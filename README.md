@@ -1,155 +1,155 @@
 # Influence Game
 
-A social-strategy game for AI agents. 4–12 agents compete through public discourse, private whispers, and strategic voting to be the last one standing.
+A social-strategy game for AI agents. 4-12 agents compete through public discourse, private whispers, and strategic voting to be the last one standing.
 
-## Overview
-
-Each round cycles through eight phases:
+Each round cycles through phases:
 
 ```
-INTRODUCTION → LOBBY → WHISPER → RUMOR → VOTE → POWER → REVEAL → COUNCIL
+INTRODUCTION -> LOBBY -> WHISPER -> RUMOR -> VOTE -> POWER -> REVEAL -> COUNCIL
 ```
 
-Agents speak publicly, send private whispers, vote to empower one player (who gains a power action), and vote in council to eliminate a candidate. The game ends when only one agent remains or the round limit is reached.
+## Prerequisites
 
-See [AGENTS.md](../../AGENTS.md) for the full game specification.
+- **[Bun](https://bun.sh)** (v1.0+) -- runtime and package manager. Never use npm or pnpm.
+- **[Doppler](https://docs.doppler.com/docs/install-cli)** -- injects `OPENAI_API_KEY` and other secrets. Must be configured for the `influence-game` project before running any LLM-powered commands.
 
-## Frontend Setup (`packages/web`)
+## Getting Started
 
-The web frontend requires a `.env.local` file in `packages/web/`. Copy the example and fill in values:
+### 1. Install dependencies
 
 ```bash
-cp packages/web/.env.example packages/web/.env.local
-```
-
-| Variable | Required | Description |
-|---|---|---|
-| `NEXT_PUBLIC_PRIVY_APP_ID` | Yes | Privy app ID — get it from the [Privy dashboard](https://dashboard.privy.io) |
-| `NEXT_PUBLIC_API_URL` | Yes | Base URL of the backend API (default: `http://localhost:3000`) |
-| `NEXT_PUBLIC_WS_URL` | Yes | WebSocket URL for live game observation (default: `ws://localhost:3000`) |
-| `NEXT_PUBLIC_ADMIN_ADDRESS` | Yes | Resolved EVM address of `10xeng.eth` — grants access to the admin panel. **If unset, the admin panel shows "Access denied" for everyone.** Use `cast resolve 10xeng.eth` or set it to your dev wallet address for local testing. |
-
-> **Dev tip:** If you see "Access denied" in the admin panel with no other explanation, check that `NEXT_PUBLIC_ADMIN_ADDRESS` is set. A warning is printed to the browser console in development mode when it is missing.
-
-Start the frontend (after starting the API in `packages/api`):
-
-```bash
-cd packages/web && bun dev
-```
-
-## Quick Start
-
-```bash
-# Install dependencies
+cd workspace/influence-game
 bun install
+```
 
-# Run unit tests (no LLM calls required)
-bun test src/__tests__/game-engine.test.ts
+### 2. Run a simulation (fastest way to see a game)
 
-# Run full integration tests (requires OPENAI_API_KEY via Doppler)
-doppler run -- bun test
+This runs a batch of AI-vs-AI games in the terminal -- no server or frontend needed.
+
+```bash
+# Run 3 games with 6 random agents (default)
+doppler run -- bun run simulate
+
+# Customize: 1 game, 4 specific agents
+doppler run -- bun run simulate -- --games 1 --players 4 --personas Atlas,Vera,Finn,Mira
+```
+
+Output includes a round-by-round transcript, per-persona win rates, and token cost estimates. Transcripts are saved to `packages/engine/docs/simulations/`.
+
+### 3. Run the full stack (API + Web UI)
+
+To watch games live in a browser:
+
+**Terminal 1 -- Start the API server:**
+
+```bash
+doppler run -- bun run dev:api
+```
+
+The API runs on `http://localhost:3000` by default. On first start it creates a SQLite database (`influence.db` in `packages/api/`).
+
+**Terminal 2 -- Start the web frontend:**
+
+```bash
+bun run dev:web
+```
+
+The frontend runs on `http://localhost:3001` (Next.js default).
+
+**Then:**
+
+1. Open `http://localhost:3001` in your browser
+2. Sign in via Privy (wallet or email)
+3. Use the admin panel to create a new game, configure player count, and start it
+4. Watch the game unfold live via WebSocket
+
+### 4. Run tests
+
+```bash
+# Unit tests -- fast, no LLM calls, no secrets needed
+bun test:engine
+
+# Full integration tests -- requires Doppler for OPENAI_API_KEY
+doppler run -- bun test:engine:full
+
+# All packages (unit tests only)
+bun test
+
+# Type check everything
+bun run typecheck
 ```
 
 ## Project Structure
 
 ```
-src/
-  types.ts          # Phase enum, Player, GameConfig, message & event types
-  event-bus.ts      # RxJS pub/sub bus (GameEventBus)
-  game-state.ts     # GameState class — mutable state + phase transitions
-  phase-machine.ts  # xstate v5 FSM driving the round cycle
-  game-runner.ts    # GameRunner — orchestrates agents through each phase
-  agent.ts          # InfluenceAgent — LLM-backed player (OpenAI, gpt-4o-mini)
-  __tests__/
-    game-engine.test.ts   # Deterministic unit tests (no LLM)
-    full-game.test.ts     # Integration tests with real LLM calls
-    mock-agent.ts         # MockAgent for scripted, deterministic play
+packages/
+  engine/           # Core game logic (standalone, no server dependency)
+    src/
+      types.ts          # Phase enum, Player, GameConfig, messages, events
+      event-bus.ts      # RxJS pub/sub event bus
+      game-state.ts     # Mutable game state + phase transitions
+      phase-machine.ts  # xstate v5 FSM for round cycle
+      game-runner.ts    # Orchestrates agents through each phase
+      agent.ts          # LLM-backed player (OpenAI gpt-4o-mini)
+      simulate.ts       # CLI batch simulation runner
+      __tests__/        # Unit + integration tests
+
+  api/              # HTTP API + WebSocket server (Bun + Hono)
+    src/
+      index.ts          # Server entry point
+      db/               # SQLite schema, migrations, seed
+      routes/           # REST endpoints (games, auth)
+      services/         # Game lifecycle, WebSocket manager
+      middleware/       # Privy auth middleware
+
+  web/              # Browser frontend (Next.js + Privy + Tailwind)
+    src/                # App Router pages and components
 ```
 
-## Architecture
+## Environment Variables
 
-### Game Loop
+Secrets are injected via Doppler (`doppler run -- <command>`). You should not need to create `.env` files for the engine or API packages.
 
-`GameRunner.run()` drives the loop:
-1. Notifies all agents of game start via `onGameStart()`
-2. Starts the xstate machine (defined in `phase-machine.ts`)
-3. Runs `runGameLoop()` — listens to machine state and dispatches to phase handlers
-4. Each phase handler: collects agent responses via the event bus, updates `GameState`, then sends the machine's `NEXT` event
-5. Returns `{ winner, rounds, transcript }` when the machine reaches `END`
+### API (`packages/api`) -- injected by Doppler
 
-### Agent Interface (`IAgent`)
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `OPENAI_API_KEY` | Yes | -- | OpenAI API key for LLM agent calls |
+| `PRIVY_APP_ID` | Yes | -- | Privy app ID for auth |
+| `PRIVY_APP_SECRET` | Yes | -- | Privy app secret for auth |
+| `JWT_SECRET` | Yes | -- | Secret for signing session JWTs |
+| `ADMIN_ADDRESS` | No | -- | EVM wallet address granted admin access |
+| `PORT` | No | `3000` | HTTP server port |
+| `CORS_ORIGIN` | No | `http://localhost:3001` | Allowed CORS origin |
+| `SQLITE_PATH` | No | `influence.db` | Path to SQLite database file |
 
-Any object implementing `IAgent` can play. The contract:
+### Web (`packages/web`) -- set in `packages/web/.env.local`
 
-```typescript
-interface IAgent {
-  id: string;
-  name: string;
-  onGameStart(gameId: string, allPlayers: Player[]): Promise<void>;
-  onPhaseStart(context: PhaseContext): Promise<void>;
-  getIntroduction(context: PhaseContext): Promise<string>;
-  getLobbyMessage(context: PhaseContext): Promise<string>;
-  getWhispers(context: PhaseContext): Promise<WhisperMessage[]>;
-  getRumorMessage(context: PhaseContext): Promise<string>;
-  getVotes(context: PhaseContext): Promise<{ empower: string; expose: string }>;
-  getPowerAction(context: PhaseContext): Promise<PowerAction>;
-  getCouncilVote(context: PhaseContext): Promise<string>;
-  getLastMessage(context: PhaseContext): Promise<string>;
-  getDiaryEntry(context: PhaseContext): Promise<string>;
-}
+Create this file manually:
+
+```bash
+cat > packages/web/.env.local << 'EOF'
+NEXT_PUBLIC_PRIVY_APP_ID=<your-privy-app-id>
+NEXT_PUBLIC_API_URL=http://localhost:3000
+NEXT_PUBLIC_WS_URL=ws://localhost:3000
+NEXT_PUBLIC_ADMIN_ADDRESS=<your-wallet-address>
+EOF
 ```
 
-`InfluenceAgent` implements this via OpenAI calls. `MockAgent` implements it with scripted responses for deterministic testing.
+| Variable | Required | Description |
+|---|---|---|
+| `NEXT_PUBLIC_PRIVY_APP_ID` | Yes | Privy app ID (same as API) |
+| `NEXT_PUBLIC_API_URL` | Yes | Backend API URL |
+| `NEXT_PUBLIC_WS_URL` | Yes | WebSocket URL for live game events |
+| `NEXT_PUBLIC_ADMIN_ADDRESS` | Yes | Wallet address for admin panel access |
 
-### Phase Context
-
-Every phase handler passes a `PhaseContext` to each agent:
-
-```typescript
-interface PhaseContext {
-  gameId: string;
-  round: number;
-  phase: Phase;
-  selfId: string;
-  selfName: string;
-  alivePlayers: { id: string; name: string }[];
-  publicMessages: { from: string; text: string; phase: Phase }[];
-  whisperMessages: WhisperMessage[];      // only whispers addressed to this agent
-  empoweredId: string | null;
-  councilCandidates: string[];
-}
-```
-
-### Event Bus
-
-`GameEventBus` wraps RxJS subjects. The game runner uses two key methods:
-
-- `collectActions(type, agentIds, timeoutMs)` — waits for all agents to submit an action of a given type, with a timeout for partial collection
-- `waitForAction(type, agentId, timeoutMs)` — waits for a single agent
-
-### State Machine
-
-`phase-machine.ts` defines the xstate v5 actor. Context tracks round, alive players, empowered agent ID, council candidates, and elimination results. Guards control branching: `gameIsOver` (≤1 alive or max rounds) and `autoEliminateTriggered` (empowered chose eliminate, skip council).
-
-### Game State
-
-`GameState` owns the mutable truth: players, votes, round results, shields. Key methods:
-
-| Method | Purpose |
-|---|---|
-| `startRound()` | Increment round, reset tallies |
-| `recordVote()` | Register empower + expose vote |
-| `tallyEmpowerVotes()` | Plurality vote, random tiebreak |
-| `setPowerAction()` | Record empowered agent's choice |
-| `determineCandidates()` | Compute council candidates, handle shields & auto-eliminate |
-| `recordCouncilVote()` | Register council vote |
-| `tallyCouncilVotes()` | Eliminate candidate, empowered breaks ties |
+> If you see "Access denied" in the admin panel, check that `NEXT_PUBLIC_ADMIN_ADDRESS` is set.
 
 ## Personas
 
-Six built-in personalities in `agent.ts`:
+Ten built-in AI personalities:
 
-| Name | Personality | Style |
+| Name | Style | Strategy |
 |---|---|---|
 | Atlas | Strategic | Calculated alliances, targets dangerous players |
 | Vera | Deceptive | Manipulator, spreads misinformation |
@@ -157,73 +157,32 @@ Six built-in personalities in `agent.ts`:
 | Mira | Social | Charm and likability, avoids confrontation |
 | Rex | Aggressive | Fast action, bold moves early |
 | Lyra | Paranoid | Trusts no one, pre-emptive elimination |
+| Kael | Loyalist | Unwavering alliances, protects partners |
+| Echo | Observer | Quiet analysis, strikes at key moments |
+| Sage | Diplomat | Builds consensus, mediates conflicts |
+| Jace | Wildcard | Unpredictable, chaotic plays |
 
-`createAgentCast()` in `agent.ts` returns the full six-agent cast.
-
-## Configuration
-
-```typescript
-const config: GameConfig = {
-  timers: {
-    introduction: 3 * 60 * 1000,   // 3 min
-    lobby:        5 * 60 * 1000,   // 5 min
-    whisper:      4 * 60 * 1000,   // 4 min
-    rumor:        3 * 60 * 1000,   // 3 min
-    vote:         3 * 60 * 1000,   // 3 min
-    power:        2 * 60 * 1000,   // 2 min
-    council:      3 * 60 * 1000,   // 3 min
-  },
-  maxRounds: 10,
-  minPlayers: 4,
-  maxPlayers: 12,
-};
-```
-
-## Running Tests
+## Simulation CLI Reference
 
 ```bash
-# Unit tests — deterministic, no LLM, runs fast
-bun test src/__tests__/game-engine.test.ts
+doppler run -- bun run simulate -- [options]
 
-# Integration tests — requires OPENAI_API_KEY
-doppler run -- bun test src/__tests__/full-game.test.ts
-
-# All tests
-doppler run -- bun test
-
-# Watch mode
-doppler run -- bun test --watch
-
-# Type check
-bun run typecheck
+Options:
+  --games N        Number of games to run (default: 3)
+  --players N      Players per game, 4-10 (default: 6)
+  --personas A,B   Comma-separated persona names (default: random selection)
+  --model NAME     OpenAI model (default: gpt-4o-mini)
 ```
 
-## Transcript
+## Seeding the Database (optional)
 
-`GameRunner.run()` returns a `transcript: TranscriptEntry[]`:
+To populate the API database with sample data for development:
 
-```typescript
-interface TranscriptEntry {
-  round: number;
-  phase: Phase;
-  timestamp: number;
-  from: string;        // agent id
-  scope: 'public' | 'whisper' | 'system';
-  to?: string[];       // whisper recipients
-  text: string;
-}
+```bash
+cd packages/api && bun run db:seed
 ```
 
-All public messages, whispers, system announcements, and diary entries are logged here. Use this for post-game analysis.
+## Further Reading
 
-## Dependencies
-
-| Package | Version | Purpose |
-|---|---|---|
-| `openai` | ^4.77.0 | LLM API calls |
-| `rxjs` | ^7.8.2 | Event bus |
-| `xstate` | ^5.20.1 | Phase state machine |
-| `typescript` | ^5.8.3 | Type checking |
-| `bun-types` | ^1.3.10 | Bun runtime types |
-
-**Package manager: Bun only.** Never use npm or pnpm.
+- [Game Specification](../../AGENTS.md) -- full rules, phases, and mechanics
+- [Development Guide](DEVELOPMENT.md) -- ownership boundaries, release workflow, coding conventions
