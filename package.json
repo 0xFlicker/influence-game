@@ -1,9 +1,10 @@
 {
   "name": "influence-game",
   "description": "Influence: AI agent social-strategy game prototype",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "scripts": {
+    "simulate": "doppler run -- bun run src/simulate.ts",
     "test": "doppler run -- bun test",
     "test:watch": "doppler run -- bun test --watch",
     "test:mock": "bun test",
