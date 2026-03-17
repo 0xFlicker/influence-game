@@ -525,9 +525,9 @@ export class GameState {
   /**
    * Tally jury votes for the Judgment finale.
    * Majority wins. Tie -> finalist with more cumulative empower votes wins.
-   * Returns the winner's ID.
+   * Returns the winner's ID and how the result was determined.
    */
-  tallyJuryVotes(): UUID {
+  tallyJuryVotes(): { winnerId: UUID; method: "majority" | "empower_tiebreaker" | "random_tiebreaker"; voteCounts: { id: UUID; name: string; votes: number }[] } {
     const finalists = this.getAlivePlayerIds();
     if (finalists.length !== 2) throw new Error("Judgment requires exactly 2 finalists");
 
@@ -543,18 +543,24 @@ export class GameState {
       if (target === f2) f2Votes++;
     }
 
-    if (f1Votes > f2Votes) return f1;
-    if (f2Votes > f1Votes) return f2;
+    const voteCounts = [
+      { id: f1, name: this.getPlayerName(f1), votes: f1Votes },
+      { id: f2, name: this.getPlayerName(f2), votes: f2Votes },
+    ];
+
+    if (f1Votes > f2Votes) return { winnerId: f1, method: "majority", voteCounts };
+    if (f2Votes > f1Votes) return { winnerId: f2, method: "majority", voteCounts };
 
     // Tiebreaker: cumulative empower votes (social capital)
     const f1Empower = this.getCumulativeEmpowerVotes(f1);
     const f2Empower = this.getCumulativeEmpowerVotes(f2);
 
-    if (f1Empower > f2Empower) return f1;
-    if (f2Empower > f1Empower) return f2;
+    if (f1Empower > f2Empower) return { winnerId: f1, method: "empower_tiebreaker", voteCounts };
+    if (f2Empower > f1Empower) return { winnerId: f2, method: "empower_tiebreaker", voteCounts };
 
     // Ultimate fallback: random
-    return Math.random() < 0.5 ? f1 : f2;
+    const winnerId = Math.random() < 0.5 ? f1 : f2;
+    return { winnerId, method: "random_tiebreaker", voteCounts };
   }
 
   // ---------------------------------------------------------------------------

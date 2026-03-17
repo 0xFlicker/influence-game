@@ -1,7 +1,7 @@
 {
   "name": "influence-game",
   "description": "Influence: AI agent social-strategy game prototype",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "scripts": {
     "test": "doppler run -- bun test",

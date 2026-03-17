@@ -355,15 +355,20 @@ Keep it to 1-2 sentences. Respond ONLY with the message text.`;
   }
 
   async getDiaryEntry(ctx: PhaseContext, question: string): Promise<string> {
+    const isEliminated = ctx.isEliminated === true;
     const prompt = this.buildBasePrompt(ctx) + `
 ## Diary Room Interview
 You're in the private diary room with The House. This is a confidential interview — only the audience can see this.
-Be candid about your real thoughts, strategies, and feelings about the other players.
+${isEliminated
+  ? `You have been ELIMINATED from the game and are now a JUROR. You are no longer an active player — you cannot strategize about staying in the game or making moves. Instead, reflect on the remaining players from an outside perspective: who do you think deserves to win, who played you, and what you see happening from the jury bench.`
+  : `Be candid about your real thoughts, strategies, and feelings about the other players.`}
 
 The House asks: "${question}"
 
-Answer the question honestly and in character. Share your genuine strategic thinking — who you trust, who you suspect, what your next moves are.
-Keep it to 2-4 sentences. Be entertaining for the audience. Respond ONLY with your answer.`;
+${isEliminated
+  ? `Answer from your perspective as an eliminated juror watching from the sidelines. Reflect on the remaining players, not on your own gameplay moves. Keep it to 2-4 sentences. Be entertaining for the audience. Respond ONLY with your answer.`
+  : `Answer the question honestly and in character. Share your genuine strategic thinking — who you trust, who you suspect, what your next moves are.
+Keep it to 2-4 sentences. Be entertaining for the audience. Respond ONLY with your answer.`}`;
 
     return this.callLLM(prompt, 250);
   }
@@ -630,10 +635,12 @@ ${PERSONALITY_PROMPTS[this.personality]}
 ## Game State
 - Round: ${ctx.round}
 - Phase: ${ctx.phase}
-- Alive players: ${ctx.alivePlayers.map((p) => p.name + (p.id === this.id ? " (YOU)" : "")).join(", ")}
-${eliminated.length > 0 ? `- Eliminated: ${eliminated.join(", ")}` : ""}
+- Alive players (ONLY these players are still in the game): ${ctx.alivePlayers.map((p) => p.name + (p.id === this.id ? " (YOU)" : "")).join(", ")}
+${eliminated.length > 0 ? `- ELIMINATED (out of the game — do NOT address or strategize about them as if they are active): ${eliminated.join(", ")}` : ""}
 ${ctx.empoweredId ? `- Empowered player: ${ctx.alivePlayers.find((p) => p.id === ctx.empoweredId)?.name ?? "unknown"}` : ""}
 ${endgameInfo}
+
+IMPORTANT: Only reference alive players in your messages, votes, and strategies. Eliminated players are gone and cannot be interacted with.
 
 ## Your Memory
 - Known allies: ${allies}

@@ -819,8 +819,9 @@ describe("GameState - Jury vote tallying (Judgment)", () => {
     gs.recordJuryVote(dave, alice);
     gs.recordJuryVote(eve, bob);
 
-    const winner = gs.tallyJuryVotes();
-    expect(winner).toBe(alice);
+    const result = gs.tallyJuryVotes();
+    expect(result.winnerId).toBe(alice);
+    expect(result.method).toBe("majority");
   });
 
   it("uses cumulative empower votes as tiebreaker", () => {
@@ -856,8 +857,9 @@ describe("GameState - Jury vote tallying (Judgment)", () => {
     gs.recordJuryVote(charlie, alice);
     gs.recordJuryVote(dave, bob);
 
-    const winner = gs.tallyJuryVotes();
-    expect(winner).toBe(alice); // More cumulative empower votes
+    const result = gs.tallyJuryVotes();
+    expect(result.winnerId).toBe(alice); // More cumulative empower votes
+    expect(result.method).toBe("empower_tiebreaker");
   });
 });
 

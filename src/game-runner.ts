@@ -96,6 +96,8 @@ export interface PhaseContext {
   endgameStage?: EndgameStage;
   jury?: JuryMember[];
   finalists?: [UUID, UUID];
+  /** True when this agent has been eliminated (e.g. juror in diary room) */
+  isEliminated?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -936,8 +938,23 @@ export class GameRunner {
       );
     }
 
-    const winnerId = this.gameState.tallyJuryVotes();
+    const { winnerId, method, voteCounts } = this.gameState.tallyJuryVotes();
     const winnerName = this.gameState.getPlayerName(winnerId);
+
+    // Log vote counts
+    for (const vc of voteCounts) {
+      this.logSystem(`Jury votes for ${vc.name}: ${vc.votes}`, Phase.JURY_VOTE);
+    }
+
+    // Log how the winner was determined
+    if (method === "majority") {
+      this.logSystem(`Winner determined by jury majority vote.`, Phase.JURY_VOTE);
+    } else if (method === "empower_tiebreaker") {
+      this.logSystem(`Jury vote tied! Tiebreaker: ${winnerName} wins with more cumulative empower votes (social capital).`, Phase.JURY_VOTE);
+    } else {
+      this.logSystem(`Jury vote tied and empower votes tied! Tiebreaker: ${winnerName} wins by random selection.`, Phase.JURY_VOTE);
+    }
+
     this.logSystem(`\n*** THE WINNER IS: ${winnerName} ***`, Phase.JURY_VOTE);
 
     // Eliminate the loser so getWinner() works
@@ -1002,7 +1019,7 @@ export class GameRunner {
 
           const diaryContext = this.buildDiaryRoomContext(precedingPhase, juror.playerName);
           const question = await this.houseInterviewer.generateQuestion(diaryContext);
-          const ctx = this.buildPhaseContext(juror.playerId, Phase.DIARY_ROOM);
+          const ctx = this.buildPhaseContext(juror.playerId, Phase.DIARY_ROOM, undefined, true);
 
           this.logDiary(`House -> ${juror.playerName} (juror)`, question);
           const answer = await agent.getDiaryEntry(ctx, question);
@@ -1056,6 +1073,7 @@ export class GameRunner {
     agentId: UUID,
     phase: Phase,
     extra?: { empoweredId?: UUID; councilCandidates?: [UUID, UUID] },
+    isEliminated?: boolean,
   ): PhaseContext {
     const player = this.gameState.getPlayer(agentId)!;
     return {
@@ -1080,6 +1098,7 @@ export class GameRunner {
         if (!f0 || !f1) return undefined;
         return [f0.id, f1.id] as [UUID, UUID];
       })(),
+      isEliminated: isEliminated ?? false,
     };
   }
 
