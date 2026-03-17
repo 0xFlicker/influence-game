@@ -802,13 +802,20 @@ ${whispers ? `## Private Whispers You Received\n${whispers}` : ""}
   // LLM calls — free text and tool invocation
   // ---------------------------------------------------------------------------
 
+  /** Check if the model is an OpenAI o-series reasoning model (o1, o3, o4, etc.) */
+  private isReasoningModel(): boolean {
+    return /^o\d/.test(this.model);
+  }
+
   /** Free-text LLM call for communication (introductions, lobby, rumor, etc.) */
   private async callLLM(prompt: string, maxTokens = 200): Promise<string> {
+    const reasoning = this.isReasoningModel();
     const response = await this.openai.chat.completions.create({
       model: this.model,
       messages: [{ role: "user", content: prompt }],
-      max_tokens: maxTokens,
-      temperature: 0.7,
+      ...(reasoning
+        ? { max_completion_tokens: maxTokens }
+        : { max_tokens: maxTokens, temperature: 0.7 }),
     });
 
     if (this.tokenTracker && response.usage) {
@@ -831,11 +838,13 @@ ${whispers ? `## Private Whispers You Received\n${whispers}` : ""}
     tool: ChatCompletionTool,
     maxTokens = 200,
   ): Promise<T> {
+    const reasoning = this.isReasoningModel();
     const response = await this.openai.chat.completions.create({
       model: this.model,
       messages: [{ role: "user", content: prompt }],
-      max_tokens: maxTokens,
-      temperature: 0.7,
+      ...(reasoning
+        ? { max_completion_tokens: maxTokens }
+        : { max_tokens: maxTokens, temperature: 0.7 }),
       tools: [tool],
       tool_choice: { type: "function", function: { name: tool.function.name } },
     });
