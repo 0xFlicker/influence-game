@@ -279,3 +279,15 @@ export const DEFAULT_CONFIG: GameConfig = {
   minPlayers: 4,
   maxPlayers: 12,
 };
+
+/**
+ * Compute a player-count-scaled maxRounds to ensure games resolve.
+ * Formula: normal rounds to reach 4 players + 3 endgame rounds + 2 buffer.
+ * For 10 players: (10-4) + 3 + 2 = 11. For 4 players: (4-4) + 3 + 2 = 5.
+ */
+export function computeMaxRounds(playerCount: number): number {
+  const normalRoundsToEndgame = Math.max(0, playerCount - 4);
+  const endgameRounds = 3; // reckoning + tribunal + judgment
+  const buffer = 2;
+  return Math.max(DEFAULT_CONFIG.maxRounds, normalRoundsToEndgame + endgameRounds + buffer);
+}

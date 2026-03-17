@@ -18,7 +18,7 @@ import type {
   JuryMember,
   EndgameStage,
 } from "./types";
-import { Phase } from "./types";
+import { Phase, computeMaxRounds } from "./types";
 
 // ---------------------------------------------------------------------------
 // Agent interface (implemented by InfluenceAgent in agent.ts)
@@ -137,7 +137,9 @@ export class GameRunner {
   private readonly houseInterviewer: IHouseInterviewer;
 
   constructor(agents: IAgent[], config: GameConfig, houseInterviewer?: IHouseInterviewer) {
-    this.config = config;
+    // Scale maxRounds based on player count to ensure games can resolve
+    const scaledMaxRounds = computeMaxRounds(agents.length);
+    this.config = { ...config, maxRounds: Math.max(config.maxRounds, scaledMaxRounds) };
     this.agents = new Map(agents.map((a) => [a.id, a]));
     this.gameState = new GameState(agents.map((a) => ({ id: a.id, name: a.name })));
     this.machine = createPhaseMachine();
