@@ -167,10 +167,13 @@ function extractEliminationOrder(transcript: readonly TranscriptEntry[]): string
   const eliminated: string[] = [];
   for (const entry of transcript) {
     if (entry.scope === "system") {
-      // Match elimination announcements
-      const match = entry.text.match(/(\w+) has been eliminated/);
-      if (match && match[1] && !eliminated.includes(match[1])) {
-        eliminated.push(match[1]);
+      // Match actual elimination formats: "AUTO-ELIMINATE: Name" and "ELIMINATED: Name"
+      const match = entry.text.match(/(?:AUTO-ELIMINATE|ELIMINATED):\s*(.+)/);
+      if (match && match[1]) {
+        const name = match[1].trim();
+        if (!eliminated.includes(name)) {
+          eliminated.push(name);
+        }
       }
     }
   }
