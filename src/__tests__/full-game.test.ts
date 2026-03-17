@@ -14,8 +14,9 @@
 
 import { describe, it, expect } from "bun:test";
 import OpenAI from "openai";
-import { GameRunner } from "../game-runner";
+import { GameRunner, type TranscriptEntry } from "../game-runner";
 import { InfluenceAgent, createAgentCast } from "../agent";
+import { LLMHouseInterviewer } from "../house-interviewer";
 import { DEFAULT_CONFIG } from "../types";
 import { Phase } from "../types";
 import type { GameConfig } from "../types";
@@ -48,14 +49,7 @@ const TEST_CONFIG: GameConfig = {
 // ---------------------------------------------------------------------------
 
 function printTranscript(
-  transcript: Array<{
-    round: number;
-    phase: Phase;
-    from: string;
-    scope: string;
-    to?: string[];
-    text: string;
-  }>,
+  transcript: readonly TranscriptEntry[],
 ): void {
   let lastPhase = "";
   for (const entry of transcript) {
@@ -70,6 +64,8 @@ function printTranscript(
       console.log(
         `  [WHISPER] ${entry.from} → ${entry.to?.join(", ")}: "${entry.text}"`,
       );
+    } else if (entry.scope === "diary") {
+      console.log(`  [DIARY] ${entry.from}: "${entry.text}"`);
     } else {
       console.log(`  ${entry.from}: "${entry.text}"`);
     }
@@ -103,14 +99,15 @@ describe("Full Influence Game", () => {
       ];
 
       console.log("\n🎮 Starting Influence game with 4 agents:");
-      console.log(`   Players: ${agents.map((a) => `${a.name} (${(a as unknown as { personality: string }).personality})`).join(", ")}`);
+      console.log(`   Players: ${agents.map((a) => `${a.name} (${a.personality})`).join(", ")}`);
       console.log(`   Max rounds: ${TEST_CONFIG.maxRounds}\n`);
 
-      const runner = new GameRunner(agents, TEST_CONFIG);
+      const houseInterviewer = new LLMHouseInterviewer(openai);
+      const runner = new GameRunner(agents, TEST_CONFIG, houseInterviewer);
       const result = await runner.run();
 
       // Print transcript
-      printTranscript(runner.transcriptLog as unknown as Parameters<typeof printTranscript>[0]);
+      printTranscript(runner.transcriptLog);
 
       console.log("\n=== GAME OVER ===");
       if (result.winner) {
@@ -157,14 +154,15 @@ describe("Full Influence Game", () => {
 
       const openai = new OpenAI({ apiKey });
       const agents = createAgentCast(openai);
+      const houseInterviewer = new LLMHouseInterviewer(openai);
 
       console.log("\n🎮 Starting Influence game with 6 agents:");
       console.log(`   Players: ${agents.map((a) => a.name).join(", ")}`);
 
-      const runner = new GameRunner(agents, TEST_CONFIG);
+      const runner = new GameRunner(agents, TEST_CONFIG, houseInterviewer);
       const result = await runner.run();
 
-      printTranscript(runner.transcriptLog as unknown as Parameters<typeof printTranscript>[0]);
+      printTranscript(runner.transcriptLog);
 
       console.log("\n=== GAME OVER ===");
       if (result.winner) {
@@ -199,7 +197,7 @@ describe("Full game with scripted mock agents", () => {
     const result = await runner.run();
 
     console.log("\n=== MOCK GAME TRANSCRIPT ===");
-    printTranscript(runner.transcriptLog as unknown as Parameters<typeof printTranscript>[0]);
+    printTranscript(runner.transcriptLog);
     console.log(`\nResult: ${result.winnerName ?? "draw"} after ${result.rounds} rounds`);
 
     // Should complete
@@ -213,5 +211,25 @@ describe("Full game with scripted mock agents", () => {
     const phases = new Set(result.transcript.map((e) => e.phase));
     expect(phases.has(Phase.INTRODUCTION)).toBe(true);
     expect(phases.has(Phase.VOTE)).toBe(true);
+
+    // Diary rooms should have been conducted between phases
+    expect(phases.has(Phase.DIARY_ROOM)).toBe(true);
+    const diaryEntries = result.transcript.filter((e) => e.scope === "diary");
+    expect(diaryEntries.length).toBeGreaterThan(0);
+
+    // Each diary room should have both House questions and agent answers
+    const houseQuestions = diaryEntries.filter((e) => e.from.startsWith("House"));
+    const agentAnswers = diaryEntries.filter((e) => !e.from.startsWith("House"));
+    expect(houseQuestions.length).toBeGreaterThan(0);
+    expect(agentAnswers.length).toBeGreaterThan(0);
+
+    // Diary entries should also be accessible via the diaryLog
+    const diaryLog = runner.diaryLog;
+    expect(diaryLog.length).toBeGreaterThan(0);
+    // Each diary log entry should have a question and answer
+    for (const entry of diaryLog) {
+      expect(entry.question.length).toBeGreaterThan(0);
+      expect(entry.answer.length).toBeGreaterThan(0);
+    }
   });
 });
