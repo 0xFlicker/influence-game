@@ -6,6 +6,8 @@
     "lib": ["ESNext"],
     "types": ["bun-types"],
     "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "outDir": "dist",
