@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import type { GameSummary, GameStatus, ModelTier } from "@/lib/api";
+import { listGames, type GameSummary, type GameStatus, type ModelTier } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Filter state
@@ -24,14 +24,14 @@ function StatusBadge({ status }: { status: GameSummary["status"] }) {
   const styles: Record<GameSummary["status"], string> = {
     waiting: "bg-yellow-900/40 text-yellow-400",
     in_progress: "bg-blue-900/40 text-blue-400",
-    complete: "bg-green-900/40 text-green-400",
-    stopped: "bg-red-900/40 text-red-400",
+    completed: "bg-green-900/40 text-green-400",
+    cancelled: "bg-red-900/40 text-red-400",
   };
   const labels: Record<GameSummary["status"], string> = {
     waiting: "waiting",
     in_progress: "live",
-    complete: "✓ done",
-    stopped: "✗ void",
+    completed: "✓ done",
+    cancelled: "✗ void",
   };
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full ${styles[status]}`}>
@@ -123,8 +123,21 @@ export function GameHistoryBrowser() {
   const [playerFilter, setPlayerFilter] = useState<PlayerFilter>("all");
   const [search, setSearch] = useState("");
 
-  // No real data yet — API integration pending (INF-42)
-  const games: GameSummary[] = [];
+  const [games, setGames] = useState<GameSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listGames()
+      .then((data) => {
+        setGames(data);
+        setError(null);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to load games.");
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   const filtered = games.filter((g) => {
     if (statusFilter !== "all" && g.status !== statusFilter) return false;
@@ -151,10 +164,10 @@ export function GameHistoryBrowser() {
           onChange={setStatusFilter}
           options={[
             { value: "all", label: "All statuses" },
-            { value: "complete", label: "Done" },
+            { value: "completed", label: "Done" },
             { value: "in_progress", label: "Live" },
             { value: "waiting", label: "Waiting" },
-            { value: "stopped", label: "Void" },
+            { value: "cancelled", label: "Void" },
           ]}
         />
         <FilterSelect
@@ -191,7 +204,15 @@ export function GameHistoryBrowser() {
       </div>
 
       {/* Table */}
-      {games.length === 0 ? (
+      {loading ? (
+        <div className="border border-white/10 rounded-xl p-16 text-center text-white/20 text-sm">
+          Loading…
+        </div>
+      ) : error ? (
+        <div className="border border-red-900/30 rounded-xl p-8 text-center text-red-400/70 text-sm">
+          {error}
+        </div>
+      ) : games.length === 0 ? (
         <div className="border border-white/10 rounded-xl p-16 text-center text-white/20 text-sm">
           No games yet. Create the first one →{" "}
           <a href="/admin/games/new" className="text-indigo-400 hover:text-indigo-300">

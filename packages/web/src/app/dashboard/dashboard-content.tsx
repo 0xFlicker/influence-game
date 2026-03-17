@@ -1,44 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
-import type { GameSummary, PlayerGameResult, PersonaKey } from "@/lib/api";
+import { getPlayerGames, type GameSummary, type PlayerGameResult, type PersonaKey } from "@/lib/api";
 import { GamesBrowser } from "@/app/games/games-browser";
 import { JoinGameModal } from "./join-game-modal";
-
-// ---------------------------------------------------------------------------
-// Mock history — replaced with real API once INF-42 lands
-// ---------------------------------------------------------------------------
-
-const MOCK_HISTORY: PlayerGameResult[] = [
-  {
-    gameId: "past-1",
-    gameNumber: 1,
-    agentName: "ShadowPlay",
-    persona: "strategic",
-    placement: 1,
-    totalPlayers: 6,
-    eliminated: false,
-    winner: true,
-    rounds: 9,
-    completedAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-    modelTier: "budget",
-  },
-  {
-    gameId: "past-2",
-    gameNumber: 2,
-    agentName: "ShadowPlay",
-    persona: "strategic",
-    placement: 3,
-    totalPlayers: 8,
-    eliminated: true,
-    winner: false,
-    rounds: 7,
-    completedAt: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(),
-    modelTier: "standard",
-  },
-];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -197,9 +164,17 @@ export function DashboardContent() {
   const { user } = usePrivy();
   const [joinTarget, setJoinTarget] = useState<GameSummary | null>(null);
   const [joinedGameIds, setJoinedGameIds] = useState<Set<string>>(new Set());
+  const [history, setHistory] = useState<PlayerGameResult[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
-  // No API yet — use mock history
-  const history = MOCK_HISTORY;
+  useEffect(() => {
+    getPlayerGames()
+      .then(setHistory)
+      .catch(() => {
+        // Not fatal — user may not have played any games yet
+      })
+      .finally(() => setHistoryLoading(false));
+  }, []);
 
   const wins = history.filter((h) => h.winner).length;
   const played = history.length;
@@ -273,7 +248,13 @@ export function DashboardContent() {
           <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">
             Your History
           </h2>
-          <HistorySection history={history} />
+          {historyLoading ? (
+            <div className="border border-white/10 rounded-xl p-8 text-center text-white/20 text-sm">
+              Loading…
+            </div>
+          ) : (
+            <HistorySection history={history} />
+          )}
         </section>
 
         {/* Agent defaults */}

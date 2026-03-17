@@ -1,10 +1,12 @@
 "use client";
 
-import { PrivyProvider } from "@privy-io/react-auth";
+import { useEffect } from "react";
+import { PrivyProvider, usePrivy } from "@privy-io/react-auth";
 import { WagmiProvider, createConfig } from "@privy-io/wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { mainnet } from "viem/chains";
 import { http } from "wagmi";
+import { loginWithPrivyToken, setAuthToken, clearAuthToken } from "@/lib/api";
 
 const wagmiConfig = createConfig({
   chains: [mainnet],
@@ -14,6 +16,30 @@ const wagmiConfig = createConfig({
 });
 
 const queryClient = new QueryClient();
+
+/** Syncs Privy auth state to a backend session JWT stored in localStorage. */
+function AuthSync() {
+  const { authenticated, getAccessToken } = usePrivy();
+
+  useEffect(() => {
+    if (!authenticated) {
+      clearAuthToken();
+      return;
+    }
+
+    getAccessToken().then(async (privyToken) => {
+      if (!privyToken) return;
+      try {
+        const { token } = await loginWithPrivyToken(privyToken);
+        setAuthToken(token);
+      } catch (err) {
+        console.error("[AuthSync] Failed to exchange Privy token:", err);
+      }
+    });
+  }, [authenticated, getAccessToken]);
+
+  return null;
+}
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
@@ -37,7 +63,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
       }}
     >
       <QueryClientProvider client={queryClient}>
-        <WagmiProvider config={wagmiConfig}>{children}</WagmiProvider>
+        <WagmiProvider config={wagmiConfig}>
+          <AuthSync />
+          {children}
+        </WagmiProvider>
       </QueryClientProvider>
     </PrivyProvider>
   );

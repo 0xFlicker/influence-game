@@ -8,6 +8,31 @@ const API_BASE =
     ? process.env.NEXT_PUBLIC_API_URL
     : process.env.NEXT_PUBLIC_API_URL) ?? "http://localhost:3000";
 
+// ---------------------------------------------------------------------------
+// Auth token storage (client-side only)
+// ---------------------------------------------------------------------------
+
+const TOKEN_KEY = "influence_session";
+
+export function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setAuthToken(token: string): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearAuthToken(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+// ---------------------------------------------------------------------------
+// Core fetch wrapper
+// ---------------------------------------------------------------------------
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -22,12 +47,18 @@ export async function apiFetch<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options?.headers as Record<string, string> | undefined),
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers,
-    },
+    headers,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
@@ -56,7 +87,7 @@ export type ModelTier = "budget" | "standard" | "premium";
 export type FillStrategy = "random" | "balanced";
 export type TimingPreset = "fast" | "standard" | "slow" | "custom";
 export type GameVisibility = "public" | "unlisted" | "private";
-export type GameStatus = "waiting" | "in_progress" | "complete" | "stopped";
+export type GameStatus = "waiting" | "in_progress" | "completed" | "cancelled";
 
 export interface CreateGameParams {
   playerCount: 4 | 6 | 8 | 10 | 12;
@@ -113,6 +144,23 @@ export async function stopGame(id: string): Promise<void> {
   await apiFetch(`/api/games/${id}/stop`, { method: "POST" });
 }
 
+export async function startGame(id: string): Promise<void> {
+  await apiFetch(`/api/games/${id}/start`, { method: "POST" });
+}
+
+// ---------------------------------------------------------------------------
+// Auth API calls
+// ---------------------------------------------------------------------------
+
+export async function loginWithPrivyToken(
+  privyToken: string,
+): Promise<{ token: string }> {
+  return apiFetch("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ token: privyToken }),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Player types
 // ---------------------------------------------------------------------------
@@ -151,6 +199,94 @@ export async function joinGame(gameId: string, config: JoinGameConfig): Promise<
 
 export async function getPlayerGames(): Promise<PlayerGameResult[]> {
   return apiFetch("/api/player/games");
+}
+
+// ---------------------------------------------------------------------------
+// Game detail types (for the game viewer)
+// ---------------------------------------------------------------------------
+
+export type PhaseKey =
+  | "INIT"
+  | "INTRODUCTION"
+  | "LOBBY"
+  | "WHISPER"
+  | "RUMOR"
+  | "VOTE"
+  | "POWER"
+  | "REVEAL"
+  | "COUNCIL"
+  | "DIARY_ROOM"
+  | "PLEA"
+  | "ACCUSATION"
+  | "DEFENSE"
+  | "OPENING_STATEMENTS"
+  | "JURY_QUESTIONS"
+  | "CLOSING_ARGUMENTS"
+  | "JURY_VOTE"
+  | "END";
+
+export type PlayerState = "alive" | "eliminated";
+
+export interface GamePlayer {
+  id: string;
+  name: string;
+  persona: string;
+  status: PlayerState;
+  shielded: boolean;
+}
+
+export type TranscriptScope = "public" | "whisper" | "system" | "diary";
+
+export interface TranscriptEntry {
+  id: number;
+  gameId: string;
+  round: number;
+  phase: PhaseKey;
+  fromPlayerId: string | null;
+  fromPlayerName: string | null;
+  scope: TranscriptScope;
+  toPlayerIds: string[] | null;
+  text: string;
+  timestamp: number;
+}
+
+export interface GameDetail {
+  id: string;
+  gameNumber: number;
+  status: GameStatus;
+  currentRound: number;
+  maxRounds: number;
+  currentPhase: PhaseKey;
+  players: GamePlayer[];
+  modelTier: ModelTier;
+  visibility: GameVisibility;
+  winner?: string;
+  winnerPersona?: string;
+  finalists?: [string, string];
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+/** WebSocket event types pushed from the server */
+export type WsGameEvent =
+  | { type: "game_state"; game: GameDetail; messages: TranscriptEntry[] }
+  | { type: "phase_change"; phase: PhaseKey; round: number; alivePlayers: string[] }
+  | { type: "message"; message: TranscriptEntry }
+  | { type: "player_eliminated"; playerId: string; playerName: string; round: number }
+  | { type: "round_complete"; round: number }
+  | { type: "game_over"; winner?: string; winnerName?: string; totalRounds: number };
+
+// ---------------------------------------------------------------------------
+// Game detail API calls
+// ---------------------------------------------------------------------------
+
+export async function getGame(id: string): Promise<GameDetail> {
+  return apiFetch(`/api/games/${id}`);
+}
+
+export async function getGameTranscript(id: string): Promise<TranscriptEntry[]> {
+  return apiFetch(`/api/games/${id}/transcript`);
 }
 
 // ---------------------------------------------------------------------------

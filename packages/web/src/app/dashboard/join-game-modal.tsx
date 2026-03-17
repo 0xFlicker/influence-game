@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { GameSummary, JoinGameConfig, PersonaKey } from "@/lib/api";
+import { joinGame, type GameSummary, type JoinGameConfig, type PersonaKey } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Persona options
@@ -57,16 +57,13 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
     setError(null);
 
     try {
-      // API not yet available — placeholder until INF-42 ships
-      // await joinGame(game.id, config);
       const config: JoinGameConfig = {
         agentName: agentName.trim(),
         personality: personality.trim(),
         strategyHints: strategyHints.trim() || undefined,
         personaKey: selectedPersona,
       };
-      console.log("Join game config (API pending):", config);
-      await new Promise((r) => setTimeout(r, 600)); // simulate async
+      await joinGame(game.id, config);
       onSuccess(game.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join game.");

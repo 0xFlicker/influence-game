@@ -17,19 +17,26 @@ import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import type { GameStatus } from "../db/schema.js";
+import {
+  requireAuth,
+  requireAdmin,
+  optionalAuth,
+  type AuthEnv,
+} from "../middleware/auth.js";
+import { startGame, isGameRunning } from "../services/game-lifecycle.js";
 
 // ---------------------------------------------------------------------------
 // Factory — creates a Hono sub-app with injected DB
 // ---------------------------------------------------------------------------
 
 export function createGameRoutes(db: DrizzleDB) {
-  const app = new Hono();
+  const app = new Hono<AuthEnv>();
 
   // -------------------------------------------------------------------------
   // POST /api/games — create a new game
   // -------------------------------------------------------------------------
 
-  app.post("/api/games", async (c) => {
+  app.post("/api/games", requireAuth(db), requireAdmin(), async (c) => {
     const body = await c.req.json().catch(() => null);
     if (!body) {
       return c.json({ error: "Invalid JSON body" }, 400);
@@ -100,6 +107,7 @@ export function createGameRoutes(db: DrizzleDB) {
 
     const gameId = randomUUID();
 
+    const user = c.get("user");
     db.insert(schema.games)
       .values({
         id: gameId,
@@ -107,6 +115,7 @@ export function createGameRoutes(db: DrizzleDB) {
         status: "waiting",
         minPlayers,
         maxPlayers,
+        createdById: user?.id ?? null,
       })
       .run();
 
@@ -249,7 +258,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // POST /api/games/:id/join — join a game with agent config
   // -------------------------------------------------------------------------
 
-  app.post("/api/games/:id/join", async (c) => {
+  app.post("/api/games/:id/join", requireAuth(db), async (c) => {
     const gameId = c.req.param("id");
 
     const game = db
@@ -306,10 +315,12 @@ export function createGameRoutes(db: DrizzleDB) {
       temperature: 0.9,
     };
 
+    const joinUser = c.get("user");
     db.insert(schema.gamePlayers)
       .values({
         id: playerId,
         gameId,
+        userId: joinUser?.id ?? null,
         persona: JSON.stringify(persona),
         agentConfig: JSON.stringify(agentConfig),
       })
@@ -322,7 +333,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // POST /api/games/:id/start — start a game (min players met)
   // -------------------------------------------------------------------------
 
-  app.post("/api/games/:id/start", async (c) => {
+  app.post("/api/games/:id/start", requireAuth(db), requireAdmin(), async (c) => {
     const gameId = c.req.param("id");
 
     const game = db
@@ -354,6 +365,11 @@ export function createGameRoutes(db: DrizzleDB) {
       );
     }
 
+    // Check if already running (race condition guard)
+    if (isGameRunning(gameId)) {
+      return c.json({ error: "Game is already running" }, 400);
+    }
+
     db.update(schema.games)
       .set({
         status: "in_progress",
@@ -362,6 +378,14 @@ export function createGameRoutes(db: DrizzleDB) {
       .where(eq(schema.games.id, gameId))
       .run();
 
+    // Fire-and-forget: trigger game execution in the background.
+    // If it fails to start (e.g. missing OPENAI_API_KEY), the game stays
+    // in_progress and can be inspected via status. The lifecycle service
+    // handles its own error logging and status updates.
+    startGame(db, gameId).catch((err) => {
+      console.error(`[games] Failed to start game ${gameId}:`, err);
+    });
+
     return c.json({ status: "in_progress", players: currentPlayers.length });
   });
 
@@ -369,7 +393,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // POST /api/games/:id/stop — stop / cancel a running game
   // -------------------------------------------------------------------------
 
-  app.post("/api/games/:id/stop", async (c) => {
+  app.post("/api/games/:id/stop", requireAuth(db), requireAdmin(), async (c) => {
     const gameId = c.req.param("id");
 
     const game = db
@@ -395,6 +419,77 @@ export function createGameRoutes(db: DrizzleDB) {
       .run();
 
     return c.json({ status: "cancelled" });
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/player/games — authenticated player's game history
+  // -------------------------------------------------------------------------
+
+  app.get("/api/player/games", requireAuth(db), async (c) => {
+    const user = c.get("user");
+
+    const playerRecords = db
+      .select()
+      .from(schema.gamePlayers)
+      .where(eq(schema.gamePlayers.userId, user.id))
+      .all();
+
+    if (playerRecords.length === 0) {
+      return c.json([]);
+    }
+
+    // Build game number map from all games ordered by creation
+    const allGames = db
+      .select({ id: schema.games.id, createdAt: schema.games.createdAt })
+      .from(schema.games)
+      .all()
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const gameNumberMap = new Map(allGames.map((g, i) => [g.id, i + 1]));
+
+    const results = playerRecords
+      .map((playerRecord) => {
+        const game = db
+          .select()
+          .from(schema.games)
+          .where(eq(schema.games.id, playerRecord.gameId))
+          .all()[0];
+        if (!game) return null;
+
+        const config = JSON.parse(game.config);
+        const persona = JSON.parse(playerRecord.persona);
+
+        const allPlayers = db
+          .select()
+          .from(schema.gamePlayers)
+          .where(eq(schema.gamePlayers.gameId, game.id))
+          .all();
+        const totalPlayers = allPlayers.length;
+
+        const result = db
+          .select()
+          .from(schema.gameResults)
+          .where(eq(schema.gameResults.gameId, game.id))
+          .all()[0];
+
+        const isWinner = result?.winnerId === playerRecord.id;
+
+        return {
+          gameId: game.id,
+          gameNumber: gameNumberMap.get(game.id) ?? 0,
+          agentName: persona.name ?? "Unknown",
+          persona: persona.personaKey ?? "strategic",
+          placement: isWinner ? 1 : totalPlayers,
+          totalPlayers,
+          eliminated: game.status === "completed" && !isWinner,
+          winner: isWinner,
+          rounds: result?.roundsPlayed ?? 0,
+          completedAt: game.endedAt ?? game.createdAt,
+          modelTier: config.modelTier ?? "budget",
+        };
+      })
+      .filter(Boolean);
+
+    return c.json(results);
   });
 
   // -------------------------------------------------------------------------

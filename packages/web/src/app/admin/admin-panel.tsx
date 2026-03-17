@@ -1,8 +1,9 @@
 "use client";
 
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
-import type { GameSummary } from "@/lib/api";
+import { listGames, stopGame, startGame, type GameSummary } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -41,8 +42,20 @@ function capitalize(s: string): string {
 // Game card (in_progress)
 // ---------------------------------------------------------------------------
 
-function GameCard({ game }: { game: GameSummary }) {
+function GameCard({ game, onRefresh }: { game: GameSummary; onRefresh: () => void }) {
   const pct = progressPct(game);
+  const [stopping, setStopping] = useState(false);
+
+  async function handleStop() {
+    setStopping(true);
+    try {
+      await stopGame(game.id);
+      onRefresh();
+    } catch (err) {
+      alert(`Failed to stop game: ${err instanceof Error ? err.message : String(err)}`);
+      setStopping(false);
+    }
+  }
 
   return (
     <div className="border border-white/10 rounded-xl p-5 flex items-start justify-between gap-4">
@@ -80,10 +93,11 @@ function GameCard({ game }: { game: GameSummary }) {
           View
         </Link>
         <button
-          onClick={() => alert(`Stop game ${game.id} — API not yet available`)}
-          className="text-xs border border-red-900/50 hover:border-red-700 text-red-400/70 hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors"
+          onClick={handleStop}
+          disabled={stopping}
+          className="text-xs border border-red-900/50 hover:border-red-700 text-red-400/70 hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
         >
-          ⏹ Stop
+          {stopping ? "…" : "⏹ Stop"}
         </button>
       </div>
     </div>
@@ -94,7 +108,32 @@ function GameCard({ game }: { game: GameSummary }) {
 // Waiting game card
 // ---------------------------------------------------------------------------
 
-function WaitingGameCard({ game }: { game: GameSummary }) {
+function WaitingGameCard({ game, onRefresh }: { game: GameSummary; onRefresh: () => void }) {
+  const [starting, setStarting] = useState(false);
+  const [stopping, setStopping] = useState(false);
+
+  async function handleStart() {
+    setStarting(true);
+    try {
+      await startGame(game.id);
+      onRefresh();
+    } catch (err) {
+      alert(`Failed to start game: ${err instanceof Error ? err.message : String(err)}`);
+      setStarting(false);
+    }
+  }
+
+  async function handleStop() {
+    setStopping(true);
+    try {
+      await stopGame(game.id);
+      onRefresh();
+    } catch (err) {
+      alert(`Failed to cancel game: ${err instanceof Error ? err.message : String(err)}`);
+      setStopping(false);
+    }
+  }
+
   return (
     <div className="border border-white/10 rounded-xl p-5 flex items-center justify-between gap-4">
       <div>
@@ -114,16 +153,18 @@ function WaitingGameCard({ game }: { game: GameSummary }) {
           View
         </Link>
         <button
-          onClick={() => alert(`Start game ${game.id} — API not yet available`)}
-          className="text-xs border border-green-900/50 hover:border-green-700 text-green-400/70 hover:text-green-400 px-3 py-1.5 rounded-lg transition-colors"
+          onClick={handleStart}
+          disabled={starting}
+          className="text-xs border border-green-900/50 hover:border-green-700 text-green-400/70 hover:text-green-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
         >
-          ▶ Start
+          {starting ? "…" : "▶ Start"}
         </button>
         <button
-          onClick={() => alert(`Delete game ${game.id} — API not yet available`)}
-          className="text-xs border border-white/10 hover:border-red-700 text-white/30 hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors"
+          onClick={handleStop}
+          disabled={stopping}
+          className="text-xs border border-white/10 hover:border-red-700 text-white/30 hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
         >
-          🗑
+          {stopping ? "…" : "🗑"}
         </button>
       </div>
     </div>
@@ -138,14 +179,14 @@ function StatusBadge({ status }: { status: GameSummary["status"] }) {
   const styles: Record<GameSummary["status"], string> = {
     waiting: "bg-yellow-900/40 text-yellow-400",
     in_progress: "bg-blue-900/40 text-blue-400",
-    complete: "bg-green-900/40 text-green-400",
-    stopped: "bg-red-900/40 text-red-400",
+    completed: "bg-green-900/40 text-green-400",
+    cancelled: "bg-red-900/40 text-red-400",
   };
   const labels: Record<GameSummary["status"], string> = {
     waiting: "waiting",
     in_progress: "live",
-    complete: "done",
-    stopped: "void",
+    completed: "done",
+    cancelled: "void",
   };
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full ${styles[status]}`}>
@@ -201,10 +242,40 @@ function RecentGameRow({ game }: { game: GameSummary }) {
 export function AdminPanel() {
   const { address } = useAccount();
 
-  // No real data yet — API integration pending (INF-42, INF-44)
-  const activeGames: GameSummary[] = [];
-  const waitingGames: GameSummary[] = [];
-  const recentGames: GameSummary[] = [];
+  const [activeGames, setActiveGames] = useState<GameSummary[]>([]);
+  const [waitingGames, setWaitingGames] = useState<GameSummary[]>([]);
+  const [recentGames, setRecentGames] = useState<GameSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchGames = useCallback(async () => {
+    setError(null);
+    try {
+      const all = await listGames();
+      setActiveGames(all.filter((g) => g.status === "in_progress"));
+      setWaitingGames(all.filter((g) => g.status === "waiting"));
+      setRecentGames(
+        all
+          .filter((g) => g.status === "completed" || g.status === "cancelled")
+          .sort(
+            (a, b) =>
+              new Date(b.completedAt ?? b.createdAt).getTime() -
+              new Date(a.completedAt ?? a.createdAt).getTime(),
+          ),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load games.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchGames();
+    // Poll every 10s while active games exist
+    const interval = setInterval(fetchGames, 10000);
+    return () => clearInterval(interval);
+  }, [fetchGames]);
 
   return (
     <div>
@@ -227,19 +298,29 @@ export function AdminPanel() {
         </div>
       </div>
 
+      {error && (
+        <div className="mb-6 border border-red-900/40 bg-red-900/20 rounded-xl p-4 text-red-400 text-sm">
+          {error}
+        </div>
+      )}
+
       {/* Active games */}
       <section className="mb-8">
         <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">
           Active Games ({activeGames.length})
         </h2>
-        {activeGames.length === 0 ? (
+        {loading ? (
+          <div className="border border-white/10 rounded-xl p-8 text-center text-white/20 text-sm">
+            Loading…
+          </div>
+        ) : activeGames.length === 0 ? (
           <div className="border border-white/10 rounded-xl p-8 text-center text-white/20 text-sm">
             No active games.
           </div>
         ) : (
           <div className="space-y-3">
             {activeGames.map((g) => (
-              <GameCard key={g.id} game={g} />
+              <GameCard key={g.id} game={g} onRefresh={fetchGames} />
             ))}
           </div>
         )}
@@ -250,7 +331,11 @@ export function AdminPanel() {
         <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">
           Waiting to Start ({waitingGames.length})
         </h2>
-        {waitingGames.length === 0 ? (
+        {loading ? (
+          <div className="border border-white/10 rounded-xl p-8 text-center text-white/20 text-sm">
+            Loading…
+          </div>
+        ) : waitingGames.length === 0 ? (
           <div className="border border-white/10 rounded-xl p-8 text-center text-white/20 text-sm">
             No games waiting.{" "}
             <Link
@@ -263,7 +348,7 @@ export function AdminPanel() {
         ) : (
           <div className="space-y-3">
             {waitingGames.map((g) => (
-              <WaitingGameCard key={g.id} game={g} />
+              <WaitingGameCard key={g.id} game={g} onRefresh={fetchGames} />
             ))}
           </div>
         )}
@@ -282,7 +367,11 @@ export function AdminPanel() {
             View all →
           </Link>
         </div>
-        {recentGames.length === 0 ? (
+        {loading ? (
+          <div className="border border-white/10 rounded-xl p-8 text-center text-white/20 text-sm">
+            Loading…
+          </div>
+        ) : recentGames.length === 0 ? (
           <div className="border border-white/10 rounded-xl p-8 text-center text-white/20 text-sm">
             No completed games yet.
           </div>
