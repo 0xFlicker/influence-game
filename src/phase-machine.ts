@@ -8,7 +8,7 @@
 
 import { assign, emit, setup } from "xstate";
 import { Phase } from "./types";
-import type { UUID, RoundResult } from "./types";
+import type { UUID } from "./types";
 
 // ---------------------------------------------------------------------------
 // Machine context
@@ -30,6 +30,16 @@ export interface PhaseMachineContext {
   /** Reason game ended */
   gameOverReason: "winner" | "max_rounds" | null;
   winner: UUID | null;
+
+  // --- Endgame fields ---
+  /** Current endgame stage, or null during normal rounds */
+  endgameStage: "reckoning" | "tribunal" | "judgment" | null;
+  /** Eliminated players forming the jury */
+  jury: Array<{ playerId: UUID; eliminatedRound: number }>;
+  /** The two finalists in Judgment */
+  finalists: [UUID, UUID] | null;
+  /** Preserved from the last normal round for endgame tiebreakers */
+  lastEmpoweredFromRegularRounds: UUID | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,7 +66,8 @@ export type PhaseMachineEvent =
     }
   | { type: "PLAYER_ELIMINATED"; playerId: UUID }
   | { type: "UPDATE_ALIVE_PLAYERS"; aliveIds: UUID[] }
-  | { type: "NEXT_ROUND" };
+  | { type: "NEXT_ROUND" }
+  | { type: "JURY_WINNER_DETERMINED"; winnerId: UUID };
 
 // ---------------------------------------------------------------------------
 // Machine emitted events (to external observers)
@@ -128,9 +139,19 @@ export function createPhaseMachine() {
           return event.playerId;
         },
       }),
+      addToJury: assign({
+        jury: ({ context, event }) => {
+          if (event.type !== "PLAYER_ELIMINATED") return context.jury;
+          return [...context.jury, { playerId: event.playerId, eliminatedRound: context.round }];
+        },
+      }),
       setWinner: assign({
-        winner: ({ context }) => {
-          if (context.alivePlayers.length === 1) return context.alivePlayers[0];
+        winner: ({ context }): UUID | null => {
+          if (context.alivePlayers.length === 1) {
+            const winner = context.alivePlayers[0];
+            if (winner === undefined) throw new Error("Expected one alive player but array was empty");
+            return winner;
+          }
           return null;
         },
         gameOverReason: ({ context }) => {
@@ -139,11 +160,42 @@ export function createPhaseMachine() {
           return null;
         },
       }),
+      setJuryWinner: assign({
+        winner: ({ event }) => {
+          if (event.type !== "JURY_WINNER_DETERMINED") return null;
+          return event.winnerId;
+        },
+        gameOverReason: (): PhaseMachineContext["gameOverReason"] => "winner",
+      }),
       resetRoundState: assign({
         empoweredId: null,
         councilCandidates: null,
         autoEliminated: null,
         lastEliminated: null,
+      }),
+      // --- Endgame stage transitions ---
+      setReckoningStage: assign({
+        endgameStage: (): PhaseMachineContext["endgameStage"] => "reckoning",
+        lastEmpoweredFromRegularRounds: ({ context }) =>
+          context.lastEmpoweredFromRegularRounds ?? context.empoweredId,
+      }),
+      setTribunalStage: assign({
+        endgameStage: (): PhaseMachineContext["endgameStage"] => "tribunal",
+      }),
+      setJudgmentStage: assign({
+        endgameStage: (): PhaseMachineContext["endgameStage"] => "judgment",
+        finalists: ({ context }): [UUID, UUID] | null => {
+          const alive = context.alivePlayers;
+          if (alive.length === 2) {
+            const first = alive[0];
+            const second = alive[1];
+            if (first === undefined || second === undefined) {
+              throw new Error("Expected two alive players for finalists but array was shorter than expected");
+            }
+            return [first, second];
+          }
+          return null;
+        },
       }),
     },
     guards: {
@@ -151,6 +203,13 @@ export function createPhaseMachine() {
         context.alivePlayers.length <= 1 || context.round >= context.maxRounds,
       hasEnoughPlayers: ({ context }) => context.alivePlayers.length >= 2,
       autoEliminateTriggered: ({ context }) => context.autoEliminated !== null,
+      // --- Endgame guards ---
+      reckoningTriggered: ({ context }) =>
+        context.alivePlayers.length === 4 && context.endgameStage === null,
+      tribunalTriggered: ({ context }) =>
+        context.alivePlayers.length === 3,
+      judgmentTriggered: ({ context }) =>
+        context.alivePlayers.length === 2,
     },
   }).createMachine({
     id: "influence-phase",
@@ -165,6 +224,11 @@ export function createPhaseMachine() {
       lastEliminated: null,
       gameOverReason: null,
       winner: null,
+      // Endgame
+      endgameStage: null,
+      jury: [],
+      finalists: null,
+      lastEmpoweredFromRegularRounds: null,
     }),
     initial: "init",
     states: {
@@ -234,7 +298,7 @@ export function createPhaseMachine() {
             actions: ["setCandidates"],
           },
           PLAYER_ELIMINATED: {
-            actions: ["recordEliminated"],
+            actions: ["recordEliminated", "addToJury"],
           },
           UPDATE_ALIVE_PLAYERS: {
             actions: ["updateAlivePlayers"],
@@ -263,7 +327,7 @@ export function createPhaseMachine() {
         exit: [{ type: "emitPhaseEnded", params: { phase: Phase.COUNCIL } }],
         on: {
           PLAYER_ELIMINATED: {
-            actions: ["recordEliminated"],
+            actions: ["recordEliminated", "addToJury"],
           },
           UPDATE_ALIVE_PLAYERS: {
             actions: ["updateAlivePlayers"],
@@ -271,6 +335,10 @@ export function createPhaseMachine() {
           PHASE_COMPLETE: "checkGameOver",
         },
       },
+
+      // =====================================================================
+      // Game over check — branches into endgame or next normal round
+      // =====================================================================
 
       checkGameOver: {
         always: [
@@ -280,10 +348,162 @@ export function createPhaseMachine() {
             actions: ["setWinner"],
           },
           {
+            guard: "reckoningTriggered",
+            target: "reckoning_lobby",
+            actions: ["setReckoningStage"],
+          },
+          {
+            guard: "tribunalTriggered",
+            target: "tribunal_lobby",
+            actions: ["setTribunalStage"],
+          },
+          {
+            guard: "judgmentTriggered",
+            target: "judgment_opening",
+            actions: ["setJudgmentStage"],
+          },
+          {
             target: "lobby",
           },
         ],
       },
+
+      // =====================================================================
+      // THE RECKONING (4 -> 3 players)
+      // =====================================================================
+
+      reckoning_lobby: {
+        entry: [
+          "incrementRound",
+          "resetRoundState",
+          { type: "emitPhaseStarted", params: { phase: Phase.LOBBY } },
+        ],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.LOBBY } }],
+        on: {
+          PHASE_COMPLETE: "reckoning_whisper",
+          UPDATE_ALIVE_PLAYERS: { actions: ["updateAlivePlayers"] },
+        },
+      },
+
+      reckoning_whisper: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.WHISPER } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.WHISPER } }],
+        on: {
+          PHASE_COMPLETE: "reckoning_plea",
+        },
+      },
+
+      reckoning_plea: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.PLEA } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.PLEA } }],
+        on: {
+          PHASE_COMPLETE: "reckoning_vote",
+        },
+      },
+
+      reckoning_vote: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.VOTE } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.VOTE } }],
+        on: {
+          PLAYER_ELIMINATED: {
+            actions: ["recordEliminated", "addToJury"],
+          },
+          UPDATE_ALIVE_PLAYERS: {
+            actions: ["updateAlivePlayers"],
+          },
+          PHASE_COMPLETE: "checkGameOver",
+        },
+      },
+
+      // =====================================================================
+      // THE TRIBUNAL (3 -> 2 players)
+      // =====================================================================
+
+      tribunal_lobby: {
+        entry: [
+          "incrementRound",
+          "resetRoundState",
+          { type: "emitPhaseStarted", params: { phase: Phase.LOBBY } },
+        ],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.LOBBY } }],
+        on: {
+          PHASE_COMPLETE: "tribunal_accusation",
+          UPDATE_ALIVE_PLAYERS: { actions: ["updateAlivePlayers"] },
+        },
+      },
+
+      tribunal_accusation: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.ACCUSATION } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.ACCUSATION } }],
+        on: {
+          PHASE_COMPLETE: "tribunal_defense",
+        },
+      },
+
+      tribunal_defense: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.DEFENSE } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.DEFENSE } }],
+        on: {
+          PHASE_COMPLETE: "tribunal_vote",
+        },
+      },
+
+      tribunal_vote: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.VOTE } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.VOTE } }],
+        on: {
+          PLAYER_ELIMINATED: {
+            actions: ["recordEliminated", "addToJury"],
+          },
+          UPDATE_ALIVE_PLAYERS: {
+            actions: ["updateAlivePlayers"],
+          },
+          PHASE_COMPLETE: "checkGameOver",
+        },
+      },
+
+      // =====================================================================
+      // THE JUDGMENT (2 finalists -- Jury Finale)
+      // =====================================================================
+
+      judgment_opening: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.OPENING_STATEMENTS } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.OPENING_STATEMENTS } }],
+        on: {
+          PHASE_COMPLETE: "judgment_jury_questions",
+        },
+      },
+
+      judgment_jury_questions: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.JURY_QUESTIONS } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.JURY_QUESTIONS } }],
+        on: {
+          PHASE_COMPLETE: "judgment_closing",
+        },
+      },
+
+      judgment_closing: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.CLOSING_ARGUMENTS } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.CLOSING_ARGUMENTS } }],
+        on: {
+          PHASE_COMPLETE: "judgment_jury_vote",
+        },
+      },
+
+      judgment_jury_vote: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.JURY_VOTE } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.JURY_VOTE } }],
+        on: {
+          JURY_WINNER_DETERMINED: {
+            actions: ["setJuryWinner"],
+          },
+          PHASE_COMPLETE: "end",
+        },
+      },
+
+      // =====================================================================
+      // End
+      // =====================================================================
 
       end: {
         type: "final",

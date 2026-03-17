@@ -20,6 +20,15 @@ export enum Phase {
   POWER = "POWER",
   REVEAL = "REVEAL",
   COUNCIL = "COUNCIL",
+  DIARY_ROOM = "DIARY_ROOM",
+  // Endgame phases
+  PLEA = "PLEA",
+  ACCUSATION = "ACCUSATION",
+  DEFENSE = "DEFENSE",
+  OPENING_STATEMENTS = "OPENING_STATEMENTS",
+  JURY_QUESTIONS = "JURY_QUESTIONS",
+  CLOSING_ARGUMENTS = "CLOSING_ARGUMENTS",
+  JURY_VOTE = "JURY_VOTE",
   END = "END",
 }
 
@@ -57,6 +66,52 @@ export interface CouncilVoteTally {
   /** Votes to eliminate each candidate (empowered agent doesn't vote normally) */
   votes: Record<UUID, UUID>; // voter -> target candidate
 }
+
+// ---------------------------------------------------------------------------
+// Endgame types
+// ---------------------------------------------------------------------------
+
+export type EndgameStage = "reckoning" | "tribunal" | "judgment";
+
+export interface JuryMember {
+  playerId: UUID;
+  playerName: string;
+  eliminatedRound: number;
+}
+
+export interface JuryQuestion {
+  jurorId: UUID;
+  targetFinalistId: UUID;
+  question: string;
+}
+
+export interface JuryAnswer {
+  finalistId: UUID;
+  jurorId: UUID;
+  answer: string;
+}
+
+export interface EndgameState {
+  stage: EndgameStage;
+  jury: JuryMember[];
+  finalists?: [UUID, UUID];
+}
+
+/** Endgame elimination vote tally (simple plurality, no empower/expose split) */
+export interface EndgameEliminationTally {
+  /** voter -> target to eliminate */
+  votes: Record<UUID, UUID>;
+}
+
+/** Jury vote tally for the Judgment finale */
+export interface JuryVoteTally {
+  /** juror -> finalist they vote for */
+  votes: Record<UUID, UUID>;
+}
+
+// ---------------------------------------------------------------------------
+// Round results
+// ---------------------------------------------------------------------------
 
 export interface RoundResult {
   round: number;
@@ -138,7 +193,13 @@ export type GameEvent =
     }
   | { type: "PLAYER_ELIMINATED"; playerId: UUID; playerName: string; round: number }
   | { type: "ROUND_COMPLETE"; round: number; result: RoundResult }
-  | { type: "GAME_OVER"; winner?: UUID; winnerName?: string; totalRounds: number };
+  | { type: "GAME_OVER"; winner?: UUID; winnerName?: string; totalRounds: number }
+  // Endgame events
+  | { type: "ENDGAME_STARTED"; stage: EndgameStage; alivePlayers: UUID[]; jury: JuryMember[] }
+  | { type: "ENDGAME_ELIMINATION_REQUESTED"; stage: EndgameStage; round: number; alivePlayers: UUID[] }
+  | { type: "JURY_QUESTION_REQUESTED"; jurorId: UUID; finalistIds: [UUID, UUID] }
+  | { type: "JURY_ANSWER_REQUESTED"; finalistId: UUID; question: JuryQuestion }
+  | { type: "JURY_VOTE_REQUESTED"; jurorId: UUID; finalistIds: [UUID, UUID] };
 
 // ---------------------------------------------------------------------------
 // Actions sent by agents to the House
@@ -153,7 +214,17 @@ export type AgentAction =
   | { type: "POWER_ACTION"; from: UUID; action: PowerActionType; target: UUID }
   | { type: "COUNCIL_VOTE"; from: UUID; eliminateTarget: UUID }
   | { type: "LAST_MESSAGE"; from: UUID; text: string }
-  | { type: "DIARY_ENTRY"; from: UUID; text: string; phase: Phase };
+  | { type: "DIARY_ENTRY"; from: UUID; text: string; phase: Phase }
+  // Endgame actions
+  | { type: "PLEA"; from: UUID; text: string }
+  | { type: "ENDGAME_ELIMINATION_VOTE"; from: UUID; eliminateTarget: UUID }
+  | { type: "ACCUSATION"; from: UUID; targetId: UUID; text: string }
+  | { type: "DEFENSE"; from: UUID; text: string }
+  | { type: "OPENING_STATEMENT"; from: UUID; text: string }
+  | { type: "JURY_QUESTION"; from: UUID; targetFinalistId: UUID; question: string }
+  | { type: "JURY_ANSWER"; from: UUID; jurorId: UUID; answer: string }
+  | { type: "CLOSING_ARGUMENT"; from: UUID; text: string }
+  | { type: "JURY_VOTE_CAST"; from: UUID; finalistId: UUID };
 
 // ---------------------------------------------------------------------------
 // Game configuration
@@ -169,6 +240,14 @@ export interface GameConfig {
     vote: number;
     power: number;
     council: number;
+    // Endgame timers
+    plea?: number;
+    accusation?: number;
+    defense?: number;
+    openingStatements?: number;
+    juryQuestions?: number;
+    closingArguments?: number;
+    juryVote?: number;
   };
   /** Max rounds before game is declared a draw */
   maxRounds: number;
@@ -187,6 +266,14 @@ export const DEFAULT_CONFIG: GameConfig = {
     vote: 20_000,
     power: 15_000,
     council: 20_000,
+    // Endgame timers
+    plea: 20_000,
+    accusation: 20_000,
+    defense: 20_000,
+    openingStatements: 30_000,
+    juryQuestions: 30_000,
+    closingArguments: 30_000,
+    juryVote: 20_000,
   },
   maxRounds: 10,
   minPlayers: 4,

@@ -8,7 +8,6 @@
 import OpenAI from "openai";
 import type { IAgent, PhaseContext } from "./game-runner";
 import type { UUID, PowerAction } from "./types";
-import { Phase } from "./types";
 
 // ---------------------------------------------------------------------------
 // Personality archetypes
@@ -35,6 +34,15 @@ const PERSONALITY_PROMPTS: Record<Personality, string> = {
     "You win through charm and likability. You make everyone feel safe around you. You avoid direct confrontation and use social pressure to steer votes.",
   aggressive:
     "You play to win fast. You target the strongest players early and use raw power to dominate. You're not afraid to make bold moves others consider reckless.",
+};
+
+const ENDGAME_PERSONALITY_HINTS: Record<Personality, string> = {
+  honest: "In the endgame, you appeal to loyalty and the genuine bonds you've built. You remind others of your integrity.",
+  strategic: "In the endgame, you make calculated arguments about who deserves to win based on gameplay. You analyze moves coolly.",
+  deceptive: "In the endgame, you rewrite history to favor yourself. You take credit for others' moves and deflect blame.",
+  paranoid: "In the endgame, you expose lies and inconsistencies. You reveal what you've observed to undermine others.",
+  social: "In the endgame, you make emotional appeals. You talk about relationships and how the game made you feel.",
+  aggressive: "In the endgame, you make bold claims about your dominance. You argue that strength deserves to win.",
 };
 
 // ---------------------------------------------------------------------------
@@ -64,7 +72,7 @@ interface AgentMemory {
 export class InfluenceAgent implements IAgent {
   readonly id: UUID;
   readonly name: string;
-  private readonly personality: Personality;
+  readonly personality: Personality;
   private readonly openai: OpenAI;
   private readonly model: string;
   private gameId: UUID = "";
@@ -100,7 +108,7 @@ export class InfluenceAgent implements IAgent {
   }
 
   // ---------------------------------------------------------------------------
-  // Phase-specific actions
+  // Phase-specific actions (normal rounds)
   // ---------------------------------------------------------------------------
 
   async getIntroduction(ctx: PhaseContext): Promise<string> {
@@ -207,7 +215,11 @@ IMPORTANT: Use player names exactly as listed. Both votes are required. Respond 
       const exposePlayer = others.find((p) => p.name === parsed.expose);
 
       // Fallback to random if parsing fails
-      const randomOther = () => others[Math.floor(Math.random() * others.length)];
+      const randomOther = () => {
+        const picked = others[Math.floor(Math.random() * others.length)];
+        if (!picked) throw new Error("No other players available for random selection");
+        return picked;
+      };
       const empowerTarget = empowerPlayer?.id ?? randomOther().id;
       const exposeTarget = exposePlayer?.id ?? randomOther().id;
 
@@ -222,7 +234,11 @@ IMPORTANT: Use player names exactly as listed. Both votes are required. Respond 
 
       return { empowerTarget, exposeTarget };
     } catch {
-      const randomOther = () => others[Math.floor(Math.random() * others.length)];
+      const randomOther = () => {
+        const picked = others[Math.floor(Math.random() * others.length)];
+        if (!picked) throw new Error("No other players available for random selection");
+        return picked;
+      };
       return { empowerTarget: randomOther().id, exposeTarget: randomOther().id };
     }
   }
@@ -257,19 +273,19 @@ For "pass", still provide a target (e.g. one of the candidates). Respond ONLY wi
     const raw = await this.callLLM(prompt, 100);
     try {
       const parsed = JSON.parse(this.extractJSON(raw));
-      const action = parsed.action as string;
-      const targetName = parsed.target as string;
+      const action = typeof parsed.action === "string" ? parsed.action : "";
+      const targetName = typeof parsed.target === "string" ? parsed.target : "";
       const targetPlayer =
         ctx.alivePlayers.find((p) => p.name === targetName) ??
         ctx.alivePlayers.find((p) => candidates.includes(p.id));
 
-      const validAction =
+      const validAction: PowerAction["action"] =
         action === "eliminate" || action === "protect" || action === "pass"
           ? action
           : "pass";
 
       return {
-        action: validAction as PowerAction["action"],
+        action: validAction,
         target: targetPlayer?.id ?? candidates[0],
       };
     } catch {
@@ -301,9 +317,13 @@ Respond ONLY with valid JSON.`;
       const parsed = JSON.parse(this.extractJSON(raw));
       if (parsed.eliminate === c1Name) return c1;
       if (parsed.eliminate === c2Name) return c2;
-      return candidates[Math.floor(Math.random() * 2)];
+      const fallback = candidates[Math.floor(Math.random() * 2)];
+      if (!fallback) throw new Error("No council candidate available");
+      return fallback;
     } catch {
-      return candidates[Math.floor(Math.random() * 2)];
+      const fallback = candidates[Math.floor(Math.random() * 2)];
+      if (!fallback) throw new Error("No council candidate available");
+      return fallback;
     }
   }
 
@@ -318,15 +338,228 @@ Keep it to 1-2 sentences. Respond ONLY with the message text.`;
     return this.callLLM(prompt, 120);
   }
 
-  async getDiaryEntry(ctx: PhaseContext): Promise<string> {
+  async getDiaryEntry(ctx: PhaseContext, question: string): Promise<string> {
     const prompt = this.buildBasePrompt(ctx) + `
-## Diary Room
-Write a private diary entry reflecting on this phase. This is your internal strategy log.
-What did you learn? Who do you trust? What's your plan?
+## Diary Room Interview
+You're in the private diary room with The House. This is a confidential interview — only the audience can see this.
+Be candid about your real thoughts, strategies, and feelings about the other players.
 
-Keep it to 2-3 sentences. Respond ONLY with the diary text.`;
+The House asks: "${question}"
+
+Answer the question honestly and in character. Share your genuine strategic thinking — who you trust, who you suspect, what your next moves are.
+Keep it to 2-4 sentences. Be entertaining for the audience. Respond ONLY with your answer.`;
+
+    return this.callLLM(prompt, 250);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Endgame phase actions
+  // ---------------------------------------------------------------------------
+
+  async getPlea(ctx: PhaseContext): Promise<string> {
+    const prompt = this.buildBasePrompt(ctx) + `
+## THE RECKONING — Public Plea
+${ENDGAME_PERSONALITY_HINTS[this.personality]}
+
+Only 4 players remain. You must make a public plea to the group: why should YOU stay in the game?
+Address the other players directly. Reference your alliances, your gameplay, your trustworthiness.
+
+Keep it to 2-3 sentences. Make it compelling.
+
+Respond with ONLY the plea text, nothing else.`;
 
     return this.callLLM(prompt, 200);
+  }
+
+  async getEndgameEliminationVote(ctx: PhaseContext): Promise<UUID> {
+    const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
+    const stage = ctx.endgameStage ?? "reckoning";
+    const stageName = stage === "reckoning" ? "THE RECKONING" : "THE TRIBUNAL";
+
+    const prompt = this.buildBasePrompt(ctx) + `
+## ${stageName} — Elimination Vote
+${ENDGAME_PERSONALITY_HINTS[this.personality]}
+
+This is a direct elimination vote. No empower/expose split — just pick who to eliminate.
+
+Available players: ${others.map((p) => p.name).join(", ")}
+
+Who should be eliminated? Consider everything that has happened in the game.
+
+Respond with JSON: {"eliminate": "PlayerName"}
+Respond ONLY with valid JSON.`;
+
+    const raw = await this.callLLM(prompt, 80);
+    try {
+      const parsed = JSON.parse(this.extractJSON(raw));
+      const target = others.find((p) => p.name === parsed.eliminate);
+      if (target) return target.id;
+      const fallback = others[Math.floor(Math.random() * others.length)];
+      if (!fallback) throw new Error("No other players available for elimination vote");
+      return fallback.id;
+    } catch {
+      const fallback = others[Math.floor(Math.random() * others.length)];
+      if (!fallback) throw new Error("No other players available for elimination vote");
+      return fallback.id;
+    }
+  }
+
+  async getAccusation(ctx: PhaseContext): Promise<{ targetId: UUID; text: string }> {
+    const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
+
+    const prompt = this.buildBasePrompt(ctx) + `
+## THE TRIBUNAL — Accusation
+${ENDGAME_PERSONALITY_HINTS[this.personality]}
+
+Only 3 players remain. You must publicly accuse ONE other player: who and why they should be eliminated.
+Be specific — reference their gameplay, betrayals, or strategies.
+
+Available players: ${others.map((p) => p.name).join(", ")}
+
+Respond with JSON: {"target": "PlayerName", "accusation": "Your accusation text here"}
+Respond ONLY with valid JSON.`;
+
+    const raw = await this.callLLM(prompt, 200);
+    try {
+      const parsed = JSON.parse(this.extractJSON(raw));
+      const target = others.find((p) => p.name === parsed.target);
+      const fallbackOther = others[0];
+      if (!fallbackOther) throw new Error("No other players available for accusation");
+      return {
+        targetId: target?.id ?? fallbackOther.id,
+        text: parsed.accusation ?? `I accuse ${target?.name ?? fallbackOther.name}.`,
+      };
+    } catch {
+      const fallbackOther = others[0];
+      if (!fallbackOther) throw new Error("No other players available for accusation");
+      return { targetId: fallbackOther.id, text: `I believe ${fallbackOther.name} should go.` };
+    }
+  }
+
+  async getDefense(ctx: PhaseContext, accusation: string, accuserName: string): Promise<string> {
+    const prompt = this.buildBasePrompt(ctx) + `
+## THE TRIBUNAL — Defense
+${ENDGAME_PERSONALITY_HINTS[this.personality]}
+
+${accuserName} has accused you: "${accusation}"
+
+Defend yourself publicly. Rebut the accusation, redirect blame, or appeal to the group.
+
+Keep it to 2-3 sentences. Respond ONLY with your defense text.`;
+
+    return this.callLLM(prompt, 200);
+  }
+
+  async getOpeningStatement(ctx: PhaseContext): Promise<string> {
+    const juryNames = ctx.jury?.map((j) => j.playerName).join(", ") ?? "the jury";
+
+    const prompt = this.buildBasePrompt(ctx) + `
+## THE JUDGMENT — Opening Statement
+${ENDGAME_PERSONALITY_HINTS[this.personality]}
+
+You are one of the TWO FINALISTS. Address the jury (${juryNames}) and make your case for why YOU should win.
+Reference your gameplay, your alliances, your strategic moves throughout the game.
+
+Keep it to 3-4 sentences. Make it powerful.
+
+Respond with ONLY your statement, nothing else.`;
+
+    return this.callLLM(prompt, 250);
+  }
+
+  async getJuryQuestion(ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string }> {
+    const [finalistId0, finalistId1] = finalistIds;
+    const finalist0 = ctx.alivePlayers.find((p) => p.id === finalistId0) ?? { id: finalistId0, name: finalistId0 };
+    const finalist1 = ctx.alivePlayers.find((p) => p.id === finalistId1) ?? { id: finalistId1, name: finalistId1 };
+    const finalists = [finalist0, finalist1];
+
+    const prompt = this.buildBasePrompt(ctx) + `
+## THE JUDGMENT — Jury Question
+You have been eliminated and are now a JUROR. You get to ask ONE question to ONE finalist.
+
+Finalists:
+1. ${finalist0.name}
+2. ${finalist1.name}
+
+Ask a pointed, revealing question. You want to know who truly deserves to win.
+
+Respond with JSON: {"target": "FinalistName", "question": "Your question here"}
+Respond ONLY with valid JSON.`;
+
+    const raw = await this.callLLM(prompt, 150);
+    try {
+      const parsed = JSON.parse(this.extractJSON(raw));
+      const target = finalists.find((f) => f.name === parsed.target);
+      return {
+        targetFinalistId: target?.id ?? finalistId0,
+        question: parsed.question ?? "Why do you deserve to win?",
+      };
+    } catch {
+      return {
+        targetFinalistId: finalistId0,
+        question: `${finalist0.name}, why do you deserve to win?`,
+      };
+    }
+  }
+
+  async getJuryAnswer(ctx: PhaseContext, question: string, jurorName: string): Promise<string> {
+    const prompt = this.buildBasePrompt(ctx) + `
+## THE JUDGMENT — Answer Jury Question
+${ENDGAME_PERSONALITY_HINTS[this.personality]}
+
+You are a FINALIST. ${jurorName} asks you: "${question}"
+
+Answer honestly and persuasively. This juror will vote for the winner — make your case.
+
+Keep it to 2-3 sentences. Respond ONLY with your answer.`;
+
+    return this.callLLM(prompt, 200);
+  }
+
+  async getClosingArgument(ctx: PhaseContext): Promise<string> {
+    const prompt = this.buildBasePrompt(ctx) + `
+## THE JUDGMENT — Closing Argument
+${ENDGAME_PERSONALITY_HINTS[this.personality]}
+
+This is your FINAL statement to the jury before they vote. Make it count.
+Summarize why you played the best game and deserve to win.
+
+Keep it to 2-3 sentences. Respond ONLY with your argument.`;
+
+    return this.callLLM(prompt, 200);
+  }
+
+  async getJuryVote(ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID> {
+    const [finalistId0, finalistId1] = finalistIds;
+    const finalist0 = ctx.alivePlayers.find((p) => p.id === finalistId0) ?? { id: finalistId0, name: finalistId0 };
+    const finalist1 = ctx.alivePlayers.find((p) => p.id === finalistId1) ?? { id: finalistId1, name: finalistId1 };
+    const finalists = [finalist0, finalist1];
+
+    const prompt = this.buildBasePrompt(ctx) + `
+## THE JUDGMENT — Jury Vote
+You are a JUROR. After hearing opening statements, Q&A, and closing arguments, cast your vote.
+
+Finalists:
+1. ${finalist0.name}
+2. ${finalist1.name}
+
+Who deserves to WIN the game? Consider their gameplay, strategy, and answers.
+
+Respond with JSON: {"winner": "FinalistName"}
+Respond ONLY with valid JSON.`;
+
+    const raw = await this.callLLM(prompt, 80);
+    try {
+      const parsed = JSON.parse(this.extractJSON(raw));
+      const target = finalists.find((f) => f.name === parsed.winner);
+      const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
+      if (!randomFinalist) throw new Error("No finalist available for jury vote");
+      return target?.id ?? randomFinalist;
+    } catch {
+      const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
+      if (!randomFinalist) throw new Error("No finalist available for jury vote");
+      return randomFinalist;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -354,6 +587,25 @@ Keep it to 2-3 sentences. Respond ONLY with the diary text.`;
     const allies = Array.from(this.memory.allies).join(", ") || "none";
     const threats = Array.from(this.memory.threats).join(", ") || "none";
 
+    let endgameInfo = "";
+    if (ctx.endgameStage) {
+      const stageNames: Record<string, string> = {
+        reckoning: "THE RECKONING",
+        tribunal: "THE TRIBUNAL",
+        judgment: "THE JUDGMENT",
+      };
+      endgameInfo = `\n## ENDGAME: ${stageNames[ctx.endgameStage] ?? ctx.endgameStage}`;
+      if (ctx.jury && ctx.jury.length > 0) {
+        endgameInfo += `\n- Jury members: ${ctx.jury.map((j) => j.playerName).join(", ")}`;
+      }
+      if (ctx.finalists) {
+        const [finalistId0, finalistId1] = ctx.finalists;
+        const f1Name = finalistId0 ? (ctx.alivePlayers.find((p) => p.id === finalistId0)?.name ?? finalistId0) : "unknown";
+        const f2Name = finalistId1 ? (ctx.alivePlayers.find((p) => p.id === finalistId1)?.name ?? finalistId1) : "unknown";
+        endgameInfo += `\n- Finalists: ${f1Name} vs ${f2Name}`;
+      }
+    }
+
     return `You are ${this.name}, playing the social strategy game "Influence".
 
 ## Your Personality
@@ -365,6 +617,7 @@ ${PERSONALITY_PROMPTS[this.personality]}
 - Alive players: ${ctx.alivePlayers.map((p) => p.name + (p.id === this.id ? " (YOU)" : "")).join(", ")}
 ${eliminated.length > 0 ? `- Eliminated: ${eliminated.join(", ")}` : ""}
 ${ctx.empoweredId ? `- Empowered player: ${ctx.alivePlayers.find((p) => p.id === ctx.empoweredId)?.name ?? "unknown"}` : ""}
+${endgameInfo}
 
 ## Your Memory
 - Known allies: ${allies}
@@ -384,27 +637,30 @@ ${whispers ? `## Private Whispers You Received\n${whispers}` : ""}
   // ---------------------------------------------------------------------------
 
   private async callLLM(prompt: string, maxTokens = 200): Promise<string> {
-    try {
-      const response = await this.openai.chat.completions.create({
-        model: this.model,
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: maxTokens,
-        temperature: 0.7,
-      });
-      return response.choices[0]?.message?.content?.trim() ?? "";
-    } catch (err) {
-      console.error(`[${this.name}] LLM call failed:`, err);
-      return "";
-    }
+    const response = await this.openai.chat.completions.create({
+      model: this.model,
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: maxTokens,
+      temperature: 0.7,
+    });
+    return response.choices[0]?.message?.content?.trim() ?? "";
   }
 
   private extractJSON(text: string): string {
     // Try to extract JSON from markdown code blocks or raw text
     const codeBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (codeBlock) return codeBlock[1].trim();
+    if (codeBlock) {
+      const inner = codeBlock[1];
+      if (!inner) throw new Error("Empty code block match");
+      return inner.trim();
+    }
 
     const jsonMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-    if (jsonMatch) return jsonMatch[1];
+    if (jsonMatch) {
+      const inner = jsonMatch[1];
+      if (!inner) throw new Error("Empty JSON match");
+      return inner;
+    }
 
     return text.trim();
   }
