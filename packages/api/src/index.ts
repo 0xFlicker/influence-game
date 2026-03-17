@@ -6,7 +6,8 @@
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { createDB } from "./db/index.js";
+import { eq } from "drizzle-orm";
+import { createDB, schema } from "./db/index.js";
 import { runMigrations } from "./db/migrate.js";
 import { createGameRoutes } from "./routes/games.js";
 import { createAuthRoutes } from "./routes/auth.js";
@@ -26,6 +27,30 @@ import {
 const dbPath = process.env.SQLITE_PATH ?? "influence.db";
 runMigrations(dbPath);
 const db = createDB(dbPath);
+
+// ---------------------------------------------------------------------------
+// Startup cleanup — reset orphaned in_progress games
+// ---------------------------------------------------------------------------
+
+const orphanedGames = db
+  .select({ id: schema.games.id })
+  .from(schema.games)
+  .where(eq(schema.games.status, "in_progress"))
+  .all();
+
+if (orphanedGames.length > 0) {
+  const now = new Date().toISOString();
+  console.warn(
+    `[startup] Found ${orphanedGames.length} orphaned in_progress game(s) — resetting to cancelled`,
+  );
+  for (const game of orphanedGames) {
+    db.update(schema.games)
+      .set({ status: "cancelled" as const, endedAt: now })
+      .where(eq(schema.games.id, game.id))
+      .run();
+    console.warn(`[startup]   cancelled orphaned game ${game.id}`);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // App
