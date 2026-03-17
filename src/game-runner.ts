@@ -133,6 +133,8 @@ export class GameRunner {
   private diaryEntries: Array<{ round: number; precedingPhase: Phase; agentId: UUID; agentName: string; question: string; answer: string }> = [];
   /** Name of the most recently eliminated player (for diary room context) */
   private lastEliminatedName: string | null = null;
+  /** Ordered list of eliminated player names (structured data, no regex needed) */
+  private readonly eliminationOrder: string[] = [];
   /** House interviewer for diary room question generation */
   private readonly houseInterviewer: IHouseInterviewer;
 
@@ -158,7 +160,7 @@ export class GameRunner {
   // Main entry point
   // ---------------------------------------------------------------------------
 
-  async run(): Promise<{ winner?: UUID; winnerName?: string; rounds: number; transcript: TranscriptEntry[] }> {
+  async run(): Promise<{ winner?: UUID; winnerName?: string; rounds: number; transcript: TranscriptEntry[]; eliminationOrder: string[] }> {
     const gameId = this.gameState.gameId;
     const allPlayers = this.gameState.getAllPlayers().map((p) => ({ id: p.id, name: p.name }));
 
@@ -194,6 +196,7 @@ export class GameRunner {
       winnerName: winner?.name,
       rounds: this.gameState.round,
       transcript: this.transcript,
+      eliminationOrder: [...this.eliminationOrder],
     };
   }
 
@@ -494,6 +497,7 @@ export class GameRunner {
         Phase.POWER,
       );
       this.lastEliminatedName = eliminatedName;
+      this.eliminationOrder.push(eliminatedName);
       const eliminated = this.gameState.getPlayer(autoEliminated)!;
       const lastMsg = eliminated.lastMessage ?? "(no final words)";
       this.logPublic(autoEliminated, lastMsg, Phase.POWER);
@@ -572,6 +576,7 @@ export class GameRunner {
       Phase.COUNCIL,
     );
     this.lastEliminatedName = eliminated.name;
+    this.eliminationOrder.push(eliminated.name);
     this.logPublic(eliminatedId, lastMsg, Phase.COUNCIL);
 
     this.gameState.eliminatePlayer(eliminatedId);
@@ -691,6 +696,7 @@ export class GameRunner {
 
     this.logSystem(`ELIMINATED: ${eliminated.name}`, Phase.VOTE);
     this.lastEliminatedName = eliminated.name;
+    this.eliminationOrder.push(eliminated.name);
     this.logPublic(eliminatedId, lastMsg, Phase.VOTE);
     this.gameState.eliminatePlayer(eliminatedId);
 
@@ -826,6 +832,7 @@ export class GameRunner {
 
     this.logSystem(`ELIMINATED: ${eliminated.name}`, Phase.VOTE);
     this.lastEliminatedName = eliminated.name;
+    this.eliminationOrder.push(eliminated.name);
     this.logPublic(eliminatedId, lastMsg, Phase.VOTE);
     this.gameState.eliminatePlayer(eliminatedId);
 

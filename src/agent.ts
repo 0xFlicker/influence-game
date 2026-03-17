@@ -6,6 +6,10 @@
  */
 
 import OpenAI from "openai";
+import type {
+  ChatCompletionTool,
+  ChatCompletionMessageToolCall,
+} from "openai/resources/chat/completions";
 import type { IAgent, PhaseContext } from "./game-runner";
 import type { UUID, PowerAction } from "./types";
 import type { TokenTracker } from "./token-tracker";
@@ -60,6 +64,153 @@ const ENDGAME_PERSONALITY_HINTS: Record<Personality, string> = {
   observer: "In the endgame, reveal the intelligence you gathered. Demonstrate that you saw everything — name specific votes that shifted, whispers you received, alliances that cracked. Your silence was surveillance, and your precision moves prove it.",
   diplomat: "In the endgame, reveal the coalition structures you built. Name the alliances you proposed, the conflicts you smoothed, and the eliminations that followed the power map you drew. Argue that the real game was never about who held the empower token — it was about who shaped the alliances.",
   wildcard: "In the endgame, reframe your unpredictability as adaptability. Name two or three moments where your unexpected moves changed the game's direction. Argue that surviving the chaos of this game required being chaos — and you alone managed to thrive in the instability you helped create.",
+};
+
+// ---------------------------------------------------------------------------
+// Tool schemas for structured agent decisions (OpenAI function calling)
+// ---------------------------------------------------------------------------
+
+const TOOL_SEND_WHISPERS: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "send_whispers",
+    description: "Send private whisper messages to other players",
+    parameters: {
+      type: "object",
+      properties: {
+        whispers: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              to: {
+                type: "array",
+                items: { type: "string" },
+                description: "Player name(s) to whisper to",
+              },
+              text: { type: "string", description: "The whisper message" },
+            },
+            required: ["to", "text"],
+          },
+          description: "List of whisper messages to send",
+        },
+      },
+      required: ["whispers"],
+    },
+  },
+};
+
+const TOOL_CAST_VOTES: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "cast_votes",
+    description: "Cast empower and expose votes for this round",
+    parameters: {
+      type: "object",
+      properties: {
+        empower: { type: "string", description: "Player name to empower" },
+        expose: { type: "string", description: "Player name to expose" },
+      },
+      required: ["empower", "expose"],
+    },
+  },
+};
+
+const TOOL_POWER_ACTION: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "use_power",
+    description: "Use your empowered ability: eliminate a candidate, protect a player, or pass",
+    parameters: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: ["eliminate", "protect", "pass"],
+          description: "The power action to take",
+        },
+        target: { type: "string", description: "Player name to target" },
+      },
+      required: ["action", "target"],
+    },
+  },
+};
+
+const TOOL_COUNCIL_VOTE: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "council_vote",
+    description: "Vote to eliminate one of the council candidates",
+    parameters: {
+      type: "object",
+      properties: {
+        eliminate: { type: "string", description: "Player name to eliminate" },
+      },
+      required: ["eliminate"],
+    },
+  },
+};
+
+const TOOL_ELIMINATION_VOTE: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "elimination_vote",
+    description: "Vote to eliminate one player in the endgame",
+    parameters: {
+      type: "object",
+      properties: {
+        eliminate: { type: "string", description: "Player name to eliminate" },
+      },
+      required: ["eliminate"],
+    },
+  },
+};
+
+const TOOL_MAKE_ACCUSATION: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "make_accusation",
+    description: "Publicly accuse a player and state why they should be eliminated",
+    parameters: {
+      type: "object",
+      properties: {
+        target: { type: "string", description: "Player name to accuse" },
+        accusation: { type: "string", description: "Your accusation text" },
+      },
+      required: ["target", "accusation"],
+    },
+  },
+};
+
+const TOOL_ASK_JURY_QUESTION: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "ask_jury_question",
+    description: "As a juror, ask one question to one finalist",
+    parameters: {
+      type: "object",
+      properties: {
+        target: { type: "string", description: "Finalist name to ask" },
+        question: { type: "string", description: "Your question" },
+      },
+      required: ["target", "question"],
+    },
+  },
+};
+
+const TOOL_JURY_VOTE: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "jury_vote",
+    description: "As a juror, vote for the winner of the game",
+    parameters: {
+      type: "object",
+      properties: {
+        winner: { type: "string", description: "Finalist name who should win" },
+      },
+      required: ["winner"],
+    },
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -169,29 +320,22 @@ Respond with ONLY the message text, nothing else.`;
 Decide who to send private whispers to and what to say. You can whisper to 1-3 players.
 Use whispers to build alliances, gather intelligence, or plant seeds of suspicion.
 
-Respond with a JSON array of whisper objects. Example:
-[
-  {"to": ["PlayerName"], "text": "Hey, I think we should work together..."},
-  {"to": ["OtherPlayer"], "text": "Watch out for Alice, she's plotting against you."}
-]
-
 Available players: ${otherPlayers.map((p) => p.name).join(", ")}
 
-IMPORTANT: Use player NAMES (not IDs) in the "to" field. Respond ONLY with valid JSON.`;
+Use the send_whispers tool to submit your whisper messages. Use player NAMES (not IDs).`;
 
-    const raw = await this.callLLM(prompt, 400);
     try {
-      const parsed = JSON.parse(this.extractJSON(raw));
-      if (!Array.isArray(parsed)) return [];
+      const result = await this.callTool<{ whispers: Array<{ to: string[]; text: string }> }>(
+        prompt, TOOL_SEND_WHISPERS, 400,
+      );
 
-      // Convert player names to IDs
-      return parsed
-        .filter((w: unknown) => w && typeof w === "object")
-        .map((w: { to?: string[]; text?: string }) => ({
-          to: (w.to ?? [])
-            .map((name: string) => otherPlayers.find((p) => p.name === name)?.id)
+      return (result.whispers ?? [])
+        .filter((w) => w && Array.isArray(w.to) && typeof w.text === "string")
+        .map((w) => ({
+          to: w.to
+            .map((name) => otherPlayers.find((p) => p.name === name)?.id)
             .filter((id): id is UUID => id !== undefined),
-          text: w.text ?? "",
+          text: w.text,
         }))
         .filter((w) => w.to.length > 0 && w.text.length > 0);
     } catch {
@@ -217,6 +361,12 @@ Respond with ONLY the message text, nothing else.`;
   ): Promise<{ empowerTarget: UUID; exposeTarget: UUID }> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
 
+    const randomOther = () => {
+      const picked = others[Math.floor(Math.random() * others.length)];
+      if (!picked) throw new Error("No other players available for random selection");
+      return picked;
+    };
+
     const prompt = this.buildBasePrompt(ctx) + `
 ## Your Task
 Cast your votes for this round.
@@ -226,27 +376,19 @@ Cast your votes for this round.
 
 Available players: ${others.map((p) => p.name).join(", ")}
 
-Respond with JSON in exactly this format:
-{"empower": "PlayerName", "expose": "PlayerName"}
+Use the cast_votes tool. Both votes are required. Use player names exactly as listed.`;
 
-IMPORTANT: Use player names exactly as listed. Both votes are required. Respond ONLY with valid JSON.`;
-
-    const raw = await this.callLLM(prompt, 100);
     try {
-      const parsed = JSON.parse(this.extractJSON(raw));
-      const empowerPlayer = others.find((p) => p.name === parsed.empower);
-      const exposePlayer = others.find((p) => p.name === parsed.expose);
+      const result = await this.callTool<{ empower: string; expose: string }>(
+        prompt, TOOL_CAST_VOTES, 100,
+      );
 
-      // Fallback to random if parsing fails
-      const randomOther = () => {
-        const picked = others[Math.floor(Math.random() * others.length)];
-        if (!picked) throw new Error("No other players available for random selection");
-        return picked;
-      };
+      const empowerPlayer = others.find((p) => p.name === result.empower);
+      const exposePlayer = others.find((p) => p.name === result.expose);
+
       const empowerTarget = empowerPlayer?.id ?? randomOther().id;
       const exposeTarget = exposePlayer?.id ?? randomOther().id;
 
-      // Update memory
       this.memory.roundHistory.push({
         round: ctx.round,
         myVotes: {
@@ -257,11 +399,6 @@ IMPORTANT: Use player names exactly as listed. Both votes are required. Respond 
 
       return { empowerTarget, exposeTarget };
     } catch {
-      const randomOther = () => {
-        const picked = others[Math.floor(Math.random() * others.length)];
-        if (!picked) throw new Error("No other players available for random selection");
-        return picked;
-      };
       return { empowerTarget: randomOther().id, exposeTarget: randomOther().id };
     }
   }
@@ -281,30 +418,27 @@ IMPORTANT: Use player names exactly as listed. Both votes are required. Respond 
 ## You Are EMPOWERED This Round!
 You have three choices:
 
-1. **auto** "${candidateNames[0]}" or "${candidateNames[1]}" — immediately eliminate them, skip council
+1. **eliminate** "${candidateNames[0]}" or "${candidateNames[1]}" — immediately eliminate them, skip council
 2. **protect** <any player> — save them from council (they gain a shield), swap in next-most-exposed player
 3. **pass** — send the two candidates to council as-is
 
 Council candidates: ${candidateNames.join(" and ")}
 Other alive players: ${otherAlive.map((p) => p.name).join(", ")}
 
-Respond with JSON in exactly this format:
-{"action": "eliminate|protect|pass", "target": "PlayerName"}
+Use the use_power tool to declare your action.`;
 
-For "pass", still provide a target (e.g. one of the candidates). Respond ONLY with valid JSON.`;
-
-    const raw = await this.callLLM(prompt, 100);
     try {
-      const parsed = JSON.parse(this.extractJSON(raw));
-      const action = typeof parsed.action === "string" ? parsed.action : "";
-      const targetName = typeof parsed.target === "string" ? parsed.target : "";
+      const result = await this.callTool<{ action: string; target: string }>(
+        prompt, TOOL_POWER_ACTION, 100,
+      );
+
       const targetPlayer =
-        ctx.alivePlayers.find((p) => p.name === targetName) ??
+        ctx.alivePlayers.find((p) => p.name === result.target) ??
         ctx.alivePlayers.find((p) => candidates.includes(p.id));
 
       const validAction: PowerAction["action"] =
-        action === "eliminate" || action === "protect" || action === "pass"
-          ? action
+        result.action === "eliminate" || result.action === "protect" || result.action === "pass"
+          ? result.action
           : "pass";
 
       return {
@@ -332,14 +466,12 @@ Candidates:
 
 Who should be eliminated? Consider your alliances, threats, and long-term strategy.
 
-Respond with JSON: {"eliminate": "PlayerName"}
-Respond ONLY with valid JSON.`;
+Use the council_vote tool to cast your vote.`;
 
-    const raw = await this.callLLM(prompt, 80);
     try {
-      const parsed = JSON.parse(this.extractJSON(raw));
-      if (parsed.eliminate === c1Name) return c1;
-      if (parsed.eliminate === c2Name) return c2;
+      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_COUNCIL_VOTE, 80);
+      if (result.eliminate === c1Name) return c1;
+      if (result.eliminate === c2Name) return c2;
       const fallback = candidates[Math.floor(Math.random() * 2)];
       if (!fallback) throw new Error("No council candidate available");
       return fallback;
@@ -414,13 +546,11 @@ Available players: ${others.map((p) => p.name).join(", ")}
 
 Who should be eliminated? Consider everything that has happened in the game.
 
-Respond with JSON: {"eliminate": "PlayerName"}
-Respond ONLY with valid JSON.`;
+Use the elimination_vote tool to cast your vote.`;
 
-    const raw = await this.callLLM(prompt, 80);
     try {
-      const parsed = JSON.parse(this.extractJSON(raw));
-      const target = others.find((p) => p.name === parsed.eliminate);
+      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_ELIMINATION_VOTE, 80);
+      const target = others.find((p) => p.name === result.eliminate);
       if (target) return target.id;
       const fallback = others[Math.floor(Math.random() * others.length)];
       if (!fallback) throw new Error("No other players available for elimination vote");
@@ -444,18 +574,18 @@ Be specific — reference their gameplay, betrayals, or strategies.
 
 Available players: ${others.map((p) => p.name).join(", ")}
 
-Respond with JSON: {"target": "PlayerName", "accusation": "Your accusation text here"}
-Respond ONLY with valid JSON.`;
+Use the make_accusation tool to submit your accusation.`;
 
-    const raw = await this.callLLM(prompt, 200);
     try {
-      const parsed = JSON.parse(this.extractJSON(raw));
-      const target = others.find((p) => p.name === parsed.target);
+      const result = await this.callTool<{ target: string; accusation: string }>(
+        prompt, TOOL_MAKE_ACCUSATION, 200,
+      );
+      const target = others.find((p) => p.name === result.target);
       const fallbackOther = others[0];
       if (!fallbackOther) throw new Error("No other players available for accusation");
       return {
         targetId: target?.id ?? fallbackOther.id,
-        text: parsed.accusation ?? `I accuse ${target?.name ?? fallbackOther.name}.`,
+        text: result.accusation ?? `I accuse ${target?.name ?? fallbackOther.name}.`,
       };
     } catch {
       const fallbackOther = others[0];
@@ -511,16 +641,16 @@ Finalists:
 
 Ask a pointed, revealing question. You want to know who truly deserves to win.
 
-Respond with JSON: {"target": "FinalistName", "question": "Your question here"}
-Respond ONLY with valid JSON.`;
+Use the ask_jury_question tool to submit your question.`;
 
-    const raw = await this.callLLM(prompt, 150);
     try {
-      const parsed = JSON.parse(this.extractJSON(raw));
-      const target = finalists.find((f) => f.name === parsed.target);
+      const result = await this.callTool<{ target: string; question: string }>(
+        prompt, TOOL_ASK_JURY_QUESTION, 150,
+      );
+      const target = finalists.find((f) => f.name === result.target);
       return {
         targetFinalistId: target?.id ?? finalistId0,
-        question: parsed.question ?? "Why do you deserve to win?",
+        question: result.question ?? "Why do you deserve to win?",
       };
     } catch {
       return {
@@ -581,13 +711,11 @@ Finalists:
 
 Who deserves to WIN the game? Consider their gameplay, strategy, and answers.
 
-Respond with JSON: {"winner": "FinalistName"}
-Respond ONLY with valid JSON.`;
+Use the jury_vote tool to cast your vote.`;
 
-    const raw = await this.callLLM(prompt, 80);
     try {
-      const parsed = JSON.parse(this.extractJSON(raw));
-      const target = finalists.find((f) => f.name === parsed.winner);
+      const result = await this.callTool<{ winner: string }>(prompt, TOOL_JURY_VOTE, 80);
+      const target = finalists.find((f) => f.name === result.winner);
       const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
       if (!randomFinalist) throw new Error("No finalist available for jury vote");
       return target?.id ?? randomFinalist;
@@ -671,9 +799,10 @@ ${whispers ? `## Private Whispers You Received\n${whispers}` : ""}
   }
 
   // ---------------------------------------------------------------------------
-  // LLM call
+  // LLM calls — free text and tool invocation
   // ---------------------------------------------------------------------------
 
+  /** Free-text LLM call for communication (introductions, lobby, rumor, etc.) */
   private async callLLM(prompt: string, maxTokens = 200): Promise<string> {
     const response = await this.openai.chat.completions.create({
       model: this.model,
@@ -682,7 +811,6 @@ ${whispers ? `## Private Whispers You Received\n${whispers}` : ""}
       temperature: 0.7,
     });
 
-    // Track token usage
     if (this.tokenTracker && response.usage) {
       this.tokenTracker.record(
         this.name,
@@ -694,23 +822,39 @@ ${whispers ? `## Private Whispers You Received\n${whispers}` : ""}
     return response.choices[0]?.message?.content?.trim() ?? "";
   }
 
-  private extractJSON(text: string): string {
-    // Try to extract JSON from markdown code blocks or raw text
-    const codeBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (codeBlock) {
-      const inner = codeBlock[1];
-      if (!inner) throw new Error("Empty code block match");
-      return inner.trim();
+  /**
+   * Structured tool-invocation LLM call for agent decisions.
+   * Forces the model to invoke the specified tool, returning validated JSON args.
+   */
+  private async callTool<T>(
+    prompt: string,
+    tool: ChatCompletionTool,
+    maxTokens = 200,
+  ): Promise<T> {
+    const response = await this.openai.chat.completions.create({
+      model: this.model,
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: maxTokens,
+      temperature: 0.7,
+      tools: [tool],
+      tool_choice: { type: "function", function: { name: tool.function.name } },
+    });
+
+    if (this.tokenTracker && response.usage) {
+      this.tokenTracker.record(
+        this.name,
+        response.usage.prompt_tokens,
+        response.usage.completion_tokens,
+      );
     }
 
-    const jsonMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-    if (jsonMatch) {
-      const inner = jsonMatch[1];
-      if (!inner) throw new Error("Empty JSON match");
-      return inner;
+    const toolCall: ChatCompletionMessageToolCall | undefined =
+      response.choices[0]?.message?.tool_calls?.[0];
+    if (!toolCall) {
+      throw new Error(`No tool call returned for ${tool.function.name}`);
     }
 
-    return text.trim();
+    return JSON.parse(toolCall.function.arguments) as T;
   }
 
   // ---------------------------------------------------------------------------

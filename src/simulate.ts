@@ -163,23 +163,6 @@ interface AggregateStats {
 // Extract data from transcript
 // ---------------------------------------------------------------------------
 
-function extractEliminationOrder(transcript: readonly TranscriptEntry[]): string[] {
-  const eliminated: string[] = [];
-  for (const entry of transcript) {
-    if (entry.scope === "system") {
-      // Match actual elimination formats: "AUTO-ELIMINATE: Name" and "ELIMINATED: Name"
-      const match = entry.text.match(/(?:AUTO-ELIMINATE|ELIMINATED):\s*(.+)/);
-      if (match && match[1]) {
-        const name = match[1].trim();
-        if (!eliminated.includes(name)) {
-          eliminated.push(name);
-        }
-      }
-    }
-  }
-  return eliminated;
-}
-
 function extractEndgameType(transcript: readonly TranscriptEntry[]): string {
   let lastStage = "normal";
   for (const entry of transcript) {
@@ -487,7 +470,7 @@ async function main() {
       const result = await runner.run();
       const durationMs = Date.now() - startTime;
 
-      const eliminationOrder = extractEliminationOrder(result.transcript);
+      const eliminationOrder = result.eliminationOrder;
       const endgameType = extractEndgameType(result.transcript);
 
       const gameTotalUsage = gameTracker.getTotalUsage();
