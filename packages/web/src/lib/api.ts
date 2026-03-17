@@ -62,6 +62,10 @@ export async function apiFetch<T>(
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
+    if (res.status === 401 && typeof window !== "undefined") {
+      clearAuthToken();
+      window.dispatchEvent(new CustomEvent("auth:expired"));
+    }
     throw new ApiError(res.status, text);
   }
   return res.json() as Promise<T>;
@@ -268,13 +272,32 @@ export interface GameDetail {
   completedAt?: string;
 }
 
-/** WebSocket event types pushed from the server */
+/** Engine-format transcript entry received over WebSocket (differs from DB TranscriptEntry) */
+export interface WsTranscriptEntry {
+  round: number;
+  phase: string;
+  from: string; // player UUID or "SYSTEM"
+  scope: TranscriptScope;
+  to?: string[];
+  text: string;
+  timestamp: number;
+}
+
+/** WebSocket event types pushed from the server (matches WsOutboundEvent in packages/api) */
 export type WsGameEvent =
-  | { type: "game_state"; game: GameDetail; messages: TranscriptEntry[] }
+  | {
+      type: "game_state";
+      snapshot: {
+        gameId: string;
+        round: number;
+        alivePlayers: Array<{ id: string; name: string; shielded: boolean }>;
+        eliminatedPlayers: Array<{ id: string; name: string }>;
+        transcript: WsTranscriptEntry[];
+      };
+    }
   | { type: "phase_change"; phase: PhaseKey; round: number; alivePlayers: string[] }
-  | { type: "message"; message: TranscriptEntry }
+  | { type: "message"; entry: WsTranscriptEntry }
   | { type: "player_eliminated"; playerId: string; playerName: string; round: number }
-  | { type: "round_complete"; round: number }
   | { type: "game_over"; winner?: string; winnerName?: string; totalRounds: number };
 
 // ---------------------------------------------------------------------------

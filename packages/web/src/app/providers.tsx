@@ -19,7 +19,7 @@ const queryClient = new QueryClient();
 
 /** Syncs Privy auth state to a backend session JWT stored in localStorage. */
 function AuthSync() {
-  const { authenticated, getAccessToken } = usePrivy();
+  const { authenticated, getAccessToken, logout } = usePrivy();
 
   useEffect(() => {
     if (!authenticated) {
@@ -37,6 +37,16 @@ function AuthSync() {
       }
     });
   }, [authenticated, getAccessToken]);
+
+  // Listen for 401 responses from apiFetch — clear session and log out via Privy
+  useEffect(() => {
+    const handleExpired = () => {
+      console.warn("[AuthSync] Session expired (401). Logging out.");
+      logout();
+    };
+    window.addEventListener("auth:expired", handleExpired);
+    return () => window.removeEventListener("auth:expired", handleExpired);
+  }, [logout]);
 
   return null;
 }
