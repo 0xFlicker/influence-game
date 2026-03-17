@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { useAccount } from "wagmi";
 
@@ -10,6 +11,16 @@ const ADMIN_ADDRESS =
 export function AdminGate({ children }: { children: React.ReactNode }) {
   const { ready, authenticated, login } = usePrivy();
   const { address } = useAccount();
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development" && ADMIN_ADDRESS === "") {
+      console.warn(
+        "[AdminGate] NEXT_PUBLIC_ADMIN_ADDRESS is not set. " +
+        "The admin panel will show \"Access denied\" for every wallet. " +
+        "Set this to the resolved address of 10xeng.eth (or your dev wallet) in .env.local.",
+      );
+    }
+  }, []);
 
   if (!ready) {
     return (

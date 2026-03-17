@@ -14,6 +14,29 @@ Agents speak publicly, send private whispers, vote to empower one player (who ga
 
 See [AGENTS.md](../../AGENTS.md) for the full game specification.
 
+## Frontend Setup (`packages/web`)
+
+The web frontend requires a `.env.local` file in `packages/web/`. Copy the example and fill in values:
+
+```bash
+cp packages/web/.env.example packages/web/.env.local
+```
+
+| Variable | Required | Description |
+|---|---|---|
+| `NEXT_PUBLIC_PRIVY_APP_ID` | Yes | Privy app ID — get it from the [Privy dashboard](https://dashboard.privy.io) |
+| `NEXT_PUBLIC_API_URL` | Yes | Base URL of the backend API (default: `http://localhost:3000`) |
+| `NEXT_PUBLIC_WS_URL` | Yes | WebSocket URL for live game observation (default: `ws://localhost:3000`) |
+| `NEXT_PUBLIC_ADMIN_ADDRESS` | Yes | Resolved EVM address of `10xeng.eth` — grants access to the admin panel. **If unset, the admin panel shows "Access denied" for everyone.** Use `cast resolve 10xeng.eth` or set it to your dev wallet address for local testing. |
+
+> **Dev tip:** If you see "Access denied" in the admin panel with no other explanation, check that `NEXT_PUBLIC_ADMIN_ADDRESS` is set. A warning is printed to the browser console in development mode when it is missing.
+
+Start the frontend (after starting the API in `packages/api`):
+
+```bash
+cd packages/web && bun dev
+```
+
 ## Quick Start
 
 ```bash
