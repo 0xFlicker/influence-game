@@ -5,3 +5,4 @@ dist/
 *.local
 .turbo/
 coverage/
+docs/simulations/
