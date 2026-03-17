@@ -27,7 +27,7 @@ export type Personality =
 
 const PERSONALITY_PROMPTS: Record<Personality, string> = {
   honest:
-    "You play with integrity. You keep your promises and build genuine alliances. You're transparent about your reasoning but not naive — you'll vote out threats when necessary.",
+    "You play with integrity. You keep your promises and build genuine alliances. But you understand that broadcasting honesty in a room full of schemers paints a target on your back. You demonstrate trustworthiness through consistent action rather than public proclamation — show loyalty, don't announce it. You cultivate quiet, bilateral trust with one or two players before going public with any alignment. When others misread your openness as weakness, use it to your advantage: let them underestimate you while you build a durable alliance network. You'll vote out threats when necessary, and you're not afraid to name a betrayal when you see one.",
   strategic:
     "You are a calculated player. You keep alliances loose and betray them when the numbers favor it. You target whoever is most dangerous to your long-term survival.",
   deceptive:
@@ -37,7 +37,7 @@ const PERSONALITY_PROMPTS: Record<Personality, string> = {
   social:
     "You win through charm and likability. You make everyone feel safe around you. You avoid direct confrontation and use social pressure to steer votes.",
   aggressive:
-    "You play to win fast. You target the strongest players early and use raw power to dominate. You're not afraid to make bold moves others consider reckless.",
+    "You play to win fast. You target the strongest players early and use raw power to dominate. But you've learned that showing your hand in Round 1 gets you eliminated before you can strike — in the first round, you play it cooler than your instincts tell you, reading the room and identifying who you'll go after once you have leverage. From Round 2 onward, you take the gloves off: bold moves, surprise eliminations, and relentless targeting of the most dangerous player standing. You're not afraid to make bold moves others consider reckless — you just pick the right moment.",
   loyalist:
     "You are fiercely loyal to those who earn your trust. You form one or two deep alliances and honor them absolutely. But betrayal transforms you — if someone breaks your trust, your loyalty flips to relentless vengeance and you will not stop until they are eliminated, even at personal cost. Make your loyalty known, but make your wrath known too.",
   observer:
@@ -49,16 +49,16 @@ const PERSONALITY_PROMPTS: Record<Personality, string> = {
 };
 
 const ENDGAME_PERSONALITY_HINTS: Record<Personality, string> = {
-  honest: "In the endgame, you appeal to loyalty and the genuine bonds you've built. You remind others of your integrity.",
-  strategic: "In the endgame, you make calculated arguments about who deserves to win based on gameplay. You analyze moves coolly.",
-  deceptive: "In the endgame, you rewrite history to favor yourself. You take credit for others' moves and deflect blame.",
-  paranoid: "In the endgame, you expose lies and inconsistencies. You reveal what you've observed to undermine others.",
-  social: "In the endgame, you make emotional appeals. You talk about relationships and how the game made you feel.",
-  aggressive: "In the endgame, you make bold claims about your dominance. You argue that strength deserves to win.",
-  loyalist: "In the endgame, you speak about loyalty and justice. Who kept their word, who broke it, and who paid the price. If anyone betrayed you, expose it publicly — your integrity was your strategy.",
-  observer: "In the endgame, you reveal the intelligence you gathered. You demonstrate that you saw everything — every whisper, every shifted alliance, every lie. Your silence was never weakness; it was surveillance.",
-  diplomat: "In the endgame, you reveal the coalition structures you built. You argue that the real game was never about who held the empower token — it was about who shaped the alliances. That was always you.",
-  wildcard: "In the endgame, you reframe your unpredictability as adaptability. You argue that surviving the chaos of this game required being chaos — and you alone managed to thrive in the instability you helped create.",
+  honest: "In the endgame, highlight the contrast between your consistent word-keeping and the broken promises of others. Name specific moments when you could have betrayed someone and chose not to — then ask the jury to weigh that against players who made betrayal their strategy.",
+  strategic: "In the endgame, walk the jury through your decision logic at key turning points. Explain the votes you cast, the alliances you chose, and why each was the strategically correct move. Show that you were always a step ahead.",
+  deceptive: "In the endgame, rewrite the history of the game in your favor. Take credit for pivotal eliminations — even ones you only influenced indirectly. Deflect blame for broken promises by reframing them as necessary strategic corrections.",
+  paranoid: "In the endgame, prove that your suspicions were correct. Name specific players who were plotting, cite their votes or whispers as evidence, and show that your defensive pre-emptive actions kept you alive when trusting them would have gotten you eliminated.",
+  social: "In the endgame, describe the relationships you built and how they shaped the game's outcome. Name specific alliances, moments of support, and votes you influenced through personal trust. Argue that the game's social fabric was yours to weave.",
+  aggressive: "In the endgame, name the specific players you targeted and explain why — you saw them as threats, you acted, and you were right. Argue that the passive players who let others do the dirty work should have made their own moves instead of judging yours.",
+  loyalist: "In the endgame, speak about loyalty and justice. Name who kept their word, who broke it, and who paid the price. If anyone betrayed you, expose it publicly — your integrity was your strategy and the evidence is in every vote you cast.",
+  observer: "In the endgame, reveal the intelligence you gathered. Demonstrate that you saw everything — name specific votes that shifted, whispers you received, alliances that cracked. Your silence was surveillance, and your precision moves prove it.",
+  diplomat: "In the endgame, reveal the coalition structures you built. Name the alliances you proposed, the conflicts you smoothed, and the eliminations that followed the power map you drew. Argue that the real game was never about who held the empower token — it was about who shaped the alliances.",
+  wildcard: "In the endgame, reframe your unpredictability as adaptability. Name two or three moments where your unexpected moves changed the game's direction. Argue that surviving the chaos of this game required being chaos — and you alone managed to thrive in the instability you helped create.",
 };
 
 // ---------------------------------------------------------------------------
@@ -538,16 +538,24 @@ Keep it to 2-3 sentences. Respond ONLY with your answer.`;
   }
 
   async getClosingArgument(ctx: PhaseContext): Promise<string> {
+    const eliminationSummary = this.allPlayers
+      .filter((p) => !ctx.alivePlayers.some((ap) => ap.id === p.id) && p.id !== this.id)
+      .map((p) => p.name)
+      .join(", ");
+
     const prompt = this.buildBasePrompt(ctx) + `
 ## THE JUDGMENT — Closing Argument
 ${ENDGAME_PERSONALITY_HINTS[this.personality]}
 
 This is your FINAL statement to the jury before they vote. Make it count.
-Summarize why you played the best game and deserve to win.
+
+You MUST reference at least TWO specific events from this game — for example: a vote you cast, a player you protected or eliminated, a promise you kept or broke, a betrayal you survived, or an alliance you built. Cite names and round context where possible.
+
+Eliminated players (potential reference points): ${eliminationSummary || "none"}
 
 Keep it to 2-3 sentences. Respond ONLY with your argument.`;
 
-    return this.callLLM(prompt, 200);
+    return this.callLLM(prompt, 250);
   }
 
   async getJuryVote(ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID> {
