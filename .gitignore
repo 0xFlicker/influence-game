@@ -6,3 +6,6 @@ dist/
 .turbo/
 coverage/
 docs/simulations/
+*.db
+*.db-wal
+*.db-shm
