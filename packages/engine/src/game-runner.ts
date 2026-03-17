@@ -17,8 +17,27 @@ import type {
   PowerAction,
   JuryMember,
   EndgameStage,
+  Player,
 } from "./types";
-import { Phase, computeMaxRounds } from "./types";
+import { Phase, PlayerStatus, computeMaxRounds } from "./types";
+
+// ---------------------------------------------------------------------------
+// Stream events — emitted in real-time for WebSocket observers
+// ---------------------------------------------------------------------------
+
+export type GameStreamEvent =
+  | { type: "transcript_entry"; entry: TranscriptEntry }
+  | { type: "phase_change"; phase: Phase; round: number; alivePlayers: Array<{ id: UUID; name: string }> }
+  | { type: "player_eliminated"; playerId: UUID; playerName: string; round: number }
+  | { type: "game_over"; winner?: UUID; winnerName?: string; totalRounds: number };
+
+export interface GameStateSnapshot {
+  gameId: UUID;
+  round: number;
+  alivePlayers: Array<{ id: UUID; name: string; shielded: boolean }>;
+  eliminatedPlayers: Array<{ id: UUID; name: string }>;
+  transcript: TranscriptEntry[];
+}
 
 // ---------------------------------------------------------------------------
 // Agent interface (implemented by InfluenceAgent in agent.ts)
@@ -137,6 +156,8 @@ export class GameRunner {
   private readonly eliminationOrder: string[] = [];
   /** House interviewer for diary room question generation */
   private readonly houseInterviewer: IHouseInterviewer;
+  /** Optional listener for real-time game events (WebSocket streaming) */
+  private _streamListener?: (event: GameStreamEvent) => void;
 
   constructor(agents: IAgent[], config: GameConfig, houseInterviewer?: IHouseInterviewer) {
     // Scale maxRounds based on player count to ensure games can resolve
@@ -154,6 +175,40 @@ export class GameRunner {
 
   get diaryLog(): ReadonlyArray<{ round: number; precedingPhase: Phase; agentId: UUID; agentName: string; question: string; answer: string }> {
     return this.diaryEntries;
+  }
+
+  /** Register a listener for real-time game events (for WebSocket streaming). */
+  setStreamListener(listener: (event: GameStreamEvent) => void): void {
+    this._streamListener = listener;
+  }
+
+  /** Get a snapshot of the current game state (for late-joining observers). */
+  getStateSnapshot(): GameStateSnapshot {
+    const allPlayers = this.gameState.getAllPlayers();
+    return {
+      gameId: this.gameState.gameId,
+      round: this.gameState.round,
+      alivePlayers: allPlayers
+        .filter((p) => p.status === PlayerStatus.ALIVE)
+        .map((p) => ({ id: p.id, name: p.name, shielded: p.shielded })),
+      eliminatedPlayers: allPlayers
+        .filter((p) => p.status === PlayerStatus.ELIMINATED)
+        .map((p) => ({ id: p.id, name: p.name })),
+      transcript: [...this.transcript],
+    };
+  }
+
+  private emitStream(event: GameStreamEvent): void {
+    try {
+      this._streamListener?.(event);
+    } catch {
+      // Never let a listener error break the game loop
+    }
+  }
+
+  private emitPhaseChange(phase: Phase): void {
+    const alivePlayers = this.gameState.getAlivePlayers().map((p) => ({ id: p.id, name: p.name }));
+    this.emitStream({ type: "phase_change", phase, round: this.gameState.round, alivePlayers });
   }
 
   // ---------------------------------------------------------------------------
@@ -191,6 +246,12 @@ export class GameRunner {
     this.bus.complete();
 
     const winner = this.gameState.getWinner();
+    this.emitStream({
+      type: "game_over",
+      winner: winner?.id,
+      winnerName: winner?.name,
+      totalRounds: this.gameState.round,
+    });
     return {
       winner: winner?.id,
       winnerName: winner?.name,
@@ -316,6 +377,7 @@ export class GameRunner {
   private async runIntroductionPhase(
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
+    this.emitPhaseChange(Phase.INTRODUCTION);
     this.logSystem("=== INTRODUCTION PHASE ===", Phase.INTRODUCTION);
     const alivePlayers = this.gameState.getAlivePlayers();
     const aliveInfos = alivePlayers.map((p) => ({ id: p.id, name: p.name }));
@@ -340,6 +402,7 @@ export class GameRunner {
     this.gameState.startRound();
     this.gameState.expireShields();
     const round = this.gameState.round;
+    this.emitPhaseChange(Phase.LOBBY);
     this.logSystem(`=== ROUND ${round}: LOBBY PHASE ===`, Phase.LOBBY);
 
     const alivePlayers = this.gameState.getAlivePlayers();
@@ -360,6 +423,7 @@ export class GameRunner {
   private async runWhisperPhase(
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
+    this.emitPhaseChange(Phase.WHISPER);
     this.logSystem("=== WHISPER PHASE ===", Phase.WHISPER);
     const alivePlayers = this.gameState.getAlivePlayers();
 
@@ -390,6 +454,7 @@ export class GameRunner {
   private async runRumorPhase(
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
+    this.emitPhaseChange(Phase.RUMOR);
     this.logSystem("=== RUMOR PHASE ===", Phase.RUMOR);
     const alivePlayers = this.gameState.getAlivePlayers();
 
@@ -409,6 +474,7 @@ export class GameRunner {
   private async runVotePhase(
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
+    this.emitPhaseChange(Phase.VOTE);
     this.logSystem("=== VOTE PHASE ===", Phase.VOTE);
     const alivePlayers = this.gameState.getAlivePlayers();
 
@@ -449,6 +515,7 @@ export class GameRunner {
   private async runPowerPhase(
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
+    this.emitPhaseChange(Phase.POWER);
     const empoweredId = this.gameState.empoweredId;
     if (!empoweredId) {
       actor.send({ type: "CANDIDATES_DETERMINED", candidates: null, autoEliminated: null });
@@ -502,6 +569,7 @@ export class GameRunner {
       const lastMsg = eliminated.lastMessage ?? "(no final words)";
       this.logPublic(autoEliminated, lastMsg, Phase.POWER);
       this.gameState.eliminatePlayer(autoEliminated);
+      this.emitStream({ type: "player_eliminated", playerId: autoEliminated, playerName: eliminatedName, round: this.gameState.round });
 
       actor.send({ type: "CANDIDATES_DETERMINED", candidates: null, autoEliminated });
       actor.send({ type: "PLAYER_ELIMINATED", playerId: autoEliminated });
@@ -547,6 +615,7 @@ export class GameRunner {
       return;
     }
 
+    this.emitPhaseChange(Phase.COUNCIL);
     this.logSystem("=== COUNCIL PHASE ===", Phase.COUNCIL);
     const alivePlayers = this.gameState.getAlivePlayers();
 
@@ -580,6 +649,7 @@ export class GameRunner {
     this.logPublic(eliminatedId, lastMsg, Phase.COUNCIL);
 
     this.gameState.eliminatePlayer(eliminatedId);
+    this.emitStream({ type: "player_eliminated", playerId: eliminatedId, playerName: eliminated.name, round: this.gameState.round });
 
     actor.send({ type: "PLAYER_ELIMINATED", playerId: eliminatedId });
     actor.send({
@@ -600,6 +670,7 @@ export class GameRunner {
     this.gameState.startRound();
     this.gameState.setEndgameStage("reckoning");
     const round = this.gameState.round;
+    this.emitPhaseChange(Phase.LOBBY);
     this.logSystem(`\n========================================`, Phase.LOBBY);
     this.logSystem(`=== THE RECKONING (Round ${round}) ===`, Phase.LOBBY);
     this.logSystem(`========================================`, Phase.LOBBY);
@@ -623,6 +694,7 @@ export class GameRunner {
   private async runReckoningWhisper(
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
+    this.emitPhaseChange(Phase.WHISPER);
     this.logSystem("=== RECKONING: WHISPER PHASE ===", Phase.WHISPER);
     const alivePlayers = this.gameState.getAlivePlayers();
     this.whisperInbox = new Map(alivePlayers.map((p) => [p.id, []]));
@@ -650,6 +722,7 @@ export class GameRunner {
   private async runReckoningPlea(
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
+    this.emitPhaseChange(Phase.PLEA);
     this.logSystem("=== RECKONING: PLEA PHASE ===", Phase.PLEA);
     const alivePlayers = this.gameState.getAlivePlayers();
 
@@ -669,6 +742,7 @@ export class GameRunner {
   private async runReckoningVote(
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
+    this.emitPhaseChange(Phase.VOTE);
     this.logSystem("=== RECKONING: ELIMINATION VOTE ===", Phase.VOTE);
     const alivePlayers = this.gameState.getAlivePlayers();
 
@@ -699,6 +773,7 @@ export class GameRunner {
     this.eliminationOrder.push(eliminated.name);
     this.logPublic(eliminatedId, lastMsg, Phase.VOTE);
     this.gameState.eliminatePlayer(eliminatedId);
+    this.emitStream({ type: "player_eliminated", playerId: eliminatedId, playerName: eliminated.name, round: this.gameState.round });
 
     actor.send({ type: "PLAYER_ELIMINATED", playerId: eliminatedId });
     actor.send({ type: "UPDATE_ALIVE_PLAYERS", aliveIds: this.gameState.getAlivePlayerIds() });
@@ -716,6 +791,7 @@ export class GameRunner {
     this.gameState.startRound();
     this.gameState.setEndgameStage("tribunal");
     const round = this.gameState.round;
+    this.emitPhaseChange(Phase.LOBBY);
     this.logSystem(`\n========================================`, Phase.LOBBY);
     this.logSystem(`=== THE TRIBUNAL (Round ${round}) ===`, Phase.LOBBY);
     this.logSystem(`========================================`, Phase.LOBBY);
@@ -742,6 +818,7 @@ export class GameRunner {
   private async runTribunalAccusation(
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
+    this.emitPhaseChange(Phase.ACCUSATION);
     this.logSystem("=== TRIBUNAL: ACCUSATION PHASE ===", Phase.ACCUSATION);
     const alivePlayers = this.gameState.getAlivePlayers();
     this._currentAccusations.clear();
@@ -768,6 +845,7 @@ export class GameRunner {
   private async runTribunalDefense(
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
+    this.emitPhaseChange(Phase.DEFENSE);
     this.logSystem("=== TRIBUNAL: DEFENSE PHASE ===", Phase.DEFENSE);
     const alivePlayers = this.gameState.getAlivePlayers();
 
@@ -790,6 +868,7 @@ export class GameRunner {
   private async runTribunalVote(
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
+    this.emitPhaseChange(Phase.VOTE);
     this.logSystem("=== TRIBUNAL: ELIMINATION VOTE ===", Phase.VOTE);
     const alivePlayers = this.gameState.getAlivePlayers();
 
@@ -835,6 +914,7 @@ export class GameRunner {
     this.eliminationOrder.push(eliminated.name);
     this.logPublic(eliminatedId, lastMsg, Phase.VOTE);
     this.gameState.eliminatePlayer(eliminatedId);
+    this.emitStream({ type: "player_eliminated", playerId: eliminatedId, playerName: eliminated.name, round: this.gameState.round });
 
     actor.send({ type: "PLAYER_ELIMINATED", playerId: eliminatedId });
     actor.send({ type: "UPDATE_ALIVE_PLAYERS", aliveIds: this.gameState.getAlivePlayerIds() });
@@ -850,6 +930,7 @@ export class GameRunner {
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
     this.gameState.setEndgameStage("judgment");
+    this.emitPhaseChange(Phase.OPENING_STATEMENTS);
     this.logSystem(`\n========================================`, Phase.OPENING_STATEMENTS);
     this.logSystem(`=== THE JUDGMENT ===`, Phase.OPENING_STATEMENTS);
     this.logSystem(`========================================`, Phase.OPENING_STATEMENTS);
@@ -875,6 +956,7 @@ export class GameRunner {
   private async runJudgmentJuryQuestions(
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
+    this.emitPhaseChange(Phase.JURY_QUESTIONS);
     this.logSystem("=== JUDGMENT: JURY QUESTIONS ===", Phase.JURY_QUESTIONS);
     const finalists = this.gameState.getAlivePlayers();
     const finalist0 = finalists[0];
@@ -908,6 +990,7 @@ export class GameRunner {
   private async runJudgmentClosing(
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
+    this.emitPhaseChange(Phase.CLOSING_ARGUMENTS);
     this.logSystem("=== JUDGMENT: CLOSING ARGUMENTS ===", Phase.CLOSING_ARGUMENTS);
     const finalists = this.gameState.getAlivePlayers();
 
@@ -927,6 +1010,7 @@ export class GameRunner {
   private async runJudgmentJuryVote(
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
+    this.emitPhaseChange(Phase.JURY_VOTE);
     this.logSystem("=== JUDGMENT: JURY VOTE ===", Phase.JURY_VOTE);
     const finalists = this.gameState.getAlivePlayers();
     const finalist0 = finalists[0];
@@ -1118,20 +1202,22 @@ export class GameRunner {
   private logPublic(fromId: UUID, text: string, phase: Phase): void {
     const name = this.gameState.getPlayerName(fromId);
     this.publicMessages.push({ from: name, text, phase });
-    this.transcript.push({
+    const entry: TranscriptEntry = {
       round: this.gameState.round,
       phase,
       timestamp: Date.now(),
       from: name,
       scope: "public",
       text,
-    });
+    };
+    this.transcript.push(entry);
+    this.emitStream({ type: "transcript_entry", entry });
   }
 
   private logWhisper(fromId: UUID, toIds: UUID[], text: string): void {
     const fromName = this.gameState.getPlayerName(fromId);
     const toNames = toIds.map((id) => this.gameState.getPlayerName(id));
-    this.transcript.push({
+    const entry: TranscriptEntry = {
       round: this.gameState.round,
       phase: Phase.WHISPER,
       timestamp: Date.now(),
@@ -1139,28 +1225,34 @@ export class GameRunner {
       scope: "whisper",
       to: toNames,
       text,
-    });
+    };
+    this.transcript.push(entry);
+    this.emitStream({ type: "transcript_entry", entry });
   }
 
   private logSystem(text: string, phase: Phase): void {
-    this.transcript.push({
+    const entry: TranscriptEntry = {
       round: this.gameState.round,
       phase,
       timestamp: Date.now(),
       from: "House",
       scope: "system",
       text,
-    });
+    };
+    this.transcript.push(entry);
+    this.emitStream({ type: "transcript_entry", entry });
   }
 
   private logDiary(from: string, text: string): void {
-    this.transcript.push({
+    const entry: TranscriptEntry = {
       round: this.gameState.round,
       phase: Phase.DIARY_ROOM,
       timestamp: Date.now(),
       from,
       scope: "diary",
       text,
-    });
+    };
+    this.transcript.push(entry);
+    this.emitStream({ type: "transcript_entry", entry });
   }
 }
