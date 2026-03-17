@@ -1,0 +1,22 @@
+{
+  "name": "influence-game",
+  "description": "Influence: AI agent social-strategy game prototype",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "doppler run -- bun test",
+    "test:watch": "doppler run -- bun test --watch",
+    "test:mock": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "openai": "^4.77.0",
+    "rxjs": "^7.8.2",
+    "xstate": "^5.20.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "bun-types": "^1.3.10",
+    "typescript": "^5.8.3"
+  }
+}
