@@ -5,13 +5,25 @@
  */
 
 import { Hono } from "hono";
+import { createDB } from "./db/index.js";
+import { runMigrations } from "./db/migrate.js";
+import { createGameRoutes } from "./routes/games.js";
+
+// ---------------------------------------------------------------------------
+// Database — run migrations on startup, then connect
+// ---------------------------------------------------------------------------
+
+const dbPath = process.env.SQLITE_PATH ?? "influence.db";
+runMigrations(dbPath);
+const db = createDB(dbPath);
+
+// ---------------------------------------------------------------------------
+// App
+// ---------------------------------------------------------------------------
 
 const app = new Hono();
 
-// ---------------------------------------------------------------------------
 // Health check
-// ---------------------------------------------------------------------------
-
 app.get("/health", (c) => {
   return c.json({
     status: "ok",
@@ -21,19 +33,21 @@ app.get("/health", (c) => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // Root
-// ---------------------------------------------------------------------------
-
 app.get("/", (c) => {
   return c.json({
     name: "Influence Game API",
     version: "0.6.0",
     endpoints: {
       health: "/health",
+      games: "/api/games",
     },
   });
 });
+
+// Game routes
+const gameRoutes = createGameRoutes(db);
+app.route("/", gameRoutes);
 
 // ---------------------------------------------------------------------------
 // Start server

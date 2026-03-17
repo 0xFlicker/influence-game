@@ -16,7 +16,12 @@ const API_ROOT = path.resolve(import.meta.dir, "../..");
 
 export function createDB(dbPath?: string) {
   const filename = dbPath ?? "influence.db";
-  const resolvedPath = path.isAbsolute(filename) ? filename : path.join(API_ROOT, filename);
+  const resolvedPath =
+    filename === ":memory:"
+      ? ":memory:"
+      : path.isAbsolute(filename)
+        ? filename
+        : path.join(API_ROOT, filename);
   const sqlite = new Database(resolvedPath, { create: true });
 
   // Enable WAL mode for better concurrent read performance
