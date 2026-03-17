@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { getGame, getGameTranscript, type GameDetail, type GamePlayer, type TranscriptEntry, type WsGameEvent, type PhaseKey } from "@/lib/api";
+import { getGame, getGameTranscript, type GameDetail, type GamePlayer, type TranscriptEntry, type WsGameEvent, type WsTranscriptEntry, type PhaseKey, type TranscriptScope } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -68,11 +68,12 @@ function formatTime(ts: number): string {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function ConnectionBadge({ status }: { status: "connecting" | "live" | "disconnected" | "replay" }) {
+function ConnectionBadge({ status }: { status: "connecting" | "live" | "disconnected" | "reconnecting" | "replay" }) {
   const configs = {
     connecting: { dot: "bg-yellow-400 animate-pulse", text: "Connecting…", cls: "text-yellow-400" },
     live: { dot: "bg-green-400 animate-pulse", text: "Live", cls: "text-green-400" },
     disconnected: { dot: "bg-red-400", text: "Disconnected", cls: "text-red-400" },
+    reconnecting: { dot: "bg-orange-400 animate-pulse", text: "Reconnecting…", cls: "text-orange-400" },
     replay: { dot: "bg-indigo-400", text: "Replay", cls: "text-indigo-400" },
   };
   const cfg = configs[status];
@@ -252,7 +253,7 @@ const WS_BASE =
     ? process.env.NEXT_PUBLIC_WS_URL
     : undefined) ?? "ws://localhost:3000";
 
-type ConnStatus = "connecting" | "live" | "disconnected";
+type ConnStatus = "connecting" | "live" | "disconnected" | "reconnecting";
 
 function useGameWebSocket(
   gameId: string,
@@ -267,24 +268,53 @@ function useGameWebSocket(
   useEffect(() => {
     if (!enabled) return;
 
-    const ws = new WebSocket(`${WS_BASE}/api/games/${gameId}/watch`);
-    wsRef.current = ws;
+    let cancelled = false;
+    let retryDelay = 1000;
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    ws.onopen = () => setStatus("live");
-    ws.onclose = () => setStatus("disconnected");
-    ws.onerror = () => setStatus("disconnected");
+    function connect() {
+      if (cancelled) return;
 
-    ws.onmessage = (ev) => {
-      try {
-        const data = JSON.parse(ev.data as string) as WsGameEvent;
-        onEventRef.current(data);
-      } catch {
-        // ignore malformed frames
-      }
-    };
+      const ws = new WebSocket(`${WS_BASE}/ws/games/${gameId}`);
+      wsRef.current = ws;
+      setStatus("connecting");
+
+      ws.onopen = () => {
+        retryDelay = 1000;
+        setStatus("live");
+      };
+
+      ws.onclose = () => {
+        if (cancelled) return;
+        // Add ±10% jitter to avoid thundering herd when multiple viewers reconnect
+        const jitter = retryDelay * 0.1 * (Math.random() * 2 - 1);
+        const delay = retryDelay + jitter;
+        setStatus("reconnecting");
+        retryTimeout = setTimeout(() => {
+          retryDelay = Math.min(retryDelay * 2, 30_000);
+          connect();
+        }, delay);
+      };
+
+      // onerror always precedes onclose — let onclose handle the status transition
+      ws.onerror = () => {};
+
+      ws.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data as string) as WsGameEvent;
+          onEventRef.current(data);
+        } catch {
+          // ignore malformed frames
+        }
+      };
+    }
+
+    connect();
 
     return () => {
-      ws.close();
+      cancelled = true;
+      if (retryTimeout) clearTimeout(retryTimeout);
+      wsRef.current?.close();
     };
   }, [gameId, enabled]);
 
@@ -305,11 +335,33 @@ interface GameViewerProps {
   initialMessages?: TranscriptEntry[];
 }
 
+/** Convert a WebSocket-format transcript entry to a display-ready TranscriptEntry. */
+function wsEntryToTranscriptEntry(
+  entry: WsTranscriptEntry,
+  gameId: string,
+  id: number,
+): TranscriptEntry {
+  return {
+    id,
+    gameId,
+    round: entry.round,
+    phase: entry.phase as PhaseKey,
+    fromPlayerId: entry.from === "SYSTEM" ? null : entry.from,
+    fromPlayerName: null, // resolved by MessageBubble via player lookup
+    scope: entry.scope as TranscriptScope,
+    toPlayerIds: entry.to ?? null,
+    text: entry.text,
+    timestamp: entry.timestamp,
+  };
+}
+
 export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerProps) {
   const [game, setGame] = useState<GameDetail | null>(initialGame ?? null);
   const [messages, setMessages] = useState<TranscriptEntry[]>(initialMessages ?? []);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [replayIndex, setReplayIndex] = useState<number>(0);
+  // Negative IDs for live WS messages (avoids collision with positive DB ids)
+  const msgIdRef = useRef(-1);
 
   // Fetch game data client-side if not provided via props
   useEffect(() => {
@@ -349,16 +401,44 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
 
   const handleWsEvent = useCallback((ev: WsGameEvent) => {
     switch (ev.type) {
-      case "game_state":
-        setGame(ev.game);
-        setMessages(ev.messages);
+      case "game_state": {
+        const { snapshot } = ev;
+        // Update player statuses from snapshot
+        const aliveIds = new Set(snapshot.alivePlayers.map((p) => p.id));
+        const shieldedIds = new Set(
+          snapshot.alivePlayers.filter((p) => p.shielded).map((p) => p.id),
+        );
+        setGame((g) =>
+          g
+            ? {
+                ...g,
+                currentRound: snapshot.round,
+                players: g.players.map((p) => ({
+                  ...p,
+                  status: aliveIds.has(p.id) ? ("alive" as const) : ("eliminated" as const),
+                  shielded: shieldedIds.has(p.id),
+                })),
+              }
+            : g,
+        );
+        // Load catch-up transcript
+        let id = msgIdRef.current;
+        const msgs = snapshot.transcript.map((entry) =>
+          wsEntryToTranscriptEntry(entry, snapshot.gameId, id--),
+        );
+        msgIdRef.current = id;
+        setMessages(msgs);
         break;
+      }
       case "phase_change":
         setGame((g) => g ? { ...g, currentPhase: ev.phase, currentRound: ev.round } : g);
         break;
-      case "message":
-        setMessages((m) => [...m, ev.message]);
+      case "message": {
+        const id = msgIdRef.current--;
+        const msg = wsEntryToTranscriptEntry(ev.entry, gameId, id);
+        setMessages((m) => [...m, msg]);
         break;
+      }
       case "player_eliminated":
         setGame((g) =>
           g
@@ -377,7 +457,7 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
         );
         break;
     }
-  }, []);
+  }, [gameId]);
 
   const wsStatus = useGameWebSocket(gameId, !!game && !isReplay, handleWsEvent);
 
