@@ -8,6 +8,7 @@
 
 import type OpenAI from "openai";
 import { Phase } from "./types";
+import type { TokenTracker } from "./token-tracker";
 
 // ---------------------------------------------------------------------------
 // Interview context passed to the House
@@ -68,10 +69,16 @@ Rules:
 export class LLMHouseInterviewer implements IHouseInterviewer {
   private readonly openai: OpenAI;
   private readonly model: string;
+  private tokenTracker: TokenTracker | null = null;
 
   constructor(openaiClient: OpenAI, model = "gpt-4o-mini") {
     this.openai = openaiClient;
     this.model = model;
+  }
+
+  /** Attach a token tracker to record LLM usage. */
+  setTokenTracker(tracker: TokenTracker): void {
+    this.tokenTracker = tracker;
   }
 
   async generateQuestion(context: DiaryRoomContext): Promise<string> {
@@ -86,6 +93,16 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       max_tokens: 150,
       temperature: 0.9,
     });
+
+    // Track token usage
+    if (this.tokenTracker && response.usage) {
+      this.tokenTracker.record(
+        "House",
+        response.usage.prompt_tokens,
+        response.usage.completion_tokens,
+      );
+    }
+
     const question = response.choices[0]?.message?.content?.trim();
     if (question && question.length > 0) return question;
 

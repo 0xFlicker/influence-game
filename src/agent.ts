@@ -8,6 +8,7 @@
 import OpenAI from "openai";
 import type { IAgent, PhaseContext } from "./game-runner";
 import type { UUID, PowerAction } from "./types";
+import type { TokenTracker } from "./token-tracker";
 
 // ---------------------------------------------------------------------------
 // Personality archetypes
@@ -91,6 +92,7 @@ export class InfluenceAgent implements IAgent {
   readonly personality: Personality;
   private readonly openai: OpenAI;
   private readonly model: string;
+  private tokenTracker: TokenTracker | null = null;
   private gameId: UUID = "";
   private allPlayers: Array<{ id: UUID; name: string }> = [];
   private memory: AgentMemory = {
@@ -112,6 +114,11 @@ export class InfluenceAgent implements IAgent {
     this.personality = personality;
     this.openai = openaiClient;
     this.model = model;
+  }
+
+  /** Attach a token tracker to record LLM usage. */
+  setTokenTracker(tracker: TokenTracker): void {
+    this.tokenTracker = tracker;
   }
 
   onGameStart(gameId: UUID, allPlayers: Array<{ id: UUID; name: string }>): void {
@@ -674,6 +681,16 @@ ${whispers ? `## Private Whispers You Received\n${whispers}` : ""}
       max_tokens: maxTokens,
       temperature: 0.7,
     });
+
+    // Track token usage
+    if (this.tokenTracker && response.usage) {
+      this.tokenTracker.record(
+        this.name,
+        response.usage.prompt_tokens,
+        response.usage.completion_tokens,
+      );
+    }
+
     return response.choices[0]?.message?.content?.trim() ?? "";
   }
 

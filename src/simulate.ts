@@ -18,6 +18,12 @@ import { GameRunner, type TranscriptEntry } from "./game-runner";
 import { InfluenceAgent, type Personality } from "./agent";
 import { LLMHouseInterviewer } from "./house-interviewer";
 import { DEFAULT_CONFIG, type GameConfig, type UUID } from "./types";
+import {
+  TokenTracker,
+  estimateCostAllModels,
+  type TokenUsage,
+  type CostEstimate,
+} from "./token-tracker";
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing
@@ -27,11 +33,12 @@ interface SimArgs {
   games: number;
   players: number;
   personas: string[] | null;
+  model: string;
 }
 
 function parseArgs(): SimArgs {
   const argv = process.argv.slice(2);
-  const args: SimArgs = { games: 3, players: 6, personas: null };
+  const args: SimArgs = { games: 3, players: 6, personas: null, model: "gpt-4o-mini" };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -44,6 +51,9 @@ function parseArgs(): SimArgs {
       i++;
     } else if (arg === "--personas" && next) {
       args.personas = next.split(",").map((s) => s.trim());
+      i++;
+    } else if (arg === "--model" && next) {
+      args.model = next;
       i++;
     }
   }
@@ -76,6 +86,7 @@ function selectCast(
   count: number,
   requestedPersonas: string[] | null,
   openai: OpenAI,
+  model: string,
 ): InfluenceAgent[] {
   let selected: Array<{ name: string; personality: Personality }>;
 
@@ -99,7 +110,7 @@ function selectCast(
 
   return selected.map(({ name, personality }) => {
     const id: UUID = randomUUID();
-    return new InfluenceAgent(id, name, personality, openai, "gpt-4o-mini");
+    return new InfluenceAgent(id, name, personality, openai, model);
   });
 }
 
@@ -116,10 +127,15 @@ interface GameResult {
   endgameType: string;
   playerPersonas: Record<string, string>;
   durationMs: number;
+  tokenUsage: {
+    perAgent: Record<string, TokenUsage>;
+    total: TokenUsage;
+  };
 }
 
 interface AggregateStats {
   totalGames: number;
+  model: string;
   perPersona: Record<
     string,
     {
@@ -136,6 +152,10 @@ interface AggregateStats {
     avgGameLength: number;
     roundDistribution: Record<number, number>;
     avgDurationMs: number;
+  };
+  tokenUsage: {
+    total: TokenUsage;
+    costEstimates: CostEstimate[];
   };
 }
 
@@ -204,12 +224,18 @@ function getSurvivalRound(
 // Aggregate stats computation
 // ---------------------------------------------------------------------------
 
-function computeAggregateStats(results: GameResult[]): AggregateStats {
+function computeAggregateStats(results: GameResult[], model: string): AggregateStats {
   const perPersona: AggregateStats["perPersona"] = {};
   const perEndgameType: Record<string, number> = {};
   let totalRounds = 0;
   let totalDuration = 0;
   const roundDist: Record<number, number> = {};
+  const batchTokens: TokenUsage = {
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    callCount: 0,
+  };
 
   for (const result of results) {
     // Track rounds
@@ -219,6 +245,12 @@ function computeAggregateStats(results: GameResult[]): AggregateStats {
 
     // Track endgame types
     perEndgameType[result.endgameType] = (perEndgameType[result.endgameType] ?? 0) + 1;
+
+    // Accumulate token usage
+    batchTokens.promptTokens += result.tokenUsage.total.promptTokens;
+    batchTokens.completionTokens += result.tokenUsage.total.completionTokens;
+    batchTokens.totalTokens += result.tokenUsage.total.totalTokens;
+    batchTokens.callCount += result.tokenUsage.total.callCount;
 
     // Track per-persona stats
     for (const [name, persona] of Object.entries(result.playerPersonas)) {
@@ -252,12 +284,17 @@ function computeAggregateStats(results: GameResult[]): AggregateStats {
 
   return {
     totalGames: results.length,
+    model,
     perPersona,
     perEndgameType,
     overall: {
       avgGameLength: results.length > 0 ? totalRounds / results.length : 0,
       roundDistribution: roundDist,
       avgDurationMs: results.length > 0 ? totalDuration / results.length : 0,
+    },
+    tokenUsage: {
+      total: batchTokens,
+      costEstimates: estimateCostAllModels(batchTokens),
     },
   };
 }
@@ -286,6 +323,7 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
   lines.push("# Simulation Results");
   lines.push("");
   lines.push(`**Games played:** ${stats.totalGames}`);
+  lines.push(`**Model:** ${stats.model}`);
   lines.push(`**Avg game length:** ${stats.overall.avgGameLength.toFixed(1)} rounds`);
   lines.push(
     `**Avg duration:** ${(stats.overall.avgDurationMs / 1000).toFixed(0)}s per game`,
@@ -333,14 +371,41 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
 
   lines.push("");
 
+  // Token usage summary
+  lines.push("## Token Usage");
+  lines.push("");
+  const tu = stats.tokenUsage.total;
+  lines.push(`| Metric | Value |`);
+  lines.push(`|--------|-------|`);
+  lines.push(`| Total LLM calls | ${tu.callCount.toLocaleString()} |`);
+  lines.push(`| Prompt tokens | ${tu.promptTokens.toLocaleString()} |`);
+  lines.push(`| Completion tokens | ${tu.completionTokens.toLocaleString()} |`);
+  lines.push(`| Total tokens | ${tu.totalTokens.toLocaleString()} |`);
+  lines.push("");
+
+  // Cost estimates across model tiers
+  lines.push("## Cost Estimates");
+  lines.push("");
+  lines.push("| Model | Input Cost | Output Cost | Total Cost |");
+  lines.push("|-------|-----------|-------------|------------|");
+  for (const est of stats.tokenUsage.costEstimates) {
+    const marker = est.model === stats.model ? " *" : "";
+    lines.push(
+      `| ${est.model}${marker} | $${est.inputCost.toFixed(4)} | $${est.outputCost.toFixed(4)} | $${est.totalCost.toFixed(4)} |`,
+    );
+  }
+  lines.push("");
+  lines.push(`_* = model used for this simulation_`);
+  lines.push("");
+
   // Individual game results
   lines.push("## Individual Games");
   lines.push("");
-  lines.push("| # | Winner | Persona | Rounds | Endgame | Duration |");
-  lines.push("|---|--------|---------|--------|---------|----------|");
+  lines.push("| # | Winner | Persona | Rounds | Endgame | Duration | Tokens | LLM Calls |");
+  lines.push("|---|--------|---------|--------|---------|----------|--------|-----------|");
   for (const r of results) {
     lines.push(
-      `| ${r.gameNumber} | ${r.winnerName ?? "draw"} | ${r.winnerPersona ?? "-"} | ${r.rounds} | ${r.endgameType} | ${(r.durationMs / 1000).toFixed(0)}s |`,
+      `| ${r.gameNumber} | ${r.winnerName ?? "draw"} | ${r.winnerPersona ?? "-"} | ${r.rounds} | ${r.endgameType} | ${(r.durationMs / 1000).toFixed(0)}s | ${r.tokenUsage.total.totalTokens.toLocaleString()} | ${r.tokenUsage.total.callCount} |`,
     );
   }
 
@@ -363,7 +428,7 @@ async function main() {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   console.log(`\n=== Influence Batch Simulation ===`);
-  console.log(`Games: ${args.games} | Players per game: ${args.players}`);
+  console.log(`Games: ${args.games} | Players per game: ${args.players} | Model: ${args.model}`);
   if (args.personas) console.log(`Personas: ${args.personas.join(", ")}`);
   console.log("");
 
@@ -401,15 +466,18 @@ async function main() {
     const startTime = Date.now();
 
     // Create fresh agents for each game
-    const agents = selectCast(args.players, args.personas, openai);
+    const agents = selectCast(args.players, args.personas, openai, args.model);
     const playerPersonas: Record<string, string> = {};
+    const gameTracker = new TokenTracker();
     for (const agent of agents) {
       playerPersonas[agent.name] = agent.personality;
+      agent.setTokenTracker(gameTracker);
     }
 
     console.log(`  Players: ${agents.map((a) => a.name).join(", ")}`);
 
-    const houseInterviewer = new LLMHouseInterviewer(openai);
+    const houseInterviewer = new LLMHouseInterviewer(openai, args.model);
+    houseInterviewer.setTokenTracker(gameTracker);
     const runner = new GameRunner(agents, simConfig, houseInterviewer);
 
     try {
@@ -419,6 +487,7 @@ async function main() {
       const eliminationOrder = extractEliminationOrder(result.transcript);
       const endgameType = extractEndgameType(result.transcript);
 
+      const gameTotalUsage = gameTracker.getTotalUsage();
       const gameResult: GameResult = {
         gameNumber: g,
         winnerName: result.winnerName,
@@ -428,11 +497,15 @@ async function main() {
         endgameType,
         playerPersonas,
         durationMs,
+        tokenUsage: {
+          perAgent: gameTracker.getAllUsage(),
+          total: gameTotalUsage,
+        },
       };
       results.push(gameResult);
 
       console.log(
-        `  Winner: ${result.winnerName ?? "draw"} (${gameResult.winnerPersona ?? "-"}) | Rounds: ${result.rounds} | ${(durationMs / 1000).toFixed(0)}s`,
+        `  Winner: ${result.winnerName ?? "draw"} (${gameResult.winnerPersona ?? "-"}) | Rounds: ${result.rounds} | ${(durationMs / 1000).toFixed(0)}s | ${gameTotalUsage.totalTokens.toLocaleString()} tokens (${gameTotalUsage.callCount} calls)`,
       );
 
       // Save transcript
@@ -450,12 +523,16 @@ async function main() {
         endgameType: "error",
         playerPersonas,
         durationMs,
+        tokenUsage: {
+          perAgent: gameTracker.getAllUsage(),
+          total: gameTracker.getTotalUsage(),
+        },
       });
     }
   }
 
   // Compute aggregates
-  const stats = computeAggregateStats(results);
+  const stats = computeAggregateStats(results, args.model);
 
   // Output structured JSON
   console.log("\n=== Aggregate Stats (JSON) ===\n");
