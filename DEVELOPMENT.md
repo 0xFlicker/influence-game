@@ -156,6 +156,103 @@ The FE references these when making engine changes to avoid regressing known goo
 - Branch off `main`, merge back to `main` via PR.
 - Do not commit `node_modules/`, `.env`, or any secrets.
 
+## Release Workflow
+
+### Version Scheme
+
+Semantic versioning: `v0.MINOR.PATCH` (pre-1.0 development stage).
+
+- **MINOR bump** (0.1.0 → 0.2.0): New features, game mechanic changes, interface changes
+- **PATCH bump** (0.1.0 → 0.1.1): Bug fixes, personality tuning, config adjustments
+
+Version is tracked in two places that must stay in sync:
+- `package.json` `version` field
+- Git annotated tags
+
+### Workspace Isolation
+
+Both agents share the project directory. To allow parallel work on different versions:
+
+- **Founding Engineer** works in `workspace/influence-game/` (on `main` or feature branches)
+- **Lead Game Designer** tests in `workspace/influence-game-test/` (a git worktree at a tagged release)
+
+This ensures the Engineer can continue development while the Designer tests a stable release.
+
+### Release Process (Founding Engineer)
+
+When a set of changes is ready for testing:
+
+1. Ensure all tests pass: `bun test src/__tests__/game-engine.test.ts`
+2. Commit all changes with descriptive messages
+3. Update `version` in `package.json` to the new version
+4. Commit the version bump: `release: v0.X.Y`
+5. Create an annotated tag:
+   ```bash
+   git tag -a v0.X.Y -m "v0.X.Y: <summary of changes>"
+   ```
+6. Push with tags: `git push origin main --tags`
+7. Comment on the relevant Paperclip issue:
+   ```markdown
+   ## Released v0.X.Y
+   - Change 1
+   - Change 2
+   ```
+
+### Picking Up a Release (Lead Game Designer)
+
+To test a specific release:
+
+1. From `workspace/influence-game/`, create a worktree at the tag:
+   ```bash
+   git fetch --tags
+   git worktree add ../influence-game-test v0.X.Y
+   ```
+2. Install dependencies in the worktree:
+   ```bash
+   cd ../influence-game-test && bun install
+   ```
+3. Run simulations:
+   ```bash
+   doppler run -- bun test
+   ```
+4. Write analysis referencing the version in the filename:
+   ```
+   docs/simulations/v0.X.Y-<topic>.md
+   ```
+5. Comment on the Paperclip issue:
+   ```markdown
+   ## Tested v0.X.Y
+   - Finding 1
+   - Finding 2
+   ```
+6. When done, clean up:
+   ```bash
+   cd ../influence-game && git worktree remove ../influence-game-test
+   ```
+
+If a worktree already exists and needs updating to a new version:
+```bash
+cd ../influence-game-test && git fetch --tags && git checkout v0.X.Y && bun install
+```
+
+### Version Referencing in Communication
+
+All Paperclip issue comments must reference specific versions:
+
+- **Releases**: "Released v0.2.0" with bullet points of changes
+- **Test reports**: "Tested v0.2.0" with findings and recommendations
+- **Bug reports**: "Found in v0.2.0: description"
+- **Fix references**: "Fixed in v0.2.1: description"
+
+### Future: QA Integration
+
+When a QA agent is added:
+
+- QA gets a dedicated worktree: `workspace/influence-game-qa/`
+- Release candidates use `-rc` suffix: `v0.3.0-rc.1`
+- QA tests release candidates and signs off before the final tag
+- Flow: Engineer tags `rc` → QA tests → QA approves → Engineer tags final release
+
 ## Environment
 
 Secrets are injected via Doppler. Never hardcode API keys.
