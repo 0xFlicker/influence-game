@@ -2,10 +2,108 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { getGame, getGameTranscript, type GameDetail, type GamePlayer, type TranscriptEntry, type WsGameEvent, type WsTranscriptEntry, type PhaseKey, type TranscriptScope } from "@/lib/api";
+import { Typewriter } from "@/components/typewriter";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// Dramatic display names for the transition overlay (◆ NAME ◆)
+const PHASE_TRANSITION_LABELS: Partial<Record<PhaseKey, string>> = {
+  INTRODUCTION: "INTRODUCTION",
+  LOBBY: "LOBBY PHASE",
+  WHISPER: "WHISPER PHASE",
+  RUMOR: "RUMOR PHASE",
+  VOTE: "VOTE PHASE",
+  POWER: "POWER PLAY",
+  REVEAL: "REVEAL",
+  COUNCIL: "COUNCIL VOTE",
+  DIARY_ROOM: "DIARY ROOM",
+  PLEA: "PLEA",
+  ACCUSATION: "ACCUSATION",
+  DEFENSE: "DEFENSE",
+  OPENING_STATEMENTS: "OPENING STATEMENTS",
+  JURY_QUESTIONS: "JURY QUESTIONS",
+  CLOSING_ARGUMENTS: "CLOSING ARGUMENTS",
+  JURY_VOTE: "JURY VOTE",
+  END: "GAME OVER",
+};
+
+// Flavor text variants per phase — 3–5 options, randomly selected on each transition
+const PHASE_FLAVORS: Partial<Record<PhaseKey, string[]>> = {
+  INTRODUCTION: [
+    "The operatives have arrived. Study them carefully.",
+    "Every game begins with first impressions. Make yours count.",
+    "Six strangers. One winner. The game begins.",
+  ],
+  LOBBY: [
+    "The floor is open. Every word is a move.",
+    "Alliances form and fracture in the lobby. Choose your words carefully.",
+    "What is said here shapes what happens next.",
+    "The public stage — where trust is built and broken.",
+  ],
+  WHISPER: [
+    "The operatives go dark. Secrets are currency.",
+    "Private channels activate. Not everything can be said out loud.",
+    "The shadows hide more than they reveal.",
+    "Every whisper is a gamble. Who can you trust?",
+  ],
+  RUMOR: [
+    "The whispers become rumors. Truth and lies blur.",
+    "Alliances tested by misinformation. What do you believe?",
+    "Information spreads. Not all of it is accurate.",
+    "The rumor mill turns. Someone is spinning a story.",
+  ],
+  VOTE: [
+    "Every operative must now cast their expose vote. Who is the most dangerous?",
+    "The chamber falls silent. Each player weighs their next move.",
+    "Alliances are tested. Truths and lies converge in a single vote.",
+    "The moment of decision has arrived. Choose wisely.",
+  ],
+  POWER: [
+    "One operative holds the power. What will they do with it?",
+    "A single decision changes everything.",
+    "Power is a gift — and a trap. All eyes are watching.",
+    "The power token changes hands. The game shifts.",
+  ],
+  REVEAL: [
+    "The votes have been counted. There is no hiding now.",
+    "Truth and deception collide in a single moment.",
+    "The moment of reckoning has arrived.",
+    "Every secret comes to light. Every vote has a name.",
+  ],
+  COUNCIL: [
+    "Two names. One elimination. Every vote counts.",
+    "The council convenes. Someone is going home.",
+    "The balance of power hangs by a thread.",
+    "Final arguments have been made. The verdict awaits.",
+  ],
+  DIARY_ROOM: [
+    "The diary room opens. What are you really thinking?",
+    "Every confession stays between you and the House.",
+    "Speak your truth. The game watches everything.",
+  ],
+  PLEA: [
+    "Make your case. Words are your only shield now.",
+    "Speak carefully. The council is listening.",
+    "Your survival depends on what you say next.",
+  ],
+  ACCUSATION: [
+    "The accusations begin. Point your finger — carefully.",
+    "Truth and lies are about to collide.",
+    "Someone is in the crosshairs. Will you pull the trigger?",
+  ],
+  JURY_QUESTIONS: [
+    "The jury demands answers. Every word will be judged.",
+    "The finalists face their reckoning. No more secrets.",
+    "Questions from those who were eliminated — and have nothing to lose.",
+  ],
+  JURY_VOTE: [
+    "The jury casts their final verdict. One player wins it all.",
+    "After everything, the eliminated decide the winner.",
+    "The ultimate judgment is at hand.",
+  ],
+};
 
 const PHASE_LABELS: Record<PhaseKey, string> = {
   INIT: "Waiting Room",
@@ -259,6 +357,76 @@ function ReplayControls({
 }
 
 // ---------------------------------------------------------------------------
+// Phase transition overlay
+// ---------------------------------------------------------------------------
+
+interface TransitionState {
+  phase: PhaseKey;
+  round: number;
+  maxRounds: number;
+  aliveCount: number;
+  flavorText: string;
+}
+
+function PhaseTransitionOverlay({
+  transition,
+  onDismiss,
+}: {
+  transition: TransitionState;
+  onDismiss: () => void;
+}) {
+  const [visible, setVisible] = useState(false);
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+
+  useEffect(() => {
+    // Brief tick to trigger CSS fade-in transition
+    const fadeIn = setTimeout(() => setVisible(true), 16);
+    // Start fade-out after 2s hold
+    const fadeOut = setTimeout(() => setVisible(false), 2000);
+    // Unmount after fade-out completes (300ms)
+    const dismiss = setTimeout(() => onDismissRef.current(), 2300);
+
+    return () => {
+      clearTimeout(fadeIn);
+      clearTimeout(fadeOut);
+      clearTimeout(dismiss);
+    };
+  }, []);
+
+  const label =
+    PHASE_TRANSITION_LABELS[transition.phase] ?? transition.phase.replace(/_/g, " ");
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
+      style={{
+        opacity: visible ? 1 : 0,
+        transition: "opacity 300ms ease-in-out",
+        pointerEvents: "none",
+      }}
+    >
+      <div className="text-center px-8 max-w-2xl">
+        <p className="text-white/20 text-sm tracking-[0.4em] uppercase mb-8">◆ ◆ ◆</p>
+        <h1
+          className={`text-3xl md:text-4xl font-bold tracking-widest uppercase mb-6 ${phaseColor(transition.phase)}`}
+        >
+          ◆&nbsp;&nbsp;{label}&nbsp;&nbsp;◆
+        </h1>
+        {transition.flavorText && (
+          <p className="text-white/55 text-base md:text-lg leading-relaxed mb-8 italic">
+            {transition.flavorText}
+          </p>
+        )}
+        <p className="text-white/25 text-sm tracking-widest uppercase">
+          Round {transition.round} of {transition.maxRounds}&nbsp;·&nbsp;{transition.aliveCount} alive
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Diary Q&A grouping
 // ---------------------------------------------------------------------------
 
@@ -388,6 +556,130 @@ function DiaryQACard({
 }
 
 // ---------------------------------------------------------------------------
+// Elimination last-words choreography
+// ---------------------------------------------------------------------------
+
+/**
+ * Renders the elimination last-words sequence with timed choreography:
+ * 1. 3s hold (skull pulse)
+ * 2. House intro typewriter: "[Name]… your last words." (50 c/s)
+ * 3. 0.5s pause
+ * 4. Player last words at slow typewriter (28 c/s)
+ * 5. Final dimmed-card state
+ *
+ * In speedrun/replay mode: renders instantly with no holds or animation.
+ */
+function LastWordsMessage({
+  entry,
+  players,
+  speedrun,
+  isReplay,
+}: {
+  entry: TranscriptEntry;
+  players: GamePlayer[];
+  speedrun: boolean;
+  isReplay: boolean;
+}) {
+  type LWPhase = "hold" | "intro" | "pause" | "words" | "done";
+
+  const [phase, setPhase] = useState<LWPhase>(() =>
+    speedrun || isReplay ? "done" : "hold",
+  );
+
+  const player = players.find((p) => p.id === entry.fromPlayerId);
+  const playerName = entry.fromPlayerName ?? player?.name ?? "Unknown";
+  const introText = `${playerName}… your last words.`;
+
+  useEffect(() => {
+    if (speedrun || isReplay) return;
+
+    if (phase === "hold") {
+      const t = setTimeout(() => setPhase("intro"), 3000);
+      return () => clearTimeout(t);
+    }
+    if (phase === "pause") {
+      const t = setTimeout(() => setPhase("words"), 500);
+      return () => clearTimeout(t);
+    }
+  }, [phase, speedrun, isReplay]);
+
+  // Shared final render (done state + speedrun/replay)
+  if (phase === "done" || speedrun || isReplay) {
+    return (
+      <div className="flex gap-3 opacity-60">
+        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-red-900/30 flex items-center justify-center text-sm">
+          💀
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2 mb-0.5">
+            <span className="text-xs font-semibold text-red-300/60">{playerName}</span>
+            <span className="text-xs text-red-400/40 italic">last words</span>
+            <span className="text-white/20 text-xs ml-auto flex-shrink-0">
+              {formatTime(entry.timestamp)}
+            </span>
+          </div>
+          <p className="text-sm text-white/50 italic leading-relaxed break-words">
+            {entry.text}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === "hold") {
+    return (
+      <div className="flex items-center gap-3 py-2 text-red-900/60">
+        <span className="text-lg animate-pulse">💀</span>
+        <span className="text-xs text-white/15 italic tracking-wider">…</span>
+      </div>
+    );
+  }
+
+  // intro + pause: show House prompt
+  const showIntroTypewriter = phase === "intro";
+  if (phase === "intro" || phase === "pause") {
+    return (
+      <div className="py-1 space-y-1">
+        <p className="text-xs text-white/30 font-medium uppercase tracking-wider">◆ House</p>
+        <p className="text-sm text-white/50 italic">
+          {showIntroTypewriter ? (
+            <Typewriter text={introText} rate="house" onComplete={() => setPhase("pause")} />
+          ) : (
+            introText
+          )}
+        </p>
+      </div>
+    );
+  }
+
+  // phase === "words"
+  return (
+    <div className="py-1 space-y-2">
+      <p className="text-xs text-white/30 font-medium uppercase tracking-wider">◆ House</p>
+      <p className="text-sm text-white/50 italic">{introText}</p>
+      <div className="flex gap-3 ml-3">
+        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-red-900/30 flex items-center justify-center text-sm">
+          💀
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2 mb-0.5">
+            <span className="text-xs font-semibold text-red-300/60">{playerName}</span>
+            <span className="text-xs text-red-400/40 italic">last words</span>
+          </div>
+          <p className="text-sm text-white/50 italic leading-relaxed break-words">
+            <Typewriter
+              text={entry.text}
+              rate="last-words"
+              onComplete={() => setPhase("done")}
+            />
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // WebSocket hook
 // ---------------------------------------------------------------------------
 
@@ -503,8 +795,16 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
   const [messages, setMessages] = useState<TranscriptEntry[]>(initialMessages ?? []);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [replayIndex, setReplayIndex] = useState<number>(0);
+  const [activeTransition, setActiveTransition] = useState<TransitionState | null>(null);
   // Negative IDs for live WS messages (avoids collision with positive DB ids)
   const msgIdRef = useRef(-1);
+  // maxRounds ref so handleWsEvent can access it without being a dep
+  const maxRoundsRef = useRef<number>(initialGame?.maxRounds ?? 9);
+  // Track players whose next public message is their elimination last words.
+  // Map: playerId → true (present = awaiting last words)
+  const awaitingLastWordsRef = useRef<Set<string>>(new Set());
+  // Set of message IDs that should render as last-words choreography
+  const [lastWordsIds, setLastWordsIds] = useState<ReadonlySet<number>>(new Set());
 
   // Fetch game data client-side if not provided via props
   useEffect(() => {
@@ -520,6 +820,7 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
       try {
         const gameData = await getGame(gameId);
         setGame(gameData);
+        maxRoundsRef.current = gameData.maxRounds;
         if (gameData.status === "completed" || gameData.status === "cancelled") {
           const transcript = await getGameTranscript(gameId);
           setMessages(transcript);
@@ -598,16 +899,44 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
         setMessages(msgs);
         break;
       }
-      case "phase_change":
+      case "phase_change": {
         setGame((g) => g ? { ...g, currentPhase: ev.phase, currentRound: ev.round } : g);
+        // Show transition overlay in live mode (not on END phase — no point)
+        if (ev.phase !== "END" && ev.phase !== "INIT") {
+          const flavors = PHASE_FLAVORS[ev.phase] ?? [];
+          const flavorText =
+            flavors.length > 0
+              ? flavors[Math.floor(Math.random() * flavors.length)]
+              : "";
+          setActiveTransition({
+            phase: ev.phase,
+            round: ev.round,
+            maxRounds: maxRoundsRef.current,
+            aliveCount: ev.alivePlayers.length,
+            flavorText,
+          });
+        }
         break;
+      }
       case "message": {
         const id = msgIdRef.current--;
         const msg = wsEntryToTranscriptEntry(ev.entry, gameId, id);
+        // If this is the first public message from a player awaiting last-words,
+        // mark it and remove them from the awaiting set.
+        if (
+          ev.entry.scope === "public" &&
+          ev.entry.from !== "SYSTEM" &&
+          awaitingLastWordsRef.current.has(ev.entry.from)
+        ) {
+          awaitingLastWordsRef.current.delete(ev.entry.from);
+          setLastWordsIds((prev) => new Set([...prev, id]));
+        }
         setMessages((m) => [...m, msg]);
         break;
       }
       case "player_eliminated":
+        // Register this player as awaiting their last-words message
+        awaitingLastWordsRef.current.add(ev.playerId);
         setGame((g) => {
           if (!g) return g;
           const found = g.players.some((p) => p.id === ev.playerId);
@@ -665,6 +994,7 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
 
   // Replay: visible messages up to replayIndex
   const visibleMessages = isReplay ? messages.slice(0, replayIndex + 1) : messages;
+  const isSpeedrun = game.viewerMode === "speedrun";
 
   // Replay state: reconstruct current phase/round from visible messages
   const replayGame: GameDetail = isReplay
@@ -676,6 +1006,15 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
     : game;
 
   return (
+    <>
+      {/* Phase transition overlay — live mode only, not replay */}
+      {activeTransition && !isReplay && (
+        <PhaseTransitionOverlay
+          transition={activeTransition}
+          onDismiss={() => setActiveTransition(null)}
+        />
+      )}
+
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_240px] gap-4">
       {/* Left: main feed */}
       <div className="flex flex-col min-h-0">
@@ -722,6 +1061,18 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
                   />
                 );
               }
+              // Last-words messages get the elimination choreography component
+              if (lastWordsIds.has(item.entry.id)) {
+                return (
+                  <LastWordsMessage
+                    key={item.entry.id}
+                    entry={item.entry}
+                    players={game.players}
+                    speedrun={isSpeedrun}
+                    isReplay={isReplay}
+                  />
+                );
+              }
               return <MessageBubble key={item.entry.id} msg={item.entry} players={game.players} />;
             })
           )}
@@ -745,5 +1096,6 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
         <PlayerRoster players={game.players} />
       </div>
     </div>
+    </>
   );
 }
