@@ -697,6 +697,109 @@ function WhisperPhaseView({
 }
 
 // ---------------------------------------------------------------------------
+// Reveal choreography panel (REVEAL + COUNCIL phases)
+// ---------------------------------------------------------------------------
+
+/**
+ * Single message item in the reveal stage — House messages are centered and
+ * styled dramatically; player messages use regular bubble styling.
+ * All-caps runs (e.g., "ATLAS" or "VERA — 4 VOTES") get a highlight treatment.
+ */
+function RevealMessageItem({
+  msg,
+  players,
+}: {
+  msg: TranscriptEntry;
+  players: GamePlayer[];
+}) {
+  const isHouse = !msg.fromPlayerId || msg.scope === "system";
+
+  if (isHouse) {
+    // Detect all-caps player name announcement (e.g., "ATLAS — 3 VOTES")
+    const isAnnouncement = /\b[A-Z]{3,}\b/.test(msg.text);
+    return (
+      <div className="text-center py-3 animate-[fadeIn_0.4s_ease-out]">
+        {isAnnouncement ? (
+          <p className="text-xl md:text-2xl font-bold tracking-widest text-red-300">
+            {msg.text}
+          </p>
+        ) : (
+          <p className="text-sm md:text-base text-white/55 italic">{msg.text}</p>
+        )}
+      </div>
+    );
+  }
+
+  const player = players.find((p) => p.id === msg.fromPlayerId);
+  const name = msg.fromPlayerName ?? player?.name ?? "Unknown";
+  return (
+    <div className="flex gap-3 animate-[fadeIn_0.4s_ease-out]">
+      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-sm">
+        {player ? personaEmoji(player.persona) : "?"}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold text-white/70 mb-0.5">{name}</p>
+        <p className="text-sm text-white/60 leading-relaxed break-words">{msg.text}</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * RevealModeView — replaces the main stage during REVEAL/COUNCIL phases.
+ * Messages are shown progressively as they're drained from the reveal queue.
+ * While waiting for the next message, a pulsing ellipsis signals more is coming.
+ */
+function RevealModeView({
+  shown,
+  pendingCount,
+  players,
+  phase,
+}: {
+  shown: TranscriptEntry[];
+  pendingCount: number;
+  players: GamePlayer[];
+  phase: PhaseKey;
+}) {
+  const feedRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (feedRef.current) {
+      feedRef.current.scrollTop = feedRef.current.scrollHeight;
+    }
+  }, [shown]);
+
+  const color = phase === "REVEAL" ? "text-pink-400/60" : "text-red-400/60";
+  const label = phase === "REVEAL" ? "REVEAL" : "COUNCIL VOTE";
+
+  return (
+    <div
+      ref={feedRef}
+      className="border border-pink-900/20 bg-pink-950/5 rounded-xl flex-1 overflow-y-auto p-6 min-h-[420px] max-h-[600px] space-y-4"
+    >
+      {shown.length === 0 && (
+        <div className="text-center mt-16">
+          <p className={`text-xs font-semibold uppercase tracking-[0.3em] mb-3 ${color}`}>
+            ◆ {label} ◆
+          </p>
+          <p className="text-xs text-white/20 animate-pulse">The votes are in…</p>
+        </div>
+      )}
+
+      {shown.map((msg) => (
+        <RevealMessageItem key={msg.id} msg={msg} players={players} />
+      ))}
+
+      {pendingCount > 0 && (
+        <div className="text-center py-2">
+          <p className="text-xs text-white/20 animate-pulse tracking-widest">…</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Endgame entry screens — Reckoning / Tribunal / Judgment
 // ---------------------------------------------------------------------------
 
@@ -1241,6 +1344,13 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
   // Endgame entry screens
   const [activeEndgame, setActiveEndgame] = useState<EndgameScreenState | null>(null);
   const prevAliveCountRef = useRef<number | null>(null);
+  // Reveal choreography queue (REVEAL + COUNCIL phases, live mode only)
+  const [revealQueue, setRevealQueue] = useState<TranscriptEntry[]>([]);
+  const [revealShown, setRevealShown] = useState<TranscriptEntry[]>([]);
+  // Track phase in a ref so handleWsEvent (useCallback) can access it without stale closure
+  const currentPhaseRef = useRef<PhaseKey>("INIT");
+  // Speedrun flag — derive early so useEffects can use it as dependency
+  const isSpeedrun = game?.viewerMode === "speedrun";
   // Diary Room tab state
   const [activeTab, setActiveTab] = useState<"stage" | "diary">("stage");
   const [newDiaryCount, setNewDiaryCount] = useState(0);
@@ -1297,6 +1407,42 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
       feedRef.current.scrollTop = feedRef.current.scrollHeight;
     }
   }, [messages, isReplay]);
+
+  // Drain reveal queue — release one message every 1.5s (or instantly in speedrun)
+  useEffect(() => {
+    if (revealQueue.length === 0 || isReplay) return;
+
+    if (isSpeedrun) {
+      setRevealShown((s) => [...s, ...revealQueue]);
+      setRevealQueue([]);
+      return;
+    }
+
+    const HOLD_MS = 1500;
+    const timer = setTimeout(() => {
+      setRevealQueue((q) => {
+        if (q.length === 0) return q;
+        const [next, ...rest] = q;
+        setRevealShown((s) => [...s, next]);
+        // Audio cues for specific reveal events
+        if (next.fromPlayerId === null || next.scope === "system") {
+          const text = next.text.toUpperCase();
+          if (text.includes("POWER") && text.includes("TOKEN")) {
+            audioCue.sting("empower_reveal");
+          } else if (text.includes("COUNCIL") && text.includes("NOMINATE")) {
+            audioCue.sting("council_nominees");
+          } else if (text.includes("ELIMINATE") && text.includes("DIRECTLY")) {
+            audioCue.sting("auto_elimination");
+          } else if (text.includes("TIE")) {
+            audioCue.sting("tiebreak");
+          }
+        }
+        return rest;
+      });
+    }, HOLD_MS);
+
+    return () => clearTimeout(timer);
+  }, [revealQueue, isReplay, isSpeedrun]);
 
   // Auth session events from Privy / login flow
   useEffect(() => {
@@ -1413,7 +1559,24 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
         break;
       }
       case "phase_change": {
+        const prevPhase = currentPhaseRef.current;
+        currentPhaseRef.current = ev.phase as PhaseKey;
         setGame((g) => g ? { ...g, currentPhase: ev.phase, currentRound: ev.round } : g);
+        // When entering REVEAL: reset reveal panel for new round
+        if (ev.phase === "REVEAL") {
+          setRevealShown([]);
+          setRevealQueue([]);
+        }
+        // When leaving REVEAL or COUNCIL: flush any remaining queued messages
+        if ((prevPhase === "REVEAL" || prevPhase === "COUNCIL") &&
+            ev.phase !== "REVEAL" && ev.phase !== "COUNCIL") {
+          setRevealQueue((q) => {
+            if (q.length > 0) {
+              setRevealShown((s) => [...s, ...q]);
+            }
+            return [];
+          });
+        }
         // Audio zone transitions
         if (ev.phase === "INTRODUCTION") audioCue.zone("ambient");
         else if (ev.phase === "WHISPER" || ev.phase === "VOTE") audioCue.zone("tension");
@@ -1452,6 +1615,15 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
         // Badge count for diary entries arriving while user is on Main Stage tab
         if (ev.entry.scope === "diary" && activeTabRef.current !== "diary") {
           setNewDiaryCount((n) => n + 1);
+        }
+        // Queue messages during REVEAL/COUNCIL for reveal choreography
+        const phase = currentPhaseRef.current;
+        if (
+          (phase === "REVEAL" || phase === "COUNCIL") &&
+          ev.entry.scope !== "diary" &&
+          ev.entry.scope !== "whisper"
+        ) {
+          setRevealQueue((q) => [...q, msg]);
         }
         setMessages((m) => [...m, msg]);
         break;
@@ -1524,7 +1696,6 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
 
   // Replay: visible messages up to replayIndex
   const visibleMessages = isReplay ? messages.slice(0, replayIndex + 1) : messages;
-  const isSpeedrun = game.viewerMode === "speedrun";
 
   // Replay state: reconstruct current phase/round from visible messages
   const replayGame: GameDetail = isReplay
@@ -1610,7 +1781,7 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
           />
         )}
 
-        {/* Main Stage: Whisper phase quiet-state OR regular message feed */}
+        {/* Main Stage: Whisper phase quiet-state */}
         {activeTab === "stage" && replayGame.currentPhase === "WHISPER" && !isReplay && (
           <WhisperPhaseView
             whisperMessages={visibleMessages.filter((m) => m.scope === "whisper")}
@@ -1620,8 +1791,23 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
           />
         )}
 
-        {/* Main Stage message feed */}
-        {activeTab === "stage" && (replayGame.currentPhase !== "WHISPER" || isReplay) && (
+        {/* Main Stage: Reveal choreography panel (REVEAL/COUNCIL, live mode) */}
+        {activeTab === "stage" &&
+          (replayGame.currentPhase === "REVEAL" || replayGame.currentPhase === "COUNCIL") &&
+          !isReplay && (
+            <RevealModeView
+              shown={revealShown}
+              pendingCount={revealQueue.length}
+              players={game.players}
+              phase={replayGame.currentPhase}
+            />
+          )}
+
+        {/* Main Stage message feed (all other phases + replay) */}
+        {activeTab === "stage" &&
+          replayGame.currentPhase !== "WHISPER" &&
+          (isReplay ||
+            (replayGame.currentPhase !== "REVEAL" && replayGame.currentPhase !== "COUNCIL")) && (
           <div
             ref={feedRef}
             className="border border-white/10 rounded-xl flex-1 overflow-y-auto p-4 space-y-3 min-h-[420px] max-h-[600px]"
