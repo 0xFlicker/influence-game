@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { getGame, getGameTranscript, type GameDetail, type GamePlayer, type TranscriptEntry, type WsGameEvent, type WsTranscriptEntry, type PhaseKey, type TranscriptScope } from "@/lib/api";
+import { getGame, getGameTranscript, getAuthToken, type GameDetail, type GamePlayer, type TranscriptEntry, type WsGameEvent, type WsTranscriptEntry, type PhaseKey, type TranscriptScope } from "@/lib/api";
 import { Typewriter } from "@/components/typewriter";
 
 // ---------------------------------------------------------------------------
@@ -857,6 +857,121 @@ function LastWordsMessage({
 }
 
 // ---------------------------------------------------------------------------
+// Diary Room panel
+// ---------------------------------------------------------------------------
+
+/**
+ * Card for a single voluntary diary reflection (no paired House question).
+ */
+function DiaryEntryCard({
+  entry,
+  players,
+}: {
+  entry: TranscriptEntry;
+  players: GamePlayer[];
+}) {
+  const [open, setOpen] = useState(true);
+  const playerName = entry.fromPlayerId
+    ? entry.fromPlayerId.replace(/ \(juror\)$/, "")
+    : "Unknown";
+  const player = players.find((p) => p.name === playerName);
+  const roundLabel = `Round ${entry.round}`;
+
+  return (
+    <div className="border border-purple-900/40 bg-purple-950/15 rounded-lg overflow-hidden text-xs">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-purple-900/20 transition-colors"
+      >
+        <span className="font-semibold uppercase tracking-wider text-purple-400/70">📔 Diary</span>
+        {player && (
+          <span className="text-purple-300/60 flex items-center gap-1">
+            <span>{personaEmoji(player.persona)}</span>
+            <span>{player.name}</span>
+          </span>
+        )}
+        {!player && playerName && (
+          <span className="text-purple-300/50">{playerName}</span>
+        )}
+        <span className="text-purple-400/35 text-xs ml-auto">{roundLabel}</span>
+        <span className="text-purple-400/30 ml-2">{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open && (
+        <div className="px-3 pb-3">
+          <p className="text-white/55 leading-relaxed italic">{entry.text}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Dedicated Diary Room panel — card-based confessional view.
+ * Access-gated: anonymous viewers see a sign-in prompt.
+ */
+function DiaryRoomPanel({
+  messages,
+  players,
+  isAuthenticated,
+}: {
+  messages: TranscriptEntry[];
+  players: GamePlayer[];
+  isAuthenticated: boolean;
+}) {
+  if (!isAuthenticated) {
+    return (
+      <div className="border border-purple-900/30 bg-purple-950/10 rounded-xl p-12 text-center min-h-[420px] flex flex-col items-center justify-center">
+        <p className="text-3xl mb-4">📓</p>
+        <p className="text-white/60 font-medium mb-2">Diary Room is locked</p>
+        <p className="text-white/30 text-xs leading-relaxed max-w-xs">
+          Sign in to read uncensored agent confessions — every operative&apos;s true thoughts.
+        </p>
+      </div>
+    );
+  }
+
+  const diaryMessages = messages.filter((m) => m.scope === "diary");
+
+  if (diaryMessages.length === 0) {
+    return (
+      <div className="border border-purple-900/30 bg-purple-950/10 rounded-xl p-12 text-center text-purple-300/30 text-sm min-h-[420px] flex items-center justify-center">
+        No diary entries yet.
+      </div>
+    );
+  }
+
+  const grouped = groupMessages(diaryMessages);
+
+  return (
+    <div className="border border-purple-900/30 bg-purple-950/10 rounded-xl flex-1 overflow-y-auto p-4 space-y-3 min-h-[420px] max-h-[600px]">
+      {grouped.map((item, idx) => {
+        if (item.kind === "diary_pair") {
+          return (
+            <DiaryQACard
+              key={item.id}
+              question={item.question}
+              answer={item.answer}
+              players={players}
+            />
+          );
+        }
+        if (item.kind === "diary_orphan_answer") {
+          return (
+            <DiaryEntryCard
+              key={`diary-${item.answer.id}-${idx}`}
+              entry={item.answer}
+              players={players}
+            />
+          );
+        }
+        return null;
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // WebSocket hook
 // ---------------------------------------------------------------------------
 
@@ -985,6 +1100,15 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
   // Endgame entry screens
   const [activeEndgame, setActiveEndgame] = useState<EndgameScreenState | null>(null);
   const prevAliveCountRef = useRef<number | null>(null);
+  // Diary Room tab state
+  const [activeTab, setActiveTab] = useState<"stage" | "diary">("stage");
+  const [newDiaryCount, setNewDiaryCount] = useState(0);
+  const activeTabRef = useRef<"stage" | "diary">("stage");
+  activeTabRef.current = activeTab;
+  // Auth state (for diary room gate)
+  const [isAuthenticated, setIsAuthenticated] = useState(() =>
+    typeof window !== "undefined" ? !!getAuthToken() : false,
+  );
 
   // Fetch game data client-side if not provided via props
   useEffect(() => {
@@ -1024,6 +1148,18 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
       feedRef.current.scrollTop = feedRef.current.scrollHeight;
     }
   }, [messages, isReplay]);
+
+  // Auth session events from Privy / login flow
+  useEffect(() => {
+    const onReady = () => setIsAuthenticated(true);
+    const onExpired = () => setIsAuthenticated(false);
+    window.addEventListener("auth:session-ready", onReady);
+    window.addEventListener("auth:expired", onExpired);
+    return () => {
+      window.removeEventListener("auth:session-ready", onReady);
+      window.removeEventListener("auth:expired", onExpired);
+    };
+  }, []);
 
   // Trigger endgame entry screens when alive count crosses a threshold
   useEffect(() => {
@@ -1133,6 +1269,10 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
           awaitingLastWordsRef.current.delete(ev.entry.from);
           setLastWordsIds((prev) => new Set([...prev, id]));
         }
+        // Badge count for diary entries arriving while user is on Main Stage tab
+        if (ev.entry.scope === "diary" && activeTabRef.current !== "diary") {
+          setNewDiaryCount((n) => n + 1);
+        }
         setMessages((m) => [...m, msg]);
         break;
       }
@@ -1226,67 +1366,103 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
       )}
 
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_240px] gap-4">
-      {/* Left: main feed */}
+      {/* Left: main feed + diary room panel */}
       <div className="flex flex-col min-h-0">
         {/* Phase header */}
         <PhaseHeader game={replayGame} isReplay={isReplay} />
 
-        {/* Connection badge */}
-        <div className="flex items-center justify-between mb-2 px-1">
-          <ConnectionBadge status={connStatus} />
-          {!isReplay && (
-            <span className="text-xs text-white/20">
-              {messages.length} message{messages.length !== 1 ? "s" : ""}
-            </span>
-          )}
+        {/* Tab toggle: Main Stage | Diary Room */}
+        <div className="flex items-center gap-1 mb-3">
+          <button
+            onClick={() => setActiveTab("stage")}
+            className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
+              activeTab === "stage"
+                ? "bg-white/10 text-white"
+                : "text-white/40 hover:text-white/70"
+            }`}
+          >
+            💬 Main Stage
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab("diary");
+              setNewDiaryCount(0);
+            }}
+            className={`relative text-xs px-3 py-1.5 rounded-lg transition-colors ${
+              activeTab === "diary"
+                ? "bg-purple-900/30 text-purple-300"
+                : "text-white/40 hover:text-white/70"
+            }`}
+          >
+            📓 Diary Room
+            {newDiaryCount > 0 && (
+              <span className="absolute -top-1 -right-1 text-[10px] bg-purple-600 text-white rounded-full w-4 h-4 flex items-center justify-center leading-none">
+                {newDiaryCount > 9 ? "9+" : newDiaryCount}
+              </span>
+            )}
+          </button>
+
+          {/* Connection badge pushed to right */}
+          <div className="ml-auto flex items-center gap-3">
+            <ConnectionBadge status={connStatus} />
+            {!isReplay && activeTab === "stage" && (
+              <span className="text-xs text-white/20">
+                {messages.filter((m) => m.scope !== "diary").length} messages
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* Message feed */}
-        <div
-          ref={feedRef}
-          className="border border-white/10 rounded-xl flex-1 overflow-y-auto p-4 space-y-3 min-h-[420px] max-h-[600px]"
-        >
-          {visibleMessages.length === 0 ? (
-            <p className="text-center text-white/20 text-sm mt-16">
-              {isReplay ? "No messages in replay." : "Waiting for game to begin…"}
-            </p>
-          ) : (
-            groupMessages(visibleMessages).map((item, idx) => {
-              if (item.kind === "diary_pair") {
-                return (
-                  <DiaryQACard
-                    key={item.id}
-                    question={item.question}
-                    answer={item.answer}
-                    players={game.players}
-                  />
-                );
-              }
-              if (item.kind === "diary_orphan_answer") {
-                return (
-                  <MessageBubble
-                    key={`orphan-${item.answer.id}-${idx}`}
-                    msg={item.answer}
-                    players={game.players}
-                  />
-                );
-              }
-              // Last-words messages get the elimination choreography component
-              if (lastWordsIds.has(item.entry.id)) {
-                return (
-                  <LastWordsMessage
-                    key={item.entry.id}
-                    entry={item.entry}
-                    players={game.players}
-                    speedrun={isSpeedrun}
-                    isReplay={isReplay}
-                  />
-                );
-              }
-              return <MessageBubble key={item.entry.id} msg={item.entry} players={game.players} />;
-            })
-          )}
-        </div>
+        {/* Diary Room panel */}
+        {activeTab === "diary" && (
+          <DiaryRoomPanel
+            messages={visibleMessages}
+            players={game.players}
+            isAuthenticated={isAuthenticated}
+          />
+        )}
+
+        {/* Main Stage message feed */}
+        {activeTab === "stage" && (
+          <div
+            ref={feedRef}
+            className="border border-white/10 rounded-xl flex-1 overflow-y-auto p-4 space-y-3 min-h-[420px] max-h-[600px]"
+          >
+            {visibleMessages.filter((m) => m.scope !== "diary").length === 0 ? (
+              <p className="text-center text-white/20 text-sm mt-16">
+                {isReplay ? "No messages in replay." : "Waiting for game to begin…"}
+              </p>
+            ) : (
+              groupMessages(visibleMessages.filter((m) => m.scope !== "diary")).map(
+                (item, idx) => {
+                  // Last-words messages get the elimination choreography component
+                  if (item.kind === "msg" && lastWordsIds.has(item.entry.id)) {
+                    return (
+                      <LastWordsMessage
+                        key={item.entry.id}
+                        entry={item.entry}
+                        players={game.players}
+                        speedrun={isSpeedrun}
+                        isReplay={isReplay}
+                      />
+                    );
+                  }
+                  if (item.kind === "msg") {
+                    return (
+                      <MessageBubble
+                        key={item.entry.id}
+                        msg={item.entry}
+                        players={game.players}
+                      />
+                    );
+                  }
+                  // diary_pair / diary_orphan_answer won't appear (filtered out above)
+                  return null;
+                },
+              )
+            )}
+          </div>
+        )}
 
         {/* Replay controls */}
         {isReplay && messages.length > 0 && (
