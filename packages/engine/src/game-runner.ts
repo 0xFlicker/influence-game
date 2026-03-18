@@ -1143,6 +1143,17 @@ export class GameRunner {
     const candidates = this.gameState.councilCandidates;
     const empoweredId = this.gameState.empoweredId;
 
+    // This player's previous diary entries for follow-up continuity
+    const previousDiaryEntries = this.diaryEntries
+      .filter((d) => d.agentName === agentName)
+      .map((d) => ({ round: d.round, question: d.question, answer: d.answer }));
+
+    // What this specific player said recently in public phases
+    const playerMessages = this.publicMessages
+      .filter((m) => m.from === agentName)
+      .slice(-5)
+      .map((m) => ({ text: m.text, phase: m.phase }));
+
     return {
       precedingPhase,
       round: this.gameState.round,
@@ -1155,6 +1166,8 @@ export class GameRunner {
         ? [this.gameState.getPlayerName(candidates[0]), this.gameState.getPlayerName(candidates[1])]
         : null,
       recentMessages: this.publicMessages.slice(-8),
+      previousDiaryEntries,
+      playerMessages,
     };
   }
 

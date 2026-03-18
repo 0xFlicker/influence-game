@@ -33,6 +33,10 @@ export interface DiaryRoomContext {
   councilCandidates: [string, string] | null;
   /** Recent public messages for context */
   recentMessages: Array<{ from: string; text: string; phase: Phase }>;
+  /** This player's previous diary room Q&A entries */
+  previousDiaryEntries?: Array<{ round: number; question: string; answer: string }>;
+  /** Messages this specific player sent recently */
+  playerMessages?: Array<{ text: string; phase: Phase }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -62,8 +66,10 @@ Your personality:
 Rules:
 - Ask exactly ONE question (can be multi-part)
 - Keep it to 1-2 sentences
-- Make it specific to what just happened — reference actual events, names, and dynamics
-- Never be generic or formulaic
+- Make it specific to what just happened — reference actual player names, quotes, and events
+- NEVER ask generic questions like "what's on your mind?" or "what's your strategy?"
+- NEVER repeat a question you've already asked this player — always find a new angle
+- If you have their previous diary answers, challenge contradictions or probe deeper
 - Respond with ONLY the question text, nothing else`;
 
 export class LLMHouseInterviewer implements IHouseInterviewer {
@@ -120,11 +126,25 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       empoweredName,
       councilCandidates,
       recentMessages,
+      previousDiaryEntries,
+      playerMessages,
     } = context;
 
     const recentMsgText = recentMessages
       .slice(-8)
       .map((m) => `  [${m.phase}] ${m.from}: "${m.text}"`)
+      .join("\n");
+
+    // What this specific player said recently
+    const playerMsgText = (playerMessages ?? [])
+      .slice(-5)
+      .map((m) => `  [${m.phase}] "${m.text}"`)
+      .join("\n");
+
+    // Previous diary Q&A for follow-up continuity
+    const prevDiaryText = (previousDiaryEntries ?? [])
+      .slice(-2)
+      .map((d) => `  Round ${d.round} — Q: "${d.question}" A: "${d.answer}"`)
       .join("\n");
 
     let situationContext = "";
@@ -169,10 +189,14 @@ ${councilCandidates ? `- Council candidates: ${councilCandidates[0]} vs ${counci
 ## Situation
 ${situationContext}
 
-## Recent Public Messages
-${recentMsgText || "(none yet)"}
+## What ${agentName} Said Recently
+${playerMsgText || "(nothing notable)"}
 
-Ask ${agentName} a sharp, specific diary room question about their situation right now.`;
+## Recent Public Messages (other players)
+${recentMsgText || "(none yet)"}
+${prevDiaryText ? `\n## ${agentName}'s Previous Diary Entries\n${prevDiaryText}\n\nDo NOT repeat or rephrase previous questions. Build on what they revealed — call out contradictions, probe deeper, or challenge them on new developments since their last answer.` : ""}
+
+Ask ${agentName} a sharp, specific diary room question about THEIR situation right now. Reference a specific name, event, or statement from above.`;
   }
 }
 
