@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
-import { listGames, stopGame, startGame, type GameSummary } from "@/lib/api";
+import { listGames, stopGame, startGame, fillGame, type GameSummary } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -87,7 +87,7 @@ function GameCard({ game, onRefresh }: { game: GameSummary; onRefresh: () => voi
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
         <Link
-          href={`/games/${game.id}`}
+          href={`/games/${game.slug ?? game.id}`}
           className="text-xs border border-white/15 hover:border-white/30 text-white/70 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
         >
           View
@@ -111,6 +111,20 @@ function GameCard({ game, onRefresh }: { game: GameSummary; onRefresh: () => voi
 function WaitingGameCard({ game, onRefresh }: { game: GameSummary; onRefresh: () => void }) {
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [filling, setFilling] = useState(false);
+
+  async function handleFill() {
+    setFilling(true);
+    try {
+      const result = await fillGame(game.id);
+      alert(`Added ${result.filled} AI players (${result.totalPlayers}/${result.maxPlayers} total)`);
+      onRefresh();
+    } catch (err) {
+      alert(`Failed to fill game: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setFilling(false);
+    }
+  }
 
   async function handleStart() {
     setStarting(true);
@@ -147,11 +161,18 @@ function WaitingGameCard({ game, onRefresh }: { game: GameSummary; onRefresh: ()
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
         <Link
-          href={`/games/${game.id}`}
+          href={`/games/${game.slug ?? game.id}`}
           className="text-xs border border-white/15 hover:border-white/30 text-white/70 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
         >
           View
         </Link>
+        <button
+          onClick={handleFill}
+          disabled={filling}
+          className="text-xs border border-indigo-900/50 hover:border-indigo-700 text-indigo-400/70 hover:text-indigo-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+        >
+          {filling ? "…" : "Fill AI"}
+        </button>
         <button
           onClick={handleStart}
           disabled={starting}
@@ -225,7 +246,7 @@ function RecentGameRow({ game }: { game: GameSummary }) {
       </td>
       <td className="py-3 px-4">
         <Link
-          href={`/games/${game.id}`}
+          href={`/games/${game.slug ?? game.id}`}
           className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors"
         >
           View →

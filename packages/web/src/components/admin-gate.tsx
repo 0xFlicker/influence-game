@@ -1,28 +1,44 @@
 "use client";
 
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { usePrivy } from "@privy-io/react-auth";
-import { useAccount } from "wagmi";
-
-// Address that 10xeng.eth resolves to. Set NEXT_PUBLIC_ADMIN_ADDRESS to override.
-const ADMIN_ADDRESS =
-  (process.env.NEXT_PUBLIC_ADMIN_ADDRESS ?? "").toLowerCase();
+import { getMe, getAuthToken } from "@/lib/api";
 
 export function AdminGate({ children }: { children: React.ReactNode }) {
   const { ready, authenticated, login } = usePrivy();
-  const { address } = useAccount();
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (process.env.NODE_ENV === "development" && ADMIN_ADDRESS === "") {
-      console.warn(
-        "[AdminGate] NEXT_PUBLIC_ADMIN_ADDRESS is not set. " +
-        "The admin panel will show \"Access denied\" for every wallet. " +
-        "Set this to the resolved address of 10xeng.eth (or your dev wallet) in .env.local.",
-      );
+    if (!ready || !authenticated) {
+      setIsAdmin(null);
+      setLoading(false);
+      return;
     }
-  }, []);
 
-  if (!ready) {
+    // Wait for session token to be available
+    const token = getAuthToken();
+    if (!token) {
+      // Listen for the session-ready event from AuthSync
+      const handleReady = () => {
+        fetchRoles();
+      };
+      window.addEventListener("auth:session-ready", handleReady);
+      return () => window.removeEventListener("auth:session-ready", handleReady);
+    }
+
+    fetchRoles();
+
+    function fetchRoles() {
+      setLoading(true);
+      getMe()
+        .then((me) => setIsAdmin(me.roles.isAdmin))
+        .catch(() => setIsAdmin(false))
+        .finally(() => setLoading(false));
+    }
+  }, [ready, authenticated]);
+
+  if (!ready || loading) {
     return (
       <div className="flex items-center justify-center min-h-64">
         <span className="text-white/40 text-sm">Loading...</span>
@@ -44,20 +60,13 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const isAdmin =
-    ADMIN_ADDRESS !== "" &&
-    address?.toLowerCase() === ADMIN_ADDRESS;
-
   if (!isAdmin) {
     return (
       <div className="flex flex-col items-center justify-center min-h-64 gap-2">
         <p className="text-white/60 font-medium">Access denied.</p>
         <p className="text-white/30 text-sm">
-          Admin panel is restricted to the 10xeng.eth wallet.
+          Admin panel is restricted to authorized wallets.
         </p>
-        {address && (
-          <p className="text-white/20 text-xs font-mono mt-2">{address}</p>
-        )}
       </div>
     );
   }

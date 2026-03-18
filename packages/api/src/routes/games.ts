@@ -12,7 +12,7 @@
  */
 
 import { Hono } from "hono";
-import { eq, and, inArray, asc } from "drizzle-orm";
+import { eq, and, inArray, asc, or } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -24,6 +24,10 @@ import {
   type AuthEnv,
 } from "../middleware/auth.js";
 import { startGame, isGameRunning } from "../services/game-lifecycle.js";
+import { generateUniqueSlug } from "../lib/slug.js";
+import { generatePersona, pickAgentNames, pickArchetypes } from "@influence/engine";
+import type { Personality } from "@influence/engine";
+import OpenAI from "openai";
 
 // ---------------------------------------------------------------------------
 // Factory — creates a Hono sub-app with injected DB
@@ -107,10 +111,16 @@ export function createGameRoutes(db: DrizzleDB) {
 
     const gameId = randomUUID();
 
+    const slug = generateUniqueSlug((s) => {
+      const existing = db.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.slug, s)).all();
+      return existing.length > 0;
+    });
+
     const user = c.get("user");
     db.insert(schema.games)
       .values({
         id: gameId,
+        slug,
         config: JSON.stringify(config),
         status: "waiting",
         minPlayers,
@@ -123,7 +133,7 @@ export function createGameRoutes(db: DrizzleDB) {
     const allGames = db.select({ id: schema.games.id }).from(schema.games).all();
     const gameNumber = allGames.length;
 
-    return c.json({ id: gameId, gameNumber }, 201);
+    return c.json({ id: gameId, slug, gameNumber }, 201);
   });
 
   // -------------------------------------------------------------------------
@@ -165,6 +175,7 @@ export function createGameRoutes(db: DrizzleDB) {
 
       return {
         id: game.id,
+        slug: game.slug ?? undefined,
         gameNumber: 0, // Populated below
         status: game.status,
         playerCount: players.length,
@@ -196,12 +207,13 @@ export function createGameRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.get("/api/games/:id", async (c) => {
-    const gameId = c.req.param("id");
+    const idOrSlug = c.req.param("id");
 
+    // Support lookup by UUID or human-readable slug
     const game = db
       .select()
       .from(schema.games)
-      .where(eq(schema.games.id, gameId))
+      .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug)))
       .all()[0];
 
     if (!game) {
@@ -213,22 +225,31 @@ export function createGameRoutes(db: DrizzleDB) {
     const players = db
       .select()
       .from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.gameId, gameId))
+      .where(eq(schema.gamePlayers.gameId, game.id))
       .all();
 
     const result = db
       .select()
       .from(schema.gameResults)
-      .where(eq(schema.gameResults.gameId, gameId))
+      .where(eq(schema.gameResults.gameId, game.id))
       .all();
 
     const winnerPlayer = result[0]?.winnerId
       ? players.find((p) => p.id === result[0]!.winnerId)
       : null;
 
+    // Compute game number from creation order
+    const allGamesOrdered = db
+      .select({ id: schema.games.id, createdAt: schema.games.createdAt })
+      .from(schema.games)
+      .all()
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    const gameNumber = allGamesOrdered.findIndex((g) => g.id === game.id) + 1;
+
     const detail = {
       id: game.id,
-      gameNumber: 0,
+      slug: game.slug ?? undefined,
+      gameNumber,
       status: game.status,
       currentRound: result[0]?.roundsPlayed ?? 0,
       maxRounds: config.maxRounds ?? 10,
@@ -327,6 +348,119 @@ export function createGameRoutes(db: DrizzleDB) {
       .run();
 
     return c.json({ playerId }, 201);
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/games/:id/fill — fill remaining slots with AI players
+  // -------------------------------------------------------------------------
+
+  app.post("/api/games/:id/fill", requireAuth(db), requireAdmin(), async (c) => {
+    const gameId = c.req.param("id");
+
+    const game = db
+      .select()
+      .from(schema.games)
+      .where(eq(schema.games.id, gameId))
+      .all()[0];
+
+    if (!game) {
+      return c.json({ error: "Game not found" }, 404);
+    }
+
+    if (game.status !== "waiting") {
+      return c.json({ error: "Game is not in waiting status" }, 400);
+    }
+
+    const currentPlayers = db
+      .select()
+      .from(schema.gamePlayers)
+      .where(eq(schema.gamePlayers.gameId, gameId))
+      .all();
+
+    const slotsToFill = game.maxPlayers - currentPlayers.length;
+    if (slotsToFill <= 0) {
+      return c.json({ error: "Game is already full" }, 400);
+    }
+
+    // Get existing player names and archetypes to avoid duplicates
+    const existingNames = currentPlayers.map((p) => {
+      const persona = JSON.parse(p.persona);
+      return persona.name as string;
+    });
+    const existingArchetypes = currentPlayers.map((p) => {
+      const persona = JSON.parse(p.persona);
+      return (persona.personaKey ?? persona.personality ?? "strategic") as Personality;
+    });
+
+    // Pick names and archetypes
+    const names = pickAgentNames(slotsToFill, existingNames);
+    const archetypes = pickArchetypes(slotsToFill, existingArchetypes);
+
+    // Parse config for model selection
+    const config = JSON.parse(game.config);
+    const agentModel =
+      config.modelTier === "premium"
+        ? "gpt-4o"
+        : config.modelTier === "standard"
+          ? "gpt-4o"
+          : "gpt-4o-mini";
+
+    // Generate personas (with LLM if OPENAI_API_KEY is available)
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+    const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
+
+    const addedPlayers: Array<{ id: string; name: string; archetype: string }> = [];
+
+    for (let i = 0; i < slotsToFill; i++) {
+      const name = names[i] ?? `Agent-${i + 1}`;
+      const archetype = archetypes[i] ?? "strategic";
+
+      let personalityBlurb = "";
+      let strategyHints = "";
+
+      if (openai) {
+        try {
+          const generated = await generatePersona(openai, name, archetype, "gpt-4o-mini");
+          personalityBlurb = generated.personality;
+          strategyHints = generated.strategyHints;
+        } catch {
+          // Falls through to empty strings — engine uses hardcoded prompts anyway
+        }
+      }
+
+      const playerId = randomUUID();
+      const persona = {
+        name,
+        personality: archetype,
+        strategyHints: strategyHints || null,
+        personaKey: archetype,
+        personalityBlurb: personalityBlurb || null,
+      };
+
+      const agentConfig = {
+        model: agentModel,
+        temperature: 0.9,
+      };
+
+      db.insert(schema.gamePlayers)
+        .values({
+          id: playerId,
+          gameId,
+          userId: null,
+          persona: JSON.stringify(persona),
+          agentConfig: JSON.stringify(agentConfig),
+        })
+        .run();
+
+      addedPlayers.push({ id: playerId, name, archetype });
+    }
+
+    return c.json({
+      filled: addedPlayers.length,
+      totalPlayers: currentPlayers.length + addedPlayers.length,
+      maxPlayers: game.maxPlayers,
+      players: addedPlayers,
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -475,6 +609,7 @@ export function createGameRoutes(db: DrizzleDB) {
 
         return {
           gameId: game.id,
+          gameSlug: game.slug ?? undefined,
           gameNumber: gameNumberMap.get(game.id) ?? 0,
           agentName: persona.name ?? "Unknown",
           persona: persona.personaKey ?? "strategic",
@@ -497,17 +632,19 @@ export function createGameRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.get("/api/games/:id/transcript", async (c) => {
-    const gameId = c.req.param("id");
+    const idOrSlug = c.req.param("id");
 
     const game = db
       .select()
       .from(schema.games)
-      .where(eq(schema.games.id, gameId))
+      .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug)))
       .all()[0];
 
     if (!game) {
       return c.json({ error: "Game not found" }, 404);
     }
+
+    const gameId = game.id;
 
     const players = db
       .select()

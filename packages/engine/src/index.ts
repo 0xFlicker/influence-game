@@ -35,6 +35,10 @@ export type { Personality } from "./agent";
 export { LLMHouseInterviewer, TemplateHouseInterviewer } from "./house-interviewer";
 export type { IHouseInterviewer, DiaryRoomContext } from "./house-interviewer";
 
+// Persona generator
+export { generatePersona, pickAgentNames, pickArchetypes } from "./persona-generator";
+export type { GeneratedPersona } from "./persona-generator";
+
 // Token tracking
 export {
   TokenTracker,

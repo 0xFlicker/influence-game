@@ -155,6 +155,7 @@ export function createAuthRoutes(db: DrizzleDB) {
       email: user.email,
       displayName: user.displayName,
       isAdmin,
+      roles: { isAdmin },
     });
   });
 

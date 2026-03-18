@@ -108,6 +108,7 @@ export interface CreateGameParams {
 
 export interface GameSummary {
   id: string;
+  slug?: string;
   gameNumber: number;
   status: GameStatus;
   playerCount: number;
@@ -133,7 +134,7 @@ export interface GameSummary {
 
 export async function createGame(
   params: CreateGameParams,
-): Promise<{ id: string; gameNumber: number }> {
+): Promise<{ id: string; slug: string; gameNumber: number }> {
   return apiFetch("/api/games", {
     method: "POST",
     body: JSON.stringify(params),
@@ -157,9 +158,33 @@ export async function startGame(id: string): Promise<void> {
   await apiFetch(`/api/games/${id}/start`, { method: "POST" });
 }
 
+export interface FillGameResult {
+  filled: number;
+  totalPlayers: number;
+  maxPlayers: number;
+  players: Array<{ id: string; name: string; archetype: string }>;
+}
+
+export async function fillGame(id: string): Promise<FillGameResult> {
+  return apiFetch(`/api/games/${id}/fill`, { method: "POST" });
+}
+
 // ---------------------------------------------------------------------------
 // Auth API calls
 // ---------------------------------------------------------------------------
+
+export interface AuthMe {
+  id: string;
+  walletAddress: string | null;
+  email: string | null;
+  displayName: string | null;
+  isAdmin: boolean;
+  roles: { isAdmin: boolean };
+}
+
+export async function getMe(): Promise<AuthMe> {
+  return apiFetch("/api/auth/me");
+}
 
 export async function loginWithPrivyToken(
   privyToken: string,
@@ -183,6 +208,7 @@ export interface JoinGameConfig {
 
 export interface PlayerGameResult {
   gameId: string;
+  gameSlug?: string;
   gameNumber: number;
   agentName: string;
   persona: PersonaKey;
@@ -264,6 +290,7 @@ export interface TranscriptEntry {
 
 export interface GameDetail {
   id: string;
+  slug?: string;
   gameNumber: number;
   status: GameStatus;
   currentRound: number;
