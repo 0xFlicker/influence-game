@@ -143,9 +143,7 @@ export function createAuthRoutes(db: DrizzleDB) {
   app.get("/api/auth/me", requireAuth(db), async (c) => {
     const user = c.get("user");
 
-    const adminAddress = (
-      process.env.ADMIN_ADDRESS || process.env.NEXT_PUBLIC_ADMIN_ADDRESS
-    )?.toLowerCase();
+    const adminAddress = process.env.ADMIN_ADDRESS?.toLowerCase();
     const isAdmin =
       !!adminAddress &&
       !!user.walletAddress &&

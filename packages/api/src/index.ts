@@ -20,6 +20,25 @@ import {
   type WsConnectionData,
 } from "./services/ws-manager.js";
 
+// ---------------------------------------------------------------------------
+// Startup env validation — crash immediately if required vars are missing
+// ---------------------------------------------------------------------------
+
+const REQUIRED_ENV = [
+  "PRIVY_APP_ID",
+  "PRIVY_APP_SECRET",
+  "JWT_SECRET",
+  "ADMIN_ADDRESS",
+] as const;
+
+const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
+if (missing.length > 0) {
+  console.error(
+    `\n  Missing required environment variables:\n\n${missing.map((k) => `    - ${k}`).join("\n")}\n\n  Set these in Doppler or your .env file and restart.\n`,
+  );
+  process.exit(1);
+}
+
 function getAllowedCorsOrigins(): string[] {
   const origins = (process.env.CORS_ORIGINS ?? process.env.CORS_ORIGIN ?? "")
     .split(",")

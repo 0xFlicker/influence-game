@@ -39,13 +39,10 @@ let _privyClient: PrivyClient | null = null;
 
 function getPrivyClient(): PrivyClient {
   if (!_privyClient) {
-    const appId =
-      process.env.PRIVY_APP_ID || process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+    const appId = process.env.PRIVY_APP_ID;
     const appSecret = process.env.PRIVY_APP_SECRET;
     if (!appId || !appSecret) {
-      throw new Error(
-        "PRIVY_APP_ID (or NEXT_PUBLIC_PRIVY_APP_ID) and PRIVY_APP_SECRET must be set",
-      );
+      throw new Error("PRIVY_APP_ID and PRIVY_APP_SECRET must be set");
     }
     _privyClient = new PrivyClient(appId, appSecret);
   }
@@ -56,23 +53,10 @@ function getPrivyClient(): PrivyClient {
 // JWT helpers
 // ---------------------------------------------------------------------------
 
-let _warnedDevJwt = false;
-
 function getJwtSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    // In development, auto-generate a stable per-process secret so login works
-    // without requiring JWT_SECRET to be explicitly configured.
-    if (!_warnedDevJwt) {
-      console.warn(
-        "[auth] JWT_SECRET not set — using auto-generated dev secret. Set JWT_SECRET in production.",
-      );
-      _warnedDevJwt = true;
-    }
-    // Use PRIVY_APP_SECRET as entropy seed so the secret is stable across restarts
-    // as long as Doppler config doesn't change.
-    const seed = process.env.PRIVY_APP_SECRET ?? "influence-dev-secret";
-    return new TextEncoder().encode(`jwt-derived:${seed}`);
+    throw new Error("JWT_SECRET must be set");
   }
   return new TextEncoder().encode(secret);
 }
@@ -188,9 +172,7 @@ export function requireAdmin() {
       return c.json({ error: "Authentication required" }, 401);
     }
 
-    const adminAddress = (
-      process.env.ADMIN_ADDRESS || process.env.NEXT_PUBLIC_ADMIN_ADDRESS
-    )?.toLowerCase();
+    const adminAddress = process.env.ADMIN_ADDRESS?.toLowerCase();
     if (!adminAddress) {
       return c.json({ error: "Admin access not configured" }, 503);
     }
