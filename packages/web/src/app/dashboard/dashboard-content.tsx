@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
-import { getPlayerGames, type GameSummary, type PlayerGameResult, type PersonaKey } from "@/lib/api";
+import { getAuthToken, getPlayerGames, type GameSummary, type PlayerGameResult, type PersonaKey } from "@/lib/api";
 import { GamesBrowser } from "@/app/games/games-browser";
 import { JoinGameModal } from "./join-game-modal";
 
@@ -168,13 +168,29 @@ export function DashboardContent() {
   const [historyLoading, setHistoryLoading] = useState(true);
 
   useEffect(() => {
-    getPlayerGames()
-      .then(setHistory)
-      .catch(() => {
-        // Not fatal — user may not have played any games yet
-      })
-      .finally(() => setHistoryLoading(false));
-  }, []);
+    function fetchHistory() {
+      if (!getAuthToken()) return;
+      setHistoryLoading(true);
+      getPlayerGames()
+        .then(setHistory)
+        .catch(() => {
+          // Not fatal — user may not have played any games yet
+        })
+        .finally(() => setHistoryLoading(false));
+    }
+
+    if (!authenticated) {
+      setHistoryLoading(false);
+      return;
+    }
+
+    // Fetch immediately if we already have a session token
+    fetchHistory();
+
+    // Also listen for when AuthSync finishes exchanging the Privy token
+    window.addEventListener("auth:session-ready", fetchHistory);
+    return () => window.removeEventListener("auth:session-ready", fetchHistory);
+  }, [authenticated]);
 
   const wins = history.filter((h) => h.winner).length;
   const played = history.length;

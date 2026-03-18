@@ -22,6 +22,7 @@ export function getAuthToken(): string | null {
 export function setAuthToken(token: string): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(TOKEN_KEY, token);
+  window.dispatchEvent(new CustomEvent("auth:session-ready"));
 }
 
 export function clearAuthToken(): void {
@@ -63,7 +64,7 @@ export async function apiFetch<T>(
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    if (res.status === 401 && typeof window !== "undefined") {
+    if (res.status === 401 && typeof window !== "undefined" && token) {
       clearAuthToken();
       window.dispatchEvent(new CustomEvent("auth:expired"));
     }
