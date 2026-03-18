@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { getGame, getGameTranscript, getAuthToken, type GameDetail, type GamePlayer, type TranscriptEntry, type WsGameEvent, type WsTranscriptEntry, type PhaseKey, type TranscriptScope } from "@/lib/api";
 import { Typewriter } from "@/components/typewriter";
+import { audioCue } from "@/lib/audio-cues";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1319,6 +1320,8 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
         .filter((p) => p.status === "eliminated")
         .map((p) => p.name);
       const alive = game.players.filter((p) => p.status === "alive");
+      // Audio sting for endgame entry
+      if (aliveCount === 4) audioCue.sting("endgame_reckoning");
       setActiveEndgame({
         stage: aliveCount === 4 ? "reckoning" : aliveCount === 3 ? "tribunal" : "judgment",
         finalists:
@@ -1376,10 +1379,14 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
             players: Array.from(playerMap.values()),
           };
         });
-        // Detect shield state changes to trigger shatter animation
+        // Detect shield state changes to trigger shatter animation + audio
         const newlyUnshielded: string[] = [];
         for (const ap of snapshot.alivePlayers) {
           const wasShielded = prevShieldedRef.current.get(ap.id);
+          if (wasShielded === false && ap.shielded) {
+            // Shield just granted
+            audioCue.sting("shield_granted");
+          }
           if (wasShielded === true && !ap.shielded) {
             newlyUnshielded.push(ap.id);
           }
@@ -1407,6 +1414,11 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
       }
       case "phase_change": {
         setGame((g) => g ? { ...g, currentPhase: ev.phase, currentRound: ev.round } : g);
+        // Audio zone transitions
+        if (ev.phase === "INTRODUCTION") audioCue.zone("ambient");
+        else if (ev.phase === "WHISPER" || ev.phase === "VOTE") audioCue.zone("tension");
+        else if (ev.phase === "REVEAL" || ev.phase === "COUNCIL") audioCue.zone("drama");
+        else if (ev.phase === "LOBBY" || ev.phase === "RUMOR") audioCue.zone("resolution");
         // Show transition overlay in live mode (not on END phase — no point)
         if (ev.phase !== "END" && ev.phase !== "INIT") {
           const flavors = PHASE_FLAVORS[ev.phase] ?? [];
@@ -1450,6 +1462,9 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
         // Track elimination round for badge display
         eliminatedRoundsRef.current.set(ev.playerId, ev.round);
         setEliminatedRounds(new Map(eliminatedRoundsRef.current));
+        // Audio: player eliminated sting + drama zone
+        audioCue.sting("player_eliminated");
+        audioCue.zone("drama");
         setGame((g) => {
           if (!g) return g;
           const found = g.players.some((p) => p.id === ev.playerId);
@@ -1476,6 +1491,8 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
         setGame((g) =>
           g ? { ...g, status: "completed", currentPhase: "END", winner: ev.winnerName } : g,
         );
+        audioCue.sting("winner_announced");
+        audioCue.zone("resolution");
         break;
     }
   }, [gameId]);
