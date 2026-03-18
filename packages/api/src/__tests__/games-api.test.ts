@@ -2,54 +2,112 @@
  * Game REST API endpoint tests.
  *
  * Uses Hono's test client and in-memory SQLite — no real server, no disk I/O.
+ * Auth is tested via JWT session tokens created directly (no Privy dependency).
  */
 
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, beforeAll } from "bun:test";
 import { Hono } from "hono";
 import { createDB, schema } from "../db/index.js";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import { createGameRoutes } from "../routes/games.js";
+import { createSessionToken } from "../middleware/auth.js";
 import { randomUUID } from "crypto";
 import path from "path";
+
+// ---------------------------------------------------------------------------
+// Set required env vars for auth
+// ---------------------------------------------------------------------------
+
+const TEST_ADMIN_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678";
+
+beforeAll(() => {
+  process.env.JWT_SECRET = "test-jwt-secret-for-unit-tests";
+  process.env.ADMIN_ADDRESS = TEST_ADMIN_ADDRESS;
+});
 
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
 
-function setupApp() {
+const ADMIN_USER_ID = "admin-user-id";
+const REGULAR_USER_ID = "regular-user-id";
+
+async function setupApp() {
   const db = createDB(":memory:");
   const migrationsFolder = path.resolve(import.meta.dir, "../../drizzle");
   migrate(db, { migrationsFolder });
+
+  // Create test users
+  db.insert(schema.users)
+    .values([
+      {
+        id: ADMIN_USER_ID,
+        walletAddress: TEST_ADMIN_ADDRESS,
+        email: "admin@test.com",
+        displayName: "Admin",
+      },
+      {
+        id: REGULAR_USER_ID,
+        walletAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        email: "player@test.com",
+        displayName: "Player",
+      },
+    ])
+    .run();
+
+  // Generate JWT tokens
+  const adminToken = await createSessionToken(ADMIN_USER_ID);
+  const userToken = await createSessionToken(REGULAR_USER_ID);
 
   const app = new Hono();
   app.get("/health", (c) => c.json({ status: "ok" }));
   app.route("/", createGameRoutes(db));
 
-  return { app, db };
+  return { app, db, adminToken, userToken };
 }
 
-function json(body: unknown): RequestInit {
+function json(body: unknown, token?: string): RequestInit {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
   return {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
   };
 }
 
-async function createTestGame(app: Hono, overrides: Record<string, unknown> = {}) {
+function authPost(token: string): RequestInit {
+  return {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  };
+}
+
+async function createTestGame(
+  app: Hono,
+  adminToken: string,
+  overrides: Record<string, unknown> = {},
+) {
   const res = await app.request(
     "/api/games",
-    json({
-      playerCount: 6,
-      modelTier: "budget",
-      personaPool: ["honest", "strategic", "deceptive"],
-      fillStrategy: "balanced",
-      timingPreset: "fast",
-      maxRounds: 10,
-      visibility: "public",
-      slotType: "all_ai",
-      ...overrides,
-    }),
+    json(
+      {
+        playerCount: 6,
+        modelTier: "budget",
+        personaPool: ["honest", "strategic", "deceptive"],
+        fillStrategy: "balanced",
+        timingPreset: "fast",
+        maxRounds: 10,
+        visibility: "public",
+        slotType: "all_ai",
+        ...overrides,
+      },
+      adminToken,
+    ),
   );
   return res.json() as Promise<{ id: string; gameNumber: number }>;
 }
@@ -58,11 +116,12 @@ async function joinTestPlayer(
   app: Hono,
   gameId: string,
   name: string,
+  token: string,
   personality = "Test personality",
 ) {
   const res = await app.request(
     `/api/games/${gameId}/join`,
-    json({ agentName: name, personality, personaKey: "honest" }),
+    json({ agentName: name, personality, personaKey: "honest" }, token),
   );
   return res.json() as Promise<{ playerId: string }>;
 }
@@ -74,9 +133,68 @@ async function joinTestPlayer(
 describe("Game REST API", () => {
   let app: Hono;
   let db: ReturnType<typeof createDB>;
+  let adminToken: string;
+  let userToken: string;
 
-  beforeEach(() => {
-    ({ app, db } = setupApp());
+  beforeEach(async () => {
+    ({ app, db, adminToken, userToken } = await setupApp());
+  });
+
+  // =========================================================================
+  // Auth enforcement
+  // =========================================================================
+
+  describe("auth enforcement", () => {
+    test("POST /api/games requires auth", async () => {
+      const res = await app.request(
+        "/api/games",
+        json({ playerCount: 6 }),
+      );
+      expect(res.status).toBe(401);
+    });
+
+    test("POST /api/games requires admin", async () => {
+      const res = await app.request(
+        "/api/games",
+        json({ playerCount: 6 }, userToken),
+      );
+      expect(res.status).toBe(403);
+    });
+
+    test("POST /api/games/:id/join requires auth", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      const res = await app.request(
+        `/api/games/${id}/join`,
+        json({ agentName: "Atlas", personality: "Test" }),
+      );
+      expect(res.status).toBe(401);
+    });
+
+    test("POST /api/games/:id/start requires admin", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      for (let i = 0; i < 4; i++) {
+        await joinTestPlayer(app, id, `Player${i}`, userToken);
+      }
+      const res = await app.request(`/api/games/${id}/start`, authPost(userToken));
+      expect(res.status).toBe(403);
+    });
+
+    test("GET /api/games is public (no auth needed)", async () => {
+      const res = await app.request("/api/games");
+      expect(res.status).toBe(200);
+    });
+
+    test("GET /api/games/:id is public", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      const res = await app.request(`/api/games/${id}`);
+      expect(res.status).toBe(200);
+    });
+
+    test("GET /api/games/:id/transcript is public", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      const res = await app.request(`/api/games/${id}/transcript`);
+      expect(res.status).toBe(200);
+    });
   });
 
   // =========================================================================
@@ -87,13 +205,16 @@ describe("Game REST API", () => {
     test("creates a game and returns id + gameNumber", async () => {
       const res = await app.request(
         "/api/games",
-        json({
-          playerCount: 6,
-          modelTier: "budget",
-          timingPreset: "standard",
-          maxRounds: 10,
-          visibility: "public",
-        }),
+        json(
+          {
+            playerCount: 6,
+            modelTier: "budget",
+            timingPreset: "standard",
+            maxRounds: 10,
+            visibility: "public",
+          },
+          adminToken,
+        ),
       );
 
       expect(res.status).toBe(201);
@@ -105,7 +226,7 @@ describe("Game REST API", () => {
     test("creates game with auto maxRounds", async () => {
       const res = await app.request(
         "/api/games",
-        json({ playerCount: 8, maxRounds: "auto" }),
+        json({ playerCount: 8, maxRounds: "auto" }, adminToken),
       );
 
       expect(res.status).toBe(201);
@@ -124,7 +245,10 @@ describe("Game REST API", () => {
     test("returns 400 for invalid JSON", async () => {
       const res = await app.request("/api/games", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${adminToken}`,
+        },
         body: "not json",
       });
 
@@ -132,7 +256,7 @@ describe("Game REST API", () => {
     });
 
     test("game defaults to waiting status", async () => {
-      const { id } = await createTestGame(app);
+      const { id } = await createTestGame(app, adminToken);
       const game = db
         .select()
         .from(schema.games)
@@ -142,10 +266,20 @@ describe("Game REST API", () => {
     });
 
     test("game numbers increment", async () => {
-      const g1 = await createTestGame(app);
-      const g2 = await createTestGame(app);
+      const g1 = await createTestGame(app, adminToken);
+      const g2 = await createTestGame(app, adminToken);
       expect(g1.gameNumber).toBe(1);
       expect(g2.gameNumber).toBe(2);
+    });
+
+    test("game records createdById from admin user", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      const game = db
+        .select()
+        .from(schema.games)
+        .all()
+        .find((g) => g.id === id)!;
+      expect(game.createdById).toBe(ADMIN_USER_ID);
     });
   });
 
@@ -162,8 +296,8 @@ describe("Game REST API", () => {
     });
 
     test("lists all games", async () => {
-      await createTestGame(app);
-      await createTestGame(app);
+      await createTestGame(app, adminToken);
+      await createTestGame(app, adminToken);
 
       const res = await app.request("/api/games");
       const body = (await res.json()) as unknown[];
@@ -171,8 +305,8 @@ describe("Game REST API", () => {
     });
 
     test("filters by status", async () => {
-      const { id: g1 } = await createTestGame(app);
-      await createTestGame(app);
+      const { id: g1 } = await createTestGame(app, adminToken);
+      await createTestGame(app, adminToken);
 
       // Manually set one to completed
       const { eq } = await import("drizzle-orm");
@@ -188,9 +322,9 @@ describe("Game REST API", () => {
     });
 
     test("filters by multiple statuses", async () => {
-      const { id: g1 } = await createTestGame(app);
-      const { id: g2 } = await createTestGame(app);
-      await createTestGame(app);
+      const { id: g1 } = await createTestGame(app, adminToken);
+      const { id: g2 } = await createTestGame(app, adminToken);
+      await createTestGame(app, adminToken);
 
       const { eq } = await import("drizzle-orm");
       db.update(schema.games)
@@ -208,9 +342,9 @@ describe("Game REST API", () => {
     });
 
     test("game summaries include player count", async () => {
-      const { id } = await createTestGame(app);
-      await joinTestPlayer(app, id, "Atlas");
-      await joinTestPlayer(app, id, "Vera");
+      const { id } = await createTestGame(app, adminToken);
+      await joinTestPlayer(app, id, "Atlas", userToken);
+      await joinTestPlayer(app, id, "Vera", userToken);
 
       const res = await app.request("/api/games");
       const body = (await res.json()) as Array<{ playerCount: number }>;
@@ -224,9 +358,9 @@ describe("Game REST API", () => {
 
   describe("GET /api/games/:id", () => {
     test("returns game details with players", async () => {
-      const { id } = await createTestGame(app);
-      await joinTestPlayer(app, id, "Atlas", "Strategic calculator");
-      await joinTestPlayer(app, id, "Vera", "Master manipulator");
+      const { id } = await createTestGame(app, adminToken);
+      await joinTestPlayer(app, id, "Atlas", userToken, "Strategic calculator");
+      await joinTestPlayer(app, id, "Vera", userToken, "Master manipulator");
 
       const res = await app.request(`/api/games/${id}`);
       expect(res.status).toBe(200);
@@ -254,15 +388,18 @@ describe("Game REST API", () => {
 
   describe("POST /api/games/:id/join", () => {
     test("adds a player to a waiting game", async () => {
-      const { id } = await createTestGame(app);
+      const { id } = await createTestGame(app, adminToken);
 
       const res = await app.request(
         `/api/games/${id}/join`,
-        json({
-          agentName: "Atlas",
-          personality: "Strategic calculator",
-          personaKey: "strategic",
-        }),
+        json(
+          {
+            agentName: "Atlas",
+            personality: "Strategic calculator",
+            personaKey: "strategic",
+          },
+          userToken,
+        ),
       );
 
       expect(res.status).toBe(201);
@@ -281,48 +418,56 @@ describe("Game REST API", () => {
     test("rejects join for non-existent game", async () => {
       const res = await app.request(
         `/api/games/${randomUUID()}/join`,
-        json({ agentName: "Atlas", personality: "Test" }),
+        json({ agentName: "Atlas", personality: "Test" }, userToken),
       );
       expect(res.status).toBe(404);
     });
 
     test("rejects join when game is not waiting", async () => {
-      const { id } = await createTestGame(app);
+      const { id } = await createTestGame(app, adminToken);
 
       // Start the game (need min players first)
       for (let i = 0; i < 4; i++) {
-        await joinTestPlayer(app, id, `Player${i}`);
+        await joinTestPlayer(app, id, `Player${i}`, userToken);
       }
-      await app.request(`/api/games/${id}/start`, { method: "POST" });
+      await app.request(`/api/games/${id}/start`, authPost(adminToken));
 
       const res = await app.request(
         `/api/games/${id}/join`,
-        json({ agentName: "Late", personality: "Too late" }),
+        json({ agentName: "Late", personality: "Too late" }, userToken),
       );
       expect(res.status).toBe(400);
     });
 
     test("rejects join when game is full", async () => {
-      const { id } = await createTestGame(app, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
 
       for (let i = 0; i < 4; i++) {
-        await joinTestPlayer(app, id, `Player${i}`);
+        await joinTestPlayer(app, id, `Player${i}`, userToken);
       }
 
       const res = await app.request(
         `/api/games/${id}/join`,
-        json({ agentName: "Extra", personality: "No room" }),
+        json({ agentName: "Extra", personality: "No room" }, userToken),
       );
       expect(res.status).toBe(400);
     });
 
     test("rejects join with missing fields", async () => {
-      const { id } = await createTestGame(app);
+      const { id } = await createTestGame(app, adminToken);
       const res = await app.request(
         `/api/games/${id}/join`,
-        json({ agentName: "Atlas" }),
+        json({ agentName: "Atlas" }, userToken),
       );
       expect(res.status).toBe(400);
+    });
+
+    test("records userId on game_player", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      await joinTestPlayer(app, id, "Atlas", userToken);
+
+      const players = db.select().from(schema.gamePlayers).all();
+      expect(players[0]!.userId).toBe(REGULAR_USER_ID);
     });
   });
 
@@ -332,13 +477,13 @@ describe("Game REST API", () => {
 
   describe("POST /api/games/:id/start", () => {
     test("starts a game with enough players", async () => {
-      const { id } = await createTestGame(app);
+      const { id } = await createTestGame(app, adminToken);
 
       for (let i = 0; i < 4; i++) {
-        await joinTestPlayer(app, id, `Player${i}`);
+        await joinTestPlayer(app, id, `Player${i}`, userToken);
       }
 
-      const res = await app.request(`/api/games/${id}/start`, { method: "POST" });
+      const res = await app.request(`/api/games/${id}/start`, authPost(adminToken));
       expect(res.status).toBe(200);
 
       const body = (await res.json()) as { status: string; players: number };
@@ -355,10 +500,10 @@ describe("Game REST API", () => {
     });
 
     test("rejects start with too few players", async () => {
-      const { id } = await createTestGame(app);
-      await joinTestPlayer(app, id, "Solo");
+      const { id } = await createTestGame(app, adminToken);
+      await joinTestPlayer(app, id, "Solo", userToken);
 
-      const res = await app.request(`/api/games/${id}/start`, { method: "POST" });
+      const res = await app.request(`/api/games/${id}/start`, authPost(adminToken));
       expect(res.status).toBe(400);
 
       const body = (await res.json()) as { error: string };
@@ -366,23 +511,21 @@ describe("Game REST API", () => {
     });
 
     test("rejects start for non-waiting game", async () => {
-      const { id } = await createTestGame(app);
+      const { id } = await createTestGame(app, adminToken);
       for (let i = 0; i < 4; i++) {
-        await joinTestPlayer(app, id, `Player${i}`);
+        await joinTestPlayer(app, id, `Player${i}`, userToken);
       }
 
       // Start once
-      await app.request(`/api/games/${id}/start`, { method: "POST" });
+      await app.request(`/api/games/${id}/start`, authPost(adminToken));
 
       // Try to start again
-      const res = await app.request(`/api/games/${id}/start`, { method: "POST" });
+      const res = await app.request(`/api/games/${id}/start`, authPost(adminToken));
       expect(res.status).toBe(400);
     });
 
     test("returns 404 for non-existent game", async () => {
-      const res = await app.request(`/api/games/${randomUUID()}/start`, {
-        method: "POST",
-      });
+      const res = await app.request(`/api/games/${randomUUID()}/start`, authPost(adminToken));
       expect(res.status).toBe(404);
     });
   });
@@ -393,13 +536,13 @@ describe("Game REST API", () => {
 
   describe("POST /api/games/:id/stop", () => {
     test("stops a running game", async () => {
-      const { id } = await createTestGame(app);
+      const { id } = await createTestGame(app, adminToken);
       for (let i = 0; i < 4; i++) {
-        await joinTestPlayer(app, id, `Player${i}`);
+        await joinTestPlayer(app, id, `Player${i}`, userToken);
       }
-      await app.request(`/api/games/${id}/start`, { method: "POST" });
+      await app.request(`/api/games/${id}/start`, authPost(adminToken));
 
-      const res = await app.request(`/api/games/${id}/stop`, { method: "POST" });
+      const res = await app.request(`/api/games/${id}/stop`, authPost(adminToken));
       expect(res.status).toBe(200);
 
       const body = (await res.json()) as { status: string };
@@ -412,20 +555,20 @@ describe("Game REST API", () => {
     });
 
     test("stops a waiting game", async () => {
-      const { id } = await createTestGame(app);
-      const res = await app.request(`/api/games/${id}/stop`, { method: "POST" });
+      const { id } = await createTestGame(app, adminToken);
+      const res = await app.request(`/api/games/${id}/stop`, authPost(adminToken));
       expect(res.status).toBe(200);
     });
 
     test("rejects stop for completed game", async () => {
-      const { id } = await createTestGame(app);
+      const { id } = await createTestGame(app, adminToken);
       const { eq } = await import("drizzle-orm");
       db.update(schema.games)
         .set({ status: "completed" })
         .where(eq(schema.games.id, id))
         .run();
 
-      const res = await app.request(`/api/games/${id}/stop`, { method: "POST" });
+      const res = await app.request(`/api/games/${id}/stop`, authPost(adminToken));
       expect(res.status).toBe(400);
     });
   });
@@ -436,7 +579,7 @@ describe("Game REST API", () => {
 
   describe("GET /api/games/:id/transcript", () => {
     test("returns empty transcript for new game", async () => {
-      const { id } = await createTestGame(app);
+      const { id } = await createTestGame(app, adminToken);
 
       const res = await app.request(`/api/games/${id}/transcript`);
       expect(res.status).toBe(200);
@@ -446,8 +589,8 @@ describe("Game REST API", () => {
     });
 
     test("returns transcript entries with player names", async () => {
-      const { id } = await createTestGame(app);
-      const { playerId } = await joinTestPlayer(app, id, "Atlas");
+      const { id } = await createTestGame(app, adminToken);
+      const { playerId } = await joinTestPlayer(app, id, "Atlas", userToken);
 
       // Insert transcript entries directly
       db.insert(schema.transcripts)
@@ -488,8 +631,8 @@ describe("Game REST API", () => {
     });
 
     test("transcript entries are ordered by timestamp", async () => {
-      const { id } = await createTestGame(app);
-      const { playerId } = await joinTestPlayer(app, id, "Atlas");
+      const { id } = await createTestGame(app, adminToken);
+      const { playerId } = await joinTestPlayer(app, id, "Atlas", userToken);
 
       const now = Date.now();
       db.insert(schema.transcripts)
@@ -527,9 +670,9 @@ describe("Game REST API", () => {
     });
 
     test("whisper entries include parsed toPlayerIds", async () => {
-      const { id } = await createTestGame(app);
-      const { playerId: p1 } = await joinTestPlayer(app, id, "Atlas");
-      const { playerId: p2 } = await joinTestPlayer(app, id, "Vera");
+      const { id } = await createTestGame(app, adminToken);
+      const { playerId: p1 } = await joinTestPlayer(app, id, "Atlas", userToken);
+      const { playerId: p2 } = await joinTestPlayer(app, id, "Vera", userToken);
 
       db.insert(schema.transcripts)
         .values({
@@ -557,13 +700,13 @@ describe("Game REST API", () => {
   describe("full game lifecycle", () => {
     test("create → join × 4 → start → stop", async () => {
       // Create
-      const { id, gameNumber } = await createTestGame(app);
+      const { id, gameNumber } = await createTestGame(app, adminToken);
       expect(gameNumber).toBe(1);
 
       // Join 4 players
       const playerIds: string[] = [];
       for (const name of ["Atlas", "Vera", "Finn", "Mira"]) {
-        const { playerId } = await joinTestPlayer(app, id, name, `${name} personality`);
+        const { playerId } = await joinTestPlayer(app, id, name, userToken, `${name} personality`);
         playerIds.push(playerId);
       }
 
@@ -573,7 +716,7 @@ describe("Game REST API", () => {
       expect(detail.players).toHaveLength(4);
 
       // Start
-      const startRes = await app.request(`/api/games/${id}/start`, { method: "POST" });
+      const startRes = await app.request(`/api/games/${id}/start`, authPost(adminToken));
       expect(startRes.status).toBe(200);
 
       // List should show in_progress
@@ -583,7 +726,7 @@ describe("Game REST API", () => {
       expect(list[0]!.status).toBe("in_progress");
 
       // Stop
-      const stopRes = await app.request(`/api/games/${id}/stop`, { method: "POST" });
+      const stopRes = await app.request(`/api/games/${id}/stop`, authPost(adminToken));
       expect(stopRes.status).toBe(200);
 
       // Final check

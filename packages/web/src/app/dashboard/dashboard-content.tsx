@@ -161,7 +161,7 @@ function AgentDefaultsSection() {
 // ---------------------------------------------------------------------------
 
 export function DashboardContent() {
-  const { user } = usePrivy();
+  const { user, authenticated, login } = usePrivy();
   const [joinTarget, setJoinTarget] = useState<GameSummary | null>(null);
   const [joinedGameIds, setJoinedGameIds] = useState<Set<string>>(new Set());
   const [history, setHistory] = useState<PlayerGameResult[]>([]);
@@ -178,6 +178,14 @@ export function DashboardContent() {
 
   const wins = history.filter((h) => h.winner).length;
   const played = history.length;
+
+  function handleJoinClick(game: GameSummary) {
+    if (!authenticated) {
+      login();
+      return;
+    }
+    setJoinTarget(game);
+  }
 
   function handleJoinSuccess(gameId: string) {
     setJoinedGameIds((prev) => new Set([...prev, gameId]));
@@ -238,7 +246,7 @@ export function DashboardContent() {
             </Link>
           </div>
           <GamesBrowser
-            onJoin={(game) => setJoinTarget(game)}
+            onJoin={handleJoinClick}
             compact={false}
           />
         </section>

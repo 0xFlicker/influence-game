@@ -20,6 +20,14 @@ import {
   type WsConnectionData,
 } from "./services/ws-manager.js";
 
+function getAllowedCorsOrigins(): string[] {
+  const origins = (process.env.CORS_ORIGINS ?? process.env.CORS_ORIGIN ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  return origins;
+}
+
 // ---------------------------------------------------------------------------
 // Database — run migrations on startup, then connect
 // ---------------------------------------------------------------------------
@@ -57,12 +65,16 @@ if (orphanedGames.length > 0) {
 // ---------------------------------------------------------------------------
 
 const app = new Hono();
+const allowedCorsOrigins = new Set(getAllowedCorsOrigins());
 
 // CORS — allow frontend origin
 app.use(
   "/api/*",
   cors({
-    origin: process.env.CORS_ORIGIN ?? "http://localhost:3001",
+    origin: (origin) => {
+      if (!origin) return origin;
+      return allowedCorsOrigins.has(origin) ? origin : null;
+    },
     credentials: true,
   }),
 );
@@ -104,8 +116,6 @@ app.route("/", gameRoutes);
 // ---------------------------------------------------------------------------
 
 const port = parseInt(process.env.PORT ?? "3000", 10);
-
-console.log(`Influence API listening on http://localhost:${port}`);
 
 const server = Bun.serve<WsConnectionData>({
   port,
@@ -153,5 +163,7 @@ const server = Bun.serve<WsConnectionData>({
 
 // Register server instance with WS manager for pub/sub broadcasting
 setServer(server);
+
+console.log(`Influence API listening on http://localhost:${server.port}`);
 
 export default server;

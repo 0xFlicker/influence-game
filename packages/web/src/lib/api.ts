@@ -55,8 +55,9 @@ export async function apiFetch<T>(
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-
-  const res = await fetch(`${API_BASE}${path}`, {
+  const url = `${API_BASE}${path}`;
+  console.log(`API ${options?.method ?? "GET"} ${url}`);
+  const res = await fetch(url, {
     ...options,
     headers,
   });
@@ -132,7 +133,10 @@ export interface GameSummary {
 export async function createGame(
   params: CreateGameParams,
 ): Promise<{ id: string; gameNumber: number }> {
-  return apiFetch("/api/games", { method: "POST", body: JSON.stringify(params) });
+  return apiFetch("/api/games", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
 }
 
 export async function listGames(
@@ -194,7 +198,10 @@ export interface PlayerGameResult {
 // Player API calls
 // ---------------------------------------------------------------------------
 
-export async function joinGame(gameId: string, config: JoinGameConfig): Promise<void> {
+export async function joinGame(
+  gameId: string,
+  config: JoinGameConfig,
+): Promise<void> {
   await apiFetch(`/api/games/${gameId}/join`, {
     method: "POST",
     body: JSON.stringify(config),
@@ -295,10 +302,25 @@ export type WsGameEvent =
         transcript: WsTranscriptEntry[];
       };
     }
-  | { type: "phase_change"; phase: PhaseKey; round: number; alivePlayers: string[] }
+  | {
+      type: "phase_change";
+      phase: PhaseKey;
+      round: number;
+      alivePlayers: string[];
+    }
   | { type: "message"; entry: WsTranscriptEntry }
-  | { type: "player_eliminated"; playerId: string; playerName: string; round: number }
-  | { type: "game_over"; winner?: string; winnerName?: string; totalRounds: number };
+  | {
+      type: "player_eliminated";
+      playerId: string;
+      playerName: string;
+      round: number;
+    }
+  | {
+      type: "game_over";
+      winner?: string;
+      winnerName?: string;
+      totalRounds: number;
+    };
 
 // ---------------------------------------------------------------------------
 // Game detail API calls
@@ -308,7 +330,9 @@ export async function getGame(id: string): Promise<GameDetail> {
   return apiFetch(`/api/games/${id}`);
 }
 
-export async function getGameTranscript(id: string): Promise<TranscriptEntry[]> {
+export async function getGameTranscript(
+  id: string,
+): Promise<TranscriptEntry[]> {
   return apiFetch(`/api/games/${id}/transcript`);
 }
 

@@ -197,11 +197,24 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
     };
   }, []);
 
-  const filtered = games.filter((g) => {
-    if (filters.status !== "all" && g.status !== filters.status) return false;
-    if (filters.tier !== "all" && g.modelTier !== filters.tier) return false;
-    return true;
-  });
+  const STATUS_ORDER: Record<GameStatus, number> = {
+    waiting: 0,
+    in_progress: 1,
+    completed: 2,
+    cancelled: 3,
+  };
+
+  const filtered = games
+    .filter((g) => {
+      if (filters.status !== "all" && g.status !== filters.status) return false;
+      if (filters.tier !== "all" && g.modelTier !== filters.tier) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      const statusDiff = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+      if (statusDiff !== 0) return statusDiff;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
 
   const statusOptions: { value: StatusFilter; label: string }[] = [
     { value: "all", label: "All" },

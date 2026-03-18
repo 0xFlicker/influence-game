@@ -120,7 +120,8 @@ Secrets are injected via Doppler (`doppler run -- <command>`). You should not ne
 | `JWT_SECRET` | Yes | -- | Secret for signing session JWTs |
 | `ADMIN_ADDRESS` | No | -- | EVM wallet address granted admin access |
 | `PORT` | No | `3000` | HTTP server port |
-| `CORS_ORIGIN` | No | `http://localhost:3001` | Allowed CORS origin |
+| `CORS_ORIGIN` | No | -- | Allowed CORS origin when using a single origin |
+| `CORS_ORIGINS` | No | -- | Comma-separated list of allowed CORS origins. Overrides `CORS_ORIGIN` when set |
 | `SQLITE_PATH` | No | `influence.db` | Path to SQLite database file |
 
 ### Web (`packages/web`) -- set in `packages/web/.env.local`
