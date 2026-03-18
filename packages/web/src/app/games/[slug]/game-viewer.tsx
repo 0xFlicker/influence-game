@@ -602,6 +602,100 @@ function DiaryQACard({
 }
 
 // ---------------------------------------------------------------------------
+// Whisper phase quiet-state view
+// ---------------------------------------------------------------------------
+
+/**
+ * Replaces the main stage during WHISPER phase.
+ * Shows a quiet-state header + whisper activity indicators (sender + recipients).
+ * Content is hidden for non-admin viewers; sign-in CTA shown for anonymous.
+ *
+ * The `phaseKey` prop causes the House intro typewriter to reset each new
+ * WHISPER phase (keyed by round number).
+ */
+function WhisperPhaseView({
+  whisperMessages,
+  players,
+  isAuthenticated,
+  phaseKey,
+}: {
+  whisperMessages: TranscriptEntry[];
+  players: GamePlayer[];
+  isAuthenticated: boolean;
+  phaseKey: string;
+}) {
+  const [introComplete, setIntroComplete] = useState(false);
+  // Reset intro when entering a new whisper phase
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setIntroComplete(false); }, [phaseKey]);
+
+  const houseIntro = "The operatives go dark. Whispers fill the shadows.";
+
+  return (
+    <div className="border border-purple-900/20 bg-purple-950/10 rounded-xl flex-1 overflow-y-auto p-6 min-h-[420px] max-h-[600px]">
+      {/* Header */}
+      <div className="text-center mb-6">
+        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-purple-400/60 mb-1">
+          ◆ WHISPER PHASE ◆
+        </p>
+        <p className="text-xs text-purple-400/30 uppercase tracking-wider">
+          Private channels are active
+        </p>
+      </div>
+
+      {/* House intro */}
+      <div className="text-center mb-6">
+        <p className="text-sm text-white/40 italic">
+          <Typewriter
+            key={phaseKey}
+            text={houseIntro}
+            rate="house"
+            onComplete={() => setIntroComplete(true)}
+          />
+        </p>
+      </div>
+
+      {/* Whisper activity indicators */}
+      {(introComplete || whisperMessages.length > 0) && whisperMessages.length > 0 && (
+        <div className="space-y-2 mt-4">
+          {whisperMessages.map((msg) => {
+            const sender = players.find((p) => p.id === msg.fromPlayerId);
+            const senderName = sender?.name ?? msg.fromPlayerId ?? "Unknown";
+            const recipients = (msg.toPlayerIds ?? [])
+              .map((id) => players.find((p) => p.id === id)?.name ?? id)
+              .filter(Boolean);
+
+            return (
+              <div key={msg.id} className="flex items-center gap-2 text-xs text-purple-300/50">
+                <span className="text-purple-500/40 flex-shrink-0">•</span>
+                <span className="flex-1">
+                  <span className="text-white/55 font-medium">{senderName}</span>
+                  {" "}is whispering to{" "}
+                  <span className="text-white/55 font-medium">
+                    {recipients.length > 0 ? recipients.join(" and ") : "someone"}
+                  </span>
+                  …
+                </span>
+                <span className="text-white/20 flex-shrink-0">{formatTime(msg.timestamp)}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Anonymous sign-in CTA */}
+      {!isAuthenticated && (
+        <div className="mt-8 text-center border-t border-purple-900/20 pt-5">
+          <p className="text-xs text-white/20 italic">
+            Sign in to view your own whispers in the sidebar
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Endgame entry screens — Reckoning / Tribunal / Judgment
 // ---------------------------------------------------------------------------
 
@@ -1499,18 +1593,28 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
           />
         )}
 
+        {/* Main Stage: Whisper phase quiet-state OR regular message feed */}
+        {activeTab === "stage" && replayGame.currentPhase === "WHISPER" && !isReplay && (
+          <WhisperPhaseView
+            whisperMessages={visibleMessages.filter((m) => m.scope === "whisper")}
+            players={game.players}
+            isAuthenticated={isAuthenticated}
+            phaseKey={`whisper-${replayGame.currentRound}`}
+          />
+        )}
+
         {/* Main Stage message feed */}
-        {activeTab === "stage" && (
+        {activeTab === "stage" && (replayGame.currentPhase !== "WHISPER" || isReplay) && (
           <div
             ref={feedRef}
             className="border border-white/10 rounded-xl flex-1 overflow-y-auto p-4 space-y-3 min-h-[420px] max-h-[600px]"
           >
-            {visibleMessages.filter((m) => m.scope !== "diary").length === 0 ? (
+            {visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper").length === 0 ? (
               <p className="text-center text-white/20 text-sm mt-16">
                 {isReplay ? "No messages in replay." : "Waiting for game to begin…"}
               </p>
             ) : (
-              groupMessages(visibleMessages.filter((m) => m.scope !== "diary")).map(
+              groupMessages(visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper")).map(
                 (item, idx) => {
                   // Last-words messages get the elimination choreography component
                   if (item.kind === "msg" && lastWordsIds.has(item.entry.id)) {
