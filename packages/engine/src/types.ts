@@ -230,6 +230,8 @@ export type AgentAction =
 // Game configuration
 // ---------------------------------------------------------------------------
 
+export type ViewerMode = "live" | "speedrun" | "replay";
+
 export interface GameConfig {
   /** Phase durations in milliseconds (0 = wait for all players to respond) */
   timers: {
@@ -255,6 +257,8 @@ export interface GameConfig {
   minPlayers: number;
   /** Maximum players */
   maxPlayers: number;
+  /** Presentation pacing mode: "live" for public viewers, "speedrun" for admin/testing, "replay" for post-game */
+  viewerMode?: ViewerMode;
 }
 
 export const DEFAULT_CONFIG: GameConfig = {
@@ -278,6 +282,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   maxRounds: 10,
   minPlayers: 4,
   maxPlayers: 12,
+  viewerMode: "speedrun",
 };
 
 /**

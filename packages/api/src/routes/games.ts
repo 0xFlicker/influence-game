@@ -55,6 +55,7 @@ export function createGameRoutes(db: DrizzleDB) {
       maxRounds,
       visibility,
       slotType,
+      viewerMode,
     } = body;
 
     const minPlayers = 4;
@@ -97,6 +98,12 @@ export function createGameRoutes(db: DrizzleDB) {
         ? Math.max(10, (maxPlayers - 4) + 3 + 2)
         : maxRounds;
 
+    // Validate viewerMode — only "live" and "speedrun" are valid at creation time
+    const validCreationModes = ["live", "speedrun"];
+    const resolvedViewerMode = validCreationModes.includes(viewerMode)
+      ? viewerMode
+      : "speedrun"; // Default for admin-created games
+
     const config = {
       timers,
       maxRounds: computedMaxRounds,
@@ -107,6 +114,7 @@ export function createGameRoutes(db: DrizzleDB) {
       fillStrategy: fillStrategy ?? "balanced",
       visibility: visibility ?? "public",
       slotType: slotType ?? "all_ai",
+      viewerMode: resolvedViewerMode,
     };
 
     const gameId = randomUUID();
@@ -187,6 +195,7 @@ export function createGameRoutes(db: DrizzleDB) {
         eliminatedPlayers: 0,
         modelTier: config.modelTier ?? "budget",
         visibility: config.visibility ?? "public",
+        viewerMode: config.viewerMode ?? "speedrun",
         winner: winnerPlayer ? JSON.parse(winnerPlayer.persona).name : undefined,
         createdAt: game.createdAt,
         startedAt: game.startedAt ?? undefined,
@@ -266,6 +275,7 @@ export function createGameRoutes(db: DrizzleDB) {
       }),
       modelTier: config.modelTier ?? "budget",
       visibility: config.visibility ?? "public",
+      viewerMode: config.viewerMode ?? "speedrun",
       winner: winnerPlayer ? JSON.parse(winnerPlayer.persona).name : undefined,
       createdAt: game.createdAt,
       startedAt: game.startedAt ?? undefined,

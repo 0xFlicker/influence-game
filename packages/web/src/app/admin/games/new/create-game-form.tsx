@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createGame, estimateCost, type CreateGameParams, type PersonaKey } from "@/lib/api";
+import { createGame, estimateCost, type CreateGameParams, type PersonaKey, type ViewerMode } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Persona definitions (matches engine PERSONALITY_PROMPTS)
@@ -41,6 +41,7 @@ interface FormState {
   timingPreset: "fast" | "standard" | "slow" | "custom";
   maxRounds: number | "auto";
   visibility: "public" | "unlisted" | "private";
+  viewerMode: "live" | "speedrun";
 }
 
 const DEFAULT_STATE: FormState = {
@@ -52,6 +53,7 @@ const DEFAULT_STATE: FormState = {
   timingPreset: "standard",
   maxRounds: "auto",
   visibility: "public",
+  viewerMode: "speedrun",
 };
 
 // ---------------------------------------------------------------------------
@@ -152,8 +154,8 @@ export function CreateGameForm() {
         ...form,
         playerCount: form.playerCount,
       };
-      const { id } = await createGame(params);
-      router.push(`/admin/games/${id}`);
+      const { slug } = await createGame(params);
+      router.push(`/games/${slug}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create game.");
       setSubmitting(false);
@@ -226,7 +228,7 @@ export function CreateGameForm() {
                 }
                 className="text-xs text-white/40 hover:text-white/60 transition-colors"
               >
-                None
+                Min
               </button>
             </div>
           </div>
@@ -267,6 +269,19 @@ export function CreateGameForm() {
             { value: "random", label: "Random", sublabel: "Pure random from pool" },
           ]}
           onChange={(v) => set("fillStrategy", v)}
+        />
+      </SectionCard>
+
+      {/* Game Mode */}
+      <SectionCard title="Game Mode">
+        <RadioGroup
+          label="Viewer mode"
+          value={form.viewerMode}
+          options={[
+            { value: "speedrun" as const, label: "Speed-run", sublabel: "Instant, for testing" },
+            { value: "live" as const, label: "Live", sublabel: "Paced for viewers" },
+          ]}
+          onChange={(v) => set("viewerMode", v as "live" | "speedrun")}
         />
       </SectionCard>
 

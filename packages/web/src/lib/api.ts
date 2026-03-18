@@ -94,6 +94,7 @@ export type FillStrategy = "random" | "balanced";
 export type TimingPreset = "fast" | "standard" | "slow" | "custom";
 export type GameVisibility = "public" | "unlisted" | "private";
 export type GameStatus = "waiting" | "in_progress" | "completed" | "cancelled";
+export type ViewerMode = "live" | "speedrun" | "replay";
 
 export interface CreateGameParams {
   playerCount: 4 | 6 | 8 | 10 | 12;
@@ -104,6 +105,7 @@ export interface CreateGameParams {
   timingPreset: TimingPreset;
   maxRounds: number | "auto";
   visibility: GameVisibility;
+  viewerMode: "live" | "speedrun";
 }
 
 export interface GameSummary {
@@ -120,6 +122,7 @@ export interface GameSummary {
   eliminatedPlayers: number;
   modelTier: ModelTier;
   visibility: GameVisibility;
+  viewerMode: ViewerMode;
   finalists?: [string, string];
   winner?: string;
   winnerPersona?: string;
@@ -299,6 +302,7 @@ export interface GameDetail {
   players: GamePlayer[];
   modelTier: ModelTier;
   visibility: GameVisibility;
+  viewerMode: ViewerMode;
   winner?: string;
   winnerPersona?: string;
   finalists?: [string, string];

@@ -254,11 +254,13 @@ async function runGameAsync(
       })
       .run();
 
-    // Update game status to completed
+    // Update game status to completed and set viewerMode to "replay"
+    const updatedConfig = { ...gameConfig, viewerMode: "replay" };
     db.update(schema.games)
       .set({
         status: "completed",
         endedAt: new Date().toISOString(),
+        config: JSON.stringify(updatedConfig),
       })
       .where(eq(schema.games.id, gameId))
       .run();
