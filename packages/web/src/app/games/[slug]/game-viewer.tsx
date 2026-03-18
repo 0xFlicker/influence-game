@@ -1351,11 +1351,18 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
   const currentPhaseRef = useRef<PhaseKey>("INIT");
   // Speedrun flag — derive early so useEffects can use it as dependency
   const isSpeedrun = game?.viewerMode === "speedrun";
-  // Diary Room tab state
+  // Diary Room tab state (desktop toggle)
   const [activeTab, setActiveTab] = useState<"stage" | "diary">("stage");
   const [newDiaryCount, setNewDiaryCount] = useState(0);
   const activeTabRef = useRef<"stage" | "diary">("stage");
   activeTabRef.current = activeTab;
+  // Mobile 4-tab state
+  type MobileTab = "chat" | "players" | "diary" | "votes";
+  const [mobileTab, setMobileTab] = useState<MobileTab>("chat");
+  const [newChatCount, setNewChatCount] = useState(0);
+  const [newEliminationsCount, setNewEliminationsCount] = useState(0);
+  const mobileTabRef = useRef<MobileTab>("chat");
+  mobileTabRef.current = mobileTab;
   // Auth state (for diary room gate)
   const [isAuthenticated, setIsAuthenticated] = useState(() =>
     typeof window !== "undefined" ? !!getAuthToken() : false,
@@ -1616,6 +1623,15 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
         if (ev.entry.scope === "diary" && activeTabRef.current !== "diary") {
           setNewDiaryCount((n) => n + 1);
         }
+        // Mobile badge counts
+        if (ev.entry.scope === "diary" && mobileTabRef.current !== "diary") {
+          // already handled via newDiaryCount shared with desktop
+        } else if (
+          ev.entry.scope === "public" &&
+          mobileTabRef.current !== "chat"
+        ) {
+          setNewChatCount((n) => n + 1);
+        }
         // Queue messages during REVEAL/COUNCIL for reveal choreography
         const phase = currentPhaseRef.current;
         if (
@@ -1634,6 +1650,10 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
         // Track elimination round for badge display
         eliminatedRoundsRef.current.set(ev.playerId, ev.round);
         setEliminatedRounds(new Map(eliminatedRoundsRef.current));
+        // Mobile: badge Players tab when not viewing it
+        if (mobileTabRef.current !== "players") {
+          setNewEliminationsCount((n) => n + 1);
+        }
         // Audio: player eliminated sting + drama zone
         audioCue.sting("player_eliminated");
         audioCue.zone("drama");
@@ -1724,7 +1744,158 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
         />
       )}
 
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_240px] gap-4">
+    {/* ── Mobile layout (<768px) — 4-tab view with bottom tab bar ── */}
+    <div className="md:hidden flex flex-col min-h-0 pb-16">
+      <PhaseHeader game={replayGame} isReplay={isReplay} />
+      <div className="flex items-center justify-between mb-2 px-1">
+        <ConnectionBadge status={connStatus} />
+        {!isReplay && (
+          <span className="text-xs text-white/20">
+            R{replayGame.currentRound}
+          </span>
+        )}
+      </div>
+
+      {/* Mobile Chat tab */}
+      {mobileTab === "chat" && replayGame.currentPhase === "WHISPER" && !isReplay && (
+        <WhisperPhaseView
+          whisperMessages={visibleMessages.filter((m) => m.scope === "whisper")}
+          players={game.players}
+          isAuthenticated={isAuthenticated}
+          phaseKey={`whisper-${replayGame.currentRound}`}
+        />
+      )}
+      {mobileTab === "chat" &&
+        (replayGame.currentPhase === "REVEAL" || replayGame.currentPhase === "COUNCIL") &&
+        !isReplay && (
+          <RevealModeView
+            shown={revealShown}
+            pendingCount={revealQueue.length}
+            players={game.players}
+            phase={replayGame.currentPhase}
+          />
+        )}
+      {mobileTab === "chat" &&
+        replayGame.currentPhase !== "WHISPER" &&
+        (isReplay ||
+          (replayGame.currentPhase !== "REVEAL" &&
+            replayGame.currentPhase !== "COUNCIL")) && (
+          <div
+            ref={feedRef}
+            className="border border-white/10 rounded-xl overflow-y-auto p-4 space-y-3 min-h-[380px] max-h-[60vh]"
+          >
+            {visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper")
+              .length === 0 ? (
+              <p className="text-center text-white/20 text-sm mt-12">
+                {isReplay ? "No messages in replay." : "Waiting for game to begin…"}
+              </p>
+            ) : (
+              groupMessages(
+                visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper"),
+              ).map((item, idx) => {
+                if (item.kind === "msg" && lastWordsIds.has(item.entry.id)) {
+                  return (
+                    <LastWordsMessage
+                      key={item.entry.id}
+                      entry={item.entry}
+                      players={game.players}
+                      speedrun={isSpeedrun}
+                      isReplay={isReplay}
+                    />
+                  );
+                }
+                if (item.kind === "msg") {
+                  return (
+                    <MessageBubble
+                      key={item.entry.id}
+                      msg={item.entry}
+                      players={game.players}
+                    />
+                  );
+                }
+                return null;
+              })
+            )}
+          </div>
+        )}
+
+      {/* Mobile Players tab */}
+      {mobileTab === "players" && (
+        <PlayerRoster
+          players={game.players}
+          empoweredPlayerId={empoweredPlayerId}
+          eliminatedRounds={eliminatedRounds}
+          recentlyUnshielded={recentlyUnshielded}
+          speedrun={isSpeedrun}
+        />
+      )}
+
+      {/* Mobile Diary tab */}
+      {mobileTab === "diary" && (
+        <DiaryRoomPanel
+          messages={visibleMessages}
+          players={game.players}
+          isAuthenticated={isAuthenticated}
+        />
+      )}
+
+      {/* Mobile Votes tab — placeholder for V2 vote tracker */}
+      {mobileTab === "votes" && (
+        <div className="border border-white/10 rounded-xl p-12 text-center text-white/20 text-sm min-h-[380px] flex items-center justify-center">
+          <p>Vote tracker coming soon</p>
+        </div>
+      )}
+
+      {/* Replay controls on mobile */}
+      {isReplay && messages.length > 0 && (
+        <ReplayControls
+          current={replayIndex}
+          total={messages.length}
+          onFirst={() => setReplayIndex(0)}
+          onLast={() => setReplayIndex(messages.length - 1)}
+          onPrev={() => setReplayIndex((i) => Math.max(0, i - 1))}
+          onNext={() => setReplayIndex((i) => Math.min(messages.length - 1, i + 1))}
+        />
+      )}
+
+      {/* Bottom tab bar — fixed */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#0a0a0a]/95 backdrop-blur border-t border-white/10 grid grid-cols-4">
+        {(
+          [
+            { id: "chat", icon: "💬", label: "Chat", badge: newChatCount },
+            { id: "players", icon: "👥", label: "Players", badge: newEliminationsCount },
+            { id: "diary", icon: "📓", label: "Diary", badge: newDiaryCount },
+            { id: "votes", icon: "🗳", label: "Votes", badge: 0 },
+          ] as Array<{ id: MobileTab; icon: string; label: string; badge: number }>
+        ).map(({ id, icon, label, badge }) => (
+          <button
+            key={id}
+            onClick={() => {
+              setMobileTab(id);
+              if (id === "chat") setNewChatCount(0);
+              if (id === "players") setNewEliminationsCount(0);
+              if (id === "diary") setNewDiaryCount(0);
+            }}
+            className={`relative flex flex-col items-center justify-center py-2 text-xs transition-colors ${
+              mobileTab === id
+                ? "text-white"
+                : "text-white/35 hover:text-white/60"
+            }`}
+          >
+            <span className="text-base mb-0.5">{icon}</span>
+            <span className="text-[10px] uppercase tracking-wide">{label}</span>
+            {badge > 0 && (
+              <span className="absolute top-1 right-3 text-[9px] bg-indigo-600 text-white rounded-full min-w-[14px] h-[14px] flex items-center justify-center leading-none px-0.5">
+                {badge > 9 ? "9+" : badge}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+
+    {/* ── Desktop layout (≥768px) — 2-column grid ── */}
+    <div className="hidden md:grid md:grid-cols-[1fr_240px] gap-4">
       {/* Left: main feed + diary room panel */}
       <div className="flex flex-col min-h-0">
         {/* Phase header */}
