@@ -12,3 +12,15 @@ body {
   color: var(--foreground);
   font-family: system-ui, -apple-system, sans-serif;
 }
+
+/* Shield shatter animation — used when a player's shield expires */
+@keyframes shield-shatter {
+  0%   { opacity: 1; transform: scale(1) rotate(0deg); }
+  25%  { opacity: 0.9; transform: scale(1.4) rotate(-8deg); }
+  60%  { opacity: 0.4; transform: scale(0.85) rotate(6deg); }
+  100% { opacity: 0; transform: scale(0.2) rotate(-12deg); }
+}
+
+.animate-shield-shatter {
+  animation: shield-shatter 0.7s ease-out forwards;
+}

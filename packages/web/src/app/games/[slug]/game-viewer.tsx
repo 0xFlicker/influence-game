@@ -219,7 +219,19 @@ function PhaseHeader({ game, isReplay }: { game: GameDetail; isReplay: boolean }
   );
 }
 
-function PlayerRoster({ players }: { players: GamePlayer[] }) {
+function PlayerRoster({
+  players,
+  empoweredPlayerId,
+  eliminatedRounds,
+  recentlyUnshielded,
+  speedrun,
+}: {
+  players: GamePlayer[];
+  empoweredPlayerId: string | null;
+  eliminatedRounds: ReadonlyMap<string, number>;
+  recentlyUnshielded: ReadonlySet<string>;
+  speedrun: boolean;
+}) {
   const alive = players.filter((p) => p.status === "alive");
   const eliminated = players.filter((p) => p.status === "eliminated");
 
@@ -229,27 +241,61 @@ function PlayerRoster({ players }: { players: GamePlayer[] }) {
         Players · {alive.length} alive
       </h3>
       <div className="space-y-1.5">
-        {alive.map((p) => (
-          <div key={p.id} className="flex items-center gap-2 text-sm">
-            <span className="text-base">{personaEmoji(p.persona)}</span>
-            <span className="text-white font-medium">{p.name}</span>
-            <span className="text-white/30 text-xs">{p.persona}</span>
-            {p.shielded && (
-              <span className="text-xs bg-blue-900/40 text-blue-400 border border-blue-900/60 px-1.5 py-0.5 rounded-full ml-auto">
-                Shielded
+        {alive.map((p) => {
+          const isEmpowered = p.id === empoweredPlayerId;
+          const isShattered = !speedrun && recentlyUnshielded.has(p.id);
+
+          return (
+            <div
+              key={p.id}
+              className={`flex items-center gap-2 text-sm rounded-lg px-1 py-0.5 transition-all duration-300 ${
+                isEmpowered
+                  ? "border border-amber-500/40 bg-amber-950/20 shadow-[0_0_8px_rgba(245,158,11,0.15)]"
+                  : ""
+              }`}
+            >
+              <span className="text-base">{personaEmoji(p.persona)}</span>
+              <span className={`font-medium ${isEmpowered ? "text-amber-200" : "text-white"}`}>
+                {p.name}
               </span>
-            )}
-          </div>
-        ))}
+              <span className="text-white/30 text-xs flex-1 truncate">{p.persona}</span>
+              {/* Crown badge — empowered player */}
+              {isEmpowered && (
+                <span className="text-amber-400 text-sm" title="Empowered">
+                  👑
+                </span>
+              )}
+              {/* Shield badge — protected player */}
+              {p.shielded && (
+                <span
+                  className="text-blue-400 text-sm"
+                  title="Protected this round"
+                >
+                  🛡
+                </span>
+              )}
+              {/* Shield shatter — just expired (live mode only) */}
+              {isShattered && (
+                <span className="text-blue-300/70 text-sm animate-shield-shatter">🛡</span>
+              )}
+            </div>
+          );
+        })}
         {eliminated.length > 0 && (
           <>
             <div className="border-t border-white/5 my-2" />
-            {eliminated.map((p) => (
-              <div key={p.id} className="flex items-center gap-2 text-sm opacity-35">
-                <span className="text-base grayscale">{personaEmoji(p.persona)}</span>
-                <span className="text-white/50 line-through">{p.name}</span>
-              </div>
-            ))}
+            {eliminated.map((p) => {
+              const elimRound = eliminatedRounds.get(p.id);
+              return (
+                <div key={p.id} className="flex items-center gap-2 text-sm">
+                  <span className="text-base grayscale opacity-40">💀</span>
+                  <span className="text-white/35 line-through">{p.name}</span>
+                  {elimRound != null && (
+                    <span className="text-white/20 text-xs ml-auto">R{elimRound}</span>
+                  )}
+                </div>
+              );
+            })}
           </>
         )}
       </div>
@@ -1109,6 +1155,14 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
   const [isAuthenticated, setIsAuthenticated] = useState(() =>
     typeof window !== "undefined" ? !!getAuthToken() : false,
   );
+  // Player card badges
+  // empoweredPlayerId is set by the reveal choreography (INF-76) — null until then
+  const [empoweredPlayerId, setEmpoweredPlayerId] = useState<string | null>(null);
+  const [eliminatedRounds, setEliminatedRounds] = useState<ReadonlyMap<string, number>>(new Map());
+  const eliminatedRoundsRef = useRef<Map<string, number>>(new Map());
+  const [recentlyUnshielded, setRecentlyUnshielded] = useState<ReadonlySet<string>>(new Set());
+  // Track previous shield states to detect expiry
+  const prevShieldedRef = useRef<Map<string, boolean>>(new Map());
 
   // Fetch game data client-side if not provided via props
   useEffect(() => {
@@ -1228,6 +1282,26 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
             players: Array.from(playerMap.values()),
           };
         });
+        // Detect shield state changes to trigger shatter animation
+        const newlyUnshielded: string[] = [];
+        for (const ap of snapshot.alivePlayers) {
+          const wasShielded = prevShieldedRef.current.get(ap.id);
+          if (wasShielded === true && !ap.shielded) {
+            newlyUnshielded.push(ap.id);
+          }
+          prevShieldedRef.current.set(ap.id, ap.shielded);
+        }
+        if (newlyUnshielded.length > 0) {
+          setRecentlyUnshielded((prev) => new Set([...prev, ...newlyUnshielded]));
+          // Clear after animation completes (800ms)
+          setTimeout(() => {
+            setRecentlyUnshielded((prev) => {
+              const next = new Set(prev);
+              for (const id of newlyUnshielded) next.delete(id);
+              return next;
+            });
+          }, 800);
+        }
         // Load catch-up transcript
         let id = msgIdRef.current;
         const msgs = snapshot.transcript.map((entry) =>
@@ -1279,6 +1353,9 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
       case "player_eliminated":
         // Register this player as awaiting their last-words message
         awaitingLastWordsRef.current.add(ev.playerId);
+        // Track elimination round for badge display
+        eliminatedRoundsRef.current.set(ev.playerId, ev.round);
+        setEliminatedRounds(new Map(eliminatedRoundsRef.current));
         setGame((g) => {
           if (!g) return g;
           const found = g.players.some((p) => p.id === ev.playerId);
@@ -1479,7 +1556,13 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
 
       {/* Right: player roster */}
       <div>
-        <PlayerRoster players={game.players} />
+        <PlayerRoster
+          players={game.players}
+          empoweredPlayerId={empoweredPlayerId}
+          eliminatedRounds={eliminatedRounds}
+          recentlyUnshielded={recentlyUnshielded}
+          speedrun={isSpeedrun}
+        />
       </div>
     </div>
     </>
