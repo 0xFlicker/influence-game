@@ -1694,6 +1694,9 @@ function DramaticReplayViewer({
   const [isPlaying, setIsPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
   const [showHouseOverlay, setShowHouseOverlay] = useState(false);
+  const [activeEndgameScreen, setActiveEndgameScreen] = useState<EndgameScreenState | null>(null);
+  const [activePhaseTransition, setActivePhaseTransition] = useState<TransitionState | null>(null);
+  const seenEndgameStages = useRef<Set<string>>(new Set());
   const feedRef = useRef<HTMLDivElement>(null);
 
   const scene = scenes[sceneIndex];
@@ -1722,6 +1725,19 @@ function DramaticReplayViewer({
     };
   }, [game, allVisibleMessages]);
 
+  // Track eliminated players from visible messages
+  const eliminatedIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const msg of allVisibleMessages) {
+      if (msg.scope === "system" && msg.text.includes("has been eliminated")) {
+        const player = players.find((p) => msg.text.includes(p.name));
+        if (player) ids.add(player.id);
+      }
+    }
+    return ids;
+  }, [allVisibleMessages, players]);
+  const aliveCount = players.length - eliminatedIds.size;
+
   // Detect round boundaries for round markers
   const prevScene = sceneIndex > 0 ? scenes[sceneIndex - 1] : null;
   const isNewRound = scene && prevScene && scene.round !== prevScene.round;
@@ -1736,9 +1752,52 @@ function DramaticReplayViewer({
     }
   }, [sceneIndex, scene?.houseIntro, isRoomChange]);
 
-  // Auto-advance messages within a scene
+  // Trigger PhaseTransitionOverlay on room type changes
   useEffect(() => {
-    if (!isPlaying || !scene || showHouseOverlay) return;
+    if (isRoomChange && scene) {
+      const flavors = PHASE_FLAVORS[scene.phase] ?? [];
+      const flavorText = flavors.length > 0
+        ? flavors[Math.floor(Math.random() * flavors.length)]!
+        : "";
+      setActivePhaseTransition({
+        phase: scene.phase,
+        round: scene.round,
+        maxRounds: game.maxRounds,
+        aliveCount,
+        flavorText,
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sceneIndex]);
+
+  // Trigger endgame entry screens at player-count thresholds
+  useEffect(() => {
+    if (!scene || scene.roomType !== "endgame") return;
+    let stage: EndgameStage | null = null;
+    if (aliveCount <= 2 && !seenEndgameStages.current.has("judgment")) {
+      stage = "judgment";
+    } else if (aliveCount <= 3 && !seenEndgameStages.current.has("tribunal")) {
+      stage = "tribunal";
+    } else if (aliveCount <= 4 && !seenEndgameStages.current.has("reckoning")) {
+      stage = "reckoning";
+    }
+    if (stage) {
+      seenEndgameStages.current.add(stage);
+      const alivePlayers = players.filter((p) => !eliminatedIds.has(p.id));
+      const finalists = alivePlayers.length === 2
+        ? [alivePlayers[0]!.name, alivePlayers[1]!.name] as [string, string]
+        : undefined;
+      const jurors = stage === "judgment"
+        ? players.filter((p) => eliminatedIds.has(p.id)).map((p) => p.name)
+        : undefined;
+      setActiveEndgameScreen({ stage, finalists, jurors });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sceneIndex]);
+
+  // Auto-advance messages within a scene (House overlay does NOT pause auto-play)
+  useEffect(() => {
+    if (!isPlaying || !scene) return;
     if (messageIndex >= scene.messages.length - 1) {
       // All messages in scene revealed — pause then advance to next scene
       if (sceneIndex >= totalScenes - 1) {
@@ -1755,7 +1814,7 @@ function DramaticReplayViewer({
       setMessageIndex((i) => i + 1);
     }, BASE_INTERVAL_MS / speed);
     return () => window.clearTimeout(timer);
-  }, [isPlaying, messageIndex, sceneIndex, scene, totalScenes, speed, showHouseOverlay]);
+  }, [isPlaying, messageIndex, sceneIndex, scene, totalScenes, speed]);
 
   // Auto-scroll feed
   useEffect(() => {
@@ -1844,18 +1903,24 @@ function DramaticReplayViewer({
   const roomBorder = ROOM_TYPE_BORDERS[scene.roomType];
   const phaseLabel = PHASE_TRANSITION_LABELS[scene.phase] ?? scene.phase;
 
-  // Count alive players at this point in the game
-  const eliminatedIds = new Set<string>();
-  for (const msg of allVisibleMessages) {
-    if (msg.scope === "system" && msg.text.includes("has been eliminated")) {
-      const player = players.find((p) => msg.text.includes(p.name));
-      if (player) eliminatedIds.add(player.id);
-    }
-  }
-  const aliveCount = players.length - eliminatedIds.size;
-
   return (
     <div className="flex flex-col gap-3">
+      {/* Phase transition overlay on room type changes */}
+      {activePhaseTransition && (
+        <PhaseTransitionOverlay
+          transition={activePhaseTransition}
+          onDismiss={() => setActivePhaseTransition(null)}
+        />
+      )}
+
+      {/* Endgame entry screens */}
+      {activeEndgameScreen && (
+        <EndgameEntryScreen
+          endgame={activeEndgameScreen}
+          onDismiss={() => setActiveEndgameScreen(null)}
+        />
+      )}
+
       {/* House Overlay */}
       {showHouseOverlay && scene.houseIntro && (
         <div
