@@ -4,6 +4,7 @@ import { getGame, getGameTranscript, type GameDetail, type TranscriptEntry } fro
 
 interface Props {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export async function generateMetadata({ params }: Props) {
@@ -14,8 +15,10 @@ export async function generateMetadata({ params }: Props) {
   };
 }
 
-export default async function GameViewerPage({ params }: Props) {
+export default async function GameViewerPage({ params, searchParams }: Props) {
   const { slug } = await params;
+  const sp = await searchParams;
+  const mode = typeof sp.mode === "string" ? sp.mode : undefined;
 
   let initialGame: GameDetail | undefined;
   let initialMessages: TranscriptEntry[] | undefined;
@@ -44,6 +47,7 @@ export default async function GameViewerPage({ params }: Props) {
           gameId={slug}
           initialGame={initialGame}
           initialMessages={initialMessages}
+          mode={mode}
         />
       </main>
     </div>

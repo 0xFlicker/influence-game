@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { useRouter } from "next/navigation";
 import { getGame, getGameTranscript, getAuthToken, type GameDetail, type GamePlayer, type GameSummary, type TranscriptEntry, type WsGameEvent, type WsTranscriptEntry, type PhaseKey, type TranscriptScope } from "@/lib/api";
@@ -165,6 +165,103 @@ function personaEmoji(persona: string): string {
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
+
+// ---------------------------------------------------------------------------
+// Dramatic Replay — Scene model + builder
+// ---------------------------------------------------------------------------
+
+type RoomType = "lobby" | "private_rooms" | "tribunal" | "diary" | "endgame";
+
+interface ReplayScene {
+  id: string;
+  round: number;
+  phase: PhaseKey;
+  roomType: RoomType;
+  messages: TranscriptEntry[];
+  houseIntro: string | null;
+}
+
+const PHASE_TO_ROOM: Partial<Record<PhaseKey, RoomType>> = {
+  INTRODUCTION: "lobby",
+  LOBBY: "lobby",
+  RUMOR: "lobby",
+  WHISPER: "private_rooms",
+  VOTE: "tribunal",
+  POWER: "tribunal",
+  REVEAL: "tribunal",
+  COUNCIL: "tribunal",
+  DIARY_ROOM: "diary",
+  PLEA: "endgame",
+  ACCUSATION: "endgame",
+  DEFENSE: "endgame",
+  OPENING_STATEMENTS: "endgame",
+  JURY_QUESTIONS: "endgame",
+  CLOSING_ARGUMENTS: "endgame",
+  JURY_VOTE: "endgame",
+  END: "endgame",
+};
+
+const ROOM_TYPE_COLORS: Record<RoomType, string> = {
+  lobby: "bg-blue-500",
+  private_rooms: "bg-purple-500",
+  tribunal: "bg-red-500",
+  diary: "bg-purple-700",
+  endgame: "bg-amber-500",
+};
+
+const ROOM_TYPE_BORDERS: Record<RoomType, string> = {
+  lobby: "border-blue-900/20 bg-blue-950/5",
+  private_rooms: "border-purple-900/20 bg-purple-950/10",
+  tribunal: "border-red-900/20 bg-red-950/5",
+  diary: "border-purple-900/30 bg-purple-950/10",
+  endgame: "border-amber-900/20 bg-amber-950/5",
+};
+
+const HOUSE_INTROS: Partial<Record<PhaseKey, string>> = {
+  WHISPER: "The operatives have gone dark. These are the conversations they didn't want you to hear.",
+  REVEAL: "The votes are in. Every operative must now face the truth.",
+  DIARY_ROOM: "Before they move on, The House has a few questions.",
+};
+
+function phaseToRoomType(phase: PhaseKey): RoomType {
+  return PHASE_TO_ROOM[phase] ?? "lobby";
+}
+
+function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] {
+  const grouped = new Map<string, TranscriptEntry[]>();
+  for (const msg of transcript) {
+    const key = `R${msg.round}-${msg.phase}`;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(msg);
+  }
+
+  const scenes: ReplayScene[] = [];
+  for (const [id, msgs] of grouped.entries()) {
+    const { round, phase } = msgs[0]!;
+    const roomType = phaseToRoomType(phase);
+    scenes.push({
+      id,
+      round,
+      phase,
+      roomType,
+      messages: msgs,
+      houseIntro: HOUSE_INTROS[phase] ?? null,
+    });
+  }
+
+  return scenes;
+}
+
+// Speed multipliers for dramatic replay
+const SPEED_OPTIONS = [
+  { label: "0.5x", value: 0.5 },
+  { label: "1x", value: 1 },
+  { label: "2x", value: 2 },
+  { label: "4x", value: 4 },
+] as const;
+
+const BASE_INTERVAL_MS = 2500;
+const INTER_SCENE_PAUSE_MS = 800;
 
 interface WhisperRoomStage {
   roomId: number;
@@ -1551,6 +1648,8 @@ interface GameViewerProps {
    */
   initialGame?: GameDetail;
   initialMessages?: TranscriptEntry[];
+  /** "classic" forces the old message-stepper replay; "dramatic" (or undefined) uses scene-based replay for completed games. */
+  mode?: string;
 }
 
 /** Convert a WebSocket-format transcript entry to a display-ready TranscriptEntry. */
@@ -1574,7 +1673,404 @@ function wsEntryToTranscriptEntry(
   };
 }
 
-export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerProps) {
+// ---------------------------------------------------------------------------
+// Dramatic Replay Viewer — scene-based orchestrator
+// ---------------------------------------------------------------------------
+
+function DramaticReplayViewer({
+  game,
+  messages,
+  players,
+}: {
+  game: GameDetail;
+  messages: TranscriptEntry[];
+  players: GamePlayer[];
+}) {
+  const scenes = useMemo(() => buildReplayScenes(messages), [messages]);
+  const [sceneIndex, setSceneIndex] = useState(0);
+  const [messageIndex, setMessageIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [speed, setSpeed] = useState(1);
+  const [showHouseOverlay, setShowHouseOverlay] = useState(false);
+  const feedRef = useRef<HTMLDivElement>(null);
+
+  const scene = scenes[sceneIndex];
+  const totalScenes = scenes.length;
+
+  // Visible messages within current scene
+  const visibleSceneMessages = scene ? scene.messages.slice(0, messageIndex + 1) : [];
+
+  // All messages visible up to current scene (for context)
+  const allVisibleMessages = useMemo(() => {
+    const msgs: TranscriptEntry[] = [];
+    for (let i = 0; i < sceneIndex; i++) {
+      msgs.push(...scenes[i]!.messages);
+    }
+    msgs.push(...visibleSceneMessages);
+    return msgs;
+  }, [scenes, sceneIndex, visibleSceneMessages]);
+
+  // Reconstruct game state from visible messages
+  const replayGame: GameDetail = useMemo(() => {
+    const lastMsg = allVisibleMessages[allVisibleMessages.length - 1];
+    return {
+      ...game,
+      currentPhase: (lastMsg?.phase ?? game.currentPhase) as PhaseKey,
+      currentRound: lastMsg?.round ?? 1,
+    };
+  }, [game, allVisibleMessages]);
+
+  // Detect round boundaries for round markers
+  const prevScene = sceneIndex > 0 ? scenes[sceneIndex - 1] : null;
+  const isNewRound = scene && prevScene && scene.round !== prevScene.round;
+  const isRoomChange = scene && prevScene && scene.roomType !== prevScene.roomType;
+
+  // Show House overlay when entering a new scene with houseIntro
+  useEffect(() => {
+    if (scene?.houseIntro && isRoomChange) {
+      setShowHouseOverlay(true);
+      const timer = window.setTimeout(() => setShowHouseOverlay(false), 2500);
+      return () => window.clearTimeout(timer);
+    }
+  }, [sceneIndex, scene?.houseIntro, isRoomChange]);
+
+  // Auto-advance messages within a scene
+  useEffect(() => {
+    if (!isPlaying || !scene || showHouseOverlay) return;
+    if (messageIndex >= scene.messages.length - 1) {
+      // All messages in scene revealed — pause then advance to next scene
+      if (sceneIndex >= totalScenes - 1) {
+        setIsPlaying(false);
+        return;
+      }
+      const timer = window.setTimeout(() => {
+        setSceneIndex((i) => Math.min(totalScenes - 1, i + 1));
+        setMessageIndex(0);
+      }, INTER_SCENE_PAUSE_MS / speed);
+      return () => window.clearTimeout(timer);
+    }
+    const timer = window.setTimeout(() => {
+      setMessageIndex((i) => i + 1);
+    }, BASE_INTERVAL_MS / speed);
+    return () => window.clearTimeout(timer);
+  }, [isPlaying, messageIndex, sceneIndex, scene, totalScenes, speed, showHouseOverlay]);
+
+  // Auto-scroll feed
+  useEffect(() => {
+    if (feedRef.current) {
+      feedRef.current.scrollTop = feedRef.current.scrollHeight;
+    }
+  }, [messageIndex, sceneIndex]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      switch (e.key) {
+        case " ":
+          e.preventDefault();
+          setIsPlaying((p) => !p);
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          if (sceneIndex < totalScenes - 1) {
+            setSceneIndex((i) => i + 1);
+            setMessageIndex(0);
+          }
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          if (sceneIndex > 0) {
+            setSceneIndex((i) => i - 1);
+            setMessageIndex(0);
+          }
+          break;
+        case "]":
+          e.preventDefault();
+          // Next round
+          for (let i = sceneIndex + 1; i < totalScenes; i++) {
+            if (scenes[i]!.round !== scene?.round) {
+              setSceneIndex(i);
+              setMessageIndex(0);
+              break;
+            }
+          }
+          break;
+        case "[":
+          e.preventDefault();
+          // Previous round
+          if (scene) {
+            for (let i = sceneIndex - 1; i >= 0; i--) {
+              if (scenes[i]!.round !== scene.round) {
+                // Jump to the first scene of that round
+                const targetRound = scenes[i]!.round;
+                let first = i;
+                while (first > 0 && scenes[first - 1]!.round === targetRound) first--;
+                setSceneIndex(first);
+                setMessageIndex(0);
+                break;
+              }
+            }
+          }
+          break;
+        case "1":
+          setSpeed(0.5);
+          break;
+        case "2":
+          setSpeed(1);
+          break;
+        case "3":
+          setSpeed(2);
+          break;
+        case "4":
+          setSpeed(4);
+          break;
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [sceneIndex, totalScenes, scene, scenes]);
+
+  if (!scene || totalScenes === 0) {
+    return (
+      <div className="border border-white/10 rounded-xl p-12 text-center text-white/20 text-sm">
+        No replay data available.
+      </div>
+    );
+  }
+
+  const roomBorder = ROOM_TYPE_BORDERS[scene.roomType];
+  const phaseLabel = PHASE_TRANSITION_LABELS[scene.phase] ?? scene.phase;
+
+  // Count alive players at this point in the game
+  const eliminatedIds = new Set<string>();
+  for (const msg of allVisibleMessages) {
+    if (msg.scope === "system" && msg.text.includes("has been eliminated")) {
+      const player = players.find((p) => msg.text.includes(p.name));
+      if (player) eliminatedIds.add(player.id);
+    }
+  }
+  const aliveCount = players.length - eliminatedIds.size;
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* House Overlay */}
+      {showHouseOverlay && scene.houseIntro && (
+        <div
+          className="fixed inset-0 z-40 bg-black/85 flex flex-col items-center justify-center cursor-pointer animate-[fadeIn_0.3s_ease-out]"
+          onClick={() => setShowHouseOverlay(false)}
+        >
+          <p className="text-white/30 text-xs tracking-[0.4em] uppercase mb-4">
+            ◆ THE HOUSE ◆
+          </p>
+          <p className="text-white/70 italic text-base md:text-lg max-w-lg text-center px-6 leading-relaxed">
+            {scene.houseIntro}
+          </p>
+        </div>
+      )}
+
+      {/* Round boundary */}
+      {isNewRound && (
+        <div className="text-center py-4">
+          <p className="text-white/20 text-xs tracking-[0.3em] uppercase">◆ ◆ ◆</p>
+          <p className="text-white/60 text-lg font-semibold mt-1">ROUND {scene.round}</p>
+          <p className="text-white/30 text-xs mt-0.5">{aliveCount} operatives remaining</p>
+          <p className="text-white/20 text-xs tracking-[0.3em] uppercase mt-1">◆ ◆ ◆</p>
+        </div>
+      )}
+
+      {/* Scene header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${ROOM_TYPE_COLORS[scene.roomType]}`} />
+          <span className={`text-xs font-semibold uppercase tracking-[0.2em] ${phaseColor(scene.phase)}`}>
+            ◆ {phaseLabel} ◆
+          </span>
+          <span className="text-xs text-white/20">Round {scene.round}</span>
+        </div>
+        <ConnectionBadge status="replay" />
+      </div>
+
+      {/* Scene scrubber */}
+      <div className="flex h-2 rounded-full overflow-hidden bg-white/5 gap-px">
+        {scenes.map((s, i) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => { setSceneIndex(i); setMessageIndex(0); }}
+            className={`flex-1 min-w-[3px] transition-opacity ${ROOM_TYPE_COLORS[s.roomType]} ${
+              i <= sceneIndex ? "opacity-100" : "opacity-25"
+            } ${i === sceneIndex ? "ring-1 ring-white/40" : ""} hover:opacity-80`}
+            title={`${s.id} — ${PHASE_TRANSITION_LABELS[s.phase] ?? s.phase}`}
+          />
+        ))}
+      </div>
+
+      {/* Message feed */}
+      <div
+        ref={feedRef}
+        className={`border ${roomBorder} rounded-xl flex-1 overflow-y-auto p-4 space-y-3 min-h-[420px] max-h-[600px]`}
+      >
+        {scene.roomType === "private_rooms" ? (
+          // Whisper room: show full content grouped by room
+          <div className="space-y-4">
+            <p className="text-center text-xs uppercase tracking-[0.25em] text-purple-300/50 mb-2">
+              The operatives went dark. These are their private conversations.
+            </p>
+            {(() => {
+              const stageData = buildWhisperStageData(visibleSceneMessages, players);
+              return stageData.rooms.map((room) => (
+                <div
+                  key={room.roomId}
+                  className="rounded-2xl border border-purple-400/20 bg-black/30 p-4 shadow-lg"
+                >
+                  <p className="text-[11px] uppercase tracking-[0.28em] text-purple-300/45 mb-1">
+                    Room {room.roomId}
+                  </p>
+                  <p className="text-sm font-semibold text-white mb-3">
+                    {room.playerNames.join(" × ")}
+                  </p>
+                  {room.messages.length === 0 ? (
+                    <p className="text-xs text-white/35 italic">No messages yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {room.messages.map((msg) => {
+                        const player = players.find((p) => p.id === msg.fromPlayerId);
+                        return (
+                          <div key={msg.id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-sm">{player ? personaEmoji(player.persona) : "●"}</span>
+                              <span className="text-xs font-semibold text-white/75">{player?.name ?? msg.fromPlayerId}</span>
+                              <span className="ml-auto text-[10px] text-white/20">{formatTime(msg.timestamp)}</span>
+                            </div>
+                            <p className="text-sm text-white/70 leading-relaxed">{msg.text}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ));
+            })()}
+          </div>
+        ) : (
+          // All other room types: linear message feed
+          visibleSceneMessages.length === 0 ? (
+            <p className="text-center text-white/20 text-sm mt-16">
+              Scene loading…
+            </p>
+          ) : (
+            visibleSceneMessages.map((msg) => (
+              <MessageBubble key={msg.id} msg={msg} players={players} />
+            ))
+          )
+        )}
+      </div>
+
+      {/* Replay control bar */}
+      <div className="border border-white/10 rounded-xl px-4 py-3 space-y-2">
+        {/* Scene info + navigation */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => { setSceneIndex(0); setMessageIndex(0); }}
+              disabled={sceneIndex === 0}
+              className="text-xs border border-white/10 hover:border-white/25 text-white/50 hover:text-white px-2 py-1 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              title="First scene"
+            >
+              ⏮
+            </button>
+            <button
+              type="button"
+              onClick={() => { setSceneIndex((i) => Math.max(0, i - 1)); setMessageIndex(0); }}
+              disabled={sceneIndex === 0}
+              className="text-xs border border-white/10 hover:border-white/25 text-white/50 hover:text-white px-2 py-1 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Previous scene (←)"
+            >
+              ←
+            </button>
+          </div>
+
+          <span className="text-xs text-white/40 text-center">
+            Scene {sceneIndex + 1} of {totalScenes} · R{scene.round} {PHASE_LABELS[scene.phase]}
+          </span>
+
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => { setSceneIndex((i) => Math.min(totalScenes - 1, i + 1)); setMessageIndex(0); }}
+              disabled={sceneIndex >= totalScenes - 1}
+              className="text-xs border border-white/10 hover:border-white/25 text-white/50 hover:text-white px-2 py-1 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Next scene (→)"
+            >
+              →
+            </button>
+            <button
+              type="button"
+              onClick={() => { setSceneIndex(totalScenes - 1); setMessageIndex(scenes[totalScenes - 1]!.messages.length - 1); }}
+              disabled={sceneIndex >= totalScenes - 1}
+              className="text-xs border border-white/10 hover:border-white/25 text-white/50 hover:text-white px-2 py-1 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Last scene"
+            >
+              ⏭
+            </button>
+          </div>
+        </div>
+
+        {/* Play/pause + speed */}
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setIsPlaying((p) => !p)}
+            className="text-xs border border-white/10 hover:border-white/25 text-white/70 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
+            title="Play/Pause (Space)"
+          >
+            {isPlaying ? "⏸ Pause" : "▶ Play"}
+          </button>
+
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-white/30 mr-1">Speed:</span>
+            {SPEED_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setSpeed(opt.value)}
+                className={`text-xs px-2 py-1 rounded-lg transition-colors ${
+                  speed === opt.value
+                    ? "bg-white/15 text-white border border-white/25"
+                    : "text-white/40 hover:text-white/70 border border-transparent"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <span className="text-xs text-white/20">
+            {messageIndex + 1}/{scene.messages.length} msgs
+          </span>
+        </div>
+
+        {/* Keyboard shortcuts hint */}
+        <p className="text-[10px] text-white/15 text-center">
+          Space: play/pause · ←→: scenes · []: rounds · 1234: speed
+        </p>
+      </div>
+
+      {/* Player roster below controls */}
+      <PlayerRoster
+        players={players}
+        empoweredPlayerId={null}
+        eliminatedRounds={new Map()}
+        recentlyUnshielded={new Set()}
+        speedrun={false}
+      />
+    </div>
+  );
+}
+
+export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameViewerProps) {
   const { authenticated, login } = usePrivy();
   const router = useRouter();
   const [joinModalOpen, setJoinModalOpen] = useState(false);
@@ -1984,6 +2480,18 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
       <div className="border border-white/10 rounded-xl p-12 text-center text-white/20 text-sm">
         Loading game…
       </div>
+    );
+  }
+
+  // Route to dramatic replay for completed games (unless ?mode=classic)
+  const useDramaticReplay = isReplay && mode !== "classic" && messages.length > 0;
+  if (useDramaticReplay) {
+    return (
+      <DramaticReplayViewer
+        game={game}
+        messages={messages}
+        players={game.players}
+      />
     );
   }
 
