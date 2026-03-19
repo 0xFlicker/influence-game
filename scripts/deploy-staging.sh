@@ -41,21 +41,24 @@ echo ""
 # Create directories
 mkdir -p "$STAGING_APP" "$STAGING_DATA" "$PID_DIR" "$LOG_DIR"
 
-# Stop existing services
+# Stop existing services (kill entire process tree to avoid stale CWD)
 echo "--- Stopping existing services ---"
 for svc in api web; do
   pidfile="$PID_DIR/$svc.pid"
   if [ -f "$pidfile" ]; then
     pid=$(cat "$pidfile")
     if kill -0 "$pid" 2>/dev/null; then
-      echo "  Stopping $svc (PID $pid)"
+      echo "  Stopping $svc (PID $pid) and children"
+      # Kill children first (next-server, bun), then parent (doppler)
+      pkill -P "$pid" 2>/dev/null || true
       kill "$pid" 2>/dev/null || true
       # Wait for graceful shutdown
       for i in $(seq 1 10); do
         kill -0 "$pid" 2>/dev/null || break
         sleep 1
       done
-      # Force kill if still running
+      # Force kill entire tree if still running
+      pkill -9 -P "$pid" 2>/dev/null || true
       kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
     fi
     rm -f "$pidfile"
@@ -117,7 +120,7 @@ WEB_PID=$!
 echo "$WEB_PID" > "$PID_DIR/web.pid"
 echo "  Web started (PID $WEB_PID) — http://$TAILSCALE_IP:4001"
 
-# Health check (wait up to 15s for API)
+# Health check (wait up to 15s for each service)
 echo "--- Health check ---"
 for i in $(seq 1 15); do
   if curl -sf "http://$TAILSCALE_IP:4000/health" >/dev/null 2>&1; then
@@ -126,6 +129,17 @@ for i in $(seq 1 15); do
   fi
   if [ "$i" -eq 15 ]; then
     echo "  WARNING: API health check failed after 15s. Check $LOG_DIR/api.log"
+  fi
+  sleep 1
+done
+
+for i in $(seq 1 15); do
+  if curl -sf "http://$TAILSCALE_IP:4001/" >/dev/null 2>&1; then
+    echo "  Web healthy"
+    break
+  fi
+  if [ "$i" -eq 15 ]; then
+    echo "  WARNING: Web health check failed after 15s. Check $LOG_DIR/web.log"
   fi
   sleep 1
 done
