@@ -2,7 +2,7 @@
   "name": "influence-game",
   "private": true,
   "description": "Influence: AI agent social-strategy game",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "workspaces": [
     "packages/*"
   ],

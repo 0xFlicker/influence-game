@@ -1,6 +1,6 @@
 {
   "name": "@influence/engine",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Influence game engine — core game logic, state machine, agents",
   "type": "module",
   "main": "src/index.ts",
