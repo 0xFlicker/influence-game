@@ -6,7 +6,6 @@
  */
 
 import { Hono } from "hono";
-import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";

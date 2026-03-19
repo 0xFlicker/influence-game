@@ -16,6 +16,7 @@ import {
   getObserverCount,
   type WsConnectionData,
 } from "../services/ws-manager.js";
+import { Phase } from "@influence/engine";
 import type { GameStreamEvent, GameStateSnapshot } from "@influence/engine";
 
 // ---------------------------------------------------------------------------
@@ -113,7 +114,7 @@ describe("WebSocket Manager", () => {
       type: "transcript_entry",
       entry: {
         round: 1,
-        phase: "LOBBY" as any,
+        phase: Phase.LOBBY,
         timestamp: Date.now(),
         from: "Alice",
         scope: "public",
@@ -138,7 +139,7 @@ describe("WebSocket Manager", () => {
 
     const event: GameStreamEvent = {
       type: "phase_change",
-      phase: "VOTE" as any,
+      phase: Phase.VOTE,
       round: 2,
       alivePlayers: [
         { id: "p1", name: "Alice" },
@@ -209,7 +210,7 @@ describe("WebSocket Manager", () => {
       transcript: [
         {
           round: 1,
-          phase: "LOBBY" as any,
+          phase: Phase.LOBBY,
           timestamp: 1000,
           from: "Alice",
           scope: "public",

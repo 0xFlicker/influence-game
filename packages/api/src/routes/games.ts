@@ -12,7 +12,7 @@
  */
 
 import { Hono } from "hono";
-import { eq, and, inArray, asc, or } from "drizzle-orm";
+import { eq, inArray, asc, or } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -20,7 +20,6 @@ import type { GameStatus } from "../db/schema.js";
 import {
   requireAuth,
   requireAdmin,
-  optionalAuth,
   type AuthEnv,
 } from "../middleware/auth.js";
 import { startGame, isGameRunning } from "../services/game-lifecycle.js";

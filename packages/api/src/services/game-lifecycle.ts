@@ -17,7 +17,6 @@ import {
 } from "@influence/engine";
 import type {
   IAgent,
-  TranscriptEntry,
   Personality,
   GameConfig,
   GameStateSnapshot,

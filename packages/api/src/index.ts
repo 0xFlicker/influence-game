@@ -12,7 +12,7 @@ import { createDB, schema } from "./db/index.js";
 import { runMigrations } from "./db/migrate.js";
 import { createGameRoutes } from "./routes/games.js";
 import { createAuthRoutes } from "./routes/auth.js";
-import { isGameRunning, getGameSnapshot } from "./services/game-lifecycle.js";
+import { getGameSnapshot } from "./services/game-lifecycle.js";
 import {
   setServer,
   handleOpen,

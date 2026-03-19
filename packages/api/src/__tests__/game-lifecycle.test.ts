@@ -6,13 +6,13 @@
  * Validates: transcript persistence, result recording, status transitions.
  */
 
-import { describe, test, expect, beforeAll, beforeEach } from "bun:test";
+import { describe, test, expect, beforeAll } from "bun:test";
 import { createDB, schema } from "../db/index.js";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { GameRunner } from "@influence/engine";
-import type { IAgent, PhaseContext, TranscriptEntry } from "@influence/engine";
+import type { IAgent, PhaseContext } from "@influence/engine";
 import type { UUID, PowerAction, GameConfig } from "@influence/engine";
 import path from "path";
 
@@ -287,7 +287,7 @@ describe("Game lifecycle integration", () => {
 
   test("game produces a winner or completes by max rounds", async () => {
     const db = setupDB();
-    const { gameId, agents, config } = createGameInDB(db, 4);
+    const { agents, config } = createGameInDB(db, 4);
 
     const runner = new GameRunner(agents, config);
     const result = await runner.run();

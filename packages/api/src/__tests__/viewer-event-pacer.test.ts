@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "bun:test";
+import { describe, it, expect } from "bun:test";
 import { Phase } from "@influence/engine";
 import type { GameStreamEvent } from "@influence/engine";
 import { ViewerEventPacer, DEFAULT_LIVE_HOLDS } from "../services/viewer-event-pacer";
