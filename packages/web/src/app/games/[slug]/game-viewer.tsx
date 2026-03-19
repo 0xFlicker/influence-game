@@ -179,6 +179,8 @@ interface ReplayScene {
   roomType: RoomType;
   messages: TranscriptEntry[];
   houseIntro: string | null;
+  /** Present on per-room whisper scenes (spectacle mode splits whisper phases by room). */
+  whisperRoom?: { roomId: number; playerNames: string[] };
 }
 
 const PHASE_TO_ROOM: Partial<Record<PhaseKey, RoomType>> = {
@@ -227,7 +229,7 @@ function phaseToRoomType(phase: PhaseKey): RoomType {
   return PHASE_TO_ROOM[phase] ?? "lobby";
 }
 
-function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] {
+function buildReplayScenes(transcript: TranscriptEntry[], players: GamePlayer[]): ReplayScene[] {
   const grouped = new Map<string, TranscriptEntry[]>();
   for (const msg of transcript) {
     const key = `R${msg.round}-${msg.phase}`;
@@ -239,14 +241,48 @@ function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] {
   for (const [id, msgs] of grouped.entries()) {
     const { round, phase } = msgs[0]!;
     const roomType = phaseToRoomType(phase);
-    scenes.push({
-      id,
-      round,
-      phase,
-      roomType,
-      messages: msgs,
-      houseIntro: HOUSE_INTROS[phase] ?? null,
-    });
+
+    if (phase === "WHISPER") {
+      // Split whisper phases into per-room scenes for proper screen time
+      const stageData = buildWhisperStageData(msgs, players);
+
+      // System messages scene (allocation reveal)
+      const systemMsgs = msgs.filter((m) => m.scope === "system");
+      if (systemMsgs.length > 0) {
+        scenes.push({
+          id: `${id}-allocation`,
+          round,
+          phase,
+          roomType,
+          messages: systemMsgs,
+          houseIntro: HOUSE_INTROS[phase] ?? null,
+        });
+      }
+
+      // Per-room scenes — each room gets its own scene with proper screen time
+      for (const room of stageData.rooms) {
+        if (room.messages.length > 0) {
+          scenes.push({
+            id: `${id}-room-${room.roomId}`,
+            round,
+            phase,
+            roomType,
+            messages: room.messages,
+            houseIntro: null,
+            whisperRoom: { roomId: room.roomId, playerNames: room.playerNames },
+          });
+        }
+      }
+    } else {
+      scenes.push({
+        id,
+        round,
+        phase,
+        roomType,
+        messages: msgs,
+        houseIntro: HOUSE_INTROS[phase] ?? null,
+      });
+    }
   }
 
   return scenes;
@@ -260,8 +296,12 @@ const SPEED_OPTIONS = [
   { label: "4x", value: 4 },
 ] as const;
 
-const BASE_INTERVAL_MS = 2500;
-const INTER_SCENE_PAUSE_MS = 800;
+// Spectacle mode timing — 1x is ~0.25x the old speed
+const BASE_INTERVAL_MS = 10000;
+const INTER_SCENE_PAUSE_MS = 2500;
+const TYPING_HOLD_MS = 2000;
+const POST_REVEAL_BASE_MS = 2500;
+const POST_REVEAL_PER_CHAR_MS = 35;
 
 interface WhisperRoomStage {
   roomId: number;
@@ -1654,6 +1694,111 @@ interface GameViewerProps {
   mode?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Spectacle message spotlight — shared between live + replay immersive views
+// ---------------------------------------------------------------------------
+
+function SpectacleMessageSpotlight({
+  message,
+  phase,
+  players,
+  onRevealComplete,
+  queueLength,
+  speedrun = false,
+}: {
+  message: TranscriptEntry | null;
+  phase: SpectacleMessagePhase;
+  players: GamePlayer[];
+  onRevealComplete: () => void;
+  queueLength: number;
+  speedrun?: boolean;
+}) {
+  if (!message) {
+    return (
+      <div className="flex-1 flex items-center justify-center min-h-[350px]">
+        <p className="text-white/15 text-sm animate-pulse">Waiting for the next move…</p>
+      </div>
+    );
+  }
+
+  const isSystem = !message.fromPlayerId || message.scope === "system";
+  const player = message.fromPlayerId
+    ? players.find((p) => p.id === message.fromPlayerId)
+      ?? players.find((p) => p.name === message.fromPlayerId)
+    : null;
+  const playerName =
+    message.fromPlayerName ?? player?.name ?? message.fromPlayerId ?? "The House";
+  const isElimination = message.scope === "system" && message.text.includes("has been eliminated");
+
+  return (
+    <div className="flex-1 flex items-center justify-center min-h-[350px] px-6 py-8">
+      <div className="max-w-2xl w-full">
+        {/* Typing indicator */}
+        {phase === "typing" && !isSystem && (
+          <div className="text-center animate-[fadeIn_0.3s_ease-out]">
+            <div className="flex items-center justify-center gap-3 mb-8">
+              {player && <span className="text-2xl">{personaEmoji(player.persona)}</span>}
+              <span className="text-lg font-semibold text-white/60">{playerName}</span>
+              {message.scope === "whisper" && (
+                <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
+              )}
+            </div>
+            <div className="flex items-center justify-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1.2s" }} />
+              <span className="w-2.5 h-2.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "200ms", animationDuration: "1.2s" }} />
+              <span className="w-2.5 h-2.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "400ms", animationDuration: "1.2s" }} />
+            </div>
+          </div>
+        )}
+
+        {/* Message reveal / done */}
+        {(phase === "revealing" || phase === "done") && (
+          <div className="text-center animate-[fadeIn_0.3s_ease-out]">
+            {!isSystem && (
+              <div className="flex items-center justify-center gap-3 mb-8">
+                {player && <span className="text-2xl">{personaEmoji(player.persona)}</span>}
+                <span className="text-lg font-semibold text-white/70">{playerName}</span>
+                {message.scope === "whisper" && (
+                  <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
+                )}
+              </div>
+            )}
+
+            {isElimination ? (
+              <p className="text-2xl md:text-3xl font-bold text-red-400 tracking-wider">
+                {phase === "revealing" ? (
+                  <Typewriter text={message.text} rate="house" onComplete={onRevealComplete} speedrun={speedrun} />
+                ) : message.text}
+              </p>
+            ) : isSystem ? (
+              <p className="text-base md:text-lg text-white/40 italic leading-relaxed">
+                {phase === "revealing" ? (
+                  <Typewriter text={message.text} rate="house" onComplete={onRevealComplete} speedrun={speedrun} />
+                ) : message.text}
+              </p>
+            ) : (
+              <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl px-8 py-6 inline-block max-w-xl text-left">
+                <p className="text-lg md:text-xl leading-relaxed text-white/80">
+                  {phase === "revealing" ? (
+                    <Typewriter text={message.text} rate="spectacle" onComplete={onRevealComplete} speedrun={speedrun} />
+                  ) : message.text}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Queue indicator */}
+        {queueLength > 0 && phase === "done" && (
+          <p className="text-center text-xs text-white/10 mt-6 animate-pulse">
+            {queueLength} more…
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Convert a WebSocket-format transcript entry to a display-ready TranscriptEntry. */
 function wsEntryToTranscriptEntry(
   entry: WsTranscriptEntry,
@@ -1676,8 +1821,10 @@ function wsEntryToTranscriptEntry(
 }
 
 // ---------------------------------------------------------------------------
-// Dramatic Replay Viewer — scene-based orchestrator
+// Spectacle Replay Viewer — immersive single-message-at-a-time orchestrator
 // ---------------------------------------------------------------------------
+
+type SpectacleMessagePhase = "typing" | "revealing" | "done";
 
 function DramaticReplayViewer({
   game,
@@ -1688,42 +1835,45 @@ function DramaticReplayViewer({
   messages: TranscriptEntry[];
   players: GamePlayer[];
 }) {
-  const scenes = useMemo(() => buildReplayScenes(messages), [messages]);
+  const scenes = useMemo(() => buildReplayScenes(messages, players), [messages, players]);
   const [sceneIndex, setSceneIndex] = useState(0);
   const [messageIndex, setMessageIndex] = useState(0);
+  const [messagePhase, setMessagePhase] = useState<SpectacleMessagePhase>("typing");
   const [isPlaying, setIsPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
   const [showHouseOverlay, setShowHouseOverlay] = useState(false);
   const [activeEndgameScreen, setActiveEndgameScreen] = useState<EndgameScreenState | null>(null);
   const [activePhaseTransition, setActivePhaseTransition] = useState<TransitionState | null>(null);
   const seenEndgameStages = useRef<Set<string>>(new Set());
-  const feedRef = useRef<HTMLDivElement>(null);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scene = scenes[sceneIndex];
   const totalScenes = scenes.length;
+  const currentMessage = scene?.messages[messageIndex] ?? null;
+  const isSystemMessage = !currentMessage?.fromPlayerId || currentMessage?.scope === "system";
 
-  // Visible messages within current scene
-  const visibleSceneMessages = scene ? scene.messages.slice(0, messageIndex + 1) : [];
+  // Resolve current speaker
+  const currentPlayer = currentMessage?.fromPlayerId
+    ? players.find((p) => p.id === currentMessage.fromPlayerId)
+      ?? players.find((p) => p.name === currentMessage.fromPlayerId)
+    : null;
+  const currentPlayerName =
+    currentMessage?.fromPlayerName ?? currentPlayer?.name ?? currentMessage?.fromPlayerId ?? "The House";
 
-  // All messages visible up to current scene (for context)
+  // All messages visible up to current point
   const allVisibleMessages = useMemo(() => {
     const msgs: TranscriptEntry[] = [];
-    for (let i = 0; i < sceneIndex; i++) {
-      msgs.push(...scenes[i]!.messages);
+    for (let i = 0; i <= sceneIndex && i < scenes.length; i++) {
+      const s = scenes[i]!;
+      if (i < sceneIndex) {
+        msgs.push(...s.messages);
+      } else {
+        msgs.push(...s.messages.slice(0, messageIndex + 1));
+      }
     }
-    msgs.push(...visibleSceneMessages);
     return msgs;
-  }, [scenes, sceneIndex, visibleSceneMessages]);
-
-  // Reconstruct game state from visible messages
-  const replayGame: GameDetail = useMemo(() => {
-    const lastMsg = allVisibleMessages[allVisibleMessages.length - 1];
-    return {
-      ...game,
-      currentPhase: (lastMsg?.phase ?? game.currentPhase) as PhaseKey,
-      currentRound: lastMsg?.round ?? 1,
-    };
-  }, [game, allVisibleMessages]);
+  }, [scenes, sceneIndex, messageIndex]);
 
   // Track eliminated players from visible messages
   const eliminatedIds = useMemo(() => {
@@ -1738,21 +1888,12 @@ function DramaticReplayViewer({
   }, [allVisibleMessages, players]);
   const aliveCount = players.length - eliminatedIds.size;
 
-  // Detect round boundaries for round markers
+  // Detect scene transitions
   const prevScene = sceneIndex > 0 ? scenes[sceneIndex - 1] : null;
   const isNewRound = scene && prevScene && scene.round !== prevScene.round;
   const isRoomChange = scene && prevScene && scene.roomType !== prevScene.roomType;
 
-  // Show House overlay when entering a new scene with houseIntro
-  useEffect(() => {
-    if (scene?.houseIntro && isRoomChange) {
-      setShowHouseOverlay(true);
-      const timer = window.setTimeout(() => setShowHouseOverlay(false), 2500);
-      return () => window.clearTimeout(timer);
-    }
-  }, [sceneIndex, scene?.houseIntro, isRoomChange]);
-
-  // Trigger PhaseTransitionOverlay on room type changes
+  // Phase transition overlay on room type changes
   useEffect(() => {
     if (isRoomChange && scene) {
       const flavors = PHASE_FLAVORS[scene.phase] ?? [];
@@ -1770,17 +1911,13 @@ function DramaticReplayViewer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sceneIndex]);
 
-  // Trigger endgame entry screens at player-count thresholds
+  // Endgame entry screens at player-count thresholds
   useEffect(() => {
     if (!scene || scene.roomType !== "endgame") return;
     let stage: EndgameStage | null = null;
-    if (aliveCount <= 2 && !seenEndgameStages.current.has("judgment")) {
-      stage = "judgment";
-    } else if (aliveCount <= 3 && !seenEndgameStages.current.has("tribunal")) {
-      stage = "tribunal";
-    } else if (aliveCount <= 4 && !seenEndgameStages.current.has("reckoning")) {
-      stage = "reckoning";
-    }
+    if (aliveCount <= 2 && !seenEndgameStages.current.has("judgment")) stage = "judgment";
+    else if (aliveCount <= 3 && !seenEndgameStages.current.has("tribunal")) stage = "tribunal";
+    else if (aliveCount <= 4 && !seenEndgameStages.current.has("reckoning")) stage = "reckoning";
     if (stage) {
       seenEndgameStages.current.add(stage);
       const alivePlayers = players.filter((p) => !eliminatedIds.has(p.id));
@@ -1795,50 +1932,108 @@ function DramaticReplayViewer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sceneIndex]);
 
-  // Auto-advance messages within a scene (House overlay does NOT pause auto-play)
+  // House overlay on room changes
   useEffect(() => {
-    if (!isPlaying || !scene) return;
-    if (messageIndex >= scene.messages.length - 1) {
-      // All messages in scene revealed — pause then advance to next scene
-      if (sceneIndex >= totalScenes - 1) {
-        setIsPlaying(false);
-        return;
-      }
-      const timer = window.setTimeout(() => {
-        setSceneIndex((i) => Math.min(totalScenes - 1, i + 1));
-        setMessageIndex(0);
-      }, INTER_SCENE_PAUSE_MS / speed);
+    if (scene?.houseIntro && isRoomChange) {
+      setShowHouseOverlay(true);
+      const timer = window.setTimeout(() => setShowHouseOverlay(false), 3500);
       return () => window.clearTimeout(timer);
     }
+  }, [sceneIndex, scene?.houseIntro, isRoomChange]);
 
-    // Determine reveal interval based on scene type
-    const currentMsg = scene.messages[messageIndex];
-    const isElimination = currentMsg?.scope === "system" && currentMsg.text.includes("has been eliminated");
-    const isTribunal = scene.phase === "REVEAL" || scene.phase === "COUNCIL";
-
-    let intervalMs: number;
-    if (isElimination) {
-      // Auto-pause 2s at elimination moments
-      intervalMs = 2000 / speed;
-    } else if (isTribunal) {
-      // Reveal/Council: 1.5s base interval for dramatic reveals
-      intervalMs = 1500 / speed;
-    } else {
-      intervalMs = BASE_INTERVAL_MS / speed;
-    }
-
-    const timer = window.setTimeout(() => {
-      setMessageIndex((i) => i + 1);
-    }, intervalMs);
-    return () => window.clearTimeout(timer);
-  }, [isPlaying, messageIndex, sceneIndex, scene, totalScenes, speed]);
-
-  // Auto-scroll feed
+  // Auto-advance state machine
   useEffect(() => {
-    if (feedRef.current) {
-      feedRef.current.scrollTop = feedRef.current.scrollHeight;
+    if (!isPlaying || !scene || !currentMessage) return;
+
+    if (messagePhase === "typing") {
+      // System messages skip typing indicator
+      if (isSystemMessage) {
+        setMessagePhase("revealing");
+        return;
+      }
+      const timer = setTimeout(() => setMessagePhase("revealing"), TYPING_HOLD_MS / speed);
+      return () => clearTimeout(timer);
     }
-  }, [messageIndex, sceneIndex]);
+
+    if (messagePhase === "done") {
+      const isLastInScene = messageIndex >= scene.messages.length - 1;
+      const isLastScene = sceneIndex >= totalScenes - 1;
+
+      // Hold time proportional to message length
+      const holdMs = isLastInScene
+        ? INTER_SCENE_PAUSE_MS / speed
+        : Math.max(POST_REVEAL_BASE_MS, currentMessage.text.length * POST_REVEAL_PER_CHAR_MS) / speed;
+
+      const timer = setTimeout(() => {
+        if (!isLastInScene) {
+          setMessageIndex((i) => i + 1);
+          setMessagePhase("typing");
+        } else if (!isLastScene) {
+          setSceneIndex((i) => i + 1);
+          setMessageIndex(0);
+          setMessagePhase("typing");
+        } else {
+          setIsPlaying(false);
+        }
+      }, holdMs);
+      return () => clearTimeout(timer);
+    }
+    // "revealing" phase transitions via Typewriter onComplete
+  }, [isPlaying, messagePhase, messageIndex, sceneIndex, scene, totalScenes, speed, currentMessage, isSystemMessage]);
+
+  // Advance function — for click/tap and keyboard
+  const advanceMessage = useCallback(() => {
+    if (!scene) return;
+    // If mid-animation, skip to fully revealed
+    if (messagePhase === "typing" || messagePhase === "revealing") {
+      setMessagePhase("done");
+      return;
+    }
+    // Advance to next message or scene
+    if (messageIndex < scene.messages.length - 1) {
+      setMessageIndex((i) => i + 1);
+      setMessagePhase("typing");
+    } else if (sceneIndex < totalScenes - 1) {
+      setSceneIndex((i) => i + 1);
+      setMessageIndex(0);
+      setMessagePhase("typing");
+    }
+  }, [scene, messagePhase, messageIndex, sceneIndex, totalScenes]);
+
+  const goToNextScene = useCallback(() => {
+    if (sceneIndex < totalScenes - 1) {
+      setSceneIndex((i) => i + 1);
+      setMessageIndex(0);
+      setMessagePhase("typing");
+    }
+  }, [sceneIndex, totalScenes]);
+
+  const goToEnd = useCallback(() => {
+    if (totalScenes > 0) {
+      const lastScene = scenes[totalScenes - 1]!;
+      setSceneIndex(totalScenes - 1);
+      setMessageIndex(lastScene.messages.length - 1);
+      setMessagePhase("done");
+      setIsPlaying(false);
+    }
+  }, [totalScenes, scenes]);
+
+  // Click handler — advance when paused, pause when playing
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("[data-controls]")) return;
+    if (!isPlaying) {
+      advanceMessage();
+    } else {
+      setIsPlaying(false);
+    }
+  }, [isPlaying, advanceMessage]);
+
+  // Auto-hide controls
+  const handleMouseMove = useCallback(() => {
+    setControlsVisible(true);
+    if (controlsTimer.current) clearTimeout(controlsTimer.current);
+    controlsTimer.current = setTimeout(() => setControlsVisible(false), 3000);
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -1850,341 +2045,268 @@ function DramaticReplayViewer({
           setIsPlaying((p) => !p);
           break;
         case "ArrowRight":
+        case "Enter":
           e.preventDefault();
-          if (sceneIndex < totalScenes - 1) {
-            setSceneIndex((i) => i + 1);
-            setMessageIndex(0);
-          }
+          advanceMessage();
           break;
         case "ArrowLeft":
           e.preventDefault();
-          if (sceneIndex > 0) {
+          if (messageIndex > 0) {
+            setMessageIndex((i) => i - 1);
+            setMessagePhase("done");
+          } else if (sceneIndex > 0) {
+            const prev = scenes[sceneIndex - 1]!;
             setSceneIndex((i) => i - 1);
-            setMessageIndex(0);
+            setMessageIndex(prev.messages.length - 1);
+            setMessagePhase("done");
           }
           break;
         case "]":
           e.preventDefault();
-          // Next round
-          for (let i = sceneIndex + 1; i < totalScenes; i++) {
-            if (scenes[i]!.round !== scene?.round) {
-              setSceneIndex(i);
-              setMessageIndex(0);
-              break;
-            }
-          }
+          goToNextScene();
           break;
         case "[":
           e.preventDefault();
-          // Previous round
           if (scene) {
             for (let i = sceneIndex - 1; i >= 0; i--) {
               if (scenes[i]!.round !== scene.round) {
-                // Jump to the first scene of that round
                 const targetRound = scenes[i]!.round;
                 let first = i;
                 while (first > 0 && scenes[first - 1]!.round === targetRound) first--;
                 setSceneIndex(first);
                 setMessageIndex(0);
+                setMessagePhase("typing");
                 break;
               }
             }
           }
           break;
-        case "1":
-          setSpeed(0.5);
-          break;
-        case "2":
-          setSpeed(1);
-          break;
-        case "3":
-          setSpeed(2);
-          break;
-        case "4":
-          setSpeed(4);
-          break;
+        case "1": setSpeed(0.5); break;
+        case "2": setSpeed(1); break;
+        case "3": setSpeed(2); break;
+        case "4": setSpeed(4); break;
       }
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [sceneIndex, totalScenes, scene, scenes]);
+  }, [advanceMessage, goToNextScene, messageIndex, sceneIndex, scene, scenes]);
 
   if (!scene || totalScenes === 0) {
     return (
-      <div className="border border-white/10 rounded-xl p-12 text-center text-white/20 text-sm">
-        No replay data available.
+      <div className="fixed inset-0 bg-black flex items-center justify-center">
+        <p className="text-white/20 text-sm">No replay data available.</p>
       </div>
     );
   }
 
-  const roomBorder = ROOM_TYPE_BORDERS[scene.roomType];
-  const phaseLabel = PHASE_TRANSITION_LABELS[scene.phase] ?? scene.phase;
+  // Whisper room label
+  const roomLabel = scene.whisperRoom
+    ? `Room ${scene.whisperRoom.roomId} — ${scene.whisperRoom.playerNames.join(" × ")}`
+    : null;
+
+  // Is the current message an elimination announcement?
+  const isElimination = currentMessage?.scope === "system" && currentMessage.text.includes("has been eliminated");
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* Phase transition overlay on room type changes */}
+    <div
+      className="fixed inset-0 z-30 bg-black flex flex-col cursor-pointer select-none"
+      onClick={handleClick}
+      onMouseMove={handleMouseMove}
+    >
+      {/* Overlays */}
       {activePhaseTransition && (
         <PhaseTransitionOverlay
           transition={activePhaseTransition}
           onDismiss={() => setActivePhaseTransition(null)}
         />
       )}
-
-      {/* Endgame entry screens */}
       {activeEndgameScreen && (
         <EndgameEntryScreen
           endgame={activeEndgameScreen}
           onDismiss={() => setActiveEndgameScreen(null)}
         />
       )}
-
-      {/* House Overlay */}
       {showHouseOverlay && scene.houseIntro && (
-        <div
-          className="fixed inset-0 z-40 bg-black/85 flex flex-col items-center justify-center cursor-pointer animate-[fadeIn_0.3s_ease-out]"
-          onClick={() => setShowHouseOverlay(false)}
-        >
-          <p className="text-white/30 text-xs tracking-[0.4em] uppercase mb-4">
-            ◆ THE HOUSE ◆
-          </p>
-          <p className="text-white/70 italic text-base md:text-lg max-w-lg text-center px-6 leading-relaxed">
+        <div className="fixed inset-0 z-40 bg-black/90 flex flex-col items-center justify-center animate-[fadeIn_0.3s_ease-out]">
+          <p className="text-white/20 text-xs tracking-[0.4em] uppercase mb-4">◆ THE HOUSE ◆</p>
+          <p className="text-white/60 italic text-lg max-w-lg text-center px-6 leading-relaxed">
             {scene.houseIntro}
           </p>
         </div>
       )}
 
-      {/* Round boundary */}
-      {isNewRound && (
-        <div className="text-center py-4">
-          <p className="text-white/20 text-xs tracking-[0.3em] uppercase">◆ ◆ ◆</p>
-          <p className="text-white/60 text-lg font-semibold mt-1">ROUND {scene.round}</p>
-          <p className="text-white/30 text-xs mt-0.5">{aliveCount} operatives remaining</p>
-          <p className="text-white/20 text-xs tracking-[0.3em] uppercase mt-1">◆ ◆ ◆</p>
-        </div>
-      )}
-
-      {/* Scene header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${ROOM_TYPE_COLORS[scene.roomType]}`} />
-          <span className={`text-xs font-semibold uppercase tracking-[0.2em] ${phaseColor(scene.phase)}`}>
-            ◆ {phaseLabel} ◆
+      {/* Top bar — phase context */}
+      <div className="flex-shrink-0 px-6 pt-5 pb-3 flex items-center justify-between z-10">
+        <div className="flex items-center gap-3">
+          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ROOM_TYPE_COLORS[scene.roomType]}`} />
+          <span className={`text-xs font-semibold uppercase tracking-[0.25em] ${phaseColor(scene.phase)}`}>
+            {PHASE_TRANSITION_LABELS[scene.phase] ?? scene.phase}
           </span>
-          <span className="text-xs text-white/20">Round {scene.round}</span>
+          {roomLabel && (
+            <span className="text-xs text-purple-300/50">{roomLabel}</span>
+          )}
+          {isNewRound && (
+            <span className="text-xs text-white/25 uppercase tracking-wider">
+              Round {scene.round}
+            </span>
+          )}
         </div>
-        <ConnectionBadge status="replay" />
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-white/15">
+            R{scene.round}/{game.maxRounds} · {aliveCount} alive
+          </span>
+          <ConnectionBadge status="replay" />
+        </div>
       </div>
 
-      {/* Scene scrubber */}
-      <div className="flex h-2 rounded-full overflow-hidden bg-white/5 gap-px">
-        {scenes.map((s, i) => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => { setSceneIndex(i); setMessageIndex(0); }}
-            className={`flex-1 min-w-[3px] transition-opacity ${ROOM_TYPE_COLORS[s.roomType]} ${
-              i <= sceneIndex ? "opacity-100" : "opacity-25"
-            } ${i === sceneIndex ? "ring-1 ring-white/40" : ""} hover:opacity-80`}
-            title={`${s.id} — ${PHASE_TRANSITION_LABELS[s.phase] ?? s.phase}`}
-          />
-        ))}
+      {/* Scene progress bar */}
+      <div className="px-6 z-10">
+        <div className="flex h-0.5 rounded-full overflow-hidden bg-white/5 gap-px">
+          {scenes.map((s, i) => (
+            <div
+              key={s.id}
+              className={`flex-1 min-w-[2px] ${ROOM_TYPE_COLORS[s.roomType]} ${
+                i <= sceneIndex ? "opacity-80" : "opacity-10"
+              }`}
+            />
+          ))}
+        </div>
       </div>
 
-      {/* Message feed */}
-      <div
-        ref={feedRef}
-        className={`border ${roomBorder} rounded-xl flex-1 overflow-y-auto p-4 space-y-3 min-h-[420px] max-h-[600px]`}
-      >
-        {scene.roomType === "private_rooms" ? (
-          // Whisper room: show full content grouped by room
-          <div className="space-y-4">
-            <p className="text-center text-xs uppercase tracking-[0.25em] text-purple-300/50 mb-2">
-              The operatives went dark. These are their private conversations.
-            </p>
-            {(() => {
-              const stageData = buildWhisperStageData(visibleSceneMessages, players);
-              return stageData.rooms.map((room, idx) => (
-                <div
-                  key={room.roomId}
-                  className="rounded-2xl border border-purple-400/20 bg-black/30 p-4 shadow-lg animate-[fadeIn_0.4s_ease-out_both]"
-                  style={{ animationDelay: `${idx * 600}ms` }}
-                >
-                  <p className="text-[11px] uppercase tracking-[0.28em] text-purple-300/45 mb-1">
-                    Room {room.roomId}
-                  </p>
-                  <p className="text-sm font-semibold text-white mb-3">
-                    {room.playerNames.join(" × ")}
-                  </p>
-                  {room.messages.length === 0 ? (
-                    <p className="text-xs text-white/35 italic">No messages yet.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {room.messages.map((msg) => {
-                        const player = players.find((p) => p.id === msg.fromPlayerId);
-                        return (
-                          <div key={msg.id} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-sm">{player ? personaEmoji(player.persona) : "●"}</span>
-                              <span className="text-xs font-semibold text-white/75">{player?.name ?? msg.fromPlayerId}</span>
-                              <span className="ml-auto text-[10px] text-white/20">{formatTime(msg.timestamp)}</span>
-                            </div>
-                            <p className="text-sm text-white/70 leading-relaxed">{msg.text}</p>
-                          </div>
-                        );
-                      })}
-                    </div>
+      {/* Center — message spotlight */}
+      <div className="flex-1 flex items-center justify-center px-8 py-12">
+        <div className="max-w-2xl w-full">
+          {/* Typing indicator */}
+          {messagePhase === "typing" && currentMessage && !isSystemMessage && (
+            <div className="text-center animate-[fadeIn_0.3s_ease-out]">
+              <div className="flex items-center justify-center gap-3 mb-8">
+                {currentPlayer && (
+                  <span className="text-2xl">{personaEmoji(currentPlayer.persona)}</span>
+                )}
+                <span className="text-lg font-semibold text-white/60">{currentPlayerName}</span>
+                {currentMessage.scope === "whisper" && (
+                  <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
+                )}
+              </div>
+              <div className="flex items-center justify-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1.2s" }} />
+                <span className="w-2.5 h-2.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "200ms", animationDuration: "1.2s" }} />
+                <span className="w-2.5 h-2.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "400ms", animationDuration: "1.2s" }} />
+              </div>
+            </div>
+          )}
+
+          {/* Message reveal / done */}
+          {(messagePhase === "revealing" || messagePhase === "done") && currentMessage && (
+            <div className="text-center animate-[fadeIn_0.3s_ease-out]">
+              {/* Player identity header */}
+              {!isSystemMessage && (
+                <div className="flex items-center justify-center gap-3 mb-8">
+                  {currentPlayer && (
+                    <span className="text-2xl">{personaEmoji(currentPlayer.persona)}</span>
+                  )}
+                  <span className="text-lg font-semibold text-white/70">{currentPlayerName}</span>
+                  {currentMessage.scope === "whisper" && (
+                    <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
                   )}
                 </div>
-              ));
-            })()}
-          </div>
-        ) : scene.roomType === "tribunal" && (scene.phase === "REVEAL" || scene.phase === "COUNCIL") ? (
-          // Tribunal: reveal choreography with dramatic message items
-          <div className="space-y-4">
-            {visibleSceneMessages.length === 0 ? (
-              <div className="text-center mt-16">
-                <p className={`text-xs font-semibold uppercase tracking-[0.3em] mb-3 ${
-                  scene.phase === "REVEAL" ? "text-pink-400/60" : "text-red-400/60"
-                }`}>
-                  ◆ {scene.phase === "REVEAL" ? "REVEAL" : "COUNCIL VOTE"} ◆
+              )}
+
+              {/* Message content */}
+              {isElimination ? (
+                <p className="text-2xl md:text-3xl font-bold text-red-400 tracking-wider">
+                  {messagePhase === "revealing" ? (
+                    <Typewriter text={currentMessage.text} rate="house" onComplete={() => setMessagePhase("done")} />
+                  ) : currentMessage.text}
                 </p>
-                <p className="text-xs text-white/20 animate-pulse">The votes are in…</p>
-              </div>
-            ) : (
-              visibleSceneMessages.map((msg) => {
-                // Detect elimination last words
-                const isElimMsg = msg.scope === "system" && msg.text.includes("has been eliminated");
-                if (isElimMsg) {
-                  return (
-                    <div key={msg.id} className="text-center py-4">
-                      <p className="text-lg font-bold text-red-400 tracking-wider animate-[fadeIn_0.5s_ease-out]">
-                        {msg.text}
-                      </p>
-                    </div>
-                  );
-                }
-                return <RevealMessageItem key={msg.id} msg={msg} players={players} />;
-              })
-            )}
-            {messageIndex < scene.messages.length - 1 && (
-              <div className="text-center py-2">
-                <p className="text-xs text-white/20 animate-pulse tracking-widest">…</p>
-              </div>
-            )}
-          </div>
-        ) : (
-          // All other room types: linear message feed
-          visibleSceneMessages.length === 0 ? (
-            <p className="text-center text-white/20 text-sm mt-16">
-              Scene loading…
+              ) : isSystemMessage ? (
+                <p className="text-base md:text-lg text-white/40 italic leading-relaxed">
+                  {messagePhase === "revealing" ? (
+                    <Typewriter text={currentMessage.text} rate="house" onComplete={() => setMessagePhase("done")} />
+                  ) : currentMessage.text}
+                </p>
+              ) : (
+                <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl px-8 py-6 inline-block max-w-xl text-left">
+                  <p className="text-lg md:text-xl leading-relaxed text-white/80">
+                    {messagePhase === "revealing" ? (
+                      <Typewriter
+                        text={currentMessage.text}
+                        rate="spectacle"
+                        onComplete={() => setMessagePhase("done")}
+                        speedrun={false}
+                      />
+                    ) : currentMessage.text}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Paused indicator */}
+          {!isPlaying && messagePhase === "done" && (
+            <p className="text-center text-xs text-white/15 mt-8 animate-pulse">
+              Click or press → to advance
             </p>
-          ) : (
-            visibleSceneMessages.map((msg) => (
-              <MessageBubble key={msg.id} msg={msg} players={players} />
-            ))
-          )
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Replay control bar */}
-      <div className="border border-white/10 rounded-xl px-4 py-3 space-y-2">
-        {/* Scene info + navigation */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => { setSceneIndex(0); setMessageIndex(0); }}
-              disabled={sceneIndex === 0}
-              className="text-xs border border-white/10 hover:border-white/25 text-white/50 hover:text-white px-2 py-1 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              title="First scene"
-            >
-              ⏮
-            </button>
-            <button
-              type="button"
-              onClick={() => { setSceneIndex((i) => Math.max(0, i - 1)); setMessageIndex(0); }}
-              disabled={sceneIndex === 0}
-              className="text-xs border border-white/10 hover:border-white/25 text-white/50 hover:text-white px-2 py-1 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              title="Previous scene (←)"
-            >
-              ←
-            </button>
-          </div>
-
-          <span className="text-xs text-white/40 text-center">
-            Scene {sceneIndex + 1} of {totalScenes} · R{scene.round} {PHASE_LABELS[scene.phase]}
-          </span>
-
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => { setSceneIndex((i) => Math.min(totalScenes - 1, i + 1)); setMessageIndex(0); }}
-              disabled={sceneIndex >= totalScenes - 1}
-              className="text-xs border border-white/10 hover:border-white/25 text-white/50 hover:text-white px-2 py-1 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              title="Next scene (→)"
-            >
-              →
-            </button>
-            <button
-              type="button"
-              onClick={() => { setSceneIndex(totalScenes - 1); setMessageIndex(scenes[totalScenes - 1]!.messages.length - 1); }}
-              disabled={sceneIndex >= totalScenes - 1}
-              className="text-xs border border-white/10 hover:border-white/25 text-white/50 hover:text-white px-2 py-1 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              title="Last scene"
-            >
-              ⏭
-            </button>
-          </div>
-        </div>
-
-        {/* Play/pause + speed */}
-        <div className="flex items-center justify-between gap-2">
+      {/* Bottom controls — auto-hide when playing */}
+      <div
+        data-controls
+        className={`flex-shrink-0 px-6 py-4 transition-opacity duration-500 z-10 ${
+          controlsVisible || !isPlaying ? "opacity-100" : "opacity-0"
+        }`}
+      >
+        <div className="flex items-center justify-between max-w-3xl mx-auto">
           <button
             type="button"
-            onClick={() => setIsPlaying((p) => !p)}
-            className="text-xs border border-white/10 hover:border-white/25 text-white/70 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
-            title="Play/Pause (Space)"
+            onClick={(e) => { e.stopPropagation(); setIsPlaying((p) => !p); }}
+            className="text-sm text-white/50 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20"
           >
             {isPlaying ? "⏸ Pause" : "▶ Play"}
           </button>
 
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); goToNextScene(); }}
+              disabled={sceneIndex >= totalScenes - 1}
+              className="text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 disabled:opacity-20 disabled:cursor-not-allowed"
+            >
+              Next Scene ▶▶
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); goToEnd(); }}
+              className="text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20"
+            >
+              Go to End ⏭
+            </button>
+          </div>
+
           <div className="flex items-center gap-1">
-            <span className="text-xs text-white/30 mr-1">Speed:</span>
+            <span className="text-xs text-white/20 mr-1">Speed:</span>
             {SPEED_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
-                onClick={() => setSpeed(opt.value)}
+                onClick={(e) => { e.stopPropagation(); setSpeed(opt.value); }}
                 className={`text-xs px-2 py-1 rounded-lg transition-colors ${
                   speed === opt.value
-                    ? "bg-white/15 text-white border border-white/25"
-                    : "text-white/40 hover:text-white/70 border border-transparent"
+                    ? "bg-white/10 text-white border border-white/20"
+                    : "text-white/30 hover:text-white/60 border border-transparent"
                 }`}
               >
                 {opt.label}
               </button>
             ))}
           </div>
-
-          <span className="text-xs text-white/20">
-            {messageIndex + 1}/{scene.messages.length} msgs
-          </span>
         </div>
-
-        {/* Keyboard shortcuts hint */}
-        <p className="text-[10px] text-white/15 text-center">
-          Space: play/pause · ←→: scenes · []: rounds · 1234: speed
+        <p className="text-[10px] text-white/10 text-center mt-2">
+          Space: play/pause · Click/→: advance · ←: back · []: rounds · 1234: speed
         </p>
       </div>
-
-      {/* Player roster below controls */}
-      <PlayerRoster
-        players={players}
-        empoweredPlayerId={null}
-        eliminatedRounds={new Map()}
-        recentlyUnshielded={new Set()}
-        speedrun={false}
-      />
     </div>
   );
 }
@@ -2243,6 +2365,10 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
   const [recentlyUnshielded, setRecentlyUnshielded] = useState<ReadonlySet<string>>(new Set());
   // Track previous shield states to detect expiry
   const prevShieldedRef = useRef<Map<string, boolean>>(new Map());
+  // Spectacle mode — queue-based single-message display for live non-whisper, non-reveal phases
+  const [spectacleQueue, setSpectacleQueue] = useState<TranscriptEntry[]>([]);
+  const [spectacleCurrent, setSpectacleCurrent] = useState<TranscriptEntry | null>(null);
+  const [spectaclePhase, setSpectaclePhase] = useState<SpectacleMessagePhase>("done");
 
   // Fetch game data client-side if not provided via props
   useEffect(() => {
@@ -2324,6 +2450,44 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
 
     return () => clearTimeout(timer);
   }, [revealQueue, isReplay, isSpeedrun]);
+
+  // Spectacle queue drain — take next message when current finishes
+  useEffect(() => {
+    if (isReplay || spectacleCurrent || spectacleQueue.length === 0) return;
+    setSpectacleQueue((q) => {
+      if (q.length === 0) return q;
+      const [next, ...rest] = q;
+      setSpectacleCurrent(next);
+      setSpectaclePhase("typing");
+      return rest;
+    });
+  }, [spectacleQueue, spectacleCurrent, isReplay]);
+
+  // Spectacle animation state machine
+  useEffect(() => {
+    if (!spectacleCurrent || isReplay) return;
+    const isSystem = !spectacleCurrent.fromPlayerId || spectacleCurrent.scope === "system";
+
+    if (spectaclePhase === "typing") {
+      if (isSystem || isSpeedrun) {
+        setSpectaclePhase("revealing");
+        return;
+      }
+      const timer = setTimeout(() => setSpectaclePhase("revealing"), TYPING_HOLD_MS);
+      return () => clearTimeout(timer);
+    }
+
+    if (spectaclePhase === "done") {
+      const holdMs = isSpeedrun
+        ? 100
+        : Math.max(POST_REVEAL_BASE_MS, spectacleCurrent.text.length * POST_REVEAL_PER_CHAR_MS);
+      const timer = setTimeout(() => {
+        setSpectacleCurrent(null);
+      }, holdMs);
+      return () => clearTimeout(timer);
+    }
+    // "revealing" transitions via Typewriter onComplete
+  }, [spectacleCurrent, spectaclePhase, isReplay, isSpeedrun]);
 
   // Auth session events from Privy / login flow
   useEffect(() => {
@@ -2518,14 +2682,14 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
         ) {
           setNewChatCount((n) => n + 1);
         }
-        // Queue messages during REVEAL/COUNCIL for reveal choreography
+        // Queue messages for spectacle display
         const phase = currentPhaseRef.current;
-        if (
-          (phase === "REVEAL" || phase === "COUNCIL") &&
-          ev.entry.scope !== "diary" &&
-          ev.entry.scope !== "whisper"
-        ) {
-          setRevealQueue((q) => [...q, msg]);
+        if (ev.entry.scope !== "diary" && ev.entry.scope !== "whisper") {
+          if (phase === "REVEAL" || phase === "COUNCIL") {
+            setRevealQueue((q) => [...q, msg]);
+          } else if (phase !== "WHISPER") {
+            setSpectacleQueue((q) => [...q, msg]);
+          }
         }
         setMessages((m) => [...m, msg]);
         break;
@@ -2745,43 +2909,35 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
         (isReplay ||
           (replayGame.currentPhase !== "REVEAL" &&
             replayGame.currentPhase !== "COUNCIL")) && (
-          <div
-            ref={feedRef}
-            className="border border-white/10 rounded-xl overflow-y-auto p-4 space-y-3 min-h-[380px] max-h-[60vh]"
-          >
-            {visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper")
-              .length === 0 ? (
-              <p className="text-center text-white/20 text-sm mt-12">
-                {isReplay ? "No messages in replay." : "Waiting for game to begin…"}
-              </p>
-            ) : (
-              groupMessages(
-                visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper"),
-              ).map((item) => {
-                if (item.kind === "msg" && lastWordsIds.has(item.entry.id)) {
-                  return (
-                    <LastWordsMessage
-                      key={item.entry.id}
-                      entry={item.entry}
-                      players={game.players}
-                      speedrun={isSpeedrun}
-                      isReplay={isReplay}
-                    />
-                  );
-                }
-                if (item.kind === "msg") {
-                  return (
-                    <MessageBubble
-                      key={item.entry.id}
-                      msg={item.entry}
-                      players={game.players}
-                    />
-                  );
-                }
-                return null;
-              })
-            )}
-          </div>
+          isReplay ? (
+            <div
+              ref={feedRef}
+              className="border border-white/10 rounded-xl overflow-y-auto p-4 space-y-3 min-h-[380px] max-h-[60vh]"
+            >
+              {visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper")
+                .length === 0 ? (
+                <p className="text-center text-white/20 text-sm mt-12">No messages in replay.</p>
+              ) : (
+                groupMessages(
+                  visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper"),
+                ).map((item) => {
+                  if (item.kind === "msg") {
+                    return <MessageBubble key={item.entry.id} msg={item.entry} players={game.players} />;
+                  }
+                  return null;
+                })
+              )}
+            </div>
+          ) : (
+            <SpectacleMessageSpotlight
+              message={spectacleCurrent}
+              phase={spectaclePhase}
+              players={game.players}
+              onRevealComplete={() => setSpectaclePhase("done")}
+              queueLength={spectacleQueue.length}
+              speedrun={isSpeedrun}
+            />
+          )
         )}
 
       {/* Mobile Players tab */}
@@ -2957,48 +3113,39 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
           )}
 
         {/* Main Stage message feed (all other phases + replay) */}
+        {/* Main Stage: default feed — spectacle for live, classic for replay */}
         {activeTab === "stage" &&
           replayGame.currentPhase !== "WHISPER" &&
           (isReplay ||
             (replayGame.currentPhase !== "REVEAL" && replayGame.currentPhase !== "COUNCIL")) && (
-          <div
-            ref={feedRef}
-            className="border border-white/10 rounded-xl flex-1 overflow-y-auto p-4 space-y-3 min-h-[420px] max-h-[600px]"
-          >
-            {visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper").length === 0 ? (
-              <p className="text-center text-white/20 text-sm mt-16">
-                {isReplay ? "No messages in replay." : "Waiting for game to begin…"}
-              </p>
-            ) : (
-              groupMessages(visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper")).map(
-                (item) => {
-                  // Last-words messages get the elimination choreography component
-                  if (item.kind === "msg" && lastWordsIds.has(item.entry.id)) {
-                    return (
-                      <LastWordsMessage
-                        key={item.entry.id}
-                        entry={item.entry}
-                        players={game.players}
-                        speedrun={isSpeedrun}
-                        isReplay={isReplay}
-                      />
-                    );
-                  }
-                  if (item.kind === "msg") {
-                    return (
-                      <MessageBubble
-                        key={item.entry.id}
-                        msg={item.entry}
-                        players={game.players}
-                      />
-                    );
-                  }
-                  // diary_pair / diary_orphan_answer won't appear (filtered out above)
-                  return null;
-                },
-              )
-            )}
-          </div>
+          isReplay ? (
+            <div
+              ref={feedRef}
+              className="border border-white/10 rounded-xl flex-1 overflow-y-auto p-4 space-y-3 min-h-[420px] max-h-[600px]"
+            >
+              {visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper").length === 0 ? (
+                <p className="text-center text-white/20 text-sm mt-16">No messages in replay.</p>
+              ) : (
+                groupMessages(visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper")).map(
+                  (item) => {
+                    if (item.kind === "msg") {
+                      return <MessageBubble key={item.entry.id} msg={item.entry} players={game.players} />;
+                    }
+                    return null;
+                  },
+                )
+              )}
+            </div>
+          ) : (
+            <SpectacleMessageSpotlight
+              message={spectacleCurrent}
+              phase={spectaclePhase}
+              players={game.players}
+              onRevealComplete={() => setSpectaclePhase("done")}
+              queueLength={spectacleQueue.length}
+              speedrun={isSpeedrun}
+            />
+          )
         )}
 
         {/* Replay controls */}

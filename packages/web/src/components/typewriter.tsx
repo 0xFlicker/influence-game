@@ -12,9 +12,10 @@ const RATES: Record<TypewriterRate, number> = {
   "last-words": 28,// Elimination last words — slow and deliberate, emotional weight
   house: 50,       // House narration / system messages — clear, authoritative
   diary: 35,       // Diary Room entries — intimate, slower, confessional feel
+  spectacle: 18,   // Immersive spectacle mode — 300 baud modem feel
 };
 
-export type TypewriterRate = "agent" | "intro" | "last-words" | "house" | "diary";
+export type TypewriterRate = "agent" | "intro" | "last-words" | "house" | "diary" | "spectacle";
 
 export interface TypewriterProps {
   /** The complete text to animate. Always animate from the full string — never partial. */
