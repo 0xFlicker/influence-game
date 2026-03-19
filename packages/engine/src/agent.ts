@@ -345,13 +345,28 @@ Use the send_whispers tool to submit your whisper messages. Use player NAMES (no
 
   async getRumorMessage(ctx: PhaseContext): Promise<string> {
     const prompt = this.buildBasePrompt(ctx) + `
-## Your Task
-Post your public rumor message. This is your one public statement this round.
-You can share genuine information, spread misinformation, defend yourself, or make accusations.
+## Your Task — ANONYMOUS RUMOR
+Post an anonymous rumor to the public board. YOUR IDENTITY WILL NOT BE REVEALED
+to other players. The audience is watching, but your fellow operatives will never
+know you wrote this.
 
-Keep it to 2-3 sentences. Make it count.
+Use this anonymity. Be bold. Be provocative. Be strategic.
 
-Respond with ONLY the message text, nothing else.`;
+Options:
+- ACCUSE: Name a player and claim they're plotting something specific
+- LEAK: Share (or fabricate) private information from whisper rooms
+- EXPOSE: Claim two players have a secret alliance (true or false)
+- MISDIRECT: Raise suspicion about an innocent player to protect yourself or an ally
+- THREATEN: Promise consequences for a specific player next round
+
+The best rumors are SPECIFIC. Don't say "someone is lying" — say WHO, about WHAT.
+Vague rumors are forgettable. Sharp rumors change the game.
+
+Your rumor will appear as: "The shadows whisper: [your message]"
+
+Keep it to 1-2 sentences. One sharp claim is better than two weak ones.
+
+Respond with ONLY the rumor text, nothing else.`;
 
     return this.callLLM(prompt, 150);
   }
@@ -735,10 +750,22 @@ Use the jury_vote tool to cast your vote.`;
       .filter((p) => !ctx.alivePlayers.some((ap) => ap.id === p.id))
       .map((p) => p.name);
 
-    const recentMessages = ctx.publicMessages
+    // Separate anonymous rumors from attributed messages
+    const nonAnonymous = ctx.publicMessages.filter((m) => !m.anonymous);
+    const anonymousRumors = ctx.publicMessages.filter((m) => m.anonymous);
+
+    const recentMessages = nonAnonymous
       .slice(-10)
       .map((m) => `  [${m.phase}] ${m.from}: "${m.text}"`)
       .join("\n");
+
+    const anonymousSection = anonymousRumors.length > 0
+      ? `\n## Anonymous Rumors\nThe following rumors were posted anonymously. You do not know who wrote them:\n` +
+        anonymousRumors
+          .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
+          .map((m, i) => `  ${i + 1}. "The shadows whisper: ${m.text}"`)
+          .join("\n")
+      : "";
 
     const whispers = ctx.whisperMessages
       .map((m) => `  From ${m.from}: "${m.text}"`)
@@ -792,6 +819,7 @@ ${memoryNotes ? `- Notes:\n${memoryNotes}` : ""}
 
 ## Recent Public Messages
 ${recentMessages || "  (none yet)"}
+${anonymousSection}
 
 ${whispers ? `## Private Whispers You Received\n${whispers}` : ""}
 

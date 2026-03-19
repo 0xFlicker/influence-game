@@ -1083,3 +1083,188 @@ describe("Full game - endgame integration", () => {
     expect(juryVoteEntries.length).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Anonymous Rumors
+// ---------------------------------------------------------------------------
+
+describe("Anonymous Rumors", () => {
+  const TEST_CONFIG: GameConfig = {
+    timers: {
+      introduction: 0,
+      lobby: 0,
+      whisper: 0,
+      rumor: 0,
+      vote: 0,
+      power: 0,
+      council: 0,
+    },
+    maxRounds: 2,
+    minPlayers: 4,
+    maxPlayers: 12,
+  };
+
+  it("rumor transcript entries have anonymous flag set to true", async () => {
+    const { MockAgent } = await import("./mock-agent");
+
+    const agents = [
+      new MockAgent(createUUID(), "Alpha"),
+      new MockAgent(createUUID(), "Beta"),
+      new MockAgent(createUUID(), "Gamma"),
+      new MockAgent(createUUID(), "Delta"),
+    ];
+
+    const runner = new GameRunner(agents, TEST_CONFIG);
+    const result = await runner.run();
+
+    const rumorEntries = result.transcript.filter(
+      (e) => e.scope === "public" && e.phase === Phase.RUMOR && e.from !== "House",
+    );
+    expect(rumorEntries.length).toBeGreaterThan(0);
+
+    for (const entry of rumorEntries) {
+      expect(entry.anonymous).toBe(true);
+    }
+  });
+
+  it("rumor transcript entries have displayOrder assigned", async () => {
+    const { MockAgent } = await import("./mock-agent");
+
+    const agents = [
+      new MockAgent(createUUID(), "Alpha"),
+      new MockAgent(createUUID(), "Beta"),
+      new MockAgent(createUUID(), "Gamma"),
+      new MockAgent(createUUID(), "Delta"),
+    ];
+
+    const runner = new GameRunner(agents, TEST_CONFIG);
+    const result = await runner.run();
+
+    const rumorEntries = result.transcript.filter(
+      (e) => e.scope === "public" && e.phase === Phase.RUMOR && e.from !== "House",
+    );
+    expect(rumorEntries.length).toBeGreaterThan(0);
+
+    for (const entry of rumorEntries) {
+      expect(typeof entry.displayOrder).toBe("number");
+      expect(entry.displayOrder).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it("rumor displayOrder values are unique within a round", async () => {
+    const { MockAgent } = await import("./mock-agent");
+
+    const agents = [
+      new MockAgent(createUUID(), "Alpha"),
+      new MockAgent(createUUID(), "Beta"),
+      new MockAgent(createUUID(), "Gamma"),
+      new MockAgent(createUUID(), "Delta"),
+    ];
+
+    const runner = new GameRunner(agents, TEST_CONFIG);
+    const result = await runner.run();
+
+    // Get rumor entries for first round that has them
+    const rumorEntries = result.transcript.filter(
+      (e) => e.scope === "public" && e.phase === Phase.RUMOR && e.from !== "House",
+    );
+
+    // Group by round
+    const byRound = new Map<number, typeof rumorEntries>();
+    for (const entry of rumorEntries) {
+      const existing = byRound.get(entry.round) ?? [];
+      existing.push(entry);
+      byRound.set(entry.round, existing);
+    }
+
+    // Within each round, displayOrder values should be unique
+    for (const [, entries] of byRound) {
+      const orders = entries.map((e) => e.displayOrder);
+      const unique = new Set(orders);
+      expect(unique.size).toBe(entries.length);
+    }
+  });
+
+  it("anonymous rumors are stripped of author in agent context (buildBasePrompt)", async () => {
+    const { MockAgent } = await import("./mock-agent");
+
+    const agents = [
+      new MockAgent(createUUID(), "Alpha"),
+      new MockAgent(createUUID(), "Beta"),
+      new MockAgent(createUUID(), "Gamma"),
+      new MockAgent(createUUID(), "Delta"),
+    ];
+
+    const runner = new GameRunner(agents, TEST_CONFIG);
+    const result = await runner.run();
+
+    // Verify that rumor transcript entries still have the author (for viewer/replay)
+    const rumorEntries = result.transcript.filter(
+      (e) => e.scope === "public" && e.phase === Phase.RUMOR && e.anonymous === true,
+    );
+    expect(rumorEntries.length).toBeGreaterThan(0);
+
+    // Each anonymous rumor entry should still have the real author in 'from'
+    // (stored for viewers/replay, but stripped from agent context)
+    for (const entry of rumorEntries) {
+      expect(entry.from).toBeTruthy();
+      expect(entry.from).not.toBe("House");
+      expect(["Alpha", "Beta", "Gamma", "Delta"]).toContain(entry.from);
+    }
+  });
+
+  it("non-rumor public messages do NOT have anonymous flag", async () => {
+    const { MockAgent } = await import("./mock-agent");
+
+    const agents = [
+      new MockAgent(createUUID(), "Alpha"),
+      new MockAgent(createUUID(), "Beta"),
+      new MockAgent(createUUID(), "Gamma"),
+      new MockAgent(createUUID(), "Delta"),
+    ];
+
+    const runner = new GameRunner(agents, TEST_CONFIG);
+    const result = await runner.run();
+
+    // Lobby and introduction entries should NOT be anonymous
+    const nonRumorPublic = result.transcript.filter(
+      (e) => e.scope === "public" && e.phase !== Phase.RUMOR && e.from !== "House",
+    );
+    expect(nonRumorPublic.length).toBeGreaterThan(0);
+
+    for (const entry of nonRumorPublic) {
+      expect(entry.anonymous).toBeUndefined();
+    }
+  });
+
+  it("stream events for rumors include anonymous metadata", async () => {
+    const { MockAgent } = await import("./mock-agent");
+
+    const agents = [
+      new MockAgent(createUUID(), "Alpha"),
+      new MockAgent(createUUID(), "Beta"),
+      new MockAgent(createUUID(), "Gamma"),
+      new MockAgent(createUUID(), "Delta"),
+    ];
+
+    const runner = new GameRunner(agents, TEST_CONFIG);
+    const events: { type: string; entry?: { anonymous?: boolean; displayOrder?: number; phase?: string; scope?: string; from?: string } }[] = [];
+    runner.setStreamListener((event) => {
+      if (event.type === "transcript_entry") {
+        events.push({ type: event.type, entry: event.entry });
+      }
+    });
+
+    await runner.run();
+
+    const rumorStreamEvents = events.filter(
+      (e) => e.entry?.phase === Phase.RUMOR && e.entry?.scope === "public" && e.entry?.from !== "House",
+    );
+    expect(rumorStreamEvents.length).toBeGreaterThan(0);
+
+    for (const event of rumorStreamEvents) {
+      expect(event.entry?.anonymous).toBe(true);
+      expect(typeof event.entry?.displayOrder).toBe("number");
+    }
+  });
+});

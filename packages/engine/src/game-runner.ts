@@ -105,7 +105,7 @@ export interface PhaseContext {
   selfId: UUID;
   selfName: string;
   alivePlayers: Array<{ id: UUID; name: string }>;
-  publicMessages: Array<{ from: string; text: string; phase: Phase }>;
+  publicMessages: Array<{ from: string; text: string; phase: Phase; anonymous?: boolean; displayOrder?: number }>;
   /** Messages this agent received as whispers */
   whisperMessages: Array<{ from: string; text: string }>;
   empoweredId?: UUID;
@@ -130,6 +130,10 @@ export interface TranscriptEntry {
   scope: "public" | "whisper" | "system" | "diary";
   to?: string[];
   text: string;
+  /** When true, author identity is hidden from players (viewers still see it) */
+  anonymous?: boolean;
+  /** Shuffled display position for anonymous rumors */
+  displayOrder?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +150,7 @@ export class GameRunner {
   /** Whisper messages keyed by recipient */
   private whisperInbox = new Map<UUID, Array<{ from: string; text: string }>>();
   /** Public messages accumulated during the game */
-  private publicMessages: Array<{ from: string; text: string; phase: Phase }> = [];
+  private publicMessages: Array<{ from: string; text: string; phase: Phase; anonymous?: boolean; displayOrder?: number }> = [];
   /** Diary room entries: question/answer pairs per agent per phase */
   private diaryEntries: Array<{ round: number; precedingPhase: Phase; agentId: UUID; agentName: string; question: string; answer: string }> = [];
   /** Name of the most recently eliminated player (for diary room context) */
@@ -457,14 +461,31 @@ export class GameRunner {
     this.logSystem("=== RUMOR PHASE ===", Phase.RUMOR);
     const alivePlayers = this.gameState.getAlivePlayers();
 
-    await Promise.all(
+    // Collect all rumors in parallel
+    const rumors = await Promise.all(
       alivePlayers.map(async (player) => {
         const agent = this.agents.get(player.id)!;
         const ctx = this.buildPhaseContext(player.id, Phase.RUMOR);
         const text = await agent.getRumorMessage(ctx);
-        this.logPublic(player.id, text, Phase.RUMOR);
+        return { playerId: player.id, text };
       }),
     );
+
+    // Shuffle display order (Fisher-Yates)
+    const shuffled = [...rumors];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
+    }
+
+    // Log rumors with anonymous metadata in shuffled order
+    for (let i = 0; i < shuffled.length; i++) {
+      const rumor = shuffled[i]!;
+      this.logPublic(rumor.playerId, rumor.text, Phase.RUMOR, {
+        anonymous: true,
+        displayOrder: i + 1,
+      });
+    }
 
     actor.send({ type: "PHASE_COMPLETE" });
     await new Promise((r) => setTimeout(r, 0));
@@ -1211,9 +1232,20 @@ export class GameRunner {
   // Transcript helpers
   // ---------------------------------------------------------------------------
 
-  private logPublic(fromId: UUID, text: string, phase: Phase): void {
+  private logPublic(
+    fromId: UUID,
+    text: string,
+    phase: Phase,
+    opts?: { anonymous?: boolean; displayOrder?: number },
+  ): void {
     const name = this.gameState.getPlayerName(fromId);
-    this.publicMessages.push({ from: name, text, phase });
+    this.publicMessages.push({
+      from: name,
+      text,
+      phase,
+      ...(opts?.anonymous && { anonymous: true }),
+      ...(opts?.displayOrder != null && { displayOrder: opts.displayOrder }),
+    });
     const entry: TranscriptEntry = {
       round: this.gameState.round,
       phase,
@@ -1221,6 +1253,8 @@ export class GameRunner {
       from: name,
       scope: "public",
       text,
+      ...(opts?.anonymous && { anonymous: true }),
+      ...(opts?.displayOrder != null && { displayOrder: opts.displayOrder }),
     };
     this.transcript.push(entry);
     this.emitStream({ type: "transcript_entry", entry });

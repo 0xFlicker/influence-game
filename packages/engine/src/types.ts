@@ -148,6 +148,10 @@ export interface PublicMessage {
   round: number;
   phase: Phase;
   timestamp: number;
+  /** When true, author identity is hidden from players (viewers still see it) */
+  anonymous?: boolean;
+  /** Shuffled display position for anonymous rumors */
+  displayOrder?: number;
 }
 
 export interface WhisperMessage {
