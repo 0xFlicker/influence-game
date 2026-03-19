@@ -45,14 +45,16 @@ function capitalize(s: string): string {
 function GameCard({ game, onRefresh }: { game: GameSummary; onRefresh: () => void }) {
   const pct = progressPct(game);
   const [stopping, setStopping] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   async function handleStop() {
+    setActionError(null);
     setStopping(true);
     try {
       await stopGame(game.id);
       onRefresh();
     } catch (err) {
-      alert(`Failed to stop game: ${err instanceof Error ? err.message : String(err)}`);
+      setActionError(err instanceof Error ? err.message : String(err));
       setStopping(false);
     }
   }
@@ -85,20 +87,25 @@ function GameCard({ game, onRefresh }: { game: GameSummary; onRefresh: () => voi
           {game.finalists && <span>Finalists: {game.finalists.join(", ")}</span>}
         </div>
       </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <Link
-          href={`/games/${game.slug ?? game.id}`}
-          className="text-xs border border-white/15 hover:border-white/30 text-white/70 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
-        >
-          View
-        </Link>
-        <button
-          onClick={handleStop}
-          disabled={stopping}
-          className="text-xs border border-red-900/50 hover:border-red-700 text-red-400/70 hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-        >
-          {stopping ? "…" : "⏹ Stop"}
-        </button>
+      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/games/${game.slug ?? game.id}`}
+            className="text-xs border border-white/15 hover:border-white/30 text-white/70 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
+          >
+            View
+          </Link>
+          <button
+            onClick={handleStop}
+            disabled={stopping}
+            className="text-xs border border-red-900/50 hover:border-red-700 text-red-400/70 hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {stopping ? "…" : "⏹ Stop"}
+          </button>
+        </div>
+        {actionError && (
+          <p className="text-xs text-red-400/80">{actionError}</p>
+        )}
       </div>
     </div>
   );
@@ -112,38 +119,41 @@ function WaitingGameCard({ game, onRefresh }: { game: GameSummary; onRefresh: ()
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [filling, setFilling] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   async function handleFill() {
+    setActionError(null);
     setFilling(true);
     try {
-      const result = await fillGame(game.id);
-      alert(`Added ${result.filled} AI players (${result.totalPlayers}/${result.maxPlayers} total)`);
+      await fillGame(game.id);
       onRefresh();
     } catch (err) {
-      alert(`Failed to fill game: ${err instanceof Error ? err.message : String(err)}`);
+      setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       setFilling(false);
     }
   }
 
   async function handleStart() {
+    setActionError(null);
     setStarting(true);
     try {
       await startGame(game.id);
       onRefresh();
     } catch (err) {
-      alert(`Failed to start game: ${err instanceof Error ? err.message : String(err)}`);
+      setActionError(err instanceof Error ? err.message : String(err));
       setStarting(false);
     }
   }
 
   async function handleStop() {
+    setActionError(null);
     setStopping(true);
     try {
       await stopGame(game.id);
       onRefresh();
     } catch (err) {
-      alert(`Failed to cancel game: ${err instanceof Error ? err.message : String(err)}`);
+      setActionError(err instanceof Error ? err.message : String(err));
       setStopping(false);
     }
   }
@@ -159,34 +169,39 @@ function WaitingGameCard({ game, onRefresh }: { game: GameSummary; onRefresh: ()
         </div>
         <p className="text-xs text-white/30">Waiting to start</p>
       </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <Link
-          href={`/games/${game.slug ?? game.id}`}
-          className="text-xs border border-white/15 hover:border-white/30 text-white/70 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
-        >
-          View
-        </Link>
-        <button
-          onClick={handleFill}
-          disabled={filling}
-          className="text-xs border border-indigo-900/50 hover:border-indigo-700 text-indigo-400/70 hover:text-indigo-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-        >
-          {filling ? "…" : "Fill AI"}
-        </button>
-        <button
-          onClick={handleStart}
-          disabled={starting}
-          className="text-xs border border-green-900/50 hover:border-green-700 text-green-400/70 hover:text-green-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-        >
-          {starting ? "…" : "▶ Start"}
-        </button>
-        <button
-          onClick={handleStop}
-          disabled={stopping}
-          className="text-xs border border-white/10 hover:border-red-700 text-white/30 hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-        >
-          {stopping ? "…" : "🗑"}
-        </button>
+      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+        {actionError && (
+          <p className="text-xs text-red-400/80">{actionError}</p>
+        )}
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/games/${game.slug ?? game.id}`}
+            className="text-xs border border-white/15 hover:border-white/30 text-white/70 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
+          >
+            View
+          </Link>
+          <button
+            onClick={handleFill}
+            disabled={filling}
+            className="text-xs border border-indigo-900/50 hover:border-indigo-700 text-indigo-400/70 hover:text-indigo-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {filling ? "…" : "Fill AI"}
+          </button>
+          <button
+            onClick={handleStart}
+            disabled={starting}
+            className="text-xs border border-green-900/50 hover:border-green-700 text-green-400/70 hover:text-green-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {starting ? "…" : "▶ Start"}
+          </button>
+          <button
+            onClick={handleStop}
+            disabled={stopping}
+            className="text-xs border border-white/10 hover:border-red-700 text-white/30 hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {stopping ? "…" : "🗑"}
+          </button>
+        </div>
       </div>
     </div>
   );

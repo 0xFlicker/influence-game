@@ -345,8 +345,9 @@ function MessageBubble({ msg, players }: { msg: TranscriptEntry; players: GamePl
     );
   }
 
-  const player = players.find((p) => p.id === msg.fromPlayerId);
-  const name = msg.fromPlayerName ?? player?.name ?? "Unknown";
+  const player = players.find((p) => p.id === msg.fromPlayerId)
+    ?? players.find((p) => p.name === msg.fromPlayerId);
+  const name = msg.fromPlayerName ?? player?.name ?? msg.fromPlayerId ?? "Unknown";
   const isEliminated = player?.status === "eliminated";
 
   return (
@@ -733,8 +734,9 @@ function RevealMessageItem({
     );
   }
 
-  const player = players.find((p) => p.id === msg.fromPlayerId);
-  const name = msg.fromPlayerName ?? player?.name ?? "Unknown";
+  const player = players.find((p) => p.id === msg.fromPlayerId)
+    ?? players.find((p) => p.name === msg.fromPlayerId);
+  const name = msg.fromPlayerName ?? player?.name ?? msg.fromPlayerId ?? "Unknown";
   return (
     <div className="flex gap-3 animate-[fadeIn_0.4s_ease-out]">
       <div className="flex-shrink-0 w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-sm">
@@ -1010,8 +1012,9 @@ function LastWordsMessage({
     speedrun || isReplay ? "done" : "hold",
   );
 
-  const player = players.find((p) => p.id === entry.fromPlayerId);
-  const playerName = entry.fromPlayerName ?? player?.name ?? "Unknown";
+  const player = players.find((p) => p.id === entry.fromPlayerId)
+    ?? players.find((p) => p.name === entry.fromPlayerId);
+  const playerName = entry.fromPlayerName ?? player?.name ?? entry.fromPlayerId ?? "Unknown";
   const introText = `${playerName}… your last words.`;
 
   useEffect(() => {
@@ -1911,7 +1914,7 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
       {/* Mobile Diary tab */}
       {mobileTab === "diary" && (
         <DiaryRoomPanel
-          messages={visibleMessages}
+          messages={isReplay ? messages : visibleMessages}
           players={game.players}
           isAuthenticated={isAuthenticated}
         />
@@ -2040,7 +2043,7 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
         {/* Diary Room panel */}
         {activeTab === "diary" && (
           <DiaryRoomPanel
-            messages={visibleMessages}
+            messages={isReplay ? messages : visibleMessages}
             players={game.players}
             isAuthenticated={isAuthenticated}
           />
