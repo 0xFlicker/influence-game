@@ -296,9 +296,18 @@ Deploy a tagged release to staging (tailnet-only):
 
 Staging uses a git worktree at `~/Development/influence/staging/app/`, checked out at the specified tag. The API binds to the Tailscale IP (`100.100.251.4`) so it is only accessible from the tailnet.
 
-**Board access URLs:**
-- API: `http://100.100.251.4:4000`
-- Web: `http://100.100.251.4:4001`
+A Tailscale service (`svc:influencer-staging`) provides HTTPS access with path-based routing:
+
+**Board access URL:** `https://influencer-staging.tail8a79ed.ts.net/`
+
+| Path | Backend | Service |
+|------|---------|----------|
+| `/` | `100.100.251.4:4001` | Next.js web |
+| `/api/*` | `100.100.251.4:4000` | Hono API |
+| `/ws/*` | `100.100.251.4:4000` | WebSocket |
+| `/health` | `100.100.251.4:4000` | Health check |
+
+After deploying, run `tailscale serve advertise svc:influencer-staging` if the service needs re-advertising.
 
 ### Port Allocation
 
