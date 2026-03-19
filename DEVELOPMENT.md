@@ -263,3 +263,95 @@ doppler run -- bun test
 ```
 
 The `OPENAI_API_KEY` env var is consumed by `InfluenceAgent`. `gpt-4o-mini` is the default model — cheap and fast for simulations. Only upgrade the model when quality is demonstrably insufficient.
+
+### Environment Strategy
+
+Three Doppler configs exist under the `social-strategy-agent` project:
+
+| Config | Purpose | Database | API Port | Web Port | Network |
+|--------|---------|----------|----------|----------|---------|
+| `dev` | Active development | SQLite (local `influence.db`) | 3000 | 3001 | localhost |
+| `stg` | Board testing, release validation | SQLite (`~/Development/influence/staging/data/influence.db`) | 4000 | 4001 | Tailnet only (100.100.251.4) |
+| `prd` | Future production | TBD (PostgreSQL) | TBD | TBD | Public |
+
+**Agents always use the `dev` config** for local development. Staging is deployed from tagged releases only — agents never run against staging directly.
+
+### Staging Deployment
+
+Deploy a tagged release to staging (tailnet-only):
+
+```bash
+# Deploy latest tag
+./scripts/deploy-staging.sh
+
+# Deploy specific version
+./scripts/deploy-staging.sh v0.6.0
+
+# Check status
+./scripts/staging-status.sh
+
+# Stop staging
+./scripts/stop-staging.sh
+```
+
+Staging uses a git worktree at `~/Development/influence/staging/app/`, checked out at the specified tag. The API binds to the Tailscale IP (`100.100.251.4`) so it is only accessible from the tailnet.
+
+**Board access URLs:**
+- API: `http://100.100.251.4:4000`
+- Web: `http://100.100.251.4:4001`
+
+### Port Allocation
+
+| Service | Dev | Staging |
+|---------|-----|---------|
+| API (Hono) | 3000 | 4000 |
+| Web (Next.js) | 3001 | 4001 |
+
+The API respects `PORT` and `HOST` env vars (set in Doppler per environment). In dev, `HOST` defaults to `0.0.0.0`. In staging, `HOST=100.100.251.4` restricts access to the tailnet.
+
+### Database Strategy
+
+**Current:** SQLite via Drizzle ORM across all environments. Simple, zero-config, good enough for pre-1.0 development.
+
+**Dev database:** Local file (`influence.db`) in the package directory. Disposable — agents can reset it anytime with `db:migrate` + `db:seed`.
+
+**Staging database:** Persistent file at `~/Development/influence/staging/data/influence.db`. Persists across deployments. Migrations run automatically during deployment.
+
+**Future (production):** PostgreSQL. Drizzle supports PG natively — migration is a config change, not a rewrite. The VPS already runs PostgreSQL for Paperclip.
+
+## Pre-Commit Checklist
+
+Before EVERY commit, agents MUST run:
+
+```bash
+bun run typecheck   # Must pass (test file errors are exceptions, not source errors)
+bun run lint        # Must pass
+bun test            # All mock tests must pass (138+ tests, 0 failures)
+```
+
+If any check fails, fix it before committing. No exceptions.
+
+## Pre-Release Checklist
+
+Before creating a version tag:
+
+1. All pre-commit checks pass
+2. Full test suite passes: `doppler run -- bun test`
+3. All package.json `version` fields are synced to the new version
+4. Commit message: `release: vX.Y.Z`
+5. Annotated tag: `git tag -a vX.Y.Z -m "vX.Y.Z: <summary>"`
+6. Push: `git push origin main --tags`
+7. Deploy to staging: `./scripts/deploy-staging.sh vX.Y.Z`
+8. Comment on Paperclip issue with release notes
+
+## Release Cadence
+
+Releases are cut when a meaningful set of changes lands — not on a fixed schedule. The process:
+
+```
+Development → Tests Pass → Version Bump → Tag → Push → Deploy Staging → Board Tests
+```
+
+- **MINOR** releases (0.7.0): new features, mechanic changes, interface changes
+- **PATCH** releases (0.6.1): bug fixes, personality tuning, config tweaks
+- Board tests against staging on the tailnet. If issues are found, agents fix → new patch → redeploy.

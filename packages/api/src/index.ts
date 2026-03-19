@@ -135,9 +135,11 @@ app.route("/", gameRoutes);
 // ---------------------------------------------------------------------------
 
 const port = parseInt(process.env.PORT ?? "3000", 10);
+const hostname = process.env.HOST ?? "0.0.0.0";
 
 const server = Bun.serve<WsConnectionData>({
   port,
+  hostname,
   fetch(req, server) {
     const url = new URL(req.url);
 
@@ -196,6 +198,6 @@ const server = Bun.serve<WsConnectionData>({
 // Register server instance with WS manager for pub/sub broadcasting
 setServer(server);
 
-console.log(`Influence API listening on http://localhost:${server.port}`);
+console.log(`Influence API listening on http://${server.hostname}:${server.port}`);
 
 export default server;
