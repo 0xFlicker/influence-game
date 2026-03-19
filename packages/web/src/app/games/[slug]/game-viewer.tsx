@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { getGame, getGameTranscript, getAuthToken, type GameDetail, type GamePlayer, type TranscriptEntry, type WsGameEvent, type WsTranscriptEntry, type PhaseKey, type TranscriptScope } from "@/lib/api";
+import { usePrivy } from "@privy-io/react-auth";
+import { useRouter } from "next/navigation";
+import { getGame, getGameTranscript, getAuthToken, type GameDetail, type GamePlayer, type GameSummary, type TranscriptEntry, type WsGameEvent, type WsTranscriptEntry, type PhaseKey, type TranscriptScope } from "@/lib/api";
 import { Typewriter } from "@/components/typewriter";
 import { audioCue } from "@/lib/audio-cues";
+import { JoinGameModal } from "@/app/dashboard/join-game-modal";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1327,6 +1330,10 @@ function wsEntryToTranscriptEntry(
 }
 
 export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerProps) {
+  const { authenticated, login } = usePrivy();
+  const router = useRouter();
+  const [joinModalOpen, setJoinModalOpen] = useState(false);
+  const [joinedSuccess, setJoinedSuccess] = useState(false);
   const [game, setGame] = useState<GameDetail | null>(initialGame ?? null);
   const [messages, setMessages] = useState<TranscriptEntry[]>(initialMessages ?? []);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -1491,6 +1498,10 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
     switch (ev.type) {
       case "game_state": {
         const { snapshot } = ev;
+        // Derive current phase from last transcript entry (snapshot lacks explicit phase field)
+        const lastEntry = snapshot.transcript.at(-1);
+        const snapshotPhase = (lastEntry?.phase ?? "INIT") as PhaseKey;
+
         // Build a complete player registry from all sources (alive + eliminated)
         setGame((g) => {
           if (!g) return g;
@@ -1529,9 +1540,15 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
           return {
             ...g,
             currentRound: snapshot.round,
+            currentPhase: snapshotPhase,
             players: Array.from(playerMap.values()),
           };
         });
+
+        // Sync phase ref so REVEAL/COUNCIL queue logic works immediately on reconnect
+        if (snapshotPhase !== "INIT") {
+          currentPhaseRef.current = snapshotPhase;
+        }
         // Detect shield state changes to trigger shatter animation + audio
         const newlyUnshielded: string[] = [];
         for (const ap of snapshot.alivePlayers) {
@@ -1726,8 +1743,52 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
       }
     : game;
 
+  // Construct a GameSummary-compatible object for the JoinGameModal
+  const gameSummaryForJoin: GameSummary = {
+    id: game.id,
+    slug: game.slug,
+    gameNumber: game.gameNumber,
+    status: game.status,
+    playerCount: game.players.length,
+    currentRound: game.currentRound,
+    maxRounds: game.maxRounds,
+    currentPhase: game.currentPhase,
+    phaseTimeRemaining: null,
+    alivePlayers: game.players.filter((p) => p.status === "alive").length,
+    eliminatedPlayers: game.players.filter((p) => p.status === "eliminated").length,
+    modelTier: game.modelTier,
+    visibility: game.visibility,
+    viewerMode: game.viewerMode,
+    createdAt: game.createdAt,
+    startedAt: game.startedAt,
+    completedAt: game.completedAt,
+  };
+
+  function handleJoinClick() {
+    if (!authenticated) {
+      login();
+      return;
+    }
+    setJoinModalOpen(true);
+  }
+
+  function handleJoinSuccess() {
+    setJoinModalOpen(false);
+    setJoinedSuccess(true);
+    router.push("/dashboard");
+  }
+
   return (
     <>
+      {/* Join modal */}
+      {joinModalOpen && (
+        <JoinGameModal
+          game={gameSummaryForJoin}
+          onClose={() => setJoinModalOpen(false)}
+          onSuccess={handleJoinSuccess}
+        />
+      )}
+
       {/* Phase transition overlay — live mode only, not replay */}
       {activeTransition && !isReplay && (
         <PhaseTransitionOverlay
@@ -1747,6 +1808,23 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
     {/* ── Mobile layout (<768px) — 4-tab view with bottom tab bar ── */}
     <div className="md:hidden flex flex-col min-h-0 pb-16">
       <PhaseHeader game={replayGame} isReplay={isReplay} />
+
+      {/* Join banner — shown when game is waiting for players */}
+      {game.status === "waiting" && !joinedSuccess && (
+        <div className="mb-3 border border-indigo-500/30 bg-indigo-950/30 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-indigo-300">Open for players</p>
+            <p className="text-xs text-white/30 mt-0.5">Waiting room — join before the game starts</p>
+          </div>
+          <button
+            onClick={handleJoinClick}
+            className="shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          >
+            Join
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-2 px-1">
         <ConnectionBadge status={connStatus} />
         {!isReplay && (
@@ -1900,6 +1978,22 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
       <div className="flex flex-col min-h-0">
         {/* Phase header */}
         <PhaseHeader game={replayGame} isReplay={isReplay} />
+
+        {/* Join banner — shown when game is waiting for players */}
+        {game.status === "waiting" && !joinedSuccess && (
+          <div className="mb-3 border border-indigo-500/30 bg-indigo-950/30 rounded-xl px-5 py-3.5 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-indigo-300">Open for players</p>
+              <p className="text-xs text-white/30 mt-0.5">Waiting room — join before the game starts</p>
+            </div>
+            <button
+              onClick={handleJoinClick}
+              className="shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-5 py-2 rounded-lg transition-colors"
+            >
+              Join Game
+            </button>
+          </div>
+        )}
 
         {/* Tab toggle: Main Stage | Diary Room */}
         <div className="flex items-center gap-1 mb-3">

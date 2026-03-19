@@ -6,7 +6,7 @@
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { createDB, schema } from "./db/index.js";
 import { runMigrations } from "./db/migrate.js";
 import { createGameRoutes } from "./routes/games.js";
@@ -141,12 +141,25 @@ const server = Bun.serve<WsConnectionData>({
   fetch(req, server) {
     const url = new URL(req.url);
 
-    // WebSocket upgrade for /ws/games/:id
+    // WebSocket upgrade for /ws/games/:id (accepts UUID or slug)
     if (url.pathname.startsWith("/ws/games/")) {
-      const gameId = url.pathname.split("/ws/games/")[1]?.split("/")[0];
-      if (!gameId) {
+      const slugOrId = url.pathname.split("/ws/games/")[1]?.split("/")[0];
+      if (!slugOrId) {
         return new Response("Missing game ID", { status: 400 });
       }
+
+      // Resolve slug to canonical UUID so WS topics match broadcastGameEvent
+      const gameRow = db
+        .select({ id: schema.games.id })
+        .from(schema.games)
+        .where(or(eq(schema.games.id, slugOrId), eq(schema.games.slug, slugOrId)))
+        .all()[0];
+
+      if (!gameRow) {
+        return new Response("Game not found", { status: 404 });
+      }
+
+      const gameId = gameRow.id;
 
       const upgraded = server.upgrade(req, {
         data: { gameId },
