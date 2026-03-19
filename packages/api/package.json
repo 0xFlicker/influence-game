@@ -1,6 +1,6 @@
 {
   "name": "@influence/api",
-  "version": "0.6.2",
+  "version": "0.8.1",
   "description": "Influence game HTTP API — Bun + Hono server",
   "type": "module",
   "main": "src/index.ts",
