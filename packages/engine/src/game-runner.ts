@@ -1272,59 +1272,56 @@ export class GameRunner {
     this.logSystem(`--- Diary Room (after ${precedingPhase}) ---`, Phase.DIARY_ROOM);
     const alivePlayers = this.gameState.getAlivePlayers();
 
-    // Interview alive players
-    await Promise.all(
-      alivePlayers.map(async (player) => {
-        const agent = this.agents.get(player.id)!;
-        const diaryContext = this.buildDiaryRoomContext(precedingPhase, player.name);
+    // Interview alive players sequentially so each agent's Q&A is emitted
+    // together before moving to the next (avoids interleaved ordering).
+    for (const player of alivePlayers) {
+      const agent = this.agents.get(player.id)!;
+      const diaryContext = this.buildDiaryRoomContext(precedingPhase, player.name);
+      const question = await this.houseInterviewer.generateQuestion(diaryContext);
+      const ctx = this.buildPhaseContext(player.id, Phase.DIARY_ROOM);
+
+      // Log the House's question
+      this.logDiary(`House -> ${player.name}`, question);
+
+      const answer = await agent.getDiaryEntry(ctx, question);
+
+      // Log the agent's response
+      this.logDiary(player.name, answer);
+
+      // Store structured diary entry
+      this.diaryEntries.push({
+        round: this.gameState.round,
+        precedingPhase,
+        agentId: player.id,
+        agentName: player.name,
+        question,
+        answer,
+      });
+    }
+
+    // During Judgment phases, also interview jury members sequentially
+    if (this.gameState.endgameStage === "judgment") {
+      for (const juror of this.gameState.jury) {
+        const agent = this.agents.get(juror.playerId);
+        if (!agent) continue;
+
+        const diaryContext = this.buildDiaryRoomContext(precedingPhase, juror.playerName);
         const question = await this.houseInterviewer.generateQuestion(diaryContext);
-        const ctx = this.buildPhaseContext(player.id, Phase.DIARY_ROOM);
+        const ctx = this.buildPhaseContext(juror.playerId, Phase.DIARY_ROOM, undefined, true);
 
-        // Log the House's question
-        this.logDiary(`House -> ${player.name}`, question);
-
+        this.logDiary(`House -> ${juror.playerName} (juror)`, question);
         const answer = await agent.getDiaryEntry(ctx, question);
+        this.logDiary(`${juror.playerName} (juror)`, answer);
 
-        // Log the agent's response
-        this.logDiary(player.name, answer);
-
-        // Store structured diary entry
         this.diaryEntries.push({
           round: this.gameState.round,
           precedingPhase,
-          agentId: player.id,
-          agentName: player.name,
+          agentId: juror.playerId,
+          agentName: juror.playerName,
           question,
           answer,
         });
-      }),
-    );
-
-    // During Judgment phases, also interview jury members
-    if (this.gameState.endgameStage === "judgment") {
-      await Promise.all(
-        this.gameState.jury.map(async (juror) => {
-          const agent = this.agents.get(juror.playerId);
-          if (!agent) return;
-
-          const diaryContext = this.buildDiaryRoomContext(precedingPhase, juror.playerName);
-          const question = await this.houseInterviewer.generateQuestion(diaryContext);
-          const ctx = this.buildPhaseContext(juror.playerId, Phase.DIARY_ROOM, undefined, true);
-
-          this.logDiary(`House -> ${juror.playerName} (juror)`, question);
-          const answer = await agent.getDiaryEntry(ctx, question);
-          this.logDiary(`${juror.playerName} (juror)`, answer);
-
-          this.diaryEntries.push({
-            round: this.gameState.round,
-            precedingPhase,
-            agentId: juror.playerId,
-            agentName: juror.playerName,
-            question,
-            answer,
-          });
-        }),
-      );
+      }
     }
   }
 
