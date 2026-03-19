@@ -381,32 +381,34 @@ export function createGameRoutes(db: DrizzleDB) {
       return c.json({ error: "Game is not in waiting status" }, 400);
     }
 
-    const currentPlayers = db
+    // Generate personas outside the transaction (may involve LLM calls)
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+    const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
+
+    // Pre-read to estimate how many personas to generate
+    const estimatedPlayers = db
       .select()
       .from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.gameId, gameId))
       .all();
 
-    const slotsToFill = game.maxPlayers - currentPlayers.length;
-    if (slotsToFill <= 0) {
+    const estimatedSlots = game.maxPlayers - estimatedPlayers.length;
+    if (estimatedSlots <= 0) {
       return c.json({ error: "Game is already full" }, 400);
     }
 
-    // Get existing player names and archetypes to avoid duplicates
-    const existingNames = currentPlayers.map((p) => {
+    const existingNames = estimatedPlayers.map((p) => {
       const persona = JSON.parse(p.persona);
       return persona.name as string;
     });
-    const existingArchetypes = currentPlayers.map((p) => {
+    const existingArchetypes = estimatedPlayers.map((p) => {
       const persona = JSON.parse(p.persona);
       return (persona.personaKey ?? persona.personality ?? "strategic") as Personality;
     });
 
-    // Pick names and archetypes
-    const names = pickAgentNames(slotsToFill, existingNames);
-    const archetypes = pickArchetypes(slotsToFill, existingArchetypes);
+    const names = pickAgentNames(estimatedSlots, existingNames);
+    const archetypes = pickArchetypes(estimatedSlots, existingArchetypes);
 
-    // Parse config for model selection
     const config = JSON.parse(game.config);
     const agentModel =
       config.modelTier === "premium"
@@ -415,19 +417,13 @@ export function createGameRoutes(db: DrizzleDB) {
           ? "gpt-4o"
           : "gpt-4o-mini";
 
-    // Generate personas (with LLM if OPENAI_API_KEY is available)
-    const openaiApiKey = process.env.OPENAI_API_KEY;
-    const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
-
-    const addedPlayers: Array<{ id: string; name: string; archetype: string }> = [];
-
-    for (let i = 0; i < slotsToFill; i++) {
+    // Pre-generate personas (LLM calls can't run inside sync SQLite transaction)
+    const generatedPersonas: Array<{ personality: string; strategyHints: string }> = [];
+    for (let i = 0; i < estimatedSlots; i++) {
       const name = names[i] ?? `Agent-${i + 1}`;
       const archetype = archetypes[i] ?? "strategic";
-
       let personalityBlurb = "";
       let strategyHints = "";
-
       if (openai) {
         try {
           const generated = await generatePersona(openai, name, archetype, "gpt-4o-mini");
@@ -437,37 +433,61 @@ export function createGameRoutes(db: DrizzleDB) {
           // Falls through to empty strings — engine uses hardcoded prompts anyway
         }
       }
+      generatedPersonas.push({ personality: personalityBlurb, strategyHints });
+    }
 
-      const playerId = randomUUID();
-      const persona = {
-        name,
-        personality: archetype,
-        strategyHints: strategyHints || null,
-        personaKey: archetype,
-        personalityBlurb: personalityBlurb || null,
-      };
+    // Atomic transaction: re-count players and insert only what fits
+    const addedPlayers: Array<{ id: string; name: string; archetype: string }> = [];
 
-      const agentConfig = {
-        model: agentModel,
-        temperature: 0.9,
-      };
+    db.transaction((tx) => {
+      const currentPlayers = tx
+        .select()
+        .from(schema.gamePlayers)
+        .where(eq(schema.gamePlayers.gameId, gameId))
+        .all();
 
-      db.insert(schema.gamePlayers)
-        .values({
-          id: playerId,
-          gameId,
-          userId: null,
-          persona: JSON.stringify(persona),
-          agentConfig: JSON.stringify(agentConfig),
-        })
-        .run();
+      const slotsToFill = game.maxPlayers - currentPlayers.length;
 
-      addedPlayers.push({ id: playerId, name, archetype });
+      for (let i = 0; i < slotsToFill && i < estimatedSlots; i++) {
+        const name = names[i] ?? `Agent-${i + 1}`;
+        const archetype = archetypes[i] ?? "strategic";
+        const gen = generatedPersonas[i] ?? { personality: "", strategyHints: "" };
+
+        const playerId = randomUUID();
+        const persona = {
+          name,
+          personality: archetype,
+          strategyHints: gen.strategyHints || null,
+          personaKey: archetype,
+          personalityBlurb: gen.personality || null,
+        };
+
+        const agentConfig = {
+          model: agentModel,
+          temperature: 0.9,
+        };
+
+        tx.insert(schema.gamePlayers)
+          .values({
+            id: playerId,
+            gameId,
+            userId: null,
+            persona: JSON.stringify(persona),
+            agentConfig: JSON.stringify(agentConfig),
+          })
+          .run();
+
+        addedPlayers.push({ id: playerId, name, archetype });
+      }
+    });
+
+    if (addedPlayers.length === 0) {
+      return c.json({ error: "Game is already full" }, 400);
     }
 
     return c.json({
       filled: addedPlayers.length,
-      totalPlayers: currentPlayers.length + addedPlayers.length,
+      totalPlayers: estimatedPlayers.length + addedPlayers.length,
       maxPlayers: game.maxPlayers,
       players: addedPlayers,
     });
@@ -662,10 +682,16 @@ export function createGameRoutes(db: DrizzleDB) {
       .where(eq(schema.gamePlayers.gameId, gameId))
       .all();
 
+    // Build lookup by both UUID and name: the engine stores player names (not UUIDs)
+    // in transcript.from, so we need both keys to resolve fromPlayerName correctly.
     const playerNameMap = new Map<string, string>();
     for (const p of players) {
       const persona = JSON.parse(p.persona);
-      playerNameMap.set(p.id, persona.name ?? "Unknown");
+      const name = persona.name as string | undefined;
+      if (name) {
+        playerNameMap.set(p.id, name);   // UUID → name (future-proof)
+        playerNameMap.set(name, name);   // name → name (current engine behavior)
+      }
     }
 
     const rows = db

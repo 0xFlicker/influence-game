@@ -1418,12 +1418,18 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
 
   const isReplay = !!game && game.status !== "in_progress" && game.status !== "waiting";
 
-  // Auto-scroll for live view
+  // Auto-scroll: live view on new messages, replay on index change
   useEffect(() => {
     if (!isReplay && feedRef.current) {
       feedRef.current.scrollTop = feedRef.current.scrollHeight;
     }
   }, [messages, isReplay]);
+
+  useEffect(() => {
+    if (isReplay && feedRef.current) {
+      feedRef.current.scrollTop = feedRef.current.scrollHeight;
+    }
+  }, [replayIndex, isReplay]);
 
   // Drain reveal queue — release one message every 1.5s (or instantly in speedrun)
   useEffect(() => {
