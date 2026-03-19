@@ -30,6 +30,7 @@ export type GameStatus = "waiting" | "in_progress" | "completed" | "cancelled";
 
 export const games = sqliteTable("games", {
   id: text("id").primaryKey(), // UUID
+  slug: text("slug").unique(), // Human-readable identifier, e.g. "punk-green-apple"
   config: text("config").notNull(), // JSON-serialized GameConfig
   status: text("status").notNull().$type<GameStatus>().default("waiting"),
   minPlayers: integer("min_players").notNull().default(4),

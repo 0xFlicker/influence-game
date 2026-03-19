@@ -8,6 +8,13 @@
       "when": 1773765376540,
       "tag": "0000_aberrant_sharon_ventura",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1773851968000,
+      "tag": "0001_add_game_slug",
+      "breakpoints": true
     }
   ]
 }

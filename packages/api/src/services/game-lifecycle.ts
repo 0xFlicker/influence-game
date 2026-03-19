@@ -21,10 +21,12 @@ import type {
   Personality,
   GameConfig,
   GameStateSnapshot,
+  ViewerMode,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { broadcastGameEvent } from "./ws-manager.js";
+import { ViewerEventPacer } from "./viewer-event-pacer.js";
 
 // ---------------------------------------------------------------------------
 // Active game tracking
@@ -177,10 +179,14 @@ export async function startGame(
   // Create runner
   const runner = new GameRunner(agents, engineConfig);
 
-  // Stream game events to WebSocket observers
-  runner.setStreamListener((event) => {
-    broadcastGameEvent(gameId, event);
-  });
+  // Stream game events to WebSocket observers via the display-hold pacer
+  const viewerMode: ViewerMode =
+    (gameConfig.viewerMode as ViewerMode) ?? "speedrun";
+  const pacer = new ViewerEventPacer(
+    viewerMode === "replay" ? "speedrun" : viewerMode,
+    (event) => broadcastGameEvent(gameId, event),
+  );
+  runner.setStreamListener((event) => pacer.emit(event));
 
   // Run game asynchronously
   const promise = runGameAsync(db, gameId, runner, tokenTracker, gameConfig);
