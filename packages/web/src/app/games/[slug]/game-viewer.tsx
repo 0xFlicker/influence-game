@@ -1921,10 +1921,11 @@ function DramaticReplayViewer({
             </p>
             {(() => {
               const stageData = buildWhisperStageData(visibleSceneMessages, players);
-              return stageData.rooms.map((room) => (
+              return stageData.rooms.map((room, idx) => (
                 <div
                   key={room.roomId}
-                  className="rounded-2xl border border-purple-400/20 bg-black/30 p-4 shadow-lg"
+                  className="rounded-2xl border border-purple-400/20 bg-black/30 p-4 shadow-lg animate-[fadeIn_0.4s_ease-out_both]"
+                  style={{ animationDelay: `${idx * 600}ms` }}
                 >
                   <p className="text-[11px] uppercase tracking-[0.28em] text-purple-300/45 mb-1">
                     Room {room.roomId}
