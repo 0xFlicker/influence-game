@@ -428,7 +428,7 @@ function PhaseTransitionOverlay({
 }) {
   const [visible, setVisible] = useState(false);
   const onDismissRef = useRef(onDismiss);
-  onDismissRef.current = onDismiss;
+  useEffect(() => { onDismissRef.current = onDismiss; });
 
   useEffect(() => {
     // Brief tick to trigger CSS fade-in transition
@@ -631,7 +631,6 @@ function WhisperPhaseView({
 }) {
   const [introComplete, setIntroComplete] = useState(false);
   // Reset intro when entering a new whisper phase
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { setIntroComplete(false); }, [phaseKey]);
 
   const houseIntro = "The operatives go dark. Whispers fill the shadows.";
@@ -1240,7 +1239,7 @@ function useGameWebSocket(
   const [status, setStatus] = useState<ConnStatus>("connecting");
   const wsRef = useRef<WebSocket | null>(null);
   const onEventRef = useRef(onEvent);
-  onEventRef.current = onEvent;
+  useEffect(() => { onEventRef.current = onEvent; });
 
   useEffect(() => {
     if (!enabled) return;
@@ -1379,7 +1378,8 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
   );
   // Player card badges
   // empoweredPlayerId is set by the reveal choreography (INF-76) — null until then
-  const [empoweredPlayerId, setEmpoweredPlayerId] = useState<string | null>(null);
+  // empoweredPlayerId will be set by reveal choreography (INF-76)
+  const [empoweredPlayerId] = useState<string | null>(null);
   const [eliminatedRounds, setEliminatedRounds] = useState<ReadonlyMap<string, number>>(new Map());
   const eliminatedRoundsRef = useRef<Map<string, number>>(new Map());
   const [recentlyUnshielded, setRecentlyUnshielded] = useState<ReadonlySet<string>>(new Set());
@@ -1879,7 +1879,7 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
             ) : (
               groupMessages(
                 visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper"),
-              ).map((item, idx) => {
+              ).map((item) => {
                 if (item.kind === "msg" && lastWordsIds.has(item.entry.id)) {
                   return (
                     <LastWordsMessage
@@ -2092,7 +2092,7 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
               </p>
             ) : (
               groupMessages(visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper")).map(
-                (item, idx) => {
+                (item) => {
                   // Last-words messages get the elimination choreography component
                   if (item.kind === "msg" && lastWordsIds.has(item.entry.id)) {
                     return (

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
-import { getAuthToken, getPlayerGames, type GameSummary, type PlayerGameResult, type PersonaKey } from "@/lib/api";
+import { getAuthToken, getPlayerGames, type GameSummary, type PlayerGameResult } from "@/lib/api";
 import { GamesBrowser } from "@/app/games/games-browser";
 import { JoinGameModal } from "./join-game-modal";
 
@@ -163,7 +163,7 @@ function AgentDefaultsSection() {
 export function DashboardContent() {
   const { user, authenticated, login } = usePrivy();
   const [joinTarget, setJoinTarget] = useState<GameSummary | null>(null);
-  const [joinedGameIds, setJoinedGameIds] = useState<Set<string>>(new Set());
+  const [, setJoinedGameIds] = useState<Set<string>>(new Set());
   const [history, setHistory] = useState<PlayerGameResult[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
 

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createGame, estimateCost, type CreateGameParams, type PersonaKey, type ViewerMode } from "@/lib/api";
+import { createGame, estimateCost, type CreateGameParams, type PersonaKey } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Persona definitions (matches engine PERSONALITY_PROMPTS)

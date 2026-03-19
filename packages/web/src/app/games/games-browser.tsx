@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePrivy } from "@privy-io/react-auth";
 import { listGames, type GameSummary, type GameStatus, type ModelTier } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
