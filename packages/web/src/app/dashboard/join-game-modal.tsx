@@ -1,24 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { joinGame, type GameSummary, type JoinGameConfig, type PersonaKey } from "@/lib/api";
-
-// ---------------------------------------------------------------------------
-// Persona options
-// ---------------------------------------------------------------------------
-
-const PERSONAS: { key: PersonaKey; name: string; icon: string; description: string }[] = [
-  { key: "strategic", name: "Atlas", icon: "♟️", description: "Long-game thinker. Forms lasting alliances, plays the board." },
-  { key: "deceptive", name: "Vera", icon: "🎭", description: "Master of misdirection. Hard to read, harder to trust." },
-  { key: "honest", name: "Finn", icon: "🤝", description: "Plays with integrity. Builds real trust — risky but respected." },
-  { key: "paranoid", name: "Lyra", icon: "👁️", description: "Suspects everyone. Sees angles others miss." },
-  { key: "social", name: "Mira", icon: "💬", description: "Reads the room. Moves through social dynamics naturally." },
-  { key: "aggressive", name: "Rex", icon: "⚡", description: "Pushes hard. Forces decisions before others are ready." },
-  { key: "loyalist", name: "Kael", icon: "🛡️", description: "Commits fully to alliances. Rewarded or punished for it." },
-  { key: "observer", name: "Echo", icon: "🔍", description: "Watches and waits. Minimal footprint, maximum intel." },
-  { key: "diplomat", name: "Sage", icon: "⚖️", description: "Mediates conflicts. Stays central by staying neutral." },
-  { key: "wildcard", name: "Jace", icon: "🎲", description: "Unpredictable. Chaos as strategy." },
-];
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import {
+  joinGame,
+  listAgents,
+  getAuthToken,
+  type GameSummary,
+  type JoinGameConfig,
+  type PersonaKey,
+  type SavedAgent,
+} from "@/lib/api";
+import { PERSONAS } from "@/lib/personas";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -31,16 +24,106 @@ interface JoinGameModalProps {
 }
 
 // ---------------------------------------------------------------------------
+// Agent picker
+// ---------------------------------------------------------------------------
+
+function AgentPicker({
+  agents,
+  selectedId,
+  onSelect,
+  onClear,
+}: {
+  agents: SavedAgent[];
+  selectedId: string | null;
+  onSelect: (agent: SavedAgent) => void;
+  onClear: () => void;
+}) {
+  if (agents.length === 0) {
+    return (
+      <div className="border border-dashed border-white/10 rounded-lg p-3 text-center">
+        <p className="text-white/30 text-xs mb-1">No saved agents yet</p>
+        <Link
+          href="/dashboard/agents"
+          className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors"
+        >
+          Create an agent →
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {agents.map((agent) => {
+          const persona = PERSONAS.find((p) => p.key === agent.personaKey);
+          const isSelected = selectedId === agent.id;
+          return (
+            <button
+              key={agent.id}
+              type="button"
+              onClick={() => (isSelected ? onClear() : onSelect(agent))}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs transition-all ${
+                isSelected
+                  ? "border-indigo-500 bg-indigo-600/20 text-white"
+                  : "border-white/10 text-white/50 hover:border-white/20 hover:text-white/70"
+              }`}
+            >
+              <span>{persona?.icon ?? "?"}</span>
+              <span>{agent.name}</span>
+              {agent.gamesPlayed > 0 && (
+                <span className="text-white/25">
+                  {agent.wins}W/{agent.losses}L
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {selectedId && (
+        <p className="text-white/25 text-xs">
+          Agent selected. Fields below are pre-filled but you can still edit them.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) {
+  const [agents, setAgents] = useState<SavedAgent[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agentName, setAgentName] = useState("");
   const [personality, setPersonality] = useState("");
   const [strategyHints, setStrategyHints] = useState("");
   const [selectedPersona, setSelectedPersona] = useState<PersonaKey>("strategic");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!getAuthToken()) return;
+    listAgents()
+      .then(setAgents)
+      .catch(() => {
+        // API may not be available yet — silently fall back to manual entry
+      });
+  }, []);
+
+  function handleSelectAgent(agent: SavedAgent) {
+    setSelectedAgentId(agent.id);
+    setAgentName(agent.name);
+    setPersonality(agent.personality);
+    setStrategyHints(agent.strategyHints ?? "");
+    setSelectedPersona(agent.personaKey);
+    setError(null);
+  }
+
+  function handleClearAgent() {
+    setSelectedAgentId(null);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -101,6 +184,19 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Saved agent picker */}
+            <div>
+              <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
+                Select Agent
+              </label>
+              <AgentPicker
+                agents={agents}
+                selectedId={selectedAgentId}
+                onSelect={handleSelectAgent}
+                onClear={handleClearAgent}
+              />
+            </div>
+
             {/* Agent name */}
             <div>
               <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">

@@ -243,6 +243,65 @@ export async function getPlayerGames(): Promise<PlayerGameResult[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Saved agent types
+// ---------------------------------------------------------------------------
+
+export interface SavedAgent {
+  id: string;
+  name: string;
+  backstory: string;
+  personality: string;
+  strategyHints?: string;
+  personaKey: PersonaKey;
+  wins: number;
+  losses: number;
+  gamesPlayed: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateAgentParams {
+  name: string;
+  backstory: string;
+  personality: string;
+  strategyHints?: string;
+  personaKey: PersonaKey;
+}
+
+export type UpdateAgentParams = Partial<CreateAgentParams>;
+
+// ---------------------------------------------------------------------------
+// Saved agent API calls
+// ---------------------------------------------------------------------------
+
+export async function listAgents(): Promise<SavedAgent[]> {
+  return apiFetch("/api/player/agents");
+}
+
+export async function createAgent(
+  params: CreateAgentParams,
+): Promise<SavedAgent> {
+  return apiFetch("/api/player/agents", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+export async function updateAgent(
+  id: string,
+  params: UpdateAgentParams,
+): Promise<SavedAgent> {
+  return apiFetch(`/api/player/agents/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(params),
+  });
+}
+
+export async function deleteAgent(id: string): Promise<void> {
+  await apiFetch(`/api/player/agents/${id}`, { method: "DELETE" });
+}
+
+// ---------------------------------------------------------------------------
 // Game detail types (for the game viewer)
 // ---------------------------------------------------------------------------
 

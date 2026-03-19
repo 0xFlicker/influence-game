@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
-import { getAuthToken, getPlayerGames, type GameSummary, type PlayerGameResult } from "@/lib/api";
+import { getAuthToken, getPlayerGames, listAgents, type GameSummary, type PlayerGameResult, type SavedAgent } from "@/lib/api";
+import { PERSONAS } from "@/lib/personas";
 import { GamesBrowser } from "@/app/games/games-browser";
 import { JoinGameModal } from "./join-game-modal";
 
@@ -98,61 +99,83 @@ function HistorySection({ history }: { history: PlayerGameResult[] }) {
 }
 
 // ---------------------------------------------------------------------------
-// Agent defaults section
+// Saved agents section
 // ---------------------------------------------------------------------------
 
-function AgentDefaultsSection() {
-  const [name, setName] = useState("");
-  const [personality, setPersonality] = useState("");
-  const [saved, setSaved] = useState(false);
+function SavedAgentsSection() {
+  const [agents, setAgents] = useState<SavedAgent[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    // TODO: persist to API once /api/player/agent-config is available
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  useEffect(() => {
+    if (!getAuthToken()) {
+      setLoading(false);
+      return;
+    }
+    listAgents()
+      .then(setAgents)
+      .catch(() => setAgents([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="border border-white/10 rounded-xl p-6 text-center text-white/20 text-sm">
+        Loading...
+      </div>
+    );
+  }
+
+  if (agents.length === 0) {
+    return (
+      <div className="border border-dashed border-white/10 rounded-xl p-6 text-center">
+        <p className="text-white/30 text-sm mb-2">No saved agents yet</p>
+        <p className="text-white/20 text-xs mb-3">
+          Create agents with rich backstories and personalities to quickly join games.
+        </p>
+        <Link
+          href="/dashboard/agents"
+          className="inline-block text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+        >
+          Create your first agent
+        </Link>
+      </div>
+    );
   }
 
   return (
-    <form onSubmit={handleSave} className="border border-white/10 rounded-xl p-6 space-y-4">
-      <div>
-        <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
-          Default Agent Name
-        </label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. Phantom-9"
-          maxLength={32}
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/20 text-sm outline-none focus:border-indigo-500 transition-colors"
-        />
+    <div className="space-y-3">
+      <div className="grid gap-2">
+        {agents.slice(0, 3).map((agent) => {
+          const persona = PERSONAS.find((p) => p.key === agent.personaKey);
+          return (
+            <div
+              key={agent.id}
+              className="border border-white/10 rounded-lg px-4 py-3 flex items-center gap-3"
+            >
+              <span className="text-lg">{persona?.icon ?? "?"}</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-white text-sm font-medium truncate">{agent.name}</p>
+                <p className="text-white/30 text-xs truncate">{agent.backstory}</p>
+              </div>
+              {agent.gamesPlayed > 0 && (
+                <span className="text-white/30 text-xs shrink-0">
+                  {agent.wins}W / {agent.losses}L
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
-      <div>
-        <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
-          Default Personality
-        </label>
-        <textarea
-          value={personality}
-          onChange={(e) => setPersonality(e.target.value)}
-          placeholder="How should your agent behave by default?"
-          rows={3}
-          maxLength={500}
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/20 text-sm outline-none focus:border-indigo-500 transition-colors resize-none"
-        />
-      </div>
-      <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          className="text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-        >
-          {saved ? "✓ Saved" : "Save defaults"}
-        </button>
-        <p className="text-white/25 text-xs">
-          These pre-fill the agent config when you join a game.
-        </p>
-      </div>
-    </form>
+      {agents.length > 3 && (
+        <p className="text-white/25 text-xs">+{agents.length - 3} more</p>
+      )}
+      <Link
+        href="/dashboard/agents"
+        className="inline-block text-indigo-400 hover:text-indigo-300 text-xs transition-colors"
+      >
+        Manage agents →
+      </Link>
+    </div>
   );
 }
 
@@ -281,14 +304,20 @@ export function DashboardContent() {
           )}
         </section>
 
-        {/* Agent defaults */}
+        {/* Saved agents */}
         <section>
-          <div className="mb-3">
+          <div className="flex items-center justify-between mb-3">
             <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider">
-              Agent Defaults
+              Your Agents
             </h2>
+            <Link
+              href="/dashboard/agents"
+              className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+            >
+              Manage →
+            </Link>
           </div>
-          <AgentDefaultsSection />
+          <SavedAgentsSection />
         </section>
       </div>
     </>
