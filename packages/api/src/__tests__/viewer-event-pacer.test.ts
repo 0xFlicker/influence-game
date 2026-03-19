@@ -59,8 +59,8 @@ describe("ViewerEventPacer", () => {
 
       // All 5 events arrive synchronously
       expect(received.length).toBe(5);
-      expect(received[0].event.type).toBe("phase_change");
-      expect(received[4].event.type).toBe("game_over");
+      expect(received[0]!.event.type).toBe("phase_change");
+      expect(received[4]!.event.type).toBe("game_over");
     });
 
     it("reports zero buffered events", () => {
@@ -90,12 +90,12 @@ describe("ViewerEventPacer", () => {
       // POWER phase_change has a hold → not yet
       await waitForDrain(10);
       expect(received.length).toBe(1);
-      expect((received[0].event as { phase: Phase }).phase).toBe(Phase.VOTE);
+      expect((received[0]!.event as { phase: Phase }).phase).toBe(Phase.VOTE);
 
       // After hold completes, POWER arrives
       await waitForDrain(100);
       expect(received.length).toBe(2);
-      expect((received[1].event as { phase: Phase }).phase).toBe(Phase.POWER);
+      expect((received[1]!.event as { phase: Phase }).phase).toBe(Phase.POWER);
     });
 
     it("holds before REVEAL phase_change (power reveal hold)", async () => {
@@ -125,7 +125,7 @@ describe("ViewerEventPacer", () => {
       // After second hold drains (~160ms total), REVEAL arrives
       await waitForDrain(100);
       expect(received.length).toBe(4);
-      expect((received[3].event as { phase: Phase }).phase).toBe(Phase.REVEAL);
+      expect((received[3]!.event as { phase: Phase }).phase).toBe(Phase.REVEAL);
     });
 
     it("holds before player_eliminated events", async () => {
@@ -138,11 +138,11 @@ describe("ViewerEventPacer", () => {
       await waitForDrain(10);
       // Transcript arrives immediately, elimination held
       expect(received.length).toBe(1);
-      expect(received[0].event.type).toBe("transcript_entry");
+      expect(received[0]!.event.type).toBe("transcript_entry");
 
       await waitForDrain(100);
       expect(received.length).toBe(2);
-      expect(received[1].event.type).toBe("player_eliminated");
+      expect(received[1]!.event.type).toBe("player_eliminated");
     });
 
     it("holds after COUNCIL phase ends (council end hold)", async () => {
@@ -161,7 +161,7 @@ describe("ViewerEventPacer", () => {
       await waitForDrain(100);
       // DIARY_ROOM phase_change arrives after council end hold
       expect(received.length).toBe(3);
-      expect((received[2].event as { phase: Phase }).phase).toBe(Phase.DIARY_ROOM);
+      expect((received[2]!.event as { phase: Phase }).phase).toBe(Phase.DIARY_ROOM);
     });
 
     it("does not hold for non-dramatic phase transitions", async () => {
@@ -186,7 +186,7 @@ describe("ViewerEventPacer", () => {
 
       await waitForDrain(10);
       expect(received.length).toBe(1);
-      expect(received[0].event.type).toBe("game_over");
+      expect(received[0]!.event.type).toBe("game_over");
     });
   });
 

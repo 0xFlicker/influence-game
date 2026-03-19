@@ -4,6 +4,7 @@
  * Bun + Hono server with WebSocket support for live game observation.
  */
 
+import { readFileSync } from "node:fs";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { eq, or } from "drizzle-orm";
@@ -19,6 +20,16 @@ import {
   sendSnapshot,
   type WsConnectionData,
 } from "./services/ws-manager.js";
+
+// ---------------------------------------------------------------------------
+// Version — read from package.json so it stays in sync with releases
+// ---------------------------------------------------------------------------
+
+const apiVersion = (
+  JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
+  ) as { version: string }
+).version;
 
 // ---------------------------------------------------------------------------
 // Startup env validation — crash immediately if required vars are missing
@@ -103,7 +114,7 @@ app.get("/health", (c) => {
   return c.json({
     status: "ok",
     service: "influence-api",
-    version: "0.7.0",
+    version: apiVersion,
     timestamp: new Date().toISOString(),
   });
 });
@@ -112,7 +123,7 @@ app.get("/health", (c) => {
 app.get("/", (c) => {
   return c.json({
     name: "Influence Game API",
-    version: "0.7.0",
+    version: apiVersion,
     endpoints: {
       health: "/health",
       auth: "/api/auth",

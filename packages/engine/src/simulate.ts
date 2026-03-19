@@ -175,26 +175,6 @@ function extractEndgameType(transcript: readonly TranscriptEntry[]): string {
   return lastStage;
 }
 
-function countEmpowerments(transcript: readonly TranscriptEntry[], playerName: string): number {
-  let count = 0;
-  for (const entry of transcript) {
-    if (entry.scope === "system" && entry.text.includes(`${playerName} is empowered`)) {
-      count++;
-    }
-  }
-  return count;
-}
-
-function countJuryAppearances(transcript: readonly TranscriptEntry[], playerName: string): number {
-  let count = 0;
-  for (const entry of transcript) {
-    if (entry.scope === "system" && entry.text.includes("Jury:") && entry.text.includes(playerName)) {
-      count++;
-    }
-  }
-  return count > 0 ? 1 : 0; // Binary: was on jury or not
-}
-
 function getSurvivalRound(
   eliminationOrder: string[],
   playerName: string,

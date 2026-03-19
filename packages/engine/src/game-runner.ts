@@ -17,7 +17,6 @@ import type {
   PowerAction,
   JuryMember,
   EndgameStage,
-  Player,
 } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 
