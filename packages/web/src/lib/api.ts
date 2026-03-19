@@ -287,6 +287,7 @@ export interface TranscriptEntry {
   fromPlayerName: string | null;
   scope: TranscriptScope;
   toPlayerIds: string[] | null;
+  roomId?: number;
   text: string;
   timestamp: number;
 }
@@ -318,6 +319,7 @@ export interface WsTranscriptEntry {
   from: string; // player UUID or "SYSTEM"
   scope: TranscriptScope;
   to?: string[];
+  roomId?: number;
   text: string;
   timestamp: number;
 }

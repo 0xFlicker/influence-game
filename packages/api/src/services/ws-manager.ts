@@ -20,7 +20,7 @@ export interface WsConnectionData {
 export type WsOutboundEvent =
   | { type: "game_state"; snapshot: GameStateSnapshot }
   | { type: "phase_change"; phase: string; round: number; alivePlayers: string[] }
-  | { type: "message"; entry: { round: number; phase: string; from: string; scope: string; to?: string[]; text: string; timestamp: number; anonymous?: boolean; displayOrder?: number } }
+  | { type: "message"; entry: { round: number; phase: string; from: string; scope: string; to?: string[]; roomId?: number; text: string; timestamp: number; anonymous?: boolean; displayOrder?: number } }
   | { type: "player_eliminated"; playerId: string; playerName: string; round: number }
   | { type: "game_over"; winner?: string; winnerName?: string; totalRounds: number }
   | { type: "error"; message: string };

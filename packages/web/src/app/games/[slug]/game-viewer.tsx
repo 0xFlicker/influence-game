@@ -166,6 +166,127 @@ function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+interface WhisperRoomStage {
+  roomId: number;
+  playerIds: string[];
+  playerNames: string[];
+  messages: TranscriptEntry[];
+}
+
+interface WhisperStageData {
+  allocationText: string | null;
+  rooms: WhisperRoomStage[];
+  commons: GamePlayer[];
+}
+
+function canonicalPairKey(a: string, b: string): string {
+  return [a, b].sort((left, right) => left.localeCompare(right)).join("::");
+}
+
+function parseWhisperAllocation(text: string, players: GamePlayer[]): {
+  rooms: Array<{ roomId: number; playerIds: string[]; playerNames: string[] }>;
+  commons: GamePlayer[];
+} {
+  const playerByName = new Map(players.map((player) => [player.name.toLowerCase(), player]));
+  const rooms: Array<{ roomId: number; playerIds: string[]; playerNames: string[] }> = [];
+
+  for (const match of text.matchAll(/Room\s+(\d+):\s*([^|]+?)\s*&\s*([^|]+?)(?=\s*\||$)/g)) {
+    const roomId = Number(match[1]);
+    const leftName = match[2]?.trim();
+    const rightName = match[3]?.trim();
+    if (!leftName || !rightName || Number.isNaN(roomId)) continue;
+
+    const leftPlayer = playerByName.get(leftName.toLowerCase());
+    const rightPlayer = playerByName.get(rightName.toLowerCase());
+
+    rooms.push({
+      roomId,
+      playerIds: [leftPlayer?.id, rightPlayer?.id].filter((value): value is string => Boolean(value)),
+      playerNames: [leftName, rightName],
+    });
+  }
+
+  const commonsText = text.match(/Commons:\s*(.+)$/)?.[1]?.trim() ?? "";
+  const commons = commonsText.length === 0
+    ? []
+    : commonsText
+        .split(",")
+        .map((name) => name.trim())
+        .map((name) => playerByName.get(name.toLowerCase()))
+        .filter((player): player is GamePlayer => Boolean(player));
+
+  return { rooms, commons };
+}
+
+function buildWhisperStageData(
+  phaseEntries: TranscriptEntry[],
+  players: GamePlayer[],
+): WhisperStageData {
+  const ordered = [...phaseEntries].sort((left, right) => left.timestamp - right.timestamp);
+  const allocationEntry = [...ordered]
+    .reverse()
+    .find((entry) => entry.scope === "system" && /Room\s+\d+:/.test(entry.text));
+
+  const parsed = allocationEntry
+    ? parseWhisperAllocation(allocationEntry.text, players)
+    : { rooms: [], commons: [] as GamePlayer[] };
+
+  const roomsById = new Map<number, WhisperRoomStage>();
+  const roomsByPair = new Map<string, WhisperRoomStage>();
+
+  for (const room of parsed.rooms) {
+    const stageRoom: WhisperRoomStage = {
+      roomId: room.roomId,
+      playerIds: room.playerIds,
+      playerNames: room.playerNames,
+      messages: [],
+    };
+    roomsById.set(room.roomId, stageRoom);
+    if (room.playerIds.length === 2) {
+      roomsByPair.set(canonicalPairKey(room.playerIds[0]!, room.playerIds[1]!), stageRoom);
+    }
+  }
+
+  for (const entry of ordered) {
+    if (entry.scope !== "whisper" || !entry.fromPlayerId) continue;
+    const partnerId = entry.toPlayerIds?.[0];
+    let room = entry.roomId != null ? roomsById.get(entry.roomId) : undefined;
+
+    if (!room && partnerId) {
+      room = roomsByPair.get(canonicalPairKey(entry.fromPlayerId, partnerId));
+    }
+
+    if (!room) {
+      const inferredRoomId = entry.roomId ?? roomsById.size + 1;
+      const inferredNames = [
+        players.find((player) => player.id === entry.fromPlayerId)?.name ?? entry.fromPlayerId,
+        partnerId
+          ? players.find((player) => player.id === partnerId)?.name ?? partnerId
+          : "Unknown",
+      ];
+      room = {
+        roomId: inferredRoomId,
+        playerIds: partnerId ? [entry.fromPlayerId, partnerId] : [entry.fromPlayerId],
+        playerNames: inferredNames,
+        messages: [],
+      };
+      roomsById.set(room.roomId, room);
+      if (partnerId) {
+        roomsByPair.set(canonicalPairKey(entry.fromPlayerId, partnerId), room);
+      }
+    }
+
+    room.messages.push(entry);
+  }
+
+  const rooms = Array.from(roomsById.values()).sort((left, right) => left.roomId - right.roomId);
+  return {
+    allocationText: allocationEntry?.text ?? null,
+    rooms,
+    commons: parsed.commons,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
@@ -610,89 +731,210 @@ function DiaryQACard({
 // Whisper phase quiet-state view
 // ---------------------------------------------------------------------------
 
-/**
- * Replaces the main stage during WHISPER phase.
- * Shows a quiet-state header + whisper activity indicators (sender + recipients).
- * Content is hidden for non-admin viewers; sign-in CTA shown for anonymous.
- *
- * The `phaseKey` prop causes the House intro typewriter to reset each new
- * WHISPER phase (keyed by round number).
- */
 function WhisperPhaseView({
-  whisperMessages,
+  phaseEntries,
   players,
-  isAuthenticated,
   phaseKey,
 }: {
-  whisperMessages: TranscriptEntry[];
+  phaseEntries: TranscriptEntry[];
   players: GamePlayer[];
-  isAuthenticated: boolean;
   phaseKey: string;
 }) {
-  const [introComplete, setIntroComplete] = useState(false);
-  // Reset intro when entering a new whisper phase
-  useEffect(() => { setIntroComplete(false); }, [phaseKey]);
+  const stage = buildWhisperStageData(phaseEntries, players);
+  const [pinnedShot, setPinnedShot] = useState<string | null>(null);
+  const [autoIndex, setAutoIndex] = useState(0);
+  const [showAllocationReveal, setShowAllocationReveal] = useState(true);
 
-  const houseIntro = "The operatives go dark. Whispers fill the shadows.";
+  useEffect(() => {
+    setPinnedShot(null);
+    setAutoIndex(0);
+    setShowAllocationReveal(true);
+  }, [phaseKey]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShowAllocationReveal(false), 2000);
+    return () => window.clearTimeout(timer);
+  }, [phaseKey]);
+
+  const shots = [
+    ...stage.rooms.map((room) => ({ key: `room-${room.roomId}`, kind: "room" as const, room })),
+    ...(stage.commons.length > 0
+      ? [{ key: "commons", kind: "commons" as const, players: stage.commons }]
+      : []),
+  ];
+
+  useEffect(() => {
+    if (showAllocationReveal || pinnedShot || shots.length <= 1) return;
+    const activeShot = shots[autoIndex % shots.length];
+    const holdMs = activeShot?.kind === "commons" ? 4000 : 9000;
+    const timer = window.setTimeout(() => {
+      setAutoIndex((index) => (index + 1) % shots.length);
+    }, holdMs);
+    return () => window.clearTimeout(timer);
+  }, [autoIndex, pinnedShot, shots, showAllocationReveal]);
+
+  const activeShot = pinnedShot
+    ? shots.find((shot) => shot.key === pinnedShot) ?? shots[0]
+    : shots[autoIndex % Math.max(shots.length, 1)];
+
+  const activeRoom = activeShot?.kind === "room" ? activeShot.room : null;
+  const activeCommons = activeShot?.kind === "commons" ? activeShot.players : null;
 
   return (
-    <div className="border border-purple-900/20 bg-purple-950/10 rounded-xl flex-1 overflow-y-auto p-6 min-h-[420px] max-h-[600px]">
-      {/* Header */}
+    <div className="border border-purple-900/20 bg-[radial-gradient(circle_at_top,rgba(120,57,191,0.2),rgba(9,4,19,0.95)_62%)] rounded-xl flex-1 overflow-y-auto p-4 md:p-6 min-h-[420px] max-h-[600px]">
       <div className="text-center mb-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-purple-400/60 mb-1">
-          ◆ WHISPER PHASE ◆
+        <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-purple-300/70 mb-1">
+          Whisper Rooms
         </p>
-        <p className="text-xs text-purple-400/30 uppercase tracking-wider">
-          Private channels are active
-        </p>
-      </div>
-
-      {/* House intro */}
-      <div className="text-center mb-6">
-        <p className="text-sm text-white/40 italic">
+        <p className="text-sm text-white/55 italic min-h-[1.5rem]">
           <Typewriter
             key={phaseKey}
-            text={houseIntro}
+            text="The House has assigned private rooms. Every secret has an audience."
             rate="house"
-            onComplete={() => setIntroComplete(true)}
           />
         </p>
       </div>
 
-      {/* Whisper activity indicators */}
-      {(introComplete || whisperMessages.length > 0) && whisperMessages.length > 0 && (
-        <div className="space-y-2 mt-4">
-          {whisperMessages.map((msg) => {
-            const sender = players.find((p) => p.id === msg.fromPlayerId);
-            const senderName = sender?.name ?? msg.fromPlayerId ?? "Unknown";
-            const recipients = (msg.toPlayerIds ?? [])
-              .map((id) => players.find((p) => p.id === id)?.name ?? id)
-              .filter(Boolean);
-
-            return (
-              <div key={msg.id} className="flex items-center gap-2 text-xs text-purple-300/50">
-                <span className="text-purple-500/40 flex-shrink-0">•</span>
-                <span className="flex-1">
-                  <span className="text-white/55 font-medium">{senderName}</span>
-                  {" "}is whispering to{" "}
-                  <span className="text-white/55 font-medium">
-                    {recipients.length > 0 ? recipients.join(" and ") : "someone"}
-                  </span>
-                  …
-                </span>
-                <span className="text-white/20 flex-shrink-0">{formatTime(msg.timestamp)}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Anonymous sign-in CTA */}
-      {!isAuthenticated && (
-        <div className="mt-8 text-center border-t border-purple-900/20 pt-5">
-          <p className="text-xs text-white/20 italic">
-            Sign in to view your own whispers in the sidebar
+      {showAllocationReveal ? (
+        <div className="space-y-4 animate-[fadeIn_0.35s_ease-out]">
+          <p className="text-center text-xs uppercase tracking-[0.25em] text-purple-300/45">
+            Room Allocation Reveal
           </p>
+          <div className="grid gap-3 md:grid-cols-2">
+            {stage.rooms.map((room, index) => (
+              <div
+                key={room.roomId}
+                className="rounded-2xl border border-purple-500/20 bg-black/25 px-4 py-5 shadow-[0_20px_60px_rgba(0,0,0,0.35)] animate-[fadeIn_0.45s_ease-out]"
+                style={{ animationDelay: `${index * 120}ms` }}
+              >
+                <p className="text-[11px] uppercase tracking-[0.28em] text-purple-300/45 mb-3">
+                  Room {room.roomId}
+                </p>
+                <p className="text-lg font-semibold text-white">
+                  {room.playerNames.join("  ×  ")}
+                </p>
+              </div>
+            ))}
+          </div>
+          {stage.commons.length > 0 && (
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-5 text-center animate-[fadeIn_0.55s_ease-out]">
+              <p className="text-[11px] uppercase tracking-[0.28em] text-white/35 mb-2">Commons</p>
+              <p className="text-sm text-white/65">
+                {stage.commons.map((player) => player.name).join(", ")}
+              </p>
+            </div>
+          )}
+        </div>
+      ) : shots.length === 0 ? (
+        <div className="rounded-2xl border border-purple-900/20 bg-black/20 p-8 text-center text-white/45">
+          Waiting for the House to finish assigning rooms.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            {stage.rooms.map((room) => {
+              const tabKey = `room-${room.roomId}`;
+              const isPinned = pinnedShot === tabKey;
+              return (
+                <button
+                  key={tabKey}
+                  type="button"
+                  onClick={() => setPinnedShot((current) => current === tabKey ? null : tabKey)}
+                  className={`rounded-full border px-3 py-1.5 text-xs uppercase tracking-[0.2em] transition-colors ${
+                    isPinned
+                      ? "border-purple-300/50 bg-purple-300/15 text-white"
+                      : "border-white/10 bg-white/5 text-white/55 hover:border-purple-300/30 hover:text-white"
+                  }`}
+                >
+                  Room {room.roomId}
+                </button>
+              );
+            })}
+            {stage.commons.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setPinnedShot((current) => current === "commons" ? null : "commons")}
+                className={`rounded-full border px-3 py-1.5 text-xs uppercase tracking-[0.2em] transition-colors ${
+                  pinnedShot === "commons"
+                    ? "border-white/40 bg-white/12 text-white"
+                    : "border-white/10 bg-white/5 text-white/55 hover:border-white/25 hover:text-white"
+                }`}
+              >
+                Commons
+              </button>
+            )}
+            <div className="ml-auto text-[11px] uppercase tracking-[0.25em] text-purple-300/45">
+              {pinnedShot ? "Pinned room" : "Auto-rotate live"}
+            </div>
+          </div>
+
+          {stage.allocationText && (
+            <p className="text-xs text-white/35 border-b border-white/10 pb-3">
+              {stage.allocationText}
+            </p>
+          )}
+
+          {activeRoom && (
+            <div
+              key={activeShot?.key}
+              className="rounded-[28px] border border-purple-400/20 bg-black/30 p-5 md:p-6 shadow-[0_30px_80px_rgba(0,0,0,0.45)] animate-[fadeIn_0.3s_ease-out]"
+            >
+              <div className="flex items-center justify-between gap-3 mb-5">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.28em] text-purple-300/45 mb-1">
+                    Room {activeRoom.roomId}
+                  </p>
+                  <p className="text-xl font-semibold text-white">
+                    {activeRoom.playerNames.join("  ×  ")}
+                  </p>
+                </div>
+                <span className="rounded-full border border-red-400/25 bg-red-400/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-red-200/80">
+                  Live
+                </span>
+              </div>
+
+              {activeRoom.messages.length === 0 ? (
+                <p className="text-sm text-white/45 italic">
+                  The room is sealed. Waiting for the first message.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {activeRoom.messages.map((msg) => {
+                    const player = players.find((candidate) => candidate.id === msg.fromPlayerId)
+                      ?? players.find((candidate) => candidate.name === msg.fromPlayerId);
+                    const name = player?.name ?? msg.fromPlayerId ?? "Unknown";
+                    return (
+                      <div key={msg.id} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="text-sm">{player ? personaEmoji(player.persona) : "●"}</span>
+                          <span className="text-sm font-semibold text-white/75">{name}</span>
+                          <span className="ml-auto text-[11px] uppercase tracking-[0.18em] text-white/25">
+                            {formatTime(msg.timestamp)}
+                          </span>
+                        </div>
+                        <p className="text-sm leading-relaxed text-white/70">{msg.text}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeCommons && (
+            <div
+              key={activeShot?.key}
+              className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] p-5 md:p-6 text-center shadow-[0_30px_80px_rgba(0,0,0,0.38)] animate-[fadeIn_0.3s_ease-out]"
+            >
+              <p className="text-[11px] uppercase tracking-[0.28em] text-white/35 mb-3">Commons</p>
+              <p className="text-2xl font-semibold text-white mb-3">
+                {activeCommons.map((player) => player.name).join("  ·  ")}
+              </p>
+              <p className="text-sm text-white/55 max-w-xl mx-auto">
+                These operatives were shut out of private conversations this round.
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1326,6 +1568,7 @@ function wsEntryToTranscriptEntry(
     fromPlayerName: null, // resolved by MessageBubble via player lookup
     scope: entry.scope as TranscriptScope,
     toPlayerIds: entry.to ?? null,
+    roomId: entry.roomId,
     text: entry.text,
     timestamp: entry.timestamp,
   };
@@ -1617,11 +1860,15 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
         else if (ev.phase === "LOBBY" || ev.phase === "RUMOR") audioCue.zone("resolution");
         // Show transition overlay in live mode (not on END phase — no point)
         if (ev.phase !== "END" && ev.phase !== "INIT") {
-          const flavors = PHASE_FLAVORS[ev.phase] ?? [];
           const flavorText =
-            flavors.length > 0
-              ? flavors[Math.floor(Math.random() * flavors.length)]
-              : "";
+            prevPhase === "WHISPER" && ev.phase === "RUMOR"
+              ? "The rooms are sealed. Time to face the group."
+              : (() => {
+                  const flavors = PHASE_FLAVORS[ev.phase] ?? [];
+                  return flavors.length > 0
+                    ? flavors[Math.floor(Math.random() * flavors.length)]
+                    : "";
+                })();
           setActiveTransition({
             phase: ev.phase,
             round: ev.round,
@@ -1752,6 +1999,13 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
       }
     : game;
 
+  const currentWhisperEntries = visibleMessages.filter(
+    (message) =>
+      message.phase === "WHISPER" &&
+      message.round === replayGame.currentRound &&
+      (message.scope === "whisper" || message.scope === "system"),
+  );
+
   // Construct a GameSummary-compatible object for the JoinGameModal
   const gameSummaryForJoin: GameSummary = {
     id: game.id,
@@ -1846,9 +2100,8 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
       {/* Mobile Chat tab */}
       {mobileTab === "chat" && replayGame.currentPhase === "WHISPER" && !isReplay && (
         <WhisperPhaseView
-          whisperMessages={visibleMessages.filter((m) => m.scope === "whisper")}
+          phaseEntries={currentWhisperEntries}
           players={game.players}
-          isAuthenticated={isAuthenticated}
           phaseKey={`whisper-${replayGame.currentRound}`}
         />
       )}
@@ -2058,9 +2311,8 @@ export function GameViewer({ gameId, initialGame, initialMessages }: GameViewerP
         {/* Main Stage: Whisper phase quiet-state */}
         {activeTab === "stage" && replayGame.currentPhase === "WHISPER" && !isReplay && (
           <WhisperPhaseView
-            whisperMessages={visibleMessages.filter((m) => m.scope === "whisper")}
+            phaseEntries={currentWhisperEntries}
             players={game.players}
-            isAuthenticated={isAuthenticated}
             phaseKey={`whisper-${replayGame.currentRound}`}
           />
         )}
