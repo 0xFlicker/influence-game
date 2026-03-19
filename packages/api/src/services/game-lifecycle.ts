@@ -7,7 +7,7 @@
  */
 
 import OpenAI from "openai";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
   GameRunner,
@@ -258,6 +258,25 @@ async function runGameAsync(
         }),
       })
       .run();
+
+    // Update agent profile win/loss stats for players with saved profiles
+    const playersWithProfiles = db
+      .select()
+      .from(schema.gamePlayers)
+      .where(eq(schema.gamePlayers.gameId, gameId))
+      .all()
+      .filter((p) => p.agentProfileId != null);
+
+    for (const player of playersWithProfiles) {
+      const isWinner = player.id === result.winner;
+      db.run(
+        sql`UPDATE agent_profiles
+            SET games_played = games_played + 1,
+                games_won = games_won + ${isWinner ? 1 : 0},
+                updated_at = ${new Date().toISOString()}
+            WHERE id = ${player.agentProfileId}`,
+      );
+    }
 
     // Update game status to completed and set viewerMode to "replay"
     const updatedConfig = { ...gameConfig, viewerMode: "replay" };

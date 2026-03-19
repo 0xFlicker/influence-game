@@ -15,6 +15,13 @@
       "when": 1773851968000,
       "tag": "0001_add_game_slug",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1773946700103,
+      "tag": "0002_smooth_punisher",
+      "breakpoints": true
     }
   ]
 }

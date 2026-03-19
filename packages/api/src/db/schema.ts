@@ -2,7 +2,7 @@
  * Influence Game — Database Schema
  *
  * Drizzle ORM schema for SQLite (better-sqlite3).
- * Tables: users, games, game_players, transcripts, game_results
+ * Tables: users, games, game_players, transcripts, game_results, agent_profiles
  */
 
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
@@ -44,6 +44,31 @@ export const games = sqliteTable("games", {
 });
 
 // ---------------------------------------------------------------------------
+// Agent Profiles (saved, reusable player agent identities)
+// ---------------------------------------------------------------------------
+
+export const agentProfiles = sqliteTable("agent_profiles", {
+  id: text("id").primaryKey(), // UUID
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  name: text("name").notNull(),
+  backstory: text("backstory"), // Rich character backstory
+  personality: text("personality").notNull(), // Personality prompt / description
+  strategyStyle: text("strategy_style"), // Strategy hints
+  personaKey: text("persona_key"), // Archetype key (honest, strategic, etc.)
+  avatarUrl: text("avatar_url"),
+  gamesPlayed: integer("games_played").notNull().default(0),
+  gamesWon: integer("games_won").notNull().default(0),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+// ---------------------------------------------------------------------------
 // Game Players
 // ---------------------------------------------------------------------------
 
@@ -53,6 +78,7 @@ export const gamePlayers = sqliteTable("game_players", {
     .notNull()
     .references(() => games.id),
   userId: text("user_id").references(() => users.id),
+  agentProfileId: text("agent_profile_id").references(() => agentProfiles.id), // Link to saved agent profile
   persona: text("persona").notNull(), // JSON: { name, personality, strategyHints }
   agentConfig: text("agent_config").notNull(), // JSON: { model, temperature, etc. }
   joinedAt: text("joined_at")

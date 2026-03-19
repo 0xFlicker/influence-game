@@ -320,18 +320,51 @@ export function createGameRoutes(db: DrizzleDB) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
 
-    const { agentName, personality, strategyHints, personaKey } = body;
+    const { agentName, personality, strategyHints, personaKey, agentProfileId } = body;
 
-    if (!agentName || !personality) {
-      return c.json({ error: "agentName and personality are required" }, 400);
+    const joinUser = c.get("user");
+    let resolvedName: string;
+    let resolvedPersonality: string;
+    let resolvedStrategyHints: string | null = strategyHints ?? null;
+    let resolvedPersonaKey: string | null = personaKey ?? null;
+    let resolvedProfileId: string | null = null;
+
+    if (agentProfileId) {
+      // Join using a saved agent profile
+      const profile = db
+        .select()
+        .from(schema.agentProfiles)
+        .where(eq(schema.agentProfiles.id, agentProfileId))
+        .all()[0];
+
+      if (!profile) {
+        return c.json({ error: "Agent profile not found" }, 404);
+      }
+
+      if (profile.userId !== joinUser?.id) {
+        return c.json({ error: "Agent profile does not belong to you" }, 403);
+      }
+
+      resolvedName = profile.name;
+      resolvedPersonality = profile.personality;
+      resolvedStrategyHints = profile.strategyStyle;
+      resolvedPersonaKey = profile.personaKey;
+      resolvedProfileId = profile.id;
+    } else {
+      // Join with inline agent config (original flow)
+      if (!agentName || !personality) {
+        return c.json({ error: "agentName and personality are required (or provide agentProfileId)" }, 400);
+      }
+      resolvedName = agentName;
+      resolvedPersonality = personality;
     }
 
     const playerId = randomUUID();
     const persona = {
-      name: agentName,
-      personality,
-      strategyHints: strategyHints ?? null,
-      personaKey: personaKey ?? null,
+      name: resolvedName,
+      personality: resolvedPersonality,
+      strategyHints: resolvedStrategyHints,
+      personaKey: resolvedPersonaKey,
     };
 
     const config = JSON.parse(game.config);
@@ -345,12 +378,12 @@ export function createGameRoutes(db: DrizzleDB) {
       temperature: 0.9,
     };
 
-    const joinUser = c.get("user");
     db.insert(schema.gamePlayers)
       .values({
         id: playerId,
         gameId,
         userId: joinUser?.id ?? null,
+        agentProfileId: resolvedProfileId,
         persona: JSON.stringify(persona),
         agentConfig: JSON.stringify(agentConfig),
       })

@@ -12,6 +12,7 @@ import { createDB, schema } from "./db/index.js";
 import { runMigrations } from "./db/migrate.js";
 import { createGameRoutes } from "./routes/games.js";
 import { createAuthRoutes } from "./routes/auth.js";
+import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
 import { getGameSnapshot } from "./services/game-lifecycle.js";
 import {
   setServer,
@@ -140,6 +141,10 @@ app.route("/", authRoutes);
 // Game routes
 const gameRoutes = createGameRoutes(db);
 app.route("/", gameRoutes);
+
+// Agent profile routes
+const agentProfileRoutes = createAgentProfileRoutes(db);
+app.route("/", agentProfileRoutes);
 
 // ---------------------------------------------------------------------------
 // Start server with WebSocket support
