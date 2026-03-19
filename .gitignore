@@ -9,3 +9,5 @@ docs/simulations/
 *.db
 *.db-wal
 *.db-shm
+*.tsbuildinfo
+.DS_Store
