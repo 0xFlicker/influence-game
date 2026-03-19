@@ -2507,7 +2507,10 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
           awaitingLastWordsRef.current.delete(ev.entry.from);
           setLastWordsIds((prev) => new Set([...prev, id]));
         }
-        // Badge count for diary entries — skip during live play (diary is replay-only)
+        // Badge count for diary entries arriving while user is on Main Stage tab
+        if (ev.entry.scope === "diary" && activeTabRef.current !== "diary") {
+          setNewDiaryCount((n) => n + 1);
+        }
         // Mobile badge counts
         if (
           ev.entry.scope === "public" &&
@@ -2792,10 +2795,10 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
         />
       )}
 
-      {/* Mobile Diary tab — replay only */}
-      {mobileTab === "diary" && isReplay && (
+      {/* Mobile Diary tab */}
+      {mobileTab === "diary" && (
         <DiaryRoomPanel
-          messages={messages}
+          messages={isReplay ? messages : visibleMessages}
           players={game.players}
           isAuthenticated={isAuthenticated}
           isReplay={isReplay}
@@ -2822,13 +2825,12 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
       )}
 
       {/* Bottom tab bar — fixed */}
-      <div className={`fixed bottom-0 left-0 right-0 z-40 bg-[#0a0a0a]/95 backdrop-blur border-t border-white/10 grid ${isReplay ? "grid-cols-4" : "grid-cols-3"}`}>
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#0a0a0a]/95 backdrop-blur border-t border-white/10 grid grid-cols-4">
         {(
           [
             { id: "chat", icon: "💬", label: "Chat", badge: newChatCount },
             { id: "players", icon: "👥", label: "Players", badge: newEliminationsCount },
-            // Diary tab hidden during live play — viewable on replays only
-            ...(isReplay ? [{ id: "diary" as MobileTab, icon: "📓", label: "Diary", badge: newDiaryCount }] : []),
+            { id: "diary", icon: "📓", label: "Diary", badge: newDiaryCount },
             { id: "votes", icon: "🗳", label: "Votes", badge: 0 },
           ] as Array<{ id: MobileTab; icon: string; label: string; badge: number }>
         ).map(({ id, icon, label, badge }) => (
@@ -2893,27 +2895,24 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
           >
             💬 Main Stage
           </button>
-          {/* Diary tab hidden during live play — viewable on replays only */}
-          {isReplay && (
-            <button
-              onClick={() => {
-                setActiveTab("diary");
-                setNewDiaryCount(0);
-              }}
-              className={`relative text-xs px-3 py-1.5 rounded-lg transition-colors ${
-                activeTab === "diary"
-                  ? "bg-purple-900/30 text-purple-300"
-                  : "text-white/40 hover:text-white/70"
-              }`}
-            >
-              📓 Diary Room
-              {newDiaryCount > 0 && (
-                <span className="absolute -top-1 -right-1 text-[10px] bg-purple-600 text-white rounded-full w-4 h-4 flex items-center justify-center leading-none">
-                  {newDiaryCount > 9 ? "9+" : newDiaryCount}
-                </span>
-              )}
-            </button>
-          )}
+          <button
+            onClick={() => {
+              setActiveTab("diary");
+              setNewDiaryCount(0);
+            }}
+            className={`relative text-xs px-3 py-1.5 rounded-lg transition-colors ${
+              activeTab === "diary"
+                ? "bg-purple-900/30 text-purple-300"
+                : "text-white/40 hover:text-white/70"
+            }`}
+          >
+            📓 Diary Room
+            {newDiaryCount > 0 && (
+              <span className="absolute -top-1 -right-1 text-[10px] bg-purple-600 text-white rounded-full w-4 h-4 flex items-center justify-center leading-none">
+                {newDiaryCount > 9 ? "9+" : newDiaryCount}
+              </span>
+            )}
+          </button>
 
           {/* Connection badge pushed to right */}
           <div className="ml-auto flex items-center gap-3">
@@ -2927,10 +2926,9 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
         </div>
 
         {/* Diary Room panel */}
-        {/* Diary Room panel — replay only */}
-        {activeTab === "diary" && isReplay && (
+        {activeTab === "diary" && (
           <DiaryRoomPanel
-            messages={messages}
+            messages={isReplay ? messages : visibleMessages}
             players={game.players}
             isAuthenticated={isAuthenticated}
             isReplay={isReplay}
