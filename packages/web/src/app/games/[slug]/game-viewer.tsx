@@ -1810,9 +1810,26 @@ function DramaticReplayViewer({
       }, INTER_SCENE_PAUSE_MS / speed);
       return () => window.clearTimeout(timer);
     }
+
+    // Determine reveal interval based on scene type
+    const currentMsg = scene.messages[messageIndex];
+    const isElimination = currentMsg?.scope === "system" && currentMsg.text.includes("has been eliminated");
+    const isTribunal = scene.phase === "REVEAL" || scene.phase === "COUNCIL";
+
+    let intervalMs: number;
+    if (isElimination) {
+      // Auto-pause 2s at elimination moments
+      intervalMs = 2000 / speed;
+    } else if (isTribunal) {
+      // Reveal/Council: 1.5s base interval for dramatic reveals
+      intervalMs = 1500 / speed;
+    } else {
+      intervalMs = BASE_INTERVAL_MS / speed;
+    }
+
     const timer = window.setTimeout(() => {
       setMessageIndex((i) => i + 1);
-    }, BASE_INTERVAL_MS / speed);
+    }, intervalMs);
     return () => window.clearTimeout(timer);
   }, [isPlaying, messageIndex, sceneIndex, scene, totalScenes, speed]);
 
@@ -2020,6 +2037,40 @@ function DramaticReplayViewer({
                 </div>
               ));
             })()}
+          </div>
+        ) : scene.roomType === "tribunal" && (scene.phase === "REVEAL" || scene.phase === "COUNCIL") ? (
+          // Tribunal: reveal choreography with dramatic message items
+          <div className="space-y-4">
+            {visibleSceneMessages.length === 0 ? (
+              <div className="text-center mt-16">
+                <p className={`text-xs font-semibold uppercase tracking-[0.3em] mb-3 ${
+                  scene.phase === "REVEAL" ? "text-pink-400/60" : "text-red-400/60"
+                }`}>
+                  ◆ {scene.phase === "REVEAL" ? "REVEAL" : "COUNCIL VOTE"} ◆
+                </p>
+                <p className="text-xs text-white/20 animate-pulse">The votes are in…</p>
+              </div>
+            ) : (
+              visibleSceneMessages.map((msg) => {
+                // Detect elimination last words
+                const isElimMsg = msg.scope === "system" && msg.text.includes("has been eliminated");
+                if (isElimMsg) {
+                  return (
+                    <div key={msg.id} className="text-center py-4">
+                      <p className="text-lg font-bold text-red-400 tracking-wider animate-[fadeIn_0.5s_ease-out]">
+                        {msg.text}
+                      </p>
+                    </div>
+                  );
+                }
+                return <RevealMessageItem key={msg.id} msg={msg} players={players} />;
+              })
+            )}
+            {messageIndex < scene.messages.length - 1 && (
+              <div className="text-center py-2">
+                <p className="text-xs text-white/20 animate-pulse tracking-widest">…</p>
+              </div>
+            )}
           </div>
         ) : (
           // All other room types: linear message feed
