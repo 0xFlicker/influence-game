@@ -150,7 +150,7 @@ function SavedAgentsSection() {
           return (
             <div
               key={agent.id}
-              className="border border-white/10 rounded-lg px-4 py-3 flex items-center gap-3"
+              className="border border-white/10 rounded-lg px-4 py-3 flex items-center gap-3 overflow-hidden"
             >
               <span className="text-lg">{persona?.icon ?? "?"}</span>
               <div className="min-w-0 flex-1">
