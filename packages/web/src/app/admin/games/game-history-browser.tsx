@@ -72,7 +72,7 @@ function GameRow({ game }: { game: GameSummary }) {
       </td>
       <td className="py-3 px-4">
         <Link
-          href={`/games/${game.id}`}
+          href={`/games/${game.slug ?? game.id}`}
           className="text-indigo-400 hover:text-indigo-300 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
         >
           View →

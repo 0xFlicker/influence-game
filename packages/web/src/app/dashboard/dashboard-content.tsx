@@ -83,7 +83,7 @@ function HistorySection({ history }: { history: PlayerGameResult[] }) {
               <td className="py-3 px-4 text-white/30 text-xs">{shortDate(r.completedAt)}</td>
               <td className="py-3 px-4">
                 <Link
-                  href={`/games/${r.gameId}`}
+                  href={`/games/${r.gameSlug ?? r.gameId}`}
                   className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors"
                 >
                   Replay →

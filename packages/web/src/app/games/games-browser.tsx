@@ -124,7 +124,7 @@ function GameCard({ game, onJoin }: GameCardProps) {
         {/* Actions */}
         <div className="flex items-center gap-2 flex-shrink-0">
           <Link
-            href={`/games/${game.id}`}
+            href={`/games/${game.slug ?? game.id}`}
             className="text-xs border border-white/15 hover:border-white/30 text-white/60 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
           >
             {isLive ? "Watch" : "View"}
