@@ -7,7 +7,6 @@ import {
   listAgents,
   getAuthToken,
   type GameSummary,
-  type JoinGameConfig,
   type PersonaKey,
   type SavedAgent,
 } from "@/lib/api";
@@ -56,7 +55,9 @@ function AgentPicker({
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
         {agents.map((agent) => {
-          const persona = PERSONAS.find((p) => p.key === agent.personaKey);
+          const persona = agent.personaKey
+            ? PERSONAS.find((p) => p.key === agent.personaKey)
+            : undefined;
           const isSelected = selectedId === agent.id;
           return (
             <button
@@ -73,7 +74,7 @@ function AgentPicker({
               <span>{agent.name}</span>
               {agent.gamesPlayed > 0 && (
                 <span className="text-white/25">
-                  {agent.wins}W/{agent.losses}L
+                  {agent.gamesWon}W/{agent.gamesPlayed - agent.gamesWon}L
                 </span>
               )}
             </button>
@@ -82,7 +83,7 @@ function AgentPicker({
       </div>
       {selectedId && (
         <p className="text-white/25 text-xs">
-          Agent selected. Fields below are pre-filled but you can still edit them.
+          Joining with this saved agent. You can deselect to customize instead.
         </p>
       )}
     </div>
@@ -116,8 +117,8 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
     setSelectedAgentId(agent.id);
     setAgentName(agent.name);
     setPersonality(agent.personality);
-    setStrategyHints(agent.strategyHints ?? "");
-    setSelectedPersona(agent.personaKey);
+    setStrategyHints(agent.strategyStyle ?? "");
+    setSelectedPersona(agent.personaKey ?? "strategic");
     setError(null);
   }
 
@@ -127,6 +128,22 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+
+    // If a saved agent is selected, join with just the profile ID
+    if (selectedAgentId) {
+      setSubmitting(true);
+      setError(null);
+      try {
+        await joinGame(game.id, { agentProfileId: selectedAgentId });
+        onSuccess(game.id);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to join game.");
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    // Otherwise, join with inline config
     if (!agentName.trim()) {
       setError("Agent name is required.");
       return;
@@ -140,13 +157,12 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
     setError(null);
 
     try {
-      const config: JoinGameConfig = {
+      await joinGame(game.id, {
         agentName: agentName.trim(),
         personality: personality.trim(),
         strategyHints: strategyHints.trim() || undefined,
         personaKey: selectedPersona,
-      };
-      await joinGame(game.id, config);
+      });
       onSuccess(game.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join game.");
@@ -197,82 +213,87 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
               />
             </div>
 
-            {/* Agent name */}
-            <div>
-              <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
-                Agent Name
-              </label>
-              <input
-                type="text"
-                value={agentName}
-                onChange={(e) => setAgentName(e.target.value)}
-                placeholder="e.g. ShadowPlay-7"
-                maxLength={32}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/20 text-sm outline-none focus:border-indigo-500 transition-colors"
-              />
-              <p className="text-white/25 text-xs mt-1">
-                The name your agent uses in the game. Other players will see this.
-              </p>
-            </div>
+            {/* Manual config — hidden when a saved agent is selected */}
+            {!selectedAgentId && (
+              <>
+                {/* Agent name */}
+                <div>
+                  <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
+                    Agent Name
+                  </label>
+                  <input
+                    type="text"
+                    value={agentName}
+                    onChange={(e) => setAgentName(e.target.value)}
+                    placeholder="e.g. ShadowPlay-7"
+                    maxLength={32}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/20 text-sm outline-none focus:border-indigo-500 transition-colors"
+                  />
+                  <p className="text-white/25 text-xs mt-1">
+                    The name your agent uses in the game. Other players will see this.
+                  </p>
+                </div>
 
-            {/* Persona selection */}
-            <div>
-              <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
-                Base Persona
-              </label>
-              <div className="grid grid-cols-5 gap-2 mb-2">
-                {PERSONAS.map((p) => (
-                  <button
-                    key={p.key}
-                    type="button"
-                    onClick={() => setSelectedPersona(p.key)}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-xs transition-all ${
-                      selectedPersona === p.key
-                        ? "border-indigo-500 bg-indigo-600/20 text-white"
-                        : "border-white/10 text-white/40 hover:border-white/20 hover:text-white/60"
-                    }`}
-                  >
-                    <span className="text-base">{p.icon}</span>
-                    <span className="text-[10px] leading-tight text-center">{p.name}</span>
-                  </button>
-                ))}
-              </div>
-              <p className="text-white/30 text-xs italic">
-                {selectedPersonaInfo.icon} {selectedPersonaInfo.name}: {selectedPersonaInfo.description}
-              </p>
-            </div>
+                {/* Persona selection */}
+                <div>
+                  <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
+                    Base Persona
+                  </label>
+                  <div className="grid grid-cols-5 gap-2 mb-2">
+                    {PERSONAS.map((p) => (
+                      <button
+                        key={p.key}
+                        type="button"
+                        onClick={() => setSelectedPersona(p.key)}
+                        className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-xs transition-all ${
+                          selectedPersona === p.key
+                            ? "border-indigo-500 bg-indigo-600/20 text-white"
+                            : "border-white/10 text-white/40 hover:border-white/20 hover:text-white/60"
+                        }`}
+                      >
+                        <span className="text-base">{p.icon}</span>
+                        <span className="text-[10px] leading-tight text-center">{p.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-white/30 text-xs italic">
+                    {selectedPersonaInfo.icon} {selectedPersonaInfo.name}: {selectedPersonaInfo.description}
+                  </p>
+                </div>
 
-            {/* Personality description */}
-            <div>
-              <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
-                Personality Description
-              </label>
-              <textarea
-                value={personality}
-                onChange={(e) => setPersonality(e.target.value)}
-                placeholder="Describe how your agent should behave, speak, and make decisions..."
-                rows={3}
-                maxLength={500}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/20 text-sm outline-none focus:border-indigo-500 transition-colors resize-none"
-              />
-              <p className="text-white/25 text-xs mt-1 text-right">{personality.length}/500</p>
-            </div>
+                {/* Personality description */}
+                <div>
+                  <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
+                    Personality Description
+                  </label>
+                  <textarea
+                    value={personality}
+                    onChange={(e) => setPersonality(e.target.value)}
+                    placeholder="Describe how your agent should behave, speak, and make decisions..."
+                    rows={3}
+                    maxLength={500}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/20 text-sm outline-none focus:border-indigo-500 transition-colors resize-none"
+                  />
+                  <p className="text-white/25 text-xs mt-1 text-right">{personality.length}/500</p>
+                </div>
 
-            {/* Strategy hints */}
-            <div>
-              <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
-                Strategy Hints{" "}
-                <span className="text-white/25 normal-case font-normal">(optional)</span>
-              </label>
-              <textarea
-                value={strategyHints}
-                onChange={(e) => setStrategyHints(e.target.value)}
-                placeholder="Any specific tactics or priorities for this game..."
-                rows={2}
-                maxLength={300}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/20 text-sm outline-none focus:border-indigo-500 transition-colors resize-none"
-              />
-            </div>
+                {/* Strategy hints */}
+                <div>
+                  <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
+                    Strategy Hints{" "}
+                    <span className="text-white/25 normal-case font-normal">(optional)</span>
+                  </label>
+                  <textarea
+                    value={strategyHints}
+                    onChange={(e) => setStrategyHints(e.target.value)}
+                    placeholder="Any specific tactics or priorities for this game..."
+                    rows={2}
+                    maxLength={300}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/20 text-sm outline-none focus:border-indigo-500 transition-colors resize-none"
+                  />
+                </div>
+              </>
+            )}
 
             {/* Error */}
             {error && (

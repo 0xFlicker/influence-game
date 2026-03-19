@@ -9,7 +9,8 @@ interface AgentListProps {
   onDelete: (agent: SavedAgent) => void;
 }
 
-function getPersonaInfo(key: string) {
+function getPersonaInfo(key: string | null) {
+  if (!key) return undefined;
   return PERSONAS.find((p) => p.key === key);
 }
 
@@ -17,10 +18,11 @@ function WinRate({ agent }: { agent: SavedAgent }) {
   if (agent.gamesPlayed === 0) {
     return <span className="text-white/25 text-xs">No games yet</span>;
   }
-  const rate = Math.round((agent.wins / agent.gamesPlayed) * 100);
+  const losses = agent.gamesPlayed - agent.gamesWon;
+  const rate = Math.round((agent.gamesWon / agent.gamesPlayed) * 100);
   return (
     <span className="text-xs text-white/50">
-      {agent.wins}W / {agent.losses}L
+      {agent.gamesWon}W / {losses}L
       <span className="text-white/25 ml-1">({rate}%)</span>
     </span>
   );

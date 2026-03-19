@@ -202,12 +202,14 @@ export async function loginWithPrivyToken(
 // Player types
 // ---------------------------------------------------------------------------
 
-export interface JoinGameConfig {
-  agentName: string;
-  personality: string;
-  strategyHints?: string;
-  personaKey: PersonaKey;
-}
+export type JoinGameConfig =
+  | { agentProfileId: string }
+  | {
+      agentName: string;
+      personality: string;
+      strategyHints?: string;
+      personaKey: PersonaKey;
+    };
 
 export interface PlayerGameResult {
   gameId: string;
@@ -243,45 +245,69 @@ export async function getPlayerGames(): Promise<PlayerGameResult[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Saved agent types
+// Saved agent profile types
 // ---------------------------------------------------------------------------
 
 export interface SavedAgent {
   id: string;
   name: string;
-  backstory: string;
+  backstory: string | null;
   personality: string;
-  strategyHints?: string;
-  personaKey: PersonaKey;
-  wins: number;
-  losses: number;
+  strategyStyle: string | null;
+  personaKey: PersonaKey | null;
+  avatarUrl: string | null;
   gamesPlayed: number;
+  gamesWon: number;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface CreateAgentParams {
   name: string;
-  backstory: string;
   personality: string;
-  strategyHints?: string;
-  personaKey: PersonaKey;
+  backstory?: string;
+  strategyStyle?: string;
+  personaKey?: PersonaKey;
+  avatarUrl?: string;
 }
 
 export type UpdateAgentParams = Partial<CreateAgentParams>;
 
+export interface GeneratePersonalityParams {
+  traits?: string;
+  occupation?: string;
+  backstoryIdea?: string;
+  archetype?: string;
+  name?: string;
+  existingProfile?: {
+    name?: string;
+    backstory?: string;
+    personality?: string;
+    strategyStyle?: string;
+    personaKey?: string;
+  };
+}
+
+export interface GeneratePersonalityResult {
+  name: string;
+  backstory: string | null;
+  personality: string;
+  strategyStyle: string | null;
+  personaKey: PersonaKey;
+}
+
 // ---------------------------------------------------------------------------
-// Saved agent API calls
+// Saved agent profile API calls
 // ---------------------------------------------------------------------------
 
 export async function listAgents(): Promise<SavedAgent[]> {
-  return apiFetch("/api/player/agents");
+  return apiFetch("/api/agent-profiles");
 }
 
 export async function createAgent(
   params: CreateAgentParams,
 ): Promise<SavedAgent> {
-  return apiFetch("/api/player/agents", {
+  return apiFetch("/api/agent-profiles", {
     method: "POST",
     body: JSON.stringify(params),
   });
@@ -291,14 +317,23 @@ export async function updateAgent(
   id: string,
   params: UpdateAgentParams,
 ): Promise<SavedAgent> {
-  return apiFetch(`/api/player/agents/${id}`, {
-    method: "PUT",
+  return apiFetch(`/api/agent-profiles/${id}`, {
+    method: "PATCH",
     body: JSON.stringify(params),
   });
 }
 
 export async function deleteAgent(id: string): Promise<void> {
-  await apiFetch(`/api/player/agents/${id}`, { method: "DELETE" });
+  await apiFetch(`/api/agent-profiles/${id}`, { method: "DELETE" });
+}
+
+export async function generatePersonality(
+  params: GeneratePersonalityParams,
+): Promise<GeneratePersonalityResult> {
+  return apiFetch("/api/agent-profiles/generate", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
 }
 
 // ---------------------------------------------------------------------------

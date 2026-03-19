@@ -159,7 +159,7 @@ function SavedAgentsSection() {
               </div>
               {agent.gamesPlayed > 0 && (
                 <span className="text-white/30 text-xs shrink-0">
-                  {agent.wins}W / {agent.losses}L
+                  {agent.gamesWon}W / {agent.gamesPlayed - agent.gamesWon}L
                 </span>
               )}
             </div>

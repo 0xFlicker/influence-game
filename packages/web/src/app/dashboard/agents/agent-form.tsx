@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { PersonaKey, SavedAgent, CreateAgentParams } from "@/lib/api";
+import {
+  generatePersonality,
+  type PersonaKey,
+  type SavedAgent,
+  type CreateAgentParams,
+  type GeneratePersonalityParams,
+} from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
 
 interface AgentFormProps {
@@ -15,21 +21,48 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
   const [name, setName] = useState(initial?.name ?? "");
   const [backstory, setBackstory] = useState(initial?.backstory ?? "");
   const [personality, setPersonality] = useState(initial?.personality ?? "");
-  const [strategyHints, setStrategyHints] = useState(initial?.strategyHints ?? "");
+  const [strategyStyle, setStrategyStyle] = useState(initial?.strategyStyle ?? "");
   const [personaKey, setPersonaKey] = useState<PersonaKey>(initial?.personaKey ?? "strategic");
   const [submitting, setSubmitting] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const selectedPersona = PERSONAS.find((p) => p.key === personaKey)!;
+
+  async function handleGenerate() {
+    setGenerating(true);
+    setError(null);
+    try {
+      const params: GeneratePersonalityParams = {};
+      // If there's existing content, use refinement mode
+      if (name.trim() || backstory.trim() || personality.trim()) {
+        params.existingProfile = {
+          name: name.trim() || undefined,
+          backstory: backstory.trim() || undefined,
+          personality: personality.trim() || undefined,
+          strategyStyle: strategyStyle.trim() || undefined,
+          personaKey,
+        };
+      } else {
+        params.archetype = personaKey;
+      }
+      const result = await generatePersonality(params);
+      setName(result.name);
+      setBackstory(result.backstory ?? "");
+      setPersonality(result.personality);
+      setStrategyStyle(result.strategyStyle ?? "");
+      setPersonaKey(result.personaKey);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "AI generation failed. Try again or fill in manually.");
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) {
       setError("Agent name is required.");
-      return;
-    }
-    if (!backstory.trim()) {
-      setError("Backstory is required.");
       return;
     }
     if (!personality.trim()) {
@@ -43,9 +76,9 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
     try {
       await onSubmit({
         name: name.trim(),
-        backstory: backstory.trim(),
         personality: personality.trim(),
-        strategyHints: strategyHints.trim() || undefined,
+        backstory: backstory.trim() || undefined,
+        strategyStyle: strategyStyle.trim() || undefined,
         personaKey,
       });
     } catch (err) {
@@ -56,6 +89,25 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+      {/* AI Help */}
+      <div className="flex items-center gap-3 p-3 rounded-lg border border-dashed border-indigo-500/30 bg-indigo-950/20">
+        <div className="flex-1 min-w-0">
+          <p className="text-white/60 text-xs">
+            {name.trim() || personality.trim()
+              ? "Refine your agent with AI — enhances existing fields."
+              : "Let AI generate a complete personality from scratch."}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleGenerate}
+          disabled={generating}
+          className="shrink-0 bg-indigo-600/80 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs px-3 py-1.5 rounded-lg font-medium transition-colors"
+        >
+          {generating ? "Generating..." : "AI Help"}
+        </button>
+      </div>
+
       {/* Agent name */}
       <div>
         <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
@@ -104,7 +156,8 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
       {/* Backstory */}
       <div>
         <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
-          Backstory
+          Backstory{" "}
+          <span className="text-white/25 normal-case font-normal">(optional)</span>
         </label>
         <textarea
           value={backstory}
@@ -133,16 +186,16 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
         <p className="text-white/25 text-xs mt-1 text-right">{personality.length}/500</p>
       </div>
 
-      {/* Strategy hints */}
+      {/* Strategy style */}
       <div>
         <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
-          Strategy Hints{" "}
+          Strategy Style{" "}
           <span className="text-white/25 normal-case font-normal">(optional)</span>
         </label>
         <textarea
-          value={strategyHints}
-          onChange={(e) => setStrategyHints(e.target.value)}
-          placeholder="Any specific tactics or priorities for this agent..."
+          value={strategyStyle}
+          onChange={(e) => setStrategyStyle(e.target.value)}
+          placeholder="Any specific tactics or strategic approach for this agent..."
           rows={2}
           maxLength={300}
           className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/20 text-sm outline-none focus:border-indigo-500 transition-colors resize-none"
