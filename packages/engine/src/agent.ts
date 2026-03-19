@@ -100,6 +100,42 @@ const TOOL_SEND_WHISPERS: ChatCompletionTool = {
   },
 };
 
+const TOOL_REQUEST_ROOM: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "request_room",
+    description: "Request a private room with another player for a whisper conversation",
+    parameters: {
+      type: "object",
+      properties: {
+        partner: {
+          type: "string",
+          description: "Name of the player you want to meet with privately",
+        },
+      },
+      required: ["partner"],
+    },
+  },
+};
+
+const TOOL_SEND_ROOM_MESSAGE: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "send_room_message",
+    description: "Send your private message to your room partner",
+    parameters: {
+      type: "object",
+      properties: {
+        message: {
+          type: "string",
+          description: "Your private message to your room partner",
+        },
+      },
+      required: ["message"],
+    },
+  },
+};
+
 const TOOL_CAST_VOTES: ChatCompletionTool = {
   type: "function",
   function: {
@@ -340,6 +376,71 @@ Use the send_whispers tool to submit your whisper messages. Use player NAMES (no
         .filter((w) => w.to.length > 0 && w.text.length > 0);
     } catch {
       return [];
+    }
+  }
+
+  async requestRoom(ctx: PhaseContext): Promise<UUID | null> {
+    const otherPlayers = ctx.alivePlayers.filter((p) => p.id !== this.id);
+    if (otherPlayers.length === 0) return null;
+
+    const roomCount = ctx.roomCount ?? 1;
+    const aliveCount = ctx.alivePlayers.length;
+
+    const prompt = this.buildBasePrompt(ctx) + `
+## Your Task
+Request a private room for a one-on-one whisper conversation. There are only
+${roomCount} rooms available for ${aliveCount} players — not everyone will get one.
+
+Choose ONE player you want to meet with. Consider:
+- Who do you need to coordinate with?
+- Who might have intelligence you need?
+- Who do you want to manipulate or mislead?
+- Being excluded from rooms means no private communication this round.
+
+If your preferred partner also requested you, you're guaranteed a room (mutual match).
+Otherwise, the House assigns rooms by availability.
+
+Available players: ${otherPlayers.map((p) => p.name).join(", ")}
+
+Use the request_room tool to submit your preference.`;
+
+    try {
+      const result = await this.callTool<{ partner: string }>(
+        prompt, TOOL_REQUEST_ROOM, 200,
+      );
+      const partnerName = result.partner;
+      const partner = otherPlayers.find((p) => p.name === partnerName);
+      return partner?.id ?? null;
+    } catch {
+      // Fallback: pick random other player
+      const idx = Math.floor(Math.random() * otherPlayers.length);
+      return otherPlayers[idx]?.id ?? null;
+    }
+  }
+
+  async sendRoomMessage(ctx: PhaseContext, partnerName: string): Promise<string> {
+    const prompt = this.buildBasePrompt(ctx) + `
+## Your Task
+You're in a private room with ${partnerName}. This is your ONE chance to communicate
+privately this round. Nobody else can hear you — but the audience is watching.
+
+Craft your message carefully:
+- Build or test an alliance
+- Share intelligence (real or fabricated)
+- Plant seeds of doubt about other players
+- Probe for information about their plans
+
+Keep it to 2-4 sentences. Make every word count.
+
+Use the send_room_message tool to send your message.`;
+
+    try {
+      const result = await this.callTool<{ message: string }>(
+        prompt, TOOL_SEND_ROOM_MESSAGE, 300,
+      );
+      return result.message ?? "";
+    } catch {
+      return `I wanted to speak with you privately, ${partnerName}. Let's watch each other's backs.`;
     }
   }
 
@@ -771,6 +872,18 @@ Use the jury_vote tool to cast your vote.`;
       .map((m) => `  From ${m.from}: "${m.text}"`)
       .join("\n");
 
+    // Room allocation context (for phases after whisper)
+    let roomSection = "";
+    if (ctx.roomAllocations && ctx.roomAllocations.length > 0) {
+      const roomLines = ctx.roomAllocations.map(
+        (r) => `  - Room ${r.roomId}: ${r.playerA} & ${r.playerB}`,
+      );
+      const excludedLine = ctx.excludedPlayers && ctx.excludedPlayers.length > 0
+        ? `  - Commons (no room): ${ctx.excludedPlayers.join(", ")}`
+        : "";
+      roomSection = `\n## Whisper Rooms This Round\n${roomLines.join("\n")}${excludedLine ? "\n" + excludedLine : ""}`;
+    }
+
     const memoryNotes = Array.from(this.memory.notes.entries())
       .map(([name, note]) => `  ${name}: ${note}`)
       .join("\n");
@@ -822,6 +935,7 @@ ${recentMessages || "  (none yet)"}
 ${anonymousSection}
 
 ${whispers ? `## Private Whispers You Received\n${whispers}` : ""}
+${roomSection}
 
 `;
   }

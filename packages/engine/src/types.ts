@@ -161,6 +161,33 @@ export interface WhisperMessage {
   text: string;
   round: number;
   timestamp: number;
+  /** Room ID this whisper happened in (new room-based whisper system) */
+  roomId?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Whisper room allocation
+// ---------------------------------------------------------------------------
+
+export interface RoomAllocation {
+  roomId: number; // 1-indexed
+  playerA: UUID;
+  playerB: UUID;
+  round: number;
+}
+
+/** System event emitted when whisper rooms are allocated for a round */
+export interface RoomAllocationEvent {
+  type: "system";
+  scope: "system";
+  text: string; // e.g. "Room 1: Atlas & Vera | Room 2: Finn & Mira | Commons: Lyra, Rex"
+  round: number;
+  phase: "WHISPER";
+  timestamp: number;
+  metadata: {
+    rooms: RoomAllocation[];
+    excluded: UUID[];
+  };
 }
 
 export interface SystemMessage {

@@ -47,6 +47,13 @@ class LifecycleMockAgent implements IAgent {
     if (others.length === 0) return [];
     return [{ to: [others[0]!.id], text: "secret" }];
   }
+  async requestRoom(ctx: PhaseContext) {
+    const others = ctx.alivePlayers.filter(p => p.id !== this.id);
+    return others[0]?.id ?? null;
+  }
+  async sendRoomMessage(_ctx: PhaseContext, partnerName: string) {
+    return `whisper to ${partnerName}`;
+  }
   async getRumorMessage() { return "rumor"; }
   async getVotes(ctx: PhaseContext) {
     const others = ctx.alivePlayers.filter(p => p.id !== this.id);

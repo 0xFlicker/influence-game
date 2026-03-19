@@ -18,6 +18,7 @@ import type {
   EndgameStage,
   EndgameEliminationTally,
   JuryVoteTally,
+  RoomAllocation,
 } from "./types";
 import { PlayerStatus } from "./types";
 
@@ -40,6 +41,9 @@ export class GameState {
   private _empoweredId: UUID | null = null;
   private _councilCandidates: [UUID, UUID] | null = null;
   private _powerAction: PowerAction | null = null;
+
+  // --- Room allocation history ---
+  private _roomAllocations = new Map<number, { rooms: RoomAllocation[]; excluded: UUID[] }>();
 
   // --- Endgame state ---
   private _jury: JuryMember[] = [];
@@ -154,6 +158,18 @@ export class GameState {
         this._players.set(player.id, { ...player, shielded: false });
       }
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Room allocation tracking
+  // ---------------------------------------------------------------------------
+
+  recordRoomAllocations(rooms: RoomAllocation[], excluded: UUID[]): void {
+    this._roomAllocations.set(this._round, { rooms, excluded });
+  }
+
+  getRoomAllocations(round: number): { rooms: RoomAllocation[]; excluded: UUID[] } | undefined {
+    return this._roomAllocations.get(round);
   }
 
   // ---------------------------------------------------------------------------

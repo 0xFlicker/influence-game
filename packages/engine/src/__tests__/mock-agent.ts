@@ -58,6 +58,21 @@ export class MockAgent implements IAgent {
     ];
   }
 
+  async requestRoom(ctx: PhaseContext): Promise<UUID | null> {
+    // Pair agents by position: 0↔1, 2↔3, 4↔5, etc. (creates mutual matches)
+    const myIndex = ctx.alivePlayers.findIndex((p) => p.id === this.id);
+    const partnerIndex = myIndex % 2 === 0 ? myIndex + 1 : myIndex - 1;
+    const partner = ctx.alivePlayers[partnerIndex];
+    if (partner && partner.id !== this.id) return partner.id;
+    // Fallback to first other player
+    const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
+    return others[0]?.id ?? null;
+  }
+
+  async sendRoomMessage(ctx: PhaseContext, partnerName: string): Promise<string> {
+    return `Hey ${partnerName}, want to work together? Let's not target each other.`;
+  }
+
   async getRumorMessage(ctx: PhaseContext): Promise<string> {
     return `Round ${ctx.round} rumor from ${this.name}: Keep your friends close!`;
   }

@@ -17,6 +17,7 @@ import type {
   PowerAction,
   JuryMember,
   EndgameStage,
+  RoomAllocation,
 } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 
@@ -53,8 +54,12 @@ export interface IAgent {
   getIntroduction(context: PhaseContext): Promise<string>;
   /** Called to collect a lobby message */
   getLobbyMessage(context: PhaseContext): Promise<string>;
-  /** Called to collect whisper actions (list of {to, text}) */
+  /** Called to collect whisper actions (list of {to, text}) — DEPRECATED, use room methods */
   getWhispers(context: PhaseContext): Promise<Array<{ to: UUID[]; text: string }>>;
+  /** Request a preferred whisper room partner */
+  requestRoom(context: PhaseContext): Promise<UUID | null>;
+  /** Send a private message to room partner */
+  sendRoomMessage(context: PhaseContext, partnerName: string): Promise<string>;
   /** Called to collect a rumor message */
   getRumorMessage(context: PhaseContext): Promise<string>;
   /** Called to collect votes */
@@ -110,6 +115,15 @@ export interface PhaseContext {
   whisperMessages: Array<{ from: string; text: string }>;
   empoweredId?: UUID;
   councilCandidates?: [UUID, UUID];
+  // Room allocation context (whisper rooms)
+  /** Number of available rooms this round */
+  roomCount?: number;
+  /** Room assignments for this round (if whisper phase completed) */
+  roomAllocations?: Array<{ roomId: number; playerA: string; playerB: string }>;
+  /** Players excluded from rooms this round */
+  excludedPlayers?: string[];
+  /** This agent's room partner (if assigned a room) */
+  roomPartner?: string;
   // Endgame context
   endgameStage?: EndgameStage;
   jury?: JuryMember[];
@@ -134,6 +148,13 @@ export interface TranscriptEntry {
   anonymous?: boolean;
   /** Shuffled display position for anonymous rumors */
   displayOrder?: number;
+  /** Room ID this whisper happened in (room-based whisper system) */
+  roomId?: number;
+  /** Room allocation metadata attached to system events */
+  roomMetadata?: {
+    rooms: import("./types").RoomAllocation[];
+    excluded: string[];
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +178,10 @@ export class GameRunner {
   private lastEliminatedName: string | null = null;
   /** Ordered list of eliminated player names (structured data, no regex needed) */
   private readonly eliminationOrder: string[] = [];
+  /** Room allocations per round (for context building) */
+  private currentRoomAllocations: RoomAllocation[] = [];
+  /** Players excluded from rooms this round */
+  private currentExcludedPlayerIds: UUID[] = [];
   /** House interviewer for diary room question generation */
   private readonly houseInterviewer: IHouseInterviewer;
   /** Optional listener for real-time game events (WebSocket streaming) */
@@ -423,6 +448,68 @@ export class GameRunner {
     await new Promise((r) => setTimeout(r, 0));
   }
 
+  /**
+   * Compute the number of whisper rooms for the current round.
+   * Formula: max(1, floor(alivePlayers / 2) - 1)
+   */
+  private computeRoomCount(aliveCount: number): number {
+    return Math.max(1, Math.floor(aliveCount / 2) - 1);
+  }
+
+  /**
+   * Allocate rooms based on player preferences using mutual-match-first logic.
+   * Returns paired rooms and excluded player IDs.
+   */
+  private allocateRooms(
+    requests: Map<UUID, UUID>, // player -> preferred partner
+    alivePlayers: Array<{ id: UUID; name: string }>,
+    roomCount: number,
+  ): { rooms: RoomAllocation[]; excluded: UUID[] } {
+    const rooms: RoomAllocation[] = [];
+    const paired = new Set<UUID>();
+    const round = this.gameState.round;
+
+    // Step 1: Mutual matches first
+    for (const [playerId, partnerId] of requests) {
+      if (paired.has(playerId) || paired.has(partnerId)) continue;
+      if (rooms.length >= roomCount) break;
+      // Check if partner also requested this player
+      if (requests.get(partnerId) === playerId) {
+        rooms.push({
+          roomId: rooms.length + 1,
+          playerA: playerId,
+          playerB: partnerId,
+          round,
+        });
+        paired.add(playerId);
+        paired.add(partnerId);
+      }
+    }
+
+    // Step 2: Remaining requests by order
+    for (const [playerId, partnerId] of requests) {
+      if (rooms.length >= roomCount) break;
+      if (paired.has(playerId)) continue;
+      if (paired.has(partnerId)) continue;
+      // Partner is available — pair them
+      rooms.push({
+        roomId: rooms.length + 1,
+        playerA: playerId,
+        playerB: partnerId,
+        round,
+      });
+      paired.add(playerId);
+      paired.add(partnerId);
+    }
+
+    // Excluded: all alive players not in a room
+    const excluded = alivePlayers
+      .filter((p) => !paired.has(p.id))
+      .map((p) => p.id);
+
+    return { rooms, excluded };
+  }
+
   private async runWhisperPhase(
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
@@ -430,23 +517,69 @@ export class GameRunner {
     this.logSystem("=== WHISPER PHASE ===", Phase.WHISPER);
     const alivePlayers = this.gameState.getAlivePlayers();
 
-    // Clear whisper inboxes
+    // Clear whisper inboxes and room state
     this.whisperInbox = new Map(alivePlayers.map((p) => [p.id, []]));
+    this.currentRoomAllocations = [];
+    this.currentExcludedPlayerIds = [];
 
+    const roomCount = this.computeRoomCount(alivePlayers.length);
+
+    // --- Sub-Step 1: Room Request ---
+    // Each agent submits a preferred room partner
+    const requests = new Map<UUID, UUID>();
     await Promise.all(
       alivePlayers.map(async (player) => {
         const agent = this.agents.get(player.id)!;
-        const ctx = this.buildPhaseContext(player.id, Phase.WHISPER);
-        const whispers = await agent.getWhispers(ctx);
-        for (const { to, text } of whispers) {
-          // Deliver to recipients
-          for (const recipientId of to) {
-            const inbox = this.whisperInbox.get(recipientId) ?? [];
-            inbox.push({ from: player.name, text });
-            this.whisperInbox.set(recipientId, inbox);
-          }
-          this.logWhisper(player.id, to, text);
+        const ctx = this.buildPhaseContext(player.id, Phase.WHISPER, undefined, undefined, { roomCount });
+        const partnerId = await agent.requestRoom(ctx);
+        if (partnerId) {
+          requests.set(player.id, partnerId);
         }
+      }),
+    );
+
+    // --- Sub-Step 2: Room Allocation ---
+    const { rooms, excluded } = this.allocateRooms(requests, alivePlayers, roomCount);
+    this.currentRoomAllocations = rooms;
+    this.currentExcludedPlayerIds = excluded;
+    this.gameState.recordRoomAllocations(rooms, excluded);
+
+    // Log room assignments as system message with metadata
+    const roomDescriptions = rooms.map((r) => {
+      const nameA = this.gameState.getPlayerName(r.playerA);
+      const nameB = this.gameState.getPlayerName(r.playerB);
+      return `Room ${r.roomId}: ${nameA} & ${nameB}`;
+    });
+    const excludedNames = excluded.map((id) => this.gameState.getPlayerName(id));
+    const allocationText = roomDescriptions.join(" | ") +
+      (excludedNames.length > 0 ? ` | Commons: ${excludedNames.join(", ")}` : "");
+    this.logRoomAllocation(allocationText, rooms, excludedNames);
+
+    // --- Sub-Step 3: Room Conversation ---
+    // Each paired agent sends ONE message to their partner
+    await Promise.all(
+      rooms.flatMap((room) => {
+        const nameA = this.gameState.getPlayerName(room.playerA);
+        const nameB = this.gameState.getPlayerName(room.playerB);
+
+        return [room.playerA, room.playerB].map(async (playerId) => {
+          const agent = this.agents.get(playerId)!;
+          const partnerId = playerId === room.playerA ? room.playerB : room.playerA;
+          const partnerName = playerId === room.playerA ? nameB : nameA;
+          const ctx = this.buildPhaseContext(playerId, Phase.WHISPER, undefined, undefined, {
+            roomCount,
+            roomPartner: partnerName,
+          });
+          const text = await agent.sendRoomMessage(ctx, partnerName);
+
+          // Deliver to partner's whisper inbox
+          const inbox = this.whisperInbox.get(partnerId) ?? [];
+          inbox.push({ from: this.gameState.getPlayerName(playerId), text });
+          this.whisperInbox.set(partnerId, inbox);
+
+          // Log to transcript with roomId
+          this.logWhisper(playerId, [partnerId], text, room.roomId);
+        });
       }),
     );
 
@@ -717,21 +850,65 @@ export class GameRunner {
     this.emitPhaseChange(Phase.WHISPER);
     this.logSystem("=== RECKONING: WHISPER PHASE ===", Phase.WHISPER);
     const alivePlayers = this.gameState.getAlivePlayers();
-    this.whisperInbox = new Map(alivePlayers.map((p) => [p.id, []]));
 
+    // Use room system for reckoning whisper (4 players → 1 room, 2 excluded)
+    this.whisperInbox = new Map(alivePlayers.map((p) => [p.id, []]));
+    this.currentRoomAllocations = [];
+    this.currentExcludedPlayerIds = [];
+
+    const roomCount = this.computeRoomCount(alivePlayers.length);
+
+    // Sub-Step 1: Room Request
+    const requests = new Map<UUID, UUID>();
     await Promise.all(
       alivePlayers.map(async (player) => {
         const agent = this.agents.get(player.id)!;
-        const ctx = this.buildPhaseContext(player.id, Phase.WHISPER);
-        const whispers = await agent.getWhispers(ctx);
-        for (const { to, text } of whispers) {
-          for (const recipientId of to) {
-            const inbox = this.whisperInbox.get(recipientId) ?? [];
-            inbox.push({ from: player.name, text });
-            this.whisperInbox.set(recipientId, inbox);
-          }
-          this.logWhisper(player.id, to, text);
+        const ctx = this.buildPhaseContext(player.id, Phase.WHISPER, undefined, undefined, { roomCount });
+        const partnerId = await agent.requestRoom(ctx);
+        if (partnerId) {
+          requests.set(player.id, partnerId);
         }
+      }),
+    );
+
+    // Sub-Step 2: Room Allocation
+    const { rooms, excluded } = this.allocateRooms(requests, alivePlayers, roomCount);
+    this.currentRoomAllocations = rooms;
+    this.currentExcludedPlayerIds = excluded;
+    this.gameState.recordRoomAllocations(rooms, excluded);
+
+    const roomDescriptions = rooms.map((r) => {
+      const nameA = this.gameState.getPlayerName(r.playerA);
+      const nameB = this.gameState.getPlayerName(r.playerB);
+      return `Room ${r.roomId}: ${nameA} & ${nameB}`;
+    });
+    const excludedNames = excluded.map((id) => this.gameState.getPlayerName(id));
+    const allocationText = roomDescriptions.join(" | ") +
+      (excludedNames.length > 0 ? ` | Commons: ${excludedNames.join(", ")}` : "");
+    this.logRoomAllocation(allocationText, rooms, excludedNames);
+
+    // Sub-Step 3: Room Conversation
+    await Promise.all(
+      rooms.flatMap((room) => {
+        const nameA = this.gameState.getPlayerName(room.playerA);
+        const nameB = this.gameState.getPlayerName(room.playerB);
+
+        return [room.playerA, room.playerB].map(async (playerId) => {
+          const agent = this.agents.get(playerId)!;
+          const partnerId = playerId === room.playerA ? room.playerB : room.playerA;
+          const partnerName = playerId === room.playerA ? nameB : nameA;
+          const ctx = this.buildPhaseContext(playerId, Phase.WHISPER, undefined, undefined, {
+            roomCount,
+            roomPartner: partnerName,
+          });
+          const text = await agent.sendRoomMessage(ctx, partnerName);
+
+          const inbox = this.whisperInbox.get(partnerId) ?? [];
+          inbox.push({ from: this.gameState.getPlayerName(playerId), text });
+          this.whisperInbox.set(partnerId, inbox);
+
+          this.logWhisper(playerId, [partnerId], text, room.roomId);
+        });
       }),
     );
 
@@ -1200,8 +1377,22 @@ export class GameRunner {
     phase: Phase,
     extra?: { empoweredId?: UUID; councilCandidates?: [UUID, UUID] },
     isEliminated?: boolean,
+    roomInfo?: { roomCount?: number; roomPartner?: string },
   ): PhaseContext {
     const player = this.gameState.getPlayer(agentId)!;
+
+    // Build room allocation context from current state
+    const roomAllocations = this.currentRoomAllocations.length > 0
+      ? this.currentRoomAllocations.map((r) => ({
+          roomId: r.roomId,
+          playerA: this.gameState.getPlayerName(r.playerA),
+          playerB: this.gameState.getPlayerName(r.playerB),
+        }))
+      : undefined;
+    const excludedPlayers = this.currentExcludedPlayerIds.length > 0
+      ? this.currentExcludedPlayerIds.map((id) => this.gameState.getPlayerName(id))
+      : undefined;
+
     return {
       gameId: this.gameState.gameId,
       round: this.gameState.round,
@@ -1213,6 +1404,11 @@ export class GameRunner {
       whisperMessages: this.whisperInbox.get(agentId) ?? [],
       empoweredId: extra?.empoweredId ?? this.gameState.empoweredId ?? undefined,
       councilCandidates: extra?.councilCandidates ?? this.gameState.councilCandidates ?? undefined,
+      // Room allocation context
+      roomCount: roomInfo?.roomCount,
+      roomAllocations,
+      excludedPlayers,
+      roomPartner: roomInfo?.roomPartner,
       // Endgame context
       endgameStage: this.gameState.endgameStage ?? undefined,
       jury: this.gameState.jury.length > 0 ? [...this.gameState.jury] : undefined,
@@ -1260,7 +1456,7 @@ export class GameRunner {
     this.emitStream({ type: "transcript_entry", entry });
   }
 
-  private logWhisper(fromId: UUID, toIds: UUID[], text: string): void {
+  private logWhisper(fromId: UUID, toIds: UUID[], text: string, roomId?: number): void {
     const fromName = this.gameState.getPlayerName(fromId);
     const toNames = toIds.map((id) => this.gameState.getPlayerName(id));
     const entry: TranscriptEntry = {
@@ -1271,6 +1467,25 @@ export class GameRunner {
       scope: "whisper",
       to: toNames,
       text,
+      ...(roomId != null && { roomId }),
+    };
+    this.transcript.push(entry);
+    this.emitStream({ type: "transcript_entry", entry });
+  }
+
+  private logRoomAllocation(
+    text: string,
+    rooms: import("./types").RoomAllocation[],
+    excludedNames: string[],
+  ): void {
+    const entry: TranscriptEntry = {
+      round: this.gameState.round,
+      phase: Phase.WHISPER,
+      timestamp: Date.now(),
+      from: "House",
+      scope: "system",
+      text,
+      roomMetadata: { rooms, excluded: excludedNames },
     };
     this.transcript.push(entry);
     this.emitStream({ type: "transcript_entry", entry });
