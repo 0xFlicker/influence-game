@@ -1502,12 +1502,14 @@ function DiaryRoomPanel({
   messages,
   players,
   isAuthenticated,
+  isReplay = false,
 }: {
   messages: TranscriptEntry[];
   players: GamePlayer[];
   isAuthenticated: boolean;
+  isReplay?: boolean;
 }) {
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !isReplay) {
     return (
       <div className="border border-purple-900/30 bg-purple-950/10 rounded-xl p-12 text-center min-h-[420px] flex flex-col items-center justify-center">
         <p className="text-3xl mb-4">📓</p>
@@ -2684,6 +2686,7 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
           messages={isReplay ? messages : visibleMessages}
           players={game.players}
           isAuthenticated={isAuthenticated}
+          isReplay={isReplay}
         />
       )}
 
@@ -2813,6 +2816,7 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
             messages={isReplay ? messages : visibleMessages}
             players={game.players}
             isAuthenticated={isAuthenticated}
+            isReplay={isReplay}
           />
         )}
 
