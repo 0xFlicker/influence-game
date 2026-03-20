@@ -211,7 +211,7 @@ function WaitingGameCard({ game, onRefresh }: { game: GameSummary; onRefresh: ()
 // Recent game row
 // ---------------------------------------------------------------------------
 
-function StatusBadge({ status }: { status: GameSummary["status"] }) {
+function StatusBadge({ status, errorInfo }: { status: GameSummary["status"]; errorInfo?: string }) {
   const styles: Record<GameSummary["status"], string> = {
     waiting: "bg-yellow-900/40 text-yellow-400",
     in_progress: "bg-blue-900/40 text-blue-400",
@@ -225,8 +225,12 @@ function StatusBadge({ status }: { status: GameSummary["status"] }) {
     cancelled: "void",
   };
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full ${styles[status]}`}>
+    <span
+      className={`text-xs px-2 py-0.5 rounded-full ${styles[status]}`}
+      title={status === "cancelled" && errorInfo ? `Error: ${errorInfo}` : undefined}
+    >
       {labels[status]}
+      {status === "cancelled" && errorInfo ? " ⚠" : ""}
     </span>
   );
 }
@@ -257,7 +261,7 @@ function RecentGameRow({ game }: { game: GameSummary }) {
       <td className="py-3 px-4 text-white/50 text-sm">{capitalize(game.modelTier)}</td>
       <td className="py-3 px-4 text-white/40 text-xs">{date}</td>
       <td className="py-3 px-4">
-        <StatusBadge status={game.status} />
+        <StatusBadge status={game.status} errorInfo={game.errorInfo} />
       </td>
       <td className="py-3 px-4">
         <Link

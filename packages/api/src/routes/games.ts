@@ -196,6 +196,7 @@ export function createGameRoutes(db: DrizzleDB) {
         visibility: config.visibility ?? "public",
         viewerMode: config.viewerMode ?? "speedrun",
         winner: winnerPlayer ? JSON.parse(winnerPlayer.persona).name : undefined,
+        errorInfo: config.errorInfo ?? undefined,
         createdAt: game.createdAt,
         startedAt: game.startedAt ?? undefined,
         completedAt: game.endedAt ?? undefined,
@@ -264,12 +265,23 @@ export function createGameRoutes(db: DrizzleDB) {
       currentPhase: game.status === "completed" ? "END" : "INIT",
       players: players.map((p) => {
         const persona = JSON.parse(p.persona);
+        // Resolve avatar from linked agent profile if available
+        let avatarUrl: string | undefined;
+        if (p.agentProfileId) {
+          const profile = db
+            .select({ avatarUrl: schema.agentProfiles.avatarUrl })
+            .from(schema.agentProfiles)
+            .where(eq(schema.agentProfiles.id, p.agentProfileId))
+            .all()[0];
+          avatarUrl = profile?.avatarUrl ?? undefined;
+        }
         return {
           id: p.id,
           name: persona.name ?? "Unknown",
           persona: persona.personality ?? persona.name ?? "Unknown",
           status: "alive" as const,
           shielded: false,
+          avatarUrl,
         };
       }),
       modelTier: config.modelTier ?? "budget",
@@ -574,13 +586,18 @@ export function createGameRoutes(db: DrizzleDB) {
       .where(eq(schema.games.id, gameId))
       .run();
 
-    // Fire-and-forget: trigger game execution in the background.
-    // If it fails to start (e.g. missing OPENAI_API_KEY), the game stays
-    // in_progress and can be inspected via status. The lifecycle service
-    // handles its own error logging and status updates.
-    startGame(db, gameId).catch((err) => {
-      console.error(`[games] Failed to start game ${gameId}:`, err);
-    });
+    // Await startGame to catch configuration errors (missing API key, etc.)
+    // before returning success to the client. The actual game execution
+    // (runGameAsync) runs in the background after this returns.
+    const result = await startGame(db, gameId);
+    if (result.error) {
+      // Revert game status — startup failed before execution began
+      db.update(schema.games)
+        .set({ status: "waiting" as const, startedAt: null })
+        .where(eq(schema.games.id, gameId))
+        .run();
+      return c.json({ error: result.error }, 500);
+    }
 
     return c.json({ status: "in_progress", players: currentPlayers.length });
   });

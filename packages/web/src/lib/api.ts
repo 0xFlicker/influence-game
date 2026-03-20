@@ -126,6 +126,7 @@ export interface GameSummary {
   finalists?: [string, string];
   winner?: string;
   winnerPersona?: string;
+  errorInfo?: string;
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
@@ -368,6 +369,7 @@ export interface GamePlayer {
   persona: string;
   status: PlayerState;
   shielded: boolean;
+  avatarUrl?: string;
 }
 
 export type TranscriptScope = "public" | "whisper" | "system" | "diary";

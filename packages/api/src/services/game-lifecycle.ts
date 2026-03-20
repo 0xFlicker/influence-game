@@ -289,13 +289,27 @@ async function runGameAsync(
       .where(eq(schema.games.id, gameId))
       .run();
   } catch (err) {
-    // Game failed — mark as cancelled with error info
-    console.error(`[game-lifecycle] Game ${gameId} failed:`, err);
+    // Game failed — mark as cancelled and store error reason in config
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.error(`[game-lifecycle] Game ${gameId} failed:`, errorMessage);
+
+    // Read current config and append errorInfo
+    const game = db
+      .select({ config: schema.games.config })
+      .from(schema.games)
+      .where(eq(schema.games.id, gameId))
+      .all()[0];
+    const currentConfig = game ? JSON.parse(game.config) : {};
+    const updatedConfig = {
+      ...currentConfig,
+      errorInfo: errorMessage,
+    };
 
     db.update(schema.games)
       .set({
         status: "cancelled",
         endedAt: new Date().toISOString(),
+        config: JSON.stringify(updatedConfig),
       })
       .where(eq(schema.games.id, gameId))
       .run();

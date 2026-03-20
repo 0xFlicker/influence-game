@@ -23,6 +23,10 @@ const TEST_ADMIN_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678";
 beforeAll(() => {
   process.env.JWT_SECRET = "test-jwt-secret-for-unit-tests";
   process.env.ADMIN_ADDRESS = TEST_ADMIN_ADDRESS;
+  // startGame validates OPENAI_API_KEY before returning success
+  if (!process.env.OPENAI_API_KEY) {
+    process.env.OPENAI_API_KEY = "test-dummy-key";
+  }
 });
 
 // ---------------------------------------------------------------------------
