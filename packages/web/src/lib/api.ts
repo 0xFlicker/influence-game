@@ -127,6 +127,11 @@ export interface GameSummary {
   winner?: string;
   winnerPersona?: string;
   errorInfo?: string;
+  // Buy-in / monetization fields
+  tierId?: string;
+  buyInCents?: number;
+  prizePoolCents?: number;
+  freeEntry?: boolean;
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
@@ -203,14 +208,18 @@ export async function loginWithPrivyToken(
 // Player types
 // ---------------------------------------------------------------------------
 
-export type JoinGameConfig =
+export type JoinGameConfig = (
   | { agentProfileId: string }
   | {
       agentName: string;
       personality: string;
       strategyHints?: string;
       personaKey: PersonaKey;
-    };
+    }
+) & {
+  paymentId?: string;
+  modelUpgrade?: boolean;
+};
 
 export interface PlayerGameResult {
   gameId: string;
@@ -403,6 +412,13 @@ export interface GameDetail {
   winner?: string;
   winnerPersona?: string;
   finalists?: [string, string];
+  // Buy-in / monetization fields
+  tierId?: string;
+  buyInCents?: number;
+  prizePoolCents?: number;
+  rakeAmountCents?: number;
+  payoutStatus?: string;
+  freeEntry?: boolean;
   createdAt: string;
   startedAt?: string;
   completedAt?: string;

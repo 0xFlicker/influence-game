@@ -3,8 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
-import { getAuthToken, getPlayerGames, getPlayerPayments, getPlayerPayouts, getPricingTiers, listAgents, type GameSummary, type PlayerGameResult, type PlayerPayment, type PlayerPayout, type SavedAgent, type PricingTier } from "@/lib/api";
-import { getTierForModel } from "@/lib/pricing";
+import { getAuthToken, getPlayerGames, getPlayerPayments, getPlayerPayouts, listAgents, type GameSummary, type PlayerGameResult, type PlayerPayment, type PlayerPayout, type SavedAgent } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
 import { GamesBrowser } from "@/app/games/games-browser";
 import { JoinGameModal } from "./join-game-modal";
@@ -355,20 +354,20 @@ function EarningsSection() {
 // Main dashboard component
 // ---------------------------------------------------------------------------
 
+/** Check if a game requires buy-in payment. */
+function gameRequiresBuyIn(game: GameSummary): boolean {
+  if (game.freeEntry === true) return false;
+  if (game.buyInCents !== undefined && game.buyInCents > 0) return true;
+  return false;
+}
+
 export function DashboardContent() {
   const { user, authenticated, login } = usePrivy();
-  const [joinTarget, setJoinTarget] = useState<GameSummary | null>(null);
+  const [joinTarget, setJoinTarget] = useState<{ game: GameSummary; paymentId?: string } | null>(null);
   const [checkoutTarget, setCheckoutTarget] = useState<GameSummary | null>(null);
   const [, setJoinedGameIds] = useState<Set<string>>(new Set());
   const [history, setHistory] = useState<PlayerGameResult[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
-  const [pricingTiers, setPricingTiers] = useState<PricingTier[]>([]);
-
-  useEffect(() => {
-    getPricingTiers()
-      .then(setPricingTiers)
-      .catch(() => {});
-  }, []);
 
   useEffect(() => {
     function fetchHistory() {
@@ -403,20 +402,19 @@ export function DashboardContent() {
       login();
       return;
     }
-    // Check if the game requires payment
-    const tier = getTierForModel(game.modelTier, pricingTiers);
-    if (tier && tier.buyinCents > 0) {
+    // Check if the game requires payment using real API data
+    if (gameRequiresBuyIn(game)) {
       setCheckoutTarget(game);
     } else {
-      setJoinTarget(game);
+      setJoinTarget({ game });
     }
   }
 
-  function handleCheckoutSuccess(_paymentId: string) {
-    // Payment completed — now show the join modal
+  function handleCheckoutSuccess(paymentId: string) {
+    // Payment completed — now show the join modal with paymentId
     const game = checkoutTarget;
     setCheckoutTarget(null);
-    if (game) setJoinTarget(game);
+    if (game) setJoinTarget({ game, paymentId });
   }
 
   function handleJoinSuccess(gameId: string) {
@@ -435,10 +433,11 @@ export function DashboardContent() {
         />
       )}
 
-      {/* Join modal */}
+      {/* Join modal — receives paymentId when coming from checkout */}
       {joinTarget && (
         <JoinGameModal
-          game={joinTarget}
+          game={joinTarget.game}
+          paymentId={joinTarget.paymentId}
           onClose={() => setJoinTarget(null)}
           onSuccess={handleJoinSuccess}
         />

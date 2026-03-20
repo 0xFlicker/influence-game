@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { listGames, getPricingTiers, type GameSummary, type GameStatus, type ModelTier, type PricingTier } from "@/lib/api";
-import { getTierForModel, formatPrice } from "@/lib/pricing";
+import { listGames, type GameSummary, type GameStatus, type ModelTier } from "@/lib/api";
+import { formatPrice } from "@/lib/pricing";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -80,16 +80,32 @@ function PriceBadge({ cents }: { cents: number }) {
   );
 }
 
+/** Determine whether a game is free based on backend data. */
+function isGameFree(game: GameSummary): boolean {
+  // Prefer explicit freeEntry flag from backend
+  if (game.freeEntry !== undefined) return game.freeEntry;
+  // Fallback: check buyInCents
+  if (game.buyInCents !== undefined) return game.buyInCents === 0;
+  // Legacy games without buy-in fields default to free for budget tier
+  return game.modelTier === "budget";
+}
+
+/** Get display price for a game. */
+function getGameBuyInDisplay(game: GameSummary): string {
+  if (isGameFree(game)) return "Free";
+  if (game.buyInCents !== undefined) return formatPrice(game.buyInCents);
+  return "Paid";
+}
+
 interface GameCardProps {
   game: GameSummary;
-  pricingTier?: PricingTier;
   onJoin?: (game: GameSummary) => void;
 }
 
-function GameCard({ game, pricingTier, onJoin }: GameCardProps) {
+function GameCard({ game, onJoin }: GameCardProps) {
   const isJoinable = game.status === "waiting";
   const isLive = game.status === "in_progress";
-  const isFree = pricingTier ? pricingTier.buyinCents === 0 : game.modelTier === "budget";
+  const isFree = isGameFree(game);
   const slotsInfo = isJoinable
     ? `${game.alivePlayers}/${game.playerCount} joined`
     : undefined;
@@ -102,7 +118,11 @@ function GameCard({ game, pricingTier, onJoin }: GameCardProps) {
           <div className="flex items-center gap-3 mb-2 flex-wrap">
             <span className="text-white font-semibold">Game #{game.gameNumber}</span>
             <StatusBadge status={game.status} />
-            {pricingTier && <PriceBadge cents={pricingTier.buyinCents} />}
+            {game.buyInCents !== undefined ? (
+              <PriceBadge cents={isFree ? 0 : game.buyInCents} />
+            ) : isFree ? (
+              <FreeBadge />
+            ) : null}
             <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-white/50 font-mono">
               {phaseLabel(game.currentPhase)}
             </span>
@@ -112,8 +132,11 @@ function GameCard({ game, pricingTier, onJoin }: GameCardProps) {
           <div className="flex items-center gap-4 text-xs text-white/40 mb-3 flex-wrap">
             <span>{game.playerCount} players</span>
             <span>{capitalize(game.modelTier)} tier</span>
-            {pricingTier && pricingTier.buyinCents > 0 && (
-              <span className="text-amber-400/60">Buy-in: {pricingTier.buyinDisplay}</span>
+            {!isFree && game.buyInCents !== undefined && game.buyInCents > 0 && (
+              <span className="text-amber-400/60">Buy-in: {formatPrice(game.buyInCents)}</span>
+            )}
+            {game.prizePoolCents !== undefined && game.prizePoolCents > 0 && (
+              <span className="text-emerald-400/60">Pool: {formatPrice(game.prizePoolCents)}</span>
             )}
             {slotsInfo && (
               <span className="text-indigo-400/70">{slotsInfo}</span>
@@ -167,7 +190,7 @@ function GameCard({ game, pricingTier, onJoin }: GameCardProps) {
                   : "bg-indigo-600 hover:bg-indigo-500 text-white"
               }`}
             >
-              {isFree ? "Join Free" : `Join · ${pricingTier?.buyinDisplay ?? "Paid"}`}
+              {isFree ? "Join Free" : `Join · ${getGameBuyInDisplay(game)}`}
             </button>
           )}
         </div>
@@ -202,22 +225,17 @@ interface GamesBrowserProps {
 export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
   const [filters, setFilters] = useState<FiltersState>({ status: "all", tier: "all", price: "all" });
   const [games, setGames] = useState<GameSummary[]>([]);
-  const [pricingTiers, setPricingTiers] = useState<PricingTier[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function fetchData() {
+    async function fetchGames() {
       try {
-        const [gamesData, tiersData] = await Promise.all([
-          listGames(),
-          getPricingTiers().catch(() => [] as PricingTier[]),
-        ]);
+        const data = await listGames();
         if (!cancelled) {
-          setGames(gamesData);
-          setPricingTiers(tiersData);
+          setGames(data);
           setError(null);
         }
       } catch (err) {
@@ -229,12 +247,8 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
       }
     }
 
-    fetchData();
-    const interval = setInterval(() => {
-      listGames()
-        .then((data) => { setGames(data); setError(null); })
-        .catch(() => {});
-    }, 10000);
+    fetchGames();
+    const interval = setInterval(fetchGames, 10000);
     return () => {
       cancelled = true;
       clearInterval(interval);
@@ -248,17 +262,12 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
     cancelled: 3,
   };
 
-  function getGameTier(game: GameSummary): PricingTier | undefined {
-    return getTierForModel(game.modelTier, pricingTiers);
-  }
-
   const filtered = games
     .filter((g) => {
       if (filters.status !== "all" && g.status !== filters.status) return false;
       if (filters.tier !== "all" && g.modelTier !== filters.tier) return false;
       if (filters.price !== "all") {
-        const tier = getGameTier(g);
-        const isFree = tier ? tier.buyinCents === 0 : g.modelTier === "budget";
+        const isFree = isGameFree(g);
         if (filters.price === "free" && !isFree) return false;
         if (filters.price === "paid" && isFree) return false;
       }
@@ -366,7 +375,7 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
       ) : (
         <div className="space-y-3">
           {filtered.map((g) => (
-            <GameCard key={g.id} game={g} pricingTier={getGameTier(g)} onJoin={onJoin} />
+            <GameCard key={g.id} game={g} onJoin={onJoin} />
           ))}
         </div>
       )}

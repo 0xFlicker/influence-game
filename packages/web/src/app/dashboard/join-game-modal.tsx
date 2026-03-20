@@ -18,6 +18,7 @@ import { PERSONAS } from "@/lib/personas";
 
 interface JoinGameModalProps {
   game: GameSummary;
+  paymentId?: string;
   onClose: () => void;
   onSuccess: (gameId: string) => void;
 }
@@ -94,7 +95,7 @@ function AgentPicker({
 // Component
 // ---------------------------------------------------------------------------
 
-export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) {
+export function JoinGameModal({ game, paymentId, onClose, onSuccess }: JoinGameModalProps) {
   const [agents, setAgents] = useState<SavedAgent[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agentName, setAgentName] = useState("");
@@ -134,7 +135,7 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
       setSubmitting(true);
       setError(null);
       try {
-        await joinGame(game.id, { agentProfileId: selectedAgentId });
+        await joinGame(game.id, { agentProfileId: selectedAgentId, paymentId });
         onSuccess(game.id);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to join game.");
@@ -162,6 +163,7 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
         personality: personality.trim(),
         strategyHints: strategyHints.trim() || undefined,
         personaKey: selectedPersona,
+        paymentId,
       });
       onSuccess(game.id);
     } catch (err) {

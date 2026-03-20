@@ -17,7 +17,7 @@ import {
   type GameSummary,
   type PricingTier,
 } from "@/lib/api";
-import { getTierForModel, formatPrice } from "@/lib/pricing";
+import { formatPrice } from "@/lib/pricing";
 
 // ---------------------------------------------------------------------------
 // Stripe singleton
@@ -281,11 +281,16 @@ export function CheckoutModal({ game, onClose, onSuccess }: CheckoutModalProps) 
     getPricingTiers()
       .then((tiers) => {
         setPricingTiers(tiers);
-        const gameTier = getTierForModel(game.modelTier, tiers);
-        if (gameTier) setSelectedTierId(gameTier.id);
+        // Use tierId from game if available, otherwise find matching tier
+        if (game.tierId) {
+          setSelectedTierId(game.tierId);
+        } else {
+          const match = tiers.find((t) => t.buyinCents > 0);
+          if (match) setSelectedTierId(match.id);
+        }
       })
       .catch(() => setError("Failed to load pricing."));
-  }, [game.modelTier]);
+  }, [game.tierId]);
 
   const selectedTier = pricingTiers.find((t) => t.id === selectedTierId);
 
