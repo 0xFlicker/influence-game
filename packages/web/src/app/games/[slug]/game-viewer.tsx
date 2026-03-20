@@ -1063,11 +1063,14 @@ function DiaryQACard({
 function WhisperRoomDM({
   room,
   players,
+  anonymous = false,
 }: {
   room: WhisperRoomStage;
   players: GamePlayer[];
+  anonymous?: boolean;
 }) {
   const feedRef = useRef<HTMLDivElement>(null);
+  const [revealedIds, setRevealedIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     if (feedRef.current) {
@@ -1089,40 +1092,74 @@ function WhisperRoomDM({
             {room.playerNames.join(" × ")}
           </p>
         </div>
-        <span className="rounded-full border border-red-400/25 bg-red-400/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.2em] text-red-200/80 flex-shrink-0">
-          Live
-        </span>
+        {anonymous ? (
+          <span className="rounded-full border border-purple-400/25 bg-purple-400/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.2em] text-purple-200/80 flex-shrink-0">
+            Anonymous
+          </span>
+        ) : (
+          <span className="rounded-full border border-red-400/25 bg-red-400/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.2em] text-red-200/80 flex-shrink-0">
+            Live
+          </span>
+        )}
       </div>
 
       <div ref={feedRef} className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
         {room.messages.length === 0 ? (
           <p className="text-xs text-white/30 italic text-center py-6">Waiting…</p>
         ) : (
-          room.messages.map((msg) => {
+          room.messages.map((msg, idx) => {
+            const isRevealed = !anonymous || revealedIds.has(msg.id);
             const isSelf = msg.fromPlayerId === selfId;
             const player = players.find((c) => c.id === msg.fromPlayerId)
               ?? players.find((c) => c.name === msg.fromPlayerId);
-            const name = player?.name ?? msg.fromPlayerId ?? "Unknown";
+            const name = isRevealed ? (player?.name ?? msg.fromPlayerId ?? "Unknown") : "???";
+            // Alternate sides for anonymous mode since we can't use sender identity
+            const showOnRight = anonymous ? idx % 2 === 1 : isSelf;
+
+            const handleReveal = () => {
+              if (anonymous && !isRevealed) {
+                setRevealedIds((prev) => new Set(prev).add(msg.id));
+              }
+            };
+
             return (
-              <div key={msg.id} className={`flex gap-2 ${isSelf ? "justify-end" : "justify-start"} animate-[fadeIn_0.25s_ease-out]`}>
-                {!isSelf && (
+              <div
+                key={msg.id}
+                className={`flex gap-2 ${showOnRight ? "justify-end" : "justify-start"} animate-[fadeIn_0.25s_ease-out]`}
+                onClick={handleReveal}
+                role={anonymous && !isRevealed ? "button" : undefined}
+                tabIndex={anonymous && !isRevealed ? 0 : undefined}
+                onKeyDown={anonymous && !isRevealed ? (e) => { if (e.key === "Enter" || e.key === " ") handleReveal(); } : undefined}
+              >
+                {!showOnRight && (
                   <div className="flex-shrink-0 mt-1">
-                    {player ? <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" /> : <span className="w-6 h-6 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>}
+                    {isRevealed && player ? (
+                      <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />
+                    ) : (
+                      <span className="w-6 h-6 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>
+                    )}
                   </div>
                 )}
-                <div className={`max-w-[80%] ${isSelf ? "text-right" : "text-left"}`}>
-                  <p className="text-[10px] text-white/30 mb-0.5">{name}</p>
-                  <div className={`rounded-2xl px-3 py-2 ${
-                    isSelf
+                <div className={`max-w-[80%] ${showOnRight ? "text-right" : "text-left"}`}>
+                  <p className={`text-[10px] mb-0.5 ${isRevealed ? "text-white/30" : "text-purple-300/40 italic"}`}>
+                    {name}
+                    {anonymous && !isRevealed && <span className="ml-1 text-purple-300/25">(tap to reveal)</span>}
+                  </p>
+                  <div className={`rounded-2xl px-3 py-2 ${anonymous && !isRevealed ? "cursor-pointer" : ""} ${
+                    showOnRight
                       ? "bg-purple-800/30 border border-purple-600/20 rounded-tr-sm"
                       : "bg-white/[0.06] border border-white/[0.08] rounded-tl-sm"
                   }`}>
                     <p className="text-xs leading-relaxed text-white/70 text-left">{msg.text}</p>
                   </div>
                 </div>
-                {isSelf && (
+                {showOnRight && (
                   <div className="flex-shrink-0 mt-1">
-                    {player ? <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" /> : <span className="w-6 h-6 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>}
+                    {isRevealed && player ? (
+                      <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />
+                    ) : (
+                      <span className="w-6 h-6 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>
+                    )}
                   </div>
                 )}
               </div>
@@ -1138,10 +1175,12 @@ function WhisperPhaseView({
   phaseEntries,
   players,
   phaseKey,
+  isReplay = false,
 }: {
   phaseEntries: TranscriptEntry[];
   players: GamePlayer[];
   phaseKey: string;
+  isReplay?: boolean;
 }) {
   const stage = buildWhisperStageData(phaseEntries, players);
   const [mobileRoomIndex, setMobileRoomIndex] = useState(0);
@@ -1211,7 +1250,7 @@ function WhisperPhaseView({
           {/* Desktop: simultaneous grid of all rooms */}
           <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-3" style={{ minHeight: "300px" }}>
             {stage.rooms.map((room) => (
-              <WhisperRoomDM key={room.roomId} room={room} players={players} />
+              <WhisperRoomDM key={room.roomId} room={room} players={players} anonymous={!isReplay} />
             ))}
             {stage.commons.length > 0 && (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 flex flex-col items-center justify-center text-center">
@@ -1244,7 +1283,7 @@ function WhisperPhaseView({
             </div>
             {stage.rooms[mobileRoomIndex] && (
               <div style={{ height: "300px" }}>
-                <WhisperRoomDM room={stage.rooms[mobileRoomIndex]} players={players} />
+                <WhisperRoomDM room={stage.rooms[mobileRoomIndex]} players={players} anonymous={!isReplay} />
               </div>
             )}
           </div>
@@ -1276,7 +1315,7 @@ function RevealMessageItem({
     // Detect all-caps player name announcement (e.g., "ATLAS — 3 VOTES")
     const isAnnouncement = /\b[A-Z]{3,}\b/.test(msg.text);
     return (
-      <div className="text-center py-3 animate-[fadeIn_0.4s_ease-out]">
+      <div className="text-center py-3 animate-[fadePure_0.4s_ease-out]">
         {isAnnouncement ? (
           <p className="text-xl md:text-2xl font-bold tracking-widest text-red-300">
             {msg.text}
@@ -1292,7 +1331,7 @@ function RevealMessageItem({
     ?? players.find((p) => p.name === msg.fromPlayerId);
   const name = msg.fromPlayerName ?? player?.name ?? msg.fromPlayerId ?? "Unknown";
   return (
-    <div className="flex gap-3 animate-[fadeIn_0.4s_ease-out]">
+    <div className="flex gap-3 animate-[fadePure_0.4s_ease-out]">
       <div className="flex-shrink-0">
         {player ? <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="8" /> : <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-sm">?</span>}
       </div>
@@ -2087,7 +2126,7 @@ function VoteTallyOverlay({
     const maxExpose = Math.max(...sorted.map((s) => s.expose), 0);
 
     return (
-      <div className="mt-8 max-w-sm mx-auto animate-[fadeIn_0.4s_ease-out]">
+      <div className="mt-8 max-w-sm mx-auto animate-[fadePure_0.4s_ease-out]">
         <p className="text-[10px] uppercase tracking-[0.3em] text-white/20 text-center mb-3">Vote Tally</p>
         <div className="space-y-1">
           {sorted.map(({ player, empower, expose }) => (
@@ -2130,17 +2169,32 @@ function VoteTallyOverlay({
     }
     if (voteCounts.size === 0) return null;
 
+    const sorted = Array.from(voteCounts.entries())
+      .sort((a, b) => b[1] - a[1]);
+    const maxVotes = sorted[0]?.[1] ?? 0;
+
     return (
-      <div className="mt-8 max-w-sm mx-auto animate-[fadeIn_0.4s_ease-out]">
+      <div className="mt-8 max-w-sm mx-auto animate-[fadePure_0.4s_ease-out]">
         <p className="text-[10px] uppercase tracking-[0.3em] text-red-400/40 text-center mb-3">Council Vote</p>
-        <div className="flex items-center justify-center gap-8">
-          {Array.from(voteCounts.entries()).map(([name, count]) => {
+        <div className="space-y-1">
+          {sorted.map(([name, count]) => {
             const player = players.find((p) => p.name === name);
             return (
-              <div key={name} className="text-center">
-                {player && <div className="mb-1 flex justify-center"><AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="10" /></div>}
-                <p className="text-sm text-white/70 font-semibold">{name}</p>
-                <p className="text-2xl font-bold text-red-400 mt-1">{count}</p>
+              <div
+                key={name}
+                className={`flex items-center gap-2 py-1.5 px-3 rounded-lg transition-all duration-500 ${
+                  count > 0 && count === maxVotes
+                    ? "bg-red-900/25 border border-red-500/25"
+                    : "bg-white/[0.02]"
+                }`}
+              >
+                {player && <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />}
+                <span className="text-xs text-white/60 flex-1">{name}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                  count === maxVotes ? "text-red-300 bg-red-900/40 font-bold" : "text-red-400/70 bg-red-900/20"
+                }`}>
+                  {count}
+                </span>
               </div>
             );
           })}
@@ -2164,7 +2218,7 @@ function VoteTallyOverlay({
     if (juryCounts.size === 0) return null;
 
     return (
-      <div className="mt-8 max-w-sm mx-auto animate-[fadeIn_0.4s_ease-out]">
+      <div className="mt-8 max-w-sm mx-auto animate-[fadePure_0.4s_ease-out]">
         <p className="text-[10px] uppercase tracking-[0.3em] text-amber-400/40 text-center mb-3">Jury Verdict</p>
         <div className="flex items-center justify-center gap-12">
           {Array.from(juryCounts.entries()).map(([name, count]) => {
@@ -2195,17 +2249,32 @@ function VoteTallyOverlay({
   }
   if (elimCounts.size === 0) return null;
 
+  const sortedElim = Array.from(elimCounts.entries())
+    .sort((a, b) => b[1] - a[1]);
+  const maxElim = sortedElim[0]?.[1] ?? 0;
+
   return (
-    <div className="mt-8 max-w-sm mx-auto animate-[fadeIn_0.4s_ease-out]">
+    <div className="mt-8 max-w-sm mx-auto animate-[fadePure_0.4s_ease-out]">
       <p className="text-[10px] uppercase tracking-[0.3em] text-red-400/40 text-center mb-3">Elimination Vote</p>
-      <div className="flex items-center justify-center gap-8">
-        {Array.from(elimCounts.entries()).map(([name, count]) => {
+      <div className="space-y-1">
+        {sortedElim.map(([name, count]) => {
           const player = players.find((p) => p.name === name);
           return (
-            <div key={name} className="text-center">
-              {player && <div className="mb-1 flex justify-center"><AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="10" /></div>}
-              <p className="text-sm text-white/70 font-semibold">{name}</p>
-              <p className="text-2xl font-bold text-red-400 mt-1">{count}</p>
+            <div
+              key={name}
+              className={`flex items-center gap-2 py-1.5 px-3 rounded-lg transition-all duration-500 ${
+                count > 0 && count === maxElim
+                  ? "bg-red-900/25 border border-red-500/25"
+                  : "bg-white/[0.02]"
+              }`}
+            >
+              {player && <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />}
+              <span className="text-xs text-white/60 flex-1">{name}</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                count === maxElim ? "text-red-300 bg-red-900/40 font-bold" : "text-red-400/70 bg-red-900/20"
+              }`}>
+                {count}
+              </span>
             </div>
           );
         })}
