@@ -489,3 +489,70 @@ export function estimateCost(
   return `~$${scaled.toFixed(2)}`;
 }
 
+// ---------------------------------------------------------------------------
+// Admin RBAC types
+// ---------------------------------------------------------------------------
+
+export interface AdminRole {
+  id: string;
+  name: string;
+  description: string | null;
+  isSystem: boolean;
+  permissions: string[];
+  createdAt: string;
+}
+
+export interface AddressRoleAssignment {
+  walletAddress: string;
+  roleId: string;
+  roleName: string;
+  grantedBy: string;
+  grantedAt: string;
+}
+
+export interface AdminUser {
+  id: string;
+  walletAddress: string | null;
+  email: string | null;
+  displayName: string | null;
+  roles: string[];
+  permissions: string[];
+  createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Admin RBAC API calls
+// ---------------------------------------------------------------------------
+
+export async function listRoles(): Promise<AdminRole[]> {
+  return apiFetch("/api/admin/roles");
+}
+
+export async function listAddressRoles(): Promise<AddressRoleAssignment[]> {
+  return apiFetch("/api/admin/address-roles");
+}
+
+export async function assignRole(
+  walletAddress: string,
+  roleId: string,
+): Promise<AddressRoleAssignment> {
+  return apiFetch("/api/admin/address-roles", {
+    method: "POST",
+    body: JSON.stringify({ walletAddress, roleId }),
+  });
+}
+
+export async function revokeRole(
+  walletAddress: string,
+  roleId: string,
+): Promise<void> {
+  await apiFetch("/api/admin/address-roles", {
+    method: "DELETE",
+    body: JSON.stringify({ walletAddress, roleId }),
+  });
+}
+
+export async function listAdminUsers(): Promise<AdminUser[]> {
+  return apiFetch("/api/admin/users");
+}
+

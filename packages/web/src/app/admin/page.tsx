@@ -1,6 +1,6 @@
 import { Nav } from "@/components/nav";
 import { AdminGate } from "@/components/admin-gate";
-import { AdminPanel } from "./admin-panel";
+import { AdminTabs } from "./admin-tabs";
 
 export const metadata = {
   title: "Admin — Influence",
@@ -12,7 +12,7 @@ export default function AdminPage() {
       <Nav />
       <main className="flex-1 px-6 py-10 max-w-5xl mx-auto w-full">
         <AdminGate>
-          <AdminPanel />
+          <AdminTabs />
         </AdminGate>
       </main>
     </div>
