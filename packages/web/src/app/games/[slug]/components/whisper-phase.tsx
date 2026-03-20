@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import type { TranscriptEntry, GamePlayer } from "@/lib/api";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { Typewriter } from "@/components/typewriter";
@@ -114,30 +114,20 @@ export function buildWhisperStageData(
   };
 }
 
-/** Single DM-style room chat box — messages aligned left/right based on speaker. */
-export function WhisperRoomDM({
+/** Sealed room card — shows room assignment but hides message content during live gameplay. */
+function WhisperRoomSealed({
   room,
   players,
-  anonymous = false,
 }: {
   room: WhisperRoomStage;
   players: GamePlayer[];
-  anonymous?: boolean;
 }) {
-  const feedRef = useRef<HTMLDivElement>(null);
-  const [revealedIds, setRevealedIds] = useState<Set<number>>(new Set());
-
-  useEffect(() => {
-    if (feedRef.current) {
-      feedRef.current.scrollTop = feedRef.current.scrollHeight;
-    }
-  }, [room.messages.length]);
-
-  // First player in the room is treated as "self" (messages on right)
-  const selfId = room.playerIds[0];
+  const playerA = players.find((p) => p.id === room.playerIds[0] || p.name === room.playerNames[0]);
+  const playerB = players.find((p) => p.id === room.playerIds[1] || p.name === room.playerNames[1]);
+  const messageCount = room.messages.length;
 
   return (
-    <div className="rounded-2xl border border-purple-400/20 bg-black/30 flex flex-col overflow-hidden h-full">
+    <div className="rounded-2xl border border-purple-400/20 bg-black/30 flex flex-col overflow-hidden">
       <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-purple-900/20">
         <div className="flex items-center gap-2 min-w-0">
           <p className="text-[10px] uppercase tracking-[0.2em] text-purple-300/45 flex-shrink-0">
@@ -147,48 +137,82 @@ export function WhisperRoomDM({
             {room.playerNames.join(" × ")}
           </p>
         </div>
-        {anonymous ? (
-          <span className="rounded-full border border-purple-400/25 bg-purple-400/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.2em] text-purple-200/80 flex-shrink-0">
-            Anonymous
-          </span>
-        ) : (
-          <span className="rounded-full border border-red-400/25 bg-red-400/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.2em] text-red-200/80 flex-shrink-0">
-            Live
-          </span>
-        )}
+        <span className="rounded-full border border-amber-400/25 bg-amber-400/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.2em] text-amber-200/80 flex-shrink-0">
+          Sealed
+        </span>
       </div>
 
-      <div ref={feedRef} className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
+      <div className="p-4 flex flex-col items-center justify-center gap-3 min-h-[120px]">
+        <div className="flex items-center gap-3">
+          {playerA && (
+            <AgentAvatar avatarUrl={playerA.avatarUrl} persona={playerA.persona} name={playerA.name} size="8" />
+          )}
+          <div className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-purple-400/60 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-purple-400/40 animate-pulse" style={{ animationDelay: "150ms" }} />
+            <span className="w-1.5 h-1.5 rounded-full bg-purple-400/20 animate-pulse" style={{ animationDelay: "300ms" }} />
+          </div>
+          {playerB && (
+            <AgentAvatar avatarUrl={playerB.avatarUrl} persona={playerB.persona} name={playerB.name} size="8" />
+          )}
+        </div>
+        <p className="text-xs text-white/30 italic">
+          {messageCount === 0
+            ? "Private conversation in progress..."
+            : `${messageCount} message${messageCount !== 1 ? "s" : ""} exchanged — revealed after voting`}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** Single DM-style room chat box — messages aligned left/right based on speaker. Used in replay/reveal mode. */
+export function WhisperRoomDM({
+  room,
+  players,
+}: {
+  room: WhisperRoomStage;
+  players: GamePlayer[];
+}) {
+  // First player in the room is treated as "self" (messages on right)
+  const selfId = room.playerIds[0];
+
+  return (
+    <div className="rounded-2xl border border-purple-400/20 bg-black/30 flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-purple-900/20">
+        <div className="flex items-center gap-2 min-w-0">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-purple-300/45 flex-shrink-0">
+            Room {room.roomId}
+          </p>
+          <p className="text-xs font-semibold text-white truncate">
+            {room.playerNames.join(" × ")}
+          </p>
+        </div>
+        <span className="rounded-full border border-red-400/25 bg-red-400/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.2em] text-red-200/80 flex-shrink-0">
+          Revealed
+        </span>
+      </div>
+
+      <div className="p-3 space-y-2">
         {room.messages.length === 0 ? (
-          <p className="text-xs text-white/30 italic text-center py-6">Waiting…</p>
+          <p className="text-xs text-white/30 italic text-center py-6">No messages exchanged.</p>
         ) : (
           room.messages.map((msg, idx) => {
-            const isRevealed = !anonymous || revealedIds.has(msg.id);
             const isSelf = msg.fromPlayerId === selfId;
             const player = players.find((c) => c.id === msg.fromPlayerId)
               ?? players.find((c) => c.name === msg.fromPlayerId);
-            const name = isRevealed ? (player?.name ?? msg.fromPlayerId ?? "Unknown") : "???";
-            // Alternate sides for anonymous mode since we can't use sender identity
-            const showOnRight = anonymous ? idx % 2 === 1 : isSelf;
-
-            const handleReveal = () => {
-              if (anonymous && !isRevealed) {
-                setRevealedIds((prev) => new Set(prev).add(msg.id));
-              }
-            };
+            const name = player?.name ?? msg.fromPlayerId ?? "Unknown";
+            const showOnRight = isSelf;
 
             return (
               <div
                 key={msg.id}
                 className={`flex gap-2 ${showOnRight ? "justify-end" : "justify-start"} animate-[fadeIn_0.25s_ease-out]`}
-                onClick={handleReveal}
-                role={anonymous && !isRevealed ? "button" : undefined}
-                tabIndex={anonymous && !isRevealed ? 0 : undefined}
-                onKeyDown={anonymous && !isRevealed ? (e) => { if (e.key === "Enter" || e.key === " ") handleReveal(); } : undefined}
+                style={{ animationDelay: `${idx * 200}ms` }}
               >
                 {!showOnRight && (
                   <div className="flex-shrink-0 mt-1">
-                    {isRevealed && player ? (
+                    {player ? (
                       <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />
                     ) : (
                       <span className="w-6 h-6 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>
@@ -196,11 +220,10 @@ export function WhisperRoomDM({
                   </div>
                 )}
                 <div className={`max-w-[80%] ${showOnRight ? "text-right" : "text-left"}`}>
-                  <p className={`text-[10px] mb-0.5 ${isRevealed ? "text-white/30" : "text-purple-300/40 italic"}`}>
+                  <p className="text-[10px] mb-0.5 text-white/30">
                     {name}
-                    {anonymous && !isRevealed && <span className="ml-1 text-purple-300/25">(tap to reveal)</span>}
                   </p>
-                  <div className={`rounded-2xl px-3 py-2 ${anonymous && !isRevealed ? "cursor-pointer" : ""} ${
+                  <div className={`rounded-2xl px-3 py-2 ${
                     showOnRight
                       ? "bg-purple-800/30 border border-purple-600/20 rounded-tr-sm"
                       : "bg-white/[0.06] border border-white/[0.08] rounded-tl-sm"
@@ -210,7 +233,7 @@ export function WhisperRoomDM({
                 </div>
                 {showOnRight && (
                   <div className="flex-shrink-0 mt-1">
-                    {isRevealed && player ? (
+                    {player ? (
                       <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />
                     ) : (
                       <span className="w-6 h-6 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>
@@ -300,12 +323,12 @@ export function WhisperPhaseView({
         <div className="rounded-2xl border border-purple-900/20 bg-black/20 p-8 text-center text-white/45">
           Waiting for the House to finish assigning rooms.
         </div>
-      ) : (
+      ) : isReplay ? (
         <>
-          {/* Desktop: simultaneous grid of all rooms */}
+          {/* Replay mode: show full whisper content */}
           <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-3" style={{ minHeight: "300px" }}>
             {stage.rooms.map((room) => (
-              <WhisperRoomDM key={room.roomId} room={room} players={players} anonymous={!isReplay} />
+              <WhisperRoomDM key={room.roomId} room={room} players={players} />
             ))}
             {stage.commons.length > 0 && (
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 flex flex-col items-center justify-center text-center">
@@ -317,8 +340,6 @@ export function WhisperPhaseView({
               </div>
             )}
           </div>
-
-          {/* Mobile: single room with tab buttons */}
           <div className="md:hidden">
             <div className="flex flex-wrap items-center gap-1.5 mb-3">
               {stage.rooms.map((room, idx) => (
@@ -338,7 +359,25 @@ export function WhisperPhaseView({
             </div>
             {stage.rooms[mobileRoomIndex] && (
               <div style={{ height: "300px" }}>
-                <WhisperRoomDM room={stage.rooms[mobileRoomIndex]} players={players} anonymous={!isReplay} />
+                <WhisperRoomDM room={stage.rooms[mobileRoomIndex]} players={players} />
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Live mode: whisper content is sealed — only room assignments visible */}
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {stage.rooms.map((room) => (
+              <WhisperRoomSealed key={room.roomId} room={room} players={players} />
+            ))}
+            {stage.commons.length > 0 && (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 flex flex-col items-center justify-center text-center">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-white/30 mb-2">Commons</p>
+                <p className="text-sm font-semibold text-white/60">
+                  {stage.commons.map((p) => p.name).join(", ")}
+                </p>
+                <p className="text-xs text-white/30 mt-1">No private room this round.</p>
               </div>
             )}
           </div>
