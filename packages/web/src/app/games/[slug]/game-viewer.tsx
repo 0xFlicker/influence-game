@@ -2860,10 +2860,14 @@ function DramaticReplayViewer({
   game,
   messages,
   players,
+  live = false,
+  connStatus,
 }: {
   game: GameDetail;
   messages: TranscriptEntry[];
   players: GamePlayer[];
+  live?: boolean;
+  connStatus?: "connecting" | "live" | "disconnected" | "reconnecting" | "replay";
 }) {
   const scenes = useMemo(() => buildReplayScenes(messages, players), [messages, players]);
   const [sceneIndex, setSceneIndex] = useState(0);
@@ -2877,6 +2881,7 @@ function DramaticReplayViewer({
   const seenEndgameStages = useRef<Set<string>>(new Set());
   const [controlsVisible, setControlsVisible] = useState(true);
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const liveInitializedRef = useRef(false);
 
   const scene = scenes[sceneIndex];
   const totalScenes = scenes.length;
@@ -2897,6 +2902,16 @@ function DramaticReplayViewer({
       }
     };
   }, [scenePhase]);
+
+  // Live mode: jump to latest position when scenes first appear
+  useEffect(() => {
+    if (!live || liveInitializedRef.current || totalScenes === 0) return;
+    liveInitializedRef.current = true;
+    const lastScene = scenes[totalScenes - 1]!;
+    setSceneIndex(totalScenes - 1);
+    setMessageIndex(lastScene.messages.length - 1);
+    setMessagePhase("done");
+  }, [live, totalScenes, scenes]);
 
   // Resolve current speaker
   const currentPlayer = currentMessage?.fromPlayerId
@@ -3027,14 +3042,16 @@ function DramaticReplayViewer({
           setSceneIndex((i) => i + 1);
           setMessageIndex(0);
           setMessagePhase("typing");
-        } else {
+        } else if (!live) {
           setIsPlaying(false);
         }
+        // In live mode at the end: do nothing — wait for new messages
+        // to arrive. When scenes rebuild, this effect re-runs and advances.
       }, holdMs);
       return () => clearTimeout(timer);
     }
     // "revealing" phase transitions via Typewriter onComplete
-  }, [isPlaying, messagePhase, messageIndex, sceneIndex, scene, totalScenes, speed, currentMessage, isSystemMessage]);
+  }, [isPlaying, messagePhase, messageIndex, sceneIndex, scene, totalScenes, speed, currentMessage, isSystemMessage, live]);
 
   // Advance function — for click/tap and keyboard
   const advanceMessage = useCallback(() => {
@@ -3147,8 +3164,18 @@ function DramaticReplayViewer({
 
   if (!scene || totalScenes === 0) {
     return (
-      <div className="fixed inset-0 bg-black flex items-center justify-center">
-        <p className="text-white/20 text-sm">No replay data available.</p>
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center gap-4">
+        {live ? (
+          <>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-green-400 animate-pulse" />
+              <span className="text-xs font-medium text-green-400">Live</span>
+            </div>
+            <p className="text-white/30 text-sm">Waiting for the game to begin…</p>
+          </>
+        ) : (
+          <p className="text-white/20 text-sm">No replay data available.</p>
+        )}
       </div>
     );
   }
@@ -3231,7 +3258,7 @@ function DramaticReplayViewer({
           )}
         </div>
         <div className="flex items-center gap-3">
-          <ConnectionBadge status="replay" />
+          <ConnectionBadge status={connStatus ?? "replay"} />
         </div>
       </div>
 
@@ -3320,6 +3347,15 @@ function DramaticReplayViewer({
               Click or press → to advance
             </p>
           )}
+          {/* Live: waiting for new messages */}
+          {live && isPlaying && messagePhase === "done" && sceneIndex >= totalScenes - 1 && messageIndex >= (scene?.messages.length ?? 0) - 1 && (
+            <div className="text-center mt-8 animate-pulse">
+              <div className="flex items-center justify-center gap-1.5 mb-1">
+                <span className="w-2 h-2 rounded-full bg-green-400/50 animate-pulse" />
+                <span className="text-xs text-green-400/50">Waiting for messages…</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -3353,7 +3389,7 @@ function DramaticReplayViewer({
               onClick={(e) => { e.stopPropagation(); goToEnd(); }}
               className="text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20"
             >
-              Go to End ⏭
+              {live ? "Jump to Live ⏭" : "Go to End ⏭"}
             </button>
           </div>
 
@@ -3856,14 +3892,20 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
     );
   }
 
-  // Route to dramatic replay for completed games (unless ?mode=classic)
-  const useDramaticReplay = isReplay && mode !== "classic" && messages.length > 0;
-  if (useDramaticReplay) {
+  // Route to dramatic viewer for completed games (replay) and live in_progress games
+  // (unless ?mode=classic). Waiting games skip this — they need the join UI.
+  const useDramaticViewer = mode !== "classic" && (
+    (isReplay && messages.length > 0) ||
+    (!isReplay && game.status === "in_progress")
+  );
+  if (useDramaticViewer) {
     return (
       <DramaticReplayViewer
         game={game}
         messages={messages}
         players={game.players}
+        live={!isReplay}
+        connStatus={connStatus}
       />
     );
   }
