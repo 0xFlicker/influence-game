@@ -21,7 +21,6 @@
     "hono": "^4.7.0",
     "jose": "^6.2.1",
     "openai": "^4.77.0",
-    "stripe": "^20.4.1",
     "viem": "^2.47.5"
   },
   "devDependencies": {

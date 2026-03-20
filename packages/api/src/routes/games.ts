@@ -27,13 +27,6 @@ import { generateUniqueSlug } from "../lib/slug.js";
 import { generatePersona, pickAgentNames, pickArchetypes } from "@influence/engine";
 import type { Personality } from "@influence/engine";
 import OpenAI from "openai";
-import {
-  getTierById,
-  RAKE_PERCENTAGE,
-  MAX_FREE_GAMES_PER_DAY,
-  UPGRADE_MODEL,
-  isPaymentsEnabled,
-} from "../lib/pricing.js";
 
 // ---------------------------------------------------------------------------
 // Factory — creates a Hono sub-app with injected DB
@@ -62,32 +55,10 @@ export function createGameRoutes(db: DrizzleDB) {
       visibility,
       slotType,
       viewerMode,
-      tierId,
     } = body;
 
-    // Resolve pricing tier
-    const tier = tierId ? getTierById(tierId) : null;
-    const isFreeEntry = tier ? tier.buyin === 0 : true; // Default to free if no tier
-
-    // Enforce daily free game limit
-    if (isFreeEntry) {
-      const todayStart = new Date();
-      todayStart.setUTCHours(0, 0, 0, 0);
-      const freeGamesToday = db
-        .select({ id: schema.games.id, createdAt: schema.games.createdAt })
-        .from(schema.games)
-        .where(eq(schema.games.freeEntry, 1))
-        .all()
-        .filter((g) => new Date(g.createdAt) >= todayStart);
-
-      if (freeGamesToday.length >= MAX_FREE_GAMES_PER_DAY) {
-        return c.json({ error: `Daily free game limit reached (${MAX_FREE_GAMES_PER_DAY})` }, 429);
-      }
-    }
-
     const minPlayers = 4;
-    const resolvedMaxPlayers = tier ? tier.maxSlots : (playerCount ?? 12);
-    const maxPlayers = resolvedMaxPlayers;
+    const maxPlayers = playerCount ?? 12;
 
     // Build GameConfig (engine-compatible)
     const timerPresets: Record<string, Record<string, number>> = {
@@ -132,10 +103,7 @@ export function createGameRoutes(db: DrizzleDB) {
       ? viewerMode
       : "speedrun"; // Default for admin-created games
 
-    // Resolve model tier from pricing tier or explicit override
-    const resolvedModelTier = tier
-      ? (tier.model === "gpt-4o" ? "premium" : tier.model === "gpt-5" ? "showcase" : "budget")
-      : (modelTier ?? "budget");
+    const resolvedModelTier = modelTier ?? "budget";
 
     const config = {
       timers,
@@ -167,12 +135,6 @@ export function createGameRoutes(db: DrizzleDB) {
         minPlayers,
         maxPlayers,
         createdById: user?.id ?? null,
-        tierId: tier?.id ?? null,
-        buyInAmount: tier ? tier.buyin : null,
-        prizePool: 0,
-        rakeAmount: 0,
-        payoutStatus: tier && tier.buyin > 0 ? "none" : null,
-        freeEntry: isFreeEntry ? 1 : 0,
       })
       .run();
 
@@ -237,11 +199,6 @@ export function createGameRoutes(db: DrizzleDB) {
         viewerMode: config.viewerMode ?? "speedrun",
         winner: winnerPlayer ? JSON.parse(winnerPlayer.persona).name : undefined,
         errorInfo: config.errorInfo ?? undefined,
-        // Buy-in info
-        tierId: game.tierId ?? undefined,
-        buyInCents: game.buyInAmount ?? undefined,
-        prizePoolCents: game.prizePool ?? undefined,
-        freeEntry: game.freeEntry === 1,
         createdAt: game.createdAt,
         startedAt: game.startedAt ?? undefined,
         completedAt: game.endedAt ?? undefined,
@@ -327,20 +284,12 @@ export function createGameRoutes(db: DrizzleDB) {
           status: "alive" as const,
           shielded: false,
           avatarUrl,
-          upgraded: p.modelUpgrade === 1,
         };
       }),
       modelTier: config.modelTier ?? "budget",
       visibility: config.visibility ?? "public",
       viewerMode: config.viewerMode ?? "speedrun",
       winner: winnerPlayer ? JSON.parse(winnerPlayer.persona).name : undefined,
-      // Buy-in info
-      tierId: game.tierId ?? undefined,
-      buyInCents: game.buyInAmount ?? undefined,
-      prizePoolCents: game.prizePool ?? undefined,
-      rakeAmountCents: game.rakeAmount ?? undefined,
-      payoutStatus: game.payoutStatus ?? undefined,
-      freeEntry: game.freeEntry === 1,
       createdAt: game.createdAt,
       startedAt: game.startedAt ?? undefined,
       completedAt: game.endedAt ?? undefined,
@@ -385,85 +334,9 @@ export function createGameRoutes(db: DrizzleDB) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
 
-    const { agentName, personality, strategyHints, personaKey, agentProfileId, paymentId, modelUpgrade } = body;
+    const { agentName, personality, strategyHints, personaKey, agentProfileId } = body;
 
     const joinUser = c.get("user");
-
-    // -----------------------------------------------------------------------
-    // Buy-in gate: verify payment if game requires buy-in
-    // Skip when payments are disabled or user is admin
-    // -----------------------------------------------------------------------
-    const adminAddress = process.env.ADMIN_ADDRESS?.toLowerCase();
-    const isAdmin = !!(joinUser?.walletAddress && adminAddress && joinUser.walletAddress.toLowerCase() === adminAddress);
-    const requiresBuyIn =
-      game.buyInAmount != null &&
-      game.buyInAmount > 0 &&
-      game.freeEntry !== 1 &&
-      isPaymentsEnabled() &&
-      !isAdmin;
-    let resolvedPaymentId: string | null = null;
-
-    if (requiresBuyIn) {
-      if (!paymentId) {
-        return c.json(
-          { error: "This game requires a buy-in. Provide a paymentId from a confirmed payment." },
-          402,
-        );
-      }
-
-      const payment = db
-        .select()
-        .from(schema.payments)
-        .where(eq(schema.payments.id, paymentId))
-        .all()[0];
-
-      if (!payment) {
-        return c.json({ error: "Payment not found" }, 404);
-      }
-
-      if (payment.status !== "confirmed") {
-        return c.json({ error: "Payment is not confirmed" }, 400);
-      }
-
-      if (payment.userId !== joinUser?.id) {
-        return c.json({ error: "Payment does not belong to you" }, 403);
-      }
-
-      // Check payment hasn't already been used for another game slot
-      const alreadyUsed = db
-        .select({ id: schema.gamePlayers.id })
-        .from(schema.gamePlayers)
-        .where(eq(schema.gamePlayers.paymentId, paymentId))
-        .all()[0];
-
-      if (alreadyUsed) {
-        return c.json({ error: "Payment has already been used to join a game" }, 409);
-      }
-
-      // Verify payment amount covers buy-in (allow 1% tolerance for currency conversion)
-      const buyInCents = game.buyInAmount!;
-      const buyInDollars = buyInCents / 100;
-      if (payment.amount < buyInDollars * 0.99) {
-        return c.json(
-          { error: `Insufficient payment: paid $${payment.amount.toFixed(2)}, required $${buyInDollars.toFixed(2)}` },
-          400,
-        );
-      }
-
-      resolvedPaymentId = paymentId;
-
-      // Update prize pool and rake
-      const rake = buyInCents * RAKE_PERCENTAGE;
-      const prizeContribution = buyInCents - rake;
-
-      db.update(schema.games)
-        .set({
-          prizePool: (game.prizePool ?? 0) + prizeContribution,
-          rakeAmount: (game.rakeAmount ?? 0) + rake,
-        })
-        .where(eq(schema.games.id, gameId))
-        .run();
-    }
 
     // -----------------------------------------------------------------------
     // Resolve agent identity
@@ -503,17 +376,15 @@ export function createGameRoutes(db: DrizzleDB) {
     }
 
     // -----------------------------------------------------------------------
-    // Resolve model (with optional premium upgrade)
+    // Resolve model from game config
     // -----------------------------------------------------------------------
     const gameConfig = JSON.parse(game.config);
-    const isUpgraded = modelUpgrade === true && requiresBuyIn;
-    const baseModel =
+    const agentModel =
       gameConfig.modelTier === "premium"
         ? "gpt-4o"
         : gameConfig.modelTier === "standard"
           ? "gpt-4o"
           : "gpt-4o-mini";
-    const agentModel = isUpgraded ? UPGRADE_MODEL : baseModel;
 
     const playerId = randomUUID();
     const persona = {
@@ -534,14 +405,12 @@ export function createGameRoutes(db: DrizzleDB) {
         gameId,
         userId: joinUser?.id ?? null,
         agentProfileId: resolvedProfileId,
-        paymentId: resolvedPaymentId,
-        modelUpgrade: isUpgraded ? 1 : 0,
         persona: JSON.stringify(persona),
         agentConfig: JSON.stringify(agentConfig),
       })
       .run();
 
-    return c.json({ playerId, upgraded: isUpgraded }, 201);
+    return c.json({ playerId }, 201);
   });
 
   // -------------------------------------------------------------------------

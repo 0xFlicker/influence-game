@@ -24,7 +24,6 @@ import type {
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { isPaymentsEnabled } from "../lib/pricing.js";
 import { broadcastGameEvent } from "./ws-manager.js";
 import { ViewerEventPacer } from "./viewer-event-pacer.js";
 
@@ -290,65 +289,6 @@ async function runGameAsync(
       .where(eq(schema.games.id, gameId))
       .run();
 
-    // Trigger winner payout if game has a prize pool and payments are configured
-    const gameRecord = db
-      .select()
-      .from(schema.games)
-      .where(eq(schema.games.id, gameId))
-      .all()[0];
-
-    if (
-      gameRecord &&
-      gameRecord.prizePool != null &&
-      gameRecord.prizePool > 0 &&
-      result.winner &&
-      isPaymentsEnabled()
-    ) {
-      // Find the winning player's user ID
-      const winnerPlayer = db
-        .select()
-        .from(schema.gamePlayers)
-        .where(eq(schema.gamePlayers.id, result.winner))
-        .all()[0];
-
-      if (winnerPlayer?.userId) {
-        // Find the winner's payment to determine payout method
-        const winnerPayment = winnerPlayer.paymentId
-          ? db
-              .select()
-              .from(schema.payments)
-              .where(eq(schema.payments.id, winnerPlayer.paymentId))
-              .all()[0]
-          : null;
-
-        const payoutMethod = winnerPayment?.method ?? "stripe";
-        const payoutCurrency = winnerPayment?.currency ?? "usd";
-        const payoutAmount = gameRecord.prizePool / 100; // Convert cents to dollars
-
-        // Create payout record
-        db.insert(schema.payouts)
-          .values({
-            id: randomUUID(),
-            userId: winnerPlayer.userId,
-            gameId,
-            amount: payoutAmount,
-            currency: payoutCurrency,
-            method: payoutMethod,
-            status: "pending",
-          })
-          .run();
-
-        // Update game payout status
-        db.update(schema.games)
-          .set({ payoutStatus: "pending" })
-          .where(eq(schema.games.id, gameId))
-          .run();
-
-        console.log(
-          `[game-lifecycle] Payout created for game ${gameId}: $${payoutAmount.toFixed(2)} to user ${winnerPlayer.userId}`,
-        );
-      }
-    }
   } catch (err) {
     // Game failed — mark as cancelled and store error reason in config
     const errorMessage = err instanceof Error ? err.message : String(err);

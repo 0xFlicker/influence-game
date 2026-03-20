@@ -14,9 +14,7 @@ import { seedRBAC } from "./db/rbac-seed.js";
 import { createGameRoutes } from "./routes/games.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
-import { createPaymentRoutes } from "./routes/payments.js";
 import { createAdminRoutes } from "./routes/admin.js";
-import { isPaymentsEnabled } from "./lib/pricing.js";
 import { getGameSnapshot } from "./services/game-lifecycle.js";
 import {
   setServer,
@@ -136,9 +134,7 @@ app.get("/health", (c) => {
 
 // Public config — exposes feature flags for the frontend
 app.get("/api/config", (c) => {
-  return c.json({
-    paymentsEnabled: isPaymentsEnabled(),
-  });
+  return c.json({});
 });
 
 // Root
@@ -151,8 +147,7 @@ app.get("/", (c) => {
       config: "/api/config",
       auth: "/api/auth",
       games: "/api/games",
-      payments: "/api/payments",
-      pricing: "/api/games/pricing",
+      admin: "/api/admin",
       ws: "/ws/games/:id",
     },
   });
@@ -169,10 +164,6 @@ app.route("/", gameRoutes);
 // Agent profile routes
 const agentProfileRoutes = createAgentProfileRoutes(db);
 app.route("/", agentProfileRoutes);
-
-// Payment routes
-const paymentRoutes = createPaymentRoutes(db);
-app.route("/", paymentRoutes);
 
 // Admin RBAC routes
 const adminRoutes = createAdminRoutes(db);
