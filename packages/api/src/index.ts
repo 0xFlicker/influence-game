@@ -72,22 +72,31 @@ const db = createDB(dbPath);
 // ---------------------------------------------------------------------------
 
 const orphanedGames = db
-  .select({ id: schema.games.id })
+  .select({ id: schema.games.id, startedAt: schema.games.startedAt })
   .from(schema.games)
   .where(eq(schema.games.status, "in_progress"))
   .all();
 
 if (orphanedGames.length > 0) {
-  const now = new Date().toISOString();
-  console.warn(
-    `[startup] Found ${orphanedGames.length} orphaned in_progress game(s) — resetting to cancelled`,
-  );
+  const now = new Date();
+  const GRACE_PERIOD_MS = 10 * 60 * 1000; // 10 minutes
+
   for (const game of orphanedGames) {
+    const startedAt = game.startedAt ? new Date(game.startedAt).getTime() : 0;
+    const ageMs = now.getTime() - startedAt;
+
+    if (ageMs < GRACE_PERIOD_MS) {
+      console.warn(
+        `[startup] Skipping recent in_progress game ${game.id} (started ${Math.round(ageMs / 1000)}s ago — may still be finishing)`,
+      );
+      continue;
+    }
+
     db.update(schema.games)
-      .set({ status: "cancelled" as const, endedAt: now })
+      .set({ status: "cancelled" as const, endedAt: now.toISOString() })
       .where(eq(schema.games.id, game.id))
       .run();
-    console.warn(`[startup]   cancelled orphaned game ${game.id}`);
+    console.warn(`[startup] Cancelled orphaned game ${game.id} (started ${Math.round(ageMs / 1000)}s ago)`);
   }
 }
 
