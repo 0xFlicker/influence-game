@@ -108,7 +108,7 @@ export class MockAgent implements IAgent {
     return `${this.name} here — well played, everyone. See you on the other side.`;
   }
 
-  async getDiaryEntry(_ctx: PhaseContext, question: string): Promise<string> {
+  async getDiaryEntry(_ctx: PhaseContext, question: string, _sessionHistory?: Array<{ question: string; answer: string }>): Promise<string> {
     return `[Diary Room] The House asked: "${question}" — My thoughts: staying the course, watching the others carefully. Trust is earned, not given.`;
   }
 

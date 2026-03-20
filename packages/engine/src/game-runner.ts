@@ -76,7 +76,7 @@ export interface IAgent {
   /** Called when the agent is about to be eliminated */
   getLastMessage(context: PhaseContext): Promise<string>;
   /** Called for diary room interviews — the House asks a question, agent responds */
-  getDiaryEntry(context: PhaseContext, question: string): Promise<string>;
+  getDiaryEntry(context: PhaseContext, question: string, sessionHistory?: Array<{ question: string; answer: string }>): Promise<string>;
 
   // --- Endgame methods ---
   /** Reckoning: public plea to the group */
@@ -1275,28 +1275,7 @@ export class GameRunner {
     // Interview alive players sequentially so each agent's Q&A is emitted
     // together before moving to the next (avoids interleaved ordering).
     for (const player of alivePlayers) {
-      const agent = this.agents.get(player.id)!;
-      const diaryContext = this.buildDiaryRoomContext(precedingPhase, player.name);
-      const question = await this.houseInterviewer.generateQuestion(diaryContext);
-      const ctx = this.buildPhaseContext(player.id, Phase.DIARY_ROOM);
-
-      // Log the House's question
-      this.logDiary(`House -> ${player.name}`, question);
-
-      const answer = await agent.getDiaryEntry(ctx, question);
-
-      // Log the agent's response
-      this.logDiary(player.name, answer);
-
-      // Store structured diary entry
-      this.diaryEntries.push({
-        round: this.gameState.round,
-        precedingPhase,
-        agentId: player.id,
-        agentName: player.name,
-        question,
-        answer,
-      });
+      await this.runDiaryInterview(precedingPhase, player.id, player.name, false);
     }
 
     // During Judgment phases, also interview jury members sequentially
@@ -1304,24 +1283,78 @@ export class GameRunner {
       for (const juror of this.gameState.jury) {
         const agent = this.agents.get(juror.playerId);
         if (!agent) continue;
-
-        const diaryContext = this.buildDiaryRoomContext(precedingPhase, juror.playerName);
-        const question = await this.houseInterviewer.generateQuestion(diaryContext);
-        const ctx = this.buildPhaseContext(juror.playerId, Phase.DIARY_ROOM, undefined, true);
-
-        this.logDiary(`House -> ${juror.playerName} (juror)`, question);
-        const answer = await agent.getDiaryEntry(ctx, question);
-        this.logDiary(`${juror.playerName} (juror)`, answer);
-
-        this.diaryEntries.push({
-          round: this.gameState.round,
-          precedingPhase,
-          agentId: juror.playerId,
-          agentName: juror.playerName,
-          question,
-          answer,
-        });
+        await this.runDiaryInterview(precedingPhase, juror.playerId, juror.playerName, true);
       }
+    }
+  }
+
+  /**
+   * Run a single diary room interview session with one player.
+   * The House asks 1-4 questions, probing deeper based on answers.
+   * The session ends when the House decides to close or 4 questions are reached.
+   */
+  private async runDiaryInterview(
+    precedingPhase: Phase,
+    playerId: UUID,
+    playerName: string,
+    isJuror: boolean,
+  ): Promise<void> {
+    const MAX_QUESTIONS = 4;
+    const agent = this.agents.get(playerId)!;
+    const label = isJuror ? `${playerName} (juror)` : playerName;
+    const houseLabel = isJuror ? `House -> ${playerName} (juror)` : `House -> ${playerName}`;
+
+    const diaryContext = this.buildDiaryRoomContext(precedingPhase, playerName);
+    const sessionExchanges: Array<{ question: string; answer: string }> = [];
+
+    // First question
+    const firstQuestion = await this.houseInterviewer.generateQuestion(diaryContext);
+    this.logDiary(houseLabel, firstQuestion);
+
+    const ctx = this.buildPhaseContext(playerId, Phase.DIARY_ROOM, undefined, isJuror || undefined);
+    const firstAnswer = await agent.getDiaryEntry(ctx, firstQuestion, sessionExchanges);
+    this.logDiary(label, firstAnswer);
+
+    sessionExchanges.push({ question: firstQuestion, answer: firstAnswer });
+    this.diaryEntries.push({
+      round: this.gameState.round,
+      precedingPhase,
+      agentId: playerId,
+      agentName: playerName,
+      question: firstQuestion,
+      answer: firstAnswer,
+    });
+
+    // Follow-up loop: House decides whether to probe further (up to MAX_QUESTIONS total)
+    for (let i = 1; i < MAX_QUESTIONS; i++) {
+      const updatedContext = this.buildDiaryRoomContext(precedingPhase, playerName);
+      const result = await this.houseInterviewer.generateFollowUpOrClose(updatedContext, sessionExchanges);
+
+      if (result.type === "close") {
+        this.logDiary(houseLabel, result.message);
+        break;
+      }
+
+      // Ask the follow-up question
+      this.logDiary(houseLabel, result.question);
+
+      const followUpAnswer = await agent.getDiaryEntry(ctx, result.question, sessionExchanges);
+      this.logDiary(label, followUpAnswer);
+
+      sessionExchanges.push({ question: result.question, answer: followUpAnswer });
+      this.diaryEntries.push({
+        round: this.gameState.round,
+        precedingPhase,
+        agentId: playerId,
+        agentName: playerName,
+        question: result.question,
+        answer: followUpAnswer,
+      });
+    }
+
+    // If we hit MAX_QUESTIONS without the House closing, add a closing message
+    if (sessionExchanges.length >= MAX_QUESTIONS) {
+      this.logDiary(houseLabel, `That's enough for now, ${playerName}. The House sees everything.`);
     }
   }
 

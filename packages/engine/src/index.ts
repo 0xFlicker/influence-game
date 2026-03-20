@@ -33,7 +33,7 @@ export type { Personality } from "./agent";
 
 // House interviewer
 export { LLMHouseInterviewer, TemplateHouseInterviewer } from "./house-interviewer";
-export type { IHouseInterviewer, DiaryRoomContext } from "./house-interviewer";
+export type { IHouseInterviewer, DiaryRoomContext, FollowUpResult } from "./house-interviewer";
 
 // Persona generator
 export { generatePersona, pickAgentNames, pickArchetypes } from "./persona-generator";

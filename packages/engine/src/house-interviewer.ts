@@ -43,9 +43,19 @@ export interface DiaryRoomContext {
 // Interface
 // ---------------------------------------------------------------------------
 
+/** Result from the House deciding whether to ask another question or wrap up. */
+export type FollowUpResult =
+  | { type: "question"; question: string }
+  | { type: "close"; message: string };
+
 export interface IHouseInterviewer {
-  /** Generate a diary room interview question for an agent */
+  /** Generate the first diary room interview question for an agent */
   generateQuestion(context: DiaryRoomContext): Promise<string>;
+  /** Decide whether to ask a follow-up or close the session. */
+  generateFollowUpOrClose(
+    context: DiaryRoomContext,
+    conversationSoFar: Array<{ question: string; answer: string }>,
+  ): Promise<FollowUpResult>;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,7 +74,7 @@ Your personality:
 - You address each player by name and tailor your question to THEIR specific situation
 
 Rules:
-- Ask exactly ONE question (can be multi-part)
+- Ask ONE question at a time (can be multi-part)
 - Keep it to 1-2 sentences
 - Make it specific to what just happened — reference actual player names, quotes, and events
 - NEVER ask generic questions like "what's on your mind?" or "what's your strategy?"
@@ -113,6 +123,73 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     if (question && question.length > 0) return question;
 
     return `${context.agentName}, what's on your mind right now?`;
+  }
+
+  async generateFollowUpOrClose(
+    context: DiaryRoomContext,
+    conversationSoFar: Array<{ question: string; answer: string }>,
+  ): Promise<FollowUpResult> {
+    const gameStatePrompt = this.buildGameStatePrompt(context);
+    const exchangeCount = conversationSoFar.length;
+
+    const convoText = conversationSoFar
+      .map((e, i) => `  Q${i + 1}: "${e.question}"\n  A${i + 1}: "${e.answer}"`)
+      .join("\n");
+
+    const followUpPrompt = `${gameStatePrompt}
+
+## This Session's Conversation So Far (${exchangeCount} exchanges)
+${convoText}
+
+## Your Decision
+You have asked ${exchangeCount} question(s) so far this session. You may ask up to 4 total.
+Decide: should you ask ANOTHER follow-up question, or wrap up the session?
+
+Ask another question if:
+- The player revealed something juicy that deserves deeper probing
+- You noticed a contradiction between what they said and what you know
+- There is an important strategic angle you haven't explored yet
+- You haven't asked enough to get a real confessional moment
+
+Wrap up if:
+- You've gotten good material from this player (entertaining, revealing answers)
+- The player is being evasive and another question won't help
+- You've covered the key angles for this phase
+- You've asked 3+ questions already
+
+Respond with EXACTLY one of these formats:
+FOLLOW_UP: <your next question>
+CLOSE: <your brief closing remark to the player, 1 sentence>`;
+
+    const response = await this.openai.chat.completions.create({
+      model: this.model,
+      messages: [
+        { role: "system", content: HOUSE_PERSONALITY },
+        { role: "user", content: followUpPrompt },
+      ],
+      max_tokens: 200,
+      temperature: 0.8,
+    });
+
+    if (this.tokenTracker && response.usage) {
+      this.tokenTracker.record(
+        "House",
+        response.usage.prompt_tokens,
+        response.usage.completion_tokens,
+      );
+    }
+
+    const raw = response.choices[0]?.message?.content?.trim() ?? "";
+
+    if (raw.startsWith("FOLLOW_UP:")) {
+      return { type: "question", question: raw.slice("FOLLOW_UP:".length).trim() };
+    }
+    if (raw.startsWith("CLOSE:")) {
+      return { type: "close", message: raw.slice("CLOSE:".length).trim() };
+    }
+
+    // If the LLM didn't follow the format, treat as a close
+    return { type: "close", message: raw || `Thank you, ${context.agentName}. The House sees all.` };
   }
 
   private buildGameStatePrompt(context: DiaryRoomContext): string {
@@ -205,6 +282,14 @@ Ask ${agentName} a sharp, specific diary room question about THEIR situation rig
 // ---------------------------------------------------------------------------
 
 export class TemplateHouseInterviewer implements IHouseInterviewer {
+  async generateFollowUpOrClose(
+    context: DiaryRoomContext,
+    _conversationSoFar: Array<{ question: string; answer: string }>,
+  ): Promise<FollowUpResult> {
+    // Template interviewer always wraps up after the first question
+    return { type: "close", message: `Interesting, ${context.agentName}. The House will be watching.` };
+  }
+
   async generateQuestion(context: DiaryRoomContext): Promise<string> {
     const { precedingPhase, round, agentName, alivePlayers, lastEliminated, councilCandidates } = context;
 
