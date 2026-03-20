@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34D399"/>
+      <stop offset="100%" stop-color="#065F46"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="64" fill="url(#bg)"/>
+  <g transform="translate(64,64)" fill="white" opacity="0.95">
+    <!-- Olive branch / peace branch -->
+    <path d="M0,28 C0,28 -2,10 -4,-4 C-5,-12 -3,-22 0,-28" stroke="white" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <!-- Leaves -->
+    <ellipse cx="-10" cy="-14" rx="8" ry="4" transform="rotate(-40,-10,-14)" fill="white" opacity="0.85"/>
+    <ellipse cx="8" cy="-8" rx="8" ry="4" transform="rotate(30,8,-8)" fill="white" opacity="0.85"/>
+    <ellipse cx="-8" cy="0" rx="7" ry="3.5" transform="rotate(-35,-8,0)" fill="white" opacity="0.7"/>
+    <ellipse cx="6" cy="6" rx="7" ry="3.5" transform="rotate(25,6,6)" fill="white" opacity="0.7"/>
+    <ellipse cx="-6" cy="14" rx="6" ry="3" transform="rotate(-30,-6,14)" fill="white" opacity="0.55"/>
+    <ellipse cx="4" cy="18" rx="6" ry="3" transform="rotate(20,4,18)" fill="white" opacity="0.55"/>
+  </g>
+</svg>

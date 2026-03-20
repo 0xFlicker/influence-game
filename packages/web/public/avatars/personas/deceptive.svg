@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#DC2626"/>
+      <stop offset="100%" stop-color="#450A0A"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="64" fill="url(#bg)"/>
+  <g transform="translate(64,64)" fill="white" opacity="0.95">
+    <!-- Theater masks - happy/sad -->
+    <!-- Happy mask -->
+    <g transform="translate(-10,-4) rotate(-8)">
+      <path d="M-14,-16 C-14,-16 -14,-6 0,-6 C14,-6 14,-16 14,-16 C14,-24 8,-28 0,-28 C-8,-28 -14,-24 -14,-16Z" fill="white"/>
+      <circle cx="-5" cy="-18" r="2" fill="#450A0A"/>
+      <circle cx="5" cy="-18" r="2" fill="#450A0A"/>
+      <path d="M-5,-12 C-5,-10 -2,-8 0,-8 C2,-8 5,-10 5,-12" stroke="#450A0A" stroke-width="1.5" fill="none"/>
+    </g>
+    <!-- Sad mask -->
+    <g transform="translate(10,6) rotate(8)">
+      <path d="M-14,-16 C-14,-16 -14,-6 0,-6 C14,-6 14,-16 14,-16 C14,-24 8,-28 0,-28 C-8,-28 -14,-24 -14,-16Z" fill="white" opacity="0.75"/>
+      <circle cx="-5" cy="-18" r="2" fill="#450A0A"/>
+      <circle cx="5" cy="-18" r="2" fill="#450A0A"/>
+      <path d="M-5,-10 C-5,-12 -2,-14 0,-14 C2,-14 5,-12 5,-10" stroke="#450A0A" stroke-width="1.5" fill="none"/>
+    </g>
+  </g>
+</svg>

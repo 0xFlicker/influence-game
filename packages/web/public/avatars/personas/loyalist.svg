@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FBBF24"/>
+      <stop offset="100%" stop-color="#B45309"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="64" fill="url(#bg)"/>
+  <g transform="translate(64,66)" fill="white" opacity="0.95">
+    <!-- Shield -->
+    <path d="M0,-30 L22,-20 L22,2 C22,18 12,26 0,32 C-12,26 -22,18 -22,2 L-22,-20Z"/>
+    <!-- Shield inner detail - star -->
+    <path d="M0,-14 L4,-4 L14,-4 L6,2 L8,12 L0,6 L-8,12 L-6,2 L-14,-4 L-4,-4Z" fill="#B45309" opacity="0.8"/>
+  </g>
+</svg>

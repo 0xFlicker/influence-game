@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#EF4444"/>
+      <stop offset="100%" stop-color="#7F1D1D"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="64" fill="url(#bg)"/>
+  <g transform="translate(64,64)" fill="white" opacity="0.95">
+    <!-- Crossed swords -->
+    <g transform="rotate(-30)">
+      <rect x="-2" y="-30" width="4" height="44" rx="1"/>
+      <rect x="-8" y="10" width="16" height="4" rx="2"/>
+      <path d="M-2,-30 L0,-36 L2,-30Z"/>
+    </g>
+    <g transform="rotate(30)">
+      <rect x="-2" y="-30" width="4" height="44" rx="1"/>
+      <rect x="-8" y="10" width="16" height="4" rx="2"/>
+      <path d="M-2,-30 L0,-36 L2,-30Z"/>
+    </g>
+    <!-- Spark at cross -->
+    <circle cx="0" cy="-6" r="3" fill="white" opacity="0.6"/>
+  </g>
+</svg>

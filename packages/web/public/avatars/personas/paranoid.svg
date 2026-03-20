@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#92400E"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="64" fill="url(#bg)"/>
+  <g transform="translate(64,64)" fill="white" opacity="0.95">
+    <!-- All-seeing eye -->
+    <path d="M-30,0 C-30,0 -15,-20 0,-20 C15,-20 30,0 30,0 C30,0 15,20 0,20 C-15,20 -30,0 -30,0Z" fill="white"/>
+    <circle cx="0" cy="0" r="12" fill="#92400E"/>
+    <circle cx="0" cy="0" r="6" fill="#1C1917"/>
+    <circle cx="2" cy="-2" r="2" fill="white" opacity="0.8"/>
+    <!-- Radiating lines -->
+    <g stroke="white" stroke-width="1.5" opacity="0.4">
+      <line x1="0" y1="-24" x2="0" y2="-30"/>
+      <line x1="16" y1="-18" x2="20" y2="-23"/>
+      <line x1="-16" y1="-18" x2="-20" y2="-23"/>
+      <line x1="24" y1="-8" x2="30" y2="-10"/>
+      <line x1="-24" y1="-8" x2="-30" y2="-10"/>
+    </g>
+  </g>
+</svg>
