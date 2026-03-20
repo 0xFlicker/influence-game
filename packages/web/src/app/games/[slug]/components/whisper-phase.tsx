@@ -252,7 +252,7 @@ export function WhisperPhaseView({
   }, [phaseKey]);
 
   return (
-    <div className="border influence-glass rounded-panel flex-1 overflow-y-auto p-4 md:p-6 min-h-[420px] max-h-[600px]">
+    <div className="flex-1 overflow-y-auto p-4 md:p-6">
       <div className="text-center mb-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-purple-300/70 mb-1">
           Whisper Rooms

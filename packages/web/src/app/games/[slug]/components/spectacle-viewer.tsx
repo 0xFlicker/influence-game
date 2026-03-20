@@ -91,7 +91,7 @@ export function SpectacleMessageSpotlight({
 }) {
   if (!message) {
     return (
-      <div className="flex-1 flex items-center justify-center min-h-[350px]">
+      <div className="flex-1 flex items-center justify-center ">
         <p className="text-white/15 text-sm animate-pulse">Waiting for the next move…</p>
       </div>
     );
@@ -107,7 +107,7 @@ export function SpectacleMessageSpotlight({
   const isElimination = message.scope === "system" && message.text.includes("has been eliminated");
 
   return (
-    <div className="flex-1 flex items-center justify-center min-h-[350px] px-6 py-8">
+    <div className="flex-1 flex items-center justify-center  px-6 py-8">
       <div className="max-w-2xl w-full">
         {/* Typing indicator */}
         {phase === "typing" && !isSystem && (

@@ -189,7 +189,7 @@ export function DiaryRoomPanel({
 }) {
   if (!isAuthenticated && !isReplay) {
     return (
-      <div className="border border-purple-900/30 bg-purple-950/10 rounded-xl p-12 text-center min-h-[420px] flex flex-col items-center justify-center">
+      <div className="border border-purple-900/30 bg-purple-950/10 p-12 text-center flex-1 flex flex-col items-center justify-center">
         <p className="text-3xl mb-4">📓</p>
         <p className="text-white/60 font-medium mb-2">Diary Room is locked</p>
         <p className="text-white/30 text-xs leading-relaxed max-w-xs">
@@ -203,7 +203,7 @@ export function DiaryRoomPanel({
 
   if (diaryMessages.length === 0) {
     return (
-      <div className="border border-purple-900/30 bg-purple-950/10 rounded-xl p-12 text-center text-purple-300/30 text-sm min-h-[420px] flex items-center justify-center">
+      <div className="border border-purple-900/30 bg-purple-950/10 p-12 text-center text-purple-300/30 text-sm flex-1 flex items-center justify-center">
         No diary entries yet.
       </div>
     );
@@ -212,7 +212,7 @@ export function DiaryRoomPanel({
   const grouped = groupMessages(diaryMessages);
 
   return (
-    <div className="border border-purple-900/30 bg-purple-950/10 rounded-xl flex-1 overflow-y-auto p-4 space-y-3 min-h-[420px] max-h-[600px]">
+    <div className="border border-purple-900/30 bg-purple-950/10 flex-1 overflow-y-auto p-4 space-y-3">
       {grouped.map((item, idx) => {
         if (item.kind === "diary_pair") {
           return (
@@ -357,7 +357,7 @@ export function DiaryRoomGridView({
   const [mobileRoomIndex, setMobileRoomIndex] = useState(0);
 
   return (
-    <div className="border influence-glass rounded-panel flex-1 overflow-y-auto p-4 md:p-6 min-h-[420px] max-h-[600px]">
+    <div className="flex-1 overflow-y-auto p-4 md:p-6">
       <div className="text-center mb-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-purple-300/70 mb-1">
           Diary Rooms

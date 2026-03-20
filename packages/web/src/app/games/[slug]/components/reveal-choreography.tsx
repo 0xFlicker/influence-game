@@ -80,7 +80,7 @@ export function RevealModeView({
   return (
     <div
       ref={feedRef}
-      className="border border-pink-900/20 bg-pink-950/5 rounded-xl flex-1 overflow-y-auto p-6 min-h-[420px] max-h-[600px] space-y-4"
+      className="border border-pink-900/20 bg-pink-950/5 flex-1 overflow-y-auto p-6 space-y-4"
     >
       {shown.length === 0 && (
         <div className="text-center mt-16">

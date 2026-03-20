@@ -29,7 +29,7 @@ export function GroupChatFeed({
   return (
     <div
       ref={feedRef}
-      className="influence-glass rounded-panel flex-1 overflow-y-auto p-4 md:p-6 min-h-[420px] max-h-[600px]"
+      className="flex-1 overflow-y-auto p-4 md:p-6"
     >
       {messages.length === 0 ? (
         <div className="flex items-center justify-center h-full">
@@ -70,7 +70,7 @@ export function JuryDMView({
   return (
     <div
       ref={feedRef}
-      className="influence-glass rounded-panel flex-1 overflow-y-auto p-4 md:p-6 min-h-[420px] max-h-[600px]"
+      className="flex-1 overflow-y-auto p-4 md:p-6"
     >
       <div className="text-center mb-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-amber-300/70 mb-1">

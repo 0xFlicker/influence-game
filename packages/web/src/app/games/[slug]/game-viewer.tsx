@@ -630,7 +630,7 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
       )}
 
     {/* ── Mobile layout (<768px) — 4-tab view with bottom tab bar ── */}
-    <div className="md:hidden flex flex-col min-h-0 pb-16">
+    <div className="md:hidden flex flex-col h-[calc(100dvh-4rem)] pb-16 overflow-hidden">
       <PhaseHeader game={replayGame} isReplay={isReplay} />
 
       {/* Join banner — shown when game is waiting for players */}
@@ -699,7 +699,7 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
       {mobileTab === "chat" && isReplay && (
         <div
           ref={feedRef}
-          className="influence-glass rounded-panel overflow-y-auto p-4 space-y-3 min-h-[380px] max-h-[60vh]"
+          className="flex-1 overflow-y-auto p-4 space-y-3"
         >
           {visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper")
             .length === 0 ? (
@@ -752,7 +752,7 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
 
       {/* Mobile Votes tab — placeholder for V2 vote tracker */}
       {mobileTab === "votes" && (
-        <div className="influence-glass rounded-panel p-12 text-center text-white/20 text-sm min-h-[380px] flex items-center justify-center">
+        <div className="flex-1 p-12 text-center text-white/20 text-sm flex items-center justify-center">
           <p>Vote tracker coming soon</p>
         </div>
       )}
@@ -806,9 +806,9 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
     </div>
 
     {/* ── Desktop layout (≥768px) — 2-column grid ── */}
-    <div className="hidden md:grid md:grid-cols-[1fr_240px] gap-4">
+    <div className="hidden md:grid md:grid-cols-[1fr_240px] gap-4 h-[calc(100dvh-2rem)] overflow-hidden">
       {/* Left: main feed + diary room panel */}
-      <div className="flex flex-col min-h-0">
+      <div className="flex flex-col min-h-0 overflow-hidden">
         {/* Phase header */}
         <PhaseHeader game={replayGame} isReplay={isReplay} />
 
@@ -930,7 +930,7 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
         {activeTab === "stage" && isReplay && (
           <div
             ref={feedRef}
-            className="influence-glass rounded-panel flex-1 overflow-y-auto p-4 space-y-3 min-h-[420px] max-h-[600px]"
+            className="flex-1 overflow-y-auto p-4 space-y-3"
           >
             {visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper").length === 0 ? (
               <p className="text-center text-white/20 text-sm mt-16">No messages in replay.</p>
