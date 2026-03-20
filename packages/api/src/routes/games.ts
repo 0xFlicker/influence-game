@@ -473,8 +473,9 @@ export function createGameRoutes(db: DrizzleDB) {
           const generated = await generatePersona(openai, name, archetype, "gpt-4o-mini");
           personalityBlurb = generated.personality;
           strategyHints = generated.strategyHints;
-        } catch {
-          // Falls through to empty strings — engine uses hardcoded prompts anyway
+        } catch (err) {
+          // Non-fatal: engine uses hardcoded prompts as fallback
+          console.warn(`[games] Persona generation failed for ${name}:`, err instanceof Error ? err.message : err);
         }
       }
       generatedPersonas.push({ personality: personalityBlurb, strategyHints });

@@ -84,7 +84,9 @@ export class ViewerEventPacer {
     }
 
     this.queue.push(event);
-    this.drain();
+    this.drain().catch((err) => {
+      console.error("[viewer-event-pacer] Drain loop failed:", err);
+    });
   }
 
   /** Returns the number of events currently buffered. */

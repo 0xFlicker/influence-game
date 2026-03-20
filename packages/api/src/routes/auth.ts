@@ -62,8 +62,9 @@ export function createAuthRoutes(db: DrizzleDB) {
       if (emailAccount && "address" in emailAccount) {
         email = emailAccount.address as string;
       }
-    } catch {
+    } catch (err) {
       // Non-fatal: we can still create a session without full user details
+      console.warn("[auth] Failed to fetch Privy user details:", err instanceof Error ? err.message : err);
     }
 
     // Upsert user in our database

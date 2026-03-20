@@ -5,7 +5,7 @@
  * Auth is tested via JWT session tokens created directly (no Privy dependency).
  */
 
-import { describe, test, expect, beforeEach, beforeAll } from "bun:test";
+import { describe, test, expect, beforeEach, beforeAll, afterAll } from "bun:test";
 import { Hono } from "hono";
 import { createDB, schema } from "../db/index.js";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
@@ -19,13 +19,24 @@ import path from "path";
 // ---------------------------------------------------------------------------
 
 const TEST_ADMIN_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678";
+const savedApiKey = process.env.OPENAI_API_KEY;
 
 beforeAll(() => {
   process.env.JWT_SECRET = "test-jwt-secret-for-unit-tests";
   process.env.ADMIN_ADDRESS = TEST_ADMIN_ADDRESS;
-  // startGame validates OPENAI_API_KEY before returning success
+  // startGame validates OPENAI_API_KEY before returning success.
+  // Use a dummy key so the route handler doesn't reject with 500.
+  // Save/restore to avoid leaking into other test files.
   if (!process.env.OPENAI_API_KEY) {
     process.env.OPENAI_API_KEY = "test-dummy-key";
+  }
+});
+
+afterAll(() => {
+  if (savedApiKey === undefined) {
+    delete process.env.OPENAI_API_KEY;
+  } else {
+    process.env.OPENAI_API_KEY = savedApiKey;
   }
 });
 
