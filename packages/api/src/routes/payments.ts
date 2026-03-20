@@ -23,6 +23,7 @@ import {
   USDC_BASE_ADDRESS,
   USDC_DECIMALS,
   getPaymentRecipient,
+  isPaymentsEnabled,
 } from "../lib/pricing.js";
 
 // ---------------------------------------------------------------------------
@@ -108,6 +109,10 @@ export function createPaymentRoutes(db: DrizzleDB) {
     "/api/payments/create-intent",
     requireAuth(db),
     async (c) => {
+      if (!isPaymentsEnabled()) {
+        return c.json({ error: "Payments not configured", code: "PAYMENTS_DISABLED" }, 503);
+      }
+
       const user = c.get("user");
       const body = await c.req.json().catch(() => null);
       if (!body) {
@@ -185,6 +190,10 @@ export function createPaymentRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.post("/api/webhooks/stripe", async (c) => {
+    if (!isPaymentsEnabled()) {
+      return c.json({ error: "Payments not configured", code: "PAYMENTS_DISABLED" }, 503);
+    }
+
     const stripe = getStripe();
     const sig = c.req.header("stripe-signature");
     if (!sig) {
@@ -236,6 +245,10 @@ export function createPaymentRoutes(db: DrizzleDB) {
     "/api/payments/verify-crypto",
     requireAuth(db),
     async (c) => {
+      if (!isPaymentsEnabled()) {
+        return c.json({ error: "Payments not configured", code: "PAYMENTS_DISABLED" }, 503);
+      }
+
       const user = c.get("user");
       const body = await c.req.json().catch(() => null);
       if (!body) {

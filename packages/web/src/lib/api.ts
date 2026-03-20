@@ -74,6 +74,18 @@ export async function apiFetch<T>(
 }
 
 // ---------------------------------------------------------------------------
+// App config
+// ---------------------------------------------------------------------------
+
+export interface AppConfig {
+  paymentsEnabled: boolean;
+}
+
+export async function getAppConfig(): Promise<AppConfig> {
+  return apiFetch<AppConfig>("/api/config");
+}
+
+// ---------------------------------------------------------------------------
 // Game types
 // ---------------------------------------------------------------------------
 

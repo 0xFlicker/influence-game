@@ -14,6 +14,7 @@ import { createGameRoutes } from "./routes/games.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
 import { createPaymentRoutes } from "./routes/payments.js";
+import { isPaymentsEnabled } from "./lib/pricing.js";
 import { getGameSnapshot } from "./services/game-lifecycle.js";
 import {
   setServer,
@@ -130,6 +131,13 @@ app.get("/health", (c) => {
   });
 });
 
+// Public config — exposes feature flags for the frontend
+app.get("/api/config", (c) => {
+  return c.json({
+    paymentsEnabled: isPaymentsEnabled(),
+  });
+});
+
 // Root
 app.get("/", (c) => {
   return c.json({
@@ -137,6 +145,7 @@ app.get("/", (c) => {
     version: apiVersion,
     endpoints: {
       health: "/health",
+      config: "/api/config",
       auth: "/api/auth",
       games: "/api/games",
       payments: "/api/payments",

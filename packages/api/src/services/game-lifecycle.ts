@@ -24,6 +24,7 @@ import type {
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { isPaymentsEnabled } from "../lib/pricing.js";
 import { broadcastGameEvent } from "./ws-manager.js";
 import { ViewerEventPacer } from "./viewer-event-pacer.js";
 
@@ -289,7 +290,7 @@ async function runGameAsync(
       .where(eq(schema.games.id, gameId))
       .run();
 
-    // Trigger winner payout if game has a prize pool
+    // Trigger winner payout if game has a prize pool and payments are configured
     const gameRecord = db
       .select()
       .from(schema.games)
@@ -300,7 +301,8 @@ async function runGameAsync(
       gameRecord &&
       gameRecord.prizePool != null &&
       gameRecord.prizePool > 0 &&
-      result.winner
+      result.winner &&
+      isPaymentsEnabled()
     ) {
       // Find the winning player's user ID
       const winnerPlayer = db

@@ -32,6 +32,7 @@ import {
   RAKE_PERCENTAGE,
   MAX_FREE_GAMES_PER_DAY,
   UPGRADE_MODEL,
+  isPaymentsEnabled,
 } from "../lib/pricing.js";
 
 // ---------------------------------------------------------------------------
@@ -390,8 +391,16 @@ export function createGameRoutes(db: DrizzleDB) {
 
     // -----------------------------------------------------------------------
     // Buy-in gate: verify payment if game requires buy-in
+    // Skip when payments are disabled or user is admin
     // -----------------------------------------------------------------------
-    const requiresBuyIn = game.buyInAmount != null && game.buyInAmount > 0 && game.freeEntry !== 1;
+    const adminAddress = process.env.ADMIN_ADDRESS?.toLowerCase();
+    const isAdmin = !!(joinUser?.walletAddress && adminAddress && joinUser.walletAddress.toLowerCase() === adminAddress);
+    const requiresBuyIn =
+      game.buyInAmount != null &&
+      game.buyInAmount > 0 &&
+      game.freeEntry !== 1 &&
+      isPaymentsEnabled() &&
+      !isAdmin;
     let resolvedPaymentId: string | null = null;
 
     if (requiresBuyIn) {

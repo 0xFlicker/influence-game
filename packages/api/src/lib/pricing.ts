@@ -71,6 +71,11 @@ export const USDC_DECIMALS = 6;
 export const USDC_BASE_ADDRESS =
   "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as const;
 
+/** Whether payment infrastructure (Stripe) is configured. */
+export function isPaymentsEnabled(): boolean {
+  return !!process.env.STRIPE_SECRET_KEY;
+}
+
 /** Expected payment recipient address — loaded from env at runtime. */
 export function getPaymentRecipient(): string {
   const addr = process.env.PAYMENT_RECIPIENT_ADDRESS;

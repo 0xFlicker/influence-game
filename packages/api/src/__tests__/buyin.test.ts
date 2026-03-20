@@ -32,6 +32,7 @@ const TEST_ADMIN_ADDRESS = "0xadmin000000000000000000000000000000dead";
 beforeAll(() => {
   process.env.JWT_SECRET = "test-jwt-secret-buyin";
   process.env.ADMIN_ADDRESS = TEST_ADMIN_ADDRESS;
+  process.env.STRIPE_SECRET_KEY = "sk_test_fake_key_for_buyin_tests";
 });
 
 // ---------------------------------------------------------------------------

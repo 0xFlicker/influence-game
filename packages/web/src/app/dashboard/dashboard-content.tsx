@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
-import { getAuthToken, getPlayerGames, getPlayerPayments, getPlayerPayouts, listAgents, type GameSummary, type PlayerGameResult, type PlayerPayment, type PlayerPayout, type SavedAgent } from "@/lib/api";
+import { getAppConfig, getAuthToken, getPlayerGames, getPlayerPayments, getPlayerPayouts, listAgents, type GameSummary, type PlayerGameResult, type PlayerPayment, type PlayerPayout, type SavedAgent } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
 import { GamesBrowser } from "@/app/games/games-browser";
 import { JoinGameModal } from "./join-game-modal";
@@ -368,6 +368,13 @@ export function DashboardContent() {
   const [, setJoinedGameIds] = useState<Set<string>>(new Set());
   const [history, setHistory] = useState<PlayerGameResult[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [paymentsEnabled, setPaymentsEnabled] = useState(false);
+
+  useEffect(() => {
+    getAppConfig()
+      .then((cfg) => setPaymentsEnabled(cfg.paymentsEnabled))
+      .catch(() => setPaymentsEnabled(false));
+  }, []);
 
   useEffect(() => {
     function fetchHistory() {
@@ -402,8 +409,8 @@ export function DashboardContent() {
       login();
       return;
     }
-    // Check if the game requires payment using real API data
-    if (gameRequiresBuyIn(game)) {
+    // Skip checkout flow when payments are disabled
+    if (paymentsEnabled && gameRequiresBuyIn(game)) {
       setCheckoutTarget(game);
     } else {
       setJoinTarget({ game });
