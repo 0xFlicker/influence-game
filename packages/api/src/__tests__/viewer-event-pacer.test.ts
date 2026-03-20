@@ -77,6 +77,8 @@ describe("ViewerEventPacer", () => {
       powerRevealMs: 50,
       councilEndMs: 50,
       eliminationMs: 50,
+      diaryEndMs: 50,
+      whisperEndMs: 50,
     };
 
     it("holds before POWER phase_change (vote end hold)", async () => {
@@ -106,6 +108,8 @@ describe("ViewerEventPacer", () => {
         powerRevealMs: 80,
         councilEndMs: 80,
         eliminationMs: 80,
+        diaryEndMs: 80,
+        whisperEndMs: 80,
       });
 
       // Emit VOTE first to set phase context, then POWER (held), then transcript, then REVEAL (held)
@@ -170,12 +174,48 @@ describe("ViewerEventPacer", () => {
 
       pacer.emit(phaseChange(Phase.INTRODUCTION));
       pacer.emit(phaseChange(Phase.LOBBY));
-      pacer.emit(phaseChange(Phase.WHISPER));
-      pacer.emit(phaseChange(Phase.RUMOR));
 
       // All should arrive without holds — drain loop processes synchronously for 0ms holds
       await waitForDrain(10);
-      expect(received.length).toBe(4);
+      expect(received.length).toBe(2);
+    });
+
+    it("holds after DIARY_ROOM phase ends (diary end hold)", async () => {
+      const { received, fn } = createCollector();
+      const pacer = new ViewerEventPacer("live", fn, SHORT_HOLDS);
+
+      // Simulate: DIARY_ROOM → VOTE transition
+      pacer.emit(phaseChange(Phase.DIARY_ROOM));
+      pacer.emit(phaseChange(Phase.VOTE));
+
+      await waitForDrain(10);
+      // DIARY_ROOM arrives immediately, VOTE is held
+      expect(received.length).toBe(1);
+      expect((received[0]!.event as { phase: Phase }).phase).toBe(Phase.DIARY_ROOM);
+
+      await waitForDrain(100);
+      // VOTE arrives after diary end hold
+      expect(received.length).toBe(2);
+      expect((received[1]!.event as { phase: Phase }).phase).toBe(Phase.VOTE);
+    });
+
+    it("holds after WHISPER phase ends (whisper end hold)", async () => {
+      const { received, fn } = createCollector();
+      const pacer = new ViewerEventPacer("live", fn, SHORT_HOLDS);
+
+      // Simulate: WHISPER → RUMOR transition
+      pacer.emit(phaseChange(Phase.WHISPER));
+      pacer.emit(phaseChange(Phase.RUMOR));
+
+      await waitForDrain(10);
+      // WHISPER arrives immediately, RUMOR is held
+      expect(received.length).toBe(1);
+      expect((received[0]!.event as { phase: Phase }).phase).toBe(Phase.WHISPER);
+
+      await waitForDrain(100);
+      // RUMOR arrives after whisper end hold
+      expect(received.length).toBe(2);
+      expect((received[1]!.event as { phase: Phase }).phase).toBe(Phase.RUMOR);
     });
 
     it("game_over events pass through without holds", async () => {
@@ -198,22 +238,24 @@ describe("ViewerEventPacer", () => {
         powerRevealMs: 30,
         councilEndMs: 30,
         eliminationMs: 30,
+        diaryEndMs: 30,
+        whisperEndMs: 30,
       });
 
       // Full round sequence
       pacer.emit(phaseChange(Phase.LOBBY));
       pacer.emit(phaseChange(Phase.WHISPER));
-      pacer.emit(phaseChange(Phase.RUMOR));
+      pacer.emit(phaseChange(Phase.RUMOR));        // hold: whisperEnd
       pacer.emit(phaseChange(Phase.VOTE));
-      pacer.emit(phaseChange(Phase.POWER));       // hold: voteEnd
+      pacer.emit(phaseChange(Phase.POWER));        // hold: voteEnd
       pacer.emit(elimination("Bob"));              // hold: elimination
       pacer.emit(phaseChange(Phase.REVEAL));       // hold: powerReveal
       pacer.emit(phaseChange(Phase.COUNCIL));
       pacer.emit(elimination("Carol"));            // hold: elimination
       pacer.emit(phaseChange(Phase.DIARY_ROOM));   // hold: councilEnd
 
-      // Wait for all holds to complete (5 holds × 30ms = 150ms, give buffer)
-      await waitForDrain(300);
+      // Wait for all holds to complete (6 holds × 30ms = 180ms, give buffer)
+      await waitForDrain(350);
 
       expect(received.length).toBe(10);
 
@@ -243,6 +285,8 @@ describe("ViewerEventPacer", () => {
       expect(DEFAULT_LIVE_HOLDS.powerRevealMs).toBe(2000);
       expect(DEFAULT_LIVE_HOLDS.councilEndMs).toBe(2000);
       expect(DEFAULT_LIVE_HOLDS.eliminationMs).toBe(3000);
+      expect(DEFAULT_LIVE_HOLDS.diaryEndMs).toBe(4000);
+      expect(DEFAULT_LIVE_HOLDS.whisperEndMs).toBe(4000);
     });
 
     it("allows partial override of hold timings", async () => {

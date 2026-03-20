@@ -23,6 +23,7 @@ import {
   CHAT_TYPING_HOLD_MS,
   CHAT_POST_MSG_BASE_MS,
   CHAT_POST_MSG_PER_CHAR_MS,
+  DIARY_WHISPER_SCENE_END_HOLD_MS,
 } from "./constants";
 import { ConnectionBadge, GameStateHUD } from "./game-info";
 import { PhaseTransitionOverlay } from "./phase-transition";
@@ -276,8 +277,9 @@ export function DramaticReplayViewer({
 
       // Chat-style phases use faster timing
       if (isChatStyleScene) {
+        const sceneEndHold = isWhisperScene ? DIARY_WHISPER_SCENE_END_HOLD_MS : INTER_SCENE_PAUSE_MS;
         const holdMs = isLastInScene
-          ? INTER_SCENE_PAUSE_MS / speed
+          ? sceneEndHold / speed
           : Math.max(CHAT_POST_MSG_BASE_MS, currentMessage.text.length * CHAT_POST_MSG_PER_CHAR_MS) / speed;
 
         const timer = setTimeout(() => {
@@ -318,7 +320,7 @@ export function DramaticReplayViewer({
       return () => clearTimeout(timer);
     }
     // "revealing" phase transitions via Typewriter onComplete
-  }, [isPlaying, messagePhase, messageIndex, sceneIndex, scene, totalScenes, speed, currentMessage, isSystemMessage, isChatStyleScene, isDiaryScene, live]);
+  }, [isPlaying, messagePhase, messageIndex, sceneIndex, scene, totalScenes, speed, currentMessage, isSystemMessage, isChatStyleScene, isWhisperScene, isDiaryScene, live]);
 
   // Advance function — for click/tap and keyboard
   const advanceMessage = useCallback(() => {

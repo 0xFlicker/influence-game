@@ -24,6 +24,10 @@ export interface DisplayHoldConfig {
   councilEndMs: number;
   /** Hold before player_eliminated events (ms) */
   eliminationMs: number;
+  /** Hold after DIARY_ROOM phase ends (ms) */
+  diaryEndMs: number;
+  /** Hold after WHISPER phase ends (ms) */
+  whisperEndMs: number;
 }
 
 export const DEFAULT_LIVE_HOLDS: DisplayHoldConfig = {
@@ -31,6 +35,8 @@ export const DEFAULT_LIVE_HOLDS: DisplayHoldConfig = {
   powerRevealMs: 2000,
   councilEndMs: 2000,
   eliminationMs: 3000,
+  diaryEndMs: 4000,
+  whisperEndMs: 4000,
 };
 
 const ZERO_HOLDS: DisplayHoldConfig = {
@@ -38,6 +44,8 @@ const ZERO_HOLDS: DisplayHoldConfig = {
   powerRevealMs: 0,
   councilEndMs: 0,
   eliminationMs: 0,
+  diaryEndMs: 0,
+  whisperEndMs: 0,
 };
 
 // ---------------------------------------------------------------------------
@@ -118,6 +126,22 @@ export class ViewerEventPacer {
           phase !== Phase.COUNCIL
         ) {
           return this.holds.councilEndMs;
+        }
+
+        // Transitioning away from DIARY_ROOM → pause so viewers can read last message
+        if (
+          this.currentPhase === Phase.DIARY_ROOM &&
+          phase !== Phase.DIARY_ROOM
+        ) {
+          return this.holds.diaryEndMs;
+        }
+
+        // Transitioning away from WHISPER → pause so viewers can read last message
+        if (
+          this.currentPhase === Phase.WHISPER &&
+          phase !== Phase.WHISPER
+        ) {
+          return this.holds.whisperEndMs;
         }
 
         return 0;

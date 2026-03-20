@@ -225,6 +225,9 @@ export const CHAT_TYPING_HOLD_MS = 800;
 export const CHAT_POST_MSG_BASE_MS = 600;
 export const CHAT_POST_MSG_PER_CHAR_MS = 12;
 
+// Hold time after the last message in diary/whisper scenes before transitioning
+export const DIARY_WHISPER_SCENE_END_HOLD_MS = 4000;
+
 export const ENDGAME_CONFIG: Record<
   EndgameStage,
   { title: string; color: string; body: string[] }
