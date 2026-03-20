@@ -3,15 +3,10 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
-import { listGames, stopGame, startGame, fillGame, type GameSummary } from "@/lib/api";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function shortAddr(address: string): string {
-  return `${address.slice(0, 6)}…${address.slice(-4)}`;
-}
+import { listGames, stopGame, startGame, fillGame, isFillAccepted, type GameSummary, type WsGameEvent } from "@/lib/api";
+import { useGameWebSocket } from "@/app/games/[slug]/components/use-game-websocket";
+import { usePermissions } from "@/hooks/use-permissions";
+import { TruncatedAddress } from "@/components/truncated-address";
 
 function phaseLabel(phase: string): string {
   const labels: Record<string, string> = {
@@ -42,7 +37,7 @@ function capitalize(s: string): string {
 // Game card (in_progress)
 // ---------------------------------------------------------------------------
 
-function GameCard({ game, onRefresh }: { game: GameSummary; onRefresh: () => void }) {
+function GameCard({ game, onRefresh, canStop }: { game: GameSummary; onRefresh: () => void; canStop: boolean }) {
   const pct = progressPct(game);
   const [stopping, setStopping] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -95,13 +90,15 @@ function GameCard({ game, onRefresh }: { game: GameSummary; onRefresh: () => voi
           >
             View
           </Link>
-          <button
-            onClick={handleStop}
-            disabled={stopping}
-            className="text-xs border border-red-900/50 hover:border-red-700 text-red-400/70 hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-          >
-            {stopping ? "…" : "⏹ Stop"}
-          </button>
+          {canStop && (
+            <button
+              onClick={handleStop}
+              disabled={stopping}
+              className="text-xs border border-red-900/50 hover:border-red-700 text-red-400/70 hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {stopping ? "…" : "⏹ Stop"}
+            </button>
+          )}
         </div>
         {actionError && (
           <p className="text-xs text-red-400/80">{actionError}</p>
@@ -115,21 +112,39 @@ function GameCard({ game, onRefresh }: { game: GameSummary; onRefresh: () => voi
 // Waiting game card
 // ---------------------------------------------------------------------------
 
-function WaitingGameCard({ game, onRefresh }: { game: GameSummary; onRefresh: () => void }) {
+function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop }: { game: GameSummary; onRefresh: () => void; canStart: boolean; canFill: boolean; canStop: boolean }) {
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [filling, setFilling] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  const handleWsEvent = useCallback(
+    (ev: WsGameEvent) => {
+      if (ev.type === "players_filled") {
+        setFilling(false);
+        onRefresh();
+      }
+    },
+    [onRefresh],
+  );
+
+  // Connect to game WS only while filling to receive players_filled confirmation
+  useGameWebSocket(game.id, filling, handleWsEvent);
+
   async function handleFill() {
     setActionError(null);
     setFilling(true);
     try {
-      await fillGame(game.id);
+      const result = await fillGame(game.id);
+      if (isFillAccepted(result)) {
+        // Async path: stay in filling state, WS will confirm
+        return;
+      }
+      // Sync path (legacy): fill completed immediately
+      setFilling(false);
       onRefresh();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
-    } finally {
       setFilling(false);
     }
   }
@@ -164,10 +179,17 @@ function WaitingGameCard({ game, onRefresh }: { game: GameSummary; onRefresh: ()
         <div className="flex items-center gap-3 mb-1">
           <span className="text-white font-semibold">#{game.gameNumber}</span>
           <span className="text-white/50 text-sm">
-            {game.playerCount}-player · Not started · {capitalize(game.modelTier)}
+            {game.playerCount}-player · {filling ? `${game.playerCount}/${game.playerCount} slots filled` : "Not started"} · {capitalize(game.modelTier)}
           </span>
+          {filling && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 text-indigo-400 animate-pulse">
+              Generating AI players…
+            </span>
+          )}
         </div>
-        <p className="text-xs text-white/30">Waiting to start</p>
+        <p className="text-xs text-white/30">
+          {filling ? "AI personas being generated — game will be ready shortly" : "Waiting to start"}
+        </p>
       </div>
       <div className="flex flex-col items-end gap-1 flex-shrink-0">
         {actionError && (
@@ -180,27 +202,32 @@ function WaitingGameCard({ game, onRefresh }: { game: GameSummary; onRefresh: ()
           >
             View
           </Link>
-          <button
-            onClick={handleFill}
-            disabled={filling}
-            className="text-xs border border-indigo-900/50 hover:border-indigo-700 text-indigo-400/70 hover:text-indigo-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-          >
-            {filling ? "…" : "Fill AI"}
-          </button>
-          <button
-            onClick={handleStart}
-            disabled={starting}
-            className="text-xs border border-green-900/50 hover:border-green-700 text-green-400/70 hover:text-green-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-          >
-            {starting ? "…" : "▶ Start"}
-          </button>
-          <button
-            onClick={handleStop}
-            disabled={stopping}
-            className="text-xs border border-white/10 hover:border-red-700 text-white/30 hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-          >
-            {stopping ? "…" : "🗑"}
-          </button>
+          {canFill && !filling && (
+            <button
+              onClick={handleFill}
+              className="text-xs border border-indigo-900/50 hover:border-indigo-700 text-indigo-400/70 hover:text-indigo-400 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              Fill AI
+            </button>
+          )}
+          {canStart && (
+            <button
+              onClick={handleStart}
+              disabled={starting || filling}
+              className="text-xs border border-green-900/50 hover:border-green-700 text-green-400/70 hover:text-green-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {starting ? "…" : "▶ Start"}
+            </button>
+          )}
+          {canStop && (
+            <button
+              onClick={handleStop}
+              disabled={stopping}
+              className="text-xs border border-white/10 hover:border-red-700 text-white/30 hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {stopping ? "…" : "🗑"}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -281,6 +308,12 @@ function RecentGameRow({ game }: { game: GameSummary }) {
 
 export function AdminPanel() {
   const { address } = useAccount();
+  const { hasPermission } = usePermissions();
+
+  const canCreateGame = hasPermission("create_game");
+  const canStartGame = hasPermission("start_game");
+  const canStopGame = hasPermission("stop_game");
+  const canFillGame = hasPermission("fill_game");
 
   const [activeGames, setActiveGames] = useState<GameSummary[]>([]);
   const [waitingGames, setWaitingGames] = useState<GameSummary[]>([]);
@@ -327,14 +360,16 @@ export function AdminPanel() {
         </div>
         <div className="flex items-center gap-4">
           {address && (
-            <span className="text-xs text-white/30 font-mono">👛 {shortAddr(address)}</span>
+            <span className="text-xs text-white/30 font-mono">👛 <TruncatedAddress address={address} maxWidth="10ch" /></span>
           )}
-          <Link
-            href="/admin/games/new"
-            className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg font-medium transition-colors"
-          >
-            + New Game
-          </Link>
+          {canCreateGame && (
+            <Link
+              href="/admin/games/new"
+              className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg font-medium transition-colors"
+            >
+              + New Game
+            </Link>
+          )}
         </div>
       </div>
 
@@ -360,7 +395,7 @@ export function AdminPanel() {
         ) : (
           <div className="space-y-3">
             {activeGames.map((g) => (
-              <GameCard key={g.id} game={g} onRefresh={fetchGames} />
+              <GameCard key={g.id} game={g} onRefresh={fetchGames} canStop={canStopGame} />
             ))}
           </div>
         )}
@@ -378,17 +413,19 @@ export function AdminPanel() {
         ) : waitingGames.length === 0 ? (
           <div className="border border-white/10 rounded-xl p-8 text-center text-white/20 text-sm">
             No games waiting.{" "}
-            <Link
-              href="/admin/games/new"
-              className="text-indigo-400 hover:text-indigo-300 transition-colors"
-            >
-              Create one →
-            </Link>
+            {canCreateGame && (
+              <Link
+                href="/admin/games/new"
+                className="text-indigo-400 hover:text-indigo-300 transition-colors"
+              >
+                Create one →
+              </Link>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
             {waitingGames.map((g) => (
-              <WaitingGameCard key={g.id} game={g} onRefresh={fetchGames} />
+              <WaitingGameCard key={g.id} game={g} onRefresh={fetchGames} canStart={canStartGame} canFill={canFillGame} canStop={canStopGame} />
             ))}
           </div>
         )}

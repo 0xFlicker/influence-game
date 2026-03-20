@@ -1,7 +1,7 @@
 /**
  * Auth middleware and routes tests.
  *
- * Tests JWT session creation/verification, admin gating, and the auth routes.
+ * Tests JWT session creation/verification, RBAC permission gating, and the auth routes.
  * Privy verification is NOT tested here (requires real Privy credentials).
  */
 
@@ -14,9 +14,12 @@ import {
   verifySessionToken,
   requireAuth,
   requireAdmin,
+  requirePermission,
+  requireRole,
   optionalAuth,
   type AuthEnv,
 } from "../middleware/auth.js";
+import { seedRBAC } from "../db/rbac-seed.js";
 import path from "path";
 
 // ---------------------------------------------------------------------------
@@ -38,6 +41,7 @@ function setupDB() {
   const db = createDB(":memory:");
   const migrationsFolder = path.resolve(import.meta.dir, "../../drizzle");
   migrate(db, { migrationsFolder });
+  seedRBAC(db);
   return db;
 }
 
@@ -55,22 +59,36 @@ describe("JWT session tokens", () => {
 
   test("verifySessionToken decodes a valid token", async () => {
     const token = await createSessionToken("user-456");
-    const userId = await verifySessionToken(token);
-    expect(userId).toBe("user-456");
+    const session = await verifySessionToken(token);
+    expect(session).not.toBeNull();
+    expect(session!.userId).toBe("user-456");
+    expect(session!.roles).toEqual([]);
+    expect(session!.permissions).toEqual([]);
+  });
+
+  test("verifySessionToken decodes roles and permissions", async () => {
+    const token = await createSessionToken("user-789", {
+      roles: ["sysop"],
+      permissions: ["manage_roles", "create_game"],
+    });
+    const session = await verifySessionToken(token);
+    expect(session).not.toBeNull();
+    expect(session!.userId).toBe("user-789");
+    expect(session!.roles).toEqual(["sysop"]);
+    expect(session!.permissions).toContain("manage_roles");
+    expect(session!.permissions).toContain("create_game");
   });
 
   test("verifySessionToken returns null for invalid token", async () => {
-    const userId = await verifySessionToken("garbage.token.here");
-    expect(userId).toBeNull();
+    const session = await verifySessionToken("garbage.token.here");
+    expect(session).toBeNull();
   });
 
-  test("verifySessionToken returns null for expired token", async () => {
-    // We can't easily test expiration without waiting, but we can test
-    // a tampered token
-    const token = await createSessionToken("user-789");
+  test("verifySessionToken returns null for tampered token", async () => {
+    const token = await createSessionToken("user-abc");
     const tampered = token.slice(0, -5) + "XXXXX";
-    const userId = await verifySessionToken(tampered);
-    expect(userId).toBeNull();
+    const session = await verifySessionToken(tampered);
+    expect(session).toBeNull();
   });
 });
 
@@ -145,10 +163,161 @@ describe("requireAuth middleware", () => {
     expect(body.userId).toBe("real-user");
     expect(body.wallet).toBe("0xabc");
   });
+
+  test("attaches roles and permissions from JWT to context", async () => {
+    db.insert(schema.users)
+      .values({
+        id: "rbac-user",
+        walletAddress: "0xrbac",
+        displayName: "RBAC User",
+      })
+      .run();
+
+    const app = new Hono<AuthEnv>();
+    app.use("/*", requireAuth(db));
+    app.get("/test", (c) => {
+      return c.json({
+        roles: c.get("userRoles"),
+        permissions: c.get("userPermissions"),
+      });
+    });
+
+    const token = await createSessionToken("rbac-user", {
+      roles: ["admin"],
+      permissions: ["create_game", "view_admin"],
+    });
+    const res = await app.request("/test", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { roles: string[]; permissions: string[] };
+    expect(body.roles).toEqual(["admin"]);
+    expect(body.permissions).toContain("create_game");
+    expect(body.permissions).toContain("view_admin");
+  });
 });
 
 // ---------------------------------------------------------------------------
-// requireAdmin middleware
+// requirePermission middleware
+// ---------------------------------------------------------------------------
+
+describe("requirePermission middleware", () => {
+  let db: ReturnType<typeof createDB>;
+
+  beforeEach(() => {
+    db = setupDB();
+  });
+
+  test("blocks user without required permission", async () => {
+    db.insert(schema.users)
+      .values({ id: "no-perm", walletAddress: "0xnoperm", displayName: "No Perm" })
+      .run();
+
+    const app = new Hono<AuthEnv>();
+    app.use("/*", requireAuth(db), requirePermission("create_game"));
+    app.get("/test", (c) => c.json({ ok: true }));
+
+    const token = await createSessionToken("no-perm", {
+      roles: ["player"],
+      permissions: ["join_game"],
+    });
+    const res = await app.request("/test", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  test("allows user with matching permission", async () => {
+    db.insert(schema.users)
+      .values({ id: "has-perm", walletAddress: "0xhasperm", displayName: "Has Perm" })
+      .run();
+
+    const app = new Hono<AuthEnv>();
+    app.use("/*", requireAuth(db), requirePermission("create_game"));
+    app.get("/test", (c) => c.json({ ok: true }));
+
+    const token = await createSessionToken("has-perm", {
+      roles: ["admin"],
+      permissions: ["create_game", "view_admin"],
+    });
+    const res = await app.request("/test", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  test("allows if user has any of multiple required permissions", async () => {
+    db.insert(schema.users)
+      .values({ id: "multi-perm", walletAddress: "0xmulti", displayName: "Multi" })
+      .run();
+
+    const app = new Hono<AuthEnv>();
+    app.use("/*", requireAuth(db), requirePermission("start_game", "stop_game"));
+    app.get("/test", (c) => c.json({ ok: true }));
+
+    const token = await createSessionToken("multi-perm", {
+      roles: ["admin"],
+      permissions: ["stop_game"],
+    });
+    const res = await app.request("/test", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// requireRole middleware
+// ---------------------------------------------------------------------------
+
+describe("requireRole middleware", () => {
+  let db: ReturnType<typeof createDB>;
+
+  beforeEach(() => {
+    db = setupDB();
+  });
+
+  test("blocks user without required role", async () => {
+    db.insert(schema.users)
+      .values({ id: "no-role", walletAddress: "0xnorole", displayName: "No Role" })
+      .run();
+
+    const app = new Hono<AuthEnv>();
+    app.use("/*", requireAuth(db), requireRole("sysop"));
+    app.get("/test", (c) => c.json({ ok: true }));
+
+    const token = await createSessionToken("no-role", {
+      roles: ["player"],
+      permissions: ["join_game"],
+    });
+    const res = await app.request("/test", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  test("allows user with matching role", async () => {
+    db.insert(schema.users)
+      .values({ id: "sysop-user", walletAddress: "0xsysop", displayName: "Sysop" })
+      .run();
+
+    const app = new Hono<AuthEnv>();
+    app.use("/*", requireAuth(db), requireRole("sysop"));
+    app.get("/test", (c) => c.json({ ok: true }));
+
+    const token = await createSessionToken("sysop-user", {
+      roles: ["sysop"],
+      permissions: ["manage_roles"],
+    });
+    const res = await app.request("/test", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// requireAdmin middleware (backward compatibility)
 // ---------------------------------------------------------------------------
 
 describe("requireAdmin middleware", () => {
@@ -158,7 +327,7 @@ describe("requireAdmin middleware", () => {
     db = setupDB();
   });
 
-  test("blocks non-admin user", async () => {
+  test("blocks non-admin user without RBAC roles", async () => {
     db.insert(schema.users)
       .values({
         id: "regular-user",
@@ -178,7 +347,7 @@ describe("requireAdmin middleware", () => {
     expect(res.status).toBe(403);
   });
 
-  test("allows admin user", async () => {
+  test("allows admin user via RBAC permissions", async () => {
     db.insert(schema.users)
       .values({
         id: "admin-user",
@@ -191,14 +360,38 @@ describe("requireAdmin middleware", () => {
     app.use("/*", requireAuth(db), requireAdmin());
     app.get("/admin", (c) => c.json({ ok: true }));
 
-    const token = await createSessionToken("admin-user");
+    const token = await createSessionToken("admin-user", {
+      roles: ["sysop"],
+      permissions: ["manage_roles", "view_admin"],
+    });
     const res = await app.request("/admin", {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(res.status).toBe(200);
   });
 
-  test("admin check is case-insensitive", async () => {
+  test("allows admin via legacy ADMIN_ADDRESS fallback", async () => {
+    db.insert(schema.users)
+      .values({
+        id: "legacy-admin",
+        walletAddress: TEST_ADMIN_ADDRESS,
+        displayName: "Legacy Admin",
+      })
+      .run();
+
+    const app = new Hono<AuthEnv>();
+    app.use("/*", requireAuth(db), requireAdmin());
+    app.get("/admin", (c) => c.json({ ok: true }));
+
+    // Token without RBAC roles — falls back to ADMIN_ADDRESS check
+    const token = await createSessionToken("legacy-admin");
+    const res = await app.request("/admin", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  test("admin check is case-insensitive for legacy fallback", async () => {
     db.insert(schema.users)
       .values({
         id: "admin-mixed",

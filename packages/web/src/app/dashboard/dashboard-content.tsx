@@ -185,7 +185,7 @@ function SavedAgentsSection() {
 
 export function DashboardContent() {
   const { user, authenticated, login } = usePrivy();
-  const [joinTarget, setJoinTarget] = useState<GameSummary | null>(null);
+  const [joinTarget, setJoinTarget] = useState<{ game: GameSummary } | null>(null);
   const [, setJoinedGameIds] = useState<Set<string>>(new Set());
   const [history, setHistory] = useState<PlayerGameResult[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -223,7 +223,7 @@ export function DashboardContent() {
       login();
       return;
     }
-    setJoinTarget(game);
+    setJoinTarget({ game });
   }
 
   function handleJoinSuccess(gameId: string) {
@@ -233,10 +233,9 @@ export function DashboardContent() {
 
   return (
     <>
-      {/* Join modal */}
       {joinTarget && (
         <JoinGameModal
-          game={joinTarget}
+          game={joinTarget.game}
           onClose={() => setJoinTarget(null)}
           onSuccess={handleJoinSuccess}
         />

@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { getPermissionsForAddress } from "../db/rbac.js";
 import {
   verifyPrivyToken,
   getPrivyUser,
@@ -122,8 +123,16 @@ export function createAuthRoutes(db: DrizzleDB) {
         .all()[0]!;
     }
 
-    // Create session JWT
-    const sessionToken = await createSessionToken(user.id);
+    // Resolve RBAC roles and permissions for wallet address
+    const resolved = user.walletAddress
+      ? getPermissionsForAddress(db, user.walletAddress)
+      : { roles: [], permissions: [] };
+
+    // Create session JWT with embedded roles and permissions
+    const sessionToken = await createSessionToken(user.id, {
+      roles: resolved.roles,
+      permissions: resolved.permissions,
+    });
 
     return c.json({
       token: sessionToken,
@@ -132,6 +141,8 @@ export function createAuthRoutes(db: DrizzleDB) {
         walletAddress: user.walletAddress,
         email: user.email,
         displayName: user.displayName,
+        roles: resolved.roles,
+        permissions: resolved.permissions,
       },
     });
   });
@@ -142,12 +153,13 @@ export function createAuthRoutes(db: DrizzleDB) {
 
   app.get("/api/auth/me", requireAuth(db), async (c) => {
     const user = c.get("user");
+    const roles = c.get("userRoles") ?? [];
+    const permissions = c.get("userPermissions") ?? [];
 
-    const adminAddress = process.env.ADMIN_ADDRESS?.toLowerCase();
     const isAdmin =
-      !!adminAddress &&
-      !!user.walletAddress &&
-      user.walletAddress.toLowerCase() === adminAddress;
+      roles.includes("sysop") ||
+      roles.includes("admin") ||
+      permissions.includes("view_admin");
 
     return c.json({
       id: user.id,
@@ -155,7 +167,8 @@ export function createAuthRoutes(db: DrizzleDB) {
       email: user.email,
       displayName: user.displayName,
       isAdmin,
-      roles: { isAdmin },
+      roles,
+      permissions,
     });
   });
 

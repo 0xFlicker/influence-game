@@ -10,9 +10,11 @@ import { cors } from "hono/cors";
 import { eq, or } from "drizzle-orm";
 import { createDB, schema } from "./db/index.js";
 import { runMigrations } from "./db/migrate.js";
+import { seedRBAC } from "./db/rbac-seed.js";
 import { createGameRoutes } from "./routes/games.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
+import { createAdminRoutes } from "./routes/admin.js";
 import { getGameSnapshot } from "./services/game-lifecycle.js";
 import {
   setServer,
@@ -66,6 +68,7 @@ function getAllowedCorsOrigins(): string[] {
 const dbPath = process.env.SQLITE_PATH ?? "influence.db";
 runMigrations(dbPath);
 const db = createDB(dbPath);
+seedRBAC(db);
 
 // ---------------------------------------------------------------------------
 // Startup cleanup — reset orphaned in_progress games
@@ -129,6 +132,11 @@ app.get("/health", (c) => {
   });
 });
 
+// Public config — exposes feature flags for the frontend
+app.get("/api/config", (c) => {
+  return c.json({});
+});
+
 // Root
 app.get("/", (c) => {
   return c.json({
@@ -136,8 +144,10 @@ app.get("/", (c) => {
     version: apiVersion,
     endpoints: {
       health: "/health",
+      config: "/api/config",
       auth: "/api/auth",
       games: "/api/games",
+      admin: "/api/admin",
       ws: "/ws/games/:id",
     },
   });
@@ -154,6 +164,10 @@ app.route("/", gameRoutes);
 // Agent profile routes
 const agentProfileRoutes = createAgentProfileRoutes(db);
 app.route("/", agentProfileRoutes);
+
+// Admin RBAC routes
+const adminRoutes = createAdminRoutes(db);
+app.route("/", adminRoutes);
 
 // ---------------------------------------------------------------------------
 // Start server with WebSocket support

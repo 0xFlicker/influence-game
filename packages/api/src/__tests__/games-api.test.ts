@@ -70,9 +70,15 @@ async function setupApp() {
     ])
     .run();
 
-  // Generate JWT tokens
-  const adminToken = await createSessionToken(ADMIN_USER_ID);
-  const userToken = await createSessionToken(REGULAR_USER_ID);
+  // Generate JWT tokens (admin gets full permissions, regular user gets join_game only)
+  const adminToken = await createSessionToken(ADMIN_USER_ID, {
+    roles: ["sysop"],
+    permissions: ["manage_roles", "create_game", "start_game", "join_game", "stop_game", "fill_game", "view_admin"],
+  });
+  const userToken = await createSessionToken(REGULAR_USER_ID, {
+    roles: ["player"],
+    permissions: ["join_game"],
+  });
 
   const app = new Hono();
   app.get("/health", (c) => c.json({ status: "ok" }));

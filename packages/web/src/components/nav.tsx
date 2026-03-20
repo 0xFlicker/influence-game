@@ -1,37 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
-import { getMe, getAuthToken } from "@/lib/api";
+import { usePermissions } from "@/hooks/use-permissions";
 
 export function Nav() {
   const { ready, authenticated, login, logout } = usePrivy();
-  const [isAdmin, setIsAdmin] = useState(false);
-
-  useEffect(() => {
-    if (!ready || !authenticated) {
-      setIsAdmin(false);
-      return;
-    }
-
-    const token = getAuthToken();
-    if (!token) {
-      const handleReady = () => {
-        fetchRoles();
-      };
-      window.addEventListener("auth:session-ready", handleReady);
-      return () => window.removeEventListener("auth:session-ready", handleReady);
-    }
-
-    fetchRoles();
-
-    function fetchRoles() {
-      getMe()
-        .then((me) => setIsAdmin(me.roles.isAdmin))
-        .catch(() => setIsAdmin(false));
-    }
-  }, [ready, authenticated]);
+  const { isAdmin } = usePermissions();
 
   return (
     <nav className="border-b border-white/10 px-6 py-4 flex items-center justify-between">

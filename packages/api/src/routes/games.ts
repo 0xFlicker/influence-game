@@ -19,10 +19,11 @@ import { schema } from "../db/index.js";
 import type { GameStatus } from "../db/schema.js";
 import {
   requireAuth,
-  requireAdmin,
+  requirePermission,
   type AuthEnv,
 } from "../middleware/auth.js";
 import { startGame, isGameRunning } from "../services/game-lifecycle.js";
+import { broadcastRaw } from "../services/ws-manager.js";
 import { generateUniqueSlug } from "../lib/slug.js";
 import { generatePersona, pickAgentNames, pickArchetypes } from "@influence/engine";
 import type { Personality } from "@influence/engine";
@@ -39,7 +40,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // POST /api/games — create a new game
   // -------------------------------------------------------------------------
 
-  app.post("/api/games", requireAuth(db), requireAdmin(), async (c) => {
+  app.post("/api/games", requireAuth(db), requirePermission("create_game"), async (c) => {
     const body = await c.req.json().catch(() => null);
     if (!body) {
       return c.json({ error: "Invalid JSON body" }, 400);
@@ -103,12 +104,14 @@ export function createGameRoutes(db: DrizzleDB) {
       ? viewerMode
       : "speedrun"; // Default for admin-created games
 
+    const resolvedModelTier = modelTier ?? "budget";
+
     const config = {
       timers,
       maxRounds: computedMaxRounds,
       minPlayers,
       maxPlayers,
-      modelTier: modelTier ?? "budget",
+      modelTier: resolvedModelTier,
       personaPool: personaPool ?? [],
       fillStrategy: fillStrategy ?? "balanced",
       visibility: visibility ?? "public",
@@ -335,6 +338,10 @@ export function createGameRoutes(db: DrizzleDB) {
     const { agentName, personality, strategyHints, personaKey, agentProfileId } = body;
 
     const joinUser = c.get("user");
+
+    // -----------------------------------------------------------------------
+    // Resolve agent identity
+    // -----------------------------------------------------------------------
     let resolvedName: string;
     let resolvedPersonality: string;
     let resolvedStrategyHints: string | null = strategyHints ?? null;
@@ -342,7 +349,6 @@ export function createGameRoutes(db: DrizzleDB) {
     let resolvedProfileId: string | null = null;
 
     if (agentProfileId) {
-      // Join using a saved agent profile
       const profile = db
         .select()
         .from(schema.agentProfiles)
@@ -363,13 +369,23 @@ export function createGameRoutes(db: DrizzleDB) {
       resolvedPersonaKey = profile.personaKey;
       resolvedProfileId = profile.id;
     } else {
-      // Join with inline agent config (original flow)
       if (!agentName || !personality) {
         return c.json({ error: "agentName and personality are required (or provide agentProfileId)" }, 400);
       }
       resolvedName = agentName;
       resolvedPersonality = personality;
     }
+
+    // -----------------------------------------------------------------------
+    // Resolve model from game config
+    // -----------------------------------------------------------------------
+    const gameConfig = JSON.parse(game.config);
+    const agentModel =
+      gameConfig.modelTier === "premium"
+        ? "gpt-4o"
+        : gameConfig.modelTier === "standard"
+          ? "gpt-4o"
+          : "gpt-4o-mini";
 
     const playerId = randomUUID();
     const persona = {
@@ -379,14 +395,8 @@ export function createGameRoutes(db: DrizzleDB) {
       personaKey: resolvedPersonaKey,
     };
 
-    const config = JSON.parse(game.config);
     const agentConfig = {
-      model:
-        config.modelTier === "premium"
-          ? "gpt-4o"
-          : config.modelTier === "standard"
-            ? "gpt-4o"
-            : "gpt-4o-mini",
+      model: agentModel,
       temperature: 0.9,
     };
 
@@ -408,7 +418,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // POST /api/games/:id/fill — fill remaining slots with AI players
   // -------------------------------------------------------------------------
 
-  app.post("/api/games/:id/fill", requireAuth(db), requireAdmin(), async (c) => {
+  app.post("/api/games/:id/fill", requireAuth(db), requirePermission("fill_game"), async (c) => {
     const gameId = c.req.param("id");
 
     const game = db
@@ -425,33 +435,28 @@ export function createGameRoutes(db: DrizzleDB) {
       return c.json({ error: "Game is not in waiting status" }, 400);
     }
 
-    // Generate personas outside the transaction (may involve LLM calls)
-    const openaiApiKey = process.env.OPENAI_API_KEY;
-    const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
-
-    // Pre-read to estimate how many personas to generate
-    const estimatedPlayers = db
+    const existingPlayers = db
       .select()
       .from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.gameId, gameId))
       .all();
 
-    const estimatedSlots = game.maxPlayers - estimatedPlayers.length;
-    if (estimatedSlots <= 0) {
+    const slotsToFill = game.maxPlayers - existingPlayers.length;
+    if (slotsToFill <= 0) {
       return c.json({ error: "Game is already full" }, 400);
     }
 
-    const existingNames = estimatedPlayers.map((p) => {
+    const existingNames = existingPlayers.map((p) => {
       const persona = JSON.parse(p.persona);
       return persona.name as string;
     });
-    const existingArchetypes = estimatedPlayers.map((p) => {
+    const existingArchetypes = existingPlayers.map((p) => {
       const persona = JSON.parse(p.persona);
       return (persona.personaKey ?? persona.personality ?? "strategic") as Personality;
     });
 
-    const names = pickAgentNames(estimatedSlots, existingNames);
-    const archetypes = pickArchetypes(estimatedSlots, existingArchetypes);
+    const names = pickAgentNames(slotsToFill, existingNames);
+    const archetypes = pickArchetypes(slotsToFill, existingArchetypes);
 
     const config = JSON.parse(game.config);
     const agentModel =
@@ -461,27 +466,7 @@ export function createGameRoutes(db: DrizzleDB) {
           ? "gpt-4o"
           : "gpt-4o-mini";
 
-    // Pre-generate personas (LLM calls can't run inside sync SQLite transaction)
-    const generatedPersonas: Array<{ personality: string; strategyHints: string }> = [];
-    for (let i = 0; i < estimatedSlots; i++) {
-      const name = names[i] ?? `Agent-${i + 1}`;
-      const archetype = archetypes[i] ?? "strategic";
-      let personalityBlurb = "";
-      let strategyHints = "";
-      if (openai) {
-        try {
-          const generated = await generatePersona(openai, name, archetype, "gpt-4o-mini");
-          personalityBlurb = generated.personality;
-          strategyHints = generated.strategyHints;
-        } catch (err) {
-          // Non-fatal: engine uses hardcoded prompts as fallback
-          console.warn(`[games] Persona generation failed for ${name}:`, err instanceof Error ? err.message : err);
-        }
-      }
-      generatedPersonas.push({ personality: personalityBlurb, strategyHints });
-    }
-
-    // Atomic transaction: re-count players and insert only what fits
+    // Step 1: Create placeholder players immediately (no LLM needed)
     const addedPlayers: Array<{ id: string; name: string; archetype: string }> = [];
 
     db.transaction((tx) => {
@@ -491,20 +476,19 @@ export function createGameRoutes(db: DrizzleDB) {
         .where(eq(schema.gamePlayers.gameId, gameId))
         .all();
 
-      const slotsToFill = game.maxPlayers - currentPlayers.length;
+      const actualSlots = game.maxPlayers - currentPlayers.length;
 
-      for (let i = 0; i < slotsToFill && i < estimatedSlots; i++) {
+      for (let i = 0; i < actualSlots && i < slotsToFill; i++) {
         const name = names[i] ?? `Agent-${i + 1}`;
         const archetype = archetypes[i] ?? "strategic";
-        const gen = generatedPersonas[i] ?? { personality: "", strategyHints: "" };
 
         const playerId = randomUUID();
         const persona = {
           name,
           personality: archetype,
-          strategyHints: gen.strategyHints || null,
+          strategyHints: null,
           personaKey: archetype,
-          personalityBlurb: gen.personality || null,
+          personalityBlurb: null,
         };
 
         const agentConfig = {
@@ -530,19 +514,76 @@ export function createGameRoutes(db: DrizzleDB) {
       return c.json({ error: "Game is already full" }, 400);
     }
 
+    // Step 2: Broadcast players_filled immediately
+    const totalPlayers = existingPlayers.length + addedPlayers.length;
+    broadcastRaw(gameId, {
+      type: "players_filled",
+      gameId,
+      players: addedPlayers,
+      totalPlayers,
+    });
+
+    // Step 3: Fire-and-forget persona generation in background
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+    const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
+
+    if (openai) {
+      void (async () => {
+        const updatedPlayers: Array<{ id: string; name: string; archetype: string }> = [];
+
+        for (const player of addedPlayers) {
+          try {
+            const generated = await generatePersona(openai, player.name, player.archetype as Personality, "gpt-4o-mini");
+
+            const existing = db
+              .select()
+              .from(schema.gamePlayers)
+              .where(eq(schema.gamePlayers.id, player.id))
+              .all()[0];
+
+            if (existing) {
+              const persona = JSON.parse(existing.persona);
+              persona.strategyHints = generated.strategyHints || null;
+              persona.personalityBlurb = generated.personality || null;
+
+              db.update(schema.gamePlayers)
+                .set({ persona: JSON.stringify(persona) })
+                .where(eq(schema.gamePlayers.id, player.id))
+                .run();
+
+              updatedPlayers.push(player);
+            }
+          } catch (err) {
+            console.warn(`[games] Persona generation failed for ${player.name}:`, err instanceof Error ? err.message : err);
+          }
+        }
+
+        if (updatedPlayers.length > 0) {
+          broadcastRaw(gameId, {
+            type: "players_updated",
+            gameId,
+            players: updatedPlayers,
+          });
+        }
+      })();
+    }
+
+    // Step 4: Return 202 Accepted immediately
     return c.json({
+      filling: true,
+      slotsToFill: addedPlayers.length,
       filled: addedPlayers.length,
-      totalPlayers: estimatedPlayers.length + addedPlayers.length,
+      totalPlayers,
       maxPlayers: game.maxPlayers,
       players: addedPlayers,
-    });
+    }, 202);
   });
 
   // -------------------------------------------------------------------------
   // POST /api/games/:id/start — start a game (min players met)
   // -------------------------------------------------------------------------
 
-  app.post("/api/games/:id/start", requireAuth(db), requireAdmin(), async (c) => {
+  app.post("/api/games/:id/start", requireAuth(db), requirePermission("start_game"), async (c) => {
     const gameId = c.req.param("id");
 
     const game = db
@@ -607,7 +648,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // POST /api/games/:id/stop — stop / cancel a running game
   // -------------------------------------------------------------------------
 
-  app.post("/api/games/:id/stop", requireAuth(db), requireAdmin(), async (c) => {
+  app.post("/api/games/:id/stop", requireAuth(db), requirePermission("stop_game"), async (c) => {
     const gameId = c.req.param("id");
 
     const game = db

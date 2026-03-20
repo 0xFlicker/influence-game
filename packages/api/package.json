@@ -20,7 +20,8 @@
     "drizzle-orm": "^0.45.1",
     "hono": "^4.7.0",
     "jose": "^6.2.1",
-    "openai": "^4.77.0"
+    "openai": "^4.77.0",
+    "viem": "^2.47.5"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

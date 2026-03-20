@@ -288,6 +288,7 @@ async function runGameAsync(
       })
       .where(eq(schema.games.id, gameId))
       .run();
+
   } catch (err) {
     // Game failed — mark as cancelled and store error reason in config
     const errorMessage = err instanceof Error ? err.message : String(err);

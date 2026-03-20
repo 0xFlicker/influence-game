@@ -2,10 +2,11 @@
  * Influence Game — Database Schema
  *
  * Drizzle ORM schema for SQLite (better-sqlite3).
- * Tables: users, games, game_players, transcripts, game_results, agent_profiles
+ * Tables: users, games, game_players, transcripts, game_results, agent_profiles,
+ *         permissions, roles, role_permissions, address_roles
  */
 
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 // ---------------------------------------------------------------------------
@@ -78,7 +79,7 @@ export const gamePlayers = sqliteTable("game_players", {
     .notNull()
     .references(() => games.id),
   userId: text("user_id").references(() => users.id),
-  agentProfileId: text("agent_profile_id").references(() => agentProfiles.id), // Link to saved agent profile
+  agentProfileId: text("agent_profile_id").references(() => agentProfiles.id),
   persona: text("persona").notNull(), // JSON: { name, personality, strategyHints }
   agentConfig: text("agent_config").notNull(), // JSON: { model, temperature, etc. }
   joinedAt: text("joined_at")
@@ -126,3 +127,62 @@ export const gameResults = sqliteTable("game_results", {
     .notNull()
     .default(sql`(datetime('now'))`),
 });
+
+// ---------------------------------------------------------------------------
+// RBAC — Permissions
+// ---------------------------------------------------------------------------
+
+export const permissions = sqliteTable("permissions", {
+  id: text("id").primaryKey(), // UUID
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+// ---------------------------------------------------------------------------
+// RBAC — Roles
+// ---------------------------------------------------------------------------
+
+export const roles = sqliteTable("roles", {
+  id: text("id").primaryKey(), // UUID
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  isSystem: integer("is_system").notNull().default(0),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+// ---------------------------------------------------------------------------
+// RBAC — Role ↔ Permission mapping
+// ---------------------------------------------------------------------------
+
+export const rolePermissions = sqliteTable("role_permissions", {
+  roleId: text("role_id")
+    .notNull()
+    .references(() => roles.id, { onDelete: "cascade" }),
+  permissionId: text("permission_id")
+    .notNull()
+    .references(() => permissions.id, { onDelete: "cascade" }),
+}, (table) => [
+  primaryKey({ columns: [table.roleId, table.permissionId] }),
+]);
+
+// ---------------------------------------------------------------------------
+// RBAC — Wallet Address ↔ Role assignments
+// ---------------------------------------------------------------------------
+
+export const addressRoles = sqliteTable("address_roles", {
+  walletAddress: text("wallet_address").notNull(), // lowercase
+  roleId: text("role_id")
+    .notNull()
+    .references(() => roles.id, { onDelete: "cascade" }),
+  grantedBy: text("granted_by"), // wallet address of granter
+  grantedAt: text("granted_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+}, (table) => [
+  primaryKey({ columns: [table.walletAddress, table.roleId] }),
+]);

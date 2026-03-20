@@ -70,6 +70,9 @@ interface GameCardProps {
 function GameCard({ game, onJoin }: GameCardProps) {
   const isJoinable = game.status === "waiting";
   const isLive = game.status === "in_progress";
+  const slotsInfo = isJoinable
+    ? `${game.alivePlayers}/${game.playerCount} joined`
+    : undefined;
 
   return (
     <div className="border border-white/10 rounded-xl p-5 hover:border-white/20 transition-colors">
@@ -86,20 +89,23 @@ function GameCard({ game, onJoin }: GameCardProps) {
 
           {/* Meta row */}
           <div className="flex items-center gap-4 text-xs text-white/40 mb-3 flex-wrap">
-            <span>👥 {game.playerCount} players</span>
-            <span>⚙️ {capitalize(game.modelTier)}</span>
+            <span>{game.playerCount} players</span>
+            <span>{capitalize(game.modelTier)} tier</span>
+            {slotsInfo && (
+              <span className="text-indigo-400/70">{slotsInfo}</span>
+            )}
             {isLive && (
               <>
                 <span>Round {game.currentRound}/{game.maxRounds}</span>
-                <span>🟢 {game.alivePlayers} alive</span>
+                <span className="text-green-400/70">{game.alivePlayers} alive</span>
                 {game.phaseTimeRemaining != null && (
-                  <span>⏱ {Math.round(game.phaseTimeRemaining / 1000)}s</span>
+                  <span>{Math.round(game.phaseTimeRemaining / 1000)}s</span>
                 )}
               </>
             )}
             {game.status === "completed" && game.winner && (
               <span>
-                🏆 {game.winner}{" "}
+                {game.winner}{" "}
                 <span className="text-white/25">({game.winnerPersona})</span>
               </span>
             )}
@@ -131,7 +137,7 @@ function GameCard({ game, onJoin }: GameCardProps) {
           {isJoinable && onJoin && (
             <button
               onClick={() => onJoin(game)}
-              className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg font-medium transition-colors"
+              className="text-xs px-3 py-1.5 rounded-lg font-medium transition-colors bg-emerald-600 hover:bg-emerald-500 text-white"
             >
               Join
             </button>
