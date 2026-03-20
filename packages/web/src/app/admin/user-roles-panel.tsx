@@ -11,14 +11,11 @@ import {
   type AddressRoleAssignment,
   type AdminUser,
 } from "@/lib/api";
+import { TruncatedAddress } from "@/components/truncated-address";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function shortAddr(address: string): string {
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
 
 const roleBadgeColors: Record<string, string> = {
   sysop: "bg-red-900/40 text-red-400",
@@ -162,8 +159,8 @@ function AddressRolesTable({
         <tbody>
           {[...grouped.entries()].map(([addr, roles]) => (
             <tr key={addr} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
-              <td className="py-3 px-4 text-white/60 text-sm font-mono" title={addr}>
-                {shortAddr(addr)}
+              <td className="py-3 px-4 text-white/60 text-sm font-mono">
+                <TruncatedAddress address={addr} maxWidth="11ch" />
               </td>
               <td className="py-3 px-4">
                 <div className="flex gap-1 flex-wrap">
@@ -173,7 +170,7 @@ function AddressRolesTable({
                 </div>
               </td>
               <td className="py-3 px-4 text-white/40 text-xs font-mono">
-                {roles[0]?.grantedBy ? shortAddr(roles[0].grantedBy) : "—"}
+                {roles[0]?.grantedBy ? <TruncatedAddress address={roles[0].grantedBy} maxWidth="11ch" /> : "—"}
               </td>
               <td className="py-3 px-4 text-right">
                 <div className="flex justify-end gap-1">
@@ -232,8 +229,8 @@ function UsersTable({
         <tbody>
           {users.map((user) => (
             <tr key={user.id} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
-              <td className="py-3 px-4 text-white/60 text-sm font-mono" title={user.walletAddress ?? undefined}>
-                {user.walletAddress ? shortAddr(user.walletAddress) : "—"}
+              <td className="py-3 px-4 text-white/60 text-sm font-mono">
+                {user.walletAddress ? <TruncatedAddress address={user.walletAddress} maxWidth="11ch" /> : "—"}
               </td>
               <td className="py-3 px-4 text-white text-sm">{user.displayName ?? "—"}</td>
               <td className="py-3 px-4 text-white/50 text-sm">{user.email ?? "—"}</td>
@@ -418,7 +415,7 @@ export function UserRolesPanel() {
       {/* Confirm dialog for sysop revoke */}
       {revokeConfirm && (
         <ConfirmDialog
-          message={`Are you sure you want to revoke the sysop role from ${shortAddr(revokeConfirm.walletAddress)}? This is a privileged role.`}
+          message={`Are you sure you want to revoke the sysop role from ${revokeConfirm.walletAddress}? This is a privileged role.`}
           onConfirm={handleRevoke}
           onCancel={() => setRevokeConfirm(null)}
         />

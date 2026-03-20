@@ -5,14 +5,7 @@ import Link from "next/link";
 import { useAccount } from "wagmi";
 import { listGames, stopGame, startGame, fillGame, type GameSummary } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function shortAddr(address: string): string {
-  return `${address.slice(0, 6)}…${address.slice(-4)}`;
-}
+import { TruncatedAddress } from "@/components/truncated-address";
 
 function phaseLabel(phase: string): string {
   const labels: Record<string, string> = {
@@ -342,7 +335,7 @@ export function AdminPanel() {
         </div>
         <div className="flex items-center gap-4">
           {address && (
-            <span className="text-xs text-white/30 font-mono">👛 {shortAddr(address)}</span>
+            <span className="text-xs text-white/30 font-mono">👛 <TruncatedAddress address={address} maxWidth="10ch" /></span>
           )}
           {canCreateGame && (
             <Link
