@@ -29,6 +29,8 @@ export interface TypewriterProps {
    * Used for speed-run game mode (admin/dev/testing).
    */
   speedrun?: boolean;
+  /** Multiplier for typing speed (e.g. 2 = twice as fast). Defaults to 1. */
+  speedMultiplier?: number;
   /** Optional className forwarded to the wrapping span. */
   className?: string;
 }
@@ -41,7 +43,7 @@ export interface TypewriterProps {
  * - Resets and re-animates whenever `text` or `rate` changes.
  * - Calls `onComplete` once when done.
  */
-export function Typewriter({ text, rate, onComplete, speedrun = false, className }: TypewriterProps) {
+export function Typewriter({ text, rate, onComplete, speedrun = false, speedMultiplier = 1, className }: TypewriterProps) {
   const [displayed, setDisplayed] = useState(() => (speedrun ? text : ""));
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
@@ -61,7 +63,8 @@ export function Typewriter({ text, rate, onComplete, speedrun = false, className
       return;
     }
 
-    const intervalMs = 1000 / RATES[rate];
+    const mul = Math.max(0.1, speedMultiplier);
+    const intervalMs = 1000 / (RATES[rate] * mul);
     let index = 0;
 
     const id = setInterval(() => {
@@ -74,7 +77,7 @@ export function Typewriter({ text, rate, onComplete, speedrun = false, className
     }, intervalMs);
 
     return () => clearInterval(id);
-  }, [text, rate, speedrun]);
+  }, [text, rate, speedrun, speedMultiplier]);
 
   return <span className={className}>{displayed}</span>;
 }

@@ -2561,6 +2561,7 @@ function SpectacleMessageContent({
   isElimination,
   currentPlayer,
   currentPlayerName,
+  speedMultiplier = 1,
 }: {
   message: TranscriptEntry;
   scene: ReplayScene;
@@ -2571,6 +2572,7 @@ function SpectacleMessageContent({
   isElimination: boolean;
   currentPlayer: GamePlayer | null | undefined;
   currentPlayerName: string;
+  speedMultiplier?: number;
 }) {
   // For parseable structured messages, skip typewriter and jump to "done"
   const parseable = isParseableStructuredMsg(message.text);
@@ -2619,20 +2621,20 @@ function SpectacleMessageContent({
       {isElimination ? (
         <p className="text-2xl md:text-3xl font-bold text-red-400 tracking-wider">
           {messagePhase === "revealing" ? (
-            <Typewriter text={message.text} rate="house" onComplete={onRevealComplete} />
+            <Typewriter text={message.text} rate="house" onComplete={onRevealComplete} speedMultiplier={speedMultiplier} />
           ) : message.text}
         </p>
       ) : isSystemMessage ? (
         <p className="text-base md:text-lg text-white/40 italic leading-relaxed">
           {messagePhase === "revealing" ? (
-            <Typewriter text={message.text} rate="house" onComplete={onRevealComplete} />
+            <Typewriter text={message.text} rate="house" onComplete={onRevealComplete} speedMultiplier={speedMultiplier} />
           ) : message.text}
         </p>
       ) : (
         <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl px-8 py-6 inline-block max-w-xl text-left">
           <p className="text-lg md:text-xl leading-relaxed text-white/80">
             {messagePhase === "revealing" ? (
-              <Typewriter text={message.text} rate="spectacle" onComplete={onRevealComplete} speedrun={false} />
+              <Typewriter text={message.text} rate="spectacle" onComplete={onRevealComplete} speedrun={false} speedMultiplier={speedMultiplier} />
             ) : message.text}
           </p>
         </div>
@@ -2983,14 +2985,13 @@ function DramaticReplayViewer({
   }, [totalScenes, scenes]);
 
   // Click handler — advance when paused, pause when playing
+  // Tap-to-skip: clicking always advances (skips current animation or goes to
+  // next message). Only the play/pause button can pause. After advancing,
+  // playback auto-continues if it was playing.
   const handleClick = useCallback((e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest("[data-controls]")) return;
-    if (!isPlaying) {
-      advanceMessage();
-    } else {
-      setIsPlaying(false);
-    }
-  }, [isPlaying, advanceMessage]);
+    advanceMessage();
+  }, [advanceMessage]);
 
   // Auto-hide controls
   const handleMouseMove = useCallback(() => {
@@ -3104,6 +3105,24 @@ function DramaticReplayViewer({
         </div>
       )}
 
+      {/* Exit button — top-left, auto-hides with controls */}
+      <button
+        type="button"
+        data-controls
+        onClick={(e) => {
+          e.stopPropagation();
+          window.history.back();
+        }}
+        className={`fixed top-4 left-4 z-20 w-9 h-9 flex items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/50 hover:text-white hover:border-white/25 transition-all duration-500 ${
+          controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+        title="Exit"
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path d="M1 1l12 12M13 1L1 13" />
+        </svg>
+      </button>
+
       {/* Top bar — phase context */}
       <div className="flex-shrink-0 px-6 pt-5 pb-3 flex items-center justify-between z-10">
         <div className="flex items-center gap-3">
@@ -3177,6 +3196,7 @@ function DramaticReplayViewer({
               isElimination={isElimination}
               currentPlayer={currentPlayer}
               currentPlayerName={currentPlayerName}
+              speedMultiplier={speed}
             />
           )}
 
