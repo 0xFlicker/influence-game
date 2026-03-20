@@ -36,6 +36,13 @@
       "when": 1774004400000,
       "tag": "0004_add_game_buyin",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1774017708986,
+      "tag": "0005_modern_power_pack",
+      "breakpoints": true
     }
   ]
 }

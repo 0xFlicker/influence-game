@@ -10,6 +10,7 @@ import { cors } from "hono/cors";
 import { eq, or } from "drizzle-orm";
 import { createDB, schema } from "./db/index.js";
 import { runMigrations } from "./db/migrate.js";
+import { seedRBAC } from "./db/rbac-seed.js";
 import { createGameRoutes } from "./routes/games.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
@@ -68,6 +69,7 @@ function getAllowedCorsOrigins(): string[] {
 const dbPath = process.env.SQLITE_PATH ?? "influence.db";
 runMigrations(dbPath);
 const db = createDB(dbPath);
+seedRBAC(db);
 
 // ---------------------------------------------------------------------------
 // Startup cleanup — reset orphaned in_progress games
