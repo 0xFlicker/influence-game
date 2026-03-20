@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { getGame, getGameTranscript, getAuthToken, type GameDetail, type GamePlayer, type GameSummary, type TranscriptEntry, type WsGameEvent, type WsTranscriptEntry, type PhaseKey, type TranscriptScope } from "@/lib/api";
 import { Typewriter } from "@/components/typewriter";
 import { audioCue } from "@/lib/audio-cues";
+import { AgentAvatar } from "@/components/agent-avatar";
 import { JoinGameModal } from "@/app/dashboard/join-game-modal";
 
 // ---------------------------------------------------------------------------
@@ -144,22 +145,6 @@ const PHASE_COLORS: Partial<Record<PhaseKey, string>> = {
 
 function phaseColor(phase: PhaseKey): string {
   return PHASE_COLORS[phase] ?? "text-white/60";
-}
-
-function personaEmoji(persona: string): string {
-  const map: Record<string, string> = {
-    honest: "🕊",
-    strategic: "♟",
-    deceptive: "🎭",
-    paranoid: "👁",
-    social: "🤝",
-    aggressive: "⚔",
-    loyalist: "🛡",
-    observer: "🔍",
-    diplomat: "🌿",
-    wildcard: "🃏",
-  };
-  return map[persona] ?? "●";
 }
 
 function formatTime(ts: number): string {
@@ -575,7 +560,7 @@ function PlayerRoster({
                   : ""
               }`}
             >
-              <span className="text-base">{personaEmoji(p.persona)}</span>
+              <AgentAvatar avatarUrl={p.avatarUrl} persona={p.persona} name={p.name} size="8" />
               <span className={`font-medium ${isEmpowered ? "text-amber-200" : "text-white"}`}>
                 {p.name}
               </span>
@@ -654,7 +639,7 @@ function MessageBubble({ msg, players }: { msg: TranscriptEntry; players: GamePl
     return (
       <div className="ml-4 border-l-2 border-purple-700/40 pl-3 py-1">
         <div className="flex items-center gap-1.5 mb-0.5">
-          {player && <span className="text-sm">{personaEmoji(player.persona)}</span>}
+          {player && <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />}
           <span className="text-xs font-semibold text-white/60">{msg.fromPlayerId}</span>
         </div>
         <p className="text-xs text-white/55 italic">{msg.text}</p>
@@ -669,8 +654,8 @@ function MessageBubble({ msg, players }: { msg: TranscriptEntry; players: GamePl
 
   return (
     <div className={`flex gap-3 ${isEliminated ? "opacity-50" : ""}`}>
-      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-sm">
-        {player ? personaEmoji(player.persona) : "?"}
+      <div className="flex-shrink-0">
+        {player ? <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="8" /> : <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-sm">?</span>}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2 mb-0.5">
@@ -682,6 +667,143 @@ function MessageBubble({ msg, players }: { msg: TranscriptEntry; players: GamePl
         </div>
         <p className="text-sm text-white/70 leading-relaxed break-words">{msg.text}</p>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Group Chat Feed — scrolling chat for INTRODUCTION / LOBBY phases (live mode)
+// ---------------------------------------------------------------------------
+
+function GroupChatFeed({
+  messages,
+  players,
+  phase,
+}: {
+  messages: TranscriptEntry[];
+  players: GamePlayer[];
+  phase: PhaseKey;
+}) {
+  const feedRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (feedRef.current) {
+      feedRef.current.scrollTop = feedRef.current.scrollHeight;
+    }
+  }, [messages.length]);
+
+  const borderStyle = phase === "INTRODUCTION"
+    ? "border-blue-900/20 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.08),rgba(9,4,19,0.95)_62%)]"
+    : "border-blue-900/20 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.06),rgba(9,4,19,0.95)_62%)]";
+
+  return (
+    <div
+      ref={feedRef}
+      className={`border ${borderStyle} rounded-xl flex-1 overflow-y-auto p-4 md:p-6 min-h-[420px] max-h-[600px]`}
+    >
+      {messages.length === 0 ? (
+        <div className="flex items-center justify-center h-full">
+          <p className="text-white/20 text-sm animate-pulse">Waiting for messages…</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {messages.map((msg) => (
+            <div key={msg.id} className="animate-[fadeIn_0.3s_ease-out]">
+              <MessageBubble msg={msg} players={players} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Jury DM View — DM-style layout for JURY_QUESTIONS phase (live mode)
+// ---------------------------------------------------------------------------
+
+function JuryDMView({
+  messages,
+  players,
+}: {
+  messages: TranscriptEntry[];
+  players: GamePlayer[];
+}) {
+  const feedRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (feedRef.current) {
+      feedRef.current.scrollTop = feedRef.current.scrollHeight;
+    }
+  }, [messages.length]);
+
+  return (
+    <div
+      ref={feedRef}
+      className="border border-amber-900/20 bg-[radial-gradient(circle_at_top,rgba(217,119,6,0.08),rgba(9,4,19,0.95)_62%)] rounded-xl flex-1 overflow-y-auto p-4 md:p-6 min-h-[420px] max-h-[600px]"
+    >
+      <div className="text-center mb-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-amber-300/70 mb-1">
+          Jury Questions
+        </p>
+      </div>
+      {messages.length === 0 ? (
+        <div className="flex items-center justify-center h-48">
+          <p className="text-white/20 text-sm animate-pulse">Awaiting jury questions…</p>
+        </div>
+      ) : (
+        <div className="space-y-3 max-w-lg mx-auto">
+          {messages.map((msg) => {
+            const question = parseJuryQuestion(msg.text);
+            const answer = parseJuryAnswer(msg.text);
+            const isQuestion = !!question;
+            const isAnswer = !!answer;
+
+            if (isQuestion) {
+              const fromPlayer = msg.fromPlayerId
+                ? players.find((p) => p.id === msg.fromPlayerId) ?? players.find((p) => p.name === msg.fromPlayerId)
+                : null;
+              const fromName = msg.fromPlayerName ?? fromPlayer?.name ?? "Juror";
+              return (
+                <div key={msg.id} className="flex gap-2 justify-start animate-[fadeIn_0.3s_ease-out]">
+                  <div className="flex-shrink-0 mt-1">
+                    {fromPlayer ? <AgentAvatar avatarUrl={fromPlayer.avatarUrl} persona={fromPlayer.persona} name={fromPlayer.name} size="8" /> : <span className="w-7 h-7 rounded-full bg-amber-900/30 flex items-center justify-center text-xs text-amber-300/60">?</span>}
+                  </div>
+                  <div className="max-w-[80%]">
+                    <p className="text-[10px] text-amber-400/60 mb-0.5">{fromName} <span className="text-white/20">to {question.finalist}</span></p>
+                    <div className="bg-white/[0.06] border border-white/[0.08] rounded-2xl rounded-tl-sm px-4 py-2.5">
+                      <p className="text-sm text-white/70 leading-relaxed italic">{question.question}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            if (isAnswer) {
+              const fromPlayer = msg.fromPlayerId
+                ? players.find((p) => p.id === msg.fromPlayerId) ?? players.find((p) => p.name === msg.fromPlayerId)
+                : null;
+              const fromName = msg.fromPlayerName ?? fromPlayer?.name ?? "Finalist";
+              return (
+                <div key={msg.id} className="flex gap-2 justify-end animate-[fadeIn_0.3s_ease-out]">
+                  <div className="max-w-[80%]">
+                    <p className="text-[10px] text-amber-300/60 text-right mb-0.5">{fromName}</p>
+                    <div className="bg-amber-900/20 border border-amber-700/20 rounded-2xl rounded-tr-sm px-4 py-2.5">
+                      <p className="text-sm text-white/80 leading-relaxed">{answer.answer}</p>
+                    </div>
+                  </div>
+                  <div className="flex-shrink-0 mt-1">
+                    {fromPlayer ? <AgentAvatar avatarUrl={fromPlayer.avatarUrl} persona={fromPlayer.persona} name={fromPlayer.name} size="8" /> : <span className="w-7 h-7 rounded-full bg-amber-900/30 flex items-center justify-center text-xs text-amber-300/60">?</span>}
+                  </div>
+                </div>
+              );
+            }
+
+            // System or non-jury message
+            return <MessageBubble key={msg.id} msg={msg} players={players} />;
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -887,7 +1009,7 @@ function DiaryQACard({
         </span>
         {player && (
           <span className="text-purple-300/60 flex items-center gap-1">
-            <span>{personaEmoji(player.persona)}</span>
+            <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />
             <span>{player.name}{isJuror ? " (juror)" : ""}</span>
           </span>
         )}
@@ -906,7 +1028,7 @@ function DiaryQACard({
           {answer ? (
             <div className="ml-3 border-l-2 border-purple-700/40 pl-3">
               <div className="flex items-center gap-1.5 mb-0.5">
-                {player && <span className="text-sm">{personaEmoji(player.persona)}</span>}
+                {player && <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />}
                 <span className="font-semibold text-white/70">{targetName}</span>
                 <span className="text-white/20 ml-auto flex-shrink-0">
                   {formatTime(answer.timestamp)}
@@ -924,8 +1046,83 @@ function DiaryQACard({
 }
 
 // ---------------------------------------------------------------------------
-// Whisper phase quiet-state view
+// Whisper phase — DM grid (desktop) / tabbed rooms (mobile)
 // ---------------------------------------------------------------------------
+
+/** Single DM-style room chat box — messages aligned left/right based on speaker. */
+function WhisperRoomDM({
+  room,
+  players,
+}: {
+  room: WhisperRoomStage;
+  players: GamePlayer[];
+}) {
+  const feedRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (feedRef.current) {
+      feedRef.current.scrollTop = feedRef.current.scrollHeight;
+    }
+  }, [room.messages.length]);
+
+  // First player in the room is treated as "self" (messages on right)
+  const selfId = room.playerIds[0];
+
+  return (
+    <div className="rounded-2xl border border-purple-400/20 bg-black/30 flex flex-col overflow-hidden h-full">
+      <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-purple-900/20">
+        <div className="flex items-center gap-2 min-w-0">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-purple-300/45 flex-shrink-0">
+            Room {room.roomId}
+          </p>
+          <p className="text-xs font-semibold text-white truncate">
+            {room.playerNames.join(" × ")}
+          </p>
+        </div>
+        <span className="rounded-full border border-red-400/25 bg-red-400/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.2em] text-red-200/80 flex-shrink-0">
+          Live
+        </span>
+      </div>
+
+      <div ref={feedRef} className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
+        {room.messages.length === 0 ? (
+          <p className="text-xs text-white/30 italic text-center py-6">Waiting…</p>
+        ) : (
+          room.messages.map((msg) => {
+            const isSelf = msg.fromPlayerId === selfId;
+            const player = players.find((c) => c.id === msg.fromPlayerId)
+              ?? players.find((c) => c.name === msg.fromPlayerId);
+            const name = player?.name ?? msg.fromPlayerId ?? "Unknown";
+            return (
+              <div key={msg.id} className={`flex gap-2 ${isSelf ? "justify-end" : "justify-start"} animate-[fadeIn_0.25s_ease-out]`}>
+                {!isSelf && (
+                  <div className="flex-shrink-0 mt-1">
+                    {player ? <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" /> : <span className="w-6 h-6 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>}
+                  </div>
+                )}
+                <div className={`max-w-[80%] ${isSelf ? "text-right" : "text-left"}`}>
+                  <p className="text-[10px] text-white/30 mb-0.5">{name}</p>
+                  <div className={`rounded-2xl px-3 py-2 ${
+                    isSelf
+                      ? "bg-purple-800/30 border border-purple-600/20 rounded-tr-sm"
+                      : "bg-white/[0.06] border border-white/[0.08] rounded-tl-sm"
+                  }`}>
+                    <p className="text-xs leading-relaxed text-white/70 text-left">{msg.text}</p>
+                  </div>
+                </div>
+                {isSelf && (
+                  <div className="flex-shrink-0 mt-1">
+                    {player ? <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" /> : <span className="w-6 h-6 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
 
 function WhisperPhaseView({
   phaseEntries,
@@ -937,13 +1134,11 @@ function WhisperPhaseView({
   phaseKey: string;
 }) {
   const stage = buildWhisperStageData(phaseEntries, players);
-  const [pinnedShot, setPinnedShot] = useState<string | null>(null);
-  const [autoIndex, setAutoIndex] = useState(0);
+  const [mobileRoomIndex, setMobileRoomIndex] = useState(0);
   const [showAllocationReveal, setShowAllocationReveal] = useState(true);
 
   useEffect(() => {
-    setPinnedShot(null);
-    setAutoIndex(0);
+    setMobileRoomIndex(0);
     setShowAllocationReveal(true);
   }, [phaseKey]);
 
@@ -952,33 +1147,9 @@ function WhisperPhaseView({
     return () => window.clearTimeout(timer);
   }, [phaseKey]);
 
-  const shots = [
-    ...stage.rooms.map((room) => ({ key: `room-${room.roomId}`, kind: "room" as const, room })),
-    ...(stage.commons.length > 0
-      ? [{ key: "commons", kind: "commons" as const, players: stage.commons }]
-      : []),
-  ];
-
-  useEffect(() => {
-    if (showAllocationReveal || pinnedShot || shots.length <= 1) return;
-    const activeShot = shots[autoIndex % shots.length];
-    const holdMs = activeShot?.kind === "commons" ? 4000 : 9000;
-    const timer = window.setTimeout(() => {
-      setAutoIndex((index) => (index + 1) % shots.length);
-    }, holdMs);
-    return () => window.clearTimeout(timer);
-  }, [autoIndex, pinnedShot, shots, showAllocationReveal]);
-
-  const activeShot = pinnedShot
-    ? shots.find((shot) => shot.key === pinnedShot) ?? shots[0]
-    : shots[autoIndex % Math.max(shots.length, 1)];
-
-  const activeRoom = activeShot?.kind === "room" ? activeShot.room : null;
-  const activeCommons = activeShot?.kind === "commons" ? activeShot.players : null;
-
   return (
     <div className="border border-purple-900/20 bg-[radial-gradient(circle_at_top,rgba(120,57,191,0.2),rgba(9,4,19,0.95)_62%)] rounded-xl flex-1 overflow-y-auto p-4 md:p-6 min-h-[420px] max-h-[600px]">
-      <div className="text-center mb-6">
+      <div className="text-center mb-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-purple-300/70 mb-1">
           Whisper Rooms
         </p>
@@ -1021,117 +1192,53 @@ function WhisperPhaseView({
             </div>
           )}
         </div>
-      ) : shots.length === 0 ? (
+      ) : stage.rooms.length === 0 ? (
         <div className="rounded-2xl border border-purple-900/20 bg-black/20 p-8 text-center text-white/45">
           Waiting for the House to finish assigning rooms.
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            {stage.rooms.map((room) => {
-              const tabKey = `room-${room.roomId}`;
-              const isPinned = pinnedShot === tabKey;
-              return (
+        <>
+          {/* Desktop: simultaneous grid of all rooms */}
+          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-3" style={{ minHeight: "300px" }}>
+            {stage.rooms.map((room) => (
+              <WhisperRoomDM key={room.roomId} room={room} players={players} />
+            ))}
+            {stage.commons.length > 0 && (
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 flex flex-col items-center justify-center text-center">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-white/30 mb-2">Commons</p>
+                <p className="text-sm font-semibold text-white/60">
+                  {stage.commons.map((p) => p.name).join(", ")}
+                </p>
+                <p className="text-xs text-white/30 mt-1">No private room this round.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Mobile: single room with tab buttons */}
+          <div className="md:hidden">
+            <div className="flex flex-wrap items-center gap-1.5 mb-3">
+              {stage.rooms.map((room, idx) => (
                 <button
-                  key={tabKey}
+                  key={room.roomId}
                   type="button"
-                  onClick={() => setPinnedShot((current) => current === tabKey ? null : tabKey)}
-                  className={`rounded-full border px-3 py-1.5 text-xs uppercase tracking-[0.2em] transition-colors ${
-                    isPinned
+                  onClick={() => setMobileRoomIndex(idx)}
+                  className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] transition-colors ${
+                    mobileRoomIndex === idx
                       ? "border-purple-300/50 bg-purple-300/15 text-white"
-                      : "border-white/10 bg-white/5 text-white/55 hover:border-purple-300/30 hover:text-white"
+                      : "border-white/10 bg-white/5 text-white/50 hover:border-purple-300/30"
                   }`}
                 >
                   Room {room.roomId}
                 </button>
-              );
-            })}
-            {stage.commons.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setPinnedShot((current) => current === "commons" ? null : "commons")}
-                className={`rounded-full border px-3 py-1.5 text-xs uppercase tracking-[0.2em] transition-colors ${
-                  pinnedShot === "commons"
-                    ? "border-white/40 bg-white/12 text-white"
-                    : "border-white/10 bg-white/5 text-white/55 hover:border-white/25 hover:text-white"
-                }`}
-              >
-                Commons
-              </button>
-            )}
-            <div className="ml-auto text-[11px] uppercase tracking-[0.25em] text-purple-300/45">
-              {pinnedShot ? "Pinned room" : "Auto-rotate live"}
+              ))}
             </div>
-          </div>
-
-          {stage.allocationText && (
-            <p className="text-xs text-white/35 border-b border-white/10 pb-3">
-              {stage.allocationText}
-            </p>
-          )}
-
-          {activeRoom && (
-            <div
-              key={activeShot?.key}
-              className="rounded-[28px] border border-purple-400/20 bg-black/30 p-5 md:p-6 shadow-[0_30px_80px_rgba(0,0,0,0.45)] animate-[fadeIn_0.3s_ease-out]"
-            >
-              <div className="flex items-center justify-between gap-3 mb-5">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.28em] text-purple-300/45 mb-1">
-                    Room {activeRoom.roomId}
-                  </p>
-                  <p className="text-xl font-semibold text-white">
-                    {activeRoom.playerNames.join("  ×  ")}
-                  </p>
-                </div>
-                <span className="rounded-full border border-red-400/25 bg-red-400/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-red-200/80">
-                  Live
-                </span>
+            {stage.rooms[mobileRoomIndex] && (
+              <div style={{ height: "300px" }}>
+                <WhisperRoomDM room={stage.rooms[mobileRoomIndex]} players={players} />
               </div>
-
-              {activeRoom.messages.length === 0 ? (
-                <p className="text-sm text-white/45 italic">
-                  The room is sealed. Waiting for the first message.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {activeRoom.messages.map((msg) => {
-                    const player = players.find((candidate) => candidate.id === msg.fromPlayerId)
-                      ?? players.find((candidate) => candidate.name === msg.fromPlayerId);
-                    const name = player?.name ?? msg.fromPlayerId ?? "Unknown";
-                    return (
-                      <div key={msg.id} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <span className="text-sm">{player ? personaEmoji(player.persona) : "●"}</span>
-                          <span className="text-sm font-semibold text-white/75">{name}</span>
-                          <span className="ml-auto text-[11px] uppercase tracking-[0.18em] text-white/25">
-                            {formatTime(msg.timestamp)}
-                          </span>
-                        </div>
-                        <p className="text-sm leading-relaxed text-white/70">{msg.text}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeCommons && (
-            <div
-              key={activeShot?.key}
-              className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] p-5 md:p-6 text-center shadow-[0_30px_80px_rgba(0,0,0,0.38)] animate-[fadeIn_0.3s_ease-out]"
-            >
-              <p className="text-[11px] uppercase tracking-[0.28em] text-white/35 mb-3">Commons</p>
-              <p className="text-2xl font-semibold text-white mb-3">
-                {activeCommons.map((player) => player.name).join("  ·  ")}
-              </p>
-              <p className="text-sm text-white/55 max-w-xl mx-auto">
-                These operatives were shut out of private conversations this round.
-              </p>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
@@ -1176,8 +1283,8 @@ function RevealMessageItem({
   const name = msg.fromPlayerName ?? player?.name ?? msg.fromPlayerId ?? "Unknown";
   return (
     <div className="flex gap-3 animate-[fadeIn_0.4s_ease-out]">
-      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-sm">
-        {player ? personaEmoji(player.persona) : "?"}
+      <div className="flex-shrink-0">
+        {player ? <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="8" /> : <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-sm">?</span>}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-xs font-semibold text-white/70 mb-0.5">{name}</p>
@@ -1573,7 +1680,7 @@ function DiaryEntryCard({
         <span className="font-semibold uppercase tracking-wider text-purple-400/70">📔 Diary</span>
         {player && (
           <span className="text-purple-300/60 flex items-center gap-1">
-            <span>{personaEmoji(player.persona)}</span>
+            <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />
             <span>{player.name}</span>
           </span>
         )}
@@ -1807,7 +1914,7 @@ function VoteTallyOverlay({
                   : "bg-white/[0.02]"
               }`}
             >
-              <span className="text-sm">{personaEmoji(player.persona)}</span>
+              <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />
               <span className="text-xs text-white/60 flex-1">{player.name}</span>
               {empower > 0 && (
                 <span className="text-[10px] text-amber-400 bg-amber-900/25 px-1.5 py-0.5 rounded">
@@ -1846,7 +1953,7 @@ function VoteTallyOverlay({
             const player = players.find((p) => p.name === name);
             return (
               <div key={name} className="text-center">
-                {player && <span className="text-2xl block mb-1">{personaEmoji(player.persona)}</span>}
+                {player && <div className="mb-1 flex justify-center"><AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="10" /></div>}
                 <p className="text-sm text-white/70 font-semibold">{name}</p>
                 <p className="text-2xl font-bold text-red-400 mt-1">{count}</p>
               </div>
@@ -1879,7 +1986,7 @@ function VoteTallyOverlay({
             const player = players.find((p) => p.name === name);
             return (
               <div key={name} className="text-center">
-                {player && <span className="text-2xl block mb-1">{personaEmoji(player.persona)}</span>}
+                {player && <div className="mb-1 flex justify-center"><AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="10" /></div>}
                 <p className="text-sm text-white/70 font-semibold">{name}</p>
                 <p className="text-3xl font-bold text-amber-400 mt-1">{count}</p>
               </div>
@@ -1911,7 +2018,7 @@ function VoteTallyOverlay({
           const player = players.find((p) => p.name === name);
           return (
             <div key={name} className="text-center">
-              {player && <span className="text-2xl block mb-1">{personaEmoji(player.persona)}</span>}
+              {player && <div className="mb-1 flex justify-center"><AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="10" /></div>}
               <p className="text-sm text-white/70 font-semibold">{name}</p>
               <p className="text-2xl font-bold text-red-400 mt-1">{count}</p>
             </div>
@@ -1941,7 +2048,7 @@ function StyledVoteCard({
     return (
       <div className="text-center animate-[fadeIn_0.3s_ease-out]">
         <div className="flex items-center justify-center gap-3 mb-6">
-          {voterPlayer && <span className="text-2xl">{personaEmoji(voterPlayer.persona)}</span>}
+          {voterPlayer && <AgentAvatar avatarUrl={voterPlayer.avatarUrl} persona={voterPlayer.persona} name={voterPlayer.name} size="10" />}
           <span className="text-lg font-semibold text-white/70">{vote.voter}</span>
         </div>
         <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl px-8 py-6 inline-block max-w-md">
@@ -1949,14 +2056,14 @@ function StyledVoteCard({
             <div className="flex items-center gap-3">
               <span className="text-amber-400 text-sm uppercase tracking-wider w-20 text-right">Empower</span>
               <span className="text-xl">👑</span>
-              {empowerPlayer && <span className="text-base">{personaEmoji(empowerPlayer.persona)}</span>}
+              {empowerPlayer && <AgentAvatar avatarUrl={empowerPlayer.avatarUrl} persona={empowerPlayer.persona} name={empowerPlayer.name} size="6" />}
               <span className="text-lg font-semibold text-amber-300">{vote.empower}</span>
             </div>
             <div className="border-t border-white/5" />
             <div className="flex items-center gap-3">
               <span className="text-red-400 text-sm uppercase tracking-wider w-20 text-right">Expose</span>
               <span className="text-xl">⚡</span>
-              {exposePlayer && <span className="text-base">{personaEmoji(exposePlayer.persona)}</span>}
+              {exposePlayer && <AgentAvatar avatarUrl={exposePlayer.avatarUrl} persona={exposePlayer.persona} name={exposePlayer.name} size="6" />}
               <span className="text-lg font-semibold text-red-300">{vote.expose}</span>
             </div>
           </div>
@@ -1972,13 +2079,13 @@ function StyledVoteCard({
     return (
       <div className="text-center animate-[fadeIn_0.3s_ease-out]">
         <div className="flex items-center justify-center gap-3 mb-6">
-          {voterPlayer && <span className="text-2xl">{personaEmoji(voterPlayer.persona)}</span>}
+          {voterPlayer && <AgentAvatar avatarUrl={voterPlayer.avatarUrl} persona={voterPlayer.persona} name={voterPlayer.name} size="10" />}
           <span className="text-lg font-semibold text-white/70">{councilVote.voter}</span>
         </div>
         <div className="bg-red-900/10 border border-red-500/15 rounded-2xl px-8 py-6 inline-block">
           <p className="text-xs text-red-400/50 uppercase tracking-wider mb-2">Votes to eliminate</p>
           <div className="flex items-center justify-center gap-3">
-            {targetPlayer && <span className="text-2xl">{personaEmoji(targetPlayer.persona)}</span>}
+            {targetPlayer && <AgentAvatar avatarUrl={targetPlayer.avatarUrl} persona={targetPlayer.persona} name={targetPlayer.name} size="10" />}
             <span className="text-2xl font-bold text-red-300">{councilVote.target}</span>
           </div>
         </div>
@@ -1993,14 +2100,14 @@ function StyledVoteCard({
     return (
       <div className="text-center animate-[fadeIn_0.3s_ease-out]">
         <div className="flex items-center justify-center gap-3 mb-6">
-          {jurorPlayer && <span className="text-2xl">{personaEmoji(jurorPlayer.persona)}</span>}
+          {jurorPlayer && <AgentAvatar avatarUrl={jurorPlayer.avatarUrl} persona={jurorPlayer.persona} name={jurorPlayer.name} size="10" />}
           <span className="text-lg font-semibold text-white/50">{juryVote.juror}</span>
           <span className="text-xs text-white/25 uppercase tracking-wider">(juror)</span>
         </div>
         <div className="bg-amber-900/10 border border-amber-500/15 rounded-2xl px-8 py-6 inline-block">
           <p className="text-xs text-amber-400/50 uppercase tracking-wider mb-2">Votes for</p>
           <div className="flex items-center justify-center gap-3">
-            {targetPlayer && <span className="text-2xl">{personaEmoji(targetPlayer.persona)}</span>}
+            {targetPlayer && <AgentAvatar avatarUrl={targetPlayer.avatarUrl} persona={targetPlayer.persona} name={targetPlayer.name} size="10" />}
             <span className="text-2xl font-bold text-amber-300">{juryVote.target}</span>
           </div>
         </div>
@@ -2017,7 +2124,7 @@ function StyledVoteCard({
       <div className="text-center animate-[fadeIn_0.3s_ease-out]">
         <div className="flex items-center justify-center gap-3 mb-6">
           <span className="text-2xl">👑</span>
-          {agentPlayer && <span className="text-2xl">{personaEmoji(agentPlayer.persona)}</span>}
+          {agentPlayer && <AgentAvatar avatarUrl={agentPlayer.avatarUrl} persona={agentPlayer.persona} name={agentPlayer.name} size="10" />}
           <span className="text-lg font-semibold text-amber-300">{powerAction.agent}</span>
         </div>
         <div className={`${isProtect ? "bg-blue-900/10 border-blue-500/15" : "bg-red-900/15 border-red-500/20"} border rounded-2xl px-8 py-6 inline-block`}>
@@ -2026,7 +2133,7 @@ function StyledVoteCard({
           </p>
           <div className="flex items-center justify-center gap-3">
             <span className="text-2xl">{isProtect ? "🛡" : "💀"}</span>
-            {targetPlayer && <span className="text-2xl">{personaEmoji(targetPlayer.persona)}</span>}
+            {targetPlayer && <AgentAvatar avatarUrl={targetPlayer.avatarUrl} persona={targetPlayer.persona} name={targetPlayer.name} size="10" />}
             <span className={`text-2xl font-bold ${isProtect ? "text-blue-300" : "text-red-300"}`}>
               {powerAction.target}
             </span>
@@ -2044,7 +2151,7 @@ function StyledVoteCard({
         <p className="text-xs text-amber-400/40 uppercase tracking-[0.3em] mb-4">◆ EMPOWERED ◆</p>
         <div className="flex items-center justify-center gap-4">
           <span className="text-4xl">👑</span>
-          {empPlayer && <span className="text-4xl">{personaEmoji(empPlayer.persona)}</span>}
+          {empPlayer && <AgentAvatar avatarUrl={empPlayer.avatarUrl} persona={empPlayer.persona} name={empPlayer.name} size="16" />}
         </div>
         <p className="text-3xl font-bold text-amber-300 mt-4 tracking-wide">{empowered.name}</p>
         <p className="text-xs text-amber-400/30 mt-2 uppercase tracking-wider">
@@ -2062,7 +2169,7 @@ function StyledVoteCard({
         <p className="text-xs text-amber-400/40 uppercase tracking-[0.4em] mb-6">◆ ◆ ◆</p>
         <p className="text-sm text-white/30 uppercase tracking-[0.3em] mb-4">THE WINNER IS</p>
         <div className="flex items-center justify-center gap-4 mb-4">
-          {winPlayer && <span className="text-5xl">{personaEmoji(winPlayer.persona)}</span>}
+          {winPlayer && <AgentAvatar avatarUrl={winPlayer.avatarUrl} persona={winPlayer.persona} name={winPlayer.name} size="16" />}
         </div>
         <p className="text-4xl md:text-5xl font-bold text-amber-300 tracking-wide">{winner.winner}</p>
         <p className="text-xs text-amber-400/30 mt-4 uppercase tracking-[0.4em]">◆ ◆ ◆</p>
@@ -2077,13 +2184,13 @@ function StyledVoteCard({
     return (
       <div className="text-center animate-[fadeIn_0.3s_ease-out]">
         <div className="flex items-center justify-center gap-3 mb-6">
-          {voterPlayer && <span className="text-2xl">{personaEmoji(voterPlayer.persona)}</span>}
+          {voterPlayer && <AgentAvatar avatarUrl={voterPlayer.avatarUrl} persona={voterPlayer.persona} name={voterPlayer.name} size="10" />}
           <span className="text-lg font-semibold text-white/70">{elimVote.voter}</span>
         </div>
         <div className="bg-red-900/10 border border-red-500/15 rounded-2xl px-8 py-6 inline-block">
           <p className="text-xs text-red-400/50 uppercase tracking-wider mb-2">Votes to eliminate</p>
           <div className="flex items-center justify-center gap-3">
-            {targetPlayer && <span className="text-2xl">{personaEmoji(targetPlayer.persona)}</span>}
+            {targetPlayer && <AgentAvatar avatarUrl={targetPlayer.avatarUrl} persona={targetPlayer.persona} name={targetPlayer.name} size="10" />}
             <span className="text-2xl font-bold text-red-300">{elimVote.target}</span>
           </div>
         </div>
@@ -2125,13 +2232,13 @@ function JuryQuestionFrame({
         {/* Juror → Finalist framing */}
         <div className="flex items-center justify-center gap-6 mb-8">
           <div className="text-center">
-            {fromPlayer && <span className="text-2xl block mb-1">{personaEmoji(fromPlayer.persona)}</span>}
+            {fromPlayer && <div className="mb-1 flex justify-center"><AgentAvatar avatarUrl={fromPlayer.avatarUrl} persona={fromPlayer.persona} name={fromPlayer.name} size="10" /></div>}
             <span className="text-sm text-white/50">{fromName}</span>
             <span className="text-[10px] text-white/25 block uppercase">juror</span>
           </div>
           <span className="text-white/15 text-lg">→</span>
           <div className="text-center">
-            {finalistPlayer && <span className="text-2xl block mb-1">{personaEmoji(finalistPlayer.persona)}</span>}
+            {finalistPlayer && <div className="mb-1 flex justify-center"><AgentAvatar avatarUrl={finalistPlayer.avatarUrl} persona={finalistPlayer.persona} name={finalistPlayer.name} size="10" /></div>}
             <span className="text-sm text-white/70 font-semibold">{question.finalist}</span>
             <span className="text-[10px] text-white/25 block uppercase">finalist</span>
           </div>
@@ -2156,7 +2263,7 @@ function JuryQuestionFrame({
     return (
       <div className="text-center animate-[fadeIn_0.3s_ease-out]">
         <div className="flex items-center justify-center gap-3 mb-8">
-          {fromPlayer && <span className="text-3xl">{personaEmoji(fromPlayer.persona)}</span>}
+          {fromPlayer && <AgentAvatar avatarUrl={fromPlayer.avatarUrl} persona={fromPlayer.persona} name={fromPlayer.name} size="12" />}
           <span className="text-xl font-semibold text-white/80">{fromName}</span>
         </div>
         <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl px-8 py-6 inline-block max-w-xl text-left">
@@ -2247,7 +2354,7 @@ function SpectacleMessageContent({
       {!isSystemMessage && (
         <div className="flex items-center justify-center gap-3 mb-8">
           {currentPlayer && (
-            <span className="text-2xl">{personaEmoji(currentPlayer.persona)}</span>
+            <AgentAvatar avatarUrl={currentPlayer.avatarUrl} persona={currentPlayer.persona} name={currentPlayer.name} size="10" />
           )}
           <span className="text-lg font-semibold text-white/70">{currentPlayerName}</span>
           {message.scope === "whisper" && (
@@ -2323,7 +2430,7 @@ function SpectacleMessageSpotlight({
         {phase === "typing" && !isSystem && (
           <div className="text-center animate-[fadeIn_0.3s_ease-out]">
             <div className="flex items-center justify-center gap-3 mb-8">
-              {player && <span className="text-2xl">{personaEmoji(player.persona)}</span>}
+              {player && <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="10" />}
               <span className="text-lg font-semibold text-white/60">{playerName}</span>
               {message.scope === "whisper" && (
                 <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
@@ -2342,7 +2449,7 @@ function SpectacleMessageSpotlight({
           <div className="text-center animate-[fadeIn_0.3s_ease-out]">
             {!isSystem && (
               <div className="flex items-center justify-center gap-3 mb-8">
-                {player && <span className="text-2xl">{personaEmoji(player.persona)}</span>}
+                {player && <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="10" />}
                 <span className="text-lg font-semibold text-white/70">{playerName}</span>
                 {message.scope === "whisper" && (
                   <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
@@ -2769,7 +2876,7 @@ function DramaticReplayViewer({
             <div className="text-center animate-[fadeIn_0.3s_ease-out]">
               <div className="flex items-center justify-center gap-3 mb-8">
                 {currentPlayer && (
-                  <span className="text-2xl">{personaEmoji(currentPlayer.persona)}</span>
+                  <AgentAvatar avatarUrl={currentPlayer.avatarUrl} persona={currentPlayer.persona} name={currentPlayer.name} size="10" />
                 )}
                 <span className="text-lg font-semibold text-white/60">{currentPlayerName}</span>
                 {currentMessage.scope === "whisper" && (
