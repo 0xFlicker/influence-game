@@ -2,16 +2,354 @@
 @tailwind components;
 @tailwind utilities;
 
+/* =========================================================================
+   Influence Design Token System
+   =========================================================================
+   Three layers: Foundation → Phase → Lighting
+   Phase colors appear as atmosphere, edge light, glass tint, and focus glow —
+   almost never as flat fills.
+   ========================================================================= */
+
+/* ---------------------------------------------------------------------------
+   1. Foundation tokens — permanent neutrals
+   --------------------------------------------------------------------------- */
 :root {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  /* Base neutrals */
+  --void: 5 5 8;
+  --surface: 13 13 18;
+  --surface-raised: 20 20 28;
+  --surface-overlay: 10 10 14;
+
+  /* Text */
+  --text-primary: 232 232 240;
+  --text-secondary: 136 136 160;
+  --text-muted: 74 74 92;
+  --text-inverse: 10 10 14;
+
+  /* Borders / separators */
+  --border: 26 26 40;
+  --border-active: 42 42 64;
+  --border-strong: 72 72 96;
+
+  /* Frosted glass */
+  --glass-fill: 255 255 255;
+  --glass-fill-alpha: 0.04;
+  --glass-fill-alpha-strong: 0.07;
+  --glass-border-alpha: 0.10;
+  --glass-highlight-alpha: 0.14;
+  --glass-blur: 16px;
+
+  /* Shadows */
+  --shadow-ambient: 0 10px 30px rgba(0, 0, 0, 0.38);
+  --shadow-panel: 0 12px 40px rgba(0, 0, 0, 0.42);
+  --shadow-elevated: 0 18px 60px rgba(0, 0, 0, 0.52);
+
+  /* White/silver brand light */
+  --brand-light: 245 247 255;
+  --brand-silver: 198 202 214;
+
+  /* Default phase fallback (indigo) */
+  --phase-rgb: 99 102 241;
+  --phase-glow-alpha: 0.12;
+  --phase-glow-alpha-strong: 0.20;
+  --phase-edge-alpha: 0.28;
+  --phase-glass-alpha: 0.08;
+
+  /* Legacy compat */
+  --background: #050508;
+  --foreground: #e8e8f0;
+
+  /* Agent tokens */
+  --agent-finn: 45 212 191;
+  --agent-atlas: 96 165 250;
+  --agent-vera: 251 113 133;
+  --agent-lyra: 251 191 36;
+  --agent-mira: 192 132 252;
+  --agent-rex: 248 113 113;
+  --agent-kael: 217 119 6;
+  --agent-echo: 148 163 184;
+  --agent-sage: 74 222 128;
+  --agent-jace: 244 114 182;
 }
 
+/* ---------------------------------------------------------------------------
+   2. Phase tokens — one active at a time via data-phase attribute
+   --------------------------------------------------------------------------- */
+
+:root[data-phase="INTRODUCTION"] {
+  --phase-rgb: 99 102 241;
+  --phase-glow-alpha: 0.10;
+  --phase-glow-alpha-strong: 0.18;
+  --phase-edge-alpha: 0.24;
+  --phase-glass-alpha: 0.07;
+}
+
+:root[data-phase="LOBBY"] {
+  --phase-rgb: 59 130 246;
+  --phase-glow-alpha: 0.10;
+  --phase-glow-alpha-strong: 0.18;
+  --phase-edge-alpha: 0.25;
+  --phase-glass-alpha: 0.07;
+}
+
+:root[data-phase="WHISPER"] {
+  --phase-rgb: 168 85 247;
+  --phase-glow-alpha: 0.08;
+  --phase-glow-alpha-strong: 0.16;
+  --phase-edge-alpha: 0.22;
+  --phase-glass-alpha: 0.08;
+}
+
+:root[data-phase="RUMOR"] {
+  --phase-rgb: 234 179 8;
+  --phase-glow-alpha: 0.06;
+  --phase-glow-alpha-strong: 0.14;
+  --phase-edge-alpha: 0.18;
+  --phase-glass-alpha: 0.06;
+}
+
+:root[data-phase="VOTE"] {
+  --phase-rgb: 249 115 22;
+  --phase-glow-alpha: 0.08;
+  --phase-glow-alpha-strong: 0.18;
+  --phase-edge-alpha: 0.24;
+  --phase-glass-alpha: 0.07;
+}
+
+:root[data-phase="POWER"] {
+  --phase-rgb: 239 68 68;
+  --phase-glow-alpha: 0.08;
+  --phase-glow-alpha-strong: 0.20;
+  --phase-edge-alpha: 0.28;
+  --phase-glass-alpha: 0.08;
+}
+
+:root[data-phase="REVEAL"] {
+  --phase-rgb: 236 72 153;
+  --phase-glow-alpha: 0.10;
+  --phase-glow-alpha-strong: 0.22;
+  --phase-edge-alpha: 0.30;
+  --phase-glass-alpha: 0.08;
+}
+
+:root[data-phase="COUNCIL"] {
+  --phase-rgb: 220 38 38;
+  --phase-glow-alpha: 0.10;
+  --phase-glow-alpha-strong: 0.22;
+  --phase-edge-alpha: 0.30;
+  --phase-glass-alpha: 0.09;
+}
+
+:root[data-phase="DIARY_ROOM"] {
+  --phase-rgb: 124 58 237;
+  --phase-glow-alpha: 0.12;
+  --phase-glow-alpha-strong: 0.22;
+  --phase-edge-alpha: 0.28;
+  --phase-glass-alpha: 0.10;
+}
+
+:root[data-phase="PLEA"] {
+  --phase-rgb: 245 158 11;
+  --phase-glow-alpha: 0.08;
+  --phase-glow-alpha-strong: 0.18;
+  --phase-edge-alpha: 0.22;
+  --phase-glass-alpha: 0.07;
+}
+
+:root[data-phase="ACCUSATION"] {
+  --phase-rgb: 185 28 28;
+  --phase-glow-alpha: 0.10;
+  --phase-glow-alpha-strong: 0.22;
+  --phase-edge-alpha: 0.30;
+  --phase-glass-alpha: 0.09;
+}
+
+:root[data-phase="DEFENSE"] {
+  --phase-rgb: 37 99 235;
+  --phase-glow-alpha: 0.10;
+  --phase-glow-alpha-strong: 0.18;
+  --phase-edge-alpha: 0.24;
+  --phase-glass-alpha: 0.08;
+}
+
+:root[data-phase="OPENING_STATEMENTS"] {
+  --phase-rgb: 217 119 6;
+  --phase-glow-alpha: 0.10;
+  --phase-glow-alpha-strong: 0.20;
+  --phase-edge-alpha: 0.25;
+  --phase-glass-alpha: 0.08;
+}
+
+:root[data-phase="JURY_QUESTIONS"] {
+  --phase-rgb: 139 92 246;
+  --phase-glow-alpha: 0.10;
+  --phase-glow-alpha-strong: 0.20;
+  --phase-edge-alpha: 0.26;
+  --phase-glass-alpha: 0.08;
+}
+
+:root[data-phase="CLOSING_ARGUMENTS"] {
+  --phase-rgb: 245 158 11;
+  --phase-glow-alpha: 0.10;
+  --phase-glow-alpha-strong: 0.20;
+  --phase-edge-alpha: 0.24;
+  --phase-glass-alpha: 0.08;
+}
+
+:root[data-phase="JURY_VOTE"] {
+  --phase-rgb: 251 191 36;
+  --phase-glow-alpha: 0.12;
+  --phase-glow-alpha-strong: 0.24;
+  --phase-edge-alpha: 0.30;
+  --phase-glass-alpha: 0.10;
+}
+
+:root[data-phase="END"] {
+  --phase-rgb: 34 197 94;
+  --phase-glow-alpha: 0.10;
+  --phase-glow-alpha-strong: 0.18;
+  --phase-edge-alpha: 0.22;
+  --phase-glass-alpha: 0.08;
+}
+
+/* ---------------------------------------------------------------------------
+   3. Endgame gold escalation overlay
+   --------------------------------------------------------------------------- */
+
+:root[data-endgame="true"] {
+  --endgame-rgb: 251 191 36;
+  --endgame-glow-alpha: 0.08;
+  --endgame-edge-alpha: 0.10;
+}
+
+/* ---------------------------------------------------------------------------
+   4. Body base
+   --------------------------------------------------------------------------- */
+
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: rgb(var(--void));
+  color: rgb(var(--text-primary));
   font-family: system-ui, -apple-system, sans-serif;
 }
+
+/* ---------------------------------------------------------------------------
+   5. Cinematic glow system — three simultaneous light fields
+   --------------------------------------------------------------------------- */
+
+/* A. Environment glow — large radial from above */
+.influence-phase-atmosphere {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      1200px 700px at 50% -10%,
+      rgb(var(--phase-rgb) / var(--phase-glow-alpha)) 0%,
+      rgb(var(--phase-rgb) / calc(var(--phase-glow-alpha) * 0.55)) 22%,
+      rgb(var(--phase-rgb) / calc(var(--phase-glow-alpha) * 0.18)) 42%,
+      transparent 70%
+    );
+}
+
+/* B. Edge vignette tint — subtle phase color in margins */
+.influence-phase-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      140% 100% at 50% 50%,
+      transparent 54%,
+      rgb(var(--phase-rgb) / 0.04) 78%,
+      rgb(var(--phase-rgb) / 0.08) 100%
+    );
+  mix-blend-mode: screen;
+}
+
+/* C. Focal bloom — localized glow for moment-of-importance surfaces */
+.influence-phase-bloom {
+  position: absolute;
+  inset: auto 50% 0 50%;
+  width: 720px;
+  height: 320px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background:
+    radial-gradient(
+      closest-side,
+      rgb(var(--phase-rgb) / var(--phase-glow-alpha-strong)) 0%,
+      rgb(var(--phase-rgb) / calc(var(--phase-glow-alpha-strong) * 0.4)) 40%,
+      transparent 78%
+    );
+  filter: blur(24px);
+}
+
+/* Viewer shell background */
+.influence-shell {
+  background:
+    radial-gradient(
+      1200px 700px at 50% -10%,
+      rgb(var(--phase-rgb) / var(--phase-glow-alpha)) 0%,
+      transparent 68%
+    ),
+    linear-gradient(
+      180deg,
+      rgb(9 9 14 / 0.94) 0%,
+      rgb(var(--void) / 1) 28%,
+      rgb(var(--void) / 1) 100%
+    );
+}
+
+/* Frosted glass panel */
+.influence-glass {
+  background:
+    linear-gradient(
+      180deg,
+      rgb(var(--glass-fill) / var(--glass-fill-alpha-strong)) 0%,
+      rgb(var(--glass-fill) / var(--glass-fill-alpha)) 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgb(var(--phase-rgb) / var(--phase-glass-alpha)) 0%,
+      transparent 100%
+    );
+  border: 1px solid rgb(var(--glass-fill) / var(--glass-border-alpha));
+  box-shadow:
+    inset 0 1px 0 rgb(var(--glass-fill) / var(--glass-highlight-alpha)),
+    0 10px 30px rgb(0 0 0 / 0.35);
+  backdrop-filter: blur(var(--glass-blur));
+}
+
+/* Phase title text glow */
+.influence-phase-title {
+  color: rgb(var(--text-primary) / 0.96);
+  text-shadow:
+    0 0 12px rgb(var(--phase-rgb) / 0.18),
+    0 0 36px rgb(var(--phase-rgb) / 0.10);
+}
+
+/* Endgame atmosphere overlay */
+.influence-endgame-atmosphere {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      900px 520px at 50% -8%,
+      rgb(var(--endgame-rgb) / var(--endgame-glow-alpha)) 0%,
+      transparent 68%
+    ),
+    radial-gradient(
+      150% 120% at 50% 50%,
+      transparent 52%,
+      rgb(var(--endgame-rgb) / var(--endgame-edge-alpha)) 100%
+    );
+  mix-blend-mode: screen;
+}
+
+/* ---------------------------------------------------------------------------
+   6. Animations
+   --------------------------------------------------------------------------- */
 
 /* Reveal mode fade-in — messages appearing one at a time in reveal choreography */
 @keyframes fadeIn {

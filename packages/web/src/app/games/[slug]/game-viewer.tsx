@@ -131,20 +131,29 @@ const PHASE_LABELS: Record<PhaseKey, string> = {
   END: "Game Over",
 };
 
-const PHASE_COLORS: Partial<Record<PhaseKey, string>> = {
-  LOBBY: "text-blue-400",
-  WHISPER: "text-purple-400",
-  RUMOR: "text-yellow-400",
-  VOTE: "text-orange-400",
-  POWER: "text-red-400",
-  REVEAL: "text-pink-400",
-  COUNCIL: "text-red-500",
-  JURY_VOTE: "text-amber-400",
-  END: "text-green-400",
-};
+// Phase accent color — driven by CSS custom property via data-phase on root.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function phaseColor(_phase: PhaseKey): string {
+  return "text-phase";
+}
 
-function phaseColor(phase: PhaseKey): string {
-  return PHASE_COLORS[phase] ?? "text-white/60";
+// Set data-phase attribute on document root for CSS variable cascade.
+function setPhaseAttr(phase: PhaseKey) {
+  if (typeof document !== "undefined") {
+    document.documentElement.setAttribute("data-phase", phase);
+  }
+}
+
+// Endgame phases for gold overlay
+const ENDGAME_PHASES: ReadonlySet<PhaseKey> = new Set([
+  "PLEA", "ACCUSATION", "DEFENSE", "OPENING_STATEMENTS",
+  "JURY_QUESTIONS", "CLOSING_ARGUMENTS", "JURY_VOTE", "END",
+]);
+
+function setEndgameAttr(phase: PhaseKey) {
+  if (typeof document !== "undefined") {
+    document.documentElement.setAttribute("data-endgame", ENDGAME_PHASES.has(phase) ? "true" : "false");
+  }
 }
 
 function formatTime(ts: number): string {
@@ -495,30 +504,30 @@ function PhaseHeader({ game, isReplay }: { game: GameDetail; isReplay: boolean }
   const roundPct = Math.round((game.currentRound / game.maxRounds) * 100);
 
   return (
-    <div className="border border-white/10 rounded-xl p-4 mb-4">
+    <div className="influence-glass rounded-panel p-4 mb-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <span className={`text-sm font-semibold uppercase tracking-wider ${phaseColor(game.currentPhase)}`}>
+          <span className="text-sm font-semibold uppercase tracking-wider text-phase">
             {PHASE_LABELS[game.currentPhase] ?? game.currentPhase}
           </span>
-          <div className="text-white/40 text-xs mt-0.5">
+          <div className="text-text-secondary text-xs mt-0.5">
             Round {game.currentRound} / {game.maxRounds}
             {!isReplay && game.status === "in_progress" && (
-              <span className="ml-3">🟢 {alive} alive · ☠ {total - alive} out</span>
+              <span className="ml-3">{alive} alive · {total - alive} out</span>
             )}
             {game.status === "completed" && game.winner && (
-              <span className="ml-3 text-green-400">🏆 {game.winner} wins</span>
+              <span className="ml-3 text-green-400">{game.winner} wins</span>
             )}
           </div>
         </div>
         <div className="text-right">
           <div className="h-1.5 bg-white/10 rounded-full w-32 overflow-hidden">
             <div
-              className="h-full bg-indigo-500 rounded-full transition-all duration-500"
+              className="h-full bg-phase rounded-full transition-all duration-500"
               style={{ width: `${roundPct}%` }}
             />
           </div>
-          <span className="text-white/25 text-xs mt-1 inline-block">{roundPct}% complete</span>
+          <span className="text-text-muted text-xs mt-1 inline-block">{roundPct}% complete</span>
         </div>
       </div>
     </div>
@@ -542,8 +551,8 @@ function PlayerRoster({
   const eliminated = players.filter((p) => p.status === "eliminated");
 
   return (
-    <div className="border border-white/10 rounded-xl p-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-white/30 mb-3">
+    <div className="influence-glass rounded-panel p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-text-muted mb-3">
         Players · {alive.length} alive
       </h3>
       <div className="space-y-1.5">
@@ -678,7 +687,6 @@ function MessageBubble({ msg, players }: { msg: TranscriptEntry; players: GamePl
 function GroupChatFeed({
   messages,
   players,
-  phase,
 }: {
   messages: TranscriptEntry[];
   players: GamePlayer[];
@@ -692,14 +700,10 @@ function GroupChatFeed({
     }
   }, [messages.length]);
 
-  const borderStyle = phase === "INTRODUCTION"
-    ? "border-blue-900/20 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.08),rgba(9,4,19,0.95)_62%)]"
-    : "border-blue-900/20 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.06),rgba(9,4,19,0.95)_62%)]";
-
   return (
     <div
       ref={feedRef}
-      className={`border ${borderStyle} rounded-xl flex-1 overflow-y-auto p-4 md:p-6 min-h-[420px] max-h-[600px]`}
+      className="influence-glass rounded-panel flex-1 overflow-y-auto p-4 md:p-6 min-h-[420px] max-h-[600px]"
     >
       {messages.length === 0 ? (
         <div className="flex items-center justify-center h-full">
@@ -740,7 +744,7 @@ function JuryDMView({
   return (
     <div
       ref={feedRef}
-      className="border border-amber-900/20 bg-[radial-gradient(circle_at_top,rgba(217,119,6,0.08),rgba(9,4,19,0.95)_62%)] rounded-xl flex-1 overflow-y-auto p-4 md:p-6 min-h-[420px] max-h-[600px]"
+      className="influence-glass rounded-panel flex-1 overflow-y-auto p-4 md:p-6 min-h-[420px] max-h-[600px]"
     >
       <div className="text-center mb-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-amber-300/70 mb-1">
@@ -889,19 +893,25 @@ function PhaseTransitionOverlay({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
+      className="fixed inset-0 z-50 flex items-center justify-center"
       style={{
         opacity: visible ? 1 : 0,
         transition: "opacity 300ms ease-in-out",
         pointerEvents: "none",
       }}
     >
-      <div className="text-center px-8 max-w-2xl">
+      {/* Cinematic backdrop */}
+      <div className="absolute inset-0 bg-black/90" />
+      <div className="influence-phase-atmosphere absolute inset-0" />
+      <div className="influence-phase-vignette absolute inset-0" />
+
+      <div className="relative text-center px-8 max-w-2xl">
+        <div className="influence-phase-bloom absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" />
         <p className="text-white/20 text-sm tracking-[0.4em] uppercase mb-8">◆ ◆ ◆</p>
         <h1
-          className={`text-3xl md:text-4xl font-bold tracking-widest uppercase mb-6 ${phaseColor(transition.phase)}`}
+          className="text-3xl md:text-4xl font-extralight tracking-[0.20em] uppercase mb-6 influence-phase-title"
         >
-          ◆&nbsp;&nbsp;{label}&nbsp;&nbsp;◆
+          {label}
         </h1>
         {transition.flavorText && (
           <p className="text-white/55 text-base md:text-lg leading-relaxed mb-8 italic">
@@ -1148,7 +1158,7 @@ function WhisperPhaseView({
   }, [phaseKey]);
 
   return (
-    <div className="border border-purple-900/20 bg-[radial-gradient(circle_at_top,rgba(120,57,191,0.2),rgba(9,4,19,0.95)_62%)] rounded-xl flex-1 overflow-y-auto p-4 md:p-6 min-h-[420px] max-h-[600px]">
+    <div className="border influence-glass rounded-panel flex-1 overflow-y-auto p-4 md:p-6 min-h-[420px] max-h-[600px]">
       <div className="text-center mb-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-purple-300/70 mb-1">
           Whisper Rooms
@@ -1891,7 +1901,7 @@ function DiaryRoomGridView({
   const [mobileRoomIndex, setMobileRoomIndex] = useState(0);
 
   return (
-    <div className="border border-purple-900/20 bg-[radial-gradient(circle_at_top,rgba(120,57,191,0.15),rgba(9,4,19,0.95)_62%)] rounded-xl flex-1 overflow-y-auto p-4 md:p-6 min-h-[420px] max-h-[600px]">
+    <div className="border influence-glass rounded-panel flex-1 overflow-y-auto p-4 md:p-6 min-h-[420px] max-h-[600px]">
       <div className="text-center mb-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-purple-300/70 mb-1">
           Diary Rooms
@@ -2721,6 +2731,21 @@ function DramaticReplayViewer({
   const currentMessage = scene?.messages[messageIndex] ?? null;
   const isSystemMessage = !currentMessage?.fromPlayerId || currentMessage?.scope === "system";
 
+  // Set data-phase on root for cinematic CSS cascade
+  const scenePhase = scene?.phase;
+  useEffect(() => {
+    if (scenePhase) {
+      setPhaseAttr(scenePhase);
+      setEndgameAttr(scenePhase);
+    }
+    return () => {
+      if (typeof document !== "undefined") {
+        document.documentElement.removeAttribute("data-phase");
+        document.documentElement.removeAttribute("data-endgame");
+      }
+    };
+  }, [scenePhase]);
+
   // Resolve current speaker
   const currentPlayer = currentMessage?.fromPlayerId
     ? players.find((p) => p.id === currentMessage.fromPlayerId)
@@ -2979,10 +3004,15 @@ function DramaticReplayViewer({
 
   return (
     <div
-      className="fixed inset-0 z-30 bg-black flex flex-col cursor-pointer select-none"
+      className="fixed inset-0 z-30 influence-shell flex flex-col cursor-pointer select-none"
       onClick={handleClick}
       onMouseMove={handleMouseMove}
     >
+      {/* Cinematic atmosphere layers */}
+      <div className="influence-phase-atmosphere" />
+      <div className="influence-phase-vignette" />
+      {ENDGAME_PHASES.has(scene.phase) && <div className="influence-endgame-atmosphere" />}
+
       {/* Overlays */}
       {activePhaseTransition && (
         <PhaseTransitionOverlay
@@ -3218,6 +3248,20 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
   const [spectacleQueue, setSpectacleQueue] = useState<TranscriptEntry[]>([]);
   const [spectacleCurrent, setSpectacleCurrent] = useState<TranscriptEntry | null>(null);
   const [spectaclePhase, setSpectaclePhase] = useState<SpectacleMessagePhase>("done");
+
+  // Set data-phase on root for cinematic CSS cascade (live mode)
+  useEffect(() => {
+    if (game?.currentPhase) {
+      setPhaseAttr(game.currentPhase);
+      setEndgameAttr(game.currentPhase);
+    }
+    return () => {
+      if (typeof document !== "undefined") {
+        document.documentElement.removeAttribute("data-phase");
+        document.documentElement.removeAttribute("data-endgame");
+      }
+    };
+  }, [game?.currentPhase]);
 
   // Fetch game data client-side if not provided via props
   useEffect(() => {
@@ -3613,7 +3657,7 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
 
   if (!game) {
     return (
-      <div className="border border-white/10 rounded-xl p-12 text-center text-white/20 text-sm">
+      <div className="influence-glass rounded-panel p-12 text-center text-white/20 text-sm">
         Loading game…
       </div>
     );
@@ -3810,7 +3854,7 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
       {mobileTab === "chat" && isReplay && (
         <div
           ref={feedRef}
-          className="border border-white/10 rounded-xl overflow-y-auto p-4 space-y-3 min-h-[380px] max-h-[60vh]"
+          className="influence-glass rounded-panel overflow-y-auto p-4 space-y-3 min-h-[380px] max-h-[60vh]"
         >
           {visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper")
             .length === 0 ? (
@@ -3863,7 +3907,7 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
 
       {/* Mobile Votes tab — placeholder for V2 vote tracker */}
       {mobileTab === "votes" && (
-        <div className="border border-white/10 rounded-xl p-12 text-center text-white/20 text-sm min-h-[380px] flex items-center justify-center">
+        <div className="influence-glass rounded-panel p-12 text-center text-white/20 text-sm min-h-[380px] flex items-center justify-center">
           <p>Vote tracker coming soon</p>
         </div>
       )}
@@ -3881,7 +3925,7 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
       )}
 
       {/* Bottom tab bar — fixed */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#0a0a0a]/95 backdrop-blur border-t border-white/10 grid grid-cols-4">
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-void/95 backdrop-blur border-t border-white/10 grid grid-cols-4">
         {(
           [
             { id: "chat", icon: "💬", label: "Chat", badge: newChatCount },
@@ -4041,7 +4085,7 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
         {activeTab === "stage" && isReplay && (
           <div
             ref={feedRef}
-            className="border border-white/10 rounded-xl flex-1 overflow-y-auto p-4 space-y-3 min-h-[420px] max-h-[600px]"
+            className="influence-glass rounded-panel flex-1 overflow-y-auto p-4 space-y-3 min-h-[420px] max-h-[600px]"
           >
             {visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper").length === 0 ? (
               <p className="text-center text-white/20 text-sm mt-16">No messages in replay.</p>
