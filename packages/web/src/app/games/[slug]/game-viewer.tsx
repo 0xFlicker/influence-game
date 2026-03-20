@@ -1768,6 +1768,181 @@ function DiaryRoomPanel({
 }
 
 // ---------------------------------------------------------------------------
+// Diary Room Grid — simultaneous diary rooms (live DIARY_ROOM phase)
+// ---------------------------------------------------------------------------
+
+interface DiaryRoomData {
+  playerName: string;
+  player: GamePlayer | undefined;
+  entries: Array<{ question: TranscriptEntry; answer: TranscriptEntry | null }>;
+}
+
+function buildDiaryRooms(
+  messages: TranscriptEntry[],
+  players: GamePlayer[],
+): DiaryRoomData[] {
+  const diaryMsgs = messages.filter((m) => m.scope === "diary");
+  const roomMap = new Map<string, DiaryRoomData>();
+
+  for (const msg of diaryMsgs) {
+    const isQuestion = msg.fromPlayerId?.startsWith("House ->");
+    const playerName = msg.fromPlayerId ? diaryPlayerName(msg.fromPlayerId) : null;
+    if (!playerName) continue;
+
+    if (!roomMap.has(playerName)) {
+      roomMap.set(playerName, {
+        playerName,
+        player: players.find((p) => p.name === playerName),
+        entries: [],
+      });
+    }
+
+    const room = roomMap.get(playerName)!;
+    if (isQuestion) {
+      room.entries.push({ question: msg, answer: null });
+    } else {
+      // Match answer to last unanswered question
+      const unanswered = room.entries.findLast((e) => e.answer === null);
+      if (unanswered) {
+        unanswered.answer = msg;
+      } else {
+        // Orphan answer — create a stub entry
+        room.entries.push({ question: msg, answer: null });
+      }
+    }
+  }
+
+  return Array.from(roomMap.values());
+}
+
+function DiaryRoomChat({
+  room,
+}: {
+  room: DiaryRoomData;
+}) {
+  const feedRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (feedRef.current) {
+      feedRef.current.scrollTop = feedRef.current.scrollHeight;
+    }
+  }, [room.entries.length]);
+
+  return (
+    <div className="rounded-2xl border border-purple-400/20 bg-black/30 flex flex-col overflow-hidden h-full">
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-purple-900/20">
+        {room.player && <AgentAvatar avatarUrl={room.player.avatarUrl} persona={room.player.persona} name={room.player.name} size="6" />}
+        <p className="text-xs font-semibold text-white truncate">{room.playerName}</p>
+        <span className="text-[9px] uppercase tracking-[0.2em] text-purple-300/45 ml-auto">Diary</span>
+      </div>
+
+      <div ref={feedRef} className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
+        {room.entries.length === 0 ? (
+          <p className="text-xs text-white/30 italic text-center py-6">Awaiting…</p>
+        ) : (
+          room.entries.map((entry, idx) => (
+            <div key={idx} className="space-y-1.5">
+              {/* House question — left side */}
+              <div className="flex gap-2 justify-start animate-[fadeIn_0.25s_ease-out]">
+                <div className="flex-shrink-0 mt-1">
+                  <span className="w-6 h-6 rounded-full bg-purple-900/40 flex items-center justify-center text-[10px]">📔</span>
+                </div>
+                <div className="max-w-[85%]">
+                  <p className="text-[10px] text-purple-300/50 mb-0.5">House</p>
+                  <div className="bg-white/[0.06] border border-white/[0.08] rounded-2xl rounded-tl-sm px-3 py-2">
+                    <p className="text-xs leading-relaxed text-purple-300/70 italic">{entry.question.text}</p>
+                  </div>
+                </div>
+              </div>
+              {/* Player answer — right side */}
+              {entry.answer ? (
+                <div className="flex gap-2 justify-end animate-[fadeIn_0.25s_ease-out]">
+                  <div className="max-w-[85%]">
+                    <p className="text-[10px] text-white/40 text-right mb-0.5">{room.playerName}</p>
+                    <div className="bg-purple-800/25 border border-purple-600/20 rounded-2xl rounded-tr-sm px-3 py-2">
+                      <p className="text-xs leading-relaxed text-white/70">{entry.answer.text}</p>
+                    </div>
+                  </div>
+                  <div className="flex-shrink-0 mt-1">
+                    {room.player ? <AgentAvatar avatarUrl={room.player.avatarUrl} persona={room.player.persona} name={room.player.name} size="6" /> : <span className="w-6 h-6 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex justify-end pr-8">
+                  <p className="text-xs text-purple-400/30 italic animate-pulse">typing…</p>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DiaryRoomGridView({
+  messages,
+  players,
+}: {
+  messages: TranscriptEntry[];
+  players: GamePlayer[];
+}) {
+  const rooms = buildDiaryRooms(messages, players);
+  const [mobileRoomIndex, setMobileRoomIndex] = useState(0);
+
+  return (
+    <div className="border border-purple-900/20 bg-[radial-gradient(circle_at_top,rgba(120,57,191,0.15),rgba(9,4,19,0.95)_62%)] rounded-xl flex-1 overflow-y-auto p-4 md:p-6 min-h-[420px] max-h-[600px]">
+      <div className="text-center mb-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-purple-300/70 mb-1">
+          Diary Rooms
+        </p>
+      </div>
+
+      {rooms.length === 0 ? (
+        <div className="flex items-center justify-center h-48">
+          <p className="text-white/20 text-sm animate-pulse">Waiting for diary sessions…</p>
+        </div>
+      ) : (
+        <>
+          {/* Desktop: simultaneous grid */}
+          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-3" style={{ minHeight: "300px" }}>
+            {rooms.map((room) => (
+              <DiaryRoomChat key={room.playerName} room={room} />
+            ))}
+          </div>
+
+          {/* Mobile: single room with tabs */}
+          <div className="md:hidden">
+            <div className="flex flex-wrap items-center gap-1.5 mb-3">
+              {rooms.map((room, idx) => (
+                <button
+                  key={room.playerName}
+                  type="button"
+                  onClick={() => setMobileRoomIndex(idx)}
+                  className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] transition-colors flex items-center gap-1 ${
+                    mobileRoomIndex === idx
+                      ? "border-purple-300/50 bg-purple-300/15 text-white"
+                      : "border-white/10 bg-white/5 text-white/50 hover:border-purple-300/30"
+                  }`}
+                >
+                  {room.player && <AgentAvatar avatarUrl={room.player.avatarUrl} persona={room.player.persona} name={room.player.name} size="6" />}
+                  {room.playerName}
+                </button>
+              ))}
+            </div>
+            {rooms[mobileRoomIndex] && (
+              <div style={{ height: "300px" }}>
+                <DiaryRoomChat room={rooms[mobileRoomIndex]} />
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // WebSocket hook
 // ---------------------------------------------------------------------------
 
@@ -3356,12 +3531,18 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
         ) {
           setNewChatCount((n) => n + 1);
         }
-        // Queue messages for spectacle display
+        // Queue messages for spectacle display (skip phases with dedicated views)
         const phase = currentPhaseRef.current;
         if (ev.entry.scope !== "diary" && ev.entry.scope !== "whisper") {
           if (phase === "REVEAL" || phase === "COUNCIL") {
             setRevealQueue((q) => [...q, msg]);
-          } else if (phase !== "WHISPER") {
+          } else if (
+            phase !== "WHISPER" &&
+            phase !== "INTRODUCTION" &&
+            phase !== "LOBBY" &&
+            phase !== "JURY_QUESTIONS" &&
+            phase !== "DIARY_ROOM"
+          ) {
             setSpectacleQueue((q) => [...q, msg]);
           }
         }
@@ -3469,6 +3650,34 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
       (message.scope === "whisper" || message.scope === "system"),
   );
 
+  // Group chat messages for INTRODUCTION/LOBBY phases (live mode)
+  const currentGroupChatMessages = visibleMessages.filter(
+    (m) =>
+      (m.phase === "INTRODUCTION" || m.phase === "LOBBY") &&
+      m.round === replayGame.currentRound &&
+      m.scope !== "diary" &&
+      m.scope !== "whisper",
+  );
+
+  // Jury question messages for JURY_QUESTIONS phase (live mode)
+  const currentJuryMessages = visibleMessages.filter(
+    (m) =>
+      m.phase === "JURY_QUESTIONS" &&
+      m.scope !== "whisper",
+  );
+
+  // Diary messages for DIARY_ROOM grid (live mode)
+  const currentDiaryMessages = visibleMessages.filter(
+    (m) =>
+      m.scope === "diary" &&
+      m.round === replayGame.currentRound,
+  );
+
+  // Phases that use dedicated views instead of spectacle spotlight
+  const DEDICATED_VIEW_PHASES: ReadonlySet<PhaseKey> = new Set([
+    "WHISPER", "REVEAL", "COUNCIL", "INTRODUCTION", "LOBBY", "JURY_QUESTIONS", "DIARY_ROOM",
+  ]);
+
   // Construct a GameSummary-compatible object for the JoinGameModal
   const gameSummaryForJoin: GameSummary = {
     id: game.id,
@@ -3560,12 +3769,31 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
         )}
       </div>
 
-      {/* Mobile Chat tab */}
+      {/* Mobile Chat tab — dedicated phase views */}
+      {mobileTab === "chat" && (replayGame.currentPhase === "INTRODUCTION" || replayGame.currentPhase === "LOBBY") && !isReplay && (
+        <GroupChatFeed
+          messages={currentGroupChatMessages}
+          players={game.players}
+          phase={replayGame.currentPhase}
+        />
+      )}
       {mobileTab === "chat" && replayGame.currentPhase === "WHISPER" && !isReplay && (
         <WhisperPhaseView
           phaseEntries={currentWhisperEntries}
           players={game.players}
           phaseKey={`whisper-${replayGame.currentRound}`}
+        />
+      )}
+      {mobileTab === "chat" && replayGame.currentPhase === "DIARY_ROOM" && !isReplay && (
+        <DiaryRoomGridView
+          messages={currentDiaryMessages}
+          players={game.players}
+        />
+      )}
+      {mobileTab === "chat" && replayGame.currentPhase === "JURY_QUESTIONS" && !isReplay && (
+        <JuryDMView
+          messages={currentJuryMessages}
+          players={game.players}
         />
       )}
       {mobileTab === "chat" &&
@@ -3578,40 +3806,38 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
             phase={replayGame.currentPhase}
           />
         )}
-      {mobileTab === "chat" &&
-        replayGame.currentPhase !== "WHISPER" &&
-        (isReplay ||
-          (replayGame.currentPhase !== "REVEAL" &&
-            replayGame.currentPhase !== "COUNCIL")) && (
-          isReplay ? (
-            <div
-              ref={feedRef}
-              className="border border-white/10 rounded-xl overflow-y-auto p-4 space-y-3 min-h-[380px] max-h-[60vh]"
-            >
-              {visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper")
-                .length === 0 ? (
-                <p className="text-center text-white/20 text-sm mt-12">No messages in replay.</p>
-              ) : (
-                groupMessages(
-                  visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper"),
-                ).map((item) => {
-                  if (item.kind === "msg") {
-                    return <MessageBubble key={item.entry.id} msg={item.entry} players={game.players} />;
-                  }
-                  return null;
-                })
-              )}
-            </div>
+      {/* Mobile Chat: replay feed (all phases) OR spectacle for remaining live phases */}
+      {mobileTab === "chat" && isReplay && (
+        <div
+          ref={feedRef}
+          className="border border-white/10 rounded-xl overflow-y-auto p-4 space-y-3 min-h-[380px] max-h-[60vh]"
+        >
+          {visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper")
+            .length === 0 ? (
+            <p className="text-center text-white/20 text-sm mt-12">No messages in replay.</p>
           ) : (
-            <SpectacleMessageSpotlight
-              message={spectacleCurrent}
-              phase={spectaclePhase}
-              players={game.players}
-              onRevealComplete={() => setSpectaclePhase("done")}
-              queueLength={spectacleQueue.length}
-              speedrun={isSpeedrun}
-            />
-          )
+            groupMessages(
+              visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper"),
+            ).map((item) => {
+              if (item.kind === "msg") {
+                return <MessageBubble key={item.entry.id} msg={item.entry} players={game.players} />;
+              }
+              return null;
+            })
+          )}
+        </div>
+      )}
+      {mobileTab === "chat" &&
+        !isReplay &&
+        !DEDICATED_VIEW_PHASES.has(replayGame.currentPhase) && (
+          <SpectacleMessageSpotlight
+            message={spectacleCurrent}
+            phase={spectaclePhase}
+            players={game.players}
+            onRevealComplete={() => setSpectaclePhase("done")}
+            queueLength={spectacleQueue.length}
+            speedrun={isSpeedrun}
+          />
         )}
 
       {/* Mobile Players tab */}
@@ -3765,12 +3991,37 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
           />
         )}
 
-        {/* Main Stage: Whisper phase quiet-state */}
+        {/* Main Stage: Group chat for INTRODUCTION/LOBBY (live mode) */}
+        {activeTab === "stage" && (replayGame.currentPhase === "INTRODUCTION" || replayGame.currentPhase === "LOBBY") && !isReplay && (
+          <GroupChatFeed
+            messages={currentGroupChatMessages}
+            players={game.players}
+            phase={replayGame.currentPhase}
+          />
+        )}
+
+        {/* Main Stage: Whisper phase — DM grid */}
         {activeTab === "stage" && replayGame.currentPhase === "WHISPER" && !isReplay && (
           <WhisperPhaseView
             phaseEntries={currentWhisperEntries}
             players={game.players}
             phaseKey={`whisper-${replayGame.currentRound}`}
+          />
+        )}
+
+        {/* Main Stage: Diary room grid (live DIARY_ROOM phase) */}
+        {activeTab === "stage" && replayGame.currentPhase === "DIARY_ROOM" && !isReplay && (
+          <DiaryRoomGridView
+            messages={currentDiaryMessages}
+            players={game.players}
+          />
+        )}
+
+        {/* Main Stage: Jury questions DM (live JURY_QUESTIONS phase) */}
+        {activeTab === "stage" && replayGame.currentPhase === "JURY_QUESTIONS" && !isReplay && (
+          <JuryDMView
+            messages={currentJuryMessages}
+            players={game.players}
           />
         )}
 
@@ -3786,31 +4037,31 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
             />
           )}
 
-        {/* Main Stage message feed (all other phases + replay) */}
-        {/* Main Stage: default feed — spectacle for live, classic for replay */}
+        {/* Main Stage: replay feed (all phases) */}
+        {activeTab === "stage" && isReplay && (
+          <div
+            ref={feedRef}
+            className="border border-white/10 rounded-xl flex-1 overflow-y-auto p-4 space-y-3 min-h-[420px] max-h-[600px]"
+          >
+            {visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper").length === 0 ? (
+              <p className="text-center text-white/20 text-sm mt-16">No messages in replay.</p>
+            ) : (
+              groupMessages(visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper")).map(
+                (item) => {
+                  if (item.kind === "msg") {
+                    return <MessageBubble key={item.entry.id} msg={item.entry} players={game.players} />;
+                  }
+                  return null;
+                },
+              )
+            )}
+          </div>
+        )}
+
+        {/* Main Stage: spectacle spotlight for remaining live phases */}
         {activeTab === "stage" &&
-          replayGame.currentPhase !== "WHISPER" &&
-          (isReplay ||
-            (replayGame.currentPhase !== "REVEAL" && replayGame.currentPhase !== "COUNCIL")) && (
-          isReplay ? (
-            <div
-              ref={feedRef}
-              className="border border-white/10 rounded-xl flex-1 overflow-y-auto p-4 space-y-3 min-h-[420px] max-h-[600px]"
-            >
-              {visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper").length === 0 ? (
-                <p className="text-center text-white/20 text-sm mt-16">No messages in replay.</p>
-              ) : (
-                groupMessages(visibleMessages.filter((m) => m.scope !== "diary" && m.scope !== "whisper")).map(
-                  (item) => {
-                    if (item.kind === "msg") {
-                      return <MessageBubble key={item.entry.id} msg={item.entry} players={game.players} />;
-                    }
-                    return null;
-                  },
-                )
-              )}
-            </div>
-          ) : (
+          !isReplay &&
+          !DEDICATED_VIEW_PHASES.has(replayGame.currentPhase) && (
             <SpectacleMessageSpotlight
               message={spectacleCurrent}
               phase={spectaclePhase}
@@ -3819,8 +4070,7 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
               queueLength={spectacleQueue.length}
               speedrun={isSpeedrun}
             />
-          )
-        )}
+          )}
 
         {/* Replay controls */}
         {isReplay && messages.length > 0 && (
