@@ -2,10 +2,11 @@
  * Influence Game — Database Schema
  *
  * Drizzle ORM schema for SQLite (better-sqlite3).
- * Tables: users, games, game_players, transcripts, game_results, agent_profiles
+ * Tables: users, games, game_players, transcripts, game_results, agent_profiles,
+ *         payments, payouts
  */
 
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 // ---------------------------------------------------------------------------
@@ -123,6 +124,53 @@ export const gameResults = sqliteTable("game_results", {
   roundsPlayed: integer("rounds_played").notNull(),
   tokenUsage: text("token_usage").notNull(), // JSON: { promptTokens, completionTokens, totalTokens, estimatedCost }
   finishedAt: text("finished_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
+
+export type PaymentCurrency = "usd" | "eth" | "usdc";
+export type PaymentMethod = "stripe" | "crypto";
+export type PaymentStatus = "pending" | "confirmed" | "failed" | "refunded";
+
+export const payments = sqliteTable("payments", {
+  id: text("id").primaryKey(), // UUID
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  gameId: text("game_id").references(() => games.id),
+  amount: real("amount").notNull(), // Decimal amount (e.g. 5.00 for $5)
+  currency: text("currency").notNull().$type<PaymentCurrency>(),
+  method: text("method").notNull().$type<PaymentMethod>(),
+  stripePaymentIntentId: text("stripe_payment_intent_id"), // Stripe PI ID when method=stripe
+  txHash: text("tx_hash"), // On-chain tx hash when method=crypto
+  status: text("status").notNull().$type<PaymentStatus>().default("pending"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+// ---------------------------------------------------------------------------
+// Payouts
+// ---------------------------------------------------------------------------
+
+export type PayoutStatus = "pending" | "confirmed" | "failed";
+
+export const payouts = sqliteTable("payouts", {
+  id: text("id").primaryKey(), // UUID
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  gameId: text("game_id").references(() => games.id),
+  amount: real("amount").notNull(),
+  currency: text("currency").notNull().$type<PaymentCurrency>(),
+  method: text("method").notNull().$type<PaymentMethod>(),
+  txHash: text("tx_hash"),
+  status: text("status").notNull().$type<PayoutStatus>().default("pending"),
+  createdAt: text("created_at")
     .notNull()
     .default(sql`(datetime('now'))`),
 });

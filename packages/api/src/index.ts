@@ -13,6 +13,7 @@ import { runMigrations } from "./db/migrate.js";
 import { createGameRoutes } from "./routes/games.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
+import { createPaymentRoutes } from "./routes/payments.js";
 import { getGameSnapshot } from "./services/game-lifecycle.js";
 import {
   setServer,
@@ -138,6 +139,8 @@ app.get("/", (c) => {
       health: "/health",
       auth: "/api/auth",
       games: "/api/games",
+      payments: "/api/payments",
+      pricing: "/api/games/pricing",
       ws: "/ws/games/:id",
     },
   });
@@ -154,6 +157,10 @@ app.route("/", gameRoutes);
 // Agent profile routes
 const agentProfileRoutes = createAgentProfileRoutes(db);
 app.route("/", agentProfileRoutes);
+
+// Payment routes
+const paymentRoutes = createPaymentRoutes(db);
+app.route("/", paymentRoutes);
 
 // ---------------------------------------------------------------------------
 // Start server with WebSocket support
