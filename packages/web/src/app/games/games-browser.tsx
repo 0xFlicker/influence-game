@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { getAppConfig, listGames, type GameSummary, type GameStatus, type ModelTier } from "@/lib/api";
-import { formatPrice } from "@/lib/pricing";
+import { listGames, type GameSummary, type GameStatus, type ModelTier } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -63,50 +62,14 @@ function StatusBadge({ status }: { status: GameStatus }) {
 // Game card
 // ---------------------------------------------------------------------------
 
-function FreeBadge() {
-  return (
-    <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-900/40 text-emerald-400 border border-emerald-900/60 font-medium">
-      Free
-    </span>
-  );
-}
-
-function PriceBadge({ cents }: { cents: number }) {
-  if (cents === 0) return <FreeBadge />;
-  return (
-    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-900/30 text-amber-400 border border-amber-900/50 font-medium">
-      {formatPrice(cents)}
-    </span>
-  );
-}
-
-/** Determine whether a game is free based on backend data. */
-function isGameFree(game: GameSummary): boolean {
-  // Prefer explicit freeEntry flag from backend
-  if (game.freeEntry !== undefined) return game.freeEntry;
-  // Fallback: check buyInCents
-  if (game.buyInCents !== undefined) return game.buyInCents === 0;
-  // Legacy games without buy-in fields default to free for budget tier
-  return game.modelTier === "budget";
-}
-
-/** Get display price for a game. */
-function getGameBuyInDisplay(game: GameSummary): string {
-  if (isGameFree(game)) return "Free";
-  if (game.buyInCents !== undefined) return formatPrice(game.buyInCents);
-  return "Paid";
-}
-
 interface GameCardProps {
   game: GameSummary;
   onJoin?: (game: GameSummary) => void;
-  showPaymentInfo?: boolean;
 }
 
-function GameCard({ game, onJoin, showPaymentInfo = true }: GameCardProps) {
+function GameCard({ game, onJoin }: GameCardProps) {
   const isJoinable = game.status === "waiting";
   const isLive = game.status === "in_progress";
-  const isFree = isGameFree(game);
   const slotsInfo = isJoinable
     ? `${game.alivePlayers}/${game.playerCount} joined`
     : undefined;
@@ -119,11 +82,6 @@ function GameCard({ game, onJoin, showPaymentInfo = true }: GameCardProps) {
           <div className="flex items-center gap-3 mb-2 flex-wrap">
             <span className="text-white font-semibold">Game #{game.gameNumber}</span>
             <StatusBadge status={game.status} />
-            {showPaymentInfo && (game.buyInCents !== undefined ? (
-              <PriceBadge cents={isFree ? 0 : game.buyInCents} />
-            ) : isFree ? (
-              <FreeBadge />
-            ) : null)}
             <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-white/50 font-mono">
               {phaseLabel(game.currentPhase)}
             </span>
@@ -133,12 +91,6 @@ function GameCard({ game, onJoin, showPaymentInfo = true }: GameCardProps) {
           <div className="flex items-center gap-4 text-xs text-white/40 mb-3 flex-wrap">
             <span>{game.playerCount} players</span>
             <span>{capitalize(game.modelTier)} tier</span>
-            {showPaymentInfo && !isFree && game.buyInCents !== undefined && game.buyInCents > 0 && (
-              <span className="text-amber-400/60">Buy-in: {formatPrice(game.buyInCents)}</span>
-            )}
-            {showPaymentInfo && game.prizePoolCents !== undefined && game.prizePoolCents > 0 && (
-              <span className="text-emerald-400/60">Pool: {formatPrice(game.prizePoolCents)}</span>
-            )}
             {slotsInfo && (
               <span className="text-indigo-400/70">{slotsInfo}</span>
             )}
@@ -185,13 +137,9 @@ function GameCard({ game, onJoin, showPaymentInfo = true }: GameCardProps) {
           {isJoinable && onJoin && (
             <button
               onClick={() => onJoin(game)}
-              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                !showPaymentInfo || isFree
-                  ? "bg-emerald-600 hover:bg-emerald-500 text-white"
-                  : "bg-indigo-600 hover:bg-indigo-500 text-white"
-              }`}
+              className="text-xs px-3 py-1.5 rounded-lg font-medium transition-colors bg-emerald-600 hover:bg-emerald-500 text-white"
             >
-              {!showPaymentInfo || isFree ? "Join" : `Join · ${getGameBuyInDisplay(game)}`}
+              Join
             </button>
           )}
         </div>
@@ -206,12 +154,10 @@ function GameCard({ game, onJoin, showPaymentInfo = true }: GameCardProps) {
 
 type StatusFilter = "all" | GameStatus;
 type TierFilter = "all" | ModelTier;
-type PriceFilter = "all" | "free" | "paid";
 
 interface FiltersState {
   status: StatusFilter;
   tier: TierFilter;
-  price: PriceFilter;
 }
 
 // ---------------------------------------------------------------------------
@@ -224,17 +170,10 @@ interface GamesBrowserProps {
 }
 
 export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
-  const [filters, setFilters] = useState<FiltersState>({ status: "all", tier: "all", price: "all" });
+  const [filters, setFilters] = useState<FiltersState>({ status: "all", tier: "all" });
   const [games, setGames] = useState<GameSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [paymentsEnabled, setPaymentsEnabled] = useState(false);
-
-  useEffect(() => {
-    getAppConfig()
-      .then((cfg) => setPaymentsEnabled(cfg.paymentsEnabled))
-      .catch(() => setPaymentsEnabled(false));
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -274,11 +213,6 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
     .filter((g) => {
       if (filters.status !== "all" && g.status !== filters.status) return false;
       if (filters.tier !== "all" && g.modelTier !== filters.tier) return false;
-      if (filters.price !== "all") {
-        const isFree = isGameFree(g);
-        if (filters.price === "free" && !isFree) return false;
-        if (filters.price === "paid" && isFree) return false;
-      }
       return true;
     })
     .sort((a, b) => {
@@ -299,12 +233,6 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
     { value: "budget", label: "Budget" },
     { value: "standard", label: "Standard" },
     { value: "premium", label: "Premium" },
-  ];
-
-  const priceOptions: { value: PriceFilter; label: string }[] = [
-    { value: "all", label: "Any price" },
-    { value: "free", label: "Free" },
-    { value: "paid", label: "Paid" },
   ];
 
   if (loading) {
@@ -357,21 +285,6 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
             ))}
           </select>
 
-          {/* Price filter — hidden when payments are disabled */}
-          {paymentsEnabled && (
-            <select
-              value={filters.price}
-              onChange={(e) => setFilters((f) => ({ ...f, price: e.target.value as PriceFilter }))}
-              className="text-xs bg-transparent border border-white/10 text-white/60 px-3 py-1.5 rounded-lg hover:border-white/20 transition-colors outline-none"
-            >
-              {priceOptions.map((opt) => (
-                <option key={opt.value} value={opt.value} className="bg-[#0a0a0a]">
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          )}
-
           <span className="text-xs text-white/25 ml-auto">
             {filtered.length} game{filtered.length !== 1 ? "s" : ""}
           </span>
@@ -385,7 +298,7 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
       ) : (
         <div className="space-y-3">
           {filtered.map((g) => (
-            <GameCard key={g.id} game={g} onJoin={onJoin} showPaymentInfo={paymentsEnabled} />
+            <GameCard key={g.id} game={g} onJoin={onJoin} />
           ))}
         </div>
       )}

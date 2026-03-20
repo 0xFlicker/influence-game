@@ -74,18 +74,6 @@ export async function apiFetch<T>(
 }
 
 // ---------------------------------------------------------------------------
-// App config
-// ---------------------------------------------------------------------------
-
-export interface AppConfig {
-  paymentsEnabled: boolean;
-}
-
-export async function getAppConfig(): Promise<AppConfig> {
-  return apiFetch<AppConfig>("/api/config");
-}
-
-// ---------------------------------------------------------------------------
 // Game types
 // ---------------------------------------------------------------------------
 
@@ -139,11 +127,6 @@ export interface GameSummary {
   winner?: string;
   winnerPersona?: string;
   errorInfo?: string;
-  // Buy-in / monetization fields
-  tierId?: string;
-  buyInCents?: number;
-  prizePoolCents?: number;
-  freeEntry?: boolean;
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
@@ -220,18 +203,14 @@ export async function loginWithPrivyToken(
 // Player types
 // ---------------------------------------------------------------------------
 
-export type JoinGameConfig = (
+export type JoinGameConfig =
   | { agentProfileId: string }
   | {
       agentName: string;
       personality: string;
       strategyHints?: string;
       personaKey: PersonaKey;
-    }
-) & {
-  paymentId?: string;
-  modelUpgrade?: boolean;
-};
+    };
 
 export interface PlayerGameResult {
   gameId: string;
@@ -424,13 +403,6 @@ export interface GameDetail {
   winner?: string;
   winnerPersona?: string;
   finalists?: [string, string];
-  // Buy-in / monetization fields
-  tierId?: string;
-  buyInCents?: number;
-  prizePoolCents?: number;
-  rakeAmountCents?: number;
-  payoutStatus?: string;
-  freeEntry?: boolean;
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
@@ -516,100 +488,3 @@ export function estimateCost(
   return `~$${scaled.toFixed(2)}`;
 }
 
-// ---------------------------------------------------------------------------
-// Pricing tiers (from backend)
-// ---------------------------------------------------------------------------
-
-export interface PricingTier {
-  id: string;
-  name: string;
-  buyinCents: number;
-  buyinDisplay: string;
-  model: string;
-  description: string;
-  maxSlots: number;
-}
-
-export async function getPricingTiers(): Promise<PricingTier[]> {
-  const res = await apiFetch<{ tiers: PricingTier[] }>("/api/games/pricing");
-  return res.tiers;
-}
-
-// ---------------------------------------------------------------------------
-// Payment API calls
-// ---------------------------------------------------------------------------
-
-export interface CreatePaymentIntentResult {
-  clientSecret: string;
-  paymentId: string;
-  amount: number;
-  currency: string;
-}
-
-export async function createPaymentIntent(
-  tierId: string,
-  gameId?: string,
-): Promise<CreatePaymentIntentResult> {
-  return apiFetch("/api/payments/create-intent", {
-    method: "POST",
-    body: JSON.stringify({ tierId, ...(gameId ? { gameId } : {}) }),
-  });
-}
-
-export interface VerifyCryptoResult {
-  paymentId: string;
-  status: string;
-  amount: number;
-  currency: string;
-}
-
-export async function verifyCryptoPayment(
-  txHash: string,
-  tierId: string,
-  currency: "eth" | "usdc",
-  gameId?: string,
-): Promise<VerifyCryptoResult> {
-  return apiFetch("/api/payments/verify-crypto", {
-    method: "POST",
-    body: JSON.stringify({
-      txHash,
-      tierId,
-      currency,
-      ...(gameId ? { gameId } : {}),
-    }),
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Player payment history
-// ---------------------------------------------------------------------------
-
-export interface PlayerPayment {
-  id: string;
-  gameId: string | null;
-  amount: number;
-  currency: string;
-  method: string;
-  status: string;
-  txHash: string | null;
-  createdAt: string;
-}
-
-export async function getPlayerPayments(): Promise<PlayerPayment[]> {
-  return apiFetch("/api/player/payments");
-}
-
-export interface PlayerPayout {
-  id: string;
-  gameId: string | null;
-  amount: number;
-  currency: string;
-  method: string;
-  status: string;
-  txHash: string | null;
-  createdAt: string;
-}
-
-export async function getPlayerPayouts(): Promise<PlayerPayout[]> {
-  return apiFetch("/api/player/payouts");
-}

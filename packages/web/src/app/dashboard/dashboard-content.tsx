@@ -3,11 +3,10 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
-import { getAppConfig, getAuthToken, getPlayerGames, getPlayerPayments, getPlayerPayouts, listAgents, type GameSummary, type PlayerGameResult, type PlayerPayment, type PlayerPayout, type SavedAgent } from "@/lib/api";
+import { getAuthToken, getPlayerGames, listAgents, type GameSummary, type PlayerGameResult, type SavedAgent } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
 import { GamesBrowser } from "@/app/games/games-browser";
 import { JoinGameModal } from "./join-game-modal";
-import { CheckoutModal } from "./checkout-modal";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -181,200 +180,15 @@ function SavedAgentsSection() {
 }
 
 // ---------------------------------------------------------------------------
-// Earnings / Payouts section
-// ---------------------------------------------------------------------------
-
-function txExplorerUrl(txHash: string): string {
-  return `https://basescan.org/tx/${txHash}`;
-}
-
-function EarningsSection() {
-  const [payments, setPayments] = useState<PlayerPayment[]>([]);
-  const [payouts, setPayouts] = useState<PlayerPayout[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!getAuthToken()) {
-      setLoading(false);
-      return;
-    }
-    Promise.all([
-      getPlayerPayments().catch(() => [] as PlayerPayment[]),
-      getPlayerPayouts().catch(() => [] as PlayerPayout[]),
-    ])
-      .then(([p, o]) => {
-        setPayments(p);
-        setPayouts(o);
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="border border-white/10 rounded-xl p-6 text-center text-white/20 text-sm">
-        Loading...
-      </div>
-    );
-  }
-
-  const totalSpent = payments
-    .filter((p) => p.status === "confirmed")
-    .reduce((sum, p) => sum + p.amount, 0);
-  const totalEarned = payouts
-    .filter((p) => p.status === "confirmed")
-    .reduce((sum, p) => sum + p.amount, 0);
-
-  if (payments.length === 0 && payouts.length === 0) {
-    return (
-      <div className="border border-dashed border-white/10 rounded-xl p-6 text-center">
-        <p className="text-white/30 text-sm">No transactions yet.</p>
-        <p className="text-white/20 text-xs mt-1">
-          Join a paid game to see your payment history here.
-        </p>
-      </div>
-    );
-  }
-
-  // Merge and sort by date descending
-  type TxRow = {
-    id: string;
-    type: "payment" | "payout";
-    amount: number;
-    currency: string;
-    status: string;
-    txHash: string | null;
-    createdAt: string;
-  };
-
-  const rows: TxRow[] = [
-    ...payments.map((p) => ({
-      id: p.id,
-      type: "payment" as const,
-      amount: p.amount,
-      currency: p.currency,
-      status: p.status,
-      txHash: p.txHash,
-      createdAt: p.createdAt,
-    })),
-    ...payouts.map((p) => ({
-      id: p.id,
-      type: "payout" as const,
-      amount: p.amount,
-      currency: p.currency,
-      status: p.status,
-      txHash: p.txHash,
-      createdAt: p.createdAt,
-    })),
-  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-  return (
-    <div className="space-y-3">
-      {/* Summary bar */}
-      <div className="flex gap-6 mb-2">
-        <div>
-          <p className="text-xs text-white/30">Spent</p>
-          <p className="text-sm font-medium text-red-400">${totalSpent.toFixed(2)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-white/30">Earned</p>
-          <p className="text-sm font-medium text-emerald-400">${totalEarned.toFixed(2)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-white/30">Net</p>
-          <p className={`text-sm font-medium ${totalEarned - totalSpent >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-            {totalEarned - totalSpent >= 0 ? "+" : ""}${(totalEarned - totalSpent).toFixed(2)}
-          </p>
-        </div>
-      </div>
-
-      {/* Transaction rows */}
-      <div className="border border-white/10 rounded-xl overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-white/10">
-              {["Type", "Amount", "Status", "Tx", "Date"].map((h) => (
-                <th key={h} className="text-left py-2.5 px-4 text-xs text-white/30 font-medium">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.slice(0, 10).map((row) => (
-              <tr key={row.id} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
-                <td className="py-2.5 px-4">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${
-                    row.type === "payout"
-                      ? "bg-emerald-900/30 text-emerald-400 border border-emerald-900/50"
-                      : "bg-amber-900/30 text-amber-400 border border-amber-900/50"
-                  }`}>
-                    {row.type === "payout" ? "Payout" : "Buy-in"}
-                  </span>
-                </td>
-                <td className={`py-2.5 px-4 text-sm font-medium ${
-                  row.type === "payout" ? "text-emerald-400" : "text-white"
-                }`}>
-                  {row.type === "payout" ? "+" : "-"}${row.amount.toFixed(2)}
-                  <span className="text-white/25 ml-1 text-xs">{row.currency.toUpperCase()}</span>
-                </td>
-                <td className="py-2.5 px-4">
-                  <span className={`text-xs ${
-                    row.status === "confirmed" ? "text-emerald-400/70" :
-                    row.status === "pending" ? "text-amber-400/70" :
-                    "text-red-400/70"
-                  }`}>
-                    {capitalize(row.status)}
-                  </span>
-                </td>
-                <td className="py-2.5 px-4">
-                  {row.txHash ? (
-                    <a
-                      href={txExplorerUrl(row.txHash)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors font-mono"
-                    >
-                      {row.txHash.slice(0, 8)}...
-                    </a>
-                  ) : (
-                    <span className="text-white/20 text-xs">-</span>
-                  )}
-                </td>
-                <td className="py-2.5 px-4 text-white/30 text-xs">{shortDate(row.createdAt)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Main dashboard component
 // ---------------------------------------------------------------------------
 
-/** Check if a game requires buy-in payment. */
-function gameRequiresBuyIn(game: GameSummary): boolean {
-  if (game.freeEntry === true) return false;
-  if (game.buyInCents !== undefined && game.buyInCents > 0) return true;
-  return false;
-}
-
 export function DashboardContent() {
   const { user, authenticated, login } = usePrivy();
-  const [joinTarget, setJoinTarget] = useState<{ game: GameSummary; paymentId?: string } | null>(null);
-  const [checkoutTarget, setCheckoutTarget] = useState<GameSummary | null>(null);
+  const [joinTarget, setJoinTarget] = useState<{ game: GameSummary } | null>(null);
   const [, setJoinedGameIds] = useState<Set<string>>(new Set());
   const [history, setHistory] = useState<PlayerGameResult[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
-  const [paymentsEnabled, setPaymentsEnabled] = useState(false);
-
-  useEffect(() => {
-    getAppConfig()
-      .then((cfg) => setPaymentsEnabled(cfg.paymentsEnabled))
-      .catch(() => setPaymentsEnabled(false));
-  }, []);
 
   useEffect(() => {
     function fetchHistory() {
@@ -409,19 +223,7 @@ export function DashboardContent() {
       login();
       return;
     }
-    // Skip checkout flow when payments are disabled
-    if (paymentsEnabled && gameRequiresBuyIn(game)) {
-      setCheckoutTarget(game);
-    } else {
-      setJoinTarget({ game });
-    }
-  }
-
-  function handleCheckoutSuccess(paymentId: string) {
-    // Payment completed — now show the join modal with paymentId
-    const game = checkoutTarget;
-    setCheckoutTarget(null);
-    if (game) setJoinTarget({ game, paymentId });
+    setJoinTarget({ game });
   }
 
   function handleJoinSuccess(gameId: string) {
@@ -431,20 +233,9 @@ export function DashboardContent() {
 
   return (
     <>
-      {/* Checkout modal for paid games */}
-      {checkoutTarget && (
-        <CheckoutModal
-          game={checkoutTarget}
-          onClose={() => setCheckoutTarget(null)}
-          onSuccess={handleCheckoutSuccess}
-        />
-      )}
-
-      {/* Join modal — receives paymentId when coming from checkout */}
       {joinTarget && (
         <JoinGameModal
           game={joinTarget.game}
-          paymentId={joinTarget.paymentId}
           onClose={() => setJoinTarget(null)}
           onSuccess={handleJoinSuccess}
         />
@@ -510,14 +301,6 @@ export function DashboardContent() {
           ) : (
             <HistorySection history={history} />
           )}
-        </section>
-
-        {/* Earnings / Payouts */}
-        <section className="mb-10">
-          <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">
-            Earnings & Payments
-          </h2>
-          <EarningsSection />
         </section>
 
         {/* Saved agents */}
