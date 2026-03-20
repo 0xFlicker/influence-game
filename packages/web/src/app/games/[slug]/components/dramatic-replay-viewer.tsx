@@ -587,8 +587,8 @@ export function DramaticReplayViewer({
       </div>
 
       {/* Center — phase-aware content */}
-      <div className={`flex-1 flex ${isChatStyleScene ? "items-end" : "items-center"} justify-center px-8 py-8 overflow-y-auto`}>
-        <div className={`w-full ${isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
+      <div className={`flex-1 flex ${isChatStyleScene ? (isDiaryScene ? "items-start" : "items-end") : "items-center"} justify-center px-8 py-8 overflow-y-auto`}>
+        <div className={`w-full ${isDiaryScene ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
           {/* --- Chat-style: Group Chat Feed --- */}
           {isChatFeedScene && (
             <div className="flex flex-col gap-2">

@@ -371,9 +371,11 @@ export function DiaryRoomGridView({
       ) : (
         <>
           {/* Desktop: simultaneous grid */}
-          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-3" style={{ minHeight: "300px" }}>
+          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(280px, 1fr))` }}>
             {rooms.map((room) => (
-              <DiaryRoomChat key={room.playerName} room={room} />
+              <div key={room.playerName} className="min-h-[350px] max-h-[500px]">
+                <DiaryRoomChat room={room} />
+              </div>
             ))}
           </div>
 
@@ -397,7 +399,7 @@ export function DiaryRoomGridView({
               ))}
             </div>
             {rooms[mobileRoomIndex] && (
-              <div style={{ height: "300px" }}>
+              <div className="min-h-[250px] max-h-[60vh]">
                 <DiaryRoomChat room={rooms[mobileRoomIndex]} />
               </div>
             )}
