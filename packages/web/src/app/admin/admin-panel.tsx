@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
-import { listGames, stopGame, startGame, fillGame, type GameSummary } from "@/lib/api";
+import { listGames, stopGame, startGame, fillGame, isFillAccepted, type GameSummary, type WsGameEvent } from "@/lib/api";
+import { useGameWebSocket } from "@/app/games/[slug]/components/use-game-websocket";
 import { usePermissions } from "@/hooks/use-permissions";
 import { TruncatedAddress } from "@/components/truncated-address";
 
@@ -117,15 +118,33 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop }: { game
   const [filling, setFilling] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  const handleWsEvent = useCallback(
+    (ev: WsGameEvent) => {
+      if (ev.type === "players_filled") {
+        setFilling(false);
+        onRefresh();
+      }
+    },
+    [onRefresh],
+  );
+
+  // Connect to game WS only while filling to receive players_filled confirmation
+  useGameWebSocket(game.id, filling, handleWsEvent);
+
   async function handleFill() {
     setActionError(null);
     setFilling(true);
     try {
-      await fillGame(game.id);
+      const result = await fillGame(game.id);
+      if (isFillAccepted(result)) {
+        // Async path: stay in filling state, WS will confirm
+        return;
+      }
+      // Sync path (legacy): fill completed immediately
+      setFilling(false);
       onRefresh();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
-    } finally {
       setFilling(false);
     }
   }
@@ -160,10 +179,17 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop }: { game
         <div className="flex items-center gap-3 mb-1">
           <span className="text-white font-semibold">#{game.gameNumber}</span>
           <span className="text-white/50 text-sm">
-            {game.playerCount}-player · Not started · {capitalize(game.modelTier)}
+            {game.playerCount}-player · {filling ? `${game.playerCount}/${game.playerCount} slots filled` : "Not started"} · {capitalize(game.modelTier)}
           </span>
+          {filling && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 text-indigo-400 animate-pulse">
+              Generating AI players…
+            </span>
+          )}
         </div>
-        <p className="text-xs text-white/30">Waiting to start</p>
+        <p className="text-xs text-white/30">
+          {filling ? "AI personas being generated — game will be ready shortly" : "Waiting to start"}
+        </p>
       </div>
       <div className="flex flex-col items-end gap-1 flex-shrink-0">
         {actionError && (
@@ -176,19 +202,18 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop }: { game
           >
             View
           </Link>
-          {canFill && (
+          {canFill && !filling && (
             <button
               onClick={handleFill}
-              disabled={filling}
-              className="text-xs border border-indigo-900/50 hover:border-indigo-700 text-indigo-400/70 hover:text-indigo-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+              className="text-xs border border-indigo-900/50 hover:border-indigo-700 text-indigo-400/70 hover:text-indigo-400 px-3 py-1.5 rounded-lg transition-colors"
             >
-              {filling ? "…" : "Fill AI"}
+              Fill AI
             </button>
           )}
           {canStart && (
             <button
               onClick={handleStart}
-              disabled={starting}
+              disabled={starting || filling}
               className="text-xs border border-green-900/50 hover:border-green-700 text-green-400/70 hover:text-green-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
             >
               {starting ? "…" : "▶ Start"}

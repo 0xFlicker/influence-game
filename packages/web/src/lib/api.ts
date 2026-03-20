@@ -169,8 +169,41 @@ export interface FillGameResult {
   players: Array<{ id: string; name: string; archetype: string }>;
 }
 
-export async function fillGame(id: string): Promise<FillGameResult> {
-  return apiFetch(`/api/games/${id}/fill`, { method: "POST" });
+export interface FillGameAccepted {
+  filling: true;
+  slotsToFill: number;
+  filled: number;
+  totalPlayers: number;
+  maxPlayers: number;
+  players: Array<{ id: string; name: string; archetype: string }>;
+}
+
+export type FillGameResponse = FillGameResult | FillGameAccepted;
+
+export async function fillGame(id: string): Promise<FillGameResponse> {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const url = `${API_BASE}/api/games/${id}/fill`;
+  console.log(`API POST ${url}`);
+  const res = await fetch(url, { method: "POST", headers });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    if (res.status === 401 && typeof window !== "undefined" && token) {
+      clearAuthToken();
+      window.dispatchEvent(new CustomEvent("auth:expired"));
+    }
+    throw new ApiError(res.status, text);
+  }
+  return res.json() as Promise<FillGameResponse>;
+}
+
+export function isFillAccepted(r: FillGameResponse): r is FillGameAccepted {
+  return "filling" in r && r.filling === true;
 }
 
 // ---------------------------------------------------------------------------
@@ -451,6 +484,17 @@ export type WsGameEvent =
       winner?: string;
       winnerName?: string;
       totalRounds: number;
+    }
+  | {
+      type: "players_filled";
+      gameId: string;
+      players: Array<{ id: string; name: string; archetype: string }>;
+      totalPlayers: number;
+    }
+  | {
+      type: "players_updated";
+      gameId: string;
+      players: Array<{ id: string; name: string; archetype: string }>;
     };
 
 // ---------------------------------------------------------------------------
