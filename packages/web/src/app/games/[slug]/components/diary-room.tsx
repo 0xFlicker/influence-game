@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import type { TranscriptEntry, GamePlayer } from "@/lib/api";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { formatTime } from "./constants";
@@ -286,23 +286,15 @@ function DiaryRoomChat({
 }: {
   room: DiaryRoomData;
 }) {
-  const feedRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (feedRef.current) {
-      feedRef.current.scrollTop = feedRef.current.scrollHeight;
-    }
-  }, [room.entries.length]);
-
   return (
-    <div className="rounded-2xl border border-purple-400/20 bg-black/30 flex flex-col overflow-hidden h-full">
+    <div className="rounded-2xl border border-purple-400/20 bg-black/30 flex flex-col overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-purple-900/20">
         {room.player && <AgentAvatar avatarUrl={room.player.avatarUrl} persona={room.player.persona} name={room.player.name} size="6" />}
         <p className="text-xs font-semibold text-white truncate">{room.playerName}</p>
         <span className="text-[9px] uppercase tracking-[0.2em] text-purple-300/45 ml-auto">Diary</span>
       </div>
 
-      <div ref={feedRef} className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
+      <div className="p-3 space-y-2">
         {room.entries.length === 0 ? (
           <p className="text-xs text-white/30 italic text-center py-6">Awaiting…</p>
         ) : (
@@ -370,37 +362,40 @@ export function DiaryRoomGridView({
         </div>
       ) : (
         <>
-          {/* Desktop: simultaneous grid */}
-          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(280px, 1fr))` }}>
-            {rooms.map((room) => (
-              <div key={room.playerName} className="min-h-[350px] max-h-[500px]">
-                <DiaryRoomChat room={room} />
-              </div>
-            ))}
-          </div>
-
-          {/* Mobile: single room with tabs */}
-          <div className="md:hidden">
-            <div className="flex flex-wrap items-center gap-1.5 mb-3">
-              {rooms.map((room, idx) => (
+          {/* Room selector */}
+          <div className="flex flex-wrap items-center gap-1.5 mb-4">
+            {rooms.map((room, idx) => {
+              const nextIdx = (mobileRoomIndex + 1) % rooms.length;
+              const isCompanion = rooms.length > 1 && idx === nextIdx;
+              return (
                 <button
                   key={room.playerName}
                   type="button"
-                  onClick={() => setMobileRoomIndex(idx)}
+                  onClick={() => { if (!isCompanion) setMobileRoomIndex(idx); }}
                   className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] transition-colors flex items-center gap-1 ${
-                    mobileRoomIndex === idx
+                    idx === mobileRoomIndex || isCompanion
                       ? "border-purple-300/50 bg-purple-300/15 text-white"
                       : "border-white/10 bg-white/5 text-white/50 hover:border-purple-300/30"
-                  }`}
+                  } ${isCompanion ? "hidden lg:flex opacity-40 cursor-not-allowed" : ""}`}
                 >
                   {room.player && <AgentAvatar avatarUrl={room.player.avatarUrl} persona={room.player.persona} name={room.player.name} size="6" />}
-                  {room.playerName}
+                  <span className="truncate max-w-[6rem]">{room.playerName}</span>
+                  {room.entries.length > 0 && (
+                    <span className="text-[8px] text-purple-300/40">{room.entries.length}</span>
+                  )}
                 </button>
-              ))}
-            </div>
+              );
+            })}
+          </div>
+
+          {/* Room display — 1 col (default), 2 col on lg+ */}
+          <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
             {rooms[mobileRoomIndex] && (
-              <div className="min-h-[250px] max-h-[60vh]">
-                <DiaryRoomChat room={rooms[mobileRoomIndex]} />
+              <DiaryRoomChat room={rooms[mobileRoomIndex]} />
+            )}
+            {rooms.length > 1 && rooms[(mobileRoomIndex + 1) % rooms.length] && (
+              <div className="hidden lg:block">
+                <DiaryRoomChat room={rooms[(mobileRoomIndex + 1) % rooms.length]!} />
               </div>
             )}
           </div>

@@ -325,49 +325,53 @@ export function WhisperPhaseView({
         </div>
       ) : isReplay ? (
         <>
-          {/* Replay mode: show full whisper content */}
-          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-3" style={{ minHeight: "300px" }}>
-            {stage.rooms.map((room) => (
-              <WhisperRoomDM key={room.roomId} room={room} players={players} />
-            ))}
-            {stage.commons.length > 0 && (
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 flex flex-col items-center justify-center text-center">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-white/30 mb-2">Commons</p>
-                <p className="text-sm font-semibold text-white/60">
-                  {stage.commons.map((p) => p.name).join(", ")}
-                </p>
-                <p className="text-xs text-white/30 mt-1">No private room this round.</p>
-              </div>
-            )}
-          </div>
-          <div className="md:hidden">
-            <div className="flex flex-wrap items-center gap-1.5 mb-3">
-              {stage.rooms.map((room, idx) => (
+          {/* Replay: room selector + selected room(s), max 2 cols on lg+ */}
+          <div className="flex flex-wrap items-center gap-1.5 mb-4">
+            {stage.rooms.map((room, idx) => {
+              const nextIdx = (mobileRoomIndex + 1) % stage.rooms.length;
+              const isCompanion = stage.rooms.length > 1 && idx === nextIdx;
+              return (
                 <button
                   key={room.roomId}
                   type="button"
-                  onClick={() => setMobileRoomIndex(idx)}
-                  className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] transition-colors ${
-                    mobileRoomIndex === idx
+                  onClick={() => { if (!isCompanion) setMobileRoomIndex(idx); }}
+                  className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] transition-colors flex items-center gap-1.5 ${
+                    idx === mobileRoomIndex || isCompanion
                       ? "border-purple-300/50 bg-purple-300/15 text-white"
                       : "border-white/10 bg-white/5 text-white/50 hover:border-purple-300/30"
-                  }`}
+                  } ${isCompanion ? "hidden lg:flex opacity-40 cursor-not-allowed" : ""}`}
                 >
-                  Room {room.roomId}
+                  <span>Room {room.roomId}</span>
+                  <span className="text-[9px] text-purple-300/40 truncate max-w-[8rem]">
+                    {room.playerNames.join(" × ")}
+                  </span>
+                  {room.messages.length > 0 && (
+                    <span className="text-[8px] text-purple-300/40">{room.messages.length}</span>
+                  )}
                 </button>
-              ))}
-            </div>
+              );
+            })}
+            {stage.commons.length > 0 && (
+              <span className="text-[10px] text-white/25 ml-1">
+                Commons: {stage.commons.map((p) => p.name).join(", ")}
+              </span>
+            )}
+          </div>
+          <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
             {stage.rooms[mobileRoomIndex] && (
-              <div style={{ height: "300px" }}>
-                <WhisperRoomDM room={stage.rooms[mobileRoomIndex]} players={players} />
+              <WhisperRoomDM room={stage.rooms[mobileRoomIndex]} players={players} />
+            )}
+            {stage.rooms.length > 1 && stage.rooms[(mobileRoomIndex + 1) % stage.rooms.length] && (
+              <div className="hidden lg:block">
+                <WhisperRoomDM room={stage.rooms[(mobileRoomIndex + 1) % stage.rooms.length]!} players={players} />
               </div>
             )}
           </div>
         </>
       ) : (
         <>
-          {/* Live mode: whisper content is sealed — only room assignments visible */}
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {/* Live mode: whisper content is sealed — max 2 cols */}
+          <div className="grid gap-3 grid-cols-1 lg:grid-cols-2">
             {stage.rooms.map((room) => (
               <WhisperRoomSealed key={room.roomId} room={room} players={players} />
             ))}
