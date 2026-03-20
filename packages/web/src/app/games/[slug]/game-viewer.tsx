@@ -534,6 +534,87 @@ function PhaseHeader({ game, isReplay }: { game: GameDetail; isReplay: boolean }
   );
 }
 
+/**
+ * GameStateHUD — compact corner overlay showing game state at a glance.
+ * Like a sports broadcast "score bug": always visible, compact, informative.
+ */
+function GameStateHUD({
+  players,
+  currentRound,
+  maxRounds,
+  phase,
+  empoweredPlayerId,
+}: {
+  players: GamePlayer[];
+  currentRound: number;
+  maxRounds: number;
+  phase: PhaseKey;
+  empoweredPlayerId: string | null;
+}) {
+  const alive = players.filter((p) => p.status === "alive");
+  const eliminated = players.filter((p) => p.status === "eliminated");
+  const shielded = alive.filter((p) => p.shielded);
+  const empowered = empoweredPlayerId
+    ? players.find((p) => p.id === empoweredPlayerId)
+    : null;
+
+  return (
+    <div className="influence-glass rounded-panel p-3 text-xs space-y-2 min-w-[180px]">
+      {/* Phase & Round */}
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold uppercase tracking-wider text-phase truncate">
+          {PHASE_LABELS[phase] ?? phase}
+        </span>
+        <span className="text-text-muted flex-shrink-0">
+          R{currentRound}/{maxRounds}
+        </span>
+      </div>
+
+      {/* Player counts */}
+      <div className="flex items-center gap-3 text-text-secondary">
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+          {alive.length} alive
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-red-400/50" />
+          {eliminated.length} out
+        </span>
+      </div>
+
+      {/* Status indicators */}
+      {(shielded.length > 0 || empowered) && (
+        <div className="border-t border-white/5 pt-2 space-y-1">
+          {empowered && (
+            <div className="flex items-center gap-1.5 text-amber-400/80">
+              <span>👑</span>
+              <span className="truncate">{empowered.name}</span>
+            </div>
+          )}
+          {shielded.length > 0 && (
+            <div className="flex items-center gap-1.5 text-blue-400/80">
+              <span>🛡</span>
+              <span className="truncate">{shielded.map((p) => p.name).join(", ")}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Round progress dots */}
+      <div className="flex gap-1 pt-1">
+        {Array.from({ length: maxRounds }, (_, i) => (
+          <span
+            key={i}
+            className={`h-1.5 flex-1 rounded-full ${
+              i < currentRound ? "bg-phase/70" : "bg-white/10"
+            }`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PlayerRoster({
   players,
   empoweredPlayerId,
@@ -2852,6 +2933,14 @@ function DramaticReplayViewer({
   }, [allVisibleMessages, players]);
   const aliveCount = players.length - eliminatedIds.size;
 
+  // Build players with correct alive/eliminated status for current replay position
+  const replayPlayers = useMemo(() =>
+    players.map((p) => ({
+      ...p,
+      status: eliminatedIds.has(p.id) ? "eliminated" as const : "alive" as const,
+    })),
+  [players, eliminatedIds]);
+
   // Detect scene transitions
   const prevScene = sceneIndex > 0 ? scenes[sceneIndex - 1] : null;
   const isNewRound = scene && prevScene && scene.round !== prevScene.round;
@@ -3124,8 +3213,10 @@ function DramaticReplayViewer({
       </button>
 
       {/* Top bar — phase context */}
-      <div className="flex-shrink-0 px-6 pt-5 pb-3 flex items-center justify-between z-10">
-        <div className="flex items-center gap-3">
+      <div className={`flex-shrink-0 px-6 pt-5 pb-3 flex items-center justify-between z-10 transition-opacity duration-500 ${
+        controlsVisible || !isPlaying ? "opacity-100" : "opacity-0"
+      }`}>
+        <div className="flex items-center gap-3 pl-10">
           <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ROOM_TYPE_COLORS[scene.roomType]}`} />
           <span className={`text-xs font-semibold uppercase tracking-[0.25em] ${phaseColor(scene.phase)}`}>
             {PHASE_TRANSITION_LABELS[scene.phase] ?? scene.phase}
@@ -3140,11 +3231,24 @@ function DramaticReplayViewer({
           )}
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-white/15">
-            R{scene.round}/{game.maxRounds} · {aliveCount} alive
-          </span>
           <ConnectionBadge status="replay" />
         </div>
+      </div>
+
+      {/* Game state HUD — top-right corner, auto-hides with controls */}
+      <div
+        data-controls
+        className={`fixed top-14 right-4 z-20 transition-opacity duration-500 ${
+          controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+      >
+        <GameStateHUD
+          players={replayPlayers}
+          currentRound={scene.round}
+          maxRounds={game.maxRounds}
+          phase={scene.phase}
+          empoweredPlayerId={null}
+        />
       </div>
 
       {/* Scene progress bar */}
@@ -4218,8 +4322,15 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
         )}
       </div>
 
-      {/* Right: player roster */}
-      <div>
+      {/* Right: game state HUD + player roster */}
+      <div className="space-y-3">
+        <GameStateHUD
+          players={game.players}
+          currentRound={replayGame.currentRound}
+          maxRounds={game.maxRounds}
+          phase={replayGame.currentPhase}
+          empoweredPlayerId={empoweredPlayerId}
+        />
         <PlayerRoster
           players={game.players}
           empoweredPlayerId={empoweredPlayerId}
