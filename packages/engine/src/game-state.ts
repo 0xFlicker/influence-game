@@ -109,6 +109,10 @@ export class GameState {
     return this._councilCandidates;
   }
 
+  get currentVoteTally() {
+    return this._currentVoteTally;
+  }
+
   isGameOver(): boolean {
     return this.getAlivePlayers().length <= 1;
   }
@@ -193,9 +197,9 @@ export class GameState {
   /**
    * Tally votes and determine the empowered agent.
    * Also increments cumulative empower votes for endgame tiebreakers.
-   * Returns the empowered player ID.
+   * Returns the empowered player ID and tied array if a tie occurred.
    */
-  tallyEmpowerVotes(): UUID {
+  tallyEmpowerVotes(): { empowered: UUID; tied: UUID[] | null } {
     const alive = this.getAlivePlayerIds();
     const counts: Record<UUID, number> = {};
     for (const id of alive) counts[id] = 0;
@@ -215,18 +219,37 @@ export class GameState {
     const maxVotes = Math.max(...Object.values(counts), 0);
 
     if (maxVotes === 0) {
-      // Zero empower votes — pick randomly
+      // Zero empower votes — pick randomly ("the wheel")
       const empowered = alive[Math.floor(Math.random() * alive.length)];
       if (!empowered) throw new Error("No alive players to empower");
       this._empoweredId = empowered;
-      return empowered;
+      return { empowered, tied: null };
     }
 
     const tied = alive.filter((id) => counts[id] === maxVotes);
-    const empowered = tied[Math.floor(Math.random() * tied.length)];
-    if (!empowered) throw new Error("No tied player found after empower tally");
-    this._empoweredId = empowered;
-    return empowered;
+    if (tied.length === 1) {
+      const empowered = tied[0]!;
+      this._empoweredId = empowered;
+      return { empowered, tied: null };
+    }
+
+    // Tie detected — return tied players for re-vote by the runner
+    return { empowered: tied[0]!, tied };
+  }
+
+  /**
+   * Record an empower re-vote (used when initial empower votes tie).
+   * Voters choose among tied candidates only.
+   */
+  recordEmpowerReVote(voterId: UUID, target: UUID): void {
+    this._currentVoteTally.empowerVotes[voterId] = target;
+  }
+
+  /**
+   * Set the empowered player directly (after re-vote or wheel).
+   */
+  setEmpowered(id: UUID): void {
+    this._empoweredId = id;
   }
 
   /**

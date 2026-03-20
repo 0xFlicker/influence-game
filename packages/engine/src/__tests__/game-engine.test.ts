@@ -84,8 +84,9 @@ describe("GameState - VOTE phase tallying", () => {
     gs.recordVote(dave, alice, bob); // empower Alice
     gs.recordVote(bob, charlie, alice); // empower Charlie
 
-    const empowered = gs.tallyEmpowerVotes();
+    const { empowered, tied } = gs.tallyEmpowerVotes();
     expect(empowered).toBe(bob); // Bob has 2 votes
+    expect(tied).toBeNull();
   });
 
   it("breaks empower ties randomly (runs 10 times and result is valid)", () => {
@@ -100,9 +101,17 @@ describe("GameState - VOTE phase tallying", () => {
       gs.recordVote(charlie, alice, bob);
       gs.recordVote(dave, bob, alice);
       gs.recordVote(bob, alice, charlie);
-      results.add(gs.tallyEmpowerVotes());
+      const { empowered, tied } = gs.tallyEmpowerVotes();
+      // When tied, the function returns tied array instead of resolving randomly
+      if (tied) {
+        expect(tied).toContain(alice);
+        expect(tied).toContain(bob);
+        results.add(tied[0]!);
+      } else {
+        results.add(empowered);
+      }
     }
-    // Both alice and bob should be empowered at least once across 10 runs
+    // Both alice and bob should appear in tied results
     expect(results.has(alice) || results.has(bob)).toBe(true);
   });
 
@@ -879,7 +888,7 @@ describe("Diary Room - interview mechanics", () => {
       council: 0,
     },
     maxRounds: 2,
-    minPlayers: 4,
+    minPlayers: 5,
     maxPlayers: 12,
   };
 
@@ -1003,7 +1012,7 @@ describe("Full game - endgame integration", () => {
       council: 0,
     },
     maxRounds: 10,
-    minPlayers: 4,
+    minPlayers: 5,
     maxPlayers: 12,
   };
 
@@ -1100,7 +1109,7 @@ describe("Anonymous Rumors", () => {
       council: 0,
     },
     maxRounds: 2,
-    minPlayers: 4,
+    minPlayers: 5,
     maxPlayers: 12,
   };
 
@@ -1285,7 +1294,7 @@ describe("Whisper Rooms", () => {
       council: 0,
     },
     maxRounds: 2,
-    minPlayers: 4,
+    minPlayers: 5,
     maxPlayers: 12,
   };
 

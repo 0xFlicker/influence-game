@@ -19,7 +19,7 @@ import type {
   EndgameStage,
   RoomAllocation,
 } from "./types";
-import { Phase, PlayerStatus, computeMaxRounds } from "./types";
+import { Phase, PlayerStatus, computeMaxRounds, computeJurySize } from "./types";
 
 // ---------------------------------------------------------------------------
 // Stream events — emitted in real-time for WebSocket observers
@@ -187,10 +187,14 @@ export class GameRunner {
   /** Optional listener for real-time game events (WebSocket streaming) */
   private _streamListener?: (event: GameStreamEvent) => void;
 
+  /** Total number of players at game start (used for jury pool sizing) */
+  private readonly totalPlayerCount: number;
+
   constructor(agents: IAgent[], config: GameConfig, houseInterviewer?: IHouseInterviewer) {
     // Scale maxRounds based on player count to ensure games can resolve
     const scaledMaxRounds = computeMaxRounds(agents.length);
     this.config = { ...config, maxRounds: Math.max(config.maxRounds, scaledMaxRounds) };
+    this.totalPlayerCount = agents.length;
     this.agents = new Map(agents.map((a) => [a.id, a]));
     this.gameState = new GameState(agents.map((a) => ({ id: a.id, name: a.name })));
     this.machine = createPhaseMachine();
@@ -203,6 +207,18 @@ export class GameRunner {
 
   get diaryLog(): ReadonlyArray<{ round: number; precedingPhase: Phase; agentId: UUID; agentName: string; question: string; answer: string }> {
     return this.diaryEntries;
+  }
+
+  /**
+   * Get the active jury — the last N eliminated players based on game size.
+   * Early eliminations don't earn jury seats.
+   */
+  private getActiveJury(): readonly JuryMember[] {
+    const maxJurors = computeJurySize(this.totalPlayerCount);
+    const allJurors = this.gameState.jury;
+    if (allJurors.length <= maxJurors) return allJurors;
+    // Take the last N (most recently eliminated = closest to finals)
+    return allJurors.slice(allJurors.length - maxJurors);
   }
 
   /** Register a listener for real-time game events (for WebSocket streaming). */
@@ -695,7 +711,54 @@ export class GameRunner {
       }),
     );
 
-    const empoweredId = this.gameState.tallyEmpowerVotes();
+    const { empowered: initialEmpowered, tied } = this.gameState.tallyEmpowerVotes();
+    let empoweredId = initialEmpowered;
+
+    if (tied) {
+      // Empower tie — re-vote among tied candidates only
+      const tiedNames = tied.map((id) => this.gameState.getPlayerName(id)).join(", ");
+      this.logSystem(`Empower TIED between: ${tiedNames}. Re-vote!`, Phase.VOTE);
+
+      // Non-tied players re-vote among tied candidates
+      const reVoters = alivePlayers.filter((p) => !tied.includes(p.id));
+      if (reVoters.length > 0) {
+        await Promise.all(
+          reVoters.map(async (player) => {
+            const agent = this.agents.get(player.id)!;
+            const ctx = this.buildPhaseContext(player.id, Phase.VOTE);
+            const votes = await agent.getVotes(ctx);
+            // Only count if they voted for a tied candidate
+            if (tied.includes(votes.empowerTarget)) {
+              this.gameState.recordEmpowerReVote(player.id, votes.empowerTarget);
+            }
+          }),
+        );
+      }
+
+      // Re-tally among tied candidates only
+      const reVoteCounts: Record<UUID, number> = {};
+      for (const id of tied) reVoteCounts[id] = 0;
+      for (const voter of reVoters) {
+        const target = this.gameState.currentVoteTally.empowerVotes[voter.id];
+        if (target && target in reVoteCounts) {
+          reVoteCounts[target] = (reVoteCounts[target] ?? 0) + 1;
+        }
+      }
+
+      const maxReVotes = Math.max(...Object.values(reVoteCounts), 0);
+      const reVoteTied = tied.filter((id) => reVoteCounts[id] === maxReVotes);
+
+      if (reVoteTied.length === 1) {
+        empoweredId = reVoteTied[0]!;
+        this.logSystem(`Re-vote resolved: ${this.gameState.getPlayerName(empoweredId)} empowered`, Phase.VOTE);
+      } else {
+        // Still tied — "the wheel" (random among tied)
+        empoweredId = reVoteTied[Math.floor(Math.random() * reVoteTied.length)]!;
+        this.logSystem(`Re-vote still tied! THE WHEEL decides: ${this.gameState.getPlayerName(empoweredId)} empowered`, Phase.VOTE);
+      }
+      this.gameState.setEmpowered(empoweredId);
+    }
+
     this.logSystem(
       `Empowered: ${this.gameState.getPlayerName(empoweredId)}`,
       Phase.VOTE,
@@ -813,9 +876,14 @@ export class GameRunner {
     this.logSystem("=== COUNCIL PHASE ===", Phase.COUNCIL);
     const alivePlayers = this.gameState.getAlivePlayers();
 
-    // All players vote (including empowered — they only count as tiebreaker)
+    // Non-candidate, non-empowered players vote normally.
+    // Candidates cannot vote in their own elimination.
+    // Empowered agent votes separately as tiebreaker only.
+    const voters = alivePlayers.filter(
+      (p) => p.id !== candidates[0] && p.id !== candidates[1],
+    );
     await Promise.all(
-      alivePlayers.map(async (player) => {
+      voters.map(async (player) => {
         const agent = this.agents.get(player.id)!;
         const ctx = this.buildPhaseContext(player.id, Phase.COUNCIL, {
           empoweredId,
@@ -1111,9 +1179,10 @@ export class GameRunner {
     let juryTiebreakerVotes: Record<UUID, UUID> | undefined;
     // Check if we need a tiebreaker before tallying
     // We'll let tallyTribunalVotes handle it; collect jury votes preemptively
-    if (this.gameState.jury.length > 0) {
+    const tribunalJury = this.getActiveJury();
+    if (tribunalJury.length > 0) {
       juryTiebreakerVotes = {};
-      for (const juror of this.gameState.jury) {
+      for (const juror of tribunalJury) {
         const jurorAgent = this.agents.get(juror.playerId);
         if (jurorAgent) {
           const ctx = this.buildPhaseContext(juror.playerId, Phase.VOTE);
@@ -1153,7 +1222,14 @@ export class GameRunner {
     this.logSystem(`=== THE JUDGMENT ===`, Phase.OPENING_STATEMENTS);
     this.logSystem(`========================================`, Phase.OPENING_STATEMENTS);
     this.logSystem(`Finalists: ${this.gameState.getAlivePlayers().map((p) => p.name).join(" vs ")}`, Phase.OPENING_STATEMENTS);
-    this.logSystem(`Jury: ${this.gameState.jury.map((j) => j.playerName).join(", ")}`, Phase.OPENING_STATEMENTS);
+    const activeJury = this.getActiveJury();
+    const excludedJurors = this.gameState.jury.filter(
+      (j) => !activeJury.some((aj) => aj.playerId === j.playerId),
+    );
+    this.logSystem(`Jury (${activeJury.length}): ${activeJury.map((j) => j.playerName).join(", ")}`, Phase.OPENING_STATEMENTS);
+    if (excludedJurors.length > 0) {
+      this.logSystem(`Eliminated too early for jury: ${excludedJurors.map((j) => j.playerName).join(", ")}`, Phase.OPENING_STATEMENTS);
+    }
 
     this.logSystem("=== JUDGMENT: OPENING STATEMENTS ===", Phase.OPENING_STATEMENTS);
     const finalists = this.gameState.getAlivePlayers();
@@ -1182,8 +1258,8 @@ export class GameRunner {
     if (!finalist0 || !finalist1) throw new Error("Expected exactly 2 finalists for jury questions phase");
     const finalistIds: [UUID, UUID] = [finalist0.id, finalist1.id];
 
-    // Each juror asks one question to one finalist, and the finalist answers
-    for (const juror of this.gameState.jury) {
+    // Only active jury members (based on pool size) ask questions
+    for (const juror of this.getActiveJury()) {
       const jurorAgent = this.agents.get(juror.playerId);
       if (!jurorAgent) continue;
 
@@ -1236,7 +1312,10 @@ export class GameRunner {
     if (!finalist0 || !finalist1) throw new Error("Expected exactly 2 finalists for jury vote phase");
     const finalistIds: [UUID, UUID] = [finalist0.id, finalist1.id];
 
-    for (const juror of this.gameState.jury) {
+    // Use fixed-size jury pool (always odd)
+    const votingJury = this.getActiveJury();
+
+    for (const juror of votingJury) {
       const jurorAgent = this.agents.get(juror.playerId);
       if (!jurorAgent) continue;
 
@@ -1299,9 +1378,9 @@ export class GameRunner {
       await this.runDiaryInterview(precedingPhase, player.id, player.name, false);
     }
 
-    // During Judgment phases, also interview jury members sequentially
+    // During Judgment phases, also interview active jury members sequentially
     if (this.gameState.endgameStage === "judgment") {
-      for (const juror of this.gameState.jury) {
+      for (const juror of this.getActiveJury()) {
         const agent = this.agents.get(juror.playerId);
         if (!agent) continue;
         await this.runDiaryInterview(precedingPhase, juror.playerId, juror.playerName, true);
@@ -1462,7 +1541,7 @@ export class GameRunner {
       roomPartner: roomInfo?.roomPartner,
       // Endgame context
       endgameStage: this.gameState.endgameStage ?? undefined,
-      jury: this.gameState.jury.length > 0 ? [...this.gameState.jury] : undefined,
+      jury: this.gameState.jury.length > 0 ? [...this.getActiveJury()] : undefined,
       finalists: (() => {
         const alivePlayers = this.gameState.getAlivePlayers();
         if (alivePlayers.length !== 2) return undefined;

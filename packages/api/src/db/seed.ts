@@ -83,7 +83,7 @@ const defaultConfig = {
     council: 20000,
   },
   maxRounds: 10,
-  minPlayers: 4,
+  minPlayers: 5,
   maxPlayers: 12,
 };
 
@@ -92,7 +92,7 @@ db.insert(schema.games)
     id: gameId,
     config: JSON.stringify(defaultConfig),
     status: "completed",
-    minPlayers: 4,
+    minPlayers: 5,
     maxPlayers: 6,
     createdById: userIds.admin,
     startedAt: new Date(Date.now() - 3600_000).toISOString(),
@@ -235,7 +235,7 @@ db.insert(schema.games)
     id: waitingGameId,
     config: JSON.stringify(defaultConfig),
     status: "waiting",
-    minPlayers: 4,
+    minPlayers: 5,
     maxPlayers: 8,
     createdById: userIds.admin,
   })

@@ -40,7 +40,7 @@ const FAST_CONFIG: GameConfig = {
     juryVote: 5_000,
   },
   maxRounds: 20,
-  minPlayers: 4,
+  minPlayers: 5,
   maxPlayers: 12,
 };
 

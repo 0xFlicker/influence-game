@@ -239,9 +239,13 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
     const aliveCount = game.players.filter((p) => p.status === "alive").length;
     const prev = prevAliveCountRef.current;
     if (prev !== null && prev > aliveCount && (aliveCount === 4 || aliveCount === 3 || aliveCount === 2)) {
-      const jurors = game.players
+      // Compute active jury pool (odd-sized, last N eliminated)
+      const totalPlayers = game.players.length;
+      const maxJurors = totalPlayers <= 6 ? 3 : totalPlayers <= 9 ? 5 : 7;
+      const allEliminated = game.players
         .filter((p) => p.status === "eliminated")
         .map((p) => p.name);
+      const jurors = allEliminated.slice(-maxJurors);
       const alive = game.players.filter((p) => p.status === "alive");
       // Audio sting for endgame entry
       if (aliveCount === 4) audioCue.sting("endgame_reckoning");

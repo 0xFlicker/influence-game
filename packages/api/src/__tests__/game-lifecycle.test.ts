@@ -111,7 +111,7 @@ function createGameInDB(
   const gameId = randomUUID();
   const config: GameConfig = {
     maxRounds: 10,
-    minPlayers: 4,
+    minPlayers: 5,
     maxPlayers: playerCount,
     timers: {
       introduction: 0,
@@ -129,7 +129,7 @@ function createGameInDB(
       id: gameId,
       config: JSON.stringify(config),
       status: "in_progress",
-      minPlayers: 4,
+      minPlayers: 5,
       maxPlayers: playerCount,
       startedAt: new Date().toISOString(),
     })

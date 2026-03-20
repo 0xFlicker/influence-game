@@ -123,6 +123,23 @@ const ENDGAME_PERSONALITY_HINTS: Record<Personality, string> = {
 };
 
 // ---------------------------------------------------------------------------
+// Per-archetype jury voting criteria — what each personality values in a winner
+// ---------------------------------------------------------------------------
+
+const JURY_VOTING_CRITERIA: Record<Personality, string> = {
+  honest: "You value integrity above all. Who kept their promises? Who was consistent and trustworthy throughout the game? Vote for the player whose word actually meant something.",
+  strategic: "You respect the player who made the best moves. Who outmaneuvered their opponents? Who was always a step ahead? Don't reward someone just for being nice — reward the player who played the game at a higher level.",
+  deceptive: "You appreciate a great performance. Who controlled the narrative? Who convinced others to do their bidding? The winner should be the player who ran the best game — whether they played clean or dirty.",
+  paranoid: "You respect survival instinct. Who navigated the most danger? Who saw threats coming and acted before it was too late? Vote for the player who proved they could handle the pressure.",
+  social: "You value relationships and emotional intelligence. Who made the game better for everyone? Who built real connections and used them wisely? Vote for the player who understood people, not just strategy.",
+  aggressive: "You respect boldness. Who took the biggest risks? Who made the moves that others were too afraid to make? Don't reward the player who coasted — reward the one who fought for their seat.",
+  loyalist: "You value honor and loyalty. Who kept their word under pressure? Who stood by their allies when it would have been easier to betray? Vote for the player whose integrity was tested and held.",
+  observer: "You value intelligence and accurate reads. Who understood the game best? Who saw through the lies and identified the real power dynamics? Vote for the player with the sharpest mind.",
+  diplomat: "You value political skill and coalition-building. Who brought people together? Who navigated conflicts and built the alliances that shaped the game? Vote for the player who architected the outcome.",
+  wildcard: "Vote for whoever made this game worth playing. Who surprised you? Who made you laugh, or gasp, or change your mind? The winner should be the person who made the game interesting.",
+};
+
+// ---------------------------------------------------------------------------
 // Tool schemas for structured agent decisions (OpenAI function calling)
 // ---------------------------------------------------------------------------
 
@@ -925,7 +942,11 @@ Finalists:
 1. ${finalist0.name}
 2. ${finalist1.name}
 
-Who deserves to WIN the game? Consider their gameplay, strategy, and answers.
+Who deserves to WIN the game?
+
+${JURY_VOTING_CRITERIA[this.personality]}
+
+Consider their gameplay, their answers to the jury, and the full arc of the game.
 
 Use the jury_vote tool to cast your vote.`;
 

@@ -311,10 +311,21 @@ export const DEFAULT_CONFIG: GameConfig = {
     juryVote: 20_000,
   },
   maxRounds: 10,
-  minPlayers: 4,
+  minPlayers: 5,
   maxPlayers: 12,
   viewerMode: "speedrun",
 };
+
+/**
+ * Compute fixed odd jury size based on total player count.
+ * 5-6 players → 3 jurors, 7-9 → 5 jurors, 10-12 → 7 jurors.
+ * Early eliminations don't earn jury seats.
+ */
+export function computeJurySize(totalPlayers: number): number {
+  if (totalPlayers <= 6) return 3;
+  if (totalPlayers <= 9) return 5;
+  return 7;
+}
 
 /**
  * Compute a player-count-scaled maxRounds to ensure games resolve.

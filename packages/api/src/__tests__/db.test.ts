@@ -91,14 +91,14 @@ describe("Database Schema", () => {
   describe("games", () => {
     test("insert and query a game", () => {
       const gameId = randomUUID();
-      const config = { timers: {}, maxRounds: 10, minPlayers: 4, maxPlayers: 8 };
+      const config = { timers: {}, maxRounds: 10, minPlayers: 5, maxPlayers: 8 };
 
       db.insert(schema.games)
         .values({
           id: gameId,
           config: JSON.stringify(config),
           status: "waiting",
-          minPlayers: 4,
+          minPlayers: 5,
           maxPlayers: 8,
         })
         .run();
