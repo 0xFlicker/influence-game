@@ -384,21 +384,36 @@ export function DramaticReplayViewer({
     }
   }, [sceneIndex, messageIndex]);
 
-  // Click handler — advance when paused, pause when playing
-  // Tap-to-skip: clicking always advances (skips current animation or goes to
-  // next message). Only the play/pause button can pause. After advancing,
-  // playback auto-continues if it was playing.
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest("[data-controls]")) return;
-    advanceMessage();
-  }, [advanceMessage]);
-
-  // Auto-hide controls
-  const handleMouseMove = useCallback(() => {
-    setControlsVisible(true);
+  // Reset auto-hide timer helper
+  const resetControlsTimer = useCallback(() => {
     if (controlsTimer.current) clearTimeout(controlsTimer.current);
     controlsTimer.current = setTimeout(() => setControlsVisible(false), 3000);
   }, []);
+
+  // Click/tap handler — if controls are hidden, show them first (don't advance).
+  // If controls are already visible, advance the message.
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("[data-controls]")) return;
+    if (!controlsVisible && isPlaying) {
+      setControlsVisible(true);
+      resetControlsTimer();
+      return;
+    }
+    advanceMessage();
+  }, [advanceMessage, controlsVisible, isPlaying, resetControlsTimer]);
+
+  // Auto-hide controls (mouse for desktop)
+  const handleMouseMove = useCallback(() => {
+    setControlsVisible(true);
+    resetControlsTimer();
+  }, [resetControlsTimer]);
+
+  // Auto-hide controls (touch for mobile)
+  const handleTouchStart = useCallback(() => {
+    if (controlsVisible) {
+      resetControlsTimer();
+    }
+  }, [controlsVisible, resetControlsTimer]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -487,6 +502,7 @@ export function DramaticReplayViewer({
       className="fixed inset-0 z-30 influence-shell flex flex-col cursor-pointer select-none"
       onClick={handleClick}
       onMouseMove={handleMouseMove}
+      onTouchStart={handleTouchStart}
     >
       {/* Cinematic atmosphere layers */}
       <div className="influence-phase-atmosphere" />
@@ -523,7 +539,7 @@ export function DramaticReplayViewer({
           e.stopPropagation();
           window.history.back();
         }}
-        className={`fixed top-4 left-4 z-20 w-9 h-9 flex items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/50 hover:text-white hover:border-white/25 transition-all duration-500 ${
+        className={`fixed top-[max(1rem,env(safe-area-inset-top))] left-4 z-20 w-9 h-9 flex items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/50 hover:text-white hover:border-white/25 transition-all duration-500 ${
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
         title="Exit"
@@ -534,32 +550,36 @@ export function DramaticReplayViewer({
       </button>
 
       {/* Top bar — phase context */}
-      <div className={`flex-shrink-0 px-6 pt-5 pb-3 flex items-center justify-between z-10 transition-opacity duration-500 ${
+      <div className={`flex-shrink-0 px-4 md:px-6 pt-4 md:pt-5 pb-2 md:pb-3 flex items-center justify-between z-10 transition-opacity duration-500 ${
         controlsVisible || !isPlaying ? "opacity-100" : "opacity-0"
       }`}>
-        <div className="flex items-center gap-3 pl-10">
+        <div className="flex items-center gap-2 md:gap-3 pl-10 min-w-0">
           <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ROOM_TYPE_COLORS[scene.roomType]}`} />
-          <span className={`text-xs font-semibold uppercase tracking-[0.25em] ${phaseColor(scene.phase)}`}>
+          <span className={`text-xs font-semibold uppercase tracking-[0.25em] ${phaseColor(scene.phase)} truncate`}>
             {PHASE_TRANSITION_LABELS[scene.phase] ?? scene.phase}
           </span>
           {roomLabel && (
-            <span className="text-xs text-purple-300/50">{roomLabel}</span>
+            <span className="text-xs text-purple-300/50 hidden md:inline">{roomLabel}</span>
           )}
           {isNewRound && (
-            <span className="text-xs text-white/25 uppercase tracking-wider">
+            <span className="text-xs text-white/25 uppercase tracking-wider hidden md:inline">
               Round {scene.round}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
+          {/* Compact mobile HUD: round + player counts */}
+          <span className="text-[10px] text-white/30 md:hidden">
+            R{scene.round} · {aliveCount} alive
+          </span>
           <ConnectionBadge status={connStatus ?? "replay"} />
         </div>
       </div>
 
-      {/* Game state HUD — top-right corner, auto-hides with controls */}
+      {/* Game state HUD — top-right corner, auto-hides with controls, hidden on mobile */}
       <div
         data-controls
-        className={`fixed top-14 right-4 z-20 transition-opacity duration-500 ${
+        className={`fixed top-14 right-4 z-20 transition-opacity duration-500 hidden md:block ${
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
@@ -587,7 +607,7 @@ export function DramaticReplayViewer({
       </div>
 
       {/* Center — phase-aware content */}
-      <div className={`flex-1 flex ${isChatStyleScene ? (isDiaryScene ? "items-start" : "items-end") : "items-center"} justify-center px-8 py-8 overflow-y-auto`}>
+      <div className={`flex-1 flex ${isChatStyleScene ? (isDiaryScene ? "items-start" : "items-end") : "items-center"} justify-center px-4 md:px-8 py-4 md:py-8 overflow-y-auto`}>
         <div className={`w-full ${isDiaryScene ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
           {/* --- Chat-style: Group Chat Feed --- */}
           {isChatFeedScene && (
@@ -706,11 +726,77 @@ export function DramaticReplayViewer({
       {/* Bottom controls — auto-hide when playing */}
       <div
         data-controls
-        className={`flex-shrink-0 px-6 py-4 transition-opacity duration-500 z-10 ${
-          controlsVisible || !isPlaying ? "opacity-100" : "opacity-0"
+        className={`flex-shrink-0 px-3 md:px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:py-4 transition-opacity duration-500 z-10 ${
+          controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
-        <div className="flex items-center justify-between max-w-3xl mx-auto">
+        {/* Mobile: compact 2-row layout */}
+        <div className="md:hidden flex flex-col gap-2 max-w-sm mx-auto">
+          <div className="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setIsPlaying((p) => !p); }}
+              className="text-xs text-white/50 hover:text-white transition-colors px-3 py-2 rounded-lg border border-white/10 active:border-white/30"
+            >
+              {isPlaying ? "⏸" : "▶"}
+            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); goToBeginning(); }}
+                disabled={sceneIndex === 0 && messageIndex === 0}
+                className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10 disabled:opacity-20"
+              >
+                ⏮
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); goToPrevScene(); }}
+                disabled={sceneIndex === 0 && messageIndex === 0}
+                className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10 disabled:opacity-20"
+              >
+                ◀◀
+              </button>
+              <span className="text-[10px] text-white/20 px-1 min-w-[3rem] text-center">
+                {sceneIndex + 1}/{totalScenes}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); goToNextScene(); }}
+                disabled={sceneIndex >= totalScenes - 1}
+                className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10 disabled:opacity-20"
+              >
+                ▶▶
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); goToEnd(); }}
+                className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10"
+              >
+                ⏭
+              </button>
+            </div>
+            <div className="flex items-center gap-0.5">
+              {SPEED_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setSpeed(opt.value); }}
+                  className={`text-[10px] px-1.5 py-1.5 rounded transition-colors ${
+                    speed === opt.value
+                      ? "bg-white/10 text-white border border-white/20"
+                      : "text-white/25 border border-transparent"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Desktop: single-row layout */}
+        <div className="hidden md:flex items-center justify-between max-w-3xl mx-auto">
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setIsPlaying((p) => !p); }}
@@ -771,7 +857,7 @@ export function DramaticReplayViewer({
             ))}
           </div>
         </div>
-        <p className="text-[10px] text-white/10 text-center mt-2">
+        <p className="text-[10px] text-white/10 text-center mt-2 hidden md:block">
           Space: play/pause · Click/→: advance · ←: back · []: rounds · 1234: speed
         </p>
       </div>
