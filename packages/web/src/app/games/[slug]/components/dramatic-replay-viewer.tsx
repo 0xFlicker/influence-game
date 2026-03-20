@@ -134,11 +134,11 @@ export function DramaticReplayViewer({
     return allVisibleMessages.filter(m => m.round === scene.round && m.phase === "WHISPER");
   }, [allVisibleMessages, scene]);
 
-  // For diary scenes: gather all diary messages for this round
+  // For diary scenes: show ALL messages at once (grid renders all rooms simultaneously)
   const diaryRoundMessages = useMemo(() => {
     if (!scene || scene.phase !== "DIARY_ROOM") return [];
-    return allVisibleMessages.filter(m => m.round === scene.round && m.phase === "DIARY_ROOM");
-  }, [allVisibleMessages, scene]);
+    return scene.messages;
+  }, [scene]);
 
   // For jury scenes: gather all jury messages
   const juryMessages = useMemo(() => {
@@ -224,6 +224,32 @@ export function DramaticReplayViewer({
   useEffect(() => {
     if (!isPlaying || !scene || !currentMessage) return;
 
+    // Diary scenes: show all content at once, hold proportionally, then advance
+    if (isDiaryScene) {
+      if (messagePhase === "typing") {
+        // Grid already renders all rooms — skip to end of scene immediately
+        setMessageIndex(scene.messages.length - 1);
+        setMessagePhase("done");
+        return;
+      }
+      if (messagePhase === "done") {
+        const isLastScene = sceneIndex >= totalScenes - 1;
+        // Hold proportional to content: ~5s base + 300ms per diary message
+        const holdMs = Math.max(5000, scene.messages.length * 300) / speed;
+        const timer = setTimeout(() => {
+          if (!isLastScene) {
+            setSceneIndex((i) => i + 1);
+            setMessageIndex(0);
+            setMessagePhase("typing");
+          } else if (!live) {
+            setIsPlaying(false);
+          }
+        }, holdMs);
+        return () => clearTimeout(timer);
+      }
+      return;
+    }
+
     if (messagePhase === "typing") {
       // Chat-style phases: short typing indicator then skip straight to "done"
       if (isChatStyleScene) {
@@ -292,11 +318,20 @@ export function DramaticReplayViewer({
       return () => clearTimeout(timer);
     }
     // "revealing" phase transitions via Typewriter onComplete
-  }, [isPlaying, messagePhase, messageIndex, sceneIndex, scene, totalScenes, speed, currentMessage, isSystemMessage, isChatStyleScene, live]);
+  }, [isPlaying, messagePhase, messageIndex, sceneIndex, scene, totalScenes, speed, currentMessage, isSystemMessage, isChatStyleScene, isDiaryScene, live]);
 
   // Advance function — for click/tap and keyboard
   const advanceMessage = useCallback(() => {
     if (!scene) return;
+    // Diary scenes show all content at once — click advances to next scene
+    if (scene.phase === "DIARY_ROOM") {
+      if (sceneIndex < totalScenes - 1) {
+        setSceneIndex((i) => i + 1);
+        setMessageIndex(0);
+        setMessagePhase("typing");
+      }
+      return;
+    }
     // If mid-animation, skip to fully revealed
     if (messagePhase === "typing" || messagePhase === "revealing") {
       setMessagePhase("done");
