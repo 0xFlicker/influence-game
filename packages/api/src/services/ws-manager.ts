@@ -23,6 +23,8 @@ export type WsOutboundEvent =
   | { type: "message"; entry: { round: number; phase: string; from: string; scope: string; to?: string[]; roomId?: number; text: string; timestamp: number; anonymous?: boolean; displayOrder?: number } }
   | { type: "player_eliminated"; playerId: string; playerName: string; round: number }
   | { type: "game_over"; winner?: string; winnerName?: string; totalRounds: number }
+  | { type: "players_filled"; gameId: string; players: Array<{ id: string; name: string; archetype: string }>; totalPlayers: number }
+  | { type: "players_updated"; gameId: string; players: Array<{ id: string; name: string; archetype: string }> }
   | { type: "error"; message: string };
 
 // ---------------------------------------------------------------------------
@@ -108,6 +110,12 @@ export function broadcastGameEvent(gameId: string, event: GameStreamEvent): void
   }
 
   _server.publish(gameTopic(gameId), JSON.stringify(outbound));
+}
+
+/** Broadcast a raw WsOutboundEvent to all observers of a game. */
+export function broadcastRaw(gameId: string, event: WsOutboundEvent): void {
+  if (!_server) return;
+  _server.publish(gameTopic(gameId), JSON.stringify(event));
 }
 
 /** Send a state snapshot to a single client (for catch-up on connect). */
