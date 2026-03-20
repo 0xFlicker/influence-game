@@ -302,6 +302,17 @@ const DRAMATIC_PHASES: ReadonlySet<PhaseKey> = new Set([
   "VOTE", "POWER", "REVEAL", "COUNCIL", "JURY_VOTE",
 ]);
 
+// Phases that render as a scrolling group chat feed (all messages on left)
+const CHAT_FEED_PHASES: ReadonlySet<PhaseKey> = new Set([
+  "INTRODUCTION", "LOBBY", "RUMOR", "ACCUSATION", "DEFENSE",
+  "OPENING_STATEMENTS", "CLOSING_ARGUMENTS", "PLEA",
+]);
+
+// Chat-style timing — faster than spotlight since messages stack in a feed
+const CHAT_TYPING_HOLD_MS = 800;
+const CHAT_POST_MSG_BASE_MS = 600;
+const CHAT_POST_MSG_PER_CHAR_MS = 12;
+
 // ---------------------------------------------------------------------------
 // Transcript message parsers — extract structured data from system messages
 // ---------------------------------------------------------------------------
@@ -2935,6 +2946,40 @@ function DramaticReplayViewer({
     return msgs;
   }, [scenes, sceneIndex, messageIndex]);
 
+  // Determine rendering mode for current scene
+  const isChatFeedScene = !!scene && CHAT_FEED_PHASES.has(scene.phase);
+  const isWhisperScene = !!scene && scene.phase === "WHISPER";
+  const isDiaryScene = !!scene && scene.phase === "DIARY_ROOM";
+  const isJuryScene = !!scene && scene.phase === "JURY_QUESTIONS";
+  const isChatStyleScene = isChatFeedScene || isWhisperScene || isDiaryScene || isJuryScene;
+
+  // Messages visible in current scene's chat feed (for chat-style phases)
+  const chatFeedMessages = useMemo(() => {
+    if (!scene || !isChatStyleScene) return [];
+    // During typing phase, show messages up to (but not including) current
+    // During revealing/done, include current message
+    const endIdx = messagePhase === "typing" ? messageIndex : messageIndex + 1;
+    return scene.messages.slice(0, endIdx);
+  }, [scene, isChatStyleScene, messageIndex, messagePhase]);
+
+  // For whisper scenes: gather all whisper messages for this round from allVisibleMessages
+  const whisperRoundMessages = useMemo(() => {
+    if (!scene || scene.phase !== "WHISPER") return [];
+    return allVisibleMessages.filter(m => m.round === scene.round && m.phase === "WHISPER");
+  }, [allVisibleMessages, scene]);
+
+  // For diary scenes: gather all diary messages for this round
+  const diaryRoundMessages = useMemo(() => {
+    if (!scene || scene.phase !== "DIARY_ROOM") return [];
+    return allVisibleMessages.filter(m => m.round === scene.round && m.phase === "DIARY_ROOM");
+  }, [allVisibleMessages, scene]);
+
+  // For jury scenes: gather all jury messages
+  const juryMessages = useMemo(() => {
+    if (!scene || scene.phase !== "JURY_QUESTIONS") return [];
+    return allVisibleMessages.filter(m => m.phase === "JURY_QUESTIONS");
+  }, [allVisibleMessages, scene]);
+
   // Track eliminated players from visible messages
   const eliminatedIds = useMemo(() => {
     const ids = new Set<string>();
@@ -3014,6 +3059,15 @@ function DramaticReplayViewer({
     if (!isPlaying || !scene || !currentMessage) return;
 
     if (messagePhase === "typing") {
+      // Chat-style phases: short typing indicator then skip straight to "done"
+      if (isChatStyleScene) {
+        if (isSystemMessage) {
+          setMessagePhase("done");
+          return;
+        }
+        const timer = setTimeout(() => setMessagePhase("done"), CHAT_TYPING_HOLD_MS / speed);
+        return () => clearTimeout(timer);
+      }
       // System messages skip typing indicator
       if (isSystemMessage) {
         setMessagePhase("revealing");
@@ -3027,6 +3081,27 @@ function DramaticReplayViewer({
     if (messagePhase === "done") {
       const isLastInScene = messageIndex >= scene.messages.length - 1;
       const isLastScene = sceneIndex >= totalScenes - 1;
+
+      // Chat-style phases use faster timing
+      if (isChatStyleScene) {
+        const holdMs = isLastInScene
+          ? INTER_SCENE_PAUSE_MS / speed
+          : Math.max(CHAT_POST_MSG_BASE_MS, currentMessage.text.length * CHAT_POST_MSG_PER_CHAR_MS) / speed;
+
+        const timer = setTimeout(() => {
+          if (!isLastInScene) {
+            setMessageIndex((i) => i + 1);
+            setMessagePhase("typing");
+          } else if (!isLastScene) {
+            setSceneIndex((i) => i + 1);
+            setMessageIndex(0);
+            setMessagePhase("typing");
+          } else if (!live) {
+            setIsPlaying(false);
+          }
+        }, holdMs);
+        return () => clearTimeout(timer);
+      }
 
       // Hold time proportional to message length; dramatic phases get extra weight
       const dramaticMul = DRAMATIC_PHASES.has(scene.phase) ? DRAMATIC_PHASE_MULTIPLIER : 1;
@@ -3051,7 +3126,7 @@ function DramaticReplayViewer({
       return () => clearTimeout(timer);
     }
     // "revealing" phase transitions via Typewriter onComplete
-  }, [isPlaying, messagePhase, messageIndex, sceneIndex, scene, totalScenes, speed, currentMessage, isSystemMessage, live]);
+  }, [isPlaying, messagePhase, messageIndex, sceneIndex, scene, totalScenes, speed, currentMessage, isSystemMessage, isChatStyleScene, live]);
 
   // Advance function — for click/tap and keyboard
   const advanceMessage = useCallback(() => {
@@ -3089,6 +3164,24 @@ function DramaticReplayViewer({
       setIsPlaying(false);
     }
   }, [totalScenes, scenes]);
+
+  const goToBeginning = useCallback(() => {
+    setSceneIndex(0);
+    setMessageIndex(0);
+    setMessagePhase("typing");
+  }, []);
+
+  const goToPrevScene = useCallback(() => {
+    if (messageIndex > 0) {
+      // If mid-scene, go to start of current scene
+      setMessageIndex(0);
+      setMessagePhase("typing");
+    } else if (sceneIndex > 0) {
+      setSceneIndex((i) => i - 1);
+      setMessageIndex(0);
+      setMessagePhase("typing");
+    }
+  }, [sceneIndex, messageIndex]);
 
   // Click handler — advance when paused, pause when playing
   // Tap-to-skip: clicking always advances (skips current animation or goes to
@@ -3292,53 +3385,103 @@ function DramaticReplayViewer({
         </div>
       </div>
 
-      {/* Center — message spotlight */}
-      <div className="flex-1 flex items-center justify-center px-8 py-8 overflow-y-auto">
-        <div className="max-w-2xl w-full">
-          {/* Typing indicator */}
-          {messagePhase === "typing" && currentMessage && !isSystemMessage && (
-            <div className="text-center animate-[fadeIn_0.3s_ease-out]">
-              <div className="flex items-center justify-center gap-3 mb-8">
-                {currentPlayer && (
-                  <AgentAvatar avatarUrl={currentPlayer.avatarUrl} persona={currentPlayer.persona} name={currentPlayer.name} size="10" />
-                )}
-                <span className="text-lg font-semibold text-white/60">{currentPlayerName}</span>
-                {currentMessage.scope === "whisper" && (
-                  <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
-                )}
-              </div>
-              <div className="flex items-center justify-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1.2s" }} />
-                <span className="w-2.5 h-2.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "200ms", animationDuration: "1.2s" }} />
-                <span className="w-2.5 h-2.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "400ms", animationDuration: "1.2s" }} />
-              </div>
+      {/* Center — phase-aware content */}
+      <div className={`flex-1 flex ${isChatStyleScene ? "items-end" : "items-center"} justify-center px-8 py-8 overflow-y-auto`}>
+        <div className={`w-full ${isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
+          {/* --- Chat-style: Group Chat Feed --- */}
+          {isChatFeedScene && (
+            <div className="flex flex-col gap-2">
+              <GroupChatFeed messages={chatFeedMessages} players={replayPlayers} phase={scene.phase} />
+              {/* Typing indicator below chat feed */}
+              {messagePhase === "typing" && currentMessage && !isSystemMessage && (
+                <div className="flex items-center gap-2 px-4 animate-[fadeIn_0.2s_ease-out]">
+                  {currentPlayer && <AgentAvatar avatarUrl={currentPlayer.avatarUrl} persona={currentPlayer.persona} name={currentPlayer.name} size="6" />}
+                  <span className="text-xs text-white/40">{currentPlayerName}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1.2s" }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "200ms", animationDuration: "1.2s" }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "400ms", animationDuration: "1.2s" }} />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Message reveal / done */}
-          {(messagePhase === "revealing" || messagePhase === "done") && currentMessage && (
-            <SpectacleMessageContent
-              message={currentMessage}
-              scene={scene}
-              players={players}
-              messagePhase={messagePhase}
-              onRevealComplete={() => setMessagePhase("done")}
-              isSystemMessage={isSystemMessage}
-              isElimination={isElimination}
-              currentPlayer={currentPlayer}
-              currentPlayerName={currentPlayerName}
-              speedMultiplier={speed}
+          {/* --- Chat-style: Whisper Rooms DM Grid --- */}
+          {isWhisperScene && (
+            <WhisperPhaseView
+              phaseEntries={whisperRoundMessages}
+              players={replayPlayers}
+              phaseKey={`replay-R${scene.round}-WHISPER`}
+              isReplay
             />
           )}
 
-          {/* Vote/council/jury tally overlay */}
-          {scene && currentMessage && DRAMATIC_PHASES.has(scene.phase) && messagePhase === "done" && (
-            <VoteTallyOverlay
-              sceneMessages={scene.messages}
-              upToIndex={messageIndex}
-              players={players}
-              scenePhase={scene.phase}
+          {/* --- Chat-style: Diary Rooms DM Grid --- */}
+          {isDiaryScene && (
+            <DiaryRoomGridView
+              messages={diaryRoundMessages}
+              players={replayPlayers}
             />
+          )}
+
+          {/* --- Chat-style: Jury Questions DM --- */}
+          {isJuryScene && (
+            <JuryDMView
+              messages={juryMessages}
+              players={replayPlayers}
+            />
+          )}
+
+          {/* --- Dramatic: Single-message spotlight (votes/reveals/power/end) --- */}
+          {!isChatStyleScene && (
+            <>
+              {/* Typing indicator */}
+              {messagePhase === "typing" && currentMessage && !isSystemMessage && (
+                <div className="text-center animate-[fadeIn_0.3s_ease-out]">
+                  <div className="flex items-center justify-center gap-3 mb-8">
+                    {currentPlayer && (
+                      <AgentAvatar avatarUrl={currentPlayer.avatarUrl} persona={currentPlayer.persona} name={currentPlayer.name} size="10" />
+                    )}
+                    <span className="text-lg font-semibold text-white/60">{currentPlayerName}</span>
+                    {currentMessage.scope === "whisper" && (
+                      <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1.2s" }} />
+                    <span className="w-2.5 h-2.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "200ms", animationDuration: "1.2s" }} />
+                    <span className="w-2.5 h-2.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "400ms", animationDuration: "1.2s" }} />
+                  </div>
+                </div>
+              )}
+
+              {/* Message reveal / done */}
+              {(messagePhase === "revealing" || messagePhase === "done") && currentMessage && (
+                <SpectacleMessageContent
+                  message={currentMessage}
+                  scene={scene}
+                  players={players}
+                  messagePhase={messagePhase}
+                  onRevealComplete={() => setMessagePhase("done")}
+                  isSystemMessage={isSystemMessage}
+                  isElimination={isElimination}
+                  currentPlayer={currentPlayer}
+                  currentPlayerName={currentPlayerName}
+                  speedMultiplier={speed}
+                />
+              )}
+
+              {/* Vote/council/jury tally overlay */}
+              {scene && currentMessage && DRAMATIC_PHASES.has(scene.phase) && messagePhase === "done" && (
+                <VoteTallyOverlay
+                  sceneMessages={scene.messages}
+                  upToIndex={messageIndex}
+                  players={players}
+                  scenePhase={scene.phase}
+                />
+              )}
+            </>
           )}
 
           {/* Paused indicator */}
@@ -3378,18 +3521,34 @@ function DramaticReplayViewer({
           <div className="flex items-center gap-3">
             <button
               type="button"
+              onClick={(e) => { e.stopPropagation(); goToBeginning(); }}
+              disabled={sceneIndex === 0 && messageIndex === 0}
+              className="text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 disabled:opacity-20 disabled:cursor-not-allowed"
+            >
+              ⏮ Start
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); goToPrevScene(); }}
+              disabled={sceneIndex === 0 && messageIndex === 0}
+              className="text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 disabled:opacity-20 disabled:cursor-not-allowed"
+            >
+              ◀◀ Prev
+            </button>
+            <button
+              type="button"
               onClick={(e) => { e.stopPropagation(); goToNextScene(); }}
               disabled={sceneIndex >= totalScenes - 1}
               className="text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 disabled:opacity-20 disabled:cursor-not-allowed"
             >
-              Next Scene ▶▶
+              Next ▶▶
             </button>
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); goToEnd(); }}
               className="text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20"
             >
-              {live ? "Jump to Live ⏭" : "Go to End ⏭"}
+              {live ? "Live ⏭" : "End ⏭"}
             </button>
           </div>
 
