@@ -1,42 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { usePrivy } from "@privy-io/react-auth";
-import { getMe, getAuthToken } from "@/lib/api";
+import { usePermissions } from "@/hooks/use-permissions";
 
+/** Gates content behind the `view_admin` permission (or admin role). */
 export function AdminGate({ children }: { children: React.ReactNode }) {
   const { ready, authenticated, login } = usePrivy();
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!ready || !authenticated) {
-      setIsAdmin(null);
-      setLoading(false);
-      return;
-    }
-
-    // Wait for session token to be available
-    const token = getAuthToken();
-    if (!token) {
-      // Listen for the session-ready event from AuthSync
-      const handleReady = () => {
-        fetchRoles();
-      };
-      window.addEventListener("auth:session-ready", handleReady);
-      return () => window.removeEventListener("auth:session-ready", handleReady);
-    }
-
-    fetchRoles();
-
-    function fetchRoles() {
-      setLoading(true);
-      getMe()
-        .then((me) => setIsAdmin(me.roles.isAdmin))
-        .catch(() => setIsAdmin(false))
-        .finally(() => setLoading(false));
-    }
-  }, [ready, authenticated]);
+  const { loading, isAdmin } = usePermissions();
 
   if (!ready || loading) {
     return (
@@ -71,5 +41,22 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
     );
   }
 
+  return <>{children}</>;
+}
+
+/** Generic gate: renders children only if the user has the required permission. */
+export function PermissionGate({
+  permission,
+  children,
+  fallback = null,
+}: {
+  permission: string;
+  children: React.ReactNode;
+  fallback?: React.ReactNode;
+}) {
+  const { loading, hasPermission } = usePermissions();
+
+  if (loading) return null;
+  if (!hasPermission(permission)) return <>{fallback}</>;
   return <>{children}</>;
 }

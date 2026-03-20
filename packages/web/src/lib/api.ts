@@ -183,7 +183,8 @@ export interface AuthMe {
   email: string | null;
   displayName: string | null;
   isAdmin: boolean;
-  roles: { isAdmin: boolean };
+  roles: string[];
+  permissions: string[];
 }
 
 export async function getMe(): Promise<AuthMe> {
