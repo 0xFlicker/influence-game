@@ -65,7 +65,13 @@ async function createUser(
       displayName: `User ${id}`,
     })
     .run();
-  return createSessionToken(id);
+  return createSessionToken(id, isAdmin ? {
+    roles: ["sysop"],
+    permissions: ["manage_roles", "create_game", "start_game", "join_game", "stop_game", "fill_game", "view_admin"],
+  } : {
+    roles: ["player"],
+    permissions: ["join_game"],
+  });
 }
 
 async function createPaidGame(

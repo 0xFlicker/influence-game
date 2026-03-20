@@ -19,7 +19,7 @@ import { schema } from "../db/index.js";
 import type { GameStatus } from "../db/schema.js";
 import {
   requireAuth,
-  requireAdmin,
+  requirePermission,
   type AuthEnv,
 } from "../middleware/auth.js";
 import { startGame, isGameRunning } from "../services/game-lifecycle.js";
@@ -46,7 +46,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // POST /api/games — create a new game
   // -------------------------------------------------------------------------
 
-  app.post("/api/games", requireAuth(db), requireAdmin(), async (c) => {
+  app.post("/api/games", requireAuth(db), requirePermission("create_game"), async (c) => {
     const body = await c.req.json().catch(() => null);
     if (!body) {
       return c.json({ error: "Invalid JSON body" }, 400);
@@ -548,7 +548,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // POST /api/games/:id/fill — fill remaining slots with AI players
   // -------------------------------------------------------------------------
 
-  app.post("/api/games/:id/fill", requireAuth(db), requireAdmin(), async (c) => {
+  app.post("/api/games/:id/fill", requireAuth(db), requirePermission("fill_game"), async (c) => {
     const gameId = c.req.param("id");
 
     const game = db
@@ -682,7 +682,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // POST /api/games/:id/start — start a game (min players met)
   // -------------------------------------------------------------------------
 
-  app.post("/api/games/:id/start", requireAuth(db), requireAdmin(), async (c) => {
+  app.post("/api/games/:id/start", requireAuth(db), requirePermission("start_game"), async (c) => {
     const gameId = c.req.param("id");
 
     const game = db
@@ -747,7 +747,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // POST /api/games/:id/stop — stop / cancel a running game
   // -------------------------------------------------------------------------
 
-  app.post("/api/games/:id/stop", requireAuth(db), requireAdmin(), async (c) => {
+  app.post("/api/games/:id/stop", requireAuth(db), requirePermission("stop_game"), async (c) => {
     const gameId = c.req.param("id");
 
     const game = db

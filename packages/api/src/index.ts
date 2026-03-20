@@ -15,6 +15,7 @@ import { createGameRoutes } from "./routes/games.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
 import { createPaymentRoutes } from "./routes/payments.js";
+import { createAdminRoutes } from "./routes/admin.js";
 import { isPaymentsEnabled } from "./lib/pricing.js";
 import { getGameSnapshot } from "./services/game-lifecycle.js";
 import {
@@ -172,6 +173,10 @@ app.route("/", agentProfileRoutes);
 // Payment routes
 const paymentRoutes = createPaymentRoutes(db);
 app.route("/", paymentRoutes);
+
+// Admin RBAC routes
+const adminRoutes = createAdminRoutes(db);
+app.route("/", adminRoutes);
 
 // ---------------------------------------------------------------------------
 // Start server with WebSocket support

@@ -4,7 +4,7 @@
  * Three layers:
  * 1. JWT session validation — checks Authorization: Bearer <jwt>
  * 2. Privy token verification — used during login to validate Privy access tokens
- * 3. Admin gate — checks wallet address against admin allowlist
+ * 3. RBAC permission / role gates — checks JWT-embedded roles & permissions
  */
 
 import { createMiddleware } from "hono/factory";
@@ -28,6 +28,8 @@ export type AuthEnv = {
   Variables: {
     user: AuthUser;
     db: DrizzleDB;
+    userRoles: string[];
+    userPermissions: string[];
   };
 };
 
@@ -61,9 +63,21 @@ function getJwtSecret(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
+export interface SessionTokenOptions {
+  roles?: string[];
+  permissions?: string[];
+}
+
 /** Create a signed JWT session token for a user. */
-export async function createSessionToken(userId: string): Promise<string> {
-  return new SignJWT({ sub: userId })
+export async function createSessionToken(
+  userId: string,
+  options?: SessionTokenOptions,
+): Promise<string> {
+  return new SignJWT({
+    sub: userId,
+    roles: options?.roles ?? [],
+    perms: options?.permissions ?? [],
+  })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("7d")
@@ -71,15 +85,27 @@ export async function createSessionToken(userId: string): Promise<string> {
     .sign(getJwtSecret());
 }
 
-/** Verify and decode a session JWT. Returns the user ID or null. */
+export interface SessionPayload {
+  userId: string;
+  roles: string[];
+  permissions: string[];
+}
+
+/** Verify and decode a session JWT. Returns user ID, roles, and permissions or null. */
 export async function verifySessionToken(
   token: string,
-): Promise<string | null> {
+): Promise<SessionPayload | null> {
   try {
     const { payload } = await jwtVerify(token, getJwtSecret(), {
       issuer: "influence-api",
     });
-    return (payload.sub as string) ?? null;
+    const userId = payload.sub as string | undefined;
+    if (!userId) return null;
+    return {
+      userId,
+      roles: (payload.roles as string[] | undefined) ?? [],
+      permissions: (payload.perms as string[] | undefined) ?? [],
+    };
   } catch {
     return null;
   }
@@ -115,7 +141,8 @@ export async function getPrivyUser(privyUserId: string) {
 
 /**
  * Hono middleware that requires a valid JWT session token.
- * Sets `c.get("user")` with the authenticated user record.
+ * Sets `c.get("user")` with the authenticated user record,
+ * plus `c.get("userRoles")` and `c.get("userPermissions")` from JWT.
  */
 export function requireAuth(db: DrizzleDB) {
   return createMiddleware<AuthEnv>(async (c, next) => {
@@ -125,8 +152,8 @@ export function requireAuth(db: DrizzleDB) {
     }
 
     const token = authHeader.slice(7);
-    const userId = await verifySessionToken(token);
-    if (!userId) {
+    const session = await verifySessionToken(token);
+    if (!session) {
       return c.json({ error: "Invalid or expired session" }, 401);
     }
 
@@ -137,7 +164,7 @@ export function requireAuth(db: DrizzleDB) {
     const user = db
       .select()
       .from(schema.users)
-      .where(eq(schema.users.id, userId))
+      .where(eq(schema.users.id, session.userId))
       .all()[0];
 
     if (!user) {
@@ -150,20 +177,56 @@ export function requireAuth(db: DrizzleDB) {
       email: user.email,
       displayName: user.displayName,
     });
+    c.set("userRoles", session.roles);
+    c.set("userPermissions", session.permissions);
 
     await next();
   });
 }
 
 // ---------------------------------------------------------------------------
-// Middleware: require admin (must be chained after requireAuth)
+// Middleware: require permission (must be chained after requireAuth)
 // ---------------------------------------------------------------------------
 
 /**
- * Hono middleware that requires the authenticated user to be an admin.
- * Must be used after `requireAuth` so that `c.get("user")` is available.
- *
- * Admin is determined by wallet address matching ADMIN_ADDRESS env var.
+ * Hono middleware that requires the user to have at least one of the
+ * specified permissions. Returns 403 if none match.
+ */
+export function requirePermission(...names: string[]) {
+  return createMiddleware<AuthEnv>(async (c, next) => {
+    const userPerms = c.get("userPermissions");
+    if (!userPerms || !names.some((n) => userPerms.includes(n))) {
+      return c.json({ error: "Insufficient permissions" }, 403);
+    }
+    await next();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Middleware: require role (must be chained after requireAuth)
+// ---------------------------------------------------------------------------
+
+/**
+ * Hono middleware that requires the user to have at least one of the
+ * specified roles. Returns 403 if none match.
+ */
+export function requireRole(...names: string[]) {
+  return createMiddleware<AuthEnv>(async (c, next) => {
+    const userRoles = c.get("userRoles");
+    if (!userRoles || !names.some((n) => userRoles.includes(n))) {
+      return c.json({ error: "Insufficient role" }, 403);
+    }
+    await next();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Middleware: require admin (DEPRECATED — use requirePermission instead)
+// ---------------------------------------------------------------------------
+
+/**
+ * @deprecated Use requirePermission('create_game', ...) instead.
+ * Kept temporarily for backward compatibility during migration.
  */
 export function requireAdmin() {
   return createMiddleware<AuthEnv>(async (c, next) => {
@@ -172,6 +235,17 @@ export function requireAdmin() {
       return c.json({ error: "Authentication required" }, 401);
     }
 
+    // Check RBAC permissions first
+    const userPerms = c.get("userPermissions");
+    if (userPerms && userPerms.length > 0) {
+      // User has RBAC roles — check for admin-level permissions
+      if (userPerms.includes("view_admin") || userPerms.includes("manage_roles")) {
+        await next();
+        return;
+      }
+    }
+
+    // Fallback to legacy ADMIN_ADDRESS check
     const adminAddress = process.env.ADMIN_ADDRESS?.toLowerCase();
     if (!adminAddress) {
       return c.json({ error: "Admin access not configured" }, 503);
@@ -199,15 +273,15 @@ export function optionalAuth(db: DrizzleDB) {
     const authHeader = c.req.header("Authorization");
     if (authHeader?.startsWith("Bearer ")) {
       const token = authHeader.slice(7);
-      const userId = await verifySessionToken(token);
-      if (userId) {
+      const session = await verifySessionToken(token);
+      if (session) {
         const { schema } = await import("../db/index.js");
         const { eq } = await import("drizzle-orm");
 
         const user = db
           .select()
           .from(schema.users)
-          .where(eq(schema.users.id, userId))
+          .where(eq(schema.users.id, session.userId))
           .all()[0];
 
         if (user) {
@@ -217,6 +291,8 @@ export function optionalAuth(db: DrizzleDB) {
             email: user.email,
             displayName: user.displayName,
           });
+          c.set("userRoles", session.roles);
+          c.set("userPermissions", session.permissions);
         }
       }
     }
