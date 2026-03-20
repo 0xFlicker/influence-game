@@ -58,8 +58,8 @@ export interface IAgent {
   getWhispers(context: PhaseContext): Promise<Array<{ to: UUID[]; text: string }>>;
   /** Request a preferred whisper room partner */
   requestRoom(context: PhaseContext): Promise<UUID | null>;
-  /** Send a private message to room partner */
-  sendRoomMessage(context: PhaseContext, partnerName: string): Promise<string>;
+  /** Send a private message to room partner, or null to pass */
+  sendRoomMessage(context: PhaseContext, partnerName: string, conversationHistory?: Array<{ from: string; text: string }>): Promise<string | null>;
   /** Called to collect a rumor message */
   getRumorMessage(context: PhaseContext): Promise<string>;
   /** Called to collect votes */
@@ -510,6 +510,69 @@ export class GameRunner {
     return { rooms, excluded };
   }
 
+  /**
+   * Run a turn-based conversation in a single whisper room.
+   * Agents alternate sending messages (max 8 per agent).
+   * Room ends when both agents pass consecutively or both hit the limit.
+   */
+  private async runRoomConversation(room: RoomAllocation, roomCount: number): Promise<void> {
+    const MAX_MESSAGES_PER_AGENT = 8;
+    const nameA = this.gameState.getPlayerName(room.playerA);
+    const nameB = this.gameState.getPlayerName(room.playerB);
+
+    const conversationHistory: Array<{ from: string; text: string }> = [];
+    const msgCount = new Map<UUID, number>([[room.playerA, 0], [room.playerB, 0]]);
+    let consecutivePasses = 0;
+
+    // Alternate turns: playerA goes first
+    let currentPlayerId: UUID = room.playerA;
+
+    while (consecutivePasses < 2) {
+      const partnerId = currentPlayerId === room.playerA ? room.playerB : room.playerA;
+      const partnerName = currentPlayerId === room.playerA ? nameB : nameA;
+      const currentName = currentPlayerId === room.playerA ? nameA : nameB;
+
+      // Auto-pass if this agent hit their message limit
+      if ((msgCount.get(currentPlayerId) ?? 0) >= MAX_MESSAGES_PER_AGENT) {
+        consecutivePasses++;
+        currentPlayerId = partnerId;
+        continue;
+      }
+
+      const agent = this.agents.get(currentPlayerId)!;
+      const ctx = this.buildPhaseContext(currentPlayerId, Phase.WHISPER, undefined, undefined, {
+        roomCount,
+        roomPartner: partnerName,
+      });
+
+      const text = await agent.sendRoomMessage(ctx, partnerName, conversationHistory);
+
+      if (text === null || text === "") {
+        consecutivePasses++;
+      } else {
+        consecutivePasses = 0;
+        msgCount.set(currentPlayerId, (msgCount.get(currentPlayerId) ?? 0) + 1);
+
+        // Deliver to partner's whisper inbox
+        const inbox = this.whisperInbox.get(partnerId) ?? [];
+        inbox.push({ from: currentName, text });
+        this.whisperInbox.set(partnerId, inbox);
+
+        conversationHistory.push({ from: currentName, text });
+        this.logWhisper(currentPlayerId, [partnerId], text, room.roomId);
+      }
+
+      // Check if both agents have exhausted their messages
+      if ((msgCount.get(room.playerA) ?? 0) >= MAX_MESSAGES_PER_AGENT &&
+          (msgCount.get(room.playerB) ?? 0) >= MAX_MESSAGES_PER_AGENT) {
+        break;
+      }
+
+      // Switch turns
+      currentPlayerId = partnerId;
+    }
+  }
+
   private async runWhisperPhase(
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
@@ -556,32 +619,10 @@ export class GameRunner {
     this.logRoomAllocation(allocationText, rooms, excludedNames);
 
     // --- Sub-Step 3: Room Conversation ---
-    // Each paired agent sends ONE message to their partner
-    await Promise.all(
-      rooms.flatMap((room) => {
-        const nameA = this.gameState.getPlayerName(room.playerA);
-        const nameB = this.gameState.getPlayerName(room.playerB);
-
-        return [room.playerA, room.playerB].map(async (playerId) => {
-          const agent = this.agents.get(playerId)!;
-          const partnerId = playerId === room.playerA ? room.playerB : room.playerA;
-          const partnerName = playerId === room.playerA ? nameB : nameA;
-          const ctx = this.buildPhaseContext(playerId, Phase.WHISPER, undefined, undefined, {
-            roomCount,
-            roomPartner: partnerName,
-          });
-          const text = await agent.sendRoomMessage(ctx, partnerName);
-
-          // Deliver to partner's whisper inbox
-          const inbox = this.whisperInbox.get(partnerId) ?? [];
-          inbox.push({ from: this.gameState.getPlayerName(playerId), text });
-          this.whisperInbox.set(partnerId, inbox);
-
-          // Log to transcript with roomId
-          this.logWhisper(playerId, [partnerId], text, room.roomId);
-        });
-      }),
-    );
+    // Turn-based conversation: agents alternate sending messages (max 8 each)
+    for (const room of rooms) {
+      await this.runRoomConversation(room, roomCount);
+    }
 
     actor.send({ type: "PHASE_COMPLETE" });
     await new Promise((r) => setTimeout(r, 0));
@@ -888,29 +929,9 @@ export class GameRunner {
     this.logRoomAllocation(allocationText, rooms, excludedNames);
 
     // Sub-Step 3: Room Conversation
-    await Promise.all(
-      rooms.flatMap((room) => {
-        const nameA = this.gameState.getPlayerName(room.playerA);
-        const nameB = this.gameState.getPlayerName(room.playerB);
-
-        return [room.playerA, room.playerB].map(async (playerId) => {
-          const agent = this.agents.get(playerId)!;
-          const partnerId = playerId === room.playerA ? room.playerB : room.playerA;
-          const partnerName = playerId === room.playerA ? nameB : nameA;
-          const ctx = this.buildPhaseContext(playerId, Phase.WHISPER, undefined, undefined, {
-            roomCount,
-            roomPartner: partnerName,
-          });
-          const text = await agent.sendRoomMessage(ctx, partnerName);
-
-          const inbox = this.whisperInbox.get(partnerId) ?? [];
-          inbox.push({ from: this.gameState.getPlayerName(playerId), text });
-          this.whisperInbox.set(partnerId, inbox);
-
-          this.logWhisper(playerId, [partnerId], text, room.roomId);
-        });
-      }),
-    );
+    for (const room of rooms) {
+      await this.runRoomConversation(room, roomCount);
+    }
 
     actor.send({ type: "PHASE_COMPLETE" });
     await new Promise((r) => setTimeout(r, 0));

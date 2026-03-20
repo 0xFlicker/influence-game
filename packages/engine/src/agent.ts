@@ -178,16 +178,20 @@ const TOOL_SEND_ROOM_MESSAGE: ChatCompletionTool = {
   type: "function",
   function: {
     name: "send_room_message",
-    description: "Send your private message to your room partner",
+    description: "Send your private message to your room partner, or pass to end the conversation",
     parameters: {
       type: "object",
       properties: {
         message: {
           type: "string",
-          description: "Your private message to your room partner",
+          description: "Your private message to your room partner (omit if passing)",
+        },
+        pass: {
+          type: "boolean",
+          description: "Set to true to pass (end your side of the conversation)",
         },
       },
-      required: ["message"],
+      required: [],
     },
   },
 };
@@ -493,11 +497,21 @@ Use the request_room tool to submit your preference.`;
     }
   }
 
-  async sendRoomMessage(ctx: PhaseContext, partnerName: string): Promise<string> {
+  async sendRoomMessage(ctx: PhaseContext, partnerName: string, conversationHistory?: Array<{ from: string; text: string }>): Promise<string | null> {
+    const history = conversationHistory ?? [];
+    const isFirstMessage = history.length === 0;
+
+    const historyText = history.length > 0
+      ? `\n## Conversation So Far\n${history.map((m) => `${m.from}: "${m.text}"`).join("\n")}\n`
+      : "";
+
     const prompt = this.buildBasePrompt(ctx) + `
 ## Your Task
-You're in a private room with ${partnerName}. This is your ONE chance to communicate
-privately this round. Nobody else can hear you — but the audience is watching.
+You're in a private room with ${partnerName}. Nobody else can hear you — but the audience is watching.
+${historyText}
+${isFirstMessage
+  ? `This is the start of your private conversation. Open with something strategic.`
+  : `Continue the conversation. You can respond to what ${partnerName} said, steer the discussion, or PASS if you're done talking.`}
 
 Craft your message carefully:
 - Build or test an alliance
@@ -506,16 +520,21 @@ Craft your message carefully:
 - Probe for information about their plans
 
 Keep it to 2-4 sentences. Make every word count.
+${!isFirstMessage ? `\nIf you have nothing more to say, use pass: true to end your side of the conversation.\nThe room closes when BOTH of you pass consecutively.` : ""}
 
-Use the send_room_message tool to send your message.`;
+Use the send_room_message tool to send your message${!isFirstMessage ? " or pass" : ""}.`;
 
     try {
-      const result = await this.callTool<{ message: string }>(
+      const result = await this.callTool<{ message?: string; pass?: boolean }>(
         prompt, TOOL_SEND_ROOM_MESSAGE, 300,
       );
+      if (result.pass) return null;
       return result.message ?? "";
     } catch {
-      return `I wanted to speak with you privately, ${partnerName}. Let's watch each other's backs.`;
+      if (isFirstMessage) {
+        return `I wanted to speak with you privately, ${partnerName}. Let's watch each other's backs.`;
+      }
+      return null; // Fallback to pass on errors after first message
     }
   }
 

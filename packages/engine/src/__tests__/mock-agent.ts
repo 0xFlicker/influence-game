@@ -69,7 +69,10 @@ export class MockAgent implements IAgent {
     return others[0]?.id ?? null;
   }
 
-  async sendRoomMessage(ctx: PhaseContext, partnerName: string): Promise<string> {
+  async sendRoomMessage(_ctx: PhaseContext, partnerName: string, conversationHistory?: Array<{ from: string; text: string }>): Promise<string | null> {
+    // Send one message, then pass on subsequent turns
+    const alreadySpoke = conversationHistory?.some((m) => m.from === this.name) ?? false;
+    if (alreadySpoke) return null;
     return `Hey ${partnerName}, want to work together? Let's not target each other.`;
   }
 
