@@ -52,6 +52,18 @@ export function getTierById(id: string): PricingTier | undefined {
   return PRICING_TIERS.find((t) => t.id === id);
 }
 
+/** House rake percentage (0–1). 15% of total buy-ins. */
+export const RAKE_PERCENTAGE = 0.15;
+
+/** Maximum free games per day across the platform. */
+export const MAX_FREE_GAMES_PER_DAY = 6;
+
+/** Premium model upgrade fee in USD cents. */
+export const MODEL_UPGRADE_FEE_CENTS = 400; // $4.00
+
+/** Model used for upgraded agents. */
+export const UPGRADE_MODEL = "gpt-4o";
+
 /** USDC uses 6 decimals on Base L2. */
 export const USDC_DECIMALS = 6;
 

@@ -29,6 +29,8 @@ export const users = sqliteTable("users", {
 
 export type GameStatus = "waiting" | "in_progress" | "completed" | "cancelled";
 
+export type PayoutGameStatus = "none" | "pending" | "paid";
+
 export const games = sqliteTable("games", {
   id: text("id").primaryKey(), // UUID
   slug: text("slug").unique(), // Human-readable identifier, e.g. "punk-green-apple"
@@ -37,6 +39,13 @@ export const games = sqliteTable("games", {
   minPlayers: integer("min_players").notNull().default(4),
   maxPlayers: integer("max_players").notNull().default(12),
   createdById: text("created_by_id").references(() => users.id),
+  // Buy-in / monetization fields
+  tierId: text("tier_id"), // Pricing tier: free, standard, premium, showcase
+  buyInAmount: real("buy_in_amount"), // Buy-in per player in USD cents
+  prizePool: real("prize_pool").default(0), // Accumulated prize pool in USD cents
+  rakeAmount: real("rake_amount").default(0), // Total rake taken in USD cents
+  payoutStatus: text("payout_status").$type<PayoutGameStatus>(), // none | pending | paid
+  freeEntry: integer("free_entry").default(0), // 1 = free game, 0 = paid
   startedAt: text("started_at"),
   endedAt: text("ended_at"),
   createdAt: text("created_at")
@@ -80,6 +89,8 @@ export const gamePlayers = sqliteTable("game_players", {
     .references(() => games.id),
   userId: text("user_id").references(() => users.id),
   agentProfileId: text("agent_profile_id").references(() => agentProfiles.id), // Link to saved agent profile
+  paymentId: text("payment_id").references(() => payments.id), // Link to buy-in payment
+  modelUpgrade: integer("model_upgrade").default(0), // 1 = upgraded AI model
   persona: text("persona").notNull(), // JSON: { name, personality, strategyHints }
   agentConfig: text("agent_config").notNull(), // JSON: { model, temperature, etc. }
   joinedAt: text("joined_at")
