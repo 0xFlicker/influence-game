@@ -44,6 +44,9 @@ if [ -z "$TAG" ]; then
 fi
 
 # Run e2e tests before deploying (unless --skip-e2e)
+# NOTE: E2E gate PAUSED UNTIL RESOURCE EXPANSION (2026-03-21)
+# Machine OOM: cannot run staging + dev + Puppeteer on 4GB Linode.
+# Always use --skip-e2e until server upgrade. See INF-194.
 if [ "$SKIP_E2E" = true ]; then
   echo "WARNING: Skipping e2e tests (--skip-e2e)"
   echo ""

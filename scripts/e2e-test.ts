@@ -2,6 +2,10 @@
 /**
  * E2E Test Orchestrator
  *
+ * PAUSED UNTIL RESOURCE EXPANSION (2026-03-21)
+ * Machine OOM: cannot run staging + dev + Puppeteer on 4GB Linode.
+ * Blocked on server upgrade. See INF-194.
+ *
  * Single entry point for the full e2e test suite.
  * Usage: doppler run -- bun scripts/e2e-test.ts
  *
