@@ -5,7 +5,7 @@
 #   ./scripts/deploy-staging.sh [--skip-e2e] [version-tag]
 #
 # Options:
-#   --skip-e2e   Skip e2e tests before deploying (emergency deploys only)
+#   --skip-e2e   (no-op, e2e tests are skipped by default — see INF-194)
 #
 # If no tag is provided, deploys the latest annotated tag.
 # Staging binds to the Tailscale IP (100.100.251.4) only.
@@ -15,7 +15,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 STAGING_DIR="/home/user/Development/influence/staging"
-SKIP_E2E=false
+SKIP_E2E=true
 STAGING_APP="$STAGING_DIR/app"
 STAGING_DATA="$STAGING_DIR/data"
 PID_DIR="$STAGING_DIR/pids"
