@@ -577,7 +577,7 @@ export function DramaticReplayViewer({
           e.stopPropagation();
           window.history.back();
         }}
-        className={`fixed top-[max(1rem,env(safe-area-inset-top))] left-4 z-20 w-9 h-9 flex items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/50 hover:text-white hover:border-white/25 transition-all duration-500 ${
+        className={`fixed top-[max(1rem,env(safe-area-inset-top))] left-4 z-[60] w-9 h-9 flex items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/50 hover:text-white hover:border-white/25 transition-all duration-500 ${
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
         title="Exit"
@@ -588,7 +588,7 @@ export function DramaticReplayViewer({
       </button>
 
       {/* Top bar — phase context */}
-      <div className={`flex-shrink-0 px-4 md:px-6 pt-4 md:pt-5 pb-2 md:pb-3 flex items-center justify-between z-10 transition-opacity duration-500 ${
+      <div className={`flex-shrink-0 px-4 md:px-6 pt-4 md:pt-5 pb-2 md:pb-3 flex items-center justify-between z-[60] transition-opacity duration-500 ${
         controlsVisible || !isPlaying ? "opacity-100" : "opacity-0"
       }`}>
         <div className="flex items-center gap-2 md:gap-3 pl-10 min-w-0">
@@ -617,7 +617,7 @@ export function DramaticReplayViewer({
       {/* Game state HUD — top-right corner, auto-hides with controls, hidden on mobile */}
       <div
         data-controls
-        className={`fixed top-14 right-4 z-20 transition-opacity duration-500 hidden md:block ${
+        className={`fixed top-14 right-4 z-[60] transition-opacity duration-500 hidden md:block ${
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
@@ -631,7 +631,7 @@ export function DramaticReplayViewer({
       </div>
 
       {/* Scene progress bar */}
-      <div className="px-6 z-10">
+      <div className="px-6 z-[60]">
         <div className="flex h-0.5 rounded-full overflow-hidden bg-white/5 gap-px">
           {scenes.map((s, i) => (
             <div
@@ -765,7 +765,7 @@ export function DramaticReplayViewer({
       {/* Bottom controls — auto-hide when playing */}
       <div
         data-controls
-        className={`flex-shrink-0 px-3 md:px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:py-4 transition-opacity duration-500 z-10 ${
+        className={`flex-shrink-0 px-3 md:px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:py-4 transition-opacity duration-500 z-[60] ${
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
