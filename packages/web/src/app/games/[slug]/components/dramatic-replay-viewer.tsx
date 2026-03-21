@@ -416,11 +416,22 @@ export function DramaticReplayViewer({
       setMessageIndex(0);
       setMessagePhase("typing");
     } else if (sceneIndex > 0) {
-      setSceneIndex((i) => i - 1);
-      setMessageIndex(0);
-      setMessagePhase("typing");
+      const prevIdx = sceneIndex - 1;
+      const prev = scenes[prevIdx]!;
+      const isGridScene = prev.phase === "DIARY_ROOM" || prev.phase === "WHISPER";
+      setSceneIndex(prevIdx);
+      if (isGridScene) {
+        // Grid scenes display all content at once — land at end and pause
+        // so the user can browse without auto-advance jumping away
+        setMessageIndex(prev.messages.length - 1);
+        setMessagePhase("done");
+        setIsPlaying(false);
+      } else {
+        setMessageIndex(0);
+        setMessagePhase("typing");
+      }
     }
-  }, [sceneIndex, messageIndex]);
+  }, [sceneIndex, messageIndex, scenes]);
 
   // Reset auto-hide timer helper
   const resetControlsTimer = useCallback(() => {
@@ -477,6 +488,10 @@ export function DramaticReplayViewer({
             setSceneIndex((i) => i - 1);
             setMessageIndex(prev.messages.length - 1);
             setMessagePhase("done");
+            // Pause on grid scenes so user can browse
+            if (prev.phase === "DIARY_ROOM" || prev.phase === "WHISPER") {
+              setIsPlaying(false);
+            }
           }
           break;
         case "]":

@@ -349,7 +349,7 @@ export function DiaryRoomGridView({
   const [mobileRoomIndex, setMobileRoomIndex] = useState(0);
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-6">
+    <div data-controls className="flex-1 overflow-y-auto p-4 md:p-6">
       <div className="text-center mb-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-purple-300/70 mb-1">
           Diary Rooms
@@ -371,7 +371,7 @@ export function DiaryRoomGridView({
                 <button
                   key={room.playerName}
                   type="button"
-                  onClick={() => { if (!isCompanion) setMobileRoomIndex(idx); }}
+                  onClick={(e) => { e.stopPropagation(); if (!isCompanion) setMobileRoomIndex(idx); }}
                   className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] transition-colors flex items-center gap-1 ${
                     idx === mobileRoomIndex || isCompanion
                       ? "border-purple-300/50 bg-purple-300/15 text-white"
