@@ -39,6 +39,10 @@ export type { IHouseInterviewer, DiaryRoomContext, FollowUpResult } from "./hous
 export { generatePersona, pickAgentNames, pickArchetypes } from "./persona-generator";
 export type { GeneratedPersona } from "./persona-generator";
 
+// Memory store
+export { InMemoryMemoryStore } from "./memory-store";
+export type { MemoryStore, MemoryRecord, MemoryType } from "./memory-store";
+
 // Token tracking
 export {
   TokenTracker,

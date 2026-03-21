@@ -129,6 +129,25 @@ export const gameResults = sqliteTable("game_results", {
 });
 
 // ---------------------------------------------------------------------------
+// Agent Memories (operational, per-game)
+// ---------------------------------------------------------------------------
+
+export const agentMemories = sqliteTable("agent_memories", {
+  id: text("id").primaryKey(), // UUID
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id),
+  agentId: text("agent_id").notNull(), // game_player id
+  round: integer("round").notNull(),
+  memoryType: text("memory_type").notNull(), // ally, threat, note, vote_history, reflection
+  subject: text("subject"), // player name or null
+  content: text("content").notNull(),
+  createdAt: integer("created_at")
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
+
+// ---------------------------------------------------------------------------
 // RBAC — Permissions
 // ---------------------------------------------------------------------------
 

@@ -13,6 +13,7 @@ import type {
 import type { IAgent, PhaseContext } from "./game-runner";
 import { Phase } from "./types";
 import type { UUID, PowerAction } from "./types";
+import type { MemoryStore } from "./memory-store";
 import type { TokenTracker } from "./token-tracker";
 
 // ---------------------------------------------------------------------------
@@ -423,6 +424,7 @@ export class InfluenceAgent implements IAgent {
   private tokenTracker: TokenTracker | null = null;
   private gameId: UUID = "";
   private allPlayers: Array<{ id: UUID; name: string }> = [];
+  private memoryStore: MemoryStore | null = null;
   private memory: AgentMemory = {
     allies: new Set(),
     threats: new Set(),
@@ -438,6 +440,7 @@ export class InfluenceAgent implements IAgent {
     openaiClient: OpenAI,
     model = "gpt-4o-mini",
     backstory?: string,
+    memoryStore?: MemoryStore,
   ) {
     this.id = id;
     this.name = name;
@@ -445,6 +448,7 @@ export class InfluenceAgent implements IAgent {
     this.openai = openaiClient;
     this.model = model;
     this.backstory = backstory ?? AGENT_BACKSTORIES[name] ?? "";
+    this.memoryStore = memoryStore ?? null;
   }
 
   /** Attach a token tracker to record LLM usage. */
@@ -705,13 +709,15 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
         exposeTarget = fallback.id;
       }
 
-      this.memory.roundHistory.push({
+      const voteEntry = {
         round: ctx.round,
         myVotes: {
           empower: empowerPlayer?.name ?? "unknown",
           expose: exposePlayer?.name ?? "unknown",
         },
-      });
+      };
+      this.memory.roundHistory.push(voteEntry);
+      this.persistMemory("vote_history", null, JSON.stringify(voteEntry));
 
       return { empowerTarget, exposeTarget };
     } catch {
@@ -1253,6 +1259,7 @@ Be specific — name players, cite events, reference conversations.`;
         prompt, TOOL_STRATEGIC_REFLECTION, 300,
       );
       this.memory.lastReflection = reflection;
+      this.persistMemory("reflection", null, JSON.stringify(reflection));
     } catch {
       // Non-critical — if reflection fails, continue without it
     }
@@ -1265,21 +1272,39 @@ Be specific — name players, cite events, reference conversations.`;
   updateThreat(playerName: string): void {
     this.memory.threats.add(playerName);
     this.memory.allies.delete(playerName);
+    this.persistMemory("threat", playerName, playerName);
   }
 
   updateAlly(playerName: string): void {
     this.memory.allies.add(playerName);
     this.memory.threats.delete(playerName);
+    this.persistMemory("ally", playerName, playerName);
   }
 
   addNote(playerName: string, note: string): void {
     this.memory.notes.set(playerName, note);
+    this.persistMemory("note", playerName, note);
   }
 
   removeFromMemory(playerName: string): void {
     this.memory.allies.delete(playerName);
     this.memory.threats.delete(playerName);
     this.memory.notes.delete(playerName);
+  }
+
+  private persistMemory(type: "ally" | "threat" | "note" | "vote_history" | "reflection", subject: string | null, content: string): void {
+    if (!this.memoryStore || !this.gameId) return;
+    const round = this.memory.roundHistory.length > 0
+      ? this.memory.roundHistory[this.memory.roundHistory.length - 1]!.round
+      : 0;
+    this.memoryStore.save({
+      gameId: this.gameId,
+      agentId: this.id,
+      round,
+      memoryType: type,
+      subject,
+      content,
+    });
   }
 }
 
@@ -1290,6 +1315,7 @@ Be specific — name players, cite events, reference conversations.`;
 export function createAgentCast(
   openaiClient: OpenAI,
   model = "gpt-4o-mini",
+  memoryStore?: MemoryStore,
 ): InfluenceAgent[] {
   const cast: Array<{ name: string; personality: Personality }> = [
     { name: "Atlas", personality: "strategic" },
@@ -1306,6 +1332,6 @@ export function createAgentCast(
 
   return cast.map(({ name, personality }) => {
     const id: UUID = require("crypto").randomUUID();
-    return new InfluenceAgent(id, name, personality, openaiClient, model);
+    return new InfluenceAgent(id, name, personality, openaiClient, model, undefined, memoryStore);
   });
 }

@@ -24,6 +24,7 @@ import type {
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { SqliteMemoryStore } from "../db/memory-store.js";
 import { broadcastGameEvent } from "./ws-manager.js";
 import { ViewerEventPacer } from "./viewer-event-pacer.js";
 
@@ -142,12 +143,15 @@ export async function startGame(
     );
     const model = agentCfg.model ?? "gpt-4o-mini";
 
+    const memoryStore = new SqliteMemoryStore(db);
     const agent = new InfluenceAgent(
       player.id,
       persona.name,
       personality,
       openai,
       model,
+      undefined,
+      memoryStore,
     );
     agent.setTokenTracker(tokenTracker);
     return agent;
@@ -319,6 +323,12 @@ async function runGameAsync(
       console.error(`[game-lifecycle] Failed to update game ${gameId} status after error:`, dbErr);
     }
   } finally {
+    // Clear operational memories — they exist only for game duration
+    try {
+      new SqliteMemoryStore(db).clear(gameId);
+    } catch {
+      // Non-critical cleanup
+    }
     activeGames.delete(gameId);
   }
 }
