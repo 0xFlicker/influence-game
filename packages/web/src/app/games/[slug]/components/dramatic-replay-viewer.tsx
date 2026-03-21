@@ -129,11 +129,11 @@ export function DramaticReplayViewer({
     return scene.messages.slice(0, endIdx);
   }, [scene, isChatStyleScene, messageIndex, messagePhase]);
 
-  // For whisper scenes: gather all whisper messages for this round from allVisibleMessages
+  // For whisper scenes: show ALL messages at once (grid renders all rooms simultaneously)
   const whisperRoundMessages = useMemo(() => {
     if (!scene || scene.phase !== "WHISPER") return [];
-    return allVisibleMessages.filter(m => m.round === scene.round && m.phase === "WHISPER");
-  }, [allVisibleMessages, scene]);
+    return scene.messages;
+  }, [scene]);
 
   // For diary scenes: show ALL messages at once (grid renders all rooms simultaneously)
   const diaryRoundMessages = useMemo(() => {
@@ -225,8 +225,8 @@ export function DramaticReplayViewer({
   useEffect(() => {
     if (!isPlaying || !scene || !currentMessage) return;
 
-    // Diary scenes: show all content at once, hold proportionally, then advance
-    if (isDiaryScene) {
+    // Diary & Whisper scenes: show all content at once, hold proportionally, then advance
+    if (isDiaryScene || isWhisperScene) {
       if (messagePhase === "typing") {
         // Grid already renders all rooms — skip to end of scene immediately
         setMessageIndex(scene.messages.length - 1);
@@ -235,7 +235,7 @@ export function DramaticReplayViewer({
       }
       if (messagePhase === "done") {
         const isLastScene = sceneIndex >= totalScenes - 1;
-        // Hold proportional to content: ~5s base + 300ms per diary message
+        // Hold proportional to content: ~5s base + 300ms per message
         const holdMs = Math.max(5000, scene.messages.length * 300) / speed;
         const timer = setTimeout(() => {
           if (!isLastScene) {
@@ -325,8 +325,8 @@ export function DramaticReplayViewer({
   // Advance function — for click/tap and keyboard
   const advanceMessage = useCallback(() => {
     if (!scene) return;
-    // Diary scenes show all content at once — click advances to next scene
-    if (scene.phase === "DIARY_ROOM") {
+    // Diary & Whisper scenes show all content at once — click advances to next scene
+    if (scene.phase === "DIARY_ROOM" || scene.phase === "WHISPER") {
       if (sceneIndex < totalScenes - 1) {
         setSceneIndex((i) => i + 1);
         setMessageIndex(0);
@@ -609,8 +609,8 @@ export function DramaticReplayViewer({
       </div>
 
       {/* Center — phase-aware content */}
-      <div className={`flex-1 flex ${isChatStyleScene ? (isDiaryScene ? "items-start" : "items-end") : "items-center"} justify-center px-4 md:px-8 py-4 md:py-8 overflow-y-auto`}>
-        <div className={`w-full ${isDiaryScene ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
+      <div className={`flex-1 flex ${isChatStyleScene ? ((isDiaryScene || isWhisperScene) ? "items-start" : "items-end") : "items-center"} justify-center px-4 md:px-8 py-4 md:py-8 overflow-y-auto`}>
+        <div className={`w-full ${(isDiaryScene || isWhisperScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
           {/* --- Chat-style: Group Chat Feed --- */}
           {isChatFeedScene && (
             <div className="flex flex-col gap-2">

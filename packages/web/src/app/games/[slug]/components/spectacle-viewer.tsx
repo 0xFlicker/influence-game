@@ -5,7 +5,6 @@ import { AgentAvatar } from "@/components/agent-avatar";
 import { Typewriter } from "@/components/typewriter";
 import type { ReplayScene, SpectacleMessagePhase } from "./types";
 import { HOUSE_INTROS, phaseToRoomType } from "./constants";
-import { buildWhisperStageData } from "./whisper-phase";
 
 // ---------------------------------------------------------------------------
 // buildReplayScenes — groups transcript into per-phase (and per-room) scenes
@@ -25,36 +24,15 @@ export function buildReplayScenes(transcript: TranscriptEntry[], players: GamePl
     const roomType = phaseToRoomType(phase);
 
     if (phase === "WHISPER") {
-      // Split whisper phases into per-room scenes for proper screen time
-      const stageData = buildWhisperStageData(msgs, players);
-
-      // System messages scene (allocation reveal)
-      const systemMsgs = msgs.filter((m) => m.scope === "system");
-      if (systemMsgs.length > 0) {
-        scenes.push({
-          id: `${id}-allocation`,
-          round,
-          phase,
-          roomType,
-          messages: systemMsgs,
-          houseIntro: HOUSE_INTROS[phase] ?? null,
-        });
-      }
-
-      // Per-room scenes — each room gets its own scene with proper screen time
-      for (const room of stageData.rooms) {
-        if (room.messages.length > 0) {
-          scenes.push({
-            id: `${id}-room-${room.roomId}`,
-            round,
-            phase,
-            roomType,
-            messages: room.messages,
-            houseIntro: null,
-            whisperRoom: { roomId: room.roomId, playerNames: room.playerNames },
-          });
-        }
-      }
+      // Single scene with all whisper messages — rooms render simultaneously
+      scenes.push({
+        id,
+        round,
+        phase,
+        roomType,
+        messages: msgs,
+        houseIntro: HOUSE_INTROS[phase] ?? null,
+      });
     } else {
       scenes.push({
         id,

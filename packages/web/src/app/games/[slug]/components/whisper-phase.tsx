@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type { TranscriptEntry, GamePlayer } from "@/lib/api";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { Typewriter } from "@/components/typewriter";
@@ -166,20 +166,47 @@ function WhisperRoomSealed({
   );
 }
 
-/** Single DM-style room chat box — messages aligned left/right based on speaker. Used in replay/reveal mode. */
+/** Single DM-style room chat box with independent scrolling. Used in replay/reveal mode. */
 export function WhisperRoomDM({
   room,
   players,
+  focused,
+  onFocus,
+  onClose,
 }: {
   room: WhisperRoomStage;
   players: GamePlayer[];
+  focused?: boolean;
+  onFocus?: () => void;
+  onClose?: () => void;
 }) {
-  // First player in the room is treated as "self" (messages on right)
   const selfId = room.playerIds[0];
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [room.messages.length]);
 
   return (
-    <div className="rounded-2xl border border-purple-400/20 bg-black/30 flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-purple-900/20">
+    <div
+      className={`rounded-2xl border bg-black/30 flex flex-col overflow-hidden transition-all duration-300 ${
+        focused
+          ? "border-purple-400/40 ring-1 ring-purple-400/20 col-span-full"
+          : "border-purple-400/20 cursor-pointer hover:border-purple-400/35"
+      }`}
+      onClick={(e) => {
+        if (!focused && onFocus) {
+          e.stopPropagation();
+          onFocus();
+        }
+      }}
+      data-controls
+    >
+      <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-purple-900/20 flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <p className="text-[10px] uppercase tracking-[0.2em] text-purple-300/45 flex-shrink-0">
             Room {room.roomId}
@@ -188,12 +215,33 @@ export function WhisperRoomDM({
             {room.playerNames.join(" × ")}
           </p>
         </div>
-        <span className="rounded-full border border-red-400/25 bg-red-400/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.2em] text-red-200/80 flex-shrink-0">
-          Revealed
-        </span>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {room.messages.length > 0 && (
+            <span className="text-[9px] text-purple-300/40">
+              {room.messages.length} msg{room.messages.length !== 1 ? "s" : ""}
+            </span>
+          )}
+          <span className="rounded-full border border-red-400/25 bg-red-400/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.2em] text-red-200/80">
+            Revealed
+          </span>
+          {focused && onClose && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onClose(); }}
+              className="w-5 h-5 flex items-center justify-center rounded-full border border-white/10 text-white/40 hover:text-white hover:border-white/25 transition-colors"
+            >
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M1 1l6 6M7 1L1 7" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="p-3 space-y-2">
+      <div
+        ref={scrollRef}
+        className={`p-3 space-y-2 overflow-y-auto ${focused ? "max-h-[60vh]" : "max-h-[40vh]"}`}
+      >
         {room.messages.length === 0 ? (
           <p className="text-xs text-white/30 italic text-center py-6">No messages exchanged.</p>
         ) : (
@@ -208,7 +256,7 @@ export function WhisperRoomDM({
               <div
                 key={msg.id}
                 className={`flex gap-2 ${showOnRight ? "justify-end" : "justify-start"} animate-[fadeIn_0.25s_ease-out]`}
-                style={{ animationDelay: `${idx * 200}ms` }}
+                style={{ animationDelay: `${Math.min(idx, 10) * 100}ms` }}
               >
                 {!showOnRight && (
                   <div className="flex-shrink-0 mt-1">
@@ -261,11 +309,11 @@ export function WhisperPhaseView({
   isReplay?: boolean;
 }) {
   const stage = buildWhisperStageData(phaseEntries, players);
-  const [mobileRoomIndex, setMobileRoomIndex] = useState(0);
+  const [focusedRoomId, setFocusedRoomId] = useState<number | null>(null);
   const [showAllocationReveal, setShowAllocationReveal] = useState(true);
 
   useEffect(() => {
-    setMobileRoomIndex(0);
+    setFocusedRoomId(null);
     setShowAllocationReveal(true);
   }, [phaseKey]);
 
@@ -273,6 +321,22 @@ export function WhisperPhaseView({
     const timer = window.setTimeout(() => setShowAllocationReveal(false), 2000);
     return () => window.clearTimeout(timer);
   }, [phaseKey]);
+
+  const handleFocus = useCallback((roomId: number) => {
+    setFocusedRoomId(roomId);
+  }, []);
+
+  const handleClose = useCallback(() => {
+    setFocusedRoomId(null);
+  }, []);
+
+  // Grid column count adapts to room count
+  const roomCount = stage.rooms.length;
+  const gridCols = roomCount <= 2
+    ? "grid-cols-1 md:grid-cols-2"
+    : roomCount <= 4
+      ? "grid-cols-1 md:grid-cols-2 xl:grid-cols-2"
+      : "grid-cols-1 md:grid-cols-2 xl:grid-cols-3";
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-6">
@@ -325,53 +389,32 @@ export function WhisperPhaseView({
         </div>
       ) : isReplay ? (
         <>
-          {/* Replay: room selector + selected room(s), max 2 cols on lg+ */}
-          <div className="flex flex-wrap items-center gap-1.5 mb-4">
-            {stage.rooms.map((room, idx) => {
-              const nextIdx = (mobileRoomIndex + 1) % stage.rooms.length;
-              const isCompanion = stage.rooms.length > 1 && idx === nextIdx;
-              return (
-                <button
-                  key={room.roomId}
-                  type="button"
-                  onClick={() => { if (!isCompanion) setMobileRoomIndex(idx); }}
-                  className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] transition-colors flex items-center gap-1.5 ${
-                    idx === mobileRoomIndex || isCompanion
-                      ? "border-purple-300/50 bg-purple-300/15 text-white"
-                      : "border-white/10 bg-white/5 text-white/50 hover:border-purple-300/30"
-                  } ${isCompanion ? "hidden lg:flex opacity-40 cursor-not-allowed" : ""}`}
-                >
-                  <span>Room {room.roomId}</span>
-                  <span className="text-[9px] text-purple-300/40 truncate max-w-[8rem]">
-                    {room.playerNames.join(" × ")}
-                  </span>
-                  {room.messages.length > 0 && (
-                    <span className="text-[8px] text-purple-300/40">{room.messages.length}</span>
-                  )}
-                </button>
-              );
-            })}
-            {stage.commons.length > 0 && (
-              <span className="text-[10px] text-white/25 ml-1">
-                Commons: {stage.commons.map((p) => p.name).join(", ")}
-              </span>
-            )}
+          {/* Replay: all rooms simultaneously in a chaotic grid */}
+          <div className={`grid gap-3 ${gridCols}`}>
+            {stage.rooms.map((room) => (
+              <WhisperRoomDM
+                key={room.roomId}
+                room={room}
+                players={players}
+                focused={focusedRoomId === room.roomId}
+                onFocus={() => handleFocus(room.roomId)}
+                onClose={handleClose}
+              />
+            ))}
           </div>
-          <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
-            {stage.rooms[mobileRoomIndex] && (
-              <WhisperRoomDM room={stage.rooms[mobileRoomIndex]} players={players} />
-            )}
-            {stage.rooms.length > 1 && stage.rooms[(mobileRoomIndex + 1) % stage.rooms.length] && (
-              <div className="hidden lg:block">
-                <WhisperRoomDM room={stage.rooms[(mobileRoomIndex + 1) % stage.rooms.length]!} players={players} />
-              </div>
-            )}
-          </div>
+          {stage.commons.length > 0 && (
+            <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-white/30 mb-1">Commons</p>
+              <p className="text-sm text-white/60">
+                {stage.commons.map((p) => p.name).join(", ")}
+              </p>
+            </div>
+          )}
         </>
       ) : (
         <>
-          {/* Live mode: whisper content is sealed — max 2 cols */}
-          <div className="grid gap-3 grid-cols-1 lg:grid-cols-2">
+          {/* Live mode: whisper content is sealed — all rooms visible */}
+          <div className={`grid gap-3 ${gridCols}`}>
             {stage.rooms.map((room) => (
               <WhisperRoomSealed key={room.roomId} room={room} players={players} />
             ))}
