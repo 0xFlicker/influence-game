@@ -16,5 +16,8 @@
     "check": "bun run typecheck && bun run lint",
     "dev:api": "cd packages/api && bun run dev",
     "dev:web": "cd packages/web && bun run dev"
+  },
+  "devDependencies": {
+    "puppeteer": "^24.40.0"
   }
 }
