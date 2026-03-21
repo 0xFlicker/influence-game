@@ -341,9 +341,55 @@ function findByName<T extends { name: string }>(
   return players.find((p) => normalizeName(p.name) === n);
 }
 
+const TOOL_STRATEGIC_REFLECTION: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "strategic_reflection",
+    description: "Record your strategic assessment of the current game state",
+    parameters: {
+      type: "object",
+      properties: {
+        certainties: {
+          type: "array",
+          items: { type: "string" },
+          description: "Things you KNOW for certain (observed facts)",
+        },
+        suspicions: {
+          type: "array",
+          items: { type: "string" },
+          description: "Things you SUSPECT but cannot confirm",
+        },
+        allies: {
+          type: "array",
+          items: { type: "string" },
+          description: "Current allies and why (name: reason)",
+        },
+        threats: {
+          type: "array",
+          items: { type: "string" },
+          description: "Current threats and why (name: reason)",
+        },
+        plan: {
+          type: "string",
+          description: "Your plan for the next round in 1-2 sentences",
+        },
+      },
+      required: ["certainties", "suspicions", "allies", "threats", "plan"],
+    },
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Agent memory
 // ---------------------------------------------------------------------------
+
+interface StrategicReflection {
+  certainties: string[];
+  suspicions: string[];
+  allies: string[];
+  threats: string[];
+  plan: string;
+}
 
 interface AgentMemory {
   /** Who this agent has made alliances with */
@@ -359,6 +405,8 @@ interface AgentMemory {
     empowered?: string;
     myVotes: { empower: string; expose: string };
   }>;
+  /** Most recent strategic reflection from diary room */
+  lastReflection: StrategicReflection | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -380,6 +428,7 @@ export class InfluenceAgent implements IAgent {
     threats: new Set(),
     notes: new Map(),
     roundHistory: [],
+    lastReflection: null,
   };
 
   constructor(
@@ -1107,7 +1156,7 @@ IMPORTANT: Only reference alive players in your messages, votes, and strategies.
 - Known threats: ${threats}
 ${memoryNotes ? `- Notes:\n${memoryNotes}` : ""}
 ${this.memory.roundHistory.length > 0 ? `## Your Vote History\n${this.memory.roundHistory.map((r) => `  R${r.round}: empower=${r.myVotes.empower}, expose=${r.myVotes.expose}${r.empowered ? `, empowered=${r.empowered}` : ""}${r.eliminated ? `, eliminated=${r.eliminated}` : ""}`).join("\n")}` : ""}
-
+${this.memory.lastReflection ? `## Strategic Assessment\n- Certainties: ${this.memory.lastReflection.certainties.join("; ") || "none"}\n- Suspicions: ${this.memory.lastReflection.suspicions.join("; ") || "none"}\n- Allies: ${this.memory.lastReflection.allies.join("; ") || "none"}\n- Threats: ${this.memory.lastReflection.threats.join("; ") || "none"}\n- Plan: ${this.memory.lastReflection.plan}` : ""}
 ## Recent Public Messages
 ${recentMessages || "  (none yet)"}
 ${anonymousSection}
@@ -1184,6 +1233,29 @@ ${roomSection}
     }
 
     return JSON.parse(toolCall.function.arguments) as T;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Strategic reflection (called after diary room sessions)
+  // ---------------------------------------------------------------------------
+
+  async getStrategicReflection(ctx: PhaseContext): Promise<void> {
+    const prompt = this.buildBasePrompt(ctx) + `
+## Strategic Reflection
+
+Based on everything you know so far, produce a strategic assessment.
+Use the strategic_reflection tool to record your analysis.
+
+Be specific — name players, cite events, reference conversations.`;
+
+    try {
+      const reflection = await this.callTool<StrategicReflection>(
+        prompt, TOOL_STRATEGIC_REFLECTION, 300,
+      );
+      this.memory.lastReflection = reflection;
+    } catch {
+      // Non-critical — if reflection fails, continue without it
+    }
   }
 
   // ---------------------------------------------------------------------------

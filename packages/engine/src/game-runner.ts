@@ -98,6 +98,10 @@ export interface IAgent {
   /** Judgment: juror votes for the winner */
   getJuryVote(context: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID>;
 
+  // --- Strategic reflection (called after diary room) ---
+  /** Produce a strategic reflection after diary room interview */
+  getStrategicReflection?(context: PhaseContext): Promise<void>;
+
   // --- Memory updates (called by GameRunner after phase events) ---
   /** Record a player as an ally */
   updateAlly(playerName: string): void;
@@ -1434,6 +1438,17 @@ export class GameRunner {
     for (const player of alivePlayers) {
       await this.runDiaryInterview(precedingPhase, player.id, player.name, false);
     }
+
+    // After all interviews, agents produce strategic reflections in parallel
+    await Promise.all(
+      alivePlayers.map(async (player) => {
+        const agent = this.agents.get(player.id);
+        if (agent?.getStrategicReflection) {
+          const ctx = this.buildPhaseContext(player.id, Phase.DIARY_ROOM);
+          await agent.getStrategicReflection(ctx);
+        }
+      }),
+    );
 
     // During Judgment phases, also interview active jury members sequentially
     if (this.gameState.endgameStage === "judgment") {
