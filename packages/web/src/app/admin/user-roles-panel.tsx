@@ -232,7 +232,13 @@ function UsersTable({
               <td className="py-3 px-4 text-white/60 text-sm font-mono">
                 {user.walletAddress ? <TruncatedAddress address={user.walletAddress} maxWidth="11ch" /> : "—"}
               </td>
-              <td className="py-3 px-4 text-white text-sm">{user.displayName ?? "—"}</td>
+              <td className="py-3 px-4 text-white text-sm font-mono">
+                {user.displayName
+                  ? (user.displayName.startsWith("0x")
+                      ? <TruncatedAddress address={user.displayName} maxWidth="11ch" />
+                      : user.displayName)
+                  : "—"}
+              </td>
               <td className="py-3 px-4 text-white/50 text-sm">{user.email ?? "—"}</td>
               <td className="py-3 px-4">
                 <div className="flex gap-1 flex-wrap">
