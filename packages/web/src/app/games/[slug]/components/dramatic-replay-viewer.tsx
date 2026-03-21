@@ -165,6 +165,12 @@ export function DramaticReplayViewer({
     return scene.messages;
   }, [scene]);
 
+  // Rumor messages for current round (for vote reveal — show voter's rumor alongside vote)
+  const rumorMessages = useMemo(() => {
+    if (!scene) return [];
+    return allVisibleMessages.filter(m => m.round === scene.round && m.phase === "RUMOR" && m.scope === "public");
+  }, [allVisibleMessages, scene]);
+
   // For diary scenes: show ALL messages at once (grid renders all rooms simultaneously)
   const diaryRoundMessages = useMemo(() => {
     if (!scene || scene.phase !== "DIARY_ROOM") return [];
@@ -722,6 +728,7 @@ export function DramaticReplayViewer({
                   currentPlayer={currentPlayer}
                   currentPlayerName={currentPlayerName}
                   speedMultiplier={speed}
+                  rumorMessages={rumorMessages}
                 />
               )}
 

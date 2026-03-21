@@ -44,19 +44,31 @@ export function MessageBubble({ msg, players }: { msg: TranscriptEntry; players:
     );
   }
 
-  const player = players.find((p) => p.id === msg.fromPlayerId)
-    ?? players.find((p) => p.name === msg.fromPlayerId);
-  const name = msg.fromPlayerName ?? player?.name ?? msg.fromPlayerId ?? "Unknown";
+  const isAnonymousRumor = msg.phase === "RUMOR" && msg.scope === "public";
+  const player = isAnonymousRumor
+    ? undefined
+    : players.find((p) => p.id === msg.fromPlayerId)
+      ?? players.find((p) => p.name === msg.fromPlayerId);
+  const name = isAnonymousRumor ? "Anonymous" : (msg.fromPlayerName ?? player?.name ?? msg.fromPlayerId ?? "Unknown");
   const isEliminated = player?.status === "eliminated";
 
   return (
     <div className={`flex gap-3 ${isEliminated ? "opacity-50" : ""}`}>
       <div className="flex-shrink-0">
-        {player ? <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="8" /> : <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-sm">?</span>}
+        {isAnonymousRumor ? (
+          <span className="w-7 h-7 rounded-full bg-purple-900/40 flex items-center justify-center text-sm">🗣</span>
+        ) : player ? (
+          <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="8" />
+        ) : (
+          <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-sm">?</span>
+        )}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2 mb-0.5">
-          <span className="text-xs font-semibold text-white/80">{name}</span>
+          <span className={`text-xs font-semibold ${isAnonymousRumor ? "text-purple-300/70 italic" : "text-white/80"}`}>{name}</span>
+          {isAnonymousRumor && (
+            <span className="text-[10px] text-purple-400/50 uppercase tracking-wider">rumor</span>
+          )}
           {isWhisper && (
             <span className="text-xs text-purple-400/70">🤫 whisper</span>
           )}

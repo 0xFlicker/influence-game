@@ -234,9 +234,11 @@ export function VoteTallyOverlay({
 export function StyledVoteCard({
   text,
   players,
+  voterRumor,
 }: {
   text: string;
   players: GamePlayer[];
+  voterRumor?: string;
 }) {
   const vote = parseVoteMsg(text);
   if (vote) {
@@ -264,6 +266,15 @@ export function StyledVoteCard({
               {exposePlayer && <AgentAvatar avatarUrl={exposePlayer.avatarUrl} persona={exposePlayer.persona} name={exposePlayer.name} size="6" />}
               <span className="text-lg font-semibold text-red-300">{vote.expose}</span>
             </div>
+            {voterRumor && (
+              <>
+                <div className="border-t border-purple-500/10" />
+                <div className="text-left">
+                  <p className="text-[10px] text-purple-400/50 uppercase tracking-wider mb-1">Their Rumor</p>
+                  <p className="text-xs text-purple-300/60 italic leading-relaxed">{voterRumor}</p>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -549,6 +560,7 @@ export function SpectacleMessageContent({
   currentPlayer,
   currentPlayerName,
   speedMultiplier = 1,
+  rumorMessages = [],
 }: {
   message: TranscriptEntry;
   scene: { phase: PhaseKey };
@@ -560,6 +572,7 @@ export function SpectacleMessageContent({
   currentPlayer: GamePlayer | null | undefined;
   currentPlayerName: string;
   speedMultiplier?: number;
+  rumorMessages?: TranscriptEntry[];
 }) {
   // For parseable structured messages, skip typewriter and jump to "done"
   const parseable = isParseableStructuredMsg(message.text);
@@ -586,8 +599,16 @@ export function SpectacleMessageContent({
 
   // Styled vote/power card — shown when parseable and done
   if (parseable) {
+    // Resolve voter's rumor from the same round (for vote reveal)
+    const vote = parseVoteMsg(message.text);
+    const voterName = vote?.voter;
+    const voterPlayer = voterName ? players.find((p) => p.name === voterName) : null;
+    const voterRumor = voterPlayer
+      ? rumorMessages.find((m) => m.fromPlayerId === voterPlayer.id || m.fromPlayerId === voterPlayer.name)?.text
+      : undefined;
+
     return (
-      <StyledVoteCard text={message.text} players={players} />
+      <StyledVoteCard text={message.text} players={players} voterRumor={voterRumor} />
     );
   }
 
