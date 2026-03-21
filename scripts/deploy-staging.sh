@@ -41,28 +41,70 @@ echo ""
 # Create directories
 mkdir -p "$STAGING_APP" "$STAGING_DATA" "$PID_DIR" "$LOG_DIR"
 
-# Stop existing services (kill entire process tree to avoid stale CWD)
+# Stop existing services — kill full process tree + port-based fallback
 echo "--- Stopping existing services ---"
+
+# Helper: recursively kill a process and all descendants
+kill_tree() {
+  local pid=$1 sig=${2:-TERM}
+  local children
+  children=$(pgrep -P "$pid" 2>/dev/null || true)
+  for child in $children; do
+    kill_tree "$child" "$sig"
+  done
+  kill -"$sig" "$pid" 2>/dev/null || true
+}
+
+# Phase 1: PID-file based kill (tree-recursive)
 for svc in api web; do
   pidfile="$PID_DIR/$svc.pid"
   if [ -f "$pidfile" ]; then
     pid=$(cat "$pidfile")
     if kill -0 "$pid" 2>/dev/null; then
-      echo "  Stopping $svc (PID $pid) and children"
-      # Kill children first (next-server, bun), then parent (doppler)
-      pkill -P "$pid" 2>/dev/null || true
-      kill "$pid" 2>/dev/null || true
-      # Wait for graceful shutdown
-      for i in $(seq 1 10); do
+      echo "  Stopping $svc (PID $pid) tree"
+      kill_tree "$pid" TERM
+      for i in $(seq 1 5); do
         kill -0 "$pid" 2>/dev/null || break
         sleep 1
       done
-      # Force kill entire tree if still running
-      pkill -9 -P "$pid" 2>/dev/null || true
-      kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
+      kill -0 "$pid" 2>/dev/null && kill_tree "$pid" 9 || true
     fi
     rm -f "$pidfile"
   fi
+done
+
+# Phase 2: Port-based fallback — kill anything still on staging ports
+for port in 4000 4001; do
+  pids=$(lsof -ti :"$port" 2>/dev/null || true)
+  if [ -n "$pids" ]; then
+    echo "  Killing stale processes on port $port: $pids"
+    echo "$pids" | xargs kill -9 2>/dev/null || true
+  fi
+done
+
+# Phase 3: Kill orphaned processes with deleted staging CWD
+orphans=""
+for pid_dir in /proc/[0-9]*/cwd; do
+  link=$(readlink "$pid_dir" 2>/dev/null || true)
+  if echo "$link" | grep -q "$STAGING_APP.*deleted"; then
+    orphan_pid=$(echo "$pid_dir" | cut -d/ -f3)
+    orphans="$orphans $orphan_pid"
+  fi
+done
+if [ -n "$orphans" ]; then
+  echo "  Killing orphaned processes with stale staging CWD:$orphans"
+  kill -9 $orphans 2>/dev/null || true
+fi
+
+# Phase 4: Wait for ports to be free (up to 5s)
+for port in 4000 4001; do
+  for i in $(seq 1 5); do
+    lsof -ti :"$port" >/dev/null 2>&1 || break
+    sleep 1
+    if [ "$i" -eq 5 ]; then
+      echo "  WARNING: Port $port still occupied after 5s"
+    fi
+  done
 done
 
 # Checkout the tag using git worktree (or update existing)
