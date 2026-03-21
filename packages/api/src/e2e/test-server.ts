@@ -107,6 +107,7 @@ export async function startTestServers(
   if (!opts.skipWeb && webPort != null) {
     const webEnv: Record<string, string> = {
       ...process.env as Record<string, string>,
+      NODE_ENV: "development",
       PORT: String(webPort),
       NEXT_PUBLIC_API_URL: apiUrl,
     };
