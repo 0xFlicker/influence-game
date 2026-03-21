@@ -3,10 +3,15 @@
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useE2EAuth } from "@/app/providers";
 
 export function Nav() {
+  const e2e = useE2EAuth();
   const { ready, authenticated, login, logout } = usePrivy();
   const { isAdmin } = usePermissions();
+
+  const effectiveReady = e2e.isE2E ? e2e.ready : ready;
+  const effectiveAuth = e2e.isE2E ? e2e.authenticated : authenticated;
 
   return (
     <nav className="border-b border-white/10 px-6 py-4 flex items-center justify-between">
@@ -19,20 +24,20 @@ export function Nav() {
           Games
         </Link>
 
-        {authenticated && (
+        {effectiveAuth && (
           <Link href="/dashboard" className="text-white/70 hover:text-white transition-colors">
             Dashboard
           </Link>
         )}
 
-        {authenticated && isAdmin && (
+        {effectiveAuth && isAdmin && (
           <Link href="/admin" className="text-white/70 hover:text-white transition-colors">
             Admin
           </Link>
         )}
 
-        {ready && (
-          authenticated ? (
+        {effectiveReady && (
+          effectiveAuth ? (
             <button
               onClick={logout}
               className="text-white/50 hover:text-white transition-colors"

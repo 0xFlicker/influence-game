@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { getMe, getAuthToken, type AuthMe } from "@/lib/api";
+import { useE2EAuth } from "@/app/providers";
 
 interface PermissionsState {
   loading: boolean;
@@ -23,9 +24,13 @@ function clearState(
 }
 
 export function usePermissions(): PermissionsState {
+  const e2e = useE2EAuth();
   const { ready, authenticated } = usePrivy();
   const [user, setUser] = useState<AuthMe | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const effectiveReady = e2e.isE2E ? e2e.ready : ready;
+  const effectiveAuth = e2e.isE2E ? e2e.authenticated : authenticated;
 
   const fetchMe = useCallback(() => {
     setLoading(true);
@@ -36,20 +41,25 @@ export function usePermissions(): PermissionsState {
   }, []);
 
   useEffect(() => {
-    if (!ready || !authenticated) {
+    if (!effectiveReady || !effectiveAuth) {
       clearState(setUser, setLoading);
       return;
     }
 
     const token = getAuthToken();
     if (!token) {
+      if (e2e.isE2E) {
+        // In e2e mode without token, just stop loading
+        clearState(setUser, setLoading);
+        return;
+      }
       const handleReady = () => fetchMe();
       window.addEventListener("auth:session-ready", handleReady);
       return () => window.removeEventListener("auth:session-ready", handleReady);
     }
 
     fetchMe();
-  }, [ready, authenticated, fetchMe]);
+  }, [effectiveReady, effectiveAuth, fetchMe, e2e.isE2E]);
 
   const roles = useMemo(() => user?.roles ?? [], [user]);
   const permissions = useMemo(() => user?.permissions ?? [], [user]);

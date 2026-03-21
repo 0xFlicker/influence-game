@@ -1,11 +1,16 @@
 "use client";
 
 import { usePrivy } from "@privy-io/react-auth";
+import { useE2EAuth } from "@/app/providers";
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
+  const e2e = useE2EAuth();
   const { ready, authenticated, login } = usePrivy();
 
-  if (!ready) {
+  const effectiveReady = e2e.isE2E ? e2e.ready : ready;
+  const effectiveAuth = e2e.isE2E ? e2e.authenticated : authenticated;
+
+  if (!effectiveReady) {
     return (
       <div className="flex items-center justify-center min-h-64">
         <span className="text-white/40 text-sm">Loading...</span>
@@ -13,7 +18,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!authenticated) {
+  if (!effectiveAuth) {
     return (
       <div className="flex flex-col items-center justify-center min-h-64 gap-4">
         <p className="text-white/60">Sign in to access this page.</p>

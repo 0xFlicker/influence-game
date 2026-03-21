@@ -2,13 +2,18 @@
 
 import { usePrivy } from "@privy-io/react-auth";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useE2EAuth } from "@/app/providers";
 
 /** Gates content behind the `view_admin` permission (or admin role). */
 export function AdminGate({ children }: { children: React.ReactNode }) {
+  const e2e = useE2EAuth();
   const { ready, authenticated, login } = usePrivy();
   const { loading, isAdmin } = usePermissions();
 
-  if (!ready || loading) {
+  const effectiveReady = e2e.isE2E ? e2e.ready : ready;
+  const effectiveAuth = e2e.isE2E ? e2e.authenticated : authenticated;
+
+  if (!effectiveReady || loading) {
     return (
       <div className="flex items-center justify-center min-h-64">
         <span className="text-white/40 text-sm">Loading...</span>
@@ -16,7 +21,7 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!authenticated) {
+  if (!effectiveAuth) {
     return (
       <div className="flex flex-col items-center justify-center min-h-64 gap-4">
         <p className="text-white/60">Admin access requires a connected wallet.</p>

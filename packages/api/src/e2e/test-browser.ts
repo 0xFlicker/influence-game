@@ -6,6 +6,7 @@
  */
 
 import puppeteer, { type Browser, type Page } from "puppeteer";
+import { injectWalletProvider } from "./test-wallet-provider.js";
 
 /**
  * Launch a headless Puppeteer browser instance.
@@ -25,27 +26,30 @@ export async function launchBrowser(): Promise<Browser> {
 /**
  * Create a new page with an authenticated session.
  *
- * Navigates to the web app origin, injects the JWT into localStorage
- * using the same key the frontend uses (`influence_session`), then
- * reloads to pick up the auth state.
+ * Injects the JWT into localStorage and optionally sets up an EIP-1193
+ * wallet provider via `evaluateOnNewDocument`, so both are available
+ * when the app boots on the first navigation (no reload needed).
  */
 export async function createAuthenticatedPage(
   browser: Browser,
   jwt: string,
   webUrl: string,
+  opts?: { privateKey?: `0x${string}` },
 ): Promise<Page> {
   const page = await browser.newPage();
 
-  // Navigate to the app first so we can set localStorage on the correct origin
-  await page.goto(webUrl, { waitUntil: "domcontentloaded" });
-
-  // Inject JWT into localStorage (matches TOKEN_KEY in packages/web/src/lib/api.ts)
-  await page.evaluate((token: string) => {
+  // Inject JWT into localStorage before the page loads
+  await page.evaluateOnNewDocument((token: string) => {
     localStorage.setItem("influence_session", token);
   }, jwt);
 
-  // Reload to pick up the authenticated session
-  await page.reload({ waitUntil: "domcontentloaded" });
+  // Optionally inject EIP-1193 wallet provider for full wallet auth in e2e
+  if (opts?.privateKey) {
+    await injectWalletProvider(page, opts.privateKey);
+  }
+
+  // Navigate — app boots with JWT and provider already available
+  await page.goto(webUrl, { waitUntil: "domcontentloaded" });
 
   return page;
 }
