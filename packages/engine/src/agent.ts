@@ -327,6 +327,21 @@ const TOOL_JURY_VOTE: ChatCompletionTool = {
 };
 
 // ---------------------------------------------------------------------------
+// Name normalization — resilient to LLM casing/whitespace drift
+// ---------------------------------------------------------------------------
+
+const normalizeName = (s: string): string => s.trim().toLowerCase();
+
+function findByName<T extends { name: string }>(
+  players: T[],
+  name: string | undefined,
+): T | undefined {
+  if (!name) return undefined;
+  const n = normalizeName(name);
+  return players.find((p) => normalizeName(p.name) === n);
+}
+
+// ---------------------------------------------------------------------------
 // Agent memory
 // ---------------------------------------------------------------------------
 
@@ -463,12 +478,16 @@ Use the send_whispers tool to submit your whisper messages. Use player NAMES (no
 
       return (result.whispers ?? [])
         .filter((w) => w && Array.isArray(w.to) && typeof w.text === "string")
-        .map((w) => ({
-          to: w.to
-            .map((name) => otherPlayers.find((p) => p.name === name)?.id)
-            .filter((id): id is UUID => id !== undefined),
-          text: w.text,
-        }))
+        .map((w) => {
+          const resolved = w.to.map((name) => {
+            const player = findByName(otherPlayers, name);
+            if (!player) {
+              console.warn(`[vote-fallback] agent="${this.name}" method=getWhispers unmatched recipient="${name}" available=[${otherPlayers.map((p) => p.name).join(", ")}]`);
+            }
+            return player?.id;
+          }).filter((id): id is UUID => id !== undefined);
+          return { to: resolved, text: w.text };
+        })
         .filter((w) => w.to.length > 0 && w.text.length > 0);
     } catch {
       return [];
@@ -505,7 +524,10 @@ Use the request_room tool to submit your preference.`;
         prompt, TOOL_REQUEST_ROOM, 200,
       );
       const partnerName = result.partner;
-      const partner = otherPlayers.find((p) => p.name === partnerName);
+      const partner = findByName(otherPlayers, partnerName);
+      if (!partner) {
+        console.warn(`[vote-fallback] agent="${this.name}" method=requestRoom returned="${partnerName}" available=[${otherPlayers.map((p) => p.name).join(", ")}] fallback=null`);
+      }
       return partner?.id ?? null;
     } catch {
       // Fallback: pick random other player
@@ -610,8 +632,8 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
         prompt, TOOL_CAST_VOTES, 100,
       );
 
-      const empowerPlayer = others.find((p) => p.name === result.empower);
-      const exposePlayer = others.find((p) => p.name === result.expose);
+      const empowerPlayer = findByName(others, result.empower);
+      const exposePlayer = findByName(others, result.expose);
 
       let empowerTarget: UUID;
       if (empowerPlayer) {
@@ -674,7 +696,7 @@ Use the use_power tool to declare your action.`;
       );
 
       const targetPlayer =
-        ctx.alivePlayers.find((p) => p.name === result.target) ??
+        findByName(ctx.alivePlayers, result.target) ??
         ctx.alivePlayers.find((p) => candidates.includes(p.id));
 
       const validAction: PowerAction["action"] =
@@ -714,11 +736,12 @@ Use the council_vote tool to cast your vote.`;
 
     try {
       const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_COUNCIL_VOTE, 80);
-      if (result.eliminate === c1Name) return c1;
-      if (result.eliminate === c2Name) return c2;
+      if (normalizeName(result.eliminate) === normalizeName(c1Name)) return c1;
+      if (normalizeName(result.eliminate) === normalizeName(c2Name)) return c2;
       const fallback = candidates[Math.floor(Math.random() * 2)];
       if (!fallback) throw new Error("No council candidate available");
-      console.warn(`[vote-fallback] agent="${this.name}" method=getCouncilVote returned="${result.eliminate}" available=[${c1Name}, ${c2Name}] fallback="${fallback.name}"`);
+      const fallbackName = ctx.alivePlayers.find((p) => p.id === fallback)?.name ?? fallback;
+      console.warn(`[vote-fallback] agent="${this.name}" method=getCouncilVote returned="${result.eliminate}" available=[${c1Name}, ${c2Name}] fallback="${fallbackName}"`);
       return fallback;
     } catch {
       const fallback = candidates[Math.floor(Math.random() * 2)];
@@ -801,7 +824,7 @@ Use the elimination_vote tool to cast your vote.`;
 
     try {
       const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_ELIMINATION_VOTE, 80);
-      const target = others.find((p) => p.name === result.eliminate);
+      const target = findByName(others, result.eliminate);
       if (target) return target.id;
       const fallback = others[Math.floor(Math.random() * others.length)];
       if (!fallback) throw new Error("No other players available for elimination vote");
@@ -832,7 +855,7 @@ Use the make_accusation tool to submit your accusation.`;
       const result = await this.callTool<{ target: string; accusation: string }>(
         prompt, TOOL_MAKE_ACCUSATION, 200,
       );
-      const target = others.find((p) => p.name === result.target);
+      const target = findByName(others, result.target);
       const fallbackOther = others[0];
       if (!fallbackOther) throw new Error("No other players available for accusation");
       if (!target) {
@@ -902,7 +925,7 @@ Use the ask_jury_question tool to submit your question.`;
       const result = await this.callTool<{ target: string; question: string }>(
         prompt, TOOL_ASK_JURY_QUESTION, 150,
       );
-      const target = finalists.find((f) => f.name === result.target);
+      const target = findByName(finalists, result.target);
       return {
         targetFinalistId: target?.id ?? finalistId0,
         question: result.question ?? "Why do you deserve to win?",
@@ -974,7 +997,7 @@ Use the jury_vote tool to cast your vote.`;
 
     try {
       const result = await this.callTool<{ winner: string }>(prompt, TOOL_JURY_VOTE, 80);
-      const target = finalists.find((f) => f.name === result.winner);
+      const target = findByName(finalists, result.winner);
       const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
       if (!randomFinalist) throw new Error("No finalist available for jury vote");
       if (!target) {
