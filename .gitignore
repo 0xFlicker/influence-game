@@ -10,4 +10,5 @@ docs/simulations/
 *.db-wal
 *.db-shm
 *.tsbuildinfo
+e2e-screenshots/
 .DS_Store

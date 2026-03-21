@@ -2,7 +2,10 @@
 # deploy-staging.sh — Deploy a tagged release to the staging environment.
 #
 # Usage:
-#   ./scripts/deploy-staging.sh [version-tag]
+#   ./scripts/deploy-staging.sh [--skip-e2e] [version-tag]
+#
+# Options:
+#   --skip-e2e   Skip e2e tests before deploying (emergency deploys only)
 #
 # If no tag is provided, deploys the latest annotated tag.
 # Staging binds to the Tailscale IP (100.100.251.4) only.
@@ -12,6 +15,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 STAGING_DIR="/home/user/Development/influence/staging"
+SKIP_E2E=false
 STAGING_APP="$STAGING_DIR/app"
 STAGING_DATA="$STAGING_DIR/data"
 PID_DIR="$STAGING_DIR/pids"
@@ -21,15 +25,33 @@ BUN="$HOME/.bun/bin/bun"
 TAILSCALE_IP="100.100.251.4"
 DOPPLER_CONFIG="stg"
 
+# Parse arguments
+TAG=""
+for arg in "$@"; do
+  case "$arg" in
+    --skip-e2e) SKIP_E2E=true ;;
+    *) TAG="$arg" ;;
+  esac
+done
+
 # Resolve version tag
-if [ -n "${1:-}" ]; then
-  TAG="$1"
-else
+if [ -z "$TAG" ]; then
   TAG=$(cd "$REPO_DIR" && git describe --tags --abbrev=0 2>/dev/null || echo "")
   if [ -z "$TAG" ]; then
     echo "ERROR: No tags found. Pass a version tag as argument."
     exit 1
   fi
+fi
+
+# Run e2e tests before deploying (unless --skip-e2e)
+if [ "$SKIP_E2E" = true ]; then
+  echo "WARNING: Skipping e2e tests (--skip-e2e)"
+  echo ""
+else
+  echo "--- Running e2e tests ---"
+  cd "$REPO_DIR"
+  doppler run -- $BUN run e2e || { echo "E2E tests failed. Aborting deploy."; exit 1; }
+  echo ""
 fi
 
 echo "=== Deploying $TAG to staging ==="
