@@ -613,8 +613,22 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
       const empowerPlayer = others.find((p) => p.name === result.empower);
       const exposePlayer = others.find((p) => p.name === result.expose);
 
-      const empowerTarget = empowerPlayer?.id ?? randomOther().id;
-      const exposeTarget = exposePlayer?.id ?? randomOther().id;
+      let empowerTarget: UUID;
+      if (empowerPlayer) {
+        empowerTarget = empowerPlayer.id;
+      } else {
+        const fallback = randomOther();
+        console.warn(`[vote-fallback] agent="${this.name}" method=getVotes vote=empower returned="${result.empower}" available=[${others.map((p) => p.name).join(", ")}] fallback="${fallback.name}"`);
+        empowerTarget = fallback.id;
+      }
+      let exposeTarget: UUID;
+      if (exposePlayer) {
+        exposeTarget = exposePlayer.id;
+      } else {
+        const fallback = randomOther();
+        console.warn(`[vote-fallback] agent="${this.name}" method=getVotes vote=expose returned="${result.expose}" available=[${others.map((p) => p.name).join(", ")}] fallback="${fallback.name}"`);
+        exposeTarget = fallback.id;
+      }
 
       this.memory.roundHistory.push({
         round: ctx.round,
@@ -668,6 +682,9 @@ Use the use_power tool to declare your action.`;
           ? result.action
           : "pass";
 
+      if (!targetPlayer) {
+        console.warn(`[vote-fallback] agent="${this.name}" method=getPowerAction returned="${result.target}" available=[${ctx.alivePlayers.map((p) => p.name).join(", ")}] fallback=candidates[0]`);
+      }
       return {
         action: validAction,
         target: targetPlayer?.id ?? candidates[0],
@@ -701,6 +718,7 @@ Use the council_vote tool to cast your vote.`;
       if (result.eliminate === c2Name) return c2;
       const fallback = candidates[Math.floor(Math.random() * 2)];
       if (!fallback) throw new Error("No council candidate available");
+      console.warn(`[vote-fallback] agent="${this.name}" method=getCouncilVote returned="${result.eliminate}" available=[${c1Name}, ${c2Name}] fallback="${fallback.name}"`);
       return fallback;
     } catch {
       const fallback = candidates[Math.floor(Math.random() * 2)];
@@ -787,6 +805,7 @@ Use the elimination_vote tool to cast your vote.`;
       if (target) return target.id;
       const fallback = others[Math.floor(Math.random() * others.length)];
       if (!fallback) throw new Error("No other players available for elimination vote");
+      console.warn(`[vote-fallback] agent="${this.name}" method=getEndgameEliminationVote returned="${result.eliminate}" available=[${others.map((p) => p.name).join(", ")}] fallback="${fallback.name}"`);
       return fallback.id;
     } catch {
       const fallback = others[Math.floor(Math.random() * others.length)];
@@ -816,6 +835,9 @@ Use the make_accusation tool to submit your accusation.`;
       const target = others.find((p) => p.name === result.target);
       const fallbackOther = others[0];
       if (!fallbackOther) throw new Error("No other players available for accusation");
+      if (!target) {
+        console.warn(`[vote-fallback] agent="${this.name}" method=getAccusation returned="${result.target}" available=[${others.map((p) => p.name).join(", ")}] fallback="${fallbackOther.name}"`);
+      }
       return {
         targetId: target?.id ?? fallbackOther.id,
         text: result.accusation ?? `I accuse ${target?.name ?? fallbackOther.name}.`,
@@ -955,6 +977,9 @@ Use the jury_vote tool to cast your vote.`;
       const target = finalists.find((f) => f.name === result.winner);
       const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
       if (!randomFinalist) throw new Error("No finalist available for jury vote");
+      if (!target) {
+        console.warn(`[vote-fallback] agent="${this.name}" method=getJuryVote returned="${result.winner}" available=[${finalists.map((f) => f.name).join(", ")}] fallback="${finalists.find((f) => f.id === randomFinalist)?.name ?? randomFinalist}"`);
+      }
       return target?.id ?? randomFinalist;
     } catch {
       const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
