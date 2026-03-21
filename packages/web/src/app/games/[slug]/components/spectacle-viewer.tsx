@@ -82,7 +82,7 @@ export function SpectacleMessageSpotlight({
     : null;
   const playerName =
     message.fromPlayerName ?? player?.name ?? message.fromPlayerId ?? "The House";
-  const isElimination = message.scope === "system" && message.text.includes("has been eliminated");
+  const isElimination = message.scope === "system" && (message.text.includes("ELIMINATED:") || message.text.includes("AUTO-ELIMINATE:"));
 
   return (
     <div className="flex-1 flex items-center justify-center  px-6 py-8">

@@ -187,7 +187,7 @@ export function DramaticReplayViewer({
   const eliminatedIds = useMemo(() => {
     const ids = new Set<string>();
     for (const msg of allVisibleMessages) {
-      if (msg.scope === "system" && msg.text.includes("has been eliminated")) {
+      if (msg.scope === "system" && (msg.text.includes("ELIMINATED:") || msg.text.includes("AUTO-ELIMINATE:"))) {
         const player = players.find((p) => msg.text.includes(p.name));
         if (player) ids.add(player.id);
       }
@@ -548,7 +548,7 @@ export function DramaticReplayViewer({
     : null;
 
   // Is the current message an elimination announcement?
-  const isElimination = currentMessage?.scope === "system" && currentMessage.text.includes("has been eliminated");
+  const isElimination = currentMessage?.scope === "system" && (currentMessage.text.includes("ELIMINATED:") || currentMessage.text.includes("AUTO-ELIMINATE:"));
 
   return (
     <div
