@@ -97,6 +97,16 @@ export interface IAgent {
   getClosingArgument(context: PhaseContext): Promise<string>;
   /** Judgment: juror votes for the winner */
   getJuryVote(context: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID>;
+
+  // --- Memory updates (called by GameRunner after phase events) ---
+  /** Record a player as an ally */
+  updateAlly(playerName: string): void;
+  /** Record a player as a threat */
+  updateThreat(playerName: string): void;
+  /** Add a note about a player */
+  addNote(playerName: string, note: string): void;
+  /** Remove a player from memory (after elimination) */
+  removeFromMemory?(playerName: string): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -764,6 +774,23 @@ export class GameRunner {
       Phase.VOTE,
     );
 
+    // Update agent memory based on votes
+    const voteTally = this.gameState.currentVoteTally;
+    for (const [voterId, empowerTargetId] of Object.entries(voteTally.empowerVotes)) {
+      const agent = this.agents.get(voterId as UUID);
+      if (agent) {
+        const empowerName = this.gameState.getPlayerName(empowerTargetId);
+        agent.updateAlly(empowerName);
+      }
+    }
+    for (const [voterId, exposeTargetId] of Object.entries(voteTally.exposeVotes)) {
+      const agent = this.agents.get(voterId as UUID);
+      if (agent) {
+        const exposeName = this.gameState.getPlayerName(exposeTargetId);
+        agent.updateThreat(exposeName);
+      }
+    }
+
     actor.send({ type: "VOTES_TALLIED", empoweredId });
     actor.send({ type: "PHASE_COMPLETE" });
     await new Promise((r) => setTimeout(r, 0));
@@ -804,6 +831,13 @@ export class GameRunner {
       Phase.POWER,
     );
 
+    // Update empowered agent's memory based on power action
+    if (powerAction.action === "protect") {
+      empoweredAgent.updateAlly(this.gameState.getPlayerName(powerAction.target));
+    } else if (powerAction.action === "eliminate") {
+      empoweredAgent.updateThreat(this.gameState.getPlayerName(powerAction.target));
+    }
+
     const { candidates, autoEliminated, shieldGranted } =
       this.gameState.determineCandidates();
 
@@ -827,6 +861,11 @@ export class GameRunner {
       this.logPublic(autoEliminated, lastMsg, Phase.POWER);
       this.gameState.eliminatePlayer(autoEliminated);
       this.emitStream({ type: "player_eliminated", playerId: autoEliminated, playerName: eliminatedName, round: this.gameState.round });
+
+      // Remove eliminated player from all agents' memory
+      for (const agent of this.agents.values()) {
+        agent.removeFromMemory?.(eliminatedName);
+      }
 
       actor.send({ type: "CANDIDATES_DETERMINED", candidates: null, autoEliminated });
       actor.send({ type: "PLAYER_ELIMINATED", playerId: autoEliminated });
@@ -891,8 +930,13 @@ export class GameRunner {
         });
         const vote = await agent.getCouncilVote(ctx, candidates);
         this.gameState.recordCouncilVote(player.id, vote);
+
+        // Record council vote in voter's memory
+        const votedAgainstName = this.gameState.getPlayerName(vote);
+        agent.addNote(votedAgainstName, `Voted against in council R${this.gameState.round}`);
+
         this.logSystem(
-          `${player.name} council vote -> ${this.gameState.getPlayerName(vote)}`,
+          `${player.name} council vote -> ${votedAgainstName}`,
           Phase.COUNCIL,
         );
       }),
@@ -912,6 +956,11 @@ export class GameRunner {
 
     this.gameState.eliminatePlayer(eliminatedId);
     this.emitStream({ type: "player_eliminated", playerId: eliminatedId, playerName: eliminated.name, round: this.gameState.round });
+
+    // Remove eliminated player from all agents' memory
+    for (const agent of this.agents.values()) {
+      agent.removeFromMemory?.(eliminated.name);
+    }
 
     actor.send({ type: "PLAYER_ELIMINATED", playerId: eliminatedId });
     actor.send({
@@ -1061,6 +1110,10 @@ export class GameRunner {
     this.gameState.eliminatePlayer(eliminatedId);
     this.emitStream({ type: "player_eliminated", playerId: eliminatedId, playerName: eliminated.name, round: this.gameState.round });
 
+    for (const agent of this.agents.values()) {
+      agent.removeFromMemory?.(eliminated.name);
+    }
+
     actor.send({ type: "PLAYER_ELIMINATED", playerId: eliminatedId });
     actor.send({ type: "UPDATE_ALIVE_PLAYERS", aliveIds: this.gameState.getAlivePlayerIds() });
     actor.send({ type: "PHASE_COMPLETE" });
@@ -1202,6 +1255,10 @@ export class GameRunner {
     this.logPublic(eliminatedId, lastMsg, Phase.VOTE);
     this.gameState.eliminatePlayer(eliminatedId);
     this.emitStream({ type: "player_eliminated", playerId: eliminatedId, playerName: eliminated.name, round: this.gameState.round });
+
+    for (const agent of this.agents.values()) {
+      agent.removeFromMemory?.(eliminated.name);
+    }
 
     actor.send({ type: "PLAYER_ELIMINATED", playerId: eliminatedId });
     actor.send({ type: "UPDATE_ALIVE_PLAYERS", aliveIds: this.gameState.getAlivePlayerIds() });

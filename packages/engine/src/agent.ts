@@ -586,9 +586,13 @@ know you wrote this.
 
 Use this anonymity. Be bold. Be provocative. Be strategic.
 
+IMPORTANT: Do NOT directly quote or reveal what was said in private whisper rooms.
+You may hint at what you learned, but specifics should stay private.
+
 Options:
 - ACCUSE: Name a player and claim they're plotting something specific
-- LEAK: Share (or fabricate) private information from whisper rooms
+- HINT: Allude to what you learned in private conversations without revealing specifics
+- SUGGEST: Imply you know something others do not, without quoting whisper content
 - EXPOSE: Claim two players have a secret alliance (true or false)
 - MISDIRECT: Raise suspicion about an innocent player to protect yourself or an ally
 - THREATEN: Promise consequences for a specific player next round
@@ -1102,6 +1106,7 @@ IMPORTANT: Only reference alive players in your messages, votes, and strategies.
 - Known allies: ${allies}
 - Known threats: ${threats}
 ${memoryNotes ? `- Notes:\n${memoryNotes}` : ""}
+${this.memory.roundHistory.length > 0 ? `## Your Vote History\n${this.memory.roundHistory.map((r) => `  R${r.round}: empower=${r.myVotes.empower}, expose=${r.myVotes.expose}${r.empowered ? `, empowered=${r.empowered}` : ""}${r.eliminated ? `, eliminated=${r.eliminated}` : ""}`).join("\n")}` : ""}
 
 ## Recent Public Messages
 ${recentMessages || "  (none yet)"}
@@ -1197,6 +1202,12 @@ ${roomSection}
 
   addNote(playerName: string, note: string): void {
     this.memory.notes.set(playerName, note);
+  }
+
+  removeFromMemory(playerName: string): void {
+    this.memory.allies.delete(playerName);
+    this.memory.threats.delete(playerName);
+    this.memory.notes.delete(playerName);
   }
 }
 

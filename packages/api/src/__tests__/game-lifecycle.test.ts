@@ -91,6 +91,12 @@ class LifecycleMockAgent implements IAgent {
   async getJuryVote(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID> {
     return finalistIds[0];
   }
+
+  // Memory methods (no-ops for mock)
+  updateAlly(_playerName: string): void { /* no-op */ }
+  updateThreat(_playerName: string): void { /* no-op */ }
+  addNote(_playerName: string, _note: string): void { /* no-op */ }
+  removeFromMemory(_playerName: string): void { /* no-op */ }
 }
 
 // ---------------------------------------------------------------------------
