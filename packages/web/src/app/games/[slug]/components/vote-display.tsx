@@ -15,6 +15,9 @@ import {
   parseJuryQuestion,
   parseJuryAnswer,
   parseEliminationVote,
+  parseEmpowerTied,
+  parseReVoteResolved,
+  parseWheelDecides,
   isParseableStructuredMsg,
 } from "./message-parsing";
 import type { SpectacleMessagePhase } from "./types";
@@ -36,12 +39,14 @@ export function VoteTallyOverlay({
   if (scenePhase === "VOTE") {
     const empowerCounts = new Map<string, number>();
     const exposeCounts = new Map<string, number>();
+    let hasTie = false;
     for (const msg of visible) {
       const vote = parseVoteMsg(msg.text);
       if (vote) {
         empowerCounts.set(vote.empower, (empowerCounts.get(vote.empower) ?? 0) + 1);
         exposeCounts.set(vote.expose, (exposeCounts.get(vote.expose) ?? 0) + 1);
       }
+      if (parseEmpowerTied(msg.text)) hasTie = true;
     }
     const hasVotes = empowerCounts.size > 0 || exposeCounts.size > 0;
     if (!hasVotes) return null;
@@ -55,36 +60,48 @@ export function VoteTallyOverlay({
       }))
       .sort((a, b) => b.expose - a.expose);
     const maxExpose = Math.max(...sorted.map((s) => s.expose), 0);
+    const maxEmpower = Math.max(...sorted.map((s) => s.empower), 0);
+    const empowerTiedCount = maxEmpower > 0 ? sorted.filter((s) => s.empower === maxEmpower).length : 0;
+    const showEmpowerTie = hasTie && empowerTiedCount > 1;
 
     return (
       <div className="mt-8 max-w-sm mx-auto animate-[fadePure_0.4s_ease-out]">
-        <p className="text-[10px] uppercase tracking-[0.3em] text-white/20 text-center mb-3">Vote Tally</p>
+        <p className={`text-[10px] uppercase tracking-[0.3em] text-center mb-3 ${showEmpowerTie ? "text-yellow-400/60" : "text-white/20"}`}>
+          {showEmpowerTie ? "Vote Tally — Tied!" : "Vote Tally"}
+        </p>
         <div className="space-y-1">
-          {sorted.map(({ player, empower, expose }) => (
-            <div
-              key={player.id}
-              className={`flex items-center gap-2 py-1.5 px-3 rounded-lg transition-all duration-500 ${
-                expose > 0 && expose === maxExpose
-                  ? "bg-red-900/25 border border-red-500/25"
-                  : "bg-white/[0.02]"
-              }`}
-            >
-              <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />
-              <span className="text-xs text-white/60 flex-1">{player.name}</span>
-              {empower > 0 && (
-                <span className="text-[10px] text-amber-400 bg-amber-900/25 px-1.5 py-0.5 rounded">
-                  👑 {empower}
-                </span>
-              )}
-              {expose > 0 && (
-                <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                  expose === maxExpose ? "text-red-300 bg-red-900/40 font-bold" : "text-red-400/70 bg-red-900/20"
-                }`}>
-                  ⚡ {expose}
-                </span>
-              )}
-            </div>
-          ))}
+          {sorted.map(({ player, empower, expose }) => {
+            const isEmpowerLeader = showEmpowerTie && empower === maxEmpower;
+            return (
+              <div
+                key={player.id}
+                className={`flex items-center gap-2 py-1.5 px-3 rounded-lg transition-all duration-500 ${
+                  isEmpowerLeader
+                    ? "bg-yellow-900/20 border border-yellow-500/30"
+                    : expose > 0 && expose === maxExpose
+                      ? "bg-red-900/25 border border-red-500/25"
+                      : "bg-white/[0.02]"
+                }`}
+              >
+                <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />
+                <span className="text-xs text-white/60 flex-1">{player.name}</span>
+                {empower > 0 && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                    isEmpowerLeader ? "text-yellow-300 bg-yellow-900/40 font-bold animate-pulse" : "text-amber-400 bg-amber-900/25"
+                  }`}>
+                    👑 {empower}
+                  </span>
+                )}
+                {expose > 0 && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                    expose === maxExpose ? "text-red-300 bg-red-900/40 font-bold" : "text-red-400/70 bg-red-900/20"
+                  }`}>
+                    ⚡ {expose}
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -320,6 +337,70 @@ export function StyledVoteCard({
             </span>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  const tied = parseEmpowerTied(text);
+  if (tied) {
+    return (
+      <div className="text-center animate-[fadeIn_0.5s_ease-out]">
+        <p className="text-xs text-yellow-400/60 uppercase tracking-[0.4em] mb-2 animate-pulse">◆ TIE ◆</p>
+        <p className="text-lg font-bold text-yellow-300 mb-4">Empower Vote Tied!</p>
+        <div className="flex items-center justify-center gap-4 flex-wrap mb-4">
+          {tied.names.map((name) => {
+            const p = players.find((pl) => pl.name === name);
+            return (
+              <div key={name} className="text-center">
+                {p && <div className="mb-1 flex justify-center"><AgentAvatar avatarUrl={p.avatarUrl} persona={p.persona} name={p.name} size="10" /></div>}
+                <p className="text-sm font-semibold text-yellow-200">{name}</p>
+              </div>
+            );
+          })}
+        </div>
+        <div className="bg-yellow-900/15 border border-yellow-500/20 rounded-xl px-6 py-3 inline-block">
+          <p className="text-xs text-yellow-400/70 uppercase tracking-wider">Re-vote required</p>
+        </div>
+      </div>
+    );
+  }
+
+  const reVoteResolved = parseReVoteResolved(text);
+  if (reVoteResolved) {
+    const resolvedPlayer = players.find((p) => p.name === reVoteResolved.name);
+    return (
+      <div className="text-center animate-[fadeIn_0.5s_ease-out]">
+        <p className="text-xs text-emerald-400/50 uppercase tracking-[0.3em] mb-4">◆ RE-VOTE RESOLVED ◆</p>
+        <div className="flex items-center justify-center gap-4">
+          <span className="text-4xl">👑</span>
+          {resolvedPlayer && <AgentAvatar avatarUrl={resolvedPlayer.avatarUrl} persona={resolvedPlayer.persona} name={resolvedPlayer.name} size="12" />}
+        </div>
+        <p className="text-2xl font-bold text-emerald-300 mt-4 tracking-wide">{reVoteResolved.name}</p>
+        <p className="text-xs text-emerald-400/30 mt-2 uppercase tracking-wider">
+          wins the re-vote
+        </p>
+      </div>
+    );
+  }
+
+  const wheel = parseWheelDecides(text);
+  if (wheel) {
+    const wheelPlayer = players.find((p) => p.name === wheel.name);
+    return (
+      <div className="text-center animate-[fadeIn_0.5s_ease-out]">
+        <p className="text-xs text-purple-400/60 uppercase tracking-[0.4em] mb-2 animate-pulse">◆ THE WHEEL ◆</p>
+        <p className="text-sm text-purple-300/50 mb-4">Re-vote still tied — fate decides!</p>
+        <div className="relative inline-block mb-4">
+          <div className="absolute inset-0 rounded-full bg-purple-500/20 animate-ping" />
+          <div className="relative flex items-center justify-center gap-4">
+            <span className="text-5xl animate-[spin_1s_ease-out]">🎡</span>
+            {wheelPlayer && <AgentAvatar avatarUrl={wheelPlayer.avatarUrl} persona={wheelPlayer.persona} name={wheelPlayer.name} size="12" />}
+          </div>
+        </div>
+        <p className="text-2xl font-bold text-purple-300 mt-4 tracking-wide">{wheel.name}</p>
+        <p className="text-xs text-purple-400/30 mt-2 uppercase tracking-wider">
+          chosen by the wheel
+        </p>
       </div>
     );
   }
