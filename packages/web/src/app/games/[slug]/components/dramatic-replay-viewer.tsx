@@ -47,7 +47,7 @@ export function DramaticReplayViewer({
   live?: boolean;
   connStatus?: "connecting" | "live" | "disconnected" | "reconnecting" | "replay";
 }) {
-  const scenes = useMemo(() => buildReplayScenes(messages, players), [messages, players]);
+  const scenes = useMemo(() => buildReplayScenes(messages), [messages]);
   const [sceneIndex, setSceneIndex] = useState(0);
   const [messageIndex, setMessageIndex] = useState(0);
   const [messagePhase, setMessagePhase] = useState<SpectacleMessagePhase>("typing");
@@ -90,6 +90,36 @@ export function DramaticReplayViewer({
     setMessageIndex(lastScene.messages.length - 1);
     setMessagePhase("done");
   }, [live, totalScenes, scenes]);
+
+  // Live mode: independent catch-up interval that doesn't get cleared by
+  // scene rebuilds. The main auto-advance timer gets reset every time a
+  // WebSocket message triggers a scene rebuild, preventing progress through
+  // dramatic phases (e.g., vote tallies not incrementing). This interval
+  // reads state from refs and advances when the viewer falls behind.
+  const sceneMsgLenRef = useRef(0);
+  sceneMsgLenRef.current = scene?.messages.length ?? 0;
+  const liveStateRef = useRef({ messageIndex, messagePhase, speed });
+  liveStateRef.current = { messageIndex, messagePhase, speed };
+
+  useEffect(() => {
+    if (!live || !isPlaying) return;
+
+    const interval = setInterval(() => {
+      const { messageIndex: idx, messagePhase: phase } = liveStateRef.current;
+      const sceneLen = sceneMsgLenRef.current;
+      if (sceneLen === 0 || idx >= sceneLen - 1) return; // caught up
+
+      if (phase === "done") {
+        setMessageIndex((i) => i + 1);
+        setMessagePhase("typing");
+      } else if (phase === "typing" || phase === "revealing") {
+        // Skip animation to catch up
+        setMessagePhase("done");
+      }
+    }, 400);
+
+    return () => clearInterval(interval);
+  }, [live, isPlaying]);
 
   // Resolve current speaker
   const currentPlayer = currentMessage?.fromPlayerId

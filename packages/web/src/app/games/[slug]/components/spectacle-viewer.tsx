@@ -10,7 +10,7 @@ import { HOUSE_INTROS, phaseToRoomType } from "./constants";
 // buildReplayScenes — groups transcript into per-phase (and per-room) scenes
 // ---------------------------------------------------------------------------
 
-export function buildReplayScenes(transcript: TranscriptEntry[], players: GamePlayer[]): ReplayScene[] {
+export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] {
   const grouped = new Map<string, TranscriptEntry[]>();
   for (const msg of transcript) {
     const key = `R${msg.round}-${msg.phase}`;
