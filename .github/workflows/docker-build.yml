@@ -51,6 +51,7 @@ jobs:
             ${{ matrix.image }}:${{ github.event.workflow_run.head_sha }}
             ${{ matrix.image }}:${{ steps.sha.outputs.short }}
             ${{ matrix.image }}:staging
+          provenance: false
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
 
