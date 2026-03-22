@@ -15,6 +15,7 @@ import { createGameRoutes } from "./routes/games.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
 import { createAdminRoutes } from "./routes/admin.js";
+import { createFreeQueueRoutes } from "./routes/free-queue.js";
 import { getGameSnapshot } from "./services/game-lifecycle.js";
 import {
   setServer,
@@ -148,6 +149,7 @@ app.get("/", (c) => {
       auth: "/api/auth",
       games: "/api/games",
       admin: "/api/admin",
+      freeQueue: "/api/free-queue",
       ws: "/ws/games/:id",
     },
   });
@@ -168,6 +170,10 @@ app.route("/", agentProfileRoutes);
 // Admin RBAC routes
 const adminRoutes = createAdminRoutes(db);
 app.route("/", adminRoutes);
+
+// Free game queue routes
+const freeQueueRoutes = createFreeQueueRoutes(db);
+app.route("/", freeQueueRoutes);
 
 // ---------------------------------------------------------------------------
 // Start server with WebSocket support
