@@ -157,11 +157,18 @@ function SavedAgentsSection() {
                 <p className="text-white text-sm font-medium truncate">{agent.name}</p>
                 <p className="text-white/30 text-xs truncate">{agent.backstory}</p>
               </div>
-              {agent.gamesPlayed > 0 && (
-                <span className="text-white/30 text-xs shrink-0">
-                  {agent.gamesWon}W / {agent.gamesPlayed - agent.gamesWon}L
-                </span>
-              )}
+              <div className="flex items-center gap-2 shrink-0">
+                {agent.gamesPlayed > 0 && (
+                  <span className="text-white/30 text-xs">
+                    {agent.gamesWon}W / {agent.gamesPlayed - agent.gamesWon}L
+                  </span>
+                )}
+                {agent.freeTrackRating && (
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-900/30 text-emerald-400 border border-emerald-900/40">
+                    ELO {agent.freeTrackRating.rating}
+                  </span>
+                )}
+              </div>
             </div>
           );
         })}

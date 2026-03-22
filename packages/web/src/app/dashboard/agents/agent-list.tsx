@@ -15,15 +15,24 @@ function getPersonaInfo(key: string | null) {
 }
 
 function WinRate({ agent }: { agent: SavedAgent }) {
-  if (agent.gamesPlayed === 0) {
+  if (agent.gamesPlayed === 0 && !agent.freeTrackRating) {
     return <span className="text-white/25 text-xs">No games yet</span>;
   }
   const losses = agent.gamesPlayed - agent.gamesWon;
-  const rate = Math.round((agent.gamesWon / agent.gamesPlayed) * 100);
+  const rate = agent.gamesPlayed > 0 ? Math.round((agent.gamesWon / agent.gamesPlayed) * 100) : 0;
   return (
     <span className="text-xs text-white/50">
-      {agent.gamesWon}W / {losses}L
-      <span className="text-white/25 ml-1">({rate}%)</span>
+      {agent.gamesPlayed > 0 && (
+        <>
+          {agent.gamesWon}W / {losses}L
+          <span className="text-white/25 ml-1">({rate}%)</span>
+        </>
+      )}
+      {agent.freeTrackRating && (
+        <span className="inline-flex items-center gap-1 ml-2 px-1.5 py-0.5 rounded bg-emerald-900/30 text-emerald-400 border border-emerald-900/40">
+          ELO {agent.freeTrackRating.rating}
+        </span>
+      )}
     </span>
   );
 }

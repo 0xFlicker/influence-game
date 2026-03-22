@@ -203,7 +203,26 @@ Respond with JSON only:
       .where(eq(schema.agentProfiles.userId, user.id))
       .all();
 
-    return c.json(profiles);
+    // Attach free-track ELO rating if available
+    const enriched = profiles.map((profile) => {
+      const rating = db
+        .select({
+          rating: schema.freeTrackRatings.rating,
+          gamesPlayed: schema.freeTrackRatings.gamesPlayed,
+          gamesWon: schema.freeTrackRatings.gamesWon,
+          peakRating: schema.freeTrackRatings.peakRating,
+        })
+        .from(schema.freeTrackRatings)
+        .where(eq(schema.freeTrackRatings.agentProfileId, profile.id))
+        .all()[0];
+
+      return {
+        ...profile,
+        freeTrackRating: rating ?? null,
+      };
+    });
+
+    return c.json(enriched);
   });
 
   // -------------------------------------------------------------------------

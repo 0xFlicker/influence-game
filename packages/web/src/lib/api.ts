@@ -98,6 +98,7 @@ export type TimingPreset = "fast" | "standard" | "slow" | "custom";
 export type GameVisibility = "public" | "unlisted" | "private";
 export type GameStatus = "waiting" | "in_progress" | "completed" | "cancelled";
 export type ViewerMode = "live" | "speedrun" | "replay";
+export type TrackType = "custom" | "free";
 
 export interface CreateGameParams {
   playerCount: 4 | 6 | 8 | 10 | 12;
@@ -126,6 +127,7 @@ export interface GameSummary {
   modelTier: ModelTier;
   visibility: GameVisibility;
   viewerMode: ViewerMode;
+  trackType?: TrackType;
   finalists?: [string, string];
   winner?: string;
   winnerPersona?: string;
@@ -286,6 +288,13 @@ export async function getPlayerGames(): Promise<PlayerGameResult[]> {
 // Saved agent profile types
 // ---------------------------------------------------------------------------
 
+export interface FreeTrackRating {
+  rating: number;
+  gamesPlayed: number;
+  gamesWon: number;
+  peakRating: number;
+}
+
 export interface SavedAgent {
   id: string;
   name: string;
@@ -296,6 +305,7 @@ export interface SavedAgent {
   avatarUrl: string | null;
   gamesPlayed: number;
   gamesWon: number;
+  freeTrackRating: FreeTrackRating | null;
   createdAt: string;
   updatedAt: string;
 }

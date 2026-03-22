@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { listGames, type GameSummary, type GameStatus, type ModelTier } from "@/lib/api";
+import { listGames, type GameSummary, type GameStatus, type ModelTier, type TrackType } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -82,6 +82,11 @@ function GameCard({ game, onJoin }: GameCardProps) {
           <div className="flex items-center gap-3 mb-2 flex-wrap">
             <span className="text-white font-semibold">Game #{game.gameNumber}</span>
             <StatusBadge status={game.status} />
+            {game.trackType === "free" && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-900/40 text-emerald-400 border border-emerald-900/60 font-medium">
+                Free
+              </span>
+            )}
             <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-white/50 font-mono">
               {phaseLabel(game.currentPhase)}
             </span>
@@ -154,10 +159,12 @@ function GameCard({ game, onJoin }: GameCardProps) {
 
 type StatusFilter = "all" | GameStatus;
 type TierFilter = "all" | ModelTier;
+type TrackFilter = "all" | TrackType;
 
 interface FiltersState {
   status: StatusFilter;
   tier: TierFilter;
+  track: TrackFilter;
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +177,7 @@ interface GamesBrowserProps {
 }
 
 export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
-  const [filters, setFilters] = useState<FiltersState>({ status: "all", tier: "all" });
+  const [filters, setFilters] = useState<FiltersState>({ status: "all", tier: "all", track: "all" });
   const [games, setGames] = useState<GameSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -213,6 +220,7 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
     .filter((g) => {
       if (filters.status !== "all" && g.status !== filters.status) return false;
       if (filters.tier !== "all" && g.modelTier !== filters.tier) return false;
+      if (filters.track !== "all" && (g.trackType ?? "custom") !== filters.track) return false;
       return true;
     })
     .sort((a, b) => {
@@ -283,6 +291,17 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
                 {opt.label}
               </option>
             ))}
+          </select>
+
+          {/* Track filter */}
+          <select
+            value={filters.track}
+            onChange={(e) => setFilters((f) => ({ ...f, track: e.target.value as TrackFilter }))}
+            className="text-xs bg-transparent border border-white/10 text-white/60 px-3 py-1.5 rounded-lg hover:border-white/20 transition-colors outline-none"
+          >
+            <option value="all" className="bg-[#0a0a0a]">Any track</option>
+            <option value="custom" className="bg-[#0a0a0a]">Custom</option>
+            <option value="free" className="bg-[#0a0a0a]">Free</option>
           </select>
 
           <span className="text-xs text-white/25 ml-auto">

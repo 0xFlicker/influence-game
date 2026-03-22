@@ -198,6 +198,7 @@ export function createGameRoutes(db: DrizzleDB) {
         modelTier: config.modelTier ?? "budget",
         visibility: config.visibility ?? "public",
         viewerMode: config.viewerMode ?? "speedrun",
+        trackType: game.trackType,
         winner: winnerPlayer ? JSON.parse(winnerPlayer.persona).name : undefined,
         errorInfo: config.errorInfo ?? undefined,
         createdAt: game.createdAt,
