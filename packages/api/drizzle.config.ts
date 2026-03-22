@@ -5,6 +5,6 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "postgresql://paperclip:paperclip@127.0.0.1:5432/influence_dev",
+    url: process.env.DATABASE_URL ?? "postgresql://influence:influence@127.0.0.1:54320/influence_dev",
   },
 });

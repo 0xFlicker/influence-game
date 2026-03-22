@@ -10,10 +10,9 @@ import { createDB, type DrizzleDB } from "../db/index.js";
 import { runMigrations } from "../db/migrate.js";
 
 // Use TEST_DATABASE_URL or hardcoded default — never fall back to DATABASE_URL
-// which may point to the Paperclip platform database.
 const TEST_DATABASE_URL =
   process.env.TEST_DATABASE_URL ??
-  "postgresql://paperclip:paperclip@127.0.0.1:5432/influence_test";
+  "postgresql://influence:influence@127.0.0.1:54320/influence_test";
 
 let migrated = false;
 

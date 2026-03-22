@@ -11,7 +11,7 @@ import * as schema from "./schema.js";
 
 export type DrizzleDB = ReturnType<typeof createDB>;
 
-const DEFAULT_DATABASE_URL = "postgresql://paperclip:paperclip@127.0.0.1:5432/influence_dev";
+const DEFAULT_DATABASE_URL = "postgresql://influence:influence@127.0.0.1:54320/influence_dev";
 
 const poolCache = new Map<string, ReturnType<typeof drizzle>>();
 
