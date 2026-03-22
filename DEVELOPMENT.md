@@ -270,9 +270,9 @@ Three Doppler configs exist under the `social-strategy-agent` project:
 
 | Config | Purpose | Database | API Port | Web Port | Network |
 |--------|---------|----------|----------|----------|---------|
-| `dev` | Active development | SQLite (local `influence.db`) | 3000 | 3001 | localhost |
-| `stg` | Board testing, release validation | SQLite (`~/Development/influence/staging/data/influence.db`) | 4000 | 4001 | Tailnet only (100.100.251.4) |
-| `prd` | Future production | TBD (PostgreSQL) | TBD | TBD | Public |
+| `dev` | Active development | PostgreSQL (`influence_dev` on port 54320) | 3000 | 3001 | localhost |
+| `stg` | Board testing, release validation | PostgreSQL (`influence_dev` via staging config) | 4000 | 4001 | Tailnet only (100.100.251.4) |
+| `prd` | Future production | PostgreSQL (dedicated instance) | TBD | TBD | Public |
 
 **Agents always use the `dev` config** for local development. Staging is deployed from tagged releases only — agents never run against staging directly.
 
@@ -320,13 +320,15 @@ The API respects `PORT` and `HOST` env vars (set in Doppler per environment). In
 
 ### Database Strategy
 
-**Current:** SQLite via Drizzle ORM across all environments. Simple, zero-config, good enough for pre-1.0 development.
+**Current:** PostgreSQL 16 via Drizzle ORM + `postgres.js` driver. The database runs in a Docker container on port 54320.
 
-**Dev database:** Local file (`influence.db`) in the package directory. Disposable — agents can reset it anytime with `db:migrate` + `db:seed`.
+**Dev database:** `influence_dev` on `127.0.0.1:54320`, owned by the `influence` user. Default connection string: `postgresql://influence:influence@127.0.0.1:54320/influence_dev`. Override with `DATABASE_URL` env var.
 
-**Staging database:** Persistent file at `~/Development/influence/staging/data/influence.db`. Persists across deployments. Migrations run automatically during deployment.
+**Test database:** `influence_test` on the same instance, same credentials. Used by test suites to avoid polluting dev data.
 
-**Future (production):** PostgreSQL. Drizzle supports PG natively — migration is a config change, not a rewrite. The VPS already runs PostgreSQL for Paperclip.
+**Staging database:** Uses the same PostgreSQL instance with staging-specific config via Doppler. Migrations run automatically during deployment.
+
+**Critical:** The `influence` user is isolated and cannot connect to the `paperclip` database. Never create tables in or connect to the `paperclip` database — it belongs to the Paperclip platform.
 
 ## Pre-Commit Checklist
 

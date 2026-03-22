@@ -12,6 +12,7 @@ INTRODUCTION -> LOBBY -> WHISPER -> RUMOR -> VOTE -> POWER -> REVEAL -> COUNCIL
 
 - **[Bun](https://bun.sh)** (v1.0+) -- runtime and package manager. Never use npm or pnpm.
 - **[Doppler](https://docs.doppler.com/docs/install-cli)** -- injects `OPENAI_API_KEY` and other secrets. Must be configured for the `influence-game` project before running any LLM-powered commands.
+- **[Docker](https://docs.docker.com/get-docker/)** -- runs the PostgreSQL 16 database container on port 54320.
 
 ## Getting Started
 
@@ -46,7 +47,7 @@ To watch games live in a browser:
 doppler run -- bun run dev:api
 ```
 
-The API runs on `http://localhost:3000` by default. On first start it creates a SQLite database (`influence.db` in `packages/api/`).
+The API runs on `http://localhost:3000` by default. It connects to a local PostgreSQL database (`influence_dev` on port 54320).
 
 **Terminal 2 -- Start the web frontend:**
 
@@ -97,7 +98,7 @@ packages/
   api/              # HTTP API + WebSocket server (Bun + Hono)
     src/
       index.ts          # Server entry point
-      db/               # SQLite schema, migrations, seed
+      db/               # PostgreSQL schema, migrations, seed
       routes/           # REST endpoints (games, auth)
       services/         # Game lifecycle, WebSocket manager
       middleware/       # Privy auth middleware
@@ -122,7 +123,7 @@ Secrets are injected via Doppler (`doppler run -- <command>`). You should not ne
 | `PORT` | No | `3000` | HTTP server port |
 | `CORS_ORIGIN` | No | -- | Allowed CORS origin when using a single origin |
 | `CORS_ORIGINS` | No | -- | Comma-separated list of allowed CORS origins. Overrides `CORS_ORIGIN` when set |
-| `SQLITE_PATH` | No | `influence.db` | Path to SQLite database file |
+| `DATABASE_URL` | No | `postgresql://influence:influence@127.0.0.1:54320/influence_dev` | PostgreSQL connection string |
 
 ### Web (`packages/web`) -- set in `packages/web/.env.local`
 
