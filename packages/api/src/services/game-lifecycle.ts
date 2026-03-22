@@ -27,6 +27,8 @@ import { schema } from "../db/index.js";
 import { SqliteMemoryStore } from "../db/memory-store.js";
 import { broadcastGameEvent } from "./ws-manager.js";
 import { ViewerEventPacer } from "./viewer-event-pacer.js";
+import { calculateEloChanges } from "./elo.js";
+import type { PlayerResult } from "./elo.js";
 
 // ---------------------------------------------------------------------------
 // Active game tracking
@@ -280,6 +282,114 @@ async function runGameAsync(
                 updated_at = ${new Date().toISOString()}
             WHERE id = ${player.agentProfileId}`,
       );
+    }
+
+    // Update free-track ELO ratings if this is a free game
+    const gameRecord = db
+      .select({ trackType: schema.games.trackType })
+      .from(schema.games)
+      .where(eq(schema.games.id, gameId))
+      .all()[0];
+
+    if (gameRecord?.trackType === "free") {
+      // Build placement from elimination order (names) → player IDs
+      const allPlayers = db
+        .select()
+        .from(schema.gamePlayers)
+        .where(eq(schema.gamePlayers.gameId, gameId))
+        .all();
+
+      // Map name → player record
+      const nameToPlayer = new Map<string, typeof allPlayers[number]>();
+      for (const p of allPlayers) {
+        const persona = JSON.parse(p.persona) as { name: string };
+        nameToPlayer.set(persona.name, p);
+      }
+
+      // eliminationOrder: first eliminated = worst placement
+      // Winner is not in eliminationOrder
+      const humanPlayers: PlayerResult[] = [];
+      const totalHumans = allPlayers.filter((p) => p.agentProfileId != null).length;
+
+      if (totalHumans >= 2) {
+        for (const p of allPlayers) {
+          if (!p.agentProfileId) continue; // skip AI-only players
+
+          const persona = JSON.parse(p.persona) as { name: string };
+          const elimIndex = result.eliminationOrder.indexOf(persona.name);
+          let placement: number;
+          if (p.id === result.winner) {
+            placement = 1;
+          } else if (elimIndex >= 0) {
+            // First eliminated gets worst placement (totalHumans),
+            // last eliminated before winner gets placement 2
+            placement = totalHumans - elimIndex;
+            // Clamp: at least 2 since 1 is reserved for winner
+            if (placement < 2) placement = 2;
+          } else {
+            // Not eliminated and not winner (shouldn't happen, but default to middle)
+            placement = Math.ceil(totalHumans / 2);
+          }
+
+          humanPlayers.push({
+            agentProfileId: p.agentProfileId!,
+            placement,
+            totalPlayers: totalHumans,
+          });
+        }
+
+        // Fetch current ratings
+        const currentRatings = new Map<string, number>();
+        for (const hp of humanPlayers) {
+          const rating = db
+            .select({ rating: schema.freeTrackRatings.rating })
+            .from(schema.freeTrackRatings)
+            .where(eq(schema.freeTrackRatings.agentProfileId, hp.agentProfileId))
+            .all()[0];
+          currentRatings.set(hp.agentProfileId, rating?.rating ?? 1200);
+        }
+
+        const eloChanges = calculateEloChanges(humanPlayers, currentRatings);
+        const now = new Date().toISOString();
+
+        for (const change of eloChanges) {
+          const isWinner = humanPlayers.find((p) => p.agentProfileId === change.agentProfileId)?.placement === 1;
+          const player = allPlayers.find((p) => p.agentProfileId === change.agentProfileId);
+
+          const existing = db
+            .select()
+            .from(schema.freeTrackRatings)
+            .where(eq(schema.freeTrackRatings.agentProfileId, change.agentProfileId))
+            .all()[0];
+
+          if (existing) {
+            const newPeak = Math.max(existing.peakRating, change.newRating);
+            db.run(
+              sql`UPDATE free_track_ratings
+                  SET rating = ${change.newRating},
+                      games_played = games_played + 1,
+                      games_won = games_won + ${isWinner ? 1 : 0},
+                      peak_rating = ${newPeak},
+                      last_game_at = ${now},
+                      updated_at = ${now}
+                  WHERE agent_profile_id = ${change.agentProfileId}`,
+            );
+          } else {
+            db.insert(schema.freeTrackRatings)
+              .values({
+                id: randomUUID(),
+                agentProfileId: change.agentProfileId,
+                userId: player?.userId ?? null,
+                rating: change.newRating,
+                gamesPlayed: 1,
+                gamesWon: isWinner ? 1 : 0,
+                peakRating: Math.max(1200, change.newRating),
+                lastGameAt: now,
+              })
+              .run();
+          }
+        }
+      }
     }
 
     // Update game status to completed and set viewerMode to "replay"
