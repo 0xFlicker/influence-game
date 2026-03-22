@@ -71,26 +71,28 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract short SHA
-        id: sha
-        run: echo "short=$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ matrix.image }}
+          tags: |
+            type=sha,format=long
+            type=sha,format=short
+            type=raw,value=staging
 
-      - name: Build image
-        run: |
-          docker build -f ${{ matrix.dockerfile }} \
-            -t ${{ matrix.image }}:${{ github.sha }} \
-            -t ${{ matrix.image }}:${{ steps.sha.outputs.short }} \
-            -t ${{ matrix.image }}:staging \
-            .
-
-      - name: Push image
-        run: |
-          docker push ${{ matrix.image }}:${{ github.sha }}
-          docker push ${{ matrix.image }}:${{ steps.sha.outputs.short }}
-          docker push ${{ matrix.image }}:staging
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
 
   trigger-deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
