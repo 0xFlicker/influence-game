@@ -164,7 +164,7 @@ Respond with JSON only:
     const id = randomUUID();
     const now = new Date().toISOString();
 
-    db.insert(schema.agentProfiles)
+    await db.insert(schema.agentProfiles)
       .values({
         id,
         userId: user.id,
@@ -178,14 +178,12 @@ Respond with JSON only:
         gamesWon: 0,
         createdAt: now,
         updatedAt: now,
-      })
-      .run();
+      });
 
-    const profile = db
+    const profile = (await db
       .select()
       .from(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.id, id))
-      .all()[0]!;
+      .where(eq(schema.agentProfiles.id, id)))[0]!;
 
     return c.json(profile, 201);
   });
@@ -197,15 +195,14 @@ Respond with JSON only:
   app.get("/api/agent-profiles", requireAuth(db), async (c) => {
     const user = c.get("user");
 
-    const profiles = db
+    const profiles = await db
       .select()
       .from(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.userId, user.id))
-      .all();
+      .where(eq(schema.agentProfiles.userId, user.id));
 
     // Attach free-track ELO rating if available
-    const enriched = profiles.map((profile) => {
-      const rating = db
+    const enriched = await Promise.all(profiles.map(async (profile) => {
+      const rating = (await db
         .select({
           rating: schema.freeTrackRatings.rating,
           gamesPlayed: schema.freeTrackRatings.gamesPlayed,
@@ -213,14 +210,13 @@ Respond with JSON only:
           peakRating: schema.freeTrackRatings.peakRating,
         })
         .from(schema.freeTrackRatings)
-        .where(eq(schema.freeTrackRatings.agentProfileId, profile.id))
-        .all()[0];
+        .where(eq(schema.freeTrackRatings.agentProfileId, profile.id)))[0];
 
       return {
         ...profile,
         freeTrackRating: rating ?? null,
       };
-    });
+    }));
 
     return c.json(enriched);
   });
@@ -233,7 +229,7 @@ Respond with JSON only:
     const user = c.get("user");
     const profileId = c.req.param("id");
 
-    const profile = db
+    const profile = (await db
       .select()
       .from(schema.agentProfiles)
       .where(
@@ -241,8 +237,7 @@ Respond with JSON only:
           eq(schema.agentProfiles.id, profileId),
           eq(schema.agentProfiles.userId, user.id),
         ),
-      )
-      .all()[0];
+      ))[0];
 
     if (!profile) {
       return c.json({ error: "Agent profile not found" }, 404);
@@ -259,7 +254,7 @@ Respond with JSON only:
     const user = c.get("user");
     const profileId = c.req.param("id");
 
-    const existing = db
+    const existing = (await db
       .select()
       .from(schema.agentProfiles)
       .where(
@@ -267,8 +262,7 @@ Respond with JSON only:
           eq(schema.agentProfiles.id, profileId),
           eq(schema.agentProfiles.userId, user.id),
         ),
-      )
-      .all()[0];
+      ))[0];
 
     if (!existing) {
       return c.json({ error: "Agent profile not found" }, 404);
@@ -310,22 +304,20 @@ Respond with JSON only:
       updates.gamesWon = 0;
     }
 
-    db.update(schema.agentProfiles)
+    await db.update(schema.agentProfiles)
       .set(updates)
-      .where(eq(schema.agentProfiles.id, profileId))
-      .run();
+      .where(eq(schema.agentProfiles.id, profileId));
 
     // Reset free-track ELO ratings if personality-defining fields changed
     let freeTrackReset = false;
     if (personalityChanged) {
-      const freeRating = db
+      const freeRating = (await db
         .select()
         .from(schema.freeTrackRatings)
-        .where(eq(schema.freeTrackRatings.agentProfileId, profileId))
-        .all()[0];
+        .where(eq(schema.freeTrackRatings.agentProfileId, profileId)))[0];
 
       if (freeRating) {
-        db.update(schema.freeTrackRatings)
+        await db.update(schema.freeTrackRatings)
           .set({
             rating: 1200,
             gamesPlayed: 0,
@@ -333,17 +325,15 @@ Respond with JSON only:
             peakRating: 1200,
             updatedAt: new Date().toISOString(),
           })
-          .where(eq(schema.freeTrackRatings.agentProfileId, profileId))
-          .run();
+          .where(eq(schema.freeTrackRatings.agentProfileId, profileId));
         freeTrackReset = true;
       }
     }
 
-    const updated = db
+    const updated = (await db
       .select()
       .from(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.id, profileId))
-      .all()[0]!;
+      .where(eq(schema.agentProfiles.id, profileId)))[0]!;
 
     return c.json({ ...updated, statsReset: resetStats, freeTrackReset });
   });
@@ -356,7 +346,7 @@ Respond with JSON only:
     const user = c.get("user");
     const profileId = c.req.param("id");
 
-    const existing = db
+    const existing = (await db
       .select()
       .from(schema.agentProfiles)
       .where(
@@ -364,22 +354,19 @@ Respond with JSON only:
           eq(schema.agentProfiles.id, profileId),
           eq(schema.agentProfiles.userId, user.id),
         ),
-      )
-      .all()[0];
+      ))[0];
 
     if (!existing) {
       return c.json({ error: "Agent profile not found" }, 404);
     }
 
     // Clear references in game_players before deleting
-    db.update(schema.gamePlayers)
+    await db.update(schema.gamePlayers)
       .set({ agentProfileId: null })
-      .where(eq(schema.gamePlayers.agentProfileId, profileId))
-      .run();
+      .where(eq(schema.gamePlayers.agentProfileId, profileId));
 
-    db.delete(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.id, profileId))
-      .run();
+    await db.delete(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, profileId));
 
     return c.json({ deleted: true });
   });

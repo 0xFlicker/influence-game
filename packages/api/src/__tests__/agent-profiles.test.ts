@@ -1,18 +1,18 @@
 /**
  * Agent Profile REST API endpoint tests.
  *
- * Uses Hono's test client and in-memory SQLite — no real server, no disk I/O.
+ * Uses Hono's test client and PostgreSQL test database.
  */
 
 import { describe, test, expect, beforeEach, beforeAll } from "bun:test";
 import { Hono } from "hono";
-import { createDB, schema } from "../db/index.js";
-import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { schema } from "../db/index.js";
+import type { DrizzleDB } from "../db/index.js";
 import { createAgentProfileRoutes } from "../routes/agent-profiles.js";
 import { createGameRoutes } from "../routes/games.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { randomUUID } from "crypto";
-import path from "path";
+import { setupTestDB } from "./test-utils.js";
 
 // ---------------------------------------------------------------------------
 // Set required env vars for auth
@@ -33,11 +33,9 @@ const USER_A_ID = "user-a-id";
 const USER_B_ID = "user-b-id";
 
 async function setupApp() {
-  const db = createDB(":memory:");
-  const migrationsFolder = path.resolve(import.meta.dir, "../../drizzle");
-  migrate(db, { migrationsFolder });
+  const db = await setupTestDB();
 
-  db.insert(schema.users)
+  await db.insert(schema.users)
     .values([
       {
         id: USER_A_ID,
@@ -51,8 +49,7 @@ async function setupApp() {
         email: "userb@test.com",
         displayName: "User B",
       },
-    ])
-    .run();
+    ]);
 
   const tokenA = await createSessionToken(USER_A_ID, {
     roles: ["sysop"],
@@ -100,7 +97,7 @@ function authDelete(token: string): RequestInit {
 
 describe("Agent Profile API", () => {
   let app: Hono;
-  let db: ReturnType<typeof createDB>;
+  let db: DrizzleDB;
   let tokenA: string;
   let tokenB: string;
 
@@ -213,7 +210,6 @@ describe("Agent Profile API", () => {
     });
 
     test("returns only the authenticated user's profiles", async () => {
-      // User A creates 2 profiles
       await app.request(
         "/api/agent-profiles",
         jsonReq({ name: "A1", personality: "P1" }, tokenA),
@@ -222,7 +218,6 @@ describe("Agent Profile API", () => {
         "/api/agent-profiles",
         jsonReq({ name: "A2", personality: "P2" }, tokenA),
       );
-      // User B creates 1
       await app.request(
         "/api/agent-profiles",
         jsonReq({ name: "B1", personality: "P3" }, tokenB),
@@ -294,7 +289,7 @@ describe("Agent Profile API", () => {
       const body = await res.json() as { name: string; backstory: string; statsReset: boolean };
       expect(body.name).toBe("Atlas v2");
       expect(body.backstory).toBe("New backstory");
-      expect(body.statsReset).toBe(false); // No games played yet
+      expect(body.statsReset).toBe(false);
     });
 
     test("resets stats when personality changes and games have been played", async () => {
@@ -306,10 +301,9 @@ describe("Agent Profile API", () => {
 
       // Simulate games played
       const { eq } = await import("drizzle-orm");
-      db.update(schema.agentProfiles)
+      await db.update(schema.agentProfiles)
         .set({ gamesPlayed: 5, gamesWon: 2 })
-        .where(eq(schema.agentProfiles.id, id))
-        .run();
+        .where(eq(schema.agentProfiles.id, id));
 
       const res = await app.request(
         `/api/agent-profiles/${id}`,
@@ -367,7 +361,7 @@ describe("Agent Profile API", () => {
       expect(res.status).toBe(200);
 
       // Verify deleted
-      const profiles = db.select().from(schema.agentProfiles).all();
+      const profiles = await db.select().from(schema.agentProfiles);
       expect(profiles).toHaveLength(0);
     });
 
@@ -382,19 +376,17 @@ describe("Agent Profile API", () => {
       expect(res.status).toBe(404);
 
       // Verify NOT deleted
-      const profiles = db.select().from(schema.agentProfiles).all();
+      const profiles = await db.select().from(schema.agentProfiles);
       expect(profiles).toHaveLength(1);
     });
 
     test("clears agentProfileId references in game_players", async () => {
-      // Create profile
       const createRes = await app.request(
         "/api/agent-profiles",
         jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
       );
       const { id: profileId } = await createRes.json() as { id: string };
 
-      // Create a game and join with the profile
       const gameRes = await app.request(
         "/api/games",
         jsonReq({ playerCount: 6, modelTier: "budget", timingPreset: "fast" }, tokenA),
@@ -409,18 +401,16 @@ describe("Agent Profile API", () => {
 
       // Verify the game_player has agentProfileId set
       const { eq } = await import("drizzle-orm");
-      let gamePlayers = db.select().from(schema.gamePlayers)
-        .where(eq(schema.gamePlayers.gameId, gameId))
-        .all();
+      let gamePlayers = await db.select().from(schema.gamePlayers)
+        .where(eq(schema.gamePlayers.gameId, gameId));
       expect(gamePlayers[0]!.agentProfileId).toBe(profileId);
 
       // Delete the profile
       await app.request(`/api/agent-profiles/${profileId}`, authDelete(tokenA));
 
       // Verify agentProfileId is now null
-      gamePlayers = db.select().from(schema.gamePlayers)
-        .where(eq(schema.gamePlayers.gameId, gameId))
-        .all();
+      gamePlayers = await db.select().from(schema.gamePlayers)
+        .where(eq(schema.gamePlayers.gameId, gameId));
       expect(gamePlayers[0]!.agentProfileId).toBeNull();
     });
   });
@@ -431,7 +421,6 @@ describe("Agent Profile API", () => {
 
   describe("join game with agent profile", () => {
     test("joins a game using a saved agent profile", async () => {
-      // Create profile
       const createRes = await app.request(
         "/api/agent-profiles",
         jsonReq(
@@ -446,22 +435,19 @@ describe("Agent Profile API", () => {
       );
       const { id: profileId } = await createRes.json() as { id: string };
 
-      // Create game
       const gameRes = await app.request(
         "/api/games",
         jsonReq({ playerCount: 6, modelTier: "budget", timingPreset: "fast" }, tokenA),
       );
       const { id: gameId } = await gameRes.json() as { id: string };
 
-      // Join with profile
       const joinRes = await app.request(
         `/api/games/${gameId}/join`,
         jsonReq({ agentProfileId: profileId }, tokenA),
       );
       expect(joinRes.status).toBe(201);
 
-      // Verify the game_player was created with correct persona data
-      const players = db.select().from(schema.gamePlayers).all();
+      const players = await db.select().from(schema.gamePlayers);
       expect(players).toHaveLength(1);
       expect(players[0]!.agentProfileId).toBe(profileId);
 
@@ -487,21 +473,18 @@ describe("Agent Profile API", () => {
     });
 
     test("rejects join with another user's profile", async () => {
-      // User A creates a profile
       const createRes = await app.request(
         "/api/agent-profiles",
         jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
       );
       const { id: profileId } = await createRes.json() as { id: string };
 
-      // User A creates a game
       const gameRes = await app.request(
         "/api/games",
         jsonReq({ playerCount: 6, modelTier: "budget", timingPreset: "fast" }, tokenA),
       );
       const { id: gameId } = await gameRes.json() as { id: string };
 
-      // User B tries to join with User A's profile
       const res = await app.request(
         `/api/games/${gameId}/join`,
         jsonReq({ agentProfileId: profileId }, tokenB),

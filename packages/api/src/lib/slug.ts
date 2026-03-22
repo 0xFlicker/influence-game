@@ -45,10 +45,10 @@ export function generateSlug(): string {
  * Generates a unique slug, retrying if the candidate is already taken.
  * `exists` should return true if the slug is already in use.
  */
-export function generateUniqueSlug(exists: (slug: string) => boolean, maxAttempts = 20): string {
+export async function generateUniqueSlug(exists: (slug: string) => boolean | Promise<boolean>, maxAttempts = 20): Promise<string> {
   for (let i = 0; i < maxAttempts; i++) {
     const slug = generateSlug();
-    if (!exists(slug)) return slug;
+    if (!(await exists(slug))) return slug;
   }
   // Extremely unlikely to reach here, but fall back with a numeric suffix
   return `${generateSlug()}-${Date.now().toString(36)}`;

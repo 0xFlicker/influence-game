@@ -18,12 +18,13 @@
  * Required env vars (injected via doppler):
  *   JWT_SECRET            Signing secret for session JWTs
  *   ADMIN_ADDRESS         Admin wallet address
+ *   DATABASE_URL          PostgreSQL connection string
  */
 
 import { SignJWT } from "jose";
-import { Database } from "bun:sqlite";
+import { sql } from "drizzle-orm";
 import { parseArgs } from "util";
-import path from "path";
+import { createDB, schema } from "../packages/api/src/db/index.js";
 
 // ---------------------------------------------------------------------------
 // CLI args
@@ -71,32 +72,27 @@ if (!ADMIN_ADDRESS) {
 const DEV_ADMIN_ID = "dev-admin-test-harness";
 
 // Ensure a dev admin user exists in the database
-const API_ROOT = path.resolve(import.meta.dir, "../packages/api");
-const dbPath = process.env.SQLITE_PATH
-  ? path.isAbsolute(process.env.SQLITE_PATH)
-    ? process.env.SQLITE_PATH
-    : path.join(API_ROOT, process.env.SQLITE_PATH)
-  : path.join(API_ROOT, "influence.db");
+const db = createDB();
 
-const db = new Database(dbPath);
-db.exec("PRAGMA journal_mode = WAL;");
-db.exec("PRAGMA foreign_keys = ON;");
+const existing = await db
+  .select({ id: schema.users.id })
+  .from(schema.users)
+  .where(sql`${schema.users.id} = ${DEV_ADMIN_ID}`);
 
-// Upsert the dev admin user
-const existing = db.query("SELECT id FROM users WHERE id = ?").get(DEV_ADMIN_ID) as { id: string } | null;
-if (!existing) {
-  db.query(
-    "INSERT INTO users (id, wallet_address, display_name) VALUES (?, ?, ?)"
-  ).run(DEV_ADMIN_ID, ADMIN_ADDRESS.toLowerCase(), "Dev Admin");
+if (existing.length === 0) {
+  await db.insert(schema.users).values({
+    id: DEV_ADMIN_ID,
+    walletAddress: ADMIN_ADDRESS.toLowerCase(),
+    displayName: "Dev Admin",
+  });
   console.log("Created dev admin user in database");
 } else {
   // Ensure wallet address matches current ADMIN_ADDRESS
-  db.query("UPDATE users SET wallet_address = ? WHERE id = ?").run(
-    ADMIN_ADDRESS.toLowerCase(),
-    DEV_ADMIN_ID
-  );
+  await db
+    .update(schema.users)
+    .set({ walletAddress: ADMIN_ADDRESS.toLowerCase() })
+    .where(sql`${schema.users.id} = ${DEV_ADMIN_ID}`);
 }
-db.close();
 
 // Mint a JWT
 const secret = new TextEncoder().encode(JWT_SECRET);

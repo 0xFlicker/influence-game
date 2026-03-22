@@ -39,14 +39,14 @@ let browser: Browser | null = null;
 afterAll(async () => {
   if (browser) await closeBrowser(browser);
   if (serverHandles) await stopTestServers(serverHandles);
-  if (testDb) destroyTestDb(testDb.dbPath);
+  if (testDb) destroyTestDb(testDb.databaseUrl);
 });
 
 describe("e2e infrastructure smoke test", () => {
-  test("createTestDb creates a DB with migrations and RBAC", () => {
-    testDb = createTestDb();
+  test("createTestDb creates a DB with migrations and RBAC", async () => {
+    testDb = await createTestDb();
     expect(testDb.db).toBeTruthy();
-    expect(testDb.dbPath).toContain("/tmp/influence-e2e-");
+    expect(testDb.databaseUrl).toContain("postgresql://");
   });
 
   test("generateTestWallet produces valid Ethereum wallet", () => {
@@ -71,16 +71,16 @@ describe("e2e infrastructure smoke test", () => {
     expect(player.jwt.split(".")).toHaveLength(3);
   });
 
-  test("createTestUser and assignRole work independently", () => {
+  test("createTestUser and assignRole work independently", async () => {
     const wallet = generateTestWallet();
-    const userId = createTestUser(testDb!.db, {
+    const userId = await createTestUser(testDb!.db, {
       walletAddress: wallet.address,
       displayName: "Independent Test User",
     });
     expect(userId).toBeTruthy();
 
     // Should not throw
-    assignRole(testDb!.db, {
+    await assignRole(testDb!.db, {
       walletAddress: wallet.address,
       roleName: "player",
     });
@@ -99,7 +99,7 @@ describe("e2e infrastructure smoke test", () => {
     const admin = await createAdminUser(testDb!.db);
 
     serverHandles = await startTestServers({
-      dbPath: testDb!.dbPath,
+      databaseUrl: testDb!.databaseUrl,
       adminAddress: admin.wallet.address,
       jwtSecret: "e2e-test-jwt-secret",
       skipWeb: true, // Skip web server for smoke test speed
@@ -140,15 +140,11 @@ describe("e2e infrastructure smoke test", () => {
     await page.close();
   }, 15000);
 
-  test("destroyTestDb cleans up DB files", () => {
-    // Create a separate throwaway DB just for this test
-    const throwaway = createTestDb();
-    expect(throwaway.dbPath).toContain("/tmp/influence-e2e-");
-
-    const { existsSync } = require("fs");
-    expect(existsSync(throwaway.dbPath)).toBe(true);
-
-    destroyTestDb(throwaway.dbPath);
-    expect(existsSync(throwaway.dbPath)).toBe(false);
+  test("destroyTestDb is a no-op for PostgreSQL", async () => {
+    // For PostgreSQL, destroyTestDb is a no-op (no temp files to clean up)
+    // Just verify it doesn't throw
+    const throwaway = await createTestDb();
+    expect(throwaway.databaseUrl).toContain("postgresql://");
+    destroyTestDb(throwaway.databaseUrl);
   });
 });

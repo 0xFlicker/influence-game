@@ -57,21 +57,19 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.get("/api/free-queue", optionalAuth(db), async (c) => {
-    const allEntries = db
+    const allEntries = await db
       .select()
-      .from(schema.freeGameQueue)
-      .all();
+      .from(schema.freeGameQueue);
 
     const user = c.get("user");
     let userEntry = null;
     if (user) {
       const entry = allEntries.find((e) => e.userId === user.id);
       if (entry) {
-        const profile = db
+        const profile = (await db
           .select({ name: schema.agentProfiles.name })
           .from(schema.agentProfiles)
-          .where(eq(schema.agentProfiles.id, entry.agentProfileId))
-          .all()[0];
+          .where(eq(schema.agentProfiles.id, entry.agentProfileId)))[0];
         userEntry = {
           agentProfileId: entry.agentProfileId,
           agentName: profile?.name ?? "Unknown",
@@ -101,11 +99,10 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
     const { agentProfileId } = body;
 
     // Validate agent profile exists and belongs to user
-    const profile = db
+    const profile = (await db
       .select()
       .from(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.id, agentProfileId))
-      .all()[0];
+      .where(eq(schema.agentProfiles.id, agentProfileId)))[0];
 
     if (!profile) {
       return c.json({ error: "Agent profile not found" }, 404);
@@ -115,24 +112,22 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
     }
 
     // Check if user already has an entry (1 per user)
-    const existing = db
+    const existing = (await db
       .select()
       .from(schema.freeGameQueue)
-      .where(eq(schema.freeGameQueue.userId, user.id))
-      .all()[0];
+      .where(eq(schema.freeGameQueue.userId, user.id)))[0];
 
     if (existing) {
       return c.json({ error: "You already have an agent in the queue. Leave first to switch." }, 409);
     }
 
     const id = randomUUID();
-    db.insert(schema.freeGameQueue)
+    await db.insert(schema.freeGameQueue)
       .values({
         id,
         userId: user.id,
         agentProfileId,
-      })
-      .run();
+      });
 
     return c.json({
       id,
@@ -148,19 +143,17 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
   app.delete("/api/free-queue/leave", requireAuth(db), async (c) => {
     const user = c.get("user");
 
-    const entry = db
+    const entry = (await db
       .select()
       .from(schema.freeGameQueue)
-      .where(eq(schema.freeGameQueue.userId, user.id))
-      .all()[0];
+      .where(eq(schema.freeGameQueue.userId, user.id)))[0];
 
     if (!entry) {
       return c.json({ error: "You are not in the queue" }, 404);
     }
 
-    db.delete(schema.freeGameQueue)
-      .where(eq(schema.freeGameQueue.id, entry.id))
-      .run();
+    await db.delete(schema.freeGameQueue)
+      .where(eq(schema.freeGameQueue.id, entry.id));
 
     return c.json({ removed: true });
   });
@@ -170,19 +163,17 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.get("/api/free-queue/leaderboard", async (c) => {
-    const ratings = db
+    const ratings = await db
       .select()
       .from(schema.freeTrackRatings)
       .orderBy(desc(schema.freeTrackRatings.rating))
-      .limit(100)
-      .all();
+      .limit(100);
 
-    const leaderboard = ratings.map((r, i) => {
-      const profile = db
+    const leaderboard = await Promise.all(ratings.map(async (r, i) => {
+      const profile = (await db
         .select({ name: schema.agentProfiles.name, avatarUrl: schema.agentProfiles.avatarUrl })
         .from(schema.agentProfiles)
-        .where(eq(schema.agentProfiles.id, r.agentProfileId))
-        .all()[0];
+        .where(eq(schema.agentProfiles.id, r.agentProfileId)))[0];
 
       return {
         rank: i + 1,
@@ -195,7 +186,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
         winRate: r.gamesPlayed > 0 ? r.gamesWon / r.gamesPlayed : 0,
         peakRating: r.peakRating,
       };
-    });
+    }));
 
     return c.json(leaderboard);
   });
@@ -208,11 +199,10 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
     const today = getTodayUTCDate();
 
     // Idempotent guard: check if a free game already exists for today
-    const existingFreeGames = db
+    const existingFreeGames = (await db
       .select()
       .from(schema.games)
-      .where(eq(schema.games.trackType, "free"))
-      .all()
+      .where(eq(schema.games.trackType, "free")))
       .filter((g) => g.createdAt.startsWith(today));
 
     if (existingFreeGames.length > 0) {
@@ -225,10 +215,9 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
     }
 
     // Get all queue entries
-    const entries = db
+    const entries = await db
       .select()
-      .from(schema.freeGameQueue)
-      .all();
+      .from(schema.freeGameQueue);
 
     if (entries.length < 2) {
       return c.json({
@@ -245,8 +234,8 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
 
     // Create the game
     const gameId = randomUUID();
-    const slug = generateUniqueSlug((s) => {
-      const existing = db.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.slug, s)).all();
+    const slug = await generateUniqueSlug(async (s) => {
+      const existing = await db.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.slug, s));
       return existing.length > 0;
     });
 
@@ -276,7 +265,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
 
     const user = c.get("user");
 
-    db.insert(schema.games)
+    await db.insert(schema.games)
       .values({
         id: gameId,
         slug,
@@ -286,18 +275,16 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
         minPlayers,
         maxPlayers,
         createdById: user?.id ?? null,
-      })
-      .run();
+      });
 
     // Add picked players to the game
     const addedPlayers: Array<{ playerId: string; userId: string; agentProfileId: string; agentName: string }> = [];
 
     for (const entry of picked) {
-      const profile = db
+      const profile = (await db
         .select()
         .from(schema.agentProfiles)
-        .where(eq(schema.agentProfiles.id, entry.agentProfileId))
-        .all()[0];
+        .where(eq(schema.agentProfiles.id, entry.agentProfileId)))[0];
 
       if (!profile) continue;
 
@@ -310,7 +297,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
         personaKey: profile.personaKey,
       };
 
-      db.insert(schema.gamePlayers)
+      await db.insert(schema.gamePlayers)
         .values({
           id: playerId,
           gameId,
@@ -318,8 +305,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
           agentProfileId: profile.id,
           persona: JSON.stringify(persona),
           agentConfig: JSON.stringify({ model: agentModel, temperature: 0.9 }),
-        })
-        .run();
+        });
 
       addedPlayers.push({
         playerId,
@@ -348,23 +334,21 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
           personaKey: archetype,
         };
 
-        db.insert(schema.gamePlayers)
+        await db.insert(schema.gamePlayers)
           .values({
             id: aiPlayerId,
             gameId,
             userId: null,
             persona: JSON.stringify(persona),
             agentConfig: JSON.stringify({ model: "gpt-4o-mini", temperature: 0.9 }),
-          })
-          .run();
+          });
       }
     }
 
     // Remove picked entries from queue
     for (const entry of picked) {
-      db.delete(schema.freeGameQueue)
-        .where(eq(schema.freeGameQueue.id, entry.id))
-        .run();
+      await db.delete(schema.freeGameQueue)
+        .where(eq(schema.freeGameQueue.id, entry.id));
     }
 
     return c.json({
@@ -385,11 +369,10 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
     const today = getTodayUTCDate();
 
     // Find today's free game in waiting status
-    const freeGames = db
+    const freeGames = (await db
       .select()
       .from(schema.games)
-      .where(and(eq(schema.games.trackType, "free"), eq(schema.games.status, "waiting")))
-      .all()
+      .where(and(eq(schema.games.trackType, "free"), eq(schema.games.status, "waiting"))))
       .filter((g) => g.createdAt.startsWith(today));
 
     if (freeGames.length === 0) {
@@ -405,11 +388,10 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       return c.json({ error: "Game is already running" }, 400);
     }
 
-    const currentPlayers = db
+    const currentPlayers = await db
       .select()
       .from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.gameId, game.id))
-      .all();
+      .where(eq(schema.gamePlayers.gameId, game.id));
 
     if (currentPlayers.length < game.minPlayers) {
       return c.json({
@@ -417,20 +399,18 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       }, 400);
     }
 
-    db.update(schema.games)
+    await db.update(schema.games)
       .set({
         status: "in_progress",
         startedAt: new Date().toISOString(),
       })
-      .where(eq(schema.games.id, game.id))
-      .run();
+      .where(eq(schema.games.id, game.id));
 
     const result = await startGame(db, game.id);
     if (result.error) {
-      db.update(schema.games)
+      await db.update(schema.games)
         .set({ status: "waiting" as const, startedAt: null })
-        .where(eq(schema.games.id, game.id))
-        .run();
+        .where(eq(schema.games.id, game.id));
       return c.json({ error: result.error }, 500);
     }
 

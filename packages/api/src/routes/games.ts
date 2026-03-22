@@ -121,13 +121,13 @@ export function createGameRoutes(db: DrizzleDB) {
 
     const gameId = randomUUID();
 
-    const slug = generateUniqueSlug((s) => {
-      const existing = db.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.slug, s)).all();
+    const slug = await generateUniqueSlug(async (s) => {
+      const existing = await db.select({ id: schema.games.id }).from(schema.games).where(eq(schema.games.slug, s));
       return existing.length > 0;
     });
 
     const user = c.get("user");
-    db.insert(schema.games)
+    await db.insert(schema.games)
       .values({
         id: gameId,
         slug,
@@ -136,11 +136,10 @@ export function createGameRoutes(db: DrizzleDB) {
         minPlayers,
         maxPlayers,
         createdById: user?.id ?? null,
-      })
-      .run();
+      });
 
     // Game number = total count of games (this is the newest)
-    const allGames = db.select({ id: schema.games.id }).from(schema.games).all();
+    const allGames = await db.select({ id: schema.games.id }).from(schema.games);
     const gameNumber = allGames.length;
 
     return c.json({ id: gameId, slug, gameNumber }, 201);
@@ -156,28 +155,25 @@ export function createGameRoutes(db: DrizzleDB) {
     let rows;
     if (statusParam) {
       const statuses = statusParam.split(",").map((s) => s.trim()) as GameStatus[];
-      rows = db
+      rows = await db
         .select()
         .from(schema.games)
-        .where(inArray(schema.games.status, statuses))
-        .all();
+        .where(inArray(schema.games.status, statuses));
     } else {
-      rows = db.select().from(schema.games).all();
+      rows = await db.select().from(schema.games);
     }
 
-    const summaries = rows.map((game) => {
+    const summaries = await Promise.all(rows.map(async (game) => {
       const config = JSON.parse(game.config);
-      const players = db
+      const players = await db
         .select()
         .from(schema.gamePlayers)
-        .where(eq(schema.gamePlayers.gameId, game.id))
-        .all();
+        .where(eq(schema.gamePlayers.gameId, game.id));
 
-      const result = db
+      const result = await db
         .select()
         .from(schema.gameResults)
-        .where(eq(schema.gameResults.gameId, game.id))
-        .all();
+        .where(eq(schema.gameResults.gameId, game.id));
 
       const winnerPlayer = result[0]?.winnerId
         ? players.find((p) => p.id === result[0]!.winnerId)
@@ -205,7 +201,7 @@ export function createGameRoutes(db: DrizzleDB) {
         startedAt: game.startedAt ?? undefined,
         completedAt: game.endedAt ?? undefined,
       };
-    });
+    }));
 
     // Assign game numbers by creation order
     summaries.forEach((s, i) => {
@@ -223,11 +219,10 @@ export function createGameRoutes(db: DrizzleDB) {
     const idOrSlug = c.req.param("id");
 
     // Support lookup by UUID or human-readable slug
-    const game = db
+    const game = (await db
       .select()
       .from(schema.games)
-      .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug)))
-      .all()[0];
+      .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug))))[0];
 
     if (!game) {
       return c.json({ error: "Game not found" }, 404);
@@ -235,27 +230,24 @@ export function createGameRoutes(db: DrizzleDB) {
 
     const config = JSON.parse(game.config);
 
-    const players = db
+    const players = await db
       .select()
       .from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.gameId, game.id))
-      .all();
+      .where(eq(schema.gamePlayers.gameId, game.id));
 
-    const result = db
+    const result = await db
       .select()
       .from(schema.gameResults)
-      .where(eq(schema.gameResults.gameId, game.id))
-      .all();
+      .where(eq(schema.gameResults.gameId, game.id));
 
     const winnerPlayer = result[0]?.winnerId
       ? players.find((p) => p.id === result[0]!.winnerId)
       : null;
 
     // Compute game number from creation order
-    const allGamesOrdered = db
+    const allGamesOrdered = (await db
       .select({ id: schema.games.id, createdAt: schema.games.createdAt })
-      .from(schema.games)
-      .all()
+      .from(schema.games))
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     const gameNumber = allGamesOrdered.findIndex((g) => g.id === game.id) + 1;
 
@@ -267,16 +259,15 @@ export function createGameRoutes(db: DrizzleDB) {
       currentRound: result[0]?.roundsPlayed ?? 0,
       maxRounds: config.maxRounds ?? 10,
       currentPhase: game.status === "completed" ? "END" : "INIT",
-      players: players.map((p) => {
+      players: await Promise.all(players.map(async (p) => {
         const persona = JSON.parse(p.persona);
         // Resolve avatar from linked agent profile if available
         let avatarUrl: string | undefined;
         if (p.agentProfileId) {
-          const profile = db
+          const profile = (await db
             .select({ avatarUrl: schema.agentProfiles.avatarUrl })
             .from(schema.agentProfiles)
-            .where(eq(schema.agentProfiles.id, p.agentProfileId))
-            .all()[0];
+            .where(eq(schema.agentProfiles.id, p.agentProfileId)))[0];
           avatarUrl = profile?.avatarUrl ?? undefined;
         }
         return {
@@ -287,7 +278,7 @@ export function createGameRoutes(db: DrizzleDB) {
           shielded: false,
           avatarUrl,
         };
-      }),
+      })),
       modelTier: config.modelTier ?? "budget",
       visibility: config.visibility ?? "public",
       viewerMode: config.viewerMode ?? "speedrun",
@@ -307,11 +298,10 @@ export function createGameRoutes(db: DrizzleDB) {
   app.post("/api/games/:id/join", requireAuth(db), async (c) => {
     const gameId = c.req.param("id");
 
-    const game = db
+    const game = (await db
       .select()
       .from(schema.games)
-      .where(eq(schema.games.id, gameId))
-      .all()[0];
+      .where(eq(schema.games.id, gameId)))[0];
 
     if (!game) {
       return c.json({ error: "Game not found" }, 404);
@@ -321,11 +311,10 @@ export function createGameRoutes(db: DrizzleDB) {
       return c.json({ error: "Game is not accepting players" }, 400);
     }
 
-    const currentPlayers = db
+    const currentPlayers = await db
       .select()
       .from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.gameId, gameId))
-      .all();
+      .where(eq(schema.gamePlayers.gameId, gameId));
 
     if (currentPlayers.length >= game.maxPlayers) {
       return c.json({ error: "Game is full" }, 400);
@@ -350,11 +339,10 @@ export function createGameRoutes(db: DrizzleDB) {
     let resolvedProfileId: string | null = null;
 
     if (agentProfileId) {
-      const profile = db
+      const profile = (await db
         .select()
         .from(schema.agentProfiles)
-        .where(eq(schema.agentProfiles.id, agentProfileId))
-        .all()[0];
+        .where(eq(schema.agentProfiles.id, agentProfileId)))[0];
 
       if (!profile) {
         return c.json({ error: "Agent profile not found" }, 404);
@@ -401,7 +389,7 @@ export function createGameRoutes(db: DrizzleDB) {
       temperature: 0.9,
     };
 
-    db.insert(schema.gamePlayers)
+    await db.insert(schema.gamePlayers)
       .values({
         id: playerId,
         gameId,
@@ -409,8 +397,7 @@ export function createGameRoutes(db: DrizzleDB) {
         agentProfileId: resolvedProfileId,
         persona: JSON.stringify(persona),
         agentConfig: JSON.stringify(agentConfig),
-      })
-      .run();
+      });
 
     return c.json({ playerId }, 201);
   });
@@ -422,11 +409,10 @@ export function createGameRoutes(db: DrizzleDB) {
   app.post("/api/games/:id/fill", requireAuth(db), requirePermission("fill_game"), async (c) => {
     const gameId = c.req.param("id");
 
-    const game = db
+    const game = (await db
       .select()
       .from(schema.games)
-      .where(eq(schema.games.id, gameId))
-      .all()[0];
+      .where(eq(schema.games.id, gameId)))[0];
 
     if (!game) {
       return c.json({ error: "Game not found" }, 404);
@@ -436,11 +422,10 @@ export function createGameRoutes(db: DrizzleDB) {
       return c.json({ error: "Game is not in waiting status" }, 400);
     }
 
-    const existingPlayers = db
+    const existingPlayers = await db
       .select()
       .from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.gameId, gameId))
-      .all();
+      .where(eq(schema.gamePlayers.gameId, gameId));
 
     const slotsToFill = game.maxPlayers - existingPlayers.length;
     if (slotsToFill <= 0) {
@@ -470,12 +455,11 @@ export function createGameRoutes(db: DrizzleDB) {
     // Step 1: Create placeholder players immediately (no LLM needed)
     const addedPlayers: Array<{ id: string; name: string; archetype: string }> = [];
 
-    db.transaction((tx) => {
-      const currentPlayers = tx
+    await db.transaction(async (tx) => {
+      const currentPlayers = await tx
         .select()
         .from(schema.gamePlayers)
-        .where(eq(schema.gamePlayers.gameId, gameId))
-        .all();
+        .where(eq(schema.gamePlayers.gameId, gameId));
 
       const actualSlots = game.maxPlayers - currentPlayers.length;
 
@@ -492,20 +476,19 @@ export function createGameRoutes(db: DrizzleDB) {
           personalityBlurb: null,
         };
 
-        const agentConfig = {
+        const agentCfg = {
           model: agentModel,
           temperature: 0.9,
         };
 
-        tx.insert(schema.gamePlayers)
+        await tx.insert(schema.gamePlayers)
           .values({
             id: playerId,
             gameId,
             userId: null,
             persona: JSON.stringify(persona),
-            agentConfig: JSON.stringify(agentConfig),
-          })
-          .run();
+            agentConfig: JSON.stringify(agentCfg),
+          });
 
         addedPlayers.push({ id: playerId, name, archetype });
       }
@@ -536,21 +519,19 @@ export function createGameRoutes(db: DrizzleDB) {
           try {
             const generated = await generatePersona(openai, player.name, player.archetype as Personality, "gpt-4o-mini");
 
-            const existing = db
+            const existing = (await db
               .select()
               .from(schema.gamePlayers)
-              .where(eq(schema.gamePlayers.id, player.id))
-              .all()[0];
+              .where(eq(schema.gamePlayers.id, player.id)))[0];
 
             if (existing) {
               const persona = JSON.parse(existing.persona);
               persona.strategyHints = generated.strategyHints || null;
               persona.personalityBlurb = generated.personality || null;
 
-              db.update(schema.gamePlayers)
+              await db.update(schema.gamePlayers)
                 .set({ persona: JSON.stringify(persona) })
-                .where(eq(schema.gamePlayers.id, player.id))
-                .run();
+                .where(eq(schema.gamePlayers.id, player.id));
 
               updatedPlayers.push(player);
             }
@@ -587,11 +568,10 @@ export function createGameRoutes(db: DrizzleDB) {
   app.post("/api/games/:id/start", requireAuth(db), requirePermission("start_game"), async (c) => {
     const gameId = c.req.param("id");
 
-    const game = db
+    const game = (await db
       .select()
       .from(schema.games)
-      .where(eq(schema.games.id, gameId))
-      .all()[0];
+      .where(eq(schema.games.id, gameId)))[0];
 
     if (!game) {
       return c.json({ error: "Game not found" }, 404);
@@ -601,11 +581,10 @@ export function createGameRoutes(db: DrizzleDB) {
       return c.json({ error: "Game can only be started from waiting status" }, 400);
     }
 
-    const currentPlayers = db
+    const currentPlayers = await db
       .select()
       .from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.gameId, gameId))
-      .all();
+      .where(eq(schema.gamePlayers.gameId, gameId));
 
     if (currentPlayers.length < game.minPlayers) {
       return c.json(
@@ -621,13 +600,12 @@ export function createGameRoutes(db: DrizzleDB) {
       return c.json({ error: "Game is already running" }, 400);
     }
 
-    db.update(schema.games)
+    await db.update(schema.games)
       .set({
         status: "in_progress",
         startedAt: new Date().toISOString(),
       })
-      .where(eq(schema.games.id, gameId))
-      .run();
+      .where(eq(schema.games.id, gameId));
 
     // Await startGame to catch configuration errors (missing API key, etc.)
     // before returning success to the client. The actual game execution
@@ -635,10 +613,9 @@ export function createGameRoutes(db: DrizzleDB) {
     const result = await startGame(db, gameId);
     if (result.error) {
       // Revert game status — startup failed before execution began
-      db.update(schema.games)
+      await db.update(schema.games)
         .set({ status: "waiting" as const, startedAt: null })
-        .where(eq(schema.games.id, gameId))
-        .run();
+        .where(eq(schema.games.id, gameId));
       return c.json({ error: result.error }, 500);
     }
 
@@ -652,11 +629,10 @@ export function createGameRoutes(db: DrizzleDB) {
   app.post("/api/games/:id/stop", requireAuth(db), requirePermission("stop_game"), async (c) => {
     const gameId = c.req.param("id");
 
-    const game = db
+    const game = (await db
       .select()
       .from(schema.games)
-      .where(eq(schema.games.id, gameId))
-      .all()[0];
+      .where(eq(schema.games.id, gameId)))[0];
 
     if (!game) {
       return c.json({ error: "Game not found" }, 404);
@@ -666,13 +642,12 @@ export function createGameRoutes(db: DrizzleDB) {
       return c.json({ error: "Game is not running or waiting" }, 400);
     }
 
-    db.update(schema.games)
+    await db.update(schema.games)
       .set({
         status: "cancelled",
         endedAt: new Date().toISOString(),
       })
-      .where(eq(schema.games.id, gameId))
-      .run();
+      .where(eq(schema.games.id, gameId));
 
     return c.json({ status: "cancelled" });
   });
@@ -684,48 +659,43 @@ export function createGameRoutes(db: DrizzleDB) {
   app.get("/api/player/games", requireAuth(db), async (c) => {
     const user = c.get("user");
 
-    const playerRecords = db
+    const playerRecords = await db
       .select()
       .from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.userId, user.id))
-      .all();
+      .where(eq(schema.gamePlayers.userId, user.id));
 
     if (playerRecords.length === 0) {
       return c.json([]);
     }
 
     // Build game number map from all games ordered by creation
-    const allGames = db
+    const allGames = (await db
       .select({ id: schema.games.id, createdAt: schema.games.createdAt })
-      .from(schema.games)
-      .all()
+      .from(schema.games))
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     const gameNumberMap = new Map(allGames.map((g, i) => [g.id, i + 1]));
 
-    const results = playerRecords
-      .map((playerRecord) => {
-        const game = db
+    const results = (await Promise.all(playerRecords
+      .map(async (playerRecord) => {
+        const game = (await db
           .select()
           .from(schema.games)
-          .where(eq(schema.games.id, playerRecord.gameId))
-          .all()[0];
+          .where(eq(schema.games.id, playerRecord.gameId)))[0];
         if (!game) return null;
 
         const config = JSON.parse(game.config);
         const persona = JSON.parse(playerRecord.persona);
 
-        const allPlayers = db
+        const allPlayers = await db
           .select()
           .from(schema.gamePlayers)
-          .where(eq(schema.gamePlayers.gameId, game.id))
-          .all();
+          .where(eq(schema.gamePlayers.gameId, game.id));
         const totalPlayers = allPlayers.length;
 
-        const result = db
+        const result = (await db
           .select()
           .from(schema.gameResults)
-          .where(eq(schema.gameResults.gameId, game.id))
-          .all()[0];
+          .where(eq(schema.gameResults.gameId, game.id)))[0];
 
         const isWinner = result?.winnerId === playerRecord.id;
 
@@ -743,7 +713,7 @@ export function createGameRoutes(db: DrizzleDB) {
           completedAt: game.endedAt ?? game.createdAt,
           modelTier: config.modelTier ?? "budget",
         };
-      })
+      })))
       .filter(Boolean);
 
     return c.json(results);
@@ -756,11 +726,10 @@ export function createGameRoutes(db: DrizzleDB) {
   app.get("/api/games/:id/transcript", async (c) => {
     const idOrSlug = c.req.param("id");
 
-    const game = db
+    const game = (await db
       .select()
       .from(schema.games)
-      .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug)))
-      .all()[0];
+      .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug))))[0];
 
     if (!game) {
       return c.json({ error: "Game not found" }, 404);
@@ -768,11 +737,10 @@ export function createGameRoutes(db: DrizzleDB) {
 
     const gameId = game.id;
 
-    const players = db
+    const players = await db
       .select()
       .from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.gameId, gameId))
-      .all();
+      .where(eq(schema.gamePlayers.gameId, gameId));
 
     // Build lookup by both UUID and name: the engine stores player names (not UUIDs)
     // in transcript.from, so we need both keys to resolve fromPlayerName correctly.
@@ -786,12 +754,11 @@ export function createGameRoutes(db: DrizzleDB) {
       }
     }
 
-    const rows = db
+    const rows = await db
       .select()
       .from(schema.transcripts)
       .where(eq(schema.transcripts.gameId, gameId))
-      .orderBy(asc(schema.transcripts.timestamp))
-      .all();
+      .orderBy(asc(schema.transcripts.timestamp));
 
     const entries = rows.map((row) => ({
       id: row.id,

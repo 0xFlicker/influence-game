@@ -161,11 +161,10 @@ export function requireAuth(db: DrizzleDB) {
     const { schema } = await import("../db/index.js");
     const { eq } = await import("drizzle-orm");
 
-    const user = db
+    const user = (await db
       .select()
       .from(schema.users)
-      .where(eq(schema.users.id, session.userId))
-      .all()[0];
+      .where(eq(schema.users.id, session.userId)))[0];
 
     if (!user) {
       return c.json({ error: "User not found" }, 401);
@@ -278,11 +277,10 @@ export function optionalAuth(db: DrizzleDB) {
         const { schema } = await import("../db/index.js");
         const { eq } = await import("drizzle-orm");
 
-        const user = db
+        const user = (await db
           .select()
           .from(schema.users)
-          .where(eq(schema.users.id, session.userId))
-          .all()[0];
+          .where(eq(schema.users.id, session.userId)))[0];
 
         if (user) {
           c.set("user", {

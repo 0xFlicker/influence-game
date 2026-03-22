@@ -1,18 +1,18 @@
 /**
  * Game REST API endpoint tests.
  *
- * Uses Hono's test client and in-memory SQLite — no real server, no disk I/O.
+ * Uses Hono's test client and PostgreSQL test database.
  * Auth is tested via JWT session tokens created directly (no Privy dependency).
  */
 
 import { describe, test, expect, beforeEach, beforeAll, afterAll } from "bun:test";
 import { Hono } from "hono";
-import { createDB, schema } from "../db/index.js";
-import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { schema } from "../db/index.js";
+import type { DrizzleDB } from "../db/index.js";
 import { createGameRoutes } from "../routes/games.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { randomUUID } from "crypto";
-import path from "path";
+import { setupTestDB } from "./test-utils.js";
 
 // ---------------------------------------------------------------------------
 // Set required env vars for auth
@@ -24,9 +24,6 @@ const savedApiKey = process.env.OPENAI_API_KEY;
 beforeAll(() => {
   process.env.JWT_SECRET = "test-jwt-secret-for-unit-tests";
   process.env.ADMIN_ADDRESS = TEST_ADMIN_ADDRESS;
-  // startGame validates OPENAI_API_KEY before returning success.
-  // Use a dummy key so the route handler doesn't reject with 500.
-  // Save/restore to avoid leaking into other test files.
   if (!process.env.OPENAI_API_KEY) {
     process.env.OPENAI_API_KEY = "test-dummy-key";
   }
@@ -48,12 +45,10 @@ const ADMIN_USER_ID = "admin-user-id";
 const REGULAR_USER_ID = "regular-user-id";
 
 async function setupApp() {
-  const db = createDB(":memory:");
-  const migrationsFolder = path.resolve(import.meta.dir, "../../drizzle");
-  migrate(db, { migrationsFolder });
+  const db = await setupTestDB();
 
   // Create test users
-  db.insert(schema.users)
+  await db.insert(schema.users)
     .values([
       {
         id: ADMIN_USER_ID,
@@ -67,10 +62,8 @@ async function setupApp() {
         email: "player@test.com",
         displayName: "Player",
       },
-    ])
-    .run();
+    ]);
 
-  // Generate JWT tokens (admin gets full permissions, regular user gets join_game only)
   const adminToken = await createSessionToken(ADMIN_USER_ID, {
     roles: ["sysop"],
     permissions: ["manage_roles", "create_game", "start_game", "join_game", "stop_game", "fill_game", "view_admin"],
@@ -153,7 +146,7 @@ async function joinTestPlayer(
 
 describe("Game REST API", () => {
   let app: Hono;
-  let db: ReturnType<typeof createDB>;
+  let db: DrizzleDB;
   let adminToken: string;
   let userToken: string;
 
@@ -255,10 +248,9 @@ describe("Game REST API", () => {
       expect(body.id).toBeTruthy();
 
       // Verify the config was stored
-      const game = db
+      const game = (await db
         .select()
-        .from(schema.games)
-        .all()[0]!;
+        .from(schema.games))[0]!;
       const config = JSON.parse(game.config);
       expect(config.maxRounds).toBeGreaterThanOrEqual(10);
     });
@@ -278,10 +270,9 @@ describe("Game REST API", () => {
 
     test("game defaults to waiting status", async () => {
       const { id } = await createTestGame(app, adminToken);
-      const game = db
+      const game = (await db
         .select()
-        .from(schema.games)
-        .all()
+        .from(schema.games))
         .find((g) => g.id === id)!;
       expect(game.status).toBe("waiting");
     });
@@ -295,10 +286,9 @@ describe("Game REST API", () => {
 
     test("game records createdById from admin user", async () => {
       const { id } = await createTestGame(app, adminToken);
-      const game = db
+      const game = (await db
         .select()
-        .from(schema.games)
-        .all()
+        .from(schema.games))
         .find((g) => g.id === id)!;
       expect(game.createdById).toBe(ADMIN_USER_ID);
     });
@@ -331,10 +321,9 @@ describe("Game REST API", () => {
 
       // Manually set one to completed
       const { eq } = await import("drizzle-orm");
-      db.update(schema.games)
+      await db.update(schema.games)
         .set({ status: "completed", endedAt: new Date().toISOString() })
-        .where(eq(schema.games.id, g1))
-        .run();
+        .where(eq(schema.games.id, g1));
 
       const res = await app.request("/api/games?status=waiting");
       const body = (await res.json()) as Array<{ status: string }>;
@@ -348,14 +337,12 @@ describe("Game REST API", () => {
       await createTestGame(app, adminToken);
 
       const { eq } = await import("drizzle-orm");
-      db.update(schema.games)
+      await db.update(schema.games)
         .set({ status: "completed" })
-        .where(eq(schema.games.id, g1))
-        .run();
-      db.update(schema.games)
+        .where(eq(schema.games.id, g1));
+      await db.update(schema.games)
         .set({ status: "in_progress" })
-        .where(eq(schema.games.id, g2))
-        .run();
+        .where(eq(schema.games.id, g2));
 
       const res = await app.request("/api/games?status=completed,in_progress");
       const body = (await res.json()) as unknown[];
@@ -428,10 +415,9 @@ describe("Game REST API", () => {
       expect(body.playerId).toBeTruthy();
 
       // Verify in DB
-      const players = db
+      const players = await db
         .select()
-        .from(schema.gamePlayers)
-        .all();
+        .from(schema.gamePlayers);
       expect(players).toHaveLength(1);
       expect(JSON.parse(players[0]!.persona).name).toBe("Atlas");
     });
@@ -447,7 +433,6 @@ describe("Game REST API", () => {
     test("rejects join when game is not waiting", async () => {
       const { id } = await createTestGame(app, adminToken);
 
-      // Start the game (need min players first)
       for (let i = 0; i < 4; i++) {
         await joinTestPlayer(app, id, `Player${i}`, userToken);
       }
@@ -487,7 +472,7 @@ describe("Game REST API", () => {
       const { id } = await createTestGame(app, adminToken);
       await joinTestPlayer(app, id, "Atlas", userToken);
 
-      const players = db.select().from(schema.gamePlayers).all();
+      const players = await db.select().from(schema.gamePlayers);
       expect(players[0]!.userId).toBe(REGULAR_USER_ID);
     });
   });
@@ -512,10 +497,9 @@ describe("Game REST API", () => {
       expect(body.players).toBe(4);
 
       // Verify in DB
-      const game = db
+      const game = (await db
         .select()
-        .from(schema.games)
-        .all()[0]!;
+        .from(schema.games))[0]!;
       expect(game.status).toBe("in_progress");
       expect(game.startedAt).toBeTruthy();
     });
@@ -537,10 +521,8 @@ describe("Game REST API", () => {
         await joinTestPlayer(app, id, `Player${i}`, userToken);
       }
 
-      // Start once
       await app.request(`/api/games/${id}/start`, authPost(adminToken));
 
-      // Try to start again
       const res = await app.request(`/api/games/${id}/start`, authPost(adminToken));
       expect(res.status).toBe(400);
     });
@@ -570,7 +552,7 @@ describe("Game REST API", () => {
       expect(body.status).toBe("cancelled");
 
       // Verify in DB
-      const game = db.select().from(schema.games).all()[0]!;
+      const game = (await db.select().from(schema.games))[0]!;
       expect(game.status).toBe("cancelled");
       expect(game.endedAt).toBeTruthy();
     });
@@ -584,10 +566,9 @@ describe("Game REST API", () => {
     test("rejects stop for completed game", async () => {
       const { id } = await createTestGame(app, adminToken);
       const { eq } = await import("drizzle-orm");
-      db.update(schema.games)
+      await db.update(schema.games)
         .set({ status: "completed" })
-        .where(eq(schema.games.id, id))
-        .run();
+        .where(eq(schema.games.id, id));
 
       const res = await app.request(`/api/games/${id}/stop`, authPost(adminToken));
       expect(res.status).toBe(400);
@@ -614,7 +595,7 @@ describe("Game REST API", () => {
       const { playerId } = await joinTestPlayer(app, id, "Atlas", userToken);
 
       // Insert transcript entries directly
-      db.insert(schema.transcripts)
+      await db.insert(schema.transcripts)
         .values([
           {
             gameId: id,
@@ -633,8 +614,7 @@ describe("Game REST API", () => {
             text: "Round 1 has begun.",
             timestamp: Date.now() + 1000,
           },
-        ])
-        .run();
+        ]);
 
       const res = await app.request(`/api/games/${id}/transcript`);
       expect(res.status).toBe(200);
@@ -656,7 +636,7 @@ describe("Game REST API", () => {
       const { playerId } = await joinTestPlayer(app, id, "Atlas", userToken);
 
       const now = Date.now();
-      db.insert(schema.transcripts)
+      await db.insert(schema.transcripts)
         .values([
           {
             gameId: id,
@@ -676,8 +656,7 @@ describe("Game REST API", () => {
             text: "First message",
             timestamp: now,
           },
-        ])
-        .run();
+        ]);
 
       const res = await app.request(`/api/games/${id}/transcript`);
       const body = (await res.json()) as Array<{ text: string }>;
@@ -695,7 +674,7 @@ describe("Game REST API", () => {
       const { playerId: p1 } = await joinTestPlayer(app, id, "Atlas", userToken);
       const { playerId: p2 } = await joinTestPlayer(app, id, "Vera", userToken);
 
-      db.insert(schema.transcripts)
+      await db.insert(schema.transcripts)
         .values({
           gameId: id,
           round: 1,
@@ -705,8 +684,7 @@ describe("Game REST API", () => {
           toPlayerIds: JSON.stringify([p2]),
           text: "Secret message",
           timestamp: Date.now(),
-        })
-        .run();
+        });
 
       const res = await app.request(`/api/games/${id}/transcript`);
       const body = (await res.json()) as Array<{ toPlayerIds: string[] | null }>;

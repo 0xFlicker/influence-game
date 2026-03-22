@@ -37,18 +37,17 @@ export function createAdminRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.get("/api/admin/roles", async (c) => {
-    const allRoles = db.select().from(schema.roles).all();
+    const allRoles = await db.select().from(schema.roles);
 
-    const rolesWithPerms = allRoles.map((role) => {
-      const permRows = db
+    const rolesWithPerms = await Promise.all(allRoles.map(async (role) => {
+      const permRows = await db
         .select({ name: schema.permissions.name })
         .from(schema.rolePermissions)
         .innerJoin(
           schema.permissions,
           sql`${schema.rolePermissions.permissionId} = ${schema.permissions.id}`,
         )
-        .where(sql`${schema.rolePermissions.roleId} = ${role.id}`)
-        .all();
+        .where(sql`${schema.rolePermissions.roleId} = ${role.id}`);
 
       return {
         id: role.id,
@@ -58,7 +57,7 @@ export function createAdminRoutes(db: DrizzleDB) {
         permissions: permRows.map((p) => p.name),
         createdAt: role.createdAt,
       };
-    });
+    }));
 
     return c.json(rolesWithPerms);
   });
@@ -68,7 +67,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.get("/api/admin/permissions", async (c) => {
-    const allPerms = db.select().from(schema.permissions).all();
+    const allPerms = await db.select().from(schema.permissions);
     return c.json(allPerms);
   });
 
@@ -77,7 +76,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.get("/api/admin/address-roles", async (c) => {
-    const assignments = db
+    const assignments = await db
       .select({
         walletAddress: schema.addressRoles.walletAddress,
         roleId: schema.addressRoles.roleId,
@@ -89,8 +88,7 @@ export function createAdminRoutes(db: DrizzleDB) {
       .innerJoin(
         schema.roles,
         sql`${schema.addressRoles.roleId} = ${schema.roles.id}`,
-      )
-      .all();
+      );
 
     return c.json(assignments);
   });
@@ -112,37 +110,34 @@ export function createAdminRoutes(db: DrizzleDB) {
     const roleId = body.roleId as string;
 
     // Verify role exists
-    const role = db
+    const role = (await db
       .select()
       .from(schema.roles)
-      .where(sql`${schema.roles.id} = ${roleId}`)
-      .get();
+      .where(sql`${schema.roles.id} = ${roleId}`))[0];
 
     if (!role) {
       return c.json({ error: "Role not found" }, 404);
     }
 
     // Check if already assigned
-    const existing = db
+    const existing = (await db
       .select()
       .from(schema.addressRoles)
       .where(
         sql`${schema.addressRoles.walletAddress} = ${walletAddress} AND ${schema.addressRoles.roleId} = ${roleId}`,
-      )
-      .get();
+      ))[0];
 
     if (existing) {
       return c.json({ error: "Role already assigned to this address" }, 409);
     }
 
     const granter = c.get("user");
-    db.insert(schema.addressRoles)
+    await db.insert(schema.addressRoles)
       .values({
         walletAddress,
         roleId,
         grantedBy: granter.walletAddress ?? granter.id,
-      })
-      .run();
+      });
 
     return c.json({
       walletAddress,
@@ -169,11 +164,10 @@ export function createAdminRoutes(db: DrizzleDB) {
     const roleId = body.roleId as string;
 
     // Sysop lockout protection: cannot revoke sysop from yourself if you're the last sysop
-    const role = db
+    const role = (await db
       .select()
       .from(schema.roles)
-      .where(sql`${schema.roles.id} = ${roleId}`)
-      .get();
+      .where(sql`${schema.roles.id} = ${roleId}`))[0];
 
     if (role?.name === "sysop") {
       const currentUser = c.get("user");
@@ -182,11 +176,10 @@ export function createAdminRoutes(db: DrizzleDB) {
 
       if (isSelf) {
         // Count remaining sysops
-        const sysopCount = db
+        const sysopCount = (await db
           .select({ count: sql<number>`count(*)` })
           .from(schema.addressRoles)
-          .where(sql`${schema.addressRoles.roleId} = ${roleId}`)
-          .get();
+          .where(sql`${schema.addressRoles.roleId} = ${roleId}`))[0];
 
         if (sysopCount && sysopCount.count <= 1) {
           return c.json(
@@ -198,24 +191,22 @@ export function createAdminRoutes(db: DrizzleDB) {
     }
 
     // Check if assignment exists
-    const existing = db
+    const existing = (await db
       .select()
       .from(schema.addressRoles)
       .where(
         sql`${schema.addressRoles.walletAddress} = ${walletAddress} AND ${schema.addressRoles.roleId} = ${roleId}`,
-      )
-      .get();
+      ))[0];
 
     if (!existing) {
       return c.json({ error: "Role assignment not found" }, 404);
     }
 
     // Delete the assignment
-    db.delete(schema.addressRoles)
+    await db.delete(schema.addressRoles)
       .where(
         sql`${schema.addressRoles.walletAddress} = ${walletAddress} AND ${schema.addressRoles.roleId} = ${roleId}`,
-      )
-      .run();
+      );
 
     return c.json({ ok: true });
   });
@@ -225,11 +216,11 @@ export function createAdminRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.get("/api/admin/users", async (c) => {
-    const allUsers = db.select().from(schema.users).all();
+    const allUsers = await db.select().from(schema.users);
 
-    const usersWithRoles = allUsers.map((user) => {
+    const usersWithRoles = await Promise.all(allUsers.map(async (user) => {
       const resolved = user.walletAddress
-        ? getPermissionsForAddress(db, user.walletAddress)
+        ? await getPermissionsForAddress(db, user.walletAddress)
         : { roles: [], permissions: [] };
 
       return {
@@ -241,7 +232,7 @@ export function createAdminRoutes(db: DrizzleDB) {
         permissions: resolved.permissions,
         createdAt: user.createdAt,
       };
-    });
+    }));
 
     return c.json(usersWithRoles);
   });

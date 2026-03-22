@@ -67,20 +67,19 @@ function getAllowedCorsOrigins(): string[] {
 // Database — run migrations on startup, then connect
 // ---------------------------------------------------------------------------
 
-const dbPath = process.env.SQLITE_PATH ?? "influence.db";
-runMigrations(dbPath);
-const db = createDB(dbPath);
-seedRBAC(db);
+const databaseUrl = process.env.DATABASE_URL;
+await runMigrations(databaseUrl);
+const db = createDB(databaseUrl);
+await seedRBAC(db);
 
 // ---------------------------------------------------------------------------
 // Startup cleanup — reset orphaned in_progress games
 // ---------------------------------------------------------------------------
 
-const orphanedGames = db
+const orphanedGames = await db
   .select({ id: schema.games.id, startedAt: schema.games.startedAt })
   .from(schema.games)
-  .where(eq(schema.games.status, "in_progress"))
-  .all();
+  .where(eq(schema.games.status, "in_progress"));
 
 if (orphanedGames.length > 0) {
   const now = new Date();
@@ -97,10 +96,9 @@ if (orphanedGames.length > 0) {
       continue;
     }
 
-    db.update(schema.games)
+    await db.update(schema.games)
       .set({ status: "cancelled" as const, endedAt: now.toISOString() })
-      .where(eq(schema.games.id, game.id))
-      .run();
+      .where(eq(schema.games.id, game.id));
     console.warn(`[startup] Cancelled orphaned game ${game.id} (started ${Math.round(ageMs / 1000)}s ago)`);
   }
 }
@@ -186,7 +184,7 @@ const hostname = process.env.HOST ?? "0.0.0.0";
 const server = Bun.serve<WsConnectionData>({
   port,
   hostname,
-  fetch(req, server) {
+  async fetch(req, server) {
     const url = new URL(req.url);
 
     // WebSocket upgrade for /ws/games/:id (accepts UUID or slug)
@@ -197,11 +195,10 @@ const server = Bun.serve<WsConnectionData>({
       }
 
       // Resolve slug to canonical UUID so WS topics match broadcastGameEvent
-      const gameRow = db
+      const gameRow = (await db
         .select({ id: schema.games.id })
         .from(schema.games)
-        .where(or(eq(schema.games.id, slugOrId), eq(schema.games.slug, slugOrId)))
-        .all()[0];
+        .where(or(eq(schema.games.id, slugOrId), eq(schema.games.slug, slugOrId))))[0];
 
       if (!gameRow) {
         return new Response("Game not found", { status: 404 });

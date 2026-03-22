@@ -7,8 +7,8 @@
 
 import { describe, test, expect, beforeAll, beforeEach } from "bun:test";
 import { Hono } from "hono";
-import { createDB, schema } from "../db/index.js";
-import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { schema } from "../db/index.js";
+import type { DrizzleDB } from "../db/index.js";
 import {
   createSessionToken,
   verifySessionToken,
@@ -20,7 +20,7 @@ import {
   type AuthEnv,
 } from "../middleware/auth.js";
 import { seedRBAC } from "../db/rbac-seed.js";
-import path from "path";
+import { setupTestDB } from "./test-utils.js";
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -37,11 +37,9 @@ beforeAll(() => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function setupDB() {
-  const db = createDB(":memory:");
-  const migrationsFolder = path.resolve(import.meta.dir, "../../drizzle");
-  migrate(db, { migrationsFolder });
-  seedRBAC(db);
+async function setupDB() {
+  const db = await setupTestDB();
+  await seedRBAC(db);
   return db;
 }
 
@@ -97,10 +95,10 @@ describe("JWT session tokens", () => {
 // ---------------------------------------------------------------------------
 
 describe("requireAuth middleware", () => {
-  let db: ReturnType<typeof createDB>;
+  let db: DrizzleDB;
 
-  beforeEach(() => {
-    db = setupDB();
+  beforeEach(async () => {
+    db = await setupDB();
   });
 
   test("blocks request without Authorization header", async () => {
@@ -138,14 +136,13 @@ describe("requireAuth middleware", () => {
   });
 
   test("allows request with valid token and existing user", async () => {
-    db.insert(schema.users)
+    await db.insert(schema.users)
       .values({
         id: "real-user",
         walletAddress: "0xabc",
         email: "test@test.com",
         displayName: "Tester",
-      })
-      .run();
+      });
 
     const app = new Hono<AuthEnv>();
     app.use("/*", requireAuth(db));
@@ -165,13 +162,12 @@ describe("requireAuth middleware", () => {
   });
 
   test("attaches roles and permissions from JWT to context", async () => {
-    db.insert(schema.users)
+    await db.insert(schema.users)
       .values({
         id: "rbac-user",
         walletAddress: "0xrbac",
         displayName: "RBAC User",
-      })
-      .run();
+      });
 
     const app = new Hono<AuthEnv>();
     app.use("/*", requireAuth(db));
@@ -202,16 +198,15 @@ describe("requireAuth middleware", () => {
 // ---------------------------------------------------------------------------
 
 describe("requirePermission middleware", () => {
-  let db: ReturnType<typeof createDB>;
+  let db: DrizzleDB;
 
-  beforeEach(() => {
-    db = setupDB();
+  beforeEach(async () => {
+    db = await setupDB();
   });
 
   test("blocks user without required permission", async () => {
-    db.insert(schema.users)
-      .values({ id: "no-perm", walletAddress: "0xnoperm", displayName: "No Perm" })
-      .run();
+    await db.insert(schema.users)
+      .values({ id: "no-perm", walletAddress: "0xnoperm", displayName: "No Perm" });
 
     const app = new Hono<AuthEnv>();
     app.use("/*", requireAuth(db), requirePermission("create_game"));
@@ -228,9 +223,8 @@ describe("requirePermission middleware", () => {
   });
 
   test("allows user with matching permission", async () => {
-    db.insert(schema.users)
-      .values({ id: "has-perm", walletAddress: "0xhasperm", displayName: "Has Perm" })
-      .run();
+    await db.insert(schema.users)
+      .values({ id: "has-perm", walletAddress: "0xhasperm", displayName: "Has Perm" });
 
     const app = new Hono<AuthEnv>();
     app.use("/*", requireAuth(db), requirePermission("create_game"));
@@ -247,9 +241,8 @@ describe("requirePermission middleware", () => {
   });
 
   test("allows if user has any of multiple required permissions", async () => {
-    db.insert(schema.users)
-      .values({ id: "multi-perm", walletAddress: "0xmulti", displayName: "Multi" })
-      .run();
+    await db.insert(schema.users)
+      .values({ id: "multi-perm", walletAddress: "0xmulti", displayName: "Multi" });
 
     const app = new Hono<AuthEnv>();
     app.use("/*", requireAuth(db), requirePermission("start_game", "stop_game"));
@@ -271,16 +264,15 @@ describe("requirePermission middleware", () => {
 // ---------------------------------------------------------------------------
 
 describe("requireRole middleware", () => {
-  let db: ReturnType<typeof createDB>;
+  let db: DrizzleDB;
 
-  beforeEach(() => {
-    db = setupDB();
+  beforeEach(async () => {
+    db = await setupDB();
   });
 
   test("blocks user without required role", async () => {
-    db.insert(schema.users)
-      .values({ id: "no-role", walletAddress: "0xnorole", displayName: "No Role" })
-      .run();
+    await db.insert(schema.users)
+      .values({ id: "no-role", walletAddress: "0xnorole", displayName: "No Role" });
 
     const app = new Hono<AuthEnv>();
     app.use("/*", requireAuth(db), requireRole("sysop"));
@@ -297,9 +289,8 @@ describe("requireRole middleware", () => {
   });
 
   test("allows user with matching role", async () => {
-    db.insert(schema.users)
-      .values({ id: "sysop-user", walletAddress: "0xsysop", displayName: "Sysop" })
-      .run();
+    await db.insert(schema.users)
+      .values({ id: "sysop-user", walletAddress: "0xsysop", displayName: "Sysop" });
 
     const app = new Hono<AuthEnv>();
     app.use("/*", requireAuth(db), requireRole("sysop"));
@@ -321,20 +312,19 @@ describe("requireRole middleware", () => {
 // ---------------------------------------------------------------------------
 
 describe("requireAdmin middleware", () => {
-  let db: ReturnType<typeof createDB>;
+  let db: DrizzleDB;
 
-  beforeEach(() => {
-    db = setupDB();
+  beforeEach(async () => {
+    db = await setupDB();
   });
 
   test("blocks non-admin user without RBAC roles", async () => {
-    db.insert(schema.users)
+    await db.insert(schema.users)
       .values({
         id: "regular-user",
         walletAddress: "0xregularwallet",
         displayName: "Regular",
-      })
-      .run();
+      });
 
     const app = new Hono<AuthEnv>();
     app.use("/*", requireAuth(db), requireAdmin());
@@ -348,13 +338,12 @@ describe("requireAdmin middleware", () => {
   });
 
   test("allows admin user via RBAC permissions", async () => {
-    db.insert(schema.users)
+    await db.insert(schema.users)
       .values({
         id: "admin-user",
         walletAddress: TEST_ADMIN_ADDRESS,
         displayName: "Admin",
-      })
-      .run();
+      });
 
     const app = new Hono<AuthEnv>();
     app.use("/*", requireAuth(db), requireAdmin());
@@ -371,13 +360,12 @@ describe("requireAdmin middleware", () => {
   });
 
   test("allows admin via legacy ADMIN_ADDRESS fallback", async () => {
-    db.insert(schema.users)
+    await db.insert(schema.users)
       .values({
         id: "legacy-admin",
         walletAddress: TEST_ADMIN_ADDRESS,
         displayName: "Legacy Admin",
-      })
-      .run();
+      });
 
     const app = new Hono<AuthEnv>();
     app.use("/*", requireAuth(db), requireAdmin());
@@ -392,13 +380,12 @@ describe("requireAdmin middleware", () => {
   });
 
   test("admin check is case-insensitive for legacy fallback", async () => {
-    db.insert(schema.users)
+    await db.insert(schema.users)
       .values({
         id: "admin-mixed",
         walletAddress: TEST_ADMIN_ADDRESS.toUpperCase(),
         displayName: "Admin",
-      })
-      .run();
+      });
 
     const app = new Hono<AuthEnv>();
     app.use("/*", requireAuth(db), requireAdmin());
@@ -412,13 +399,12 @@ describe("requireAdmin middleware", () => {
   });
 
   test("blocks user without wallet address", async () => {
-    db.insert(schema.users)
+    await db.insert(schema.users)
       .values({
         id: "email-only",
         email: "nope@test.com",
         displayName: "Email Only",
-      })
-      .run();
+      });
 
     const app = new Hono<AuthEnv>();
     app.use("/*", requireAuth(db), requireAdmin());
@@ -437,10 +423,10 @@ describe("requireAdmin middleware", () => {
 // ---------------------------------------------------------------------------
 
 describe("optionalAuth middleware", () => {
-  let db: ReturnType<typeof createDB>;
+  let db: DrizzleDB;
 
-  beforeEach(() => {
-    db = setupDB();
+  beforeEach(async () => {
+    db = await setupDB();
   });
 
   test("continues without auth header", async () => {
@@ -458,13 +444,12 @@ describe("optionalAuth middleware", () => {
   });
 
   test("attaches user when valid token provided", async () => {
-    db.insert(schema.users)
+    await db.insert(schema.users)
       .values({
         id: "opt-user",
         walletAddress: "0xopt",
         displayName: "Optional",
-      })
-      .run();
+      });
 
     const app = new Hono<AuthEnv>();
     app.use("/*", optionalAuth(db));

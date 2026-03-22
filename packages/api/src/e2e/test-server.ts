@@ -20,7 +20,7 @@ export interface TestServerHandles {
 }
 
 export interface StartTestServersOptions {
-  dbPath: string;
+  databaseUrl: string;
   apiPort?: number;
   webPort?: number;
   /** Admin wallet address for RBAC seeding (used as ADMIN_ADDRESS env var) */
@@ -61,7 +61,7 @@ async function waitForHealth(
 /**
  * Start API and optionally Web servers as child processes.
  *
- * The API server runs against the given test DB path with dummy Privy
+ * The API server runs against the given test database URL with dummy Privy
  * credentials (e2e tests bypass Privy auth and mint JWTs directly).
  */
 export async function startTestServers(
@@ -74,7 +74,7 @@ export async function startTestServers(
 
   const apiEnv: Record<string, string> = {
     ...process.env as Record<string, string>,
-    SQLITE_PATH: opts.dbPath,
+    DATABASE_URL: opts.databaseUrl,
     PORT: String(apiPort),
     HOST: "127.0.0.1",
     JWT_SECRET: jwtSecret,

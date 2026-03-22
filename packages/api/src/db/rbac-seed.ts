@@ -57,25 +57,22 @@ const ROLES = [
 // Seed runner
 // ---------------------------------------------------------------------------
 
-export function seedRBAC(db: DrizzleDB): void {
+export async function seedRBAC(db: DrizzleDB): Promise<void> {
   // 1. Seed permissions — upsert by name
   const permissionIds = new Map<string, string>();
 
   for (const perm of PERMISSIONS) {
-    // Check if permission already exists
-    const existing = db
+    const existing = (await db
       .select({ id: schema.permissions.id })
       .from(schema.permissions)
-      .where(sql`${schema.permissions.name} = ${perm.name}`)
-      .get();
+      .where(sql`${schema.permissions.name} = ${perm.name}`))[0];
 
     if (existing) {
       permissionIds.set(perm.name, existing.id);
     } else {
       const id = randomUUID();
-      db.insert(schema.permissions)
-        .values({ id, name: perm.name, description: perm.description })
-        .run();
+      await db.insert(schema.permissions)
+        .values({ id, name: perm.name, description: perm.description });
       permissionIds.set(perm.name, id);
     }
   }
@@ -84,24 +81,22 @@ export function seedRBAC(db: DrizzleDB): void {
   const roleIds = new Map<string, string>();
 
   for (const role of ROLES) {
-    const existing = db
+    const existing = (await db
       .select({ id: schema.roles.id })
       .from(schema.roles)
-      .where(sql`${schema.roles.name} = ${role.name}`)
-      .get();
+      .where(sql`${schema.roles.name} = ${role.name}`))[0];
 
     if (existing) {
       roleIds.set(role.name, existing.id);
     } else {
       const id = randomUUID();
-      db.insert(schema.roles)
+      await db.insert(schema.roles)
         .values({
           id,
           name: role.name,
           description: role.description,
           isSystem: role.isSystem,
-        })
-        .run();
+        });
       roleIds.set(role.name, id);
     }
   }
@@ -112,18 +107,16 @@ export function seedRBAC(db: DrizzleDB): void {
     for (const permName of role.permissions) {
       const permId = permissionIds.get(permName)!;
 
-      const existing = db
+      const existing = (await db
         .select({ roleId: schema.rolePermissions.roleId })
         .from(schema.rolePermissions)
         .where(
           sql`${schema.rolePermissions.roleId} = ${roleId} AND ${schema.rolePermissions.permissionId} = ${permId}`,
-        )
-        .get();
+        ))[0];
 
       if (!existing) {
-        db.insert(schema.rolePermissions)
-          .values({ roleId, permissionId: permId })
-          .run();
+        await db.insert(schema.rolePermissions)
+          .values({ roleId, permissionId: permId });
       }
     }
   }
@@ -133,22 +126,20 @@ export function seedRBAC(db: DrizzleDB): void {
   const sysopRoleId = roleIds.get("sysop");
 
   if (adminAddress && sysopRoleId) {
-    const existing = db
+    const existing = (await db
       .select({ walletAddress: schema.addressRoles.walletAddress })
       .from(schema.addressRoles)
       .where(
         sql`${schema.addressRoles.walletAddress} = ${adminAddress} AND ${schema.addressRoles.roleId} = ${sysopRoleId}`,
-      )
-      .get();
+      ))[0];
 
     if (!existing) {
-      db.insert(schema.addressRoles)
+      await db.insert(schema.addressRoles)
         .values({
           walletAddress: adminAddress,
           roleId: sysopRoleId,
           grantedBy: "system",
-        })
-        .run();
+        });
       console.log(
         `[rbac-seed] Assigned sysop role to ADMIN_ADDRESS: ${adminAddress}`,
       );

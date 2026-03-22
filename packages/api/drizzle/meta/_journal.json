@@ -1,68 +1,12 @@
 {
   "version": "7",
-  "dialect": "sqlite",
+  "dialect": "postgresql",
   "entries": [
     {
       "idx": 0,
-      "version": "6",
-      "when": 1773765376540,
-      "tag": "0000_aberrant_sharon_ventura",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1773851968000,
-      "tag": "0001_add_game_slug",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1773946700103,
-      "tag": "0002_smooth_punisher",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1773982267924,
-      "tag": "0003_silent_clint_barton",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1774004400000,
-      "tag": "0004_add_game_buyin",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1774017708986,
-      "tag": "0005_modern_power_pack",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1774019052943,
-      "tag": "0006_mute_starhawk",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1774079364527,
-      "tag": "0007_tiny_loners",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1774145491326,
-      "tag": "0008_hard_gertrude_yorkes",
+      "version": "7",
+      "when": 1774165247634,
+      "tag": "0000_many_starjammers",
       "breakpoints": true
     }
   ]

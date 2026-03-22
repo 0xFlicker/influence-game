@@ -45,18 +45,17 @@ export interface CreateTestUserOptions {
 /**
  * Insert a user directly into the test DB.
  */
-export function createTestUser(
+export async function createTestUser(
   db: DrizzleDB,
   opts: CreateTestUserOptions,
-): string {
+): Promise<string> {
   const id = opts.id ?? randomUUID();
-  db.insert(schema.users)
+  await db.insert(schema.users)
     .values({
       id,
       walletAddress: opts.walletAddress,
       displayName: opts.displayName ?? `TestUser-${id.slice(0, 6)}`,
-    })
-    .run();
+    });
   return id;
 }
 
@@ -67,36 +66,35 @@ export function createTestUser(
 /**
  * Assign a role to a wallet address in the test DB.
  */
-export function assignRole(
+export async function assignRole(
   db: DrizzleDB,
   opts: { walletAddress: string; roleName: string },
-): void {
-  const role = db
+): Promise<void> {
+  const roles = await db
     .select({ id: schema.roles.id })
     .from(schema.roles)
-    .where(sql`${schema.roles.name} = ${opts.roleName}`)
-    .get();
+    .where(sql`${schema.roles.name} = ${opts.roleName}`);
+
+  const role = roles[0];
 
   if (!role) {
     throw new Error(`Role "${opts.roleName}" not found — was RBAC seeded?`);
   }
 
-  const existing = db
+  const existing = await db
     .select({ walletAddress: schema.addressRoles.walletAddress })
     .from(schema.addressRoles)
     .where(
       sql`${schema.addressRoles.walletAddress} = ${opts.walletAddress.toLowerCase()} AND ${schema.addressRoles.roleId} = ${role.id}`,
-    )
-    .get();
+    );
 
-  if (!existing) {
-    db.insert(schema.addressRoles)
+  if (existing.length === 0) {
+    await db.insert(schema.addressRoles)
       .values({
         walletAddress: opts.walletAddress.toLowerCase(),
         roleId: role.id,
         grantedBy: "e2e-test",
-      })
-      .run();
+      });
   }
 }
 
@@ -135,11 +133,11 @@ export interface AdminUserResult {
  */
 export async function createAdminUser(db: DrizzleDB): Promise<AdminUserResult> {
   const wallet = generateTestWallet();
-  const userId = createTestUser(db, {
+  const userId = await createTestUser(db, {
     walletAddress: wallet.address,
     displayName: "E2E Admin",
   });
-  assignRole(db, { walletAddress: wallet.address, roleName: "sysop" });
+  await assignRole(db, { walletAddress: wallet.address, roleName: "sysop" });
 
   const jwt = await mintTestJwt(userId, {
     roles: ["sysop"],
@@ -171,11 +169,11 @@ export async function createPlayerUser(
   index: number,
 ): Promise<PlayerUserResult> {
   const wallet = generateTestWallet();
-  const userId = createTestUser(db, {
+  const userId = await createTestUser(db, {
     walletAddress: wallet.address,
     displayName: `Player ${index + 1}`,
   });
-  assignRole(db, { walletAddress: wallet.address, roleName: "player" });
+  await assignRole(db, { walletAddress: wallet.address, roleName: "player" });
 
   const jwt = await mintTestJwt(userId, {
     roles: ["player"],

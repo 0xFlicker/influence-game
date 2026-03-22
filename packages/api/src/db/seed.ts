@@ -9,10 +9,10 @@ import { randomUUID } from "crypto";
 import { runMigrations } from "./migrate.js";
 import { schema } from "./index.js";
 
-const DB_PATH = process.env.SQLITE_PATH ?? "influence-seed.db";
+const DATABASE_URL = process.env.DATABASE_URL;
 
 // Run migrations first, then seed
-const db = runMigrations(DB_PATH);
+const db = await runMigrations(DATABASE_URL);
 
 // ---------------------------------------------------------------------------
 // Sample users
@@ -27,7 +27,7 @@ const userIds = {
   eve: randomUUID(),
 };
 
-db.insert(schema.users)
+await db.insert(schema.users)
   .values([
     {
       id: userIds.admin,
@@ -62,8 +62,7 @@ db.insert(schema.users)
       email: "eve@example.com",
       displayName: "Eve",
     },
-  ])
-  .run();
+  ]);
 
 console.log(`Seeded ${Object.keys(userIds).length} users`);
 
@@ -87,7 +86,7 @@ const defaultConfig = {
   maxPlayers: 12,
 };
 
-db.insert(schema.games)
+await db.insert(schema.games)
   .values({
     id: gameId,
     config: JSON.stringify(defaultConfig),
@@ -97,8 +96,7 @@ db.insert(schema.games)
     createdById: userIds.admin,
     startedAt: new Date(Date.now() - 3600_000).toISOString(),
     endedAt: new Date().toISOString(),
-  })
-  .run();
+  });
 
 console.log("Seeded 1 completed game");
 
@@ -130,7 +128,7 @@ for (let i = 0; i < 6; i++) {
   const playerId = randomUUID();
   playerIds.push(playerId);
 
-  db.insert(schema.gamePlayers)
+  await db.insert(schema.gamePlayers)
     .values({
       id: playerId,
       gameId,
@@ -140,8 +138,7 @@ for (let i = 0; i < 6; i++) {
         model: "gpt-4o-mini",
         temperature: 0.9,
       }),
-    })
-    .run();
+    });
 }
 
 console.log(`Seeded ${playerIds.length} game players`);
@@ -152,7 +149,7 @@ console.log(`Seeded ${playerIds.length} game players`);
 
 const now = Date.now();
 
-db.insert(schema.transcripts)
+await db.insert(schema.transcripts)
   .values([
     {
       gameId,
@@ -198,8 +195,7 @@ db.insert(schema.transcripts)
       text: "Vote results: Rex eliminated. Atlas empowered.",
       timestamp: now - 3100_000,
     },
-  ])
-  .run();
+  ]);
 
 console.log("Seeded 5 transcript entries");
 
@@ -207,7 +203,7 @@ console.log("Seeded 5 transcript entries");
 // Sample game result
 // ---------------------------------------------------------------------------
 
-db.insert(schema.gameResults)
+await db.insert(schema.gameResults)
   .values({
     id: randomUUID(),
     gameId,
@@ -219,8 +215,7 @@ db.insert(schema.gameResults)
       totalTokens: 57000,
       estimatedCost: 0.05,
     }),
-  })
-  .run();
+  });
 
 console.log("Seeded 1 game result");
 
@@ -230,7 +225,7 @@ console.log("Seeded 1 game result");
 
 const waitingGameId = randomUUID();
 
-db.insert(schema.games)
+await db.insert(schema.games)
   .values({
     id: waitingGameId,
     config: JSON.stringify(defaultConfig),
@@ -238,12 +233,11 @@ db.insert(schema.games)
     minPlayers: 5,
     maxPlayers: 8,
     createdById: userIds.admin,
-  })
-  .run();
+  });
 
 // Two players already joined
 for (let i = 0; i < 2; i++) {
-  db.insert(schema.gamePlayers)
+  await db.insert(schema.gamePlayers)
     .values({
       id: randomUUID(),
       gameId: waitingGameId,
@@ -253,9 +247,10 @@ for (let i = 0; i < 2; i++) {
         model: "gpt-4o-mini",
         temperature: 0.9,
       }),
-    })
-    .run();
+    });
 }
 
 console.log("Seeded 1 waiting game with 2 players");
-console.log(`\nSeed complete! Database: ${DB_PATH}`);
+console.log("\nSeed complete!");
+
+process.exit(0);

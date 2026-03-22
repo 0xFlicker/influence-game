@@ -5,20 +5,21 @@
  * Can be run standalone or imported programmatically.
  */
 
-import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { createDB } from "./index.js";
 import path from "path";
 
-export function runMigrations(dbPath?: string) {
-  const db = createDB(dbPath);
-  const migrationsFolder = path.resolve(process.cwd(), "drizzle");
-  migrate(db, { migrationsFolder });
+export async function runMigrations(connectionString?: string) {
+  const db = createDB(connectionString);
+  const migrationsFolder = path.resolve(import.meta.dir, "../../drizzle");
+  await migrate(db, { migrationsFolder });
   console.log("Migrations applied successfully.");
   return db;
 }
 
 // Run directly: bun run src/db/migrate.ts
 if (import.meta.main) {
-  const dbPath = process.env.SQLITE_PATH ?? "influence.db";
-  runMigrations(dbPath);
+  const url = process.env.DATABASE_URL;
+  await runMigrations(url);
+  process.exit(0);
 }

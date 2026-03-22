@@ -69,12 +69,12 @@ let gameSlug: string;
 // ---------------------------------------------------------------------------
 
 beforeAll(async () => {
-  testDb = createTestDb();
+  testDb = await createTestDb();
 
   admin = await createAdminUser(testDb.db);
 
   servers = await startTestServers({
-    dbPath: testDb.dbPath,
+    databaseUrl: testDb.databaseUrl,
     adminAddress: admin.wallet.address,
     jwtSecret: "e2e-test-jwt-secret",
   });
@@ -85,7 +85,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (browser) await closeBrowser(browser);
   if (servers) await stopTestServers(servers);
-  if (testDb) destroyTestDb(testDb.dbPath);
+  if (testDb) destroyTestDb(testDb.databaseUrl);
 });
 
 // ---------------------------------------------------------------------------

@@ -31,6 +31,7 @@ COPY --from=build /app/packages/api/package.json ./
 ENV NODE_ENV=production
 ENV PORT=3001
 ENV HOST=0.0.0.0
+# DATABASE_URL must be provided at runtime (e.g. via docker run -e or compose)
 
 EXPOSE 3001
 

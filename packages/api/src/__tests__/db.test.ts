@@ -1,28 +1,21 @@
 /**
  * Database schema and operations tests.
  *
- * Uses in-memory SQLite via :memory: — no disk I/O, no cleanup needed.
+ * Uses a PostgreSQL test database with table truncation for isolation.
  */
 
 import { describe, test, expect, beforeEach } from "bun:test";
 import { eq } from "drizzle-orm";
-import { createDB, schema } from "../db/index.js";
-import { migrate } from "drizzle-orm/bun-sqlite/migrator";
-import path from "path";
+import { schema } from "../db/index.js";
+import type { DrizzleDB } from "../db/index.js";
 import { randomUUID } from "crypto";
-
-function setupDB() {
-  const db = createDB(":memory:");
-  const migrationsFolder = path.resolve(import.meta.dir, "../../drizzle");
-  migrate(db, { migrationsFolder });
-  return db;
-}
+import { setupTestDB } from "./test-utils.js";
 
 describe("Database Schema", () => {
-  let db: ReturnType<typeof createDB>;
+  let db: DrizzleDB;
 
-  beforeEach(() => {
-    db = setupDB();
+  beforeEach(async () => {
+    db = await setupTestDB();
   });
 
   // -------------------------------------------------------------------------
@@ -30,22 +23,20 @@ describe("Database Schema", () => {
   // -------------------------------------------------------------------------
 
   describe("users", () => {
-    test("insert and query a user", () => {
+    test("insert and query a user", async () => {
       const id = randomUUID();
-      db.insert(schema.users)
+      await db.insert(schema.users)
         .values({
           id,
           walletAddress: "0xABC123",
           email: "test@example.com",
           displayName: "Test User",
-        })
-        .run();
+        });
 
-      const rows = db
+      const rows = await db
         .select()
         .from(schema.users)
-        .where(eq(schema.users.id, id))
-        .all();
+        .where(eq(schema.users.id, id));
 
       expect(rows).toHaveLength(1);
       expect(rows[0]!.walletAddress).toBe("0xABC123");
@@ -54,30 +45,30 @@ describe("Database Schema", () => {
       expect(rows[0]!.createdAt).toBeTruthy();
     });
 
-    test("wallet address is unique", () => {
+    test("wallet address is unique", async () => {
       const wallet = "0xUNIQUE";
-      db.insert(schema.users)
-        .values({ id: randomUUID(), walletAddress: wallet })
-        .run();
+      await db.insert(schema.users)
+        .values({ id: randomUUID(), walletAddress: wallet });
 
-      expect(() => {
-        db.insert(schema.users)
-          .values({ id: randomUUID(), walletAddress: wallet })
-          .run();
-      }).toThrow();
+      let threw = false;
+      try {
+        await db.insert(schema.users)
+          .values({ id: randomUUID(), walletAddress: wallet });
+      } catch {
+        threw = true;
+      }
+      expect(threw).toBe(true);
     });
 
-    test("user can have null wallet and null email", () => {
+    test("user can have null wallet and null email", async () => {
       const id = randomUUID();
-      db.insert(schema.users)
-        .values({ id, displayName: "No Wallet" })
-        .run();
+      await db.insert(schema.users)
+        .values({ id, displayName: "No Wallet" });
 
-      const rows = db
+      const rows = await db
         .select()
         .from(schema.users)
-        .where(eq(schema.users.id, id))
-        .all();
+        .where(eq(schema.users.id, id));
 
       expect(rows[0]!.walletAddress).toBeNull();
       expect(rows[0]!.email).toBeNull();
@@ -89,84 +80,75 @@ describe("Database Schema", () => {
   // -------------------------------------------------------------------------
 
   describe("games", () => {
-    test("insert and query a game", () => {
+    test("insert and query a game", async () => {
       const gameId = randomUUID();
       const config = { timers: {}, maxRounds: 10, minPlayers: 5, maxPlayers: 8 };
 
-      db.insert(schema.games)
+      await db.insert(schema.games)
         .values({
           id: gameId,
           config: JSON.stringify(config),
           status: "waiting",
           minPlayers: 5,
           maxPlayers: 8,
-        })
-        .run();
+        });
 
-      const rows = db
+      const rows = await db
         .select()
         .from(schema.games)
-        .where(eq(schema.games.id, gameId))
-        .all();
+        .where(eq(schema.games.id, gameId));
 
       expect(rows).toHaveLength(1);
       expect(rows[0]!.status).toBe("waiting");
       expect(JSON.parse(rows[0]!.config)).toEqual(config);
     });
 
-    test("game status defaults to waiting", () => {
+    test("game status defaults to waiting", async () => {
       const gameId = randomUUID();
-      db.insert(schema.games)
-        .values({ id: gameId, config: "{}" })
-        .run();
+      await db.insert(schema.games)
+        .values({ id: gameId, config: "{}" });
 
-      const rows = db
+      const rows = await db
         .select()
         .from(schema.games)
-        .where(eq(schema.games.id, gameId))
-        .all();
+        .where(eq(schema.games.id, gameId));
 
       expect(rows[0]!.status).toBe("waiting");
     });
 
-    test("game status transitions", () => {
+    test("game status transitions", async () => {
       const gameId = randomUUID();
-      db.insert(schema.games)
-        .values({ id: gameId, config: "{}" })
-        .run();
+      await db.insert(schema.games)
+        .values({ id: gameId, config: "{}" });
 
       // Start the game
-      db.update(schema.games)
+      await db.update(schema.games)
         .set({
           status: "in_progress",
           startedAt: new Date().toISOString(),
         })
-        .where(eq(schema.games.id, gameId))
-        .run();
+        .where(eq(schema.games.id, gameId));
 
-      let rows = db
+      let rows = await db
         .select()
         .from(schema.games)
-        .where(eq(schema.games.id, gameId))
-        .all();
+        .where(eq(schema.games.id, gameId));
 
       expect(rows[0]!.status).toBe("in_progress");
       expect(rows[0]!.startedAt).toBeTruthy();
 
       // Complete the game
-      db.update(schema.games)
+      await db.update(schema.games)
         .set({
           status: "completed",
           endedAt: new Date().toISOString(),
         })
-        .where(eq(schema.games.id, gameId))
-        .run();
+        .where(eq(schema.games.id, gameId));
 
-      rows = db
+      rows = await db
         .select()
         .from(schema.games)
-        .where(eq(schema.games.id, gameId))
-        .all();
+        .where(eq(schema.games.id, gameId));
 
       expect(rows[0]!.status).toBe("completed");
       expect(rows[0]!.endedAt).toBeTruthy();
@@ -178,62 +160,56 @@ describe("Database Schema", () => {
   // -------------------------------------------------------------------------
 
   describe("game_players", () => {
-    test("insert players for a game", () => {
+    test("insert players for a game", async () => {
       const userId = randomUUID();
       const gameId = randomUUID();
 
-      db.insert(schema.users).values({ id: userId }).run();
-      db.insert(schema.games)
-        .values({ id: gameId, config: "{}" })
-        .run();
+      await db.insert(schema.users).values({ id: userId });
+      await db.insert(schema.games)
+        .values({ id: gameId, config: "{}" });
 
       const playerId = randomUUID();
       const persona = { name: "Atlas", personality: "Strategic calculator" };
       const agentConfig = { model: "gpt-4o-mini", temperature: 0.9 };
 
-      db.insert(schema.gamePlayers)
+      await db.insert(schema.gamePlayers)
         .values({
           id: playerId,
           gameId,
           userId,
           persona: JSON.stringify(persona),
           agentConfig: JSON.stringify(agentConfig),
-        })
-        .run();
+        });
 
-      const rows = db
+      const rows = await db
         .select()
         .from(schema.gamePlayers)
-        .where(eq(schema.gamePlayers.gameId, gameId))
-        .all();
+        .where(eq(schema.gamePlayers.gameId, gameId));
 
       expect(rows).toHaveLength(1);
       expect(JSON.parse(rows[0]!.persona)).toEqual(persona);
       expect(JSON.parse(rows[0]!.agentConfig)).toEqual(agentConfig);
     });
 
-    test("multiple players per game", () => {
+    test("multiple players per game", async () => {
       const gameId = randomUUID();
-      db.insert(schema.games)
-        .values({ id: gameId, config: "{}" })
-        .run();
+      await db.insert(schema.games)
+        .values({ id: gameId, config: "{}" });
 
       for (let i = 0; i < 6; i++) {
-        db.insert(schema.gamePlayers)
+        await db.insert(schema.gamePlayers)
           .values({
             id: randomUUID(),
             gameId,
             persona: JSON.stringify({ name: `Player${i}` }),
             agentConfig: JSON.stringify({ model: "gpt-4o-mini" }),
-          })
-          .run();
+          });
       }
 
-      const rows = db
+      const rows = await db
         .select()
         .from(schema.gamePlayers)
-        .where(eq(schema.gamePlayers.gameId, gameId))
-        .all();
+        .where(eq(schema.gamePlayers.gameId, gameId));
 
       expect(rows).toHaveLength(6);
     });
@@ -244,13 +220,12 @@ describe("Database Schema", () => {
   // -------------------------------------------------------------------------
 
   describe("transcripts", () => {
-    test("insert and query transcript entries", () => {
+    test("insert and query transcript entries", async () => {
       const gameId = randomUUID();
-      db.insert(schema.games)
-        .values({ id: gameId, config: "{}" })
-        .run();
+      await db.insert(schema.games)
+        .values({ id: gameId, config: "{}" });
 
-      db.insert(schema.transcripts)
+      await db.insert(schema.transcripts)
         .values([
           {
             gameId,
@@ -279,14 +254,12 @@ describe("Database Schema", () => {
             text: "Round 1 has begun.",
             timestamp: Date.now(),
           },
-        ])
-        .run();
+        ]);
 
-      const rows = db
+      const rows = await db
         .select()
         .from(schema.transcripts)
-        .where(eq(schema.transcripts.gameId, gameId))
-        .all();
+        .where(eq(schema.transcripts.gameId, gameId));
 
       expect(rows).toHaveLength(3);
 
@@ -298,13 +271,12 @@ describe("Database Schema", () => {
       expect(system!.fromPlayerId).toBeNull();
     });
 
-    test("transcript entries are auto-incremented", () => {
+    test("transcript entries are auto-incremented", async () => {
       const gameId = randomUUID();
-      db.insert(schema.games)
-        .values({ id: gameId, config: "{}" })
-        .run();
+      await db.insert(schema.games)
+        .values({ id: gameId, config: "{}" });
 
-      db.insert(schema.transcripts)
+      await db.insert(schema.transcripts)
         .values({
           gameId,
           round: 1,
@@ -312,10 +284,9 @@ describe("Database Schema", () => {
           scope: "public",
           text: "First",
           timestamp: 1000,
-        })
-        .run();
+        });
 
-      db.insert(schema.transcripts)
+      await db.insert(schema.transcripts)
         .values({
           gameId,
           round: 1,
@@ -323,14 +294,12 @@ describe("Database Schema", () => {
           scope: "public",
           text: "Second",
           timestamp: 2000,
-        })
-        .run();
+        });
 
-      const rows = db
+      const rows = await db
         .select()
         .from(schema.transcripts)
-        .where(eq(schema.transcripts.gameId, gameId))
-        .all();
+        .where(eq(schema.transcripts.gameId, gameId));
 
       expect(rows[0]!.id).toBeLessThan(rows[1]!.id);
     });
@@ -341,11 +310,10 @@ describe("Database Schema", () => {
   // -------------------------------------------------------------------------
 
   describe("game_results", () => {
-    test("insert and query game result", () => {
+    test("insert and query game result", async () => {
       const gameId = randomUUID();
-      db.insert(schema.games)
-        .values({ id: gameId, config: "{}" })
-        .run();
+      await db.insert(schema.games)
+        .values({ id: gameId, config: "{}" });
 
       const resultId = randomUUID();
       const tokenUsage = {
@@ -355,75 +323,71 @@ describe("Database Schema", () => {
         estimatedCost: 0.05,
       };
 
-      db.insert(schema.gameResults)
+      await db.insert(schema.gameResults)
         .values({
           id: resultId,
           gameId,
           winnerId: "player-1",
           roundsPlayed: 5,
           tokenUsage: JSON.stringify(tokenUsage),
-        })
-        .run();
+        });
 
-      const rows = db
+      const rows = await db
         .select()
         .from(schema.gameResults)
-        .where(eq(schema.gameResults.gameId, gameId))
-        .all();
+        .where(eq(schema.gameResults.gameId, gameId));
 
       expect(rows).toHaveLength(1);
       expect(rows[0]!.roundsPlayed).toBe(5);
       expect(JSON.parse(rows[0]!.tokenUsage)).toEqual(tokenUsage);
     });
 
-    test("one result per game (unique constraint)", () => {
+    test("one result per game (unique constraint)", async () => {
       const gameId = randomUUID();
-      db.insert(schema.games)
-        .values({ id: gameId, config: "{}" })
-        .run();
+      await db.insert(schema.games)
+        .values({ id: gameId, config: "{}" });
 
-      db.insert(schema.gameResults)
+      await db.insert(schema.gameResults)
         .values({
           id: randomUUID(),
           gameId,
           roundsPlayed: 5,
           tokenUsage: "{}",
-        })
-        .run();
+        });
 
-      expect(() => {
-        db.insert(schema.gameResults)
+      let threw = false;
+      try {
+        await db.insert(schema.gameResults)
           .values({
             id: randomUUID(),
             gameId,
             roundsPlayed: 3,
             tokenUsage: "{}",
-          })
-          .run();
-      }).toThrow();
+          });
+      } catch {
+        threw = true;
+      }
+      expect(threw).toBe(true);
     });
 
-    test("draw game has null winnerId", () => {
+    test("draw game has null winnerId", async () => {
       const gameId = randomUUID();
-      db.insert(schema.games)
-        .values({ id: gameId, config: "{}" })
-        .run();
+      await db.insert(schema.games)
+        .values({ id: gameId, config: "{}" });
 
-      db.insert(schema.gameResults)
+      await db.insert(schema.gameResults)
         .values({
           id: randomUUID(),
           gameId,
           winnerId: null,
           roundsPlayed: 10,
           tokenUsage: "{}",
-        })
-        .run();
+        });
 
-      const rows = db
+      const rows = await db
         .select()
         .from(schema.gameResults)
-        .where(eq(schema.gameResults.gameId, gameId))
-        .all();
+        .where(eq(schema.gameResults.gameId, gameId));
 
       expect(rows[0]!.winnerId).toBeNull();
     });
@@ -434,32 +398,30 @@ describe("Database Schema", () => {
   // -------------------------------------------------------------------------
 
   describe("relationships", () => {
-    test("full game lifecycle: create user, game, players, transcripts, results", () => {
+    test("full game lifecycle: create user, game, players, transcripts, results", async () => {
       // Create users
       const userId1 = randomUUID();
       const userId2 = randomUUID();
-      db.insert(schema.users)
+      await db.insert(schema.users)
         .values([
           { id: userId1, walletAddress: "0xAAA", displayName: "Alice" },
           { id: userId2, walletAddress: "0xBBB", displayName: "Bob" },
-        ])
-        .run();
+        ]);
 
       // Create game
       const gameId = randomUUID();
-      db.insert(schema.games)
+      await db.insert(schema.games)
         .values({
           id: gameId,
           config: JSON.stringify({ maxRounds: 10 }),
           status: "waiting",
           createdById: userId1,
-        })
-        .run();
+        });
 
       // Players join
       const p1 = randomUUID();
       const p2 = randomUUID();
-      db.insert(schema.gamePlayers)
+      await db.insert(schema.gamePlayers)
         .values([
           {
             id: p1,
@@ -475,17 +437,15 @@ describe("Database Schema", () => {
             persona: JSON.stringify({ name: "Vera" }),
             agentConfig: JSON.stringify({ model: "gpt-4o-mini" }),
           },
-        ])
-        .run();
+        ]);
 
       // Game starts
-      db.update(schema.games)
+      await db.update(schema.games)
         .set({ status: "in_progress", startedAt: new Date().toISOString() })
-        .where(eq(schema.games.id, gameId))
-        .run();
+        .where(eq(schema.games.id, gameId));
 
       // Transcript entries
-      db.insert(schema.transcripts)
+      await db.insert(schema.transcripts)
         .values([
           {
             gameId,
@@ -505,52 +465,45 @@ describe("Database Schema", () => {
             text: "Call me Vera.",
             timestamp: Date.now(),
           },
-        ])
-        .run();
+        ]);
 
       // Game completes
-      db.update(schema.games)
+      await db.update(schema.games)
         .set({ status: "completed", endedAt: new Date().toISOString() })
-        .where(eq(schema.games.id, gameId))
-        .run();
+        .where(eq(schema.games.id, gameId));
 
-      db.insert(schema.gameResults)
+      await db.insert(schema.gameResults)
         .values({
           id: randomUUID(),
           gameId,
           winnerId: p1,
           roundsPlayed: 5,
           tokenUsage: JSON.stringify({ totalTokens: 57000 }),
-        })
-        .run();
+        });
 
       // Verify full state
-      const game = db
+      const game = await db
         .select()
         .from(schema.games)
-        .where(eq(schema.games.id, gameId))
-        .all();
+        .where(eq(schema.games.id, gameId));
       expect(game[0]!.status).toBe("completed");
 
-      const players = db
+      const players = await db
         .select()
         .from(schema.gamePlayers)
-        .where(eq(schema.gamePlayers.gameId, gameId))
-        .all();
+        .where(eq(schema.gamePlayers.gameId, gameId));
       expect(players).toHaveLength(2);
 
-      const transcript = db
+      const transcript = await db
         .select()
         .from(schema.transcripts)
-        .where(eq(schema.transcripts.gameId, gameId))
-        .all();
+        .where(eq(schema.transcripts.gameId, gameId));
       expect(transcript).toHaveLength(2);
 
-      const result = db
+      const result = await db
         .select()
         .from(schema.gameResults)
-        .where(eq(schema.gameResults.gameId, gameId))
-        .all();
+        .where(eq(schema.gameResults.gameId, gameId));
       expect(result).toHaveLength(1);
       expect(result[0]!.winnerId).toBe(p1);
     });

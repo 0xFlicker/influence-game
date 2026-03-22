@@ -1,35 +1,28 @@
 /**
  * Influence Game — Database Connection
  *
- * Creates a Drizzle ORM instance backed by Bun's built-in SQLite.
+ * Creates a Drizzle ORM instance backed by PostgreSQL via postgres.js.
+ * Caches connection pools per URL to avoid connection exhaustion.
  */
 
-import { Database } from "bun:sqlite";
-import { drizzle } from "drizzle-orm/bun-sqlite";
-import path from "path";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "./schema.js";
 
 export type DrizzleDB = ReturnType<typeof createDB>;
 
-/** Root of the api package (packages/api/) — uses cwd for bundle compatibility */
-const API_ROOT = process.cwd();
+const DEFAULT_DATABASE_URL = "postgresql://paperclip:paperclip@127.0.0.1:5432/influence_dev";
 
-export function createDB(dbPath?: string) {
-  const filename = dbPath ?? "influence.db";
-  const resolvedPath =
-    filename === ":memory:"
-      ? ":memory:"
-      : path.isAbsolute(filename)
-        ? filename
-        : path.join(API_ROOT, filename);
-  const sqlite = new Database(resolvedPath, { create: true });
+const poolCache = new Map<string, ReturnType<typeof drizzle>>();
 
-  // Enable WAL mode for better concurrent read performance
-  sqlite.exec("PRAGMA journal_mode = WAL;");
-  sqlite.exec("PRAGMA foreign_keys = ON;");
+export function createDB(connectionString?: string) {
+  const url = connectionString ?? process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL;
+  const existing = poolCache.get(url);
+  if (existing) return existing;
 
-  const db = drizzle(sqlite, { schema });
-
+  const client = postgres(url);
+  const db = drizzle(client, { schema });
+  poolCache.set(url, db);
   return db;
 }
 

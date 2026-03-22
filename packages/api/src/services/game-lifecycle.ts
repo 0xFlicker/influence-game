@@ -24,7 +24,7 @@ import type {
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { SqliteMemoryStore } from "../db/memory-store.js";
+import { PgMemoryStore } from "../db/memory-store.js";
 import { broadcastGameEvent } from "./ws-manager.js";
 import { ViewerEventPacer } from "./viewer-event-pacer.js";
 import { calculateEloChanges } from "./elo.js";
@@ -89,11 +89,10 @@ export async function startGame(
   }
 
   // Load game record
-  const game = db
+  const game = (await db
     .select()
     .from(schema.games)
-    .where(eq(schema.games.id, gameId))
-    .all()[0];
+    .where(eq(schema.games.id, gameId)))[0];
 
   if (!game) {
     return { error: "Game not found" };
@@ -104,11 +103,10 @@ export async function startGame(
   }
 
   // Load players
-  const players = db
+  const players = await db
     .select()
     .from(schema.gamePlayers)
-    .where(eq(schema.gamePlayers.gameId, gameId))
-    .all();
+    .where(eq(schema.gamePlayers.gameId, gameId));
 
   if (players.length < game.minPlayers) {
     return { error: `Not enough players: ${players.length} < ${game.minPlayers}` };
@@ -145,7 +143,7 @@ export async function startGame(
     );
     const model = agentCfg.model ?? "gpt-4o-mini";
 
-    const memoryStore = new SqliteMemoryStore(db);
+    const memoryStore = new PgMemoryStore(db);
     const agent = new InfluenceAgent(
       player.id,
       persona.name,
@@ -223,11 +221,11 @@ async function runGameAsync(
     // Persist transcript entries
     const transcriptEntries = result.transcript;
     if (transcriptEntries.length > 0) {
-      // Batch insert in chunks to avoid SQLite limits
+      // Batch insert in chunks to avoid parameter limits
       const CHUNK_SIZE = 100;
       for (let i = 0; i < transcriptEntries.length; i += CHUNK_SIZE) {
         const chunk = transcriptEntries.slice(i, i + CHUNK_SIZE);
-        db.insert(schema.transcripts)
+        await db.insert(schema.transcripts)
           .values(
             chunk.map((entry) => ({
               gameId,
@@ -239,8 +237,7 @@ async function runGameAsync(
               text: entry.text,
               timestamp: entry.timestamp,
             })),
-          )
-          .run();
+          );
       }
     }
 
@@ -250,7 +247,7 @@ async function runGameAsync(
     const cost = estimateCost(usage, model);
 
     // Write game results
-    db.insert(schema.gameResults)
+    await db.insert(schema.gameResults)
       .values({
         id: randomUUID(),
         gameId,
@@ -262,20 +259,18 @@ async function runGameAsync(
           totalTokens: usage.totalTokens,
           estimatedCost: cost.totalCost,
         }),
-      })
-      .run();
+      });
 
     // Update agent profile win/loss stats for players with saved profiles
-    const playersWithProfiles = db
+    const playersWithProfiles = (await db
       .select()
       .from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.gameId, gameId))
-      .all()
+      .where(eq(schema.gamePlayers.gameId, gameId)))
       .filter((p) => p.agentProfileId != null);
 
     for (const player of playersWithProfiles) {
       const isWinner = player.id === result.winner;
-      db.run(
+      await db.execute(
         sql`UPDATE agent_profiles
             SET games_played = games_played + 1,
                 games_won = games_won + ${isWinner ? 1 : 0},
@@ -285,19 +280,17 @@ async function runGameAsync(
     }
 
     // Update free-track ELO ratings if this is a free game
-    const gameRecord = db
+    const gameRecord = (await db
       .select({ trackType: schema.games.trackType })
       .from(schema.games)
-      .where(eq(schema.games.id, gameId))
-      .all()[0];
+      .where(eq(schema.games.id, gameId)))[0];
 
     if (gameRecord?.trackType === "free") {
       // Build placement from elimination order (names) → player IDs
-      const allPlayers = db
+      const allPlayers = await db
         .select()
         .from(schema.gamePlayers)
-        .where(eq(schema.gamePlayers.gameId, gameId))
-        .all();
+        .where(eq(schema.gamePlayers.gameId, gameId));
 
       // Map name → player record
       const nameToPlayer = new Map<string, typeof allPlayers[number]>();
@@ -341,11 +334,10 @@ async function runGameAsync(
         // Fetch current ratings
         const currentRatings = new Map<string, number>();
         for (const hp of humanPlayers) {
-          const rating = db
+          const rating = (await db
             .select({ rating: schema.freeTrackRatings.rating })
             .from(schema.freeTrackRatings)
-            .where(eq(schema.freeTrackRatings.agentProfileId, hp.agentProfileId))
-            .all()[0];
+            .where(eq(schema.freeTrackRatings.agentProfileId, hp.agentProfileId)))[0];
           currentRatings.set(hp.agentProfileId, rating?.rating ?? 1200);
         }
 
@@ -356,15 +348,14 @@ async function runGameAsync(
           const isWinner = humanPlayers.find((p) => p.agentProfileId === change.agentProfileId)?.placement === 1;
           const player = allPlayers.find((p) => p.agentProfileId === change.agentProfileId);
 
-          const existing = db
+          const existing = (await db
             .select()
             .from(schema.freeTrackRatings)
-            .where(eq(schema.freeTrackRatings.agentProfileId, change.agentProfileId))
-            .all()[0];
+            .where(eq(schema.freeTrackRatings.agentProfileId, change.agentProfileId)))[0];
 
           if (existing) {
             const newPeak = Math.max(existing.peakRating, change.newRating);
-            db.run(
+            await db.execute(
               sql`UPDATE free_track_ratings
                   SET rating = ${change.newRating},
                       games_played = games_played + 1,
@@ -375,7 +366,7 @@ async function runGameAsync(
                   WHERE agent_profile_id = ${change.agentProfileId}`,
             );
           } else {
-            db.insert(schema.freeTrackRatings)
+            await db.insert(schema.freeTrackRatings)
               .values({
                 id: randomUUID(),
                 agentProfileId: change.agentProfileId,
@@ -385,8 +376,7 @@ async function runGameAsync(
                 gamesWon: isWinner ? 1 : 0,
                 peakRating: Math.max(1200, change.newRating),
                 lastGameAt: now,
-              })
-              .run();
+              });
           }
         }
       }
@@ -394,14 +384,13 @@ async function runGameAsync(
 
     // Update game status to completed and set viewerMode to "replay"
     const updatedConfig = { ...gameConfig, viewerMode: "replay" };
-    db.update(schema.games)
+    await db.update(schema.games)
       .set({
         status: "completed",
         endedAt: new Date().toISOString(),
         config: JSON.stringify(updatedConfig),
       })
-      .where(eq(schema.games.id, gameId))
-      .run();
+      .where(eq(schema.games.id, gameId));
 
   } catch (err) {
     // Game failed — mark as cancelled and store error reason in config
@@ -410,32 +399,30 @@ async function runGameAsync(
 
     try {
       // Read current config and append errorInfo
-      const game = db
+      const game = (await db
         .select({ config: schema.games.config })
         .from(schema.games)
-        .where(eq(schema.games.id, gameId))
-        .all()[0];
+        .where(eq(schema.games.id, gameId)))[0];
       const currentConfig = game ? JSON.parse(game.config) : {};
       const updatedConfig = {
         ...currentConfig,
         errorInfo: errorMessage,
       };
 
-      db.update(schema.games)
+      await db.update(schema.games)
         .set({
           status: "cancelled",
           endedAt: new Date().toISOString(),
           config: JSON.stringify(updatedConfig),
         })
-        .where(eq(schema.games.id, gameId))
-        .run();
+        .where(eq(schema.games.id, gameId));
     } catch (dbErr) {
       console.error(`[game-lifecycle] Failed to update game ${gameId} status after error:`, dbErr);
     }
   } finally {
     // Clear operational memories — they exist only for game duration
     try {
-      new SqliteMemoryStore(db).clear(gameId);
+      await new PgMemoryStore(db).clear(gameId);
     } catch {
       // Non-critical cleanup
     }

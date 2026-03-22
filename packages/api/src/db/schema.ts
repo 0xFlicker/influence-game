@@ -1,26 +1,26 @@
 /**
  * Influence Game — Database Schema
  *
- * Drizzle ORM schema for SQLite (better-sqlite3).
+ * Drizzle ORM schema for PostgreSQL.
  * Tables: users, games, game_players, transcripts, game_results, agent_profiles,
  *         permissions, roles, role_permissions, address_roles
  */
 
-import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core";
+import { pgTable, text, integer, primaryKey, serial, bigint } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 // ---------------------------------------------------------------------------
 // Users
 // ---------------------------------------------------------------------------
 
-export const users = sqliteTable("users", {
+export const users = pgTable("users", {
   id: text("id").primaryKey(), // UUID
   walletAddress: text("wallet_address").unique(),
   email: text("email"),
   displayName: text("display_name"),
   createdAt: text("created_at")
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(sql`now()::text`),
 });
 
 // ---------------------------------------------------------------------------
@@ -30,7 +30,7 @@ export const users = sqliteTable("users", {
 export type GameStatus = "waiting" | "in_progress" | "completed" | "cancelled";
 export type TrackType = "custom" | "free";
 
-export const games = sqliteTable("games", {
+export const games = pgTable("games", {
   id: text("id").primaryKey(), // UUID
   slug: text("slug").unique(), // Human-readable identifier, e.g. "punk-green-apple"
   config: text("config").notNull(), // JSON-serialized GameConfig
@@ -43,14 +43,14 @@ export const games = sqliteTable("games", {
   endedAt: text("ended_at"),
   createdAt: text("created_at")
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(sql`now()::text`),
 });
 
 // ---------------------------------------------------------------------------
 // Agent Profiles (saved, reusable player agent identities)
 // ---------------------------------------------------------------------------
 
-export const agentProfiles = sqliteTable("agent_profiles", {
+export const agentProfiles = pgTable("agent_profiles", {
   id: text("id").primaryKey(), // UUID
   userId: text("user_id")
     .notNull()
@@ -65,17 +65,17 @@ export const agentProfiles = sqliteTable("agent_profiles", {
   gamesWon: integer("games_won").notNull().default(0),
   createdAt: text("created_at")
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(sql`now()::text`),
   updatedAt: text("updated_at")
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(sql`now()::text`),
 });
 
 // ---------------------------------------------------------------------------
 // Game Players
 // ---------------------------------------------------------------------------
 
-export const gamePlayers = sqliteTable("game_players", {
+export const gamePlayers = pgTable("game_players", {
   id: text("id").primaryKey(), // UUID
   gameId: text("game_id")
     .notNull()
@@ -86,7 +86,7 @@ export const gamePlayers = sqliteTable("game_players", {
   agentConfig: text("agent_config").notNull(), // JSON: { model, temperature, etc. }
   joinedAt: text("joined_at")
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(sql`now()::text`),
 });
 
 // ---------------------------------------------------------------------------
@@ -95,8 +95,8 @@ export const gamePlayers = sqliteTable("game_players", {
 
 export type TranscriptScope = "public" | "whisper" | "system" | "diary";
 
-export const transcripts = sqliteTable("transcripts", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const transcripts = pgTable("transcripts", {
+  id: serial("id").primaryKey(),
   gameId: text("game_id")
     .notNull()
     .references(() => games.id),
@@ -106,17 +106,17 @@ export const transcripts = sqliteTable("transcripts", {
   scope: text("scope").notNull().$type<TranscriptScope>().default("public"),
   toPlayerIds: text("to_player_ids"), // JSON array for whispers, null otherwise
   text: text("text").notNull(),
-  timestamp: integer("timestamp").notNull(), // Unix ms
+  timestamp: bigint("timestamp", { mode: "number" }).notNull(), // Unix ms
   createdAt: text("created_at")
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(sql`now()::text`),
 });
 
 // ---------------------------------------------------------------------------
 // Game Results
 // ---------------------------------------------------------------------------
 
-export const gameResults = sqliteTable("game_results", {
+export const gameResults = pgTable("game_results", {
   id: text("id").primaryKey(), // UUID
   gameId: text("game_id")
     .notNull()
@@ -127,14 +127,14 @@ export const gameResults = sqliteTable("game_results", {
   tokenUsage: text("token_usage").notNull(), // JSON: { promptTokens, completionTokens, totalTokens, estimatedCost }
   finishedAt: text("finished_at")
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(sql`now()::text`),
 });
 
 // ---------------------------------------------------------------------------
 // Agent Memories (operational, per-game)
 // ---------------------------------------------------------------------------
 
-export const agentMemories = sqliteTable("agent_memories", {
+export const agentMemories = pgTable("agent_memories", {
   id: text("id").primaryKey(), // UUID
   gameId: text("game_id")
     .notNull()
@@ -144,43 +144,43 @@ export const agentMemories = sqliteTable("agent_memories", {
   memoryType: text("memory_type").notNull(), // ally, threat, note, vote_history, reflection
   subject: text("subject"), // player name or null
   content: text("content").notNull(),
-  createdAt: integer("created_at")
+  createdAt: bigint("created_at", { mode: "number" })
     .notNull()
-    .default(sql`(unixepoch())`),
+    .default(sql`(extract(epoch from now()))::bigint`),
 });
 
 // ---------------------------------------------------------------------------
 // RBAC — Permissions
 // ---------------------------------------------------------------------------
 
-export const permissions = sqliteTable("permissions", {
+export const permissions = pgTable("permissions", {
   id: text("id").primaryKey(), // UUID
   name: text("name").notNull().unique(),
   description: text("description"),
   createdAt: text("created_at")
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(sql`now()::text`),
 });
 
 // ---------------------------------------------------------------------------
 // RBAC — Roles
 // ---------------------------------------------------------------------------
 
-export const roles = sqliteTable("roles", {
+export const roles = pgTable("roles", {
   id: text("id").primaryKey(), // UUID
   name: text("name").notNull().unique(),
   description: text("description"),
   isSystem: integer("is_system").notNull().default(0),
   createdAt: text("created_at")
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(sql`now()::text`),
 });
 
 // ---------------------------------------------------------------------------
 // RBAC — Role ↔ Permission mapping
 // ---------------------------------------------------------------------------
 
-export const rolePermissions = sqliteTable("role_permissions", {
+export const rolePermissions = pgTable("role_permissions", {
   roleId: text("role_id")
     .notNull()
     .references(() => roles.id, { onDelete: "cascade" }),
@@ -195,7 +195,7 @@ export const rolePermissions = sqliteTable("role_permissions", {
 // RBAC — Wallet Address ↔ Role assignments
 // ---------------------------------------------------------------------------
 
-export const addressRoles = sqliteTable("address_roles", {
+export const addressRoles = pgTable("address_roles", {
   walletAddress: text("wallet_address").notNull(), // lowercase
   roleId: text("role_id")
     .notNull()
@@ -203,7 +203,7 @@ export const addressRoles = sqliteTable("address_roles", {
   grantedBy: text("granted_by"), // wallet address of granter
   grantedAt: text("granted_at")
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(sql`now()::text`),
 }, (table) => [
   primaryKey({ columns: [table.walletAddress, table.roleId] }),
 ]);
@@ -212,7 +212,7 @@ export const addressRoles = sqliteTable("address_roles", {
 // Free Game Queue
 // ---------------------------------------------------------------------------
 
-export const freeGameQueue = sqliteTable("free_game_queue", {
+export const freeGameQueue = pgTable("free_game_queue", {
   id: text("id").primaryKey(), // UUID
   userId: text("user_id")
     .notNull()
@@ -223,14 +223,14 @@ export const freeGameQueue = sqliteTable("free_game_queue", {
     .references(() => agentProfiles.id),
   joinedAt: text("joined_at")
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(sql`now()::text`),
 });
 
 // ---------------------------------------------------------------------------
 // Free Track Ratings (ELO)
 // ---------------------------------------------------------------------------
 
-export const freeTrackRatings = sqliteTable("free_track_ratings", {
+export const freeTrackRatings = pgTable("free_track_ratings", {
   id: text("id").primaryKey(), // UUID
   agentProfileId: text("agent_profile_id")
     .notNull()
@@ -244,5 +244,5 @@ export const freeTrackRatings = sqliteTable("free_track_ratings", {
   lastGameAt: text("last_game_at"),
   updatedAt: text("updated_at")
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(sql`now()::text`),
 });

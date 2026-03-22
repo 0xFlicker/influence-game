@@ -7,14 +7,14 @@
  */
 
 import { describe, test, expect, beforeAll } from "bun:test";
-import { createDB, schema } from "../db/index.js";
-import { migrate } from "drizzle-orm/bun-sqlite/migrator";
+import { schema } from "../db/index.js";
+import type { DrizzleDB } from "../db/index.js";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { GameRunner } from "@influence/engine";
 import type { IAgent, PhaseContext } from "@influence/engine";
 import type { UUID, PowerAction, GameConfig } from "@influence/engine";
-import path from "path";
+import { setupTestDB } from "./test-utils.js";
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -103,15 +103,8 @@ class LifecycleMockAgent implements IAgent {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function setupDB() {
-  const db = createDB(":memory:");
-  const migrationsFolder = path.resolve(import.meta.dir, "../../drizzle");
-  migrate(db, { migrationsFolder });
-  return db;
-}
-
-function createGameInDB(
-  db: ReturnType<typeof createDB>,
+async function createGameInDB(
+  db: DrizzleDB,
   playerCount: number,
 ) {
   const gameId = randomUUID();
@@ -130,7 +123,7 @@ function createGameInDB(
     },
   };
 
-  db.insert(schema.games)
+  await db.insert(schema.games)
     .values({
       id: gameId,
       config: JSON.stringify(config),
@@ -138,8 +131,7 @@ function createGameInDB(
       minPlayers: 5,
       maxPlayers: playerCount,
       startedAt: new Date().toISOString(),
-    })
-    .run();
+    });
 
   // Create player records
   const playerIds: string[] = [];
@@ -151,14 +143,13 @@ function createGameInDB(
     const name = names[i] ?? `Player${i}`;
     playerIds.push(playerId);
 
-    db.insert(schema.gamePlayers)
+    await db.insert(schema.gamePlayers)
       .values({
         id: playerId,
         gameId,
         persona: JSON.stringify({ name, personality: "strategic", personaKey: "strategic" }),
         agentConfig: JSON.stringify({ model: "mock", temperature: 0 }),
-      })
-      .run();
+      });
 
     agents.push(new LifecycleMockAgent(playerId, name));
   }
@@ -172,8 +163,8 @@ function createGameInDB(
 
 describe("Game lifecycle integration", () => {
   test("GameRunner produces transcript and results", async () => {
-    const db = setupDB();
-    const { gameId, agents, config } = createGameInDB(db, 4);
+    const db = await setupTestDB();
+    const { gameId, agents, config } = await createGameInDB(db, 4);
 
     // Run the game
     const runner = new GameRunner(agents, config);
@@ -187,7 +178,7 @@ describe("Game lifecycle integration", () => {
     const CHUNK_SIZE = 100;
     for (let i = 0; i < result.transcript.length; i += CHUNK_SIZE) {
       const chunk = result.transcript.slice(i, i + CHUNK_SIZE);
-      db.insert(schema.transcripts)
+      await db.insert(schema.transcripts)
         .values(
           chunk.map((entry) => ({
             gameId,
@@ -199,12 +190,11 @@ describe("Game lifecycle integration", () => {
             text: entry.text,
             timestamp: entry.timestamp,
           })),
-        )
-        .run();
+        );
     }
 
     // Persist results
-    db.insert(schema.gameResults)
+    await db.insert(schema.gameResults)
       .values({
         id: randomUUID(),
         gameId,
@@ -216,45 +206,40 @@ describe("Game lifecycle integration", () => {
           totalTokens: 0,
           estimatedCost: 0,
         }),
-      })
-      .run();
+      });
 
     // Update game status
-    db.update(schema.games)
+    await db.update(schema.games)
       .set({ status: "completed", endedAt: new Date().toISOString() })
-      .where(eq(schema.games.id, gameId))
-      .run();
+      .where(eq(schema.games.id, gameId));
 
     // Verify transcript was persisted
-    const transcriptRows = db
+    const transcriptRows = await db
       .select()
       .from(schema.transcripts)
-      .where(eq(schema.transcripts.gameId, gameId))
-      .all();
+      .where(eq(schema.transcripts.gameId, gameId));
     expect(transcriptRows.length).toBe(result.transcript.length);
 
     // Verify results
-    const resultRows = db
+    const resultRows = await db
       .select()
       .from(schema.gameResults)
-      .where(eq(schema.gameResults.gameId, gameId))
-      .all();
+      .where(eq(schema.gameResults.gameId, gameId));
     expect(resultRows).toHaveLength(1);
     expect(resultRows[0]!.roundsPlayed).toBe(result.rounds);
 
     // Verify game status
-    const updatedGame = db
+    const updatedGame = (await db
       .select()
       .from(schema.games)
-      .where(eq(schema.games.id, gameId))
-      .all()[0]!;
+      .where(eq(schema.games.id, gameId)))[0]!;
     expect(updatedGame.status).toBe("completed");
     expect(updatedGame.endedAt).toBeTruthy();
   }, 30000);
 
   test("transcript entries have correct structure", async () => {
-    const db = setupDB();
-    const { gameId, agents, config } = createGameInDB(db, 4);
+    const db = await setupTestDB();
+    const { gameId, agents, config } = await createGameInDB(db, 4);
 
     const runner = new GameRunner(agents, config);
     const result = await runner.run();
@@ -262,7 +247,7 @@ describe("Game lifecycle integration", () => {
     // Persist transcript
     for (let i = 0; i < result.transcript.length; i += 100) {
       const chunk = result.transcript.slice(i, i + 100);
-      db.insert(schema.transcripts)
+      await db.insert(schema.transcripts)
         .values(
           chunk.map((entry) => ({
             gameId,
@@ -274,15 +259,13 @@ describe("Game lifecycle integration", () => {
             text: entry.text,
             timestamp: entry.timestamp,
           })),
-        )
-        .run();
+        );
     }
 
-    const rows = db
+    const rows = await db
       .select()
       .from(schema.transcripts)
-      .where(eq(schema.transcripts.gameId, gameId))
-      .all();
+      .where(eq(schema.transcripts.gameId, gameId));
 
     // Should have at least introduction + lobby + vote phases
     const phases = new Set(rows.map((r) => r.phase));
@@ -301,22 +284,20 @@ describe("Game lifecycle integration", () => {
   }, 30000);
 
   test("game produces a winner or completes by max rounds", async () => {
-    const db = setupDB();
-    const { agents, config } = createGameInDB(db, 4);
+    const db = await setupTestDB();
+    const { agents, config } = await createGameInDB(db, 4);
 
     const runner = new GameRunner(agents, config);
     const result = await runner.run();
 
-    // Game should have a winner (with 4 mock agents, elimination happens)
-    // OR reached max rounds
     expect(result.rounds).toBeGreaterThan(0);
-    expect(result.rounds).toBeLessThanOrEqual(config.maxRounds + 5); // Some buffer for endgame
+    expect(result.rounds).toBeLessThanOrEqual(config.maxRounds + 5);
   }, 30000);
 
   test("concurrent games run independently", async () => {
-    const db = setupDB();
-    const game1 = createGameInDB(db, 4);
-    const game2 = createGameInDB(db, 4);
+    const db = await setupTestDB();
+    const game1 = await createGameInDB(db, 4);
+    const game2 = await createGameInDB(db, 4);
 
     const runner1 = new GameRunner(game1.agents, game1.config);
     const runner2 = new GameRunner(game2.agents, game2.config);
@@ -336,20 +317,19 @@ describe("Game lifecycle integration", () => {
       [game1.gameId, result1],
       [game2.gameId, result2],
     ] as [string, typeof result1][]) {
-      db.insert(schema.gameResults)
+      await db.insert(schema.gameResults)
         .values({
           id: randomUUID(),
           gameId,
           winnerId: result.winner ?? null,
           roundsPlayed: result.rounds,
           tokenUsage: JSON.stringify({ promptTokens: 0, completionTokens: 0, totalTokens: 0, estimatedCost: 0 }),
-        })
-        .run();
+        });
     }
 
     // Verify both games have results
-    const results1 = db.select().from(schema.gameResults).where(eq(schema.gameResults.gameId, game1.gameId)).all();
-    const results2 = db.select().from(schema.gameResults).where(eq(schema.gameResults.gameId, game2.gameId)).all();
+    const results1 = await db.select().from(schema.gameResults).where(eq(schema.gameResults.gameId, game1.gameId));
+    const results2 = await db.select().from(schema.gameResults).where(eq(schema.gameResults.gameId, game2.gameId));
     expect(results1).toHaveLength(1);
     expect(results2).toHaveLength(1);
   }, 60000);

@@ -71,20 +71,18 @@ export function createAuthRoutes(db: DrizzleDB) {
     // Upsert user in our database
     // Look up by wallet first, then by Privy subject ID stored in users.id
     let user = walletAddress
-      ? db
+      ? (await db
           .select()
           .from(schema.users)
-          .where(eq(schema.users.walletAddress, walletAddress))
-          .all()[0]
+          .where(eq(schema.users.walletAddress, walletAddress)))[0]
       : null;
 
     if (!user) {
       // Check if we have a user with this Privy ID already
-      user = db
+      user = (await db
         .select()
         .from(schema.users)
-        .where(eq(schema.users.id, privyUserId))
-        .all()[0];
+        .where(eq(schema.users.id, privyUserId)))[0];
     }
 
     if (user) {
@@ -97,15 +95,14 @@ export function createAuthRoutes(db: DrizzleDB) {
         updates.email = email;
       }
       if (Object.keys(updates).length > 0) {
-        db.update(schema.users)
+        await db.update(schema.users)
           .set(updates)
-          .where(eq(schema.users.id, user.id))
-          .run();
+          .where(eq(schema.users.id, user.id));
       }
     } else {
       // Create new user
       const userId = privyUserId;
-      db.insert(schema.users)
+      await db.insert(schema.users)
         .values({
           id: userId,
           walletAddress,
@@ -113,19 +110,17 @@ export function createAuthRoutes(db: DrizzleDB) {
           displayName: walletAddress
             ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
             : email ?? "Player",
-        })
-        .run();
+        });
 
-      user = db
+      user = (await db
         .select()
         .from(schema.users)
-        .where(eq(schema.users.id, userId))
-        .all()[0]!;
+        .where(eq(schema.users.id, userId)))[0]!;
     }
 
     // Resolve RBAC roles and permissions for wallet address
     const resolved = user.walletAddress
-      ? getPermissionsForAddress(db, user.walletAddress)
+      ? await getPermissionsForAddress(db, user.walletAddress)
       : { roles: [], permissions: [] };
 
     // Create session JWT with embedded roles and permissions
