@@ -3,10 +3,13 @@
  * All API calls go through apiFetch so the base URL and auth headers are consistent.
  */
 
-const API_BASE =
-  (typeof window !== "undefined"
-    ? process.env.NEXT_PUBLIC_API_URL
-    : process.env.NEXT_PUBLIC_API_URL) ?? "http://localhost:3000";
+let API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
+
+/** Called by RuntimeConfigProvider once runtime config is fetched. */
+export function setApiBase(url: string): void {
+  API_BASE = url;
+}
 
 // ---------------------------------------------------------------------------
 // Auth token storage (client-side only)

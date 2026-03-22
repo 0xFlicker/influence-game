@@ -1,0 +1,42 @@
+FROM oven/bun:1 AS base
+WORKDIR /app
+
+# Install dependencies
+FROM base AS deps
+COPY package.json bun.lock bunfig.toml ./
+COPY packages/web/package.json packages/web/
+COPY packages/api/package.json packages/api/
+COPY packages/engine/package.json packages/engine/
+RUN bun install --frozen-lockfile
+
+# Build Next.js
+FROM base AS build
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json bun.lock bunfig.toml tsconfig.json ./
+COPY packages/web/ packages/web/
+COPY packages/engine/ packages/engine/
+# Workspace resolution
+COPY packages/api/package.json packages/api/
+
+ENV NEXT_TELEMETRY_DISABLED=1
+
+WORKDIR /app/packages/web
+RUN bun run build
+
+# Runtime — use standalone output
+FROM base AS runtime
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+# Copy standalone build
+COPY --from=build /app/packages/web/.next/standalone ./
+COPY --from=build /app/packages/web/.next/static ./packages/web/.next/static
+COPY --from=build /app/packages/web/public ./packages/web/public
+
+EXPOSE 3000
+
+CMD ["bun", "run", "packages/web/server.js"]

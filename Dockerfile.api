@@ -1,0 +1,37 @@
+FROM oven/bun:1 AS base
+WORKDIR /app
+
+# Install dependencies
+FROM base AS deps
+COPY package.json bun.lock bunfig.toml ./
+COPY packages/api/package.json packages/api/
+COPY packages/engine/package.json packages/engine/
+COPY packages/web/package.json packages/web/
+RUN bun install --frozen-lockfile
+
+# Build a single bundled file
+FROM base AS build
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json bun.lock bunfig.toml tsconfig.json ./
+COPY packages/api/ packages/api/
+COPY packages/engine/ packages/engine/
+COPY packages/web/package.json packages/web/
+
+WORKDIR /app/packages/api
+RUN bun build src/index.ts --target=bun --outdir=dist --sourcemap=external
+
+# Slim runtime — no node_modules needed
+FROM oven/bun:1-slim AS runtime
+WORKDIR /app
+
+COPY --from=build /app/packages/api/dist/ ./dist/
+COPY --from=build /app/packages/api/drizzle/ ./drizzle/
+COPY --from=build /app/packages/api/package.json ./
+
+ENV NODE_ENV=production
+ENV PORT=3001
+ENV HOST=0.0.0.0
+
+EXPOSE 3001
+
+CMD ["bun", "run", "dist/index.js"]

@@ -5,6 +5,7 @@
  */
 
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { eq, or } from "drizzle-orm";
@@ -31,7 +32,7 @@ import {
 
 const apiVersion = (
   JSON.parse(
-    readFileSync(new URL("../package.json", import.meta.url), "utf-8"),
+    readFileSync(path.resolve(process.cwd(), "package.json"), "utf-8"),
   ) as { version: string }
 ).version;
 

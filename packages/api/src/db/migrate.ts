@@ -11,7 +11,7 @@ import path from "path";
 
 export function runMigrations(dbPath?: string) {
   const db = createDB(dbPath);
-  const migrationsFolder = path.resolve(import.meta.dir, "../../drizzle");
+  const migrationsFolder = path.resolve(process.cwd(), "drizzle");
   migrate(db, { migrationsFolder });
   console.log("Migrations applied successfully.");
   return db;

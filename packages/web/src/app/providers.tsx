@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { RuntimeConfigProvider, useRuntimeConfig } from "@/lib/runtime-config";
 import { PrivyProvider, usePrivy } from "@privy-io/react-auth";
 import {
   WagmiProvider as PrivyWagmiProvider,
@@ -98,6 +99,15 @@ function AuthSync() {
 const E2E_PRIVY_APP_ID = "e2e-dummy-privy-app-id";
 
 export function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <RuntimeConfigProvider>
+      <InnerProviders>{children}</InnerProviders>
+    </RuntimeConfigProvider>
+  );
+}
+
+function InnerProviders({ children }: { children: React.ReactNode }) {
+  const runtimeConfig = useRuntimeConfig();
   const [e2e, setE2e] = useState(false);
   const [checked, setChecked] = useState(false);
 
@@ -108,7 +118,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   const privyAppId = e2e
     ? E2E_PRIVY_APP_ID
-    : process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+    : runtimeConfig.PRIVY_APP_ID || process.env.NEXT_PUBLIC_PRIVY_APP_ID;
 
   const e2eAuth = useMemo<E2EAuthState>(() => {
     if (!e2e) return { isE2E: false, authenticated: false, ready: false };
@@ -117,12 +127,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
     return { isE2E: true, authenticated: hasToken, ready: true };
   }, [e2e]);
 
-  if (!checked) {
-    return null; // Wait for client-side e2e detection
+  if (!checked || !runtimeConfig.ready) {
+    return null; // Wait for client-side e2e detection and runtime config
   }
 
   if (!privyAppId) {
-    throw new Error("NEXT_PUBLIC_PRIVY_APP_ID is not set");
+    throw new Error("PRIVY_APP_ID is not set (check runtime env or NEXT_PUBLIC_PRIVY_APP_ID)");
   }
 
   return (

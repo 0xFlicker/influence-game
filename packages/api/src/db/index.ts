@@ -11,8 +11,8 @@ import * as schema from "./schema.js";
 
 export type DrizzleDB = ReturnType<typeof createDB>;
 
-/** Root of the api package (packages/api/) */
-const API_ROOT = path.resolve(import.meta.dir, "../..");
+/** Root of the api package (packages/api/) — uses cwd for bundle compatibility */
+const API_ROOT = process.cwd();
 
 export function createDB(dbPath?: string) {
   const filename = dbPath ?? "influence.db";

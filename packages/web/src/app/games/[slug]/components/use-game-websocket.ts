@@ -4,10 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import type { WsGameEvent } from "@/lib/api";
 import type { ConnStatus } from "./types";
 
-const WS_BASE =
-  (typeof window !== "undefined"
-    ? process.env.NEXT_PUBLIC_WS_URL
-    : undefined) ?? "ws://localhost:3000";
+let WS_BASE =
+  process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3000";
+
+/** Called by RuntimeConfigProvider once runtime config is fetched. */
+export function setWsBase(url: string): void {
+  WS_BASE = url;
+}
 
 export function useGameWebSocket(
   gameId: string,
