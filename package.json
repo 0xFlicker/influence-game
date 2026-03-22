@@ -12,6 +12,7 @@
     "test:engine:full": "cd packages/engine && doppler run -- bun test",
     "simulate": "cd packages/engine && doppler run -- bun run src/simulate.ts",
     "e2e": "bun scripts/e2e-test.ts",
+    "test:e2e": "bunx playwright test",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "bun run --filter '*' lint",
     "check": "bun run typecheck && bun run lint",
@@ -19,6 +20,7 @@
     "dev:web": "cd packages/web && bun run dev"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "puppeteer": "^24.40.0"
   }
 }
