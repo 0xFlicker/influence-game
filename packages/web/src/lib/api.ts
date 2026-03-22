@@ -600,3 +600,60 @@ export async function listAdminUsers(): Promise<AdminUser[]> {
   return apiFetch("/api/admin/users");
 }
 
+// ---------------------------------------------------------------------------
+// Free game queue types
+// ---------------------------------------------------------------------------
+
+export interface FreeQueueStatus {
+  queuedCount: number;
+  nextGameAt: string; // ISO datetime of next midnight UTC
+  userEntry: {
+    agentProfileId: string;
+    agentName: string;
+    joinedAt: string;
+  } | null;
+  todayGame: {
+    id: string;
+    slug: string;
+    gameNumber: number;
+    status: GameStatus;
+  } | null;
+}
+
+export interface FreeTrackLeaderboardEntry {
+  rank: number;
+  agentProfileId: string;
+  agentName: string;
+  userId: string;
+  personaKey: PersonaKey | null;
+  avatarUrl: string | null;
+  rating: number;
+  gamesPlayed: number;
+  gamesWon: number;
+  winRate: number;
+  peakRating: number;
+}
+
+// ---------------------------------------------------------------------------
+// Free game queue API calls
+// ---------------------------------------------------------------------------
+
+export async function getFreeQueueStatus(): Promise<FreeQueueStatus> {
+  return apiFetch("/api/free-queue");
+}
+
+export async function joinFreeQueue(agentProfileId: string): Promise<void> {
+  await apiFetch("/api/free-queue/join", {
+    method: "POST",
+    body: JSON.stringify({ agentProfileId }),
+  });
+}
+
+export async function leaveFreeQueue(): Promise<void> {
+  await apiFetch("/api/free-queue/leave", { method: "DELETE" });
+}
+
+export async function getFreeQueueLeaderboard(): Promise<FreeTrackLeaderboardEntry[]> {
+  return apiFetch("/api/free-queue/leaderboard");
+}
+

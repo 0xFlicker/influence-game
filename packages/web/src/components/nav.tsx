@@ -24,6 +24,10 @@ export function Nav() {
           Games
         </Link>
 
+        <Link href="/games/free" className="text-white/70 hover:text-white transition-colors">
+          Free Games
+        </Link>
+
         {effectiveAuth && (
           <Link href="/dashboard" className="text-white/70 hover:text-white transition-colors">
             Dashboard
