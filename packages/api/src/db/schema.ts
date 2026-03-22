@@ -28,12 +28,14 @@ export const users = sqliteTable("users", {
 // ---------------------------------------------------------------------------
 
 export type GameStatus = "waiting" | "in_progress" | "completed" | "cancelled";
+export type TrackType = "custom" | "free";
 
 export const games = sqliteTable("games", {
   id: text("id").primaryKey(), // UUID
   slug: text("slug").unique(), // Human-readable identifier, e.g. "punk-green-apple"
   config: text("config").notNull(), // JSON-serialized GameConfig
   status: text("status").notNull().$type<GameStatus>().default("waiting"),
+  trackType: text("track_type").notNull().$type<TrackType>().default("custom"),
   minPlayers: integer("min_players").notNull().default(4),
   maxPlayers: integer("max_players").notNull().default(12),
   createdById: text("created_by_id").references(() => users.id),
@@ -205,3 +207,42 @@ export const addressRoles = sqliteTable("address_roles", {
 }, (table) => [
   primaryKey({ columns: [table.walletAddress, table.roleId] }),
 ]);
+
+// ---------------------------------------------------------------------------
+// Free Game Queue
+// ---------------------------------------------------------------------------
+
+export const freeGameQueue = sqliteTable("free_game_queue", {
+  id: text("id").primaryKey(), // UUID
+  userId: text("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id),
+  agentProfileId: text("agent_profile_id")
+    .notNull()
+    .references(() => agentProfiles.id),
+  joinedAt: text("joined_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+// ---------------------------------------------------------------------------
+// Free Track Ratings (ELO)
+// ---------------------------------------------------------------------------
+
+export const freeTrackRatings = sqliteTable("free_track_ratings", {
+  id: text("id").primaryKey(), // UUID
+  agentProfileId: text("agent_profile_id")
+    .notNull()
+    .unique()
+    .references(() => agentProfiles.id),
+  userId: text("user_id").references(() => users.id), // denormalized for leaderboard queries
+  rating: integer("rating").notNull().default(1200),
+  gamesPlayed: integer("games_played").notNull().default(0),
+  gamesWon: integer("games_won").notNull().default(0),
+  peakRating: integer("peak_rating").notNull().default(1200),
+  lastGameAt: text("last_game_at"),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});

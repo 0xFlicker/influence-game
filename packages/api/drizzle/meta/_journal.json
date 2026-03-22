@@ -57,6 +57,13 @@
       "when": 1774079364527,
       "tag": "0007_tiny_loners",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1774145491326,
+      "tag": "0008_hard_gertrude_yorkes",
+      "breakpoints": true
     }
   ]
 }
