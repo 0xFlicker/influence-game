@@ -28,6 +28,8 @@ RUN bun build src/index.ts --target=bun --outdir=dist --sourcemap=external
 FROM oven/bun:1-slim AS runtime
 WORKDIR /app
 
+LABEL org.opencontainers.image.source=https://github.com/0xFlicker/influence-game
+
 COPY --from=build /app/packages/api/dist/ ./dist/
 COPY --from=build /app/packages/api/drizzle/ ./drizzle/
 COPY --from=build /app/packages/api/package.json ./
