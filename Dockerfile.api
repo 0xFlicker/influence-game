@@ -17,6 +17,10 @@ COPY packages/api/ packages/api/
 COPY packages/engine/ packages/engine/
 COPY packages/web/package.json packages/web/
 
+# Restore workspace-specific node_modules (bun creates symlinks into root .bun cache)
+COPY --from=deps /app/packages/api/node_modules ./packages/api/node_modules
+COPY --from=deps /app/packages/engine/node_modules ./packages/engine/node_modules
+
 WORKDIR /app/packages/api
 RUN bun build src/index.ts --target=bun --outdir=dist --sourcemap=external
 

@@ -18,6 +18,12 @@ COPY packages/engine/ packages/engine/
 # Workspace resolution
 COPY packages/api/package.json packages/api/
 
+# Restore workspace-specific node_modules (bun creates symlinks into root .bun cache)
+COPY --from=deps /app/packages/web/node_modules ./packages/web/node_modules
+COPY --from=deps /app/packages/engine/node_modules ./packages/engine/node_modules
+
+# Ensure CLI tools (next, etc.) are on PATH from root node_modules
+ENV PATH="/app/node_modules/.bin:$PATH"
 ENV NEXT_TELEMETRY_DISABLED=1
 
 WORKDIR /app/packages/web
