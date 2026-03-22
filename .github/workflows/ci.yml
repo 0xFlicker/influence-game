@@ -75,25 +75,18 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ matrix.image }}
-          tags: |
-            type=sha,format=long
-            type=sha,format=short
-            type=raw,value=staging
+      - name: Extract short SHA
+        id: sha
+        run: echo "short=$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          provenance: false
+        run: |
+          docker build -f ${{ matrix.dockerfile }} \
+            -t ${{ matrix.image }}:${{ steps.sha.outputs.short }} \
+            -t ${{ matrix.image }}:staging \
+            .
+          docker push ${{ matrix.image }}:${{ steps.sha.outputs.short }}
+          docker push ${{ matrix.image }}:staging
 
   trigger-deploy:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
