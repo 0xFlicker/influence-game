@@ -278,36 +278,16 @@ Three Doppler configs exist under the `social-strategy-agent` project:
 
 ### Staging Deployment
 
-Deploy a tagged release to staging (tailnet-only):
+Staging deploys are automated via the CI/CD pipeline:
 
-```bash
-# Deploy latest tag
-./scripts/deploy-staging.sh
+1. Push to `main` → CI passes (typecheck, lint, test)
+2. Docker images built and pushed to GHCR (`ghcr.io/0xflicker/influence-{api,web}`)
+3. Cross-repo trigger fires `deploy-staging.yml` in the `linode-iac` repo
+4. Docker Compose deploys to the staging host
 
-# Deploy specific version
-./scripts/deploy-staging.sh v0.6.0
-
-# Check status
-./scripts/staging-status.sh
-
-# Stop staging
-./scripts/stop-staging.sh
-```
-
-Staging uses a git worktree at `~/Development/influence/staging/app/`, checked out at the specified tag. The API binds to the Tailscale IP (`100.100.251.4`) so it is only accessible from the tailnet.
-
-A Tailscale service (`svc:influencer-staging`) provides HTTPS access with path-based routing:
+To manually trigger a staging deploy, use the `deploy-staging` skill or trigger the `deploy-staging.yml` workflow in linode-iac.
 
 **Board access URL:** `https://influencer-staging.tail8a79ed.ts.net/`
-
-| Path | Backend | Service |
-|------|---------|----------|
-| `/` | `100.100.251.4:4001` | Next.js web |
-| `/api/*` | `100.100.251.4:4000` | Hono API |
-| `/ws/*` | `100.100.251.4:4000` | WebSocket |
-| `/health` | `100.100.251.4:4000` | Health check |
-
-After deploying, run `tailscale serve advertise svc:influencer-staging` if the service needs re-advertising.
 
 ### Port Allocation
 
@@ -352,7 +332,7 @@ Before creating a version tag:
 4. Commit message: `release: vX.Y.Z`
 5. Annotated tag: `git tag -a vX.Y.Z -m "vX.Y.Z: <summary>"`
 6. Push: `git push origin main --tags`
-7. Deploy to staging: `./scripts/deploy-staging.sh vX.Y.Z`
+7. Deploy to staging: push triggers automated deploy via CI/CD pipeline
 8. Comment on Paperclip issue with release notes
 
 ## Release Cadence
