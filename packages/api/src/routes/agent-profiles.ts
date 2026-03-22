@@ -296,13 +296,37 @@ Respond with JSON only:
       .where(eq(schema.agentProfiles.id, profileId))
       .run();
 
+    // Reset free-track ELO ratings if personality-defining fields changed
+    let freeTrackReset = false;
+    if (personalityChanged) {
+      const freeRating = db
+        .select()
+        .from(schema.freeTrackRatings)
+        .where(eq(schema.freeTrackRatings.agentProfileId, profileId))
+        .all()[0];
+
+      if (freeRating) {
+        db.update(schema.freeTrackRatings)
+          .set({
+            rating: 1200,
+            gamesPlayed: 0,
+            gamesWon: 0,
+            peakRating: 1200,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(schema.freeTrackRatings.agentProfileId, profileId))
+          .run();
+        freeTrackReset = true;
+      }
+    }
+
     const updated = db
       .select()
       .from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, profileId))
       .all()[0]!;
 
-    return c.json({ ...updated, statsReset: resetStats });
+    return c.json({ ...updated, statsReset: resetStats, freeTrackReset });
   });
 
   // -------------------------------------------------------------------------
