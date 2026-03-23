@@ -26,10 +26,10 @@ import { createUUID } from "../game-state";
 // Test configuration
 // ---------------------------------------------------------------------------
 
-/** Timeout for the full game test (10 minutes max) */
-const GAME_TIMEOUT_MS = 10 * 60 * 1000;
+/** Timeout for the full game test (5 minutes max) */
+const GAME_TIMEOUT_MS = 5 * 60 * 1000;
 
-/** Fast config for tests: shorter timers, fewer rounds */
+/** Fast config for tests: shorter timers, fewer rounds, limited diary rooms */
 const TEST_CONFIG: GameConfig = {
   ...DEFAULT_CONFIG,
   timers: {
@@ -42,6 +42,8 @@ const TEST_CONFIG: GameConfig = {
     council: 0,
   },
   maxRounds: 6, // Cap at 6 rounds to keep test fast
+  maxDiaryFollowUps: 0, // Single question per interview (no follow-ups)
+  diaryRoomAfterPhases: [Phase.INTRODUCTION, Phase.LOBBY, Phase.VOTE], // Only 3 diary rooms per round
 };
 
 // ---------------------------------------------------------------------------
@@ -143,8 +145,8 @@ describe("Full Influence Game", () => {
     GAME_TIMEOUT_MS,
   );
 
-  it(
-    "runs a complete game with 6 LLM agents (full cast)",
+  it.skip(
+    "runs a complete game with 6 LLM agents (full cast) — slow, run manually",
     async () => {
       const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey) {

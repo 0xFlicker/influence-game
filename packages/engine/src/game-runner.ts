@@ -1437,6 +1437,12 @@ export class GameRunner {
    * During Judgment, jury members are also interviewed.
    */
   private async runDiaryRoom(precedingPhase: Phase): Promise<void> {
+    // Skip diary room if config restricts to specific phases
+    const allowedPhases = this.config.diaryRoomAfterPhases;
+    if (allowedPhases && !allowedPhases.includes(precedingPhase)) {
+      return;
+    }
+
     this.logSystem(`--- Diary Room (after ${precedingPhase}) ---`, Phase.DIARY_ROOM);
     const alivePlayers = this.gameState.getAlivePlayers();
 
@@ -1478,7 +1484,8 @@ export class GameRunner {
     playerName: string,
     isJuror: boolean,
   ): Promise<void> {
-    const MAX_QUESTIONS = 4;
+    const maxFollowUps = this.config.maxDiaryFollowUps ?? 3;
+    const MAX_QUESTIONS = 1 + maxFollowUps; // first question + follow-ups
     const agent = this.agents.get(playerId)!;
     const label = isJuror ? `${playerName} (juror)` : playerName;
     const houseLabel = isJuror ? `House -> ${playerName} (juror)` : `House -> ${playerName}`;
