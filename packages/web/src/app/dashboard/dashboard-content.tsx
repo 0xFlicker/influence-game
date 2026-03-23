@@ -27,7 +27,7 @@ function PlacementBadge({ result }: { result: PlayerGameResult }) {
   if (result.winner) {
     return (
       <span className="text-xs bg-yellow-900/40 text-yellow-400 border border-yellow-900/60 px-2 py-0.5 rounded-full font-medium">
-        🏆 Winner
+        🏆<span className="hidden lg:inline"> Winner</span>
       </span>
     );
   }
