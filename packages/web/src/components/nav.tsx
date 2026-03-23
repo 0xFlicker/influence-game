@@ -28,6 +28,10 @@ export function Nav() {
           Free Games
         </Link>
 
+        <Link href="/rules" className="text-white/70 hover:text-white transition-colors">
+          Rules
+        </Link>
+
         <Link href="/about" className="text-white/70 hover:text-white transition-colors">
           About
         </Link>
