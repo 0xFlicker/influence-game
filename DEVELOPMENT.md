@@ -51,22 +51,53 @@ If `types.ts` needs new fields, the FE makes those changes. LGD should never edi
 2. If a change alters `PhaseContext`, `IAgent` interface, or `GameConfig` shape, post a comment on the active LGD issue so they can update their simulations.
 3. Unit tests in `game-engine.test.ts` must pass before any merge.
 
-## Testing Contract
+## Testing
 
-Every change must satisfy:
+### Test Tiers
+
+Tests are organized into three tiers with different requirements:
+
+| Tier | Command | Needs DB? | Needs Doppler? | When to run |
+|------|---------|-----------|----------------|-------------|
+| **Unit (mock)** | `bun run test` | No | No | Every commit (pre-commit check) |
+| **DB integration** | `bun run test:db` | Yes (PostgreSQL) | No | Before merging API changes |
+| **Full LLM** | `doppler run -- bun test:engine:full` | No | Yes (OPENAI_API_KEY) | Before releasing engine changes |
+
+### Running Tests
 
 ```bash
-# Must always pass (no LLM, fast)
-bun test src/__tests__/game-engine.test.ts
+# From repo root — runs ALL unit tests across all packages (engine + api + web)
+bun run test
 
-# Must pass before merging engine changes
-doppler run -- bun test
+# API integration tests (requires PostgreSQL on port 54320)
+bun run test:db
+
+# Engine unit tests only
+bun run test:engine
+
+# Engine full tests with real LLM calls (requires Doppler)
+doppler run -- bun run test:engine:full
+
+# E2E smoke tests (requires running API server)
+cd packages/api && bun run test:e2e
 ```
+
+**Important:** Always use `bun run test` (the script), not `bun test` (the raw runner). Running `bun test` from the repo root bypasses the workspace filter and picks up all test files, including integration tests that require PostgreSQL.
+
+### What each package's `test:mock` runs
+
+- **engine**: `game-engine.test.ts` — core game mechanics with mock agents (no LLM)
+- **api**: `websocket.test.ts`, `viewer-event-pacer.test.ts` — pure unit tests (no DB)
+- **web**: `api-utils.test.ts`, `constants.test.ts`, `message-parsing.test.ts` — frontend utilities
+
+The remaining API tests (`db.test.ts`, `auth.test.ts`, `games-api.test.ts`, `agent-profiles.test.ts`, `game-lifecycle.test.ts`) are integration tests that require a running PostgreSQL instance. Run them with `bun run test:db`.
+
+### Testing Contract
 
 Rules:
 - New game mechanics require new unit tests in `game-engine.test.ts`.
 - New personas require a mock-game smoke test or a note in the PR explaining why one wasn't added.
-- Never merge code that breaks `game-engine.test.ts`.
+- Never merge code that breaks `bun run test`.
 - Integration tests (`full-game.test.ts`) are allowed to be flaky due to LLM non-determinism, but should not systematically fail.
 
 ## Adding a New Persona
@@ -315,10 +346,13 @@ The API respects `PORT` and `HOST` env vars (set in Doppler per environment). In
 Before EVERY commit, agents MUST run:
 
 ```bash
-bun run typecheck   # Must pass (test file errors are exceptions, not source errors)
-bun run lint        # Must pass
-bun test            # All mock tests must pass (138+ tests, 0 failures)
+bun install --frozen-lockfile  # Lockfile must be in sync with package.json
+bun run typecheck              # Must pass
+bun run lint                   # Must pass
+bun run test                   # All unit/mock tests must pass (0 failures)
 ```
+
+**Use `bun run test`, not `bun test`.** The raw `bun test` command picks up integration tests that require PostgreSQL and will fail without a database.
 
 If any check fails, fix it before committing. No exceptions.
 
