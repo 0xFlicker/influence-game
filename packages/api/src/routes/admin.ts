@@ -12,7 +12,7 @@
  */
 
 import { Hono } from "hono";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { getPermissionsForAddress } from "../db/rbac.js";
@@ -245,17 +245,56 @@ export function createAdminRoutes(db: DrizzleDB) {
   app.get("/api/admin/games", async (c) => {
     const rows = await db.select().from(schema.games);
 
-    const summaries = rows.map((game) => ({
-      id: game.id,
-      slug: game.slug,
-      status: game.status,
-      trackType: game.trackType,
-      hidden: !!game.hiddenAt,
-      hiddenAt: game.hiddenAt,
-      createdAt: game.createdAt,
-      startedAt: game.startedAt,
-      endedAt: game.endedAt,
+    const summaries = await Promise.all(rows.map(async (game) => {
+      const config = JSON.parse(game.config);
+      const players = await db
+        .select()
+        .from(schema.gamePlayers)
+        .where(eq(schema.gamePlayers.gameId, game.id));
+
+      const result = await db
+        .select()
+        .from(schema.gameResults)
+        .where(eq(schema.gameResults.gameId, game.id));
+
+      const winnerPlayer = result[0]?.winnerId
+        ? players.find((p) => p.id === result[0]!.winnerId)
+        : null;
+      const winnerPersona = winnerPlayer
+        ? JSON.parse(winnerPlayer.persona)
+        : null;
+
+      return {
+        id: game.id,
+        slug: game.slug ?? undefined,
+        gameNumber: 0, // populated below
+        status: game.status,
+        playerCount: players.length,
+        currentRound: 0,
+        maxRounds: config.maxRounds ?? 10,
+        currentPhase: game.status === "completed" ? "END" : "INIT",
+        phaseTimeRemaining: null,
+        alivePlayers: players.length,
+        eliminatedPlayers: 0,
+        modelTier: config.modelTier ?? "budget",
+        visibility: config.visibility ?? "public",
+        viewerMode: config.viewerMode ?? "speedrun",
+        trackType: game.trackType,
+        winner: winnerPersona?.name ?? undefined,
+        winnerPersona: winnerPersona?.personality ?? undefined,
+        errorInfo: config.errorInfo ?? undefined,
+        createdAt: game.createdAt,
+        startedAt: game.startedAt ?? undefined,
+        completedAt: game.endedAt ?? undefined,
+        hidden: !!game.hiddenAt,
+        hiddenAt: game.hiddenAt ?? undefined,
+      };
     }));
+
+    // Assign game numbers by creation order
+    summaries.forEach((s, i) => {
+      s.gameNumber = i + 1;
+    });
 
     return c.json(summaries);
   });

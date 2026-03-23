@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { listGames, type GameSummary, type GameStatus, type ModelTier } from "@/lib/api";
+import { listAdminGames, hideGame, unhideGame, type AdminGameSummary, type GameStatus, type ModelTier } from "@/lib/api";
+import { usePermissions } from "@/hooks/use-permissions";
 
 // ---------------------------------------------------------------------------
 // Filter state
@@ -11,6 +12,7 @@ import { listGames, type GameSummary, type GameStatus, type ModelTier } from "@/
 type StatusFilter = GameStatus | "all";
 type ModelFilter = ModelTier | "all";
 type PlayerFilter = "all" | "4" | "6" | "8" | "10" | "12";
+type VisibilityFilter = "all" | "visible" | "hidden";
 
 // ---------------------------------------------------------------------------
 // Row component
@@ -20,14 +22,14 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function StatusBadge({ status }: { status: GameSummary["status"] }) {
-  const styles: Record<GameSummary["status"], string> = {
+function StatusBadge({ status }: { status: AdminGameSummary["status"] }) {
+  const styles: Record<AdminGameSummary["status"], string> = {
     waiting: "bg-yellow-900/40 text-yellow-400",
     in_progress: "bg-blue-900/40 text-blue-400",
     completed: "bg-green-900/40 text-green-400",
     cancelled: "bg-red-900/40 text-red-400",
   };
-  const labels: Record<GameSummary["status"], string> = {
+  const labels: Record<AdminGameSummary["status"], string> = {
     waiting: "waiting",
     in_progress: "live",
     completed: "✓ done",
@@ -40,7 +42,8 @@ function StatusBadge({ status }: { status: GameSummary["status"] }) {
   );
 }
 
-function GameRow({ game }: { game: GameSummary }) {
+function GameRow({ game, canHide, onToggleVisibility }: { game: AdminGameSummary; canHide: boolean; onToggleVisibility: () => void }) {
+  const [toggling, setToggling] = useState(false);
   const date = new Date(game.completedAt ?? game.createdAt).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -48,9 +51,30 @@ function GameRow({ game }: { game: GameSummary }) {
     minute: "2-digit",
   });
 
+  async function handleToggle() {
+    setToggling(true);
+    try {
+      if (game.hidden) {
+        await unhideGame(game.id);
+      } else {
+        await hideGame(game.id);
+      }
+      onToggleVisibility();
+    } catch {
+      setToggling(false);
+    }
+  }
+
   return (
-    <tr className="border-t border-white/5 hover:bg-white/[0.02] transition-colors group">
-      <td className="py-3 px-4 text-white/50 text-sm">#{game.gameNumber}</td>
+    <tr className={`border-t border-white/5 hover:bg-white/[0.02] transition-colors group ${game.hidden ? "opacity-40" : ""}`}>
+      <td className="py-3 px-4 text-white/50 text-sm">
+        #{game.gameNumber}
+        {game.hidden && (
+          <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-orange-900/40 text-orange-400">
+            hidden
+          </span>
+        )}
+      </td>
       <td className="py-3 px-4 text-white text-sm">
         {game.winner ? (
           <span>
@@ -71,12 +95,28 @@ function GameRow({ game }: { game: GameSummary }) {
         <StatusBadge status={game.status} />
       </td>
       <td className="py-3 px-4">
-        <Link
-          href={`/games/${game.slug ?? game.id}`}
-          className="text-indigo-400 hover:text-indigo-300 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-        >
-          View →
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/games/${game.slug ?? game.id}`}
+            className="text-indigo-400 hover:text-indigo-300 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            View →
+          </Link>
+          {canHide && (
+            <button
+              onClick={handleToggle}
+              disabled={toggling}
+              title={game.hidden ? "Restore to public lists" : "Hide from public lists"}
+              className={`text-xs opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 ${
+                game.hidden
+                  ? "text-white/20 hover:text-green-400"
+                  : "text-white/20 hover:text-orange-400"
+              }`}
+            >
+              {toggling ? "…" : game.hidden ? "Unhide" : "Hide"}
+            </button>
+          )}
+        </div>
       </td>
     </tr>
   );
@@ -118,17 +158,21 @@ function FilterSelect<T extends string>({
 // ---------------------------------------------------------------------------
 
 export function GameHistoryBrowser() {
+  const { hasPermission } = usePermissions();
+  const canHideGame = hasPermission("hide_game");
+
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [modelFilter, setModelFilter] = useState<ModelFilter>("all");
   const [playerFilter, setPlayerFilter] = useState<PlayerFilter>("all");
+  const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>("all");
   const [search, setSearch] = useState("");
 
-  const [games, setGames] = useState<GameSummary[]>([]);
+  const [games, setGames] = useState<AdminGameSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    listGames()
+  const fetchGames = useCallback(() => {
+    listAdminGames()
       .then((data) => {
         setGames(data);
         setError(null);
@@ -139,10 +183,16 @@ export function GameHistoryBrowser() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    fetchGames();
+  }, [fetchGames]);
+
   const filtered = games.filter((g) => {
     if (statusFilter !== "all" && g.status !== statusFilter) return false;
     if (modelFilter !== "all" && g.modelTier !== modelFilter) return false;
     if (playerFilter !== "all" && g.playerCount !== parseInt(playerFilter)) return false;
+    if (visibilityFilter === "visible" && g.hidden) return false;
+    if (visibilityFilter === "hidden" && !g.hidden) return false;
     if (search) {
       const q = search.toLowerCase();
       if (
@@ -153,6 +203,8 @@ export function GameHistoryBrowser() {
     }
     return true;
   });
+
+  const hiddenCount = games.filter((g) => g.hidden).length;
 
   return (
     <div>
@@ -194,6 +246,18 @@ export function GameHistoryBrowser() {
             { value: "12", label: "12 players" },
           ]}
         />
+        {hiddenCount > 0 && (
+          <FilterSelect
+            label="Visibility"
+            value={visibilityFilter}
+            onChange={setVisibilityFilter}
+            options={[
+              { value: "all", label: `All (${hiddenCount} hidden)` },
+              { value: "visible", label: "Visible only" },
+              { value: "hidden", label: "Hidden only" },
+            ]}
+          />
+        )}
         <input
           type="text"
           placeholder="Search…"
@@ -240,7 +304,7 @@ export function GameHistoryBrowser() {
             </thead>
             <tbody>
               {filtered.map((g) => (
-                <GameRow key={g.id} game={g} />
+                <GameRow key={g.id} game={g} canHide={canHideGame} onToggleVisibility={fetchGames} />
               ))}
             </tbody>
           </table>

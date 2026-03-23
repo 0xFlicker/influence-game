@@ -159,6 +159,15 @@ export async function listGames(
   return apiFetch(`/api/games${q}`);
 }
 
+export interface AdminGameSummary extends GameSummary {
+  hidden: boolean;
+  hiddenAt?: string;
+}
+
+export async function listAdminGames(): Promise<AdminGameSummary[]> {
+  return apiFetch("/api/admin/games");
+}
+
 export async function stopGame(id: string): Promise<void> {
   await apiFetch(`/api/games/${id}/stop`, { method: "POST" });
 }
@@ -513,6 +522,14 @@ export type WsGameEvent =
 // ---------------------------------------------------------------------------
 // Game detail API calls
 // ---------------------------------------------------------------------------
+
+export async function hideGame(id: string): Promise<void> {
+  await apiFetch(`/api/games/${id}/hide`, { method: "PATCH" });
+}
+
+export async function unhideGame(id: string): Promise<void> {
+  await apiFetch(`/api/games/${id}/unhide`, { method: "PATCH" });
+}
 
 export async function getGame(id: string): Promise<GameDetail> {
   return apiFetch(`/api/games/${id}`);

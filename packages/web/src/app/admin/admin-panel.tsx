@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
-import { listGames, stopGame, startGame, fillGame, isFillAccepted, type GameSummary, type WsGameEvent } from "@/lib/api";
+import { listGames, stopGame, startGame, fillGame, isFillAccepted, hideGame, type GameSummary, type WsGameEvent } from "@/lib/api";
 import { useGameWebSocket } from "@/app/games/[slug]/components/use-game-websocket";
 import { usePermissions } from "@/hooks/use-permissions";
 import { TruncatedAddress } from "@/components/truncated-address";
@@ -112,10 +112,11 @@ function GameCard({ game, onRefresh, canStop }: { game: GameSummary; onRefresh: 
 // Waiting game card
 // ---------------------------------------------------------------------------
 
-function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop }: { game: GameSummary; onRefresh: () => void; canStart: boolean; canFill: boolean; canStop: boolean }) {
+function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide }: { game: GameSummary; onRefresh: () => void; canStart: boolean; canFill: boolean; canStop: boolean; canHide: boolean }) {
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [filling, setFilling] = useState(false);
+  const [hiding, setHiding] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const handleWsEvent = useCallback(
@@ -170,6 +171,18 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop }: { game
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
       setStopping(false);
+    }
+  }
+
+  async function handleHide() {
+    setActionError(null);
+    setHiding(true);
+    try {
+      await hideGame(game.id);
+      onRefresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+      setHiding(false);
     }
   }
 
@@ -228,6 +241,16 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop }: { game
               {stopping ? "…" : "🗑"}
             </button>
           )}
+          {canHide && (
+            <button
+              onClick={handleHide}
+              disabled={hiding}
+              title="Hide from public lists"
+              className="text-xs border border-white/10 hover:border-orange-700 text-white/30 hover:text-orange-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+            >
+              {hiding ? "…" : "Hide"}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -262,13 +285,24 @@ function StatusBadge({ status, errorInfo }: { status: GameSummary["status"]; err
   );
 }
 
-function RecentGameRow({ game }: { game: GameSummary }) {
+function RecentGameRow({ game, canHide, onRefresh }: { game: GameSummary; canHide: boolean; onRefresh: () => void }) {
+  const [hiding, setHiding] = useState(false);
   const date = new Date(game.completedAt ?? game.createdAt).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   });
+
+  async function handleHide() {
+    setHiding(true);
+    try {
+      await hideGame(game.id);
+      onRefresh();
+    } catch {
+      setHiding(false);
+    }
+  }
 
   return (
     <tr className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
@@ -291,12 +325,24 @@ function RecentGameRow({ game }: { game: GameSummary }) {
         <StatusBadge status={game.status} errorInfo={game.errorInfo} />
       </td>
       <td className="py-3 px-4">
-        <Link
-          href={`/games/${game.slug ?? game.id}`}
-          className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors"
-        >
-          View →
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/games/${game.slug ?? game.id}`}
+            className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors"
+          >
+            View →
+          </Link>
+          {canHide && (
+            <button
+              onClick={handleHide}
+              disabled={hiding}
+              title="Hide from public lists"
+              className="text-white/20 hover:text-orange-400 text-xs transition-colors disabled:opacity-50"
+            >
+              {hiding ? "…" : "Hide"}
+            </button>
+          )}
+        </div>
       </td>
     </tr>
   );
@@ -314,6 +360,7 @@ export function AdminPanel() {
   const canStartGame = hasPermission("start_game");
   const canStopGame = hasPermission("stop_game");
   const canFillGame = hasPermission("fill_game");
+  const canHideGame = hasPermission("hide_game");
 
   const [activeGames, setActiveGames] = useState<GameSummary[]>([]);
   const [waitingGames, setWaitingGames] = useState<GameSummary[]>([]);
@@ -425,7 +472,7 @@ export function AdminPanel() {
         ) : (
           <div className="space-y-3">
             {waitingGames.map((g) => (
-              <WaitingGameCard key={g.id} game={g} onRefresh={fetchGames} canStart={canStartGame} canFill={canFillGame} canStop={canStopGame} />
+              <WaitingGameCard key={g.id} game={g} onRefresh={fetchGames} canStart={canStartGame} canFill={canFillGame} canStop={canStopGame} canHide={canHideGame} />
             ))}
           </div>
         )}
@@ -471,7 +518,7 @@ export function AdminPanel() {
               </thead>
               <tbody>
                 {recentGames.slice(0, 5).map((g) => (
-                  <RecentGameRow key={g.id} game={g} />
+                  <RecentGameRow key={g.id} game={g} canHide={canHideGame} onRefresh={fetchGames} />
                 ))}
               </tbody>
             </table>
