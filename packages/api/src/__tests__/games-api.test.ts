@@ -13,6 +13,7 @@ import { createGameRoutes } from "../routes/games.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { randomUUID } from "crypto";
 import { setupTestDB } from "./test-utils.js";
+import { abortAllGames } from "../services/game-lifecycle.js";
 
 // ---------------------------------------------------------------------------
 // Set required env vars for auth
@@ -29,7 +30,10 @@ beforeAll(() => {
   }
 });
 
-afterAll(() => {
+afterAll(async () => {
+  // Abort background games started during tests. PgMemoryStore.save() handles
+  // FK errors gracefully, so we don't need to fully await completion.
+  abortAllGames().catch(() => {});
   if (savedApiKey === undefined) {
     delete process.env.OPENAI_API_KEY;
   } else {

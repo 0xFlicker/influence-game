@@ -549,7 +549,7 @@ describe("Agent Profile API", () => {
       expect(body.name).toBeTruthy();
       expect(body.personality).toBeTruthy();
       expect(body.personaKey).toBeTruthy();
-    });
+    }, 15_000);
 
     llmTest("generates a personality from archetype only", async () => {
       const res = await app.request(
@@ -559,7 +559,7 @@ describe("Agent Profile API", () => {
       expect(res.status).toBe(200);
       const body = await res.json() as { personaKey: string };
       expect(body.personaKey).toBeTruthy();
-    });
+    }, 15_000);
 
     llmTest("refines an existing profile", async () => {
       const res = await app.request(
@@ -577,6 +577,6 @@ describe("Agent Profile API", () => {
       const body = await res.json() as { name: string; backstory: string };
       expect(body.name).toBeTruthy();
       expect(body.backstory).toBeTruthy();
-    });
+    }, 15_000);
   });
 });

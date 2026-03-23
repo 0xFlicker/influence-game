@@ -52,6 +52,17 @@ export function getActiveGameCount(): number {
   return activeGames.size;
 }
 
+/** Abort and await all active games — used by tests to prevent cross-file pollution. */
+export async function abortAllGames(): Promise<void> {
+  for (const game of activeGames.values()) {
+    game.runner.abort();
+  }
+  const promises = [...activeGames.values()].map((g) =>
+    g.promise.catch(() => {}),
+  );
+  await Promise.all(promises);
+}
+
 /** Get a state snapshot for a running game (for WebSocket catch-up). */
 export function getGameSnapshot(gameId: string): GameStateSnapshot | null {
   const active = activeGames.get(gameId);

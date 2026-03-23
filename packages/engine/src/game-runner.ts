@@ -200,6 +200,8 @@ export class GameRunner {
   private readonly houseInterviewer: IHouseInterviewer;
   /** Optional listener for real-time game events (WebSocket streaming) */
   private _streamListener?: (event: GameStreamEvent) => void;
+  /** When true, the game loop will exit at the next phase boundary. */
+  private _aborted = false;
 
   /** Total number of players at game start (used for jury pool sizing) */
   private readonly totalPlayerCount: number;
@@ -254,6 +256,11 @@ export class GameRunner {
         .map((p) => ({ id: p.id, name: p.name })),
       transcript: [...this.transcript],
     };
+  }
+
+  /** Signal the game to stop at the next phase boundary. */
+  abort(): void {
+    this._aborted = true;
   }
 
   private emitStream(event: GameStreamEvent): void {
@@ -339,7 +346,7 @@ export class GameRunner {
     // Drive phases
     await this.runPhase(Phase.INIT, actor);
 
-    while (!done) {
+    while (!done && !this._aborted) {
       const snapshot = actor.getSnapshot();
       const state = snapshot.value as string;
 
