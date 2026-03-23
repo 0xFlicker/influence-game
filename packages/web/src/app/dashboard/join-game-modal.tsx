@@ -96,6 +96,7 @@ function AgentPicker({
 
 export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) {
   const [agents, setAgents] = useState<SavedAgent[]>([]);
+  const [agentsFetchError, setAgentsFetchError] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agentName, setAgentName] = useState("");
   const [personality, setPersonality] = useState("");
@@ -108,8 +109,9 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
     if (!getAuthToken()) return;
     listAgents()
       .then(setAgents)
-      .catch(() => {
-        // API may not be available yet — silently fall back to manual entry
+      .catch((err) => {
+        console.warn("[JoinGameModal] Failed to load saved agents:", err);
+        setAgentsFetchError(true);
       });
   }, []);
 
@@ -205,12 +207,20 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
               <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
                 Select Agent
               </label>
-              <AgentPicker
-                agents={agents}
-                selectedId={selectedAgentId}
-                onSelect={handleSelectAgent}
-                onClear={handleClearAgent}
-              />
+              {agentsFetchError ? (
+                <div className="border border-yellow-900/40 bg-yellow-900/10 rounded-lg p-3 text-center">
+                  <p className="text-yellow-400/80 text-xs">
+                    Could not load saved agents. You can still join manually below.
+                  </p>
+                </div>
+              ) : (
+                <AgentPicker
+                  agents={agents}
+                  selectedId={selectedAgentId}
+                  onSelect={handleSelectAgent}
+                  onClear={handleClearAgent}
+                />
+              )}
             </div>
 
             {/* Manual config — hidden when a saved agent is selected */}

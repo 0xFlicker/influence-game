@@ -53,15 +53,17 @@ export function useGameWebSocket(
         }, delay);
       };
 
-      // onerror always precedes onclose — let onclose handle the status transition
-      ws.onerror = () => {};
+      ws.onerror = (event) => {
+        console.warn(`[useGameWebSocket] WebSocket error for game ${gameId}:`, event);
+        // onclose always follows onerror — let onclose handle status transition & reconnect
+      };
 
       ws.onmessage = (ev) => {
         try {
           const data = JSON.parse(ev.data as string) as WsGameEvent;
           onEventRef.current(data);
-        } catch {
-          // ignore malformed frames
+        } catch (err) {
+          console.warn(`[useGameWebSocket] Malformed WebSocket frame for game ${gameId}:`, err, ev.data);
         }
       };
     }

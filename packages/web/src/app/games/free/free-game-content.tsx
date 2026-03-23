@@ -376,6 +376,9 @@ export function FreeGameContent() {
   const [agents, setAgents] = useState<SavedAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [leaderboardLoading, setLeaderboardLoading] = useState(true);
+  const [queueError, setQueueError] = useState<string | null>(null);
+  const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+  const [agentsError, setAgentsError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -383,9 +386,11 @@ export function FreeGameContent() {
     try {
       const status = await getFreeQueueStatus();
       setQueueStatus(status);
-    } catch {
-      // Queue endpoint may not exist yet — show empty state
+      setQueueError(null);
+    } catch (err) {
+      console.warn("[FreeGameContent] Failed to load queue status:", err);
       setQueueStatus(null);
+      setQueueError("Failed to load queue status.");
     } finally {
       setLoading(false);
     }
@@ -395,8 +400,11 @@ export function FreeGameContent() {
     try {
       const data = await getFreeQueueLeaderboard();
       setLeaderboard(data);
-    } catch {
+      setLeaderboardError(null);
+    } catch (err) {
+      console.warn("[FreeGameContent] Failed to load leaderboard:", err);
       setLeaderboard([]);
+      setLeaderboardError("Failed to load leaderboard.");
     } finally {
       setLeaderboardLoading(false);
     }
@@ -407,8 +415,11 @@ export function FreeGameContent() {
     try {
       const data = await listAgents();
       setAgents(data);
-    } catch {
+      setAgentsError(null);
+    } catch (err) {
+      console.warn("[FreeGameContent] Failed to load agents:", err);
       setAgents([]);
+      setAgentsError("Failed to load agents.");
     }
   }, []);
 
@@ -483,6 +494,8 @@ export function FreeGameContent() {
                 player{queueStatus.queuedCount !== 1 ? "s" : ""} queued for
                 tonight&apos;s game
               </>
+            ) : queueError ? (
+              <span className="text-red-400">{queueError}</span>
             ) : (
               "Queue status unavailable"
             )}
@@ -498,6 +511,11 @@ export function FreeGameContent() {
         <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">
           Queue
         </h2>
+        {agentsError && (
+          <div className="border border-yellow-900/40 bg-yellow-900/10 rounded-lg p-3 mb-3 text-center">
+            <p className="text-yellow-400/80 text-xs">{agentsError}</p>
+          </div>
+        )}
         <QueueSection
           queueStatus={queueStatus}
           agents={agents}
@@ -518,7 +536,13 @@ export function FreeGameContent() {
         <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">
           Free Track Leaderboard
         </h2>
-        <Leaderboard entries={leaderboard} loading={leaderboardLoading} />
+        {leaderboardError && !leaderboardLoading ? (
+          <div className="border border-red-900/40 bg-red-900/10 rounded-xl p-8 text-center">
+            <p className="text-red-400 text-sm">{leaderboardError}</p>
+          </div>
+        ) : (
+          <Leaderboard entries={leaderboard} loading={leaderboardLoading} />
+        )}
       </section>
     </div>
   );

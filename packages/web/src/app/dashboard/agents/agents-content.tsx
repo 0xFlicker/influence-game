@@ -23,13 +23,18 @@ export function AgentsContent() {
   const [editTarget, setEditTarget] = useState<SavedAgent | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<SavedAgent | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const fetchAgents = useCallback(() => {
     if (!getAuthToken()) return;
     setLoading(true);
+    setFetchError(null);
     listAgents()
       .then(setAgents)
-      .catch(() => setAgents([]))
+      .catch((err) => {
+        console.warn("[AgentsContent] Failed to load agents:", err);
+        setFetchError("Failed to load agents. Please try again.");
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -134,6 +139,16 @@ export function AgentsContent() {
           {loading ? (
             <div className="border border-white/10 rounded-xl p-8 text-center text-white/20 text-sm">
               Loading...
+            </div>
+          ) : fetchError ? (
+            <div className="border border-red-900/40 bg-red-900/10 rounded-xl p-8 text-center">
+              <p className="text-red-400 text-sm">{fetchError}</p>
+              <button
+                onClick={fetchAgents}
+                className="mt-3 text-xs text-white/50 hover:text-white/80 underline transition-colors"
+              >
+                Retry
+              </button>
             </div>
           ) : (
             <AgentList

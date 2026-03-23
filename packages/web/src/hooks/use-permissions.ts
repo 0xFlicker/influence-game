@@ -8,6 +8,7 @@ import { useE2EAuth } from "@/app/providers";
 interface PermissionsState {
   loading: boolean;
   user: AuthMe | null;
+  authError: boolean;
   roles: string[];
   permissions: string[];
   isAdmin: boolean;
@@ -28,15 +29,21 @@ export function usePermissions(): PermissionsState {
   const { ready, authenticated } = usePrivy();
   const [user, setUser] = useState<AuthMe | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(false);
 
   const effectiveReady = e2e.isE2E ? e2e.ready : ready;
   const effectiveAuth = e2e.isE2E ? e2e.authenticated : authenticated;
 
   const fetchMe = useCallback(() => {
     setLoading(true);
+    setAuthError(false);
     getMe()
       .then((me) => setUser(me))
-      .catch(() => setUser(null))
+      .catch((err) => {
+        console.warn("[usePermissions] /auth/me request failed:", err);
+        setUser(null);
+        setAuthError(true);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -77,5 +84,5 @@ export function usePermissions(): PermissionsState {
     [permissionSet],
   );
 
-  return { loading, user, roles, permissions, isAdmin, hasPermission, hasAnyPermission };
+  return { loading, user, authError, roles, permissions, isAdmin, hasPermission, hasAnyPermission };
 }

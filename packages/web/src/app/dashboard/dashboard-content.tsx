@@ -105,6 +105,7 @@ function HistorySection({ history }: { history: PlayerGameResult[] }) {
 function SavedAgentsSection() {
   const [agents, setAgents] = useState<SavedAgent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!getAuthToken()) {
@@ -113,7 +114,10 @@ function SavedAgentsSection() {
     }
     listAgents()
       .then(setAgents)
-      .catch(() => setAgents([]))
+      .catch((err) => {
+        console.warn("[SavedAgentsSection] Failed to load agents:", err);
+        setFetchError("Failed to load agents.");
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -121,6 +125,14 @@ function SavedAgentsSection() {
     return (
       <div className="border border-white/10 rounded-xl p-6 text-center text-white/20 text-sm">
         Loading...
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="border border-red-900/40 bg-red-900/10 rounded-xl p-6 text-center">
+        <p className="text-red-400 text-sm">{fetchError}</p>
       </div>
     );
   }
@@ -196,15 +208,18 @@ export function DashboardContent() {
   const [, setJoinedGameIds] = useState<Set<string>>(new Set());
   const [history, setHistory] = useState<PlayerGameResult[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   useEffect(() => {
     function fetchHistory() {
       if (!getAuthToken()) return;
       setHistoryLoading(true);
+      setHistoryError(null);
       getPlayerGames()
         .then(setHistory)
-        .catch(() => {
-          // Not fatal — user may not have played any games yet
+        .catch((err) => {
+          console.warn("[DashboardContent] Failed to load game history:", err);
+          setHistoryError("Failed to load game history.");
         })
         .finally(() => setHistoryLoading(false));
     }
@@ -304,6 +319,10 @@ export function DashboardContent() {
           {historyLoading ? (
             <div className="border border-white/10 rounded-xl p-8 text-center text-white/20 text-sm">
               Loading…
+            </div>
+          ) : historyError ? (
+            <div className="border border-red-900/40 bg-red-900/10 rounded-xl p-8 text-center">
+              <p className="text-red-400 text-sm">{historyError}</p>
             </div>
           ) : (
             <HistorySection history={history} />

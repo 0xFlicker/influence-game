@@ -28,8 +28,9 @@ export default async function GameViewerPage({ params, searchParams }: Props) {
     if (initialGame.status === "completed" || initialGame.status === "cancelled") {
       initialMessages = await getGameTranscript(slug);
     }
-  } catch {
-    // API unavailable or game not found — client will handle it
+  } catch (err) {
+    console.error(`[GameViewerPage] SSR fetch failed for slug="${slug}":`, err);
+    // Client-side GameViewer will retry and show loadError if API remains unavailable
   }
 
   return (
