@@ -28,6 +28,10 @@ export function Nav() {
           Free Games
         </Link>
 
+        <Link href="/about" className="text-white/70 hover:text-white transition-colors">
+          About
+        </Link>
+
         {effectiveAuth && (
           <Link href="/dashboard" className="text-white/70 hover:text-white transition-colors">
             Dashboard
