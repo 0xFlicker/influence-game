@@ -2,8 +2,8 @@
 /**
  * E2E Test Orchestrator
  *
- * PAUSED UNTIL RESOURCE EXPANSION (2026-03-21)
- * Machine OOM: cannot run staging + dev + Puppeteer on 4GB Linode.
+ * PAUSED — OOM on 4GB/2-CPU machine (2026-03-23)
+ * Cannot run full game-flow e2e (API + web + Playwright) concurrently.
  * Blocked on server upgrade. See INF-194.
  *
  * Single entry point for the full e2e test suite.
@@ -64,32 +64,9 @@ async function killTestProcess(): Promise<void> {
   }
 }
 
-function cleanupTempDbs() {
-  // Clean up any orphaned e2e test DBs in /tmp
-  try {
-    const tmpFiles = readdirSync("/tmp");
-    for (const f of tmpFiles) {
-      if (f.startsWith("influence-e2e-") && f.endsWith(".db")) {
-        const dbPath = path.join("/tmp", f);
-        for (const suffix of ["", "-wal", "-shm"]) {
-          try {
-            unlinkSync(dbPath + suffix);
-          } catch {
-            // ignore
-          }
-        }
-        log(`Cleaned up orphaned test DB: ${f}`);
-      }
-    }
-  } catch {
-    // ignore
-  }
-}
-
 async function cleanup(): Promise<void> {
   if (timeoutId) clearTimeout(timeoutId);
   await killTestProcess();
-  cleanupTempDbs();
 }
 
 // Handle signals for clean shutdown
@@ -118,9 +95,6 @@ async function run(): Promise<number> {
   cleanupScreenshots();
   mkdirSync(SCREENSHOT_DIR, { recursive: true });
 
-  // Clean orphaned DBs from previous failed runs
-  cleanupTempDbs();
-
   // Verify the e2e test file exists
   const testFile = path.join(API_DIR, "src/e2e/game-flow.e2e.test.ts");
   if (!existsSync(testFile)) {
@@ -142,10 +116,6 @@ async function run(): Promise<number> {
       stderr: "inherit",
       env: {
         ...process.env,
-        // Ensure Puppeteer can find Chrome
-        PUPPETEER_CACHE_DIR:
-          process.env.PUPPETEER_CACHE_DIR ||
-          path.join(ROOT_DIR, "node_modules/.cache/puppeteer"),
       },
     });
   } catch (err) {
@@ -166,7 +136,6 @@ async function run(): Promise<number> {
   if (result.kind === "timeout") {
     log(`TIMEOUT: Test suite exceeded ${OVERALL_TIMEOUT_MS / 1000}s`);
     await killTestProcess();
-    cleanupTempDbs();
 
     // Check for screenshots
     const screenshots = existsSync(SCREENSHOT_DIR)
