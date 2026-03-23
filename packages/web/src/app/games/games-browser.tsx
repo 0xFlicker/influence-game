@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { listGames, type GameSummary, type GameStatus, type ModelTier, type TrackType } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
@@ -68,6 +68,7 @@ interface GameCardProps {
 }
 
 function GameCard({ game, onJoin }: GameCardProps) {
+  const router = useRouter();
   const isJoinable = game.status === "waiting";
   const isLive = game.status === "in_progress";
   const slotsInfo = isJoinable
@@ -75,7 +76,10 @@ function GameCard({ game, onJoin }: GameCardProps) {
     : undefined;
 
   return (
-    <div className="border border-white/10 rounded-xl p-5 hover:border-white/20 transition-colors">
+    <div
+      onClick={() => router.push(`/games/${game.slug ?? game.id}`)}
+      className="border border-white/10 rounded-xl p-5 hover:border-white/20 transition-colors cursor-pointer"
+    >
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           {/* Header row */}
@@ -132,22 +136,16 @@ function GameCard({ game, onJoin }: GameCardProps) {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <Link
-            href={`/games/${game.slug ?? game.id}`}
-            className="text-xs border border-white/15 hover:border-white/30 text-white/60 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
-          >
-            {isLive ? "Watch" : "View"}
-          </Link>
-          {isJoinable && onJoin && (
+        {isJoinable && onJoin && (
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button
-              onClick={() => onJoin(game)}
+              onClick={(e) => { e.stopPropagation(); onJoin(game); }}
               className="text-xs px-3 py-1.5 rounded-lg font-medium transition-colors bg-emerald-600 hover:bg-emerald-500 text-white"
             >
               Join
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

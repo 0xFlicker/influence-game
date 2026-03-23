@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAccount } from "wagmi";
 import { listGames, stopGame, startGame, fillGame, isFillAccepted, hideGame, type GameSummary, type WsGameEvent } from "@/lib/api";
@@ -38,6 +39,7 @@ function capitalize(s: string): string {
 // ---------------------------------------------------------------------------
 
 function GameCard({ game, onRefresh, canStop }: { game: GameSummary; onRefresh: () => void; canStop: boolean }) {
+  const router = useRouter();
   const pct = progressPct(game);
   const [stopping, setStopping] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -55,7 +57,10 @@ function GameCard({ game, onRefresh, canStop }: { game: GameSummary; onRefresh: 
   }
 
   return (
-    <div className="border border-white/10 rounded-xl p-5 flex items-start justify-between gap-4">
+    <div
+      onClick={() => router.push(`/games/${game.slug ?? game.id}`)}
+      className="border border-white/10 rounded-xl p-5 flex items-start justify-between gap-4 cursor-pointer hover:border-white/20 transition-colors"
+    >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-3 mb-2">
           <span className="text-white font-semibold">#{game.gameNumber}</span>
@@ -83,23 +88,17 @@ function GameCard({ game, onRefresh, canStop }: { game: GameSummary; onRefresh: 
         </div>
       </div>
       <div className="flex flex-col items-end gap-1 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/games/${game.slug ?? game.id}`}
-            className="text-xs border border-white/15 hover:border-white/30 text-white/70 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
-          >
-            View
-          </Link>
-          {canStop && (
+        {canStop && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={handleStop}
+              onClick={(e) => { e.stopPropagation(); handleStop(); }}
               disabled={stopping}
               className="text-xs border border-red-900/50 hover:border-red-700 text-red-400/70 hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
             >
               {stopping ? "…" : "⏹ Stop"}
             </button>
-          )}
-        </div>
+          </div>
+        )}
         {actionError && (
           <p className="text-xs text-red-400/80">{actionError}</p>
         )}
@@ -188,8 +187,13 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
     }
   }
 
+  const router = useRouter();
+
   return (
-    <div className="border border-white/10 rounded-xl p-5 flex items-center justify-between gap-4">
+    <div
+      onClick={() => router.push(`/games/${game.slug ?? game.id}`)}
+      className="border border-white/10 rounded-xl p-5 flex items-center justify-between gap-4 cursor-pointer hover:border-white/20 transition-colors"
+    >
       <div>
         <div className="flex items-center gap-3 mb-1">
           <span className="text-white font-semibold">#{game.gameNumber}</span>
@@ -211,15 +215,9 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
           <p className="text-xs text-red-400/80">{actionError}</p>
         )}
         <div className="flex items-center gap-2">
-          <Link
-            href={`/games/${game.slug ?? game.id}`}
-            className="text-xs border border-white/15 hover:border-white/30 text-white/70 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
-          >
-            View
-          </Link>
           {canFill && !filling && (
             <button
-              onClick={handleFill}
+              onClick={(e) => { e.stopPropagation(); handleFill(); }}
               className="text-xs border border-indigo-900/50 hover:border-indigo-700 text-indigo-400/70 hover:text-indigo-400 px-3 py-1.5 rounded-lg transition-colors"
             >
               Fill AI
@@ -227,7 +225,7 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
           )}
           {canStart && (
             <button
-              onClick={handleStart}
+              onClick={(e) => { e.stopPropagation(); handleStart(); }}
               disabled={starting || filling}
               className="text-xs border border-green-900/50 hover:border-green-700 text-green-400/70 hover:text-green-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
             >
@@ -236,7 +234,7 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
           )}
           {canStop && (
             <button
-              onClick={handleStop}
+              onClick={(e) => { e.stopPropagation(); handleStop(); }}
               disabled={stopping}
               className="text-xs border border-white/10 hover:border-red-700 text-white/30 hover:text-red-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
             >
@@ -245,7 +243,7 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
           )}
           {canHide && (
             <button
-              onClick={() => setConfirmHide(true)}
+              onClick={(e) => { e.stopPropagation(); setConfirmHide(true); }}
               disabled={hiding}
               title="Hide from public lists"
               className="text-xs border border-white/10 hover:border-orange-700 text-white/30 hover:text-orange-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
@@ -311,6 +309,7 @@ function StatusBadge({ status, errorInfo }: { status: GameSummary["status"]; err
 }
 
 function RecentGameRow({ game, canHide, onRefresh }: { game: GameSummary; canHide: boolean; onRefresh: () => void }) {
+  const router = useRouter();
   const [hiding, setHiding] = useState(false);
   const [confirmHide, setConfirmHide] = useState(false);
   const date = new Date(game.completedAt ?? game.createdAt).toLocaleDateString("en-US", {
@@ -332,7 +331,10 @@ function RecentGameRow({ game, canHide, onRefresh }: { game: GameSummary; canHid
   }
 
   return (
-    <tr className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
+    <tr
+      onClick={() => router.push(`/games/${game.slug ?? game.id}`)}
+      className="border-t border-white/5 hover:bg-white/[0.02] transition-colors cursor-pointer"
+    >
       <td className="py-3 px-4 text-white/60 text-sm">#{game.gameNumber}</td>
       <td className="py-3 px-4 text-white text-sm">
         {game.winner ? (
@@ -352,26 +354,18 @@ function RecentGameRow({ game, canHide, onRefresh }: { game: GameSummary; canHid
         <StatusBadge status={game.status} errorInfo={game.errorInfo} />
       </td>
       <td className="py-3 px-4">
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/games/${game.slug ?? game.id}`}
-            className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors"
+        {canHide && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setConfirmHide(true); }}
+            disabled={hiding}
+            title="Hide from public lists"
+            className="text-white/20 hover:text-orange-400 text-xs transition-colors disabled:opacity-50"
           >
-            View →
-          </Link>
-          {canHide && (
-            <button
-              onClick={() => setConfirmHide(true)}
-              disabled={hiding}
-              title="Hide from public lists"
-              className="text-white/20 hover:text-orange-400 text-xs transition-colors disabled:opacity-50"
-            >
-              {hiding ? "…" : "Hide"}
-            </button>
-          )}
-        </div>
+            {hiding ? "…" : "Hide"}
+          </button>
+        )}
         {confirmHide && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={(e) => e.stopPropagation()}>
             <div className="bg-zinc-900 border border-white/10 rounded-xl p-6 max-w-sm w-full mx-4">
               <p className="text-white text-sm mb-4">
                 Hide game <strong>#{game.gameNumber}</strong> from public lists? It can be restored from Game History.

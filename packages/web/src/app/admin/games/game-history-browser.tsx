@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { listAdminGames, hideGame, unhideGame, type AdminGameSummary, type GameStatus, type ModelTier } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 
@@ -43,6 +43,7 @@ function StatusBadge({ status }: { status: AdminGameSummary["status"] }) {
 }
 
 function GameRow({ game, canHide, onToggleVisibility }: { game: AdminGameSummary; canHide: boolean; onToggleVisibility: () => void }) {
+  const router = useRouter();
   const [toggling, setToggling] = useState(false);
   const [confirmHide, setConfirmHide] = useState(false);
   const date = new Date(game.completedAt ?? game.createdAt).toLocaleDateString("en-US", {
@@ -68,7 +69,10 @@ function GameRow({ game, canHide, onToggleVisibility }: { game: AdminGameSummary
   }
 
   return (
-    <tr className={`border-t border-white/5 hover:bg-white/[0.02] transition-colors group ${game.hidden ? "opacity-40" : ""}`}>
+    <tr
+      onClick={() => router.push(`/games/${game.slug ?? game.id}`)}
+      className={`border-t border-white/5 hover:bg-white/[0.02] transition-colors group cursor-pointer ${game.hidden ? "opacity-40" : ""}`}
+    >
       <td className="py-3 px-4 text-white/50 text-sm">
         #{game.gameNumber}
         {game.hidden && (
@@ -97,30 +101,22 @@ function GameRow({ game, canHide, onToggleVisibility }: { game: AdminGameSummary
         <StatusBadge status={game.status} />
       </td>
       <td className="py-3 px-4">
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/games/${game.slug ?? game.id}`}
-            className="text-indigo-400 hover:text-indigo-300 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+        {canHide && (
+          <button
+            onClick={(e) => { e.stopPropagation(); game.hidden ? handleToggle() : setConfirmHide(true); }}
+            disabled={toggling}
+            title={game.hidden ? "Restore to public lists" : "Hide from public lists"}
+            className={`text-xs opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 ${
+              game.hidden
+                ? "text-white/20 hover:text-green-400"
+                : "text-white/20 hover:text-orange-400"
+            }`}
           >
-            View →
-          </Link>
-          {canHide && (
-            <button
-              onClick={game.hidden ? handleToggle : () => setConfirmHide(true)}
-              disabled={toggling}
-              title={game.hidden ? "Restore to public lists" : "Hide from public lists"}
-              className={`text-xs opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 ${
-                game.hidden
-                  ? "text-white/20 hover:text-green-400"
-                  : "text-white/20 hover:text-orange-400"
-              }`}
-            >
-              {toggling ? "…" : game.hidden ? "Unhide" : "Hide"}
-            </button>
-          )}
-        </div>
+            {toggling ? "…" : game.hidden ? "Unhide" : "Hide"}
+          </button>
+        )}
         {confirmHide && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={(e) => e.stopPropagation()}>
             <div className="bg-zinc-900 border border-white/10 rounded-xl p-6 max-w-sm w-full mx-4">
               <p className="text-white text-sm mb-4">
                 Hide game <strong>#{game.gameNumber}</strong> from public lists?
