@@ -466,8 +466,8 @@ async function runGameAsync(
     // Clear operational memories — they exist only for game duration
     try {
       await new PgMemoryStore(db).clear(gameId);
-    } catch {
-      // Non-critical cleanup
+    } catch (err) {
+      console.warn(`[game-lifecycle] memory cleanup failed for game=${gameId}:`, err instanceof Error ? err.message : err);
     }
     activeGames.delete(gameId);
   }

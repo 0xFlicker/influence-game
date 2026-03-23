@@ -266,8 +266,8 @@ export class GameRunner {
   private emitStream(event: GameStreamEvent): void {
     try {
       this._streamListener?.(event);
-    } catch {
-      // Never let a listener error break the game loop
+    } catch (err) {
+      console.warn(`[game-runner] stream listener error on event="${event.type}":`, err instanceof Error ? err.message : err);
     }
   }
 

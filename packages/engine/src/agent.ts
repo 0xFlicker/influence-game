@@ -542,7 +542,8 @@ Use the send_whispers tool to submit your whisper messages. Use player NAMES (no
           return { to: resolved, text: w.text };
         })
         .filter((w) => w.to.length > 0 && w.text.length > 0);
-    } catch {
+    } catch (err) {
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getWhispers error="${err instanceof Error ? err.message : err}" fallback=[]`);
       return [];
     }
   }
@@ -582,9 +583,11 @@ Use the request_room tool to submit your preference.`;
         console.warn(`[vote-fallback] agent="${this.name}" method=requestRoom returned="${partnerName}" available=[${otherPlayers.map((p) => p.name).join(", ")}] fallback=null`);
       }
       return partner?.id ?? null;
-    } catch {
+    } catch (err) {
       // Fallback: pick random other player
       const idx = Math.floor(Math.random() * otherPlayers.length);
+      const fallbackName = otherPlayers[idx]?.name ?? "none";
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=requestRoom error="${err instanceof Error ? err.message : err}" fallback="${fallbackName}"`);
       return otherPlayers[idx]?.id ?? null;
     }
   }
@@ -720,8 +723,11 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
       this.persistMemory("vote_history", null, JSON.stringify(voteEntry));
 
       return { empowerTarget, exposeTarget };
-    } catch {
-      return { empowerTarget: randomOther().id, exposeTarget: randomOther().id };
+    } catch (err) {
+      const empFallback = randomOther();
+      const expFallback = randomOther();
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getVotes error="${err instanceof Error ? err.message : err}" fallback=empower:"${empFallback.name}",expose:"${expFallback.name}"`);
+      return { empowerTarget: empFallback.id, exposeTarget: expFallback.id };
     }
   }
 
@@ -802,9 +808,11 @@ Use the council_vote tool to cast your vote.`;
       const fallbackName = ctx.alivePlayers.find((p) => p.id === fallback)?.name ?? fallback;
       console.warn(`[vote-fallback] agent="${this.name}" method=getCouncilVote returned="${result.eliminate}" available=[${c1Name}, ${c2Name}] fallback="${fallbackName}"`);
       return fallback;
-    } catch {
+    } catch (err) {
       const fallback = candidates[Math.floor(Math.random() * 2)];
       if (!fallback) throw new Error("No council candidate available");
+      const fallbackName = ctx.alivePlayers.find((p) => p.id === fallback)?.name ?? fallback;
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getCouncilVote error="${err instanceof Error ? err.message : err}" fallback="${fallbackName}"`);
       return fallback;
     }
   }
@@ -889,9 +897,10 @@ Use the elimination_vote tool to cast your vote.`;
       if (!fallback) throw new Error("No other players available for elimination vote");
       console.warn(`[vote-fallback] agent="${this.name}" method=getEndgameEliminationVote returned="${result.eliminate}" available=[${others.map((p) => p.name).join(", ")}] fallback="${fallback.name}"`);
       return fallback.id;
-    } catch {
+    } catch (err) {
       const fallback = others[Math.floor(Math.random() * others.length)];
       if (!fallback) throw new Error("No other players available for elimination vote");
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getEndgameEliminationVote error="${err instanceof Error ? err.message : err}" fallback="${fallback.name}"`);
       return fallback.id;
     }
   }
@@ -924,9 +933,10 @@ Use the make_accusation tool to submit your accusation.`;
         targetId: target?.id ?? fallbackOther.id,
         text: result.accusation ?? `I accuse ${target?.name ?? fallbackOther.name}.`,
       };
-    } catch {
+    } catch (err) {
       const fallbackOther = others[0];
       if (!fallbackOther) throw new Error("No other players available for accusation");
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getAccusation error="${err instanceof Error ? err.message : err}" fallback="${fallbackOther.name}"`);
       return { targetId: fallbackOther.id, text: `I believe ${fallbackOther.name} should go.` };
     }
   }
@@ -989,7 +999,8 @@ Use the ask_jury_question tool to submit your question.`;
         targetFinalistId: target?.id ?? finalistId0,
         question: result.question ?? "Why do you deserve to win?",
       };
-    } catch {
+    } catch (err) {
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getJuryQuestion error="${err instanceof Error ? err.message : err}" fallback=target:"${finalist0.name}"`);
       return {
         targetFinalistId: finalistId0,
         question: `${finalist0.name}, why do you deserve to win?`,
@@ -1063,9 +1074,11 @@ Use the jury_vote tool to cast your vote.`;
         console.warn(`[vote-fallback] agent="${this.name}" method=getJuryVote returned="${result.winner}" available=[${finalists.map((f) => f.name).join(", ")}] fallback="${finalists.find((f) => f.id === randomFinalist)?.name ?? randomFinalist}"`);
       }
       return target?.id ?? randomFinalist;
-    } catch {
+    } catch (err) {
       const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
       if (!randomFinalist) throw new Error("No finalist available for jury vote");
+      const fallbackName = finalists.find((f) => f.id === randomFinalist)?.name ?? randomFinalist;
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getJuryVote error="${err instanceof Error ? err.message : err}" fallback="${fallbackName}"`);
       return randomFinalist;
     }
   }
@@ -1293,8 +1306,8 @@ Be specific — name players, cite events, reference conversations.`;
       );
       this.memory.lastReflection = reflection;
       this.persistMemory("reflection", null, JSON.stringify(reflection));
-    } catch {
-      // Non-critical — if reflection fails, continue without it
+    } catch (err) {
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getStrategicReflection error="${err instanceof Error ? err.message : err}" fallback=skipped`);
     }
   }
 
