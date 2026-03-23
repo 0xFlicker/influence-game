@@ -1,24 +1,21 @@
 /**
  * Influence Game — Database Migration Runner
  *
- * Applies Drizzle migrations from the drizzle/ directory.
+ * Applies Drizzle migrations from the directory specified by DRIZZLE_MIGRATIONS_DIR.
  * Can be run standalone or imported programmatically.
  */
 
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { createDB } from "./index.js";
-import path from "path";
-import fs from "fs";
 
 export async function runMigrations(connectionString?: string) {
+  const migrationsFolder = process.env.DRIZZLE_MIGRATIONS_DIR;
+  if (!migrationsFolder) {
+    throw new Error(
+      "DRIZZLE_MIGRATIONS_DIR is not set. Set it to the path of the drizzle migrations directory."
+    );
+  }
   const db = createDB(connectionString);
-  // In source: import.meta.dir is src/db/, drizzle/ is ../../drizzle
-  // In bundle:  import.meta.dir is dist/,   drizzle/ is ../drizzle
-  const bundledPath = path.resolve(import.meta.dir, "../drizzle");
-  const sourcePath = path.resolve(import.meta.dir, "../../drizzle");
-  const migrationsFolder = fs.existsSync(path.join(bundledPath, "meta/_journal.json"))
-    ? bundledPath
-    : sourcePath;
   await migrate(db, { migrationsFolder });
   console.log("Migrations applied successfully.");
   return db;

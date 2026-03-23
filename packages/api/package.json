@@ -5,15 +5,15 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "dev": "bun run --watch src/index.ts",
-    "start": "bun run src/index.ts",
+    "dev": "DRIZZLE_MIGRATIONS_DIR=./drizzle bun run --watch src/index.ts",
+    "start": "DRIZZLE_MIGRATIONS_DIR=./drizzle bun run src/index.ts",
     "typecheck": "tsc --noEmit",
     "test:mock": "bun test src/__tests__/",
     "test:e2e": "bun test src/e2e/",
     "lint": "eslint src/",
     "db:generate": "bunx drizzle-kit generate",
-    "db:migrate": "bun run src/db/migrate.ts",
-    "db:seed": "bun run src/db/seed.ts"
+    "db:migrate": "DRIZZLE_MIGRATIONS_DIR=./drizzle bun run src/db/migrate.ts",
+    "db:seed": "DRIZZLE_MIGRATIONS_DIR=./drizzle bun run src/db/seed.ts"
   },
   "dependencies": {
     "@influence/engine": "workspace:*",
