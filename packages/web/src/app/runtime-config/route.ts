@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 
+// Force dynamic so process.env is read at request time, not cached at build time
+export const dynamic = "force-dynamic";
+
 /**
  * Runtime config Route Handler.
  *
