@@ -113,6 +113,6 @@ jobs:
               workflow_id: 'deploy-staging.yml',
               ref: 'main',
               inputs: {
-                image_tag: '${{ github.sha }}'
+                image_tag: 'staging'
               }
             });
