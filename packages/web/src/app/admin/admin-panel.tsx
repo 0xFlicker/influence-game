@@ -117,6 +117,7 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
   const [stopping, setStopping] = useState(false);
   const [filling, setFilling] = useState(false);
   const [hiding, setHiding] = useState(false);
+  const [confirmHide, setConfirmHide] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const handleWsEvent = useCallback(
@@ -175,6 +176,7 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
   }
 
   async function handleHide() {
+    setConfirmHide(false);
     setActionError(null);
     setHiding(true);
     try {
@@ -243,7 +245,7 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
           )}
           {canHide && (
             <button
-              onClick={handleHide}
+              onClick={() => setConfirmHide(true)}
               disabled={hiding}
               title="Hide from public lists"
               className="text-xs border border-white/10 hover:border-orange-700 text-white/30 hover:text-orange-400 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
@@ -253,6 +255,29 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
           )}
         </div>
       </div>
+      {confirmHide && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-zinc-900 border border-white/10 rounded-xl p-6 max-w-sm w-full mx-4">
+            <p className="text-white text-sm mb-4">
+              Hide game <strong>#{game.gameNumber}</strong> from public lists? It can be restored from Game History.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmHide(false)}
+                className="text-sm text-white/50 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleHide}
+                className="text-sm bg-orange-600 hover:bg-orange-500 text-white px-4 py-1.5 rounded-lg transition-colors"
+              >
+                Hide
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -287,6 +312,7 @@ function StatusBadge({ status, errorInfo }: { status: GameSummary["status"]; err
 
 function RecentGameRow({ game, canHide, onRefresh }: { game: GameSummary; canHide: boolean; onRefresh: () => void }) {
   const [hiding, setHiding] = useState(false);
+  const [confirmHide, setConfirmHide] = useState(false);
   const date = new Date(game.completedAt ?? game.createdAt).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -295,6 +321,7 @@ function RecentGameRow({ game, canHide, onRefresh }: { game: GameSummary; canHid
   });
 
   async function handleHide() {
+    setConfirmHide(false);
     setHiding(true);
     try {
       await hideGame(game.id);
@@ -334,7 +361,7 @@ function RecentGameRow({ game, canHide, onRefresh }: { game: GameSummary; canHid
           </Link>
           {canHide && (
             <button
-              onClick={handleHide}
+              onClick={() => setConfirmHide(true)}
               disabled={hiding}
               title="Hide from public lists"
               className="text-white/20 hover:text-orange-400 text-xs transition-colors disabled:opacity-50"
@@ -343,6 +370,29 @@ function RecentGameRow({ game, canHide, onRefresh }: { game: GameSummary; canHid
             </button>
           )}
         </div>
+        {confirmHide && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+            <div className="bg-zinc-900 border border-white/10 rounded-xl p-6 max-w-sm w-full mx-4">
+              <p className="text-white text-sm mb-4">
+                Hide game <strong>#{game.gameNumber}</strong> from public lists? It can be restored from Game History.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setConfirmHide(false)}
+                  className="text-sm text-white/50 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleHide}
+                  className="text-sm bg-orange-600 hover:bg-orange-500 text-white px-4 py-1.5 rounded-lg transition-colors"
+                >
+                  Hide
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </td>
     </tr>
   );

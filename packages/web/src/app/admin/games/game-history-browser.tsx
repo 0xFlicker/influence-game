@@ -44,6 +44,7 @@ function StatusBadge({ status }: { status: AdminGameSummary["status"] }) {
 
 function GameRow({ game, canHide, onToggleVisibility }: { game: AdminGameSummary; canHide: boolean; onToggleVisibility: () => void }) {
   const [toggling, setToggling] = useState(false);
+  const [confirmHide, setConfirmHide] = useState(false);
   const date = new Date(game.completedAt ?? game.createdAt).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -52,6 +53,7 @@ function GameRow({ game, canHide, onToggleVisibility }: { game: AdminGameSummary
   });
 
   async function handleToggle() {
+    setConfirmHide(false);
     setToggling(true);
     try {
       if (game.hidden) {
@@ -104,7 +106,7 @@ function GameRow({ game, canHide, onToggleVisibility }: { game: AdminGameSummary
           </Link>
           {canHide && (
             <button
-              onClick={handleToggle}
+              onClick={game.hidden ? handleToggle : () => setConfirmHide(true)}
               disabled={toggling}
               title={game.hidden ? "Restore to public lists" : "Hide from public lists"}
               className={`text-xs opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 ${
@@ -117,6 +119,29 @@ function GameRow({ game, canHide, onToggleVisibility }: { game: AdminGameSummary
             </button>
           )}
         </div>
+        {confirmHide && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+            <div className="bg-zinc-900 border border-white/10 rounded-xl p-6 max-w-sm w-full mx-4">
+              <p className="text-white text-sm mb-4">
+                Hide game <strong>#{game.gameNumber}</strong> from public lists?
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setConfirmHide(false)}
+                  className="text-sm text-white/50 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleToggle}
+                  className="text-sm bg-orange-600 hover:bg-orange-500 text-white px-4 py-1.5 rounded-lg transition-colors"
+                >
+                  Hide
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </td>
     </tr>
   );
