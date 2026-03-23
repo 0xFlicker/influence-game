@@ -101,6 +101,8 @@ jobs:
 
       - name: Create staging deployment tag
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           TAG="staging/$(date -u +%Y-%m-%d)/$(echo ${{ github.sha }} | cut -c1-7)"
           git tag -a "$TAG" -m "Staging deploy from ${GITHUB_SHA}"
           git push origin "$TAG"
