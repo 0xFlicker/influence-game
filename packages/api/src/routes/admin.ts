@@ -21,6 +21,7 @@ import {
   requirePermission,
   type AuthEnv,
 } from "../middleware/auth.js";
+import { parseJsonBody } from "../lib/parse-json-body.js";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -98,7 +99,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.post("/api/admin/address-roles", async (c) => {
-    const body = await c.req.json().catch(() => null);
+    const body = await parseJsonBody(c, "POST /api/admin/address-roles");
     if (!body?.walletAddress || !body?.roleId) {
       return c.json(
         { error: "walletAddress and roleId are required" },
@@ -152,7 +153,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.delete("/api/admin/address-roles", async (c) => {
-    const body = await c.req.json().catch(() => null);
+    const body = await parseJsonBody(c, "DELETE /api/admin/address-roles");
     if (!body?.walletAddress || !body?.roleId) {
       return c.json(
         { error: "walletAddress and roleId are required" },

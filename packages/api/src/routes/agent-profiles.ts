@@ -20,6 +20,7 @@ import {
   requireAuth,
   type AuthEnv,
 } from "../middleware/auth.js";
+import { parseJsonBody } from "../lib/parse-json-body.js";
 
 // Valid personality archetype keys
 const VALID_PERSONA_KEYS = new Set([
@@ -39,7 +40,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.post("/api/agent-profiles/generate", requireAuth(db), async (c) => {
-    const body = await c.req.json().catch(() => null);
+    const body = await parseJsonBody(c, "POST /api/agent-profiles/generate");
     if (!body) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
@@ -145,7 +146,7 @@ Respond with JSON only:
   // -------------------------------------------------------------------------
 
   app.post("/api/agent-profiles", requireAuth(db), async (c) => {
-    const body = await c.req.json().catch(() => null);
+    const body = await parseJsonBody(c, "POST /api/agent-profiles");
     if (!body) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
@@ -268,7 +269,7 @@ Respond with JSON only:
       return c.json({ error: "Agent profile not found" }, 404);
     }
 
-    const body = await c.req.json().catch(() => null);
+    const body = await parseJsonBody(c, "PATCH /api/agent-profiles/:id");
     if (!body) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }

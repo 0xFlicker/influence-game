@@ -17,6 +17,7 @@ import {
   requireAuth,
   type AuthEnv,
 } from "../middleware/auth.js";
+import { parseJsonBody } from "../lib/parse-json-body.js";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -30,7 +31,7 @@ export function createAuthRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.post("/api/auth/login", async (c) => {
-    const body = await c.req.json().catch(() => null);
+    const body = await parseJsonBody(c, "POST /api/auth/login");
     if (!body?.token) {
       return c.json({ error: "token is required" }, 400);
     }

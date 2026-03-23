@@ -25,6 +25,7 @@ import {
 import { startGame, isGameRunning } from "../services/game-lifecycle.js";
 import { broadcastRaw } from "../services/ws-manager.js";
 import { generateUniqueSlug } from "../lib/slug.js";
+import { parseJsonBody } from "../lib/parse-json-body.js";
 import { generatePersona, pickAgentNames, pickArchetypes } from "@influence/engine";
 import type { Personality } from "@influence/engine";
 import OpenAI from "openai";
@@ -41,7 +42,7 @@ export function createGameRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.post("/api/games", requireAuth(db), requirePermission("create_game"), async (c) => {
-    const body = await c.req.json().catch(() => null);
+    const body = await parseJsonBody(c, "POST /api/games");
     if (!body) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
@@ -320,7 +321,7 @@ export function createGameRoutes(db: DrizzleDB) {
       return c.json({ error: "Game is full" }, 400);
     }
 
-    const body = await c.req.json().catch(() => null);
+    const body = await parseJsonBody(c, "POST /api/games/:id/join");
     if (!body) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }

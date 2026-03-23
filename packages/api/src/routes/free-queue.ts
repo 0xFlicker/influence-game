@@ -23,6 +23,7 @@ import {
   optionalAuth,
   type AuthEnv,
 } from "../middleware/auth.js";
+import { parseJsonBody } from "../lib/parse-json-body.js";
 import { generateUniqueSlug } from "../lib/slug.js";
 import { pickAgentNames, pickArchetypes } from "@influence/engine";
 
@@ -91,7 +92,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
 
   app.post("/api/free-queue/join", requireAuth(db), async (c) => {
     const user = c.get("user");
-    const body = await c.req.json().catch(() => null);
+    const body = await parseJsonBody(c, "POST /api/free-queue/join");
     if (!body?.agentProfileId) {
       return c.json({ error: "agentProfileId is required" }, 400);
     }
