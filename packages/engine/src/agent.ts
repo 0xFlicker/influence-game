@@ -1185,23 +1185,40 @@ ${roomSection}
   /** Free-text LLM call for communication (introductions, lobby, rumor, etc.) */
   private async callLLM(prompt: string, maxTokens = 200): Promise<string> {
     const reasoning = this.isReasoningModel();
-    const response = await this.openai.chat.completions.create({
-      model: this.model,
-      messages: [{ role: "user", content: prompt }],
-      ...(reasoning
-        ? { max_completion_tokens: maxTokens }
-        : { max_tokens: maxTokens, temperature: 0.7 }),
-    });
+    const maxAttempts = 2; // 1 initial + 1 retry
 
-    if (this.tokenTracker && response.usage) {
-      this.tokenTracker.record(
-        this.name,
-        response.usage.prompt_tokens,
-        response.usage.completion_tokens,
-      );
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const response = await this.openai.chat.completions.create({
+          model: this.model,
+          messages: [{ role: "user", content: prompt }],
+          ...(reasoning
+            ? { max_completion_tokens: maxTokens }
+            : { max_tokens: maxTokens, temperature: 0.7 }),
+        });
+
+        if (this.tokenTracker && response.usage) {
+          this.tokenTracker.record(
+            this.name,
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+          );
+        }
+
+        return response.choices[0]?.message?.content?.trim() ?? "";
+      } catch (error) {
+        if (attempt < maxAttempts) {
+          const backoffMs = attempt * 1000;
+          console.warn(`[${this.name}] callLLM attempt ${attempt} failed, retrying in ${backoffMs}ms:`, error);
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        } else {
+          console.error(`[${this.name}] callLLM failed after ${maxAttempts} attempts:`, error);
+          return "[No response]";
+        }
+      }
     }
 
-    return response.choices[0]?.message?.content?.trim() ?? "";
+    return "[No response]";
   }
 
   /**
@@ -1214,31 +1231,47 @@ ${roomSection}
     maxTokens = 200,
   ): Promise<T> {
     const reasoning = this.isReasoningModel();
-    const response = await this.openai.chat.completions.create({
-      model: this.model,
-      messages: [{ role: "user", content: prompt }],
-      ...(reasoning
-        ? { max_completion_tokens: maxTokens }
-        : { max_tokens: maxTokens, temperature: 0.7 }),
-      tools: [tool],
-      tool_choice: { type: "function", function: { name: tool.function.name } },
-    });
+    const maxAttempts = 2; // 1 initial + 1 retry
 
-    if (this.tokenTracker && response.usage) {
-      this.tokenTracker.record(
-        this.name,
-        response.usage.prompt_tokens,
-        response.usage.completion_tokens,
-      );
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const response = await this.openai.chat.completions.create({
+          model: this.model,
+          messages: [{ role: "user", content: prompt }],
+          ...(reasoning
+            ? { max_completion_tokens: maxTokens }
+            : { max_tokens: maxTokens, temperature: 0.7 }),
+          tools: [tool],
+          tool_choice: { type: "function", function: { name: tool.function.name } },
+        });
+
+        if (this.tokenTracker && response.usage) {
+          this.tokenTracker.record(
+            this.name,
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+          );
+        }
+
+        const toolCall: ChatCompletionMessageToolCall | undefined =
+          response.choices[0]?.message?.tool_calls?.[0];
+        if (!toolCall) {
+          throw new Error(`No tool call returned for ${tool.function.name}`);
+        }
+
+        return JSON.parse(toolCall.function.arguments) as T;
+      } catch (error) {
+        if (attempt < maxAttempts) {
+          const backoffMs = attempt * 1000;
+          console.warn(`[${this.name}] callTool(${tool.function.name}) attempt ${attempt} failed, retrying in ${backoffMs}ms:`, error);
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        } else {
+          throw error; // callTool callers already have their own try/catch
+        }
+      }
     }
 
-    const toolCall: ChatCompletionMessageToolCall | undefined =
-      response.choices[0]?.message?.tool_calls?.[0];
-    if (!toolCall) {
-      throw new Error(`No tool call returned for ${tool.function.name}`);
-    }
-
-    return JSON.parse(toolCall.function.arguments) as T;
+    throw new Error(`callTool(${tool.function.name}) exhausted retries`);
   }
 
   // ---------------------------------------------------------------------------

@@ -1449,26 +1449,38 @@ export class GameRunner {
     // Interview alive players sequentially so each agent's Q&A is emitted
     // together before moving to the next (avoids interleaved ordering).
     for (const player of alivePlayers) {
-      await this.runDiaryInterview(precedingPhase, player.id, player.name, false);
+      try {
+        await this.runDiaryInterview(precedingPhase, player.id, player.name, false);
+      } catch (error) {
+        console.error(`[DiaryRoom] Interview failed for ${player.name}, skipping:`, error);
+      }
     }
 
     // After all interviews, agents produce strategic reflections in parallel
-    await Promise.all(
-      alivePlayers.map(async (player) => {
-        const agent = this.agents.get(player.id);
-        if (agent?.getStrategicReflection) {
-          const ctx = this.buildPhaseContext(player.id, Phase.DIARY_ROOM);
-          await agent.getStrategicReflection(ctx);
-        }
-      }),
-    );
+    try {
+      await Promise.all(
+        alivePlayers.map(async (player) => {
+          const agent = this.agents.get(player.id);
+          if (agent?.getStrategicReflection) {
+            const ctx = this.buildPhaseContext(player.id, Phase.DIARY_ROOM);
+            await agent.getStrategicReflection(ctx);
+          }
+        }),
+      );
+    } catch (error) {
+      console.error(`[DiaryRoom] Strategic reflections failed, continuing:`, error);
+    }
 
     // During Judgment phases, also interview active jury members sequentially
     if (this.gameState.endgameStage === "judgment") {
       for (const juror of this.getActiveJury()) {
         const agent = this.agents.get(juror.playerId);
         if (!agent) continue;
-        await this.runDiaryInterview(precedingPhase, juror.playerId, juror.playerName, true);
+        try {
+          await this.runDiaryInterview(precedingPhase, juror.playerId, juror.playerName, true);
+        } catch (error) {
+          console.error(`[DiaryRoom] Juror interview failed for ${juror.playerName}, skipping:`, error);
+        }
       }
     }
   }
