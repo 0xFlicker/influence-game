@@ -127,6 +127,7 @@ const healthResponse = () => ({
   status: "ok" as const,
   service: "influence-api",
   version: apiVersion,
+  commit: process.env.GIT_SHA ?? "unknown",
   timestamp: new Date().toISOString(),
 });
 app.get("/health", (c) => c.json(healthResponse()));
@@ -142,6 +143,7 @@ app.get("/", (c) => {
   return c.json({
     name: "Influence Game API",
     version: apiVersion,
+    commit: process.env.GIT_SHA ?? "unknown",
     endpoints: {
       health: "/api/health",
       config: "/api/config",

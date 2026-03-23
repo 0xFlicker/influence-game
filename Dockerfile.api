@@ -34,6 +34,8 @@ COPY --from=build /app/packages/api/dist/ ./dist/
 COPY --from=build /app/packages/api/drizzle/ ./drizzle/
 COPY --from=build /app/packages/api/package.json ./
 
+ARG GIT_SHA=unknown
+ENV GIT_SHA=${GIT_SHA}
 ENV NODE_ENV=production
 ENV PORT=3001
 ENV HOST=0.0.0.0

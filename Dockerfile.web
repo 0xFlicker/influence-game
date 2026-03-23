@@ -36,6 +36,8 @@ WORKDIR /app
 
 LABEL org.opencontainers.image.source=https://github.com/0xFlicker/influence-game
 
+ARG GIT_SHA=unknown
+ENV GIT_SHA=${GIT_SHA}
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000

@@ -83,11 +83,27 @@ jobs:
       - name: Build and push
         run: |
           docker build -f ${{ matrix.dockerfile }} \
+            --build-arg GIT_SHA=${{ github.sha }} \
             -t ${{ matrix.image }}:${{ steps.sha.outputs.short }} \
             -t ${{ matrix.image }}:staging \
             .
           docker push ${{ matrix.image }}:${{ steps.sha.outputs.short }}
           docker push ${{ matrix.image }}:staging
+
+  tag-deploy:
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    needs: docker-build-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create staging deployment tag
+        run: |
+          TAG="staging/$(date -u +%Y-%m-%d)/$(echo ${{ github.sha }} | cut -c1-7)"
+          git tag -a "$TAG" -m "Staging deploy from ${GITHUB_SHA}"
+          git push origin "$TAG"
 
   trigger-deploy:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
