@@ -25,7 +25,7 @@ import type {
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { PgMemoryStore } from "../db/memory-store.js";
-import { broadcastGameEvent } from "./ws-manager.js";
+import { broadcastGameEvent, broadcastRaw } from "./ws-manager.js";
 import { ViewerEventPacer } from "./viewer-event-pacer.js";
 import { calculateEloChanges } from "./elo.js";
 import type { PlayerResult } from "./elo.js";
@@ -408,6 +408,37 @@ async function runGameAsync(
     const errorMessage = err instanceof Error ? err.message : String(err);
     console.error(`[game-lifecycle] Game ${gameId} failed:`, errorMessage);
 
+    // Save partial transcript so viewers can replay what happened before the crash
+    try {
+      const partialTranscript = runner.transcriptLog;
+      if (partialTranscript.length > 0) {
+        const CHUNK_SIZE = 100;
+        for (let i = 0; i < partialTranscript.length; i += CHUNK_SIZE) {
+          const chunk = partialTranscript.slice(i, i + CHUNK_SIZE);
+          await db.insert(schema.transcripts)
+            .values(
+              chunk.map((entry) => ({
+                gameId,
+                round: entry.round,
+                phase: entry.phase,
+                fromPlayerId: entry.from === "SYSTEM" ? null : entry.from,
+                scope: entry.scope,
+                toPlayerIds: entry.to ? JSON.stringify(entry.to) : null,
+                text: entry.text,
+                timestamp: entry.timestamp,
+              })),
+            );
+        }
+        console.error(`[game-lifecycle] Saved ${partialTranscript.length} partial transcript entries for game ${gameId}`);
+      }
+    } catch (transcriptErr) {
+      console.error(`[game-lifecycle] Failed to save partial transcript for game ${gameId}:`, transcriptErr);
+    }
+
+    // Notify live viewers that the game crashed
+    broadcastRaw(gameId, { type: "error", message: "Game ended unexpectedly due to an error." });
+    broadcastRaw(gameId, { type: "game_over", totalRounds: 0 });
+
     try {
       // Read current config and append errorInfo
       const game = (await db
@@ -418,6 +449,7 @@ async function runGameAsync(
       const updatedConfig = {
         ...currentConfig,
         errorInfo: errorMessage,
+        viewerMode: "replay",
       };
 
       await db.update(schema.games)
