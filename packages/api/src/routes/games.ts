@@ -8,11 +8,13 @@
  *   POST   /api/games/:id/join  — join a game with agent config
  *   POST   /api/games/:id/start — start a game (min players met)
  *   POST   /api/games/:id/stop  — stop / cancel a running game
+ *   PATCH  /api/games/:id/hide — admin soft-delete (hide from public lists)
+ *   PATCH  /api/games/:id/unhide — admin restore hidden game
  *   GET    /api/games/:id/transcript — full transcript export
  */
 
 import { Hono } from "hono";
-import { eq, inArray, asc, or } from "drizzle-orm";
+import { eq, inArray, asc, or, and, isNull } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -159,9 +161,9 @@ export function createGameRoutes(db: DrizzleDB) {
       rows = await db
         .select()
         .from(schema.games)
-        .where(inArray(schema.games.status, statuses));
+        .where(and(inArray(schema.games.status, statuses), isNull(schema.games.hiddenAt)));
     } else {
-      rows = await db.select().from(schema.games);
+      rows = await db.select().from(schema.games).where(isNull(schema.games.hiddenAt));
     }
 
     const summaries = await Promise.all(rows.map(async (game) => {
@@ -654,6 +656,60 @@ export function createGameRoutes(db: DrizzleDB) {
   });
 
   // -------------------------------------------------------------------------
+  // PATCH /api/games/:id/hide — admin soft-delete a game
+  // -------------------------------------------------------------------------
+
+  app.patch("/api/games/:id/hide", requireAuth(db), requirePermission("hide_game"), async (c) => {
+    const gameId = c.req.param("id");
+
+    const game = (await db
+      .select()
+      .from(schema.games)
+      .where(eq(schema.games.id, gameId)))[0];
+
+    if (!game) {
+      return c.json({ error: "Game not found" }, 404);
+    }
+
+    if (game.hiddenAt) {
+      return c.json({ error: "Game is already hidden" }, 400);
+    }
+
+    await db.update(schema.games)
+      .set({ hiddenAt: new Date().toISOString() })
+      .where(eq(schema.games.id, gameId));
+
+    return c.json({ id: gameId, hiddenAt: new Date().toISOString() });
+  });
+
+  // -------------------------------------------------------------------------
+  // PATCH /api/games/:id/unhide — admin restore a hidden game
+  // -------------------------------------------------------------------------
+
+  app.patch("/api/games/:id/unhide", requireAuth(db), requirePermission("hide_game"), async (c) => {
+    const gameId = c.req.param("id");
+
+    const game = (await db
+      .select()
+      .from(schema.games)
+      .where(eq(schema.games.id, gameId)))[0];
+
+    if (!game) {
+      return c.json({ error: "Game not found" }, 404);
+    }
+
+    if (!game.hiddenAt) {
+      return c.json({ error: "Game is not hidden" }, 400);
+    }
+
+    await db.update(schema.games)
+      .set({ hiddenAt: null })
+      .where(eq(schema.games.id, gameId));
+
+    return c.json({ id: gameId, hiddenAt: null });
+  });
+
+  // -------------------------------------------------------------------------
   // GET /api/player/games — authenticated player's game history
   // -------------------------------------------------------------------------
 
@@ -681,7 +737,7 @@ export function createGameRoutes(db: DrizzleDB) {
         const game = (await db
           .select()
           .from(schema.games)
-          .where(eq(schema.games.id, playerRecord.gameId)))[0];
+          .where(and(eq(schema.games.id, playerRecord.gameId), isNull(schema.games.hiddenAt))))[0];
         if (!game) return null;
 
         const config = JSON.parse(game.config);

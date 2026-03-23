@@ -41,6 +41,7 @@ export const games = pgTable("games", {
   createdById: text("created_by_id").references(() => users.id),
   startedAt: text("started_at"),
   endedAt: text("ended_at"),
+  hiddenAt: text("hidden_at"), // Soft-delete: non-null means game is hidden from public lists
   createdAt: text("created_at")
     .notNull()
     .default(sql`now()::text`),

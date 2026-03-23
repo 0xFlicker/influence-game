@@ -70,7 +70,7 @@ async function setupApp() {
 
   const adminToken = await createSessionToken(ADMIN_USER_ID, {
     roles: ["sysop"],
-    permissions: ["manage_roles", "create_game", "start_game", "join_game", "stop_game", "fill_game", "view_admin"],
+    permissions: ["manage_roles", "create_game", "start_game", "join_game", "stop_game", "fill_game", "view_admin", "hide_game"],
   });
   const userToken = await createSessionToken(REGULAR_USER_ID, {
     roles: ["player"],
@@ -736,6 +736,162 @@ describe("Game REST API", () => {
       const finalRes = await app.request(`/api/games/${id}`);
       const finalDetail = (await finalRes.json()) as { status: string };
       expect(finalDetail.status).toBe("cancelled");
+    });
+  });
+
+  // =========================================================================
+  // PATCH /api/games/:id/hide + /unhide
+  // =========================================================================
+
+  describe("PATCH /api/games/:id/hide", () => {
+    test("hides a game (admin only)", async () => {
+      const { id } = await createTestGame(app, adminToken);
+
+      const res = await app.request(`/api/games/${id}/hide`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      expect(res.status).toBe(200);
+
+      const body = (await res.json()) as { id: string; hiddenAt: string };
+      expect(body.id).toBe(id);
+      expect(body.hiddenAt).toBeTruthy();
+    });
+
+    test("returns 400 when game is already hidden", async () => {
+      const { id } = await createTestGame(app, adminToken);
+
+      await app.request(`/api/games/${id}/hide`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+
+      const res = await app.request(`/api/games/${id}/hide`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      expect(res.status).toBe(400);
+    });
+
+    test("returns 404 for non-existent game", async () => {
+      const res = await app.request(`/api/games/${randomUUID()}/hide`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      expect(res.status).toBe(404);
+    });
+
+    test("requires hide_game permission", async () => {
+      const { id } = await createTestGame(app, adminToken);
+
+      const res = await app.request(`/api/games/${id}/hide`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${userToken}` },
+      });
+      expect(res.status).toBe(403);
+    });
+  });
+
+  describe("PATCH /api/games/:id/unhide", () => {
+    test("unhides a hidden game", async () => {
+      const { id } = await createTestGame(app, adminToken);
+
+      await app.request(`/api/games/${id}/hide`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+
+      const res = await app.request(`/api/games/${id}/unhide`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      expect(res.status).toBe(200);
+
+      const body = (await res.json()) as { id: string; hiddenAt: null };
+      expect(body.id).toBe(id);
+      expect(body.hiddenAt).toBeNull();
+    });
+
+    test("returns 400 when game is not hidden", async () => {
+      const { id } = await createTestGame(app, adminToken);
+
+      const res = await app.request(`/api/games/${id}/unhide`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      expect(res.status).toBe(400);
+    });
+  });
+
+  // =========================================================================
+  // Hidden game filtering
+  // =========================================================================
+
+  describe("hidden game filtering", () => {
+    test("GET /api/games excludes hidden games", async () => {
+      const { id: g1 } = await createTestGame(app, adminToken);
+      await createTestGame(app, adminToken);
+
+      // Hide g1
+      await app.request(`/api/games/${g1}/hide`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+
+      const res = await app.request("/api/games");
+      const body = (await res.json()) as Array<{ id: string }>;
+      expect(body).toHaveLength(1);
+      expect(body[0]!.id).not.toBe(g1);
+    });
+
+    test("GET /api/games with status filter excludes hidden games", async () => {
+      const { id: g1 } = await createTestGame(app, adminToken);
+      await createTestGame(app, adminToken);
+
+      // Hide g1
+      await app.request(`/api/games/${g1}/hide`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+
+      const res = await app.request("/api/games?status=waiting");
+      const body = (await res.json()) as Array<{ id: string }>;
+      expect(body).toHaveLength(1);
+      expect(body[0]!.id).not.toBe(g1);
+    });
+
+    test("GET /api/games/:id still returns hidden game by direct ID", async () => {
+      const { id } = await createTestGame(app, adminToken);
+
+      await app.request(`/api/games/${id}/hide`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+
+      const res = await app.request(`/api/games/${id}`);
+      expect(res.status).toBe(200);
+
+      const body = (await res.json()) as { id: string };
+      expect(body.id).toBe(id);
+    });
+
+    test("unhidden game reappears in GET /api/games", async () => {
+      const { id } = await createTestGame(app, adminToken);
+
+      // Hide then unhide
+      await app.request(`/api/games/${id}/hide`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      await app.request(`/api/games/${id}/unhide`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+
+      const res = await app.request("/api/games");
+      const body = (await res.json()) as Array<{ id: string }>;
+      expect(body).toHaveLength(1);
+      expect(body[0]!.id).toBe(id);
     });
   });
 });

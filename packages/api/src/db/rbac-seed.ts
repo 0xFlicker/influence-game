@@ -23,6 +23,7 @@ const PERMISSIONS = [
   { name: "fill_game", description: "Fill AI player slots" },
   { name: "view_admin", description: "Access the admin panel" },
   { name: "schedule_free_game", description: "Trigger daily free game draw and start" },
+  { name: "hide_game", description: "Hide/unhide games from public lists" },
 ] as const;
 
 const ROLES = [
@@ -43,6 +44,7 @@ const ROLES = [
       "fill_game",
       "view_admin",
       "schedule_free_game",
+      "hide_game",
     ],
   },
   {

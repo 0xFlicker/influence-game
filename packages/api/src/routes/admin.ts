@@ -238,5 +238,27 @@ export function createAdminRoutes(db: DrizzleDB) {
     return c.json(usersWithRoles);
   });
 
+  // -------------------------------------------------------------------------
+  // GET /api/admin/games — list all games including hidden ones
+  // -------------------------------------------------------------------------
+
+  app.get("/api/admin/games", async (c) => {
+    const rows = await db.select().from(schema.games);
+
+    const summaries = rows.map((game) => ({
+      id: game.id,
+      slug: game.slug,
+      status: game.status,
+      trackType: game.trackType,
+      hidden: !!game.hiddenAt,
+      hiddenAt: game.hiddenAt,
+      createdAt: game.createdAt,
+      startedAt: game.startedAt,
+      endedAt: game.endedAt,
+    }));
+
+    return c.json(summaries);
+  });
+
   return app;
 }
