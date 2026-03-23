@@ -92,13 +92,13 @@ export function Nav() {
         </Link>
 
         {/* Desktop nav */}
-        <div className="hidden md:flex items-center gap-6 text-sm">
+        <div className="hidden lg:flex items-center gap-6 text-sm">
           {navLinks}
         </div>
 
         {/* Mobile hamburger */}
         <button
-          className="md:hidden text-white/70 hover:text-white transition-colors"
+          className="lg:hidden text-white/70 hover:text-white transition-colors"
           onClick={() => setMobileOpen(!mobileOpen)}
           aria-label={mobileOpen ? "Close menu" : "Open menu"}
         >
@@ -108,7 +108,7 @@ export function Nav() {
 
       {/* Mobile menu */}
       {mobileOpen && (
-        <div className="md:hidden mt-4 flex flex-col gap-4 text-sm border-t border-white/10 pt-4">
+        <div className="lg:hidden mt-4 flex flex-col gap-4 text-sm border-t border-white/10 pt-4">
           {navLinks}
         </div>
       )}
