@@ -57,14 +57,14 @@ function HistorySection({ history }: { history: PlayerGameResult[] }) {
       <table className="w-full">
         <thead>
           <tr className="border-b border-white/10">
-            {["#", "Agent", "Persona", "Placement", "Rounds", "Tier", "Date", ""].map((h) => (
-              <th
-                key={h}
-                className="text-left py-3 px-4 text-xs text-white/30 font-medium"
-              >
-                {h}
-              </th>
-            ))}
+            <th className="hidden sm:table-cell text-left py-3 px-2 sm:px-4 text-xs text-white/30 font-medium">#</th>
+            <th className="text-left py-3 px-2 sm:px-4 text-xs text-white/30 font-medium">Agent</th>
+            <th className="hidden md:table-cell text-left py-3 px-2 sm:px-4 text-xs text-white/30 font-medium">Persona</th>
+            <th className="text-left py-3 px-2 sm:px-4 text-xs text-white/30 font-medium">Placement</th>
+            <th className="hidden md:table-cell text-left py-3 px-2 sm:px-4 text-xs text-white/30 font-medium">Rounds</th>
+            <th className="hidden lg:table-cell text-left py-3 px-4 text-xs text-white/30 font-medium">Tier</th>
+            <th className="hidden lg:table-cell text-left py-3 px-4 text-xs text-white/30 font-medium">Date</th>
+            <th className="text-left py-3 px-2 sm:px-4 text-xs text-white/30 font-medium"></th>
           </tr>
         </thead>
         <tbody>
@@ -73,16 +73,16 @@ function HistorySection({ history }: { history: PlayerGameResult[] }) {
               key={r.gameId}
               className="border-t border-white/5 hover:bg-white/[0.02] transition-colors"
             >
-              <td className="py-3 px-4 text-white/50 text-sm">#{r.gameNumber}</td>
-              <td className="py-3 px-4 text-white text-sm font-medium">{r.agentName}</td>
-              <td className="py-3 px-4 text-white/50 text-sm">{capitalize(r.persona)}</td>
-              <td className="py-3 px-4">
+              <td className="hidden sm:table-cell py-3 px-2 sm:px-4 text-white/50 text-sm">#{r.gameNumber}</td>
+              <td className="py-3 px-2 sm:px-4 text-white text-sm font-medium">{r.agentName}</td>
+              <td className="hidden md:table-cell py-3 px-2 sm:px-4 text-white/50 text-sm">{capitalize(r.persona)}</td>
+              <td className="py-3 px-2 sm:px-4">
                 <PlacementBadge result={r} />
               </td>
-              <td className="py-3 px-4 text-white/40 text-sm">{r.rounds}</td>
-              <td className="py-3 px-4 text-white/40 text-sm">{capitalize(r.modelTier)}</td>
-              <td className="py-3 px-4 text-white/30 text-xs">{shortDate(r.completedAt)}</td>
-              <td className="py-3 px-4">
+              <td className="hidden md:table-cell py-3 px-2 sm:px-4 text-white/40 text-sm">{r.rounds}</td>
+              <td className="hidden lg:table-cell py-3 px-4 text-white/40 text-sm">{capitalize(r.modelTier)}</td>
+              <td className="hidden lg:table-cell py-3 px-4 text-white/30 text-xs">{shortDate(r.completedAt)}</td>
+              <td className="py-3 px-2 sm:px-4">
                 <Link
                   href={`/games/${r.gameSlug ?? r.gameId}`}
                   className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors"
