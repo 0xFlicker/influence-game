@@ -8,10 +8,17 @@
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { createDB } from "./index.js";
 import path from "path";
+import fs from "fs";
 
 export async function runMigrations(connectionString?: string) {
   const db = createDB(connectionString);
-  const migrationsFolder = path.resolve(import.meta.dir, "../../drizzle");
+  // In source: import.meta.dir is src/db/, drizzle/ is ../../drizzle
+  // In bundle:  import.meta.dir is dist/,   drizzle/ is ../drizzle
+  const bundledPath = path.resolve(import.meta.dir, "../drizzle");
+  const sourcePath = path.resolve(import.meta.dir, "../../drizzle");
+  const migrationsFolder = fs.existsSync(path.join(bundledPath, "meta/_journal.json"))
+    ? bundledPath
+    : sourcePath;
   await migrate(db, { migrationsFolder });
   console.log("Migrations applied successfully.");
   return db;
