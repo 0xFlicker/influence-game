@@ -11,4 +11,5 @@ docs/simulations/
 *.db-shm
 *.tsbuildinfo
 e2e-screenshots/
+test-results/
 .DS_Store
