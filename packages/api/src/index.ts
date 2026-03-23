@@ -122,15 +122,15 @@ app.use(
   }),
 );
 
-// Health check
-app.get("/health", (c) => {
-  return c.json({
-    status: "ok",
-    service: "influence-api",
-    version: apiVersion,
-    timestamp: new Date().toISOString(),
-  });
+// Health check (both paths: /health for direct access, /api/health for reverse-proxy)
+const healthResponse = () => ({
+  status: "ok" as const,
+  service: "influence-api",
+  version: apiVersion,
+  timestamp: new Date().toISOString(),
 });
+app.get("/health", (c) => c.json(healthResponse()));
+app.get("/api/health", (c) => c.json(healthResponse()));
 
 // Public config — exposes feature flags for the frontend
 app.get("/api/config", (c) => {
@@ -143,7 +143,7 @@ app.get("/", (c) => {
     name: "Influence Game API",
     version: apiVersion,
     endpoints: {
-      health: "/health",
+      health: "/api/health",
       config: "/api/config",
       auth: "/api/auth",
       games: "/api/games",
