@@ -2,9 +2,9 @@
 /**
  * E2E Test Orchestrator
  *
- * PAUSED — OOM on 4GB/2-CPU machine (2026-03-23)
- * Cannot run full game-flow e2e (API + web + Playwright) concurrently.
- * Blocked on server upgrade. See INF-194.
+ * NOTE: On the 4GB/2-CPU machine, run WITHOUT the staging server to avoid OOM.
+ * API + Web dev + Puppeteer fits in ~2GB, leaving headroom on 4GB.
+ * Only the triple-stack (dev + staging + browser) caused OOM.
  *
  * Single entry point for the full e2e test suite.
  * Usage: doppler run -- bun scripts/e2e-test.ts
