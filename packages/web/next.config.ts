@@ -3,19 +3,21 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Transpile Privy + wagmi packages as needed
   transpilePackages: [],
-  // Standalone output for Docker deployments
-  output: "standalone",
-  // Proxy /api/* to the API server in development (in production Caddy handles this)
+  // Standalone output for Docker deployments only
+  ...(process.env.DOCKER_BUILD === "1" ? { output: "standalone" as const } : {}),
+  // Proxy /api/* to the API server in dev/test (in production Caddy handles this).
+  // Uses API_BACKEND_URL (not NEXT_PUBLIC_API_URL) to avoid self-referencing loops.
   async rewrites() {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:3001";
+    const backendUrl =
+      process.env.API_BACKEND_URL ?? "http://127.0.0.1:3001";
     return [
       {
         source: "/api/:path*",
-        destination: `${apiUrl}/api/:path*`,
+        destination: `${backendUrl}/api/:path*`,
       },
       {
         source: "/health",
-        destination: `${apiUrl}/health`,
+        destination: `${backendUrl}/health`,
       },
     ];
   },
