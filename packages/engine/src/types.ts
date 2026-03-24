@@ -290,7 +290,7 @@ export interface GameConfig {
   maxPlayers: number;
   /** Presentation pacing mode: "live" for public viewers, "speedrun" for admin/testing, "replay" for post-game */
   viewerMode?: ViewerMode;
-  /** Max follow-up questions per diary room interview (default 3). Set to 0 for single-question interviews. */
+  /** Max follow-up questions per diary room interview (default 1). Set to 0 for single-question interviews. */
   maxDiaryFollowUps?: number;
   /** If set, only run diary rooms after these phases. If unset, diary rooms run after every phase. */
   diaryRoomAfterPhases?: Phase[];

@@ -1512,7 +1512,7 @@ export class GameRunner {
   /**
    * Run a single diary room interview session with one player.
    * The House asks 1-4 questions, probing deeper based on answers.
-   * The session ends when the House decides to close or 4 questions are reached.
+   * The session ends when the House decides to close or max questions are reached.
    */
   private async runDiaryInterview(
     precedingPhase: Phase,
@@ -1520,7 +1520,7 @@ export class GameRunner {
     playerName: string,
     isJuror: boolean,
   ): Promise<void> {
-    const maxFollowUps = this.config.maxDiaryFollowUps ?? 3;
+    const maxFollowUps = this.config.maxDiaryFollowUps ?? 1;
     const MAX_QUESTIONS = 1 + maxFollowUps; // first question + follow-ups
     const agent = this.agents.get(playerId)!;
     const label = isJuror ? `${playerName} (juror)` : playerName;
