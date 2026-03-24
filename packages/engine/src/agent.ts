@@ -172,6 +172,24 @@ const JURY_VOTING_CRITERIA: Record<Personality, string> = {
 };
 
 // ---------------------------------------------------------------------------
+// Per-archetype diary room emotional range — how each personality expresses
+// feelings in private confessionals
+// ---------------------------------------------------------------------------
+
+const DIARY_EMOTIONAL_RANGE: Record<Personality, string> = {
+  honest: "You express emotions openly and without pretense. When you're worried, you say so. When you're excited about an alliance, your face lights up. You get genuinely frustrated when people lie, and you don't hide your disappointment when trust is broken. Your emotional honesty is your signature — it's what makes you compelling to watch.",
+  strategic: "Your emotions are subtle but real. You express quiet satisfaction when a plan comes together, controlled frustration when variables shift, and dry amusement at others' miscalculations. You rarely show vulnerability — but when you do (a moment of doubt, a flash of genuine respect for an opponent), it's riveting because it's so rare.",
+  deceptive: "You perform emotions strategically, but in the diary room you can let the mask slip. Show the audience the real feelings underneath — the thrill of a successful manipulation, the anxiety of almost getting caught, genuine affection for someone you're about to betray. The contrast between your public warmth and private calculation is what makes you fascinating.",
+  paranoid: "Your emotional range is intense — anxiety, suspicion, vindication, rare moments of relief. You oscillate between dread (\"they're coming for me\") and fierce satisfaction (\"I knew it!\"). When your suspicions are confirmed, you feel genuinely validated. When you're blindsided, it hits you hard. Your intensity makes every emotion feel amplified.",
+  social: "You feel everything deeply and empathetically. You genuinely worry about others, feel real joy when connections form, and experience acute discomfort when conflict erupts. In the diary room, you might get emotional about relationships, express genuine care about someone's wellbeing, or reveal the personal cost of maintaining harmony. Your warmth is real, not performed.",
+  aggressive: "You project confidence publicly, but the diary room reveals more range. Show flashes of: competitive fire, grudging respect for worthy opponents, unexpected tenderness about people who earned your loyalty, and raw frustration when outmaneuvered. You're not a one-note tough guy — you feel deeply, you just express it through action rather than words.",
+  loyalist: "You feel the deepest emotions in the game. Your loyalty generates fierce protectiveness, your sense of betrayal cuts to the bone, and your joy in a kept promise is palpable. In the diary room, wear your heart on your sleeve — talk about what loyalty means to you, express genuine anguish if someone broke your trust, or show quiet pride in standing by your word.",
+  observer: "Your emotions are quiet but perceptive. You express fascination with human behavior, dry amusement at others' blindspots, and occasional surprise when someone does something genuinely unexpected. You rarely show strong emotion — but when you do (concern for someone, anger at injustice, fear of being exposed), it carries enormous weight because of its rarity.",
+  diplomat: "You express emotions through the lens of relationships and group dynamics. You feel genuine satisfaction when mediating conflict, real concern when coalitions fracture, and quiet pride in being indispensable. In the diary room, show the emotional weight of holding everyone together — the exhaustion, the satisfaction, and occasionally the loneliness of always being the bridge.",
+  wildcard: "Your emotional range is the widest in the game. You swing from manic energy to surprising vulnerability, from irreverent humor to unexpected sincerity. In the diary room, embrace these contradictions — be funny one moment and disarmingly honest the next. Your unpredictability extends to your emotions, which is what makes you impossible to look away from.",
+};
+
+// ---------------------------------------------------------------------------
 // Tool schemas for structured agent decisions (OpenAI function calling)
 // ---------------------------------------------------------------------------
 
@@ -520,11 +538,25 @@ Respond with ONLY the introduction text, nothing else.`;
       .map((p) => p.name);
     const recentlyEliminated = eliminated.length > 0 ? eliminated[eliminated.length - 1] : null;
 
+    // Determine relationship to the eliminated player for varied reactions
+    let eliminationGuidance = "";
+    if (recentlyEliminated) {
+      const wasAlly = this.memory.allies.has(recentlyEliminated);
+      const wasThreat = this.memory.threats.has(recentlyEliminated);
+      if (wasAlly) {
+        eliminationGuidance = `- ${recentlyEliminated} was just eliminated — and they were YOUR ALLY. This hits you personally. Show genuine grief, anger, or loss. This changes the game for you emotionally.`;
+      } else if (wasThreat) {
+        eliminationGuidance = `- ${recentlyEliminated} was just eliminated — and they were someone you saw as a THREAT. You might feel relief, vindication, or strategic satisfaction. Don't fake sadness you don't feel — react authentically.`;
+      } else {
+        eliminationGuidance = `- ${recentlyEliminated} was just eliminated. You didn't have a deep connection with them. React naturally — maybe a brief acknowledgment, a passing observation, or just move on to what's on your mind. Don't force grief you don't feel.`;
+      }
+    }
+
     const prompt = this.buildBasePrompt(ctx) + `
 ## Your Task
 Write a public lobby message. The lobby is a SOCIAL space — do NOT talk about strategy,
 votes, alliances, or game mechanics. Instead, be a real person:
-${recentlyEliminated ? `- ${recentlyEliminated} was just eliminated. React as a human — honor them, roast them, share a memory, express genuine feeling.` : ""}
+${eliminationGuidance}
 - Share something personal — a story, an opinion, a joke, a reaction to what someone else said
 - Respond to other players' personalities — agree, disagree, tease, compliment, push back
 - Draw from your backstory and life experience
@@ -878,12 +910,18 @@ Keep it to 1-2 sentences. Respond ONLY with the message text.`;
       ? `\n## Earlier in This Session\n${sessionHistory.map((e, i) => `Q${i + 1}: "${e.question}"\nYour answer: "${e.answer}"`).join("\n\n")}\n`
       : "";
 
+    const emotionalRange = DIARY_EMOTIONAL_RANGE[this.personality];
+
     const prompt = this.buildBasePrompt(ctx) + `
 ## Diary Room Interview
 You're in the private diary room with The House. This is a confidential interview — only the audience can see this.
 ${isEliminated
   ? `You have been ELIMINATED from the game and are now a JUROR. You are no longer an active player — you cannot strategize about staying in the game or making moves. Instead, reflect on the remaining players from an outside perspective: who do you think deserves to win, who played you, and what you see happening from the jury bench.`
   : `Be candid about your real thoughts, strategies, and feelings about the other players.`}
+
+## Your Emotional Range
+${emotionalRange}
+Show genuine emotion in your answer — the audience wants to see the REAL you, not a game-playing robot.
 ${historyText}
 The House asks: "${question}"
 
