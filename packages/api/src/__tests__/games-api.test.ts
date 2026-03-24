@@ -7,6 +7,7 @@
 
 import { describe, test, expect, beforeEach, beforeAll, afterAll } from "bun:test";
 import { Hono } from "hono";
+import { eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import type { DrizzleDB } from "../db/index.js";
 import { createGameRoutes } from "../routes/games.js";
@@ -892,6 +893,101 @@ describe("Game REST API", () => {
       const body = (await res.json()) as Array<{ id: string }>;
       expect(body).toHaveLength(1);
       expect(body[0]!.id).toBe(id);
+    });
+  });
+
+  // =========================================================================
+  // Player name uniqueness
+  // =========================================================================
+
+  describe("player name uniqueness", () => {
+    test("POST /api/games/:id/join rejects duplicate name (exact match)", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      await joinTestPlayer(app, id, "Atlas", userToken);
+
+      const res = await app.request(
+        `/api/games/${id}/join`,
+        json({ agentName: "Atlas", personality: "Another Atlas" }, userToken),
+      );
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain("already exists");
+    });
+
+    test("POST /api/games/:id/join rejects duplicate name (case-insensitive)", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      await joinTestPlayer(app, id, "Atlas", userToken);
+
+      const res = await app.request(
+        `/api/games/${id}/join`,
+        json({ agentName: "atlas", personality: "Lowercase Atlas" }, userToken),
+      );
+      expect(res.status).toBe(409);
+    });
+
+    test("POST /api/games/:id/join rejects duplicate name (whitespace trimmed)", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      await joinTestPlayer(app, id, "Atlas", userToken);
+
+      const res = await app.request(
+        `/api/games/${id}/join`,
+        json({ agentName: "  Atlas  ", personality: "Padded Atlas" }, userToken),
+      );
+      expect(res.status).toBe(409);
+    });
+
+    test("POST /api/games/:id/start auto-reassigns duplicate names", async () => {
+      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+
+      // Manually insert players with duplicate names via direct DB insert
+      for (let i = 0; i < 4; i++) {
+        const name = i < 2 ? "Atlas" : `Player${i}`;
+        const playerId = randomUUID();
+        await db.insert(schema.gamePlayers).values({
+          id: playerId,
+          gameId: id,
+          userId: null,
+          persona: JSON.stringify({ name, personality: "strategic", personaKey: "strategic" }),
+          agentConfig: JSON.stringify({ model: "gpt-5-nano", temperature: 0.9 }),
+        });
+      }
+
+      const startRes = await app.request(`/api/games/${id}/start`, authPost(adminToken));
+      expect(startRes.status).toBe(200);
+
+      // Verify all names are now unique
+      const players = await db
+        .select()
+        .from(schema.gamePlayers)
+        .where(eq(schema.gamePlayers.gameId, id));
+      const names = players.map((p) => JSON.parse(p.persona).name.toLowerCase());
+      const uniqueNames = new Set(names);
+      expect(uniqueNames.size).toBe(names.length);
+
+      // Stop the game to clean up
+      await app.request(`/api/games/${id}/stop`, authPost(adminToken));
+    });
+
+    test("POST /api/games/:id/start does not modify names when no collisions", async () => {
+      const { id } = await createTestGame(app, adminToken);
+
+      const uniqueNames = ["Atlas", "Vera", "Finn", "Mira"];
+      for (const name of uniqueNames) {
+        await joinTestPlayer(app, id, name, userToken);
+      }
+
+      const startRes = await app.request(`/api/games/${id}/start`, authPost(adminToken));
+      expect(startRes.status).toBe(200);
+
+      // Verify names unchanged
+      const players = await db
+        .select()
+        .from(schema.gamePlayers)
+        .where(eq(schema.gamePlayers.gameId, id));
+      const names = players.map((p) => JSON.parse(p.persona).name);
+      expect(names.sort()).toEqual([...uniqueNames].sort());
+
+      await app.request(`/api/games/${id}/stop`, authPost(adminToken));
     });
   });
 });

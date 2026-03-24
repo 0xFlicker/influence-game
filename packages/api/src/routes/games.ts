@@ -369,6 +369,18 @@ export function createGameRoutes(db: DrizzleDB) {
     }
 
     // -----------------------------------------------------------------------
+    // Reject if name collides with an existing player in this game
+    // -----------------------------------------------------------------------
+    const normalizedJoinName = resolvedName.trim().toLowerCase();
+    const nameCollision = currentPlayers.some((p) => {
+      const persona = JSON.parse(p.persona) as { name: string };
+      return persona.name.trim().toLowerCase() === normalizedJoinName;
+    });
+    if (nameCollision) {
+      return c.json({ error: "A player with that name already exists in this game" }, 409);
+    }
+
+    // -----------------------------------------------------------------------
     // Resolve model from game config
     // -----------------------------------------------------------------------
     const gameConfig = JSON.parse(game.config);
@@ -596,6 +608,40 @@ export function createGameRoutes(db: DrizzleDB) {
         },
         400,
       );
+    }
+
+    // -----------------------------------------------------------------------
+    // Detect and resolve player name collisions before starting
+    // -----------------------------------------------------------------------
+    const seenNames = new Map<string, string>(); // normalized name → first player id
+    const collidingPlayerIds: string[] = [];
+
+    for (const player of currentPlayers) {
+      const persona = JSON.parse(player.persona) as { name: string };
+      const normalized = persona.name.trim().toLowerCase();
+      if (seenNames.has(normalized)) {
+        collidingPlayerIds.push(player.id);
+      } else {
+        seenNames.set(normalized, player.id);
+      }
+    }
+
+    if (collidingPlayerIds.length > 0) {
+      const allCurrentNames = currentPlayers.map((p) => {
+        const persona = JSON.parse(p.persona) as { name: string };
+        return persona.name;
+      });
+      const replacementNames = pickAgentNames(collidingPlayerIds.length, allCurrentNames);
+
+      for (let i = 0; i < collidingPlayerIds.length; i++) {
+        const playerId = collidingPlayerIds[i]!;
+        const player = currentPlayers.find((p) => p.id === playerId)!;
+        const persona = JSON.parse(player.persona) as Record<string, unknown>;
+        persona.name = replacementNames[i] ?? `Agent-${i + 1}`;
+        await db.update(schema.gamePlayers)
+          .set({ persona: JSON.stringify(persona) })
+          .where(eq(schema.gamePlayers.id, playerId));
+      }
     }
 
     // Check if already running (race condition guard)
