@@ -281,7 +281,7 @@ export function buildDiaryRooms(
   return Array.from(roomMap.values());
 }
 
-function DiaryRoomChat({
+export function DiaryRoomChat({
   room,
 }: {
   room: DiaryRoomData;

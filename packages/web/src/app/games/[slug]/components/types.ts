@@ -9,8 +9,12 @@ export interface ReplayScene {
   roomType: RoomType;
   messages: TranscriptEntry[];
   houseIntro: string | null;
-  /** Present on per-room whisper scenes (spectacle mode splits whisper phases by room). */
+  /** Present on per-room whisper scenes (sequential presentation). */
   whisperRoom?: { roomId: number; playerNames: string[] };
+  /** Present on per-player diary scenes (sequential presentation). */
+  diaryPlayer?: { playerName: string };
+  /** When true, this scene is an overview/allocation screen with no chat messages. */
+  isOverview?: boolean;
 }
 
 export interface WhisperRoomStage {
