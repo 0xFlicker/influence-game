@@ -92,10 +92,15 @@ export async function generatePersona(
   model = "gpt-5-nano",
 ): Promise<GeneratedPersona> {
   try {
+    const isGpt5 = model.startsWith("gpt-5");
+    const isReasoning = /^o\d/.test(model) || model === "gpt-5-nano" || model === "gpt-5-mini";
+    const budget = isReasoning ? 600 : 200;
     const response = await openai.chat.completions.create({
       model,
-      max_tokens: 200,
-      temperature: 0.9,
+      ...(isGpt5 || isReasoning
+        ? { max_completion_tokens: budget }
+        : { max_tokens: budget }),
+      ...(!isReasoning && { temperature: 0.9 }),
       messages: [
         {
           role: "system",

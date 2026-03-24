@@ -98,6 +98,19 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     this.tokenTracker = tracker;
   }
 
+  /** gpt-5 family requires max_completion_tokens; nano/mini don't support temperature */
+  private modelParams(maxTokens: number, temperature: number) {
+    const isGpt5 = this.model.startsWith("gpt-5");
+    const isReasoning = /^o\d/.test(this.model) || this.model === "gpt-5-nano" || this.model === "gpt-5-mini";
+    const budget = isReasoning ? maxTokens + 400 : maxTokens;
+    return {
+      ...(isGpt5 || isReasoning
+        ? { max_completion_tokens: budget }
+        : { max_tokens: budget }),
+      ...(!isReasoning && { temperature }),
+    };
+  }
+
   async generateQuestion(context: DiaryRoomContext): Promise<string> {
     const gameStatePrompt = this.buildGameStatePrompt(context);
 
@@ -107,8 +120,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
         { role: "system", content: HOUSE_PERSONALITY },
         { role: "user", content: gameStatePrompt },
       ],
-      max_tokens: 150,
-      temperature: 0.9,
+      ...this.modelParams(150, 0.9),
     });
 
     // Track token usage (including cached tokens for cost estimation)
@@ -170,8 +182,7 @@ CLOSE: <your brief closing remark to the player, 1 sentence>`;
         { role: "system", content: HOUSE_PERSONALITY },
         { role: "user", content: followUpPrompt },
       ],
-      max_tokens: 200,
-      temperature: 0.8,
+      ...this.modelParams(200, 0.8),
     });
 
     if (this.tokenTracker && response.usage) {

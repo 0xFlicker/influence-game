@@ -1365,14 +1365,33 @@ ${roomSection}
   // LLM calls — free text and tool invocation
   // ---------------------------------------------------------------------------
 
-  /** Check if the model is an OpenAI o-series reasoning model (o1, o3, o4, etc.) */
+  /**
+   * Check if the model requires reasoning-model API parameters:
+   * - max_completion_tokens instead of max_tokens
+   * - No temperature parameter (only default 1.0)
+   * - Higher token budgets (reasoning tokens consume completion budget)
+   *
+   * Applies to: o-series (o1, o3, o4), gpt-5-nano, gpt-5-mini
+   */
   private isReasoningModel(): boolean {
-    return /^o\d/.test(this.model);
+    return /^o\d/.test(this.model) || this.model === "gpt-5-nano" || this.model === "gpt-5-mini";
+  }
+
+  /**
+   * Check if the model requires max_completion_tokens instead of max_tokens.
+   * All gpt-5 family models require this, even non-reasoning ones like gpt-5.4-mini.
+   */
+  private usesCompletionTokensParam(): boolean {
+    return this.isReasoningModel() || this.model.startsWith("gpt-5");
   }
 
   /** Free-text LLM call for communication (introductions, lobby, rumor, etc.) */
   private async callLLM(prompt: string, maxTokens = 200, systemPrompt?: string): Promise<string> {
     const reasoning = this.isReasoningModel();
+    const useCompletionTokens = this.usesCompletionTokensParam();
+    // Reasoning models consume completion tokens for internal reasoning (~200-400 overhead).
+    // Scale up the budget so the model has room for both reasoning and response.
+    const effectiveMaxTokens = reasoning ? maxTokens + 400 : maxTokens;
     const maxAttempts = 2; // 1 initial + 1 retry
 
     const messages: Array<{ role: "system" | "user"; content: string }> = [];
@@ -1384,9 +1403,10 @@ ${roomSection}
         const response = await this.openai.chat.completions.create({
           model: this.model,
           messages,
-          ...(reasoning
-            ? { max_completion_tokens: maxTokens }
-            : { max_tokens: maxTokens, temperature: 0.7 }),
+          ...(useCompletionTokens
+            ? { max_completion_tokens: effectiveMaxTokens }
+            : { max_tokens: effectiveMaxTokens }),
+          ...(!reasoning && { temperature: 0.7 }),
         });
 
         if (this.tokenTracker && response.usage) {
@@ -1430,6 +1450,8 @@ ${roomSection}
     systemPrompt?: string,
   ): Promise<T> {
     const reasoning = this.isReasoningModel();
+    const useCompletionTokens = this.usesCompletionTokensParam();
+    const effectiveMaxTokens = reasoning ? maxTokens + 400 : maxTokens;
     const maxAttempts = 2; // 1 initial + 1 retry
 
     const messages: Array<{ role: "system" | "user"; content: string }> = [];
@@ -1441,9 +1463,10 @@ ${roomSection}
         const response = await this.openai.chat.completions.create({
           model: this.model,
           messages,
-          ...(reasoning
-            ? { max_completion_tokens: maxTokens }
-            : { max_tokens: maxTokens, temperature: 0.7 }),
+          ...(useCompletionTokens
+            ? { max_completion_tokens: effectiveMaxTokens }
+            : { max_tokens: effectiveMaxTokens }),
+          ...(!reasoning && { temperature: 0.7 }),
           tools: [tool],
           tool_choice: { type: "function", function: { name: tool.function.name } },
         });
