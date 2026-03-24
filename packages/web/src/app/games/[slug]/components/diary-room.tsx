@@ -38,8 +38,10 @@ export function groupMessages(messages: TranscriptEntry[]): GroupedMessage[] {
       i++;
     }
 
-    const questions = batch.filter((e) => e.fromPlayerId?.startsWith("House ->"));
-    const answers = batch.filter((e) => !e.fromPlayerId?.startsWith("House ->"));
+    // Filter out House close messages (from "House" without "-> PlayerName")
+    const filtered = batch.filter((e) => e.fromPlayerId !== "House");
+    const questions = filtered.filter((e) => e.fromPlayerId?.startsWith("House ->"));
+    const answers = filtered.filter((e) => !e.fromPlayerId?.startsWith("House ->"));
     const usedAnswerIds = new Set<number>();
 
     for (const q of questions) {
@@ -251,6 +253,8 @@ export function buildDiaryRooms(
   const roomMap = new Map<string, DiaryRoomData>();
 
   for (const msg of diaryMsgs) {
+    // Skip House close messages (from "House" without "-> PlayerName")
+    if (msg.fromPlayerId === "House") continue;
     const isQuestion = msg.fromPlayerId?.startsWith("House ->");
     const playerName = msg.fromPlayerId ? diaryPlayerName(msg.fromPlayerId) : null;
     if (!playerName) continue;

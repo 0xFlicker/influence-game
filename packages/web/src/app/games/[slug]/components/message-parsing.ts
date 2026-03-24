@@ -50,6 +50,11 @@ export function parseEliminationVote(text: string) {
   return m ? { voter: m[1]!, target: m[2]! } : null;
 }
 
+export function parseReVoteMsg(text: string) {
+  const m = text.match(/^(.+?) re-votes: empower=(.+?)$/);
+  return m ? { voter: m[1]!, empower: m[2]! } : null;
+}
+
 export function parseEmpowerTied(text: string) {
   const m = text.match(/^Empower TIED between: (.+)\. Re-vote!$/);
   if (!m) return null;
@@ -71,6 +76,7 @@ export function parseWheelDecides(text: string) {
 export function isParseableStructuredMsg(text: string): boolean {
   return !!(
     parseVoteMsg(text) ||
+    parseReVoteMsg(text) ||
     parseCouncilVoteMsg(text) ||
     parsePowerAction(text) ||
     parseJuryVoteMsg(text) ||

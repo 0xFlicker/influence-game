@@ -246,6 +246,13 @@ export class GameState {
   }
 
   /**
+   * Clear a voter's empower vote (used before re-vote to prevent stale votes).
+   */
+  clearEmpowerVote(voterId: UUID): void {
+    delete this._currentVoteTally.empowerVotes[voterId];
+  }
+
+  /**
    * Set the empowered player directly (after re-vote or wheel).
    */
   setEmpowered(id: UUID): void {

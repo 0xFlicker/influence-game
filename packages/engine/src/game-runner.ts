@@ -779,6 +779,11 @@ export class GameRunner {
 
       // Non-tied players re-vote among tied candidates
       const reVoters = alivePlayers.filter((p) => !tied.includes(p.id));
+      // Clear stale empower votes from re-voters so original votes don't
+      // leak into the re-tally if a re-voter votes for a non-tied candidate
+      for (const rv of reVoters) {
+        this.gameState.clearEmpowerVote(rv.id);
+      }
       if (reVoters.length > 0) {
         await Promise.all(
           reVoters.map(async (player) => {
@@ -788,6 +793,8 @@ export class GameRunner {
             // Only count if they voted for a tied candidate
             if (tied.includes(votes.empowerTarget)) {
               this.gameState.recordEmpowerReVote(player.id, votes.empowerTarget);
+              const empowerName = this.gameState.getPlayerName(votes.empowerTarget);
+              this.logSystem(`${player.name} re-votes: empower=${empowerName}`, Phase.VOTE);
             }
           }),
         );
@@ -1596,7 +1603,8 @@ export class GameRunner {
       const result = await this.houseInterviewer.generateFollowUpOrClose(updatedContext, sessionExchanges);
 
       if (result.type === "close") {
-        this.logDiary(houseLabel, result.message);
+        // Use "House" (not "House -> Name") so frontend doesn't treat close as a new question
+        this.logDiary("House", result.message);
         break;
       }
 
@@ -1619,7 +1627,7 @@ export class GameRunner {
 
     // If we hit MAX_QUESTIONS without the House closing, add a closing message
     if (sessionExchanges.length >= MAX_QUESTIONS) {
-      this.logDiary(houseLabel, `That's enough for now, ${playerName}. The House sees everything.`);
+      this.logDiary("House", `That's enough for now, ${playerName}. The House sees everything.`);
     }
   }
 

@@ -15,6 +15,7 @@ import {
   parseJuryQuestion,
   parseJuryAnswer,
   parseEliminationVote,
+  parseReVoteMsg,
   parseEmpowerTied,
   parseReVoteResolved,
   parseWheelDecides,
@@ -275,6 +276,29 @@ export function StyledVoteCard({
                 </div>
               </>
             )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const reVote = parseReVoteMsg(text);
+  if (reVote) {
+    const voterPlayer = players.find((p) => p.name === reVote.voter);
+    const empowerPlayer = players.find((p) => p.name === reVote.empower);
+    return (
+      <div className="text-center animate-[fadeIn_0.3s_ease-out]">
+        <div className="flex items-center justify-center gap-3 mb-6">
+          {voterPlayer && <AgentAvatar avatarUrl={voterPlayer.avatarUrl} persona={voterPlayer.persona} name={voterPlayer.name} size="10" />}
+          <span className="text-lg font-semibold text-white/70">{reVote.voter}</span>
+          <span className="text-xs text-yellow-400/50 uppercase tracking-wider">(re-vote)</span>
+        </div>
+        <div className="bg-yellow-900/10 border border-yellow-500/15 rounded-2xl px-8 py-6 inline-block">
+          <p className="text-xs text-yellow-400/50 uppercase tracking-wider mb-2">Empower</p>
+          <div className="flex items-center justify-center gap-3">
+            <span className="text-xl">👑</span>
+            {empowerPlayer && <AgentAvatar avatarUrl={empowerPlayer.avatarUrl} persona={empowerPlayer.persona} name={empowerPlayer.name} size="10" />}
+            <span className="text-2xl font-bold text-yellow-300">{reVote.empower}</span>
           </div>
         </div>
       </div>

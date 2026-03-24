@@ -796,7 +796,14 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
         prompt, TOOL_SEND_ROOM_MESSAGE, 300, sys,
       );
       if (result.pass) return null;
-      return result.message ?? "";
+      const msg = result.message?.trim();
+      if (!msg) {
+        // Tool succeeded but no message — likely token budget consumed by reasoning
+        return isFirstMessage
+          ? `I wanted to speak with you privately, ${partnerName}. Let's watch each other's backs.`
+          : null;
+      }
+      return msg;
     } catch {
       if (isFirstMessage) {
         return `I wanted to speak with you privately, ${partnerName}. Let's watch each other's backs.`;
