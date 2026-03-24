@@ -228,6 +228,14 @@ export const CHAT_POST_MSG_PER_CHAR_MS = 12;
 // Hold time after the last message in diary/whisper scenes before transitioning
 export const DIARY_WHISPER_SCENE_END_HOLD_MS = 4000;
 
+// Phases that get an extra digestion pause at the end before transitioning
+export const PACED_PHASES: ReadonlySet<PhaseKey> = new Set([
+  "INTRODUCTION", "LOBBY", "WHISPER",
+]);
+
+// Extra pause at the end of paced phases (ms at 1x speed)
+export const PHASE_END_PAUSE_MS = 5000;
+
 export const ENDGAME_CONFIG: Record<
   EndgameStage,
   { title: string; color: string; body: string[] }

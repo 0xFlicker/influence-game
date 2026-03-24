@@ -7,9 +7,12 @@ import type { TransitionState } from "./types";
 export function PhaseTransitionOverlay({
   transition,
   onDismiss,
+  holdMs = 2000,
 }: {
   transition: TransitionState;
   onDismiss: () => void;
+  /** How long to hold the overlay before fading out (default 2000ms). */
+  holdMs?: number;
 }) {
   const [visible, setVisible] = useState(false);
   const onDismissRef = useRef(onDismiss);
@@ -18,17 +21,17 @@ export function PhaseTransitionOverlay({
   useEffect(() => {
     // Brief tick to trigger CSS fade-in transition
     const fadeIn = setTimeout(() => setVisible(true), 16);
-    // Start fade-out after 2s hold
-    const fadeOut = setTimeout(() => setVisible(false), 2000);
+    // Start fade-out after hold period
+    const fadeOut = setTimeout(() => setVisible(false), holdMs);
     // Unmount after fade-out completes (300ms)
-    const dismiss = setTimeout(() => onDismissRef.current(), 2300);
+    const dismiss = setTimeout(() => onDismissRef.current(), holdMs + 300);
 
     return () => {
       clearTimeout(fadeIn);
       clearTimeout(fadeOut);
       clearTimeout(dismiss);
     };
-  }, []);
+  }, [holdMs]);
 
   const label =
     PHASE_TRANSITION_LABELS[transition.phase] ?? transition.phase.replace(/_/g, " ");

@@ -24,7 +24,10 @@ import {
   CHAT_POST_MSG_BASE_MS,
   CHAT_POST_MSG_PER_CHAR_MS,
   DIARY_WHISPER_SCENE_END_HOLD_MS,
+  PACED_PHASES,
+  PHASE_END_PAUSE_MS,
 } from "./constants";
+import { PhaseEndingCue } from "./phase-ending-cue";
 import { ConnectionBadge, GameStateHUD } from "./game-info";
 import { PhaseTransitionOverlay } from "./phase-transition";
 import { EndgameEntryScreen } from "./endgame-entry";
@@ -56,6 +59,7 @@ export function DramaticReplayViewer({
   const [showHouseOverlay, setShowHouseOverlay] = useState(false);
   const [activeEndgameScreen, setActiveEndgameScreen] = useState<EndgameScreenState | null>(null);
   const [activePhaseTransition, setActivePhaseTransition] = useState<TransitionState | null>(null);
+  const [showPhaseEndingCue, setShowPhaseEndingCue] = useState(false);
   const seenEndgameStages = useRef<Set<string>>(new Set());
   const [controlsVisible, setControlsVisible] = useState(true);
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -210,6 +214,9 @@ export function DramaticReplayViewer({
   const isRoomChange = scene && prevScene && scene.roomType !== prevScene.roomType;
 
   // Phase transition overlay on room type changes
+  const replayTransitionHoldMs =
+    prevScene && PACED_PHASES.has(prevScene.phase) ? 2000 + PHASE_END_PAUSE_MS / speed : 2000;
+
   useEffect(() => {
     if (isRoomChange && scene) {
       const flavors = PHASE_FLAVORS[scene.phase] ?? [];
@@ -271,9 +278,14 @@ export function DramaticReplayViewer({
       }
       if (messagePhase === "done") {
         const isLastScene = sceneIndex >= totalScenes - 1;
+        const isPaced = PACED_PHASES.has(scene.phase);
         // Hold proportional to content: ~5s base + 300ms per message
-        const holdMs = Math.max(5000, scene.messages.length * 300) / speed;
+        const baseHoldMs = Math.max(5000, scene.messages.length * 300) / speed;
+        const pacedExtra = isPaced ? PHASE_END_PAUSE_MS / speed : 0;
+        const holdMs = baseHoldMs + pacedExtra;
+        if (isPaced) setShowPhaseEndingCue(true);
         const timer = setTimeout(() => {
+          setShowPhaseEndingCue(false);
           if (!isLastScene) {
             setSceneIndex((i) => i + 1);
             setMessageIndex(0);
@@ -313,12 +325,16 @@ export function DramaticReplayViewer({
 
       // Chat-style phases use faster timing
       if (isChatStyleScene) {
+        const isPaced = PACED_PHASES.has(scene.phase);
         const sceneEndHold = isWhisperScene ? DIARY_WHISPER_SCENE_END_HOLD_MS : INTER_SCENE_PAUSE_MS;
+        const pacedExtra = (isPaced && isLastInScene) ? PHASE_END_PAUSE_MS : 0;
         const holdMs = isLastInScene
-          ? sceneEndHold / speed
+          ? (sceneEndHold + pacedExtra) / speed
           : Math.max(CHAT_POST_MSG_BASE_MS, currentMessage.text.length * CHAT_POST_MSG_PER_CHAR_MS) / speed;
 
+        if (isPaced && isLastInScene) setShowPhaseEndingCue(true);
         const timer = setTimeout(() => {
+          setShowPhaseEndingCue(false);
           if (!isLastInScene) {
             setMessageIndex((i) => i + 1);
             setMessagePhase("typing");
@@ -361,6 +377,7 @@ export function DramaticReplayViewer({
   // Advance function — for click/tap and keyboard
   const advanceMessage = useCallback(() => {
     if (!scene) return;
+    setShowPhaseEndingCue(false);
     // Diary & Whisper scenes show all content at once — click advances to next scene
     if (scene.phase === "DIARY_ROOM" || scene.phase === "WHISPER") {
       if (sceneIndex < totalScenes - 1) {
@@ -387,6 +404,7 @@ export function DramaticReplayViewer({
   }, [scene, messagePhase, messageIndex, sceneIndex, totalScenes]);
 
   const goToNextScene = useCallback(() => {
+    setShowPhaseEndingCue(false);
     if (sceneIndex < totalScenes - 1) {
       setSceneIndex((i) => i + 1);
       setMessageIndex(0);
@@ -395,6 +413,7 @@ export function DramaticReplayViewer({
   }, [sceneIndex, totalScenes]);
 
   const goToEnd = useCallback(() => {
+    setShowPhaseEndingCue(false);
     if (totalScenes > 0) {
       const lastScene = scenes[totalScenes - 1]!;
       setSceneIndex(totalScenes - 1);
@@ -405,12 +424,14 @@ export function DramaticReplayViewer({
   }, [totalScenes, scenes]);
 
   const goToBeginning = useCallback(() => {
+    setShowPhaseEndingCue(false);
     setSceneIndex(0);
     setMessageIndex(0);
     setMessagePhase("typing");
   }, []);
 
   const goToPrevScene = useCallback(() => {
+    setShowPhaseEndingCue(false);
     if (messageIndex > 0) {
       // If mid-scene, go to start of current scene
       setMessageIndex(0);
@@ -567,6 +588,7 @@ export function DramaticReplayViewer({
         <PhaseTransitionOverlay
           transition={activePhaseTransition}
           onDismiss={() => setActivePhaseTransition(null)}
+          holdMs={replayTransitionHoldMs}
         />
       )}
       {activeEndgameScreen && (
@@ -574,6 +596,9 @@ export function DramaticReplayViewer({
           endgame={activeEndgameScreen}
           onDismiss={() => setActiveEndgameScreen(null)}
         />
+      )}
+      {showPhaseEndingCue && (
+        <PhaseEndingCue durationMs={PHASE_END_PAUSE_MS / speed} />
       )}
       {showHouseOverlay && scene.houseIntro && (
         <div className="fixed inset-0 z-40 bg-black/90 flex flex-col items-center justify-center animate-[fadeIn_0.3s_ease-out]">

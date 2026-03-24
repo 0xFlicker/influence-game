@@ -374,3 +374,9 @@ body {
 .animate-shield-shatter {
   animation: shield-shatter 0.7s ease-out forwards;
 }
+
+/* Phase-ending progress bar shrink — duration set inline via style prop */
+@keyframes phaseEndShrink {
+  from { width: 100%; }
+  to   { width: 0%; }
+}

@@ -15,6 +15,8 @@ import {
   TYPING_HOLD_MS,
   POST_REVEAL_BASE_MS,
   POST_REVEAL_PER_CHAR_MS,
+  PACED_PHASES,
+  PHASE_END_PAUSE_MS,
 } from "./components/constants";
 import { wsEntryToTranscriptEntry } from "./components/message-parsing";
 import { useGameWebSocket } from "./components/use-game-websocket";
@@ -40,6 +42,7 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
   const [loadError, setLoadError] = useState<string | null>(null);
   const [replayIndex, setReplayIndex] = useState<number>(0);
   const [activeTransition, setActiveTransition] = useState<TransitionState | null>(null);
+  const [transitionHoldMs, setTransitionHoldMs] = useState(2000);
   // Negative IDs for live WS messages (avoids collision with positive DB ids)
   const msgIdRef = useRef(-1);
   // maxRounds ref so handleWsEvent can access it without being a dep
@@ -384,6 +387,8 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
                     ? flavors[Math.floor(Math.random() * flavors.length)]
                     : "";
                 })();
+          // Extend overlay hold when leaving a paced phase (gives viewers digestion time)
+          setTransitionHoldMs(PACED_PHASES.has(prevPhase) ? 2000 + PHASE_END_PAUSE_MS : 2000);
           setActiveTransition({
             phase: ev.phase,
             round: ev.round,
@@ -622,6 +627,7 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
         <PhaseTransitionOverlay
           transition={activeTransition}
           onDismiss={() => setActiveTransition(null)}
+          holdMs={transitionHoldMs}
         />
       )}
 
