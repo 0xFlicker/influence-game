@@ -33,9 +33,23 @@ function parseWhisperRooms(msgs: TranscriptEntry[]): Array<{ roomId: number; pla
 }
 
 export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] {
+  // Group messages by round+phase, but split DIARY_ROOM into separate groups
+  // for each contiguous batch. Each runDiaryRoom(precedingPhase) produces a
+  // contiguous run of diary entries in the transcript; by assigning a unique
+  // key per run we keep post-LOBBY diary rooms separate from post-COUNCIL ones.
   const grouped = new Map<string, TranscriptEntry[]>();
+  let diaryBatch = 0;
+  let prevWasDiary = false;
   for (const msg of transcript) {
-    const key = `R${msg.round}-${msg.phase}`;
+    let key: string;
+    if (msg.phase === "DIARY_ROOM") {
+      if (!prevWasDiary) diaryBatch++;
+      key = `R${msg.round}-DIARY_ROOM-${diaryBatch}`;
+      prevWasDiary = true;
+    } else {
+      key = `R${msg.round}-${msg.phase}`;
+      prevWasDiary = false;
+    }
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key)!.push(msg);
   }
