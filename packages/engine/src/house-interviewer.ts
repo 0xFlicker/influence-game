@@ -102,7 +102,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   private modelParams(maxTokens: number, temperature: number) {
     const isGpt5 = this.model.startsWith("gpt-5");
     const isReasoning = /^o\d/.test(this.model) || this.model === "gpt-5-nano" || this.model === "gpt-5-mini";
-    const budget = isReasoning ? maxTokens + 400 : maxTokens;
+    const budget = isReasoning ? maxTokens + 800 : maxTokens;
     return {
       ...(isGpt5 || isReasoning
         ? { max_completion_tokens: budget }

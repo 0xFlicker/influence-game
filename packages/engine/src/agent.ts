@@ -1391,7 +1391,7 @@ ${roomSection}
     const useCompletionTokens = this.usesCompletionTokensParam();
     // Reasoning models consume completion tokens for internal reasoning (~200-400 overhead).
     // Scale up the budget so the model has room for both reasoning and response.
-    const effectiveMaxTokens = reasoning ? maxTokens + 400 : maxTokens;
+    const effectiveMaxTokens = reasoning ? maxTokens + 800 : maxTokens;
     const maxAttempts = 2; // 1 initial + 1 retry
 
     const messages: Array<{ role: "system" | "user"; content: string }> = [];
@@ -1451,7 +1451,7 @@ ${roomSection}
   ): Promise<T> {
     const reasoning = this.isReasoningModel();
     const useCompletionTokens = this.usesCompletionTokensParam();
-    const effectiveMaxTokens = reasoning ? maxTokens + 400 : maxTokens;
+    const effectiveMaxTokens = reasoning ? maxTokens + 800 : maxTokens;
     const maxAttempts = 2; // 1 initial + 1 retry
 
     const messages: Array<{ role: "system" | "user"; content: string }> = [];
