@@ -72,6 +72,11 @@ export function buildWhisperStageData(
     if (room.playerIds.length === 2) {
       roomsByPair.set(canonicalPairKey(room.playerIds[0]!, room.playerIds[1]!), stageRoom);
     }
+    // Also key by player names — message `fromPlayerId` / `toPlayerIds` contain
+    // names (not UUIDs) so the UUID pair key above won't match during fallback.
+    if (room.playerNames.length === 2) {
+      roomsByPair.set(canonicalPairKey(room.playerNames[0]!, room.playerNames[1]!), stageRoom);
+    }
   }
 
   for (const entry of ordered) {
@@ -180,7 +185,12 @@ export function WhisperRoomDM({
   onFocus?: () => void;
   onClose?: () => void;
 }) {
-  const selfId = room.playerIds[0];
+  // Room owner: first player in allocation (the one who chose this room).
+  // Resolve via players array to get canonical ID for robust matching.
+  const ownerName = room.playerNames[0];
+  const ownerPlayer = ownerName
+    ? players.find((p) => p.id === room.playerIds[0] || p.name === ownerName)
+    : undefined;
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when messages change
@@ -246,19 +256,21 @@ export function WhisperRoomDM({
           <p className="text-xs text-white/30 italic text-center py-6">No messages exchanged.</p>
         ) : (
           room.messages.map((msg, idx) => {
-            const isSelf = msg.fromPlayerId === selfId;
+            // Resolve sender, then compare to owner by canonical player object
             const player = players.find((c) => c.id === msg.fromPlayerId)
               ?? players.find((c) => c.name === msg.fromPlayerId);
+            const isOwner = ownerPlayer
+              ? (player?.id === ownerPlayer.id)
+              : (msg.fromPlayerId === ownerName);
             const name = player?.name ?? msg.fromPlayerId ?? "Unknown";
-            const showOnRight = isSelf;
 
             return (
               <div
                 key={msg.id}
-                className={`flex gap-2 ${showOnRight ? "justify-end" : "justify-start"} animate-[fadeIn_0.25s_ease-out]`}
+                className={`flex gap-2 ${isOwner ? "justify-end" : "justify-start"} animate-[fadeIn_0.25s_ease-out]`}
                 style={{ animationDelay: `${Math.min(idx, 10) * 100}ms` }}
               >
-                {!showOnRight && (
+                {!isOwner && (
                   <div className="flex-shrink-0 mt-1">
                     {player ? (
                       <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />
@@ -267,19 +279,19 @@ export function WhisperRoomDM({
                     )}
                   </div>
                 )}
-                <div className={`max-w-[80%] ${showOnRight ? "text-right" : "text-left"}`}>
+                <div className={`max-w-[80%] ${isOwner ? "text-right" : "text-left"}`}>
                   <p className="text-[10px] mb-0.5 text-white/30">
                     {name}
                   </p>
                   <div className={`rounded-2xl px-3 py-2 ${
-                    showOnRight
-                      ? "bg-purple-800/30 border border-purple-600/20 rounded-tr-sm"
-                      : "bg-white/[0.06] border border-white/[0.08] rounded-tl-sm"
+                    isOwner
+                      ? "bg-blue-600/30 border border-blue-500/25 rounded-tr-sm"
+                      : "bg-white/[0.08] border border-white/[0.10] rounded-tl-sm"
                   }`}>
                     <p className="text-xs leading-relaxed text-white/70 text-left">{msg.text}</p>
                   </div>
                 </div>
-                {showOnRight && (
+                {isOwner && (
                   <div className="flex-shrink-0 mt-1">
                     {player ? (
                       <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />
