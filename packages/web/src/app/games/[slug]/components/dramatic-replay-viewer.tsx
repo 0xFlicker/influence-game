@@ -163,11 +163,12 @@ export function DramaticReplayViewer({
     return scene.messages.slice(0, endIdx);
   }, [scene, isChatStyleScene, messageIndex, messagePhase]);
 
-  // For whisper scenes: show ALL messages at once (grid renders all rooms simultaneously)
+  // For whisper scenes: progressive playback — show messages up to current index
   const whisperRoundMessages = useMemo(() => {
     if (!scene || scene.phase !== "WHISPER") return [];
-    return scene.messages;
-  }, [scene]);
+    const endIdx = messagePhase === "typing" ? messageIndex : messageIndex + 1;
+    return scene.messages.slice(0, endIdx);
+  }, [scene, messageIndex, messagePhase]);
 
   // Rumor messages for current round (for vote reveal — show voter's rumor alongside vote)
   const rumorMessages = useMemo(() => {
@@ -175,11 +176,12 @@ export function DramaticReplayViewer({
     return allVisibleMessages.filter(m => m.round === scene.round && m.phase === "RUMOR" && m.scope === "public");
   }, [allVisibleMessages, scene]);
 
-  // For diary scenes: show ALL messages at once (grid renders all rooms simultaneously)
+  // For diary scenes: progressive playback — show messages up to current index
   const diaryRoundMessages = useMemo(() => {
     if (!scene || scene.phase !== "DIARY_ROOM") return [];
-    return scene.messages;
-  }, [scene]);
+    const endIdx = messagePhase === "typing" ? messageIndex : messageIndex + 1;
+    return scene.messages.slice(0, endIdx);
+  }, [scene, messageIndex, messagePhase]);
 
   // For jury scenes: gather all jury messages
   const juryMessages = useMemo(() => {
@@ -268,37 +270,6 @@ export function DramaticReplayViewer({
   useEffect(() => {
     if (!isPlaying || !scene || !currentMessage) return;
 
-    // Diary & Whisper scenes: show all content at once, hold proportionally, then advance
-    if (isDiaryScene || isWhisperScene) {
-      if (messagePhase === "typing") {
-        // Grid already renders all rooms — skip to end of scene immediately
-        setMessageIndex(scene.messages.length - 1);
-        setMessagePhase("done");
-        return;
-      }
-      if (messagePhase === "done") {
-        const isLastScene = sceneIndex >= totalScenes - 1;
-        const isPaced = PACED_PHASES.has(scene.phase);
-        // Hold proportional to content: ~5s base + 300ms per message
-        const baseHoldMs = Math.max(5000, scene.messages.length * 300) / speed;
-        const pacedExtra = isPaced ? PHASE_END_PAUSE_MS / speed : 0;
-        const holdMs = baseHoldMs + pacedExtra;
-        if (isPaced) setShowPhaseEndingCue(true);
-        const timer = setTimeout(() => {
-          setShowPhaseEndingCue(false);
-          if (!isLastScene) {
-            setSceneIndex((i) => i + 1);
-            setMessageIndex(0);
-            setMessagePhase("typing");
-          } else if (!live) {
-            setIsPlaying(false);
-          }
-        }, holdMs);
-        return () => clearTimeout(timer);
-      }
-      return;
-    }
-
     if (messagePhase === "typing") {
       // Chat-style phases: short typing indicator then skip straight to "done"
       if (isChatStyleScene) {
@@ -326,7 +297,7 @@ export function DramaticReplayViewer({
       // Chat-style phases use faster timing
       if (isChatStyleScene) {
         const isPaced = PACED_PHASES.has(scene.phase);
-        const sceneEndHold = isWhisperScene ? DIARY_WHISPER_SCENE_END_HOLD_MS : INTER_SCENE_PAUSE_MS;
+        const sceneEndHold = (isWhisperScene || isDiaryScene) ? DIARY_WHISPER_SCENE_END_HOLD_MS : INTER_SCENE_PAUSE_MS;
         const pacedExtra = (isPaced && isLastInScene) ? PHASE_END_PAUSE_MS : 0;
         const holdMs = isLastInScene
           ? (sceneEndHold + pacedExtra) / speed
@@ -378,15 +349,6 @@ export function DramaticReplayViewer({
   const advanceMessage = useCallback(() => {
     if (!scene) return;
     setShowPhaseEndingCue(false);
-    // Diary & Whisper scenes show all content at once — click advances to next scene
-    if (scene.phase === "DIARY_ROOM" || scene.phase === "WHISPER") {
-      if (sceneIndex < totalScenes - 1) {
-        setSceneIndex((i) => i + 1);
-        setMessageIndex(0);
-        setMessagePhase("typing");
-      }
-      return;
-    }
     // If mid-animation, skip to fully revealed
     if (messagePhase === "typing" || messagePhase === "revealing") {
       setMessagePhase("done");
@@ -437,22 +399,11 @@ export function DramaticReplayViewer({
       setMessageIndex(0);
       setMessagePhase("typing");
     } else if (sceneIndex > 0) {
-      const prevIdx = sceneIndex - 1;
-      const prev = scenes[prevIdx]!;
-      const isGridScene = prev.phase === "DIARY_ROOM" || prev.phase === "WHISPER";
-      setSceneIndex(prevIdx);
-      if (isGridScene) {
-        // Grid scenes display all content at once — land at end and pause
-        // so the user can browse without auto-advance jumping away
-        setMessageIndex(prev.messages.length - 1);
-        setMessagePhase("done");
-        setIsPlaying(false);
-      } else {
-        setMessageIndex(0);
-        setMessagePhase("typing");
-      }
+      setSceneIndex(sceneIndex - 1);
+      setMessageIndex(0);
+      setMessagePhase("typing");
     }
-  }, [sceneIndex, messageIndex, scenes]);
+  }, [sceneIndex, messageIndex]);
 
   // Reset auto-hide timer helper
   const resetControlsTimer = useCallback(() => {
@@ -509,10 +460,6 @@ export function DramaticReplayViewer({
             setSceneIndex((i) => i - 1);
             setMessageIndex(prev.messages.length - 1);
             setMessagePhase("done");
-            // Pause on grid scenes so user can browse
-            if (prev.phase === "DIARY_ROOM" || prev.phase === "WHISPER") {
-              setIsPlaying(false);
-            }
           }
           break;
         case "]":
