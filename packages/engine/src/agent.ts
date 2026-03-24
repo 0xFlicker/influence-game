@@ -96,7 +96,7 @@ The lobby is where personality meets strategy — but NEVER overtly. The surface
 - The SUBTEXT of your words should serve your strategy: snide asides at rivals, loaded compliments to allies, double-entendres that only your faction understands, sarcasm aimed at the last empowered player or dominant alliance
 - Create personality friction — not everyone gets along, and that's entertaining
 - If someone was eliminated: ONE brief acknowledgment is fine (especially if they were your ally). Then MOVE ON. Do not write eulogies. Do not dwell. The game continues.
-${isEarlyGame ? `\nEARLY GAME (Round ${round}): You barely know these people. Express genuine opinions and show personality. Disagree with someone. Share a strong take. Let friction emerge naturally. Avoid overt game talk, but your personality and worldview should hint at how you'll play.` : `\nMID/LATE GAME (Round ${round}): You have history with these people now. Your lobby messages should carry weight — reference things that happened (without being explicit about strategy). A pointed joke about someone's "loyalty" or a casual observation about who always ends up in whisper rooms together. The audience should feel the tension beneath the banter.`}`;
+${round === 1 ? `\nROUND 1 — FRESH START: This is your first real conversation with the group! The vibe is excited, curious, and playful. You're genuinely interested in these people — ask questions, riff on what others said, share something fun about yourself. Think: first night in a new house together, everyone buzzing with energy. Keep it LIGHT, CHEERY, and FUN. No snark, no shade, no pointed remarks yet — you haven't been wronged by anyone, there's nothing to be snarky about! Save the edge for when someone actually gives you a reason.` : isEarlyGame ? `\nROUND 2 — GETTING COMFORTABLE: You've had one round together and you're starting to form impressions. The energy is still mostly positive and curious, but you can start having mild opinions — gentle teasing, playful disagreements, expressing who you vibe with. Think: second day at summer camp. Light personality friction can emerge naturally, but the overall tone stays warm and engaged.` : `\nMID/LATE GAME (Round ${round}): You have history with these people now. Your lobby messages should carry weight — reference things that happened (without being explicit about strategy). A pointed joke about someone's "loyalty" or a casual observation about who always ends up in whisper rooms together. The audience should feel the tension beneath the banter.`}`;
 
     case Phase.WHISPER:
       return `PHASE BEHAVIOR — WHISPER (STRATEGY PHASE):
@@ -542,18 +542,29 @@ Respond with ONLY the introduction text, nothing else.`;
 
   async getLobbyIntent(ctx: PhaseContext): Promise<string> {
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const isEarlyRound = ctx.round <= 2;
     const prompt = this.buildUserPrompt(ctx) + `
 ## Pre-Lobby Strategy
 
-Before you speak in the lobby, take a moment to plan. The lobby is social on the surface,
-but your words should serve your strategy underneath.
+Before you speak in the lobby, take a moment to plan.${isEarlyRound ? `
+
+It's early in the game (Round ${ctx.round}) — the vibe should be light, warm, and excited.
+
+In 1-2 sentences, answer:
+- What fun or genuine thing do I want to share or talk about?
+- Who said something interesting that I want to riff on or ask about?
+- What's my energy right now — curious, playful, enthusiastic, witty?
+
+Be specific. Name a player you're genuinely interested in engaging with.` : `
+
+The lobby is social on the surface, but your words should serve your strategy underneath.
 
 In 1-2 sentences, answer:
 - What do I want to subtly communicate or accomplish in this lobby session?
 - Who should I target with a pointed remark, loaded question, or snide aside?
 - What emotional angle fits my personality right now — humor, sarcasm, warmth, intensity?
 
-Be specific. Name a player and what you want to signal about them (or to them).
+Be specific. Name a player and what you want to signal about them (or to them).`}
 Do NOT write your actual lobby message — just your internal game plan.
 
 Respond with ONLY your strategy intent, nothing else.`;
@@ -590,28 +601,63 @@ Respond with ONLY your strategy intent, nothing else.`;
       }
     }
 
-    // Sub-round specific direction
+    // Sub-round specific direction (tone-aware for early rounds)
+    const isRoundOne = ctx.round === 1;
+    const isEarlySubRound = ctx.round <= 2;
     let subRoundGuidance = "";
     if (isFirstMessage) {
-      subRoundGuidance = `This is your OPENING message (${subRound + 1}/${totalSubRounds}). Set the tone — lead with personality and a strong take.`;
+      subRoundGuidance = isRoundOne
+        ? `This is your OPENING message (${subRound + 1}/${totalSubRounds}). Set a warm, excited tone — you're happy to be here!`
+        : isEarlySubRound
+          ? `This is your OPENING message (${subRound + 1}/${totalSubRounds}). Set the tone — lead with personality and genuine energy.`
+          : `This is your OPENING message (${subRound + 1}/${totalSubRounds}). Set the tone — lead with personality and a strong take.`;
     } else if (subRound === totalSubRounds - 1) {
-      subRoundGuidance = `This is your FINAL message (${subRound + 1}/${totalSubRounds}). React to what's been said. Leave an impression — a pointed observation, a loaded joke, or a line that makes people think.`;
+      subRoundGuidance = isRoundOne
+        ? `This is your FINAL message (${subRound + 1}/${totalSubRounds}). React to what's been said — show you were listening and leave a warm impression.`
+        : isEarlySubRound
+          ? `This is your FINAL message (${subRound + 1}/${totalSubRounds}). React to what's been said. Leave an impression — a fun observation or a line that shows your personality.`
+          : `This is your FINAL message (${subRound + 1}/${totalSubRounds}). React to what's been said. Leave an impression — a pointed observation, a loaded joke, or a line that makes people think.`;
     } else {
-      subRoundGuidance = `Message ${subRound + 1}/${totalSubRounds}. Build on the conversation — respond to someone directly. Push back, agree sharply, or drop a subtle jab.`;
+      subRoundGuidance = isRoundOne
+        ? `Message ${subRound + 1}/${totalSubRounds}. Build on the conversation — respond to someone with genuine curiosity or humor.`
+        : isEarlySubRound
+          ? `Message ${subRound + 1}/${totalSubRounds}. Build on the conversation — respond to someone directly with interest, humor, or a playful take.`
+          : `Message ${subRound + 1}/${totalSubRounds}. Build on the conversation — respond to someone directly. Push back, agree sharply, or drop a subtle jab.`;
     }
 
-    // Inject lobby intent if available
+    // Inject lobby intent if available (softer framing for early rounds)
     const intentSection = this.lobbyIntent
-      ? `\n## Your Lobby Strategy (PRIVATE — do not reveal this)\n${this.lobbyIntent}\nUse this to guide the SUBTEXT of your message. Your strategy should be invisible to others — expressed through tone, word choice, and what you choose to react to. Never state your strategy directly.\n`
+      ? ctx.round <= 2
+        ? `\n## Your Vibe for This Lobby (PRIVATE)\n${this.lobbyIntent}\nLet this guide the energy of your message — who you engage with and what you're curious about.\n`
+        : `\n## Your Lobby Strategy (PRIVATE — do not reveal this)\n${this.lobbyIntent}\nUse this to guide the SUBTEXT of your message. Your strategy should be invisible to others — expressed through tone, word choice, and what you choose to react to. Never state your strategy directly.\n`
       : "";
 
+    const isEarlyRound = ctx.round <= 2;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `${intentSection}
 ## Your Task
-Write a public lobby message. The lobby is social on the surface, but your words carry weight.
+Write a public lobby message.${isEarlyRound ? ` It's early — keep the energy light, warm, and fun.` : ` The lobby is social on the surface, but your words carry weight.`}
 ${subRoundGuidance}
 ${eliminationGuidance}
-- Be a real person: stories, opinions, humor, reactions to what others said
+${ctx.round === 1 ? `- Be excited and genuinely curious — this is your first real conversation with the group!
+- Riff on what others said: ask follow-up questions, share a related story, laugh at something funny
+- Show your personality through warmth, humor, and authentic interest in people
+- NO snark, shade, or suspicion yet — nothing has happened to warrant it
+- Do NOT discuss strategy, votes, or alliances — just be a person getting to know new people
+
+EXAMPLES of good Round 1 energy (don't copy these, create your own):
+- "Wait, you're actually a firefighter? I have so many questions. Starting with: what's the worst false alarm you've ever responded to?"
+- "Okay I already know this group is going to be fun. Between the comedian and the philosophy professor, nobody's getting a word in edgewise."
+- Sharing a quick personal story that connects to something someone else just said` : isEarlyRound ? `- Be a real person: stories, opinions, humor, reactions to what others said
+- Respond to specific players — ask questions, riff on their stories, show genuine interest
+- Mild teasing and playful disagreements are fine, but the tone stays warm and engaged
+- Light personality can shine — you're starting to form impressions, not grudges
+- Do NOT explicitly discuss strategy, votes, or alliances
+
+EXAMPLES of good Round 2 energy (don't copy these, create your own):
+- "I've been thinking about what you said earlier — I'm not sure I buy it, but I respect the confidence."
+- Playfully calling someone out for a quirky thing they said in the first round
+- Sharing a quick opinion that shows your personality without being combative` : `- Be a real person: stories, opinions, humor, reactions to what others said
 - Respond to specific players — challenge, tease, compliment, push back on what they said
 - Your SUBTEXT should serve your game: snide asides at rivals, loaded remarks to allies, sarcasm at the powerful
 - Create friction and personality clashes — not everyone agrees, and that's what makes it interesting
@@ -620,9 +666,9 @@ ${eliminationGuidance}
 EXAMPLES of good lobby subtext (don't copy these, create your own):
 - "Funny how some people always have the perfect thing to say at the perfect time..." (targeting someone you suspect)
 - "I respect people who say what they mean. Getting harder to find around here." (signaling distrust)
-- Telling a personal story that just happens to parallel someone's suspicious behavior
+- Telling a personal story that just happens to parallel someone's suspicious behavior`}
 
-Keep it to 2-3 sentences. Be authentic, entertaining, and sharp.
+Keep it to 2-3 sentences. Be authentic, entertaining, and ${ctx.round === 1 ? "warm" : isEarlyRound ? "engaging" : "sharp"}.
 
 Respond with ONLY the message text, nothing else.`;
 
