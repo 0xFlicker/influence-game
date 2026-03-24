@@ -676,6 +676,9 @@ Craft your message carefully:
 - Share intelligence (real or fabricated)
 - Plant seeds of doubt about other players
 - Probe for information about their plans
+- Form specific plans you can execute together in later phases (lobby, rumor, votes)
+
+Think ahead: what will you and this person DO after this conversation? Agree on a target, a signal, a vote, or a story to tell publicly. Plans that carry into the lobby and vote phases are more powerful than vague promises.
 
 Keep it to 2-4 sentences. Make every word count.
 ${!isFirstMessage ? `\nIf you have nothing more to say, use pass: true to end your side of the conversation.\nThe room closes when BOTH of you pass consecutively.` : ""}

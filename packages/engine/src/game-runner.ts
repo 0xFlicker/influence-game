@@ -461,6 +461,18 @@ export class GameRunner {
     await new Promise((r) => setTimeout(r, 0));
   }
 
+  /**
+   * Compute messages per player for lobby phase.
+   * Scaling: fewer players = more messages per player (more intimate discussion).
+   * 4-5 players → 4, 6-7 → 3, 8+ → 2.
+   */
+  private computeLobbyMessagesPerPlayer(aliveCount: number): number {
+    if (this.config.lobbyMessagesPerPlayer != null) return this.config.lobbyMessagesPerPlayer;
+    if (aliveCount <= 5) return 4;
+    if (aliveCount <= 7) return 3;
+    return 2;
+  }
+
   private async runLobbyPhase(
     actor: ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>,
   ): Promise<void> {
@@ -471,15 +483,21 @@ export class GameRunner {
     this.logSystem(`=== ROUND ${round}: LOBBY PHASE ===`, Phase.LOBBY);
 
     const alivePlayers = this.gameState.getAlivePlayers();
+    const messagesPerPlayer = this.computeLobbyMessagesPerPlayer(alivePlayers.length);
 
-    await Promise.all(
-      alivePlayers.map(async (player) => {
-        const agent = this.agents.get(player.id)!;
-        const ctx = this.buildPhaseContext(player.id, Phase.LOBBY);
-        const text = await agent.getLobbyMessage(ctx);
-        this.logPublic(player.id, text, Phase.LOBBY);
-      }),
-    );
+    // Run multiple sub-rounds so players can react to each other's messages.
+    // Each sub-round collects one message from all players in parallel,
+    // then subsequent sub-rounds see the accumulated messages via buildPhaseContext.
+    for (let sub = 0; sub < messagesPerPlayer; sub++) {
+      await Promise.all(
+        alivePlayers.map(async (player) => {
+          const agent = this.agents.get(player.id)!;
+          const ctx = this.buildPhaseContext(player.id, Phase.LOBBY);
+          const text = await agent.getLobbyMessage(ctx);
+          this.logPublic(player.id, text, Phase.LOBBY);
+        }),
+      );
+    }
 
     actor.send({ type: "PHASE_COMPLETE" });
     await new Promise((r) => setTimeout(r, 0));
@@ -999,15 +1017,18 @@ export class GameRunner {
     this.logSystem(`${this.gameState.describeState()}`, Phase.LOBBY);
 
     const alivePlayers = this.gameState.getAlivePlayers();
+    const messagesPerPlayer = this.computeLobbyMessagesPerPlayer(alivePlayers.length);
 
-    await Promise.all(
-      alivePlayers.map(async (player) => {
-        const agent = this.agents.get(player.id)!;
-        const ctx = this.buildPhaseContext(player.id, Phase.LOBBY);
-        const text = await agent.getLobbyMessage(ctx);
-        this.logPublic(player.id, text, Phase.LOBBY);
-      }),
-    );
+    for (let sub = 0; sub < messagesPerPlayer; sub++) {
+      await Promise.all(
+        alivePlayers.map(async (player) => {
+          const agent = this.agents.get(player.id)!;
+          const ctx = this.buildPhaseContext(player.id, Phase.LOBBY);
+          const text = await agent.getLobbyMessage(ctx);
+          this.logPublic(player.id, text, Phase.LOBBY);
+        }),
+      );
+    }
 
     actor.send({ type: "PHASE_COMPLETE" });
     await new Promise((r) => setTimeout(r, 0));
@@ -1148,15 +1169,18 @@ export class GameRunner {
     this.logSystem(`${this.gameState.describeState()}`, Phase.LOBBY);
 
     const alivePlayers = this.gameState.getAlivePlayers();
+    const messagesPerPlayer = this.computeLobbyMessagesPerPlayer(alivePlayers.length);
 
-    await Promise.all(
-      alivePlayers.map(async (player) => {
-        const agent = this.agents.get(player.id)!;
-        const ctx = this.buildPhaseContext(player.id, Phase.LOBBY);
-        const text = await agent.getLobbyMessage(ctx);
-        this.logPublic(player.id, text, Phase.LOBBY);
-      }),
-    );
+    for (let sub = 0; sub < messagesPerPlayer; sub++) {
+      await Promise.all(
+        alivePlayers.map(async (player) => {
+          const agent = this.agents.get(player.id)!;
+          const ctx = this.buildPhaseContext(player.id, Phase.LOBBY);
+          const text = await agent.getLobbyMessage(ctx);
+          this.logPublic(player.id, text, Phase.LOBBY);
+        }),
+      );
+    }
 
     actor.send({ type: "PHASE_COMPLETE" });
     await new Promise((r) => setTimeout(r, 0));

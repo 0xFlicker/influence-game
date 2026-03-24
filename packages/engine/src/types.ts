@@ -294,6 +294,8 @@ export interface GameConfig {
   maxDiaryFollowUps?: number;
   /** If set, only run diary rooms after these phases. If unset, diary rooms run after every phase. */
   diaryRoomAfterPhases?: Phase[];
+  /** Messages per player in the lobby phase. If unset, uses player-count scaling: fewer players get more messages. */
+  lobbyMessagesPerPlayer?: number;
 }
 
 export const DEFAULT_CONFIG: GameConfig = {
