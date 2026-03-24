@@ -650,14 +650,20 @@ export function SpectacleMessageContent({
   }
 
   // Default text rendering
+  const isAnonymousRumor = message.phase === "RUMOR" && message.scope === "public";
   return (
     <div className="text-center animate-[fadeIn_0.3s_ease-out]">
       {!isSystemMessage && (
         <div className="flex items-center justify-center gap-3 mb-8">
-          {currentPlayer && (
+          {isAnonymousRumor ? (
+            <span className="w-10 h-10 rounded-full bg-purple-900/40 flex items-center justify-center text-xl">🗣</span>
+          ) : currentPlayer ? (
             <AgentAvatar avatarUrl={currentPlayer.avatarUrl} persona={currentPlayer.persona} name={currentPlayer.name} size="10" />
+          ) : null}
+          <span className={`text-lg font-semibold ${isAnonymousRumor ? "text-purple-300/70 italic" : "text-white/70"}`}>{currentPlayerName}</span>
+          {isAnonymousRumor && (
+            <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">rumor</span>
           )}
-          <span className="text-lg font-semibold text-white/70">{currentPlayerName}</span>
           {message.scope === "whisper" && (
             <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
           )}

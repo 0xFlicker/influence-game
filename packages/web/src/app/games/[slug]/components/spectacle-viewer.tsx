@@ -170,12 +170,14 @@ export function SpectacleMessageSpotlight({
   }
 
   const isSystem = !message.fromPlayerId || message.scope === "system";
-  const player = message.fromPlayerId
+  const isAnonymousRumor = message.phase === "RUMOR" && message.scope === "public";
+  const player = isAnonymousRumor ? null : (message.fromPlayerId
     ? players.find((p) => p.id === message.fromPlayerId)
       ?? players.find((p) => p.name === message.fromPlayerId)
-    : null;
-  const playerName =
-    message.fromPlayerName ?? player?.name ?? message.fromPlayerId ?? "The House";
+    : null);
+  const playerName = isAnonymousRumor
+    ? "Anonymous"
+    : (message.fromPlayerName ?? player?.name ?? message.fromPlayerId ?? "The House");
   const isElimination = message.scope === "system" && (message.text.includes("ELIMINATED:") || message.text.includes("AUTO-ELIMINATE:"));
 
   return (
@@ -185,8 +187,15 @@ export function SpectacleMessageSpotlight({
         {phase === "typing" && !isSystem && (
           <div className="text-center animate-[fadeIn_0.3s_ease-out]">
             <div className="flex items-center justify-center gap-3 mb-8">
-              {player && <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="10" />}
-              <span className="text-lg font-semibold text-white/60">{playerName}</span>
+              {isAnonymousRumor ? (
+                <span className="w-10 h-10 rounded-full bg-purple-900/40 flex items-center justify-center text-xl">🗣</span>
+              ) : player ? (
+                <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="10" />
+              ) : null}
+              <span className={`text-lg font-semibold ${isAnonymousRumor ? "text-purple-300/70 italic" : "text-white/60"}`}>{playerName}</span>
+              {isAnonymousRumor && (
+                <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">rumor</span>
+              )}
               {message.scope === "whisper" && (
                 <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
               )}
@@ -204,8 +213,15 @@ export function SpectacleMessageSpotlight({
           <div className="text-center animate-[fadeIn_0.3s_ease-out]">
             {!isSystem && (
               <div className="flex items-center justify-center gap-3 mb-8">
-                {player && <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="10" />}
-                <span className="text-lg font-semibold text-white/70">{playerName}</span>
+                {isAnonymousRumor ? (
+                  <span className="w-10 h-10 rounded-full bg-purple-900/40 flex items-center justify-center text-xl">🗣</span>
+                ) : player ? (
+                  <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="10" />
+                ) : null}
+                <span className={`text-lg font-semibold ${isAnonymousRumor ? "text-purple-300/70 italic" : "text-white/70"}`}>{playerName}</span>
+                {isAnonymousRumor && (
+                  <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">rumor</span>
+                )}
                 {message.scope === "whisper" && (
                   <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
                 )}

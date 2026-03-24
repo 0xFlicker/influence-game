@@ -151,13 +151,15 @@ export function DramaticReplayViewer({
     prevTotalScenes.current = totalScenes;
   }, [live, isPlaying, totalScenes, sceneIndex]);
 
-  // Resolve current speaker
-  const currentPlayer = currentMessage?.fromPlayerId
+  // Resolve current speaker (anonymous for RUMOR phase)
+  const isCurrentRumor = currentMessage?.phase === "RUMOR" && currentMessage?.scope === "public";
+  const currentPlayer = isCurrentRumor ? null : (currentMessage?.fromPlayerId
     ? players.find((p) => p.id === currentMessage.fromPlayerId)
       ?? players.find((p) => p.name === currentMessage.fromPlayerId)
-    : null;
-  const currentPlayerName =
-    currentMessage?.fromPlayerName ?? currentPlayer?.name ?? currentMessage?.fromPlayerId ?? "The House";
+    : null);
+  const currentPlayerName = isCurrentRumor
+    ? "Anonymous"
+    : (currentMessage?.fromPlayerName ?? currentPlayer?.name ?? currentMessage?.fromPlayerId ?? "The House");
 
   // All messages visible up to current point
   const allVisibleMessages = useMemo(() => {
@@ -756,8 +758,12 @@ export function DramaticReplayViewer({
               {/* Typing indicator below chat feed */}
               {messagePhase === "typing" && currentMessage && !isSystemMessage && (
                 <div className="flex items-center gap-2 px-4 animate-[fadeIn_0.2s_ease-out]">
-                  {currentPlayer && <AgentAvatar avatarUrl={currentPlayer.avatarUrl} persona={currentPlayer.persona} name={currentPlayer.name} size="6" />}
-                  <span className="text-xs text-white/40">{currentPlayerName}</span>
+                  {isCurrentRumor ? (
+                    <span className="w-6 h-6 rounded-full bg-purple-900/40 flex items-center justify-center text-xs">🗣</span>
+                  ) : currentPlayer ? (
+                    <AgentAvatar avatarUrl={currentPlayer.avatarUrl} persona={currentPlayer.persona} name={currentPlayer.name} size="6" />
+                  ) : null}
+                  <span className={`text-xs ${isCurrentRumor ? "text-purple-300/70 italic" : "text-white/40"}`}>{currentPlayerName}</span>
                   <div className="flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1.2s" }} />
                     <span className="w-1.5 h-1.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "200ms", animationDuration: "1.2s" }} />
@@ -819,10 +825,15 @@ export function DramaticReplayViewer({
               {messagePhase === "typing" && currentMessage && !isSystemMessage && (
                 <div className="text-center animate-[fadeIn_0.3s_ease-out]">
                   <div className="flex items-center justify-center gap-3 mb-8">
-                    {currentPlayer && (
+                    {isCurrentRumor ? (
+                      <span className="w-10 h-10 rounded-full bg-purple-900/40 flex items-center justify-center text-xl">🗣</span>
+                    ) : currentPlayer ? (
                       <AgentAvatar avatarUrl={currentPlayer.avatarUrl} persona={currentPlayer.persona} name={currentPlayer.name} size="10" />
+                    ) : null}
+                    <span className={`text-lg font-semibold ${isCurrentRumor ? "text-purple-300/70 italic" : "text-white/60"}`}>{currentPlayerName}</span>
+                    {isCurrentRumor && (
+                      <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">rumor</span>
                     )}
-                    <span className="text-lg font-semibold text-white/60">{currentPlayerName}</span>
                     {currentMessage.scope === "whisper" && (
                       <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
                     )}
