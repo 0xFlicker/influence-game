@@ -32,7 +32,7 @@ import { ConnectionBadge, GameStateHUD } from "./game-info";
 import { PhaseTransitionOverlay } from "./phase-transition";
 import { EndgameEntryScreen } from "./endgame-entry";
 import { GroupChatFeed, JuryDMView } from "./chat-feeds";
-import { WhisperRoomDM } from "./whisper-phase";
+import { WhisperRoomDM, WhisperAllocationOverview, buildWhisperStageData } from "./whisper-phase";
 import { buildDiaryRooms, DiaryRoomChat } from "./diary-room";
 import type { WhisperRoomStage } from "./types";
 import { VoteTallyOverlay, SpectacleMessageContent } from "./vote-display";
@@ -176,6 +176,16 @@ export function DramaticReplayViewer({
       messages: scene.messages.slice(0, endIdx),
     };
   }, [scene, isWhisperScene, messageIndex, messagePhase]);
+
+  // For overview scenes: build full whisper stage data for rich allocation display
+  const overviewStageData = useMemo(() => {
+    if (!scene || !isOverviewScene) return null;
+    // Gather all entries from this round's WHISPER phase to parse allocation
+    const whisperEntries = messages.filter(
+      (m) => m.phase === "WHISPER" && m.round === scene.round,
+    );
+    return buildWhisperStageData(whisperEntries, players);
+  }, [scene, isOverviewScene, messages, players]);
 
   // Rumor messages for current round (for vote reveal — show voter's rumor alongside vote)
   const rumorMessages = useMemo(() => {
@@ -642,7 +652,7 @@ export function DramaticReplayViewer({
 
       {/* Center — phase-aware content */}
       <div className={`flex-1 flex ${isChatStyleScene ? ((isDiaryScene || isWhisperScene) ? "items-start" : "items-end") : "items-center"} justify-center px-4 md:px-8 py-4 md:py-8 overflow-y-auto`}>
-        <div className={`w-full ${(isDiaryScene || isWhisperScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
+        <div className={`w-full ${(isDiaryScene || isWhisperScene || isOverviewScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
           {/* --- Chat-style: Group Chat Feed --- */}
           {isChatFeedScene && (
             <div className="flex flex-col gap-2">
@@ -685,8 +695,16 @@ export function DramaticReplayViewer({
             />
           )}
 
+          {/* --- Whisper Overview: Rich allocation display --- */}
+          {isOverviewScene && overviewStageData && (
+            <WhisperAllocationOverview
+              stage={overviewStageData}
+              players={replayPlayers}
+            />
+          )}
+
           {/* --- Dramatic: Single-message spotlight (votes/reveals/power/end) --- */}
-          {!isChatStyleScene && (
+          {!isChatStyleScene && !isOverviewScene && (
             <>
               {/* Typing indicator */}
               {messagePhase === "typing" && currentMessage && !isSystemMessage && (

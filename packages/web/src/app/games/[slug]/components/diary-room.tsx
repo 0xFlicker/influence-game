@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { TranscriptEntry, GamePlayer } from "@/lib/api";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { formatTime } from "./constants";
@@ -338,6 +338,7 @@ export function DiaryRoomChat({
   );
 }
 
+/** Sequential diary room view — shows one player's diary at a time with auto-advance. */
 export function DiaryRoomGridView({
   messages,
   players,
@@ -346,7 +347,20 @@ export function DiaryRoomGridView({
   players: GamePlayer[];
 }) {
   const rooms = buildDiaryRooms(messages, players);
-  const [mobileRoomIndex, setMobileRoomIndex] = useState(0);
+  const [activeRoomIndex, setActiveRoomIndex] = useState(0);
+  const prevRoomCount = useRef(rooms.length);
+
+  // When a new room appears, auto-advance to it after a pause
+  useEffect(() => {
+    if (rooms.length > prevRoomCount.current) {
+      const timer = window.setTimeout(() => {
+        setActiveRoomIndex(rooms.length - 1);
+      }, 4000);
+      prevRoomCount.current = rooms.length;
+      return () => window.clearTimeout(timer);
+    }
+    prevRoomCount.current = rooms.length;
+  }, [rooms.length]);
 
   return (
     <div data-controls className="flex-1 overflow-y-auto p-4 md:p-6">
@@ -362,43 +376,48 @@ export function DiaryRoomGridView({
         </div>
       ) : (
         <>
-          {/* Room selector */}
-          <div className="flex flex-wrap items-center gap-1.5 mb-4">
-            {rooms.map((room, idx) => {
-              const nextIdx = (mobileRoomIndex + 1) % rooms.length;
-              const isCompanion = rooms.length > 1 && idx === nextIdx;
-              return (
-                <button
-                  key={room.playerName}
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); if (!isCompanion) setMobileRoomIndex(idx); }}
-                  className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] transition-colors flex items-center gap-1 ${
-                    idx === mobileRoomIndex || isCompanion
-                      ? "border-purple-300/50 bg-purple-300/15 text-white"
-                      : "border-white/10 bg-white/5 text-white/50 hover:border-purple-300/30"
-                  } ${isCompanion ? "hidden lg:flex opacity-40 cursor-not-allowed" : ""}`}
-                >
-                  {room.player && <AgentAvatar avatarUrl={room.player.avatarUrl} persona={room.player.persona} name={room.player.name} size="6" />}
-                  <span className="truncate max-w-[6rem]">{room.playerName}</span>
-                  {room.entries.length > 0 && (
-                    <span className="text-[8px] text-purple-300/40">{room.entries.length}</span>
-                  )}
-                </button>
-              );
-            })}
+          {/* Room selector — one player at a time */}
+          <div className="flex flex-wrap items-center justify-center gap-1.5 mb-4">
+            {rooms.map((room, idx) => (
+              <button
+                key={room.playerName}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setActiveRoomIndex(idx); }}
+                className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] transition-colors flex items-center gap-1 ${
+                  idx === activeRoomIndex
+                    ? "border-purple-300/50 bg-purple-300/15 text-white"
+                    : "border-white/10 bg-white/5 text-white/50 hover:border-purple-300/30"
+                }`}
+              >
+                {room.player && <AgentAvatar avatarUrl={room.player.avatarUrl} persona={room.player.persona} name={room.player.name} size="6" />}
+                <span className="truncate max-w-[6rem]">{room.playerName}</span>
+                {room.entries.length > 0 && (
+                  <span className="text-[8px] text-purple-300/40">{room.entries.length}</span>
+                )}
+              </button>
+            ))}
           </div>
 
-          {/* Room display — 1 col (default), 2 col on lg+ */}
-          <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
-            {rooms[mobileRoomIndex] && (
-              <DiaryRoomChat room={rooms[mobileRoomIndex]} />
-            )}
-            {rooms.length > 1 && rooms[(mobileRoomIndex + 1) % rooms.length] && (
-              <div className="hidden lg:block">
-                <DiaryRoomChat room={rooms[(mobileRoomIndex + 1) % rooms.length]!} />
-              </div>
+          {/* Single room display */}
+          <div className="max-w-2xl mx-auto animate-[fadeIn_0.3s_ease-out]" key={activeRoomIndex}>
+            {rooms[activeRoomIndex] && (
+              <DiaryRoomChat room={rooms[activeRoomIndex]} />
             )}
           </div>
+
+          {/* Progress indicator */}
+          {rooms.length > 1 && (
+            <div className="flex items-center justify-center gap-1.5 mt-4">
+              {rooms.map((_, idx) => (
+                <span
+                  key={idx}
+                  className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                    idx === activeRoomIndex ? "bg-purple-400/60" : "bg-white/10"
+                  }`}
+                />
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>

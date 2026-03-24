@@ -309,6 +309,103 @@ export function WhisperRoomDM({
   );
 }
 
+/**
+ * Rich allocation overview — used by the dramatic viewer for overview scenes
+ * and as the opening screen in the sequential whisper view.
+ * Explains whisper room mechanics and shows who ended up where.
+ */
+export function WhisperAllocationOverview({
+  stage,
+  players,
+  animated = true,
+}: {
+  stage: WhisperStageData;
+  players: GamePlayer[];
+  animated?: boolean;
+}) {
+  const fadeIn = animated ? "animate-[fadeIn_0.35s_ease-out]" : "";
+
+  return (
+    <div data-controls className="flex-1 overflow-y-auto p-4 md:p-6">
+      <div className="text-center mb-6">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-purple-300/70 mb-2">
+          Whisper Room Assignments
+        </p>
+        <p className="text-xs text-white/40 max-w-md mx-auto leading-relaxed">
+          Each player secretly chose another player to whisper with.
+          Mutual picks share a private room. Unmatched players go to the Commons.
+        </p>
+      </div>
+
+      {stage.rooms.length === 0 ? (
+        <div className="rounded-2xl border border-purple-900/20 bg-black/20 p-8 text-center text-white/45">
+          Waiting for the House to finish assigning rooms.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 max-w-2xl mx-auto">
+            {stage.rooms.map((room, index) => {
+              const playerA = players.find((p) => p.id === room.playerIds[0] || p.name === room.playerNames[0]);
+              const playerB = players.find((p) => p.id === room.playerIds[1] || p.name === room.playerNames[1]);
+              return (
+                <div
+                  key={room.roomId}
+                  className={`rounded-2xl border border-purple-500/25 bg-black/30 px-5 py-5 shadow-[0_20px_60px_rgba(0,0,0,0.35)] ${fadeIn}`}
+                  style={animated ? { animationDelay: `${index * 150}ms` } : undefined}
+                >
+                  <p className="text-[10px] uppercase tracking-[0.28em] text-purple-300/50 mb-4">
+                    Room {room.roomId}
+                  </p>
+                  <div className="flex items-center justify-center gap-4">
+                    <div className="flex flex-col items-center gap-1.5">
+                      {playerA ? (
+                        <AgentAvatar avatarUrl={playerA.avatarUrl} persona={playerA.persona} name={playerA.name} size="10" />
+                      ) : (
+                        <span className="w-10 h-10 rounded-full bg-purple-900/30 flex items-center justify-center text-sm text-purple-300/60">?</span>
+                      )}
+                      <span className="text-xs font-medium text-white/80 text-center max-w-[5rem] truncate">{room.playerNames[0]}</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-0.5">
+                      <span className="text-purple-400/60 text-lg font-light">&times;</span>
+                    </div>
+                    <div className="flex flex-col items-center gap-1.5">
+                      {playerB ? (
+                        <AgentAvatar avatarUrl={playerB.avatarUrl} persona={playerB.persona} name={playerB.name} size="10" />
+                      ) : (
+                        <span className="w-10 h-10 rounded-full bg-purple-900/30 flex items-center justify-center text-sm text-purple-300/60">?</span>
+                      )}
+                      <span className="text-xs font-medium text-white/80 text-center max-w-[5rem] truncate">{room.playerNames[1]}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {stage.commons.length > 0 && (
+            <div
+              className={`rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-5 text-center max-w-2xl mx-auto ${fadeIn}`}
+              style={animated ? { animationDelay: `${stage.rooms.length * 150 + 100}ms` } : undefined}
+            >
+              <p className="text-[10px] uppercase tracking-[0.28em] text-white/35 mb-3">Commons</p>
+              <div className="flex items-center justify-center gap-4 flex-wrap">
+                {stage.commons.map((player) => (
+                  <div key={player.id} className="flex flex-col items-center gap-1.5">
+                    <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="8" />
+                    <span className="text-xs text-white/60">{player.name}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-white/25 mt-3 italic">No mutual pick — waiting in the Commons this round.</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Sequential whisper view for the classic game viewer — overview then one room at a time. */
 export function WhisperPhaseView({
   phaseEntries,
   players,
@@ -321,34 +418,35 @@ export function WhisperPhaseView({
   isReplay?: boolean;
 }) {
   const stage = buildWhisperStageData(phaseEntries, players);
-  const [focusedRoomId, setFocusedRoomId] = useState<number | null>(null);
-  const [showAllocationReveal, setShowAllocationReveal] = useState(true);
+  // activeIndex: -1 = overview, 0..N = room index
+  const [activeIndex, setActiveIndex] = useState(-1);
 
+  // Reset to overview on phase change
   useEffect(() => {
-    setFocusedRoomId(null);
-    setShowAllocationReveal(true);
+    setActiveIndex(-1);
   }, [phaseKey]);
 
+  // Auto-advance from overview to first room after 6 seconds
   useEffect(() => {
-    const timer = window.setTimeout(() => setShowAllocationReveal(false), 2000);
+    if (activeIndex !== -1 || stage.rooms.length === 0) return;
+    const timer = window.setTimeout(() => setActiveIndex(0), 6000);
     return () => window.clearTimeout(timer);
-  }, [phaseKey]);
+  }, [activeIndex, stage.rooms.length]);
 
-  const handleFocus = useCallback((roomId: number) => {
-    setFocusedRoomId(roomId);
-  }, []);
+  // Auto-advance between rooms every 8 seconds (if room has messages and we're caught up)
+  useEffect(() => {
+    if (activeIndex < 0 || activeIndex >= stage.rooms.length) return;
+    const room = stage.rooms[activeIndex];
+    if (!room || room.messages.length === 0) return;
+    const timer = window.setTimeout(() => {
+      if (activeIndex < stage.rooms.length - 1) {
+        setActiveIndex((i) => i + 1);
+      }
+    }, 8000);
+    return () => window.clearTimeout(timer);
+  }, [activeIndex, stage.rooms]);
 
-  const handleClose = useCallback(() => {
-    setFocusedRoomId(null);
-  }, []);
-
-  // Grid column count adapts to room count
-  const roomCount = stage.rooms.length;
-  const gridCols = roomCount <= 2
-    ? "grid-cols-1 md:grid-cols-2"
-    : roomCount <= 4
-      ? "grid-cols-1 md:grid-cols-2 xl:grid-cols-2"
-      : "grid-cols-1 md:grid-cols-2 xl:grid-cols-3";
+  const activeRoom = activeIndex >= 0 ? stage.rooms[activeIndex] : null;
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-6">
@@ -365,82 +463,67 @@ export function WhisperPhaseView({
         </p>
       </div>
 
-      {showAllocationReveal ? (
-        <div className="space-y-4 animate-[fadeIn_0.35s_ease-out]">
-          <p className="text-center text-xs uppercase tracking-[0.25em] text-purple-300/45">
-            Room Allocation Reveal
-          </p>
-          <div className="grid gap-3 md:grid-cols-2">
-            {stage.rooms.map((room, index) => (
-              <div
-                key={room.roomId}
-                className="rounded-2xl border border-purple-500/20 bg-black/25 px-4 py-5 shadow-[0_20px_60px_rgba(0,0,0,0.35)] animate-[fadeIn_0.45s_ease-out]"
-                style={{ animationDelay: `${index * 120}ms` }}
-              >
-                <p className="text-[11px] uppercase tracking-[0.28em] text-purple-300/45 mb-3">
-                  Room {room.roomId}
-                </p>
-                <p className="text-lg font-semibold text-white">
-                  {room.playerNames.join("  ×  ")}
-                </p>
-              </div>
-            ))}
-          </div>
-          {stage.commons.length > 0 && (
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-5 text-center animate-[fadeIn_0.55s_ease-out]">
-              <p className="text-[11px] uppercase tracking-[0.28em] text-white/35 mb-2">Commons</p>
-              <p className="text-sm text-white/65">
-                {stage.commons.map((player) => player.name).join(", ")}
-              </p>
-            </div>
-          )}
+      {/* Room navigation tabs */}
+      {stage.rooms.length > 0 && (
+        <div className="flex flex-wrap items-center justify-center gap-1.5 mb-4">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setActiveIndex(-1); }}
+            className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] transition-colors ${
+              activeIndex === -1
+                ? "border-purple-300/50 bg-purple-300/15 text-white"
+                : "border-white/10 bg-white/5 text-white/50 hover:border-purple-300/30"
+            }`}
+          >
+            Overview
+          </button>
+          {stage.rooms.map((room, idx) => (
+            <button
+              key={room.roomId}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setActiveIndex(idx); }}
+              className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] transition-colors flex items-center gap-1 ${
+                idx === activeIndex
+                  ? "border-purple-300/50 bg-purple-300/15 text-white"
+                  : "border-white/10 bg-white/5 text-white/50 hover:border-purple-300/30"
+              }`}
+            >
+              Room {room.roomId}
+              {room.messages.length > 0 && (
+                <span className="text-[8px] text-purple-300/40">{room.messages.length}</span>
+              )}
+            </button>
+          ))}
         </div>
-      ) : stage.rooms.length === 0 ? (
+      )}
+
+      {/* Content: overview or single room */}
+      {activeIndex === -1 ? (
+        <WhisperAllocationOverview stage={stage} players={players} />
+      ) : activeRoom ? (
+        isReplay ? (
+          <div className="max-w-2xl mx-auto animate-[fadeIn_0.3s_ease-out]">
+            <WhisperRoomDM room={activeRoom} players={players} />
+          </div>
+        ) : (
+          <div className="max-w-2xl mx-auto animate-[fadeIn_0.3s_ease-out]">
+            <WhisperRoomSealed room={activeRoom} players={players} />
+          </div>
+        )
+      ) : (
         <div className="rounded-2xl border border-purple-900/20 bg-black/20 p-8 text-center text-white/45">
           Waiting for the House to finish assigning rooms.
         </div>
-      ) : isReplay ? (
-        <>
-          {/* Replay: all rooms simultaneously in a chaotic grid */}
-          <div className={`grid gap-3 ${gridCols}`}>
-            {stage.rooms.map((room) => (
-              <WhisperRoomDM
-                key={room.roomId}
-                room={room}
-                players={players}
-                focused={focusedRoomId === room.roomId}
-                onFocus={() => handleFocus(room.roomId)}
-                onClose={handleClose}
-              />
-            ))}
-          </div>
-          {stage.commons.length > 0 && (
-            <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-white/30 mb-1">Commons</p>
-              <p className="text-sm text-white/60">
-                {stage.commons.map((p) => p.name).join(", ")}
-              </p>
-            </div>
-          )}
-        </>
-      ) : (
-        <>
-          {/* Live mode: whisper content is sealed — all rooms visible */}
-          <div className={`grid gap-3 ${gridCols}`}>
-            {stage.rooms.map((room) => (
-              <WhisperRoomSealed key={room.roomId} room={room} players={players} />
-            ))}
-            {stage.commons.length > 0 && (
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 flex flex-col items-center justify-center text-center">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-white/30 mb-2">Commons</p>
-                <p className="text-sm font-semibold text-white/60">
-                  {stage.commons.map((p) => p.name).join(", ")}
-                </p>
-                <p className="text-xs text-white/30 mt-1">No private room this round.</p>
-              </div>
-            )}
-          </div>
-        </>
+      )}
+
+      {/* Commons note below active room */}
+      {activeIndex >= 0 && stage.commons.length > 0 && (
+        <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-center max-w-2xl mx-auto">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-white/30 mb-1">Commons</p>
+          <p className="text-sm text-white/60">
+            {stage.commons.map((p) => p.name).join(", ")}
+          </p>
+        </div>
       )}
     </div>
   );

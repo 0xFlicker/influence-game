@@ -5,10 +5,32 @@ import { AgentAvatar } from "@/components/agent-avatar";
 import { Typewriter } from "@/components/typewriter";
 import type { ReplayScene, SpectacleMessagePhase } from "./types";
 import { HOUSE_INTROS, phaseToRoomType } from "./constants";
+import { diaryPlayerName } from "./diary-room";
 
 // ---------------------------------------------------------------------------
 // buildReplayScenes — groups transcript into per-phase (and per-room) scenes
 // ---------------------------------------------------------------------------
+
+/**
+ * Parse whisper allocation text to extract room assignments.
+ * Lightweight version for scene-building (no player UUID resolution needed).
+ */
+function parseWhisperRooms(msgs: TranscriptEntry[]): Array<{ roomId: number; playerNames: string[] }> {
+  const allocationEntry = [...msgs]
+    .reverse()
+    .find((e) => e.scope === "system" && /Room\s+\d+:/.test(e.text));
+  if (!allocationEntry) return [];
+
+  const rooms: Array<{ roomId: number; playerNames: string[] }> = [];
+  for (const match of allocationEntry.text.matchAll(/Room\s+(\d+):\s*([^|]+?)\s*&\s*([^|]+?)(?=\s*\||$)/g)) {
+    const roomId = Number(match[1]);
+    const leftName = match[2]?.trim();
+    const rightName = match[3]?.trim();
+    if (!leftName || !rightName || Number.isNaN(roomId)) continue;
+    rooms.push({ roomId, playerNames: [leftName, rightName] });
+  }
+  return rooms;
+}
 
 export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] {
   const grouped = new Map<string, TranscriptEntry[]>();
@@ -24,15 +46,87 @@ export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] 
     const roomType = phaseToRoomType(phase);
 
     if (phase === "WHISPER") {
-      // Single scene with all whisper messages — rooms render simultaneously
+      // Sequential: overview scene → one scene per room
+      const rooms = parseWhisperRooms(msgs);
+      const systemMsgs = msgs.filter((m) => m.scope === "system");
+
+      // Overview scene (allocation reveal — no chat messages to step through)
       scenes.push({
-        id,
+        id: `${id}-overview`,
         round,
         phase,
         roomType,
-        messages: msgs,
+        messages: systemMsgs.length > 0 ? [systemMsgs[0]!] : [],
         houseIntro: HOUSE_INTROS[phase] ?? null,
+        isOverview: true,
       });
+
+      if (rooms.length > 0) {
+        // One scene per room
+        for (const room of rooms) {
+          const roomMsgs = msgs.filter(
+            (m) => m.scope === "whisper" && m.roomId === room.roomId,
+          );
+          if (roomMsgs.length === 0) continue;
+          scenes.push({
+            id: `${id}-room${room.roomId}`,
+            round,
+            phase,
+            roomType,
+            messages: roomMsgs,
+            houseIntro: null,
+            whisperRoom: { roomId: room.roomId, playerNames: room.playerNames },
+          });
+        }
+      } else {
+        // Fallback: no allocation parsed — single scene with all whisper messages
+        const whisperMsgs = msgs.filter((m) => m.scope === "whisper");
+        if (whisperMsgs.length > 0) {
+          scenes.push({
+            id: `${id}-all`,
+            round,
+            phase,
+            roomType,
+            messages: whisperMsgs,
+            houseIntro: null,
+          });
+        }
+      }
+    } else if (phase === "DIARY_ROOM") {
+      // Sequential: one scene per player
+      const playerMap = new Map<string, TranscriptEntry[]>();
+      for (const msg of msgs) {
+        if (msg.scope !== "diary" || !msg.fromPlayerId) continue;
+        const name = diaryPlayerName(msg.fromPlayerId);
+        if (!playerMap.has(name)) playerMap.set(name, []);
+        playerMap.get(name)!.push(msg);
+      }
+
+      if (playerMap.size > 0) {
+        let idx = 0;
+        for (const [playerName, playerMsgs] of playerMap.entries()) {
+          scenes.push({
+            id: `${id}-diary-${idx}`,
+            round,
+            phase,
+            roomType,
+            messages: playerMsgs,
+            houseIntro: idx === 0 ? (HOUSE_INTROS[phase] ?? null) : null,
+            diaryPlayer: { playerName },
+          });
+          idx++;
+        }
+      } else {
+        // Fallback: system-only diary messages
+        scenes.push({
+          id,
+          round,
+          phase,
+          roomType,
+          messages: msgs,
+          houseIntro: HOUSE_INTROS[phase] ?? null,
+        });
+      }
     } else {
       scenes.push({
         id,
