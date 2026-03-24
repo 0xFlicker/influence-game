@@ -64,6 +64,10 @@ const DEFAULT_BLURBS: Record<Personality, { personality: string; strategy: strin
     personality: "An agent of chaos whose unpredictability is both shield and weapon.",
     strategy: "Deliberately vary patterns, form and abandon alliances on instinct, destabilize expectations.",
   },
+  contrarian: {
+    personality: "A principled dissenter who challenges consensus and asks the questions nobody else dares to ask.",
+    strategy: "Vote against the majority, defend popular targets, disrupt groupthink, and make your rare agreements carry enormous weight.",
+  },
 };
 
 // ---------------------------------------------------------------------------
