@@ -41,6 +41,19 @@ export function VoteTallyOverlay({
     const empowerCounts = new Map<string, number>();
     const exposeCounts = new Map<string, number>();
     let hasTie = false;
+
+    // Determine all participants from the full scene (stable layout across reveals)
+    const roundParticipants = new Set<string>();
+    for (const msg of sceneMessages) {
+      const vote = parseVoteMsg(msg.text);
+      if (vote) {
+        roundParticipants.add(vote.voter);
+        roundParticipants.add(vote.empower);
+        roundParticipants.add(vote.expose);
+      }
+    }
+
+    // Accumulate counts from only the revealed (visible) messages
     for (const msg of visible) {
       const vote = parseVoteMsg(msg.text);
       if (vote) {
@@ -53,7 +66,7 @@ export function VoteTallyOverlay({
     if (!hasVotes) return null;
 
     const sorted = players
-      .filter((p) => p.status === "alive")
+      .filter((p) => roundParticipants.has(p.name))
       .map((p) => ({
         player: p,
         empower: empowerCounts.get(p.name) ?? 0,
