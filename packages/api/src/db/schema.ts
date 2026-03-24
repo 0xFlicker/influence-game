@@ -106,6 +106,7 @@ export const transcripts = pgTable("transcripts", {
   fromPlayerId: text("from_player_id"), // null for system messages
   scope: text("scope").notNull().$type<TranscriptScope>().default("public"),
   toPlayerIds: text("to_player_ids"), // JSON array for whispers, null otherwise
+  roomId: integer("room_id"), // Whisper room ID (1-indexed), null for non-whisper entries
   text: text("text").notNull(),
   timestamp: bigint("timestamp", { mode: "number" }).notNull(), // Unix ms
   createdAt: text("created_at")

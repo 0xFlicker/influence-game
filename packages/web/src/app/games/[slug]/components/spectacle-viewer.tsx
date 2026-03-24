@@ -62,11 +62,18 @@ export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] 
       });
 
       if (rooms.length > 0) {
-        // One scene per room
+        // One scene per room — match by roomId first, fall back to player names
+        // (older games may lack roomId on persisted transcript entries)
         for (const room of rooms) {
-          const roomMsgs = msgs.filter(
-            (m) => m.scope === "whisper" && m.roomId === room.roomId,
-          );
+          const nameSet = new Set(room.playerNames.map((n) => n.toLowerCase()));
+          const roomMsgs = msgs.filter((m) => {
+            if (m.scope !== "whisper") return false;
+            if (m.roomId != null) return m.roomId === room.roomId;
+            // Fallback: match by sender/recipient names
+            const from = (m.fromPlayerId ?? m.fromPlayerName ?? "").toLowerCase();
+            const to = (m.toPlayerIds?.[0] ?? "").toLowerCase();
+            return nameSet.has(from) && (to === "" || nameSet.has(to));
+          });
           if (roomMsgs.length === 0) continue;
           scenes.push({
             id: `${id}-room${room.roomId}`,

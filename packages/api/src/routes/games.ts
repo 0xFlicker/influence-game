@@ -872,6 +872,7 @@ export function createGameRoutes(db: DrizzleDB) {
       fromPlayerName: row.fromPlayerId ? (playerNameMap.get(row.fromPlayerId) ?? null) : null,
       scope: row.scope,
       toPlayerIds: row.toPlayerIds ? JSON.parse(row.toPlayerIds) : null,
+      ...(row.roomId != null && { roomId: row.roomId }),
       text: row.text,
       timestamp: row.timestamp,
     }));

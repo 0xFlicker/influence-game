@@ -15,6 +15,13 @@
       "when": 1774274354658,
       "tag": "0001_demonic_orphan",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774598400000,
+      "tag": "0002_add_room_id",
+      "breakpoints": true
     }
   ]
 }
