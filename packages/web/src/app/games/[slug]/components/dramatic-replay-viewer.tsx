@@ -285,9 +285,9 @@ export function DramaticReplayViewer({
     }
   }, [sceneIndex, scene?.houseIntro, isRoomChange]);
 
-  // Auto-advance state machine
+  // Auto-advance state machine — pauses while phase transition overlay is active (INF-84)
   useEffect(() => {
-    if (!isPlaying || !scene || !currentMessage) return;
+    if (!isPlaying || !scene || !currentMessage || activePhaseTransition) return;
 
     if (messagePhase === "typing") {
       // Chat-style phases: short typing indicator then skip straight to "done"
@@ -362,7 +362,7 @@ export function DramaticReplayViewer({
       return () => clearTimeout(timer);
     }
     // "revealing" phase transitions via Typewriter onComplete
-  }, [isPlaying, messagePhase, messageIndex, sceneIndex, scene, totalScenes, speed, currentMessage, isSystemMessage, isChatStyleScene, isWhisperScene, isDiaryScene, live]);
+  }, [isPlaying, messagePhase, messageIndex, sceneIndex, scene, totalScenes, speed, currentMessage, isSystemMessage, isChatStyleScene, isWhisperScene, isDiaryScene, live, activePhaseTransition]);
 
   // Advance function — for click/tap and keyboard
   const advanceMessage = useCallback(() => {

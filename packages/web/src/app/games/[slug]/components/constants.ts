@@ -203,11 +203,12 @@ export const SPEED_OPTIONS = [
 ] as const;
 
 // Spectacle mode timing — 1x is ~0.25x the old speed
-export const BASE_INTERVAL_MS = 10000;
-export const INTER_SCENE_PAUSE_MS = 2500;
-export const TYPING_HOLD_MS = 2000;
-export const POST_REVEAL_BASE_MS = 2500;
-export const POST_REVEAL_PER_CHAR_MS = 35;
+// All base constants tuned +33% from original values after QA feedback (INF-84).
+export const BASE_INTERVAL_MS = 13000;
+export const INTER_SCENE_PAUSE_MS = 3300;
+export const TYPING_HOLD_MS = 2700;
+export const POST_REVEAL_BASE_MS = 3300;
+export const POST_REVEAL_PER_CHAR_MS = 47;
 // Dramatic phases get extra timing multiplier on top of spectacle base
 export const DRAMATIC_PHASE_MULTIPLIER = 2.5;
 export const DRAMATIC_PHASES: ReadonlySet<PhaseKey> = new Set([
@@ -221,9 +222,10 @@ export const CHAT_FEED_PHASES: ReadonlySet<PhaseKey> = new Set([
 ]);
 
 // Chat-style timing — faster than spotlight since messages stack in a feed
-export const CHAT_TYPING_HOLD_MS = 800;
-export const CHAT_POST_MSG_BASE_MS = 600;
-export const CHAT_POST_MSG_PER_CHAR_MS = 12;
+// Tuned +33% from original values after QA feedback (INF-84).
+export const CHAT_TYPING_HOLD_MS = 1100;
+export const CHAT_POST_MSG_BASE_MS = 800;
+export const CHAT_POST_MSG_PER_CHAR_MS = 16;
 
 // Hold time after the last message in diary/whisper scenes before transitioning
 export const DIARY_WHISPER_SCENE_END_HOLD_MS = 4000;

@@ -151,8 +151,9 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
   }, [replayIndex, isReplay]);
 
   // Drain reveal queue — release one message every 1.5s (or instantly in speedrun)
+  // Pauses while phase transition overlay is active (INF-84).
   useEffect(() => {
-    if (revealQueue.length === 0 || isReplay) return;
+    if (revealQueue.length === 0 || isReplay || activeTransition) return;
 
     if (isSpeedrun) {
       setRevealShown((s) => [...s, ...revealQueue]);
@@ -184,11 +185,12 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
     }, HOLD_MS);
 
     return () => clearTimeout(timer);
-  }, [revealQueue, isReplay, isSpeedrun]);
+  }, [revealQueue, isReplay, isSpeedrun, activeTransition]);
 
   // Spectacle queue drain — take next message when current finishes
+  // Pauses while phase transition overlay is active (INF-84).
   useEffect(() => {
-    if (isReplay || spectacleCurrent || spectacleQueue.length === 0) return;
+    if (isReplay || spectacleCurrent || spectacleQueue.length === 0 || activeTransition) return;
     setSpectacleQueue((q) => {
       if (q.length === 0) return q;
       const [next, ...rest] = q;
@@ -196,11 +198,12 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
       setSpectaclePhase("typing");
       return rest;
     });
-  }, [spectacleQueue, spectacleCurrent, isReplay]);
+  }, [spectacleQueue, spectacleCurrent, isReplay, activeTransition]);
 
   // Spectacle animation state machine
+  // Pauses while phase transition overlay is active (INF-84).
   useEffect(() => {
-    if (!spectacleCurrent || isReplay) return;
+    if (!spectacleCurrent || isReplay || activeTransition) return;
     const isSystem = !spectacleCurrent.fromPlayerId || spectacleCurrent.scope === "system";
 
     if (spectaclePhase === "typing") {
@@ -222,7 +225,7 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
       return () => clearTimeout(timer);
     }
     // "revealing" transitions via Typewriter onComplete
-  }, [spectacleCurrent, spectaclePhase, isReplay, isSpeedrun]);
+  }, [spectacleCurrent, spectaclePhase, isReplay, isSpeedrun, activeTransition]);
 
   // Auth session events from Privy / login flow
   useEffect(() => {
