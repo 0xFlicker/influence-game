@@ -656,13 +656,13 @@ Options:
 The best rumors are SPECIFIC. Don't say "someone is lying" — say WHO, about WHAT.
 Vague rumors are forgettable. Sharp rumors change the game.
 
-Your rumor will appear as: "The shadows whisper: [your message]"
-
 Keep it to 1-2 sentences. One sharp claim is better than two weak ones.
 
 Respond with ONLY the rumor text, nothing else.`;
 
-    return this.callLLM(prompt, 150);
+    const text = await this.callLLM(prompt, 150);
+    // Strip "The shadows whisper: " prefix if the LLM included it
+    return text.replace(/^the\s+shadows?\s+whispers?:\s*/i, "");
   }
 
   async getVotes(
@@ -1218,7 +1218,12 @@ ${roomSection}
           );
         }
 
-        return response.choices[0]?.message?.content?.trim() ?? "";
+        let text = response.choices[0]?.message?.content?.trim() ?? "";
+        // Strip wrapping double quotes that LLMs sometimes add
+        if (text.startsWith('"') && text.endsWith('"') && text.length >= 2) {
+          text = text.slice(1, -1);
+        }
+        return text;
       } catch (error) {
         if (attempt < maxAttempts) {
           const backoffMs = attempt * 1000;
