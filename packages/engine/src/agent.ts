@@ -1385,13 +1385,20 @@ ${roomSection}
     return this.isReasoningModel() || this.model.startsWith("gpt-5");
   }
 
+  /**
+   * Reasoning overhead added to max_completion_tokens for reasoning models.
+   * gpt-5-nano/mini consume 700-1000+ completion tokens for internal chain-of-thought
+   * before producing visible output. Without sufficient headroom the entire budget is
+   * consumed by reasoning, the API returns an empty response or throws a length error,
+   * and the caller falls back to "[No response]".
+   */
+  private static REASONING_TOKEN_OVERHEAD = 4000;
+
   /** Free-text LLM call for communication (introductions, lobby, rumor, etc.) */
   private async callLLM(prompt: string, maxTokens = 200, systemPrompt?: string): Promise<string> {
     const reasoning = this.isReasoningModel();
     const useCompletionTokens = this.usesCompletionTokensParam();
-    // Reasoning models consume completion tokens for internal reasoning (~200-400 overhead).
-    // Scale up the budget so the model has room for both reasoning and response.
-    const effectiveMaxTokens = reasoning ? maxTokens + 800 : maxTokens;
+    const effectiveMaxTokens = reasoning ? maxTokens + InfluenceAgent.REASONING_TOKEN_OVERHEAD : maxTokens;
     const maxAttempts = 2; // 1 initial + 1 retry
 
     const messages: Array<{ role: "system" | "user"; content: string }> = [];
@@ -1451,7 +1458,7 @@ ${roomSection}
   ): Promise<T> {
     const reasoning = this.isReasoningModel();
     const useCompletionTokens = this.usesCompletionTokensParam();
-    const effectiveMaxTokens = reasoning ? maxTokens + 800 : maxTokens;
+    const effectiveMaxTokens = reasoning ? maxTokens + InfluenceAgent.REASONING_TOKEN_OVERHEAD : maxTokens;
     const maxAttempts = 2; // 1 initial + 1 retry
 
     const messages: Array<{ role: "system" | "user"; content: string }> = [];

@@ -26,8 +26,8 @@ import { createUUID } from "../game-state";
 // Test configuration
 // ---------------------------------------------------------------------------
 
-/** Timeout for the full game test (5 minutes max) */
-const GAME_TIMEOUT_MS = 5 * 60 * 1000;
+/** Timeout for the full game test (15 minutes — reasoning models like gpt-5-nano need more time per call) */
+const GAME_TIMEOUT_MS = 15 * 60 * 1000;
 
 /** Fast config for tests: shorter timers, fewer rounds, limited diary rooms */
 const TEST_CONFIG: GameConfig = {
