@@ -86,11 +86,27 @@ cd packages/api && bun run test:e2e
 
 ### What each package's `test:mock` runs
 
-- **engine**: `game-engine.test.ts` — core game mechanics with mock agents (no LLM)
-- **api**: `websocket.test.ts`, `viewer-event-pacer.test.ts` — pure unit tests (no DB)
-- **web**: `api-utils.test.ts`, `constants.test.ts`, `message-parsing.test.ts` — frontend utilities
+- **engine**: `game-engine.test.ts` (48 tests — core game mechanics), `stream-listener.test.ts` (5 tests — GameRunner stream events with MockAgent)
+- **api**: `websocket.test.ts` (10 tests — WS manager), `viewer-event-pacer.test.ts` (12 tests — event pacing)
+- **web**: `api-utils.test.ts` (7 tests), `constants.test.ts` (17 tests), `message-parsing.test.ts` (30 tests) — frontend utilities
 
 The remaining API tests (`db.test.ts`, `auth.test.ts`, `games-api.test.ts`, `agent-profiles.test.ts`, `game-lifecycle.test.ts`) are integration tests that require a running PostgreSQL instance. Run them with `bun run test:db`.
+
+### E2E Tests
+
+E2E tests live in two places and require more infrastructure:
+
+| Test | Runner | Dependencies | Command |
+|------|--------|--------------|---------|
+| `e2e/smoke.spec.ts` | Playwright | Running staging server | `bun run test:e2e` |
+| `packages/api/src/e2e/e2e-smoke.test.ts` | Bun + Puppeteer | PostgreSQL | `cd packages/api && bun test src/e2e/e2e-smoke.test.ts` |
+| `packages/api/src/e2e/game-flow.e2e.test.ts` | Bun + Puppeteer | PostgreSQL + Doppler | `cd packages/api && doppler run -- bun test src/e2e/game-flow.e2e.test.ts` |
+
+The full game-flow E2E test spins up an API server, creates a real 6-player LLM game, and watches it via Puppeteer (up to 11 minute timeout). Run it sparingly.
+
+### Full Test Audit
+
+See `docs/test-audit.md` for a comprehensive inventory of all 280 tests: what they cover, their dependencies, timing, and cost.
 
 ### Testing Contract
 
