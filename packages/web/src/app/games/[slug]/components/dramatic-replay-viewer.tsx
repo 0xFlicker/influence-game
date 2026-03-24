@@ -366,6 +366,12 @@ export function DramaticReplayViewer({
         const timer = setTimeout(() => setMessagePhase("done"), CHAT_TYPING_HOLD_MS / speed);
         return () => clearTimeout(timer);
       }
+      // Overview scenes (e.g. whisper allocation) render a static component, not
+      // a Typewriter, so skip straight to "done" — there is no onComplete to fire.
+      if (isOverviewScene) {
+        setMessagePhase("done");
+        return;
+      }
       // System messages skip typing indicator
       if (isSystemMessage) {
         setMessagePhase("revealing");
@@ -438,7 +444,7 @@ export function DramaticReplayViewer({
       return () => clearTimeout(timer);
     }
     // "revealing" phase transitions via Typewriter onComplete
-  }, [isPlaying, messagePhase, messageIndex, sceneIndex, scene, totalScenes, speed, currentMessage, isSystemMessage, isChatStyleScene, isWhisperScene, isDiaryScene, live, activePhaseTransition]);
+  }, [isPlaying, messagePhase, messageIndex, sceneIndex, scene, totalScenes, speed, currentMessage, isSystemMessage, isChatStyleScene, isOverviewScene, isWhisperScene, isDiaryScene, live, activePhaseTransition]);
 
   // Debounce scene transitions to prevent rapid clicks from skipping content
   const lastSceneAdvanceRef = useRef(0);
