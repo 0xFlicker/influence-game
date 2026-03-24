@@ -89,15 +89,14 @@ function getPhaseGuidelines(phase: Phase, round: number): string {
 Introduce yourself as a PERSON, not as a game player. Share something from your backstory — your job, where you're from, a personal quirk. First impressions are about personality, not strategy. Do NOT mention game mechanics, alliances, voting, or strategy. Be the kind of person others want to get to know. Think: first day at a new job, or meeting people at a dinner party.`;
 
     case Phase.LOBBY:
-      return `PHASE BEHAVIOR — LOBBY (SOCIAL PHASE):
-The lobby is a SOCIAL space. The unspoken rule is: do NOT talk about the game, strategy, votes, alliances, or eliminations in strategic terms. Instead:
-- If someone was just eliminated, honor them or roast them — react as a HUMAN, not a strategist
-- Share personal stories, jokes, opinions, memories from your backstory
-- Build bonds through personality compatibility, not strategic alignment
-- React to what other players said — agree, disagree, laugh, push back
-- Be the person you'd want to sit next to at a dinner party
-Think Big Brother living room conversations, not boardroom strategy sessions. Players who talk game in the lobby look desperate and untrustworthy.
-${isEarlyGame ? `\nEARLY GAME (Round ${round}): You barely know these people. Express genuine opinions and show personality. Disagree with someone. Share a strong take. Do NOT talk about alliances, trust, or "working together" — it's too soon and you'd sound desperate. Let friction and personality differences emerge naturally.` : ""}`;
+      return `PHASE BEHAVIOR — LOBBY (SOCIAL PHASE WITH TEETH):
+The lobby is where personality meets strategy — but NEVER overtly. The surface is social. The subtext is the game.
+- Lead with personality: stories, opinions, humor, friction, disagreements
+- React to what other players said — challenge them, tease them, call them out, build on their stories
+- The SUBTEXT of your words should serve your strategy: snide asides at rivals, loaded compliments to allies, double-entendres that only your faction understands, sarcasm aimed at the last empowered player or dominant alliance
+- Create personality friction — not everyone gets along, and that's entertaining
+- If someone was eliminated: ONE brief acknowledgment is fine (especially if they were your ally). Then MOVE ON. Do not write eulogies. Do not dwell. The game continues.
+${isEarlyGame ? `\nEARLY GAME (Round ${round}): You barely know these people. Express genuine opinions and show personality. Disagree with someone. Share a strong take. Let friction emerge naturally. Avoid overt game talk, but your personality and worldview should hint at how you'll play.` : `\nMID/LATE GAME (Round ${round}): You have history with these people now. Your lobby messages should carry weight — reference things that happened (without being explicit about strategy). A pointed joke about someone's "loyalty" or a casual observation about who always ends up in whisper rooms together. The audience should feel the tension beneath the banter.`}`;
 
     case Phase.WHISPER:
       return `PHASE BEHAVIOR — WHISPER (STRATEGY PHASE):
@@ -488,6 +487,7 @@ export class InfluenceAgent implements IAgent {
     roundHistory: [],
     lastReflection: null,
   };
+  private lobbyIntent: string | null = null;
 
   constructor(
     id: UUID,
@@ -539,40 +539,87 @@ Respond with ONLY the introduction text, nothing else.`;
     return this.callLLM(prompt, 150);
   }
 
+  async getLobbyIntent(ctx: PhaseContext): Promise<string> {
+    const prompt = this.buildBasePrompt(ctx) + `
+## Pre-Lobby Strategy
+
+Before you speak in the lobby, take a moment to plan. The lobby is social on the surface,
+but your words should serve your strategy underneath.
+
+In 1-2 sentences, answer:
+- What do I want to subtly communicate or accomplish in this lobby session?
+- Who should I target with a pointed remark, loaded question, or snide aside?
+- What emotional angle fits my personality right now — humor, sarcasm, warmth, intensity?
+
+Be specific. Name a player and what you want to signal about them (or to them).
+Do NOT write your actual lobby message — just your internal game plan.
+
+Respond with ONLY your strategy intent, nothing else.`;
+
+    try {
+      this.lobbyIntent = await this.callLLM(prompt, 100);
+    } catch {
+      this.lobbyIntent = null;
+    }
+    return this.lobbyIntent ?? "";
+  }
+
   async getLobbyMessage(ctx: PhaseContext): Promise<string> {
     const eliminated = this.allPlayers
       .filter((p) => !ctx.alivePlayers.some((ap) => ap.id === p.id))
       .map((p) => p.name);
     const recentlyEliminated = eliminated.length > 0 ? eliminated[eliminated.length - 1] : null;
 
-    // Determine relationship to the eliminated player for varied reactions
+    const subRound = ctx.lobbySubRound ?? 0;
+    const totalSubRounds = ctx.lobbyTotalSubRounds ?? 1;
+    const isFirstMessage = subRound === 0;
+
+    // Elimination guidance: only for first message, and brief after round 1
     let eliminationGuidance = "";
-    if (recentlyEliminated) {
+    if (recentlyEliminated && isFirstMessage) {
       const wasAlly = this.memory.allies.has(recentlyEliminated);
       const wasThreat = this.memory.threats.has(recentlyEliminated);
       if (wasAlly) {
-        eliminationGuidance = `- ${recentlyEliminated} was just eliminated — and they were YOUR ALLY. This hits you personally. Show genuine grief, anger, or loss. This changes the game for you emotionally.`;
+        eliminationGuidance = `- ${recentlyEliminated} was just eliminated — they were your ally. A brief, genuine reaction is fine (grief, anger), but then move on to engaging with who's still here.`;
       } else if (wasThreat) {
-        eliminationGuidance = `- ${recentlyEliminated} was just eliminated — and they were someone you saw as a THREAT. You might feel relief, vindication, or strategic satisfaction. Don't fake sadness you don't feel — react authentically.`;
+        eliminationGuidance = `- ${recentlyEliminated} was just eliminated — you saw them as a threat. A quick authentic reaction (relief, a dry remark), then move on.`;
       } else {
-        eliminationGuidance = `- ${recentlyEliminated} was just eliminated. You didn't have a deep connection with them. React naturally — maybe a brief acknowledgment, a passing observation, or just move on to what's on your mind. Don't force grief you don't feel.`;
+        eliminationGuidance = `- ${recentlyEliminated} was just eliminated. A brief nod at most — don't dwell on someone you weren't close to. Focus on the living.`;
       }
     }
 
-    const prompt = this.buildBasePrompt(ctx) + `
+    // Sub-round specific direction
+    let subRoundGuidance = "";
+    if (isFirstMessage) {
+      subRoundGuidance = `This is your OPENING message (${subRound + 1}/${totalSubRounds}). Set the tone — lead with personality and a strong take.`;
+    } else if (subRound === totalSubRounds - 1) {
+      subRoundGuidance = `This is your FINAL message (${subRound + 1}/${totalSubRounds}). React to what's been said. Leave an impression — a pointed observation, a loaded joke, or a line that makes people think.`;
+    } else {
+      subRoundGuidance = `Message ${subRound + 1}/${totalSubRounds}. Build on the conversation — respond to someone directly. Push back, agree sharply, or drop a subtle jab.`;
+    }
+
+    // Inject lobby intent if available
+    const intentSection = this.lobbyIntent
+      ? `\n## Your Lobby Strategy (PRIVATE — do not reveal this)\n${this.lobbyIntent}\nUse this to guide the SUBTEXT of your message. Your strategy should be invisible to others — expressed through tone, word choice, and what you choose to react to. Never state your strategy directly.\n`
+      : "";
+
+    const prompt = this.buildBasePrompt(ctx) + `${intentSection}
 ## Your Task
-Write a public lobby message. The lobby is a SOCIAL space — do NOT talk about strategy,
-votes, alliances, or game mechanics. Instead, be a real person:
+Write a public lobby message. The lobby is social on the surface, but your words carry weight.
+${subRoundGuidance}
 ${eliminationGuidance}
-- Share something personal — a story, an opinion, a joke, a reaction to what someone else said
-- Respond to other players' personalities — agree, disagree, tease, compliment, push back
-- Draw from your backstory and life experience
-- Build connections through personality, humor, and shared humanity
+- Be a real person: stories, opinions, humor, reactions to what others said
+- Respond to specific players — challenge, tease, compliment, push back on what they said
+- Your SUBTEXT should serve your game: snide asides at rivals, loaded remarks to allies, sarcasm at the powerful
+- Create friction and personality clashes — not everyone agrees, and that's what makes it interesting
+- Do NOT explicitly discuss strategy, votes, or alliances — but let the audience FEEL the tension
 
-Think: Big Brother living room conversation, not a strategy meeting.
-Players who talk game in the lobby look desperate.
+EXAMPLES of good lobby subtext (don't copy these, create your own):
+- "Funny how some people always have the perfect thing to say at the perfect time..." (targeting someone you suspect)
+- "I respect people who say what they mean. Getting harder to find around here." (signaling distrust)
+- Telling a personal story that just happens to parallel someone's suspicious behavior
 
-Keep it to 2-3 sentences. Be authentic and entertaining.
+Keep it to 2-3 sentences. Be authentic, entertaining, and sharp.
 
 Respond with ONLY the message text, nothing else.`;
 

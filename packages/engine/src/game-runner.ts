@@ -52,6 +52,8 @@ export interface IAgent {
   onPhaseStart(context: PhaseContext): Promise<void>;
   /** Called to collect this agent's introduction message */
   getIntroduction(context: PhaseContext): Promise<string>;
+  /** Called once before lobby sub-rounds to form a lobby strategy intent */
+  getLobbyIntent?(context: PhaseContext): Promise<string>;
   /** Called to collect a lobby message */
   getLobbyMessage(context: PhaseContext): Promise<string>;
   /** Called to collect whisper actions (list of {to, text}) — DEPRECATED, use room methods */
@@ -144,6 +146,10 @@ export interface PhaseContext {
   finalists?: [UUID, UUID];
   /** True when this agent has been eliminated (e.g. juror in diary room) */
   isEliminated?: boolean;
+  /** Current lobby sub-round index (0-based) */
+  lobbySubRound?: number;
+  /** Total lobby sub-rounds this phase */
+  lobbyTotalSubRounds?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -485,6 +491,17 @@ export class GameRunner {
     const alivePlayers = this.gameState.getAlivePlayers();
     const messagesPerPlayer = this.computeLobbyMessagesPerPlayer(alivePlayers.length);
 
+    // Pre-lobby: each agent formulates a lobby intent (what to subtly communicate)
+    await Promise.all(
+      alivePlayers.map(async (player) => {
+        const agent = this.agents.get(player.id)!;
+        if (agent.getLobbyIntent) {
+          const ctx = this.buildPhaseContext(player.id, Phase.LOBBY);
+          await agent.getLobbyIntent(ctx);
+        }
+      }),
+    );
+
     // Run multiple sub-rounds so players can react to each other's messages.
     // Each sub-round collects one message from all players in parallel,
     // then subsequent sub-rounds see the accumulated messages via buildPhaseContext.
@@ -493,6 +510,8 @@ export class GameRunner {
         alivePlayers.map(async (player) => {
           const agent = this.agents.get(player.id)!;
           const ctx = this.buildPhaseContext(player.id, Phase.LOBBY);
+          ctx.lobbySubRound = sub;
+          ctx.lobbyTotalSubRounds = messagesPerPlayer;
           const text = await agent.getLobbyMessage(ctx);
           this.logPublic(player.id, text, Phase.LOBBY);
         }),
@@ -1019,11 +1038,23 @@ export class GameRunner {
     const alivePlayers = this.gameState.getAlivePlayers();
     const messagesPerPlayer = this.computeLobbyMessagesPerPlayer(alivePlayers.length);
 
+    await Promise.all(
+      alivePlayers.map(async (player) => {
+        const agent = this.agents.get(player.id)!;
+        if (agent.getLobbyIntent) {
+          const ctx = this.buildPhaseContext(player.id, Phase.LOBBY);
+          await agent.getLobbyIntent(ctx);
+        }
+      }),
+    );
+
     for (let sub = 0; sub < messagesPerPlayer; sub++) {
       await Promise.all(
         alivePlayers.map(async (player) => {
           const agent = this.agents.get(player.id)!;
           const ctx = this.buildPhaseContext(player.id, Phase.LOBBY);
+          ctx.lobbySubRound = sub;
+          ctx.lobbyTotalSubRounds = messagesPerPlayer;
           const text = await agent.getLobbyMessage(ctx);
           this.logPublic(player.id, text, Phase.LOBBY);
         }),
@@ -1171,11 +1202,23 @@ export class GameRunner {
     const alivePlayers = this.gameState.getAlivePlayers();
     const messagesPerPlayer = this.computeLobbyMessagesPerPlayer(alivePlayers.length);
 
+    await Promise.all(
+      alivePlayers.map(async (player) => {
+        const agent = this.agents.get(player.id)!;
+        if (agent.getLobbyIntent) {
+          const ctx = this.buildPhaseContext(player.id, Phase.LOBBY);
+          await agent.getLobbyIntent(ctx);
+        }
+      }),
+    );
+
     for (let sub = 0; sub < messagesPerPlayer; sub++) {
       await Promise.all(
         alivePlayers.map(async (player) => {
           const agent = this.agents.get(player.id)!;
           const ctx = this.buildPhaseContext(player.id, Phase.LOBBY);
+          ctx.lobbySubRound = sub;
+          ctx.lobbyTotalSubRounds = messagesPerPlayer;
           const text = await agent.getLobbyMessage(ctx);
           this.logPublic(player.id, text, Phase.LOBBY);
         }),
