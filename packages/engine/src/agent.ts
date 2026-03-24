@@ -1032,7 +1032,9 @@ Keep it to 1-2 sentences. Respond ONLY with the message text.`;
 You're in the private diary room with The House. This is a confidential interview — only the audience can see this.
 ${isEliminated
   ? `You have been ELIMINATED from the game and are now a JUROR. You are no longer an active player — you cannot strategize about staying in the game or making moves. Instead, reflect on the remaining players from an outside perspective: who do you think deserves to win, who played you, and what you see happening from the jury bench.`
-  : `Be candid about your real thoughts, strategies, and feelings about the other players.`}
+  : ctx.phase === Phase.INTRODUCTION
+    ? `The game is about to begin. The House wants to know your STRATEGY — how you plan to play, who you're thinking of working with, and what your approach is. Share your genuine game plan with the audience. Be specific: name players and say what you intend to do.`
+    : `Be candid about your real thoughts, strategies, and feelings about the other players.`}
 
 ## Your Emotional Range
 ${emotionalRange}
@@ -1042,7 +1044,10 @@ The House asks: "${question}"
 
 ${isEliminated
   ? `Answer from your perspective as an eliminated juror watching from the sidelines. Reflect on the remaining players, not on your own gameplay moves. Keep it to 2-4 sentences. Be entertaining for the audience. Respond ONLY with your answer.`
-  : `Answer the question honestly and in character. Share your genuine strategic thinking — who you trust, who you suspect, what your next moves are.
+  : ctx.phase === Phase.INTRODUCTION
+    ? `Answer with your STRATEGY going into the game. Name specific players — who interests you, who concerns you, who might you approach first? Share your game plan, not just impressions.
+Keep it to 2-4 sentences. Be entertaining for the audience. Respond ONLY with your answer.`
+    : `Answer the question honestly and in character. Share your genuine strategic thinking — who you trust, who you suspect, what your next moves are.
 Keep it to 2-4 sentences. Be entertaining for the audience. Respond ONLY with your answer.`}`;
 
     return this.callLLM(prompt, 250, sys);
@@ -1475,6 +1480,10 @@ ${roomSection}
         // Strip wrapping double quotes that LLMs sometimes add
         if (text.startsWith('"') && text.endsWith('"') && text.length >= 2) {
           text = text.slice(1, -1);
+        }
+        if (text.length === 0) {
+          console.warn(`[${this.name}] callLLM returned empty content (reasoning may have consumed token budget)`);
+          return "[No response]";
         }
         return text;
       } catch (error) {

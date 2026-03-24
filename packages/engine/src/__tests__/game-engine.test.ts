@@ -969,10 +969,10 @@ describe("Diary Room - interview mechanics", () => {
       expect(entry.answer.length).toBeGreaterThan(0);
     }
 
-    // Introduction diary questions should mention "first impressions" or "met"
+    // Introduction diary questions should ask about strategy going into the game
     const introEntries = diaryLog.filter((e) => e.precedingPhase === Phase.INTRODUCTION);
     for (const entry of introEntries) {
-      expect(entry.question.toLowerCase()).toMatch(/met|impressions|stands out/);
+      expect(entry.question.toLowerCase()).toMatch(/strategy|working with|watch their back/);
     }
   });
 

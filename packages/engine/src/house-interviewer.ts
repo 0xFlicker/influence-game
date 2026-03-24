@@ -242,7 +242,7 @@ CLOSE: <your brief closing remark to the player, 1 sentence>`;
     let situationContext = "";
     switch (precedingPhase) {
       case Phase.INTRODUCTION:
-        situationContext = "First impressions just dropped. Ask about a SPECIFIC other player's introduction — did it ring true? Did someone seem too polished, too nervous, too calculated?";
+        situationContext = `Introductions just wrapped. The House wants to know ${agentName}'s STRATEGY going into the game. Ask what their game plan is — who caught their attention, who might they want to work with (or avoid), and how do they plan to play this? Reference a SPECIFIC player from the introductions and ask how ${agentName} plans to approach them. Think: "the game starts now — what's your move?"`;
         break;
       case Phase.LOBBY:
         situationContext = `The Round ${round} lobby just ended. Pick ONE specific thing ${agentName} or another player said in the lobby (from the messages below) and ask about the subtext — what were they REALLY saying?`;
@@ -310,7 +310,7 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
 
     switch (precedingPhase) {
       case Phase.INTRODUCTION:
-        return `${agentName}, you've just met the other players. What are your first impressions? Who stands out to you, and why?`;
+        return `${agentName}, the introductions are done and the game is about to begin. What's your strategy going in? Who are you thinking of working with, and who should watch their back?`;
 
       case Phase.LOBBY:
         return `${agentName}, the public discussion for round ${round} just wrapped. With ${alivePlayers.length} players still in the game, what did you pick up on? Are any alliances forming?`;
