@@ -203,7 +203,7 @@ export function WhisperRoomDM({
 
   return (
     <div
-      className={`rounded-2xl border bg-black/30 flex flex-col overflow-hidden transition-all duration-300 ${
+      className={`rounded-2xl border bg-black/30 flex flex-col min-h-0 overflow-hidden transition-all duration-300 flex-1 ${
         focused
           ? "border-purple-400/40 ring-1 ring-purple-400/20 col-span-full"
           : "border-purple-400/20 cursor-pointer hover:border-purple-400/35"
@@ -250,7 +250,7 @@ export function WhisperRoomDM({
 
       <div
         ref={scrollRef}
-        className={`p-3 space-y-2 overflow-y-auto ${focused ? "max-h-[60vh]" : "max-h-[40vh]"}`}
+        className="p-3 space-y-2 overflow-y-auto flex-1 min-h-0"
       >
         {room.messages.length === 0 ? (
           <p className="text-xs text-white/30 italic text-center py-6">No messages exchanged.</p>
@@ -449,8 +449,8 @@ export function WhisperPhaseView({
   const activeRoom = activeIndex >= 0 ? stage.rooms[activeIndex] : null;
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-6">
-      <div className="text-center mb-4">
+    <div className="flex-1 flex flex-col min-h-0 p-4 md:p-6">
+      <div className="flex-shrink-0 text-center mb-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-purple-300/70 mb-1">
           Whisper Rooms
         </p>
@@ -465,7 +465,7 @@ export function WhisperPhaseView({
 
       {/* Room navigation tabs */}
       {stage.rooms.length > 0 && (
-        <div className="flex flex-wrap items-center justify-center gap-1.5 mb-4">
+        <div className="flex-shrink-0 flex flex-wrap items-center justify-center gap-1.5 mb-4">
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setActiveIndex(-1); }}
@@ -502,7 +502,7 @@ export function WhisperPhaseView({
         <WhisperAllocationOverview stage={stage} players={players} />
       ) : activeRoom ? (
         isReplay ? (
-          <div className="max-w-2xl mx-auto animate-[fadeIn_0.3s_ease-out]">
+          <div className="flex-1 min-h-0 flex flex-col max-w-2xl w-full mx-auto animate-[fadeIn_0.3s_ease-out]">
             <WhisperRoomDM room={activeRoom} players={players} />
           </div>
         ) : (
@@ -518,7 +518,7 @@ export function WhisperPhaseView({
 
       {/* Commons note below active room */}
       {activeIndex >= 0 && stage.commons.length > 0 && (
-        <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-center max-w-2xl mx-auto">
+        <div className="flex-shrink-0 mt-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-center max-w-2xl mx-auto">
           <p className="text-[10px] uppercase tracking-[0.2em] text-white/30 mb-1">Commons</p>
           <p className="text-sm text-white/60">
             {stage.commons.map((p) => p.name).join(", ")}
