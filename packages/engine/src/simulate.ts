@@ -198,6 +198,7 @@ function computeAggregateStats(results: GameResult[], model: string): AggregateS
   const roundDist: Record<number, number> = {};
   const batchTokens: TokenUsage = {
     promptTokens: 0,
+    cachedTokens: 0,
     completionTokens: 0,
     totalTokens: 0,
     callCount: 0,
@@ -214,6 +215,7 @@ function computeAggregateStats(results: GameResult[], model: string): AggregateS
 
     // Accumulate token usage
     batchTokens.promptTokens += result.tokenUsage.total.promptTokens;
+    batchTokens.cachedTokens += result.tokenUsage.total.cachedTokens;
     batchTokens.completionTokens += result.tokenUsage.total.completionTokens;
     batchTokens.totalTokens += result.tokenUsage.total.totalTokens;
     batchTokens.callCount += result.tokenUsage.total.callCount;

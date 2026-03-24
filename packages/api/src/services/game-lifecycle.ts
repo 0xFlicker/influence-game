@@ -266,6 +266,7 @@ async function runGameAsync(
         roundsPlayed: result.rounds,
         tokenUsage: JSON.stringify({
           promptTokens: usage.promptTokens,
+          cachedTokens: usage.cachedTokens,
           completionTokens: usage.completionTokens,
           totalTokens: usage.totalTokens,
           estimatedCost: cost.totalCost,

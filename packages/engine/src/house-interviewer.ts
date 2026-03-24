@@ -111,12 +111,13 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       temperature: 0.9,
     });
 
-    // Track token usage
+    // Track token usage (including cached tokens for cost estimation)
     if (this.tokenTracker && response.usage) {
       this.tokenTracker.record(
         "House",
         response.usage.prompt_tokens,
         response.usage.completion_tokens,
+        response.usage.prompt_tokens_details?.cached_tokens ?? 0,
       );
     }
 
@@ -178,6 +179,7 @@ CLOSE: <your brief closing remark to the player, 1 sentence>`;
         "House",
         response.usage.prompt_tokens,
         response.usage.completion_tokens,
+        response.usage.prompt_tokens_details?.cached_tokens ?? 0,
       );
     }
 

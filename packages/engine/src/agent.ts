@@ -526,7 +526,8 @@ export class InfluenceAgent implements IAgent {
   // ---------------------------------------------------------------------------
 
   async getIntroduction(ctx: PhaseContext): Promise<string> {
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task
 Introduce yourself as a PERSON — share who you are, where you're from, something memorable about your life.
 Do NOT talk about game strategy, alliances, or how you plan to play. This is a social introduction, like
@@ -536,11 +537,12 @@ Keep it to 2-3 sentences. Be warm, specific, and human.
 
 Respond with ONLY the introduction text, nothing else.`;
 
-    return this.callLLM(prompt, 150);
+    return this.callLLM(prompt, 150, sys);
   }
 
   async getLobbyIntent(ctx: PhaseContext): Promise<string> {
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## Pre-Lobby Strategy
 
 Before you speak in the lobby, take a moment to plan. The lobby is social on the surface,
@@ -557,7 +559,7 @@ Do NOT write your actual lobby message — just your internal game plan.
 Respond with ONLY your strategy intent, nothing else.`;
 
     try {
-      this.lobbyIntent = await this.callLLM(prompt, 100);
+      this.lobbyIntent = await this.callLLM(prompt, 100, sys);
     } catch {
       this.lobbyIntent = null;
     }
@@ -603,7 +605,8 @@ Respond with ONLY your strategy intent, nothing else.`;
       ? `\n## Your Lobby Strategy (PRIVATE — do not reveal this)\n${this.lobbyIntent}\nUse this to guide the SUBTEXT of your message. Your strategy should be invisible to others — expressed through tone, word choice, and what you choose to react to. Never state your strategy directly.\n`
       : "";
 
-    const prompt = this.buildBasePrompt(ctx) + `${intentSection}
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `${intentSection}
 ## Your Task
 Write a public lobby message. The lobby is social on the surface, but your words carry weight.
 ${subRoundGuidance}
@@ -623,7 +626,7 @@ Keep it to 2-3 sentences. Be authentic, entertaining, and sharp.
 
 Respond with ONLY the message text, nothing else.`;
 
-    return this.callLLM(prompt, 150);
+    return this.callLLM(prompt, 150, sys);
   }
 
   async getWhispers(
@@ -632,7 +635,8 @@ Respond with ONLY the message text, nothing else.`;
     const otherPlayers = ctx.alivePlayers.filter((p) => p.id !== this.id);
     if (otherPlayers.length === 0) return [];
 
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task
 Decide who to send private whispers to and what to say. You can whisper to 1-3 players.
 Use whispers to build alliances, gather intelligence, or plant seeds of suspicion.
@@ -643,7 +647,7 @@ Use the send_whispers tool to submit your whisper messages. Use player NAMES (no
 
     try {
       const result = await this.callTool<{ whispers: Array<{ to: string[]; text: string }> }>(
-        prompt, TOOL_SEND_WHISPERS, 400,
+        prompt, TOOL_SEND_WHISPERS, 400, sys,
       );
 
       return (result.whispers ?? [])
@@ -672,7 +676,8 @@ Use the send_whispers tool to submit your whisper messages. Use player NAMES (no
     const roomCount = ctx.roomCount ?? 1;
     const aliveCount = ctx.alivePlayers.length;
 
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task
 Request a private room for a one-on-one whisper conversation. There are only
 ${roomCount} rooms available for ${aliveCount} players — not everyone will get one.
@@ -692,7 +697,7 @@ Use the request_room tool to submit your preference.`;
 
     try {
       const result = await this.callTool<{ partner: string }>(
-        prompt, TOOL_REQUEST_ROOM, 200,
+        prompt, TOOL_REQUEST_ROOM, 200, sys,
       );
       const partnerName = result.partner;
       const partner = findByName(otherPlayers, partnerName);
@@ -717,7 +722,8 @@ Use the request_room tool to submit your preference.`;
       ? `\n## Conversation So Far\n${history.map((m) => `${m.from}: "${m.text}"`).join("\n")}\n`
       : "";
 
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task
 You're in a private room with ${partnerName}. Nobody else can hear you — but the audience is watching.
 ${historyText}
@@ -741,7 +747,7 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
 
     try {
       const result = await this.callTool<{ message?: string; pass?: boolean }>(
-        prompt, TOOL_SEND_ROOM_MESSAGE, 300,
+        prompt, TOOL_SEND_ROOM_MESSAGE, 300, sys,
       );
       if (result.pass) return null;
       return result.message ?? "";
@@ -776,7 +782,8 @@ Think gossip column, not courtroom prosecution.`
 Frame accusations as insinuations and loaded questions rather than direct callouts.
 The best rumors feel like insider knowledge whispered through a keyhole.`;
 
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task — ANONYMOUS RUMOR
 Post an anonymous rumor to the public board. YOUR IDENTITY WILL NOT BE REVEALED
 to other players. The audience is watching, but your fellow operatives will never
@@ -791,7 +798,7 @@ Keep it to 1-2 sentences. One sharp claim is better than two weak ones.
 
 Respond with ONLY the rumor text, nothing else.`;
 
-    const text = await this.callLLM(prompt, 150);
+    const text = await this.callLLM(prompt, 150, sys);
     // Strip "The shadows whisper: " prefix if the LLM included it
     return text.replace(/^the\s+shadows?\s+whispers?:\s*/i, "");
   }
@@ -807,7 +814,8 @@ Respond with ONLY the rumor text, nothing else.`;
       return picked;
     };
 
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task
 Cast your votes for this round.
 
@@ -820,7 +828,7 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
 
     try {
       const result = await this.callTool<{ empower: string; expose: string }>(
-        prompt, TOOL_CAST_VOTES, 100,
+        prompt, TOOL_CAST_VOTES, 100, sys,
       );
 
       const empowerPlayer = findByName(others, result.empower);
@@ -873,7 +881,8 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
       (p) => p.id !== this.id && !candidates.includes(p.id),
     );
 
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## You Are EMPOWERED This Round!
 You have three choices:
 
@@ -888,7 +897,7 @@ Use the use_power tool to declare your action.`;
 
     try {
       const result = await this.callTool<{ action: string; target: string }>(
-        prompt, TOOL_POWER_ACTION, 100,
+        prompt, TOOL_POWER_ACTION, 100, sys,
       );
 
       const targetPlayer =
@@ -918,7 +927,8 @@ Use the use_power tool to declare your action.`;
     const c2Name = ctx.alivePlayers.find((p) => p.id === c2)?.name ?? c2;
     const isEmpowered = ctx.empoweredId === this.id;
 
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## Council Vote
 ${isEmpowered ? "You are the EMPOWERED agent. Your vote only counts as a TIEBREAKER." : "Vote to eliminate one of the two council candidates."}
 
@@ -931,7 +941,7 @@ Who should be eliminated? Consider your alliances, threats, and long-term strate
 Use the council_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_COUNCIL_VOTE, 80);
+      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys);
       if (normalizeName(result.eliminate) === normalizeName(c1Name)) return c1;
       if (normalizeName(result.eliminate) === normalizeName(c2Name)) return c2;
       const fallback = candidates[Math.floor(Math.random() * 2)];
@@ -949,14 +959,15 @@ Use the council_vote tool to cast your vote.`;
   }
 
   async getLastMessage(ctx: PhaseContext): Promise<string> {
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## Pre-register Your Last Words
 If you are eliminated this round, this message will be posted when you leave.
 Make it count — a final accusation, a farewell, a cryptic warning, or a graceful exit.
 
 Keep it to 1-2 sentences. Respond ONLY with the message text.`;
 
-    return this.callLLM(prompt, 120);
+    return this.callLLM(prompt, 120, sys);
   }
 
   async getDiaryEntry(ctx: PhaseContext, question: string, sessionHistory?: Array<{ question: string; answer: string }>): Promise<string> {
@@ -969,7 +980,8 @@ Keep it to 1-2 sentences. Respond ONLY with the message text.`;
 
     const emotionalRange = DIARY_EMOTIONAL_RANGE[this.personality];
 
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## Diary Room Interview
 You're in the private diary room with The House. This is a confidential interview — only the audience can see this.
 ${isEliminated
@@ -987,7 +999,7 @@ ${isEliminated
   : `Answer the question honestly and in character. Share your genuine strategic thinking — who you trust, who you suspect, what your next moves are.
 Keep it to 2-4 sentences. Be entertaining for the audience. Respond ONLY with your answer.`}`;
 
-    return this.callLLM(prompt, 250);
+    return this.callLLM(prompt, 250, sys);
   }
 
   // ---------------------------------------------------------------------------
@@ -995,7 +1007,8 @@ Keep it to 2-4 sentences. Be entertaining for the audience. Respond ONLY with yo
   // ---------------------------------------------------------------------------
 
   async getPlea(ctx: PhaseContext): Promise<string> {
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## THE RECKONING — Public Plea
 ${ENDGAME_PERSONALITY_HINTS[this.personality]}
 
@@ -1006,7 +1019,7 @@ Keep it to 2-3 sentences. Make it compelling.
 
 Respond with ONLY the plea text, nothing else.`;
 
-    return this.callLLM(prompt, 200);
+    return this.callLLM(prompt, 200, sys);
   }
 
   async getEndgameEliminationVote(ctx: PhaseContext): Promise<UUID> {
@@ -1014,7 +1027,8 @@ Respond with ONLY the plea text, nothing else.`;
     const stage = ctx.endgameStage ?? "reckoning";
     const stageName = stage === "reckoning" ? "THE RECKONING" : "THE TRIBUNAL";
 
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## ${stageName} — Elimination Vote
 ${ENDGAME_PERSONALITY_HINTS[this.personality]}
 
@@ -1027,7 +1041,7 @@ Who should be eliminated? Consider everything that has happened in the game.
 Use the elimination_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_ELIMINATION_VOTE, 80);
+      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys);
       const target = findByName(others, result.eliminate);
       if (target) return target.id;
       const fallback = others[Math.floor(Math.random() * others.length)];
@@ -1045,7 +1059,8 @@ Use the elimination_vote tool to cast your vote.`;
   async getAccusation(ctx: PhaseContext): Promise<{ targetId: UUID; text: string }> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
 
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## THE TRIBUNAL — Accusation
 ${ENDGAME_PERSONALITY_HINTS[this.personality]}
 
@@ -1058,7 +1073,7 @@ Use the make_accusation tool to submit your accusation.`;
 
     try {
       const result = await this.callTool<{ target: string; accusation: string }>(
-        prompt, TOOL_MAKE_ACCUSATION, 200,
+        prompt, TOOL_MAKE_ACCUSATION, 200, sys,
       );
       const target = findByName(others, result.target);
       const fallbackOther = others[0];
@@ -1079,7 +1094,8 @@ Use the make_accusation tool to submit your accusation.`;
   }
 
   async getDefense(ctx: PhaseContext, accusation: string, accuserName: string): Promise<string> {
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## THE TRIBUNAL — Defense
 ${ENDGAME_PERSONALITY_HINTS[this.personality]}
 
@@ -1089,13 +1105,14 @@ Defend yourself publicly. Rebut the accusation, redirect blame, or appeal to the
 
 Keep it to 2-3 sentences. Respond ONLY with your defense text.`;
 
-    return this.callLLM(prompt, 200);
+    return this.callLLM(prompt, 200, sys);
   }
 
   async getOpeningStatement(ctx: PhaseContext): Promise<string> {
     const juryNames = ctx.jury?.map((j) => j.playerName).join(", ") ?? "the jury";
 
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## THE JUDGMENT — Opening Statement
 ${ENDGAME_PERSONALITY_HINTS[this.personality]}
 
@@ -1106,7 +1123,7 @@ Keep it to 3-4 sentences. Make it powerful.
 
 Respond with ONLY your statement, nothing else.`;
 
-    return this.callLLM(prompt, 250);
+    return this.callLLM(prompt, 250, sys);
   }
 
   async getJuryQuestion(ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string }> {
@@ -1115,7 +1132,8 @@ Respond with ONLY your statement, nothing else.`;
     const finalist1 = ctx.alivePlayers.find((p) => p.id === finalistId1) ?? { id: finalistId1, name: finalistId1 };
     const finalists = [finalist0, finalist1];
 
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## THE JUDGMENT — Jury Question
 You have been eliminated and are now a JUROR. You get to ask ONE question to ONE finalist.
 
@@ -1129,7 +1147,7 @@ Use the ask_jury_question tool to submit your question.`;
 
     try {
       const result = await this.callTool<{ target: string; question: string }>(
-        prompt, TOOL_ASK_JURY_QUESTION, 150,
+        prompt, TOOL_ASK_JURY_QUESTION, 150, sys,
       );
       const target = findByName(finalists, result.target);
       return {
@@ -1146,7 +1164,8 @@ Use the ask_jury_question tool to submit your question.`;
   }
 
   async getJuryAnswer(ctx: PhaseContext, question: string, jurorName: string): Promise<string> {
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## THE JUDGMENT — Answer Jury Question
 ${ENDGAME_PERSONALITY_HINTS[this.personality]}
 
@@ -1156,7 +1175,7 @@ Answer honestly and persuasively. This juror will vote for the winner — make y
 
 Keep it to 2-3 sentences. Respond ONLY with your answer.`;
 
-    return this.callLLM(prompt, 200);
+    return this.callLLM(prompt, 200, sys);
   }
 
   async getClosingArgument(ctx: PhaseContext): Promise<string> {
@@ -1165,7 +1184,8 @@ Keep it to 2-3 sentences. Respond ONLY with your answer.`;
       .map((p) => p.name)
       .join(", ");
 
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## THE JUDGMENT — Closing Argument
 ${ENDGAME_PERSONALITY_HINTS[this.personality]}
 
@@ -1177,7 +1197,7 @@ Eliminated players (potential reference points): ${eliminationSummary || "none"}
 
 Keep it to 2-3 sentences. Respond ONLY with your argument.`;
 
-    return this.callLLM(prompt, 250);
+    return this.callLLM(prompt, 250, sys);
   }
 
   async getJuryVote(ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID> {
@@ -1186,7 +1206,8 @@ Keep it to 2-3 sentences. Respond ONLY with your argument.`;
     const finalist1 = ctx.alivePlayers.find((p) => p.id === finalistId1) ?? { id: finalistId1, name: finalistId1 };
     const finalists = [finalist0, finalist1];
 
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## THE JUDGMENT — Jury Vote
 You are a JUROR. After hearing opening statements, Q&A, and closing arguments, cast your vote.
 
@@ -1203,7 +1224,7 @@ Consider their gameplay, their answers to the jury, and the full arc of the game
 Use the jury_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ winner: string }>(prompt, TOOL_JURY_VOTE, 80);
+      const result = await this.callTool<{ winner: string }>(prompt, TOOL_JURY_VOTE, 80, sys);
       const target = findByName(finalists, result.winner);
       const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
       if (!randomFinalist) throw new Error("No finalist available for jury vote");
@@ -1224,7 +1245,30 @@ Use the jury_vote tool to cast your vote.`;
   // Prompt construction
   // ---------------------------------------------------------------------------
 
-  private buildBasePrompt(ctx: PhaseContext): string {
+  /**
+   * Build the static system prompt (identity + personality + phase behavior).
+   * This content is identical across calls for the same agent in the same phase,
+   * enabling OpenAI's automatic prompt prefix caching (~90% input cost savings).
+   */
+  private buildSystemPrompt(phase: Phase, round: number): string {
+    const phaseGuidelines = getPhaseGuidelines(phase, round);
+    return `You are ${this.name}, a contestant on "Influence" — a social strategy game where real personalities clash.
+
+${this.backstory ? `## Who You Are\n${this.backstory}\n` : ""}
+## Your Personality & Game Approach
+${PERSONALITY_PROMPTS[this.personality]}
+
+${phaseGuidelines ? `## ${phaseGuidelines}\n` : ""}
+IMPORTANT: Only reference alive players in your messages, votes, and strategies. Eliminated players are gone and cannot be interacted with.
+`;
+  }
+
+  /**
+   * Build the dynamic user prompt (game state, memory, messages).
+   * This changes every call — placed after the system prompt so it doesn't
+   * break the cached prefix.
+   */
+  private buildUserPrompt(ctx: PhaseContext): string {
     const eliminated = this.allPlayers
       .filter((p) => !ctx.alivePlayers.some((ap) => ap.id === p.id))
       .map((p) => p.name);
@@ -1288,24 +1332,13 @@ Use the jury_vote tool to cast your vote.`;
       }
     }
 
-    const phaseGuidelines = getPhaseGuidelines(ctx.phase, ctx.round);
-
-    return `You are ${this.name}, a contestant on "Influence" — a social strategy game where real personalities clash.
-
-${this.backstory ? `## Who You Are\n${this.backstory}\n` : ""}
-## Your Personality & Game Approach
-${PERSONALITY_PROMPTS[this.personality]}
-
-${phaseGuidelines ? `## ${phaseGuidelines}\n` : ""}
-## Game State
+    return `## Game State
 - Round: ${ctx.round}
 - Phase: ${ctx.phase}
 - Alive players (ONLY these players are still in the game): ${ctx.alivePlayers.map((p) => p.name + (p.id === this.id ? " (YOU)" : "")).join(", ")}
 ${eliminated.length > 0 ? `- ELIMINATED (out of the game — do NOT address or strategize about them as if they are active): ${eliminated.join(", ")}` : ""}
 ${ctx.empoweredId ? `- Empowered player: ${ctx.alivePlayers.find((p) => p.id === ctx.empoweredId)?.name ?? "unknown"}` : ""}
 ${endgameInfo}
-
-IMPORTANT: Only reference alive players in your messages, votes, and strategies. Eliminated players are gone and cannot be interacted with.
 
 ## Your Memory
 - Known allies: ${allies}
@@ -1323,6 +1356,11 @@ ${roomSection}
 `;
   }
 
+  /** Legacy single-string prompt (system + user combined). Used by buildBasePrompt callers. */
+  private buildBasePrompt(ctx: PhaseContext): string {
+    return this.buildSystemPrompt(ctx.phase, ctx.round) + this.buildUserPrompt(ctx);
+  }
+
   // ---------------------------------------------------------------------------
   // LLM calls — free text and tool invocation
   // ---------------------------------------------------------------------------
@@ -1333,15 +1371,19 @@ ${roomSection}
   }
 
   /** Free-text LLM call for communication (introductions, lobby, rumor, etc.) */
-  private async callLLM(prompt: string, maxTokens = 200): Promise<string> {
+  private async callLLM(prompt: string, maxTokens = 200, systemPrompt?: string): Promise<string> {
     const reasoning = this.isReasoningModel();
     const maxAttempts = 2; // 1 initial + 1 retry
+
+    const messages: Array<{ role: "system" | "user"; content: string }> = [];
+    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
+    messages.push({ role: "user", content: prompt });
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const response = await this.openai.chat.completions.create({
           model: this.model,
-          messages: [{ role: "user", content: prompt }],
+          messages,
           ...(reasoning
             ? { max_completion_tokens: maxTokens }
             : { max_tokens: maxTokens, temperature: 0.7 }),
@@ -1352,6 +1394,7 @@ ${roomSection}
             this.name,
             response.usage.prompt_tokens,
             response.usage.completion_tokens,
+            response.usage.prompt_tokens_details?.cached_tokens ?? 0,
           );
         }
 
@@ -1384,15 +1427,20 @@ ${roomSection}
     prompt: string,
     tool: ChatCompletionTool,
     maxTokens = 200,
+    systemPrompt?: string,
   ): Promise<T> {
     const reasoning = this.isReasoningModel();
     const maxAttempts = 2; // 1 initial + 1 retry
+
+    const messages: Array<{ role: "system" | "user"; content: string }> = [];
+    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
+    messages.push({ role: "user", content: prompt });
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const response = await this.openai.chat.completions.create({
           model: this.model,
-          messages: [{ role: "user", content: prompt }],
+          messages,
           ...(reasoning
             ? { max_completion_tokens: maxTokens }
             : { max_tokens: maxTokens, temperature: 0.7 }),
@@ -1405,6 +1453,7 @@ ${roomSection}
             this.name,
             response.usage.prompt_tokens,
             response.usage.completion_tokens,
+            response.usage.prompt_tokens_details?.cached_tokens ?? 0,
           );
         }
 
@@ -1434,7 +1483,8 @@ ${roomSection}
   // ---------------------------------------------------------------------------
 
   async getStrategicReflection(ctx: PhaseContext): Promise<void> {
-    const prompt = this.buildBasePrompt(ctx) + `
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
 ## Strategic Reflection
 
 Based on everything you know so far, produce a strategic assessment.
@@ -1444,7 +1494,7 @@ Be specific — name players, cite events, reference conversations.`;
 
     try {
       const reflection = await this.callTool<StrategicReflection>(
-        prompt, TOOL_STRATEGIC_REFLECTION, 300,
+        prompt, TOOL_STRATEGIC_REFLECTION, 300, sys,
       );
       this.memory.lastReflection = reflection;
       this.persistMemory("reflection", null, JSON.stringify(reflection));
