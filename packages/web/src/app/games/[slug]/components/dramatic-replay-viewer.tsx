@@ -126,6 +126,29 @@ export function DramaticReplayViewer({
     return () => clearInterval(interval);
   }, [live, isPlaying]);
 
+  // Live mode: auto-advance to new scenes when they appear (INF-83).
+  // When scenes rebuild and there are more scenes than before, advance from
+  // the old last scene to the next one. This handles phase transitions in live
+  // mode where the viewer was waiting at the end of available content.
+  const prevTotalScenes = useRef(0);
+  useEffect(() => {
+    if (!live || !isPlaying) {
+      prevTotalScenes.current = totalScenes;
+      return;
+    }
+    if (totalScenes > prevTotalScenes.current && prevTotalScenes.current > 0) {
+      // New scenes arrived — if we were at the old last scene, advance
+      const wasAtEnd = sceneIndex >= prevTotalScenes.current - 1;
+      if (wasAtEnd) {
+        setShowPhaseEndingCue(false);
+        setSceneIndex(prevTotalScenes.current); // first new scene
+        setMessageIndex(0);
+        setMessagePhase("typing");
+      }
+    }
+    prevTotalScenes.current = totalScenes;
+  }, [live, isPlaying, totalScenes, sceneIndex]);
+
   // Resolve current speaker
   const currentPlayer = currentMessage?.fromPlayerId
     ? players.find((p) => p.id === currentMessage.fromPlayerId)
@@ -323,6 +346,12 @@ export function DramaticReplayViewer({
           : Math.max(CHAT_POST_MSG_BASE_MS, currentMessage.text.length * CHAT_POST_MSG_PER_CHAR_MS) / speed;
 
         if (isPaced && isLastInScene) setShowPhaseEndingCue(true);
+
+        // Live mode at end of available scenes: show indeterminate cue, wait for new data (INF-83)
+        if (live && isLastScene && isLastInScene) {
+          return; // No timer — live scene catch-up effect handles advancement
+        }
+
         const timer = setTimeout(() => {
           setShowPhaseEndingCue(false);
           if (!isLastInScene) {
@@ -345,6 +374,11 @@ export function DramaticReplayViewer({
         ? (INTER_SCENE_PAUSE_MS * dramaticMul) / speed
         : (Math.max(POST_REVEAL_BASE_MS, currentMessage.text.length * POST_REVEAL_PER_CHAR_MS) * dramaticMul) / speed;
 
+      // Live mode at end of available scenes: wait for new data (INF-83)
+      if (live && isLastScene && isLastInScene) {
+        return;
+      }
+
       const timer = setTimeout(() => {
         if (!isLastInScene) {
           setMessageIndex((i) => i + 1);
@@ -356,8 +390,6 @@ export function DramaticReplayViewer({
         } else if (!live) {
           setIsPlaying(false);
         }
-        // In live mode at the end: do nothing — wait for new messages
-        // to arrive. When scenes rebuild, this effect re-runs and advances.
       }, holdMs);
       return () => clearTimeout(timer);
     }
@@ -564,7 +596,10 @@ export function DramaticReplayViewer({
         />
       )}
       {showPhaseEndingCue && (
-        <PhaseEndingCue durationMs={PHASE_END_PAUSE_MS / speed} />
+        <PhaseEndingCue
+          durationMs={live && sceneIndex >= totalScenes - 1 ? 0 : PHASE_END_PAUSE_MS / speed}
+          label={live && sceneIndex >= totalScenes - 1 ? "Waiting for next phase" : "Phase complete"}
+        />
       )}
       {showHouseOverlay && scene.houseIntro && (
         <div className="fixed inset-0 z-40 bg-black/90 flex flex-col items-center justify-center animate-[fadeIn_0.3s_ease-out]">

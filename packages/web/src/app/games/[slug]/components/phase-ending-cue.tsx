@@ -24,7 +24,7 @@ export function PhaseEndingCue({
 
   return (
     <div
-      className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-2"
+      className="fixed bottom-24 md:bottom-28 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-2"
       style={{
         opacity: visible ? 1 : 0,
         transition: "opacity 400ms ease-in-out",
@@ -34,12 +34,21 @@ export function PhaseEndingCue({
         {label}
       </p>
       <div className="w-48 h-0.5 bg-white/10 rounded-full overflow-hidden">
-        <div
-          className="h-full bg-white/30 rounded-full"
-          style={{
-            animation: `phaseEndShrink ${durationMs}ms linear forwards`,
-          }}
-        />
+        {durationMs > 0 ? (
+          <div
+            className="h-full bg-white/30 rounded-full"
+            style={{
+              animation: `phaseEndShrink ${durationMs}ms linear forwards`,
+            }}
+          />
+        ) : (
+          <div
+            className="h-full w-1/3 bg-white/30 rounded-full"
+            style={{
+              animation: "phaseEndPulse 1.5s ease-in-out infinite",
+            }}
+          />
+        )}
       </div>
     </div>
   );
