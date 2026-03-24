@@ -32,8 +32,9 @@ import { ConnectionBadge, GameStateHUD } from "./game-info";
 import { PhaseTransitionOverlay } from "./phase-transition";
 import { EndgameEntryScreen } from "./endgame-entry";
 import { GroupChatFeed, JuryDMView } from "./chat-feeds";
-import { WhisperPhaseView } from "./whisper-phase";
-import { DiaryRoomGridView } from "./diary-room";
+import { WhisperRoomDM } from "./whisper-phase";
+import { buildDiaryRooms, DiaryRoomChat } from "./diary-room";
+import type { WhisperRoomStage } from "./types";
 import { VoteTallyOverlay, SpectacleMessageContent } from "./vote-display";
 import { buildReplayScenes } from "./spectacle-viewer";
 
@@ -149,8 +150,9 @@ export function DramaticReplayViewer({
 
   // Determine rendering mode for current scene
   const isChatFeedScene = !!scene && CHAT_FEED_PHASES.has(scene.phase);
-  const isWhisperScene = !!scene && scene.phase === "WHISPER";
+  const isWhisperScene = !!scene && scene.phase === "WHISPER" && !scene.isOverview;
   const isDiaryScene = !!scene && scene.phase === "DIARY_ROOM";
+  const isOverviewScene = !!scene && !!scene.isOverview;
   const isJuryScene = !!scene && scene.phase === "JURY_QUESTIONS";
   const isChatStyleScene = isChatFeedScene || isWhisperScene || isDiaryScene || isJuryScene;
 
@@ -163,30 +165,22 @@ export function DramaticReplayViewer({
     return scene.messages.slice(0, endIdx);
   }, [scene, isChatStyleScene, messageIndex, messagePhase]);
 
-  // For whisper scenes: progressive playback — show messages up to current index
-  const whisperRoundMessages = useMemo(() => {
-    if (!scene || scene.phase !== "WHISPER") return [];
+  // For per-room whisper scenes: build a WhisperRoomStage for single-room rendering
+  const whisperRoom = useMemo((): WhisperRoomStage | null => {
+    if (!scene || !scene.whisperRoom || !isWhisperScene) return null;
     const endIdx = messagePhase === "typing" ? messageIndex : messageIndex + 1;
-    return scene.messages.slice(0, endIdx);
-  }, [scene, messageIndex, messagePhase]);
+    return {
+      roomId: scene.whisperRoom.roomId,
+      playerIds: scene.whisperRoom.playerNames, // names used as IDs (engine convention)
+      playerNames: scene.whisperRoom.playerNames,
+      messages: scene.messages.slice(0, endIdx),
+    };
+  }, [scene, isWhisperScene, messageIndex, messagePhase]);
 
   // Rumor messages for current round (for vote reveal — show voter's rumor alongside vote)
   const rumorMessages = useMemo(() => {
     if (!scene) return [];
     return allVisibleMessages.filter(m => m.round === scene.round && m.phase === "RUMOR" && m.scope === "public");
-  }, [allVisibleMessages, scene]);
-
-  // For diary scenes: progressive playback — show messages up to current index
-  const diaryRoundMessages = useMemo(() => {
-    if (!scene || scene.phase !== "DIARY_ROOM") return [];
-    const endIdx = messagePhase === "typing" ? messageIndex : messageIndex + 1;
-    return scene.messages.slice(0, endIdx);
-  }, [scene, messageIndex, messagePhase]);
-
-  // For jury scenes: gather all jury messages
-  const juryMessages = useMemo(() => {
-    if (!scene || scene.phase !== "JURY_QUESTIONS") return [];
-    return allVisibleMessages.filter(m => m.phase === "JURY_QUESTIONS");
   }, [allVisibleMessages, scene]);
 
   // Track eliminated players from visible messages
@@ -209,6 +203,21 @@ export function DramaticReplayViewer({
       status: eliminatedIds.has(p.id) ? "eliminated" as const : "alive" as const,
     })),
   [players, eliminatedIds]);
+
+  // For per-player diary scenes: build a DiaryRoomData for single-player rendering
+  const diaryRoomData = useMemo(() => {
+    if (!scene || !isDiaryScene) return null;
+    const endIdx = messagePhase === "typing" ? messageIndex : messageIndex + 1;
+    const visibleMsgs = scene.messages.slice(0, endIdx);
+    const rooms = buildDiaryRooms(visibleMsgs, replayPlayers);
+    return rooms[0] ?? null;
+  }, [scene, isDiaryScene, messageIndex, messagePhase, replayPlayers]);
+
+  // For jury scenes: gather all jury messages
+  const juryMessages = useMemo(() => {
+    if (!scene || scene.phase !== "JURY_QUESTIONS") return [];
+    return allVisibleMessages.filter(m => m.phase === "JURY_QUESTIONS");
+  }, [allVisibleMessages, scene]);
 
   // Detect scene transitions
   const prevScene = sceneIndex > 0 ? scenes[sceneIndex - 1] : null;
@@ -653,21 +662,18 @@ export function DramaticReplayViewer({
             </div>
           )}
 
-          {/* --- Chat-style: Whisper Rooms DM Grid --- */}
-          {isWhisperScene && (
-            <WhisperPhaseView
-              phaseEntries={whisperRoundMessages}
+          {/* --- Chat-style: Whisper Room DM --- */}
+          {isWhisperScene && whisperRoom && (
+            <WhisperRoomDM
+              room={whisperRoom}
               players={replayPlayers}
-              phaseKey={`replay-R${scene.round}-WHISPER`}
-              isReplay
             />
           )}
 
-          {/* --- Chat-style: Diary Rooms DM Grid --- */}
-          {isDiaryScene && (
-            <DiaryRoomGridView
-              messages={diaryRoundMessages}
-              players={replayPlayers}
+          {/* --- Chat-style: Diary Room DM --- */}
+          {isDiaryScene && diaryRoomData && (
+            <DiaryRoomChat
+              room={diaryRoomData}
             />
           )}
 
