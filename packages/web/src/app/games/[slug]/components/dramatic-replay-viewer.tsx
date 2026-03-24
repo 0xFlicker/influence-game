@@ -65,6 +65,8 @@ export function DramaticReplayViewer({
   const [controlsVisible, setControlsVisible] = useState(true);
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const liveInitializedRef = useRef(false);
+  // Scroll ref for stacked diary/whisper content (INF-93)
+  const stackedScrollRef = useRef<HTMLDivElement>(null);
 
   const scene = scenes[sceneIndex];
   const totalScenes = scenes.length;
@@ -246,6 +248,48 @@ export function DramaticReplayViewer({
     return rooms[0] ?? null;
   }, [scene, isDiaryScene, messageIndex, messagePhase, replayPlayers]);
 
+  // Stacked diary rooms: completed diary scenes from the same round (INF-93)
+  const previousDiaryRooms = useMemo(() => {
+    if (!scene || !isDiaryScene) return [];
+    const rooms = [];
+    for (let i = 0; i < sceneIndex; i++) {
+      const s = scenes[i]!;
+      if (s.phase === "DIARY_ROOM" && s.round === scene.round && s.diaryPlayer) {
+        const built = buildDiaryRooms(s.messages, replayPlayers);
+        if (built[0]) rooms.push(built[0]);
+      }
+    }
+    return rooms;
+  }, [scene, isDiaryScene, sceneIndex, scenes, replayPlayers]);
+
+  // Stacked whisper rooms: completed whisper scenes from the same round (INF-93)
+  const previousWhisperRooms = useMemo((): WhisperRoomStage[] => {
+    if (!scene || !isWhisperScene) return [];
+    const rooms: WhisperRoomStage[] = [];
+    for (let i = 0; i < sceneIndex; i++) {
+      const s = scenes[i]!;
+      if (s.phase === "WHISPER" && s.round === scene.round && s.whisperRoom) {
+        rooms.push({
+          roomId: s.whisperRoom.roomId,
+          playerIds: s.whisperRoom.playerNames,
+          playerNames: s.whisperRoom.playerNames,
+          messages: s.messages,
+        });
+      }
+    }
+    return rooms;
+  }, [scene, isWhisperScene, sceneIndex, scenes]);
+
+  // Auto-scroll stacked content to bottom when new rooms/messages arrive (INF-93)
+  const hasPreviousRooms = previousDiaryRooms.length > 0 || previousWhisperRooms.length > 0;
+  useEffect(() => {
+    if (hasPreviousRooms) {
+      requestAnimationFrame(() => {
+        stackedScrollRef.current?.scrollTo({ top: stackedScrollRef.current.scrollHeight, behavior: "smooth" });
+      });
+    }
+  }, [hasPreviousRooms, sceneIndex, messageIndex]);
+
   // For jury scenes: gather all jury messages
   const juryMessages = useMemo(() => {
     if (!scene || scene.phase !== "JURY_QUESTIONS") return [];
@@ -396,6 +440,10 @@ export function DramaticReplayViewer({
     // "revealing" phase transitions via Typewriter onComplete
   }, [isPlaying, messagePhase, messageIndex, sceneIndex, scene, totalScenes, speed, currentMessage, isSystemMessage, isChatStyleScene, isWhisperScene, isDiaryScene, live, activePhaseTransition]);
 
+  // Debounce scene transitions to prevent rapid clicks from skipping content
+  const lastSceneAdvanceRef = useRef(0);
+  const SCENE_ADVANCE_COOLDOWN_MS = 400;
+
   // Advance function — for click/tap and keyboard
   const advanceMessage = useCallback(() => {
     if (!scene) return;
@@ -410,6 +458,10 @@ export function DramaticReplayViewer({
       setMessageIndex((i) => i + 1);
       setMessagePhase("typing");
     } else if (sceneIndex < totalScenes - 1) {
+      // Debounce scene transitions to prevent rapid clicks skipping entire phases
+      const now = Date.now();
+      if (now - lastSceneAdvanceRef.current < SCENE_ADVANCE_COOLDOWN_MS) return;
+      lastSceneAdvanceRef.current = now;
       setSceneIndex((i) => i + 1);
       setMessageIndex(0);
       setMessagePhase("typing");
@@ -686,7 +738,10 @@ export function DramaticReplayViewer({
       </div>
 
       {/* Center — phase-aware content */}
-      <div className={`flex-1 flex ${isChatStyleScene ? ((isDiaryScene || isWhisperScene) ? "items-start" : "items-end") : "items-center"} justify-center px-4 md:px-8 py-4 md:py-8 overflow-y-auto`}>
+      <div
+        ref={(isDiaryScene || isWhisperScene) ? stackedScrollRef : undefined}
+        className={`flex-1 flex ${isChatStyleScene ? ((isDiaryScene || isWhisperScene) ? "items-start" : "items-end") : "items-center"} justify-center px-4 md:px-8 py-4 md:py-8 overflow-y-auto`}
+      >
         <div className={`w-full ${(isDiaryScene || isWhisperScene || isOverviewScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
           {/* --- Chat-style: Group Chat Feed --- */}
           {isChatFeedScene && (
@@ -707,19 +762,32 @@ export function DramaticReplayViewer({
             </div>
           )}
 
-          {/* --- Chat-style: Whisper Room DM --- */}
-          {isWhisperScene && whisperRoom && (
-            <WhisperRoomDM
-              room={whisperRoom}
-              players={replayPlayers}
-            />
+          {/* --- Chat-style: Whisper Room DM (stacked) --- */}
+          {isWhisperScene && (
+            <div className="flex flex-col gap-4">
+              {previousWhisperRooms.map((prevRoom) => (
+                <div key={`whisper-prev-${prevRoom.roomId}`} className="opacity-60">
+                  <WhisperRoomDM room={prevRoom} players={replayPlayers} />
+                </div>
+              ))}
+              {whisperRoom && (
+                <WhisperRoomDM room={whisperRoom} players={replayPlayers} />
+              )}
+            </div>
           )}
 
-          {/* --- Chat-style: Diary Room DM --- */}
-          {isDiaryScene && diaryRoomData && (
-            <DiaryRoomChat
-              room={diaryRoomData}
-            />
+          {/* --- Chat-style: Diary Room DM (stacked) --- */}
+          {isDiaryScene && (
+            <div className="flex flex-col gap-4">
+              {previousDiaryRooms.map((prevRoom) => (
+                <div key={`diary-prev-${prevRoom.playerName}`} className="opacity-60">
+                  <DiaryRoomChat room={prevRoom} />
+                </div>
+              ))}
+              {diaryRoomData && (
+                <DiaryRoomChat room={diaryRoomData} />
+              )}
+            </div>
           )}
 
           {/* --- Chat-style: Jury Questions DM --- */}
