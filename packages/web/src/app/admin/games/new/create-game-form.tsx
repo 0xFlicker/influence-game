@@ -194,9 +194,9 @@ export function CreateGameForm() {
           label="Select model"
           value={form.modelTier}
           options={[
-            { value: "budget", label: "Budget", sublabel: "gpt-4o-mini" },
-            { value: "standard", label: "Standard", sublabel: "gpt-4o" },
-            { value: "premium", label: "Premium", sublabel: "o1-mini" },
+            { value: "budget", label: "Budget", sublabel: "gpt-5.1-nano" },
+            { value: "standard", label: "Standard", sublabel: "gpt-5.1-mini" },
+            { value: "premium", label: "Premium", sublabel: "gpt-5.4-mini" },
           ]}
           onChange={(v) => set("modelTier", v)}
         />
