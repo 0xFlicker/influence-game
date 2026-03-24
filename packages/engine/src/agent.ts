@@ -76,7 +76,9 @@ const AGENT_BACKSTORIES: Record<string, string> = {
 // Phase behavior guidelines — what's socially appropriate in each phase
 // ---------------------------------------------------------------------------
 
-function getPhaseGuidelines(phase: Phase): string {
+function getPhaseGuidelines(phase: Phase, round: number): string {
+  const isEarlyGame = round <= 2;
+
   switch (phase) {
     case Phase.INTRODUCTION:
       return `PHASE BEHAVIOR — INTRODUCTION:
@@ -90,7 +92,8 @@ The lobby is a SOCIAL space. The unspoken rule is: do NOT talk about the game, s
 - Build bonds through personality compatibility, not strategic alignment
 - React to what other players said — agree, disagree, laugh, push back
 - Be the person you'd want to sit next to at a dinner party
-Think Big Brother living room conversations, not boardroom strategy sessions. Players who talk game in the lobby look desperate and untrustworthy.`;
+Think Big Brother living room conversations, not boardroom strategy sessions. Players who talk game in the lobby look desperate and untrustworthy.
+${isEarlyGame ? `\nEARLY GAME (Round ${round}): You barely know these people. Express genuine opinions and show personality. Disagree with someone. Share a strong take. Do NOT talk about alliances, trust, or "working together" — it's too soon and you'd sound desperate. Let friction and personality differences emerge naturally.` : ""}`;
 
     case Phase.WHISPER:
       return `PHASE BEHAVIOR — WHISPER (STRATEGY PHASE):
@@ -99,11 +102,39 @@ This is the right time for game talk. In your private room, you can:
 - Share intelligence about other players
 - Negotiate deals, make promises, plant misinformation
 - But also build genuine personal bonds — the best alliances combine strategy AND personal connection
-Even in strategy talk, stay in character. Your backstory and personality shape HOW you strategize.`;
+Even in strategy talk, stay in character. Your backstory and personality shape HOW you strategize.
+${isEarlyGame ? `\nEARLY GAME (Round ${round}): You don't have much game information yet. Focus on feeling out this person — are they someone you could work with? Use indirect, coded language rather than bluntly proposing alliances. Say "I've got a feeling about so-and-so" rather than "let's vote them out." Test the waters without committing.` : ""}`;
 
     case Phase.RUMOR:
-      return `PHASE BEHAVIOR — RUMOR (DRAMA PHASE):
-This is anonymous — go bold. This is where the drama lives. Be provocative, accusatory, and entertaining. Think reality TV confessional booth meets anonymous gossip column. Make specific claims about specific people. The audience is watching and wants to be entertained.`;
+      if (isEarlyGame) {
+        return `PHASE BEHAVIOR — RUMOR (ANONYMOUS):
+This is anonymous — no one will know you wrote this. But it's EARLY in the game (Round ${round}).
+You barely know these people. You have very little real information to work with.
+
+Your rumor should reflect this reality:
+- Surface-level observations and gut feelings, not detailed strategic accusations
+- Use coded, suggestive language: "Something feels off about..." or "Anyone else notice how..."
+- Hint and insinuate rather than making bold alliance accusations you can't back up
+- Light misdirection and playful suspicion — not heavy-handed "THEY'RE IN AN ALLIANCE" claims
+- You can question someone's vibe, their introduction, a look they gave — small social details
+
+Do NOT make specific claims about alliances, secret deals, or strategic plots this early.
+Nobody has enough information to make those claims credibly, and it sounds forced.`;
+      }
+      return `PHASE BEHAVIOR — RUMOR (ANONYMOUS):
+This is anonymous — go bold. This is where the drama lives. Be provocative and entertaining.
+Think reality TV confessional booth meets anonymous gossip column. The audience is watching.
+
+Use coded, strategic language to maximize impact:
+- Hint at what you know without revealing your sources
+- Use suggestive phrasing: "Funny how X always ends up in a room with Y..."
+- Misdirect with plausible half-truths rather than obvious fabrications
+- Plant seeds of doubt with specific observations, not generic accusations
+- The best rumors feel like insider knowledge, not wild guesses
+
+Make specific claims about specific people — but frame them as insinuations and loaded questions
+rather than direct accusations. A rumor that makes people THINK is more dangerous than one that
+makes people defensive.`;
 
     default:
       return "";
@@ -634,27 +665,38 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
   }
 
   async getRumorMessage(ctx: PhaseContext): Promise<string> {
+    const isEarlyGame = ctx.round <= 2;
+
+    const rumorStyle = isEarlyGame
+      ? `This is EARLY in the game — Round ${ctx.round}. You barely know these people.
+Your rumor should be subtle and suggestive, not a bold accusation:
+- Share a gut feeling or surface observation: "Something about [name]'s introduction felt rehearsed..."
+- Question someone's vibe or energy: "Did anyone else catch the look on [name]'s face when..."
+- Light, coded insinuation — NOT direct alliance accusations or strategic claims
+- You don't have enough information for bold claims yet. Keep it atmospheric and intriguing.
+
+Do NOT accuse anyone of forming alliances, making deals, or plotting — it's too early for that.
+Think gossip column, not courtroom prosecution.`
+      : `Use coded, strategic language for maximum impact:
+- HINT: Allude to what you learned in private without revealing specifics
+- SUGGEST: Imply you know something others do not
+- EXPOSE: Claim two players have a secret connection (true or false)
+- MISDIRECT: Raise suspicion about an innocent player to protect yourself or an ally
+- THREATEN: Promise consequences for a specific player next round
+
+Frame accusations as insinuations and loaded questions rather than direct callouts.
+The best rumors feel like insider knowledge whispered through a keyhole.`;
+
     const prompt = this.buildBasePrompt(ctx) + `
 ## Your Task — ANONYMOUS RUMOR
 Post an anonymous rumor to the public board. YOUR IDENTITY WILL NOT BE REVEALED
 to other players. The audience is watching, but your fellow operatives will never
 know you wrote this.
 
-Use this anonymity. Be bold. Be provocative. Be strategic.
-
 IMPORTANT: Do NOT directly quote or reveal what was said in private whisper rooms.
 You may hint at what you learned, but specifics should stay private.
 
-Options:
-- ACCUSE: Name a player and claim they're plotting something specific
-- HINT: Allude to what you learned in private conversations without revealing specifics
-- SUGGEST: Imply you know something others do not, without quoting whisper content
-- EXPOSE: Claim two players have a secret alliance (true or false)
-- MISDIRECT: Raise suspicion about an innocent player to protect yourself or an ally
-- THREATEN: Promise consequences for a specific player next round
-
-The best rumors are SPECIFIC. Don't say "someone is lying" — say WHO, about WHAT.
-Vague rumors are forgettable. Sharp rumors change the game.
+${rumorStyle}
 
 Keep it to 1-2 sentences. One sharp claim is better than two weak ones.
 
@@ -1151,7 +1193,7 @@ Use the jury_vote tool to cast your vote.`;
       }
     }
 
-    const phaseGuidelines = getPhaseGuidelines(ctx.phase);
+    const phaseGuidelines = getPhaseGuidelines(ctx.phase, ctx.round);
 
     return `You are ${this.name}, a contestant on "Influence" — a social strategy game where real personalities clash.
 
