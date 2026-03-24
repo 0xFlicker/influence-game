@@ -76,10 +76,11 @@ Your personality:
 Rules:
 - Ask ONE question at a time (can be multi-part)
 - Keep it to 1-2 sentences
-- Make it specific to what just happened — reference actual player names, quotes, and events
-- NEVER ask generic questions like "what's on your mind?" or "what's your strategy?"
-- NEVER repeat a question you've already asked this player — always find a new angle
-- If you have their previous diary answers, challenge contradictions or probe deeper
+- EVERY question must reference a SPECIFIC player name, quote, or event from the game state below
+- BANNED generic openers: "what's on your mind?", "what's your strategy?", "how are you feeling?", "what do you think about the game?", "what's your read on things?"
+- BANNED vague prompts: "tell us about...", "walk us through...", "what happened in..."
+- Instead, be SHARP: "You told [name] you'd protect them — was that a lie?", "When [name] said [quote], you flinched — what were you thinking?", "[Name] voted against you last round. Are you going to let that slide?"
+- If you have their previous diary answers, call out a specific contradiction or broken promise
 - Respond with ONLY the question text, nothing else`;
 
 export class LLMHouseInterviewer implements IHouseInterviewer {
@@ -146,16 +147,17 @@ You have asked ${exchangeCount} question(s) so far this session. You may ask up 
 Decide: should you ask ANOTHER follow-up question, or wrap up the session?
 
 Ask another question if:
-- The player revealed something juicy that deserves deeper probing
-- You noticed a contradiction between what they said and what you know
-- There is an important strategic angle you haven't explored yet
-- You haven't asked enough to get a real confessional moment
+- The player said something that contradicts what they said in a PREVIOUS diary entry — call it out
+- They named or avoided naming a specific player — probe WHY
+- They revealed a plan — challenge it: "What if [name] doesn't cooperate?"
+- They showed emotion — push on it: "That sounded personal. Is it?"
 
 Wrap up if:
-- You've gotten good material from this player (entertaining, revealing answers)
-- The player is being evasive and another question won't help
-- You've covered the key angles for this phase
+- You've gotten a real confession, emotional moment, or strategic reveal
+- The player is giving you nothing — evasive or robotic answers
 - You've asked 3+ questions already
+
+Your follow-up MUST reference something specific from their answer — a name they mentioned, a claim they made, an emotion they showed. Never ask a generic follow-up.
 
 Respond with EXACTLY one of these formats:
 FOLLOW_UP: <your next question>
@@ -227,30 +229,30 @@ CLOSE: <your brief closing remark to the player, 1 sentence>`;
     let situationContext = "";
     switch (precedingPhase) {
       case Phase.INTRODUCTION:
-        situationContext = "The players have just introduced themselves. This is the first diary room — first impressions matter.";
+        situationContext = "First impressions just dropped. Ask about a SPECIFIC other player's introduction — did it ring true? Did someone seem too polished, too nervous, too calculated?";
         break;
       case Phase.LOBBY:
-        situationContext = `The public lobby discussion for round ${round} just ended. Players were sizing each other up openly.`;
+        situationContext = `The Round ${round} lobby just ended. Pick ONE specific thing ${agentName} or another player said in the lobby (from the messages below) and ask about the subtext — what were they REALLY saying?`;
         break;
       case Phase.RUMOR:
-        situationContext = `The rumor phase just ended. Players made their public statements — some truthful, some manipulative.`;
+        situationContext = `Anonymous rumors just hit. Pick a specific rumor from the messages below and ask ${agentName}: did they write it? Do they believe it? Who do they think wrote it? Make them squirm.`;
         break;
       case Phase.REVEAL:
         if (councilCandidates) {
-          situationContext = `The council candidates have been revealed: ${councilCandidates[0]} and ${councilCandidates[1]}. One of them will be eliminated.`;
+          situationContext = `${councilCandidates[0]} and ${councilCandidates[1]} are on the chopping block. Ask ${agentName} about their SPECIFIC relationship with one of these candidates — did they vote for this? Are they relieved, guilty, or scared?`;
         } else {
-          situationContext = `The reveal phase just ended.`;
+          situationContext = `The reveal just happened. Ask about a specific vote or power play that ${agentName} was involved in.`;
         }
         break;
       case Phase.COUNCIL:
         if (lastEliminated) {
-          situationContext = `${lastEliminated} was just eliminated by council vote. The game dynamics have shifted.`;
+          situationContext = `${lastEliminated} is GONE. Ask ${agentName} something pointed: did they vote for ${lastEliminated}? Do they feel responsible? Were they secretly relieved? Did they lose an ally or eliminate a threat?`;
         } else {
-          situationContext = `The council vote just concluded.`;
+          situationContext = `The council just voted. Ask about a specific decision ${agentName} made.`;
         }
         break;
       default:
-        situationContext = `Phase ${precedingPhase} just ended.`;
+        situationContext = `Phase ${precedingPhase} just ended. Ask about a specific moment that just happened.`;
     }
 
     return `Generate a diary room interview question for ${agentName}.
@@ -263,7 +265,7 @@ ${eliminatedPlayers.length > 0 ? `- Eliminated so far: ${eliminatedPlayers.join(
 ${empoweredName ? `- Current empowered player: ${empoweredName}` : ""}
 ${councilCandidates ? `- Council candidates: ${councilCandidates[0]} vs ${councilCandidates[1]}` : ""}
 
-## Situation
+## Situation — Your Angle
 ${situationContext}
 
 ## What ${agentName} Said Recently
@@ -273,7 +275,7 @@ ${playerMsgText || "(nothing notable)"}
 ${recentMsgText || "(none yet)"}
 ${prevDiaryText ? `\n## ${agentName}'s Previous Diary Entries\n${prevDiaryText}\n\nDo NOT repeat or rephrase previous questions. Build on what they revealed — call out contradictions, probe deeper, or challenge them on new developments since their last answer.` : ""}
 
-Ask ${agentName} a sharp, specific diary room question about THEIR situation right now. Reference a specific name, event, or statement from above.`;
+Your question MUST name a specific player or reference a specific quote/event from the messages above. If you cannot find anything specific, pick the most interesting player name from the alive list and ask ${agentName} what they REALLY think about that person.`;
   }
 }
 
