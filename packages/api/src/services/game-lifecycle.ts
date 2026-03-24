@@ -152,7 +152,7 @@ export async function startGame(
     const personality = resolvePersonality(
       persona.personaKey ?? persona.personality,
     );
-    const model = agentCfg.model ?? "gpt-4o-mini";
+    const model = agentCfg.model ?? "gpt-5-nano";
 
     const memoryStore = new PgMemoryStore(db);
     const agent = new InfluenceAgent(
@@ -254,7 +254,7 @@ async function runGameAsync(
 
     // Compute token usage
     const usage = tokenTracker.getTotalUsage();
-    const model = (gameConfig.modelTier === "premium" ? "gpt-4o" : "gpt-4o-mini") as string;
+    const model = (gameConfig.modelTier === "premium" ? "gpt-5.4-mini" : gameConfig.modelTier === "standard" ? "gpt-5-mini" : "gpt-5-nano") as string;
     const cost = estimateCost(usage, model);
 
     // Write game results

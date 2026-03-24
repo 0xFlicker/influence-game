@@ -88,7 +88,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   private readonly model: string;
   private tokenTracker: TokenTracker | null = null;
 
-  constructor(openaiClient: OpenAI, model = "gpt-4o-mini") {
+  constructor(openaiClient: OpenAI, model = "gpt-5-nano") {
     this.openai = openaiClient;
     this.model = model;
   }

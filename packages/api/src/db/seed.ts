@@ -135,7 +135,7 @@ for (let i = 0; i < 6; i++) {
       userId: playerUsers[i]!,
       persona: JSON.stringify(personas[i]),
       agentConfig: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "gpt-5-nano",
         temperature: 0.9,
       }),
     });
@@ -244,7 +244,7 @@ for (let i = 0; i < 2; i++) {
       userId: playerUsers[i]!,
       persona: JSON.stringify(personas[i]),
       agentConfig: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "gpt-5-nano",
         temperature: 0.9,
       }),
     });

@@ -99,7 +99,7 @@ Respond with JSON only:
 
     try {
       const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-5-nano",
         max_tokens: 400,
         temperature: 0.9,
         messages: [

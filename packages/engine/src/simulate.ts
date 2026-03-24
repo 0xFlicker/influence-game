@@ -38,7 +38,7 @@ interface SimArgs {
 
 function parseArgs(): SimArgs {
   const argv = process.argv.slice(2);
-  const args: SimArgs = { games: 3, players: 6, personas: null, model: "gpt-4o-mini" };
+  const args: SimArgs = { games: 3, players: 6, personas: null, model: "gpt-5-nano" };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];

@@ -170,7 +170,7 @@ describe("Database Schema", () => {
 
       const playerId = randomUUID();
       const persona = { name: "Atlas", personality: "Strategic calculator" };
-      const agentConfig = { model: "gpt-4o-mini", temperature: 0.9 };
+      const agentConfig = { model: "gpt-5-nano", temperature: 0.9 };
 
       await db.insert(schema.gamePlayers)
         .values({
@@ -202,7 +202,7 @@ describe("Database Schema", () => {
             id: randomUUID(),
             gameId,
             persona: JSON.stringify({ name: `Player${i}` }),
-            agentConfig: JSON.stringify({ model: "gpt-4o-mini" }),
+            agentConfig: JSON.stringify({ model: "gpt-5-nano" }),
           });
       }
 
@@ -428,14 +428,14 @@ describe("Database Schema", () => {
             gameId,
             userId: userId1,
             persona: JSON.stringify({ name: "Atlas" }),
-            agentConfig: JSON.stringify({ model: "gpt-4o-mini" }),
+            agentConfig: JSON.stringify({ model: "gpt-5-nano" }),
           },
           {
             id: p2,
             gameId,
             userId: userId2,
             persona: JSON.stringify({ name: "Vera" }),
-            agentConfig: JSON.stringify({ model: "gpt-4o-mini" }),
+            agentConfig: JSON.stringify({ model: "gpt-5-nano" }),
           },
         ]);
 

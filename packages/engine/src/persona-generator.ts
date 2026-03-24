@@ -89,7 +89,7 @@ export async function generatePersona(
   openai: OpenAI,
   name: string,
   archetype: Personality,
-  model = "gpt-4o-mini",
+  model = "gpt-5-nano",
 ): Promise<GeneratedPersona> {
   try {
     const response = await openai.chat.completions.create({

@@ -374,10 +374,10 @@ export function createGameRoutes(db: DrizzleDB) {
     const gameConfig = JSON.parse(game.config);
     const agentModel =
       gameConfig.modelTier === "premium"
-        ? "gpt-4o"
+        ? "gpt-5.4-mini"
         : gameConfig.modelTier === "standard"
-          ? "gpt-4o"
-          : "gpt-4o-mini";
+          ? "gpt-5-mini"
+          : "gpt-5-nano";
 
     const playerId = randomUUID();
     const persona = {
@@ -450,10 +450,10 @@ export function createGameRoutes(db: DrizzleDB) {
     const config = JSON.parse(game.config);
     const agentModel =
       config.modelTier === "premium"
-        ? "gpt-4o"
+        ? "gpt-5.4-mini"
         : config.modelTier === "standard"
-          ? "gpt-4o"
-          : "gpt-4o-mini";
+          ? "gpt-5-mini"
+          : "gpt-5-nano";
 
     // Step 1: Create placeholder players immediately (no LLM needed)
     const addedPlayers: Array<{ id: string; name: string; archetype: string }> = [];
@@ -520,7 +520,7 @@ export function createGameRoutes(db: DrizzleDB) {
 
         for (const player of addedPlayers) {
           try {
-            const generated = await generatePersona(openai, player.name, player.archetype as Personality, "gpt-4o-mini");
+            const generated = await generatePersona(openai, player.name, player.archetype as Personality, "gpt-5-nano");
 
             const existing = (await db
               .select()

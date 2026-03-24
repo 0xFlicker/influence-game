@@ -290,7 +290,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       if (!profile) continue;
 
       const playerId = randomUUID();
-      const agentModel = "gpt-4o-mini"; // budget tier
+      const agentModel = "gpt-5-nano"; // budget tier
       const persona = {
         name: profile.name,
         personality: profile.personality,
@@ -341,7 +341,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
             gameId,
             userId: null,
             persona: JSON.stringify(persona),
-            agentConfig: JSON.stringify({ model: "gpt-4o-mini", temperature: 0.9 }),
+            agentConfig: JSON.stringify({ model: "gpt-5-nano", temperature: 0.9 }),
           });
       }
     }

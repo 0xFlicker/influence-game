@@ -41,6 +41,9 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "gpt-4.1-nano": { inputPer1M: 0.10, outputPer1M: 0.40 },
   "gpt-4.1-mini": { inputPer1M: 0.40, outputPer1M: 1.60 },
   "gpt-4.1": { inputPer1M: 2.00, outputPer1M: 8.00 },
+  "gpt-5-nano": { inputPer1M: 0.05, outputPer1M: 0.40 },
+  "gpt-5-mini": { inputPer1M: 0.25, outputPer1M: 2.00 },
+  "gpt-5.4-mini": { inputPer1M: 0.75, outputPer1M: 4.50 },
 };
 
 // ---------------------------------------------------------------------------
@@ -51,7 +54,7 @@ export function estimateCost(usage: TokenUsage, pricing: ModelPricing): CostEsti
 export function estimateCost(usage: TokenUsage, model: string): CostEstimate;
 export function estimateCost(usage: TokenUsage, pricingOrModel: ModelPricing | string): CostEstimate {
   const pricing = typeof pricingOrModel === "string"
-    ? MODEL_PRICING[pricingOrModel] ?? MODEL_PRICING["gpt-4o-mini"]!
+    ? MODEL_PRICING[pricingOrModel] ?? MODEL_PRICING["gpt-5-nano"]!
     : pricingOrModel;
   const model = typeof pricingOrModel === "string" ? pricingOrModel : "custom";
 

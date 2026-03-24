@@ -494,7 +494,7 @@ export class InfluenceAgent implements IAgent {
     name: string,
     personality: Personality,
     openaiClient: OpenAI,
-    model = "gpt-4o-mini",
+    model = "gpt-5-nano",
     backstory?: string,
     memoryStore?: MemoryStore,
   ) {
@@ -1455,7 +1455,7 @@ Be specific — name players, cite events, reference conversations.`;
 
 export function createAgentCast(
   openaiClient: OpenAI,
-  model = "gpt-4o-mini",
+  model = "gpt-5-nano",
   memoryStore?: MemoryStore,
 ): InfluenceAgent[] {
   const cast: Array<{ name: string; personality: Personality }> = [

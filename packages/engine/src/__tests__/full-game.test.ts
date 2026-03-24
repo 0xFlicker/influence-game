@@ -2,7 +2,7 @@
  * Influence Game - Full Game Integration Test
  *
  * Runs a complete game with 4-6 LLM-driven AI agents.
- * Uses gpt-4o-mini via OPENAI_API_KEY (inject with `doppler run -- bun test`).
+ * Uses gpt-5-nano via OPENAI_API_KEY (inject with `doppler run -- bun test`).
  *
  * Validates:
  * - Full phase cycle (Introduction → Council → elimination)
