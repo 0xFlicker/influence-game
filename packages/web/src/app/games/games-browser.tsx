@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { listGames, type GameSummary, type GameStatus, type ModelTier, type TrackType } from "@/lib/api";
+import { usePermissions } from "@/hooks/use-permissions";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -65,9 +66,10 @@ function StatusBadge({ status }: { status: GameStatus }) {
 interface GameCardProps {
   game: GameSummary;
   onJoin?: (game: GameSummary) => void;
+  isAdmin?: boolean;
 }
 
-function GameCard({ game, onJoin }: GameCardProps) {
+function GameCard({ game, onJoin, isAdmin }: GameCardProps) {
   const router = useRouter();
   const isJoinable = game.status === "waiting";
   const isLive = game.status === "in_progress";
@@ -133,6 +135,9 @@ function GameCard({ game, onJoin }: GameCardProps) {
               />
             </div>
           )}
+          {isLive && !isAdmin && (
+            <p className="text-xs text-white/30 mt-2">Replay available when game finishes</p>
+          )}
         </div>
 
         {/* Actions */}
@@ -175,6 +180,7 @@ interface GamesBrowserProps {
 }
 
 export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
+  const { isAdmin } = usePermissions();
   const [filters, setFilters] = useState<FiltersState>({ status: "all", tier: "all", track: "all" });
   const [games, setGames] = useState<GameSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -315,7 +321,7 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
       ) : (
         <div className="space-y-3">
           {filtered.map((g) => (
-            <GameCard key={g.id} game={g} onJoin={onJoin} />
+            <GameCard key={g.id} game={g} onJoin={onJoin} isAdmin={isAdmin} />
           ))}
         </div>
       )}

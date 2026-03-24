@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { useRouter } from "next/navigation";
 import { getGame, getGameTranscript, getAuthToken, type GameDetail, type GamePlayer, type GameSummary, type TranscriptEntry, type WsGameEvent, type PhaseKey } from "@/lib/api";
+import { usePermissions } from "@/hooks/use-permissions";
 import { audioCue } from "@/lib/audio-cues";
 import { JoinGameModal } from "@/app/dashboard/join-game-modal";
 
@@ -34,6 +35,7 @@ import { DramaticReplayViewer } from "./components/dramatic-replay-viewer";
 
 export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameViewerProps) {
   const { authenticated, login } = usePrivy();
+  const { isAdmin, loading: permLoading } = usePermissions();
   const router = useRouter();
   const [joinModalOpen, setJoinModalOpen] = useState(false);
   const [joinedSuccess, setJoinedSuccess] = useState(false);
@@ -510,6 +512,27 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
     return (
       <div className="influence-glass rounded-panel p-12 text-center text-white/20 text-sm">
         Loading game…
+      </div>
+    );
+  }
+
+  // Gate live match viewing to admin-only (INF-92).
+  // Non-admin users see a "game in progress" notice instead of the live feed.
+  if (game.status === "in_progress" && !permLoading && !isAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center px-4">
+        <div className="text-4xl">&#x1f3ac;</div>
+        <h2 className="text-xl font-semibold text-white">Game in progress</h2>
+        <p className="text-white/50 text-sm max-w-md">
+          This match is currently being played. Live viewing is available to admins only.
+          Check back once the game is finished to watch the full replay.
+        </p>
+        <button
+          onClick={() => router.push("/games")}
+          className="mt-2 text-sm px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/70 transition-colors"
+        >
+          Browse games
+        </button>
       </div>
     );
   }
