@@ -100,7 +100,7 @@ Respond with JSON only:
     try {
       const response = await openai.chat.completions.create({
         model: "gpt-5-nano",
-        max_completion_tokens: 1200,
+        max_completion_tokens: 5200,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userParts.join("\n\n") },
