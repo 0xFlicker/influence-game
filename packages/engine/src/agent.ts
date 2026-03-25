@@ -1403,7 +1403,7 @@ ${endgameInfo}
 - Known threats: ${threats}
 ${memoryNotes ? `- Notes:\n${memoryNotes}` : ""}
 ${this.memory.roundHistory.length > 0 ? `## Your Vote History\n${this.memory.roundHistory.map((r) => `  R${r.round}: empower=${r.myVotes.empower}, expose=${r.myVotes.expose}${r.empowered ? `, empowered=${r.empowered}` : ""}${r.eliminated ? `, eliminated=${r.eliminated}` : ""}`).join("\n")}` : ""}
-${this.memory.lastReflection ? `## Strategic Assessment\n- Certainties: ${this.memory.lastReflection.certainties.join("; ") || "none"}\n- Suspicions: ${this.memory.lastReflection.suspicions.join("; ") || "none"}\n- Allies: ${this.memory.lastReflection.allies.join("; ") || "none"}\n- Threats: ${this.memory.lastReflection.threats.join("; ") || "none"}\n- Plan: ${this.memory.lastReflection.plan}` : ""}
+${this.memory.lastReflection ? `## Strategic Assessment\n- Certainties: ${(this.memory.lastReflection.certainties ?? []).join("; ") || "none"}\n- Suspicions: ${(this.memory.lastReflection.suspicions ?? []).join("; ") || "none"}\n- Allies: ${(this.memory.lastReflection.allies ?? []).join("; ") || "none"}\n- Threats: ${(this.memory.lastReflection.threats ?? []).join("; ") || "none"}\n- Plan: ${this.memory.lastReflection.plan ?? "none"}` : ""}
 ## Recent Public Messages
 ${recentMessages || "  (none yet)"}
 ${anonymousSection}
@@ -1589,11 +1589,11 @@ Be specific — name players, cite events, reference conversations.`;
         prompt, TOOL_STRATEGIC_REFLECTION, 300, sys,
       );
       this.memory.lastReflection = {
-        certainties: reflection.certainties ?? [],
-        suspicions: reflection.suspicions ?? [],
-        allies: reflection.allies ?? [],
-        threats: reflection.threats ?? [],
-        plan: reflection.plan ?? "",
+        certainties: Array.isArray(reflection.certainties) ? reflection.certainties : [],
+        suspicions: Array.isArray(reflection.suspicions) ? reflection.suspicions : [],
+        allies: Array.isArray(reflection.allies) ? reflection.allies : [],
+        threats: Array.isArray(reflection.threats) ? reflection.threats : [],
+        plan: typeof reflection.plan === "string" ? reflection.plan : "",
       };
       this.persistMemory("reflection", null, JSON.stringify(reflection));
     } catch (err) {
