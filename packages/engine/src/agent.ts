@@ -1588,7 +1588,13 @@ Be specific — name players, cite events, reference conversations.`;
       const reflection = await this.callTool<StrategicReflection>(
         prompt, TOOL_STRATEGIC_REFLECTION, 300, sys,
       );
-      this.memory.lastReflection = reflection;
+      this.memory.lastReflection = {
+        certainties: reflection.certainties ?? [],
+        suspicions: reflection.suspicions ?? [],
+        allies: reflection.allies ?? [],
+        threats: reflection.threats ?? [],
+        plan: reflection.plan ?? "",
+      };
       this.persistMemory("reflection", null, JSON.stringify(reflection));
     } catch (err) {
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getStrategicReflection error="${err instanceof Error ? err.message : err}" fallback=skipped`);
