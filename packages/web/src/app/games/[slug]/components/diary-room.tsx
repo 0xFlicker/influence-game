@@ -189,6 +189,16 @@ export function DiaryRoomPanel({
   isAuthenticated: boolean;
   isReplay?: boolean;
 }) {
+  const diaryMessages = messages.filter((m) => m.scope === "diary");
+  const grouped = groupMessages(diaryMessages);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [diaryMessages.length]);
+
   if (!isAuthenticated && !isReplay) {
     return (
       <div className="border border-purple-900/30 bg-purple-950/10 p-12 text-center flex-1 flex flex-col items-center justify-center">
@@ -201,8 +211,6 @@ export function DiaryRoomPanel({
     );
   }
 
-  const diaryMessages = messages.filter((m) => m.scope === "diary");
-
   if (diaryMessages.length === 0) {
     return (
       <div className="border border-purple-900/30 bg-purple-950/10 p-12 text-center text-purple-300/30 text-sm flex-1 flex items-center justify-center">
@@ -211,10 +219,8 @@ export function DiaryRoomPanel({
     );
   }
 
-  const grouped = groupMessages(diaryMessages);
-
   return (
-    <div className="border border-purple-900/30 bg-purple-950/10 flex-1 overflow-y-auto p-4 space-y-3">
+    <div ref={scrollRef} className="border border-purple-900/30 bg-purple-950/10 flex-1 overflow-y-auto p-4 space-y-3">
       {grouped.map((item, idx) => {
         if (item.kind === "diary_pair") {
           return (
@@ -353,6 +359,7 @@ export function DiaryRoomGridView({
   const rooms = buildDiaryRooms(messages, players);
   const [activeRoomIndex, setActiveRoomIndex] = useState(0);
   const prevRoomCount = useRef(rooms.length);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // When a new room appears, auto-advance to it after a pause
   useEffect(() => {
@@ -366,8 +373,15 @@ export function DiaryRoomGridView({
     prevRoomCount.current = rooms.length;
   }, [rooms.length]);
 
+  // Auto-scroll to bottom when new diary entries appear
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages.length, activeRoomIndex]);
+
   return (
-    <div data-controls className="flex-1 overflow-y-auto p-4 md:p-6">
+    <div ref={scrollRef} data-controls className="flex-1 overflow-y-auto p-4 md:p-6">
       <div className="text-center mb-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-purple-300/70 mb-1">
           Diary Rooms
