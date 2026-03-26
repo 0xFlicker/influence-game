@@ -10,6 +10,7 @@ import type {
   ChatCompletionTool,
   ChatCompletionMessageToolCall,
 } from "openai/resources/chat/completions";
+import type { ReasoningEffort } from "openai/resources/shared";
 import type { IAgent, PhaseContext } from "./game-runner";
 import { Phase } from "./types";
 import type { UUID, PowerAction } from "./types";
@@ -556,7 +557,7 @@ Keep it to 2-3 sentences. Be warm, specific, and human.
 
 Respond with ONLY the introduction text, nothing else.`;
 
-    return this.callLLM(prompt, 150, sys, { action: "introduction", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW });
+    return this.callLLM(prompt, 150, sys, { action: "introduction", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
   }
 
   async getLobbyIntent(ctx: PhaseContext): Promise<string> {
@@ -589,7 +590,7 @@ Do NOT write your actual lobby message — just your internal game plan.
 Respond with ONLY your strategy intent, nothing else.`;
 
     try {
-      this.lobbyIntent = await this.callLLM(prompt, 100, sys, { action: "lobby-intent", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW });
+      this.lobbyIntent = await this.callLLM(prompt, 100, sys, { action: "lobby-intent", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
     } catch {
       this.lobbyIntent = null;
     }
@@ -691,7 +692,7 @@ Keep it to 2-3 sentences. Be authentic, entertaining, and ${ctx.round === 1 ? "w
 
 Respond with ONLY the message text, nothing else.`;
 
-    return this.callLLM(prompt, 150, sys, { action: "lobby", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW });
+    return this.callLLM(prompt, 150, sys, { action: "lobby", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
   }
 
   async getWhispers(
@@ -713,7 +714,7 @@ Use the send_whispers tool to submit your whisper messages. Use player NAMES (no
     try {
       const result = await this.callTool<{ whispers: Array<{ to: string[]; text: string }> }>(
         prompt, TOOL_SEND_WHISPERS, 400, sys,
-        { action: "whispers", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH },
+        { action: "whispers", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" },
       );
 
       return (result.whispers ?? [])
@@ -764,7 +765,7 @@ Use the request_room tool to submit your preference.`;
     try {
       const result = await this.callTool<{ partner: string }>(
         prompt, TOOL_REQUEST_ROOM, 200, sys,
-        { action: "room-request", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW },
+        { action: "room-request", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
       );
       const partnerName = result.partner;
       const partner = findByName(otherPlayers, partnerName);
@@ -815,7 +816,7 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
     try {
       const result = await this.callTool<{ message?: string; pass?: boolean }>(
         prompt, TOOL_SEND_ROOM_MESSAGE, 300, sys,
-        { action: "room-message" },
+        { action: "room-message", reasoningEffort: "medium" },
       );
       if (result.pass) return null;
       const msg = result.message?.trim();
@@ -873,7 +874,7 @@ Keep it to 1-2 sentences. One sharp claim is better than two weak ones.
 
 Respond with ONLY the rumor text, nothing else.`;
 
-    const text = await this.callLLM(prompt, 150, sys, { action: "rumor", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW });
+    const text = await this.callLLM(prompt, 150, sys, { action: "rumor", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
     // Strip "The shadows whisper: " prefix if the LLM included it
     return text.replace(/^the\s+shadows?\s+whispers?:\s*/i, "");
   }
@@ -904,7 +905,7 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
     try {
       const result = await this.callTool<{ empower: string; expose: string }>(
         prompt, TOOL_CAST_VOTES, 100, sys,
-        { action: "vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH },
+        { action: "vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" },
       );
 
       const empowerPlayer = findByName(others, result.empower);
@@ -974,7 +975,7 @@ Use the use_power tool to declare your action.`;
     try {
       const result = await this.callTool<{ action: string; target: string }>(
         prompt, TOOL_POWER_ACTION, 100, sys,
-        { action: "power", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH },
+        { action: "power", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" },
       );
 
       const targetPlayer =
@@ -1018,7 +1019,7 @@ Who should be eliminated? Consider your alliances, threats, and long-term strate
 Use the council_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH });
+      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" });
       if (normalizeName(result.eliminate) === normalizeName(c1Name)) return c1;
       if (normalizeName(result.eliminate) === normalizeName(c2Name)) return c2;
       const fallback = candidates[Math.floor(Math.random() * 2)];
@@ -1044,7 +1045,7 @@ Make it count — a final accusation, a farewell, a cryptic warning, or a gracef
 
 Keep it to 1-2 sentences. Respond ONLY with the message text.`;
 
-    return this.callLLM(prompt, 120, sys, { action: "plea", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW });
+    return this.callLLM(prompt, 120, sys, { action: "plea", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
   }
 
   async getDiaryEntry(ctx: PhaseContext, question: string, sessionHistory?: Array<{ question: string; answer: string }>): Promise<string> {
@@ -1081,7 +1082,7 @@ Keep it to 2-4 sentences. Be entertaining for the audience. Respond ONLY with yo
     : `Answer the question honestly and in character. Share your genuine strategic thinking — who you trust, who you suspect, what your next moves are.
 Keep it to 2-4 sentences. Be entertaining for the audience. Respond ONLY with your answer.`}`;
 
-    return this.callLLM(prompt, 250, sys, { action: "diary" });
+    return this.callLLM(prompt, 250, sys, { action: "diary", reasoningEffort: "medium" });
   }
 
   // ---------------------------------------------------------------------------
@@ -1101,7 +1102,7 @@ Keep it to 2-3 sentences. Make it compelling.
 
 Respond with ONLY the plea text, nothing else.`;
 
-    return this.callLLM(prompt, 200, sys, { action: "defense" });
+    return this.callLLM(prompt, 200, sys, { action: "defense", reasoningEffort: "medium" });
   }
 
   async getEndgameEliminationVote(ctx: PhaseContext): Promise<UUID> {
@@ -1123,7 +1124,7 @@ Who should be eliminated? Consider everything that has happened in the game.
 Use the elimination_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, { action: "elimination-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH });
+      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, { action: "elimination-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" });
       const target = findByName(others, result.eliminate);
       if (target) return target.id;
       const fallback = others[Math.floor(Math.random() * others.length)];
@@ -1156,7 +1157,7 @@ Use the make_accusation tool to submit your accusation.`;
     try {
       const result = await this.callTool<{ target: string; accusation: string }>(
         prompt, TOOL_MAKE_ACCUSATION, 200, sys,
-        { action: "accusation" },
+        { action: "accusation", reasoningEffort: "medium" },
       );
       const target = findByName(others, result.target);
       const fallbackOther = others[0];
@@ -1188,7 +1189,7 @@ Defend yourself publicly. Rebut the accusation, redirect blame, or appeal to the
 
 Keep it to 2-3 sentences. Respond ONLY with your defense text.`;
 
-    return this.callLLM(prompt, 200, sys, { action: "tribunal-defense" });
+    return this.callLLM(prompt, 200, sys, { action: "tribunal-defense", reasoningEffort: "medium" });
   }
 
   async getOpeningStatement(ctx: PhaseContext): Promise<string> {
@@ -1206,7 +1207,7 @@ Keep it to 3-4 sentences. Make it powerful.
 
 Respond with ONLY your statement, nothing else.`;
 
-    return this.callLLM(prompt, 250, sys, { action: "opening-statement" });
+    return this.callLLM(prompt, 250, sys, { action: "opening-statement", reasoningEffort: "medium" });
   }
 
   async getJuryQuestion(ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string }> {
@@ -1231,7 +1232,7 @@ Use the ask_jury_question tool to submit your question.`;
     try {
       const result = await this.callTool<{ target: string; question: string }>(
         prompt, TOOL_ASK_JURY_QUESTION, 150, sys,
-        { action: "jury-question" },
+        { action: "jury-question", reasoningEffort: "medium" },
       );
       const target = findByName(finalists, result.target);
       return {
@@ -1259,7 +1260,7 @@ Answer honestly and persuasively. This juror will vote for the winner — make y
 
 Keep it to 2-3 sentences. Respond ONLY with your answer.`;
 
-    return this.callLLM(prompt, 200, sys, { action: "jury-answer" });
+    return this.callLLM(prompt, 200, sys, { action: "jury-answer", reasoningEffort: "medium" });
   }
 
   async getClosingArgument(ctx: PhaseContext): Promise<string> {
@@ -1281,7 +1282,7 @@ Eliminated players (potential reference points): ${eliminationSummary || "none"}
 
 Keep it to 2-3 sentences. Respond ONLY with your argument.`;
 
-    return this.callLLM(prompt, 250, sys, { action: "closing-argument" });
+    return this.callLLM(prompt, 250, sys, { action: "closing-argument", reasoningEffort: "medium" });
   }
 
   async getJuryVote(ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID> {
@@ -1308,7 +1309,7 @@ Consider their gameplay, their answers to the jury, and the full arc of the game
 Use the jury_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ winner: string }>(prompt, TOOL_JURY_VOTE, 80, sys, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH });
+      const result = await this.callTool<{ winner: string }>(prompt, TOOL_JURY_VOTE, 80, sys, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" });
       const target = findByName(finalists, result.winner);
       const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
       if (!randomFinalist) throw new Error("No finalist available for jury vote");
@@ -1471,24 +1472,26 @@ ${roomSection}
 
   /**
    * Default reasoning overhead added to max_completion_tokens for reasoning models.
-   * gpt-5-nano/mini consume 700-1000+ completion tokens for internal chain-of-thought
-   * before producing visible output. Without sufficient headroom the entire budget is
+   * gpt-5-nano/mini consume completion tokens for internal chain-of-thought before
+   * producing visible output. Without sufficient headroom the entire budget is
    * consumed by reasoning, the API returns an empty response or throws a length error,
    * and the caller falls back to "[No response]".
    *
+   * With reasoning_effort parameter support (low/medium/high), overheads can be
+   * tighter: low-effort uses ~0-256 reasoning tokens, medium ~500-830, high ~2000+.
    * Per-action overrides allow tighter budgets for simple outputs (introductions,
    * lobby chat) and more headroom for complex decisions (votes, strategic reflection).
    */
-  private static REASONING_TOKEN_OVERHEAD = 2500;
+  private static REASONING_TOKEN_OVERHEAD = 1500;
   private static REASONING_OVERHEAD_HIGH = 3000;
-  private static REASONING_OVERHEAD_LOW = 2000;
+  private static REASONING_OVERHEAD_LOW = 500;
 
   /** Free-text LLM call for communication (introductions, lobby, rumor, etc.) */
   private async callLLM(
     prompt: string,
     maxTokens = 200,
     systemPrompt?: string,
-    options?: { action?: string; reasoningOverhead?: number },
+    options?: { action?: string; reasoningOverhead?: number; reasoningEffort?: ReasoningEffort },
   ): Promise<string> {
     const reasoning = this.isReasoningModel();
     const useCompletionTokens = this.usesCompletionTokensParam();
@@ -1510,6 +1513,7 @@ ${roomSection}
             ? { max_completion_tokens: effectiveMaxTokens }
             : { max_tokens: effectiveMaxTokens }),
           ...(!reasoning && { temperature: 0.7 }),
+          ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
         });
 
         if (this.tokenTracker && response.usage) {
@@ -1561,7 +1565,7 @@ ${roomSection}
     tool: ChatCompletionTool,
     maxTokens = 200,
     systemPrompt?: string,
-    options?: { action?: string; reasoningOverhead?: number },
+    options?: { action?: string; reasoningOverhead?: number; reasoningEffort?: ReasoningEffort },
   ): Promise<T> {
     const reasoning = this.isReasoningModel();
     const useCompletionTokens = this.usesCompletionTokensParam();
@@ -1583,6 +1587,7 @@ ${roomSection}
             ? { max_completion_tokens: effectiveMaxTokens }
             : { max_tokens: effectiveMaxTokens }),
           ...(!reasoning && { temperature: 0.7 }),
+          ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
           tools: [tool],
           tool_choice: { type: "function", function: { name: tool.function.name } },
         });
@@ -1638,7 +1643,7 @@ Be specific — name players, cite events, reference conversations.`;
     try {
       const reflection = await this.callTool<StrategicReflection>(
         prompt, TOOL_STRATEGIC_REFLECTION, 300, sys,
-        { action: "reflection", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH },
+        { action: "reflection", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" },
       );
       this.memory.lastReflection = {
         certainties: Array.isArray(reflection.certainties) ? reflection.certainties : [],
