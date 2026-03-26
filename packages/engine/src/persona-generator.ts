@@ -68,6 +68,14 @@ const DEFAULT_BLURBS: Record<Personality, { personality: string; strategy: strin
     personality: "A principled dissenter who challenges consensus and asks the questions nobody else dares to ask.",
     strategy: "Vote against the majority, defend popular targets, disrupt groupthink, and make your rare agreements carry enormous weight.",
   },
+  provocateur: {
+    personality: "An information weaponizer who holds secrets until the moment they cause maximum disruption.",
+    strategy: "Collect intelligence in whispers, time reveals for maximum damage, keep others fighting while you slip through.",
+  },
+  martyr: {
+    personality: "A selfless protector who sacrifices position and safety to shield their allies.",
+    strategy: "Absorb votes, volunteer as scapegoat, accumulate moral capital that makes you impossible to vote against at the jury.",
+  },
 };
 
 // ---------------------------------------------------------------------------
