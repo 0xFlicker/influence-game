@@ -286,6 +286,7 @@ export function createGameRoutes(db: DrizzleDB) {
       visibility: config.visibility ?? "public",
       viewerMode: config.viewerMode ?? "speedrun",
       winner: winnerPlayer ? JSON.parse(winnerPlayer.persona).name : undefined,
+      tokenUsage: result[0]?.tokenUsage ? JSON.parse(result[0].tokenUsage) : undefined,
       createdAt: game.createdAt,
       startedAt: game.startedAt ?? undefined,
       completedAt: game.endedAt ?? undefined,

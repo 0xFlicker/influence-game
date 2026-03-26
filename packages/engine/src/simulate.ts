@@ -202,8 +202,10 @@ function computeAggregateStats(results: GameResult[], model: string): AggregateS
     promptTokens: 0,
     cachedTokens: 0,
     completionTokens: 0,
+    reasoningTokens: 0,
     totalTokens: 0,
     callCount: 0,
+    emptyResponses: 0,
   };
 
   for (const result of results) {
@@ -219,8 +221,10 @@ function computeAggregateStats(results: GameResult[], model: string): AggregateS
     batchTokens.promptTokens += result.tokenUsage.total.promptTokens;
     batchTokens.cachedTokens += result.tokenUsage.total.cachedTokens;
     batchTokens.completionTokens += result.tokenUsage.total.completionTokens;
+    batchTokens.reasoningTokens += result.tokenUsage.total.reasoningTokens;
     batchTokens.totalTokens += result.tokenUsage.total.totalTokens;
     batchTokens.callCount += result.tokenUsage.total.callCount;
+    batchTokens.emptyResponses += result.tokenUsage.total.emptyResponses;
 
     // Track per-persona stats
     for (const [name, persona] of Object.entries(result.playerPersonas)) {
@@ -349,8 +353,16 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
   lines.push(`|--------|-------|`);
   lines.push(`| Total LLM calls | ${tu.callCount.toLocaleString()} |`);
   lines.push(`| Prompt tokens | ${tu.promptTokens.toLocaleString()} |`);
+  lines.push(`| Cached input tokens | ${tu.cachedTokens.toLocaleString()} |`);
   lines.push(`| Completion tokens | ${tu.completionTokens.toLocaleString()} |`);
+  if (tu.reasoningTokens > 0) {
+    lines.push(`| Reasoning tokens (CoT) | ${tu.reasoningTokens.toLocaleString()} |`);
+    lines.push(`| Visible output tokens | ${(tu.completionTokens - tu.reasoningTokens).toLocaleString()} |`);
+  }
   lines.push(`| Total tokens | ${tu.totalTokens.toLocaleString()} |`);
+  if (tu.emptyResponses > 0) {
+    lines.push(`| Empty/fallback responses | ${tu.emptyResponses} (${((tu.emptyResponses / tu.callCount) * 100).toFixed(1)}%) |`);
+  }
   lines.push("");
 
   // Cost estimates across model tiers

@@ -15,8 +15,12 @@ export interface TokenUsage {
   /** Number of prompt tokens served from OpenAI's prefix cache. */
   cachedTokens: number;
   completionTokens: number;
+  /** Number of completion tokens consumed by internal reasoning (CoT). */
+  reasoningTokens: number;
   totalTokens: number;
   callCount: number;
+  /** Number of calls that returned empty/fallback due to budget exhaustion. */
+  emptyResponses: number;
 }
 
 export interface ModelPricing {
@@ -99,21 +103,37 @@ const EMPTY_USAGE: TokenUsage = {
   promptTokens: 0,
   cachedTokens: 0,
   completionTokens: 0,
+  reasoningTokens: 0,
   totalTokens: 0,
   callCount: 0,
+  emptyResponses: 0,
 };
 
 export class TokenTracker {
   private readonly perSource: Map<string, TokenUsage> = new Map();
 
   /** Record a single LLM call's usage. */
-  record(source: string, promptTokens: number, completionTokens: number, cachedTokens = 0): void {
+  record(
+    source: string,
+    promptTokens: number,
+    completionTokens: number,
+    cachedTokens = 0,
+    reasoningTokens = 0,
+  ): void {
     const existing = this.perSource.get(source) ?? { ...EMPTY_USAGE };
     existing.promptTokens += promptTokens;
     existing.cachedTokens += cachedTokens;
     existing.completionTokens += completionTokens;
+    existing.reasoningTokens += reasoningTokens;
     existing.totalTokens += promptTokens + completionTokens;
     existing.callCount += 1;
+    this.perSource.set(source, existing);
+  }
+
+  /** Record an empty/fallback response for a source. */
+  recordEmptyResponse(source: string): void {
+    const existing = this.perSource.get(source) ?? { ...EMPTY_USAGE };
+    existing.emptyResponses += 1;
     this.perSource.set(source, existing);
   }
 
@@ -129,8 +149,10 @@ export class TokenTracker {
       total.promptTokens += usage.promptTokens;
       total.cachedTokens += usage.cachedTokens;
       total.completionTokens += usage.completionTokens;
+      total.reasoningTokens += usage.reasoningTokens;
       total.totalTokens += usage.totalTokens;
       total.callCount += usage.callCount;
+      total.emptyResponses += usage.emptyResponses;
     }
     return total;
   }
@@ -151,8 +173,10 @@ export class TokenTracker {
       existing.promptTokens += usage.promptTokens;
       existing.cachedTokens += usage.cachedTokens;
       existing.completionTokens += usage.completionTokens;
+      existing.reasoningTokens += usage.reasoningTokens;
       existing.totalTokens += usage.totalTokens;
       existing.callCount += usage.callCount;
+      existing.emptyResponses += usage.emptyResponses;
       this.perSource.set(source, existing);
     }
   }

@@ -269,8 +269,11 @@ async function runGameAsync(
           promptTokens: usage.promptTokens,
           cachedTokens: usage.cachedTokens,
           completionTokens: usage.completionTokens,
+          reasoningTokens: usage.reasoningTokens,
           totalTokens: usage.totalTokens,
+          emptyResponses: usage.emptyResponses,
           estimatedCost: cost.totalCost,
+          perAction: tokenTracker.getAllUsage(),
         }),
       });
 

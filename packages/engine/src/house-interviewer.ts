@@ -123,13 +123,17 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       ...this.modelParams(150, 0.9),
     });
 
-    // Track token usage (including cached tokens for cost estimation)
+    // Track token usage (including cached + reasoning tokens for cost estimation)
     if (this.tokenTracker && response.usage) {
+      const reasoningTk = (response.usage as unknown as Record<string, unknown>).completion_tokens_details
+        ? ((response.usage as unknown as Record<string, unknown>).completion_tokens_details as Record<string, number>)?.reasoning_tokens ?? 0
+        : 0;
       this.tokenTracker.record(
-        "House",
+        "House/question",
         response.usage.prompt_tokens,
         response.usage.completion_tokens,
         response.usage.prompt_tokens_details?.cached_tokens ?? 0,
+        reasoningTk,
       );
     }
 
@@ -186,11 +190,15 @@ CLOSE: <your brief closing remark to the player, 1 sentence>`;
     });
 
     if (this.tokenTracker && response.usage) {
+      const reasoningTk = (response.usage as unknown as Record<string, unknown>).completion_tokens_details
+        ? ((response.usage as unknown as Record<string, unknown>).completion_tokens_details as Record<string, number>)?.reasoning_tokens ?? 0
+        : 0;
       this.tokenTracker.record(
-        "House",
+        "House/followup",
         response.usage.prompt_tokens,
         response.usage.completion_tokens,
         response.usage.prompt_tokens_details?.cached_tokens ?? 0,
+        reasoningTk,
       );
     }
 
