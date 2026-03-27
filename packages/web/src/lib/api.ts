@@ -567,6 +567,37 @@ export function estimateCost(
 }
 
 // ---------------------------------------------------------------------------
+// Admin agent profile types
+// ---------------------------------------------------------------------------
+
+export interface AdminAgent {
+  id: string;
+  userId: string;
+  name: string;
+  backstory: string | null;
+  personality: string;
+  strategyStyle: string | null;
+  personaKey: PersonaKey | null;
+  avatarUrl: string | null;
+  gamesPlayed: number;
+  gamesWon: number;
+  freeTrackRating: FreeTrackRating | null;
+  ownerWallet: string | null;
+  ownerDisplayName: string | null;
+  ownerEmail: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Admin agent profile API calls
+// ---------------------------------------------------------------------------
+
+export async function listAdminAgents(): Promise<AdminAgent[]> {
+  return apiFetch("/api/admin/agents");
+}
+
+// ---------------------------------------------------------------------------
 // Admin RBAC types
 // ---------------------------------------------------------------------------
 

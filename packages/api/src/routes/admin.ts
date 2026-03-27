@@ -239,6 +239,53 @@ export function createAdminRoutes(db: DrizzleDB) {
   });
 
   // -------------------------------------------------------------------------
+  // GET /api/admin/agents — list all agent profiles across all users
+  // -------------------------------------------------------------------------
+
+  app.get("/api/admin/agents", async (c) => {
+    const profiles = await db
+      .select({
+        id: schema.agentProfiles.id,
+        userId: schema.agentProfiles.userId,
+        name: schema.agentProfiles.name,
+        backstory: schema.agentProfiles.backstory,
+        personality: schema.agentProfiles.personality,
+        strategyStyle: schema.agentProfiles.strategyStyle,
+        personaKey: schema.agentProfiles.personaKey,
+        avatarUrl: schema.agentProfiles.avatarUrl,
+        gamesPlayed: schema.agentProfiles.gamesPlayed,
+        gamesWon: schema.agentProfiles.gamesWon,
+        createdAt: schema.agentProfiles.createdAt,
+        updatedAt: schema.agentProfiles.updatedAt,
+        ownerWallet: schema.users.walletAddress,
+        ownerDisplayName: schema.users.displayName,
+        ownerEmail: schema.users.email,
+      })
+      .from(schema.agentProfiles)
+      .innerJoin(schema.users, sql`${schema.agentProfiles.userId} = ${schema.users.id}`);
+
+    // Attach free-track ELO rating if available
+    const enriched = await Promise.all(profiles.map(async (profile) => {
+      const rating = (await db
+        .select({
+          rating: schema.freeTrackRatings.rating,
+          gamesPlayed: schema.freeTrackRatings.gamesPlayed,
+          gamesWon: schema.freeTrackRatings.gamesWon,
+          peakRating: schema.freeTrackRatings.peakRating,
+        })
+        .from(schema.freeTrackRatings)
+        .where(eq(schema.freeTrackRatings.agentProfileId, profile.id)))[0];
+
+      return {
+        ...profile,
+        freeTrackRating: rating ?? null,
+      };
+    }));
+
+    return c.json(enriched);
+  });
+
+  // -------------------------------------------------------------------------
   // GET /api/admin/games — list all games including hidden ones
   // -------------------------------------------------------------------------
 

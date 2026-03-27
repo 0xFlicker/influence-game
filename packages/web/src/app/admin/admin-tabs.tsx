@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { AdminPanel } from "./admin-panel";
 import { UserRolesPanel } from "./user-roles-panel";
+import { AgentsAdminPanel } from "./agents-admin-panel";
 import { PermissionGate } from "@/components/admin-gate";
 
-type Tab = "games" | "users";
+type Tab = "games" | "agents" | "users";
 
 export function AdminTabs() {
   const [activeTab, setActiveTab] = useState<Tab>("games");
@@ -20,6 +21,12 @@ export function AdminTabs() {
         >
           Games
         </TabButton>
+        <TabButton
+          active={activeTab === "agents"}
+          onClick={() => setActiveTab("agents")}
+        >
+          Agents
+        </TabButton>
         <PermissionGate permission="manage_roles">
           <TabButton
             active={activeTab === "users"}
@@ -32,6 +39,7 @@ export function AdminTabs() {
 
       {/* Tab content */}
       {activeTab === "games" && <AdminPanel />}
+      {activeTab === "agents" && <AgentsAdminPanel />}
       {activeTab === "users" && <UserRolesPanel />}
     </div>
   );
