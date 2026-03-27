@@ -690,3 +690,22 @@ export async function getFreeQueueLeaderboard(): Promise<FreeTrackLeaderboardEnt
   return apiFetch("/api/free-queue/leaderboard");
 }
 
+// ---------------------------------------------------------------------------
+// Upload API calls
+// ---------------------------------------------------------------------------
+
+export interface UploadUrlResult {
+  uploadUrl: string;
+  publicUrl: string;
+}
+
+export async function requestUploadUrl(
+  filename: string,
+  contentType: string,
+): Promise<UploadUrlResult> {
+  return apiFetch("/api/upload/pfp", {
+    method: "POST",
+    body: JSON.stringify({ filename, contentType }),
+  });
+}
+

@@ -9,6 +9,7 @@ import {
   type GeneratePersonalityParams,
 } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
+import { AvatarUpload } from "@/components/avatar-upload";
 
 interface AgentFormProps {
   initial?: SavedAgent;
@@ -23,6 +24,7 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
   const [personality, setPersonality] = useState(initial?.personality ?? "");
   const [strategyStyle, setStrategyStyle] = useState(initial?.strategyStyle ?? "");
   const [personaKey, setPersonaKey] = useState<PersonaKey>(initial?.personaKey ?? "strategic");
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(initial?.avatarUrl ?? undefined);
   const [submitting, setSubmitting] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +82,7 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
         backstory: backstory.trim() || undefined,
         strategyStyle: strategyStyle.trim() || undefined,
         personaKey,
+        avatarUrl,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save agent.");
@@ -89,6 +92,16 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+      {/* Avatar upload */}
+      <div className="flex justify-center">
+        <AvatarUpload
+          currentUrl={avatarUrl}
+          persona={personaKey}
+          name={name || "Agent"}
+          onUploaded={setAvatarUrl}
+        />
+      </div>
+
       {/* AI Help */}
       <div className="flex items-center gap-3 p-3 rounded-lg border border-dashed border-indigo-500/30 bg-indigo-950/20">
         <div className="flex-1 min-w-0">
