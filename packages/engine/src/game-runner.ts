@@ -693,10 +693,8 @@ export class GameRunner {
     this.logRoomAllocation(allocationText, rooms, excludedNames);
 
     // --- Sub-Step 3: Room Conversation ---
-    // Turn-based conversation: agents alternate sending messages (max 8 each)
-    for (const room of rooms) {
-      await this.runRoomConversation(room, roomCount);
-    }
+    // Rooms are independent (separate player pairs, separate histories) — run in parallel
+    await Promise.all(rooms.map((room) => this.runRoomConversation(room, roomCount)));
 
     actor.send({ type: "PHASE_COMPLETE" });
     await new Promise((r) => setTimeout(r, 0));
@@ -1115,10 +1113,8 @@ export class GameRunner {
       (excludedNames.length > 0 ? ` | Commons: ${excludedNames.join(", ")}` : "");
     this.logRoomAllocation(allocationText, rooms, excludedNames);
 
-    // Sub-Step 3: Room Conversation
-    for (const room of rooms) {
-      await this.runRoomConversation(room, roomCount);
-    }
+    // Sub-Step 3: Room Conversation — rooms are independent, run in parallel
+    await Promise.all(rooms.map((room) => this.runRoomConversation(room, roomCount)));
 
     actor.send({ type: "PHASE_COMPLETE" });
     await new Promise((r) => setTimeout(r, 0));
@@ -1520,15 +1516,17 @@ export class GameRunner {
     this.logSystem(`--- Diary Room (after ${precedingPhase}) ---`, Phase.DIARY_ROOM);
     const alivePlayers = this.gameState.getAlivePlayers();
 
-    // Interview alive players sequentially so each agent's Q&A is emitted
-    // together before moving to the next (avoids interleaved ordering).
-    for (const player of alivePlayers) {
-      try {
-        await this.runDiaryInterview(precedingPhase, player.id, player.name, false);
-      } catch (error) {
-        console.error(`[DiaryRoom] Interview failed for ${player.name}, skipping:`, error);
-      }
-    }
+    // Interviews are independent per-agent — run in parallel for wall-clock savings.
+    // Each interview has agentId/agentName metadata for frontend grouping.
+    await Promise.all(
+      alivePlayers.map(async (player) => {
+        try {
+          await this.runDiaryInterview(precedingPhase, player.id, player.name, false);
+        } catch (error) {
+          console.error(`[DiaryRoom] Interview failed for ${player.name}, skipping:`, error);
+        }
+      }),
+    );
 
     // After all interviews, agents produce strategic reflections in parallel
     try {
@@ -1545,17 +1543,20 @@ export class GameRunner {
       console.error(`[DiaryRoom] Strategic reflections failed, continuing:`, error);
     }
 
-    // During Judgment phases, also interview active jury members sequentially
+    // During Judgment phases, also interview active jury members in parallel
     if (this.gameState.endgameStage === "judgment") {
-      for (const juror of this.getActiveJury()) {
-        const agent = this.agents.get(juror.playerId);
-        if (!agent) continue;
-        try {
-          await this.runDiaryInterview(precedingPhase, juror.playerId, juror.playerName, true);
-        } catch (error) {
-          console.error(`[DiaryRoom] Juror interview failed for ${juror.playerName}, skipping:`, error);
-        }
-      }
+      const activeJury = this.getActiveJury();
+      await Promise.all(
+        activeJury.map(async (juror) => {
+          const agent = this.agents.get(juror.playerId);
+          if (!agent) return;
+          try {
+            await this.runDiaryInterview(precedingPhase, juror.playerId, juror.playerName, true);
+          } catch (error) {
+            console.error(`[DiaryRoom] Juror interview failed for ${juror.playerName}, skipping:`, error);
+          }
+        }),
+      );
     }
   }
 
