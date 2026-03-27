@@ -17,6 +17,7 @@ import { createAuthRoutes } from "./routes/auth.js";
 import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
 import { createAdminRoutes } from "./routes/admin.js";
 import { createFreeQueueRoutes } from "./routes/free-queue.js";
+import { createUploadRoutes } from "./routes/upload.js";
 import { getGameSnapshot } from "./services/game-lifecycle.js";
 import {
   setServer,
@@ -53,6 +54,20 @@ if (missing.length > 0) {
     `\n  Missing required environment variables:\n\n${missing.map((k) => `    - ${k}`).join("\n")}\n\n  Set these in Doppler or your .env file and restart.\n`,
   );
   process.exit(1);
+}
+
+// Optional: Linode Object Storage for PFP uploads
+const STORAGE_ENV = [
+  "LINODE_OBJ_ENDPOINT",
+  "LINODE_OBJ_ACCESS_KEY",
+  "LINODE_OBJ_SECRET_KEY",
+  "LINODE_OBJ_BUCKET",
+] as const;
+const missingStorage = STORAGE_ENV.filter((key) => !process.env[key]);
+if (missingStorage.length > 0) {
+  console.warn(
+    `[startup] PFP upload disabled — missing env vars: ${missingStorage.join(", ")}`,
+  );
 }
 
 function getAllowedCorsOrigins(): string[] {
@@ -175,6 +190,10 @@ app.route("/", adminRoutes);
 // Free game queue routes
 const freeQueueRoutes = createFreeQueueRoutes(db);
 app.route("/", freeQueueRoutes);
+
+// Upload routes (presigned URL generation for PFPs)
+const uploadRoutes = createUploadRoutes(db);
+app.route("/", uploadRoutes);
 
 // ---------------------------------------------------------------------------
 // Start server with WebSocket support
