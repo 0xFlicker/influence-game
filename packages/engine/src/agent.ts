@@ -1477,13 +1477,14 @@ ${roomSection}
    * consumed by reasoning, the API returns an empty response or throws a length error,
    * and the caller falls back to "[No response]".
    *
-   * With reasoning_effort parameter support (low/medium/high), overheads can be
-   * tighter: low-effort uses ~0-256 reasoning tokens, medium ~500-830, high ~2000+.
+   * With reasoning_effort parameter support (low/medium/high), overheads vary by
+   * prompt complexity: low-effort uses ~0-256 reasoning tokens for simple prompts,
+   * medium ~500-1500 for game prompts, high ~2000-3000+ for complex decisions.
    * Per-action overrides allow tighter budgets for simple outputs (introductions,
    * lobby chat) and more headroom for complex decisions (votes, strategic reflection).
    */
-  private static REASONING_TOKEN_OVERHEAD = 1500;
-  private static REASONING_OVERHEAD_HIGH = 3000;
+  private static REASONING_TOKEN_OVERHEAD = 2500;
+  private static REASONING_OVERHEAD_HIGH = 4000;
   private static REASONING_OVERHEAD_LOW = 500;
 
   /** Free-text LLM call for communication (introductions, lobby, rumor, etc.) */
@@ -1643,7 +1644,7 @@ Be specific — name players, cite events, reference conversations.`;
     try {
       const reflection = await this.callTool<StrategicReflection>(
         prompt, TOOL_STRATEGIC_REFLECTION, 300, sys,
-        { action: "reflection", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" },
+        { action: "reflection", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "medium" },
       );
       this.memory.lastReflection = {
         certainties: Array.isArray(reflection.certainties) ? reflection.certainties : [],
