@@ -26,6 +26,7 @@ import { parseJsonBody } from "../lib/parse-json-body.js";
 const VALID_PERSONA_KEYS = new Set([
   "honest", "strategic", "deceptive", "paranoid", "social",
   "aggressive", "loyalist", "observer", "diplomat", "wildcard",
+  "contrarian", "provocateur", "martyr",
 ]);
 
 // ---------------------------------------------------------------------------

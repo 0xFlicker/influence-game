@@ -24,6 +24,9 @@ const PERSONAS: {
   { key: "observer", name: "Echo", icon: "🕵️", desc: "Patient, watches, strikes late" },
   { key: "diplomat", name: "Sage", icon: "🌐", desc: "Coalition architect, indispensable" },
   { key: "wildcard", name: "Jace", icon: "🎲", desc: "Unpredictable by design" },
+  { key: "contrarian", name: "Nyx", icon: "⚡", desc: "Challenges consensus, asks hard questions" },
+  { key: "provocateur", name: "Rune", icon: "🔮", desc: "Weaponizes information, stirs conflict" },
+  { key: "martyr", name: "Wren", icon: "🕊️", desc: "Sacrifices self to protect allies" },
 ];
 
 const ALL_PERSONA_KEYS = PERSONAS.map((p) => p.key);

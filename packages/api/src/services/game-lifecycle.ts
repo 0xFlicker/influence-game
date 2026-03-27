@@ -77,6 +77,7 @@ export function getGameSnapshot(gameId: string): GameStateSnapshot | null {
 const VALID_PERSONALITIES = new Set<string>([
   "honest", "strategic", "deceptive", "paranoid", "social",
   "aggressive", "loyalist", "observer", "diplomat", "wildcard",
+  "contrarian", "provocateur", "martyr",
 ]);
 
 function resolvePersonality(key: string | null | undefined): Personality {

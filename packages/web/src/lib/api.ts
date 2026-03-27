@@ -90,7 +90,10 @@ export type PersonaKey =
   | "loyalist"
   | "observer"
   | "diplomat"
-  | "wildcard";
+  | "wildcard"
+  | "contrarian"
+  | "provocateur"
+  | "martyr";
 
 export type ModelTier = "budget" | "standard" | "premium";
 export type FillStrategy = "random" | "balanced";

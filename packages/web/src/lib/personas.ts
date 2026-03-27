@@ -18,4 +18,7 @@ export const PERSONAS: PersonaOption[] = [
   { key: "observer", name: "Echo", icon: "\uD83D\uDD0D", description: "Watches and waits. Minimal footprint, maximum intel." },
   { key: "diplomat", name: "Sage", icon: "\u2696\uFE0F", description: "Mediates conflicts. Stays central by staying neutral." },
   { key: "wildcard", name: "Jace", icon: "\uD83C\uDFB2", description: "Unpredictable. Chaos as strategy." },
+  { key: "contrarian", name: "Nyx", icon: "\u26A1", description: "Challenges consensus. Asks the questions nobody else dares." },
+  { key: "provocateur", name: "Rune", icon: "\uD83D\uDD2E", description: "Weaponizes information. Times reveals for maximum damage." },
+  { key: "martyr", name: "Wren", icon: "\uD83D\uDD4A\uFE0F", description: "Sacrifices position to protect allies. Earns jury sympathy." },
 ];

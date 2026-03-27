@@ -5,6 +5,7 @@ import Image from "next/image";
 const PERSONA_AVATARS: ReadonlySet<string> = new Set([
   "honest", "strategic", "deceptive", "paranoid", "social",
   "aggressive", "loyalist", "observer", "diplomat", "wildcard",
+  "contrarian", "provocateur", "martyr",
 ]);
 
 interface AgentAvatarProps {
