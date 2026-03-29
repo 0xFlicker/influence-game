@@ -83,6 +83,7 @@ const FULL_CAST: Array<{ name: string; personality: Personality }> = [
   { name: "Rune", personality: "provocateur" },
   { name: "Wren", personality: "martyr" },
   { name: "Nyx", personality: "contrarian" },
+  { name: "Vex", personality: "broker" },
 ];
 
 function selectCast(
