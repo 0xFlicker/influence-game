@@ -1282,7 +1282,7 @@ Eliminated players (potential reference points): ${eliminationSummary || "none"}
 
 Keep it to 2-3 sentences. Respond ONLY with your argument.`;
 
-    return this.callLLM(prompt, 250, sys, { action: "closing-argument", reasoningEffort: "medium" });
+    return this.callLLM(prompt, 250, sys, { action: "closing-argument", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "medium" });
   }
 
   async getJuryVote(ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID> {
