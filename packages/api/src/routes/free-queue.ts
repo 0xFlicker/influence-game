@@ -42,9 +42,6 @@ function getNextFreeGameTime(): string {
   return next.toISOString();
 }
 
-function getTodayUTCDate(): string {
-  return new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
-}
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -197,24 +194,6 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.post("/api/free-queue/draw", requireAuth(db), requirePermission("schedule_free_game"), async (c) => {
-    const today = getTodayUTCDate();
-
-    // Idempotent guard: check if a free game already exists for today
-    const existingFreeGames = (await db
-      .select()
-      .from(schema.games)
-      .where(eq(schema.games.trackType, "free")))
-      .filter((g) => g.createdAt.startsWith(today));
-
-    if (existingFreeGames.length > 0) {
-      return c.json({
-        drawn: false,
-        reason: "Free game already exists for today",
-        gameId: existingFreeGames[0]!.id,
-        gameSlug: existingFreeGames[0]!.slug,
-      });
-    }
-
     // Get all queue entries
     const entries = await db
       .select()
@@ -367,17 +346,16 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.post("/api/free-queue/start", requireAuth(db), requirePermission("schedule_free_game"), async (c) => {
-    const today = getTodayUTCDate();
-
-    // Find today's free game in waiting status
-    const freeGames = (await db
+    // Find any waiting free game (most recent first)
+    const freeGames = await db
       .select()
       .from(schema.games)
-      .where(and(eq(schema.games.trackType, "free"), eq(schema.games.status, "waiting"))))
-      .filter((g) => g.createdAt.startsWith(today));
+      .where(and(eq(schema.games.trackType, "free"), eq(schema.games.status, "waiting")))
+      .orderBy(desc(schema.games.createdAt))
+      .limit(1);
 
     if (freeGames.length === 0) {
-      return c.json({ error: "No waiting free game found for today. Run draw first." }, 404);
+      return c.json({ error: "No waiting free game found. Run draw first." }, 404);
     }
 
     const game = freeGames[0]!;
