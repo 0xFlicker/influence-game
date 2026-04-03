@@ -1,16 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
 import {
   joinGame,
   listAgents,
+  createAgent,
   getAuthToken,
   type GameSummary,
   type PersonaKey,
   type SavedAgent,
+  type CreateAgentParams,
 } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
+import { AgentForm } from "./agents/agent-form";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -31,22 +33,25 @@ function AgentPicker({
   selectedId,
   onSelect,
   onClear,
+  onCreateNew,
 }: {
   agents: SavedAgent[];
   selectedId: string | null;
   onSelect: (agent: SavedAgent) => void;
   onClear: () => void;
+  onCreateNew: () => void;
 }) {
   if (agents.length === 0) {
     return (
       <div className="border border-dashed border-white/10 rounded-lg p-3 text-center">
         <p className="text-white/30 text-xs mb-1">No saved agents yet</p>
-        <Link
-          href="/dashboard/agents"
+        <button
+          type="button"
+          onClick={onCreateNew}
           className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors"
         >
           Create an agent →
-        </Link>
+        </button>
       </div>
     );
   }
@@ -80,6 +85,14 @@ function AgentPicker({
             </button>
           );
         })}
+        <button
+          type="button"
+          onClick={onCreateNew}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-white/10 text-white/30 hover:border-white/20 hover:text-white/50 text-xs transition-all"
+        >
+          <span>+</span>
+          <span>New Agent</span>
+        </button>
       </div>
       {selectedId && (
         <p className="text-white/25 text-xs">
@@ -104,6 +117,7 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
   const [selectedPersona, setSelectedPersona] = useState<PersonaKey>("strategic");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [creatingAgent, setCreatingAgent] = useState(false);
 
   useEffect(() => {
     if (!getAuthToken()) return;
@@ -114,6 +128,13 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
         setAgentsFetchError(true);
       });
   }, []);
+
+  async function handleCreateAgent(params: CreateAgentParams) {
+    const newAgent = await createAgent(params);
+    setAgents((prev) => [...prev, newAgent]);
+    setCreatingAgent(false);
+    handleSelectAgent(newAgent);
+  }
 
   function handleSelectAgent(agent: SavedAgent) {
     setSelectedAgentId(agent.id);
@@ -201,6 +222,25 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
             </button>
           </div>
 
+          {creatingAgent ? (
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setCreatingAgent(false)}
+                  className="text-white/30 hover:text-white/60 text-sm transition-colors"
+                >
+                  ← Back
+                </button>
+                <h3 className="text-sm font-semibold text-white">Create New Agent</h3>
+              </div>
+              <AgentForm
+                onSubmit={handleCreateAgent}
+                onCancel={() => setCreatingAgent(false)}
+                submitLabel="Create & Select"
+              />
+            </div>
+          ) : (
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Saved agent picker */}
             <div>
@@ -219,6 +259,7 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
                   selectedId={selectedAgentId}
                   onSelect={handleSelectAgent}
                   onClear={handleClearAgent}
+                  onCreateNew={() => setCreatingAgent(true)}
                 />
               )}
             </div>
@@ -330,6 +371,7 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
               </button>
             </div>
           </form>
+          )}
         </div>
       </div>
     </div>
