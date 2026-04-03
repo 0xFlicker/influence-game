@@ -28,7 +28,7 @@ export function AdminTabs() {
         params.set("tab", tab);
       }
       const qs = params.toString();
-      router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+      router.push(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
     },
     [searchParams, router, pathname],
   );

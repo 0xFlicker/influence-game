@@ -124,11 +124,19 @@ function AssignRoleForm({
 
 function AddressRolesTable({
   assignments,
+  users,
   onRevoke,
 }: {
   assignments: AddressRoleAssignment[];
+  users: AdminUser[];
   onRevoke: (walletAddress: string, roleId: string, roleName: string) => void;
 }) {
+  const usersByWallet = new Map<string, AdminUser>();
+  for (const u of users) {
+    if (u.walletAddress) {
+      usersByWallet.set(u.walletAddress.toLowerCase(), u);
+    }
+  }
   if (assignments.length === 0) {
     return (
       <div className="border border-white/10 rounded-xl p-8 text-center text-white/20 text-sm">
@@ -157,10 +165,26 @@ function AddressRolesTable({
           </tr>
         </thead>
         <tbody>
-          {[...grouped.entries()].map(([addr, roles]) => (
+          {[...grouped.entries()].map(([addr, roles]) => {
+            const user = usersByWallet.get(addr.toLowerCase());
+            const label = user?.displayName && !user.displayName.startsWith("0x")
+              ? user.displayName
+              : user?.email ?? null;
+            return (
             <tr key={addr} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
-              <td className="py-3 px-4 text-white/60 text-sm font-mono">
-                <TruncatedAddress address={addr} maxWidth="11ch" />
+              <td className="py-3 px-4 text-sm">
+                {label ? (
+                  <div className="flex flex-col">
+                    <span className="text-white/70">{label}</span>
+                    <span className="text-white/25 text-xs font-mono">
+                      <TruncatedAddress address={addr} maxWidth="11ch" />
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-white/60 font-mono">
+                    <TruncatedAddress address={addr} maxWidth="11ch" />
+                  </span>
+                )}
               </td>
               <td className="py-3 px-4">
                 <div className="flex gap-1 flex-wrap">
@@ -187,7 +211,8 @@ function AddressRolesTable({
                 </div>
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -403,6 +428,7 @@ export function UserRolesPanel() {
         </h2>
         <AddressRolesTable
           assignments={assignments}
+          users={users}
           onRevoke={handleRevokeClick}
         />
       </section>
