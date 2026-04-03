@@ -79,7 +79,8 @@ export async function generatePresignedUpload(
     ACL: "public-read",
   });
 
-  const uploadUrl = await getSignedUrl(client, command, { expiresIn });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const uploadUrl = await getSignedUrl(client as any, command, { expiresIn });
 
   // Public URL: https://{bucket}.{endpoint-host}/{key}
   const endpoint = process.env.LINODE_OBJ_ENDPOINT!;
