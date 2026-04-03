@@ -5,11 +5,12 @@ import { useCallback } from "react";
 import { AdminPanel } from "./admin-panel";
 import { UserRolesPanel } from "./user-roles-panel";
 import { AgentsAdminPanel } from "./agents-admin-panel";
+import { InviteCodesPanel } from "./invite-codes-panel";
 import { PermissionGate } from "@/components/admin-gate";
 
-type Tab = "games" | "agents" | "users";
+type Tab = "games" | "agents" | "users" | "invites";
 
-const VALID_TABS: Tab[] = ["games", "agents", "users"];
+const VALID_TABS: Tab[] = ["games", "agents", "users", "invites"];
 
 export function AdminTabs() {
   const searchParams = useSearchParams();
@@ -57,12 +58,19 @@ export function AdminTabs() {
             Users & Roles
           </TabButton>
         </PermissionGate>
+        <TabButton
+          active={activeTab === "invites"}
+          onClick={() => setActiveTab("invites")}
+        >
+          Invites
+        </TabButton>
       </div>
 
       {/* Tab content */}
       {activeTab === "games" && <AdminPanel />}
       {activeTab === "agents" && <AgentsAdminPanel />}
       {activeTab === "users" && <UserRolesPanel />}
+      {activeTab === "invites" && <InviteCodesPanel />}
     </div>
   );
 }

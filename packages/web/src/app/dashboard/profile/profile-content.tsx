@@ -6,7 +6,9 @@ import {
   getAuthToken,
   getProfile,
   updateProfile,
+  getMyInviteCodes,
   type PlayerProfile,
+  type InviteCodesResponse,
 } from "@/lib/api";
 
 export function ProfileContent() {
@@ -19,6 +21,10 @@ export function ProfileContent() {
   const [nameInput, setNameInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Invite codes
+  const [inviteCodes, setInviteCodes] = useState<InviteCodesResponse | null>(null);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   useEffect(() => {
     function fetchProfile() {
@@ -34,6 +40,10 @@ export function ProfileContent() {
           setError("Failed to load profile.");
         })
         .finally(() => setLoading(false));
+
+      getMyInviteCodes()
+        .then(setInviteCodes)
+        .catch(() => {});
     }
 
     fetchProfile();
@@ -207,6 +217,40 @@ export function ProfileContent() {
           </div>
         </div>
       </section>
+
+      {/* Invite Codes */}
+      {inviteCodes && (
+        <section className="border border-white/10 rounded-xl p-6">
+          <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-4">
+            Invite Codes
+          </h2>
+          <p className="text-sm text-white/50 mb-4">
+            Share these codes with friends so they can sign up.
+            You have <span className="text-white font-medium">{inviteCodes.totalAvailable}</span> available
+            {inviteCodes.totalUsed > 0 && <>, <span className="text-white/40">{inviteCodes.totalUsed} used</span></>}.
+          </p>
+          {inviteCodes.available.length > 0 ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {inviteCodes.available.map((ic) => (
+                <button
+                  key={ic.code}
+                  onClick={() => {
+                    navigator.clipboard.writeText(ic.code);
+                    setCopiedCode(ic.code);
+                    setTimeout(() => setCopiedCode(null), 2000);
+                  }}
+                  className="font-mono text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-2 text-white transition-colors text-center"
+                  title="Click to copy"
+                >
+                  {copiedCode === ic.code ? "Copied!" : ic.code}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-white/30 text-sm">No invite codes available.</p>
+          )}
+        </section>
+      )}
 
       {/* Link to leaderboard */}
       <div className="text-center">

@@ -18,6 +18,7 @@ import {
   type AuthEnv,
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
+import { isInviteRequired, redeemInviteCode, grantInitialInviteCodes } from "../lib/invite-codes.js";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -101,6 +102,16 @@ export function createAuthRoutes(db: DrizzleDB) {
           .where(eq(schema.users.id, user.id));
       }
     } else {
+      // New user signup — check invite code requirement
+      const inviteRequired = await isInviteRequired(db);
+
+      if (inviteRequired && !body.inviteCode) {
+        return c.json({
+          error: "Invite code required",
+          code: "INVITE_REQUIRED",
+        }, 403);
+      }
+
       // Create new user
       const userId = privyUserId;
       await db.insert(schema.users)
@@ -113,10 +124,26 @@ export function createAuthRoutes(db: DrizzleDB) {
             : email ?? "Player",
         });
 
+      // Redeem invite code if provided
+      if (inviteRequired && body.inviteCode) {
+        const redeemed = await redeemInviteCode(db, body.inviteCode as string, userId);
+        if (!redeemed) {
+          // Roll back user creation
+          await db.delete(schema.users).where(eq(schema.users.id, userId));
+          return c.json({
+            error: "Invalid or already used invite code",
+            code: "INVALID_INVITE_CODE",
+          }, 403);
+        }
+      }
+
       user = (await db
         .select()
         .from(schema.users)
         .where(eq(schema.users.id, userId)))[0]!;
+
+      // Grant initial invite codes to new user
+      await grantInitialInviteCodes(db, userId);
     }
 
     // Resolve RBAC roles and permissions for wallet address
@@ -141,6 +168,15 @@ export function createAuthRoutes(db: DrizzleDB) {
         permissions: resolved.permissions,
       },
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/auth/check-invite — check if invite codes are required
+  // -------------------------------------------------------------------------
+
+  app.get("/api/auth/invite-required", async (c) => {
+    const required = await isInviteRequired(db);
+    return c.json({ required });
   });
 
   // -------------------------------------------------------------------------

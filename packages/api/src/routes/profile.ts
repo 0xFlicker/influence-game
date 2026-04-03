@@ -133,5 +133,34 @@ export function createProfileRoutes(db: DrizzleDB) {
     return c.json(leaderboard);
   });
 
+  // -------------------------------------------------------------------------
+  // GET /api/profile/invite-codes — get current user's invite codes
+  // -------------------------------------------------------------------------
+
+  app.get("/api/profile/invite-codes", requireAuth(db), async (c) => {
+    const user = c.get("user");
+
+    const codes = await db
+      .select({
+        id: schema.inviteCodes.id,
+        code: schema.inviteCodes.code,
+        usedById: schema.inviteCodes.usedById,
+        usedAt: schema.inviteCodes.usedAt,
+        createdAt: schema.inviteCodes.createdAt,
+      })
+      .from(schema.inviteCodes)
+      .where(eq(schema.inviteCodes.ownerId, user.id));
+
+    const available = codes.filter((c) => !c.usedById);
+    const used = codes.filter((c) => c.usedById);
+
+    return c.json({
+      available: available.map((c) => ({ code: c.code, createdAt: c.createdAt })),
+      used: used.map((c) => ({ code: c.code, usedAt: c.usedAt })),
+      totalAvailable: available.length,
+      totalUsed: used.length,
+    });
+  });
+
   return app;
 }

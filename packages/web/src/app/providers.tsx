@@ -15,8 +15,10 @@ import {
   setAuthToken,
   clearAuthToken,
   getAuthToken,
+  ApiError,
 } from "@/lib/api";
 import { isE2EMode } from "@/lib/wallet-adapter";
+import { InviteCodeModal } from "@/components/invite-code-modal";
 
 // ---------------------------------------------------------------------------
 // Wagmi config (Privy-managed)
@@ -50,12 +52,38 @@ export function useE2EAuth(): E2EAuthState {
 }
 
 // ---------------------------------------------------------------------------
+// Invite code context — prompts new users for invite code
+// ---------------------------------------------------------------------------
+
+interface InviteState {
+  needsInvite: boolean;
+  submitInvite: (code: string) => Promise<void>;
+  inviteError: string | null;
+  submitting: boolean;
+}
+
+const InviteContext = createContext<InviteState>({
+  needsInvite: false,
+  submitInvite: async () => {},
+  inviteError: null,
+  submitting: false,
+});
+
+export function useInvite(): InviteState {
+  return useContext(InviteContext);
+}
+
+// ---------------------------------------------------------------------------
 // AuthSync — production Privy → backend JWT sync (skipped in e2e)
 // ---------------------------------------------------------------------------
 
-function AuthSync() {
+function AuthSync({ children }: { children: React.ReactNode }) {
   const { authenticated, getAccessToken, logout } = usePrivy();
   const e2e = useE2EAuth();
+  const [needsInvite, setNeedsInvite] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [pendingPrivyToken, setPendingPrivyToken] = useState<string | null>(null);
 
   useEffect(() => {
     // In e2e mode, JWT is injected by test harness — skip Privy sync
@@ -63,6 +91,8 @@ function AuthSync() {
 
     if (!authenticated) {
       clearAuthToken();
+      setNeedsInvite(false);
+      setPendingPrivyToken(null);
       return;
     }
 
@@ -71,11 +101,48 @@ function AuthSync() {
       try {
         const { token } = await loginWithPrivyToken(privyToken);
         setAuthToken(token);
+        setNeedsInvite(false);
+        setPendingPrivyToken(null);
       } catch (err) {
+        if (err instanceof ApiError) {
+          try {
+            const body = JSON.parse(err.message);
+            if (body.code === "INVITE_REQUIRED") {
+              setPendingPrivyToken(privyToken);
+              setNeedsInvite(true);
+              return;
+            }
+          } catch { /* not JSON, fall through */ }
+        }
         console.error("[AuthSync] Failed to exchange Privy token:", err);
       }
     });
   }, [authenticated, getAccessToken, e2e.isE2E]);
+
+  const submitInvite = async (inviteCode: string) => {
+    if (!pendingPrivyToken) return;
+    setSubmitting(true);
+    setInviteError(null);
+    try {
+      const { token } = await loginWithPrivyToken(pendingPrivyToken, inviteCode);
+      setAuthToken(token);
+      setNeedsInvite(false);
+      setPendingPrivyToken(null);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        try {
+          const body = JSON.parse(err.message);
+          setInviteError(body.error || "Invalid invite code");
+        } catch {
+          setInviteError("Invalid invite code");
+        }
+      } else {
+        setInviteError("Something went wrong. Try again.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     if (e2e.isE2E) return;
@@ -88,7 +155,19 @@ function AuthSync() {
     return () => window.removeEventListener("auth:expired", handleExpired);
   }, [logout, e2e.isE2E]);
 
-  return null;
+  const inviteState = useMemo<InviteState>(() => ({
+    needsInvite,
+    submitInvite,
+    inviteError,
+    submitting,
+  }), [needsInvite, inviteError, submitting, pendingPrivyToken]);
+
+  return (
+    <InviteContext.Provider value={inviteState}>
+      {children}
+      <InviteCodeModal />
+    </InviteContext.Provider>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -152,8 +231,9 @@ function InnerProviders({ children }: { children: React.ReactNode }) {
       >
         <QueryClientProvider client={queryClient}>
           <PrivyWagmiProvider config={wagmiConfig}>
-            <AuthSync />
-            {children}
+            <AuthSync>
+              {children}
+            </AuthSync>
           </PrivyWagmiProvider>
         </QueryClientProvider>
       </PrivyProvider>

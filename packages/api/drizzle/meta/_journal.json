@@ -29,6 +29,13 @@
       "when": 1775347200000,
       "tag": "0003_account_level_elo",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775433600000,
+      "tag": "0004_invite_codes",
+      "breakpoints": true
     }
   ]
 }

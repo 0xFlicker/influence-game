@@ -245,10 +245,77 @@ export async function getMe(): Promise<AuthMe> {
 
 export async function loginWithPrivyToken(
   privyToken: string,
+  inviteCode?: string,
 ): Promise<{ token: string }> {
   return apiFetch("/api/auth/login", {
     method: "POST",
-    body: JSON.stringify({ token: privyToken }),
+    body: JSON.stringify({ token: privyToken, ...(inviteCode ? { inviteCode } : {}) }),
+  });
+}
+
+export async function checkInviteRequired(): Promise<{ required: boolean }> {
+  return apiFetch("/api/auth/invite-required");
+}
+
+// ---------------------------------------------------------------------------
+// Invite code types
+// ---------------------------------------------------------------------------
+
+export interface InviteCodesResponse {
+  available: { code: string; createdAt: string }[];
+  used: { code: string; usedAt: string | null }[];
+  totalAvailable: number;
+  totalUsed: number;
+}
+
+export async function getMyInviteCodes(): Promise<InviteCodesResponse> {
+  return apiFetch("/api/profile/invite-codes");
+}
+
+// ---------------------------------------------------------------------------
+// Admin invite code types & calls
+// ---------------------------------------------------------------------------
+
+export interface AdminInviteCode {
+  id: string;
+  code: string;
+  ownerId: string;
+  usedById: string | null;
+  usedAt: string | null;
+  createdAt: string;
+  ownerDisplayName: string | null;
+}
+
+export async function getAdminInviteSetting(): Promise<{ inviteRequired: boolean }> {
+  return apiFetch("/api/admin/settings/invite");
+}
+
+export async function setAdminInviteSetting(inviteRequired: boolean): Promise<{ inviteRequired: boolean }> {
+  return apiFetch("/api/admin/settings/invite", {
+    method: "PATCH",
+    body: JSON.stringify({ inviteRequired }),
+  });
+}
+
+export async function getAdminInviteCodes(params?: { userId?: string; status?: "available" | "used" }): Promise<AdminInviteCode[]> {
+  const qs = new URLSearchParams();
+  if (params?.userId) qs.set("userId", params.userId);
+  if (params?.status) qs.set("status", params.status);
+  const query = qs.toString();
+  return apiFetch(`/api/admin/invite-codes${query ? `?${query}` : ""}`);
+}
+
+export async function adminGenerateInviteCodes(userId: string, count?: number): Promise<{ generated: number; codes: string[] }> {
+  return apiFetch("/api/admin/invite-codes", {
+    method: "POST",
+    body: JSON.stringify({ userId, count }),
+  });
+}
+
+export async function adminRefillInviteCodes(minCodes: number, minAgeDays?: number): Promise<{ usersProcessed: number; totalGenerated: number }> {
+  return apiFetch("/api/admin/invite-codes/refill", {
+    method: "POST",
+    body: JSON.stringify({ minCodes, minAgeDays }),
   });
 }
 

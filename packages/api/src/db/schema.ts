@@ -234,6 +234,35 @@ export const freeGameQueue = pgTable("free_game_queue", {
 });
 
 // ---------------------------------------------------------------------------
+// Invite Codes
+// ---------------------------------------------------------------------------
+
+export const inviteCodes = pgTable("invite_codes", {
+  id: text("id").primaryKey(), // UUID
+  code: text("code").notNull().unique(), // 8-char alphanumeric code
+  ownerId: text("owner_id")
+    .notNull()
+    .references(() => users.id), // User who owns/generated this code
+  usedById: text("used_by_id").references(() => users.id), // User who redeemed it
+  usedAt: text("used_at"), // Timestamp when redeemed
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+});
+
+// ---------------------------------------------------------------------------
+// App Settings (global key-value config)
+// ---------------------------------------------------------------------------
+
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(), // JSON-encoded value
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`now()::text`),
+});
+
+// ---------------------------------------------------------------------------
 // Free Track Ratings (ELO)
 // ---------------------------------------------------------------------------
 

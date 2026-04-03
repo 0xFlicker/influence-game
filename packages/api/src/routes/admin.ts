@@ -12,7 +12,7 @@
  */
 
 import { Hono } from "hono";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, isNull, and } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { getPermissionsForAddress } from "../db/rbac.js";
@@ -22,6 +22,8 @@ import {
   type AuthEnv,
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
+import { generateInviteCode } from "../lib/invite-codes.js";
+import { randomUUID } from "crypto";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -326,6 +328,178 @@ export function createAdminRoutes(db: DrizzleDB) {
     });
 
     return c.json(summaries);
+  });
+
+  // =========================================================================
+  // Invite Code Management
+  // =========================================================================
+
+  // -------------------------------------------------------------------------
+  // GET /api/admin/settings/invite — get invite code settings
+  // -------------------------------------------------------------------------
+
+  app.get("/api/admin/settings/invite", async (c) => {
+    const setting = (await db
+      .select()
+      .from(schema.appSettings)
+      .where(eq(schema.appSettings.key, "invite_required")))[0];
+
+    return c.json({
+      inviteRequired: setting?.value === "true",
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // PATCH /api/admin/settings/invite — toggle invite code requirement
+  // -------------------------------------------------------------------------
+
+  app.patch("/api/admin/settings/invite", async (c) => {
+    const body = await parseJsonBody(c, "PATCH /api/admin/settings/invite");
+    if (body?.inviteRequired === undefined) {
+      return c.json({ error: "inviteRequired is required" }, 400);
+    }
+
+    const value = body.inviteRequired ? "true" : "false";
+    const now = new Date().toISOString();
+
+    await db
+      .insert(schema.appSettings)
+      .values({ key: "invite_required", value, updatedAt: now })
+      .onConflictDoUpdate({
+        target: schema.appSettings.key,
+        set: { value, updatedAt: now },
+      });
+
+    return c.json({ inviteRequired: body.inviteRequired });
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/admin/invite-codes — list invite codes with filters
+  // -------------------------------------------------------------------------
+
+  app.get("/api/admin/invite-codes", async (c) => {
+    const userId = c.req.query("userId");
+    const status = c.req.query("status"); // "available" | "used" | undefined (all)
+
+    let query = db
+      .select({
+        id: schema.inviteCodes.id,
+        code: schema.inviteCodes.code,
+        ownerId: schema.inviteCodes.ownerId,
+        usedById: schema.inviteCodes.usedById,
+        usedAt: schema.inviteCodes.usedAt,
+        createdAt: schema.inviteCodes.createdAt,
+        ownerDisplayName: schema.users.displayName,
+      })
+      .from(schema.inviteCodes)
+      .innerJoin(schema.users, eq(schema.inviteCodes.ownerId, schema.users.id))
+      .$dynamic();
+
+    const conditions = [];
+    if (userId) conditions.push(eq(schema.inviteCodes.ownerId, userId));
+    if (status === "available") conditions.push(isNull(schema.inviteCodes.usedById));
+    if (status === "used") conditions.push(sql`${schema.inviteCodes.usedById} IS NOT NULL`);
+    if (conditions.length > 0) query = query.where(and(...conditions));
+
+    const rows = await query;
+    return c.json(rows);
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/admin/invite-codes — generate codes for a user
+  // -------------------------------------------------------------------------
+
+  app.post("/api/admin/invite-codes", async (c) => {
+    const body = await parseJsonBody(c, "POST /api/admin/invite-codes");
+    if (!body?.userId) {
+      return c.json({ error: "userId is required" }, 400);
+    }
+
+    const count = Math.min(Math.max(Number(body.count) || 5, 1), 100);
+    const userId = body.userId as string;
+
+    // Verify user exists
+    const user = (await db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(eq(schema.users.id, userId)))[0];
+
+    if (!user) {
+      return c.json({ error: "User not found" }, 404);
+    }
+
+    const codes = Array.from({ length: count }, () => ({
+      id: randomUUID(),
+      code: generateInviteCode(),
+      ownerId: userId,
+    }));
+
+    await db.insert(schema.inviteCodes).values(codes);
+
+    return c.json({
+      generated: count,
+      codes: codes.map((c) => c.code),
+    }, 201);
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/admin/invite-codes/refill — bulk refill: ensure min codes
+  // -------------------------------------------------------------------------
+
+  app.post("/api/admin/invite-codes/refill", async (c) => {
+    const body = await parseJsonBody(c, "POST /api/admin/invite-codes/refill");
+    const minCodes = Math.min(Math.max(Number(body?.minCodes) || 5, 1), 100);
+    const minAgeDays = Number(body?.minAgeDays) || 0;
+
+    // Get eligible users
+    const cutoff = minAgeDays > 0
+      ? new Date(Date.now() - minAgeDays * 86400000).toISOString()
+      : null;
+
+    let usersQuery = db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .$dynamic();
+
+    if (cutoff) {
+      usersQuery = usersQuery.where(
+        sql`${schema.users.createdAt} <= ${cutoff}`,
+      );
+    }
+
+    const eligibleUsers = await usersQuery;
+    let totalGenerated = 0;
+
+    for (const user of eligibleUsers) {
+      // Count available (unused) codes
+      const countResult = (await db
+        .select({ count: sql<number>`count(*)` })
+        .from(schema.inviteCodes)
+        .where(
+          and(
+            eq(schema.inviteCodes.ownerId, user.id),
+            isNull(schema.inviteCodes.usedById),
+          ),
+        ))[0];
+
+      const available = Number(countResult?.count ?? 0);
+      const needed = minCodes - available;
+
+      if (needed > 0) {
+        const codes = Array.from({ length: needed }, () => ({
+          id: randomUUID(),
+          code: generateInviteCode(),
+          ownerId: user.id,
+        }));
+        await db.insert(schema.inviteCodes).values(codes);
+        totalGenerated += needed;
+      }
+    }
+
+    return c.json({
+      usersProcessed: eligibleUsers.length,
+      totalGenerated,
+    });
   });
 
   return app;
