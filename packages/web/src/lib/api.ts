@@ -827,11 +827,27 @@ export interface UploadResult {
 }
 
 export async function uploadProfilePicture(file: File): Promise<UploadResult> {
-  const formData = new FormData();
-  formData.append("file", file);
-  return apiFetch("/api/upload/pfp", {
+  // Step 1: Get a presigned PUT URL from our API
+  const { uploadUrl, publicUrl, key } = await apiFetch<{
+    uploadUrl: string;
+    publicUrl: string;
+    key: string;
+  }>("/api/upload/pfp", {
     method: "POST",
-    body: formData,
+    body: JSON.stringify({ contentType: file.type }),
   });
+
+  // Step 2: PUT the file directly to object storage
+  const putRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": file.type },
+    body: file,
+  });
+
+  if (!putRes.ok) {
+    throw new Error(`Upload failed: ${putRes.status}`);
+  }
+
+  return { publicUrl, key };
 }
 

@@ -23,5 +23,8 @@
   "devDependencies": {
     "@playwright/test": "^1.58.2",
     "puppeteer": "^24.40.0"
+  },
+  "dependencies": {
+    "@aws-sdk/s3-request-presigner": "^3.1023.0"
   }
 }
