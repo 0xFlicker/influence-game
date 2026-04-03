@@ -38,7 +38,7 @@ export function PhaseHeader({ game, isReplay }: { game: GameDetail; isReplay: bo
             {!isReplay && game.status === "in_progress" && (
               <span className="ml-3">{alive} alive · {total - alive} out</span>
             )}
-            {game.status === "completed" && game.winner && (
+            {game.status === "completed" && game.winner && !isReplay && (
               <span className="ml-3 text-green-400">{game.winner} wins</span>
             )}
           </div>
