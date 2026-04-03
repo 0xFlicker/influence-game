@@ -16,10 +16,14 @@ import { AgentList } from "./agent-list";
 
 type View = "list" | "create" | "edit";
 
-export function AgentsContent() {
+interface AgentsContentProps {
+  initialView?: "create";
+}
+
+export function AgentsContent({ initialView }: AgentsContentProps) {
   const [agents, setAgents] = useState<SavedAgent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<View>("list");
+  const [view, setView] = useState<View>(initialView ?? "list");
   const [editTarget, setEditTarget] = useState<SavedAgent | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<SavedAgent | null>(null);
   const [error, setError] = useState<string | null>(null);

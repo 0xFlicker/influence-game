@@ -106,6 +106,7 @@ function SavedAgentsSection() {
   const [agents, setAgents] = useState<SavedAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     if (!getAuthToken()) {
@@ -154,10 +155,29 @@ function SavedAgentsSection() {
     );
   }
 
+  const query = search.toLowerCase();
+  const filtered = query
+    ? agents.filter(
+        (a) =>
+          a.name.toLowerCase().includes(query) ||
+          (a.personaKey && a.personaKey.toLowerCase().includes(query)) ||
+          (a.backstory && a.backstory.toLowerCase().includes(query))
+      )
+    : agents;
+
   return (
     <div className="space-y-3">
+      {agents.length > 3 && (
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search agents..."
+          className="w-full text-xs bg-transparent border border-white/10 text-white/70 placeholder:text-white/20 px-3 py-2 rounded-lg outline-none focus:border-white/25 transition-colors"
+        />
+      )}
       <div className="grid gap-2">
-        {agents.slice(0, 3).map((agent) => {
+        {filtered.slice(0, search ? filtered.length : 3).map((agent) => {
           const persona = PERSONAS.find((p) => p.key === agent.personaKey);
           return (
             <div
@@ -180,15 +200,12 @@ function SavedAgentsSection() {
           );
         })}
       </div>
-      {agents.length > 3 && (
-        <p className="text-white/25 text-xs">+{agents.length - 3} more</p>
+      {!search && filtered.length > 3 && (
+        <p className="text-white/25 text-xs">+{filtered.length - 3} more</p>
       )}
-      <Link
-        href="/dashboard/agents"
-        className="inline-block text-indigo-400 hover:text-indigo-300 text-xs transition-colors"
-      >
-        Manage agents →
-      </Link>
+      {search && filtered.length === 0 && (
+        <p className="text-white/25 text-xs">No agents match &ldquo;{search}&rdquo;</p>
+      )}
     </div>
   );
 }
@@ -330,12 +347,20 @@ export function DashboardContent() {
             <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider">
               Your Agents
             </h2>
-            <Link
-              href="/dashboard/agents"
-              className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-            >
-              Manage →
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link
+                href="/dashboard/agents?view=create"
+                className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg font-medium transition-colors"
+              >
+                + Create Agent
+              </Link>
+              <Link
+                href="/dashboard/agents"
+                className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+              >
+                Manage →
+              </Link>
+            </div>
           </div>
           <SavedAgentsSection />
         </section>
