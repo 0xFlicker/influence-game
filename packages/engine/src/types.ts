@@ -139,7 +139,7 @@ export interface PowerAction {
 // Messages passed between agents and the House
 // ---------------------------------------------------------------------------
 
-export type MessageScope = "public" | "whisper" | "system";
+export type MessageScope = "public" | "whisper" | "system" | "thinking";
 
 export interface PublicMessage {
   type: "public";
@@ -199,7 +199,19 @@ export interface SystemMessage {
   timestamp: number;
 }
 
-export type GameMessage = PublicMessage | WhisperMessage | SystemMessage;
+/** Agent's hidden internal thought — revealable by viewers on-demand */
+export interface ThinkingMessage {
+  type: "thinking";
+  from: UUID;
+  text: string;
+  round: number;
+  phase: Phase;
+  timestamp: number;
+  /** Thinking events are hidden by default; viewers toggle visibility */
+  visible: boolean;
+}
+
+export type GameMessage = PublicMessage | WhisperMessage | SystemMessage | ThinkingMessage;
 
 // ---------------------------------------------------------------------------
 // Events emitted by the House to agents
@@ -246,6 +258,7 @@ export type AgentAction =
   | { type: "COUNCIL_VOTE"; from: UUID; eliminateTarget: UUID }
   | { type: "LAST_MESSAGE"; from: UUID; text: string }
   | { type: "DIARY_ENTRY"; from: UUID; text: string; phase: Phase }
+  | { type: "THINKING"; from: UUID; text: string; phase: Phase }
   // Endgame actions
   | { type: "PLEA"; from: UUID; text: string }
   | { type: "ENDGAME_ELIMINATION_VOTE"; from: UUID; eliminateTarget: UUID }
@@ -296,6 +309,12 @@ export interface GameConfig {
   diaryRoomAfterPhases?: Phase[];
   /** Messages per player in the lobby phase. If unset, uses player-count scaling: fewer players get more messages. */
   lobbyMessagesPerPlayer?: number;
+  /** Max whisper conversations per agent per round (default 2). Scarcity makes whispers more strategic. */
+  maxWhisperPairsPerAgent?: number;
+  /** Max message exchanges per whisper conversation (default 2). Each exchange = 1 message per agent. */
+  maxWhisperExchanges?: number;
+  /** Number of whisper sessions per round (default 2). Each session allocates new rooms. */
+  whisperSessionsPerRound?: number;
 }
 
 export const DEFAULT_CONFIG: GameConfig = {

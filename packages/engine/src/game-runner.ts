@@ -100,6 +100,10 @@ export interface IAgent {
   /** Judgment: juror votes for the winner */
   getJuryVote(context: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID>;
 
+  // --- Revealable thinking (replaces most diary rooms) ---
+  /** Produce a brief internal thought during a phase (1-3 sentences, hidden from other players) */
+  getThinking?(context: PhaseContext): Promise<string>;
+
   // --- Strategic reflection (called after diary room) ---
   /** Produce a strategic reflection after diary room interview */
   getStrategicReflection?(context: PhaseContext): Promise<void>;
@@ -161,7 +165,7 @@ export interface TranscriptEntry {
   phase: Phase;
   timestamp: number;
   from: string;
-  scope: "public" | "whisper" | "system" | "diary";
+  scope: "public" | "whisper" | "system" | "diary" | "thinking";
   to?: string[];
   text: string;
   /** When true, author identity is hidden from players (viewers still see it) */
@@ -194,6 +198,8 @@ export class GameRunner {
   private publicMessages: Array<{ from: string; text: string; phase: Phase; anonymous?: boolean; displayOrder?: number }> = [];
   /** Diary room entries: question/answer pairs per agent per phase */
   private diaryEntries: Array<{ round: number; precedingPhase: Phase; agentId: UUID; agentName: string; question: string; answer: string }> = [];
+  /** Thinking entries: agent internal monologue per phase (revealable by viewers) */
+  private thinkingEntries: Array<{ round: number; phase: Phase; agentId: UUID; agentName: string; text: string }> = [];
   /** Name of the most recently eliminated player (for diary room context) */
   private lastEliminatedName: string | null = null;
   /** Ordered list of eliminated player names (structured data, no regex needed) */
@@ -229,6 +235,10 @@ export class GameRunner {
 
   get diaryLog(): ReadonlyArray<{ round: number; precedingPhase: Phase; agentId: UUID; agentName: string; question: string; answer: string }> {
     return this.diaryEntries;
+  }
+
+  get thinkingLog(): ReadonlyArray<{ round: number; phase: Phase; agentId: UUID; agentName: string; text: string }> {
+    return this.thinkingEntries;
   }
 
   /**
@@ -359,58 +369,66 @@ export class GameRunner {
       // --- Normal round phases ---
       if (state === "introduction") {
         await this.runIntroductionPhase(actor);
+        // Diary room: intro only (round 1 — agents introduce strategy to audience)
         await this.runDiaryRoom(Phase.INTRODUCTION);
       } else if (state === "lobby") {
         await this.runLobbyPhase(actor);
-        await this.runDiaryRoom(Phase.LOBBY);
+        // Revealable thinking replaces diary room after lobby
+        await this.collectThinking(Phase.LOBBY);
       } else if (state === "whisper") {
         await this.runWhisperPhase(actor);
+        // Revealable thinking after whisper
+        await this.collectThinking(Phase.WHISPER);
       } else if (state === "rumor") {
         await this.runRumorPhase(actor);
-        await this.runDiaryRoom(Phase.RUMOR);
+        // Revealable thinking after rumor
+        await this.collectThinking(Phase.RUMOR);
       } else if (state === "vote") {
         await this.runVotePhase(actor);
+        // Revealable thinking after vote (before vote is the plan, but post-vote thinking is more natural)
+        await this.collectThinking(Phase.VOTE);
       } else if (state === "power") {
         await this.runPowerPhase(actor);
       } else if (state === "reveal") {
         await this.runRevealPhase(actor);
-        await this.runDiaryRoom(Phase.REVEAL);
       } else if (state === "council") {
         await this.runCouncilPhase(actor);
-        await this.runDiaryRoom(Phase.COUNCIL);
+        // Brief exit thought for eliminated agent (handled inside council phase)
 
       // --- THE RECKONING (4 -> 3) ---
       } else if (state === "reckoning_lobby") {
         await this.runReckoningLobby(actor);
-        await this.runDiaryRoom(Phase.LOBBY);
+        await this.collectThinking(Phase.LOBBY);
       } else if (state === "reckoning_whisper") {
         await this.runReckoningWhisper(actor);
+        await this.collectThinking(Phase.WHISPER);
       } else if (state === "reckoning_plea") {
         await this.runReckoningPlea(actor);
-        await this.runDiaryRoom(Phase.PLEA);
+        await this.collectThinking(Phase.PLEA);
       } else if (state === "reckoning_vote") {
         await this.runReckoningVote(actor);
-        await this.runDiaryRoom(Phase.VOTE);
 
       // --- THE TRIBUNAL (3 -> 2) ---
       } else if (state === "tribunal_lobby") {
         await this.runTribunalLobby(actor);
-        await this.runDiaryRoom(Phase.LOBBY);
+        await this.collectThinking(Phase.LOBBY);
       } else if (state === "tribunal_accusation") {
         await this.runTribunalAccusation(actor);
+        await this.collectThinking(Phase.ACCUSATION);
       } else if (state === "tribunal_defense") {
         await this.runTribunalDefense(actor);
-        await this.runDiaryRoom(Phase.DEFENSE);
+        await this.collectThinking(Phase.DEFENSE);
       } else if (state === "tribunal_vote") {
         await this.runTribunalVote(actor);
-        await this.runDiaryRoom(Phase.VOTE);
 
       // --- THE JUDGMENT (2 finalists) ---
       } else if (state === "judgment_opening") {
         await this.runJudgmentOpening(actor);
+        // Diary room for final 2 — agents make their case to the audience
+        await this.runDiaryRoom(Phase.OPENING_STATEMENTS);
       } else if (state === "judgment_jury_questions") {
         await this.runJudgmentJuryQuestions(actor);
-        await this.runDiaryRoom(Phase.JURY_QUESTIONS);
+        await this.collectThinking(Phase.JURY_QUESTIONS);
       } else if (state === "judgment_closing") {
         await this.runJudgmentClosing(actor);
       } else if (state === "judgment_jury_vote") {
@@ -586,11 +604,11 @@ export class GameRunner {
 
   /**
    * Run a turn-based conversation in a single whisper room.
-   * Agents alternate sending messages (max 8 per agent).
+   * Agents alternate sending messages (capped by maxWhisperExchanges config, default 2 per agent).
    * Room ends when both agents pass consecutively or both hit the limit.
    */
   private async runRoomConversation(room: RoomAllocation, roomCount: number): Promise<void> {
-    const MAX_MESSAGES_PER_AGENT = 8;
+    const MAX_MESSAGES_PER_AGENT = this.config.maxWhisperExchanges ?? 2;
     const nameA = this.gameState.getPlayerName(room.playerA);
     const nameB = this.gameState.getPlayerName(room.playerB);
 
@@ -659,42 +677,78 @@ export class GameRunner {
     this.currentRoomAllocations = [];
     this.currentExcludedPlayerIds = [];
 
-    const roomCount = this.computeRoomCount(alivePlayers.length);
+    const maxPairsPerAgent = this.config.maxWhisperPairsPerAgent ?? 2;
+    const sessionsPerRound = this.config.whisperSessionsPerRound ?? 2;
 
-    // --- Sub-Step 1: Room Request ---
-    // Each agent submits a preferred room partner
-    const requests = new Map<UUID, UUID>();
-    await Promise.all(
-      alivePlayers.map(async (player) => {
-        const agent = this.agents.get(player.id)!;
-        const ctx = this.buildPhaseContext(player.id, Phase.WHISPER, undefined, undefined, { roomCount });
-        const partnerId = await agent.requestRoom(ctx);
-        if (partnerId) {
-          requests.set(player.id, partnerId);
-        }
-      }),
-    );
+    // Track how many conversations each agent has had this round
+    const conversationCount = new Map<UUID, number>(alivePlayers.map((p) => [p.id, 0]));
+    const allRooms: RoomAllocation[] = [];
+    const allExcluded = new Set<UUID>();
+    let globalRoomId = 0;
 
-    // --- Sub-Step 2: Room Allocation ---
-    const { rooms, excluded } = this.allocateRooms(requests, alivePlayers, roomCount);
-    this.currentRoomAllocations = rooms;
-    this.currentExcludedPlayerIds = excluded;
-    this.gameState.recordRoomAllocations(rooms, excluded);
+    // Run multiple whisper sessions per round
+    for (let session = 0; session < sessionsPerRound; session++) {
+      // Eligible agents: alive and haven't hit their pair limit
+      const eligible = alivePlayers.filter(
+        (p) => (conversationCount.get(p.id) ?? 0) < maxPairsPerAgent,
+      );
+      if (eligible.length < 2) break;
 
-    // Log room assignments as system message with metadata
-    const roomDescriptions = rooms.map((r) => {
-      const nameA = this.gameState.getPlayerName(r.playerA);
-      const nameB = this.gameState.getPlayerName(r.playerB);
-      return `Room ${r.roomId}: ${nameA} & ${nameB}`;
-    });
-    const excludedNames = excluded.map((id) => this.gameState.getPlayerName(id));
-    const allocationText = roomDescriptions.join(" | ") +
-      (excludedNames.length > 0 ? ` | Commons: ${excludedNames.join(", ")}` : "");
-    this.logRoomAllocation(allocationText, rooms, excludedNames);
+      const roomCount = this.computeRoomCount(eligible.length);
 
-    // --- Sub-Step 3: Room Conversation ---
-    // Rooms are independent (separate player pairs, separate histories) — run in parallel
-    await Promise.all(rooms.map((room) => this.runRoomConversation(room, roomCount)));
+      // Each eligible agent submits a preferred room partner
+      const requests = new Map<UUID, UUID>();
+      await Promise.all(
+        eligible.map(async (player) => {
+          const agent = this.agents.get(player.id)!;
+          const ctx = this.buildPhaseContext(player.id, Phase.WHISPER, undefined, undefined, { roomCount });
+          const partnerId = await agent.requestRoom(ctx);
+          // Only accept if partner is also eligible
+          if (partnerId && eligible.some((p) => p.id === partnerId)) {
+            requests.set(player.id, partnerId);
+          }
+        }),
+      );
+
+      // Allocate rooms for this session
+      const { rooms, excluded } = this.allocateRooms(requests, eligible, roomCount);
+
+      // Re-number rooms globally across sessions
+      const sessionRooms = rooms.map((r) => {
+        globalRoomId++;
+        return { ...r, roomId: globalRoomId };
+      });
+
+      // Track conversation counts
+      for (const room of sessionRooms) {
+        conversationCount.set(room.playerA, (conversationCount.get(room.playerA) ?? 0) + 1);
+        conversationCount.set(room.playerB, (conversationCount.get(room.playerB) ?? 0) + 1);
+      }
+
+      allRooms.push(...sessionRooms);
+      for (const id of excluded) allExcluded.add(id);
+
+      // Log room assignments for this session
+      const roomDescriptions = sessionRooms.map((r) => {
+        const nameA = this.gameState.getPlayerName(r.playerA);
+        const nameB = this.gameState.getPlayerName(r.playerB);
+        return `Room ${r.roomId}: ${nameA} & ${nameB}`;
+      });
+      const excludedNames = excluded.map((id) => this.gameState.getPlayerName(id));
+      const sessionLabel = sessionsPerRound > 1 ? ` (session ${session + 1})` : "";
+      const allocationText = roomDescriptions.join(" | ") +
+        (excludedNames.length > 0 ? ` | Commons: ${excludedNames.join(", ")}` : "") +
+        sessionLabel;
+      this.logRoomAllocation(allocationText, sessionRooms, excludedNames);
+
+      // Run conversations in parallel within this session
+      await Promise.all(sessionRooms.map((room) => this.runRoomConversation(room, roomCount)));
+    }
+
+    // Store cumulative room allocations for context building
+    this.currentRoomAllocations = allRooms;
+    this.currentExcludedPlayerIds = [...allExcluded];
+    this.gameState.recordRoomAllocations(allRooms, [...allExcluded]);
 
     actor.send({ type: "PHASE_COMPLETE" });
     await new Promise((r) => setTimeout(r, 0));
@@ -1497,6 +1551,61 @@ export class GameRunner {
   }
 
   // ---------------------------------------------------------------------------
+  // Revealable Thinking — agents emit hidden internal monologue during phases
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Collect thinking events from all alive agents for a given phase.
+   * Thinking is a brief internal monologue (1-3 sentences) that replaces most diary rooms.
+   * Hidden by default — viewers can reveal on-demand.
+   * Also triggers strategic reflections to maintain strategic continuity.
+   */
+  private async collectThinking(phase: Phase): Promise<void> {
+    const alivePlayers = this.gameState.getAlivePlayers();
+
+    // Collect thinking events in parallel
+    await Promise.all(
+      alivePlayers.map(async (player) => {
+        const agent = this.agents.get(player.id)!;
+        if (!agent.getThinking) return;
+        try {
+          const ctx = this.buildPhaseContext(player.id, phase);
+          const text = await agent.getThinking(ctx);
+          if (text && text !== "[No response]") {
+            this.logThinking(player.id, text, phase);
+            this.thinkingEntries.push({
+              round: this.gameState.round,
+              phase,
+              agentId: player.id,
+              agentName: player.name,
+              text,
+            });
+          }
+        } catch (error) {
+          console.warn(`[Thinking] Failed for ${player.name}, skipping:`, error);
+        }
+      }),
+    );
+
+    // Run strategic reflections after vote phase thinking (once per round, not every phase)
+    if (phase === Phase.VOTE) {
+      try {
+        await Promise.all(
+          alivePlayers.map(async (player) => {
+            const agent = this.agents.get(player.id);
+            if (agent?.getStrategicReflection) {
+              const ctx = this.buildPhaseContext(player.id, phase);
+              await agent.getStrategicReflection(ctx);
+            }
+          }),
+        );
+      } catch (error) {
+        console.error(`[Thinking] Strategic reflections failed, continuing:`, error);
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Diary Room — House interviews agents between phases
   // ---------------------------------------------------------------------------
 
@@ -1815,6 +1924,20 @@ export class GameRunner {
       timestamp: Date.now(),
       from,
       scope: "diary",
+      text,
+    };
+    this.transcript.push(entry);
+    this.emitStream({ type: "transcript_entry", entry });
+  }
+
+  private logThinking(fromId: UUID, text: string, phase: Phase): void {
+    const name = this.gameState.getPlayerName(fromId);
+    const entry: TranscriptEntry = {
+      round: this.gameState.round,
+      phase,
+      timestamp: Date.now(),
+      from: name,
+      scope: "thinking",
       text,
     };
     this.transcript.push(entry);

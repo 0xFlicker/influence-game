@@ -18,6 +18,11 @@ export const users = pgTable("users", {
   walletAddress: text("wallet_address").unique(),
   email: text("email"),
   displayName: text("display_name"),
+  rating: integer("rating").notNull().default(1200),
+  gamesPlayed: integer("games_played").notNull().default(0),
+  gamesWon: integer("games_won").notNull().default(0),
+  peakRating: integer("peak_rating").notNull().default(1200),
+  lastGameAt: text("last_game_at"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`now()::text`),
@@ -94,7 +99,7 @@ export const gamePlayers = pgTable("game_players", {
 // Transcripts
 // ---------------------------------------------------------------------------
 
-export type TranscriptScope = "public" | "whisper" | "system" | "diary";
+export type TranscriptScope = "public" | "whisper" | "system" | "diary" | "thinking";
 
 export const transcripts = pgTable("transcripts", {
   id: serial("id").primaryKey(),

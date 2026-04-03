@@ -920,7 +920,7 @@ describe("Diary Room - interview mechanics", () => {
     expect(agentAnswers.length).toBeGreaterThan(0);
   });
 
-  it("diary rooms run after Introduction, Lobby, Rumor, Reveal, and Council", async () => {
+  it("diary rooms run after Introduction only; thinking replaces diary for other phases", async () => {
     const { MockAgent } = await import("./mock-agent");
 
     const agents = [
@@ -935,17 +935,22 @@ describe("Diary Room - interview mechanics", () => {
 
     const diaryLog = runner.diaryLog;
 
-    // Should have diary entries after INTRODUCTION
+    // Should have diary entries after INTRODUCTION (kept)
     const introEntries = diaryLog.filter((e) => e.precedingPhase === Phase.INTRODUCTION);
     expect(introEntries.length).toBeGreaterThan(0);
 
-    // Should have diary entries after LOBBY (at least round 1)
+    // Diary rooms after LOBBY/RUMOR replaced by revealable thinking
     const lobbyEntries = diaryLog.filter((e) => e.precedingPhase === Phase.LOBBY);
-    expect(lobbyEntries.length).toBeGreaterThan(0);
+    expect(lobbyEntries.length).toBe(0);
 
-    // Should have diary entries after RUMOR
     const rumorEntries = diaryLog.filter((e) => e.precedingPhase === Phase.RUMOR);
-    expect(rumorEntries.length).toBeGreaterThan(0);
+    expect(rumorEntries.length).toBe(0);
+
+    // Thinking entries should exist for Lobby, Whisper, Rumor, Vote phases
+    const thinkingEntries = runner.thinkingLog;
+    expect(thinkingEntries.length).toBeGreaterThan(0);
+    const thinkingPhases = new Set(thinkingEntries.map((e) => e.phase));
+    expect(thinkingPhases.has(Phase.LOBBY)).toBe(true);
   });
 
   it("diary entries contain contextual House questions", async () => {
@@ -1393,12 +1398,13 @@ describe("Whisper Rooms", () => {
       (e) => e.scope === "whisper" && e.phase === Phase.WHISPER && e.round === 1,
     );
 
-    // Exactly 2 whisper messages (one from each room partner)
-    expect(round1Whispers).toHaveLength(2);
+    // With 2 whisper sessions and 2 exchanges per conversation,
+    // expect more whisper messages (up to 4 per session × 2 sessions for paired players)
+    expect(round1Whispers.length).toBeGreaterThanOrEqual(2);
 
-    // The whisper authors should be the paired players from the allocation
+    // The whisper authors should include the paired players from the allocation
     const whisperAuthors = new Set(round1Whispers.map((e) => e.from));
-    expect(whisperAuthors.size).toBe(2);
+    expect(whisperAuthors.size).toBeGreaterThanOrEqual(2);
   });
 
   it("6-player game has 2 rooms", async () => {

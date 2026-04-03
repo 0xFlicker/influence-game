@@ -1055,6 +1055,26 @@ Keep it to 1-2 sentences. Respond ONLY with the message text.`;
     return this.callLLM(prompt, 120, sys, { action: "plea", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
   }
 
+  // ---------------------------------------------------------------------------
+  // Revealable thinking — brief internal monologue during phases
+  // ---------------------------------------------------------------------------
+
+  async getThinking(ctx: PhaseContext): Promise<string> {
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
+## Internal Thinking (Hidden from other players)
+
+This is your private internal monologue — only viewers can see this, not other players.
+Based on what just happened in the ${ctx.phase} phase, share a brief, honest thought.
+
+What are you really thinking right now? What did you notice? What's your gut reaction?
+Be specific — name players, reference what just happened, show your real strategic mind.
+
+Keep it to 1-3 sentences. Be candid and in character. Respond ONLY with your thought.`;
+
+    return this.callLLM(prompt, 120, sys, { action: "thinking", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
+  }
+
   async getDiaryEntry(ctx: PhaseContext, question: string, sessionHistory?: Array<{ question: string; answer: string }>): Promise<string> {
     const isEliminated = ctx.isEliminated === true;
 
