@@ -12,6 +12,7 @@ import {
   type CreateAgentParams,
 } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
+import { AgentAvatar } from "@/components/agent-avatar";
 import { AgentForm } from "./agents/agent-form";
 
 // ---------------------------------------------------------------------------
@@ -75,7 +76,12 @@ function AgentPicker({
                   : "border-white/10 text-white/50 hover:border-white/20 hover:text-white/70"
               }`}
             >
-              <span>{persona?.icon ?? "?"}</span>
+              <AgentAvatar
+                avatarUrl={agent.avatarUrl}
+                persona={agent.personaKey ?? "strategic"}
+                name={agent.name}
+                size="6"
+              />
               <span>{agent.name}</span>
               {agent.gamesPlayed > 0 && (
                 <span className="text-white/25">

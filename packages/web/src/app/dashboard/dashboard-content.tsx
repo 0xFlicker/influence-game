@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
 import { getAuthToken, getPlayerGames, listAgents, type GameSummary, type PlayerGameResult, type SavedAgent } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
+import { AgentAvatar } from "@/components/agent-avatar";
 import { GamesBrowser } from "@/app/games/games-browser";
 import { JoinGameModal } from "./join-game-modal";
 
@@ -184,7 +185,12 @@ function SavedAgentsSection() {
               key={agent.id}
               className="border border-white/10 rounded-lg px-4 py-3 flex items-center gap-3 overflow-hidden"
             >
-              <span className="text-lg">{persona?.icon ?? "?"}</span>
+              <AgentAvatar
+                avatarUrl={agent.avatarUrl}
+                persona={agent.personaKey ?? "strategic"}
+                name={agent.name}
+                size="8"
+              />
               <div className="min-w-0 flex-1">
                 <p className="text-white text-sm font-medium truncate">{agent.name}</p>
                 <p className="text-white/30 text-xs truncate">{agent.backstory}</p>
