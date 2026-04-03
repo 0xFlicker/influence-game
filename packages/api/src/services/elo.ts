@@ -3,16 +3,18 @@
  *
  * Standard ELO with pairwise comparisons across all human players.
  * K-factor: 32. Placement-based actual score via linear interpolation.
+ *
+ * Ratings are tracked at the **account (user) level**, not per-agent.
  */
 
 export interface PlayerResult {
-  agentProfileId: string;
+  userId: string;
   placement: number; // 1 = winner, higher = worse
   totalPlayers: number;
 }
 
 export interface EloChange {
-  agentProfileId: string;
+  userId: string;
   oldRating: number;
   newRating: number;
   delta: number;
@@ -40,16 +42,16 @@ export function calculateEloChanges(
   if (players.length < 2) return [];
 
   return players.map((player) => {
-    const oldRating = currentRatings.get(player.agentProfileId) ?? 1200;
+    const oldRating = currentRatings.get(player.userId) ?? 1200;
 
     // Pairwise comparison against all other players
     let totalExpected = 0;
     let totalActual = 0;
 
     for (const opponent of players) {
-      if (opponent.agentProfileId === player.agentProfileId) continue;
+      if (opponent.userId === player.userId) continue;
 
-      const opponentRating = currentRatings.get(opponent.agentProfileId) ?? 1200;
+      const opponentRating = currentRatings.get(opponent.userId) ?? 1200;
       totalExpected += expectedScore(oldRating, opponentRating);
 
       // Actual score: 1 if player placed higher, 0 if lower, 0.5 if tied
@@ -69,7 +71,7 @@ export function calculateEloChanges(
     const newRating = Math.max(0, oldRating + delta);
 
     return {
-      agentProfileId: player.agentProfileId,
+      userId: player.userId,
       oldRating,
       newRating,
       delta,

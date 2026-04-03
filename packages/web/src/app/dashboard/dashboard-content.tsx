@@ -175,11 +175,6 @@ function SavedAgentsSection() {
                     {agent.gamesWon}W / {agent.gamesPlayed - agent.gamesWon}L
                   </span>
                 )}
-                {agent.freeTrackRating && (
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-900/30 text-emerald-400 border border-emerald-900/40">
-                    ELO {agent.freeTrackRating.rating}
-                  </span>
-                )}
               </div>
             </div>
           );

@@ -296,7 +296,7 @@ async function runGameAsync(
       );
     }
 
-    // Update free-track ELO ratings if this is a free game
+    // Update account-level ELO ratings if this is a free game
     const gameRecord = (await db
       .select({ trackType: schema.games.trackType })
       .from(schema.games)
@@ -309,21 +309,18 @@ async function runGameAsync(
         .from(schema.gamePlayers)
         .where(eq(schema.gamePlayers.gameId, gameId));
 
-      // Map name → player record
-      const nameToPlayer = new Map<string, typeof allPlayers[number]>();
-      for (const p of allPlayers) {
-        const persona = JSON.parse(p.persona) as { name: string };
-        nameToPlayer.set(persona.name, p);
-      }
-
       // eliminationOrder: first eliminated = worst placement
       // Winner is not in eliminationOrder
+      // Deduplicate by userId — one ELO update per account
+      const seenUsers = new Set<string>();
       const humanPlayers: PlayerResult[] = [];
-      const totalHumans = allPlayers.filter((p) => p.agentProfileId != null).length;
+      const totalHumans = allPlayers.filter((p) => p.userId != null).length;
 
       if (totalHumans >= 2) {
         for (const p of allPlayers) {
-          if (!p.agentProfileId) continue; // skip AI-only players
+          if (!p.userId) continue; // skip players without accounts
+          if (seenUsers.has(p.userId)) continue; // one entry per account
+          seenUsers.add(p.userId);
 
           const persona = JSON.parse(p.persona) as { name: string };
           const elimIndex = result.eliminationOrder.indexOf(persona.name);
@@ -342,59 +339,43 @@ async function runGameAsync(
           }
 
           humanPlayers.push({
-            agentProfileId: p.agentProfileId!,
+            userId: p.userId,
             placement,
             totalPlayers: totalHumans,
           });
         }
 
-        // Fetch current ratings
+        // Fetch current account-level ratings
         const currentRatings = new Map<string, number>();
         for (const hp of humanPlayers) {
-          const rating = (await db
-            .select({ rating: schema.freeTrackRatings.rating })
-            .from(schema.freeTrackRatings)
-            .where(eq(schema.freeTrackRatings.agentProfileId, hp.agentProfileId)))[0];
-          currentRatings.set(hp.agentProfileId, rating?.rating ?? 1200);
+          const user = (await db
+            .select({ rating: schema.users.rating })
+            .from(schema.users)
+            .where(eq(schema.users.id, hp.userId)))[0];
+          currentRatings.set(hp.userId, user?.rating ?? 1200);
         }
 
         const eloChanges = calculateEloChanges(humanPlayers, currentRatings);
         const now = new Date().toISOString();
 
         for (const change of eloChanges) {
-          const isWinner = humanPlayers.find((p) => p.agentProfileId === change.agentProfileId)?.placement === 1;
-          const player = allPlayers.find((p) => p.agentProfileId === change.agentProfileId);
+          const isWinner = humanPlayers.find((p) => p.userId === change.userId)?.placement === 1;
 
-          const existing = (await db
-            .select()
-            .from(schema.freeTrackRatings)
-            .where(eq(schema.freeTrackRatings.agentProfileId, change.agentProfileId)))[0];
+          const user = (await db
+            .select({ peakRating: schema.users.peakRating })
+            .from(schema.users)
+            .where(eq(schema.users.id, change.userId)))[0];
 
-          if (existing) {
-            const newPeak = Math.max(existing.peakRating, change.newRating);
-            await db.execute(
-              sql`UPDATE free_track_ratings
-                  SET rating = ${change.newRating},
-                      games_played = games_played + 1,
-                      games_won = games_won + ${isWinner ? 1 : 0},
-                      peak_rating = ${newPeak},
-                      last_game_at = ${now},
-                      updated_at = ${now}
-                  WHERE agent_profile_id = ${change.agentProfileId}`,
-            );
-          } else {
-            await db.insert(schema.freeTrackRatings)
-              .values({
-                id: randomUUID(),
-                agentProfileId: change.agentProfileId,
-                userId: player?.userId ?? null,
-                rating: change.newRating,
-                gamesPlayed: 1,
-                gamesWon: isWinner ? 1 : 0,
-                peakRating: Math.max(1200, change.newRating),
-                lastGameAt: now,
-              });
-          }
+          const newPeak = Math.max(user?.peakRating ?? 1200, change.newRating);
+          await db.execute(
+            sql`UPDATE users
+                SET rating = ${change.newRating},
+                    games_played = games_played + 1,
+                    games_won = games_won + ${isWinner ? 1 : 0},
+                    peak_rating = ${newPeak},
+                    last_game_at = ${now}
+                WHERE id = ${change.userId}`,
+          );
         }
       }
     }

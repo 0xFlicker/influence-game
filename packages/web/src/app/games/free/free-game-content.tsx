@@ -11,7 +11,7 @@ import {
   leaveFreeQueue,
   listAgents,
   type FreeQueueStatus,
-  type FreeTrackLeaderboardEntry,
+  type LeaderboardEntry,
   type SavedAgent,
   type GameStatus,
 } from "@/lib/api";
@@ -282,7 +282,7 @@ function Leaderboard({
   entries,
   loading,
 }: {
-  entries: FreeTrackLeaderboardEntry[];
+  entries: LeaderboardEntry[];
   loading: boolean;
 }) {
   if (loading) {
@@ -306,7 +306,7 @@ function Leaderboard({
       <table className="w-full">
         <thead>
           <tr className="border-b border-white/10">
-            {["#", "Agent", "ELO", "Games", "Win Rate", "Peak"].map((h) => (
+            {["#", "Player", "ELO", "Games", "Win Rate", "Peak"].map((h) => (
               <th
                 key={h}
                 className="text-left py-3 px-4 text-xs text-white/30 font-medium"
@@ -319,24 +319,16 @@ function Leaderboard({
         <tbody>
           {entries.map((entry) => (
             <tr
-              key={entry.agentProfileId}
+              key={entry.userId}
               className="border-t border-white/5 hover:bg-white/[0.02] transition-colors"
             >
               <td className="py-3 px-4 text-white/50 text-sm font-mono">
                 {entry.rank}
               </td>
               <td className="py-3 px-4">
-                <div className="flex items-center gap-2">
-                  <AgentAvatar
-                    avatarUrl={entry.avatarUrl}
-                    persona={entry.personaKey ?? "strategic"}
-                    name={entry.agentName}
-                    size="6"
-                  />
-                  <span className="text-white text-sm font-medium truncate">
-                    {entry.agentName}
-                  </span>
-                </div>
+                <span className="text-white text-sm font-medium truncate">
+                  {entry.displayName}
+                </span>
               </td>
               <td className="py-3 px-4 text-white text-sm font-semibold font-mono">
                 {entry.rating}
@@ -370,7 +362,7 @@ export function FreeGameContent() {
   const effectiveAuth = e2e.isE2E ? e2e.authenticated : authenticated;
 
   const [queueStatus, setQueueStatus] = useState<FreeQueueStatus | null>(null);
-  const [leaderboard, setLeaderboard] = useState<FreeTrackLeaderboardEntry[]>(
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>(
     [],
   );
   const [agents, setAgents] = useState<SavedAgent[]>([]);

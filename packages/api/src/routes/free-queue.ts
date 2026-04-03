@@ -157,34 +157,35 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
   });
 
   // -------------------------------------------------------------------------
-  // GET /api/free-queue/leaderboard — top 100 by ELO
+  // GET /api/free-queue/leaderboard — account-level leaderboard (top 100 by ELO)
   // -------------------------------------------------------------------------
 
   app.get("/api/free-queue/leaderboard", async (c) => {
-    const ratings = await db
-      .select()
-      .from(schema.freeTrackRatings)
-      .orderBy(desc(schema.freeTrackRatings.rating))
+    const rows = await db
+      .select({
+        id: schema.users.id,
+        displayName: schema.users.displayName,
+        rating: schema.users.rating,
+        gamesPlayed: schema.users.gamesPlayed,
+        gamesWon: schema.users.gamesWon,
+        peakRating: schema.users.peakRating,
+      })
+      .from(schema.users)
+      .orderBy(desc(schema.users.rating))
       .limit(100);
 
-    const leaderboard = await Promise.all(ratings.map(async (r, i) => {
-      const profile = (await db
-        .select({ name: schema.agentProfiles.name, avatarUrl: schema.agentProfiles.avatarUrl })
-        .from(schema.agentProfiles)
-        .where(eq(schema.agentProfiles.id, r.agentProfileId)))[0];
-
-      return {
+    const leaderboard = rows
+      .filter((r) => r.gamesPlayed > 0)
+      .map((r, i) => ({
         rank: i + 1,
-        agentProfileId: r.agentProfileId,
-        agentName: profile?.name ?? "Unknown",
-        avatarUrl: profile?.avatarUrl ?? null,
+        userId: r.id,
+        displayName: r.displayName ?? "Anonymous",
         rating: r.rating,
         gamesPlayed: r.gamesPlayed,
         gamesWon: r.gamesWon,
         winRate: r.gamesPlayed > 0 ? r.gamesWon / r.gamesPlayed : 0,
         peakRating: r.peakRating,
-      };
-    }));
+      }));
 
     return c.json(leaderboard);
   });

@@ -58,6 +58,12 @@ export function Nav() {
         </Link>
       )}
 
+      {effectiveAuth && (
+        <Link href="/dashboard/profile" className="text-white/70 hover:text-white transition-colors" onClick={() => setMobileOpen(false)}>
+          Profile
+        </Link>
+      )}
+
       {effectiveAuth && isAdmin && (
         <Link href="/admin" className="text-white/70 hover:text-white transition-colors" onClick={() => setMobileOpen(false)}>
           Admin

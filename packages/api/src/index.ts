@@ -18,6 +18,7 @@ import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
 import { createAdminRoutes } from "./routes/admin.js";
 import { createFreeQueueRoutes } from "./routes/free-queue.js";
 import { createUploadRoutes } from "./routes/upload.js";
+import { createProfileRoutes } from "./routes/profile.js";
 import { getGameSnapshot } from "./services/game-lifecycle.js";
 import {
   setServer,
@@ -194,6 +195,10 @@ app.route("/", freeQueueRoutes);
 // Upload routes (presigned URL generation for PFPs)
 const uploadRoutes = createUploadRoutes(db);
 app.route("/", uploadRoutes);
+
+// Profile & leaderboard routes
+const profileRoutes = createProfileRoutes(db);
+app.route("/", profileRoutes);
 
 // ---------------------------------------------------------------------------
 // Start server with WebSocket support

@@ -201,25 +201,7 @@ Respond with JSON only:
       .from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.userId, user.id));
 
-    // Attach free-track ELO rating if available
-    const enriched = await Promise.all(profiles.map(async (profile) => {
-      const rating = (await db
-        .select({
-          rating: schema.freeTrackRatings.rating,
-          gamesPlayed: schema.freeTrackRatings.gamesPlayed,
-          gamesWon: schema.freeTrackRatings.gamesWon,
-          peakRating: schema.freeTrackRatings.peakRating,
-        })
-        .from(schema.freeTrackRatings)
-        .where(eq(schema.freeTrackRatings.agentProfileId, profile.id)))[0];
-
-      return {
-        ...profile,
-        freeTrackRating: rating ?? null,
-      };
-    }));
-
-    return c.json(enriched);
+    return c.json(profiles);
   });
 
   // -------------------------------------------------------------------------
@@ -309,34 +291,12 @@ Respond with JSON only:
       .set(updates)
       .where(eq(schema.agentProfiles.id, profileId));
 
-    // Reset free-track ELO ratings if personality-defining fields changed
-    let freeTrackReset = false;
-    if (personalityChanged) {
-      const freeRating = (await db
-        .select()
-        .from(schema.freeTrackRatings)
-        .where(eq(schema.freeTrackRatings.agentProfileId, profileId)))[0];
-
-      if (freeRating) {
-        await db.update(schema.freeTrackRatings)
-          .set({
-            rating: 1200,
-            gamesPlayed: 0,
-            gamesWon: 0,
-            peakRating: 1200,
-            updatedAt: new Date().toISOString(),
-          })
-          .where(eq(schema.freeTrackRatings.agentProfileId, profileId));
-        freeTrackReset = true;
-      }
-    }
-
     const updated = (await db
       .select()
       .from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, profileId)))[0]!;
 
-    return c.json({ ...updated, statsReset: resetStats, freeTrackReset });
+    return c.json({ ...updated, statsReset: resetStats });
   });
 
   // -------------------------------------------------------------------------
