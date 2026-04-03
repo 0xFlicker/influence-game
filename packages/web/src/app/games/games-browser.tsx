@@ -114,11 +114,8 @@ function GameCard({ game, onJoin, isAdmin }: GameCardProps) {
                 )}
               </>
             )}
-            {game.status === "completed" && game.winner && (
-              <span>
-                {game.winner}{" "}
-                <span className="text-white/25">({game.winnerPersona})</span>
-              </span>
+            {game.status === "completed" && (
+              <span className="text-emerald-400/70">Finished</span>
             )}
             {game.finalists && isLive && (
               <span>Finalists: {game.finalists.join(", ")}</span>

@@ -39,6 +39,7 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
   const router = useRouter();
   const [joinModalOpen, setJoinModalOpen] = useState(false);
   const [joinedSuccess, setJoinedSuccess] = useState(false);
+  const [replayChoice, setReplayChoice] = useState<"replay" | "results" | null>(null);
   const [game, setGame] = useState<GameDetail | null>(initialGame ?? null);
   const [messages, setMessages] = useState<TranscriptEntry[]>(initialMessages ?? []);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -533,6 +534,123 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
         >
           Browse games
         </button>
+      </div>
+    );
+  }
+
+  // Spoiler-free entry screen for completed games (INF-138).
+  // Show choice before entering the replay viewer.
+  if (isReplay && messages.length > 0 && !replayChoice) {
+    return (
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center gap-8 text-center px-4">
+        <div>
+          <h1 className="text-3xl font-bold text-white mb-2">
+            Game #{game.gameNumber}
+          </h1>
+          <p className="text-white/40 text-sm">
+            {game.players.length} players &middot; Completed
+          </p>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <button
+            onClick={() => setReplayChoice("replay")}
+            className="group relative px-8 py-4 rounded-xl border border-indigo-500/50 bg-indigo-600/20 hover:bg-indigo-600/30 transition-all"
+          >
+            <div className="text-2xl mb-1">&#x25B6;&#xFE0F;</div>
+            <div className="text-white font-semibold">Watch Replay</div>
+            <p className="text-white/40 text-xs mt-1">
+              Experience the game scene by scene
+            </p>
+          </button>
+          <button
+            onClick={() => setReplayChoice("results")}
+            className="group relative px-8 py-4 rounded-xl border border-amber-500/50 bg-amber-600/20 hover:bg-amber-600/30 transition-all"
+          >
+            <div className="text-2xl mb-1">&#x1F3C6;</div>
+            <div className="text-white font-semibold">Reveal Results</div>
+            <p className="text-white/40 text-xs mt-1">
+              See the winner and round summary
+            </p>
+          </button>
+        </div>
+        <button
+          onClick={() => router.push("/games")}
+          className="text-sm text-white/30 hover:text-white/60 transition-colors"
+        >
+          Back to games
+        </button>
+      </div>
+    );
+  }
+
+  // Results reveal screen (INF-138)
+  if (isReplay && replayChoice === "results" && game) {
+    const winnerName = game.winner;
+    const alive = game.players.filter((p) => p.status === "alive");
+    const eliminated = game.players.filter((p) => p.status === "eliminated");
+    return (
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center gap-8 text-center px-4 overflow-y-auto py-12">
+        <div>
+          <div className="text-4xl mb-3">&#x1F3C6;</div>
+          <h1 className="text-3xl font-bold text-white mb-1">
+            {winnerName ?? "Unknown"}
+          </h1>
+          <p className="text-amber-400 text-sm font-medium">Winner</p>
+          {game.winnerPersona && (
+            <p className="text-white/30 text-xs mt-1">{game.winnerPersona}</p>
+          )}
+        </div>
+
+        {alive.length > 0 && (
+          <div>
+            <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">Finalists</h2>
+            <div className="flex flex-wrap justify-center gap-3">
+              {alive.map((p) => (
+                <div
+                  key={p.id}
+                  className={`px-4 py-2 rounded-lg border text-sm ${
+                    p.name === winnerName
+                      ? "border-amber-500/50 bg-amber-600/20 text-amber-300"
+                      : "border-white/10 bg-white/5 text-white/60"
+                  }`}
+                >
+                  {p.name}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {eliminated.length > 0 && (
+          <div>
+            <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">Eliminated</h2>
+            <div className="flex flex-wrap justify-center gap-2">
+              {eliminated.map((p) => (
+                <span
+                  key={p.id}
+                  className="px-3 py-1.5 rounded-lg border border-white/5 bg-white/5 text-white/30 text-xs"
+                >
+                  {p.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-3 mt-4">
+          <button
+            onClick={() => setReplayChoice("replay")}
+            className="text-sm px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors"
+          >
+            Watch Replay
+          </button>
+          <button
+            onClick={() => router.push("/games")}
+            className="text-sm px-5 py-2.5 rounded-lg bg-white/10 hover:bg-white/15 text-white/70 transition-colors"
+          >
+            Back to games
+          </button>
+        </div>
       </div>
     );
   }
