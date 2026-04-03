@@ -51,7 +51,14 @@ export function DramaticReplayViewer({
   live?: boolean;
   connStatus?: "connecting" | "live" | "disconnected" | "reconnecting" | "replay";
 }) {
-  const scenes = useMemo(() => buildReplayScenes(messages), [messages]);
+  const [showThinking, setShowThinking] = useState(false);
+  const filteredMessages = useMemo(
+    () => showThinking ? messages : messages.filter((m) => m.scope !== "thinking"),
+    [messages, showThinking],
+  );
+  const scenes = useMemo(() => buildReplayScenes(filteredMessages), [filteredMessages]);
+  // Check if any thinking messages exist (to decide whether to show toggle)
+  const hasThinkingMessages = useMemo(() => messages.some((m) => m.scope === "thinking"), [messages]);
   const [sceneIndex, setSceneIndex] = useState(0);
   const [messageIndex, setMessageIndex] = useState(0);
   const [messagePhase, setMessagePhase] = useState<SpectacleMessagePhase>("typing");
@@ -961,6 +968,20 @@ export function DramaticReplayViewer({
                   {opt.label}
                 </button>
               ))}
+              {hasThinkingMessages && !live && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setShowThinking((v) => !v); }}
+                  className={`text-[10px] px-1.5 py-1.5 rounded transition-colors ml-1 ${
+                    showThinking
+                      ? "bg-indigo-900/40 text-indigo-300 border border-indigo-500/30"
+                      : "text-white/25 border border-transparent"
+                  }`}
+                  title={showThinking ? "Hide agent thinking" : "Show agent thinking"}
+                >
+                  {showThinking ? "🧠" : "🧠"}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1026,6 +1047,20 @@ export function DramaticReplayViewer({
               </button>
             ))}
           </div>
+
+          {hasThinkingMessages && !live && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setShowThinking((v) => !v); }}
+              className={`text-xs px-3 py-1.5 rounded-lg transition-colors border ${
+                showThinking
+                  ? "bg-indigo-900/40 text-indigo-300 border-indigo-500/30"
+                  : "text-white/30 hover:text-white/60 border-white/10 hover:border-white/20"
+              }`}
+            >
+              {showThinking ? "Hide Thinking" : "Show Thinking"}
+            </button>
+          )}
         </div>
         <p className="text-[10px] text-white/10 text-center mt-2 hidden md:block">
           Space: play/pause · Click/→: advance · ←: back · []: rounds · 1234: speed

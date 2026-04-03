@@ -492,7 +492,7 @@ export interface GamePlayer {
   avatarUrl?: string;
 }
 
-export type TranscriptScope = "public" | "whisper" | "system" | "diary";
+export type TranscriptScope = "public" | "whisper" | "system" | "diary" | "thinking";
 
 export interface TranscriptEntry {
   id: number;

@@ -10,6 +10,7 @@ export function MessageBubble({ msg, players }: { msg: TranscriptEntry; players:
   const isSystem = msg.scope === "system";
   const isDiary = msg.scope === "diary";
   const isWhisper = msg.scope === "whisper";
+  const isThinking = msg.scope === "thinking";
 
   if (isSystem) {
     return (
@@ -40,6 +41,21 @@ export function MessageBubble({ msg, players }: { msg: TranscriptEntry; players:
           <span className="text-xs font-semibold text-white/60">{msg.fromPlayerId}</span>
         </div>
         <p className="text-xs text-white/55 italic">{msg.text}</p>
+      </div>
+    );
+  }
+
+  if (isThinking) {
+    const player = players.find((p) => p.name === msg.fromPlayerId)
+      ?? players.find((p) => p.id === msg.fromPlayerId);
+    return (
+      <div className="ml-4 border-l-2 border-indigo-700/40 pl-3 py-1">
+        <div className="flex items-center gap-1.5 mb-0.5">
+          {player && <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />}
+          <span className="text-xs font-semibold text-white/60">{msg.fromPlayerName ?? msg.fromPlayerId}</span>
+          <span className="text-[10px] text-indigo-400/60 uppercase tracking-wider">thinking</span>
+        </div>
+        <p className="text-xs text-indigo-200/50 italic">{msg.text}</p>
       </div>
     );
   }
