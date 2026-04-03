@@ -110,17 +110,29 @@ function SavedAgentsSection() {
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    if (!getAuthToken()) {
-      setLoading(false);
-      return;
+    function fetchAgents() {
+      if (!getAuthToken()) return;
+      setLoading(true);
+      setFetchError(null);
+      listAgents()
+        .then(setAgents)
+        .catch((err) => {
+          console.warn("[SavedAgentsSection] Failed to load agents:", err);
+          setFetchError("Failed to load agents.");
+        })
+        .finally(() => setLoading(false));
     }
-    listAgents()
-      .then(setAgents)
-      .catch((err) => {
-        console.warn("[SavedAgentsSection] Failed to load agents:", err);
-        setFetchError("Failed to load agents.");
-      })
-      .finally(() => setLoading(false));
+
+    // Fetch immediately if we already have a session token
+    if (getAuthToken()) {
+      fetchAgents();
+    } else {
+      setLoading(false);
+    }
+
+    // Also listen for when AuthSync finishes exchanging the Privy token
+    window.addEventListener("auth:session-ready", fetchAgents);
+    return () => window.removeEventListener("auth:session-ready", fetchAgents);
   }, []);
 
   if (loading) {
