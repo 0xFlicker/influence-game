@@ -840,7 +840,7 @@ export async function uploadProfilePicture(file: File): Promise<UploadResult> {
   // Step 2: PUT the file directly to object storage
   const putRes = await fetch(uploadUrl, {
     method: "PUT",
-    headers: { "Content-Type": file.type },
+    headers: { "Content-Type": file.type, "x-amz-acl": "public-read" },
     body: file,
   });
 
