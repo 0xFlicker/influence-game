@@ -168,6 +168,7 @@ interface FiltersState {
   status: StatusFilter;
   tier: TierFilter;
   track: TrackFilter;
+  search: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -181,7 +182,7 @@ interface GamesBrowserProps {
 
 export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
   const { isAdmin } = usePermissions();
-  const [filters, setFilters] = useState<FiltersState>({ status: "all", tier: "all", track: "all" });
+  const [filters, setFilters] = useState<FiltersState>({ status: "all", tier: "all", track: "all", search: "" });
   const [games, setGames] = useState<GameSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -220,11 +221,16 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
     cancelled: 3,
   };
 
+  const searchQuery = filters.search.toLowerCase();
   const filtered = games
     .filter((g) => {
       if (filters.status !== "all" && g.status !== filters.status) return false;
       if (filters.tier !== "all" && g.modelTier !== filters.tier) return false;
       if (filters.track !== "all" && (g.trackType ?? "custom") !== filters.track) return false;
+      if (searchQuery) {
+        const haystack = `Game #${g.gameNumber} ${g.winner ?? ""} ${g.winnerPersona ?? ""} ${g.modelTier} ${g.trackType ?? ""}`.toLowerCase();
+        if (!haystack.includes(searchQuery)) return false;
+      }
       return true;
     })
     .sort((a, b) => {
@@ -267,6 +273,15 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
     <div>
       {!compact && (
         <div className="flex items-center gap-3 mb-5 flex-wrap">
+          {/* Search input */}
+          <input
+            type="text"
+            value={filters.search}
+            onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+            placeholder="Search games..."
+            className="text-xs bg-transparent border border-white/10 text-white/70 placeholder:text-white/20 px-3 py-1.5 rounded-lg outline-none focus:border-white/25 transition-colors w-36"
+          />
+
           {/* Status filters */}
           <div className="flex rounded-lg overflow-hidden border border-white/10">
             {statusOptions.map((opt) => (
