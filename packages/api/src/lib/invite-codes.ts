@@ -3,11 +3,8 @@
  */
 
 import { eq, and, isNull } from "drizzle-orm";
-import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-
-const INITIAL_INVITE_COUNT = 5;
 
 /**
  * Generate a random 8-character alphanumeric invite code.
@@ -67,18 +64,3 @@ export async function redeemInviteCode(
   return true;
 }
 
-/**
- * Grant initial invite codes to a newly registered user.
- */
-export async function grantInitialInviteCodes(
-  db: DrizzleDB,
-  userId: string,
-  count: number = INITIAL_INVITE_COUNT,
-): Promise<void> {
-  const values = Array.from({ length: count }, () => ({
-    id: randomUUID(),
-    code: generateInviteCode(),
-    ownerId: userId,
-  }));
-  await db.insert(schema.inviteCodes).values(values);
-}

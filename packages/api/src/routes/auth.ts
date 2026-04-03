@@ -18,7 +18,7 @@ import {
   type AuthEnv,
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
-import { isInviteRequired, redeemInviteCode, grantInitialInviteCodes } from "../lib/invite-codes.js";
+import { isInviteRequired, redeemInviteCode } from "../lib/invite-codes.js";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -141,9 +141,6 @@ export function createAuthRoutes(db: DrizzleDB) {
         .select()
         .from(schema.users)
         .where(eq(schema.users.id, userId)))[0]!;
-
-      // Grant initial invite codes to new user
-      await grantInitialInviteCodes(db, userId);
     }
 
     // Resolve RBAC roles and permissions for wallet address
