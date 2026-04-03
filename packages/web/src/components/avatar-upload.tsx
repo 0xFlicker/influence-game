@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { requestUploadUrl } from "@/lib/api";
+import { uploadProfilePicture } from "@/lib/api";
 import { AgentAvatar } from "./agent-avatar";
 
 const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp"];
@@ -44,13 +44,7 @@ export function AvatarUpload({ currentUrl, persona, name, onUploaded }: AvatarUp
     setPreviewUrl(localPreview);
 
     try {
-      const { uploadUrl, publicUrl } = await requestUploadUrl(file.name, file.type);
-
-      await fetch(uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
+      const { publicUrl } = await uploadProfilePicture(file);
 
       URL.revokeObjectURL(localPreview);
       setPreviewUrl(publicUrl);

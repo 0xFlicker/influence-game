@@ -52,8 +52,10 @@ export async function apiFetch<T>(
   options?: RequestInit,
 ): Promise<T> {
   const token = getAuthToken();
+  const isFormData = options?.body instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    // Skip Content-Type for FormData — browser sets it with the correct boundary
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...(options?.headers as Record<string, string> | undefined),
   };
   if (token) {
@@ -300,13 +302,6 @@ export async function getPlayerGames(): Promise<PlayerGameResult[]> {
 // Saved agent profile types
 // ---------------------------------------------------------------------------
 
-export interface FreeTrackRating {
-  rating: number;
-  gamesPlayed: number;
-  gamesWon: number;
-  peakRating: number;
-}
-
 export interface SavedAgent {
   id: string;
   name: string;
@@ -317,7 +312,6 @@ export interface SavedAgent {
   avatarUrl: string | null;
   gamesPlayed: number;
   gamesWon: number;
-  freeTrackRating: FreeTrackRating | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -581,7 +575,6 @@ export interface AdminAgent {
   avatarUrl: string | null;
   gamesPlayed: number;
   gamesWon: number;
-  freeTrackRating: FreeTrackRating | null;
   ownerWallet: string | null;
   ownerDisplayName: string | null;
   ownerEmail: string | null;
@@ -684,18 +677,35 @@ export interface FreeQueueStatus {
   } | null;
 }
 
-export interface FreeTrackLeaderboardEntry {
+export interface LeaderboardEntry {
   rank: number;
-  agentProfileId: string;
-  agentName: string;
   userId: string;
-  personaKey: PersonaKey | null;
-  avatarUrl: string | null;
+  displayName: string;
   rating: number;
   gamesPlayed: number;
   gamesWon: number;
   winRate: number;
   peakRating: number;
+}
+
+// Keep for backwards compat during transition
+export type FreeTrackLeaderboardEntry = LeaderboardEntry;
+
+// ---------------------------------------------------------------------------
+// Player profile types
+// ---------------------------------------------------------------------------
+
+export interface PlayerProfile {
+  id: string;
+  displayName: string | null;
+  walletAddress: string | null;
+  email: string | null;
+  rating: number;
+  gamesPlayed: number;
+  gamesWon: number;
+  peakRating: number;
+  lastGameAt: string | null;
+  createdAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -717,26 +727,44 @@ export async function leaveFreeQueue(): Promise<void> {
   await apiFetch("/api/free-queue/leave", { method: "DELETE" });
 }
 
-export async function getFreeQueueLeaderboard(): Promise<FreeTrackLeaderboardEntry[]> {
+export async function getFreeQueueLeaderboard(): Promise<LeaderboardEntry[]> {
   return apiFetch("/api/free-queue/leaderboard");
+}
+
+export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
+  return apiFetch("/api/leaderboard");
+}
+
+// ---------------------------------------------------------------------------
+// Profile API calls
+// ---------------------------------------------------------------------------
+
+export async function getProfile(): Promise<PlayerProfile> {
+  return apiFetch("/api/profile");
+}
+
+export async function updateProfile(displayName: string): Promise<PlayerProfile> {
+  return apiFetch("/api/profile", {
+    method: "PATCH",
+    body: JSON.stringify({ displayName }),
+  });
 }
 
 // ---------------------------------------------------------------------------
 // Upload API calls
 // ---------------------------------------------------------------------------
 
-export interface UploadUrlResult {
-  uploadUrl: string;
+export interface UploadResult {
   publicUrl: string;
+  key: string;
 }
 
-export async function requestUploadUrl(
-  filename: string,
-  contentType: string,
-): Promise<UploadUrlResult> {
+export async function uploadProfilePicture(file: File): Promise<UploadResult> {
+  const formData = new FormData();
+  formData.append("file", file);
   return apiFetch("/api/upload/pfp", {
     method: "POST",
-    body: JSON.stringify({ filename, contentType }),
+    body: formData,
   });
 }
 

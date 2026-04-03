@@ -1,11 +1,11 @@
 /**
  * S3-compatible object storage client for Linode Object Storage.
  *
- * Provides presigned PUT URL generation for direct browser-to-bucket uploads.
+ * Provides server-side upload and proxied reads (Linode Object Storage
+ * does not support S3 ACLs or CORS, so we proxy through the API).
  */
 
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 
 // ---------------------------------------------------------------------------
 // Client singleton
@@ -44,50 +44,75 @@ function getBucket(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Presigned URL generation
+// Server-side upload
 // ---------------------------------------------------------------------------
 
-export interface PresignedUploadResult {
-  /** Presigned PUT URL for direct upload (5 min expiry). */
-  uploadUrl: string;
-  /** Permanent public URL for the uploaded file. */
-  publicUrl: string;
+export interface UploadResult {
   /** The object key in the bucket. */
   key: string;
+  /** API-proxied URL to access the file (e.g. /api/files/pfp/user/file.png). */
+  publicUrl: string;
 }
 
 /**
- * Generate a presigned PUT URL for uploading an object.
+ * Upload a file to object storage server-side.
  *
- * @param key       Object key (path) within the bucket
- * @param contentType  MIME type of the uploaded file
- * @param maxSizeBytes Maximum allowed content length
- * @param expiresIn    URL expiry in seconds (default 300 = 5 min)
+ * @param key         Object key (path) within the bucket
+ * @param contentType MIME type of the uploaded file
+ * @param body        File body (Buffer, Uint8Array, or ReadableStream)
+ * @param apiBaseUrl  Base URL for the API (used to construct the proxied public URL)
  */
-export async function createPresignedUploadUrl(
+export async function uploadObject(
   key: string,
   contentType: string,
-  maxSizeBytes: number,
-  expiresIn = 300,
-): Promise<PresignedUploadResult> {
+  body: Buffer | Uint8Array | ReadableStream,
+  apiBaseUrl: string,
+): Promise<UploadResult> {
   const client = getS3Client();
   const bucket = getBucket();
-  const endpoint = process.env.LINODE_OBJ_ENDPOINT!;
 
-  const command = new PutObjectCommand({
-    Bucket: bucket,
-    Key: key,
-    ContentType: contentType,
-    ContentLength: maxSizeBytes,
-  });
+  await client.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      ContentType: contentType,
+      Body: body,
+    }),
+  );
 
-  const uploadUrl = await getSignedUrl(client, command, { expiresIn });
+  // Return a proxied URL through our API (avoids CORS/ACL issues)
+  const publicUrl = `${apiBaseUrl}/api/files/${key}`;
 
-  // Public URL: https://<bucket>.<endpoint-host>/<key>
-  const endpointUrl = new URL(endpoint);
-  const publicUrl = `${endpointUrl.protocol}//${bucket}.${endpointUrl.host}/${key}`;
+  return { key, publicUrl };
+}
 
-  return { uploadUrl, publicUrl, key };
+// ---------------------------------------------------------------------------
+// Server-side read (proxy)
+// ---------------------------------------------------------------------------
+
+export interface FileReadResult {
+  body: ReadableStream | null;
+  contentType: string | undefined;
+}
+
+/**
+ * Read a file from object storage (for proxying to clients).
+ */
+export async function readObject(key: string): Promise<FileReadResult> {
+  const client = getS3Client();
+  const bucket = getBucket();
+
+  const result = await client.send(
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: key,
+    }),
+  );
+
+  return {
+    body: result.Body?.transformToWebStream() ?? null,
+    contentType: result.ContentType,
+  };
 }
 
 /**
