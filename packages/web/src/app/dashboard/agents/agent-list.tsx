@@ -2,6 +2,7 @@
 
 import type { SavedAgent } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
+import { AgentAvatar } from "@/components/agent-avatar";
 
 interface AgentListProps {
   agents: SavedAgent[];
@@ -48,10 +49,13 @@ export function AgentList({ agents, onEdit, onDelete }: AgentListProps) {
           >
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-3 min-w-0">
-                {/* Persona icon */}
-                <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-lg shrink-0">
-                  {persona?.icon ?? "?"}
-                </div>
+                {/* Agent avatar with persona badge */}
+                <AgentAvatar
+                  avatarUrl={agent.avatarUrl}
+                  persona={agent.personaKey ?? "strategic"}
+                  name={agent.name}
+                  size="10"
+                />
 
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
