@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useCallback } from "react";
 import { AdminPanel } from "./admin-panel";
 import { UserRolesPanel } from "./user-roles-panel";
 import { AgentsAdminPanel } from "./agents-admin-panel";
@@ -8,8 +9,29 @@ import { PermissionGate } from "@/components/admin-gate";
 
 type Tab = "games" | "agents" | "users";
 
+const VALID_TABS: Tab[] = ["games", "agents", "users"];
+
 export function AdminTabs() {
-  const [activeTab, setActiveTab] = useState<Tab>("games");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const rawTab = searchParams.get("tab");
+  const activeTab: Tab = VALID_TABS.includes(rawTab as Tab) ? (rawTab as Tab) : "games";
+
+  const setActiveTab = useCallback(
+    (tab: Tab) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (tab === "games") {
+        params.delete("tab");
+      } else {
+        params.set("tab", tab);
+      }
+      const qs = params.toString();
+      router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+    },
+    [searchParams, router, pathname],
+  );
 
   return (
     <div>

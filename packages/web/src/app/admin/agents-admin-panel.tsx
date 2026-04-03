@@ -79,25 +79,6 @@ function AgentDetailModal({
           </div>
         </div>
 
-        {/* ELO */}
-        {agent.freeTrackRating && (
-          <div className="mb-5 bg-emerald-900/20 border border-emerald-900/30 rounded-lg p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-emerald-400 text-sm font-medium">
-                Free Track ELO
-              </span>
-              <span className="text-emerald-400 font-semibold">
-                {agent.freeTrackRating.rating}
-              </span>
-            </div>
-            <div className="text-emerald-400/50 text-xs mt-1">
-              Peak: {agent.freeTrackRating.peakRating} | W/L:{" "}
-              {agent.freeTrackRating.gamesWon}/
-              {agent.freeTrackRating.gamesPlayed - agent.freeTrackRating.gamesWon}
-            </div>
-          </div>
-        )}
-
         {/* Details */}
         <div className="space-y-4">
           {agent.backstory && (
@@ -209,9 +190,20 @@ function AgentRow({
       <td className="py-3 px-4 text-white/50 text-sm">
         {persona?.name ?? "—"}
       </td>
-      <td className="py-3 px-4 text-white/50 text-sm font-mono">
-        {agent.ownerWallet ? (
-          <TruncatedAddress address={agent.ownerWallet} maxWidth="10ch" />
+      <td className="py-3 px-4 text-white/50 text-sm">
+        {agent.ownerDisplayName || agent.ownerEmail ? (
+          <div className="flex flex-col">
+            <span className="text-white/70">{agent.ownerDisplayName ?? agent.ownerEmail}</span>
+            {agent.ownerWallet && (
+              <span className="text-white/25 text-xs font-mono">
+                <TruncatedAddress address={agent.ownerWallet} maxWidth="10ch" />
+              </span>
+            )}
+          </div>
+        ) : agent.ownerWallet ? (
+          <span className="font-mono">
+            <TruncatedAddress address={agent.ownerWallet} maxWidth="10ch" />
+          </span>
         ) : (
           "—"
         )}
@@ -226,13 +218,7 @@ function AgentRow({
         {winRate !== null ? `${winRate}%` : "—"}
       </td>
       <td className="py-3 px-4 text-center">
-        {agent.freeTrackRating ? (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-900/30 text-emerald-400 text-xs border border-emerald-900/40">
-            {agent.freeTrackRating.rating}
-          </span>
-        ) : (
-          <span className="text-white/20 text-xs">—</span>
-        )}
+        <span className="text-white/20 text-xs">—</span>
       </td>
       <td className="py-3 px-4 text-white/40 text-xs">
         {new Date(agent.createdAt).toLocaleDateString("en-US", {
