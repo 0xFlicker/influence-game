@@ -9,7 +9,7 @@ import type { TranscriptLogger } from "../transcript-logger";
 import type { ContextBuilder } from "../context-builder";
 import type { DiaryRoom } from "../diary-room";
 import type { createPhaseMachine } from "../phase-machine";
-import type { UUID, GameConfig, RoomAllocation } from "../types";
+import type { UUID, GameConfig } from "../types";
 import type { IAgent } from "../game-runner.types";
 
 export type PhaseActor = ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>;

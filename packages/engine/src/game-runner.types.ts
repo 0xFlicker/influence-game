@@ -6,7 +6,6 @@
 
 import type {
   UUID,
-  GameConfig,
   PowerAction,
   JuryMember,
   EndgameStage,

@@ -8,7 +8,7 @@ import type { GameState } from "./game-state";
 import type { TranscriptLogger } from "./transcript-logger";
 import type { UUID, RoomAllocation, JuryMember } from "./types";
 import { Phase } from "./types";
-import type { PhaseContext, IAgent } from "./game-runner.types";
+import type { PhaseContext } from "./game-runner.types";
 import { computeJurySize } from "./types";
 
 export class ContextBuilder {

@@ -125,7 +125,7 @@ export async function runWhisperPhase(
   contextBuilder.currentRoomAllocations = [];
   contextBuilder.currentExcludedPlayerIds = [];
 
-  const maxPairsPerAgent = config.maxWhisperPairsPerAgent ?? 2;
+  const maxPairsPerAgent = config.maxWhisperPairsPerAgent ?? 3;
   const sessionsPerRound = config.whisperSessionsPerRound ?? 2;
 
   const conversationCount = new Map<UUID, number>(alivePlayers.map((p) => [p.id, 0]));

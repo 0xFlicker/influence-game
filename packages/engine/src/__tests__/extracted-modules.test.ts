@@ -9,9 +9,9 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import { GameState, createUUID } from "../game-state";
 import { TranscriptLogger } from "../transcript-logger";
 import { ContextBuilder } from "../context-builder";
-import { Phase, PlayerStatus } from "../types";
-import type { UUID, GameConfig, RoomAllocation } from "../types";
-import type { GameStreamEvent, TranscriptEntry } from "../game-runner.types";
+import { Phase } from "../types";
+import type { UUID, RoomAllocation } from "../types";
+import type { GameStreamEvent } from "../game-runner.types";
 import { computeLobbyMessagesPerPlayer } from "../phases/lobby";
 import { computeRoomCount, allocateRooms } from "../phases/whisper";
 
@@ -299,7 +299,7 @@ describe("allocateRooms", () => {
     requests.set(c, d);
     requests.set(d, a); // D wants A but A is taken
 
-    const { rooms, excluded } = allocateRooms(requests, players, 2, 1);
+    const { rooms } = allocateRooms(requests, players, 2, 1);
     expect(rooms).toHaveLength(2);
     // First room should be mutual match A-B
     expect(rooms[0]!.playerA).toBe(a);
