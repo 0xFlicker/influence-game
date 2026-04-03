@@ -1,7 +1,7 @@
 /**
  * S3-compatible object storage client for Linode Object Storage (E1).
  *
- * Uses browser-direct presigned URL uploads. The E1 endpoint (us-ord-1)
+ * Uses browser-direct presigned URL uploads. The E1 endpoint (us-iad)
  * supports CORS and object ACLs, so clients PUT directly to the bucket.
  */
 
@@ -27,7 +27,7 @@ function getS3Client(): S3Client {
     }
 
     _client = new S3Client({
-      region: "us-ord-1",
+      region: "us-iad",
       endpoint,
       credentials: { accessKeyId, secretAccessKey },
       forcePathStyle: true,
