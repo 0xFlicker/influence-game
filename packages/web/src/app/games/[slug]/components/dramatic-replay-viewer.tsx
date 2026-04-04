@@ -844,6 +844,9 @@ export function DramaticReplayViewer({
                     {currentMessage.scope === "whisper" && (
                       <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
                     )}
+                    {currentMessage.scope === "thinking" && (
+                      <span className="text-xs text-indigo-400/60 uppercase tracking-wider ml-1">thinking</span>
+                    )}
                   </div>
                   <div className="flex items-center justify-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1.2s" }} />

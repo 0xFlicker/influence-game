@@ -649,6 +649,28 @@ export function SpectacleMessageContent({
     );
   }
 
+  // Thinking — styled inline with indigo treatment (matches MessageBubble)
+  if (message.scope === "thinking") {
+    return (
+      <div className="text-center animate-[fadeIn_0.3s_ease-out]">
+        <div className="flex items-center justify-center gap-3 mb-6">
+          {currentPlayer ? (
+            <AgentAvatar avatarUrl={currentPlayer.avatarUrl} persona={currentPlayer.persona} name={currentPlayer.name} size="10" />
+          ) : null}
+          <span className="text-lg font-semibold text-indigo-300/70">{currentPlayerName}</span>
+          <span className="text-xs text-indigo-400/60 uppercase tracking-wider">thinking</span>
+        </div>
+        <div className="bg-indigo-950/30 border border-indigo-500/20 rounded-2xl px-8 py-6 inline-block max-w-xl text-left">
+          <p className="text-lg md:text-xl leading-relaxed text-indigo-200/60 italic">
+            {messagePhase === "revealing" ? (
+              <Typewriter text={message.text} rate="spectacle" onComplete={onRevealComplete} speedrun={false} speedMultiplier={speedMultiplier} />
+            ) : message.text}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // Default text rendering
   const isAnonymousRumor = message.phase === "RUMOR" && message.scope === "public";
   return (

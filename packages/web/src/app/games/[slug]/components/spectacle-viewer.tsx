@@ -113,6 +113,19 @@ export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] 
           });
         }
       }
+
+      // Thinking entries from this whisper phase — shown as a separate scene
+      const whisperThinking = msgs.filter((m) => m.scope === "thinking");
+      if (whisperThinking.length > 0) {
+        scenes.push({
+          id: `${id}-thinking`,
+          round,
+          phase,
+          roomType,
+          messages: whisperThinking,
+          houseIntro: null,
+        });
+      }
     } else if (phase === "DIARY_ROOM") {
       // Sequential: one scene per player
       const playerMap = new Map<string, TranscriptEntry[]>();
@@ -146,6 +159,19 @@ export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] 
           roomType,
           messages: msgs,
           houseIntro: HOUSE_INTROS[phase] ?? null,
+        });
+      }
+
+      // Thinking entries from this diary phase — shown as a separate scene
+      const diaryThinking = msgs.filter((m) => m.scope === "thinking");
+      if (diaryThinking.length > 0) {
+        scenes.push({
+          id: `${id}-thinking`,
+          round,
+          phase,
+          roomType,
+          messages: diaryThinking,
+          houseIntro: null,
         });
       }
     } else {
