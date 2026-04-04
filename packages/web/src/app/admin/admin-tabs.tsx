@@ -6,11 +6,12 @@ import { AdminPanel } from "./admin-panel";
 import { UserRolesPanel } from "./user-roles-panel";
 import { AgentsAdminPanel } from "./agents-admin-panel";
 import { InviteCodesPanel } from "./invite-codes-panel";
+import { ImportGamePanel } from "./import-game-panel";
 import { PermissionGate } from "@/components/admin-gate";
 
-type Tab = "games" | "agents" | "users" | "invites";
+type Tab = "games" | "agents" | "users" | "invites" | "import";
 
-const VALID_TABS: Tab[] = ["games", "agents", "users", "invites"];
+const VALID_TABS: Tab[] = ["games", "agents", "users", "invites", "import"];
 
 export function AdminTabs() {
   const searchParams = useSearchParams();
@@ -64,6 +65,12 @@ export function AdminTabs() {
         >
           Invites
         </TabButton>
+        <TabButton
+          active={activeTab === "import"}
+          onClick={() => setActiveTab("import")}
+        >
+          Import Game
+        </TabButton>
       </div>
 
       {/* Tab content */}
@@ -71,6 +78,7 @@ export function AdminTabs() {
       {activeTab === "agents" && <AgentsAdminPanel />}
       {activeTab === "users" && <UserRolesPanel />}
       {activeTab === "invites" && <InviteCodesPanel />}
+      {activeTab === "import" && <ImportGamePanel />}
     </div>
   );
 }

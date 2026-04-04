@@ -858,3 +858,40 @@ export async function uploadProfilePicture(file: File): Promise<UploadResult> {
   return { publicUrl, key };
 }
 
+// ---------------------------------------------------------------------------
+// Admin import game types & API calls
+// ---------------------------------------------------------------------------
+
+export interface RemoteGame {
+  slug: string;
+  gameNumber: number;
+  status: GameStatus;
+  playerCount: number;
+  currentRound: number;
+  maxRounds: number;
+  createdAt: string;
+}
+
+export interface ImportGameResult {
+  id: string;
+  slug: string;
+  gameNumber: number;
+}
+
+export async function listRemoteGames(
+  sourceUrl: string,
+): Promise<RemoteGame[]> {
+  const qs = new URLSearchParams({ url: sourceUrl });
+  return apiFetch(`/api/admin/remote-games?${qs}`);
+}
+
+export async function importGame(
+  sourceUrl: string,
+  slug: string,
+): Promise<ImportGameResult> {
+  return apiFetch("/api/admin/import-game", {
+    method: "POST",
+    body: JSON.stringify({ sourceUrl, slug }),
+  });
+}
+
