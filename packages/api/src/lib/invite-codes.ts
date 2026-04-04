@@ -32,6 +32,26 @@ export async function isInviteRequired(db: DrizzleDB): Promise<boolean> {
 }
 
 /**
+ * Check if an invite code is valid (exists and unused) without redeeming it.
+ */
+export async function isInviteCodeValid(
+  db: DrizzleDB,
+  code: string,
+): Promise<boolean> {
+  const normalizedCode = code.trim().toUpperCase();
+  const codeRow = (await db
+    .select({ id: schema.inviteCodes.id })
+    .from(schema.inviteCodes)
+    .where(
+      and(
+        eq(schema.inviteCodes.code, normalizedCode),
+        isNull(schema.inviteCodes.usedById),
+      ),
+    ))[0];
+  return !!codeRow;
+}
+
+/**
  * Validate and consume an invite code for a new user.
  * Returns the code row if valid, null if invalid/used.
  */

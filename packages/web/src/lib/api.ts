@@ -257,6 +257,13 @@ export async function checkInviteRequired(): Promise<{ required: boolean }> {
   return apiFetch("/api/auth/invite-required");
 }
 
+export async function validateInviteCode(code: string): Promise<{ valid: boolean }> {
+  return apiFetch("/api/auth/validate-invite", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Invite code types
 // ---------------------------------------------------------------------------

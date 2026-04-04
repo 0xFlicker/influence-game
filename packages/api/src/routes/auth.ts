@@ -18,7 +18,7 @@ import {
   type AuthEnv,
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
-import { isInviteRequired, redeemInviteCode } from "../lib/invite-codes.js";
+import { isInviteRequired, isInviteCodeValid, redeemInviteCode } from "../lib/invite-codes.js";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -174,6 +174,19 @@ export function createAuthRoutes(db: DrizzleDB) {
   app.get("/api/auth/invite-required", async (c) => {
     const required = await isInviteRequired(db);
     return c.json({ required });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/auth/validate-invite — check if an invite code is valid (no auth required)
+  // -------------------------------------------------------------------------
+
+  app.post("/api/auth/validate-invite", async (c) => {
+    const body = await parseJsonBody(c, "POST /api/auth/validate-invite");
+    if (!body?.code) {
+      return c.json({ error: "code is required" }, 400);
+    }
+    const valid = await isInviteCodeValid(db, body.code as string);
+    return c.json({ valid });
   });
 
   // -------------------------------------------------------------------------
