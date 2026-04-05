@@ -86,20 +86,20 @@ async function runRoomConversation(
       roomPartner: partnerName,
     });
 
-    const text = await agent.sendRoomMessage(phaseCtx, partnerName, conversationHistory);
+    const response = await agent.sendRoomMessage(phaseCtx, partnerName, conversationHistory);
 
-    if (text === null || text === "") {
+    if (response === null) {
       consecutivePasses++;
     } else {
       consecutivePasses = 0;
       msgCount.set(currentPlayerId, (msgCount.get(currentPlayerId) ?? 0) + 1);
 
       const inbox = ctx.whisperInbox.get(partnerId) ?? [];
-      inbox.push({ from: currentName, text });
+      inbox.push({ from: currentName, text: response.message });
       ctx.whisperInbox.set(partnerId, inbox);
 
-      conversationHistory.push({ from: currentName, text });
-      logger.logWhisper(currentPlayerId, [partnerId], text, room.roomId);
+      conversationHistory.push({ from: currentName, text: response.message });
+      logger.logWhisper(currentPlayerId, [partnerId], response.message, room.roomId, response.thinking);
     }
 
     if ((msgCount.get(room.playerA) ?? 0) >= MAX_MESSAGES_PER_AGENT &&

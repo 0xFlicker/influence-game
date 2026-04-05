@@ -12,7 +12,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { GameRunner } from "@influence/engine";
-import type { IAgent, PhaseContext } from "@influence/engine";
+import type { AgentResponse, IAgent, PhaseContext } from "@influence/engine";
 import type { UUID, PowerAction, GameConfig } from "@influence/engine";
 import { setupTestDB } from "./test-utils.js";
 
@@ -29,6 +29,9 @@ beforeAll(() => {
 // Minimal mock agent (no LLM calls)
 // ---------------------------------------------------------------------------
 
+/** Helper to wrap message into AgentResponse */
+function r(message: string): AgentResponse { return { thinking: "", message }; }
+
 class LifecycleMockAgent implements IAgent {
   readonly id: UUID;
   readonly name: string;
@@ -40,8 +43,8 @@ class LifecycleMockAgent implements IAgent {
 
   onGameStart() {}
   async onPhaseStart() {}
-  async getIntroduction() { return `Hi, I'm ${this.name}`; }
-  async getLobbyMessage(ctx: PhaseContext) { return `${this.name} round ${ctx.round}`; }
+  async getIntroduction() { return r(`Hi, I'm ${this.name}`); }
+  async getLobbyMessage(ctx: PhaseContext) { return r(`${this.name} round ${ctx.round}`); }
   async getWhispers(ctx: PhaseContext) {
     const others = ctx.alivePlayers.filter(p => p.id !== this.id);
     if (others.length === 0) return [];
@@ -54,9 +57,9 @@ class LifecycleMockAgent implements IAgent {
   async sendRoomMessage(_ctx: PhaseContext, partnerName: string, conversationHistory?: Array<{ from: string; text: string }>) {
     const alreadySpoke = conversationHistory?.some((m) => m.from === this.name) ?? false;
     if (alreadySpoke) return null;
-    return `whisper to ${partnerName}`;
+    return r(`whisper to ${partnerName}`);
   }
-  async getRumorMessage() { return "rumor"; }
+  async getRumorMessage() { return r("rumor"); }
   async getVotes(ctx: PhaseContext) {
     const others = ctx.alivePlayers.filter(p => p.id !== this.id);
     return {
@@ -70,9 +73,9 @@ class LifecycleMockAgent implements IAgent {
   async getCouncilVote(_ctx: PhaseContext, candidates: [UUID, UUID]): Promise<UUID> {
     return candidates[0];
   }
-  async getLastMessage() { return "goodbye"; }
-  async getDiaryEntry() { return "diary entry"; }
-  async getPlea() { return "please keep me"; }
+  async getLastMessage() { return r("goodbye"); }
+  async getDiaryEntry() { return r("diary entry"); }
+  async getPlea() { return r("please keep me"); }
   async getEndgameEliminationVote(ctx: PhaseContext): Promise<UUID> {
     const others = ctx.alivePlayers.filter(p => p.id !== this.id);
     return others[0]?.id ?? this.id;
@@ -81,13 +84,13 @@ class LifecycleMockAgent implements IAgent {
     const others = ctx.alivePlayers.filter(p => p.id !== this.id);
     return { targetId: others[0]?.id ?? this.id, text: "accusation" };
   }
-  async getDefense() { return "defense"; }
-  async getOpeningStatement() { return "opening"; }
+  async getDefense() { return r("defense"); }
+  async getOpeningStatement() { return r("opening"); }
   async getJuryQuestion(_ctx: PhaseContext, finalistIds: [UUID, UUID]) {
     return { targetFinalistId: finalistIds[0], question: "why?" };
   }
-  async getJuryAnswer() { return "because"; }
-  async getClosingArgument() { return "closing"; }
+  async getJuryAnswer() { return r("because"); }
+  async getClosingArgument() { return r("closing"); }
   async getJuryVote(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID> {
     return finalistIds[0];
   }

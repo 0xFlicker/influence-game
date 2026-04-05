@@ -946,11 +946,13 @@ describe("Diary Room - interview mechanics", () => {
     const rumorEntries = diaryLog.filter((e) => e.precedingPhase === Phase.RUMOR);
     expect(rumorEntries.length).toBe(0);
 
-    // Thinking entries should exist for Lobby, Whisper, Rumor, Vote phases
-    const thinkingEntries = runner.thinkingLog;
-    expect(thinkingEntries.length).toBeGreaterThan(0);
-    const thinkingPhases = new Set(thinkingEntries.map((e) => e.phase));
-    expect(thinkingPhases.has(Phase.LOBBY)).toBe(true);
+    // Thinking is now embedded on transcript entries (not separate thinkingLog)
+    const transcript = runner.transcriptLog;
+    const entriesWithThinking = transcript.filter((e) => e.thinking && e.thinking.length > 0);
+    expect(entriesWithThinking.length).toBeGreaterThan(0);
+    // Lobby messages should have thinking attached
+    const lobbyThinking = entriesWithThinking.filter((e) => e.phase === Phase.LOBBY);
+    expect(lobbyThinking.length).toBeGreaterThan(0);
   });
 
   it("diary entries contain contextual House questions", async () => {

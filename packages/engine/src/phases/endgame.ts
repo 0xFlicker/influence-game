@@ -16,8 +16,8 @@ export async function runReckoningPlea(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.PLEA);
-      const text = await agent.getPlea(phaseCtx);
-      logger.logPublic(player.id, text, Phase.PLEA);
+      const { message, thinking } = await agent.getPlea(phaseCtx);
+      logger.logPublic(player.id, message, Phase.PLEA, { thinking });
     }),
   );
 
@@ -41,9 +41,9 @@ export async function runTribunalAccusation(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.ACCUSATION);
-      const { targetId, text } = await agent.getAccusation(phaseCtx);
+      const { targetId, text, thinking } = await agent.getAccusation(phaseCtx);
       const targetName = gameState.getPlayerName(targetId);
-      logger.logPublic(player.id, `[ACCUSES ${targetName}] ${text}`, Phase.ACCUSATION);
+      logger.logPublic(player.id, `[ACCUSES ${targetName}] ${text}`, Phase.ACCUSATION, { thinking });
       accusations.set(targetId, {
         accuserId: player.id,
         accuserName: player.name,
@@ -74,8 +74,8 @@ export async function runTribunalDefense(
 
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.DEFENSE);
-      const defense = await agent.getDefense(phaseCtx, accusation.text, accusation.accuserName);
-      logger.logPublic(player.id, `[DEFENSE] ${defense}`, Phase.DEFENSE);
+      const { message: defense, thinking } = await agent.getDefense(phaseCtx, accusation.text, accusation.accuserName);
+      logger.logPublic(player.id, `[DEFENSE] ${defense}`, Phase.DEFENSE, { thinking });
     }),
   );
 
@@ -111,8 +111,8 @@ export async function runJudgmentOpening(
     finalists.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.OPENING_STATEMENTS);
-      const text = await agent.getOpeningStatement(phaseCtx);
-      logger.logPublic(player.id, text, Phase.OPENING_STATEMENTS);
+      const { message, thinking } = await agent.getOpeningStatement(phaseCtx);
+      logger.logPublic(player.id, message, Phase.OPENING_STATEMENTS, { thinking });
     }),
   );
 
@@ -139,15 +139,15 @@ export async function runJudgmentJuryQuestions(
     if (!jurorAgent) continue;
 
     const jurorCtx = contextBuilder.buildPhaseContext(juror.playerId, Phase.JURY_QUESTIONS);
-    const { targetFinalistId, question } = await jurorAgent.getJuryQuestion(jurorCtx, finalistIds);
+    const { targetFinalistId, question, thinking: questionThinking } = await jurorAgent.getJuryQuestion(jurorCtx, finalistIds);
     const finalistName = gameState.getPlayerName(targetFinalistId);
-    logger.logPublic(juror.playerId, `[QUESTION to ${finalistName}] ${question}`, Phase.JURY_QUESTIONS);
+    logger.logPublic(juror.playerId, `[QUESTION to ${finalistName}] ${question}`, Phase.JURY_QUESTIONS, { thinking: questionThinking });
 
     const finalistAgent = agents.get(targetFinalistId);
     if (finalistAgent) {
       const finalistCtx = contextBuilder.buildPhaseContext(targetFinalistId, Phase.JURY_QUESTIONS);
-      const answer = await finalistAgent.getJuryAnswer(finalistCtx, question, juror.playerName);
-      logger.logPublic(targetFinalistId, `[ANSWER to ${juror.playerName}] ${answer}`, Phase.JURY_QUESTIONS);
+      const { message: answer, thinking: answerThinking } = await finalistAgent.getJuryAnswer(finalistCtx, question, juror.playerName);
+      logger.logPublic(targetFinalistId, `[ANSWER to ${juror.playerName}] ${answer}`, Phase.JURY_QUESTIONS, { thinking: answerThinking });
     }
   }
 
@@ -169,8 +169,8 @@ export async function runJudgmentClosing(
     finalists.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.CLOSING_ARGUMENTS);
-      const text = await agent.getClosingArgument(phaseCtx);
-      logger.logPublic(player.id, text, Phase.CLOSING_ARGUMENTS);
+      const { message, thinking } = await agent.getClosingArgument(phaseCtx);
+      logger.logPublic(player.id, message, Phase.CLOSING_ARGUMENTS, { thinking });
     }),
   );
 

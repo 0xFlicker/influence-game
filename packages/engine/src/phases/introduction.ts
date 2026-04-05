@@ -15,8 +15,8 @@ export async function runIntroductionPhase(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.INTRODUCTION);
-      const text = await agent.getIntroduction(phaseCtx);
-      logger.logPublic(player.id, text, Phase.INTRODUCTION);
+      const { message, thinking } = await agent.getIntroduction(phaseCtx);
+      logger.logPublic(player.id, message, Phase.INTRODUCTION, { thinking });
     }),
   );
 

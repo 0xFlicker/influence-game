@@ -11,7 +11,7 @@ import type {
   ChatCompletionMessageToolCall,
 } from "openai/resources/chat/completions";
 import type { ReasoningEffort } from "openai/resources/shared";
-import type { IAgent, PhaseContext } from "./game-runner";
+import type { AgentResponse, IAgent, PhaseContext } from "./game-runner";
 import { Phase } from "./types";
 import type { UUID, PowerAction } from "./types";
 import type { MemoryStore } from "./memory-store";
@@ -282,6 +282,7 @@ const TOOL_SEND_ROOM_MESSAGE: ChatCompletionTool = {
     parameters: {
       type: "object",
       properties: {
+        thinking: { type: "string", description: "Your internal reasoning for this message (hidden from other players)" },
         message: {
           type: "string",
           description: "Your private message to your room partner (omit if passing)",
@@ -291,7 +292,7 @@ const TOOL_SEND_ROOM_MESSAGE: ChatCompletionTool = {
           description: "Set to true to pass (end your side of the conversation)",
         },
       },
-      required: [],
+      required: ["thinking"],
     },
   },
 };
@@ -304,10 +305,11 @@ const TOOL_CAST_VOTES: ChatCompletionTool = {
     parameters: {
       type: "object",
       properties: {
+        thinking: { type: "string", description: "Your internal reasoning for these votes (hidden from other players)" },
         empower: { type: "string", description: "Player name to empower" },
         expose: { type: "string", description: "Player name to expose" },
       },
-      required: ["empower", "expose"],
+      required: ["thinking", "empower", "expose"],
     },
   },
 };
@@ -320,6 +322,7 @@ const TOOL_POWER_ACTION: ChatCompletionTool = {
     parameters: {
       type: "object",
       properties: {
+        thinking: { type: "string", description: "Your internal reasoning for this decision (hidden from other players)" },
         action: {
           type: "string",
           enum: ["eliminate", "protect", "pass"],
@@ -327,7 +330,7 @@ const TOOL_POWER_ACTION: ChatCompletionTool = {
         },
         target: { type: "string", description: "Player name to target" },
       },
-      required: ["action", "target"],
+      required: ["thinking", "action", "target"],
     },
   },
 };
@@ -340,9 +343,10 @@ const TOOL_COUNCIL_VOTE: ChatCompletionTool = {
     parameters: {
       type: "object",
       properties: {
+        thinking: { type: "string", description: "Your internal reasoning for this vote (hidden from other players)" },
         eliminate: { type: "string", description: "Player name to eliminate" },
       },
-      required: ["eliminate"],
+      required: ["thinking", "eliminate"],
     },
   },
 };
@@ -355,9 +359,10 @@ const TOOL_ELIMINATION_VOTE: ChatCompletionTool = {
     parameters: {
       type: "object",
       properties: {
+        thinking: { type: "string", description: "Your internal reasoning for this vote (hidden from other players)" },
         eliminate: { type: "string", description: "Player name to eliminate" },
       },
-      required: ["eliminate"],
+      required: ["thinking", "eliminate"],
     },
   },
 };
@@ -370,10 +375,11 @@ const TOOL_MAKE_ACCUSATION: ChatCompletionTool = {
     parameters: {
       type: "object",
       properties: {
+        thinking: { type: "string", description: "Your internal reasoning for this accusation (hidden from other players)" },
         target: { type: "string", description: "Player name to accuse" },
         accusation: { type: "string", description: "Your accusation text" },
       },
-      required: ["target", "accusation"],
+      required: ["thinking", "target", "accusation"],
     },
   },
 };
@@ -386,10 +392,11 @@ const TOOL_ASK_JURY_QUESTION: ChatCompletionTool = {
     parameters: {
       type: "object",
       properties: {
+        thinking: { type: "string", description: "Your internal reasoning for this question (hidden from other players)" },
         target: { type: "string", description: "Finalist name to ask" },
         question: { type: "string", description: "Your question" },
       },
-      required: ["target", "question"],
+      required: ["thinking", "target", "question"],
     },
   },
 };
@@ -402,9 +409,10 @@ const TOOL_JURY_VOTE: ChatCompletionTool = {
     parameters: {
       type: "object",
       properties: {
+        thinking: { type: "string", description: "Your internal reasoning for this vote (hidden from other players)" },
         winner: { type: "string", description: "Finalist name who should win" },
       },
-      required: ["winner"],
+      required: ["thinking", "winner"],
     },
   },
 };
@@ -552,7 +560,7 @@ export class InfluenceAgent implements IAgent {
   // Phase-specific actions (normal rounds)
   // ---------------------------------------------------------------------------
 
-  async getIntroduction(ctx: PhaseContext): Promise<string> {
+  async getIntroduction(ctx: PhaseContext): Promise<AgentResponse> {
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task
@@ -560,11 +568,9 @@ Introduce yourself as a PERSON — share who you are, where you're from, somethi
 Do NOT talk about game strategy, alliances, or how you plan to play. This is a social introduction, like
 meeting people at a dinner party. Let your personality shine through naturally.
 
-Keep it to 2-3 sentences. Be warm, specific, and human.
+Keep it to 2-3 sentences. Be warm, specific, and human.`;
 
-Respond with ONLY the introduction text, nothing else.`;
-
-    return this.callLLM(prompt, 150, sys, { action: "introduction", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
+    return this.callLLMWithThinking(prompt, 150, sys, { action: "introduction", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
   }
 
   async getLobbyIntent(ctx: PhaseContext): Promise<string> {
@@ -604,7 +610,7 @@ Respond with ONLY your strategy intent, nothing else.`;
     return this.lobbyIntent ?? "";
   }
 
-  async getLobbyMessage(ctx: PhaseContext): Promise<string> {
+  async getLobbyMessage(ctx: PhaseContext): Promise<AgentResponse> {
     const eliminated = this.allPlayers
       .filter((p) => !ctx.alivePlayers.some((ap) => ap.id === p.id))
       .map((p) => p.name);
@@ -695,11 +701,9 @@ EXAMPLES of good lobby subtext (don't copy these, create your own):
 - "I respect people who say what they mean. Getting harder to find around here." (signaling distrust)
 - Telling a personal story that just happens to parallel someone's suspicious behavior`}
 
-Keep it to 2-3 sentences. Be authentic, entertaining, and ${ctx.round === 1 ? "warm" : isEarlyRound ? "engaging" : "sharp"}.
+Keep it to 2-3 sentences. Be authentic, entertaining, and ${ctx.round === 1 ? "warm" : isEarlyRound ? "engaging" : "sharp"}.`;
 
-Respond with ONLY the message text, nothing else.`;
-
-    return this.callLLM(prompt, 150, sys, { action: "lobby", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
+    return this.callLLMWithThinking(prompt, 150, sys, { action: "lobby", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
   }
 
   async getWhispers(
@@ -789,7 +793,7 @@ Use the request_room tool to submit your preference.`;
     }
   }
 
-  async sendRoomMessage(ctx: PhaseContext, partnerName: string, conversationHistory?: Array<{ from: string; text: string }>): Promise<string | null> {
+  async sendRoomMessage(ctx: PhaseContext, partnerName: string, conversationHistory?: Array<{ from: string; text: string }>): Promise<AgentResponse | null> {
     const history = conversationHistory ?? [];
     const isFirstMessage = history.length === 0;
 
@@ -821,28 +825,28 @@ ${!isFirstMessage ? `\nIf you have nothing more to say, use pass: true to end yo
 Use the send_room_message tool to send your message${!isFirstMessage ? " or pass" : ""}.`;
 
     try {
-      const result = await this.callTool<{ message?: string; pass?: boolean }>(
+      const result = await this.callTool<{ thinking?: string; message?: string; pass?: boolean }>(
         prompt, TOOL_SEND_ROOM_MESSAGE, 300, sys,
         { action: "room-message", reasoningEffort: "medium" },
       );
       if (result.pass) return null;
       const msg = result.message?.trim();
       if (!msg) {
-        // Tool succeeded but no message — likely token budget consumed by reasoning
-        return isFirstMessage
+        const fallbackMsg = isFirstMessage
           ? `I wanted to speak with you privately, ${partnerName}. Let's watch each other's backs.`
           : null;
+        return fallbackMsg ? { thinking: result.thinking ?? "", message: fallbackMsg } : null;
       }
-      return msg;
+      return { thinking: result.thinking ?? "", message: msg };
     } catch {
       if (isFirstMessage) {
-        return `I wanted to speak with you privately, ${partnerName}. Let's watch each other's backs.`;
+        return { thinking: "", message: `I wanted to speak with you privately, ${partnerName}. Let's watch each other's backs.` };
       }
-      return null; // Fallback to pass on errors after first message
+      return null;
     }
   }
 
-  async getRumorMessage(ctx: PhaseContext): Promise<string> {
+  async getRumorMessage(ctx: PhaseContext): Promise<AgentResponse> {
     const isEarlyGame = ctx.round <= 2;
 
     const rumorStyle = isEarlyGame
@@ -877,13 +881,11 @@ You may hint at what you learned, but specifics should stay private.
 
 ${rumorStyle}
 
-Keep it to 1-2 sentences. One sharp claim is better than two weak ones.
+Keep it to 1-2 sentences. One sharp claim is better than two weak ones.`;
 
-Respond with ONLY the rumor text, nothing else.`;
-
-    const text = await this.callLLM(prompt, 150, sys, { action: "rumor", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
+    const response = await this.callLLMWithThinking(prompt, 150, sys, { action: "rumor", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
     // Strip "The shadows whisper: " prefix if the LLM included it
-    return text.replace(/^the\s+shadows?\s+whispers?:\s*/i, "");
+    return { thinking: response.thinking, message: response.message.replace(/^the\s+shadows?\s+whispers?:\s*/i, "") };
   }
 
   async getVotes(
@@ -1043,39 +1045,19 @@ Use the council_vote tool to cast your vote.`;
     }
   }
 
-  async getLastMessage(ctx: PhaseContext): Promise<string> {
+  async getLastMessage(ctx: PhaseContext): Promise<AgentResponse> {
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## Pre-register Your Last Words
 If you are eliminated this round, this message will be posted when you leave.
 Make it count — a final accusation, a farewell, a cryptic warning, or a graceful exit.
 
-Keep it to 1-2 sentences. Respond ONLY with the message text.`;
+Keep it to 1-2 sentences.`;
 
-    return this.callLLM(prompt, 120, sys, { action: "plea", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
+    return this.callLLMWithThinking(prompt, 120, sys, { action: "plea", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
   }
 
-  // ---------------------------------------------------------------------------
-  // Revealable thinking — brief internal monologue during phases
-  // ---------------------------------------------------------------------------
-
-  async getThinking(ctx: PhaseContext): Promise<string> {
-    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
-    const prompt = this.buildUserPrompt(ctx) + `
-## Internal Thinking (Hidden from other players)
-
-This is your private internal monologue — only viewers can see this, not other players.
-Based on what just happened in the ${ctx.phase} phase, share a brief, honest thought.
-
-What are you really thinking right now? What did you notice? What's your gut reaction?
-Be specific — name players, reference what just happened, show your real strategic mind.
-
-Keep it to 1-3 sentences. Be candid and in character. Respond ONLY with your thought.`;
-
-    return this.callLLM(prompt, 120, sys, { action: "thinking", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
-  }
-
-  async getDiaryEntry(ctx: PhaseContext, question: string, sessionHistory?: Array<{ question: string; answer: string }>): Promise<string> {
+  async getDiaryEntry(ctx: PhaseContext, question: string, sessionHistory?: Array<{ question: string; answer: string }>): Promise<AgentResponse> {
     const isEliminated = ctx.isEliminated === true;
 
     // Build conversation history context if this is a follow-up question
@@ -1102,21 +1084,21 @@ ${historyText}
 The House asks: "${question}"
 
 ${isEliminated
-  ? `Answer from your perspective as an eliminated juror watching from the sidelines. Reflect on the remaining players, not on your own gameplay moves. Keep it to 2-4 sentences. Be entertaining for the audience. Respond ONLY with your answer.`
+  ? `Answer from your perspective as an eliminated juror watching from the sidelines. Reflect on the remaining players, not on your own gameplay moves. Keep it to 2-4 sentences. Be entertaining for the audience.`
   : ctx.phase === Phase.INTRODUCTION
     ? `Answer with your STRATEGY going into the game. Name specific players — who interests you, who concerns you, who might you approach first? Share your game plan, not just impressions.
-Keep it to 2-4 sentences. Be entertaining for the audience. Respond ONLY with your answer.`
+Keep it to 2-4 sentences. Be entertaining for the audience.`
     : `Answer the question honestly and in character. Share your genuine strategic thinking — who you trust, who you suspect, what your next moves are.
-Keep it to 2-4 sentences. Be entertaining for the audience. Respond ONLY with your answer.`}`;
+Keep it to 2-4 sentences. Be entertaining for the audience.`}`;
 
-    return this.callLLM(prompt, 250, sys, { action: "diary", reasoningEffort: "medium" });
+    return this.callLLMWithThinking(prompt, 250, sys, { action: "diary", reasoningEffort: "medium" });
   }
 
   // ---------------------------------------------------------------------------
   // Endgame phase actions
   // ---------------------------------------------------------------------------
 
-  async getPlea(ctx: PhaseContext): Promise<string> {
+  async getPlea(ctx: PhaseContext): Promise<AgentResponse> {
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## THE RECKONING — Public Plea
@@ -1125,11 +1107,9 @@ ${ENDGAME_PERSONALITY_HINTS[this.personality]}
 Only 4 players remain. You must make a public plea to the group: why should YOU stay in the game?
 Address the other players directly. Reference your alliances, your gameplay, your trustworthiness.
 
-Keep it to 2-3 sentences. Make it compelling.
+Keep it to 2-3 sentences. Make it compelling.`;
 
-Respond with ONLY the plea text, nothing else.`;
-
-    return this.callLLM(prompt, 200, sys, { action: "defense", reasoningEffort: "medium" });
+    return this.callLLMWithThinking(prompt, 200, sys, { action: "defense", reasoningEffort: "medium" });
   }
 
   async getEndgameEliminationVote(ctx: PhaseContext): Promise<UUID> {
@@ -1166,7 +1146,7 @@ Use the elimination_vote tool to cast your vote.`;
     }
   }
 
-  async getAccusation(ctx: PhaseContext): Promise<{ targetId: UUID; text: string }> {
+  async getAccusation(ctx: PhaseContext): Promise<{ targetId: UUID; text: string; thinking?: string }> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
@@ -1182,7 +1162,7 @@ Available players: ${others.map((p) => p.name).join(", ")}
 Use the make_accusation tool to submit your accusation.`;
 
     try {
-      const result = await this.callTool<{ target: string; accusation: string }>(
+      const result = await this.callTool<{ thinking?: string; target: string; accusation: string }>(
         prompt, TOOL_MAKE_ACCUSATION, 200, sys,
         { action: "accusation", reasoningEffort: "medium" },
       );
@@ -1195,6 +1175,7 @@ Use the make_accusation tool to submit your accusation.`;
       return {
         targetId: target?.id ?? fallbackOther.id,
         text: result.accusation ?? `I accuse ${target?.name ?? fallbackOther.name}.`,
+        thinking: result.thinking,
       };
     } catch (err) {
       const fallbackOther = others[0];
@@ -1204,7 +1185,7 @@ Use the make_accusation tool to submit your accusation.`;
     }
   }
 
-  async getDefense(ctx: PhaseContext, accusation: string, accuserName: string): Promise<string> {
+  async getDefense(ctx: PhaseContext, accusation: string, accuserName: string): Promise<AgentResponse> {
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## THE TRIBUNAL — Defense
@@ -1214,12 +1195,12 @@ ${accuserName} has accused you: "${accusation}"
 
 Defend yourself publicly. Rebut the accusation, redirect blame, or appeal to the group.
 
-Keep it to 2-3 sentences. Respond ONLY with your defense text.`;
+Keep it to 2-3 sentences.`;
 
-    return this.callLLM(prompt, 200, sys, { action: "tribunal-defense", reasoningEffort: "medium" });
+    return this.callLLMWithThinking(prompt, 200, sys, { action: "tribunal-defense", reasoningEffort: "medium" });
   }
 
-  async getOpeningStatement(ctx: PhaseContext): Promise<string> {
+  async getOpeningStatement(ctx: PhaseContext): Promise<AgentResponse> {
     const juryNames = ctx.jury?.map((j) => j.playerName).join(", ") ?? "the jury";
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
@@ -1230,14 +1211,12 @@ ${ENDGAME_PERSONALITY_HINTS[this.personality]}
 You are one of the TWO FINALISTS. Address the jury (${juryNames}) and make your case for why YOU should win.
 Reference your gameplay, your alliances, your strategic moves throughout the game.
 
-Keep it to 3-4 sentences. Make it powerful.
+Keep it to 3-4 sentences. Make it powerful.`;
 
-Respond with ONLY your statement, nothing else.`;
-
-    return this.callLLM(prompt, 250, sys, { action: "opening-statement", reasoningEffort: "medium" });
+    return this.callLLMWithThinking(prompt, 250, sys, { action: "opening-statement", reasoningEffort: "medium" });
   }
 
-  async getJuryQuestion(ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string }> {
+  async getJuryQuestion(ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string; thinking?: string }> {
     const [finalistId0, finalistId1] = finalistIds;
     const finalist0 = ctx.alivePlayers.find((p) => p.id === finalistId0) ?? { id: finalistId0, name: finalistId0 };
     const finalist1 = ctx.alivePlayers.find((p) => p.id === finalistId1) ?? { id: finalistId1, name: finalistId1 };
@@ -1257,7 +1236,7 @@ Ask a pointed, revealing question. You want to know who truly deserves to win.
 Use the ask_jury_question tool to submit your question.`;
 
     try {
-      const result = await this.callTool<{ target: string; question: string }>(
+      const result = await this.callTool<{ thinking?: string; target: string; question: string }>(
         prompt, TOOL_ASK_JURY_QUESTION, 150, sys,
         { action: "jury-question", reasoningEffort: "medium" },
       );
@@ -1265,6 +1244,7 @@ Use the ask_jury_question tool to submit your question.`;
       return {
         targetFinalistId: target?.id ?? finalistId0,
         question: result.question ?? "Why do you deserve to win?",
+        thinking: result.thinking,
       };
     } catch (err) {
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getJuryQuestion error="${err instanceof Error ? err.message : err}" fallback=target:"${finalist0.name}"`);
@@ -1275,7 +1255,7 @@ Use the ask_jury_question tool to submit your question.`;
     }
   }
 
-  async getJuryAnswer(ctx: PhaseContext, question: string, jurorName: string): Promise<string> {
+  async getJuryAnswer(ctx: PhaseContext, question: string, jurorName: string): Promise<AgentResponse> {
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## THE JUDGMENT — Answer Jury Question
@@ -1285,12 +1265,12 @@ You are a FINALIST. ${jurorName} asks you: "${question}"
 
 Answer honestly and persuasively. This juror will vote for the winner — make your case.
 
-Keep it to 2-3 sentences. Respond ONLY with your answer.`;
+Keep it to 2-3 sentences.`;
 
-    return this.callLLM(prompt, 200, sys, { action: "jury-answer", reasoningEffort: "medium" });
+    return this.callLLMWithThinking(prompt, 200, sys, { action: "jury-answer", reasoningEffort: "medium" });
   }
 
-  async getClosingArgument(ctx: PhaseContext): Promise<string> {
+  async getClosingArgument(ctx: PhaseContext): Promise<AgentResponse> {
     const eliminationSummary = this.allPlayers
       .filter((p) => !ctx.alivePlayers.some((ap) => ap.id === p.id) && p.id !== this.id)
       .map((p) => p.name)
@@ -1307,9 +1287,9 @@ You MUST reference at least TWO specific events from this game — for example: 
 
 Eliminated players (potential reference points): ${eliminationSummary || "none"}
 
-Keep it to 2-3 sentences. Respond ONLY with your argument.`;
+Keep it to 2-3 sentences.`;
 
-    return this.callLLM(prompt, 250, sys, { action: "closing-argument", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "medium" });
+    return this.callLLMWithThinking(prompt, 250, sys, { action: "closing-argument", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "medium" });
   }
 
   async getJuryVote(ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID> {
@@ -1514,6 +1494,24 @@ ${roomSection}
   private static REASONING_OVERHEAD_HIGH = 4000;
   private static REASONING_OVERHEAD_LOW = 500;
 
+  /** JSON Schema for structured AgentResponse output (thinking + message) */
+  private static readonly AGENT_RESPONSE_FORMAT = {
+    type: "json_schema" as const,
+    json_schema: {
+      name: "agent_response",
+      strict: true,
+      schema: {
+        type: "object",
+        properties: {
+          thinking: { type: "string", description: "Your internal reasoning (hidden from other players, visible to viewers)" },
+          message: { type: "string", description: "Your actual message" },
+        },
+        required: ["thinking", "message"],
+        additionalProperties: false,
+      },
+    },
+  };
+
   /** Free-text LLM call for communication (introductions, lobby, rumor, etc.) */
   private async callLLM(
     prompt: string,
@@ -1582,6 +1580,90 @@ ${roomSection}
     }
 
     return "[No response]";
+  }
+
+  /**
+   * Structured output LLM call that returns AgentResponse (thinking + message).
+   * Uses JSON Schema response_format to get both internal thinking and the visible message.
+   */
+  private async callLLMWithThinking(
+    prompt: string,
+    maxTokens = 200,
+    systemPrompt?: string,
+    options?: { action?: string; reasoningOverhead?: number; reasoningEffort?: ReasoningEffort },
+  ): Promise<AgentResponse> {
+    const reasoning = this.isReasoningModel();
+    const useCompletionTokens = this.usesCompletionTokensParam();
+    const overhead = options?.reasoningOverhead ?? InfluenceAgent.REASONING_TOKEN_OVERHEAD;
+    const effectiveMaxTokens = reasoning ? maxTokens + overhead : maxTokens;
+    const maxAttempts = 2;
+    const sourceKey = options?.action ? `${this.name}/${options.action}` : this.name;
+
+    const messages: Array<{ role: "system" | "user"; content: string }> = [];
+    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
+    messages.push({ role: "user", content: prompt });
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const response = await this.openai.chat.completions.create({
+          model: this.model,
+          messages,
+          ...(useCompletionTokens
+            ? { max_completion_tokens: effectiveMaxTokens }
+            : { max_tokens: effectiveMaxTokens }),
+          ...(!reasoning && { temperature: 0.7 }),
+          ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
+          response_format: InfluenceAgent.AGENT_RESPONSE_FORMAT,
+        });
+
+        if (this.tokenTracker && response.usage) {
+          const reasoningTk = (response.usage as unknown as Record<string, unknown>).completion_tokens_details
+            ? ((response.usage as unknown as Record<string, unknown>).completion_tokens_details as Record<string, number>)?.reasoning_tokens ?? 0
+            : 0;
+          this.tokenTracker.record(
+            sourceKey,
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+            response.usage.prompt_tokens_details?.cached_tokens ?? 0,
+            reasoningTk,
+          );
+        }
+
+        const content = response.choices[0]?.message?.content?.trim() ?? "";
+        if (!content) {
+          console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned empty content`);
+          if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
+          return { thinking: "", message: "[No response]" };
+        }
+
+        try {
+          const parsed = JSON.parse(content) as { thinking?: string; message?: string };
+          const message = parsed.message?.trim() ?? "";
+          if (!message) {
+            console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned empty message field`);
+            if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
+            return { thinking: parsed.thinking ?? "", message: "[No response]" };
+          }
+          return { thinking: parsed.thinking ?? "", message };
+        } catch {
+          // Fallback: treat entire content as message (model didn't return valid JSON)
+          console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned non-JSON, treating as plain message`);
+          return { thinking: "", message: content };
+        }
+      } catch (error) {
+        if (attempt < maxAttempts) {
+          const backoffMs = attempt * 1000;
+          console.warn(`[${this.name}] callLLMWithThinking attempt ${attempt} failed, retrying in ${backoffMs}ms:`, error);
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        } else {
+          console.error(`[${this.name}] callLLMWithThinking failed after ${maxAttempts} attempts:`, error);
+          if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
+          return { thinking: "", message: "[No response]" };
+        }
+      }
+    }
+
+    return { thinking: "", message: "[No response]" };
   }
 
   /**
