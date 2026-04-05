@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useE2EAuth, useLoginGate } from "@/app/providers";
+import { useE2EAuth } from "@/app/providers";
 
 function HamburgerIcon() {
   return (
@@ -28,8 +28,7 @@ function CloseIcon() {
 export function Nav() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const e2e = useE2EAuth();
-  const { ready, authenticated, logout } = usePrivy();
-  const { gatedLogin } = useLoginGate();
+  const { ready, authenticated, login, logout } = usePrivy();
   const { isAdmin } = usePermissions();
 
   const effectiveReady = e2e.isE2E ? e2e.ready : ready;
@@ -81,7 +80,7 @@ export function Nav() {
           </button>
         ) : (
           <button
-            onClick={() => { setMobileOpen(false); gatedLogin(); }}
+            onClick={() => { setMobileOpen(false); login(); }}
             className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-md transition-colors"
           >
             Sign in
