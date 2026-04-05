@@ -183,11 +183,14 @@ export function DramaticReplayViewer({
   }, [scenes, sceneIndex, messageIndex]);
 
   // Determine rendering mode for current scene
-  const isChatFeedScene = !!scene && CHAT_FEED_PHASES.has(scene.phase);
-  const isWhisperScene = !!scene && scene.phase === "WHISPER" && !scene.isOverview;
-  const isDiaryScene = !!scene && scene.phase === "DIARY_ROOM";
+  // Thinking-only scenes (from WHISPER/DIARY phases) should render as a chat feed,
+  // not through whisper/diary-specific paths that expect room data.
+  const isThinkingOnlyScene = !!scene && scene.messages.length > 0 && scene.messages.every((m) => m.scope === "thinking");
+  const isChatFeedScene = !!scene && (CHAT_FEED_PHASES.has(scene.phase) || isThinkingOnlyScene);
+  const isWhisperScene = !!scene && scene.phase === "WHISPER" && !scene.isOverview && !isThinkingOnlyScene;
+  const isDiaryScene = !!scene && scene.phase === "DIARY_ROOM" && !isThinkingOnlyScene;
   const isOverviewScene = !!scene && !!scene.isOverview;
-  const isJuryScene = !!scene && scene.phase === "JURY_QUESTIONS";
+  const isJuryScene = !!scene && scene.phase === "JURY_QUESTIONS" && !isThinkingOnlyScene;
   const isChatStyleScene = isChatFeedScene || isWhisperScene || isDiaryScene || isJuryScene;
 
   // Messages visible in current scene's chat feed (for chat-style phases)
@@ -978,7 +981,7 @@ export function DramaticReplayViewer({
                   className={`text-[10px] px-1.5 py-1.5 rounded transition-colors ml-1 ${
                     showThinking
                       ? "bg-indigo-900/40 text-indigo-300 border border-indigo-500/30"
-                      : "text-white/25 border border-transparent"
+                      : "text-white/40 border border-indigo-500/20 bg-indigo-950/20"
                   }`}
                   title={showThinking ? "Hide agent thinking" : "Show agent thinking"}
                 >
@@ -1058,10 +1061,10 @@ export function DramaticReplayViewer({
               className={`text-xs px-3 py-1.5 rounded-lg transition-colors border ${
                 showThinking
                   ? "bg-indigo-900/40 text-indigo-300 border-indigo-500/30"
-                  : "text-white/30 hover:text-white/60 border-white/10 hover:border-white/20"
+                  : "text-indigo-300/50 hover:text-indigo-200 border-indigo-500/20 hover:border-indigo-500/40 bg-indigo-950/20"
               }`}
             >
-              {showThinking ? "Hide Thinking" : "Show Thinking"}
+              🧠 {showThinking ? "Hide Thinking" : "Show Thinking"}
             </button>
           )}
         </div>
