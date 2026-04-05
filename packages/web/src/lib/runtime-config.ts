@@ -19,6 +19,9 @@ export interface RuntimeConfig {
   API_URL: string;
   WS_URL: string;
   ADMIN_ADDRESS: string;
+  EPHEMERAL: boolean;
+  EPHEMERAL_PR: string;
+  SOURCE_ENV_URL: string;
   ready: boolean;
 }
 
@@ -33,6 +36,9 @@ const defaults: RuntimeConfig = {
   API_URL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000",
   WS_URL: process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3000",
   ADMIN_ADDRESS: process.env.NEXT_PUBLIC_ADMIN_ADDRESS ?? "",
+  EPHEMERAL: false,
+  EPHEMERAL_PR: "",
+  SOURCE_ENV_URL: "",
   ready: hasLocalDefaults, // ready immediately in local dev, wait for fetch in Docker
 };
 

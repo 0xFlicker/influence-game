@@ -32,6 +32,9 @@ export function GET() {
       process.env.ADMIN_ADDRESS ??
       process.env.NEXT_PUBLIC_ADMIN_ADDRESS ??
       "",
+    EPHEMERAL: process.env.EPHEMERAL === "true",
+    EPHEMERAL_PR: process.env.EPHEMERAL_PR ?? "",
+    SOURCE_ENV_URL: process.env.SOURCE_ENV_URL ?? "",
   };
 
   return NextResponse.json(config, {
