@@ -26,122 +26,6 @@ import { generateInviteCode } from "../lib/invite-codes.js";
 import { randomUUID } from "crypto";
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Fallback: construct an export-compatible object from a remote env's public
- * APIs when the dedicated export endpoint is unavailable (404).
- *
- * Fetches GET /api/games/:slug and GET /api/games/:slug/transcript,
- * then maps the responses into the v1 export format.
- */
-async function constructExportFromPublicAPIs(
-  origin: string,
-  slug: string,
-  headers: Record<string, string>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<Record<string, any>> {
-  const encodedSlug = encodeURIComponent(slug);
-
-  // Fetch game detail
-  const gameResp = await fetch(`${origin}/api/games/${encodedSlug}`, { headers });
-  if (!gameResp.ok) {
-    return { error: `Failed to fetch game from remote (${gameResp.status})`, detail: await gameResp.text() };
-  }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const gameDetail = await gameResp.json() as any;
-
-  // Fetch transcript
-  const txResp = await fetch(`${origin}/api/games/${encodedSlug}/transcript`, { headers });
-  if (!txResp.ok) {
-    return { error: `Failed to fetch transcript from remote (${txResp.status})`, detail: await txResp.text() };
-  }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const transcriptEntries = await txResp.json() as any[];
-
-  // Reconstruct game record
-  const config = JSON.stringify({
-    maxRounds: gameDetail.maxRounds ?? 10,
-    modelTier: gameDetail.modelTier ?? "budget",
-    visibility: gameDetail.visibility ?? "public",
-    viewerMode: gameDetail.viewerMode ?? "speedrun",
-  });
-
-  const game = {
-    id: gameDetail.id,
-    slug: gameDetail.slug,
-    config,
-    status: gameDetail.status ?? "completed",
-    trackType: "custom",
-    minPlayers: gameDetail.players?.length ?? 4,
-    maxPlayers: gameDetail.players?.length ?? 12,
-    startedAt: gameDetail.startedAt ?? null,
-    endedAt: gameDetail.completedAt ?? null,
-    hiddenAt: null,
-    createdAt: gameDetail.createdAt ?? new Date().toISOString(),
-  };
-
-  // Reconstruct players
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const players = (gameDetail.players ?? []).map((p: any) => ({
-    id: p.id,
-    gameId: gameDetail.id,
-    userId: null,
-    agentProfileId: null,
-    persona: JSON.stringify({ name: p.name, personality: p.persona ?? p.name }),
-    agentConfig: JSON.stringify({ model: gameDetail.modelTier ?? "budget", temperature: 0.7 }),
-    joinedAt: gameDetail.createdAt ?? new Date().toISOString(),
-    agentProfile: null,
-  }));
-
-  // Map transcripts (already close to export format)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const transcripts = transcriptEntries.map((t: any) => ({
-    gameId: gameDetail.id,
-    round: t.round,
-    phase: t.phase,
-    fromPlayerId: t.fromPlayerId ?? null,
-    scope: t.scope ?? "public",
-    toPlayerIds: t.toPlayerIds ? JSON.stringify(t.toPlayerIds) : null,
-    roomId: t.roomId ?? null,
-    text: t.text,
-    timestamp: t.timestamp,
-    createdAt: t.createdAt ?? new Date().toISOString(),
-  }));
-
-  // Reconstruct game result if winner info available
-  let result = null;
-  if (gameDetail.tokenUsage || gameDetail.winner) {
-    const winnerPlayer = gameDetail.winner
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ? (gameDetail.players ?? []).find((p: any) => p.name === gameDetail.winner)
-      : null;
-    result = {
-      id: randomUUID(),
-      gameId: gameDetail.id,
-      winnerId: winnerPlayer?.id ?? null,
-      roundsPlayed: gameDetail.currentRound ?? 0,
-      tokenUsage: gameDetail.tokenUsage
-        ? JSON.stringify(gameDetail.tokenUsage)
-        : JSON.stringify({ promptTokens: 0, completionTokens: 0, totalTokens: 0, estimatedCost: 0 }),
-      finishedAt: gameDetail.completedAt ?? new Date().toISOString(),
-    };
-  }
-
-  return {
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    sourceEnv: origin,
-    game,
-    players,
-    transcripts,
-    result,
-    agentMemories: [],
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
@@ -742,32 +626,20 @@ export function createAdminRoutes(db: DrizzleDB) {
         return c.json({ error: "Only http/https URLs are allowed" }, 400);
       }
 
-      const origin = parsedUrl.origin;
-      const slug = encodeURIComponent(body.slug as string);
+      const exportUrl = `${parsedUrl.origin}/api/admin/export-game/${encodeURIComponent(body.slug as string)}`;
       const headers: Record<string, string> = { Accept: "application/json" };
       if (authHeader) headers["Authorization"] = authHeader;
 
       try {
-        // Try the dedicated export endpoint first
-        const exportResp = await fetch(`${origin}/api/admin/export-game/${slug}`, { headers });
-
-        if (exportResp.ok) {
-          exportData = await exportResp.json();
-        } else if (exportResp.status === 404) {
-          // Fallback: reconstruct export from standard public APIs
-          // (supports importing from envs that don't have the export endpoint)
-          const constructed = await constructExportFromPublicAPIs(origin, body.slug as string, headers);
-          if ("error" in constructed) {
-            return c.json(constructed, 502);
-          }
-          exportData = constructed;
-        } else {
-          const detail = await exportResp.text();
+        const resp = await fetch(exportUrl, { headers });
+        if (!resp.ok) {
+          const detail = await resp.text();
           return c.json({
-            error: `Remote export failed (${exportResp.status})`,
+            error: `Remote export failed (${resp.status})`,
             detail,
-          }, exportResp.status as 502);
+          }, resp.status as 502);
         }
+        exportData = await resp.json();
       } catch (err) {
         return c.json({
           error: "Failed to fetch export from remote environment",
