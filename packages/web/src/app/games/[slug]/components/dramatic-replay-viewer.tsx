@@ -51,7 +51,7 @@ export function DramaticReplayViewer({
   live?: boolean;
   connStatus?: "connecting" | "live" | "disconnected" | "reconnecting" | "replay";
 }) {
-  const [showThinking, setShowThinking] = useState(true);
+  const [showThinking, setShowThinking] = useState(false);
   const filteredMessages = useMemo(
     () => showThinking ? messages : messages.filter((m) => m.scope !== "thinking"),
     [messages, showThinking],
