@@ -249,10 +249,16 @@ export function StyledVoteCard({
   text,
   players,
   voterRumor,
+  voterRumorThinking,
+  showThinking,
+  messageThinking,
 }: {
   text: string;
   players: GamePlayer[];
   voterRumor?: string;
+  voterRumorThinking?: string | null;
+  showThinking?: boolean;
+  messageThinking?: string | null;
 }) {
   const vote = parseVoteMsg(text);
   if (vote) {
@@ -261,6 +267,17 @@ export function StyledVoteCard({
     const exposePlayer = players.find((p) => p.name === vote.expose);
     return (
       <div className="text-center animate-[fadeIn_0.3s_ease-out]">
+        {/* Vote thinking bubble — shown before the vote card */}
+        {showThinking && messageThinking && (
+          <div className="mb-6">
+            <div className="flex items-center justify-center gap-2 mb-3">
+              <span className="text-xs text-indigo-400/60 uppercase tracking-wider">thinking</span>
+            </div>
+            <div className="bg-indigo-950/30 border border-indigo-500/20 rounded-2xl px-8 py-4 inline-block max-w-xl text-left">
+              <p className="text-base leading-relaxed text-indigo-200/50 italic">{messageThinking}</p>
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-center gap-3 mb-6">
           {voterPlayer && <AgentAvatar avatarUrl={voterPlayer.avatarUrl} persona={voterPlayer.persona} name={voterPlayer.name} size="10" />}
           <span className="text-lg font-semibold text-white/70">{vote.voter}</span>
@@ -285,6 +302,11 @@ export function StyledVoteCard({
                 <div className="border-t border-purple-500/10" />
                 <div className="text-left">
                   <p className="text-[10px] text-purple-400/50 uppercase tracking-wider mb-1">Their Rumor</p>
+                  {voterRumorThinking && (
+                    <div className="border-l-2 border-indigo-700/30 pl-2 py-0.5 mb-1">
+                      <p className="text-[10px] text-indigo-400/50 italic leading-relaxed">{voterRumorThinking}</p>
+                    </div>
+                  )}
                   <p className="text-xs text-purple-300/60 italic leading-relaxed">{voterRumor}</p>
                 </div>
               </>
@@ -642,17 +664,17 @@ export function SpectacleMessageContent({
     const vote = parseVoteMsg(message.text);
     const voterName = vote?.voter;
     const voterPlayer = voterName ? players.find((p) => p.name === voterName) : null;
-    const voterRumor = voterPlayer
-      ? rumorMessages.find((m) => m.fromPlayerId === voterPlayer.id || m.fromPlayerId === voterPlayer.name)?.text
+    const voterRumorEntry = voterPlayer
+      ? rumorMessages.find((m) => m.fromPlayerId === voterPlayer.id || m.fromPlayerId === voterPlayer.name)
       : undefined;
 
     return (
-      <StyledVoteCard text={message.text} players={players} voterRumor={voterRumor} />
+      <StyledVoteCard text={message.text} players={players} voterRumor={voterRumorEntry?.text} voterRumorThinking={showThinking ? voterRumorEntry?.thinking : undefined} showThinking={showThinking} messageThinking={message.thinking} />
     );
   }
 
-  // Per-message thinking bubble (shown before the actual message content)
-  const thinkingBubble = showThinking && message.thinking ? (
+  // Per-message thinking bubble (shown before the actual message content, hidden for anonymous rumors)
+  const thinkingBubble = showThinking && message.thinking && message.phase !== "RUMOR" ? (
     <div className="text-center animate-[fadeIn_0.3s_ease-out] mb-6">
       <div className="flex items-center justify-center gap-2 mb-3">
         <span className="text-xs text-indigo-400/60 uppercase tracking-wider">thinking</span>

@@ -57,8 +57,8 @@ export function MessageBubble({ msg, players, showThinking }: { msg: TranscriptE
 
   return (
     <div className={isEliminated ? "opacity-50" : ""}>
-      {/* Per-message thinking bubble (shown before the message) */}
-      {showThinking && msg.thinking && (
+      {/* Per-message thinking bubble (shown before the message, hidden for anonymous rumors) */}
+      {showThinking && msg.thinking && msg.phase !== "RUMOR" && (
         <div className="ml-4 border-l-2 border-indigo-700/40 pl-3 py-1 mb-1">
           <div className="flex items-center gap-1.5 mb-0.5">
             <span className="text-[10px] text-indigo-400/60 uppercase tracking-wider">thinking</span>
