@@ -32,6 +32,53 @@ function parseWhisperRooms(msgs: TranscriptEntry[]): Array<{ roomId: number; pla
   return rooms;
 }
 
+/**
+ * Interleave thinking entries inline: each agent's thinking appears right
+ * after that agent's last regular message, instead of being grouped at the end.
+ */
+function interleaveThinking(msgs: TranscriptEntry[]): TranscriptEntry[] {
+  const regular = msgs.filter((m) => m.scope !== "thinking");
+  const thinking = msgs.filter((m) => m.scope === "thinking");
+  if (thinking.length === 0) return msgs;
+
+  // Map agent → thinking entries
+  const thinkingByAgent = new Map<string, TranscriptEntry[]>();
+  for (const t of thinking) {
+    const key = t.fromPlayerId ?? t.fromPlayerName ?? "";
+    if (!thinkingByAgent.has(key)) thinkingByAgent.set(key, []);
+    thinkingByAgent.get(key)!.push(t);
+  }
+
+  // Find last regular message index per agent
+  const lastIdx = new Map<string, number>();
+  regular.forEach((m, i) => {
+    const key = m.fromPlayerId ?? m.fromPlayerName ?? "";
+    lastIdx.set(key, i);
+  });
+
+  // Insert thinking after each agent's last regular message
+  const result: TranscriptEntry[] = [];
+  const inserted = new Set<string>();
+  for (let i = 0; i < regular.length; i++) {
+    const m = regular[i]!;
+    result.push(m);
+    const key = m.fromPlayerId ?? m.fromPlayerName ?? "";
+    if (lastIdx.get(key) === i && thinkingByAgent.has(key)) {
+      result.push(...thinkingByAgent.get(key)!);
+      inserted.add(key);
+    }
+  }
+
+  // Append thinking from agents with no regular messages
+  for (const [key, entries] of thinkingByAgent) {
+    if (!inserted.has(key)) {
+      result.push(...entries);
+    }
+  }
+
+  return result;
+}
+
 export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] {
   // Group messages by round+phase, but split DIARY_ROOM into separate groups
   // for each contiguous batch. Each runDiaryRoom(precedingPhase) produces a
@@ -114,17 +161,34 @@ export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] 
         }
       }
 
-      // Thinking entries from this whisper phase — shown as a separate scene
+      // Distribute thinking entries inline into whisper room scenes
       const whisperThinking = msgs.filter((m) => m.scope === "thinking");
       if (whisperThinking.length > 0) {
-        scenes.push({
-          id: `${id}-thinking`,
-          round,
-          phase,
-          roomType,
-          messages: whisperThinking,
-          houseIntro: null,
-        });
+        // Match thinking entries to rooms by agent name
+        const roomPlayerSets = rooms.map((r) => new Set(r.playerNames.map((n) => n.toLowerCase())));
+        for (const t of whisperThinking) {
+          const name = (t.fromPlayerId ?? t.fromPlayerName ?? "").toLowerCase();
+          // Find the last room scene this agent belongs to and append thinking
+          let added = false;
+          for (let ri = scenes.length - 1; ri >= 0; ri--) {
+            const s = scenes[ri]!;
+            if (s.whisperRoom && roomPlayerSets.some((ps) => ps.has(name) && ps.has(s.whisperRoom!.playerNames[0]!.toLowerCase()))) {
+              s.messages.push(t);
+              added = true;
+              break;
+            }
+          }
+          // Fallback: append to the last whisper room scene
+          if (!added) {
+            for (let ri = scenes.length - 1; ri >= 0; ri--) {
+              if (scenes[ri]!.whisperRoom) {
+                scenes[ri]!.messages.push(t);
+                added = true;
+                break;
+              }
+            }
+          }
+        }
       }
     } else if (phase === "DIARY_ROOM") {
       // Sequential: one scene per player
@@ -162,17 +226,29 @@ export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] 
         });
       }
 
-      // Thinking entries from this diary phase — shown as a separate scene
+      // Distribute thinking entries inline into per-player diary scenes
       const diaryThinking = msgs.filter((m) => m.scope === "thinking");
-      if (diaryThinking.length > 0) {
-        scenes.push({
-          id: `${id}-thinking`,
-          round,
-          phase,
-          roomType,
-          messages: diaryThinking,
-          houseIntro: null,
-        });
+      for (const t of diaryThinking) {
+        const name = diaryPlayerName(t.fromPlayerId ?? "");
+        // Find the matching diary player scene and append
+        let added = false;
+        for (let di = scenes.length - 1; di >= 0; di--) {
+          if (scenes[di]!.diaryPlayer?.playerName === name) {
+            scenes[di]!.messages.push(t);
+            added = true;
+            break;
+          }
+        }
+        // Fallback: append to last diary scene
+        if (!added) {
+          for (let di = scenes.length - 1; di >= 0; di--) {
+            if (scenes[di]!.diaryPlayer) {
+              scenes[di]!.messages.push(t);
+              added = true;
+              break;
+            }
+          }
+        }
       }
     } else {
       scenes.push({
@@ -180,7 +256,7 @@ export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] 
         round,
         phase,
         roomType,
-        messages: msgs,
+        messages: interleaveThinking(msgs),
         houseIntro: HOUSE_INTROS[phase] ?? null,
       });
     }
