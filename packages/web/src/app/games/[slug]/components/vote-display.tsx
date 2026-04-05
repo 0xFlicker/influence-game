@@ -323,6 +323,16 @@ export function StyledVoteCard({
     const empowerPlayer = players.find((p) => p.name === reVote.empower);
     return (
       <div className="text-center animate-[fadeIn_0.3s_ease-out]">
+        {showThinking && messageThinking && (
+          <div className="mb-6">
+            <div className="flex items-center justify-center gap-2 mb-3">
+              <span className="text-xs text-indigo-400/60 uppercase tracking-wider">thinking</span>
+            </div>
+            <div className="bg-indigo-950/30 border border-indigo-500/20 rounded-2xl px-8 py-4 inline-block max-w-xl text-left">
+              <p className="text-base leading-relaxed text-indigo-200/50 italic">{messageThinking}</p>
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-center gap-3 mb-6">
           {voterPlayer && <AgentAvatar avatarUrl={voterPlayer.avatarUrl} persona={voterPlayer.persona} name={voterPlayer.name} size="10" />}
           <span className="text-lg font-semibold text-white/70">{reVote.voter}</span>
@@ -346,6 +356,16 @@ export function StyledVoteCard({
     const targetPlayer = players.find((p) => p.name === councilVote.target);
     return (
       <div className="text-center animate-[fadeIn_0.3s_ease-out]">
+        {showThinking && messageThinking && (
+          <div className="mb-6">
+            <div className="flex items-center justify-center gap-2 mb-3">
+              <span className="text-xs text-indigo-400/60 uppercase tracking-wider">thinking</span>
+            </div>
+            <div className="bg-indigo-950/30 border border-indigo-500/20 rounded-2xl px-8 py-4 inline-block max-w-xl text-left">
+              <p className="text-base leading-relaxed text-indigo-200/50 italic">{messageThinking}</p>
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-center gap-3 mb-6">
           {voterPlayer && <AgentAvatar avatarUrl={voterPlayer.avatarUrl} persona={voterPlayer.persona} name={voterPlayer.name} size="10" />}
           <span className="text-lg font-semibold text-white/70">{councilVote.voter}</span>
@@ -367,6 +387,16 @@ export function StyledVoteCard({
     const targetPlayer = players.find((p) => p.name === juryVote.target);
     return (
       <div className="text-center animate-[fadeIn_0.3s_ease-out]">
+        {showThinking && messageThinking && (
+          <div className="mb-6">
+            <div className="flex items-center justify-center gap-2 mb-3">
+              <span className="text-xs text-indigo-400/60 uppercase tracking-wider">thinking</span>
+            </div>
+            <div className="bg-indigo-950/30 border border-indigo-500/20 rounded-2xl px-8 py-4 inline-block max-w-xl text-left">
+              <p className="text-base leading-relaxed text-indigo-200/50 italic">{messageThinking}</p>
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-center gap-3 mb-6">
           {jurorPlayer && <AgentAvatar avatarUrl={jurorPlayer.avatarUrl} persona={jurorPlayer.persona} name={jurorPlayer.name} size="10" />}
           <span className="text-lg font-semibold text-white/50">{juryVote.juror}</span>
@@ -390,6 +420,16 @@ export function StyledVoteCard({
     const isProtect = powerAction.action === "protect";
     return (
       <div className="text-center animate-[fadeIn_0.3s_ease-out]">
+        {showThinking && messageThinking && (
+          <div className="mb-6">
+            <div className="flex items-center justify-center gap-2 mb-3">
+              <span className="text-xs text-indigo-400/60 uppercase tracking-wider">thinking</span>
+            </div>
+            <div className="bg-indigo-950/30 border border-indigo-500/20 rounded-2xl px-8 py-4 inline-block max-w-xl text-left">
+              <p className="text-base leading-relaxed text-indigo-200/50 italic">{messageThinking}</p>
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-center gap-3 mb-6">
           <span className="text-2xl">👑</span>
           {agentPlayer && <AgentAvatar avatarUrl={agentPlayer.avatarUrl} persona={agentPlayer.persona} name={agentPlayer.name} size="10" />}
