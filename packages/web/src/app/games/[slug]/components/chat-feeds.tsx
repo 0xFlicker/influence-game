@@ -13,10 +13,12 @@ import { parseJuryQuestion, parseJuryAnswer } from "./message-parsing";
 export function GroupChatFeed({
   messages,
   players,
+  showThinking,
 }: {
   messages: TranscriptEntry[];
   players: GamePlayer[];
   phase: PhaseKey;
+  showThinking?: boolean;
 }) {
   const feedRef = useRef<HTMLDivElement>(null);
 
@@ -39,7 +41,7 @@ export function GroupChatFeed({
         <div className="space-y-3">
           {messages.map((msg) => (
             <div key={msg.id} className="animate-[fadeIn_0.3s_ease-out]">
-              <MessageBubble msg={msg} players={players} />
+              <MessageBubble msg={msg} players={players} showThinking={showThinking} />
             </div>
           ))}
         </div>
@@ -55,9 +57,11 @@ export function GroupChatFeed({
 export function JuryDMView({
   messages,
   players,
+  showThinking,
 }: {
   messages: TranscriptEntry[];
   players: GamePlayer[];
+  showThinking?: boolean;
 }) {
   const feedRef = useRef<HTMLDivElement>(null);
 
@@ -130,7 +134,7 @@ export function JuryDMView({
             }
 
             // System or non-jury message
-            return <MessageBubble key={msg.id} msg={msg} players={players} />;
+            return <MessageBubble key={msg.id} msg={msg} players={players} showThinking={showThinking} />;
           })}
         </div>
       )}

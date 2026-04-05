@@ -178,12 +178,14 @@ export function WhisperRoomDM({
   focused,
   onFocus,
   onClose,
+  showThinking,
 }: {
   room: WhisperRoomStage;
   players: GamePlayer[];
   focused?: boolean;
   onFocus?: () => void;
   onClose?: () => void;
+  showThinking?: boolean;
 }) {
   // Room owner: first player in allocation (the one who chose this room).
   // Resolve via players array to get canonical ID for robust matching.
@@ -283,6 +285,11 @@ export function WhisperRoomDM({
                   <p className="text-[10px] mb-0.5 text-white/30">
                     {name}
                   </p>
+                  {showThinking && msg.thinking && (
+                    <div className="mb-1 border-l-2 border-indigo-700/30 pl-2 py-0.5">
+                      <p className="text-[10px] text-indigo-400/50 italic leading-relaxed">{msg.thinking}</p>
+                    </div>
+                  )}
                   <div className={`rounded-2xl px-3 py-2 ${
                     isOwner
                       ? "bg-blue-600/30 border border-blue-500/25 rounded-tr-sm"
