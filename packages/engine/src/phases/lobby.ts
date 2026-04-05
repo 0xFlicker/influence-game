@@ -40,8 +40,8 @@ async function runLobbyMessages(
         const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.LOBBY);
         phaseCtx.lobbySubRound = sub;
         phaseCtx.lobbyTotalSubRounds = messagesPerPlayer;
-        const text = await agent.getLobbyMessage(phaseCtx);
-        logger.logPublic(player.id, text, Phase.LOBBY);
+        const { message, thinking } = await agent.getLobbyMessage(phaseCtx);
+        logger.logPublic(player.id, message, Phase.LOBBY, { thinking });
       }),
     );
   }

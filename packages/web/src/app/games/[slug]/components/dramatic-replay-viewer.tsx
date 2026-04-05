@@ -51,14 +51,15 @@ export function DramaticReplayViewer({
   live?: boolean;
   connStatus?: "connecting" | "live" | "disconnected" | "reconnecting" | "replay";
 }) {
-  const [showThinking, setShowThinking] = useState(false);
+  const [showThinking, setShowThinking] = useState(!live); // default true for replay
+  // Backward compat: always filter out old scope='thinking' entries (they lack per-message association)
   const filteredMessages = useMemo(
-    () => showThinking ? messages : messages.filter((m) => m.scope !== "thinking"),
-    [messages, showThinking],
+    () => messages.filter((m) => m.scope !== "thinking"),
+    [messages],
   );
   const scenes = useMemo(() => buildReplayScenes(filteredMessages), [filteredMessages]);
-  // Check if any thinking messages exist (to decide whether to show toggle)
-  const hasThinkingMessages = useMemo(() => messages.some((m) => m.scope === "thinking"), [messages]);
+  // Check if any per-message thinking exists (to decide whether to show toggle)
+  const hasThinkingMessages = useMemo(() => messages.some((m) => m.thinking), [messages]);
   const [sceneIndex, setSceneIndex] = useState(0);
   const [messageIndex, setMessageIndex] = useState(0);
   const [messagePhase, setMessagePhase] = useState<SpectacleMessagePhase>("typing");
@@ -764,7 +765,7 @@ export function DramaticReplayViewer({
           {/* --- Chat-style: Group Chat Feed --- */}
           {isChatFeedScene && (
             <div className="flex flex-col gap-2">
-              <GroupChatFeed messages={chatFeedMessages} players={replayPlayers} phase={scene.phase} />
+              <GroupChatFeed messages={chatFeedMessages} players={replayPlayers} phase={scene.phase} showThinking={showThinking} />
               {/* Typing indicator below chat feed */}
               {messagePhase === "typing" && currentMessage && !isSystemMessage && (
                 <div className="flex items-center gap-2 px-4 animate-[fadeIn_0.2s_ease-out]">
@@ -789,11 +790,11 @@ export function DramaticReplayViewer({
             <div className="flex flex-col gap-4">
               {previousWhisperRooms.map((prevRoom) => (
                 <div key={`whisper-prev-${prevRoom.roomId}`} className="opacity-60">
-                  <WhisperRoomDM room={prevRoom} players={replayPlayers} />
+                  <WhisperRoomDM room={prevRoom} players={replayPlayers} showThinking={showThinking} />
                 </div>
               ))}
               {whisperRoom && (
-                <WhisperRoomDM room={whisperRoom} players={replayPlayers} />
+                <WhisperRoomDM room={whisperRoom} players={replayPlayers} showThinking={showThinking} />
               )}
             </div>
           )}
@@ -803,11 +804,11 @@ export function DramaticReplayViewer({
             <div className="flex flex-col gap-4">
               {previousDiaryRooms.map((prevRoom) => (
                 <div key={`diary-prev-${prevRoom.playerName}`} className="opacity-60">
-                  <DiaryRoomChat room={prevRoom} />
+                  <DiaryRoomChat room={prevRoom} showThinking={showThinking} />
                 </div>
               ))}
               {diaryRoomData && (
-                <DiaryRoomChat room={diaryRoomData} />
+                <DiaryRoomChat room={diaryRoomData} showThinking={showThinking} />
               )}
             </div>
           )}
@@ -817,6 +818,7 @@ export function DramaticReplayViewer({
             <JuryDMView
               messages={juryMessages}
               players={replayPlayers}
+              showThinking={showThinking}
             />
           )}
 
@@ -847,9 +849,6 @@ export function DramaticReplayViewer({
                     {currentMessage.scope === "whisper" && (
                       <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
                     )}
-                    {currentMessage.scope === "thinking" && (
-                      <span className="text-xs text-indigo-400/60 uppercase tracking-wider ml-1">thinking</span>
-                    )}
                   </div>
                   <div className="flex items-center justify-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1.2s" }} />
@@ -873,6 +872,7 @@ export function DramaticReplayViewer({
                   currentPlayerName={currentPlayerName}
                   speedMultiplier={speed}
                   rumorMessages={rumorMessages}
+                  showThinking={showThinking}
                 />
               )}
 

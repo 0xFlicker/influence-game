@@ -37,7 +37,7 @@ export class TranscriptLogger {
     fromId: string,
     text: string,
     phase: Phase,
-    opts?: { anonymous?: boolean; displayOrder?: number },
+    opts?: { anonymous?: boolean; displayOrder?: number; thinking?: string },
   ): void {
     const name = this.gameState.getPlayerName(fromId);
     this.publicMessages.push({
@@ -56,12 +56,13 @@ export class TranscriptLogger {
       text,
       ...(opts?.anonymous && { anonymous: true }),
       ...(opts?.displayOrder != null && { displayOrder: opts.displayOrder }),
+      ...(opts?.thinking && { thinking: opts.thinking }),
     };
     this.transcript.push(entry);
     this.emitStream({ type: "transcript_entry", entry });
   }
 
-  logWhisper(fromId: string, toIds: string[], text: string, roomId?: number): void {
+  logWhisper(fromId: string, toIds: string[], text: string, roomId?: number, thinking?: string): void {
     const fromName = this.gameState.getPlayerName(fromId);
     const toNames = toIds.map((id) => this.gameState.getPlayerName(id));
     const entry: TranscriptEntry = {
@@ -73,6 +74,7 @@ export class TranscriptLogger {
       to: toNames,
       text,
       ...(roomId != null && { roomId }),
+      ...(thinking && { thinking }),
     };
     this.transcript.push(entry);
     this.emitStream({ type: "transcript_entry", entry });
@@ -109,7 +111,7 @@ export class TranscriptLogger {
     this.emitStream({ type: "transcript_entry", entry });
   }
 
-  logDiary(from: string, text: string): void {
+  logDiary(from: string, text: string, thinking?: string): void {
     const entry: TranscriptEntry = {
       round: this.gameState.round,
       phase: Phase.DIARY_ROOM,
@@ -117,6 +119,7 @@ export class TranscriptLogger {
       from,
       scope: "diary",
       text,
+      ...(thinking && { thinking }),
     };
     this.transcript.push(entry);
     this.emitStream({ type: "transcript_entry", entry });

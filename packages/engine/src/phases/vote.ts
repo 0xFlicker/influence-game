@@ -39,13 +39,13 @@ export async function runVotePhase(
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
 
-      const [votes, lastMsg] = await Promise.all([
+      const [votes, lastMsgResponse] = await Promise.all([
         agent.getVotes(phaseCtx),
         agent.getLastMessage(phaseCtx),
       ]);
 
       gameState.recordVote(player.id, votes.empowerTarget, votes.exposeTarget);
-      gameState.recordLastMessage(player.id, lastMsg);
+      gameState.recordLastMessage(player.id, lastMsgResponse.message);
 
       const empowerName = gameState.getPlayerName(votes.empowerTarget);
       const exposeName = gameState.getPlayerName(votes.exposeTarget);
@@ -145,12 +145,12 @@ export async function runReckoningVote(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
-      const [vote, lastMsg] = await Promise.all([
+      const [vote, lastMsgResponse] = await Promise.all([
         agent.getEndgameEliminationVote(phaseCtx),
         agent.getLastMessage(phaseCtx),
       ]);
       gameState.recordEndgameEliminationVote(player.id, vote);
-      gameState.recordLastMessage(player.id, lastMsg);
+      gameState.recordLastMessage(player.id, lastMsgResponse.message);
       logger.logSystem(
         `${player.name} votes to eliminate: ${gameState.getPlayerName(vote)}`,
         Phase.VOTE,
@@ -181,12 +181,12 @@ export async function runTribunalVote(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
-      const [vote, lastMsg] = await Promise.all([
+      const [vote, lastMsgResponse] = await Promise.all([
         agent.getEndgameEliminationVote(phaseCtx),
         agent.getLastMessage(phaseCtx),
       ]);
       gameState.recordEndgameEliminationVote(player.id, vote);
-      gameState.recordLastMessage(player.id, lastMsg);
+      gameState.recordLastMessage(player.id, lastMsgResponse.message);
       logger.logSystem(
         `${player.name} votes to eliminate: ${gameState.getPlayerName(vote)}`,
         Phase.VOTE,

@@ -293,8 +293,10 @@ export function buildDiaryRooms(
 
 export function DiaryRoomChat({
   room,
+  showThinking,
 }: {
   room: DiaryRoomData;
+  showThinking?: boolean;
 }) {
   return (
     <div className="rounded-2xl border border-purple-400/20 bg-black/30 flex flex-col overflow-hidden">
@@ -327,6 +329,11 @@ export function DiaryRoomChat({
                 <div className="flex gap-2 justify-end animate-[fadeIn_0.25s_ease-out]">
                   <div className="max-w-[85%]">
                     <p className="text-[10px] text-white/40 text-right mb-0.5">{room.playerName}</p>
+                    {showThinking && entry.answer.thinking && (
+                      <div className="mb-1 border-r-2 border-indigo-700/30 pr-2 py-0.5 text-right">
+                        <p className="text-[10px] text-indigo-400/50 italic leading-relaxed">{entry.answer.thinking}</p>
+                      </div>
+                    )}
                     <div className="bg-purple-800/25 border border-purple-600/20 rounded-2xl rounded-tr-sm px-3 py-2">
                       <p className="text-xs leading-relaxed text-white/70">{entry.answer.text}</p>
                     </div>

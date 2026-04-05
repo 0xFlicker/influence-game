@@ -20,7 +20,7 @@ import type { UUID, GameConfig } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 
 // Re-export types from the extracted module for backward compatibility
-export type { GameStreamEvent, GameStateSnapshot, IAgent, PhaseContext, TranscriptEntry } from "./game-runner.types";
+export type { AgentResponse, GameStreamEvent, GameStateSnapshot, IAgent, PhaseContext, TranscriptEntry } from "./game-runner.types";
 import type { GameStreamEvent, GameStateSnapshot, IAgent, TranscriptEntry } from "./game-runner.types";
 
 // Internal modules
@@ -221,16 +221,13 @@ export class GameRunner {
         await this.diaryRoom.runDiaryRoom(Phase.INTRODUCTION);
       } else if (state === "lobby") {
         await runLobbyPhase(prc, actor);
-        await this.diaryRoom.collectThinking(Phase.LOBBY);
       } else if (state === "whisper") {
         await runWhisperPhase(prc, actor);
-        await this.diaryRoom.collectThinking(Phase.WHISPER);
       } else if (state === "rumor") {
         await runRumorPhase(prc, actor);
-        await this.diaryRoom.collectThinking(Phase.RUMOR);
       } else if (state === "vote") {
         await runVotePhase(prc, actor);
-        await this.diaryRoom.collectThinking(Phase.VOTE);
+        await this.diaryRoom.runStrategicReflections(Phase.VOTE);
       } else if (state === "power") {
         await runPowerPhase(prc, actor);
       } else if (state === "reveal") {
@@ -241,26 +238,20 @@ export class GameRunner {
       // --- THE RECKONING (4 -> 3) ---
       } else if (state === "reckoning_lobby") {
         await runReckoningLobby(prc, actor);
-        await this.diaryRoom.collectThinking(Phase.LOBBY);
       } else if (state === "reckoning_whisper") {
         await runReckoningWhisper(prc, actor);
-        await this.diaryRoom.collectThinking(Phase.WHISPER);
       } else if (state === "reckoning_plea") {
         await runReckoningPlea(prc, actor);
-        await this.diaryRoom.collectThinking(Phase.PLEA);
       } else if (state === "reckoning_vote") {
         await runReckoningVote(prc, actor);
 
       // --- THE TRIBUNAL (3 -> 2) ---
       } else if (state === "tribunal_lobby") {
         await runTribunalLobby(prc, actor);
-        await this.diaryRoom.collectThinking(Phase.LOBBY);
       } else if (state === "tribunal_accusation") {
         await runTribunalAccusation(prc, actor, this._currentAccusations);
-        await this.diaryRoom.collectThinking(Phase.ACCUSATION);
       } else if (state === "tribunal_defense") {
         await runTribunalDefense(prc, actor, this._currentAccusations);
-        await this.diaryRoom.collectThinking(Phase.DEFENSE);
       } else if (state === "tribunal_vote") {
         await runTribunalVote(prc, actor);
 
@@ -270,7 +261,6 @@ export class GameRunner {
         await this.diaryRoom.runDiaryRoom(Phase.OPENING_STATEMENTS);
       } else if (state === "judgment_jury_questions") {
         await runJudgmentJuryQuestions(prc, actor);
-        await this.diaryRoom.collectThinking(Phase.JURY_QUESTIONS);
       } else if (state === "judgment_closing") {
         await runJudgmentClosing(prc, actor);
       } else if (state === "judgment_jury_vote") {

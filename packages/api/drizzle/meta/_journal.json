@@ -36,6 +36,13 @@
       "when": 1775433600000,
       "tag": "0004_invite_codes",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775606400000,
+      "tag": "0005_add_thinking_column",
+      "breakpoints": true
     }
   ]
 }

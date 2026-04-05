@@ -6,11 +6,13 @@ import { AgentAvatar } from "@/components/agent-avatar";
 import { Typewriter } from "@/components/typewriter";
 import { formatTime } from "./constants";
 
-export function MessageBubble({ msg, players }: { msg: TranscriptEntry; players: GamePlayer[] }) {
+export function MessageBubble({ msg, players, showThinking }: { msg: TranscriptEntry; players: GamePlayer[]; showThinking?: boolean }) {
   const isSystem = msg.scope === "system";
   const isDiary = msg.scope === "diary";
   const isWhisper = msg.scope === "whisper";
-  const isThinking = msg.scope === "thinking";
+
+  // Backward compat: old games with scope='thinking' entries — hide entirely
+  if (msg.scope === "thinking") return null;
 
   if (isSystem) {
     return (
@@ -45,21 +47,6 @@ export function MessageBubble({ msg, players }: { msg: TranscriptEntry; players:
     );
   }
 
-  if (isThinking) {
-    const player = players.find((p) => p.name === msg.fromPlayerId)
-      ?? players.find((p) => p.id === msg.fromPlayerId);
-    return (
-      <div className="ml-4 border-l-2 border-indigo-700/40 pl-3 py-1">
-        <div className="flex items-center gap-1.5 mb-0.5">
-          {player && <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />}
-          <span className="text-xs font-semibold text-white/60">{msg.fromPlayerName ?? msg.fromPlayerId}</span>
-          <span className="text-[10px] text-indigo-400/60 uppercase tracking-wider">thinking</span>
-        </div>
-        <p className="text-xs text-indigo-200/50 italic">{msg.text}</p>
-      </div>
-    );
-  }
-
   const isAnonymousRumor = msg.phase === "RUMOR" && msg.scope === "public";
   const player = isAnonymousRumor
     ? undefined
@@ -69,28 +56,39 @@ export function MessageBubble({ msg, players }: { msg: TranscriptEntry; players:
   const isEliminated = player?.status === "eliminated";
 
   return (
-    <div className={`flex gap-3 ${isEliminated ? "opacity-50" : ""}`}>
-      <div className="flex-shrink-0">
-        {isAnonymousRumor ? (
-          <span className="w-7 h-7 rounded-full bg-purple-900/40 flex items-center justify-center text-sm">🗣</span>
-        ) : player ? (
-          <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="8" />
-        ) : (
-          <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-sm">?</span>
-        )}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-2 mb-0.5">
-          <span className={`text-xs font-semibold ${isAnonymousRumor ? "text-purple-300/70 italic" : "text-white/80"}`}>{name}</span>
-          {isAnonymousRumor && (
-            <span className="text-[10px] text-purple-400/50 uppercase tracking-wider">rumor</span>
-          )}
-          {isWhisper && (
-            <span className="text-xs text-purple-400/70">🤫 whisper</span>
-          )}
-          <span className="text-white/20 text-xs ml-auto flex-shrink-0">{formatTime(msg.timestamp)}</span>
+    <div className={isEliminated ? "opacity-50" : ""}>
+      {/* Per-message thinking bubble (shown before the message, hidden for anonymous rumors) */}
+      {showThinking && msg.thinking && msg.phase !== "RUMOR" && (
+        <div className="ml-4 border-l-2 border-indigo-700/40 pl-3 py-1 mb-1">
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <span className="text-[10px] text-indigo-400/60 uppercase tracking-wider">thinking</span>
+          </div>
+          <p className="text-xs text-indigo-200/50 italic">{msg.thinking}</p>
         </div>
-        <p className="text-sm text-white/70 leading-relaxed break-words">{msg.text}</p>
+      )}
+      <div className="flex gap-3">
+        <div className="flex-shrink-0">
+          {isAnonymousRumor ? (
+            <span className="w-7 h-7 rounded-full bg-purple-900/40 flex items-center justify-center text-sm">🗣</span>
+          ) : player ? (
+            <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="8" />
+          ) : (
+            <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-sm">?</span>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2 mb-0.5">
+            <span className={`text-xs font-semibold ${isAnonymousRumor ? "text-purple-300/70 italic" : "text-white/80"}`}>{name}</span>
+            {isAnonymousRumor && (
+              <span className="text-[10px] text-purple-400/50 uppercase tracking-wider">rumor</span>
+            )}
+            {isWhisper && (
+              <span className="text-xs text-purple-400/70">🤫 whisper</span>
+            )}
+            <span className="text-white/20 text-xs ml-auto flex-shrink-0">{formatTime(msg.timestamp)}</span>
+          </div>
+          <p className="text-sm text-white/70 leading-relaxed break-words">{msg.text}</p>
+        </div>
       </div>
     </div>
   );

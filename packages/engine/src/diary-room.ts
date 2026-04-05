@@ -15,7 +15,7 @@ import type { IAgent } from "./game-runner.types";
 export class DiaryRoom {
   /** Diary room entries: question/answer pairs per agent per phase */
   readonly diaryEntries: Array<{ round: number; precedingPhase: Phase; agentId: UUID; agentName: string; question: string; answer: string }> = [];
-  /** Thinking entries: agent internal monologue per phase (revealable by viewers) */
+  /** @deprecated Thinking is now stored on transcript entries via the `thinking` field. */
   readonly thinkingEntries: Array<{ round: number; phase: Phase; agentId: UUID; agentName: string; text: string }> = [];
   /** Name of the most recently eliminated player (for diary room context) */
   lastEliminatedName: string | null = null;
@@ -30,49 +30,24 @@ export class DiaryRoom {
   ) {}
 
   /**
-   * Collect thinking events from all alive agents for a given phase.
+   * Run strategic reflections for all alive agents after a phase.
+   * Thinking is now captured per-message via structured output, but strategic
+   * reflections are still a separate step that updates agent memory.
    */
-  async collectThinking(phase: Phase): Promise<void> {
+  async runStrategicReflections(phase: Phase): Promise<void> {
     const alivePlayers = this.gameState.getAlivePlayers();
-
-    await Promise.all(
-      alivePlayers.map(async (player) => {
-        const agent = this.agents.get(player.id)!;
-        if (!agent.getThinking) return;
-        try {
-          const ctx = this.contextBuilder.buildPhaseContext(player.id, phase);
-          const text = await agent.getThinking(ctx);
-          if (text && text !== "[No response]") {
-            this.logger.logThinking(player.id, text, phase);
-            this.thinkingEntries.push({
-              round: this.gameState.round,
-              phase,
-              agentId: player.id,
-              agentName: player.name,
-              text,
-            });
+    try {
+      await Promise.all(
+        alivePlayers.map(async (player) => {
+          const agent = this.agents.get(player.id);
+          if (agent?.getStrategicReflection) {
+            const ctx = this.contextBuilder.buildPhaseContext(player.id, phase);
+            await agent.getStrategicReflection(ctx);
           }
-        } catch (error) {
-          console.warn(`[Thinking] Failed for ${player.name}, skipping:`, error);
-        }
-      }),
-    );
-
-    // Run strategic reflections after vote phase thinking
-    if (phase === Phase.VOTE) {
-      try {
-        await Promise.all(
-          alivePlayers.map(async (player) => {
-            const agent = this.agents.get(player.id);
-            if (agent?.getStrategicReflection) {
-              const ctx = this.contextBuilder.buildPhaseContext(player.id, phase);
-              await agent.getStrategicReflection(ctx);
-            }
-          }),
-        );
-      } catch (error) {
-        console.error(`[Thinking] Strategic reflections failed, continuing:`, error);
-      }
+        }),
+      );
+    } catch (error) {
+      console.error(`[DiaryRoom] Strategic reflections failed, continuing:`, error);
     }
   }
 
@@ -153,17 +128,17 @@ export class DiaryRoom {
     this.logger.logDiary(houseLabel, firstQuestion);
 
     const ctx = this.contextBuilder.buildPhaseContext(playerId, Phase.DIARY_ROOM, undefined, isJuror || undefined);
-    const firstAnswer = await agent.getDiaryEntry(ctx, firstQuestion, sessionExchanges);
-    this.logger.logDiary(label, firstAnswer);
+    const firstResponse = await agent.getDiaryEntry(ctx, firstQuestion, sessionExchanges);
+    this.logger.logDiary(label, firstResponse.message, firstResponse.thinking);
 
-    sessionExchanges.push({ question: firstQuestion, answer: firstAnswer });
+    sessionExchanges.push({ question: firstQuestion, answer: firstResponse.message });
     this.diaryEntries.push({
       round: this.gameState.round,
       precedingPhase,
       agentId: playerId,
       agentName: playerName,
       question: firstQuestion,
-      answer: firstAnswer,
+      answer: firstResponse.message,
     });
 
     // Follow-up loop
@@ -178,17 +153,17 @@ export class DiaryRoom {
 
       this.logger.logDiary(houseLabel, result.question);
 
-      const followUpAnswer = await agent.getDiaryEntry(ctx, result.question, sessionExchanges);
-      this.logger.logDiary(label, followUpAnswer);
+      const followUpResponse = await agent.getDiaryEntry(ctx, result.question, sessionExchanges);
+      this.logger.logDiary(label, followUpResponse.message, followUpResponse.thinking);
 
-      sessionExchanges.push({ question: result.question, answer: followUpAnswer });
+      sessionExchanges.push({ question: result.question, answer: followUpResponse.message });
       this.diaryEntries.push({
         round: this.gameState.round,
         precedingPhase,
         agentId: playerId,
         agentName: playerName,
         question: result.question,
-        answer: followUpAnswer,
+        answer: followUpResponse.message,
       });
     }
 

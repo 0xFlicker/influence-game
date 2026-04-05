@@ -32,6 +32,17 @@ export interface GameStateSnapshot {
 }
 
 // ---------------------------------------------------------------------------
+// Agent response — structured output from message-producing methods
+// ---------------------------------------------------------------------------
+
+export interface AgentResponse {
+  /** Agent's internal thinking (hidden from players, visible to viewers) */
+  thinking: string;
+  /** The actual message content */
+  message: string;
+}
+
+// ---------------------------------------------------------------------------
 // Agent interface (implemented by InfluenceAgent in agent.ts)
 // ---------------------------------------------------------------------------
 
@@ -43,19 +54,19 @@ export interface IAgent {
   /** Called at the start of each phase with current game context */
   onPhaseStart(context: PhaseContext): Promise<void>;
   /** Called to collect this agent's introduction message */
-  getIntroduction(context: PhaseContext): Promise<string>;
+  getIntroduction(context: PhaseContext): Promise<AgentResponse>;
   /** Called once before lobby sub-rounds to form a lobby strategy intent */
   getLobbyIntent?(context: PhaseContext): Promise<string>;
   /** Called to collect a lobby message */
-  getLobbyMessage(context: PhaseContext): Promise<string>;
+  getLobbyMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called to collect whisper actions (list of {to, text}) — DEPRECATED, use room methods */
   getWhispers(context: PhaseContext): Promise<Array<{ to: UUID[]; text: string }>>;
   /** Request a preferred whisper room partner */
   requestRoom(context: PhaseContext): Promise<UUID | null>;
   /** Send a private message to room partner, or null to pass */
-  sendRoomMessage(context: PhaseContext, partnerName: string, conversationHistory?: Array<{ from: string; text: string }>): Promise<string | null>;
+  sendRoomMessage(context: PhaseContext, partnerName: string, conversationHistory?: Array<{ from: string; text: string }>): Promise<AgentResponse | null>;
   /** Called to collect a rumor message */
-  getRumorMessage(context: PhaseContext): Promise<string>;
+  getRumorMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called to collect votes */
   getVotes(
     context: PhaseContext,
@@ -68,33 +79,29 @@ export interface IAgent {
   /** Called for council vote (empowered agent also votes as tiebreaker) */
   getCouncilVote(context: PhaseContext, candidates: [UUID, UUID]): Promise<UUID>;
   /** Called when the agent is about to be eliminated */
-  getLastMessage(context: PhaseContext): Promise<string>;
+  getLastMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called for diary room interviews — the House asks a question, agent responds */
-  getDiaryEntry(context: PhaseContext, question: string, sessionHistory?: Array<{ question: string; answer: string }>): Promise<string>;
+  getDiaryEntry(context: PhaseContext, question: string, sessionHistory?: Array<{ question: string; answer: string }>): Promise<AgentResponse>;
 
   // --- Endgame methods ---
   /** Reckoning: public plea to the group */
-  getPlea(context: PhaseContext): Promise<string>;
+  getPlea(context: PhaseContext): Promise<AgentResponse>;
   /** Reckoning/Tribunal: vote to eliminate one player (simple plurality) */
   getEndgameEliminationVote(context: PhaseContext): Promise<UUID>;
   /** Tribunal: publicly accuse one player */
-  getAccusation(context: PhaseContext): Promise<{ targetId: UUID; text: string }>;
+  getAccusation(context: PhaseContext): Promise<{ targetId: UUID; text: string; thinking?: string }>;
   /** Tribunal: defend against an accusation */
-  getDefense(context: PhaseContext, accusation: string, accuserName: string): Promise<string>;
+  getDefense(context: PhaseContext, accusation: string, accuserName: string): Promise<AgentResponse>;
   /** Judgment: opening statement to the jury */
-  getOpeningStatement(context: PhaseContext): Promise<string>;
+  getOpeningStatement(context: PhaseContext): Promise<AgentResponse>;
   /** Judgment: juror asks one question to one finalist */
-  getJuryQuestion(context: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string }>;
+  getJuryQuestion(context: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string; thinking?: string }>;
   /** Judgment: finalist answers a jury question */
-  getJuryAnswer(context: PhaseContext, question: string, jurorName: string): Promise<string>;
+  getJuryAnswer(context: PhaseContext, question: string, jurorName: string): Promise<AgentResponse>;
   /** Judgment: closing argument to the jury */
-  getClosingArgument(context: PhaseContext): Promise<string>;
+  getClosingArgument(context: PhaseContext): Promise<AgentResponse>;
   /** Judgment: juror votes for the winner */
   getJuryVote(context: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID>;
-
-  // --- Revealable thinking (replaces most diary rooms) ---
-  /** Produce a brief internal thought during a phase (1-3 sentences, hidden from other players) */
-  getThinking?(context: PhaseContext): Promise<string>;
 
   // --- Strategic reflection (called after diary room) ---
   /** Produce a strategic reflection after diary room interview */
@@ -160,6 +167,8 @@ export interface TranscriptEntry {
   scope: "public" | "whisper" | "system" | "diary" | "thinking";
   to?: string[];
   text: string;
+  /** Agent's internal thinking when producing this message (hidden from players, visible to viewers) */
+  thinking?: string;
   /** When true, author identity is hidden from players (viewers still see it) */
   anonymous?: boolean;
   /** Shuffled display position for anonymous rumors */

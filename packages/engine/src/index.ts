@@ -25,7 +25,7 @@ export type {
 
 // Game runner
 export { GameRunner } from "./game-runner";
-export type { IAgent, PhaseContext, TranscriptEntry, GameStreamEvent, GameStateSnapshot } from "./game-runner";
+export type { AgentResponse, IAgent, PhaseContext, TranscriptEntry, GameStreamEvent, GameStateSnapshot } from "./game-runner";
 
 // Agent
 export { InfluenceAgent, createAgentCast } from "./agent";

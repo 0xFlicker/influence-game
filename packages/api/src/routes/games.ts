@@ -875,6 +875,7 @@ export function createGameRoutes(db: DrizzleDB) {
       toPlayerIds: row.toPlayerIds ? JSON.parse(row.toPlayerIds) : null,
       ...(row.roomId != null && { roomId: row.roomId }),
       text: row.text,
+      thinking: row.thinking ?? null,
       timestamp: row.timestamp,
     }));
 
