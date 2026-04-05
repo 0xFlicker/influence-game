@@ -51,14 +51,15 @@ export function DramaticReplayViewer({
   live?: boolean;
   connStatus?: "connecting" | "live" | "disconnected" | "reconnecting" | "replay";
 }) {
-  const [showThinking, setShowThinking] = useState(false);
+  const [showThinking, setShowThinking] = useState(!live); // default true for replay
+  // Backward compat: always filter out old scope='thinking' entries (they lack per-message association)
   const filteredMessages = useMemo(
-    () => showThinking ? messages : messages.filter((m) => m.scope !== "thinking"),
-    [messages, showThinking],
+    () => messages.filter((m) => m.scope !== "thinking"),
+    [messages],
   );
   const scenes = useMemo(() => buildReplayScenes(filteredMessages), [filteredMessages]);
-  // Check if any thinking messages exist (to decide whether to show toggle)
-  const hasThinkingMessages = useMemo(() => messages.some((m) => m.scope === "thinking"), [messages]);
+  // Check if any per-message thinking exists (to decide whether to show toggle)
+  const hasThinkingMessages = useMemo(() => messages.some((m) => m.thinking), [messages]);
   const [sceneIndex, setSceneIndex] = useState(0);
   const [messageIndex, setMessageIndex] = useState(0);
   const [messagePhase, setMessagePhase] = useState<SpectacleMessagePhase>("typing");
@@ -873,6 +874,7 @@ export function DramaticReplayViewer({
                   currentPlayerName={currentPlayerName}
                   speedMultiplier={speed}
                   rumorMessages={rumorMessages}
+                  showThinking={showThinking}
                 />
               )}
 

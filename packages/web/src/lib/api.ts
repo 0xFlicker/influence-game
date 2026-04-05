@@ -505,6 +505,7 @@ export interface TranscriptEntry {
   toPlayerIds: string[] | null;
   roomId?: number;
   text: string;
+  thinking?: string | null;
   timestamp: number;
 }
 
