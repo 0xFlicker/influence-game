@@ -1,12 +1,11 @@
 "use client";
 
 import { usePrivy } from "@privy-io/react-auth";
-import { useE2EAuth, useLoginGate } from "@/app/providers";
+import { useE2EAuth } from "@/app/providers";
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const e2e = useE2EAuth();
-  const { ready, authenticated } = usePrivy();
-  const { gatedLogin } = useLoginGate();
+  const { ready, authenticated, login } = usePrivy();
 
   const effectiveReady = e2e.isE2E ? e2e.ready : ready;
   const effectiveAuth = e2e.isE2E ? e2e.authenticated : authenticated;
@@ -24,7 +23,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       <div className="flex flex-col items-center justify-center min-h-64 gap-4">
         <p className="text-white/60">Sign in to access this page.</p>
         <button
-          onClick={gatedLogin}
+          onClick={login}
           className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg transition-colors"
         >
           Sign in

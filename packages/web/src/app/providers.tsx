@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { RuntimeConfigProvider, useRuntimeConfig } from "@/lib/runtime-config";
 import { PrivyProvider, usePrivy } from "@privy-io/react-auth";
 import {
@@ -15,8 +15,6 @@ import {
   setAuthToken,
   clearAuthToken,
   getAuthToken,
-  checkInviteRequired,
-  validateInviteCode,
   ApiError,
 } from "@/lib/api";
 import { isE2EMode } from "@/lib/wallet-adapter";
@@ -54,16 +52,12 @@ export function useE2EAuth(): E2EAuthState {
 }
 
 // ---------------------------------------------------------------------------
-// Invite code context — gates login behind invite code when required
+// Invite code context — prompts new users for invite code
 // ---------------------------------------------------------------------------
 
 interface InviteState {
-  /** True when the invite code modal should be shown (pre-auth) */
   needsInvite: boolean;
-  /** Validate and accept an invite code, then proceed to Privy login */
   submitInvite: (code: string) => Promise<void>;
-  /** Dismiss the invite modal without logging in */
-  cancelInvite: () => void;
   inviteError: string | null;
   submitting: boolean;
 }
@@ -71,7 +65,6 @@ interface InviteState {
 const InviteContext = createContext<InviteState>({
   needsInvite: false,
   submitInvite: async () => {},
-  cancelInvite: () => {},
   inviteError: null,
   submitting: false,
 });
@@ -81,109 +74,42 @@ export function useInvite(): InviteState {
 }
 
 // ---------------------------------------------------------------------------
-// Login gate context — wraps Privy login with invite-code pre-check
-// ---------------------------------------------------------------------------
-
-interface LoginGateState {
-  /** Call this instead of Privy's login(). It checks invite requirement first. */
-  gatedLogin: () => void;
-}
-
-const LoginGateContext = createContext<LoginGateState>({
-  gatedLogin: () => {},
-});
-
-export function useLoginGate(): LoginGateState {
-  return useContext(LoginGateContext);
-}
-
-// ---------------------------------------------------------------------------
 // AuthSync — production Privy → backend JWT sync (skipped in e2e)
-// Now also handles pre-auth invite gating.
 // ---------------------------------------------------------------------------
 
 function AuthSync({ children }: { children: React.ReactNode }) {
-  const { authenticated, getAccessToken, logout, login: privyLogin } = usePrivy();
+  const { authenticated, getAccessToken, logout } = usePrivy();
   const e2e = useE2EAuth();
   const [needsInvite, setNeedsInvite] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  // Stores a validated invite code to pass along during Privy→backend token exchange
-  const pendingInviteCodeRef = useRef<string | null>(null);
-
-  // ------ Pre-auth invite gating ------
-
-  const gatedLogin = useCallback(() => {
-    if (e2e.isE2E) return;
-    // Check if invites are required before opening Privy
-    checkInviteRequired()
-      .then(({ required }) => {
-        if (required) {
-          setNeedsInvite(true);
-          setInviteError(null);
-        } else {
-          privyLogin();
-        }
-      })
-      .catch(() => {
-        // If the check fails, fall through to Privy login
-        privyLogin();
-      });
-  }, [e2e.isE2E, privyLogin]);
-
-  const submitInvite = useCallback(async (inviteCode: string) => {
-    setSubmitting(true);
-    setInviteError(null);
-    try {
-      const { valid } = await validateInviteCode(inviteCode);
-      if (!valid) {
-        setInviteError("Invalid or already used invite code");
-        return;
-      }
-      // Store the validated code so AuthSync can pass it during token exchange
-      pendingInviteCodeRef.current = inviteCode;
-      setNeedsInvite(false);
-      // Now open Privy login
-      privyLogin();
-    } catch {
-      setInviteError("Something went wrong. Try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  }, [privyLogin]);
-
-  const cancelInvite = useCallback(() => {
-    setNeedsInvite(false);
-    setInviteError(null);
-  }, []);
-
-  // ------ Privy → backend token exchange ------
+  const [pendingPrivyToken, setPendingPrivyToken] = useState<string | null>(null);
 
   useEffect(() => {
+    // In e2e mode, JWT is injected by test harness — skip Privy sync
     if (e2e.isE2E) return;
 
     if (!authenticated) {
       clearAuthToken();
-      pendingInviteCodeRef.current = null;
+      setNeedsInvite(false);
+      setPendingPrivyToken(null);
       return;
     }
 
     getAccessToken().then(async (privyToken) => {
       if (!privyToken) return;
       try {
-        const inviteCode = pendingInviteCodeRef.current ?? undefined;
-        const { token } = await loginWithPrivyToken(privyToken, inviteCode);
+        const { token } = await loginWithPrivyToken(privyToken);
         setAuthToken(token);
-        pendingInviteCodeRef.current = null;
+        setNeedsInvite(false);
+        setPendingPrivyToken(null);
       } catch (err) {
         if (err instanceof ApiError) {
           try {
             const body = JSON.parse(err.message);
             if (body.code === "INVITE_REQUIRED") {
-              // Edge case: server still requires invite but we don't have one
-              // (e.g. code became invalid between validate and login)
+              setPendingPrivyToken(privyToken);
               setNeedsInvite(true);
-              setInviteError("Your invite code was already used. Please enter another.");
               return;
             }
           } catch { /* not JSON, fall through */ }
@@ -192,6 +118,31 @@ function AuthSync({ children }: { children: React.ReactNode }) {
       }
     });
   }, [authenticated, getAccessToken, e2e.isE2E]);
+
+  const submitInvite = async (inviteCode: string) => {
+    if (!pendingPrivyToken) return;
+    setSubmitting(true);
+    setInviteError(null);
+    try {
+      const { token } = await loginWithPrivyToken(pendingPrivyToken, inviteCode);
+      setAuthToken(token);
+      setNeedsInvite(false);
+      setPendingPrivyToken(null);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        try {
+          const body = JSON.parse(err.message);
+          setInviteError(body.error || "Invalid invite code");
+        } catch {
+          setInviteError("Invalid invite code");
+        }
+      } else {
+        setInviteError("Something went wrong. Try again.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     if (e2e.isE2E) return;
@@ -207,22 +158,15 @@ function AuthSync({ children }: { children: React.ReactNode }) {
   const inviteState = useMemo<InviteState>(() => ({
     needsInvite,
     submitInvite,
-    cancelInvite,
     inviteError,
     submitting,
-  }), [needsInvite, submitInvite, cancelInvite, inviteError, submitting]);
-
-  const loginGateState = useMemo<LoginGateState>(() => ({
-    gatedLogin,
-  }), [gatedLogin]);
+  }), [needsInvite, inviteError, submitting, pendingPrivyToken]);
 
   return (
-    <LoginGateContext.Provider value={loginGateState}>
-      <InviteContext.Provider value={inviteState}>
-        {children}
-        <InviteCodeModal />
-      </InviteContext.Provider>
-    </LoginGateContext.Provider>
+    <InviteContext.Provider value={inviteState}>
+      {children}
+      <InviteCodeModal />
+    </InviteContext.Provider>
   );
 }
 

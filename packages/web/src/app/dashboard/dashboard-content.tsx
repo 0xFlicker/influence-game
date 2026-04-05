@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
-import { useLoginGate } from "@/app/providers";
 import { getAuthToken, getPlayerGames, listAgents, type GameSummary, type PlayerGameResult, type SavedAgent } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
 import { AgentAvatar } from "@/components/agent-avatar";
@@ -234,8 +233,7 @@ function SavedAgentsSection() {
 // ---------------------------------------------------------------------------
 
 export function DashboardContent() {
-  const { user, authenticated } = usePrivy();
-  const { gatedLogin } = useLoginGate();
+  const { user, authenticated, login } = usePrivy();
   const [joinTarget, setJoinTarget] = useState<{ game: GameSummary } | null>(null);
   const [, setJoinedGameIds] = useState<Set<string>>(new Set());
   const [history, setHistory] = useState<PlayerGameResult[]>([]);
@@ -274,7 +272,7 @@ export function DashboardContent() {
 
   function handleJoinClick(game: GameSummary) {
     if (!authenticated) {
-      gatedLogin();
+      login();
       return;
     }
     setJoinTarget({ game });

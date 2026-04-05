@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { usePrivy } from "@privy-io/react-auth";
-import { useLoginGate } from "@/app/providers";
 import { useRouter } from "next/navigation";
 import { getGame, getGameTranscript, getAuthToken, type GameDetail, type GamePlayer, type GameSummary, type TranscriptEntry, type WsGameEvent, type PhaseKey } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
@@ -35,8 +34,7 @@ import { SpectacleMessageSpotlight } from "./components/spectacle-viewer";
 import { DramaticReplayViewer } from "./components/dramatic-replay-viewer";
 
 export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameViewerProps) {
-  const { authenticated } = usePrivy();
-  const { gatedLogin } = useLoginGate();
+  const { authenticated, login } = usePrivy();
   const { isAdmin, loading: permLoading } = usePermissions();
   const router = useRouter();
   const [joinModalOpen, setJoinModalOpen] = useState(false);
@@ -745,7 +743,7 @@ export function GameViewer({ gameId, initialGame, initialMessages, mode }: GameV
 
   function handleJoinClick() {
     if (!authenticated) {
-      gatedLogin();
+      login();
       return;
     }
     setJoinModalOpen(true);
