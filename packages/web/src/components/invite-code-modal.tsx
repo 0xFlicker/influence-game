@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useInvite } from "@/app/providers";
 
 export function InviteCodeModal() {
-  const { needsInvite, submitInvite, cancelInvite, inviteError, submitting } = useInvite();
+  const { needsInvite, submitInvite, inviteError, submitting } = useInvite();
   const [code, setCode] = useState("");
 
   if (!needsInvite) return null;
@@ -14,7 +14,7 @@ export function InviteCodeModal() {
       <div className="bg-zinc-900 border border-white/10 rounded-xl p-8 max-w-md w-full">
         <h2 className="text-xl font-bold text-white mb-2">Invite Code Required</h2>
         <p className="text-white/50 text-sm mb-6">
-          Enter an invite code to sign in. Ask a friend who already plays for one.
+          Enter an invite code to create your account. Ask a friend who already plays for one.
         </p>
 
         <form
@@ -42,15 +42,7 @@ export function InviteCodeModal() {
             disabled={submitting || code.trim().length === 0}
             className="w-full mt-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white py-3 rounded-lg font-medium transition-colors"
           >
-            {submitting ? "Verifying..." : "Continue"}
-          </button>
-
-          <button
-            type="button"
-            onClick={cancelInvite}
-            className="w-full mt-2 text-white/40 hover:text-white/60 py-2 text-sm transition-colors"
-          >
-            Cancel
+            {submitting ? "Verifying..." : "Submit"}
           </button>
         </form>
       </div>
