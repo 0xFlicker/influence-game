@@ -248,6 +248,7 @@ async function runGameAsync(
               toPlayerIds: entry.to ? JSON.stringify(entry.to) : null,
               roomId: entry.roomId ?? null,
               text: entry.text,
+              thinking: entry.thinking ?? null,
               timestamp: entry.timestamp,
             })),
           );
@@ -413,6 +414,7 @@ async function runGameAsync(
                 toPlayerIds: entry.to ? JSON.stringify(entry.to) : null,
                 roomId: entry.roomId ?? null,
                 text: entry.text,
+                thinking: entry.thinking ?? null,
                 timestamp: entry.timestamp,
               })),
             );
