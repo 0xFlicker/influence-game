@@ -1485,14 +1485,15 @@ ${roomSection}
    * and the caller falls back to "[No response]".
    *
    * With reasoning_effort parameter support (low/medium/high), overheads vary by
-   * prompt complexity: low-effort uses ~0-256 reasoning tokens for simple prompts,
-   * medium ~500-1500 for game prompts, high ~2000-3000+ for complex decisions.
+   * prompt complexity: low-effort uses ~256-1000 reasoning tokens for simple prompts,
+   * medium ~1000-2500 for game prompts, high ~3000-4000+ for complex decisions.
    * Per-action overrides allow tighter budgets for simple outputs (introductions,
    * lobby chat) and more headroom for complex decisions (votes, strategic reflection).
+   * Structured output (JSON schema) adds ~200-400 tokens of formatting overhead.
    */
-  private static REASONING_TOKEN_OVERHEAD = 2500;
-  private static REASONING_OVERHEAD_HIGH = 4000;
-  private static REASONING_OVERHEAD_LOW = 500;
+  private static REASONING_TOKEN_OVERHEAD = 3000;
+  private static REASONING_OVERHEAD_HIGH = 5000;
+  private static REASONING_OVERHEAD_LOW = 1500;
 
   /** JSON Schema for structured AgentResponse output (thinking + message) */
   private static readonly AGENT_RESPONSE_FORMAT = {
