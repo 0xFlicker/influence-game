@@ -611,19 +611,56 @@ export function createAdminRoutes(db: DrizzleDB) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
 
+    // Mode 1: Remote fetch — { sourceUrl, slug } → fetch export from remote env
+    // Mode 2: Direct import — { version, game, players, transcripts, ... }
+    let exportData = body;
+    if (body.sourceUrl && body.slug) {
+      const authHeader = c.req.header("Authorization");
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(body.sourceUrl as string);
+      } catch {
+        return c.json({ error: "Invalid sourceUrl" }, 400);
+      }
+      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+        return c.json({ error: "Only http/https URLs are allowed" }, 400);
+      }
+
+      const exportUrl = `${parsedUrl.origin}/api/admin/export-game/${encodeURIComponent(body.slug as string)}`;
+      const headers: Record<string, string> = { Accept: "application/json" };
+      if (authHeader) headers["Authorization"] = authHeader;
+
+      try {
+        const resp = await fetch(exportUrl, { headers });
+        if (!resp.ok) {
+          const detail = await resp.text();
+          return c.json({
+            error: `Remote export failed (${resp.status})`,
+            detail,
+          }, resp.status as 502);
+        }
+        exportData = await resp.json();
+      } catch (err) {
+        return c.json({
+          error: "Failed to fetch export from remote environment",
+          detail: err instanceof Error ? err.message : String(err),
+        }, 502);
+      }
+    }
+
     // Validate required fields
-    if (body.version !== 1) {
+    if (exportData.version !== 1) {
       return c.json({ error: "Unsupported export version" }, 400);
     }
-    if (!body.game || !body.players || !body.transcripts) {
+    if (!exportData.game || !exportData.players || !exportData.transcripts) {
       return c.json({ error: "Missing required fields: game, players, transcripts" }, 400);
     }
 
-    const importedGame = body.game as Record<string, unknown>;
-    const importedPlayers = body.players as Array<Record<string, unknown>>;
-    const importedTranscripts = body.transcripts as Array<Record<string, unknown>>;
-    const importedResult = body.result as Record<string, unknown> | null;
-    const importedMemories = (body.agentMemories ?? []) as Array<Record<string, unknown>>;
+    const importedGame = exportData.game as Record<string, unknown>;
+    const importedPlayers = exportData.players as Array<Record<string, unknown>>;
+    const importedTranscripts = exportData.transcripts as Array<Record<string, unknown>>;
+    const importedResult = exportData.result as Record<string, unknown> | null;
+    const importedMemories = (exportData.agentMemories ?? []) as Array<Record<string, unknown>>;
 
     // Resolve slug collision
     let slug = importedGame.slug as string | null;
@@ -812,7 +849,7 @@ export function createAdminRoutes(db: DrizzleDB) {
         }
       });
 
-      return c.json({ gameId: newGameId, slug }, 201);
+      return c.json({ id: newGameId, gameId: newGameId, slug }, 201);
     } catch (err) {
       console.error("[import-game] Transaction failed:", err);
       return c.json({
