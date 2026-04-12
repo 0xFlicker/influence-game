@@ -15,6 +15,7 @@ import {
   type AuthEnv,
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
+import { getPublicDisplayName, isEmailLike } from "../lib/display-name.js";
 
 // ---------------------------------------------------------------------------
 // Factory — creates a Hono sub-app with injected DB
@@ -74,6 +75,9 @@ export function createProfileRoutes(db: DrizzleDB) {
     if (trimmed.length === 0 || trimmed.length > 50) {
       return c.json({ error: "displayName must be 1-50 characters" }, 400);
     }
+    if (isEmailLike(trimmed)) {
+      return c.json({ error: "displayName cannot be an email address" }, 400);
+    }
 
     await db.update(schema.users)
       .set({ displayName: trimmed })
@@ -107,6 +111,8 @@ export function createProfileRoutes(db: DrizzleDB) {
       .select({
         id: schema.users.id,
         displayName: schema.users.displayName,
+        email: schema.users.email,
+        walletAddress: schema.users.walletAddress,
         rating: schema.users.rating,
         gamesPlayed: schema.users.gamesPlayed,
         gamesWon: schema.users.gamesWon,
@@ -122,7 +128,7 @@ export function createProfileRoutes(db: DrizzleDB) {
       .map((r, i) => ({
         rank: i + 1,
         userId: r.id,
-        displayName: r.displayName ?? "Anonymous",
+        displayName: getPublicDisplayName(r),
         rating: r.rating,
         gamesPlayed: r.gamesPlayed,
         gamesWon: r.gamesWon,

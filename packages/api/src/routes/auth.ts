@@ -19,6 +19,7 @@ import {
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { isInviteRequired, redeemInviteCode } from "../lib/invite-codes.js";
+import { getSafeDefaultDisplayName, isEmailLike } from "../lib/display-name.js";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -96,6 +97,16 @@ export function createAuthRoutes(db: DrizzleDB) {
       if (email && !user.email) {
         updates.email = email;
       }
+      if (
+        !user.displayName ||
+        isEmailLike(user.displayName) ||
+        (user.email &&
+          user.displayName.trim().toLowerCase() === user.email.trim().toLowerCase())
+      ) {
+        updates.displayName = getSafeDefaultDisplayName({
+          walletAddress: walletAddress ?? user.walletAddress,
+        });
+      }
       if (Object.keys(updates).length > 0) {
         await db.update(schema.users)
           .set(updates)
@@ -119,9 +130,7 @@ export function createAuthRoutes(db: DrizzleDB) {
           id: userId,
           walletAddress,
           email,
-          displayName: walletAddress
-            ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
-            : email ?? "Player",
+          displayName: getSafeDefaultDisplayName({ walletAddress }),
         });
 
       // Redeem invite code if provided

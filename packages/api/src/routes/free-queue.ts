@@ -25,6 +25,7 @@ import {
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { generateUniqueSlug } from "../lib/slug.js";
+import { getPublicDisplayName } from "../lib/display-name.js";
 import { pickAgentNames, pickArchetypes } from "@influence/engine";
 
 // ---------------------------------------------------------------------------
@@ -165,6 +166,8 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       .select({
         id: schema.users.id,
         displayName: schema.users.displayName,
+        email: schema.users.email,
+        walletAddress: schema.users.walletAddress,
         rating: schema.users.rating,
         gamesPlayed: schema.users.gamesPlayed,
         gamesWon: schema.users.gamesWon,
@@ -179,7 +182,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       .map((r, i) => ({
         rank: i + 1,
         userId: r.id,
-        displayName: r.displayName ?? "Anonymous",
+        displayName: getPublicDisplayName(r),
         rating: r.rating,
         gamesPlayed: r.gamesPlayed,
         gamesWon: r.gamesWon,

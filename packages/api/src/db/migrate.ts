@@ -6,15 +6,12 @@
  */
 
 import { migrate } from "drizzle-orm/postgres-js/migrator";
+import { fileURLToPath } from "node:url";
 import { createDB } from "./index.js";
 
 export async function runMigrations(connectionString?: string) {
-  const migrationsFolder = process.env.DRIZZLE_MIGRATIONS_DIR;
-  if (!migrationsFolder) {
-    throw new Error(
-      "DRIZZLE_MIGRATIONS_DIR is not set. Set it to the path of the drizzle migrations directory."
-    );
-  }
+  const migrationsFolder = process.env.DRIZZLE_MIGRATIONS_DIR
+    ?? fileURLToPath(new URL("../../drizzle", import.meta.url));
   const db = createDB(connectionString);
   await migrate(db, { migrationsFolder });
   console.log("Migrations applied successfully.");
