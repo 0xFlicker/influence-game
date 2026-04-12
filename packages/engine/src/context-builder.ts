@@ -38,7 +38,11 @@ export class ContextBuilder {
   buildPhaseContext(
     agentId: UUID,
     phase: Phase,
-    extra?: { empoweredId?: UUID; councilCandidates?: [UUID, UUID] },
+    extra?: {
+      empoweredId?: UUID;
+      councilCandidates?: [UUID, UUID];
+      eliminationContext?: PhaseContext["eliminationContext"];
+    },
     isEliminated?: boolean,
     roomInfo?: { roomCount?: number; roomPartner?: string },
   ): PhaseContext {
@@ -81,6 +85,7 @@ export class ContextBuilder {
         return [f0.id, f1.id] as [UUID, UUID];
       })(),
       isEliminated: isEliminated ?? false,
+      eliminationContext: extra?.eliminationContext,
     };
   }
 }

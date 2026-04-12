@@ -1047,14 +1047,34 @@ Use the council_vote tool to cast your vote.`;
 
   async getLastMessage(ctx: PhaseContext): Promise<AgentResponse> {
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const eliminationContext = ctx.eliminationContext;
+    const eliminationDetails = eliminationContext
+      ? [
+          eliminationContext.directExecutor
+            ? `- The direct kill shot came from: ${eliminationContext.directExecutor}`
+            : null,
+          eliminationContext.exposedBy && eliminationContext.exposedBy.length > 0
+            ? `- You were exposed by: ${eliminationContext.exposedBy.join(", ")}`
+            : null,
+          eliminationContext.councilVoters && eliminationContext.councilVoters.length > 0
+            ? `- The council votes against you came from: ${eliminationContext.councilVoters.join(", ")}`
+            : null,
+          eliminationContext.eliminationVoters && eliminationContext.eliminationVoters.length > 0
+            ? `- The direct elimination votes against you came from: ${eliminationContext.eliminationVoters.join(", ")}`
+            : null,
+        ].filter(Boolean).join("\n")
+      : "";
     const prompt = this.buildUserPrompt(ctx) + `
-## Pre-register Your Last Words
-If you are eliminated this round, this message will be posted when you leave.
-Make it count — a final accusation, a farewell, a cryptic warning, or a graceful exit.
+## Final Words
+You have been ELIMINATED right now. This is your FINAL public statement before you leave the game for good.
+You will not get another turn, and you have no future rounds to play.
+You may snap back at the people who exposed or voted out you, reveal a secret, issue a warning, say goodbye, or leave gracefully.
+Do NOT discuss future strategy, future votes, or what you will do next in the game.
+${eliminationDetails ? `\n## How You Were Taken Out\n${eliminationDetails}\n` : ""}
 
 Keep it to 1-2 sentences.`;
 
-    return this.callLLMWithThinking(prompt, 120, sys, { action: "plea", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
+    return this.callLLMWithThinking(prompt, 120, sys, { action: "last-message", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
   }
 
   async getDiaryEntry(ctx: PhaseContext, question: string, sessionHistory?: Array<{ question: string; answer: string }>): Promise<AgentResponse> {

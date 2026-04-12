@@ -1,6 +1,7 @@
 import type { UUID } from "../types";
 import { Phase } from "../types";
 import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
+import { getExposeVoterNames, handleElimination } from "./elimination";
 
 export async function runPowerPhase(
   ctx: PhaseRunnerContext,
@@ -57,17 +58,11 @@ export async function runPowerPhase(
   if (autoEliminated) {
     const eliminatedName = gameState.getPlayerName(autoEliminated);
     logger.logSystem(`AUTO-ELIMINATE: ${eliminatedName}`, Phase.POWER);
-    ctx.diaryRoom.lastEliminatedName = eliminatedName;
-    ctx.eliminationOrder.push(eliminatedName);
-    const eliminated = gameState.getPlayer(autoEliminated)!;
-    const lastMsg = eliminated.lastMessage ?? "(no final words)";
-    logger.logPublic(autoEliminated, lastMsg, Phase.POWER);
-    gameState.eliminatePlayer(autoEliminated);
-    logger.emitStream({ type: "player_eliminated", playerId: autoEliminated, playerName: eliminatedName, round: gameState.round });
-
-    for (const agent of agents.values()) {
-      agent.removeFromMemory?.(eliminatedName);
-    }
+    await handleElimination(ctx, autoEliminated, Phase.POWER, {
+      mode: "power",
+      directExecutor: gameState.getPlayerName(empoweredId),
+      exposedBy: getExposeVoterNames(ctx, autoEliminated),
+    });
 
     actor.send({ type: "CANDIDATES_DETERMINED", candidates: null, autoEliminated });
     actor.send({ type: "PLAYER_ELIMINATED", playerId: autoEliminated });

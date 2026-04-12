@@ -1,5 +1,6 @@
 import { Phase } from "../types";
 import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
+import { getCouncilVoterNames, getExposeVoterNames, handleElimination } from "./elimination";
 
 export async function runRevealPhase(
   ctx: PhaseRunnerContext,
@@ -63,20 +64,11 @@ export async function runCouncilPhase(
   );
 
   const eliminatedId = gameState.tallyCouncilVotes(empoweredId);
-  const eliminated = gameState.getPlayer(eliminatedId)!;
-  const lastMsg = eliminated.lastMessage ?? "(no final words)";
-
-  logger.logSystem(`ELIMINATED: ${eliminated.name}`, Phase.COUNCIL);
-  ctx.diaryRoom.lastEliminatedName = eliminated.name;
-  ctx.eliminationOrder.push(eliminated.name);
-  logger.logPublic(eliminatedId, lastMsg, Phase.COUNCIL);
-
-  gameState.eliminatePlayer(eliminatedId);
-  logger.emitStream({ type: "player_eliminated", playerId: eliminatedId, playerName: eliminated.name, round: gameState.round });
-
-  for (const agent of agents.values()) {
-    agent.removeFromMemory?.(eliminated.name);
-  }
+  await handleElimination(ctx, eliminatedId, Phase.COUNCIL, {
+    mode: "council",
+    exposedBy: getExposeVoterNames(ctx, eliminatedId),
+    councilVoters: getCouncilVoterNames(ctx, eliminatedId),
+  });
 
   actor.send({ type: "PLAYER_ELIMINATED", playerId: eliminatedId });
   actor.send({

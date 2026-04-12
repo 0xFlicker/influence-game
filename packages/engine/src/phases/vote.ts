@@ -1,28 +1,10 @@
 import type { UUID } from "../types";
 import { Phase } from "../types";
 import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
-
-/** Shared helper: handle elimination of a player with logging and cleanup */
-function handleElimination(
-  ctx: PhaseRunnerContext,
-  eliminatedId: UUID,
-  phase: Phase,
-): void {
-  const { gameState, agents, logger } = ctx;
-  const eliminated = gameState.getPlayer(eliminatedId)!;
-  const lastMsg = eliminated.lastMessage ?? "(no final words)";
-
-  logger.logSystem(`ELIMINATED: ${eliminated.name}`, phase);
-  ctx.diaryRoom.lastEliminatedName = eliminated.name;
-  ctx.eliminationOrder.push(eliminated.name);
-  logger.logPublic(eliminatedId, lastMsg, phase);
-  gameState.eliminatePlayer(eliminatedId);
-  logger.emitStream({ type: "player_eliminated", playerId: eliminatedId, playerName: eliminated.name, round: gameState.round });
-
-  for (const agent of agents.values()) {
-    agent.removeFromMemory?.(eliminated.name);
-  }
-}
+import {
+  getEndgameEliminationVoterNames,
+  handleElimination,
+} from "./elimination";
 
 export async function runVotePhase(
   ctx: PhaseRunnerContext,
@@ -38,14 +20,9 @@ export async function runVotePhase(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
-
-      const [votes, lastMsgResponse] = await Promise.all([
-        agent.getVotes(phaseCtx),
-        agent.getLastMessage(phaseCtx),
-      ]);
+      const votes = await agent.getVotes(phaseCtx);
 
       gameState.recordVote(player.id, votes.empowerTarget, votes.exposeTarget);
-      gameState.recordLastMessage(player.id, lastMsgResponse.message);
 
       const empowerName = gameState.getPlayerName(votes.empowerTarget);
       const exposeName = gameState.getPlayerName(votes.exposeTarget);
@@ -145,12 +122,8 @@ export async function runReckoningVote(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
-      const [vote, lastMsgResponse] = await Promise.all([
-        agent.getEndgameEliminationVote(phaseCtx),
-        agent.getLastMessage(phaseCtx),
-      ]);
+      const vote = await agent.getEndgameEliminationVote(phaseCtx);
       gameState.recordEndgameEliminationVote(player.id, vote);
-      gameState.recordLastMessage(player.id, lastMsgResponse.message);
       logger.logSystem(
         `${player.name} votes to eliminate: ${gameState.getPlayerName(vote)}`,
         Phase.VOTE,
@@ -159,7 +132,10 @@ export async function runReckoningVote(
   );
 
   const eliminatedId = gameState.tallyEndgameEliminationVotes();
-  handleElimination(ctx, eliminatedId, Phase.VOTE);
+  await handleElimination(ctx, eliminatedId, Phase.VOTE, {
+    mode: "endgame",
+    eliminationVoters: getEndgameEliminationVoterNames(ctx, eliminatedId),
+  });
 
   actor.send({ type: "PLAYER_ELIMINATED", playerId: eliminatedId });
   actor.send({ type: "UPDATE_ALIVE_PLAYERS", aliveIds: gameState.getAlivePlayerIds() });
@@ -181,12 +157,8 @@ export async function runTribunalVote(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
-      const [vote, lastMsgResponse] = await Promise.all([
-        agent.getEndgameEliminationVote(phaseCtx),
-        agent.getLastMessage(phaseCtx),
-      ]);
+      const vote = await agent.getEndgameEliminationVote(phaseCtx);
       gameState.recordEndgameEliminationVote(player.id, vote);
-      gameState.recordLastMessage(player.id, lastMsgResponse.message);
       logger.logSystem(
         `${player.name} votes to eliminate: ${gameState.getPlayerName(vote)}`,
         Phase.VOTE,
@@ -210,7 +182,10 @@ export async function runTribunalVote(
   }
 
   const eliminatedId = gameState.tallyTribunalVotes(juryTiebreakerVotes);
-  handleElimination(ctx, eliminatedId, Phase.VOTE);
+  await handleElimination(ctx, eliminatedId, Phase.VOTE, {
+    mode: "endgame",
+    eliminationVoters: getEndgameEliminationVoterNames(ctx, eliminatedId),
+  });
 
   actor.send({ type: "PLAYER_ELIMINATED", playerId: eliminatedId });
   actor.send({ type: "UPDATE_ALIVE_PLAYERS", aliveIds: gameState.getAlivePlayerIds() });

@@ -149,6 +149,14 @@ export interface PhaseContext {
   finalists?: [UUID, UUID];
   /** True when this agent has been eliminated (e.g. juror in diary room) */
   isEliminated?: boolean;
+  /** Context about how this agent was just eliminated for final words. */
+  eliminationContext?: {
+    mode: "power" | "council" | "endgame";
+    exposedBy?: string[];
+    councilVoters?: string[];
+    eliminationVoters?: string[];
+    directExecutor?: string;
+  };
   /** Current lobby sub-round index (0-based) */
   lobbySubRound?: number;
   /** Total lobby sub-rounds this phase */

@@ -113,6 +113,14 @@ export class GameState {
     return this._currentVoteTally;
   }
 
+  get currentCouncilTally() {
+    return this._currentCouncilTally;
+  }
+
+  get endgameEliminationTally() {
+    return this._endgameEliminationTally;
+  }
+
   isGameOver(): boolean {
     return this.getAlivePlayers().length <= 1;
   }

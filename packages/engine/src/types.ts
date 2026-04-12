@@ -47,7 +47,7 @@ export interface Player {
   status: PlayerStatus;
   /** Shielded players cannot be revealed as council candidates this round */
   shielded: boolean;
-  /** One-time last message (pre-registered during VOTE, posted on elimination) */
+  /** One-time last message generated at the moment this player is eliminated */
   lastMessage?: string;
 }
 
