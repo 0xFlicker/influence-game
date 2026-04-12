@@ -1,7 +1,8 @@
 /**
  * Admin routes for RBAC management.
  *
- * All endpoints require the `manage_roles` permission.
+ * Role-management endpoints require `manage_roles`.
+ * Other admin surfaces require `view_admin` (or `manage_roles`).
  *
  * GET    /api/admin/roles           — List all roles with their permissions
  * GET    /api/admin/permissions     — List all permissions
@@ -32,14 +33,17 @@ import { randomUUID } from "crypto";
 export function createAdminRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
 
-  // All admin routes require authentication + manage_roles permission
-  app.use("/api/admin/*", requireAuth(db), requirePermission("manage_roles"));
+  const requireAdminRead = requirePermission("view_admin", "manage_roles");
+  const requireRoleManagement = requirePermission("manage_roles");
+
+  // All admin routes require authentication. Permissions are applied per-route.
+  app.use("/api/admin/*", requireAuth(db));
 
   // -------------------------------------------------------------------------
   // GET /api/admin/roles — list all roles with their permissions
   // -------------------------------------------------------------------------
 
-  app.get("/api/admin/roles", async (c) => {
+  app.get("/api/admin/roles", requireRoleManagement, async (c) => {
     const allRoles = await db.select().from(schema.roles);
 
     const rolesWithPerms = await Promise.all(allRoles.map(async (role) => {
@@ -69,7 +73,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // GET /api/admin/permissions — list all permissions
   // -------------------------------------------------------------------------
 
-  app.get("/api/admin/permissions", async (c) => {
+  app.get("/api/admin/permissions", requireRoleManagement, async (c) => {
     const allPerms = await db.select().from(schema.permissions);
     return c.json(allPerms);
   });
@@ -78,7 +82,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // GET /api/admin/address-roles — list all address-role assignments
   // -------------------------------------------------------------------------
 
-  app.get("/api/admin/address-roles", async (c) => {
+  app.get("/api/admin/address-roles", requireRoleManagement, async (c) => {
     const assignments = await db
       .select({
         walletAddress: schema.addressRoles.walletAddress,
@@ -100,7 +104,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // POST /api/admin/address-roles — assign role to address
   // -------------------------------------------------------------------------
 
-  app.post("/api/admin/address-roles", async (c) => {
+  app.post("/api/admin/address-roles", requireRoleManagement, async (c) => {
     const body = await parseJsonBody(c, "POST /api/admin/address-roles");
     if (!body?.walletAddress || !body?.roleId) {
       return c.json(
@@ -154,7 +158,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // DELETE /api/admin/address-roles — revoke role from address
   // -------------------------------------------------------------------------
 
-  app.delete("/api/admin/address-roles", async (c) => {
+  app.delete("/api/admin/address-roles", requireRoleManagement, async (c) => {
     const body = await parseJsonBody(c, "DELETE /api/admin/address-roles");
     if (!body?.walletAddress || !body?.roleId) {
       return c.json(
@@ -218,7 +222,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // GET /api/admin/users — list all users with their resolved roles
   // -------------------------------------------------------------------------
 
-  app.get("/api/admin/users", async (c) => {
+  app.get("/api/admin/users", requireRoleManagement, async (c) => {
     const allUsers = await db.select().from(schema.users);
 
     const usersWithRoles = await Promise.all(allUsers.map(async (user) => {
@@ -244,7 +248,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // GET /api/admin/agents — list all agent profiles across all users
   // -------------------------------------------------------------------------
 
-  app.get("/api/admin/agents", async (c) => {
+  app.get("/api/admin/agents", requireAdminRead, async (c) => {
     const profiles = await db
       .select({
         id: schema.agentProfiles.id,
@@ -273,7 +277,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // GET /api/admin/games — list all games including hidden ones
   // -------------------------------------------------------------------------
 
-  app.get("/api/admin/games", async (c) => {
+  app.get("/api/admin/games", requireAdminRead, async (c) => {
     const rows = await db.select().from(schema.games);
 
     const summaries = await Promise.all(rows.map(async (game) => {
@@ -338,7 +342,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // GET /api/admin/settings/invite — get invite code settings
   // -------------------------------------------------------------------------
 
-  app.get("/api/admin/settings/invite", async (c) => {
+  app.get("/api/admin/settings/invite", requireAdminRead, async (c) => {
     const setting = (await db
       .select()
       .from(schema.appSettings)
@@ -353,7 +357,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // PATCH /api/admin/settings/invite — toggle invite code requirement
   // -------------------------------------------------------------------------
 
-  app.patch("/api/admin/settings/invite", async (c) => {
+  app.patch("/api/admin/settings/invite", requireAdminRead, async (c) => {
     const body = await parseJsonBody(c, "PATCH /api/admin/settings/invite");
     if (body?.inviteRequired === undefined) {
       return c.json({ error: "inviteRequired is required" }, 400);
@@ -377,7 +381,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // GET /api/admin/invite-codes — list invite codes with filters
   // -------------------------------------------------------------------------
 
-  app.get("/api/admin/invite-codes", async (c) => {
+  app.get("/api/admin/invite-codes", requireAdminRead, async (c) => {
     const userId = c.req.query("userId");
     const status = c.req.query("status"); // "available" | "used" | undefined (all)
 
@@ -409,7 +413,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // POST /api/admin/invite-codes — generate codes for a user
   // -------------------------------------------------------------------------
 
-  app.post("/api/admin/invite-codes", async (c) => {
+  app.post("/api/admin/invite-codes", requireAdminRead, async (c) => {
     const body = await parseJsonBody(c, "POST /api/admin/invite-codes");
     if (!body?.userId) {
       return c.json({ error: "userId is required" }, 400);
@@ -446,7 +450,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // POST /api/admin/invite-codes/refill — bulk refill: ensure min codes
   // -------------------------------------------------------------------------
 
-  app.post("/api/admin/invite-codes/refill", async (c) => {
+  app.post("/api/admin/invite-codes/refill", requireAdminRead, async (c) => {
     const body = await parseJsonBody(c, "POST /api/admin/invite-codes/refill");
     const minCodes = Math.min(Math.max(Number(body?.minCodes) || 5, 1), 100);
     const minAgeDays = Number(body?.minAgeDays) || 0;
@@ -510,7 +514,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // GET /api/admin/export-game/:idOrSlug — export a complete game as JSON
   // -------------------------------------------------------------------------
 
-  app.get("/api/admin/export-game/:idOrSlug", async (c) => {
+  app.get("/api/admin/export-game/:idOrSlug", requireAdminRead, async (c) => {
     const idOrSlug = c.req.param("idOrSlug");
 
     const game = (await db
@@ -605,7 +609,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // POST /api/admin/import-game — import a previously exported game
   // -------------------------------------------------------------------------
 
-  app.post("/api/admin/import-game", async (c) => {
+  app.post("/api/admin/import-game", requireAdminRead, async (c) => {
     const body = await parseJsonBody(c, "POST /api/admin/import-game");
     if (!body) {
       return c.json({ error: "Invalid JSON body" }, 400);
@@ -863,7 +867,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   // GET /api/admin/remote-games — proxy to another env's game list
   // -------------------------------------------------------------------------
 
-  app.get("/api/admin/remote-games", async (c) => {
+  app.get("/api/admin/remote-games", requireAdminRead, async (c) => {
     const url = c.req.query("url");
     if (!url) {
       return c.json({ error: "url query parameter is required" }, 400);

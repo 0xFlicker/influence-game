@@ -48,6 +48,16 @@ const ROLES = [
     ],
   },
   {
+    name: "gamer",
+    description: "Limited game operator who can create, fill, and start games",
+    isSystem: 1,
+    permissions: [
+      "create_game",
+      "start_game",
+      "fill_game",
+    ],
+  },
+  {
     name: "player",
     description: "Standard player who can join games",
     isSystem: 0,
