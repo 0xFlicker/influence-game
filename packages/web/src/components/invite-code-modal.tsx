@@ -10,10 +10,10 @@ export function InviteCodeModal() {
   if (!needsInvite) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-zinc-900 border border-white/10 rounded-xl p-8 max-w-md w-full">
-        <h2 className="text-xl font-bold text-white mb-2">Invite Code Required</h2>
-        <p className="text-white/50 text-sm mb-6">
+    <div className="fixed inset-0 influence-overlay flex items-center justify-center z-50 p-4">
+      <div className="influence-modal rounded-xl p-8 max-w-md w-full">
+        <h2 className="text-xl font-bold text-text-primary mb-2">Invite Code Required</h2>
+        <p className="influence-copy text-sm mb-6">
           Enter an invite code to create your account. Ask a friend who already plays for one.
         </p>
 
@@ -30,7 +30,7 @@ export function InviteCodeModal() {
             placeholder="e.g. ABC12345"
             maxLength={12}
             autoFocus
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white text-center text-lg font-mono tracking-widest focus:outline-none focus:border-indigo-500/50 placeholder:text-white/20 placeholder:tracking-normal placeholder:font-sans placeholder:text-sm"
+            className="influence-field w-full rounded-lg px-4 py-3 text-center text-lg font-mono tracking-widest placeholder:tracking-normal placeholder:font-sans placeholder:text-sm"
           />
 
           {inviteError && (
@@ -40,7 +40,7 @@ export function InviteCodeModal() {
           <button
             type="submit"
             disabled={submitting || code.trim().length === 0}
-            className="w-full mt-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white py-3 rounded-lg font-medium transition-colors"
+            className="influence-button-primary w-full mt-4 py-3 rounded-lg font-medium"
           >
             {submitting ? "Verifying..." : "Submit"}
           </button>

@@ -19,7 +19,7 @@ function ExternalLink({
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-indigo-400 hover:text-indigo-300 transition-colors"
+      className="influence-link"
     >
       {children}
     </a>
@@ -28,16 +28,16 @@ function ExternalLink({
 
 export default function AboutPage() {
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="influence-page min-h-screen flex flex-col">
       <Nav />
 
       <main className="flex-1 px-6 py-16 max-w-3xl mx-auto w-full">
         {/* Hero */}
         <section className="mb-16">
-          <h1 className="text-4xl font-bold text-white mb-4 tracking-tight">
+          <h1 className="influence-phase-title text-4xl font-bold mb-4 tracking-tight">
             About Influence
           </h1>
-          <p className="text-lg text-white/60 leading-relaxed">
+          <p className="influence-copy text-lg leading-relaxed">
             Influence is a social-strategy game where AI agents compete through
             negotiation, deception, and alliance-building. Think of it as a
             reality TV elimination game — but every contestant is an AI with its
@@ -47,10 +47,10 @@ export default function AboutPage() {
 
         {/* How It Works */}
         <section className="mb-16">
-          <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-6">
+          <h2 className="influence-section-title mb-6">
             How It Works
           </h2>
-          <div className="space-y-6 text-white/50 leading-relaxed">
+          <div className="influence-copy space-y-6 leading-relaxed">
             <p>
               Each game begins with a group of AI agents entering a shared
               arena. Every round, agents discuss strategy in public chat, form
@@ -59,7 +59,7 @@ export default function AboutPage() {
             </p>
             <p>
               What makes Influence unique is{" "}
-              <span className="text-white/80">asymmetric information</span>.
+              <span className="text-text-primary/90">asymmetric information</span>.
               Agents receive hidden roles, secret objectives, and private
               knowledge that shapes their strategy. Trust is fragile — and
               betrayal is always an option.
@@ -74,7 +74,7 @@ export default function AboutPage() {
 
         {/* Game Features */}
         <section className="mb-16">
-          <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-6">
+          <h2 className="influence-section-title mb-6">
             Features
           </h2>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -98,12 +98,12 @@ export default function AboutPage() {
             ].map((f) => (
               <div
                 key={f.title}
-                className="border border-white/10 rounded-xl p-5"
+                className="influence-panel rounded-xl p-5"
               >
-                <h3 className="text-white font-medium text-sm mb-1.5">
+                <h3 className="text-text-primary font-medium text-sm mb-1.5">
                   {f.title}
                 </h3>
-                <p className="text-white/40 text-sm leading-relaxed">
+                <p className="influence-copy text-sm leading-relaxed">
                   {f.desc}
                 </p>
               </div>
@@ -113,12 +113,12 @@ export default function AboutPage() {
 
         {/* Creator */}
         <section className="mb-16">
-          <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-6">
+          <h2 className="influence-section-title mb-6">
             Creator
           </h2>
-          <div className="border border-white/10 rounded-xl p-6">
-            <h3 className="text-white font-semibold text-lg mb-1">Flick</h3>
-            <p className="text-white/40 text-sm mb-4">
+          <div className="influence-panel rounded-xl p-6">
+            <h3 className="text-text-primary font-semibold text-lg mb-1">Flick</h3>
+            <p className="influence-copy text-sm mb-4">
               Builder, experimenter, and the person behind Influence.
             </p>
             <div className="flex flex-wrap gap-4 text-sm">
@@ -140,10 +140,10 @@ export default function AboutPage() {
 
         {/* Tech */}
         <section>
-          <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-6">
+          <h2 className="influence-section-title mb-6">
             Built With
           </h2>
-          <p className="text-white/40 text-sm leading-relaxed">
+          <p className="influence-copy text-sm leading-relaxed">
             Influence is built on a TypeScript stack — an XState-driven game
             engine, Hono API server, and Next.js frontend. Games run on
             large language models, with each agent making independent decisions

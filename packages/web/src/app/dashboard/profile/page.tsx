@@ -8,7 +8,7 @@ export const metadata = {
 
 export default function ProfilePage() {
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="influence-page min-h-screen flex flex-col">
       <Nav />
       <main className="flex-1 px-6 py-10 max-w-2xl mx-auto w-full">
         <AuthGate>

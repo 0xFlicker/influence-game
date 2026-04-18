@@ -69,7 +69,7 @@ export function ProfileContent() {
 
   if (loading) {
     return (
-      <div className="border border-white/10 rounded-xl p-12 text-center text-white/20 text-sm">
+      <div className="influence-empty-state rounded-xl p-12 text-center text-sm">
         Loading...
       </div>
     );
@@ -77,7 +77,7 @@ export function ProfileContent() {
 
   if (error || !profile) {
     return (
-      <div className="border border-red-900/40 bg-red-900/10 rounded-xl p-8 text-center">
+      <div className="rounded-xl p-8 text-center border border-red-400/30 bg-red-400/10">
         <p className="text-red-400 text-sm">{error ?? "Profile not found"}</p>
       </div>
     );
@@ -91,15 +91,15 @@ export function ProfileContent() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-white mb-1">Profile</h1>
-        <p className="text-white/40 text-sm">
+        <h1 className="influence-phase-title text-3xl font-bold mb-1">Profile</h1>
+        <p className="influence-copy text-sm">
           Your account settings and ELO rating.
         </p>
       </div>
 
       {/* Display Name */}
-      <section className="border border-white/10 rounded-xl p-6">
-        <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-4">
+      <section className="influence-panel rounded-xl p-6">
+        <h2 className="influence-section-title mb-4">
           Display Name
         </h2>
         {editing ? (
@@ -109,14 +109,14 @@ export function ProfileContent() {
               value={nameInput}
               onChange={(e) => setNameInput(e.target.value)}
               maxLength={50}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:border-indigo-500/50"
+              className="influence-field w-full rounded-lg px-4 py-2.5 text-sm"
               placeholder="Enter display name"
             />
             <div className="flex items-center gap-3">
               <button
                 onClick={handleSave}
                 disabled={saving || nameInput.trim().length === 0}
-                className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                className="influence-button-primary px-4 py-2 rounded-lg text-sm font-medium"
               >
                 {saving ? "Saving..." : "Save"}
               </button>
@@ -126,7 +126,7 @@ export function ProfileContent() {
                   setNameInput(profile.displayName ?? "");
                   setSaveError(null);
                 }}
-                className="text-white/50 hover:text-white text-sm transition-colors"
+                className="influence-copy hover:text-text-primary text-sm transition-colors"
               >
                 Cancel
               </button>
@@ -137,12 +137,12 @@ export function ProfileContent() {
           </div>
         ) : (
           <div className="flex items-center justify-between">
-            <p className="text-white text-lg font-semibold">
+            <p className="text-text-primary text-lg font-semibold">
               {profile.displayName ?? "Anonymous"}
             </p>
             <button
               onClick={() => setEditing(true)}
-              className="text-xs border border-white/15 hover:border-white/30 text-white/60 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
+              className="influence-button-secondary text-xs px-3 py-1.5 rounded-lg"
             >
               Edit
             </button>
@@ -151,34 +151,34 @@ export function ProfileContent() {
       </section>
 
       {/* ELO Stats */}
-      <section className="border border-white/10 rounded-xl p-6">
-        <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-4">
+      <section className="influence-panel rounded-xl p-6">
+        <h2 className="influence-section-title mb-4">
           Rating
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
           <div>
-            <p className="text-3xl font-bold text-white font-mono">
+            <p className="text-3xl font-bold text-text-primary font-mono">
               {profile.rating}
             </p>
-            <p className="text-xs text-white/30 mt-1">Current ELO</p>
+            <p className="influence-copy-muted text-xs mt-1">Current ELO</p>
           </div>
           <div>
-            <p className="text-3xl font-bold text-white/60 font-mono">
+            <p className="text-3xl font-bold text-text-primary/65 font-mono">
               {profile.peakRating}
             </p>
-            <p className="text-xs text-white/30 mt-1">Peak ELO</p>
+            <p className="influence-copy-muted text-xs mt-1">Peak ELO</p>
           </div>
           <div>
-            <p className="text-3xl font-bold text-white font-mono">
+            <p className="text-3xl font-bold text-text-primary font-mono">
               {profile.gamesPlayed}
             </p>
-            <p className="text-xs text-white/30 mt-1">Games Played</p>
+            <p className="influence-copy-muted text-xs mt-1">Games Played</p>
           </div>
           <div>
             <p className="text-3xl font-bold text-yellow-400 font-mono">
               {profile.gamesPlayed > 0 ? `${winRate}%` : "-"}
             </p>
-            <p className="text-xs text-white/30 mt-1">
+            <p className="influence-copy-muted text-xs mt-1">
               Win Rate ({profile.gamesWon}W)
             </p>
           </div>
@@ -186,15 +186,15 @@ export function ProfileContent() {
       </section>
 
       {/* Account Info */}
-      <section className="border border-white/10 rounded-xl p-6">
-        <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-4">
+      <section className="influence-panel rounded-xl p-6">
+        <h2 className="influence-section-title mb-4">
           Account
         </h2>
         <div className="space-y-3 text-sm">
           {profile.walletAddress && (
             <div className="flex items-center justify-between">
-              <span className="text-white/40">Wallet</span>
-              <span className="text-white/70 font-mono text-xs">
+              <span className="influence-copy-muted">Wallet</span>
+              <span className="influence-copy-strong font-mono text-xs">
                 {profile.walletAddress.slice(0, 6)}...
                 {profile.walletAddress.slice(-4)}
               </span>
@@ -202,13 +202,13 @@ export function ProfileContent() {
           )}
           {profile.email && (
             <div className="flex items-center justify-between">
-              <span className="text-white/40">Email</span>
-              <span className="text-white/70">{profile.email}</span>
+              <span className="influence-copy-muted">Email</span>
+              <span className="influence-copy-strong">{profile.email}</span>
             </div>
           )}
           <div className="flex items-center justify-between">
-            <span className="text-white/40">Member since</span>
-            <span className="text-white/70">
+            <span className="influence-copy-muted">Member since</span>
+            <span className="influence-copy-strong">
               {new Date(profile.createdAt).toLocaleDateString("en-US", {
                 month: "long",
                 year: "numeric",
@@ -220,14 +220,14 @@ export function ProfileContent() {
 
       {/* Invite Codes */}
       {inviteCodes && (
-        <section className="border border-white/10 rounded-xl p-6">
-          <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-4">
+        <section className="influence-panel rounded-xl p-6">
+          <h2 className="influence-section-title mb-4">
             Invite Codes
           </h2>
-          <p className="text-sm text-white/50 mb-4">
+          <p className="influence-copy text-sm mb-4">
             Share these codes with friends so they can sign up.
-            You have <span className="text-white font-medium">{inviteCodes.totalAvailable}</span> available
-            {inviteCodes.totalUsed > 0 && <>, <span className="text-white/40">{inviteCodes.totalUsed} used</span></>}.
+            You have <span className="text-text-primary font-medium">{inviteCodes.totalAvailable}</span> available
+            {inviteCodes.totalUsed > 0 && <>, <span className="influence-copy-muted">{inviteCodes.totalUsed} used</span></>}.
           </p>
           {inviteCodes.available.length > 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -239,7 +239,7 @@ export function ProfileContent() {
                     setCopiedCode(ic.code);
                     setTimeout(() => setCopiedCode(null), 2000);
                   }}
-                  className="font-mono text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-2 text-white transition-colors text-center"
+                  className="influence-button-secondary font-mono text-sm rounded-lg px-3 py-2 text-center"
                   title="Click to copy"
                 >
                   {copiedCode === ic.code ? "Copied!" : ic.code}
@@ -247,19 +247,14 @@ export function ProfileContent() {
               ))}
             </div>
           ) : (
-            <p className="text-white/30 text-sm">No invite codes available.</p>
+            <p className="influence-copy-muted text-sm">No invite codes available.</p>
           )}
         </section>
       )}
 
       {/* Link to leaderboard */}
       <div className="text-center">
-        <Link
-          href="/games/free"
-          className="text-indigo-400 hover:text-indigo-300 text-sm transition-colors"
-        >
-          View Leaderboard →
-        </Link>
+        <Link href="/games/free" className="influence-link text-sm">View Leaderboard →</Link>
       </div>
     </div>
   );

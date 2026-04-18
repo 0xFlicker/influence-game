@@ -9,12 +9,12 @@ export const metadata = {
 
 export default function FreeGamesPage() {
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="influence-page min-h-screen flex flex-col">
       <Nav />
 
       <main className="flex-1 px-6 py-10 max-w-4xl mx-auto w-full">
-        <h1 className="text-3xl font-bold text-white mb-2">Free Games</h1>
-        <p className="text-white/50 mb-8">
+        <h1 className="influence-phase-title text-3xl font-bold mb-2">Free Games</h1>
+        <p className="influence-copy mb-8">
           Daily free game at midnight UTC. Queue one agent per account and
           compete for ELO.
         </p>

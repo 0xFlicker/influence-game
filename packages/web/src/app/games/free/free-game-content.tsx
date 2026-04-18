@@ -79,13 +79,13 @@ function CountdownTimer() {
 
   return (
     <div className="text-center">
-      <p className="text-xs text-white/40 uppercase tracking-wider mb-2">
+      <p className="influence-section-title mb-2">
         Next game in
       </p>
-      <p className="text-4xl font-mono font-bold text-white tracking-wider">
+      <p className="text-4xl font-mono font-bold text-text-primary tracking-wider">
         {formatCountdown(remaining)}
       </p>
-      <p className="text-xs text-white/30 mt-2">Daily at midnight UTC</p>
+      <p className="influence-copy-muted text-xs mt-2">Daily at midnight UTC</p>
     </div>
   );
 }
@@ -121,13 +121,13 @@ function QueueSection({
 
   if (!authenticated) {
     return (
-      <div className="border border-white/10 rounded-xl p-6 text-center">
-        <p className="text-white/50 text-sm mb-3">
+      <div className="influence-panel rounded-xl p-6 text-center">
+        <p className="influence-copy text-sm mb-3">
           Sign in to queue your agent for tonight&apos;s free game.
         </p>
         <button
           onClick={login}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
+          className="influence-button-primary px-6 py-2.5 rounded-lg text-sm font-medium"
         >
           Sign in
         </button>
@@ -137,20 +137,20 @@ function QueueSection({
 
   if (isQueued) {
     return (
-      <div className="border border-indigo-500/30 bg-indigo-950/20 rounded-xl p-6">
+      <div className="influence-panel rounded-xl p-6">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-indigo-400 text-sm font-medium mb-1">
+            <p className="text-phase text-sm font-medium mb-1">
               You&apos;re in the queue
             </p>
-            <p className="text-white text-lg font-semibold">
+            <p className="text-text-primary text-lg font-semibold">
               {queueStatus.userEntry!.agentName}
             </p>
           </div>
           <button
             onClick={onLeave}
             disabled={actionLoading}
-            className="text-xs border border-red-500/30 text-red-400 hover:bg-red-950/30 px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+            className="influence-button-danger text-xs px-4 py-2 rounded-lg"
           >
             {actionLoading ? "Leaving..." : "Leave Queue"}
           </button>
@@ -164,14 +164,14 @@ function QueueSection({
 
   if (agents.length === 0) {
     return (
-      <div className="border border-dashed border-white/10 rounded-xl p-6 text-center">
-        <p className="text-white/30 text-sm mb-2">No agents yet</p>
-        <p className="text-white/20 text-xs mb-3">
+      <div className="influence-panel-dashed rounded-xl p-6 text-center">
+        <p className="influence-copy-muted text-sm mb-2">No agents yet</p>
+        <p className="influence-copy-muted text-xs mb-3">
           Create an agent to join the free game queue.
         </p>
         <Link
           href="/dashboard/agents"
-          className="inline-block text-sm bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+          className="influence-button-primary inline-block text-sm px-4 py-2 rounded-lg font-medium"
         >
           Create an agent
         </Link>
@@ -180,8 +180,8 @@ function QueueSection({
   }
 
   return (
-    <div className="border border-white/10 rounded-xl p-6">
-      <p className="text-xs text-white/40 uppercase tracking-wider mb-3">
+    <div className="influence-panel rounded-xl p-6">
+      <p className="influence-section-title mb-3">
         Select an agent to queue
       </p>
       <div className="grid gap-2 mb-4">
@@ -192,11 +192,8 @@ function QueueSection({
             <button
               key={agent.id}
               onClick={() => setSelectedAgentId(agent.id)}
-              className={`border rounded-lg px-4 py-3 flex items-center gap-3 text-left transition-colors ${
-                isSelected
-                  ? "border-indigo-500/50 bg-indigo-950/20"
-                  : "border-white/10 hover:border-white/20"
-              }`}
+              className="influence-selection-card rounded-lg px-4 py-3 flex items-center gap-3 text-left transition-colors"
+              data-selected={isSelected}
             >
               <AgentAvatar
                 avatarUrl={agent.avatarUrl}
@@ -205,15 +202,15 @@ function QueueSection({
                 size="8"
               />
               <div className="min-w-0 flex-1">
-                <p className="text-white text-sm font-medium truncate">
+                <p className="text-text-primary text-sm font-medium truncate">
                   {agent.name}
                 </p>
-                <p className="text-white/30 text-xs truncate">
+                <p className="influence-copy-muted text-xs truncate">
                   {persona?.name ?? agent.personaKey ?? "Agent"}
                 </p>
               </div>
               {isSelected && (
-                <span className="text-indigo-400 text-xs font-medium shrink-0">
+                <span className="text-phase text-xs font-medium shrink-0">
                   Selected
                 </span>
               )}
@@ -224,7 +221,7 @@ function QueueSection({
       <button
         onClick={() => onJoin(selectedAgentId)}
         disabled={!selectedAgentId || actionLoading}
-        className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white px-6 py-3 rounded-lg text-sm font-medium transition-colors"
+        className="influence-button-primary w-full px-6 py-3 rounded-lg text-sm font-medium"
       >
         {actionLoading ? "Joining..." : "Join Queue"}
       </button>
@@ -251,20 +248,20 @@ function TodayGameSection({
 
   return (
     <section>
-      <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">
+      <h2 className="influence-section-title mb-3">
         Today&apos;s Game
       </h2>
-      <div className="border border-white/10 rounded-xl p-5">
+      <div className="influence-panel rounded-xl p-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-white font-semibold">
+            <span className="text-text-primary font-semibold">
               Game #{todayGame.gameNumber}
             </span>
             <StatusBadge status={todayGame.status} />
           </div>
           <Link
             href={`/games/${todayGame.slug ?? todayGame.id}`}
-            className="text-xs border border-white/15 hover:border-white/30 text-white/60 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
+            className="influence-button-secondary text-xs px-3 py-1.5 rounded-lg"
           >
             {isLive ? "Watch" : isDone ? "Replay" : "View"}
           </Link>
@@ -287,7 +284,7 @@ function Leaderboard({
 }) {
   if (loading) {
     return (
-      <div className="border border-white/10 rounded-xl p-8 text-center text-white/20 text-sm">
+      <div className="influence-empty-state rounded-xl p-8 text-center text-sm">
         Loading leaderboard...
       </div>
     );
@@ -295,21 +292,21 @@ function Leaderboard({
 
   if (entries.length === 0) {
     return (
-      <div className="border border-white/10 rounded-xl p-8 text-center text-white/30 text-sm">
+      <div className="influence-empty-state rounded-xl p-8 text-center text-sm">
         No ratings yet. Play some free games to appear on the leaderboard.
       </div>
     );
   }
 
   return (
-    <div className="border border-white/10 rounded-xl overflow-hidden">
+    <div className="influence-panel rounded-xl overflow-hidden">
       <table className="w-full">
         <thead>
-          <tr className="border-b border-white/10">
+          <tr className="border-b border-border-active/60">
             {["#", "Player", "ELO", "Games", "Win Rate", "Peak"].map((h) => (
               <th
                 key={h}
-                className="text-left py-3 px-4 text-xs text-white/30 font-medium"
+                className="influence-table-header text-left py-3 px-4 text-xs font-medium"
               >
                 {h}
               </th>
@@ -318,30 +315,27 @@ function Leaderboard({
         </thead>
         <tbody>
           {entries.map((entry) => (
-            <tr
-              key={entry.userId}
-              className="border-t border-white/5 hover:bg-white/[0.02] transition-colors"
-            >
-              <td className="py-3 px-4 text-white/50 text-sm font-mono">
+            <tr key={entry.userId} className="influence-table-row">
+              <td className="py-3 px-4 influence-copy text-sm font-mono">
                 {entry.rank}
               </td>
               <td className="py-3 px-4">
-                <span className="text-white text-sm font-medium truncate">
+                <span className="text-text-primary text-sm font-medium truncate">
                   {entry.displayName}
                 </span>
               </td>
-              <td className="py-3 px-4 text-white text-sm font-semibold font-mono">
+              <td className="py-3 px-4 text-text-primary text-sm font-semibold font-mono">
                 {entry.rating}
               </td>
-              <td className="py-3 px-4 text-white/40 text-sm">
+              <td className="py-3 px-4 influence-copy-muted text-sm">
                 {entry.gamesPlayed}
               </td>
-              <td className="py-3 px-4 text-white/40 text-sm">
+              <td className="py-3 px-4 influence-copy-muted text-sm">
                 {entry.gamesPlayed > 0
                   ? `${Math.round(entry.winRate * 100)}%`
                   : "-"}
               </td>
-              <td className="py-3 px-4 text-white/30 text-sm font-mono">
+              <td className="py-3 px-4 influence-copy-muted text-sm font-mono">
                 {entry.peakRating}
               </td>
             </tr>
@@ -465,7 +459,7 @@ export function FreeGameContent() {
 
   if (loading) {
     return (
-      <div className="border border-white/10 rounded-xl p-12 text-center text-white/20 text-sm">
+      <div className="influence-empty-state rounded-xl p-12 text-center text-sm">
         Loading...
       </div>
     );
@@ -474,13 +468,13 @@ export function FreeGameContent() {
   return (
     <div className="space-y-10">
       {/* Hero: Countdown + Queue Status */}
-      <section className="border border-white/10 rounded-xl p-8">
+      <section className="influence-panel rounded-xl p-8">
         <CountdownTimer />
         <div className="mt-6 text-center">
-          <p className="text-white/50 text-sm">
+          <p className="influence-copy text-sm">
             {queueStatus ? (
               <>
-                <span className="text-white font-semibold">
+                <span className="text-text-primary font-semibold">
                   {queueStatus.queuedCount}
                 </span>{" "}
                 player{queueStatus.queuedCount !== 1 ? "s" : ""} queued for
@@ -492,7 +486,7 @@ export function FreeGameContent() {
               "Queue status unavailable"
             )}
           </p>
-          <p className="text-white/25 text-xs mt-1">
+          <p className="influence-copy-muted text-xs mt-1">
             12 players drawn at 23:00 UTC. Game starts at midnight.
           </p>
         </div>
@@ -500,11 +494,11 @@ export function FreeGameContent() {
 
       {/* Queue Join/Leave */}
       <section>
-        <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">
+        <h2 className="influence-section-title mb-3">
           Queue
         </h2>
         {agentsError && (
-          <div className="border border-yellow-900/40 bg-yellow-900/10 rounded-lg p-3 mb-3 text-center">
+          <div className="rounded-lg p-3 mb-3 text-center border border-yellow-400/30 bg-yellow-400/10">
             <p className="text-yellow-400/80 text-xs">{agentsError}</p>
           </div>
         )}
@@ -525,11 +519,11 @@ export function FreeGameContent() {
 
       {/* Leaderboard */}
       <section>
-        <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">
+        <h2 className="influence-section-title mb-3">
           Free Track Leaderboard
         </h2>
         {leaderboardError && !leaderboardLoading ? (
-          <div className="border border-red-900/40 bg-red-900/10 rounded-xl p-8 text-center">
+          <div className="rounded-xl p-8 text-center border border-red-400/30 bg-red-400/10">
             <p className="text-red-400 text-sm">{leaderboardError}</p>
           </div>
         ) : (
