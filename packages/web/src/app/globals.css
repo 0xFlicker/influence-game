@@ -412,7 +412,6 @@ a {
   background: rgb(var(--warning-rgb) / 0.12);
   color: rgb(var(--warning-rgb) / 0.92);
 }
-
 .influence-panel {
   background:
     linear-gradient(

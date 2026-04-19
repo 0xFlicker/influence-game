@@ -354,14 +354,15 @@ describe("Game REST API", () => {
       expect(body).toHaveLength(2);
     });
 
-    test("game summaries include player count", async () => {
+    test("game summaries keep configured seat count while reporting joined players separately", async () => {
       const { id } = await createTestGame(app, adminToken);
       await joinTestPlayer(app, id, "Atlas", userToken);
       await joinTestPlayer(app, id, "Vera", userToken);
 
       const res = await app.request("/api/games");
-      const body = (await res.json()) as Array<{ playerCount: number }>;
-      expect(body[0]!.playerCount).toBe(2);
+      const body = (await res.json()) as Array<{ playerCount: number; alivePlayers: number }>;
+      expect(body[0]!.playerCount).toBe(6);
+      expect(body[0]!.alivePlayers).toBe(2);
     });
   });
 

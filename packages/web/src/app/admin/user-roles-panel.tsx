@@ -12,22 +12,17 @@ import {
   type AdminUser,
 } from "@/lib/api";
 import { TruncatedAddress } from "@/components/truncated-address";
+import { formatRoleName, getRoleBadgeClass } from "@/lib/role-display";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const roleBadgeColors: Record<string, string> = {
-  sysop: "bg-red-900/40 text-red-400",
-  admin: "bg-blue-900/40 text-blue-400",
-  player: "bg-green-900/40 text-green-400",
-};
-
 function RoleBadge({ name }: { name: string }) {
-  const color = roleBadgeColors[name] ?? "bg-white/10 text-white/60";
+  const color = getRoleBadgeClass(name);
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full ${color}`}>
-      {name}
+      {formatRoleName(name)}
     </span>
   );
 }
@@ -43,14 +38,22 @@ function isValidAddress(addr: string): boolean {
 function AssignRoleForm({
   roles,
   onAssigned,
+  initialAddress,
 }: {
   roles: AdminRole[];
   onAssigned: () => void;
+  initialAddress?: string | null;
 }) {
   const [address, setAddress] = useState("");
   const [selectedRoleId, setSelectedRoleId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialAddress) {
+      setAddress(initialAddress);
+    }
+  }, [initialAddress]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -96,15 +99,15 @@ function AssignRoleForm({
         <select
           value={selectedRoleId}
           onChange={(e) => setSelectedRoleId(e.target.value)}
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+          className="w-full appearance-none bg-zinc-950 border border-white/15 rounded-lg px-3 py-2 text-sm text-white shadow-inner shadow-black/20 focus:outline-none focus:border-indigo-500"
           style={{ colorScheme: "dark" }}
         >
-          <option value="" className="bg-[#0b0b0d] text-white">
+          <option value="" className="bg-zinc-950 text-white">
             Select role...
           </option>
           {roles.map((r) => (
-            <option key={r.id} value={r.id} className="bg-[#0b0b0d] text-white">
-              {r.name}
+            <option key={r.id} value={r.id} className="bg-zinc-950 text-white">
+              {formatRoleName(r.name)}
             </option>
           ))}
         </select>
@@ -415,7 +418,7 @@ export function UserRolesPanel() {
           Assign Role
         </h2>
         <div className="border border-white/10 rounded-xl p-5">
-          <AssignRoleForm roles={roles} onAssigned={fetchAll} />
+          <AssignRoleForm roles={roles} onAssigned={fetchAll} initialAddress={prefillAddress} />
           {prefillAddress && (
             <p className="text-xs text-white/30 mt-2">
               Pre-filled address: <span className="font-mono">{prefillAddress}</span>

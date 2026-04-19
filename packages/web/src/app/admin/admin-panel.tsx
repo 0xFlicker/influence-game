@@ -138,7 +138,8 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
     try {
       const result = await fillGame(game.id);
       if (isFillAccepted(result)) {
-        // Async path: stay in filling state, WS will confirm
+        setFilling(false);
+        onRefresh();
         return;
       }
       // Sync path (legacy): fill completed immediately
