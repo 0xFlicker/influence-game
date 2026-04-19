@@ -141,6 +141,8 @@ function GameCard({
       const result = await fillGame(game.id);
       if (isFillAccepted(result)) {
         applyFilledState(result);
+        setFilling(false);
+        await onRefresh();
         return;
       }
 
