@@ -80,6 +80,10 @@ bun test
 bun run typecheck
 ```
 
+### 5. Close out code-backed work
+
+Before marking a Paperclip feature task `done`, open a reviewable PR and report the PR URL plus the real verification results. The canonical delivery sequence and closeout format live in [`DEVELOPMENT.md`](DEVELOPMENT.md#definition-of-done).
+
 ## Project Structure
 
 ```
