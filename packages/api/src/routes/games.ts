@@ -187,7 +187,7 @@ export function createGameRoutes(db: DrizzleDB) {
         slug: game.slug ?? undefined,
         gameNumber: 0, // Populated below
         status: game.status,
-        playerCount: players.length,
+        playerCount: game.maxPlayers ?? config.maxPlayers ?? players.length,
         currentRound: 0,
         maxRounds: config.maxRounds ?? 10,
         currentPhase: game.status === "completed" ? "END" : "INIT",

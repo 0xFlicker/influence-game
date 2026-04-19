@@ -295,14 +295,13 @@ function GameCard({
                 {starting ? "Starting…" : "Start"}
               </button>
             )}
-            {isJoinable && canFill && (
+            {isJoinable && canFill && !isReadyToStart && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   void handleFill();
                 }}
-                disabled={filling || isReadyToStart}
-                title={isReadyToStart ? "Lobby is already full" : undefined}
+                disabled={filling}
                 className="influence-button-secondary text-xs px-3 py-1.5 rounded-lg font-medium disabled:opacity-50"
               >
                 {filling ? "Filling…" : "Fill AI"}
