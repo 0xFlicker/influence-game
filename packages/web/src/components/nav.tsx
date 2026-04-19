@@ -36,36 +36,36 @@ export function Nav() {
 
   const navLinks = (
     <>
-      <Link href="/games" className="text-white/70 hover:text-white transition-colors" onClick={() => setMobileOpen(false)}>
+      <Link href="/games" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
         Games
       </Link>
 
-      <Link href="/games/free" className="text-white/70 hover:text-white transition-colors" onClick={() => setMobileOpen(false)}>
+      <Link href="/games/free" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
         Free Games
       </Link>
 
-      <Link href="/rules" className="text-white/70 hover:text-white transition-colors" onClick={() => setMobileOpen(false)}>
+      <Link href="/rules" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
         Rules
       </Link>
 
-      <Link href="/about" className="text-white/70 hover:text-white transition-colors" onClick={() => setMobileOpen(false)}>
+      <Link href="/about" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
         About
       </Link>
 
       {effectiveAuth && (
-        <Link href="/dashboard" className="text-white/70 hover:text-white transition-colors" onClick={() => setMobileOpen(false)}>
+        <Link href="/dashboard" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
           Dashboard
         </Link>
       )}
 
       {effectiveAuth && (
-        <Link href="/dashboard/profile" className="text-white/70 hover:text-white transition-colors" onClick={() => setMobileOpen(false)}>
+        <Link href="/dashboard/profile" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
           Profile
         </Link>
       )}
 
       {effectiveAuth && isAdmin && (
-        <Link href="/admin" className="text-white/70 hover:text-white transition-colors" onClick={() => setMobileOpen(false)}>
+        <Link href="/admin" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
           Admin
         </Link>
       )}
@@ -74,14 +74,14 @@ export function Nav() {
         effectiveAuth ? (
           <button
             onClick={() => { setMobileOpen(false); logout(); }}
-            className="text-white/50 hover:text-white transition-colors"
+            className="influence-copy-muted hover:text-text-primary transition-colors"
           >
             Sign out
           </button>
         ) : (
           <button
             onClick={() => { setMobileOpen(false); login(); }}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-md transition-colors"
+            className="influence-button-primary px-4 py-1.5 rounded-md"
           >
             Sign in
           </button>
@@ -91,9 +91,9 @@ export function Nav() {
   );
 
   return (
-    <nav className="border-b border-white/10 px-6 py-4">
+    <nav className="border-b border-border-active/60 bg-surface-overlay/30 px-6 py-4 backdrop-blur-sm">
       <div className="flex items-center justify-between">
-        <Link href="/" className="text-lg font-bold tracking-tight text-white">
+        <Link href="/" className="text-lg font-bold tracking-tight text-text-primary">
           Influence
         </Link>
 
@@ -104,7 +104,7 @@ export function Nav() {
 
         {/* Mobile hamburger */}
         <button
-          className="lg:hidden text-white/70 hover:text-white transition-colors"
+          className="lg:hidden influence-copy hover:text-text-primary transition-colors"
           onClick={() => setMobileOpen(!mobileOpen)}
           aria-label={mobileOpen ? "Close menu" : "Open menu"}
         >
@@ -114,7 +114,7 @@ export function Nav() {
 
       {/* Mobile menu */}
       {mobileOpen && (
-        <div className="lg:hidden mt-4 flex flex-col gap-4 text-sm border-t border-white/10 pt-4">
+        <div className="lg:hidden mt-4 flex flex-col gap-4 text-sm border-t border-border-active/60 pt-4">
           {navLinks}
         </div>
       )}

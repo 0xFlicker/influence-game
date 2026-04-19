@@ -79,23 +79,20 @@ export function AgentsContent({ initialView }: AgentsContentProps) {
       <div className="flex items-start justify-between mb-6">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <Link
-              href="/dashboard"
-              className="text-white/30 hover:text-white/60 text-sm transition-colors"
-            >
+            <Link href="/dashboard" className="influence-copy-muted hover:text-text-primary text-sm transition-colors">
               Dashboard
             </Link>
-            <span className="text-white/15">/</span>
-            <h1 className="text-2xl font-bold text-white">Agents</h1>
+            <span className="influence-copy-muted opacity-50">/</span>
+            <h1 className="text-2xl font-bold text-text-primary">Agents</h1>
           </div>
-          <p className="text-white/40 text-sm">
+          <p className="influence-copy text-sm">
             Create and manage your saved agents. Use them to quickly join games.
           </p>
         </div>
         {view === "list" && (
           <button
             onClick={() => setView("create")}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg font-medium transition-colors"
+            className="influence-button-primary text-sm px-4 py-2 rounded-lg font-medium"
           >
             + New Agent
           </button>
@@ -104,15 +101,15 @@ export function AgentsContent({ initialView }: AgentsContentProps) {
 
       {/* Error */}
       {error && (
-        <p className="text-red-400 text-sm bg-red-900/20 border border-red-900/40 rounded-lg px-4 py-2.5 mb-4">
+        <p className="text-red-400 text-sm rounded-lg px-4 py-2.5 mb-4 border border-red-400/30 bg-red-400/10">
           {error}
         </p>
       )}
 
       {/* Create form */}
       {view === "create" && (
-        <div className="border border-white/10 rounded-xl p-6">
-          <h2 className="text-lg font-semibold text-white mb-4">Create Agent</h2>
+        <div className="influence-panel rounded-xl p-6">
+          <h2 className="text-lg font-semibold text-text-primary mb-4">Create Agent</h2>
           <AgentForm
             onSubmit={handleCreate}
             onCancel={() => setView("list")}
@@ -123,8 +120,8 @@ export function AgentsContent({ initialView }: AgentsContentProps) {
 
       {/* Edit form */}
       {view === "edit" && editTarget && (
-        <div className="border border-white/10 rounded-xl p-6">
-          <h2 className="text-lg font-semibold text-white mb-4">Edit Agent</h2>
+        <div className="influence-panel rounded-xl p-6">
+          <h2 className="text-lg font-semibold text-text-primary mb-4">Edit Agent</h2>
           <AgentForm
             initial={editTarget}
             onSubmit={handleUpdate}
@@ -141,15 +138,15 @@ export function AgentsContent({ initialView }: AgentsContentProps) {
       {view === "list" && (
         <>
           {loading ? (
-            <div className="border border-white/10 rounded-xl p-8 text-center text-white/20 text-sm">
+            <div className="influence-empty-state rounded-xl p-8 text-center text-sm">
               Loading...
             </div>
           ) : fetchError ? (
-            <div className="border border-red-900/40 bg-red-900/10 rounded-xl p-8 text-center">
+            <div className="rounded-xl p-8 text-center border border-red-400/30 bg-red-400/10">
               <p className="text-red-400 text-sm">{fetchError}</p>
               <button
                 onClick={fetchAgents}
-                className="mt-3 text-xs text-white/50 hover:text-white/80 underline transition-colors"
+                className="mt-3 text-xs influence-copy hover:text-text-primary underline transition-colors"
               >
                 Retry
               </button>
@@ -171,29 +168,29 @@ export function AgentsContent({ initialView }: AgentsContentProps) {
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            className="influence-overlay absolute inset-0"
             onClick={() => setDeleteConfirm(null)}
           />
-          <div className="relative bg-[#111] border border-white/15 rounded-2xl w-full max-w-sm shadow-2xl p-6">
-            <h3 className="text-white font-semibold mb-2">Delete Agent</h3>
-            <p className="text-white/50 text-sm mb-1">
-              Are you sure you want to delete <strong className="text-white">{deleteConfirm.name}</strong>?
+          <div className="influence-modal relative w-full max-w-sm rounded-2xl p-6">
+            <h3 className="text-text-primary font-semibold mb-2">Delete Agent</h3>
+            <p className="influence-copy text-sm mb-1">
+              Are you sure you want to delete <strong className="text-text-primary">{deleteConfirm.name}</strong>?
             </p>
             {deleteConfirm.gamesPlayed > 0 && (
-              <p className="text-white/30 text-xs mb-4">
+              <p className="influence-copy-muted text-xs mb-4">
                 This agent has played {deleteConfirm.gamesPlayed} game{deleteConfirm.gamesPlayed !== 1 ? "s" : ""}. Game history will be preserved.
               </p>
             )}
             <div className="flex gap-3 mt-4">
               <button
                 onClick={() => setDeleteConfirm(null)}
-                className="flex-1 border border-white/10 hover:border-white/20 text-white/60 hover:text-white text-sm py-2.5 rounded-lg transition-colors"
+                className="influence-button-secondary flex-1 text-sm py-2.5 rounded-lg"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleDelete(deleteConfirm)}
-                className="flex-1 bg-red-600 hover:bg-red-500 text-white text-sm py-2.5 rounded-lg font-medium transition-colors"
+                className="influence-button-danger flex-1 text-sm py-2.5 rounded-lg font-medium"
               >
                 Delete
               </button>

@@ -44,12 +44,12 @@ function AgentPicker({
 }) {
   if (agents.length === 0) {
     return (
-      <div className="border border-dashed border-white/10 rounded-lg p-3 text-center">
-        <p className="text-white/30 text-xs mb-1">No saved agents yet</p>
+      <div className="influence-panel-dashed rounded-lg p-3 text-center">
+        <p className="influence-copy-muted text-xs mb-1">No saved agents yet</p>
         <button
           type="button"
           onClick={onCreateNew}
-          className="text-indigo-400 hover:text-indigo-300 text-xs transition-colors"
+          className="influence-link text-xs"
         >
           Create an agent →
         </button>
@@ -70,11 +70,10 @@ function AgentPicker({
               key={agent.id}
               type="button"
               onClick={() => (isSelected ? onClear() : onSelect(agent))}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs transition-all ${
-                isSelected
-                  ? "border-indigo-500 bg-indigo-600/20 text-white"
-                  : "border-white/10 text-white/50 hover:border-white/20 hover:text-white/70"
+              className={`influence-selection-card flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-all ${
+                isSelected ? "text-text-primary" : "influence-copy"
               }`}
+              data-selected={isSelected}
             >
               <AgentAvatar
                 avatarUrl={agent.avatarUrl}
@@ -84,7 +83,7 @@ function AgentPicker({
               />
               <span>{agent.name}</span>
               {agent.gamesPlayed > 0 && (
-                <span className="text-white/25">
+                <span className="influence-copy-muted">
                   {agent.gamesWon}W/{agent.gamesPlayed - agent.gamesWon}L
                 </span>
               )}
@@ -94,14 +93,14 @@ function AgentPicker({
         <button
           type="button"
           onClick={onCreateNew}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-white/10 text-white/30 hover:border-white/20 hover:text-white/50 text-xs transition-all"
+          className="influence-panel-dashed flex items-center gap-2 px-3 py-2 rounded-lg influence-copy-muted text-xs transition-all"
         >
           <span>+</span>
           <span>New Agent</span>
         </button>
       </div>
       {selectedId && (
-        <p className="text-white/25 text-xs">
+        <p className="influence-copy-muted text-xs">
           Joining with this saved agent. You can deselect to customize instead.
         </p>
       )}
@@ -205,24 +204,24 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
     /* Backdrop */
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        className="influence-overlay absolute inset-0"
         onClick={onClose}
       />
 
       {/* Modal */}
-      <div className="relative bg-[#111] border border-white/15 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
+      <div className="influence-modal relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl">
         <div className="p-6">
           {/* Header */}
           <div className="flex items-start justify-between mb-6">
             <div>
-              <h2 className="text-xl font-bold text-white">Join Game #{game.gameNumber}</h2>
-              <p className="text-white/40 text-sm mt-1">
+              <h2 className="text-xl font-bold text-text-primary">Join Game #{game.gameNumber}</h2>
+              <p className="influence-copy text-sm mt-1">
                 {game.playerCount}-player · {game.modelTier.charAt(0).toUpperCase() + game.modelTier.slice(1)} tier
               </p>
             </div>
             <button
               onClick={onClose}
-              className="text-white/30 hover:text-white/70 transition-colors text-xl leading-none"
+              className="influence-copy-muted hover:text-text-primary transition-colors text-xl leading-none"
             >
               ×
             </button>
@@ -234,11 +233,11 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
                 <button
                   type="button"
                   onClick={() => setCreatingAgent(false)}
-                  className="text-white/30 hover:text-white/60 text-sm transition-colors"
+                  className="influence-copy-muted hover:text-text-primary text-sm transition-colors"
                 >
                   ← Back
                 </button>
-                <h3 className="text-sm font-semibold text-white">Create New Agent</h3>
+                <h3 className="text-sm font-semibold text-text-primary">Create New Agent</h3>
               </div>
               <AgentForm
                 onSubmit={handleCreateAgent}
@@ -250,11 +249,11 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Saved agent picker */}
             <div>
-              <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
+              <label className="influence-section-title block mb-2">
                 Select Agent
               </label>
               {agentsFetchError ? (
-                <div className="border border-yellow-900/40 bg-yellow-900/10 rounded-lg p-3 text-center">
+                <div className="rounded-lg p-3 text-center border border-yellow-400/30 bg-yellow-400/10">
                   <p className="text-yellow-400/80 text-xs">
                     Could not load saved agents. You can still join manually below.
                   </p>
@@ -275,7 +274,7 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
               <>
                 {/* Agent name */}
                 <div>
-                  <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
+                  <label className="influence-section-title block mb-2">
                     Agent Name
                   </label>
                   <input
@@ -284,16 +283,16 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
                     onChange={(e) => setAgentName(e.target.value)}
                     placeholder="e.g. ShadowPlay-7"
                     maxLength={32}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/20 text-sm outline-none focus:border-indigo-500 transition-colors"
+                    className="influence-field w-full rounded-lg px-4 py-2.5 text-sm"
                   />
-                  <p className="text-white/25 text-xs mt-1">
+                  <p className="influence-copy-muted text-xs mt-1">
                     The name your agent uses in the game. Other players will see this.
                   </p>
                 </div>
 
                 {/* Persona selection */}
                 <div>
-                  <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
+                  <label className="influence-section-title block mb-2">
                     Base Persona
                   </label>
                   <div className="grid grid-cols-5 gap-2 mb-2">
@@ -302,25 +301,24 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
                         key={p.key}
                         type="button"
                         onClick={() => setSelectedPersona(p.key)}
-                        className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-xs transition-all ${
-                          selectedPersona === p.key
-                            ? "border-indigo-500 bg-indigo-600/20 text-white"
-                            : "border-white/10 text-white/40 hover:border-white/20 hover:text-white/60"
+                        className={`influence-selection-card flex flex-col items-center gap-1 p-2 rounded-lg text-xs transition-all ${
+                          selectedPersona === p.key ? "text-text-primary" : "influence-copy"
                         }`}
+                        data-selected={selectedPersona === p.key}
                       >
                         <span className="text-base">{p.icon}</span>
                         <span className="text-[10px] leading-tight text-center">{p.name}</span>
                       </button>
                     ))}
                   </div>
-                  <p className="text-white/30 text-xs italic">
+                  <p className="influence-copy-muted text-xs italic">
                     {selectedPersonaInfo.icon} {selectedPersonaInfo.name}: {selectedPersonaInfo.description}
                   </p>
                 </div>
 
                 {/* Personality description */}
                 <div>
-                  <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
+                  <label className="influence-section-title block mb-2">
                     Personality Description
                   </label>
                   <textarea
@@ -329,16 +327,16 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
                     placeholder="Describe how your agent should behave, speak, and make decisions..."
                     rows={3}
                     maxLength={500}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/20 text-sm outline-none focus:border-indigo-500 transition-colors resize-none"
+                    className="influence-field w-full rounded-lg px-4 py-2.5 text-sm resize-none"
                   />
-                  <p className="text-white/25 text-xs mt-1 text-right">{personality.length}/500</p>
+                  <p className="influence-copy-muted text-xs mt-1 text-right">{personality.length}/500</p>
                 </div>
 
                 {/* Strategy hints */}
                 <div>
-                  <label className="block text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">
+                  <label className="influence-section-title block mb-2">
                     Strategy Hints{" "}
-                    <span className="text-white/25 normal-case font-normal">(optional)</span>
+                    <span className="influence-copy-muted normal-case font-normal">(optional)</span>
                   </label>
                   <textarea
                     value={strategyHints}
@@ -346,7 +344,7 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
                     placeholder="Any specific tactics or priorities for this game..."
                     rows={2}
                     maxLength={300}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder-white/20 text-sm outline-none focus:border-indigo-500 transition-colors resize-none"
+                    className="influence-field w-full rounded-lg px-4 py-2.5 text-sm resize-none"
                   />
                 </div>
               </>
@@ -354,7 +352,7 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
 
             {/* Error */}
             {error && (
-              <p className="text-red-400 text-sm bg-red-900/20 border border-red-900/40 rounded-lg px-4 py-2.5">
+              <p className="text-red-400 text-sm rounded-lg px-4 py-2.5 border border-red-400/30 bg-red-400/10">
                 {error}
               </p>
             )}
@@ -364,14 +362,14 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 border border-white/10 hover:border-white/20 text-white/60 hover:text-white text-sm py-2.5 rounded-lg transition-colors"
+                className="influence-button-secondary flex-1 text-sm py-2.5 rounded-lg"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm py-2.5 rounded-lg font-medium transition-colors"
+                className="influence-button-primary flex-1 text-sm py-2.5 rounded-lg font-medium"
               >
                 {submitting ? "Joining..." : "Join Game"}
               </button>

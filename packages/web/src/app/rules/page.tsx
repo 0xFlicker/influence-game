@@ -22,7 +22,7 @@ function Section({
 }) {
   return (
     <section id={id} className="mb-14 scroll-mt-24">
-      <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-6">
+      <h2 className="influence-section-title mb-6">
         {title}
       </h2>
       {children}
@@ -39,20 +39,18 @@ function SubSection({
 }) {
   return (
     <div className="mb-8">
-      <h3 className="text-white font-semibold text-lg mb-3">{title}</h3>
+      <h3 className="text-text-primary font-semibold text-lg mb-3">{title}</h3>
       {children}
     </div>
   );
 }
 
 function P({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-white/50 leading-relaxed mb-4">{children}</p>
-  );
+  return <p className="influence-copy leading-relaxed mb-4">{children}</p>;
 }
 
 function Em({ children }: { children: React.ReactNode }) {
-  return <span className="text-white/80 font-medium">{children}</span>;
+  return <span className="text-text-primary/90 font-medium">{children}</span>;
 }
 
 function RulesTable({
@@ -64,13 +62,13 @@ function RulesTable({
 }) {
   return (
     <div className="overflow-x-auto mb-4">
-      <table className="w-full text-sm">
+      <table className="w-full text-sm influence-panel rounded-xl overflow-hidden">
         <thead>
-          <tr className="border-b border-white/10">
+          <tr className="border-b border-border-active/60">
             {headers.map((h) => (
               <th
                 key={h}
-                className="text-left py-2.5 px-4 text-xs text-white/30 font-medium"
+                className="influence-table-header text-left py-2.5 px-4 text-xs font-medium"
               >
                 {h}
               </th>
@@ -79,11 +77,11 @@ function RulesTable({
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-t border-white/5">
+            <tr key={i} className="influence-table-row">
               {row.map((cell, j) => (
                 <td
                   key={j}
-                  className={`py-2.5 px-4 text-white/50 ${j === 0 ? "text-white/70 font-medium" : ""}`}
+                  className={`py-2.5 px-4 ${j === 0 ? "text-text-primary/90 font-medium" : "influence-copy"}`}
                 >
                   {cell}
                 </td>
@@ -119,12 +117,12 @@ const TOC = [
 
 export default function RulesPage() {
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="influence-page min-h-screen flex flex-col">
       <Nav />
 
       <main className="flex-1 px-6 py-16 max-w-3xl mx-auto w-full">
         {/* Hero */}
-        <h1 className="text-4xl font-bold text-white mb-4 tracking-tight">
+        <h1 className="influence-phase-title text-4xl font-bold mb-4 tracking-tight">
           Rules of Influence
         </h1>
         <P>
@@ -135,8 +133,8 @@ export default function RulesPage() {
         </P>
 
         {/* Table of contents */}
-        <nav className="border border-white/10 rounded-xl p-5 mb-14">
-          <p className="text-xs text-white/30 uppercase tracking-wider font-semibold mb-3">
+        <nav className="influence-panel rounded-xl p-5 mb-14">
+          <p className="influence-table-header text-xs uppercase tracking-wider font-semibold mb-3">
             Contents
           </p>
           <ul className="grid gap-1.5 sm:grid-cols-2 text-sm">
@@ -144,7 +142,7 @@ export default function RulesPage() {
               <li key={t.id}>
                 <a
                   href={`#${t.id}`}
-                  className="text-indigo-400 hover:text-indigo-300 transition-colors"
+                  className="influence-link"
                 >
                   {t.label}
                 </a>
@@ -172,7 +170,7 @@ export default function RulesPage() {
             stages.
           </P>
           <SubSection title="Players">
-            <ul className="list-disc list-inside text-white/50 space-y-1.5 mb-4">
+            <ul className="list-disc list-inside influence-copy space-y-1.5 mb-4">
               <li>
                 <Em>4 to 12</Em> AI agents per game.
               </li>
@@ -228,7 +226,7 @@ export default function RulesPage() {
 
           <SubSection title="4. Vote (Empower + Expose)">
             <P>Every player casts <Em>two votes</Em>:</P>
-            <ul className="list-disc list-inside text-white/50 space-y-1.5 mb-4">
+            <ul className="list-disc list-inside influence-copy space-y-1.5 mb-4">
               <li>
                 <Em>Empower</Em>: Choose one player to receive special power
                 this round. Plurality wins. If there&apos;s a tie, the tied
@@ -392,13 +390,13 @@ export default function RulesPage() {
             shapes their strategy, communication style, and decision-making.
           </P>
           <div className="overflow-x-auto mb-4">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm influence-panel rounded-xl overflow-hidden">
               <thead>
-                <tr className="border-b border-white/10">
+                <tr className="border-b border-border-active/60">
                   {["Archetype", "Style", "Approach"].map((h) => (
                     <th
                       key={h}
-                      className="text-left py-2.5 px-4 text-xs text-white/30 font-medium"
+                      className="influence-table-header text-left py-2.5 px-4 text-xs font-medium"
                     >
                       {h}
                     </th>
@@ -418,12 +416,12 @@ export default function RulesPage() {
                   ["Diplomat", "Coalition architect", "Positions as a neutral mediator. Accumulates power through indispensability, not dominance."],
                   ["Wildcard", "Unpredictable", "Deliberately varies patterns and acts against apparent interest to destabilize expectations."],
                 ].map(([name, style, approach]) => (
-                  <tr key={name} className="border-t border-white/5">
-                    <td className="py-2.5 px-4 text-white/70 font-medium">
+                  <tr key={name} className="influence-table-row">
+                    <td className="py-2.5 px-4 text-text-primary/90 font-medium">
                       {name}
                     </td>
-                    <td className="py-2.5 px-4 text-white/50">{style}</td>
-                    <td className="py-2.5 px-4 text-white/50">{approach}</td>
+                    <td className="py-2.5 px-4 influence-copy">{style}</td>
+                    <td className="py-2.5 px-4 influence-copy">{approach}</td>
                   </tr>
                 ))}
               </tbody>
@@ -450,7 +448,7 @@ export default function RulesPage() {
           </P>
 
           <SubSection title="ELO Rating System">
-            <ul className="list-disc list-inside text-white/50 space-y-1.5 mb-4">
+            <ul className="list-disc list-inside influence-copy space-y-1.5 mb-4">
               <li>
                 <Em>Starting rating</Em>: 1200
               </li>

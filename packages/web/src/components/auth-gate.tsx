@@ -13,18 +13,18 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   if (!effectiveReady) {
     return (
       <div className="flex items-center justify-center min-h-64">
-        <span className="text-white/40 text-sm">Loading...</span>
+        <span className="influence-copy-muted text-sm">Loading...</span>
       </div>
     );
   }
 
   if (!effectiveAuth) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-64 gap-4">
-        <p className="text-white/60">Sign in to access this page.</p>
+      <div className="influence-panel mx-auto flex min-h-64 max-w-lg flex-col items-center justify-center gap-4 rounded-xl px-6 py-10 text-center">
+        <p className="influence-copy">Sign in to access this page.</p>
         <button
           onClick={login}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg transition-colors"
+          className="influence-button-primary rounded-lg px-6 py-2"
         >
           Sign in
         </button>
