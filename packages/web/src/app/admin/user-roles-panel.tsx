@@ -97,10 +97,13 @@ function AssignRoleForm({
           value={selectedRoleId}
           onChange={(e) => setSelectedRoleId(e.target.value)}
           className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+          style={{ colorScheme: "dark" }}
         >
-          <option value="">Select role...</option>
+          <option value="" className="bg-[#0b0b0d] text-white">
+            Select role...
+          </option>
           {roles.map((r) => (
-            <option key={r.id} value={r.id}>
+            <option key={r.id} value={r.id} className="bg-[#0b0b0d] text-white">
               {r.name}
             </option>
           ))}
