@@ -283,18 +283,6 @@ function GameCard({
                 Join
               </button>
             )}
-            {isJoinable && canFill && !isReadyToStart && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void handleFill();
-                }}
-                disabled={filling}
-                className="influence-button-secondary text-xs px-3 py-1.5 rounded-lg font-medium disabled:opacity-50"
-              >
-                {filling ? "Filling…" : "Fill AI"}
-              </button>
-            )}
             {isJoinable && canStart && (
               <button
                 onClick={(e) => {
@@ -305,6 +293,18 @@ function GameCard({
                 className="influence-button-primary text-xs px-3 py-1.5 rounded-lg font-medium disabled:opacity-50"
               >
                 {starting ? "Starting…" : "Start"}
+              </button>
+            )}
+            {isJoinable && canFill && !isReadyToStart && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleFill();
+                }}
+                disabled={filling}
+                className="influence-button-secondary text-xs px-3 py-1.5 rounded-lg font-medium disabled:opacity-50"
+              >
+                {filling ? "Filling…" : "Fill AI"}
               </button>
             )}
             {canStop && (
@@ -388,7 +388,7 @@ interface GamesBrowserProps {
 }
 
 export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
-  const { isAdmin, hasPermission, hasAnyPermission } = usePermissions();
+  const { isAdmin, hasPermission } = usePermissions();
   const [filters, setFilters] = useState<FiltersState>({ status: "all", tier: "all", track: "all", search: "" });
   const [games, setGames] = useState<GameSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -447,7 +447,6 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
   const canStart = hasPermission("start_game");
   const canStop = hasPermission("stop_game");
   const canHide = hasPermission("hide_game");
-  const hasOperatorControls = hasAnyPermission("create_game", "fill_game", "start_game");
 
   const STATUS_ORDER: Record<GameStatus, number> = {
     waiting: 0,
@@ -506,27 +505,6 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
 
   return (
     <div>
-      {!compact && hasOperatorControls && (
-        <div className="influence-panel-muted rounded-xl px-4 py-4 mb-5">
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div>
-              <p className="influence-copy-strong text-sm font-medium">Operator Controls Enabled</p>
-              <p className="influence-copy-muted text-xs mt-1 max-w-2xl">
-                Game Operators can create games and manage open lobbies from this screen.
-                Use <span className="influence-copy-strong">Fill AI</span> on waiting games to seat
-                the remaining AI players, then use <span className="influence-copy-strong">Start</span>
-                once the lobby is full.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {canCreate && <span className="influence-chip influence-chip-accent text-xs px-2.5 py-1">Create</span>}
-              {canFill && <span className="influence-chip text-xs px-2.5 py-1">Fill AI</span>}
-              {canStart && <span className="influence-chip text-xs px-2.5 py-1">Start</span>}
-            </div>
-          </div>
-        </div>
-      )}
-
       {!compact && (
         <div className="flex items-center gap-3 mb-5 flex-wrap">
           <input
