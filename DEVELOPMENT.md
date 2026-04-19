@@ -195,6 +195,47 @@ The FE references these when making engine changes to avoid regressing known goo
 - Async/await throughout — no raw Promise chains.
 - Bun runtime only. No Node-specific APIs unless they're available in Bun.
 
+## Definition of Done
+
+For code-backed work, "done" means the change is ready for board review in a pull request. Branch-only work is not a finished deliverable.
+
+Required delivery sequence:
+
+1. Run the required checks and record the real result:
+   - `bun install --frozen-lockfile`
+   - `bun run typecheck`
+   - `bun run lint`
+   - `bun run test`
+2. Fix failures before moving on.
+3. Commit the change.
+4. Push the branch.
+5. Open a reviewable PR.
+6. Close out the task with the PR link plus an honest summary of what passed, what was not run, and any remaining risk.
+
+Use this closeout format in the Paperclip task comment:
+
+```md
+## Ready for Review
+
+- PR: <url>
+- Branch: <branch-name>
+- Verification:
+  - `bun install --frozen-lockfile` — passed / failed / not run
+  - `bun run typecheck` — passed / failed / not run
+  - `bun run lint` — passed / failed / not run
+  - `bun run test` — passed / failed / not run
+- Not run: none / <why>
+- Remaining risk: none / <details>
+```
+
+Closeout rules:
+
+- Feature work is not done until there is a reviewable PR link for board review.
+- Draft PRs count as progress for `in_progress` or `in_review`, not as `done`.
+- If work is intentionally partial, leave the task open and state exactly what remains.
+- If work is blocked, mark the task `blocked` with the blocker, impact, and owner needed to unblock it.
+- Documentation-only or non-code tasks may close without a PR only when no repository change is required. The closeout must say why a PR is not applicable.
+
 ## Git Practices
 
 - One logical change per commit.
