@@ -745,6 +745,15 @@ export interface FreeQueueStatus {
   } | null;
 }
 
+interface FreeQueueStatusResponse {
+  count?: number;
+  queuedCount?: number;
+  nextGameTime?: string;
+  nextGameAt?: string;
+  userEntry?: FreeQueueStatus["userEntry"];
+  todayGame?: FreeQueueStatus["todayGame"];
+}
+
 export interface LeaderboardEntry {
   rank: number;
   userId: string;
@@ -781,7 +790,14 @@ export interface PlayerProfile {
 // ---------------------------------------------------------------------------
 
 export async function getFreeQueueStatus(): Promise<FreeQueueStatus> {
-  return apiFetch("/api/free-queue");
+  const status = await apiFetch<FreeQueueStatusResponse>("/api/free-queue");
+
+  return {
+    queuedCount: status.queuedCount ?? status.count ?? 0,
+    nextGameAt: status.nextGameAt ?? status.nextGameTime ?? new Date().toISOString(),
+    userEntry: status.userEntry ?? null,
+    todayGame: status.todayGame ?? null,
+  };
 }
 
 export async function joinFreeQueue(agentProfileId: string): Promise<void> {
@@ -888,4 +904,3 @@ export async function importGame(
     body: JSON.stringify({ sourceUrl, slug }),
   });
 }
-
