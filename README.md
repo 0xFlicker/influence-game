@@ -19,7 +19,7 @@ INTRODUCTION -> LOBBY -> WHISPER -> RUMOR -> VOTE -> POWER -> REVEAL -> COUNCIL
 ### 1. Install dependencies
 
 ```bash
-cd workspace/influence-game
+cd <your-influence-game-checkout>
 bun install
 ```
 

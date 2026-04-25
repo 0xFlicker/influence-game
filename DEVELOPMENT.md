@@ -261,8 +261,8 @@ Version is tracked in two places that must stay in sync:
 
 Both agents share the project directory. To allow parallel work on different versions:
 
-- **Founding Engineer** works in `workspace/influence-game/` (on `main` or feature branches)
-- **Lead Game Designer** tests in `workspace/influence-game-test/` (a git worktree at a tagged release)
+- **Founding Engineer** works in the active project checkout (on `main` or feature branches)
+- **Lead Game Designer** tests in a separate sibling worktree at a tagged release
 
 This ensures the Engineer can continue development while the Designer tests a stable release.
 
@@ -290,7 +290,7 @@ When a set of changes is ready for testing:
 
 To test a specific release:
 
-1. From `workspace/influence-game/`, create a worktree at the tag:
+1. From the active project checkout, create a worktree at the tag:
    ```bash
    git fetch --tags
    git worktree add ../influence-game-test v0.X.Y
@@ -336,7 +336,7 @@ All Paperclip issue comments must reference specific versions:
 
 When a QA agent is added:
 
-- QA gets a dedicated worktree: `workspace/influence-game-qa/`
+- QA gets a dedicated sibling worktree for release-candidate testing
 - Release candidates use `-rc` suffix: `v0.3.0-rc.1`
 - QA tests release candidates and signs off before the final tag
 - Flow: Engineer tags `rc` → QA tests → QA approves → Engineer tags final release
