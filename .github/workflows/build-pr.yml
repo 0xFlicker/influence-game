@@ -9,9 +9,76 @@ on:
       head_sha:
         description: "PR head commit SHA"
         required: true
+  pull_request:
+    types:
+      - synchronize
+
+concurrency:
+  group: build-pr-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
 
 jobs:
+  ephemeral-status:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      should_deploy: ${{ steps.status.outputs.should_deploy }}
+      pr_number: ${{ steps.status.outputs.pr_number }}
+      head_sha: ${{ steps.status.outputs.head_sha }}
+    steps:
+      - name: Determine ephemeral redeploy eligibility
+        id: status
+        uses: actions/github-script@v7
+        env:
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+          INPUT_HEAD_SHA: ${{ inputs.head_sha }}
+        with:
+          script: |
+            if (context.eventName === 'workflow_dispatch') {
+              core.setOutput('should_deploy', 'true');
+              core.setOutput('pr_number', process.env.INPUT_PR_NUMBER);
+              core.setOutput('head_sha', process.env.INPUT_HEAD_SHA);
+              core.notice('Manual dispatch requested; deploying regardless of PR lifecycle comments.');
+              return;
+            }
+
+            const pull = context.payload.pull_request;
+            const prNumber = pull.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+
+            const lifecycle = comments
+              .filter((comment) =>
+                comment.body?.includes('### Ephemeral deployment ready') ||
+                comment.body?.includes('### Ephemeral deployment destroyed')
+              )
+              .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+            const latest = lifecycle.at(-1);
+            const shouldDeploy = latest?.body?.includes('### Ephemeral deployment ready') === true;
+
+            core.setOutput('should_deploy', shouldDeploy ? 'true' : 'false');
+            core.setOutput('pr_number', String(prNumber));
+            core.setOutput('head_sha', pull.head.sha);
+
+            if (shouldDeploy) {
+              core.notice(`Latest ephemeral lifecycle comment is ready; redeploying PR #${prNumber}.`);
+            } else if (latest) {
+              core.notice(`Latest ephemeral lifecycle comment is destroyed; skipping redeploy for PR #${prNumber}.`);
+            } else {
+              core.notice(`No live ephemeral lifecycle comment found; skipping redeploy for PR #${prNumber}.`);
+            }
+
   check:
+    needs: ephemeral-status
+    if: needs.ephemeral-status.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
 
     services:
@@ -36,7 +103,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.head_sha }}
+          ref: ${{ needs.ephemeral-status.outputs.head_sha }}
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -55,7 +122,10 @@ jobs:
         run: bun run test
 
   docker-build-push:
-    needs: check
+    needs:
+      - ephemeral-status
+      - check
+    if: needs.ephemeral-status.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -73,7 +143,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.head_sha }}
+          ref: ${{ needs.ephemeral-status.outputs.head_sha }}
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -85,13 +155,16 @@ jobs:
       - name: Build and push
         run: |
           docker build -f ${{ matrix.dockerfile }} \
-            --build-arg GIT_SHA=${{ inputs.head_sha }} \
-            -t ${{ matrix.image }}:pr-${{ inputs.pr_number }} \
+            --build-arg GIT_SHA=${{ needs.ephemeral-status.outputs.head_sha }} \
+            -t ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }} \
             .
-          docker push ${{ matrix.image }}:pr-${{ inputs.pr_number }}
+          docker push ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }}
 
   trigger-deploy:
-    needs: docker-build-push
+    needs:
+      - ephemeral-status
+      - docker-build-push
+    if: needs.ephemeral-status.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Generate GitHub App token
@@ -114,8 +187,8 @@ jobs:
               workflow_id: 'deploy-ephemeral.yml',
               ref: 'main',
               inputs: {
-                pr_number: '${{ inputs.pr_number }}',
-                image_tag: 'pr-${{ inputs.pr_number }}',
+                pr_number: '${{ needs.ephemeral-status.outputs.pr_number }}',
+                image_tag: 'pr-${{ needs.ephemeral-status.outputs.pr_number }}',
                 source_repo: '${{ github.repository }}'
               }
             });
