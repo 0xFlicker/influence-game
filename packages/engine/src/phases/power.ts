@@ -1,7 +1,59 @@
 import type { UUID } from "../types";
 import { Phase } from "../types";
+import type { PowerLobbyExposure } from "../game-runner.types";
 import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
 import { getExposeVoterNames, handleElimination } from "./elimination";
+
+function buildExposePressure(
+  ctx: PhaseRunnerContext,
+  scores: Record<UUID, number>,
+): PowerLobbyExposure[] {
+  return ctx.gameState
+    .getAlivePlayerIds()
+    .map((id) => ({
+      id,
+      name: ctx.gameState.getPlayerName(id),
+      score: scores[id] ?? 0,
+    }))
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+}
+
+async function runPowerLobbyMessages(
+  ctx: PhaseRunnerContext,
+  empoweredId: UUID,
+  provisionalCandidates: [UUID, UUID],
+  exposePressure: PowerLobbyExposure[],
+): Promise<void> {
+  const { gameState, agents, logger, contextBuilder } = ctx;
+  const candidateNames = provisionalCandidates.map((id) => gameState.getPlayerName(id));
+  const pressureSummary = exposePressure
+    .slice(0, 3)
+    .map((player) => `${player.name} (${player.score})`)
+    .join(", ");
+
+  logger.logSystem(
+    `POWER LOBBY: The vote is locked. ${gameState.getPlayerName(empoweredId)} holds power. Provisional council pressure falls on ${candidateNames.join(" and ")}. Top expose pressure: ${pressureSummary}. Protect can still change the final reveal.`,
+    Phase.POWER,
+  );
+
+  await Promise.all(
+    gameState.getAlivePlayers().map(async (player) => {
+      const agent = agents.get(player.id);
+      if (!agent?.getPowerLobbyMessage) return;
+
+      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.POWER, {
+        empoweredId,
+        councilCandidates: provisionalCandidates,
+      });
+      const { message, thinking } = await agent.getPowerLobbyMessage(
+        phaseCtx,
+        provisionalCandidates,
+        exposePressure,
+      );
+      logger.logPublic(player.id, message, Phase.POWER, { thinking });
+    }),
+  );
+}
 
 export async function runPowerPhase(
   ctx: PhaseRunnerContext,
@@ -29,6 +81,11 @@ export async function runPowerPhase(
   const sorted1 = sorted[1];
   if (!sorted0) throw new Error("No players to sort for power phase preliminary candidates");
   const prelim: [UUID, UUID] = [sorted0, sorted1 ?? sorted0];
+  const exposePressure = buildExposePressure(ctx, scores);
+
+  if (ctx.config.powerLobbyAfterVote) {
+    await runPowerLobbyMessages(ctx, empoweredId, prelim, exposePressure);
+  }
 
   const empoweredAgent = agents.get(empoweredId)!;
   const phaseCtx = contextBuilder.buildPhaseContext(empoweredId, Phase.POWER, { empoweredId, councilCandidates: prelim });

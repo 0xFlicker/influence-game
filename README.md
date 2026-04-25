@@ -11,7 +11,7 @@ INTRODUCTION -> LOBBY -> WHISPER -> RUMOR -> VOTE -> POWER -> REVEAL -> COUNCIL
 ## Prerequisites
 
 - **[Bun](https://bun.sh)** (v1.0+) -- runtime and package manager. Never use npm or pnpm.
-- **[Doppler](https://docs.doppler.com/docs/install-cli)** -- injects `OPENAI_API_KEY` and other secrets. Must be configured for the `influence-game` project before running any LLM-powered commands.
+- **[Doppler](https://docs.doppler.com/docs/install-cli)** -- injects `OPENAI_API_KEY` and other secrets from the `social-strategy-agent` project.
 - **[Docker](https://docs.docker.com/get-docker/)** -- runs the PostgreSQL 16 database container on port 54320.
 
 ## Getting Started
@@ -31,11 +31,13 @@ This runs a batch of AI-vs-AI games in the terminal -- no server or frontend nee
 
 ```bash
 # Run 3 games with 6 random agents (default)
-doppler run -- bun run simulate
+bun run simulate
 
 # Customize: 1 game, 4 specific agents
-doppler run -- bun run simulate -- --games 1 --players 4 --personas Atlas,Vera,Finn,Mira
+bun run simulate -- --games 1 --players 4 --personas Atlas,Vera,Finn,Mira
 ```
+
+The root `simulate` script injects secrets from the Doppler `social-strategy-agent` project's `dev` config. Use that dev-scoped path for local simulator validation; staging credentials are reserved for release validation.
 
 Output includes a round-by-round transcript, per-persona win rates, and token cost estimates. Transcripts are saved to `packages/engine/docs/simulations/`.
 
@@ -72,8 +74,8 @@ The frontend runs on `http://localhost:3001` (Next.js default).
 # Unit tests -- fast, no LLM calls, no secrets needed
 bun test:engine
 
-# Full integration tests -- requires Doppler for OPENAI_API_KEY
-doppler run -- bun test:engine:full
+# Full integration tests -- requires dev Doppler access for OPENAI_API_KEY
+bun run test:engine:full
 
 # All packages (unit tests only)
 bun test
@@ -173,7 +175,7 @@ Ten built-in AI personalities:
 ## Simulation CLI Reference
 
 ```bash
-doppler run -- bun run simulate -- [options]
+bun run simulate -- [options]
 
 Options:
   --games N        Number of games to run (default: 3)

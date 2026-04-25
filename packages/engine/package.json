@@ -6,9 +6,9 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
-    "simulate": "doppler run -- bun run src/simulate.ts",
-    "test": "doppler run -- bun test",
-    "test:watch": "doppler run -- bun test --watch",
+    "simulate": "doppler run --project social-strategy-agent --config dev -- bun run src/simulate.ts",
+    "test": "doppler run --project social-strategy-agent --config dev -- bun test",
+    "test:watch": "doppler run --project social-strategy-agent --config dev -- bun test --watch",
     "test:mock": "bun test src/__tests__/game-engine.test.ts src/__tests__/stream-listener.test.ts src/__tests__/goodbye-message.test.ts src/__tests__/simulation-instrumentation.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
