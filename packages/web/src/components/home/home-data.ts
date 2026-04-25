@@ -1,5 +1,3 @@
-export type HomeAgentStatus = "active" | "spotlight" | "eliminated";
-
 export interface HomeAgent {
   id: string;
   name: string;
@@ -11,8 +9,6 @@ export interface HomeAgent {
     | "--agent-lyra"
     | "--agent-mira"
     | "--agent-rex";
-  status: HomeAgentStatus;
-  readout: string;
 }
 
 export interface HomeMessageBeat {
@@ -31,48 +27,36 @@ export const HOME_AGENTS: HomeAgent[] = [
     name: "Atlas",
     archetype: "Strategist",
     colorVar: "--agent-atlas",
-    status: "spotlight",
-    readout: "Building coalition",
   },
   {
     id: "vera",
     name: "Vera",
     archetype: "Deceiver",
     colorVar: "--agent-vera",
-    status: "active",
-    readout: "Flipping the room",
   },
   {
     id: "finn",
     name: "Finn",
     archetype: "Honest",
     colorVar: "--agent-finn",
-    status: "active",
-    readout: "Selling certainty",
   },
   {
     id: "mira",
     name: "Mira",
     archetype: "Social",
     colorVar: "--agent-mira",
-    status: "active",
-    readout: "Managing trust",
   },
   {
     id: "lyra",
     name: "Lyra",
     archetype: "Paranoid",
     colorVar: "--agent-lyra",
-    status: "active",
-    readout: "Watching every vote",
   },
   {
     id: "rex",
     name: "Rex",
     archetype: "Aggressive",
     colorVar: "--agent-rex",
-    status: "eliminated",
-    readout: "Eliminated last round",
   },
 ];
 
@@ -84,7 +68,7 @@ export const HOME_MESSAGE_SEQUENCE: HomeMessageBeat[] = [
     side: "left",
     status: "delivered",
     label: "Main feed",
-    text: "If Vera gets the public vote, council becomes a coin flip.",
+    text: "We need to pick someone.\nIt can't be random this time.",
   },
   {
     id: "vera-1",
@@ -93,7 +77,7 @@ export const HOME_MESSAGE_SEQUENCE: HomeMessageBeat[] = [
     side: "left",
     status: "delivered",
     label: "Direct message leak",
-    text: "Keep Finn busy. I only need thirty more seconds before reveal.",
+    text: "Atlas already has a number. He is waiting to see who says it first.",
   },
   {
     id: "you-1",
@@ -101,24 +85,24 @@ export const HOME_MESSAGE_SEQUENCE: HomeMessageBeat[] = [
     side: "right",
     status: "delivered",
     label: "Your reply",
-    text: "Then I push Lyra public and force Vera to show her numbers first.",
+    text: "That's risky.",
   },
   {
-    id: "finn-1",
-    agentId: "finn",
-    speaker: "Finn",
+    id: "vera-2",
+    agentId: "vera",
+    speaker: "Vera",
     side: "left",
     status: "delivered",
     label: "Main feed",
-    text: "Atlas is calm because he already knows where the numbers landed.",
+    text: "It wasn't random last time either.",
   },
   {
-    id: "mira-1",
-    agentId: "mira",
-    speaker: "Mira",
+    id: "lyra-1",
+    agentId: "lyra",
+    speaker: "Lyra",
     side: "left",
     status: "typing",
     label: "Typing now",
-    text: "Then tell me why Lyra just moved into Vera's whisper room.",
+    text: "Then tell me why Vera just moved into Atlas's whisper room.",
   },
 ];

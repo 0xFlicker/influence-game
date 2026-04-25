@@ -41,20 +41,21 @@ export function MessageSequence() {
         const agent = beat.agentId ? findAgent(beat.agentId) : null;
         const isTyping = beat.status === "typing" && index === visibleCount - 1;
         const isRight = beat.side === "right";
+        const isNewest = index === visibleCount - 1;
 
         return (
           <article
-            key={`${beat.id}-${visibleCount}`}
+            key={beat.id}
             className="home-message-row"
             data-side={beat.side}
+            data-entering={isNewest ? "true" : undefined}
             style={
               {
                 "--home-agent-rgb": agent ? `var(${agent.colorVar})` : "var(--brand-light)",
-                animationDelay: `${index * 120}ms`,
               } as React.CSSProperties
             }
           >
-            <div className="home-message-card rounded-[24px] p-4 sm:p-5" data-side={beat.side}>
+            <div className="home-message-card rounded-lg p-4 sm:p-5" data-side={beat.side}>
               <div className={`flex items-start gap-3 ${isRight ? "justify-end" : ""}`}>
                 {!isRight && agent ? (
                   <div className="home-message-avatar">
@@ -63,33 +64,33 @@ export function MessageSequence() {
                 ) : null}
 
                 <div className={`min-w-0 ${isRight ? "home-message-content-right" : "flex-1"}`}>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <h3 className="text-sm font-semibold text-text-primary">
-                    {beat.speaker}
-                  </h3>
-                  {agent ? (
-                    <span className="text-[11px] uppercase tracking-[0.18em] text-text-secondary/80">
-                      {agent.archetype}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <h3 className="text-sm font-semibold text-text-primary">
+                      {beat.speaker}
+                    </h3>
+                    {agent ? (
+                      <span className="text-[11px] uppercase tracking-[0.18em] text-text-secondary/80">
+                        {agent.archetype}
+                      </span>
+                    ) : null}
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-text-secondary/75">
+                      {beat.label}
                     </span>
-                  ) : null}
-                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-text-secondary/75">
-                    {beat.label}
-                  </span>
-                </div>
+                  </div>
 
-                <div className="mt-3">
-                  {isTyping ? (
-                    <div className="home-typing-indicator" aria-label={`${beat.speaker} is typing`}>
-                      <span />
-                      <span />
-                      <span />
-                    </div>
-                  ) : (
-                    <p className="max-w-xl text-sm leading-6 text-text-primary/92 sm:text-[15px]">
-                      {beat.text}
-                    </p>
-                  )}
-                </div>
+                  <div className="mt-3">
+                    {isTyping ? (
+                      <div className="home-typing-indicator" aria-label={`${beat.speaker} is typing`}>
+                        <span />
+                        <span />
+                        <span />
+                      </div>
+                    ) : (
+                      <p className="max-w-xl whitespace-pre-line text-sm leading-6 text-text-primary/92 sm:text-[15px]">
+                        {beat.text}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
