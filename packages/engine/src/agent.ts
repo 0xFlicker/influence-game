@@ -285,16 +285,18 @@ const TOOL_SEND_ROOM_MESSAGE: ChatCompletionTool = {
       properties: {
         thinking: { type: "string", description: "Your internal reasoning for this message (hidden from other players)" },
         message: {
-          type: "string",
-          description: "Your private message to your room partner (omit if passing)",
+          type: ["string", "null"],
+          description: "Your private message to your room partner, or null when passing",
         },
         pass: {
           type: "boolean",
           description: "Set to true to pass (end your side of the conversation)",
         },
       },
-      required: ["thinking"],
+      required: ["thinking", "message", "pass"],
+      additionalProperties: false,
     },
+    strict: true,
   },
 };
 
@@ -311,7 +313,9 @@ const TOOL_CAST_VOTES: ChatCompletionTool = {
         expose: { type: "string", description: "Player name to expose" },
       },
       required: ["thinking", "empower", "expose"],
+      additionalProperties: false,
     },
+    strict: true,
   },
 };
 
@@ -332,7 +336,9 @@ const TOOL_POWER_ACTION: ChatCompletionTool = {
         target: { type: "string", description: "Player name to target" },
       },
       required: ["thinking", "action", "target"],
+      additionalProperties: false,
     },
+    strict: true,
   },
 };
 
@@ -431,6 +437,20 @@ function findByName<T extends { name: string }>(
   if (!name) return undefined;
   const n = normalizeName(name);
   return players.find((p) => normalizeName(p.name) === n);
+}
+
+class ToolCallRetryError extends Error {
+  constructor(message: string, readonly increaseTokenBudget = false) {
+    super(message);
+    this.name = "ToolCallRetryError";
+  }
+}
+
+class ToolCallFatalError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ToolCallFatalError";
+  }
 }
 
 const TOOL_STRATEGIC_REFLECTION: ChatCompletionTool = {
@@ -1639,13 +1659,37 @@ ${JSON.stringify(tool.function.parameters)}`,
         : { max_tokens: effectiveMaxTokens }),
       ...(!reasoning && { temperature: 0.7 }),
       ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
-      response_format: { type: "json_object" },
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: `${tool.function.name}_arguments`,
+          strict: true,
+          schema: tool.function.parameters ?? {
+            type: "object",
+            properties: {},
+            required: [],
+            additionalProperties: false,
+          },
+        },
+      },
     });
 
     this.recordTokenUsage(response, sourceKey);
 
+    const choice = response.choices[0];
+    const message = choice?.message;
+    if (message?.refusal) {
+      throw new ToolCallFatalError(`Model refused JSON fallback for ${tool.function.name}`);
+    }
+    if (choice?.finish_reason === "content_filter") {
+      throw new ToolCallFatalError(`JSON fallback stopped by content filter for ${tool.function.name}`);
+    }
+    if (choice?.finish_reason === "length") {
+      throw new ToolCallRetryError(`JSON fallback incomplete for ${tool.function.name}`, true);
+    }
+
     const parsed = this.parseToolArgsFromContent<T>(
-      response.choices[0]?.message?.content,
+      message?.content,
       tool.function.name,
     );
     if (!parsed) {
@@ -1802,7 +1846,7 @@ ${JSON.stringify(tool.function.parameters)}`,
     const reasoning = this.isReasoningModel();
     const useCompletionTokens = this.usesCompletionTokensParam();
     const overhead = options?.reasoningOverhead ?? InfluenceAgent.REASONING_TOKEN_OVERHEAD;
-    const effectiveMaxTokens = reasoning ? maxTokens + overhead : maxTokens;
+    let effectiveMaxTokens = reasoning ? maxTokens + overhead : maxTokens;
     const maxAttempts = 2; // 1 initial + 1 retry
     const sourceKey = options?.action ? `${this.name}/${options.action}` : this.name;
 
@@ -1822,15 +1866,28 @@ ${JSON.stringify(tool.function.parameters)}`,
           ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
           tools: [tool],
           tool_choice: { type: "function", function: { name: tool.function.name } },
+          parallel_tool_calls: false,
         });
 
         this.recordTokenUsage(response, sourceKey);
 
+        const choice = response.choices[0];
+        const message = choice?.message;
+        if (message?.refusal) {
+          throw new ToolCallFatalError(`Model refused tool call for ${tool.function.name}`);
+        }
+        if (choice?.finish_reason === "content_filter") {
+          throw new ToolCallFatalError(`Tool call stopped by content filter for ${tool.function.name}`);
+        }
+        if (choice?.finish_reason === "length") {
+          throw new ToolCallRetryError(`Tool call incomplete for ${tool.function.name}`, true);
+        }
+
         const toolCall: ChatCompletionMessageToolCall | undefined =
-          response.choices[0]?.message?.tool_calls?.[0];
+          message?.tool_calls?.[0];
         if (!toolCall) {
           const parsedContent = this.parseToolArgsFromContent<T>(
-            response.choices[0]?.message?.content,
+            message?.content,
             tool.function.name,
           );
           if (parsedContent) {
@@ -1852,7 +1909,13 @@ ${JSON.stringify(tool.function.parameters)}`,
 
         return JSON.parse(toolCall.function.arguments) as T;
       } catch (error) {
+        if (error instanceof ToolCallFatalError) {
+          throw error;
+        }
         if (attempt < maxAttempts) {
+          if (error instanceof ToolCallRetryError && error.increaseTokenBudget) {
+            effectiveMaxTokens = Math.ceil(effectiveMaxTokens * 1.5);
+          }
           const backoffMs = attempt * 1000;
           console.warn(`[${this.name}] callTool(${tool.function.name}) attempt ${attempt} failed, retrying in ${backoffMs}ms:`, error);
           await new Promise((resolve) => setTimeout(resolve, backoffMs));
