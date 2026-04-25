@@ -12,6 +12,7 @@
 
 import OpenAI from "openai";
 import { randomUUID } from "crypto";
+import { execFileSync } from "child_process";
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { GameRunner, type TranscriptEntry } from "./game-runner";
@@ -24,6 +25,14 @@ import {
   type TokenUsage,
   type CostEstimate,
 } from "./token-tracker";
+import {
+  aggregateInstrumentation,
+  instrumentGame,
+  type BatchInstrumentation,
+  type GameInstrumentation,
+  type GitMetadata,
+  type SimulationRunMetadata,
+} from "./simulation-instrumentation";
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing
@@ -34,11 +43,18 @@ interface SimArgs {
   players: number;
   personas: string[] | null;
   model: string;
+  variant: string;
 }
 
 function parseArgs(): SimArgs {
   const argv = process.argv.slice(2);
-  const args: SimArgs = { games: 3, players: 6, personas: null, model: "gpt-5-nano" };
+  const args: SimArgs = {
+    games: 3,
+    players: 6,
+    personas: null,
+    model: "gpt-5-nano",
+    variant: process.env.INFLUENCE_SIM_VARIANT ?? "baseline",
+  };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -55,6 +71,9 @@ function parseArgs(): SimArgs {
     } else if (arg === "--model" && next) {
       args.model = next;
       i++;
+    } else if (arg === "--variant" && next) {
+      args.variant = next;
+      i++;
     }
   }
 
@@ -63,6 +82,47 @@ function parseArgs(): SimArgs {
   if (args.players > 10) args.players = 10;
 
   return args;
+}
+
+function readGitField(args: string[]): string | null {
+  try {
+    return execFileSync("git", args, {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function readGitMetadata(): GitMetadata {
+  const commitSha = readGitField(["rev-parse", "HEAD"]);
+  const status = readGitField(["status", "--porcelain"]);
+
+  return {
+    branch: readGitField(["rev-parse", "--abbrev-ref", "HEAD"]),
+    commitSha,
+    commitShortSha: commitSha ? commitSha.slice(0, 7) : null,
+    isDirty: status === null ? null : status.length > 0,
+  };
+}
+
+function buildRunMetadata(args: SimArgs, timestamp: string): SimulationRunMetadata {
+  return {
+    variant: args.variant,
+    timestamp,
+    command: process.argv.join(" "),
+    cwd: process.cwd(),
+    git: readGitMetadata(),
+    args: {
+      games: args.games,
+      players: args.players,
+      personas: args.personas,
+      model: args.model,
+      variant: args.variant,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +184,7 @@ function selectCast(
 
 interface GameResult {
   gameNumber: number;
+  status: "completed" | "failed";
   winnerName: string | undefined;
   winnerPersona: string | undefined;
   rounds: number;
@@ -131,13 +192,18 @@ interface GameResult {
   endgameType: string;
   playerPersonas: Record<string, string>;
   durationMs: number;
+  transcriptPath: string;
+  jsonPath: string;
+  error?: string;
   tokenUsage: {
     perAgent: Record<string, TokenUsage>;
     total: TokenUsage;
   };
+  instrumentation: GameInstrumentation;
 }
 
 interface AggregateStats {
+  metadata: SimulationRunMetadata;
   totalGames: number;
   model: string;
   perPersona: Record<
@@ -161,6 +227,7 @@ interface AggregateStats {
     total: TokenUsage;
     costEstimates: CostEstimate[];
   };
+  instrumentation: BatchInstrumentation;
 }
 
 // ---------------------------------------------------------------------------
@@ -194,7 +261,11 @@ function getSurvivalRound(
 // Aggregate stats computation
 // ---------------------------------------------------------------------------
 
-function computeAggregateStats(results: GameResult[], model: string): AggregateStats {
+function computeAggregateStats(
+  results: GameResult[],
+  model: string,
+  metadata: SimulationRunMetadata,
+): AggregateStats {
   const perPersona: AggregateStats["perPersona"] = {};
   const perEndgameType: Record<string, number> = {};
   let totalRounds = 0;
@@ -259,6 +330,7 @@ function computeAggregateStats(results: GameResult[], model: string): AggregateS
   }
 
   return {
+    metadata,
     totalGames: results.length,
     model,
     perPersona,
@@ -272,6 +344,7 @@ function computeAggregateStats(results: GameResult[], model: string): AggregateS
       total: batchTokens,
       costEstimates: estimateCostAllModels(batchTokens),
     },
+    instrumentation: aggregateInstrumentation(results.map((result) => result.instrumentation)),
   };
 }
 
@@ -298,6 +371,10 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
 
   lines.push("# Simulation Results");
   lines.push("");
+  lines.push(`**Variant:** ${stats.metadata.variant}`);
+  lines.push(`**Git:** ${stats.metadata.git.commitShortSha ?? "unknown"} (${stats.metadata.git.branch ?? "unknown branch"}${stats.metadata.git.isDirty ? ", dirty" : ""})`);
+  lines.push(`**Command:** \`${stats.metadata.command}\``);
+  lines.push(`**Timestamp:** ${stats.metadata.timestamp}`);
   lines.push(`**Games played:** ${stats.totalGames}`);
   lines.push(`**Model:** ${stats.model}`);
   lines.push(`**Avg game length:** ${stats.overall.avgGameLength.toFixed(1)} rounds`);
@@ -305,6 +382,72 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
     `**Avg duration:** ${(stats.overall.avgDurationMs / 1000).toFixed(0)}s per game`,
   );
   lines.push("");
+
+  // Instrumentation summary
+  lines.push("## Instrumentation");
+  lines.push("");
+  lines.push("| Signal | Count |");
+  lines.push("|--------|------:|");
+  lines.push(`| Power actions | ${stats.instrumentation.powerActions.total} |`);
+  lines.push(`| Power eliminate | ${stats.instrumentation.powerActions.counts.eliminate} |`);
+  lines.push(`| Power protect | ${stats.instrumentation.powerActions.counts.protect} |`);
+  lines.push(`| Power pass | ${stats.instrumentation.powerActions.counts.pass} |`);
+  lines.push(`| Auto-eliminations | ${stats.instrumentation.autoEliminations.total} |`);
+  lines.push(`| Reveal phases | ${stats.instrumentation.council.revealPhases} |`);
+  lines.push(`| Council phases | ${stats.instrumentation.council.councilPhases} |`);
+  lines.push(`| Council votes | ${stats.instrumentation.council.councilVotes} |`);
+  lines.push(`| Reckoning markers | ${stats.instrumentation.endgame.reckoning} |`);
+  lines.push(`| Tribunal markers | ${stats.instrumentation.endgame.tribunal} |`);
+  lines.push(`| Judgment markers | ${stats.instrumentation.endgame.judgment} |`);
+  lines.push(`| Whisper rooms | ${stats.instrumentation.rooms.totalRooms} |`);
+  lines.push(`| Room exclusions | ${stats.instrumentation.rooms.totalExclusions} |`);
+  lines.push(`| Repeated room-pair occurrences | ${stats.instrumentation.rooms.repeatedPairs.totalRepeatedOccurrences} |`);
+  lines.push(`| LLM empty/fallback responses | ${stats.instrumentation.actionUsage.totalEmptyResponses} |`);
+  lines.push("");
+
+  if (Object.keys(stats.instrumentation.rooms.participationByPlayer).length > 0) {
+    lines.push("## Room Participation");
+    lines.push("");
+    lines.push("| Player | Rooms | Exclusions |");
+    lines.push("|--------|------:|-----------:|");
+    const players = new Set([
+      ...Object.keys(stats.instrumentation.rooms.participationByPlayer),
+      ...Object.keys(stats.instrumentation.rooms.exclusionsByPlayer),
+    ]);
+    for (const player of [...players].sort()) {
+      lines.push(
+        `| ${player} | ${stats.instrumentation.rooms.participationByPlayer[player] ?? 0} | ${stats.instrumentation.rooms.exclusionsByPlayer[player] ?? 0} |`,
+      );
+    }
+    lines.push("");
+  }
+
+  if (stats.instrumentation.rooms.repeatedPairs.pairs.length > 0) {
+    lines.push("## Repeated Room Pairs");
+    lines.push("");
+    lines.push("| Pair | Count | Rounds |");
+    lines.push("|------|------:|--------|");
+    for (const pair of stats.instrumentation.rooms.repeatedPairs.pairs) {
+      lines.push(`| ${pair.pair.join(" + ")} | ${pair.count} | ${pair.rounds.join(", ")} |`);
+    }
+    lines.push("");
+  }
+
+  if (Object.keys(stats.instrumentation.actionUsage.byAction).length > 0) {
+    lines.push("## LLM Action Usage");
+    lines.push("");
+    lines.push("| Action | Calls | Empty/Fallback | Empty Rate | Tokens |");
+    lines.push("|--------|------:|---------------:|-----------:|-------:|");
+    const actionEntries = Object.entries(stats.instrumentation.actionUsage.byAction).sort(
+      ([, a], [, b]) => b.callCount - a.callCount,
+    );
+    for (const [action, usage] of actionEntries) {
+      lines.push(
+        `| ${action} | ${usage.callCount} | ${usage.emptyResponses} | ${(usage.emptyResponseRate * 100).toFixed(1)}% | ${usage.totalTokens.toLocaleString()} |`,
+      );
+    }
+    lines.push("");
+  }
 
   // Per-persona table
   lines.push("## Per-Persona Stats");
@@ -403,6 +546,8 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
 
 async function main() {
   const args = parseArgs();
+  const runTimestamp = new Date().toISOString();
+  const metadata = buildRunMetadata(args, runTimestamp);
 
   if (!process.env.OPENAI_API_KEY) {
     console.error("Error: OPENAI_API_KEY not set. Run via: doppler run -- bun run simulate");
@@ -412,7 +557,8 @@ async function main() {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   console.log(`\n=== Influence Batch Simulation ===`);
-  console.log(`Games: ${args.games} | Players per game: ${args.players} | Model: ${args.model}`);
+  console.log(`Games: ${args.games} | Players per game: ${args.players} | Model: ${args.model} | Variant: ${args.variant}`);
+  console.log(`Git: ${metadata.git.commitShortSha ?? "unknown"} (${metadata.git.branch ?? "unknown branch"}${metadata.git.isDirty ? ", dirty" : ""})`);
   if (args.personas) console.log(`Personas: ${args.personas.join(", ")}`);
   console.log("");
 
@@ -439,7 +585,7 @@ async function main() {
   };
 
   // Create output directory
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const timestamp = runTimestamp.replace(/[:.]/g, "-").slice(0, 19);
   const batchDir = join(import.meta.dir, "..", "docs", "simulations", `batch-${timestamp}`);
   mkdirSync(batchDir, { recursive: true });
 
@@ -452,9 +598,11 @@ async function main() {
     // Create fresh agents for each game
     const agents = selectCast(args.players, args.personas, openai, args.model);
     const playerPersonas: Record<string, string> = {};
+    const playerNameById: Record<string, string> = {};
     const gameTracker = new TokenTracker();
     for (const agent of agents) {
       playerPersonas[agent.name] = agent.personality;
+      playerNameById[agent.id] = agent.name;
       agent.setTokenTracker(gameTracker);
     }
 
@@ -463,6 +611,8 @@ async function main() {
     const houseInterviewer = new LLMHouseInterviewer(openai, args.model);
     houseInterviewer.setTokenTracker(gameTracker);
     const runner = new GameRunner(agents, simConfig, houseInterviewer);
+    const transcriptPath = join(batchDir, `game-${g}.txt`);
+    const jsonPath = join(batchDir, `game-${g}.json`);
 
     try {
       const result = await runner.run();
@@ -472,8 +622,11 @@ async function main() {
       const endgameType = extractEndgameType(result.transcript);
 
       const gameTotalUsage = gameTracker.getTotalUsage();
+      const perAgentUsage = gameTracker.getAllUsage();
+      const instrumentation = instrumentGame(result.transcript, perAgentUsage, playerNameById);
       const gameResult: GameResult = {
         gameNumber: g,
+        status: "completed",
         winnerName: result.winnerName,
         winnerPersona: result.winnerName ? playerPersonas[result.winnerName] : undefined,
         rounds: result.rounds,
@@ -481,10 +634,13 @@ async function main() {
         endgameType,
         playerPersonas,
         durationMs,
+        transcriptPath,
+        jsonPath,
         tokenUsage: {
-          perAgent: gameTracker.getAllUsage(),
+          perAgent: perAgentUsage,
           total: gameTotalUsage,
         },
+        instrumentation,
       };
       results.push(gameResult);
 
@@ -493,13 +649,28 @@ async function main() {
       );
 
       // Save transcript
-      const transcriptPath = join(batchDir, `game-${g}.txt`);
       writeFileSync(transcriptPath, formatTranscript(result.transcript));
+      writeFileSync(
+        jsonPath,
+        JSON.stringify(
+          {
+            metadata,
+            result: gameResult,
+            transcript: result.transcript,
+          },
+          null,
+          2,
+        ),
+      );
     } catch (err) {
       const durationMs = Date.now() - startTime;
       console.error(`  Game ${g} FAILED after ${(durationMs / 1000).toFixed(0)}s: ${err}`);
-      results.push({
+      const transcript = [...runner.transcriptLog];
+      const perAgentUsage = gameTracker.getAllUsage();
+      const instrumentation = instrumentGame(transcript, perAgentUsage, playerNameById);
+      const gameResult: GameResult = {
         gameNumber: g,
+        status: "failed",
         winnerName: undefined,
         winnerPersona: undefined,
         rounds: 0,
@@ -507,16 +678,34 @@ async function main() {
         endgameType: "error",
         playerPersonas,
         durationMs,
+        transcriptPath,
+        jsonPath,
+        error: err instanceof Error ? err.message : String(err),
         tokenUsage: {
-          perAgent: gameTracker.getAllUsage(),
+          perAgent: perAgentUsage,
           total: gameTracker.getTotalUsage(),
         },
-      });
+        instrumentation,
+      };
+      results.push(gameResult);
+      writeFileSync(transcriptPath, formatTranscript(transcript));
+      writeFileSync(
+        jsonPath,
+        JSON.stringify(
+          {
+            metadata,
+            result: gameResult,
+            transcript,
+          },
+          null,
+          2,
+        ),
+      );
     }
   }
 
   // Compute aggregates
-  const stats = computeAggregateStats(results, args.model);
+  const stats = computeAggregateStats(results, args.model, metadata);
 
   // Output structured JSON
   console.log("\n=== Aggregate Stats (JSON) ===\n");
@@ -529,8 +718,20 @@ async function main() {
   // Save summary to batch directory
   writeFileSync(join(batchDir, "summary.md"), markdown);
   writeFileSync(join(batchDir, "stats.json"), JSON.stringify(stats, null, 2));
+  writeFileSync(
+    join(batchDir, "results.json"),
+    JSON.stringify(
+      {
+        metadata,
+        stats,
+        games: results,
+      },
+      null,
+      2,
+    ),
+  );
 
-  console.log(`\nTranscripts saved to: ${batchDir}`);
+  console.log(`\nSimulation artifacts saved to: ${batchDir}`);
 }
 
 main().catch((err) => {
