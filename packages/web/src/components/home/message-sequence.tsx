@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { HOME_AGENTS, HOME_MESSAGE_SEQUENCE, type HomeAgent } from "./home-data";
 
 const SEQUENCE_INTERVAL_MS = 1400;
+const TYPING_PREVIEW_MS = 620;
+const MESSAGE_TEXT_HOLD_MS = SEQUENCE_INTERVAL_MS - TYPING_PREVIEW_MS;
 const MAX_RENDERED_BEATS = 8;
 
 function findAgent(agentId: string): HomeAgent {
@@ -19,15 +21,37 @@ function findAgent(agentId: string): HomeAgent {
 
 export function MessageSequence() {
   const [cursor, setCursor] = useState(1);
+  const [activePhase, setActivePhase] = useState<"typing" | "delivered">("typing");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const activeBeatIndex = (cursor - 1) % HOME_MESSAGE_SEQUENCE.length;
+    const activeBeat = HOME_MESSAGE_SEQUENCE[activeBeatIndex];
+
+    if (!activeBeat) {
+      throw new Error(`Unknown home message beat: ${activeBeatIndex}`);
+    }
+
+    const holdsTyping = activeBeat.status === "typing";
+    const delay =
+      activePhase === "typing"
+        ? holdsTyping
+          ? SEQUENCE_INTERVAL_MS
+          : TYPING_PREVIEW_MS
+        : MESSAGE_TEXT_HOLD_MS;
+
     const timeoutId = setTimeout(() => {
+      if (activePhase === "typing" && !holdsTyping) {
+        setActivePhase("delivered");
+        return;
+      }
+
       setCursor((current) => current + 1);
-    }, SEQUENCE_INTERVAL_MS);
+      setActivePhase("typing");
+    }, delay);
 
     return () => clearTimeout(timeoutId);
-  }, [cursor]);
+  }, [activePhase, cursor]);
 
   const visibleBeats = useMemo(() => {
     const renderedCount = Math.min(cursor, MAX_RENDERED_BEATS);
@@ -74,9 +98,9 @@ export function MessageSequence() {
       <div className="home-message-stack">
         {visibleBeats.map(({ absoluteIndex, beat, key }) => {
           const agent = beat.agentId ? findAgent(beat.agentId) : null;
-          const isTyping = beat.status === "typing" && absoluteIndex === cursor - 1;
-          const isRight = beat.side === "right";
           const isNewest = absoluteIndex === cursor - 1;
+          const isTyping = isNewest && activePhase === "typing";
+          const isRight = beat.side === "right";
 
           return (
             <article
@@ -94,7 +118,7 @@ export function MessageSequence() {
               <div
                 className="home-message-card rounded-lg p-4 sm:p-5"
                 data-side={beat.side}
-                data-status={beat.status}
+                data-status={isTyping ? "typing" : beat.status}
               >
                 <div className={`flex items-start gap-3 ${isRight ? "justify-end" : ""}`}>
                   {!isRight && agent ? (
