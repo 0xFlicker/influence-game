@@ -10,10 +10,12 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import { GameState, createUUID } from "../game-state";
 import { GameEventBus } from "../event-bus";
 import { GameRunner } from "../game-runner";
+import type { AgentResponse, PhaseContext, PowerLobbyExposure } from "../game-runner";
 import { createPhaseMachine } from "../phase-machine";
 import { createActor } from "xstate";
 import { Phase, PlayerStatus } from "../types";
 import type { GameConfig } from "../types";
+import { MockAgent } from "./mock-agent";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -27,6 +29,31 @@ function defined<T>(value: T | undefined, msg = "Expected value to be defined"):
 
 function makeState(playerNames: string[]) {
   return new GameState(playerNames.map((name) => ({ id: createUUID(), name })));
+}
+
+class PowerLobbyProbeAgent extends MockAgent {
+  readonly powerLobbyCalls: Array<{
+    context: PhaseContext;
+    candidates: [string, string];
+    exposePressure: PowerLobbyExposure[];
+  }> = [];
+
+  override async getPowerLobbyMessage(
+    context: PhaseContext,
+    candidates: [string, string],
+    exposePressure: PowerLobbyExposure[],
+  ): Promise<AgentResponse> {
+    this.powerLobbyCalls.push({ context, candidates, exposePressure });
+    const empoweredName = context.alivePlayers.find((p) => p.id === context.empoweredId)?.name ?? "the empowered player";
+    const candidateNames = candidates.map(
+      (id) => context.alivePlayers.find((p) => p.id === id)?.name ?? id,
+    );
+
+    return {
+      thinking: `${this.name} addresses ${empoweredName}`,
+      message: `${empoweredName}, ${candidateNames.join(" and ")} need to answer the expose vote before you act.`,
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -219,6 +246,102 @@ describe("GameState - POWER phase", () => {
 
     gs.expireShields();
     expect(gs.getPlayer(charlie)?.shielded).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GameRunner: Power Lobby experiment
+// ---------------------------------------------------------------------------
+
+describe("GameRunner - Power Lobby after vote experiment", () => {
+  const BASE_CONFIG: GameConfig = {
+    timers: {
+      introduction: 0,
+      lobby: 0,
+      whisper: 0,
+      rumor: 0,
+      vote: 0,
+      power: 0,
+      council: 0,
+    },
+    maxRounds: 2,
+    minPlayers: 4,
+    maxPlayers: 12,
+    lobbyMessagesPerPlayer: 1,
+    whisperSessionsPerRound: 1,
+    maxWhisperExchanges: 1,
+  };
+
+  function makeAgents(): PowerLobbyProbeAgent[] {
+    return ["Alpha", "Beta", "Gamma", "Delta"].map(
+      (name) => new PowerLobbyProbeAgent(createUUID(), name),
+    );
+  }
+
+  it("logs a POWER lobby marker and one public message per alive player when enabled", async () => {
+    const agents = makeAgents();
+    const runner = new GameRunner(agents, {
+      ...BASE_CONFIG,
+      powerLobbyAfterVote: true,
+    });
+
+    const result = await runner.run();
+    const firstRoundPowerTranscript = result.transcript.filter(
+      (entry) => entry.round === 1 && entry.phase === Phase.POWER,
+    );
+    const marker = firstRoundPowerTranscript.find(
+      (entry) => entry.scope === "system" && entry.text.startsWith("POWER LOBBY:"),
+    );
+    const publicMessages = firstRoundPowerTranscript.filter((entry) => entry.scope === "public");
+    const powerAction = firstRoundPowerTranscript.find(
+      (entry) => entry.scope === "system" && entry.text.includes("power action:"),
+    );
+
+    expect(marker).toBeDefined();
+    expect(marker?.text).toContain("The vote is locked");
+    expect(marker?.text).toContain("Provisional council pressure");
+    expect(publicMessages).toHaveLength(4);
+    expect(powerAction).toBeDefined();
+    expect(firstRoundPowerTranscript.indexOf(marker!)).toBeLessThan(
+      firstRoundPowerTranscript.indexOf(powerAction!),
+    );
+    expect(firstRoundPowerTranscript.indexOf(publicMessages.at(-1)!)).toBeLessThan(
+      firstRoundPowerTranscript.indexOf(powerAction!),
+    );
+
+    for (const agent of agents) {
+      expect(agent.powerLobbyCalls.length).toBeGreaterThanOrEqual(1);
+      const call = agent.powerLobbyCalls[0]!;
+      expect(call.context.phase).toBe(Phase.POWER);
+      expect(call.context.empoweredId).toBeDefined();
+      expect(call.context.councilCandidates).toEqual(call.candidates);
+      for (let i = 1; i < call.exposePressure.length; i++) {
+        expect(call.exposePressure[i - 1]!.score).toBeGreaterThanOrEqual(
+          call.exposePressure[i]!.score,
+        );
+      }
+    }
+  });
+
+  it("does not run the Power Lobby sub-step when the experiment flag is off", async () => {
+    const agents = makeAgents();
+    const runner = new GameRunner(agents, BASE_CONFIG);
+
+    const result = await runner.run();
+
+    expect(
+      result.transcript.some(
+        (entry) => entry.phase === Phase.POWER && entry.text.startsWith("POWER LOBBY:"),
+      ),
+    ).toBe(false);
+    expect(
+      result.transcript.some(
+        (entry) => entry.phase === Phase.POWER && entry.scope === "public",
+      ),
+    ).toBe(false);
+    for (const agent of agents) {
+      expect(agent.powerLobbyCalls).toHaveLength(0);
+    }
   });
 });
 

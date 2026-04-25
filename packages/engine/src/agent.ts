@@ -11,7 +11,7 @@ import type {
   ChatCompletionMessageToolCall,
 } from "openai/resources/chat/completions";
 import type { ReasoningEffort } from "openai/resources/shared";
-import type { AgentResponse, IAgent, PhaseContext } from "./game-runner";
+import type { AgentResponse, IAgent, PhaseContext, PowerLobbyExposure } from "./game-runner";
 import { Phase } from "./types";
 import type { UUID, PowerAction } from "./types";
 import type { MemoryStore } from "./memory-store";
@@ -954,6 +954,44 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getVotes error="${err instanceof Error ? err.message : err}" fallback=empower:"${empFallback.name}",expose:"${expFallback.name}"`);
       return { empowerTarget: empFallback.id, exposeTarget: expFallback.id };
     }
+  }
+
+  async getPowerLobbyMessage(
+    ctx: PhaseContext,
+    candidates: [UUID, UUID],
+    exposePressure: PowerLobbyExposure[],
+  ): Promise<AgentResponse> {
+    const empoweredName = ctx.alivePlayers.find((p) => p.id === ctx.empoweredId)?.name ?? "the empowered player";
+    const candidateNames = candidates.map(
+      (id) => ctx.alivePlayers.find((p) => p.id === id)?.name ?? id,
+    );
+    const pressureSummary = exposePressure
+      .slice(0, 3)
+      .map((player) => `${player.name}: ${player.score}`)
+      .join(", ");
+    const selfIsCandidate = candidates.includes(this.id);
+    const selfIsEmpowered = ctx.empoweredId === this.id;
+
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
+## Power Lobby After Vote
+The votes are locked. ${empoweredName} is empowered.
+The provisional council candidates are ${candidateNames.join(" and ")}.
+Top expose pressure: ${pressureSummary}.
+
+You have one short public message before ${empoweredName} uses power.
+${selfIsEmpowered ? "You hold power. Answer the public pressure without promising more than you mean." : ""}
+${selfIsCandidate ? "You are under direct council pressure. Defend yourself, redirect suspicion, or offer a concrete deal." : ""}
+
+Make a concrete plea, offer a named deal, pressure ${empoweredName}, defend yourself,
+or explain why another player is the real threat. Avoid generic social talk.
+Keep it to 1-2 sentences.`;
+
+    return this.callLLMWithThinking(prompt, 180, sys, {
+      action: "power-lobby",
+      reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW,
+      reasoningEffort: "low",
+    });
   }
 
   async getPowerAction(

@@ -125,6 +125,10 @@ function buildRunMetadata(args: SimArgs, timestamp: string): SimulationRunMetada
   };
 }
 
+function isPowerLobbyVariant(variant: string): boolean {
+  return ["power-lobby", "power-lobby-after-vote"].includes(variant.toLowerCase());
+}
+
 // ---------------------------------------------------------------------------
 // Cast of available personas
 // ---------------------------------------------------------------------------
@@ -582,6 +586,7 @@ async function main() {
       juryVote: 0,
     },
     maxRounds: 10,
+    powerLobbyAfterVote: isPowerLobbyVariant(args.variant),
   };
 
   // Create output directory
