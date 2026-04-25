@@ -728,7 +728,7 @@ a {
 }
 
 .home-scene-panel {
-  min-height: min(36rem, calc(100vh - 140px));
+  min-height: clamp(32rem, calc(100vh - 140px), 38rem);
   border: 1px solid rgb(255 255 255 / 0.12);
   background:
     linear-gradient(
@@ -957,7 +957,7 @@ a {
   }
 
   .home-scene-panel {
-    min-height: auto;
+    min-height: clamp(28rem, 62vh, 34rem);
   }
 
   .home-message-card[data-side="right"] {
