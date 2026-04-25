@@ -114,4 +114,80 @@ describe("simulation instrumentation", () => {
     expect(aggregate.actionUsage.byAction.power?.callCount).toBe(2);
     expect(aggregate.actionUsage.bySource["Atlas/power"]?.totalTokens).toBe(50);
   });
+
+  it("handles 8-player room participation, exclusions, and repeated pairs", () => {
+    const playerNameById = {
+      p0: "Atlas",
+      p1: "Vera",
+      p2: "Finn",
+      p3: "Mira",
+      p4: "Rex",
+      p5: "Lyra",
+      p6: "Kael",
+      p7: "Echo",
+    };
+
+    const transcript: TranscriptEntry[] = [
+      {
+        ...systemEntry(
+          1,
+          Phase.WHISPER,
+          "Room 1: Atlas & Vera | Room 2: Finn & Mira | Room 3: Rex & Lyra | Commons: Kael, Echo",
+        ),
+        roomMetadata: {
+          rooms: [
+            { roomId: 1, playerA: "p0", playerB: "p1", round: 1 },
+            { roomId: 2, playerA: "p2", playerB: "p3", round: 1 },
+            { roomId: 3, playerA: "p4", playerB: "p5", round: 1 },
+          ],
+          excluded: ["Kael", "Echo"],
+        },
+      },
+      {
+        ...systemEntry(
+          2,
+          Phase.WHISPER,
+          "Room 1: Vera & Atlas | Room 2: Kael & Echo | Room 3: Finn & Rex | Commons: Mira, Lyra",
+        ),
+        roomMetadata: {
+          rooms: [
+            { roomId: 1, playerA: "p1", playerB: "p0", round: 2 },
+            { roomId: 2, playerA: "p6", playerB: "p7", round: 2 },
+            { roomId: 3, playerA: "p2", playerB: "p4", round: 2 },
+          ],
+          excluded: ["Mira", "Lyra"],
+        },
+      },
+      systemEntry(2, Phase.POWER, "Rex power action: pass -> Atlas"),
+    ];
+
+    const instrumentation = instrumentGame(
+      transcript,
+      {
+        "Atlas/room-request": usage({ callCount: 2, totalTokens: 80 }),
+        "Rex/power": usage({ callCount: 1, totalTokens: 40 }),
+      },
+      playerNameById,
+    );
+
+    expect(instrumentation.rooms.totalRooms).toBe(6);
+    expect(instrumentation.rooms.whisperRounds).toBe(2);
+    expect(instrumentation.rooms.totalExclusions).toBe(4);
+    expect(instrumentation.rooms.participationByPlayer.Atlas).toBe(2);
+    expect(instrumentation.rooms.participationByPlayer.Vera).toBe(2);
+    expect(instrumentation.rooms.participationByPlayer.Finn).toBe(2);
+    expect(instrumentation.rooms.participationByPlayer.Rex).toBe(2);
+    expect(instrumentation.rooms.exclusionsByPlayer.Kael).toBe(1);
+    expect(instrumentation.rooms.exclusionsByPlayer.Echo).toBe(1);
+    expect(instrumentation.rooms.exclusionsByPlayer.Mira).toBe(1);
+    expect(instrumentation.rooms.exclusionsByPlayer.Lyra).toBe(1);
+    expect(instrumentation.rooms.repeatedPairs.totalRepeatedOccurrences).toBe(1);
+    expect(instrumentation.rooms.repeatedPairs.maxPairCount).toBe(2);
+    expect(instrumentation.rooms.repeatedPairs.maxPairShareOfRooms).toBeCloseTo(2 / 6);
+    expect(instrumentation.rooms.repeatedPairs.maxPairShareOfWhisperRounds).toBe(1);
+    expect(instrumentation.rooms.repeatedPairs.pairs[0]?.pair).toEqual(["Atlas", "Vera"]);
+    expect(instrumentation.powerActions.counts.pass).toBe(1);
+    expect(instrumentation.actionUsage.byAction["room-request"]?.callCount).toBe(2);
+    expect(instrumentation.actionUsage.byAction.power?.totalTokens).toBe(40);
+  });
 });
