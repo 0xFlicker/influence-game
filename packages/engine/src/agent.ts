@@ -7,6 +7,7 @@
 
 import OpenAI from "openai";
 import type {
+  ChatCompletion,
   ChatCompletionTool,
   ChatCompletionMessageToolCall,
 } from "openai/resources/chat/completions";
@@ -1533,6 +1534,128 @@ ${roomSection}
     },
   };
 
+  private recordTokenUsage(response: ChatCompletion, sourceKey: string): void {
+    if (!this.tokenTracker || !response.usage) return;
+
+    const reasoningTk = (response.usage as unknown as Record<string, unknown>).completion_tokens_details
+      ? ((response.usage as unknown as Record<string, unknown>).completion_tokens_details as Record<string, number>)?.reasoning_tokens ?? 0
+      : 0;
+    this.tokenTracker.record(
+      sourceKey,
+      response.usage.prompt_tokens,
+      response.usage.completion_tokens,
+      response.usage.prompt_tokens_details?.cached_tokens ?? 0,
+      reasoningTk,
+    );
+  }
+
+  private static extractFirstJsonObject(text: string): string | null {
+    const start = text.indexOf("{");
+    if (start === -1) return null;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = start; i < text.length; i++) {
+      const char = text[i];
+
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === "\"") {
+        inString = !inString;
+        continue;
+      }
+      if (inString) continue;
+
+      if (char === "{") depth++;
+      if (char === "}") depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+
+    return null;
+  }
+
+  private parseToolArgsFromContent<T>(content: string | null | undefined, toolName: string): T | null {
+    const text = content?.trim();
+    if (!text) return null;
+
+    const fencedJson = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
+    const extractedJson = InfluenceAgent.extractFirstJsonObject(text);
+    const candidates = [text, fencedJson, extractedJson].filter((candidate): candidate is string => Boolean(candidate));
+
+    for (const candidate of candidates) {
+      try {
+        const parsed = JSON.parse(candidate) as unknown;
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+
+        const record = parsed as Record<string, unknown>;
+        const wrappedArgs = record.arguments ?? record[toolName];
+        if (wrappedArgs && typeof wrappedArgs === "object" && !Array.isArray(wrappedArgs)) {
+          return wrappedArgs as T;
+        }
+
+        return record as T;
+      } catch {
+        // Try the next candidate; models sometimes wrap JSON in markdown or prose.
+      }
+    }
+
+    return null;
+  }
+
+  private async callToolJsonFallback<T>(
+    prompt: string,
+    tool: ChatCompletionTool,
+    effectiveMaxTokens: number,
+    useCompletionTokens: boolean,
+    reasoning: boolean,
+    systemPrompt: string | undefined,
+    options: { action?: string; reasoningEffort?: ReasoningEffort } | undefined,
+    sourceKey: string,
+  ): Promise<T> {
+    const messages: Array<{ role: "system" | "user"; content: string }> = [];
+    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
+    messages.push({
+      role: "user",
+      content: `${prompt}
+
+The forced tool call did not produce a function call. Return one valid JSON object only.
+It must contain the arguments for the ${tool.function.name} tool and match this JSON schema:
+${JSON.stringify(tool.function.parameters)}`,
+    });
+
+    const response = await this.openai.chat.completions.create({
+      model: this.model,
+      messages,
+      ...(useCompletionTokens
+        ? { max_completion_tokens: effectiveMaxTokens }
+        : { max_tokens: effectiveMaxTokens }),
+      ...(!reasoning && { temperature: 0.7 }),
+      ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
+      response_format: { type: "json_object" },
+    });
+
+    this.recordTokenUsage(response, sourceKey);
+
+    const parsed = this.parseToolArgsFromContent<T>(
+      response.choices[0]?.message?.content,
+      tool.function.name,
+    );
+    if (!parsed) {
+      throw new Error(`JSON fallback returned invalid arguments for ${tool.function.name}`);
+    }
+
+    console.warn(`[tool-fallback] agent="${this.name}" tool=${tool.function.name} source=json_response`);
+    return parsed;
+  }
+
   /** Free-text LLM call for communication (introductions, lobby, rumor, etc.) */
   private async callLLM(
     prompt: string,
@@ -1563,18 +1686,7 @@ ${roomSection}
           ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
         });
 
-        if (this.tokenTracker && response.usage) {
-          const reasoningTk = (response.usage as unknown as Record<string, unknown>).completion_tokens_details
-            ? ((response.usage as unknown as Record<string, unknown>).completion_tokens_details as Record<string, number>)?.reasoning_tokens ?? 0
-            : 0;
-          this.tokenTracker.record(
-            sourceKey,
-            response.usage.prompt_tokens,
-            response.usage.completion_tokens,
-            response.usage.prompt_tokens_details?.cached_tokens ?? 0,
-            reasoningTk,
-          );
-        }
+        this.recordTokenUsage(response, sourceKey);
 
         let text = response.choices[0]?.message?.content?.trim() ?? "";
         // Strip wrapping double quotes that LLMs sometimes add
@@ -1637,18 +1749,7 @@ ${roomSection}
           response_format: InfluenceAgent.AGENT_RESPONSE_FORMAT,
         });
 
-        if (this.tokenTracker && response.usage) {
-          const reasoningTk = (response.usage as unknown as Record<string, unknown>).completion_tokens_details
-            ? ((response.usage as unknown as Record<string, unknown>).completion_tokens_details as Record<string, number>)?.reasoning_tokens ?? 0
-            : 0;
-          this.tokenTracker.record(
-            sourceKey,
-            response.usage.prompt_tokens,
-            response.usage.completion_tokens,
-            response.usage.prompt_tokens_details?.cached_tokens ?? 0,
-            reasoningTk,
-          );
-        }
+        this.recordTokenUsage(response, sourceKey);
 
         const content = response.choices[0]?.message?.content?.trim() ?? "";
         if (!content) {
@@ -1723,23 +1824,30 @@ ${roomSection}
           tool_choice: { type: "function", function: { name: tool.function.name } },
         });
 
-        if (this.tokenTracker && response.usage) {
-          const reasoningTk = (response.usage as unknown as Record<string, unknown>).completion_tokens_details
-            ? ((response.usage as unknown as Record<string, unknown>).completion_tokens_details as Record<string, number>)?.reasoning_tokens ?? 0
-            : 0;
-          this.tokenTracker.record(
-            sourceKey,
-            response.usage.prompt_tokens,
-            response.usage.completion_tokens,
-            response.usage.prompt_tokens_details?.cached_tokens ?? 0,
-            reasoningTk,
-          );
-        }
+        this.recordTokenUsage(response, sourceKey);
 
         const toolCall: ChatCompletionMessageToolCall | undefined =
           response.choices[0]?.message?.tool_calls?.[0];
         if (!toolCall) {
-          throw new Error(`No tool call returned for ${tool.function.name}`);
+          const parsedContent = this.parseToolArgsFromContent<T>(
+            response.choices[0]?.message?.content,
+            tool.function.name,
+          );
+          if (parsedContent) {
+            console.warn(`[tool-fallback] agent="${this.name}" tool=${tool.function.name} source=message_content`);
+            return parsedContent;
+          }
+
+          return await this.callToolJsonFallback<T>(
+            prompt,
+            tool,
+            effectiveMaxTokens,
+            useCompletionTokens,
+            reasoning,
+            systemPrompt,
+            options,
+            sourceKey,
+          );
         }
 
         return JSON.parse(toolCall.function.arguments) as T;
