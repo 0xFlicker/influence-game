@@ -5,9 +5,9 @@
  * Runs multiple game simulations and outputs structured analysis.
  *
  * Usage:
- *   doppler run -- bun run simulate
- *   doppler run -- bun run simulate -- --games 5 --players 6
- *   doppler run -- bun run simulate -- --games 3 --players 4 --personas Atlas,Vera,Finn,Mira
+ *   bun run simulate
+ *   bun run simulate -- --games 5 --players 6
+ *   bun run simulate -- --games 3 --players 4 --personas Atlas,Vera,Finn,Mira
  */
 
 import OpenAI from "openai";
@@ -554,7 +554,9 @@ async function main() {
   const metadata = buildRunMetadata(args, runTimestamp);
 
   if (!process.env.OPENAI_API_KEY) {
-    console.error("Error: OPENAI_API_KEY not set. Run via: doppler run -- bun run simulate");
+    console.error(
+      "Error: OPENAI_API_KEY not set. Run from the repo root via: bun run simulate",
+    );
     process.exit(1);
   }
 
