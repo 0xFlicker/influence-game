@@ -6,6 +6,10 @@
 
 - 
 
+## Start-of-Work Sync
+
+- [ ] Before editing, I checked branch/worktree status, fetched `origin`, updated local `main`, and started or reconciled this branch against latest `main`.
+
 ## Verification
 
 - [ ] `bun install --frozen-lockfile`

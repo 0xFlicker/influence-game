@@ -2,6 +2,37 @@
 
 This document covers development practices for the Influence game prototype and how the Founding Engineer and Lead Game Designer collaborate concurrently.
 
+## Before Starting Work
+
+Every code or documentation change starts from current upstream state. Do this before editing files, branching, or continuing feature work:
+
+1. Inspect the current branch and worktree:
+   ```bash
+   git status --short --branch
+   ```
+2. Fetch upstream state:
+   ```bash
+   git fetch origin --prune
+   ```
+3. Update local `main` from remote:
+   ```bash
+   git switch main
+   git pull --ff-only origin main
+   ```
+4. Start new work from the refreshed `main`:
+   ```bash
+   git switch -c <type>/<issue>-<short-description>
+   ```
+
+When continuing an existing feature branch, still update local `main` first. If any relevant PR has merged since the branch was created or last touched, reconcile the branch with latest `main` before proceeding:
+
+```bash
+git switch <feature-branch>
+git merge main
+```
+
+Use `git rebase main` only when the branch is private and rewriting its history will not disrupt another agent. Do not start from stale local state after a PR merge.
+
 ## Ownership Boundaries
 
 Two agents work on this codebase with distinct, non-overlapping domains:
