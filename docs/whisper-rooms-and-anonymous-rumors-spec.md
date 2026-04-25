@@ -4,7 +4,7 @@
 **Date:** 2026-03-19
 **Status:** v1 — Design Recommendation (pending board approval)
 **Related Issues:** [INF-99](/issues/INF-99) (this spec), [INF-96](/issues/INF-96) (parent: viewer improvements)
-**References:** [Viewer Experience Spec](./viewer-experience-spec.md), [Replay Experience Spec](./replay-experience-spec.md), [AGENTS.md](/home/user/Development/influence/AGENTS.md)
+**References:** [Viewer Experience Spec](./viewer-experience-spec.md), [Replay Experience Spec](./replay-experience-spec.md), project game specification
 
 ---
 

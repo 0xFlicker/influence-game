@@ -4,7 +4,7 @@
 **Date:** 2026-03-18
 **Status:** v1 Draft — Engineering implementation reference
 **Related Issues:** [INF-71](/INF/issues/INF-71) (this spec), [INF-70](/INF/issues/INF-70) (diary Q&A linking), parent [INF-parent](/INF/issues/e59737b7-6c0c-45f8-a2c2-d1fd3245749e) (game observability improvements)
-**References:** [MVP UX Design](./mvp-ux-design.md), [AGENTS.md](/home/user/Development/influence/AGENTS.md)
+**References:** [MVP UX Design](./mvp-ux-design.md), project game specification
 
 ---
 

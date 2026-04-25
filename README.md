@@ -21,7 +21,7 @@ Before making repository changes, follow the current-main sync workflow in [`DEV
 ### 1. Install dependencies
 
 ```bash
-cd workspace/influence-game
+cd <your-influence-game-checkout>
 bun install
 ```
 

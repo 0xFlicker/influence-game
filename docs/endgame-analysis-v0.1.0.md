@@ -167,4 +167,4 @@ bun test v1.3.10
 Ran 3 tests across 1 file. [206.40s]
 ```
 
-Tests run from worktree `workspace/influence-game-test` at tag `v0.1.0`.
+Tests run from a separate release-test worktree at tag `v0.1.0`.
