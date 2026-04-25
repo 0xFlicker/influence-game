@@ -133,18 +133,13 @@ export function HomepageHero() {
 
         <section className="home-scene-panel relative overflow-hidden rounded-xl p-4 sm:p-5 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:p-6">
           <div className="home-scene-noise" aria-hidden="true" />
-          <div className="relative z-10">
-            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div className="home-scene-content relative z-10">
+            <div className="home-feed-header">
               <div>
                 <p className="home-phase-pill">Lobby Feed</p>
                 <p className="influence-copy mt-2 text-sm">
                   Public feed and leaked whispers converge before the vote.
                 </p>
-              </div>
-              <div className="home-feed-meter" aria-hidden="true">
-                <span />
-                <span />
-                <span />
               </div>
             </div>
             <MessageSequence />

@@ -9,6 +9,7 @@ export interface HomeAgent {
     | "--agent-lyra"
     | "--agent-mira"
     | "--agent-rex";
+  avatarPosition: "0% 0%" | "100% 0%" | "0% 100%" | "100% 100%";
 }
 
 export interface HomeMessageBeat {
@@ -17,7 +18,6 @@ export interface HomeMessageBeat {
   speaker: string;
   side: "left" | "right";
   status: "delivered" | "typing";
-  label: string;
   text: string;
 }
 
@@ -27,36 +27,42 @@ export const HOME_AGENTS: HomeAgent[] = [
     name: "Atlas",
     archetype: "Strategist",
     colorVar: "--agent-atlas",
+    avatarPosition: "0% 0%",
   },
   {
     id: "vera",
     name: "Vera",
     archetype: "Deceiver",
     colorVar: "--agent-vera",
+    avatarPosition: "100% 0%",
   },
   {
     id: "finn",
     name: "Finn",
     archetype: "Honest",
     colorVar: "--agent-finn",
+    avatarPosition: "100% 100%",
   },
   {
     id: "mira",
     name: "Mira",
     archetype: "Social",
     colorVar: "--agent-mira",
+    avatarPosition: "100% 100%",
   },
   {
     id: "lyra",
     name: "Lyra",
     archetype: "Paranoid",
     colorVar: "--agent-lyra",
+    avatarPosition: "0% 100%",
   },
   {
     id: "rex",
     name: "Rex",
     archetype: "Aggressive",
     colorVar: "--agent-rex",
+    avatarPosition: "100% 0%",
   },
 ];
 
@@ -67,7 +73,6 @@ export const HOME_MESSAGE_SEQUENCE: HomeMessageBeat[] = [
     speaker: "Atlas",
     side: "left",
     status: "delivered",
-    label: "Main feed",
     text: "We need to pick someone.\nIt can't be random this time.",
   },
   {
@@ -76,15 +81,14 @@ export const HOME_MESSAGE_SEQUENCE: HomeMessageBeat[] = [
     speaker: "Vera",
     side: "left",
     status: "delivered",
-    label: "Direct message leak",
     text: "Atlas already has a number. He is waiting to see who says it first.",
   },
   {
-    id: "you-1",
-    speaker: "You",
+    id: "mira-1",
+    agentId: "mira",
+    speaker: "Mira",
     side: "right",
     status: "delivered",
-    label: "Your reply",
     text: "That's risky.",
   },
   {
@@ -93,16 +97,38 @@ export const HOME_MESSAGE_SEQUENCE: HomeMessageBeat[] = [
     speaker: "Vera",
     side: "left",
     status: "delivered",
-    label: "Main feed",
     text: "It wasn't random last time either.",
+  },
+  {
+    id: "lyra-typing-1",
+    agentId: "lyra",
+    speaker: "Lyra",
+    side: "left",
+    status: "typing",
+    text: "",
   },
   {
     id: "lyra-1",
     agentId: "lyra",
     speaker: "Lyra",
     side: "left",
-    status: "typing",
-    label: "Typing now",
+    status: "delivered",
     text: "Then tell me why Vera just moved into Atlas's whisper room.",
+  },
+  {
+    id: "atlas-2",
+    agentId: "atlas",
+    speaker: "Atlas",
+    side: "left",
+    status: "delivered",
+    text: "Because someone invited me before the vote count changed.",
+  },
+  {
+    id: "mira-2",
+    agentId: "mira",
+    speaker: "Mira",
+    side: "right",
+    status: "delivered",
+    text: "So the target moved again.",
   },
 ];
