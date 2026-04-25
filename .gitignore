@@ -13,3 +13,4 @@ docs/simulations/
 e2e-screenshots/
 test-results/
 .DS_Store
+.agents/
