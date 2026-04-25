@@ -208,6 +208,8 @@ describe("goodbye message handling", () => {
 
 type OpenAIStubResponse = {
   content?: string | null;
+  finishReason?: string;
+  refusal?: string | null;
   toolName?: string;
   toolArguments?: string;
 };
@@ -244,11 +246,11 @@ function makeOpenAIStub(responses: OpenAIStubResponse[]): { openai: OpenAI; call
               choices: [
                 {
                   index: 0,
-                  finish_reason: toolCalls ? "tool_calls" : "stop",
+                  finish_reason: response.finishReason ?? (toolCalls ? "tool_calls" : "stop"),
                   message: {
                     role: "assistant",
                     content: response.content ?? null,
-                    refusal: null,
+                    refusal: response.refusal ?? null,
                     tool_calls: toolCalls,
                   },
                 },
@@ -288,7 +290,7 @@ function makeAgentContext(phase: Phase = Phase.VOTE): PhaseContext {
 
 describe("InfluenceAgent tool-call fallbacks", () => {
   test("sendRoomMessage accepts JSON arguments returned as assistant content", async () => {
-    const { openai } = makeOpenAIStub([
+    const { openai, calls } = makeOpenAIStub([
       {
         content: JSON.stringify({
           thinking: "Build trust, then steer the next vote.",
@@ -305,6 +307,13 @@ describe("InfluenceAgent tool-call fallbacks", () => {
       thinking: "Build trust, then steer the next vote.",
       message: "Vera, I think we can keep heat off each other if we both watch Mira's next move.",
     });
+
+    const tool = (calls[0]?.tools as Array<{
+      function: { strict?: boolean; parameters?: { required?: string[]; additionalProperties?: unknown } };
+    }>)[0];
+    expect(tool?.function.strict).toBe(true);
+    expect(tool?.function.parameters?.required).toEqual(["thinking", "message", "pass"]);
+    expect(tool?.function.parameters?.additionalProperties).toBe(false);
   });
 
   test("getVotes accepts JSON arguments returned as assistant content", async () => {
@@ -327,9 +336,36 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     });
   });
 
-  test("getPowerAction retries with JSON mode when the forced tool call is empty", async () => {
+  test("getPowerAction retries with more tokens when the forced tool call is incomplete", async () => {
     const { openai, calls } = makeOpenAIStub([
-      { content: null },
+      { content: null, finishReason: "length" },
+      {
+        toolName: "use_power",
+        toolArguments: JSON.stringify({
+          thinking: "Take the shot before the council can scatter.",
+          action: "eliminate",
+          target: "Mira",
+        }),
+      },
+    ]);
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
+
+    const action = await agent.getPowerAction(
+      makeAgentContext(Phase.POWER),
+      ["vera-id", "mira-id"],
+    );
+
+    expect(action).toEqual({
+      action: "eliminate",
+      target: "mira-id",
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.max_completion_tokens).toBeGreaterThan(calls[0]?.max_completion_tokens as number);
+  });
+
+  test("getPowerAction retries with strict JSON schema when a completed response has no tool call", async () => {
+    const { openai, calls } = makeOpenAIStub([
+      { content: null, finishReason: "stop" },
       {
         content: JSON.stringify({
           thinking: "Take the shot before the council can scatter.",
@@ -350,6 +386,51 @@ describe("InfluenceAgent tool-call fallbacks", () => {
       target: "mira-id",
     });
     expect(calls).toHaveLength(2);
-    expect(calls[1]?.response_format).toEqual({ type: "json_object" });
+    expect(calls[1]?.response_format).toEqual({
+      type: "json_schema",
+      json_schema: {
+        name: "use_power_arguments",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            thinking: { type: "string", description: "Your internal reasoning for this decision (hidden from other players)" },
+            action: {
+              type: "string",
+              enum: ["eliminate", "protect", "pass"],
+              description: "The power action to take",
+            },
+            target: { type: "string", description: "Player name to target" },
+          },
+          required: ["thinking", "action", "target"],
+          additionalProperties: false,
+        },
+      },
+    });
+  });
+
+  test("getPowerAction does not retry a refusal through JSON fallback", async () => {
+    const { openai, calls } = makeOpenAIStub([
+      { content: null, refusal: "I cannot comply with that request." },
+      {
+        content: JSON.stringify({
+          thinking: "This response should not be requested.",
+          action: "eliminate",
+          target: "Mira",
+        }),
+      },
+    ]);
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
+
+    const action = await agent.getPowerAction(
+      makeAgentContext(Phase.POWER),
+      ["vera-id", "mira-id"],
+    );
+
+    expect(action).toEqual({
+      action: "pass",
+      target: "vera-id",
+    });
+    expect(calls).toHaveLength(1);
   });
 });
