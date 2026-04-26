@@ -315,6 +315,8 @@ export interface GameConfig {
   maxWhisperExchanges?: number;
   /** Number of whisper sessions per round (default 2). Each session allocates new rooms. */
   whisperSessionsPerRound?: number;
+  /** Simulator experiment flag: avoid honoring repeat whisper-room pair requests. */
+  experimentalAntiRepeatWhisperRooms?: boolean;
 }
 
 export const DEFAULT_CONFIG: GameConfig = {

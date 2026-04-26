@@ -13,7 +13,8 @@ import { GameRunner } from "../game-runner";
 import { createPhaseMachine } from "../phase-machine";
 import { createActor } from "xstate";
 import { Phase, PlayerStatus } from "../types";
-import type { GameConfig } from "../types";
+import type { GameConfig, PowerAction, UUID } from "../types";
+import type { PhaseContext } from "../game-runner";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -1431,5 +1432,76 @@ describe("Whisper Rooms", () => {
     expect(allocationMsg).toBeDefined();
     expect(allocationMsg!.text).toContain("Room 1:");
     expect(allocationMsg!.text).toContain("Room 2:");
+  });
+
+  it("anti-repeat experiment logs broken repeat room preferences in the transcript", async () => {
+    const { MockAgent } = await import("./mock-agent");
+    const preferredPartners = new Map([
+      ["Alpha", "Beta"],
+      ["Beta", "Alpha"],
+      ["Gamma", "Delta"],
+      ["Delta", "Gamma"],
+      ["Echo", "Alpha"],
+      ["Foxtrot", "Echo"],
+    ]);
+
+    class RepeatPreferenceAgent extends MockAgent {
+      async requestRoom(ctx: PhaseContext): Promise<UUID | null> {
+        const preferredName = preferredPartners.get(this.name);
+        const preferred = ctx.alivePlayers.find(
+          (player) => player.name === preferredName && player.id !== this.id,
+        );
+        return preferred?.id ?? super.requestRoom(ctx);
+      }
+
+      async getVotes(ctx: PhaseContext): Promise<{ empowerTarget: UUID; exposeTarget: UUID }> {
+        const fallback = defined(
+          ctx.alivePlayers.find((player) => player.id !== this.id) ?? ctx.alivePlayers[0],
+          "Expected at least one alive player for voting",
+        );
+        const alpha = ctx.alivePlayers.find((player) => player.name === "Alpha") ?? fallback;
+        const foxtrot = ctx.alivePlayers.find((player) => player.name === "Foxtrot") ?? fallback;
+        return { empowerTarget: alpha.id, exposeTarget: foxtrot.id };
+      }
+
+      async getPowerAction(_ctx: PhaseContext, candidates: [UUID, UUID]): Promise<PowerAction> {
+        return { action: "pass", target: candidates[0] };
+      }
+
+      async getCouncilVote(_ctx: PhaseContext, candidates: [UUID, UUID]): Promise<UUID> {
+        return candidates[0];
+      }
+    }
+
+    const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo", "Foxtrot"].map(
+      (name) => new RepeatPreferenceAgent(createUUID(), name),
+    );
+
+    const runner = new GameRunner(agents, {
+      ...TEST_CONFIG,
+      maxRounds: 4,
+      whisperSessionsPerRound: 1,
+      experimentalAntiRepeatWhisperRooms: true,
+    });
+    const result = await runner.run();
+
+    const antiRepeatLog = result.transcript.find(
+      (entry) =>
+        entry.scope === "system" &&
+        entry.phase === Phase.WHISPER &&
+        entry.round === 2 &&
+        entry.text.includes("Anti-repeat whisper experiment: The House broke repeat room preference"),
+    );
+    expect(antiRepeatLog).toBeDefined();
+    expect(antiRepeatLog!.text).toContain("Alpha -> Beta");
+
+    const round2Allocation = result.transcript.find(
+      (entry) =>
+        entry.scope === "system" &&
+        entry.phase === Phase.WHISPER &&
+        entry.round === 2 &&
+        entry.text.includes("Room 1: Echo & Alpha"),
+    );
+    expect(round2Allocation).toBeDefined();
   });
 });
