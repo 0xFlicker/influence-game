@@ -135,9 +135,18 @@ const POWER_LOBBY_VARIANTS = new Set([
   "anti-repeat-power-lobby",
   "power-lobby-v2-anti-repeat",
   "anti-repeat-power-lobby-v2",
+  "power-lobby-diversity-whisper",
+  "diversity-whisper-power-lobby",
+  "power-lobby-v2-diversity-whisper",
+  "diversity-whisper-power-lobby-v2",
 ]);
 
-const ANTI_REPEAT_WHISPER_VARIANTS = new Set([
+const DIVERSITY_WHISPER_VARIANTS = new Set([
+  "diversity-whisper",
+  "power-lobby-diversity-whisper",
+  "diversity-whisper-power-lobby",
+  "power-lobby-v2-diversity-whisper",
+  "diversity-whisper-power-lobby-v2",
   "anti-repeat",
   "anti-repeat-whispers",
   "power-lobby-anti-repeat",
@@ -151,7 +160,7 @@ export function isPowerLobbyVariant(variant: string): boolean {
 }
 
 export function isAntiRepeatWhisperVariant(variant: string): boolean {
-  return ANTI_REPEAT_WHISPER_VARIANTS.has(variant.toLowerCase());
+  return DIVERSITY_WHISPER_VARIANTS.has(variant.toLowerCase());
 }
 
 export function buildSimulationConfig(variant: string): GameConfig {
@@ -175,6 +184,7 @@ export function buildSimulationConfig(variant: string): GameConfig {
     },
     maxRounds: 10,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),
+    whisperRoomAllocationMode: isAntiRepeatWhisperVariant(variant) ? "diversity-weighted" : "request-order",
     experimentalAntiRepeatWhisperRooms: isAntiRepeatWhisperVariant(variant),
   };
 }

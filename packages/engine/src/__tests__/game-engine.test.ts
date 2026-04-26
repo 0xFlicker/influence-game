@@ -12,9 +12,13 @@ import { GameEventBus } from "../event-bus";
 import { GameRunner } from "../game-runner";
 import type { AgentResponse, PhaseContext, PowerLobbyExposure } from "../game-runner";
 import { createPhaseMachine } from "../phase-machine";
+import { ContextBuilder } from "../context-builder";
+import { TranscriptLogger } from "../transcript-logger";
+import { allocateRooms, runReckoningWhisper } from "../phases/whisper";
+import type { PhaseActor, PhaseRunnerContext } from "../phases/phase-runner-context";
 import { createActor } from "xstate";
 import { Phase, PlayerStatus } from "../types";
-import type { GameConfig, PowerAction, UUID } from "../types";
+import type { GameConfig, PowerAction, RoomAllocation, UUID } from "../types";
 import { MockAgent } from "./mock-agent";
 
 // ---------------------------------------------------------------------------
@@ -1428,6 +1432,202 @@ describe("Whisper Rooms", () => {
     maxPlayers: 12,
   };
 
+  function makeWhisperPlayers(names: string[]): Array<{ id: UUID; name: string }> {
+    return names.map((name) => ({ id: createUUID(), name }));
+  }
+
+  function playerId(players: Array<{ id: UUID; name: string }>, name: string): UUID {
+    return defined(players.find((player) => player.name === name)?.id, `Expected player ${name}`);
+  }
+
+  function makeRequests(
+    players: Array<{ id: UUID; name: string }>,
+    pairs: Array<[string, string]>,
+  ): Map<UUID, UUID> {
+    return new Map(pairs.map(([from, to]) => [playerId(players, from), playerId(players, to)]));
+  }
+
+  function makePriorRooms(
+    players: Array<{ id: UUID; name: string }>,
+    pairs: Array<[string, string]>,
+    round: number,
+  ): RoomAllocation[] {
+    return pairs.map(([a, b], index) => ({
+      roomId: index + 1,
+      playerA: playerId(players, a),
+      playerB: playerId(players, b),
+      round,
+    }));
+  }
+
+  function roomHasPair(rooms: RoomAllocation[], a: UUID, b: UUID): boolean {
+    return rooms.some((room) =>
+      new Set([room.playerA, room.playerB]).has(a) &&
+      new Set([room.playerA, room.playerB]).has(b),
+    );
+  }
+
+  function countHonoredPairs(
+    rooms: RoomAllocation[],
+    players: Array<{ id: UUID; name: string }>,
+    pairs: Array<[string, string]>,
+  ): number {
+    return pairs.filter(([a, b]) => roomHasPair(rooms, playerId(players, a), playerId(players, b))).length;
+  }
+
+  it("diversity allocator avoids repeated mutual pairs for 6-player full matchings", () => {
+    const players = makeWhisperPlayers(["A", "B", "C", "D", "E", "F"]);
+    const requests = makeRequests(players, [
+      ["A", "B"],
+      ["B", "A"],
+      ["C", "D"],
+      ["D", "C"],
+      ["E", "F"],
+      ["F", "E"],
+    ]);
+    const previousSessionRooms = makePriorRooms(players, [["A", "B"], ["C", "D"]], 1);
+
+    const { rooms, excluded } = allocateRooms(requests, players, 2, 2, {
+      allocationMode: "diversity-weighted",
+      priorRooms: previousSessionRooms,
+      previousSessionRooms,
+    });
+
+    expect(rooms).toHaveLength(2);
+    expect(excluded).toHaveLength(2);
+    expect(roomHasPair(rooms, playerId(players, "A"), playerId(players, "B"))).toBe(false);
+    expect(roomHasPair(rooms, playerId(players, "C"), playerId(players, "D"))).toBe(false);
+  });
+
+  it("diversity allocator resolves a 6-player star request without pairing the target twice", () => {
+    const players = makeWhisperPlayers(["A", "B", "C", "D", "E", "F"]);
+    const requests = makeRequests(players, [
+      ["A", "B"],
+      ["B", "A"],
+      ["C", "A"],
+      ["D", "A"],
+      ["E", "A"],
+      ["F", "A"],
+    ]);
+
+    const { rooms } = allocateRooms(requests, players, 2, 1, {
+      allocationMode: "diversity-weighted",
+      sessionIndex: 0,
+    });
+    const targetId = playerId(players, "A");
+
+    expect(rooms).toHaveLength(2);
+    expect(rooms.filter((room) => room.playerA === targetId || room.playerB === targetId)).toHaveLength(1);
+    expect(roomHasPair(rooms, targetId, playerId(players, "B"))).toBe(true);
+  });
+
+  it("diversity allocator avoids back-to-back exclusions for 7 players when feasible", () => {
+    const players = makeWhisperPlayers(["A", "B", "C", "D", "E", "F", "G"]);
+    const previousExcluded = ["A", "B", "C"].map((name) => playerId(players, name));
+    const exclusionCounts = new Map(previousExcluded.map((id) => [id, 1] as const));
+
+    const { rooms, excluded } = allocateRooms(new Map(), players, 2, 2, {
+      allocationMode: "diversity-weighted",
+      previousSessionExcludedPlayerIds: previousExcluded,
+      exclusionCounts,
+    });
+
+    expect(rooms).toHaveLength(2);
+    for (const playerId of previousExcluded) {
+      expect(excluded).not.toContain(playerId);
+    }
+  });
+
+  it("diversity allocator balances prior exclusions over one clean mutual pair for 8 players", () => {
+    const players = makeWhisperPlayers(["A", "B", "C", "D", "E", "F", "G", "H"]);
+    const requests = makeRequests(players, [
+      ["A", "B"],
+      ["B", "A"],
+      ["C", "D"],
+      ["D", "C"],
+      ["E", "F"],
+      ["F", "E"],
+    ]);
+    const previousExcluded = ["G", "H"].map((name) => playerId(players, name));
+
+    const { rooms, excluded } = allocateRooms(requests, players, 3, 2, {
+      allocationMode: "diversity-weighted",
+      previousSessionExcludedPlayerIds: previousExcluded,
+      exclusionCounts: new Map(previousExcluded.map((id) => [id, 1] as const)),
+    });
+
+    expect(rooms).toHaveLength(3);
+    expect(excluded).not.toContain(playerId(players, "G"));
+    expect(excluded).not.toContain(playerId(players, "H"));
+    expect(countHonoredPairs(rooms, players, [["A", "B"], ["C", "D"], ["E", "F"]])).toBeGreaterThanOrEqual(2);
+  });
+
+  it("diversity allocator avoids repeated requested pairs for 8 players when alternatives exist", () => {
+    const players = makeWhisperPlayers(["A", "B", "C", "D", "E", "F", "G", "H"]);
+    const repeatPairs: Array<[string, string]> = [["A", "B"], ["C", "D"], ["E", "F"], ["G", "H"]];
+    const requests = makeRequests(
+      players,
+      repeatPairs.flatMap(([a, b]) => [[a, b], [b, a]] as Array<[string, string]>),
+    );
+    const previousSessionRooms = makePriorRooms(players, repeatPairs, 1);
+
+    const { rooms } = allocateRooms(requests, players, 3, 2, {
+      allocationMode: "diversity-weighted",
+      priorRooms: previousSessionRooms,
+      previousSessionRooms,
+    });
+
+    expect(rooms).toHaveLength(3);
+    for (const [a, b] of repeatPairs) {
+      expect(roomHasPair(rooms, playerId(players, a), playerId(players, b))).toBe(false);
+    }
+  });
+
+  it("diversity allocator softens repeat safeguards for 5- and 4-player late-game rooms", () => {
+    for (const names of [["A", "B", "C", "D", "E"], ["A", "B", "C", "D"]]) {
+      const players = makeWhisperPlayers(names);
+      const requests = makeRequests(players, [["A", "B"], ["B", "A"]]);
+      const priorRooms = makePriorRooms(players, [["A", "B"]], 1);
+      const previousExcluded = ["A", "B"].map((name) => playerId(players, name));
+
+      const { rooms } = allocateRooms(requests, players, 1, 3, {
+        allocationMode: "diversity-weighted",
+        priorRooms,
+        previousSessionExcludedPlayerIds: previousExcluded,
+        exclusionCounts: new Map(previousExcluded.map((id) => [id, 1] as const)),
+      });
+
+      expect(roomHasPair(rooms, playerId(players, "A"), playerId(players, "B"))).toBe(true);
+    }
+  });
+
+  it("reckoning whisper records allocation metadata through the diversity allocator", async () => {
+    const agents = ["A", "B", "C", "D"].map((name) => new MockAgent(createUUID(), name));
+    const gameState = new GameState(agents.map((agent) => ({ id: agent.id, name: agent.name })));
+    gameState.startRound();
+    const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
+    const whisperInbox = new Map<UUID, Array<{ from: string; text: string }>>();
+    const logger = new TranscriptLogger(gameState);
+    const contextBuilder = new ContextBuilder(gameState, logger, whisperInbox, agents.length);
+    const ctx: PhaseRunnerContext = {
+      gameState,
+      agents: agentMap,
+      config: { ...TEST_CONFIG, whisperRoomAllocationMode: "diversity-weighted" },
+      logger,
+      contextBuilder,
+      diaryRoom: {} as PhaseRunnerContext["diaryRoom"],
+      whisperInbox,
+      eliminationOrder: [],
+    };
+
+    await runReckoningWhisper(ctx, { send: () => undefined } as unknown as PhaseActor);
+
+    const allocationEntry = logger.transcript.find((entry) => entry.roomMetadata);
+    expect(allocationEntry?.roomMetadata?.rooms).toHaveLength(1);
+    expect(allocationEntry?.roomMetadata?.excluded).toHaveLength(2);
+    expect(gameState.getRoomAllocations(1)?.rooms).toHaveLength(1);
+  });
+
   it("room allocation system message appears in transcript during whisper phase", async () => {
     const { MockAgent } = await import("./mock-agent");
 
@@ -1627,7 +1827,7 @@ describe("Whisper Rooms", () => {
         entry.scope === "system" &&
         entry.phase === Phase.WHISPER &&
         entry.round === 2 &&
-        entry.text.includes("Anti-repeat whisper experiment: The House broke repeat room preference"),
+        entry.text.includes("Whisper allocation experiment: diversified rooms"),
     );
     expect(antiRepeatLog).toBeDefined();
     expect(antiRepeatLog!.text).toContain("Alpha -> Beta");
@@ -1637,7 +1837,10 @@ describe("Whisper Rooms", () => {
         entry.scope === "system" &&
         entry.phase === Phase.WHISPER &&
         entry.round === 2 &&
-        entry.text.includes("Room 1: Echo & Alpha"),
+        entry.roomMetadata?.rooms.every((room) =>
+          !new Set([room.playerA, room.playerB]).has(agents[0]!.id) ||
+          !new Set([room.playerA, room.playerB]).has(agents[1]!.id),
+        ),
     );
     expect(round2Allocation).toBeDefined();
   });

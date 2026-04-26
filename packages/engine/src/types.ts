@@ -176,6 +176,8 @@ export interface RoomAllocation {
   round: number;
 }
 
+export type WhisperRoomAllocationMode = "request-order" | "diversity-weighted";
+
 /** System event emitted when whisper rooms are allocated for a round */
 export interface RoomAllocationEvent {
   type: "system";
@@ -317,7 +319,9 @@ export interface GameConfig {
   whisperSessionsPerRound?: number;
   /** Simulator experiment flag: add one public post-vote Power Lobby beat before the empowered action. */
   powerLobbyAfterVote?: boolean;
-  /** Simulator experiment flag: avoid honoring repeat whisper-room pair requests. */
+  /** Whisper room allocator. Defaults to request-order unless an experiment enables diversity weighting. */
+  whisperRoomAllocationMode?: WhisperRoomAllocationMode;
+  /** Legacy simulator alias for the diversity-weighted whisper allocator. */
   experimentalAntiRepeatWhisperRooms?: boolean;
 }
 
