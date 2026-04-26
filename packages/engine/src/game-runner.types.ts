@@ -42,6 +42,12 @@ export interface AgentResponse {
   message: string;
 }
 
+export interface PowerLobbyExposure {
+  id: UUID;
+  name: string;
+  score: number;
+}
+
 // ---------------------------------------------------------------------------
 // Agent interface (implemented by InfluenceAgent in agent.ts)
 // ---------------------------------------------------------------------------
@@ -71,6 +77,12 @@ export interface IAgent {
   getVotes(
     context: PhaseContext,
   ): Promise<{ empowerTarget: UUID; exposeTarget: UUID }>;
+  /** Called during the optional post-vote Power Lobby experiment before the empowered action */
+  getPowerLobbyMessage?(
+    context: PhaseContext,
+    provisionalCandidates: [UUID, UUID],
+    exposePressure: PowerLobbyExposure[],
+  ): Promise<AgentResponse>;
   /** Called only if this agent is the empowered agent */
   getPowerAction(
     context: PhaseContext,
@@ -129,7 +141,7 @@ export interface PhaseContext {
   selfId: UUID;
   selfName: string;
   alivePlayers: Array<{ id: UUID; name: string }>;
-  publicMessages: Array<{ from: string; text: string; phase: Phase; anonymous?: boolean; displayOrder?: number }>;
+  publicMessages: Array<{ from: string; text: string; phase: Phase; round?: number; anonymous?: boolean; displayOrder?: number }>;
   /** Messages this agent received as whispers */
   whisperMessages: Array<{ from: string; text: string }>;
   empoweredId?: UUID;

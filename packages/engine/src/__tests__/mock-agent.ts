@@ -3,7 +3,7 @@
  * Uses simple scripted strategies to validate game mechanics.
  */
 
-import type { AgentResponse, IAgent, PhaseContext } from "../game-runner";
+import type { AgentResponse, IAgent, PhaseContext, PowerLobbyExposure } from "../game-runner";
 import type { UUID, PowerAction } from "../types";
 
 /** Assert a value is defined — throws in tests if assumption is violated */
@@ -106,6 +106,23 @@ export class MockAgent implements IAgent {
     const empowerTarget = defined(others[0], "Expected at least one other player to empower").id;
     const exposeTarget = defined(others[others.length - 1], "Expected at least one other player to expose").id;
     return { empowerTarget, exposeTarget };
+  }
+
+  async getPowerLobbyMessage(
+    ctx: PhaseContext,
+    candidates: [UUID, UUID],
+    exposePressure: PowerLobbyExposure[],
+  ): Promise<AgentResponse> {
+    const empoweredName = ctx.alivePlayers.find((p) => p.id === ctx.empoweredId)?.name ?? "the empowered player";
+    const candidateNames = candidates.map(
+      (id) => ctx.alivePlayers.find((p) => p.id === id)?.name ?? id,
+    );
+    const topPressure = exposePressure[0]?.name ?? candidateNames[0] ?? "the exposed players";
+    const role = candidates.includes(this.id) ? "I need to redirect the vote" : `look closely at ${topPressure}`;
+    return respond(
+      `${empoweredName}, this power choice matters. ${role}; ${candidateNames.join(" and ")} should both answer for the expose vote.`,
+      `Power lobby: address ${empoweredName} and candidates ${candidateNames.join(", ")}`,
+    );
   }
 
   async getPowerAction(

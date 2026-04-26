@@ -398,4 +398,68 @@ describe("allocateRooms", () => {
       pairedPlayers.add(room.playerB);
     }
   });
+
+  it("keeps repeat pair requests when anti-repeat experiment is disabled", () => {
+    const a = createUUID(), b = createUUID(), c = createUUID(), d = createUUID();
+    const players = [
+      { id: a, name: "A" },
+      { id: b, name: "B" },
+      { id: c, name: "C" },
+      { id: d, name: "D" },
+    ];
+
+    const requests = new Map<UUID, UUID>();
+    requests.set(a, b);
+    requests.set(b, a);
+    requests.set(c, d);
+    requests.set(d, c);
+
+    const priorRooms: RoomAllocation[] = [{ roomId: 1, playerA: a, playerB: b, round: 1 }];
+    const { rooms, brokenPreferences } = allocateRooms(
+      requests,
+      players,
+      2,
+      2,
+      { priorRooms },
+    );
+
+    expect(rooms[0]!.playerA).toBe(a);
+    expect(rooms[0]!.playerB).toBe(b);
+    expect(brokenPreferences).toHaveLength(0);
+  });
+
+  it("breaks prior repeat pair preferences when anti-repeat experiment is enabled", () => {
+    const a = createUUID(), b = createUUID(), c = createUUID(), d = createUUID();
+    const players = [
+      { id: a, name: "A" },
+      { id: b, name: "B" },
+      { id: c, name: "C" },
+      { id: d, name: "D" },
+    ];
+
+    const requests = new Map<UUID, UUID>();
+    requests.set(a, b);
+    requests.set(b, a);
+    requests.set(c, a);
+    requests.set(d, b);
+
+    const priorRooms: RoomAllocation[] = [{ roomId: 1, playerA: a, playerB: b, round: 1 }];
+    const { rooms, excluded, brokenPreferences } = allocateRooms(
+      requests,
+      players,
+      2,
+      2,
+      { avoidRepeatPairs: true, priorRooms },
+    );
+
+    const roomPairs = rooms.map((room) => new Set([room.playerA, room.playerB]));
+    expect(roomPairs.some((pair) => pair.has(a) && pair.has(b))).toBe(false);
+    expect(roomPairs.some((pair) => pair.has(c) && pair.has(a))).toBe(true);
+    expect(roomPairs.some((pair) => pair.has(d) && pair.has(b))).toBe(true);
+    expect(excluded).toHaveLength(0);
+    expect(brokenPreferences).toEqual([
+      { playerId: a, requestedPartnerId: b },
+      { playerId: b, requestedPartnerId: a },
+    ]);
+  });
 });

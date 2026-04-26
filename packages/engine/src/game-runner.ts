@@ -20,7 +20,7 @@ import type { UUID, GameConfig } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 
 // Re-export types from the extracted module for backward compatibility
-export type { AgentResponse, GameStreamEvent, GameStateSnapshot, IAgent, PhaseContext, TranscriptEntry } from "./game-runner.types";
+export type { AgentResponse, GameStreamEvent, GameStateSnapshot, IAgent, PhaseContext, PowerLobbyExposure, TranscriptEntry } from "./game-runner.types";
 import type { GameStreamEvent, GameStateSnapshot, IAgent, TranscriptEntry } from "./game-runner.types";
 
 // Internal modules
