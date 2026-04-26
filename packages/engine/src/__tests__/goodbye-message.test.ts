@@ -288,6 +288,11 @@ function makeAgentContext(phase: Phase = Phase.VOTE): PhaseContext {
   };
 }
 
+function getUserPrompt(call: Record<string, unknown> | undefined): string {
+  const messages = call?.messages as Array<{ role: string; content: string }> | undefined;
+  return messages?.find((message) => message.role === "user")?.content ?? "";
+}
+
 describe("InfluenceAgent tool-call fallbacks", () => {
   test("sendRoomMessage accepts JSON arguments returned as assistant content", async () => {
     const { openai, calls } = makeOpenAIStub([
@@ -432,5 +437,99 @@ describe("InfluenceAgent tool-call fallbacks", () => {
       target: "vera-id",
     });
     expect(calls).toHaveLength(1);
+  });
+
+  test("getPowerAction only treats same-round Power Lobby messages as fresh evidence", async () => {
+    const { openai: staleOpenAI, calls: staleCalls } = makeOpenAIStub([
+      {
+        toolName: "use_power",
+        toolArguments: JSON.stringify({
+          thinking: "Let council expose the alliances.",
+          action: "pass",
+          target: "Vera",
+        }),
+      },
+    ]);
+    const staleAgent = new InfluenceAgent("atlas-id", "Atlas", "strategic", staleOpenAI, "gpt-5-nano");
+    const staleCtx = makeAgentContext(Phase.POWER);
+    staleCtx.round = 2;
+    staleCtx.publicMessages = [
+      {
+        from: "Vera",
+        text: "Atlas, eliminate Mira and I will vote with you.",
+        phase: Phase.POWER,
+        round: 1,
+      },
+    ];
+
+    await staleAgent.getPowerAction(staleCtx, ["vera-id", "mira-id"]);
+
+    const stalePrompt = getUserPrompt(staleCalls[0]);
+    expect(stalePrompt).toContain("No fresh Power Lobby record is available");
+    expect(stalePrompt).toContain("do not treat older Power Lobby messages as current evidence");
+
+    const { openai: freshOpenAI, calls: freshCalls } = makeOpenAIStub([
+      {
+        toolName: "use_power",
+        toolArguments: JSON.stringify({
+          thinking: "Honor the current public receipt.",
+          action: "protect",
+          target: "Mira",
+        }),
+      },
+    ]);
+    const freshAgent = new InfluenceAgent("atlas-id", "Atlas", "strategic", freshOpenAI, "gpt-5-nano");
+    const freshCtx = makeAgentContext(Phase.POWER);
+    freshCtx.round = 2;
+    freshCtx.publicMessages = [
+      {
+        from: "Mira",
+        text: "Atlas, protect me and I will expose Vera next round.",
+        phase: Phase.POWER,
+        round: 2,
+      },
+    ];
+
+    await freshAgent.getPowerAction(freshCtx, ["vera-id", "mira-id"]);
+
+    expect(getUserPrompt(freshCalls[0])).toContain("The Power Lobby just happened this round");
+    expect(getUserPrompt(freshCalls[0])).toContain("Current-round Power Lobby record");
+    expect(getUserPrompt(freshCalls[0])).toContain("Mira: Atlas, protect me and I will expose Vera next round.");
+  });
+
+  test("getPowerAction prompt carries anti-repeat power guidance and last action", async () => {
+    const { openai, calls } = makeOpenAIStub([
+      {
+        toolName: "use_power",
+        toolArguments: JSON.stringify({
+          thinking: "Take one direct shot.",
+          action: "eliminate",
+          target: "Mira",
+        }),
+      },
+      {
+        toolName: "use_power",
+        toolArguments: JSON.stringify({
+          thinking: "Avoid a second direct shot without a fresh receipt.",
+          action: "pass",
+          target: "Vera",
+        }),
+      },
+    ]);
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
+
+    const round1Ctx = makeAgentContext(Phase.POWER);
+    await agent.getPowerAction(round1Ctx, ["vera-id", "mira-id"]);
+
+    const round2Ctx = makeAgentContext(Phase.POWER);
+    round2Ctx.round = 2;
+    await agent.getPowerAction(round2Ctx, ["vera-id", "mira-id"]);
+
+    const secondPrompt = getUserPrompt(calls[1]);
+    expect(secondPrompt).toContain("Your last empowered action: R1 eliminate -> Mira.");
+    expect(secondPrompt).toContain("Do not protect an ally you already protected unless this round's Power Lobby creates a new public receipt");
+    expect(secondPrompt).toContain("eliminate is gated by fresh current-round Power Lobby evidence against that exact candidate");
+    expect(secondPrompt).toContain("your hidden thinking MUST cite the speaker and evidence from this round's Power Lobby");
+    expect(secondPrompt).toContain("When the lobby record conflicts, when council would expose useful public votes");
   });
 });

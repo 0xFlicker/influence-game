@@ -92,7 +92,7 @@ Tests are organized into three tiers with different requirements:
 |------|---------|-----------|----------------|-------------|
 | **Unit (mock)** | `bun run test` | No | No | Every commit (pre-commit check) |
 | **DB integration** | `bun run test:db` | Yes (PostgreSQL) | No | Before merging API changes |
-| **Full LLM** | `doppler run -- bun test:engine:full` | No | Yes (OPENAI_API_KEY) | Before releasing engine changes |
+| **Full LLM** | `bun run test:engine:full` | No | Yes (`OPENAI_API_KEY` from Doppler dev) | Before releasing engine changes |
 
 ### Running Tests
 
@@ -106,8 +106,8 @@ bun run test:db
 # Engine unit tests only
 bun run test:engine
 
-# Engine full tests with real LLM calls (requires Doppler)
-doppler run -- bun run test:engine:full
+# Engine full tests with real LLM calls (requires Doppler dev access)
+bun run test:engine:full
 
 # E2E smoke tests (requires running API server)
 cd packages/api && bun run test:e2e
@@ -332,7 +332,7 @@ To test a specific release:
    ```
 3. Run simulations:
    ```bash
-   doppler run -- bun test
+   bun run test:engine:full
    ```
 4. Write analysis referencing the version in the filename:
    ```
@@ -377,8 +377,8 @@ When a QA agent is added:
 Secrets are injected via Doppler. Never hardcode API keys.
 
 ```bash
-# Always prefix LLM-calling commands with:
-doppler run -- bun test
+# Simulator validation uses repo scripts, which inject Doppler dev secrets explicitly:
+bun run simulate -- --games 1 --players 4 --model gpt-5-nano
 ```
 
 The `OPENAI_API_KEY` env var is consumed by `InfluenceAgent`. `gpt-4o-mini` is the default model — cheap and fast for simulations. Only upgrade the model when quality is demonstrably insufficient.
@@ -394,6 +394,12 @@ Three Doppler configs exist under the `social-strategy-agent` project:
 | `prd` | Future production | PostgreSQL (dedicated instance) | TBD | TBD | Public |
 
 **Agents always use the `dev` config** for local development. Staging is deployed from tagged releases only — agents never run against staging directly.
+
+The root `simulate` and `test:engine:full` scripts pass `--project social-strategy-agent --config dev` to Doppler so local validation does not depend on a per-checkout Doppler setup file. Run simulator batches from the repo root with:
+
+```bash
+bun run simulate -- --games 2 --players 8 --personas Atlas,Vera,Finn,Mira,Rex,Lyra,Kael,Echo --model gpt-5-nano
+```
 
 ### Staging Deployment
 
@@ -449,7 +455,7 @@ If any check fails, fix it before committing. No exceptions.
 Before creating a version tag:
 
 1. All pre-commit checks pass
-2. Full test suite passes: `doppler run -- bun test`
+2. Full test suite passes: `bun run test:engine:full`
 3. All package.json `version` fields are synced to the new version
 4. Commit message: `release: vX.Y.Z`
 5. Annotated tag: `git tag -a vX.Y.Z -m "vX.Y.Z: <summary>"`

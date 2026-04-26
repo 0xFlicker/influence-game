@@ -12,7 +12,7 @@ import type {
   ChatCompletionMessageToolCall,
 } from "openai/resources/chat/completions";
 import type { ReasoningEffort } from "openai/resources/shared";
-import type { AgentResponse, IAgent, PhaseContext } from "./game-runner";
+import type { AgentResponse, IAgent, PhaseContext, PowerLobbyExposure } from "./game-runner";
 import { Phase } from "./types";
 import type { UUID, PowerAction } from "./types";
 import type { MemoryStore } from "./memory-store";
@@ -517,6 +517,12 @@ interface AgentMemory {
     empowered?: string;
     myVotes: { empower: string; expose: string };
   }>;
+  /** Previous empowered actions taken by this agent */
+  powerActions: Array<{
+    round: number;
+    action: PowerAction["action"];
+    target: string;
+  }>;
   /** Most recent strategic reflection from diary room */
   lastReflection: StrategicReflection | null;
 }
@@ -541,6 +547,7 @@ export class InfluenceAgent implements IAgent {
     threats: new Set(),
     notes: new Map(),
     roundHistory: [],
+    powerActions: [],
     lastReflection: null,
   };
   private lobbyIntent: string | null = null;
@@ -977,6 +984,57 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
     }
   }
 
+  async getPowerLobbyMessage(
+    ctx: PhaseContext,
+    candidates: [UUID, UUID],
+    exposePressure: PowerLobbyExposure[],
+  ): Promise<AgentResponse> {
+    const empoweredName = ctx.alivePlayers.find((p) => p.id === ctx.empoweredId)?.name ?? "the empowered player";
+    const candidateNames = candidates.map(
+      (id) => ctx.alivePlayers.find((p) => p.id === id)?.name ?? id,
+    );
+    const pressureSummary = exposePressure
+      .slice(0, 3)
+      .map((player) => `${player.name}: ${player.score}`)
+      .join(", ");
+    const selfIsCandidate = candidates.includes(this.id);
+    const selfIsEmpowered = ctx.empoweredId === this.id;
+
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
+## Power Lobby After Vote: Accountable Leverage
+The votes are locked. ${empoweredName} is empowered.
+The provisional council candidates are ${candidateNames.join(" and ")}.
+Top expose pressure: ${pressureSummary}.
+
+You have one short public message before ${empoweredName} uses power. This is hard gameplay, not small talk.
+${selfIsEmpowered ? `
+You hold power. Publicly answer the pressure before your private final action:
+- Name your current lean: "pass", "protect <player>", or "eliminate <candidate>"
+- Set one condition, price, or line of accountability that could confirm or change that lean
+- Make clear who will owe you, who will be exposed, or what receipt you are relying on
+Do not promise more than you mean, but give the room a public standard they can judge later.` : `
+You are not empowered. Your message MUST include all four elements:
+- Address ${empoweredName} by name
+- Make exactly one concrete ask: "pass", "protect <player>", or "eliminate <candidate>"
+- Name the target or beneficiary of that ask
+- Attach one accountability hook: a promise you will keep, a threat you will carry out, or a receipt from votes, whispers, or public behavior`}
+${selfIsCandidate ? `
+You are under direct council pressure. In addition to the ask above, you MUST name either:
+- a counter-target who should take your place, or
+- a player you believe exposed you or pushed you into danger
+Do not only plead for safety. Redirect pressure to a named person.` : ""}
+
+Avoid generic pleas like "trust me" or "think carefully." Make one accountable ask the room can cite later.
+Keep it to 1-2 sentences.`;
+
+    return this.callLLMWithThinking(prompt, 180, sys, {
+      action: "power-lobby",
+      reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW,
+      reasoningEffort: "low",
+    });
+  }
+
   async getPowerAction(
     ctx: PhaseContext,
     candidates: [UUID, UUID],
@@ -987,20 +1045,41 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
     const otherAlive = ctx.alivePlayers.filter(
       (p) => p.id !== this.id && !candidates.includes(p.id),
     );
+    const currentPowerLobbyMessages = ctx.publicMessages.filter(
+      (m) => m.phase === Phase.POWER && m.round === ctx.round,
+    );
+    const hasFreshPowerLobbyMessages = currentPowerLobbyMessages.length > 0;
+    const freshPowerLobbyRecord = currentPowerLobbyMessages
+      .map((m) => `- ${m.from}: ${m.text}`)
+      .join("\n");
+    const lastPowerAction = this.memory.powerActions.at(-1);
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## You Are EMPOWERED This Round!
+${hasFreshPowerLobbyMessages ? `The Power Lobby just happened this round. Recent Public Messages include the public asks, promises, threats, receipts, and any leaning or condition you stated. Treat that fresh public record as leverage: honor your stated lean/condition unless betraying it creates a stronger strategic advantage you are willing to own.` : `No fresh Power Lobby record is available for this decision. Use the vote pressure, your memory, and the current candidate list; do not treat older Power Lobby messages as current evidence.`}
+${hasFreshPowerLobbyMessages ? `
+Current-round Power Lobby record:
+${freshPowerLobbyRecord}` : ""}
+
 You have three choices:
 
-1. **eliminate** "${candidateNames[0]}" or "${candidateNames[1]}" — immediately eliminate them, skip council
-2. **protect** <any player> — save them from council (they gain a shield), swap in next-most-exposed player
-3. **pass** — send the two candidates to council as-is
+1. **pass** — send the two candidates to council as-is. This is the cleanest default when a council fight will expose alliances, force public votes, or create future betrayal evidence.
+2. **protect** <any player> — save them from council (they gain a shield), swap in next-most-exposed player. Use this when protection creates an accountable debt, rewards a concrete current-round promise, or forces a better counter-target into danger.
+3. **eliminate** "${candidateNames[0]}" or "${candidateNames[1]}" — immediately eliminate them and skip council. This is a high-debt veto, not the default. Use it only when the target is an immediate threat and the current-round record gives you strong evidence, consensus, or a promise/threat worth owning publicly.
 
 Council candidates: ${candidateNames.join(" and ")}
 Other alive players: ${otherAlive.map((p) => p.name).join(", ")}
+${lastPowerAction ? `Your last empowered action: R${lastPowerAction.round} ${lastPowerAction.action} -> ${lastPowerAction.target}.` : "You have not used empowered power before."}
 
-Use the use_power tool to declare your action.`;
+## Anti-Repeat Power Guidance
+- Repeatedly protecting the same ally makes your power actions predictable. Do not protect an ally you already protected unless this round's Power Lobby creates a new public receipt: a fresh promise, threat, vote explanation, or named counter-target that makes the repeat protection accountable.
+- Consecutive auto-eliminations make the power holder look deterministic. If your last empowered action was eliminate, eliminate is gated by fresh current-round Power Lobby evidence against that exact candidate.
+- To eliminate after a prior eliminate, your hidden thinking MUST cite the speaker and evidence from this round's Power Lobby. If you cannot cite a fresh named receipt, choose pass or protect.
+- When the lobby record conflicts, when council would expose useful public votes, or when protection creates a debt you can call later, prefer pass or protect over an immediate hit.
+
+Before using the tool, decide what future debt or backlash your action creates. Prefer pass or protect when they create a callable ally, a sharper council fight, or a betrayal hook for later.
+Use the use_power tool to declare your final hidden action.`;
 
     try {
       const result = await this.callTool<{ action: string; target: string }>(
@@ -1020,6 +1099,11 @@ Use the use_power tool to declare your action.`;
       if (!targetPlayer) {
         console.warn(`[vote-fallback] agent="${this.name}" method=getPowerAction returned="${result.target}" available=[${ctx.alivePlayers.map((p) => p.name).join(", ")}] fallback=candidates[0]`);
       }
+      this.memory.powerActions.push({
+        round: ctx.round,
+        action: validAction,
+        target: targetPlayer?.name ?? candidateNames[0] ?? "unknown",
+      });
       return {
         action: validAction,
         target: targetPlayer?.id ?? candidates[0],

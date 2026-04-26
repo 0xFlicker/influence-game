@@ -11,7 +11,7 @@ import type { TranscriptEntry, GameStreamEvent } from "./game-runner.types";
 
 export class TranscriptLogger {
   readonly transcript: TranscriptEntry[] = [];
-  readonly publicMessages: Array<{ from: string; text: string; phase: Phase; anonymous?: boolean; displayOrder?: number }> = [];
+  readonly publicMessages: Array<{ from: string; text: string; phase: Phase; round: number; anonymous?: boolean; displayOrder?: number }> = [];
   private _streamListener?: (event: GameStreamEvent) => void;
 
   constructor(private readonly gameState: GameState) {}
@@ -44,6 +44,7 @@ export class TranscriptLogger {
       from: name,
       text,
       phase,
+      round: this.gameState.round,
       ...(opts?.anonymous && { anonymous: true }),
       ...(opts?.displayOrder != null && { displayOrder: opts.displayOrder }),
     });

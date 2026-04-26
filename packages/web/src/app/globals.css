@@ -711,6 +711,32 @@ a {
   padding: 0.45rem 0.7rem;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
   backdrop-filter: blur(12px);
+  outline: none;
+  text-decoration: none;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+  animation: home-status-enter 280ms ease both;
+}
+
+.home-stat-pill:hover,
+.home-stat-pill:focus-visible {
+  border-color: rgb(var(--phase-rgb) / 0.42);
+  background: rgb(0 0 0 / 0.38);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    0 0 22px rgb(var(--phase-rgb) / 0.14);
+  transform: translateY(-1px);
+}
+
+.home-stat-pill[data-tone="daily"] {
+  border-color: rgb(var(--phase-rgb) / 0.22);
+}
+
+.home-stat-pill[data-tone="open"] {
+  border-color: rgb(255 255 255 / 0.14);
 }
 
 .home-stat-pill span {
@@ -725,6 +751,18 @@ a {
   color: rgb(var(--text-primary) / 0.96);
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+@keyframes home-status-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .home-scene-panel {
