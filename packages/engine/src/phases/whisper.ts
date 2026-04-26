@@ -2,12 +2,57 @@ import type { UUID, RoomAllocation } from "../types";
 import { Phase } from "../types";
 import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
 
+export interface BrokenWhisperRoomPreference {
+  playerId: UUID;
+  requestedPartnerId: UUID;
+}
+
+export interface RoomAllocationOptions {
+  avoidRepeatPairs?: boolean;
+  priorRooms?: RoomAllocation[];
+}
+
 /**
  * Compute the number of whisper rooms for the current round.
  * Formula: max(1, floor(alivePlayers / 2) - 1)
  */
 export function computeRoomCount(aliveCount: number): number {
   return Math.max(1, Math.floor(aliveCount / 2) - 1);
+}
+
+function pairKey(playerA: UUID, playerB: UUID): string {
+  return [playerA, playerB].sort().join(":");
+}
+
+function buildPriorPairKeys(priorRooms: RoomAllocation[]): Set<string> {
+  return new Set(priorRooms.map((room) => pairKey(room.playerA, room.playerB)));
+}
+
+function getRecordedPriorRooms(ctx: PhaseRunnerContext, currentRoundRooms: RoomAllocation[]): RoomAllocation[] {
+  const priorRooms: RoomAllocation[] = [...currentRoundRooms];
+  for (let priorRound = 1; priorRound < ctx.gameState.round; priorRound++) {
+    const allocation = ctx.gameState.getRoomAllocations(priorRound);
+    if (allocation) priorRooms.push(...allocation.rooms);
+  }
+  return priorRooms;
+}
+
+function logBrokenRepeatPreferences(
+  ctx: PhaseRunnerContext,
+  brokenPreferences: BrokenWhisperRoomPreference[],
+): void {
+  if (brokenPreferences.length === 0) return;
+
+  const brokenText = brokenPreferences
+    .map((preference) =>
+      `${ctx.gameState.getPlayerName(preference.playerId)} -> ${ctx.gameState.getPlayerName(preference.requestedPartnerId)}`,
+    )
+    .join(", ");
+
+  ctx.logger.logSystem(
+    `Anti-repeat whisper experiment: The House broke repeat room preference(s): ${brokenText}.`,
+    Phase.WHISPER,
+  );
 }
 
 /**
@@ -18,14 +63,21 @@ export function allocateRooms(
   alivePlayers: Array<{ id: UUID; name: string }>,
   roomCountLimit: number,
   round: number,
-): { rooms: RoomAllocation[]; excluded: UUID[] } {
+  options: RoomAllocationOptions = {},
+): { rooms: RoomAllocation[]; excluded: UUID[]; brokenPreferences: BrokenWhisperRoomPreference[] } {
   const rooms: RoomAllocation[] = [];
   const paired = new Set<UUID>();
+  const repeatedPairKeys = options.avoidRepeatPairs
+    ? buildPriorPairKeys(options.priorRooms ?? [])
+    : new Set<string>();
+  const isAvoidedRepeatPair = (playerId: UUID, partnerId: UUID): boolean =>
+    options.avoidRepeatPairs === true && repeatedPairKeys.has(pairKey(playerId, partnerId));
 
   // Step 1: Mutual matches first
   for (const [playerId, partnerId] of requests) {
     if (paired.has(playerId) || paired.has(partnerId)) continue;
     if (rooms.length >= roomCountLimit) break;
+    if (isAvoidedRepeatPair(playerId, partnerId)) continue;
     if (requests.get(partnerId) === playerId) {
       rooms.push({ roomId: rooms.length + 1, playerA: playerId, playerB: partnerId, round });
       paired.add(playerId);
@@ -38,6 +90,7 @@ export function allocateRooms(
     if (rooms.length >= roomCountLimit) break;
     if (paired.has(playerId)) continue;
     if (paired.has(partnerId)) continue;
+    if (isAvoidedRepeatPair(playerId, partnerId)) continue;
     rooms.push({ roomId: rooms.length + 1, playerA: playerId, playerB: partnerId, round });
     paired.add(playerId);
     paired.add(partnerId);
@@ -47,7 +100,16 @@ export function allocateRooms(
     .filter((p) => !paired.has(p.id))
     .map((p) => p.id);
 
-  return { rooms, excluded };
+  const brokenPreferences = options.avoidRepeatPairs === true
+    ? Array.from(requests)
+      .filter(([playerId, partnerId]) =>
+        isAvoidedRepeatPair(playerId, partnerId) &&
+        !rooms.some((room) => pairKey(room.playerA, room.playerB) === pairKey(playerId, partnerId)),
+      )
+      .map(([playerId, requestedPartnerId]) => ({ playerId, requestedPartnerId }))
+    : [];
+
+  return { rooms, excluded, brokenPreferences };
 }
 
 /**
@@ -153,12 +215,22 @@ export async function runWhisperPhase(
       }),
     );
 
-    const { rooms, excluded } = allocateRooms(requests, eligible, roomCount, gameState.round);
+    const { rooms, excluded, brokenPreferences } = allocateRooms(
+      requests,
+      eligible,
+      roomCount,
+      gameState.round,
+      config.experimentalAntiRepeatWhisperRooms
+        ? { avoidRepeatPairs: true, priorRooms: getRecordedPriorRooms(ctx, allRooms) }
+        : undefined,
+    );
 
     const sessionRooms = rooms.map((r) => {
       globalRoomId++;
       return { ...r, roomId: globalRoomId };
     });
+
+    logBrokenRepeatPreferences(ctx, brokenPreferences);
 
     for (const room of sessionRooms) {
       conversationCount.set(room.playerA, (conversationCount.get(room.playerA) ?? 0) + 1);
@@ -219,10 +291,19 @@ export async function runReckoningWhisper(
     }),
   );
 
-  const { rooms, excluded } = allocateRooms(requests, alivePlayers, roomCount, gameState.round);
+  const { rooms, excluded, brokenPreferences } = allocateRooms(
+    requests,
+    alivePlayers,
+    roomCount,
+    gameState.round,
+    ctx.config.experimentalAntiRepeatWhisperRooms
+      ? { avoidRepeatPairs: true, priorRooms: getRecordedPriorRooms(ctx, []) }
+      : undefined,
+  );
   contextBuilder.currentRoomAllocations = rooms;
   contextBuilder.currentExcludedPlayerIds = excluded;
   gameState.recordRoomAllocations(rooms, excluded);
+  logBrokenRepeatPreferences(ctx, brokenPreferences);
 
   const roomDescriptions = rooms.map((r) => {
     const nameA = gameState.getPlayerName(r.playerA);

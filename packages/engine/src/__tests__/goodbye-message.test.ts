@@ -205,3 +205,327 @@ describe("goodbye message handling", () => {
     expect(prc.logger.transcript.at(-1)?.text).toBe("Charlie signing off.");
   });
 });
+
+type OpenAIStubResponse = {
+  content?: string | null;
+  finishReason?: string;
+  refusal?: string | null;
+  toolName?: string;
+  toolArguments?: string;
+};
+
+function makeOpenAIStub(responses: OpenAIStubResponse[]): { openai: OpenAI; calls: Array<Record<string, unknown>> } {
+  const calls: Array<Record<string, unknown>> = [];
+
+  return {
+    calls,
+    openai: {
+      chat: {
+        completions: {
+          create: async (params: Record<string, unknown>) => {
+            calls.push(params);
+            const response = responses[Math.min(calls.length - 1, responses.length - 1)] ?? {};
+            const toolCalls = response.toolName && response.toolArguments
+              ? [
+                  {
+                    id: "call_test",
+                    type: "function",
+                    function: {
+                      name: response.toolName,
+                      arguments: response.toolArguments,
+                    },
+                  },
+                ]
+              : undefined;
+
+            return {
+              id: "chatcmpl_test",
+              object: "chat.completion",
+              created: 0,
+              model: "gpt-5-nano",
+              choices: [
+                {
+                  index: 0,
+                  finish_reason: response.finishReason ?? (toolCalls ? "tool_calls" : "stop"),
+                  message: {
+                    role: "assistant",
+                    content: response.content ?? null,
+                    refusal: response.refusal ?? null,
+                    tool_calls: toolCalls,
+                  },
+                },
+              ],
+              usage: {
+                prompt_tokens: 1,
+                completion_tokens: 1,
+                total_tokens: 2,
+                prompt_tokens_details: { cached_tokens: 0 },
+                completion_tokens_details: { reasoning_tokens: 0 },
+              },
+            };
+          },
+        },
+      },
+    } as unknown as OpenAI,
+  };
+}
+
+function makeAgentContext(phase: Phase = Phase.VOTE): PhaseContext {
+  return {
+    gameId: "game-1",
+    round: 1,
+    phase,
+    selfId: "atlas-id",
+    selfName: "Atlas",
+    alivePlayers: [
+      { id: "atlas-id", name: "Atlas" },
+      { id: "vera-id", name: "Vera" },
+      { id: "mira-id", name: "Mira" },
+      { id: "finn-id", name: "Finn" },
+    ],
+    publicMessages: [],
+    whisperMessages: [],
+  };
+}
+
+function getUserPrompt(call: Record<string, unknown> | undefined): string {
+  const messages = call?.messages as Array<{ role: string; content: string }> | undefined;
+  return messages?.find((message) => message.role === "user")?.content ?? "";
+}
+
+describe("InfluenceAgent tool-call fallbacks", () => {
+  test("sendRoomMessage accepts JSON arguments returned as assistant content", async () => {
+    const { openai, calls } = makeOpenAIStub([
+      {
+        content: JSON.stringify({
+          thinking: "Build trust, then steer the next vote.",
+          message: "Vera, I think we can keep heat off each other if we both watch Mira's next move.",
+          pass: false,
+        }),
+      },
+    ]);
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
+
+    const result = await agent.sendRoomMessage(makeAgentContext(Phase.WHISPER), "Vera");
+
+    expect(result).toEqual({
+      thinking: "Build trust, then steer the next vote.",
+      message: "Vera, I think we can keep heat off each other if we both watch Mira's next move.",
+    });
+
+    const tool = (calls[0]?.tools as Array<{
+      function: { strict?: boolean; parameters?: { required?: string[]; additionalProperties?: unknown } };
+    }>)[0];
+    expect(tool?.function.strict).toBe(true);
+    expect(tool?.function.parameters?.required).toEqual(["thinking", "message", "pass"]);
+    expect(tool?.function.parameters?.additionalProperties).toBe(false);
+  });
+
+  test("getVotes accepts JSON arguments returned as assistant content", async () => {
+    const { openai } = makeOpenAIStub([
+      {
+        content: JSON.stringify({
+          thinking: "Empower an ally and expose the player driving consensus.",
+          empower: "Mira",
+          expose: "Vera",
+        }),
+      },
+    ]);
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
+
+    const votes = await agent.getVotes(makeAgentContext(Phase.VOTE));
+
+    expect(votes).toEqual({
+      empowerTarget: "mira-id",
+      exposeTarget: "vera-id",
+    });
+  });
+
+  test("getPowerAction retries with more tokens when the forced tool call is incomplete", async () => {
+    const { openai, calls } = makeOpenAIStub([
+      { content: null, finishReason: "length" },
+      {
+        toolName: "use_power",
+        toolArguments: JSON.stringify({
+          thinking: "Take the shot before the council can scatter.",
+          action: "eliminate",
+          target: "Mira",
+        }),
+      },
+    ]);
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
+
+    const action = await agent.getPowerAction(
+      makeAgentContext(Phase.POWER),
+      ["vera-id", "mira-id"],
+    );
+
+    expect(action).toEqual({
+      action: "eliminate",
+      target: "mira-id",
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.max_completion_tokens).toBeGreaterThan(calls[0]?.max_completion_tokens as number);
+  });
+
+  test("getPowerAction retries with strict JSON schema when a completed response has no tool call", async () => {
+    const { openai, calls } = makeOpenAIStub([
+      { content: null, finishReason: "stop" },
+      {
+        content: JSON.stringify({
+          thinking: "Take the shot before the council can scatter.",
+          action: "eliminate",
+          target: "Mira",
+        }),
+      },
+    ]);
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
+
+    const action = await agent.getPowerAction(
+      makeAgentContext(Phase.POWER),
+      ["vera-id", "mira-id"],
+    );
+
+    expect(action).toEqual({
+      action: "eliminate",
+      target: "mira-id",
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.response_format).toEqual({
+      type: "json_schema",
+      json_schema: {
+        name: "use_power_arguments",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            thinking: { type: "string", description: "Your internal reasoning for this decision (hidden from other players)" },
+            action: {
+              type: "string",
+              enum: ["eliminate", "protect", "pass"],
+              description: "The power action to take",
+            },
+            target: { type: "string", description: "Player name to target" },
+          },
+          required: ["thinking", "action", "target"],
+          additionalProperties: false,
+        },
+      },
+    });
+  });
+
+  test("getPowerAction does not retry a refusal through JSON fallback", async () => {
+    const { openai, calls } = makeOpenAIStub([
+      { content: null, refusal: "I cannot comply with that request." },
+      {
+        content: JSON.stringify({
+          thinking: "This response should not be requested.",
+          action: "eliminate",
+          target: "Mira",
+        }),
+      },
+    ]);
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
+
+    const action = await agent.getPowerAction(
+      makeAgentContext(Phase.POWER),
+      ["vera-id", "mira-id"],
+    );
+
+    expect(action).toEqual({
+      action: "pass",
+      target: "vera-id",
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  test("getPowerAction only treats same-round Power Lobby messages as fresh evidence", async () => {
+    const { openai: staleOpenAI, calls: staleCalls } = makeOpenAIStub([
+      {
+        toolName: "use_power",
+        toolArguments: JSON.stringify({
+          thinking: "Let council expose the alliances.",
+          action: "pass",
+          target: "Vera",
+        }),
+      },
+    ]);
+    const staleAgent = new InfluenceAgent("atlas-id", "Atlas", "strategic", staleOpenAI, "gpt-5-nano");
+    const staleCtx = makeAgentContext(Phase.POWER);
+    staleCtx.round = 2;
+    staleCtx.publicMessages = [
+      {
+        from: "Vera",
+        text: "Atlas, eliminate Mira and I will vote with you.",
+        phase: Phase.POWER,
+        round: 1,
+      },
+    ];
+
+    await staleAgent.getPowerAction(staleCtx, ["vera-id", "mira-id"]);
+
+    const stalePrompt = getUserPrompt(staleCalls[0]);
+    expect(stalePrompt).toContain("No fresh Power Lobby record is available");
+    expect(stalePrompt).toContain("do not treat older Power Lobby messages as current evidence");
+
+    const { openai: freshOpenAI, calls: freshCalls } = makeOpenAIStub([
+      {
+        toolName: "use_power",
+        toolArguments: JSON.stringify({
+          thinking: "Honor the current public receipt.",
+          action: "protect",
+          target: "Mira",
+        }),
+      },
+    ]);
+    const freshAgent = new InfluenceAgent("atlas-id", "Atlas", "strategic", freshOpenAI, "gpt-5-nano");
+    const freshCtx = makeAgentContext(Phase.POWER);
+    freshCtx.round = 2;
+    freshCtx.publicMessages = [
+      {
+        from: "Mira",
+        text: "Atlas, protect me and I will expose Vera next round.",
+        phase: Phase.POWER,
+        round: 2,
+      },
+    ];
+
+    await freshAgent.getPowerAction(freshCtx, ["vera-id", "mira-id"]);
+
+    expect(getUserPrompt(freshCalls[0])).toContain("The Power Lobby just happened this round");
+  });
+
+  test("getPowerAction prompt carries anti-repeat power guidance and last action", async () => {
+    const { openai, calls } = makeOpenAIStub([
+      {
+        toolName: "use_power",
+        toolArguments: JSON.stringify({
+          thinking: "Take one direct shot.",
+          action: "eliminate",
+          target: "Mira",
+        }),
+      },
+      {
+        toolName: "use_power",
+        toolArguments: JSON.stringify({
+          thinking: "Avoid a second direct shot without a fresh receipt.",
+          action: "pass",
+          target: "Vera",
+        }),
+      },
+    ]);
+    const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
+
+    const round1Ctx = makeAgentContext(Phase.POWER);
+    await agent.getPowerAction(round1Ctx, ["vera-id", "mira-id"]);
+
+    const round2Ctx = makeAgentContext(Phase.POWER);
+    round2Ctx.round = 2;
+    await agent.getPowerAction(round2Ctx, ["vera-id", "mira-id"]);
+
+    const secondPrompt = getUserPrompt(calls[1]);
+    expect(secondPrompt).toContain("Your last empowered action: R1 eliminate -> Mira.");
+    expect(secondPrompt).toContain("Do not protect an ally you already protected unless this round's Power Lobby creates a new public receipt");
+    expect(secondPrompt).toContain("If your last empowered action was eliminate, default away from eliminate unless this round's fresh Power Lobby evidence");
+  });
+});
