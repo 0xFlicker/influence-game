@@ -8,6 +8,8 @@
  *   bun run simulate
  *   bun run simulate -- --games 5 --players 6
  *   bun run simulate -- --games 3 --players 4 --personas Atlas,Vera,Finn,Mira
+ *   bun run simulate -- --variant anti-repeat
+ *   bun run simulate -- --variant power-lobby-anti-repeat
  */
 
 import OpenAI from "openai";
@@ -125,8 +127,56 @@ function buildRunMetadata(args: SimArgs, timestamp: string): SimulationRunMetada
   };
 }
 
-function isPowerLobbyVariant(variant: string): boolean {
-  return ["power-lobby", "power-lobby-after-vote"].includes(variant.toLowerCase());
+const POWER_LOBBY_VARIANTS = new Set([
+  "power-lobby",
+  "power-lobby-after-vote",
+  "power-lobby-v2",
+  "power-lobby-anti-repeat",
+  "anti-repeat-power-lobby",
+  "power-lobby-v2-anti-repeat",
+  "anti-repeat-power-lobby-v2",
+]);
+
+const ANTI_REPEAT_WHISPER_VARIANTS = new Set([
+  "anti-repeat",
+  "anti-repeat-whispers",
+  "power-lobby-anti-repeat",
+  "anti-repeat-power-lobby",
+  "power-lobby-v2-anti-repeat",
+  "anti-repeat-power-lobby-v2",
+]);
+
+export function isPowerLobbyVariant(variant: string): boolean {
+  return POWER_LOBBY_VARIANTS.has(variant.toLowerCase());
+}
+
+export function isAntiRepeatWhisperVariant(variant: string): boolean {
+  return ANTI_REPEAT_WHISPER_VARIANTS.has(variant.toLowerCase());
+}
+
+export function buildSimulationConfig(variant: string): GameConfig {
+  return {
+    ...DEFAULT_CONFIG,
+    timers: {
+      introduction: 0,
+      lobby: 0,
+      whisper: 0,
+      rumor: 0,
+      vote: 0,
+      power: 0,
+      council: 0,
+      plea: 0,
+      accusation: 0,
+      defense: 0,
+      openingStatements: 0,
+      juryQuestions: 0,
+      closingArguments: 0,
+      juryVote: 0,
+    },
+    maxRounds: 10,
+    powerLobbyAfterVote: isPowerLobbyVariant(variant),
+    experimentalAntiRepeatWhisperRooms: isAntiRepeatWhisperVariant(variant),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -569,27 +619,7 @@ async function main() {
   console.log("");
 
   // Simulation config: no timers (agents respond as fast as they can)
-  const simConfig: GameConfig = {
-    ...DEFAULT_CONFIG,
-    timers: {
-      introduction: 0,
-      lobby: 0,
-      whisper: 0,
-      rumor: 0,
-      vote: 0,
-      power: 0,
-      council: 0,
-      plea: 0,
-      accusation: 0,
-      defense: 0,
-      openingStatements: 0,
-      juryQuestions: 0,
-      closingArguments: 0,
-      juryVote: 0,
-    },
-    maxRounds: 10,
-    powerLobbyAfterVote: isPowerLobbyVariant(args.variant),
-  };
+  const simConfig = buildSimulationConfig(args.variant);
 
   // Create output directory
   const timestamp = runTimestamp.replace(/[:.]/g, "-").slice(0, 19);
@@ -741,7 +771,9 @@ async function main() {
   console.log(`\nSimulation artifacts saved to: ${batchDir}`);
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error("Fatal error:", err);
+    process.exit(1);
+  });
+}

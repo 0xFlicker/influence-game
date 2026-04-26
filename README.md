@@ -35,6 +35,10 @@ bun run simulate
 
 # Customize: 1 game, 4 specific agents
 bun run simulate -- --games 1 --players 4 --personas Atlas,Vera,Finn,Mira
+
+# Validation variants
+bun run simulate -- --variant anti-repeat
+bun run simulate -- --variant power-lobby-anti-repeat
 ```
 
 The root `simulate` script injects secrets from the Doppler `social-strategy-agent` project's `dev` config. Use that dev-scoped path for local simulator validation; staging credentials are reserved for release validation.
@@ -182,6 +186,8 @@ Options:
   --players N      Players per game, 4-10 (default: 6)
   --personas A,B   Comma-separated persona names (default: random selection)
   --model NAME     OpenAI model (default: gpt-4o-mini)
+  --variant NAME   Variant: baseline, power-lobby, anti-repeat,
+                   or power-lobby-anti-repeat (default: baseline)
 ```
 
 ## Seeding the Database (optional)
