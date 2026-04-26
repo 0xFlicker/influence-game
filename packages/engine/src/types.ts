@@ -176,6 +176,75 @@ export interface RoomAllocation {
   round: number;
 }
 
+export type WhisperRoomAllocationMode = "request-order" | "diversity-weighted";
+
+export type WhisperRoomRequestStatus = "valid" | "missing" | "self" | "ineligible";
+
+export interface WhisperRoomPlayerRef {
+  id: UUID;
+  name: string;
+}
+
+export interface WhisperRoomRequestRecord {
+  requester: WhisperRoomPlayerRef;
+  requestedPartner: WhisperRoomPlayerRef | null;
+  status: WhisperRoomRequestStatus;
+}
+
+export interface WhisperPriorPairCount {
+  players: [WhisperRoomPlayerRef, WhisperRoomPlayerRef];
+  count: number;
+}
+
+export interface WhisperAllocatedRoomDiagnostics {
+  roomId: number;
+  players: [WhisperRoomPlayerRef, WhisperRoomPlayerRef];
+  immediateRepeat: boolean;
+  priorRepeatCount: number;
+  noFullNonRepeatMatchingExisted: boolean;
+}
+
+export interface WhisperExcludedPlayerDiagnostics {
+  player: WhisperRoomPlayerRef;
+  consecutiveExclusion: boolean;
+  alternativeFullMatchingCouldAvoid: boolean;
+}
+
+export interface WhisperRequestSatisfactionSummary {
+  validRequests: number;
+  mutualHonored: number;
+  oneWayHonored: number;
+  unmatchedValidRequests: number;
+  invalidOrMissingRequests: number;
+}
+
+export interface WhisperRepeatPairFlags {
+  immediateRepeats: number;
+  repeatedPairs: number;
+  noFullNonRepeatMatchingExists: boolean;
+}
+
+export interface WhisperExclusionFlags {
+  consecutiveExclusions: number;
+  avoidableConsecutiveExclusions: number;
+}
+
+export interface WhisperSessionDiagnostics {
+  round: number;
+  sessionIndex: number;
+  allocationMode: WhisperRoomAllocationMode;
+  roomCountLimit: number;
+  eligiblePlayers: WhisperRoomPlayerRef[];
+  requests: WhisperRoomRequestRecord[];
+  allocatedRooms: WhisperAllocatedRoomDiagnostics[];
+  excludedPlayers: WhisperExcludedPlayerDiagnostics[];
+  priorPairCounts: WhisperPriorPairCount[];
+  previousSessionExcludedPlayers: WhisperRoomPlayerRef[];
+  requestSatisfaction: WhisperRequestSatisfactionSummary;
+  repeatPairFlags: WhisperRepeatPairFlags;
+  exclusionFlags: WhisperExclusionFlags;
+}
+
 /** System event emitted when whisper rooms are allocated for a round */
 export interface RoomAllocationEvent {
   type: "system";
@@ -317,7 +386,9 @@ export interface GameConfig {
   whisperSessionsPerRound?: number;
   /** Simulator experiment flag: add one public post-vote Power Lobby beat before the empowered action. */
   powerLobbyAfterVote?: boolean;
-  /** Simulator experiment flag: avoid honoring repeat whisper-room pair requests. */
+  /** Whisper room allocator. Defaults to request-order unless an experiment enables diversity weighting. */
+  whisperRoomAllocationMode?: WhisperRoomAllocationMode;
+  /** Legacy simulator alias for the diversity-weighted whisper allocator. */
   experimentalAntiRepeatWhisperRooms?: boolean;
 }
 

@@ -43,7 +43,10 @@ export class GameState {
   private _powerAction: PowerAction | null = null;
 
   // --- Room allocation history ---
-  private _roomAllocations = new Map<number, { rooms: RoomAllocation[]; excluded: UUID[] }>();
+  private _roomAllocations = new Map<
+    number,
+    { rooms: RoomAllocation[]; excluded: UUID[]; lastSessionExcluded: UUID[] }
+  >();
 
   // --- Endgame state ---
   private _jury: JuryMember[] = [];
@@ -176,11 +179,13 @@ export class GameState {
   // Room allocation tracking
   // ---------------------------------------------------------------------------
 
-  recordRoomAllocations(rooms: RoomAllocation[], excluded: UUID[]): void {
-    this._roomAllocations.set(this._round, { rooms, excluded });
+  recordRoomAllocations(rooms: RoomAllocation[], excluded: UUID[], lastSessionExcluded = excluded): void {
+    this._roomAllocations.set(this._round, { rooms, excluded, lastSessionExcluded });
   }
 
-  getRoomAllocations(round: number): { rooms: RoomAllocation[]; excluded: UUID[] } | undefined {
+  getRoomAllocations(round: number):
+    | { rooms: RoomAllocation[]; excluded: UUID[]; lastSessionExcluded: UUID[] }
+    | undefined {
     return this._roomAllocations.get(round);
   }
 

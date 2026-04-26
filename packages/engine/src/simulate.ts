@@ -135,9 +135,18 @@ const POWER_LOBBY_VARIANTS = new Set([
   "anti-repeat-power-lobby",
   "power-lobby-v2-anti-repeat",
   "anti-repeat-power-lobby-v2",
+  "power-lobby-diversity-whisper",
+  "diversity-whisper-power-lobby",
+  "power-lobby-v2-diversity-whisper",
+  "diversity-whisper-power-lobby-v2",
 ]);
 
-const ANTI_REPEAT_WHISPER_VARIANTS = new Set([
+const DIVERSITY_WHISPER_VARIANTS = new Set([
+  "diversity-whisper",
+  "power-lobby-diversity-whisper",
+  "diversity-whisper-power-lobby",
+  "power-lobby-v2-diversity-whisper",
+  "diversity-whisper-power-lobby-v2",
   "anti-repeat",
   "anti-repeat-whispers",
   "power-lobby-anti-repeat",
@@ -151,7 +160,7 @@ export function isPowerLobbyVariant(variant: string): boolean {
 }
 
 export function isAntiRepeatWhisperVariant(variant: string): boolean {
-  return ANTI_REPEAT_WHISPER_VARIANTS.has(variant.toLowerCase());
+  return DIVERSITY_WHISPER_VARIANTS.has(variant.toLowerCase());
 }
 
 export function buildSimulationConfig(variant: string): GameConfig {
@@ -175,6 +184,7 @@ export function buildSimulationConfig(variant: string): GameConfig {
     },
     maxRounds: 10,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),
+    whisperRoomAllocationMode: isAntiRepeatWhisperVariant(variant) ? "diversity-weighted" : "request-order",
     experimentalAntiRepeatWhisperRooms: isAntiRepeatWhisperVariant(variant),
   };
 }
@@ -236,7 +246,7 @@ function selectCast(
 // Game result types
 // ---------------------------------------------------------------------------
 
-interface GameResult {
+export interface GameResult {
   gameNumber: number;
   status: "completed" | "failed";
   winnerName: string | undefined;
@@ -256,9 +266,14 @@ interface GameResult {
   instrumentation: GameInstrumentation;
 }
 
-interface AggregateStats {
+export interface AggregateStats {
   metadata: SimulationRunMetadata;
+  requestedGames: number;
+  attemptedGames: number;
   totalGames: number;
+  completedGames: number;
+  failedGames: number;
+  partial: boolean;
   model: string;
   perPersona: Record<
     string,
@@ -315,11 +330,13 @@ function getSurvivalRound(
 // Aggregate stats computation
 // ---------------------------------------------------------------------------
 
-function computeAggregateStats(
+export function computeAggregateStats(
   results: GameResult[],
   model: string,
   metadata: SimulationRunMetadata,
+  partial = false,
 ): AggregateStats {
+  const completedResults = results.filter((result) => result.status === "completed");
   const perPersona: AggregateStats["perPersona"] = {};
   const perEndgameType: Record<string, number> = {};
   let totalRounds = 0;
@@ -335,7 +352,7 @@ function computeAggregateStats(
     emptyResponses: 0,
   };
 
-  for (const result of results) {
+  for (const result of completedResults) {
     // Track rounds
     totalRounds += result.rounds;
     totalDuration += result.durationMs;
@@ -385,20 +402,25 @@ function computeAggregateStats(
 
   return {
     metadata,
-    totalGames: results.length,
+    requestedGames: metadata.args.games,
+    attemptedGames: results.length,
+    totalGames: completedResults.length,
+    completedGames: completedResults.length,
+    failedGames: results.length - completedResults.length,
+    partial,
     model,
     perPersona,
     perEndgameType,
     overall: {
-      avgGameLength: results.length > 0 ? totalRounds / results.length : 0,
+      avgGameLength: completedResults.length > 0 ? totalRounds / completedResults.length : 0,
       roundDistribution: roundDist,
-      avgDurationMs: results.length > 0 ? totalDuration / results.length : 0,
+      avgDurationMs: completedResults.length > 0 ? totalDuration / completedResults.length : 0,
     },
     tokenUsage: {
       total: batchTokens,
       costEstimates: estimateCostAllModels(batchTokens),
     },
-    instrumentation: aggregateInstrumentation(results.map((result) => result.instrumentation)),
+    instrumentation: aggregateInstrumentation(completedResults.map((result) => result.instrumentation)),
   };
 }
 
@@ -429,7 +451,10 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
   lines.push(`**Git:** ${stats.metadata.git.commitShortSha ?? "unknown"} (${stats.metadata.git.branch ?? "unknown branch"}${stats.metadata.git.isDirty ? ", dirty" : ""})`);
   lines.push(`**Command:** \`${stats.metadata.command}\``);
   lines.push(`**Timestamp:** ${stats.metadata.timestamp}`);
-  lines.push(`**Games played:** ${stats.totalGames}`);
+  lines.push(`**Games completed:** ${stats.completedGames}/${stats.requestedGames}`);
+  lines.push(`**Games attempted:** ${stats.attemptedGames}`);
+  if (stats.failedGames > 0) lines.push(`**Failed games:** ${stats.failedGames}`);
+  if (stats.partial) lines.push("**Partial batch:** yes");
   lines.push(`**Model:** ${stats.model}`);
   lines.push(`**Avg game length:** ${stats.overall.avgGameLength.toFixed(1)} rounds`);
   lines.push(
@@ -457,8 +482,15 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
   lines.push(`| Tribunal markers | ${stats.instrumentation.endgame.tribunal} |`);
   lines.push(`| Judgment markers | ${stats.instrumentation.endgame.judgment} |`);
   lines.push(`| Whisper rooms | ${stats.instrumentation.rooms.totalRooms} |`);
+  lines.push(`| Whisper sessions instrumented | ${stats.instrumentation.rooms.whisperSessions.length} |`);
   lines.push(`| Room exclusions | ${stats.instrumentation.rooms.totalExclusions} |`);
   lines.push(`| Repeated room-pair occurrences | ${stats.instrumentation.rooms.repeatedPairs.totalRepeatedOccurrences} |`);
+  lines.push(`| Request mutual matches honored | ${stats.instrumentation.rooms.requestSatisfaction.mutualHonored} |`);
+  lines.push(`| Request one-way matches honored | ${stats.instrumentation.rooms.requestSatisfaction.oneWayHonored} |`);
+  lines.push(`| Unmatched valid room requests | ${stats.instrumentation.rooms.requestSatisfaction.unmatchedValidRequests} |`);
+  lines.push(`| Invalid/missing room requests | ${stats.instrumentation.rooms.requestSatisfaction.invalidOrMissingRequests} |`);
+  lines.push(`| Immediate repeat rooms flagged | ${stats.instrumentation.rooms.repeatPairFlags.immediateRepeats} |`);
+  lines.push(`| Avoidable consecutive exclusions flagged | ${stats.instrumentation.rooms.exclusionFlags.avoidableConsecutiveExclusions} |`);
   lines.push(`| LLM empty/fallback responses | ${stats.instrumentation.actionUsage.totalEmptyResponses} |`);
   lines.push("");
 
@@ -644,6 +676,34 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
   return lines.join("\n");
 }
 
+function writeBatchArtifacts(
+  batchDir: string,
+  metadata: SimulationRunMetadata,
+  model: string,
+  results: GameResult[],
+  partial: boolean,
+): { stats: AggregateStats; markdown: string } {
+  const stats = computeAggregateStats(results, model, metadata, partial);
+  const markdown = renderMarkdownSummary(stats, results);
+
+  writeFileSync(join(batchDir, "summary.md"), markdown);
+  writeFileSync(join(batchDir, "stats.json"), JSON.stringify(stats, null, 2));
+  writeFileSync(
+    join(batchDir, "results.json"),
+    JSON.stringify(
+      {
+        metadata,
+        stats,
+        games: results,
+      },
+      null,
+      2,
+    ),
+  );
+
+  return { stats, markdown };
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -677,6 +737,15 @@ async function main() {
   mkdirSync(batchDir, { recursive: true });
 
   const results: GameResult[] = [];
+  const flushPartialAndExit = (signal: "SIGINT" | "SIGTERM"): void => {
+    writeBatchArtifacts(batchDir, metadata, args.model, results, true);
+    console.error(
+      `\n${signal} received. Partial aggregate artifacts saved from ${results.filter((result) => result.status === "completed").length} completed game(s) to: ${batchDir}`,
+    );
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  };
+  process.once("SIGINT", () => flushPartialAndExit("SIGINT"));
+  process.once("SIGTERM", () => flushPartialAndExit("SIGTERM"));
 
   for (let g = 1; g <= args.games; g++) {
     console.log(`--- Game ${g}/${args.games} ---`);
@@ -749,6 +818,7 @@ async function main() {
           2,
         ),
       );
+      writeBatchArtifacts(batchDir, metadata, args.model, results, g < args.games);
     } catch (err) {
       const durationMs = Date.now() - startTime;
       console.error(`  Game ${g} FAILED after ${(durationMs / 1000).toFixed(0)}s: ${err}`);
@@ -788,35 +858,19 @@ async function main() {
           2,
         ),
       );
+      writeBatchArtifacts(batchDir, metadata, args.model, results, g < args.games);
     }
   }
 
   // Compute aggregates
-  const stats = computeAggregateStats(results, args.model, metadata);
+  const { stats, markdown } = writeBatchArtifacts(batchDir, metadata, args.model, results, false);
 
   // Output structured JSON
   console.log("\n=== Aggregate Stats (JSON) ===\n");
   console.log(JSON.stringify(stats, null, 2));
 
   // Output markdown summary
-  const markdown = renderMarkdownSummary(stats, results);
   console.log("\n" + markdown);
-
-  // Save summary to batch directory
-  writeFileSync(join(batchDir, "summary.md"), markdown);
-  writeFileSync(join(batchDir, "stats.json"), JSON.stringify(stats, null, 2));
-  writeFileSync(
-    join(batchDir, "results.json"),
-    JSON.stringify(
-      {
-        metadata,
-        stats,
-        games: results,
-      },
-      null,
-      2,
-    ),
-  );
 
   console.log(`\nSimulation artifacts saved to: ${batchDir}`);
 }

@@ -1,5 +1,11 @@
 import type { TranscriptEntry } from "./game-runner.types";
 import type { TokenUsage } from "./token-tracker";
+import type {
+  WhisperExclusionFlags,
+  WhisperRepeatPairFlags,
+  WhisperRequestSatisfactionSummary,
+  WhisperSessionDiagnostics,
+} from "./types";
 import { Phase } from "./types";
 
 export interface SimulatorArgsSnapshot {
@@ -100,6 +106,15 @@ export interface RoomInstrumentation {
   totalExclusions: number;
   pairs: RoomPairObservation[];
   repeatedPairs: RepeatedPairInstrumentation;
+  whisperSessions: WhisperSessionDiagnostics[];
+  requestSatisfaction: WhisperRequestSatisfactionSummary;
+  repeatPairFlags: WhisperRepeatPairFlags & {
+    sessionsWithImmediateRepeats: number;
+    sessionsWithoutFullNonRepeatMatching: number;
+  };
+  exclusionFlags: WhisperExclusionFlags & {
+    sessionsWithConsecutiveExclusions: number;
+  };
 }
 
 export interface ActionUsageInstrumentation {
@@ -357,6 +372,66 @@ function buildRepeatedPairInstrumentation(
   };
 }
 
+function emptyRequestSatisfaction(): WhisperRequestSatisfactionSummary {
+  return {
+    validRequests: 0,
+    mutualHonored: 0,
+    oneWayHonored: 0,
+    unmatchedValidRequests: 0,
+    invalidOrMissingRequests: 0,
+  };
+}
+
+function summarizeWhisperSessions(
+  sessions: readonly WhisperSessionDiagnostics[],
+): Pick<RoomInstrumentation, "requestSatisfaction" | "repeatPairFlags" | "exclusionFlags"> {
+  const requestSatisfaction = emptyRequestSatisfaction();
+  const repeatPairFlags: RoomInstrumentation["repeatPairFlags"] = {
+    immediateRepeats: 0,
+    repeatedPairs: 0,
+    noFullNonRepeatMatchingExists: false,
+    sessionsWithImmediateRepeats: 0,
+    sessionsWithoutFullNonRepeatMatching: 0,
+  };
+  const exclusionFlags: RoomInstrumentation["exclusionFlags"] = {
+    consecutiveExclusions: 0,
+    avoidableConsecutiveExclusions: 0,
+    sessionsWithConsecutiveExclusions: 0,
+  };
+
+  for (const session of sessions) {
+    requestSatisfaction.validRequests += session.requestSatisfaction.validRequests;
+    requestSatisfaction.mutualHonored += session.requestSatisfaction.mutualHonored;
+    requestSatisfaction.oneWayHonored += session.requestSatisfaction.oneWayHonored;
+    requestSatisfaction.unmatchedValidRequests += session.requestSatisfaction.unmatchedValidRequests;
+    requestSatisfaction.invalidOrMissingRequests += session.requestSatisfaction.invalidOrMissingRequests;
+
+    repeatPairFlags.immediateRepeats += session.repeatPairFlags.immediateRepeats;
+    repeatPairFlags.repeatedPairs += session.repeatPairFlags.repeatedPairs;
+    repeatPairFlags.noFullNonRepeatMatchingExists =
+      repeatPairFlags.noFullNonRepeatMatchingExists ||
+      session.repeatPairFlags.noFullNonRepeatMatchingExists;
+    if (session.repeatPairFlags.immediateRepeats > 0) {
+      repeatPairFlags.sessionsWithImmediateRepeats += 1;
+    }
+    if (session.repeatPairFlags.noFullNonRepeatMatchingExists) {
+      repeatPairFlags.sessionsWithoutFullNonRepeatMatching += 1;
+    }
+
+    exclusionFlags.consecutiveExclusions += session.exclusionFlags.consecutiveExclusions;
+    exclusionFlags.avoidableConsecutiveExclusions += session.exclusionFlags.avoidableConsecutiveExclusions;
+    if (session.exclusionFlags.consecutiveExclusions > 0) {
+      exclusionFlags.sessionsWithConsecutiveExclusions += 1;
+    }
+  }
+
+  return {
+    requestSatisfaction,
+    repeatPairFlags,
+    exclusionFlags,
+  };
+}
+
 export function buildActionUsageInstrumentation(
   perSourceUsage: Record<string, TokenUsage>,
 ): ActionUsageInstrumentation {
@@ -416,6 +491,7 @@ export function instrumentGame(
   const participationByPlayer: Record<string, number> = {};
   const exclusionsByPlayer: Record<string, number> = {};
   const pairs: RoomPairObservation[] = [];
+  const whisperSessions: WhisperSessionDiagnostics[] = [];
   const whisperRounds = new Set<number>();
   let totalExclusions = 0;
 
@@ -474,6 +550,9 @@ export function instrumentGame(
 
     if (entry.roomMetadata) {
       whisperRounds.add(entry.round);
+      if (entry.roomMetadata.diagnostics) {
+        whisperSessions.push(entry.roomMetadata.diagnostics);
+      }
       for (const room of entry.roomMetadata.rooms) {
         const playerA = playerNameById[room.playerA] ?? room.playerA;
         const playerB = playerNameById[room.playerB] ?? room.playerB;
@@ -509,6 +588,8 @@ export function instrumentGame(
       totalExclusions,
       pairs,
       repeatedPairs: buildRepeatedPairInstrumentation(pairs, whisperRounds.size),
+      whisperSessions,
+      ...summarizeWhisperSessions(whisperSessions),
     },
     actionUsage: buildActionUsageInstrumentation(perSourceUsage),
   };
@@ -551,6 +632,7 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
   const participationByPlayer: Record<string, number> = {};
   const exclusionsByPlayer: Record<string, number> = {};
   const pairs: RoomPairObservation[] = [];
+  const whisperSessions: WhisperSessionDiagnostics[] = [];
   const repeatedPairTotals = new Map<string, { pair: [string, string]; count: number; rounds: Set<number> }>();
   let totalRepeatedOccurrences = 0;
   let maxPairCount = 0;
@@ -629,6 +711,7 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
     totalExclusions += game.rooms.totalExclusions;
     whisperRounds += game.rooms.whisperRounds;
     pairs.push(...game.rooms.pairs);
+    whisperSessions.push(...game.rooms.whisperSessions);
     totalRepeatedOccurrences += game.rooms.repeatedPairs.totalRepeatedOccurrences;
     maxPairCount = Math.max(maxPairCount, game.rooms.repeatedPairs.maxPairCount);
     maxPairShareOfRooms = Math.max(
@@ -709,6 +792,8 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
           }))
           .sort((a, b) => b.count - a.count || pairKey(a.pair).localeCompare(pairKey(b.pair))),
       },
+      whisperSessions,
+      ...summarizeWhisperSessions(whisperSessions),
     },
     actionUsage: {
       totalCalls,
