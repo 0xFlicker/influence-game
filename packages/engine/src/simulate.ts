@@ -446,6 +446,9 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
   lines.push(`| Power eliminate | ${stats.instrumentation.powerActions.counts.eliminate} |`);
   lines.push(`| Power protect | ${stats.instrumentation.powerActions.counts.protect} |`);
   lines.push(`| Power pass | ${stats.instrumentation.powerActions.counts.pass} |`);
+  lines.push(`| Empowered actors | ${Object.keys(stats.instrumentation.powerActions.actorCounts).length} |`);
+  lines.push(`| Consecutive eliminate repeats | ${stats.instrumentation.powerActions.consecutiveEliminates.total} |`);
+  lines.push(`| Repeated protect-same-target occurrences | ${stats.instrumentation.powerActions.repeatedProtectSameTarget.total} |`);
   lines.push(`| Auto-eliminations | ${stats.instrumentation.autoEliminations.total} |`);
   lines.push(`| Reveal phases | ${stats.instrumentation.council.revealPhases} |`);
   lines.push(`| Council phases | ${stats.instrumentation.council.councilPhases} |`);
@@ -458,6 +461,53 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
   lines.push(`| Repeated room-pair occurrences | ${stats.instrumentation.rooms.repeatedPairs.totalRepeatedOccurrences} |`);
   lines.push(`| LLM empty/fallback responses | ${stats.instrumentation.actionUsage.totalEmptyResponses} |`);
   lines.push("");
+
+  if (Object.keys(stats.instrumentation.powerActions.actionDistributionByActor).length > 0) {
+    lines.push("## Power Action Distribution");
+    lines.push("");
+    lines.push("| Actor | Actions | Eliminate | Protect | Pass |");
+    lines.push("|-------|--------:|----------:|--------:|-----:|");
+    const actors = Object.keys(stats.instrumentation.powerActions.actionDistributionByActor).sort(
+      (a, b) =>
+        (stats.instrumentation.powerActions.actorCounts[b] ?? 0) -
+          (stats.instrumentation.powerActions.actorCounts[a] ?? 0) ||
+        a.localeCompare(b),
+    );
+    for (const actor of actors) {
+      const distribution = stats.instrumentation.powerActions.actionDistributionByActor[actor];
+      if (!distribution) continue;
+      lines.push(
+        `| ${actor} | ${stats.instrumentation.powerActions.actorCounts[actor] ?? 0} | ${distribution.eliminate} | ${distribution.protect} | ${distribution.pass} |`,
+      );
+    }
+    lines.push("");
+  }
+
+  if (stats.instrumentation.powerActions.consecutiveEliminates.occurrences.length > 0) {
+    lines.push("## Consecutive Power Eliminates");
+    lines.push("");
+    lines.push("| Actor | Rounds | Targets |");
+    lines.push("|-------|--------|---------|");
+    for (const occurrence of stats.instrumentation.powerActions.consecutiveEliminates.occurrences) {
+      lines.push(
+        `| ${occurrence.actor} | ${occurrence.previousRound} -> ${occurrence.round} | ${occurrence.previousTarget} -> ${occurrence.target} |`,
+      );
+    }
+    lines.push("");
+  }
+
+  if (stats.instrumentation.powerActions.repeatedProtectSameTarget.repeats.length > 0) {
+    lines.push("## Repeated Protect Targets");
+    lines.push("");
+    lines.push("| Actor | Target | Protects | Repeats | Rounds |");
+    lines.push("|-------|--------|---------:|--------:|--------|");
+    for (const repeat of stats.instrumentation.powerActions.repeatedProtectSameTarget.repeats) {
+      lines.push(
+        `| ${repeat.actor} | ${repeat.target} | ${repeat.protectActions} | ${repeat.repeatedOccurrences} | ${repeat.rounds.join(", ")} |`,
+      );
+    }
+    lines.push("");
+  }
 
   if (Object.keys(stats.instrumentation.rooms.participationByPlayer).length > 0) {
     lines.push("## Room Participation");

@@ -493,6 +493,8 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     await freshAgent.getPowerAction(freshCtx, ["vera-id", "mira-id"]);
 
     expect(getUserPrompt(freshCalls[0])).toContain("The Power Lobby just happened this round");
+    expect(getUserPrompt(freshCalls[0])).toContain("Current-round Power Lobby record");
+    expect(getUserPrompt(freshCalls[0])).toContain("Mira: Atlas, protect me and I will expose Vera next round.");
   });
 
   test("getPowerAction prompt carries anti-repeat power guidance and last action", async () => {
@@ -526,6 +528,8 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     const secondPrompt = getUserPrompt(calls[1]);
     expect(secondPrompt).toContain("Your last empowered action: R1 eliminate -> Mira.");
     expect(secondPrompt).toContain("Do not protect an ally you already protected unless this round's Power Lobby creates a new public receipt");
-    expect(secondPrompt).toContain("If your last empowered action was eliminate, default away from eliminate unless this round's fresh Power Lobby evidence");
+    expect(secondPrompt).toContain("eliminate is gated by fresh current-round Power Lobby evidence against that exact candidate");
+    expect(secondPrompt).toContain("your hidden thinking MUST cite the speaker and evidence from this round's Power Lobby");
+    expect(secondPrompt).toContain("When the lobby record conflicts, when council would expose useful public votes");
   });
 });

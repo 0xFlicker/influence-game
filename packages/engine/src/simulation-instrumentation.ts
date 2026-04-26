@@ -34,6 +34,24 @@ export interface PowerActionObservation {
   text: string;
 }
 
+export type PowerActionCounts = Record<PowerActionObservation["action"], number>;
+
+export interface ConsecutiveEliminateObservation {
+  actor: string;
+  previousRound: number;
+  round: number;
+  previousTarget: string;
+  target: string;
+}
+
+export interface RepeatedProtectSameTargetObservation {
+  actor: string;
+  target: string;
+  protectActions: number;
+  repeatedOccurrences: number;
+  rounds: number[];
+}
+
 export interface AutoEliminateObservation {
   round: number;
   target: string;
@@ -103,8 +121,18 @@ export interface ActionUsageInstrumentation {
 export interface GameInstrumentation {
   powerActions: {
     total: number;
-    counts: Record<"eliminate" | "protect" | "pass", number>;
+    counts: PowerActionCounts;
     actions: PowerActionObservation[];
+    actorCounts: Record<string, number>;
+    actionDistributionByActor: Record<string, PowerActionCounts>;
+    consecutiveEliminates: {
+      total: number;
+      occurrences: ConsecutiveEliminateObservation[];
+    };
+    repeatedProtectSameTarget: {
+      total: number;
+      repeats: RepeatedProtectSameTargetObservation[];
+    };
   };
   autoEliminations: {
     total: number;
@@ -156,6 +184,18 @@ function pairKey(pair: [string, string]): string {
   return `${pair[0]}|${pair[1]}`;
 }
 
+function powerPatternKey(actor: string, target: string): string {
+  return `${actor}|${target}`;
+}
+
+function emptyPowerActionCounts(): PowerActionCounts {
+  return {
+    eliminate: 0,
+    protect: 0,
+    pass: 0,
+  };
+}
+
 function parsePowerAction(text: string): Omit<PowerActionObservation, "round" | "text"> | null {
   const match = /^(.+) power action: (eliminate|protect|pass) -> (.+)$/.exec(text.trim());
   if (!match) return null;
@@ -165,6 +205,86 @@ function parsePowerAction(text: string): Omit<PowerActionObservation, "round" | 
     actor,
     action: action as "eliminate" | "protect" | "pass",
     target,
+  };
+}
+
+function buildPowerActionInstrumentation(
+  actions: PowerActionObservation[],
+): GameInstrumentation["powerActions"] {
+  const counts = emptyPowerActionCounts();
+  const actorCounts: Record<string, number> = {};
+  const actionDistributionByActor: Record<string, PowerActionCounts> = {};
+  const previousByActor = new Map<string, PowerActionObservation>();
+  const consecutiveEliminates: ConsecutiveEliminateObservation[] = [];
+  const protectsByActorTarget = new Map<
+    string,
+    { actor: string; target: string; rounds: number[]; protectActions: number }
+  >();
+
+  for (const action of actions) {
+    counts[action.action] += 1;
+    actorCounts[action.actor] = (actorCounts[action.actor] ?? 0) + 1;
+
+    const actorDistribution = actionDistributionByActor[action.actor] ?? emptyPowerActionCounts();
+    actorDistribution[action.action] += 1;
+    actionDistributionByActor[action.actor] = actorDistribution;
+
+    const previous = previousByActor.get(action.actor);
+    if (previous?.action === "eliminate" && action.action === "eliminate") {
+      consecutiveEliminates.push({
+        actor: action.actor,
+        previousRound: previous.round,
+        round: action.round,
+        previousTarget: previous.target,
+        target: action.target,
+      });
+    }
+    previousByActor.set(action.actor, action);
+
+    if (action.action === "protect") {
+      const key = powerPatternKey(action.actor, action.target);
+      const existing = protectsByActorTarget.get(key) ?? {
+        actor: action.actor,
+        target: action.target,
+        rounds: [],
+        protectActions: 0,
+      };
+      existing.rounds.push(action.round);
+      existing.protectActions += 1;
+      protectsByActorTarget.set(key, existing);
+    }
+  }
+
+  const repeatedProtects = [...protectsByActorTarget.values()]
+    .filter((repeat) => repeat.protectActions > 1)
+    .map((repeat) => ({
+      actor: repeat.actor,
+      target: repeat.target,
+      protectActions: repeat.protectActions,
+      repeatedOccurrences: repeat.protectActions - 1,
+      rounds: [...repeat.rounds].sort((a, b) => a - b),
+    }))
+    .sort(
+      (a, b) =>
+        b.repeatedOccurrences - a.repeatedOccurrences ||
+        a.actor.localeCompare(b.actor) ||
+        a.target.localeCompare(b.target),
+    );
+
+  return {
+    total: actions.length,
+    counts,
+    actions,
+    actorCounts,
+    actionDistributionByActor,
+    consecutiveEliminates: {
+      total: consecutiveEliminates.length,
+      occurrences: consecutiveEliminates,
+    },
+    repeatedProtectSameTarget: {
+      total: repeatedProtects.reduce((sum, repeat) => sum + repeat.repeatedOccurrences, 0),
+      repeats: repeatedProtects,
+    },
   };
 }
 
@@ -374,15 +494,7 @@ export function instrumentGame(
   }
 
   return {
-    powerActions: {
-      total: powerActions.length,
-      counts: {
-        eliminate: powerActions.filter((action) => action.action === "eliminate").length,
-        protect: powerActions.filter((action) => action.action === "protect").length,
-        pass: powerActions.filter((action) => action.action === "pass").length,
-      },
-      actions: powerActions,
-    },
+    powerActions: buildPowerActionInstrumentation(powerActions),
     autoEliminations: {
       total: autoEliminations.length,
       eliminations: autoEliminations,
@@ -405,8 +517,18 @@ export function instrumentGame(
 export function aggregateInstrumentation(games: readonly GameInstrumentation[]): BatchInstrumentation {
   const powerActions: BatchInstrumentation["powerActions"] = {
     total: 0,
-    counts: { eliminate: 0, protect: 0, pass: 0 },
+    counts: emptyPowerActionCounts(),
     actions: [],
+    actorCounts: {},
+    actionDistributionByActor: {},
+    consecutiveEliminates: {
+      total: 0,
+      occurrences: [],
+    },
+    repeatedProtectSameTarget: {
+      total: 0,
+      repeats: [],
+    },
   };
   const autoEliminations: BatchInstrumentation["autoEliminations"] = {
     total: 0,
@@ -440,6 +562,10 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
   let totalEmptyResponses = 0;
   const byAction: ActionUsageInstrumentation["byAction"] = {};
   const bySource: Record<string, TokenUsage> = {};
+  const repeatedProtectTotals = new Map<
+    string,
+    RepeatedProtectSameTargetObservation
+  >();
 
   for (const game of games) {
     powerActions.total += game.powerActions.total;
@@ -447,6 +573,35 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
     powerActions.counts.protect += game.powerActions.counts.protect;
     powerActions.counts.pass += game.powerActions.counts.pass;
     powerActions.actions.push(...game.powerActions.actions);
+    for (const [actor, count] of Object.entries(game.powerActions.actorCounts)) {
+      powerActions.actorCounts[actor] = (powerActions.actorCounts[actor] ?? 0) + count;
+    }
+    for (const [actor, distribution] of Object.entries(game.powerActions.actionDistributionByActor)) {
+      const existing = powerActions.actionDistributionByActor[actor] ?? emptyPowerActionCounts();
+      existing.eliminate += distribution.eliminate;
+      existing.protect += distribution.protect;
+      existing.pass += distribution.pass;
+      powerActions.actionDistributionByActor[actor] = existing;
+    }
+    powerActions.consecutiveEliminates.total += game.powerActions.consecutiveEliminates.total;
+    powerActions.consecutiveEliminates.occurrences.push(
+      ...game.powerActions.consecutiveEliminates.occurrences,
+    );
+    powerActions.repeatedProtectSameTarget.total += game.powerActions.repeatedProtectSameTarget.total;
+    for (const repeat of game.powerActions.repeatedProtectSameTarget.repeats) {
+      const key = powerPatternKey(repeat.actor, repeat.target);
+      const existing = repeatedProtectTotals.get(key) ?? {
+        actor: repeat.actor,
+        target: repeat.target,
+        protectActions: 0,
+        repeatedOccurrences: 0,
+        rounds: [],
+      };
+      existing.protectActions += repeat.protectActions;
+      existing.repeatedOccurrences += repeat.repeatedOccurrences;
+      existing.rounds.push(...repeat.rounds);
+      repeatedProtectTotals.set(key, existing);
+    }
 
     autoEliminations.total += game.autoEliminations.total;
     autoEliminations.eliminations.push(...game.autoEliminations.eliminations);
@@ -515,6 +670,18 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
       bySource[source] = mergeUsage(bySource[source] ?? EMPTY_USAGE, usage);
     }
   }
+
+  powerActions.repeatedProtectSameTarget.repeats = [...repeatedProtectTotals.values()]
+    .map((repeat) => ({
+      ...repeat,
+      rounds: [...repeat.rounds].sort((a, b) => a - b),
+    }))
+    .sort(
+      (a, b) =>
+        b.repeatedOccurrences - a.repeatedOccurrences ||
+        a.actor.localeCompare(b.actor) ||
+        a.target.localeCompare(b.target),
+    );
 
   return {
     totalGames: games.length,

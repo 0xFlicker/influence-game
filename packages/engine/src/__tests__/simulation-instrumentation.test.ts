@@ -109,10 +109,57 @@ describe("simulation instrumentation", () => {
 
     expect(aggregate.totalGames).toBe(2);
     expect(aggregate.powerActions.counts.protect).toBe(2);
+    expect(aggregate.powerActions.actorCounts.Atlas).toBe(2);
+    expect(aggregate.powerActions.actionDistributionByActor.Atlas?.protect).toBe(2);
+    expect(aggregate.powerActions.repeatedProtectSameTarget.total).toBe(0);
     expect(aggregate.rooms.participationByPlayer.Atlas).toBe(2);
     expect(aggregate.rooms.repeatedPairs.totalRepeatedOccurrences).toBe(0);
     expect(aggregate.actionUsage.byAction.power?.callCount).toBe(2);
     expect(aggregate.actionUsage.bySource["Atlas/power"]?.totalTokens).toBe(50);
+  });
+
+  it("summarizes repeated empowered actor and action patterns", () => {
+    const instrumentation = instrumentGame(
+      [
+        systemEntry(1, Phase.POWER, "Lyra power action: eliminate -> Kael"),
+        systemEntry(2, Phase.POWER, "Lyra power action: eliminate -> Atlas"),
+        systemEntry(3, Phase.POWER, "Kael power action: protect -> Echo"),
+        systemEntry(4, Phase.POWER, "Kael power action: protect -> Echo"),
+        systemEntry(5, Phase.POWER, "Lyra power action: pass -> Vera"),
+      ],
+      {},
+      {},
+    );
+
+    expect(instrumentation.powerActions.actorCounts.Lyra).toBe(3);
+    expect(instrumentation.powerActions.actorCounts.Kael).toBe(2);
+    expect(instrumentation.powerActions.actionDistributionByActor.Lyra?.eliminate).toBe(2);
+    expect(instrumentation.powerActions.actionDistributionByActor.Lyra?.pass).toBe(1);
+    expect(instrumentation.powerActions.actionDistributionByActor.Kael?.protect).toBe(2);
+    expect(instrumentation.powerActions.consecutiveEliminates.total).toBe(1);
+    expect(instrumentation.powerActions.consecutiveEliminates.occurrences[0]).toEqual({
+      actor: "Lyra",
+      previousRound: 1,
+      round: 2,
+      previousTarget: "Kael",
+      target: "Atlas",
+    });
+    expect(instrumentation.powerActions.repeatedProtectSameTarget.total).toBe(1);
+    expect(instrumentation.powerActions.repeatedProtectSameTarget.repeats[0]).toEqual({
+      actor: "Kael",
+      target: "Echo",
+      protectActions: 2,
+      repeatedOccurrences: 1,
+      rounds: [3, 4],
+    });
+
+    const aggregate = aggregateInstrumentation([instrumentation, instrumentation]);
+    expect(aggregate.powerActions.actorCounts.Lyra).toBe(6);
+    expect(aggregate.powerActions.actionDistributionByActor.Kael?.protect).toBe(4);
+    expect(aggregate.powerActions.consecutiveEliminates.total).toBe(2);
+    expect(aggregate.powerActions.repeatedProtectSameTarget.total).toBe(2);
+    expect(aggregate.powerActions.repeatedProtectSameTarget.repeats[0]?.protectActions).toBe(4);
+    expect(aggregate.powerActions.repeatedProtectSameTarget.repeats[0]?.repeatedOccurrences).toBe(2);
   });
 
   it("handles 8-player room participation, exclusions, and repeated pairs", () => {

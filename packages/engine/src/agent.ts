@@ -1049,18 +1049,24 @@ Keep it to 1-2 sentences.`;
       (m) => m.phase === Phase.POWER && m.round === ctx.round,
     );
     const hasFreshPowerLobbyMessages = currentPowerLobbyMessages.length > 0;
+    const freshPowerLobbyRecord = currentPowerLobbyMessages
+      .map((m) => `- ${m.from}: ${m.text}`)
+      .join("\n");
     const lastPowerAction = this.memory.powerActions.at(-1);
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## You Are EMPOWERED This Round!
 ${hasFreshPowerLobbyMessages ? `The Power Lobby just happened this round. Recent Public Messages include the public asks, promises, threats, receipts, and any leaning or condition you stated. Treat that fresh public record as leverage: honor your stated lean/condition unless betraying it creates a stronger strategic advantage you are willing to own.` : `No fresh Power Lobby record is available for this decision. Use the vote pressure, your memory, and the current candidate list; do not treat older Power Lobby messages as current evidence.`}
+${hasFreshPowerLobbyMessages ? `
+Current-round Power Lobby record:
+${freshPowerLobbyRecord}` : ""}
 
 You have three choices:
 
 1. **pass** — send the two candidates to council as-is. This is the cleanest default when a council fight will expose alliances, force public votes, or create future betrayal evidence.
-2. **protect** <any player> — save them from council (they gain a shield), swap in next-most-exposed player. Use this to collect a debt, reward a concrete promise, or force a better counter-target into danger.
-3. **eliminate** "${candidateNames[0]}" or "${candidateNames[1]}" — immediately eliminate them and skip council. This is a high-debt veto, not the default. Use it only when the target is an immediate threat, the lobby gave you strong evidence or consensus, or letting council happen would waste your leverage. You will be publicly accountable for this hit.
+2. **protect** <any player> — save them from council (they gain a shield), swap in next-most-exposed player. Use this when protection creates an accountable debt, rewards a concrete current-round promise, or forces a better counter-target into danger.
+3. **eliminate** "${candidateNames[0]}" or "${candidateNames[1]}" — immediately eliminate them and skip council. This is a high-debt veto, not the default. Use it only when the target is an immediate threat and the current-round record gives you strong evidence, consensus, or a promise/threat worth owning publicly.
 
 Council candidates: ${candidateNames.join(" and ")}
 Other alive players: ${otherAlive.map((p) => p.name).join(", ")}
@@ -1068,7 +1074,9 @@ ${lastPowerAction ? `Your last empowered action: R${lastPowerAction.round} ${las
 
 ## Anti-Repeat Power Guidance
 - Repeatedly protecting the same ally makes your power actions predictable. Do not protect an ally you already protected unless this round's Power Lobby creates a new public receipt: a fresh promise, threat, vote explanation, or named counter-target that makes the repeat protection accountable.
-- Consecutive auto-eliminations make the power holder look deterministic. If your last empowered action was eliminate, default away from eliminate unless this round's fresh Power Lobby evidence gives you a named reason the room can judge.
+- Consecutive auto-eliminations make the power holder look deterministic. If your last empowered action was eliminate, eliminate is gated by fresh current-round Power Lobby evidence against that exact candidate.
+- To eliminate after a prior eliminate, your hidden thinking MUST cite the speaker and evidence from this round's Power Lobby. If you cannot cite a fresh named receipt, choose pass or protect.
+- When the lobby record conflicts, when council would expose useful public votes, or when protection creates a debt you can call later, prefer pass or protect over an immediate hit.
 
 Before using the tool, decide what future debt or backlash your action creates. Prefer pass or protect when they create a callable ally, a sharper council fight, or a betrayal hook for later.
 Use the use_power tool to declare your final hidden action.`;
