@@ -1583,6 +1583,51 @@ describe("Whisper Rooms", () => {
     }
   });
 
+  it("records raw request diagnostics and allocator context", () => {
+    const players = makeWhisperPlayers(["A", "B", "C", "D", "E", "F"]);
+    const ids = Object.fromEntries(players.map((player) => [player.name, player.id]));
+    const priorRooms = makePriorRooms(players, [["A", "B"]], 1);
+    const rawRequests = new Map<UUID, UUID | null>([
+      [ids.A!, ids.B!],
+      [ids.B!, ids.A!],
+      [ids.C!, ids.C!],
+      [ids.D!, "not-an-active-player"],
+      [ids.F!, ids.E!],
+    ]);
+    const validRequests = new Map<UUID, UUID>([
+      [ids.A!, ids.B!],
+      [ids.B!, ids.A!],
+      [ids.F!, ids.E!],
+    ]);
+
+    const { diagnostics } = allocateRooms(validRequests, players, 2, 2, {
+      allocationMode: "diversity-weighted",
+      priorRooms,
+      previousSessionRooms: priorRooms,
+      previousSessionExcludedPlayerIds: [ids.C!],
+      exclusionCounts: new Map([[ids.C!, 1]]),
+      rawRequests,
+    });
+
+    const requestStatusByName = Object.fromEntries(
+      diagnostics.requests.map((request) => [request.requester.name, request.status]),
+    );
+    expect(requestStatusByName).toEqual({
+      A: "valid",
+      B: "valid",
+      C: "self",
+      D: "ineligible",
+      E: "missing",
+      F: "valid",
+    });
+    expect(diagnostics.priorPairCounts).toHaveLength(1);
+    expect(diagnostics.priorPairCounts[0]?.count).toBe(1);
+    expect(diagnostics.priorPairCounts[0]?.players.map((player) => player.name).sort()).toEqual(["A", "B"]);
+    expect(diagnostics.previousSessionExcludedPlayers).toEqual([{ id: ids.C!, name: "C" }]);
+    expect(diagnostics.requestSatisfaction.validRequests).toBe(3);
+    expect(diagnostics.requestSatisfaction.invalidOrMissingRequests).toBe(3);
+  });
+
   it("diversity allocator softens repeat safeguards for 5- and 4-player late-game rooms", () => {
     for (const names of [["A", "B", "C", "D", "E"], ["A", "B", "C", "D"]]) {
       const players = makeWhisperPlayers(names);
@@ -1625,6 +1670,9 @@ describe("Whisper Rooms", () => {
     const allocationEntry = logger.transcript.find((entry) => entry.roomMetadata);
     expect(allocationEntry?.roomMetadata?.rooms).toHaveLength(1);
     expect(allocationEntry?.roomMetadata?.excluded).toHaveLength(2);
+    expect(allocationEntry?.roomMetadata?.diagnostics?.requests).toHaveLength(4);
+    expect(allocationEntry?.roomMetadata?.diagnostics?.requestSatisfaction.mutualHonored).toBe(1);
+    expect(allocationEntry?.roomMetadata?.diagnostics?.requestSatisfaction.unmatchedValidRequests).toBe(2);
     expect(gameState.getRoomAllocations(1)?.rooms).toHaveLength(1);
   });
 

@@ -11,6 +11,7 @@ import type {
   EndgameStage,
   RoomAllocation,
   Phase,
+  WhisperSessionDiagnostics,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -199,5 +200,6 @@ export interface TranscriptEntry {
   roomMetadata?: {
     rooms: RoomAllocation[];
     excluded: string[];
+    diagnostics?: WhisperSessionDiagnostics;
   };
 }

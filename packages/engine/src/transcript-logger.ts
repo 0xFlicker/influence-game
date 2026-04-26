@@ -5,7 +5,7 @@
  */
 
 import type { GameState } from "./game-state";
-import type { RoomAllocation } from "./types";
+import type { RoomAllocation, WhisperSessionDiagnostics } from "./types";
 import { Phase } from "./types";
 import type { TranscriptEntry, GameStreamEvent } from "./game-runner.types";
 
@@ -85,6 +85,7 @@ export class TranscriptLogger {
     text: string,
     rooms: RoomAllocation[],
     excludedNames: string[],
+    diagnostics?: WhisperSessionDiagnostics,
   ): void {
     const entry: TranscriptEntry = {
       round: this.gameState.round,
@@ -93,7 +94,11 @@ export class TranscriptLogger {
       from: "House",
       scope: "system",
       text,
-      roomMetadata: { rooms, excluded: excludedNames },
+      roomMetadata: {
+        rooms,
+        excluded: excludedNames,
+        ...(diagnostics && { diagnostics }),
+      },
     };
     this.transcript.push(entry);
     this.emitStream({ type: "transcript_entry", entry });

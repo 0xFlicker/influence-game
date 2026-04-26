@@ -1,4 +1,12 @@
-import type { UUID, RoomAllocation, GameConfig, WhisperRoomAllocationMode } from "../types";
+import type {
+  UUID,
+  RoomAllocation,
+  GameConfig,
+  WhisperRoomAllocationMode,
+  WhisperRoomPlayerRef,
+  WhisperRoomRequestRecord,
+  WhisperSessionDiagnostics,
+} from "../types";
 import { Phase } from "../types";
 import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
 
@@ -16,6 +24,7 @@ export interface RoomAllocationOptions {
   priorExcludedPlayerIds?: UUID[];
   exclusionCounts?: Map<UUID, number>;
   sessionIndex?: number;
+  rawRequests?: Map<UUID, UUID | null>;
 }
 
 interface CandidatePair {
@@ -371,6 +380,210 @@ function matchingHasConsecutiveExclusion(excluded: UUID[], stats: AllocationStat
   return excluded.some((playerId) => stats.previousExcludedPlayerIds.has(playerId));
 }
 
+function buildPlayerRef(
+  playerById: Map<UUID, { id: UUID; name: string }>,
+  playerId: UUID,
+): WhisperRoomPlayerRef {
+  return {
+    id: playerId,
+    name: playerById.get(playerId)?.name ?? playerId,
+  };
+}
+
+function buildRequestRecords(
+  rawRequests: Map<UUID, UUID | null>,
+  requests: Map<UUID, UUID>,
+  alivePlayers: Array<{ id: UUID; name: string }>,
+  eligiblePlayerIds: Set<UUID>,
+): WhisperRoomRequestRecord[] {
+  const playerById = new Map(alivePlayers.map((player) => [player.id, player]));
+
+  return alivePlayers.map((player) => {
+    const requestedPartnerId = rawRequests.has(player.id)
+      ? rawRequests.get(player.id)
+      : requests.get(player.id) ?? null;
+    const requestedPartner = requestedPartnerId
+      ? buildPlayerRef(playerById, requestedPartnerId)
+      : null;
+
+    if (!requestedPartnerId) {
+      return {
+        requester: buildPlayerRef(playerById, player.id),
+        requestedPartner,
+        status: "missing",
+      };
+    }
+    if (requestedPartnerId === player.id) {
+      return {
+        requester: buildPlayerRef(playerById, player.id),
+        requestedPartner,
+        status: "self",
+      };
+    }
+    if (!eligiblePlayerIds.has(requestedPartnerId)) {
+      return {
+        requester: buildPlayerRef(playerById, player.id),
+        requestedPartner,
+        status: "ineligible",
+      };
+    }
+
+    return {
+      requester: buildPlayerRef(playerById, player.id),
+      requestedPartner,
+      status: "valid",
+    };
+  });
+}
+
+function matchingIncludesPlayer(matching: CandidatePair[], playerId: UUID): boolean {
+  return matching.some((pair) => pair.playerA === playerId || pair.playerB === playerId);
+}
+
+function buildPriorPairCountsDiagnostics(
+  stats: AllocationStats,
+  playerById: Map<UUID, { id: UUID; name: string }>,
+): WhisperSessionDiagnostics["priorPairCounts"] {
+  return [...stats.priorPairCounts.entries()]
+    .map(([key, count]) => {
+      const [playerA, playerB] = key.split(":") as [UUID, UUID];
+      return {
+        players: [buildPlayerRef(playerById, playerA), buildPlayerRef(playerById, playerB)] as [
+          WhisperRoomPlayerRef,
+          WhisperRoomPlayerRef,
+        ],
+        count,
+      };
+    })
+    .sort((a, b) => {
+      const left = `${a.players[0].name}|${a.players[1].name}`;
+      const right = `${b.players[0].name}|${b.players[1].name}`;
+      return left.localeCompare(right);
+    });
+}
+
+function buildRequestSatisfaction(
+  requestRecords: WhisperRoomRequestRecord[],
+  rooms: RoomAllocation[],
+  requests: Map<UUID, UUID>,
+  eligiblePlayerIds: Set<UUID>,
+): WhisperSessionDiagnostics["requestSatisfaction"] {
+  const roomPairKeys = new Set(rooms.map((room) => pairKey(room.playerA, room.playerB)));
+  let validRequests = 0;
+  let mutualHonored = 0;
+  let oneWayHonored = 0;
+  let unmatchedValidRequests = 0;
+  let invalidOrMissingRequests = 0;
+
+  for (const room of rooms) {
+    const aRequestedB = getValidRequest(requests, room.playerA, eligiblePlayerIds) === room.playerB;
+    const bRequestedA = getValidRequest(requests, room.playerB, eligiblePlayerIds) === room.playerA;
+    if (aRequestedB && bRequestedA) {
+      mutualHonored += 1;
+    } else if (aRequestedB || bRequestedA) {
+      oneWayHonored += 1;
+    }
+  }
+
+  for (const request of requestRecords) {
+    if (request.status !== "valid" || !request.requestedPartner) {
+      invalidOrMissingRequests += 1;
+      continue;
+    }
+
+    validRequests += 1;
+    if (!roomPairKeys.has(pairKey(request.requester.id, request.requestedPartner.id))) {
+      unmatchedValidRequests += 1;
+    }
+  }
+
+  return {
+    validRequests,
+    mutualHonored,
+    oneWayHonored,
+    unmatchedValidRequests,
+    invalidOrMissingRequests,
+  };
+}
+
+function buildWhisperSessionDiagnostics(
+  requests: Map<UUID, UUID>,
+  alivePlayers: Array<{ id: UUID; name: string }>,
+  roomCountLimit: number,
+  round: number,
+  options: RoomAllocationOptions,
+  rooms: RoomAllocation[],
+  excluded: UUID[],
+): WhisperSessionDiagnostics {
+  const allocationMode = resolveAllocationMode(options);
+  const roomCount = Math.min(roomCountLimit, Math.floor(alivePlayers.length / 2));
+  const stats = buildAllocationStats(alivePlayers, round, options);
+  const candidatePairs = enumerateCandidatePairs(alivePlayers);
+  const allFullMatchings = enumerateMatchings(candidatePairs, roomCount);
+  const nonRepeatFullMatchings = allFullMatchings.filter(
+    (matching) => !matchingHasImmediateRepeat(matching, stats),
+  );
+  const hasFullNonRepeatMatching = nonRepeatFullMatchings.length > 0;
+  const exclusionAlternatives = hasFullNonRepeatMatching ? nonRepeatFullMatchings : allFullMatchings;
+  const eligiblePlayerIds = new Set(alivePlayers.map((player) => player.id));
+  const playerById = new Map(alivePlayers.map((player) => [player.id, player]));
+  const rawRequests = options.rawRequests ?? new Map<UUID, UUID | null>(requests);
+  const requestRecords = buildRequestRecords(rawRequests, requests, alivePlayers, eligiblePlayerIds);
+
+  const allocatedRooms = rooms.map((room) => {
+    const key = pairKey(room.playerA, room.playerB);
+    const immediateRepeat = stats.previousPairKeys.has(key);
+    const priorRepeatCount = stats.priorPairCounts.get(key) ?? 0;
+    return {
+      roomId: room.roomId,
+      players: [
+        buildPlayerRef(playerById, room.playerA),
+        buildPlayerRef(playerById, room.playerB),
+      ] as [WhisperRoomPlayerRef, WhisperRoomPlayerRef],
+      immediateRepeat,
+      priorRepeatCount,
+      noFullNonRepeatMatchingExisted: immediateRepeat && !hasFullNonRepeatMatching,
+    };
+  });
+
+  const excludedPlayers = excluded.map((playerId) => {
+    const consecutiveExclusion = stats.previousExcludedPlayerIds.has(playerId);
+    return {
+      player: buildPlayerRef(playerById, playerId),
+      consecutiveExclusion,
+      alternativeFullMatchingCouldAvoid: consecutiveExclusion &&
+        exclusionAlternatives.some((matching) => matchingIncludesPlayer(matching, playerId)),
+    };
+  });
+
+  return {
+    round,
+    sessionIndex: (options.sessionIndex ?? 0) + 1,
+    allocationMode,
+    roomCountLimit,
+    eligiblePlayers: alivePlayers.map((player) => buildPlayerRef(playerById, player.id)),
+    requests: requestRecords,
+    allocatedRooms,
+    excludedPlayers,
+    priorPairCounts: buildPriorPairCountsDiagnostics(stats, playerById),
+    previousSessionExcludedPlayers: [...stats.previousExcludedPlayerIds]
+      .map((playerId) => buildPlayerRef(playerById, playerId))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    requestSatisfaction: buildRequestSatisfaction(requestRecords, rooms, requests, eligiblePlayerIds),
+    repeatPairFlags: {
+      immediateRepeats: allocatedRooms.filter((room) => room.immediateRepeat).length,
+      repeatedPairs: allocatedRooms.filter((room) => room.priorRepeatCount > 0).length,
+      noFullNonRepeatMatchingExists: !hasFullNonRepeatMatching,
+    },
+    exclusionFlags: {
+      consecutiveExclusions: excludedPlayers.filter((player) => player.consecutiveExclusion).length,
+      avoidableConsecutiveExclusions: excludedPlayers.filter(
+        (player) => player.consecutiveExclusion && player.alternativeFullMatchingCouldAvoid,
+      ).length,
+    },
+  };
+}
+
 function chooseDiversityWeightedMatching(
   requests: Map<UUID, UUID>,
   alivePlayers: Array<{ id: UUID; name: string }>,
@@ -455,7 +668,12 @@ export function allocateRooms(
   roomCountLimit: number,
   round: number,
   options: RoomAllocationOptions = {},
-): { rooms: RoomAllocation[]; excluded: UUID[]; brokenPreferences: BrokenWhisperRoomPreference[] } {
+): {
+  rooms: RoomAllocation[];
+  excluded: UUID[];
+  brokenPreferences: BrokenWhisperRoomPreference[];
+  diagnostics: WhisperSessionDiagnostics;
+} {
   if (resolveAllocationMode(options) === "diversity-weighted") {
     const { pairs, excluded } = chooseDiversityWeightedMatching(
       requests,
@@ -470,10 +688,20 @@ export function allocateRooms(
       playerB: pair.playerB,
       round,
     }));
+    const diagnostics = buildWhisperSessionDiagnostics(
+      requests,
+      alivePlayers,
+      roomCountLimit,
+      round,
+      options,
+      rooms,
+      excluded,
+    );
     return {
       rooms,
       excluded,
       brokenPreferences: getUnhonoredRepeatPreferences(requests, rooms, options.priorRooms ?? []),
+      diagnostics,
     };
   }
 
@@ -521,7 +749,20 @@ export function allocateRooms(
       .map(([playerId, requestedPartnerId]) => ({ playerId, requestedPartnerId }))
     : [];
 
-  return { rooms, excluded, brokenPreferences };
+  return {
+    rooms,
+    excluded,
+    brokenPreferences,
+    diagnostics: buildWhisperSessionDiagnostics(
+      requests,
+      alivePlayers,
+      roomCountLimit,
+      round,
+      options,
+      rooms,
+      excluded,
+    ),
+  };
 }
 
 /**
@@ -618,39 +859,55 @@ export async function runWhisperPhase(
 
     const roomCount = computeRoomCount(eligible.length);
 
+    const rawRequests = new Map<UUID, UUID | null>();
     const requests = new Map<UUID, UUID>();
     await Promise.all(
       eligible.map(async (player) => {
         const agent = agents.get(player.id)!;
         const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.WHISPER, undefined, undefined, { roomCount });
         const partnerId = await agent.requestRoom(phaseCtx);
+        rawRequests.set(player.id, partnerId);
         if (partnerId && eligible.some((p) => p.id === partnerId)) {
           requests.set(player.id, partnerId);
         }
       }),
     );
 
-    const { rooms, excluded, brokenPreferences } = allocateRooms(
+    const allocationMode = getWhisperAllocationMode(config);
+    const allocationOptions: RoomAllocationOptions = allocationMode === "diversity-weighted"
+      ? {
+          allocationMode: "diversity-weighted",
+          priorRooms: getRecordedPriorRooms(ctx, allRooms),
+          previousSessionRooms,
+          previousSessionExcludedPlayerIds,
+          exclusionCounts,
+          sessionIndex: session,
+          rawRequests,
+        }
+      : {
+          allocationMode: "request-order",
+          sessionIndex: session,
+          rawRequests,
+        };
+    const { rooms, excluded, brokenPreferences, diagnostics } = allocateRooms(
       requests,
       eligible,
       roomCount,
       gameState.round,
-      getWhisperAllocationMode(config) === "diversity-weighted"
-        ? {
-            allocationMode: "diversity-weighted",
-            priorRooms: getRecordedPriorRooms(ctx, allRooms),
-            previousSessionRooms,
-            previousSessionExcludedPlayerIds,
-            exclusionCounts,
-            sessionIndex: session,
-          }
-        : undefined,
+      allocationOptions,
     );
 
     const sessionRooms = rooms.map((r) => {
       globalRoomId++;
       return { ...r, roomId: globalRoomId };
     });
+    const sessionDiagnostics: WhisperSessionDiagnostics = {
+      ...diagnostics,
+      allocatedRooms: diagnostics.allocatedRooms.map((room, index) => ({
+        ...room,
+        roomId: sessionRooms[index]?.roomId ?? room.roomId,
+      })),
+    };
 
     logDiversityAllocation(ctx, brokenPreferences);
 
@@ -677,7 +934,7 @@ export async function runWhisperPhase(
     const allocationText = roomDescriptions.join(" | ") +
       (excludedNames.length > 0 ? ` | Commons: ${excludedNames.join(", ")}` : "") +
       sessionLabel;
-    logger.logRoomAllocation(allocationText, sessionRooms, excludedNames);
+    logger.logRoomAllocation(allocationText, sessionRooms, excludedNames, sessionDiagnostics);
 
     await Promise.all(sessionRooms.map((room) => runRoomConversation(ctx, room, roomCount)));
   }
@@ -706,33 +963,42 @@ export async function runReckoningWhisper(
 
   const roomCount = computeRoomCount(alivePlayers.length);
 
+  const rawRequests = new Map<UUID, UUID | null>();
   const requests = new Map<UUID, UUID>();
   await Promise.all(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.WHISPER, undefined, undefined, { roomCount });
       const partnerId = await agent.requestRoom(phaseCtx);
+      rawRequests.set(player.id, partnerId);
       if (partnerId) {
         requests.set(player.id, partnerId);
       }
     }),
   );
 
-  const { rooms, excluded, brokenPreferences } = allocateRooms(
+  const allocationMode = getWhisperAllocationMode(ctx.config);
+  const allocationOptions: RoomAllocationOptions = allocationMode === "diversity-weighted"
+    ? {
+        allocationMode: "diversity-weighted",
+        priorRooms: getRecordedPriorRooms(ctx, []),
+        previousSessionRooms: getMostRecentRecordedRooms(ctx),
+        previousSessionExcludedPlayerIds: getMostRecentRecordedExcludedPlayerIds(ctx),
+        exclusionCounts: buildRecordedExclusionCounts(ctx),
+        sessionIndex: 0,
+        rawRequests,
+      }
+    : {
+        allocationMode: "request-order",
+        sessionIndex: 0,
+        rawRequests,
+      };
+  const { rooms, excluded, brokenPreferences, diagnostics } = allocateRooms(
     requests,
     alivePlayers,
     roomCount,
     gameState.round,
-    getWhisperAllocationMode(ctx.config) === "diversity-weighted"
-      ? {
-          allocationMode: "diversity-weighted",
-          priorRooms: getRecordedPriorRooms(ctx, []),
-          previousSessionRooms: getMostRecentRecordedRooms(ctx),
-          previousSessionExcludedPlayerIds: getMostRecentRecordedExcludedPlayerIds(ctx),
-          exclusionCounts: buildRecordedExclusionCounts(ctx),
-          sessionIndex: 0,
-        }
-      : undefined,
+    allocationOptions,
   );
   contextBuilder.currentRoomAllocations = rooms;
   contextBuilder.currentExcludedPlayerIds = excluded;
@@ -747,7 +1013,7 @@ export async function runReckoningWhisper(
   const excludedNames = excluded.map((id) => gameState.getPlayerName(id));
   const allocationText = roomDescriptions.join(" | ") +
     (excludedNames.length > 0 ? ` | Commons: ${excludedNames.join(", ")}` : "");
-  logger.logRoomAllocation(allocationText, rooms, excludedNames);
+  logger.logRoomAllocation(allocationText, rooms, excludedNames, diagnostics);
 
   await Promise.all(rooms.map((room) => runRoomConversation(ctx, room, roomCount)));
 

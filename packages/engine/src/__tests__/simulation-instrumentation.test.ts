@@ -118,6 +118,108 @@ describe("simulation instrumentation", () => {
     expect(aggregate.actionUsage.bySource["Atlas/power"]?.totalTokens).toBe(50);
   });
 
+  it("preserves whisper request diagnostics and aggregates audit flags", () => {
+    const diagnostics = {
+      round: 2,
+      sessionIndex: 1,
+      allocationMode: "diversity-weighted" as const,
+      roomCountLimit: 1,
+      eligiblePlayers: [
+        { id: "p1", name: "Atlas" },
+        { id: "p2", name: "Vera" },
+        { id: "p3", name: "Finn" },
+      ],
+      requests: [
+        {
+          requester: { id: "p1", name: "Atlas" },
+          requestedPartner: { id: "p2", name: "Vera" },
+          status: "valid" as const,
+        },
+        {
+          requester: { id: "p2", name: "Vera" },
+          requestedPartner: { id: "p1", name: "Atlas" },
+          status: "valid" as const,
+        },
+        {
+          requester: { id: "p3", name: "Finn" },
+          requestedPartner: null,
+          status: "missing" as const,
+        },
+      ],
+      allocatedRooms: [
+        {
+          roomId: 1,
+          players: [
+            { id: "p1", name: "Atlas" },
+            { id: "p2", name: "Vera" },
+          ] as [{ id: string; name: string }, { id: string; name: string }],
+          immediateRepeat: true,
+          priorRepeatCount: 1,
+          noFullNonRepeatMatchingExisted: false,
+        },
+      ],
+      excludedPlayers: [
+        {
+          player: { id: "p3", name: "Finn" },
+          consecutiveExclusion: true,
+          alternativeFullMatchingCouldAvoid: true,
+        },
+      ],
+      priorPairCounts: [
+        {
+          players: [
+            { id: "p1", name: "Atlas" },
+            { id: "p2", name: "Vera" },
+          ] as [{ id: string; name: string }, { id: string; name: string }],
+          count: 1,
+        },
+      ],
+      previousSessionExcludedPlayers: [{ id: "p3", name: "Finn" }],
+      requestSatisfaction: {
+        validRequests: 2,
+        mutualHonored: 1,
+        oneWayHonored: 0,
+        unmatchedValidRequests: 0,
+        invalidOrMissingRequests: 1,
+      },
+      repeatPairFlags: {
+        immediateRepeats: 1,
+        repeatedPairs: 1,
+        noFullNonRepeatMatchingExists: false,
+      },
+      exclusionFlags: {
+        consecutiveExclusions: 1,
+        avoidableConsecutiveExclusions: 1,
+      },
+    };
+    const game = instrumentGame(
+      [
+        {
+          ...systemEntry(2, Phase.WHISPER, "Room 1: Atlas & Vera | Commons: Finn"),
+          roomMetadata: {
+            rooms: [{ roomId: 1, playerA: "p1", playerB: "p2", round: 2 }],
+            excluded: ["Finn"],
+            diagnostics,
+          },
+        },
+      ],
+      {},
+      { p1: "Atlas", p2: "Vera", p3: "Finn" },
+    );
+
+    expect(game.rooms.whisperSessions).toEqual([diagnostics]);
+    expect(game.rooms.requestSatisfaction.mutualHonored).toBe(1);
+    expect(game.rooms.requestSatisfaction.invalidOrMissingRequests).toBe(1);
+    expect(game.rooms.repeatPairFlags.sessionsWithImmediateRepeats).toBe(1);
+    expect(game.rooms.exclusionFlags.avoidableConsecutiveExclusions).toBe(1);
+
+    const aggregate = aggregateInstrumentation([game, game]);
+    expect(aggregate.rooms.whisperSessions).toHaveLength(2);
+    expect(aggregate.rooms.requestSatisfaction.validRequests).toBe(4);
+    expect(aggregate.rooms.repeatPairFlags.immediateRepeats).toBe(2);
+    expect(aggregate.rooms.exclusionFlags.sessionsWithConsecutiveExclusions).toBe(2);
+  });
+
   it("summarizes repeated empowered actor and action patterns", () => {
     const instrumentation = instrumentGame(
       [
