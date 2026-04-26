@@ -86,6 +86,25 @@ describe("GameState - player management", () => {
     expect(gs.isGameOver()).toBe(true);
     expect(gs.getWinner()?.name).toBe(defined(alive[1]).name);
   });
+
+  it("tracks final whisper-session exclusions separately from round exclusions", () => {
+    const gs = makeState(["Alice", "Bob", "Charlie", "Dave"]);
+    gs.startRound();
+    const players = gs.getAlivePlayers();
+    const room: RoomAllocation = {
+      roomId: 1,
+      playerA: defined(players[0]).id,
+      playerB: defined(players[1]).id,
+      round: 1,
+    };
+    const roundExcluded = [defined(players[2]).id, defined(players[3]).id];
+    const finalSessionExcluded = [defined(players[3]).id];
+
+    gs.recordRoomAllocations([room], roundExcluded, finalSessionExcluded);
+
+    expect(gs.getRoomAllocations(1)?.excluded).toEqual(roundExcluded);
+    expect(gs.getRoomAllocations(1)?.lastSessionExcluded).toEqual(finalSessionExcluded);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1538,6 +1557,20 @@ describe("Whisper Rooms", () => {
     }
   });
 
+  it("diversity allocator does not mark consecutive exclusions avoidable when no full alternative exists", () => {
+    const players = makeWhisperPlayers(["A", "B", "C", "D", "E", "F", "G"]);
+    const previousExcluded = ["A", "B", "C", "D", "E"].map((name) => playerId(players, name));
+
+    const { diagnostics } = allocateRooms(new Map(), players, 2, 2, {
+      allocationMode: "diversity-weighted",
+      previousSessionExcludedPlayerIds: previousExcluded,
+      exclusionCounts: new Map(previousExcluded.map((id) => [id, 1] as const)),
+    });
+
+    expect(diagnostics.exclusionFlags.consecutiveExclusions).toBeGreaterThan(0);
+    expect(diagnostics.exclusionFlags.avoidableConsecutiveExclusions).toBe(0);
+  });
+
   it("diversity allocator balances prior exclusions over one clean mutual pair for 8 players", () => {
     const players = makeWhisperPlayers(["A", "B", "C", "D", "E", "F", "G", "H"]);
     const requests = makeRequests(players, [
@@ -1581,6 +1614,31 @@ describe("Whisper Rooms", () => {
     for (const [a, b] of repeatPairs) {
       expect(roomHasPair(rooms, playerId(players, a), playerId(players, b))).toBe(false);
     }
+  });
+
+  it("diversity allocator preserves clean historical mutual requests after hard filters", () => {
+    const players = makeWhisperPlayers(["A", "B", "C", "D", "E", "F", "G", "H"]);
+    const requests = makeRequests(players, [
+      ["A", "B"],
+      ["B", "A"],
+      ["C", "D"],
+      ["D", "C"],
+      ["E", "F"],
+      ["F", "E"],
+    ]);
+    const historicalRooms = makePriorRooms(players, [["A", "B"]], 1);
+    const previousSessionRooms = makePriorRooms(players, [["G", "H"]], 2);
+
+    const { rooms, diagnostics } = allocateRooms(requests, players, 3, 3, {
+      allocationMode: "diversity-weighted",
+      priorRooms: [...historicalRooms, ...previousSessionRooms],
+      previousSessionRooms,
+    });
+
+    expect(rooms).toHaveLength(3);
+    expect(roomHasPair(rooms, playerId(players, "A"), playerId(players, "B"))).toBe(true);
+    expect(countHonoredPairs(rooms, players, [["A", "B"], ["C", "D"], ["E", "F"]])).toBe(3);
+    expect(diagnostics.requestSatisfaction.unmatchedValidRequests).toBe(0);
   });
 
   it("records raw request diagnostics and allocator context", () => {

@@ -44,6 +44,18 @@ interface AllocationStats {
   orderIndex: Map<UUID, number>;
 }
 
+const REQUEST_BONUS_MUTUAL = 130;
+const REQUEST_BONUS_ONE_WAY = 65;
+const UNDER_PARTICIPATION_BONUS = 8;
+const PREVIOUSLY_EXCLUDED_PAIRING_BONUS = 12;
+const IMMEDIATE_REPEAT_PENALTY = 160;
+const HISTORICAL_REPEAT_BASE_PENALTY = 45;
+const HISTORICAL_REPEAT_COUNT_PENALTY = 15;
+const CONSECUTIVE_EXCLUSION_PENALTY = 160;
+const OVER_MIN_EXCLUSION_PENALTY = 45;
+const CLEAN_MUTUAL_EXCLUDED_PENALTY = 90;
+const UNMATCHED_VALID_REQUEST_PENALTY = 15;
+
 /**
  * Compute the number of whisper rooms for the current round.
  * Formula: max(1, floor(alivePlayers / 2) - 1)
@@ -90,7 +102,7 @@ function getMostRecentRecordedRooms(ctx: PhaseRunnerContext): RoomAllocation[] {
 
 function getMostRecentRecordedExcludedPlayerIds(ctx: PhaseRunnerContext): UUID[] {
   const allocation = ctx.gameState.getRoomAllocations(ctx.gameState.round - 1);
-  return allocation?.excluded ?? [];
+  return allocation?.lastSessionExcluded ?? allocation?.excluded ?? [];
 }
 
 function buildRecordedExclusionCounts(ctx: PhaseRunnerContext): Map<UUID, number> {
@@ -300,25 +312,25 @@ function scorePair(
   const requestB = getValidRequest(requests, pair.playerB, eligiblePlayerIds);
 
   if (requestA === pair.playerB && requestB === pair.playerA) {
-    score += 100;
+    score += REQUEST_BONUS_MUTUAL;
   } else if (requestA === pair.playerB || requestB === pair.playerA) {
-    score += 45;
+    score += REQUEST_BONUS_ONE_WAY;
   }
 
   for (const playerId of [pair.playerA, pair.playerB]) {
     if ((stats.participationCounts.get(playerId) ?? 0) < stats.medianParticipation) {
-      score += 25;
+      score += UNDER_PARTICIPATION_BONUS;
     }
     if (stats.previousExcludedPlayerIds.has(playerId)) {
-      score += 20;
+      score += PREVIOUSLY_EXCLUDED_PAIRING_BONUS;
     }
   }
 
   const priorPairCount = stats.priorPairCounts.get(pair.key) ?? 0;
-  if (stats.previousPairKeys.has(pair.key)) score -= 160;
+  if (stats.previousPairKeys.has(pair.key)) score -= IMMEDIATE_REPEAT_PENALTY;
   if (priorPairCount > 0) {
-    score -= 100;
-    score -= 40 * priorPairCount;
+    score -= HISTORICAL_REPEAT_BASE_PENALTY;
+    score -= HISTORICAL_REPEAT_COUNT_PENALTY * priorPairCount;
   }
 
   return score;
@@ -344,20 +356,19 @@ function scoreMatching(
   eligiblePlayerIds: Set<UUID>,
   stats: AllocationStats,
 ): { score: number; excluded: UUID[]; tieBreakKey: string } {
-  const pairedPlayerIds = new Set<UUID>();
   let score = 0;
 
   for (const pair of pairs) {
-    pairedPlayerIds.add(pair.playerA);
-    pairedPlayerIds.add(pair.playerB);
     score += scorePair(pair, requests, eligiblePlayerIds, stats);
   }
 
-  const excluded = alivePlayers.filter((player) => !pairedPlayerIds.has(player.id)).map((player) => player.id);
+  const excluded = getExcludedPlayerIds(pairs, alivePlayers);
   for (const playerId of excluded) {
-    if (stats.previousExcludedPlayerIds.has(playerId)) score -= 140;
-    if ((stats.exclusionCounts.get(playerId) ?? 0) > stats.minExclusions) score -= 60;
-    if (cleanMutualRequestWasExcluded(playerId, requests, eligiblePlayerIds, stats)) score -= 30;
+    if (stats.previousExcludedPlayerIds.has(playerId)) score -= CONSECUTIVE_EXCLUSION_PENALTY;
+    if ((stats.exclusionCounts.get(playerId) ?? 0) > stats.minExclusions) score -= OVER_MIN_EXCLUSION_PENALTY;
+    if (cleanMutualRequestWasExcluded(playerId, requests, eligiblePlayerIds, stats)) {
+      score -= CLEAN_MUTUAL_EXCLUDED_PENALTY;
+    }
   }
 
   for (const player of alivePlayers) {
@@ -366,7 +377,7 @@ function scoreMatching(
     const matchedRequest = pairs.some((pair) =>
       pair.key === pairKey(player.id, requestedPartnerId),
     );
-    if (!matchedRequest) score -= 10;
+    if (!matchedRequest) score -= UNMATCHED_VALID_REQUEST_PENALTY;
   }
 
   return { score, excluded, tieBreakKey: matchingTieBreakKey(pairs, excluded, stats) };
@@ -376,8 +387,36 @@ function matchingHasImmediateRepeat(pairs: CandidatePair[], stats: AllocationSta
   return pairs.some((pair) => stats.previousPairKeys.has(pair.key));
 }
 
-function matchingHasConsecutiveExclusion(excluded: UUID[], stats: AllocationStats): boolean {
-  return excluded.some((playerId) => stats.previousExcludedPlayerIds.has(playerId));
+function getExcludedPlayerIds(
+  pairs: CandidatePair[],
+  alivePlayers: Array<{ id: UUID; name: string }>,
+): UUID[] {
+  const pairedPlayerIds = new Set<UUID>();
+  for (const pair of pairs) {
+    pairedPlayerIds.add(pair.playerA);
+    pairedPlayerIds.add(pair.playerB);
+  }
+  return alivePlayers.filter((player) => !pairedPlayerIds.has(player.id)).map((player) => player.id);
+}
+
+function matchingConsecutiveExclusionCount(
+  matching: CandidatePair[],
+  alivePlayers: Array<{ id: UUID; name: string }>,
+  stats: AllocationStats,
+): number {
+  return getExcludedPlayerIds(matching, alivePlayers).filter((playerId) =>
+    stats.previousExcludedPlayerIds.has(playerId),
+  ).length;
+}
+
+function filterToNoConsecutiveExclusions(
+  matchings: CandidatePair[][],
+  alivePlayers: Array<{ id: UUID; name: string }>,
+  stats: AllocationStats,
+): CandidatePair[][] {
+  return matchings.filter((matching) =>
+    matchingConsecutiveExclusionCount(matching, alivePlayers, stats) === 0,
+  );
 }
 
 function buildPlayerRef(
@@ -434,10 +473,6 @@ function buildRequestRecords(
       status: "valid",
     };
   });
-}
-
-function matchingIncludesPlayer(matching: CandidatePair[], playerId: UUID): boolean {
-  return matching.some((pair) => pair.playerA === playerId || pair.playerB === playerId);
 }
 
 function buildPriorPairCountsDiagnostics(
@@ -520,11 +555,17 @@ function buildWhisperSessionDiagnostics(
   const stats = buildAllocationStats(alivePlayers, round, options);
   const candidatePairs = enumerateCandidatePairs(alivePlayers);
   const allFullMatchings = enumerateMatchings(candidatePairs, roomCount);
-  const nonRepeatFullMatchings = allFullMatchings.filter(
+  const noConsecutiveExclusionMatchings = alivePlayers.length >= 6
+    ? filterToNoConsecutiveExclusions(allFullMatchings, alivePlayers, stats)
+    : [];
+  const repeatEligibleFullMatchings = noConsecutiveExclusionMatchings.length > 0
+    ? noConsecutiveExclusionMatchings
+    : allFullMatchings;
+  const nonRepeatFullMatchings = repeatEligibleFullMatchings.filter(
     (matching) => !matchingHasImmediateRepeat(matching, stats),
   );
   const hasFullNonRepeatMatching = nonRepeatFullMatchings.length > 0;
-  const exclusionAlternatives = hasFullNonRepeatMatching ? nonRepeatFullMatchings : allFullMatchings;
+  const hasFullNoConsecutiveExclusionMatching = noConsecutiveExclusionMatchings.length > 0;
   const eligiblePlayerIds = new Set(alivePlayers.map((player) => player.id));
   const playerById = new Map(alivePlayers.map((player) => [player.id, player]));
   const rawRequests = options.rawRequests ?? new Map<UUID, UUID | null>(requests);
@@ -551,8 +592,7 @@ function buildWhisperSessionDiagnostics(
     return {
       player: buildPlayerRef(playerById, playerId),
       consecutiveExclusion,
-      alternativeFullMatchingCouldAvoid: consecutiveExclusion &&
-        exclusionAlternatives.some((matching) => matchingIncludesPlayer(matching, playerId)),
+      alternativeFullMatchingCouldAvoid: consecutiveExclusion && hasFullNoConsecutiveExclusionMatching,
     };
   });
 
@@ -598,22 +638,14 @@ function chooseDiversityWeightedMatching(
   let matchings = enumerateMatchings(candidatePairs, roomCount);
 
   if (alivePlayers.length >= 6) {
+    const withoutConsecutiveExclusions = filterToNoConsecutiveExclusions(matchings, alivePlayers, stats);
+    if (withoutConsecutiveExclusions.length > 0) {
+      matchings = withoutConsecutiveExclusions;
+    }
+
     const withoutImmediateRepeats = matchings.filter((matching) => !matchingHasImmediateRepeat(matching, stats));
     if (withoutImmediateRepeats.length > 0) {
       matchings = withoutImmediateRepeats;
-    }
-
-    const withoutConsecutiveExclusions = matchings.filter((matching) => {
-      const pairedPlayerIds = new Set<UUID>();
-      for (const pair of matching) {
-        pairedPlayerIds.add(pair.playerA);
-        pairedPlayerIds.add(pair.playerB);
-      }
-      const excluded = alivePlayers.filter((player) => !pairedPlayerIds.has(player.id)).map((player) => player.id);
-      return !matchingHasConsecutiveExclusion(excluded, stats);
-    });
-    if (withoutConsecutiveExclusions.length > 0) {
-      matchings = withoutConsecutiveExclusions;
     }
   }
 
@@ -941,7 +973,7 @@ export async function runWhisperPhase(
 
   contextBuilder.currentRoomAllocations = allRooms;
   contextBuilder.currentExcludedPlayerIds = [...allExcluded];
-  gameState.recordRoomAllocations(allRooms, [...allExcluded]);
+  gameState.recordRoomAllocations(allRooms, [...allExcluded], previousSessionExcludedPlayerIds);
 
   actor.send({ type: "PHASE_COMPLETE" });
   await new Promise((r) => setTimeout(r, 0));
