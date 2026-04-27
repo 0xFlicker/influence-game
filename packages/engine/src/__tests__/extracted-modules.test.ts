@@ -99,13 +99,13 @@ describe("TranscriptLogger", () => {
   it("logRoomAllocation includes room metadata", () => {
     const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
     const bob = gs.getAlivePlayers().find((p) => p.name === "Bob")!;
-    const rooms: RoomAllocation[] = [{ roomId: 1, playerA: alice.id, playerB: bob.id, round: 1 }];
-    logger.logRoomAllocation("Room 1: Alice & Bob", rooms, ["Charlie"]);
+    const rooms: RoomAllocation[] = [{ roomId: 1, playerIds: [alice.id, bob.id], round: 1, beat: 1 }];
+    logger.logRoomAllocation("Room 1: Alice, Bob", rooms, []);
 
     expect(logger.transcript).toHaveLength(1);
     expect(logger.transcript[0]!.roomMetadata).toBeDefined();
     expect(logger.transcript[0]!.roomMetadata!.rooms).toHaveLength(1);
-    expect(logger.transcript[0]!.roomMetadata!.excluded).toEqual(["Charlie"]);
+    expect(logger.transcript[0]!.roomMetadata!.excluded).toEqual([]);
   });
 
   it("emitStream calls listener and handles errors gracefully", () => {
@@ -188,24 +188,21 @@ describe("ContextBuilder", () => {
     const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
     const ctx = builder.buildPhaseContext(alice.id, Phase.WHISPER, undefined, undefined, {
       roomCount: 2,
-      roomPartner: "Bob",
+      roomMates: ["Alice", "Bob"],
     });
 
     expect(ctx.roomCount).toBe(2);
-    expect(ctx.roomPartner).toBe("Bob");
+    expect(ctx.roomMates).toEqual(["Alice", "Bob"]);
   });
 
   it("buildPhaseContext includes room allocations when set", () => {
     const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
     const bob = gs.getAlivePlayers().find((p) => p.name === "Bob")!;
-    builder.currentRoomAllocations = [{ roomId: 1, playerA: alice.id, playerB: bob.id, round: 1 }];
-    builder.currentExcludedPlayerIds = [gs.getAlivePlayers().find((p) => p.name === "Charlie")!.id];
+    builder.currentRoomAllocations = [{ roomId: 1, playerIds: [alice.id, bob.id], round: 1, beat: 1 }];
 
     const ctx = builder.buildPhaseContext(alice.id, Phase.WHISPER);
     expect(ctx.roomAllocations).toHaveLength(1);
-    expect(ctx.roomAllocations![0]!.playerA).toBe("Alice");
-    expect(ctx.excludedPlayers).toHaveLength(1);
-    expect(ctx.excludedPlayers![0]).toBe("Charlie");
+    expect(ctx.roomAllocations![0]!.playerNames).toEqual(["Alice", "Bob"]);
   });
 
   it("buildPhaseContext detects finalists when 2 alive", () => {
@@ -269,197 +266,64 @@ describe("computeLobbyMessagesPerPlayer", () => {
 });
 
 describe("computeRoomCount", () => {
-  it("returns at least 1 room", () => {
-    expect(computeRoomCount(2)).toBe(1);
-    expect(computeRoomCount(3)).toBe(1);
+  it("skips open rooms below five alive players", () => {
+    expect(computeRoomCount(2)).toBe(0);
+    expect(computeRoomCount(4)).toBe(0);
   });
 
-  it("scales with player count", () => {
-    expect(computeRoomCount(4)).toBe(1);
+  it("scales open rooms by ceil(alive / 3)", () => {
+    expect(computeRoomCount(5)).toBe(2);
     expect(computeRoomCount(6)).toBe(2);
-    expect(computeRoomCount(8)).toBe(3);
+    expect(computeRoomCount(7)).toBe(3);
+    expect(computeRoomCount(9)).toBe(3);
     expect(computeRoomCount(10)).toBe(4);
+    expect(computeRoomCount(12)).toBe(4);
+    expect(computeRoomCount(16)).toBe(6);
   });
 });
 
 describe("allocateRooms", () => {
-  it("creates mutual match rooms first", () => {
-    const a = createUUID(), b = createUUID(), c = createUUID(), d = createUUID();
+  it("honors valid neutral room choices exactly", () => {
+    const a = createUUID(), b = createUUID(), c = createUUID(), d = createUUID(), e = createUUID();
     const players = [
       { id: a, name: "A" },
       { id: b, name: "B" },
       { id: c, name: "C" },
       { id: d, name: "D" },
+      { id: e, name: "E" },
     ];
-
-    // A wants B, B wants A (mutual)
-    const requests = new Map<UUID, UUID>();
-    requests.set(a, b);
-    requests.set(b, a);
-    requests.set(c, d);
-    requests.set(d, a); // D wants A but A is taken
-
-    const { rooms } = allocateRooms(requests, players, 2, 1);
+    const choices = new Map<UUID, number | null>([[a, 2], [b, 2], [c, 1], [d, 1], [e, 2]]);
+    const { rooms } = allocateRooms(choices, players, 2, 1, 1);
     expect(rooms).toHaveLength(2);
-    // First room should be mutual match A-B
-    expect(rooms[0]!.playerA).toBe(a);
-    expect(rooms[0]!.playerB).toBe(b);
+    expect(rooms[0]!.playerIds).toEqual([c, d]);
+    expect(rooms[1]!.playerIds).toEqual([a, b, e]);
   });
 
-  it("returns excluded players not in rooms", () => {
+  it("falls back invalid and missing choices to Room 1", () => {
     const a = createUUID(), b = createUUID(), c = createUUID();
     const players = [
       { id: a, name: "A" },
       { id: b, name: "B" },
       { id: c, name: "C" },
     ];
-
-    const requests = new Map<UUID, UUID>();
-    requests.set(a, b);
-    requests.set(b, a);
-    // C has no request
-
-    const { rooms, excluded } = allocateRooms(requests, players, 1, 1);
-    expect(rooms).toHaveLength(1);
-    expect(excluded).toContain(c);
+    const choices = new Map<UUID, number | null>([[a, 0], [b, 3], [c, null]]);
+    const { rooms, diagnostics } = allocateRooms(choices, players, 2, 1, 1);
+    expect(rooms[0]!.playerIds).toEqual([a, b, c]);
+    expect(rooms[1]!.playerIds).toEqual([]);
+    expect(diagnostics.choices.map((choice) => choice.status)).toEqual(["invalid", "invalid", "missing"]);
   });
 
-  it("respects room count limit", () => {
-    const a = createUUID(), b = createUUID(), c = createUUID(), d = createUUID();
-    const players = [
-      { id: a, name: "A" },
-      { id: b, name: "B" },
-      { id: c, name: "C" },
-      { id: d, name: "D" },
-    ];
-
-    const requests = new Map<UUID, UUID>();
-    requests.set(a, b);
-    requests.set(b, a);
-    requests.set(c, d);
-    requests.set(d, c);
-
-    // Only allow 1 room even though 2 mutual matches exist
-    const { rooms, excluded } = allocateRooms(requests, players, 1, 1);
-    expect(rooms).toHaveLength(1);
-    expect(excluded).toHaveLength(2);
-  });
-
-  it("handles empty requests", () => {
+  it("represents empty and singleton rooms", () => {
     const a = createUUID(), b = createUUID();
     const players = [
       { id: a, name: "A" },
       { id: b, name: "B" },
     ];
-
-    const requests = new Map<UUID, UUID>();
-    const { rooms, excluded } = allocateRooms(requests, players, 2, 1);
-    expect(rooms).toHaveLength(0);
-    expect(excluded).toHaveLength(2);
-  });
-
-  it("assigns correct round and room IDs", () => {
-    const a = createUUID(), b = createUUID();
-    const players = [
-      { id: a, name: "A" },
-      { id: b, name: "B" },
-    ];
-
-    const requests = new Map<UUID, UUID>();
-    requests.set(a, b);
-    requests.set(b, a);
-
-    const { rooms } = allocateRooms(requests, players, 1, 3);
-    expect(rooms[0]!.roomId).toBe(1);
-    expect(rooms[0]!.round).toBe(3);
-  });
-
-  it("prevents a player from being paired twice", () => {
-    const a = createUUID(), b = createUUID(), c = createUUID();
-    const players = [
-      { id: a, name: "A" },
-      { id: b, name: "B" },
-      { id: c, name: "C" },
-    ];
-
-    // Both B and C want A
-    const requests = new Map<UUID, UUID>();
-    requests.set(b, a);
-    requests.set(c, a);
-    requests.set(a, b); // A wants B
-
-    const { rooms } = allocateRooms(requests, players, 2, 1);
-    // A-B should be the mutual match; C can't pair with A
-    const pairedPlayers = new Set<UUID>();
-    for (const room of rooms) {
-      expect(pairedPlayers.has(room.playerA)).toBe(false);
-      expect(pairedPlayers.has(room.playerB)).toBe(false);
-      pairedPlayers.add(room.playerA);
-      pairedPlayers.add(room.playerB);
-    }
-  });
-
-  it("keeps repeat pair requests when anti-repeat experiment is disabled", () => {
-    const a = createUUID(), b = createUUID(), c = createUUID(), d = createUUID();
-    const players = [
-      { id: a, name: "A" },
-      { id: b, name: "B" },
-      { id: c, name: "C" },
-      { id: d, name: "D" },
-    ];
-
-    const requests = new Map<UUID, UUID>();
-    requests.set(a, b);
-    requests.set(b, a);
-    requests.set(c, d);
-    requests.set(d, c);
-
-    const priorRooms: RoomAllocation[] = [{ roomId: 1, playerA: a, playerB: b, round: 1 }];
-    const { rooms, brokenPreferences } = allocateRooms(
-      requests,
-      players,
-      2,
-      2,
-      { priorRooms },
-    );
-
-    expect(rooms[0]!.playerA).toBe(a);
-    expect(rooms[0]!.playerB).toBe(b);
-    expect(brokenPreferences).toHaveLength(0);
-  });
-
-  it("breaks prior repeat pair preferences when anti-repeat experiment is enabled", () => {
-    const a = createUUID(), b = createUUID(), c = createUUID(), d = createUUID();
-    const players = [
-      { id: a, name: "A" },
-      { id: b, name: "B" },
-      { id: c, name: "C" },
-      { id: d, name: "D" },
-    ];
-
-    const requests = new Map<UUID, UUID>();
-    requests.set(a, b);
-    requests.set(b, a);
-    requests.set(c, a);
-    requests.set(d, b);
-
-    const priorRooms: RoomAllocation[] = [{ roomId: 1, playerA: a, playerB: b, round: 1 }];
-    const { rooms, excluded, brokenPreferences } = allocateRooms(
-      requests,
-      players,
-      2,
-      2,
-      { avoidRepeatPairs: true, priorRooms },
-    );
-
-    const roomPairs = rooms.map((room) => new Set([room.playerA, room.playerB]));
-    expect(roomPairs.some((pair) => pair.has(a) && pair.has(b))).toBe(false);
-    expect(roomPairs.some((pair) => pair.has(c) && pair.has(a))).toBe(true);
-    expect(roomPairs.some((pair) => pair.has(d) && pair.has(b))).toBe(true);
-    expect(excluded).toHaveLength(0);
-    expect(brokenPreferences).toEqual([
-      { playerId: a, requestedPartnerId: b },
-      { playerId: b, requestedPartnerId: a },
-    ]);
+    const { rooms, diagnostics } = allocateRooms(new Map([[a, 2], [b, 1]]), players, 3, 4, 2);
+    expect(rooms).toHaveLength(3);
+    expect(rooms[0]).toMatchObject({ roomId: 1, round: 4, beat: 2, playerIds: [b] });
+    expect(rooms[1]).toMatchObject({ roomId: 2, round: 4, beat: 2, playerIds: [a] });
+    expect(rooms[2]).toMatchObject({ roomId: 3, round: 4, beat: 2, playerIds: [] });
+    expect(diagnostics.allocatedRooms.map((room) => room.conversationRan)).toEqual([false, false, false]);
   });
 });

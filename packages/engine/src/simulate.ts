@@ -8,8 +8,8 @@
  *   bun run simulate
  *   bun run simulate -- --games 5 --players 6
  *   bun run simulate -- --games 3 --players 4 --personas Atlas,Vera,Finn,Mira
- *   bun run simulate -- --variant anti-repeat
- *   bun run simulate -- --variant power-lobby-anti-repeat
+ *   bun run simulate -- --variant open-whisper
+ *   bun run simulate -- --variant power-lobby-open-whisper
  */
 
 import OpenAI from "openai";
@@ -131,36 +131,27 @@ const POWER_LOBBY_VARIANTS = new Set([
   "power-lobby",
   "power-lobby-after-vote",
   "power-lobby-v2",
-  "power-lobby-anti-repeat",
-  "anti-repeat-power-lobby",
-  "power-lobby-v2-anti-repeat",
-  "anti-repeat-power-lobby-v2",
-  "power-lobby-diversity-whisper",
-  "diversity-whisper-power-lobby",
-  "power-lobby-v2-diversity-whisper",
-  "diversity-whisper-power-lobby-v2",
+  "power-lobby-open-whisper",
+  "open-whisper-power-lobby",
+  "power-lobby-v2-open-whisper",
+  "open-whisper-power-lobby-v2",
 ]);
 
-const DIVERSITY_WHISPER_VARIANTS = new Set([
-  "diversity-whisper",
-  "power-lobby-diversity-whisper",
-  "diversity-whisper-power-lobby",
-  "power-lobby-v2-diversity-whisper",
-  "diversity-whisper-power-lobby-v2",
-  "anti-repeat",
-  "anti-repeat-whispers",
-  "power-lobby-anti-repeat",
-  "anti-repeat-power-lobby",
-  "power-lobby-v2-anti-repeat",
-  "anti-repeat-power-lobby-v2",
+const OPEN_WHISPER_VARIANTS = new Set([
+  "baseline",
+  "open-whisper",
+  "power-lobby-open-whisper",
+  "open-whisper-power-lobby",
+  "power-lobby-v2-open-whisper",
+  "open-whisper-power-lobby-v2",
 ]);
 
 export function isPowerLobbyVariant(variant: string): boolean {
   return POWER_LOBBY_VARIANTS.has(variant.toLowerCase());
 }
 
-export function isAntiRepeatWhisperVariant(variant: string): boolean {
-  return DIVERSITY_WHISPER_VARIANTS.has(variant.toLowerCase());
+export function isOpenWhisperVariant(variant: string): boolean {
+  return OPEN_WHISPER_VARIANTS.has(variant.toLowerCase());
 }
 
 export function buildSimulationConfig(variant: string): GameConfig {
@@ -184,8 +175,7 @@ export function buildSimulationConfig(variant: string): GameConfig {
     },
     maxRounds: 10,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),
-    whisperRoomAllocationMode: isAntiRepeatWhisperVariant(variant) ? "diversity-weighted" : "request-order",
-    experimentalAntiRepeatWhisperRooms: isAntiRepeatWhisperVariant(variant),
+    whisperSessionsPerRound: isOpenWhisperVariant(variant) ? 2 : DEFAULT_CONFIG.whisperSessionsPerRound,
   };
 }
 

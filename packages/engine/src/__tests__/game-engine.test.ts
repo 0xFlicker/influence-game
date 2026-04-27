@@ -12,13 +12,9 @@ import { GameEventBus } from "../event-bus";
 import { GameRunner } from "../game-runner";
 import type { AgentResponse, PhaseContext, PowerLobbyExposure } from "../game-runner";
 import { createPhaseMachine } from "../phase-machine";
-import { ContextBuilder } from "../context-builder";
-import { TranscriptLogger } from "../transcript-logger";
-import { allocateRooms, runReckoningWhisper } from "../phases/whisper";
-import type { PhaseActor, PhaseRunnerContext } from "../phases/phase-runner-context";
 import { createActor } from "xstate";
 import { Phase, PlayerStatus } from "../types";
-import type { GameConfig, PowerAction, RoomAllocation, UUID } from "../types";
+import type { GameConfig, RoomAllocation } from "../types";
 import { MockAgent } from "./mock-agent";
 
 // ---------------------------------------------------------------------------
@@ -93,9 +89,9 @@ describe("GameState - player management", () => {
     const players = gs.getAlivePlayers();
     const room: RoomAllocation = {
       roomId: 1,
-      playerA: defined(players[0]).id,
-      playerB: defined(players[1]).id,
       round: 1,
+      beat: 1,
+      playerIds: [defined(players[0]).id, defined(players[1]).id],
     };
     const roundExcluded = [defined(players[2]).id, defined(players[3]).id];
     const finalSessionExcluded = [defined(players[3]).id];
@@ -104,6 +100,83 @@ describe("GameState - player management", () => {
 
     expect(gs.getRoomAllocations(1)?.excluded).toEqual(roundExcluded);
     expect(gs.getRoomAllocations(1)?.lastSessionExcluded).toEqual(finalSessionExcluded);
+  });
+});
+
+describe("Whisper Rooms", () => {
+  const TEST_CONFIG: GameConfig = {
+    timers: {
+      introduction: 0,
+      lobby: 0,
+      whisper: 0,
+      rumor: 0,
+      vote: 0,
+      power: 0,
+      council: 0,
+    },
+    maxRounds: 2,
+    minPlayers: 5,
+    maxPlayers: 12,
+  };
+
+  it("open room allocation system message appears in transcript", async () => {
+    const agents = [
+      new MockAgent(createUUID(), "Alpha"),
+      new MockAgent(createUUID(), "Beta"),
+      new MockAgent(createUUID(), "Gamma"),
+      new MockAgent(createUUID(), "Delta"),
+      new MockAgent(createUUID(), "Echo"),
+    ];
+
+    const runner = new GameRunner(agents, TEST_CONFIG);
+    const result = await runner.run();
+
+    const allocation = result.transcript.find(
+      (entry) => entry.scope === "system" && entry.phase === Phase.WHISPER && entry.roomMetadata,
+    );
+    expect(allocation).toBeDefined();
+    expect(allocation!.text).toContain("Beat 1:");
+    expect(allocation!.roomMetadata!.rooms).toHaveLength(2);
+    expect(allocation!.roomMetadata!.rooms[0]!.playerIds.length).toBeGreaterThan(0);
+  });
+
+  it("open rooms generate group whispers for rooms with multiple occupants", async () => {
+    class PileOnAgent extends MockAgent {
+      async chooseWhisperRoom(): Promise<number> {
+        return 1;
+      }
+    }
+
+    const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map(
+      (name) => new PileOnAgent(createUUID(), name),
+    );
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 1 });
+    const result = await runner.run();
+
+    const allocation = result.transcript.find((entry) => entry.roomMetadata);
+    expect(allocation?.roomMetadata?.rooms[0]?.playerIds).toHaveLength(5);
+
+    const whispers = result.transcript.filter((entry) => entry.scope === "whisper" && entry.phase === Phase.WHISPER);
+    expect(whispers).toHaveLength(5);
+    expect(whispers[0]!.to).toHaveLength(4);
+  });
+
+  it("open rooms skip conversation for singleton rooms", async () => {
+    class SpreadAgent extends MockAgent {
+      async chooseWhisperRoom(ctx: PhaseContext): Promise<number> {
+        return ctx.selfName === "Alpha" ? 1 : 2;
+      }
+    }
+
+    const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map(
+      (name) => new SpreadAgent(createUUID(), name),
+    );
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 1 });
+    const result = await runner.run();
+
+    const whispers = result.transcript.filter((entry) => entry.scope === "whisper" && entry.phase === Phase.WHISPER);
+    expect(whispers.every((entry) => entry.from !== "Alpha")).toBe(true);
+    expect(whispers).toHaveLength(4);
   });
 });
 
@@ -1428,526 +1501,5 @@ describe("Anonymous Rumors", () => {
       expect(event.entry?.anonymous).toBe(true);
       expect(typeof event.entry?.displayOrder).toBe("number");
     }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Whisper Rooms
-// ---------------------------------------------------------------------------
-
-describe("Whisper Rooms", () => {
-  const TEST_CONFIG: GameConfig = {
-    timers: {
-      introduction: 0,
-      lobby: 0,
-      whisper: 0,
-      rumor: 0,
-      vote: 0,
-      power: 0,
-      council: 0,
-    },
-    maxRounds: 2,
-    minPlayers: 5,
-    maxPlayers: 12,
-  };
-
-  function makeWhisperPlayers(names: string[]): Array<{ id: UUID; name: string }> {
-    return names.map((name) => ({ id: createUUID(), name }));
-  }
-
-  function playerId(players: Array<{ id: UUID; name: string }>, name: string): UUID {
-    return defined(players.find((player) => player.name === name)?.id, `Expected player ${name}`);
-  }
-
-  function makeRequests(
-    players: Array<{ id: UUID; name: string }>,
-    pairs: Array<[string, string]>,
-  ): Map<UUID, UUID> {
-    return new Map(pairs.map(([from, to]) => [playerId(players, from), playerId(players, to)]));
-  }
-
-  function makePriorRooms(
-    players: Array<{ id: UUID; name: string }>,
-    pairs: Array<[string, string]>,
-    round: number,
-  ): RoomAllocation[] {
-    return pairs.map(([a, b], index) => ({
-      roomId: index + 1,
-      playerA: playerId(players, a),
-      playerB: playerId(players, b),
-      round,
-    }));
-  }
-
-  function roomHasPair(rooms: RoomAllocation[], a: UUID, b: UUID): boolean {
-    return rooms.some((room) =>
-      new Set([room.playerA, room.playerB]).has(a) &&
-      new Set([room.playerA, room.playerB]).has(b),
-    );
-  }
-
-  function countHonoredPairs(
-    rooms: RoomAllocation[],
-    players: Array<{ id: UUID; name: string }>,
-    pairs: Array<[string, string]>,
-  ): number {
-    return pairs.filter(([a, b]) => roomHasPair(rooms, playerId(players, a), playerId(players, b))).length;
-  }
-
-  it("diversity allocator avoids repeated mutual pairs for 6-player full matchings", () => {
-    const players = makeWhisperPlayers(["A", "B", "C", "D", "E", "F"]);
-    const requests = makeRequests(players, [
-      ["A", "B"],
-      ["B", "A"],
-      ["C", "D"],
-      ["D", "C"],
-      ["E", "F"],
-      ["F", "E"],
-    ]);
-    const previousSessionRooms = makePriorRooms(players, [["A", "B"], ["C", "D"]], 1);
-
-    const { rooms, excluded } = allocateRooms(requests, players, 2, 2, {
-      allocationMode: "diversity-weighted",
-      priorRooms: previousSessionRooms,
-      previousSessionRooms,
-    });
-
-    expect(rooms).toHaveLength(2);
-    expect(excluded).toHaveLength(2);
-    expect(roomHasPair(rooms, playerId(players, "A"), playerId(players, "B"))).toBe(false);
-    expect(roomHasPair(rooms, playerId(players, "C"), playerId(players, "D"))).toBe(false);
-  });
-
-  it("diversity allocator resolves a 6-player star request without pairing the target twice", () => {
-    const players = makeWhisperPlayers(["A", "B", "C", "D", "E", "F"]);
-    const requests = makeRequests(players, [
-      ["A", "B"],
-      ["B", "A"],
-      ["C", "A"],
-      ["D", "A"],
-      ["E", "A"],
-      ["F", "A"],
-    ]);
-
-    const { rooms } = allocateRooms(requests, players, 2, 1, {
-      allocationMode: "diversity-weighted",
-      sessionIndex: 0,
-    });
-    const targetId = playerId(players, "A");
-
-    expect(rooms).toHaveLength(2);
-    expect(rooms.filter((room) => room.playerA === targetId || room.playerB === targetId)).toHaveLength(1);
-    expect(roomHasPair(rooms, targetId, playerId(players, "B"))).toBe(true);
-  });
-
-  it("diversity allocator avoids back-to-back exclusions for 7 players when feasible", () => {
-    const players = makeWhisperPlayers(["A", "B", "C", "D", "E", "F", "G"]);
-    const previousExcluded = ["A", "B", "C"].map((name) => playerId(players, name));
-    const exclusionCounts = new Map(previousExcluded.map((id) => [id, 1] as const));
-
-    const { rooms, excluded } = allocateRooms(new Map(), players, 2, 2, {
-      allocationMode: "diversity-weighted",
-      previousSessionExcludedPlayerIds: previousExcluded,
-      exclusionCounts,
-    });
-
-    expect(rooms).toHaveLength(2);
-    for (const playerId of previousExcluded) {
-      expect(excluded).not.toContain(playerId);
-    }
-  });
-
-  it("diversity allocator does not mark consecutive exclusions avoidable when no full alternative exists", () => {
-    const players = makeWhisperPlayers(["A", "B", "C", "D", "E", "F", "G"]);
-    const previousExcluded = ["A", "B", "C", "D", "E"].map((name) => playerId(players, name));
-
-    const { diagnostics } = allocateRooms(new Map(), players, 2, 2, {
-      allocationMode: "diversity-weighted",
-      previousSessionExcludedPlayerIds: previousExcluded,
-      exclusionCounts: new Map(previousExcluded.map((id) => [id, 1] as const)),
-    });
-
-    expect(diagnostics.exclusionFlags.consecutiveExclusions).toBeGreaterThan(0);
-    expect(diagnostics.exclusionFlags.avoidableConsecutiveExclusions).toBe(0);
-  });
-
-  it("diversity allocator balances prior exclusions over one clean mutual pair for 8 players", () => {
-    const players = makeWhisperPlayers(["A", "B", "C", "D", "E", "F", "G", "H"]);
-    const requests = makeRequests(players, [
-      ["A", "B"],
-      ["B", "A"],
-      ["C", "D"],
-      ["D", "C"],
-      ["E", "F"],
-      ["F", "E"],
-    ]);
-    const previousExcluded = ["G", "H"].map((name) => playerId(players, name));
-
-    const { rooms, excluded } = allocateRooms(requests, players, 3, 2, {
-      allocationMode: "diversity-weighted",
-      previousSessionExcludedPlayerIds: previousExcluded,
-      exclusionCounts: new Map(previousExcluded.map((id) => [id, 1] as const)),
-    });
-
-    expect(rooms).toHaveLength(3);
-    expect(excluded).not.toContain(playerId(players, "G"));
-    expect(excluded).not.toContain(playerId(players, "H"));
-    expect(countHonoredPairs(rooms, players, [["A", "B"], ["C", "D"], ["E", "F"]])).toBeGreaterThanOrEqual(2);
-  });
-
-  it("diversity allocator avoids repeated requested pairs for 8 players when alternatives exist", () => {
-    const players = makeWhisperPlayers(["A", "B", "C", "D", "E", "F", "G", "H"]);
-    const repeatPairs: Array<[string, string]> = [["A", "B"], ["C", "D"], ["E", "F"], ["G", "H"]];
-    const requests = makeRequests(
-      players,
-      repeatPairs.flatMap(([a, b]) => [[a, b], [b, a]] as Array<[string, string]>),
-    );
-    const previousSessionRooms = makePriorRooms(players, repeatPairs, 1);
-
-    const { rooms } = allocateRooms(requests, players, 3, 2, {
-      allocationMode: "diversity-weighted",
-      priorRooms: previousSessionRooms,
-      previousSessionRooms,
-    });
-
-    expect(rooms).toHaveLength(3);
-    for (const [a, b] of repeatPairs) {
-      expect(roomHasPair(rooms, playerId(players, a), playerId(players, b))).toBe(false);
-    }
-  });
-
-  it("diversity allocator preserves clean historical mutual requests after hard filters", () => {
-    const players = makeWhisperPlayers(["A", "B", "C", "D", "E", "F", "G", "H"]);
-    const requests = makeRequests(players, [
-      ["A", "B"],
-      ["B", "A"],
-      ["C", "D"],
-      ["D", "C"],
-      ["E", "F"],
-      ["F", "E"],
-    ]);
-    const historicalRooms = makePriorRooms(players, [["A", "B"]], 1);
-    const previousSessionRooms = makePriorRooms(players, [["G", "H"]], 2);
-
-    const { rooms, diagnostics } = allocateRooms(requests, players, 3, 3, {
-      allocationMode: "diversity-weighted",
-      priorRooms: [...historicalRooms, ...previousSessionRooms],
-      previousSessionRooms,
-    });
-
-    expect(rooms).toHaveLength(3);
-    expect(roomHasPair(rooms, playerId(players, "A"), playerId(players, "B"))).toBe(true);
-    expect(countHonoredPairs(rooms, players, [["A", "B"], ["C", "D"], ["E", "F"]])).toBe(3);
-    expect(diagnostics.requestSatisfaction.unmatchedValidRequests).toBe(0);
-  });
-
-  it("records raw request diagnostics and allocator context", () => {
-    const players = makeWhisperPlayers(["A", "B", "C", "D", "E", "F"]);
-    const ids = Object.fromEntries(players.map((player) => [player.name, player.id]));
-    const priorRooms = makePriorRooms(players, [["A", "B"]], 1);
-    const rawRequests = new Map<UUID, UUID | null>([
-      [ids.A!, ids.B!],
-      [ids.B!, ids.A!],
-      [ids.C!, ids.C!],
-      [ids.D!, "not-an-active-player"],
-      [ids.F!, ids.E!],
-    ]);
-    const validRequests = new Map<UUID, UUID>([
-      [ids.A!, ids.B!],
-      [ids.B!, ids.A!],
-      [ids.F!, ids.E!],
-    ]);
-
-    const { diagnostics } = allocateRooms(validRequests, players, 2, 2, {
-      allocationMode: "diversity-weighted",
-      priorRooms,
-      previousSessionRooms: priorRooms,
-      previousSessionExcludedPlayerIds: [ids.C!],
-      exclusionCounts: new Map([[ids.C!, 1]]),
-      rawRequests,
-    });
-
-    const requestStatusByName = Object.fromEntries(
-      diagnostics.requests.map((request) => [request.requester.name, request.status]),
-    );
-    expect(requestStatusByName).toEqual({
-      A: "valid",
-      B: "valid",
-      C: "self",
-      D: "ineligible",
-      E: "missing",
-      F: "valid",
-    });
-    expect(diagnostics.priorPairCounts).toHaveLength(1);
-    expect(diagnostics.priorPairCounts[0]?.count).toBe(1);
-    expect(diagnostics.priorPairCounts[0]?.players.map((player) => player.name).sort()).toEqual(["A", "B"]);
-    expect(diagnostics.previousSessionExcludedPlayers).toEqual([{ id: ids.C!, name: "C" }]);
-    expect(diagnostics.requestSatisfaction.validRequests).toBe(3);
-    expect(diagnostics.requestSatisfaction.invalidOrMissingRequests).toBe(3);
-  });
-
-  it("diversity allocator softens repeat safeguards for 5- and 4-player late-game rooms", () => {
-    for (const names of [["A", "B", "C", "D", "E"], ["A", "B", "C", "D"]]) {
-      const players = makeWhisperPlayers(names);
-      const requests = makeRequests(players, [["A", "B"], ["B", "A"]]);
-      const priorRooms = makePriorRooms(players, [["A", "B"]], 1);
-      const previousExcluded = ["A", "B"].map((name) => playerId(players, name));
-
-      const { rooms } = allocateRooms(requests, players, 1, 3, {
-        allocationMode: "diversity-weighted",
-        priorRooms,
-        previousSessionExcludedPlayerIds: previousExcluded,
-        exclusionCounts: new Map(previousExcluded.map((id) => [id, 1] as const)),
-      });
-
-      expect(roomHasPair(rooms, playerId(players, "A"), playerId(players, "B"))).toBe(true);
-    }
-  });
-
-  it("reckoning whisper records allocation metadata through the diversity allocator", async () => {
-    const agents = ["A", "B", "C", "D"].map((name) => new MockAgent(createUUID(), name));
-    const gameState = new GameState(agents.map((agent) => ({ id: agent.id, name: agent.name })));
-    gameState.startRound();
-    const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
-    const whisperInbox = new Map<UUID, Array<{ from: string; text: string }>>();
-    const logger = new TranscriptLogger(gameState);
-    const contextBuilder = new ContextBuilder(gameState, logger, whisperInbox, agents.length);
-    const ctx: PhaseRunnerContext = {
-      gameState,
-      agents: agentMap,
-      config: { ...TEST_CONFIG, whisperRoomAllocationMode: "diversity-weighted" },
-      logger,
-      contextBuilder,
-      diaryRoom: {} as PhaseRunnerContext["diaryRoom"],
-      whisperInbox,
-      eliminationOrder: [],
-    };
-
-    await runReckoningWhisper(ctx, { send: () => undefined } as unknown as PhaseActor);
-
-    const allocationEntry = logger.transcript.find((entry) => entry.roomMetadata);
-    expect(allocationEntry?.roomMetadata?.rooms).toHaveLength(1);
-    expect(allocationEntry?.roomMetadata?.excluded).toHaveLength(2);
-    expect(allocationEntry?.roomMetadata?.diagnostics?.requests).toHaveLength(4);
-    expect(allocationEntry?.roomMetadata?.diagnostics?.requestSatisfaction.mutualHonored).toBe(1);
-    expect(allocationEntry?.roomMetadata?.diagnostics?.requestSatisfaction.unmatchedValidRequests).toBe(2);
-    expect(gameState.getRoomAllocations(1)?.rooms).toHaveLength(1);
-  });
-
-  it("room allocation system message appears in transcript during whisper phase", async () => {
-    const { MockAgent } = await import("./mock-agent");
-
-    const agents = [
-      new MockAgent(createUUID(), "Alpha"),
-      new MockAgent(createUUID(), "Beta"),
-      new MockAgent(createUUID(), "Gamma"),
-      new MockAgent(createUUID(), "Delta"),
-    ];
-
-    const runner = new GameRunner(agents, TEST_CONFIG);
-    const result = await runner.run();
-
-    // Should have a system message during WHISPER with room assignments
-    const whisperSystemEntries = result.transcript.filter(
-      (e) => e.scope === "system" && e.phase === Phase.WHISPER && e.text !== "=== WHISPER PHASE ===",
-    );
-    expect(whisperSystemEntries.length).toBeGreaterThan(0);
-
-    // Room allocation message should mention "Room" and player names
-    const allocationMsg = whisperSystemEntries[0]!;
-    expect(allocationMsg.text).toContain("Room 1:");
-  });
-
-  it("room count formula: max(1, floor(alivePlayers/2) - 1)", async () => {
-    const { MockAgent } = await import("./mock-agent");
-
-    // 4 players → max(1, floor(4/2) - 1) = max(1, 1) = 1 room
-    const agents4 = [
-      new MockAgent(createUUID(), "A"),
-      new MockAgent(createUUID(), "B"),
-      new MockAgent(createUUID(), "C"),
-      new MockAgent(createUUID(), "D"),
-    ];
-    const runner4 = new GameRunner(agents4, TEST_CONFIG);
-    const result4 = await runner4.run();
-
-    // With 4 players and 1 room: 2 paired, 2 excluded
-    const whisperSys4 = result4.transcript.filter(
-      (e) => e.scope === "system" && e.phase === Phase.WHISPER && e.text.includes("Room 1:") && !e.text.includes("Room 2:"),
-    );
-    expect(whisperSys4.length).toBeGreaterThan(0);
-
-    // Should mention "Commons" for excluded players
-    const commonsMsg = result4.transcript.find(
-      (e) => e.scope === "system" && e.phase === Phase.WHISPER && e.text.includes("Commons:"),
-    );
-    expect(commonsMsg).toBeDefined();
-  });
-
-  it("whisper messages are generated by room partners", async () => {
-    const { MockAgent } = await import("./mock-agent");
-
-    const agents = [
-      new MockAgent(createUUID(), "Alpha"),
-      new MockAgent(createUUID(), "Beta"),
-      new MockAgent(createUUID(), "Gamma"),
-      new MockAgent(createUUID(), "Delta"),
-    ];
-
-    const runner = new GameRunner(agents, TEST_CONFIG);
-    const result = await runner.run();
-
-    // Should have whisper entries in WHISPER phase
-    const whisperEntries = result.transcript.filter(
-      (e) => e.scope === "whisper" && e.phase === Phase.WHISPER,
-    );
-    // With 1 room (4 players): 2 paired players each send 1 message = 2 whisper entries
-    expect(whisperEntries.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it("excluded players do not generate whisper messages", async () => {
-    const { MockAgent } = await import("./mock-agent");
-
-    const agents = [
-      new MockAgent(createUUID(), "Alpha"),
-      new MockAgent(createUUID(), "Beta"),
-      new MockAgent(createUUID(), "Gamma"),
-      new MockAgent(createUUID(), "Delta"),
-    ];
-
-    const runner = new GameRunner(agents, TEST_CONFIG);
-    const result = await runner.run();
-
-    // Get the room allocation to find who was paired
-    const allocationMsg = result.transcript.find(
-      (e) => e.scope === "system" && e.phase === Phase.WHISPER && e.text.includes("Room 1:"),
-    );
-    expect(allocationMsg).toBeDefined();
-
-    // Get round 1 whisper entries
-    const round1Whispers = result.transcript.filter(
-      (e) => e.scope === "whisper" && e.phase === Phase.WHISPER && e.round === 1,
-    );
-
-    // With 2 whisper sessions and 2 exchanges per conversation,
-    // expect more whisper messages (up to 4 per session × 2 sessions for paired players)
-    expect(round1Whispers.length).toBeGreaterThanOrEqual(2);
-
-    // The whisper authors should include the paired players from the allocation
-    const whisperAuthors = new Set(round1Whispers.map((e) => e.from));
-    expect(whisperAuthors.size).toBeGreaterThanOrEqual(2);
-  });
-
-  it("6-player game has 2 rooms", async () => {
-    const { MockAgent } = await import("./mock-agent");
-
-    const agents = [
-      new MockAgent(createUUID(), "Alpha"),
-      new MockAgent(createUUID(), "Beta"),
-      new MockAgent(createUUID(), "Gamma"),
-      new MockAgent(createUUID(), "Delta"),
-      new MockAgent(createUUID(), "Echo"),
-      new MockAgent(createUUID(), "Foxtrot"),
-    ];
-
-    const runner = new GameRunner(agents, { ...TEST_CONFIG, maxRounds: 4 });
-    const result = await runner.run();
-
-    // 6 players → max(1, floor(6/2) - 1) = max(1, 2) = 2 rooms
-    const allocationMsg = result.transcript.find(
-      (e) => e.scope === "system" && e.phase === Phase.WHISPER && e.round === 1 && e.text.includes("Room 2:"),
-    );
-    expect(allocationMsg).toBeDefined();
-    expect(allocationMsg!.text).toContain("Room 1:");
-    expect(allocationMsg!.text).toContain("Room 2:");
-  });
-
-  it("anti-repeat whisper rooms coexist with the Power Lobby experiment", async () => {
-    const { MockAgent } = await import("./mock-agent");
-    const preferredPartners = new Map([
-      ["Alpha", "Beta"],
-      ["Beta", "Alpha"],
-      ["Gamma", "Delta"],
-      ["Delta", "Gamma"],
-      ["Echo", "Alpha"],
-      ["Foxtrot", "Echo"],
-    ]);
-
-    class RepeatPreferenceAgent extends MockAgent {
-      async requestRoom(ctx: PhaseContext): Promise<UUID | null> {
-        const preferredName = preferredPartners.get(this.name);
-        const preferred = ctx.alivePlayers.find(
-          (player) => player.name === preferredName && player.id !== this.id,
-        );
-        return preferred?.id ?? super.requestRoom(ctx);
-      }
-
-      async getVotes(ctx: PhaseContext): Promise<{ empowerTarget: UUID; exposeTarget: UUID }> {
-        const fallback = defined(
-          ctx.alivePlayers.find((player) => player.id !== this.id) ?? ctx.alivePlayers[0],
-          "Expected at least one alive player for voting",
-        );
-        const alpha = ctx.alivePlayers.find((player) => player.name === "Alpha") ?? fallback;
-        const foxtrot = ctx.alivePlayers.find((player) => player.name === "Foxtrot") ?? fallback;
-        return { empowerTarget: alpha.id, exposeTarget: foxtrot.id };
-      }
-
-      async getPowerAction(_ctx: PhaseContext, candidates: [UUID, UUID]): Promise<PowerAction> {
-        return { action: "pass", target: candidates[0] };
-      }
-
-      async getCouncilVote(_ctx: PhaseContext, candidates: [UUID, UUID]): Promise<UUID> {
-        return candidates[0];
-      }
-    }
-
-    const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo", "Foxtrot"].map(
-      (name) => new RepeatPreferenceAgent(createUUID(), name),
-    );
-
-    const runner = new GameRunner(agents, {
-      ...TEST_CONFIG,
-      maxRounds: 4,
-      whisperSessionsPerRound: 1,
-      powerLobbyAfterVote: true,
-      experimentalAntiRepeatWhisperRooms: true,
-    });
-    const result = await runner.run();
-
-    const powerLobbyLog = result.transcript.find(
-      (entry) =>
-        entry.scope === "system" &&
-        entry.phase === Phase.POWER &&
-        entry.round === 1 &&
-        entry.text.startsWith("POWER LOBBY:"),
-    );
-    expect(powerLobbyLog).toBeDefined();
-
-    const powerLobbyMessages = result.transcript.filter(
-      (entry) => entry.scope === "public" && entry.phase === Phase.POWER && entry.round === 1,
-    );
-    expect(powerLobbyMessages.length).toBeGreaterThan(0);
-
-    const antiRepeatLog = result.transcript.find(
-      (entry) =>
-        entry.scope === "system" &&
-        entry.phase === Phase.WHISPER &&
-        entry.round === 2 &&
-        entry.text.includes("Whisper allocation experiment: diversified rooms"),
-    );
-    expect(antiRepeatLog).toBeDefined();
-    expect(antiRepeatLog!.text).toContain("Alpha -> Beta");
-
-    const round2Allocation = result.transcript.find(
-      (entry) =>
-        entry.scope === "system" &&
-        entry.phase === Phase.WHISPER &&
-        entry.round === 2 &&
-        entry.roomMetadata?.rooms.every((room) =>
-          !new Set([room.playerA, room.playerB]).has(agents[0]!.id) ||
-          !new Set([room.playerA, room.playerB]).has(agents[1]!.id),
-        ),
-    );
-    expect(round2Allocation).toBeDefined();
   });
 });
