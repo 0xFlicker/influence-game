@@ -257,20 +257,20 @@ const TOOL_SEND_WHISPERS: ChatCompletionTool = {
   },
 };
 
-const TOOL_REQUEST_ROOM: ChatCompletionTool = {
+const TOOL_CHOOSE_WHISPER_ROOM: ChatCompletionTool = {
   type: "function",
   function: {
-    name: "request_room",
-    description: "Request a private room with another player for a whisper conversation",
+    name: "choose_whisper_room",
+    description: "Choose a neutral open whisper room by room number",
     parameters: {
       type: "object",
       properties: {
-        partner: {
-          type: "string",
-          description: "Name of the player you want to meet with privately",
+        roomId: {
+          type: "number",
+          description: "Room number to enter",
         },
       },
-      required: ["partner"],
+      required: ["roomId"],
     },
   },
 };
@@ -279,7 +279,7 @@ const TOOL_SEND_ROOM_MESSAGE: ChatCompletionTool = {
   type: "function",
   function: {
     name: "send_room_message",
-    description: "Send your private message to your room partner, or pass to end the conversation",
+    description: "Send your private message to everyone else in your room, or pass",
     parameters: {
       type: "object",
       properties: {
@@ -775,53 +775,47 @@ Use the send_whispers tool to submit your whisper messages. Use player NAMES (no
     }
   }
 
-  async requestRoom(ctx: PhaseContext): Promise<UUID | null> {
-    const otherPlayers = ctx.alivePlayers.filter((p) => p.id !== this.id);
-    if (otherPlayers.length === 0) return null;
-
+  async chooseWhisperRoom(ctx: PhaseContext): Promise<number | null> {
     const roomCount = ctx.roomCount ?? 1;
-    const aliveCount = ctx.alivePlayers.length;
+    if (roomCount < 1) return null;
+    const rooms = Array.from({ length: roomCount }, (_, index) => index + 1);
+
+    const previousOccupancy = ctx.roomAllocations && ctx.roomAllocations.length > 0
+      ? `\n## Previous Room Occupancy\n${ctx.roomAllocations
+          .slice(-roomCount)
+          .map((room) => {
+            const occupants = room.playerNames.length > 0 ? room.playerNames.join(", ") : "Empty";
+            return `- Room ${room.roomId}: ${occupants}`;
+          })
+          .join("\n")}`
+      : "";
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task
-Request a private room for a one-on-one whisper conversation. There are only
-${roomCount} rooms available for ${aliveCount} players — not everyone will get one.
+Choose one neutral whisper room to enter for this beat.
 
-Choose ONE player you want to meet with. Consider:
-- Who do you need to coordinate with?
-- Who might have intelligence you need?
-- Who do you want to manipulate or mislead?
-- Being excluded from rooms means no private communication this round.
+Available rooms: ${rooms.map((roomId) => `Room ${roomId}`).join(", ")}
+${previousOccupancy}
 
-If your preferred partner also requested you, you're guaranteed a room (mutual match).
-Otherwise, the House assigns rooms by availability.
-
-Available players: ${otherPlayers.map((p) => p.name).join(", ")}
-
-Use the request_room tool to submit your preference.`;
+Rooms have no theme and no occupancy cap. You may stay, move, pile into a crowded room, or sit alone.
+Use the choose_whisper_room tool to submit one room number.`;
 
     try {
-      const result = await this.callTool<{ partner: string }>(
-        prompt, TOOL_REQUEST_ROOM, 200, sys,
-        { action: "room-request", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
+      const result = await this.callTool<{ roomId: number }>(
+        prompt, TOOL_CHOOSE_WHISPER_ROOM, 150, sys,
+        { action: "room-choice", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
       );
-      const partnerName = result.partner;
-      const partner = findByName(otherPlayers, partnerName);
-      if (!partner) {
-        console.warn(`[vote-fallback] agent="${this.name}" method=requestRoom returned="${partnerName}" available=[${otherPlayers.map((p) => p.name).join(", ")}] fallback=null`);
-      }
-      return partner?.id ?? null;
+      return Number.isInteger(result.roomId) ? result.roomId : null;
     } catch (err) {
-      // Fallback: pick random other player
-      const idx = Math.floor(Math.random() * otherPlayers.length);
-      const fallbackName = otherPlayers[idx]?.name ?? "none";
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=requestRoom error="${err instanceof Error ? err.message : err}" fallback="${fallbackName}"`);
-      return otherPlayers[idx]?.id ?? null;
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=chooseWhisperRoom error="${err instanceof Error ? err.message : err}" fallback=1`);
+      return 1;
     }
   }
 
-  async sendRoomMessage(ctx: PhaseContext, partnerName: string, conversationHistory?: Array<{ from: string; text: string }>): Promise<AgentResponse | null> {
+  async sendRoomMessage(ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<AgentResponse | null> {
+    const otherRoomMates = roomMates.filter((name) => name !== this.name);
+    if (otherRoomMates.length === 0) return null;
     const history = conversationHistory ?? [];
     const isFirstMessage = history.length === 0;
 
@@ -832,11 +826,11 @@ Use the request_room tool to submit your preference.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task
-You're in a private room with ${partnerName}. Nobody else can hear you — but the audience is watching.
+You're in a private room with ${roomMates.join(", ")}. Nobody outside the room can hear you — but the audience is watching.
 ${historyText}
 ${isFirstMessage
-  ? `This is the start of your private conversation. Open with something strategic.`
-  : `Continue the conversation. You can respond to what ${partnerName} said, steer the discussion, or PASS if you're done talking.`}
+  ? `This is the start of this room beat. Open with something strategic for the group.`
+  : `Continue the conversation. You can respond to the room, steer the discussion, or PASS if you're done talking.`}
 
 Craft your message carefully:
 - Build or test an alliance
@@ -845,9 +839,9 @@ Craft your message carefully:
 - Probe for information about their plans
 - Form specific plans you can execute together in later phases (lobby, rumor, votes)
 
-Think ahead: what will you and this person DO after this conversation? Agree on a target, a signal, a vote, or a story to tell publicly. Plans that carry into the lobby and vote phases are more powerful than vague promises.
+Think ahead: what will this room DO after this conversation? Agree on a target, a signal, a vote, or a story to tell publicly. Plans that carry into the lobby and vote phases are more powerful than vague promises.
 
-Keep it to 2-4 sentences. Make every word count.
+Keep it to 1-3 sentences. Make every word count.
 ${!isFirstMessage ? `\nIf you have nothing more to say, use pass: true to end your side of the conversation.\nThe room closes when BOTH of you pass consecutively.` : ""}
 
 Use the send_room_message tool to send your message${!isFirstMessage ? " or pass" : ""}.`;
@@ -861,14 +855,14 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
       const msg = result.message?.trim();
       if (!msg) {
         const fallbackMsg = isFirstMessage
-          ? `I wanted to speak with you privately, ${partnerName}. Let's watch each other's backs.`
+          ? `${otherRoomMates.join(", ")}, let's compare notes and watch the vote together.`
           : null;
         return fallbackMsg ? { thinking: result.thinking ?? "", message: fallbackMsg } : null;
       }
       return { thinking: result.thinking ?? "", message: msg };
     } catch {
       if (isFirstMessage) {
-        return { thinking: "", message: `I wanted to speak with you privately, ${partnerName}. Let's watch each other's backs.` };
+        return { thinking: "", message: `${otherRoomMates.join(", ")}, let's compare notes and watch the vote together.` };
       }
       return null;
     }
@@ -1514,13 +1508,11 @@ IMPORTANT: Only reference alive players in your messages, votes, and strategies.
     // Room allocation context (for phases after whisper)
     let roomSection = "";
     if (ctx.roomAllocations && ctx.roomAllocations.length > 0) {
-      const roomLines = ctx.roomAllocations.map(
-        (r) => `  - Room ${r.roomId}: ${r.playerA} & ${r.playerB}`,
-      );
-      const excludedLine = ctx.excludedPlayers && ctx.excludedPlayers.length > 0
-        ? `  - Commons (no room): ${ctx.excludedPlayers.join(", ")}`
-        : "";
-      roomSection = `\n## Whisper Rooms This Round\n${roomLines.join("\n")}${excludedLine ? "\n" + excludedLine : ""}`;
+      const roomLines = ctx.roomAllocations.map((r) => {
+        const occupants = r.playerNames.length > 0 ? r.playerNames.join(", ") : "Empty";
+        return `  - Beat ${r.beat}, Room ${r.roomId}: ${occupants}`;
+      });
+      roomSection = `\n## Whisper Rooms This Round\n${roomLines.join("\n")}`;
     }
 
     const memoryNotes = Array.from(this.memory.notes.entries())

@@ -44,19 +44,17 @@ export class ContextBuilder {
       eliminationContext?: PhaseContext["eliminationContext"];
     },
     isEliminated?: boolean,
-    roomInfo?: { roomCount?: number; roomPartner?: string },
+    roomInfo?: { roomCount?: number; roomMates?: string[] },
   ): PhaseContext {
     const player = this.gameState.getPlayer(agentId)!;
 
     const roomAllocations = this.currentRoomAllocations.length > 0
       ? this.currentRoomAllocations.map((r) => ({
           roomId: r.roomId,
-          playerA: this.gameState.getPlayerName(r.playerA),
-          playerB: this.gameState.getPlayerName(r.playerB),
+          beat: r.beat,
+          playerIds: [...r.playerIds],
+          playerNames: r.playerIds.map((id) => this.gameState.getPlayerName(id)),
         }))
-      : undefined;
-    const excludedPlayers = this.currentExcludedPlayerIds.length > 0
-      ? this.currentExcludedPlayerIds.map((id) => this.gameState.getPlayerName(id))
       : undefined;
 
     return {
@@ -72,8 +70,7 @@ export class ContextBuilder {
       councilCandidates: extra?.councilCandidates ?? this.gameState.councilCandidates ?? undefined,
       roomCount: roomInfo?.roomCount,
       roomAllocations,
-      excludedPlayers,
-      roomPartner: roomInfo?.roomPartner,
+      roomMates: roomInfo?.roomMates,
       endgameStage: this.gameState.endgameStage ?? undefined,
       jury: this.gameState.jury.length > 0 ? [...this.getActiveJury()] : undefined,
       finalists: (() => {

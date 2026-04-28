@@ -68,10 +68,10 @@ export interface IAgent {
   getLobbyMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called to collect whisper actions (list of {to, text}) — DEPRECATED, use room methods */
   getWhispers(context: PhaseContext): Promise<Array<{ to: UUID[]; text: string }>>;
-  /** Request a preferred whisper room partner */
-  requestRoom(context: PhaseContext): Promise<UUID | null>;
-  /** Send a private message to room partner, or null to pass */
-  sendRoomMessage(context: PhaseContext, partnerName: string, conversationHistory?: Array<{ from: string; text: string }>): Promise<AgentResponse | null>;
+  /** Choose a neutral whisper room by room number */
+  chooseWhisperRoom(context: PhaseContext): Promise<number | null>;
+  /** Send a private room message to all other occupants, or null to pass */
+  sendRoomMessage(context: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<AgentResponse | null>;
   /** Called to collect a rumor message */
   getRumorMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called to collect votes */
@@ -151,11 +151,9 @@ export interface PhaseContext {
   /** Number of available rooms this round */
   roomCount?: number;
   /** Room assignments for this round (if whisper phase completed) */
-  roomAllocations?: Array<{ roomId: number; playerA: string; playerB: string }>;
-  /** Players excluded from rooms this round */
-  excludedPlayers?: string[];
-  /** This agent's room partner (if assigned a room) */
-  roomPartner?: string;
+  roomAllocations?: Array<{ roomId: number; beat: number; playerIds: string[]; playerNames: string[] }>;
+  /** This agent's current room occupants, including self */
+  roomMates?: string[];
   // Endgame context
   endgameStage?: EndgameStage;
   jury?: JuryMember[];

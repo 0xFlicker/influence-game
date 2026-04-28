@@ -1,12 +1,26 @@
 import type { TranscriptEntry } from "./game-runner.types";
 import type { TokenUsage } from "./token-tracker";
-import type {
-  WhisperExclusionFlags,
-  WhisperRepeatPairFlags,
-  WhisperRequestSatisfactionSummary,
-  WhisperSessionDiagnostics,
-} from "./types";
+import type { WhisperSessionDiagnostics } from "./types";
 import { Phase } from "./types";
+
+interface WhisperRequestSatisfactionSummary {
+  validRequests: number;
+  mutualHonored: number;
+  oneWayHonored: number;
+  unmatchedValidRequests: number;
+  invalidOrMissingRequests: number;
+}
+
+interface WhisperRepeatPairFlags {
+  immediateRepeats: number;
+  repeatedPairs: number;
+  noFullNonRepeatMatchingExists: boolean;
+}
+
+interface WhisperExclusionFlags {
+  consecutiveExclusions: number;
+  avoidableConsecutiveExclusions: number;
+}
 
 export interface SimulatorArgsSnapshot {
   games: number;
@@ -400,29 +414,10 @@ function summarizeWhisperSessions(
   };
 
   for (const session of sessions) {
-    requestSatisfaction.validRequests += session.requestSatisfaction.validRequests;
-    requestSatisfaction.mutualHonored += session.requestSatisfaction.mutualHonored;
-    requestSatisfaction.oneWayHonored += session.requestSatisfaction.oneWayHonored;
-    requestSatisfaction.unmatchedValidRequests += session.requestSatisfaction.unmatchedValidRequests;
-    requestSatisfaction.invalidOrMissingRequests += session.requestSatisfaction.invalidOrMissingRequests;
-
-    repeatPairFlags.immediateRepeats += session.repeatPairFlags.immediateRepeats;
-    repeatPairFlags.repeatedPairs += session.repeatPairFlags.repeatedPairs;
-    repeatPairFlags.noFullNonRepeatMatchingExists =
-      repeatPairFlags.noFullNonRepeatMatchingExists ||
-      session.repeatPairFlags.noFullNonRepeatMatchingExists;
-    if (session.repeatPairFlags.immediateRepeats > 0) {
-      repeatPairFlags.sessionsWithImmediateRepeats += 1;
-    }
-    if (session.repeatPairFlags.noFullNonRepeatMatchingExists) {
-      repeatPairFlags.sessionsWithoutFullNonRepeatMatching += 1;
-    }
-
-    exclusionFlags.consecutiveExclusions += session.exclusionFlags.consecutiveExclusions;
-    exclusionFlags.avoidableConsecutiveExclusions += session.exclusionFlags.avoidableConsecutiveExclusions;
-    if (session.exclusionFlags.consecutiveExclusions > 0) {
-      exclusionFlags.sessionsWithConsecutiveExclusions += 1;
-    }
+    requestSatisfaction.validRequests += session.choices.filter((choice) => choice.status === "valid").length;
+    requestSatisfaction.invalidOrMissingRequests += session.choices.filter(
+      (choice) => choice.status === "missing" || choice.status === "invalid",
+    ).length;
   }
 
   return {
@@ -493,6 +488,7 @@ export function instrumentGame(
   const pairs: RoomPairObservation[] = [];
   const whisperSessions: WhisperSessionDiagnostics[] = [];
   const whisperRounds = new Set<number>();
+  let totalRooms = 0;
   let totalExclusions = 0;
 
   for (const entry of transcript) {
@@ -554,15 +550,20 @@ export function instrumentGame(
         whisperSessions.push(entry.roomMetadata.diagnostics);
       }
       for (const room of entry.roomMetadata.rooms) {
-        const playerA = playerNameById[room.playerA] ?? room.playerA;
-        const playerB = playerNameById[room.playerB] ?? room.playerB;
-        participationByPlayer[playerA] = (participationByPlayer[playerA] ?? 0) + 1;
-        participationByPlayer[playerB] = (participationByPlayer[playerB] ?? 0) + 1;
-        pairs.push({
-          round: entry.round,
-          roomId: room.roomId,
-          players: [playerA, playerB],
-        });
+        totalRooms += 1;
+        const playerNames = room.playerIds.map((playerId) => playerNameById[playerId] ?? playerId);
+        for (const playerName of playerNames) {
+          participationByPlayer[playerName] = (participationByPlayer[playerName] ?? 0) + 1;
+        }
+        for (let i = 0; i < playerNames.length; i++) {
+          for (let j = i + 1; j < playerNames.length; j++) {
+            pairs.push({
+              round: entry.round,
+              roomId: room.roomId,
+              players: [playerNames[i]!, playerNames[j]!],
+            });
+          }
+        }
       }
 
       for (const playerName of entry.roomMetadata.excluded) {
@@ -581,7 +582,7 @@ export function instrumentGame(
     council,
     endgame,
     rooms: {
-      totalRooms: pairs.length,
+      totalRooms,
       whisperRounds: whisperRounds.size,
       participationByPlayer,
       exclusionsByPlayer,
@@ -638,6 +639,7 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
   let maxPairCount = 0;
   let maxPairShareOfRooms = 0;
   let maxPairShareOfWhisperRounds = 0;
+  let totalRooms = 0;
   let totalExclusions = 0;
   let whisperRounds = 0;
   let totalCalls = 0;
@@ -709,6 +711,7 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
       exclusionsByPlayer[player] = (exclusionsByPlayer[player] ?? 0) + count;
     }
     totalExclusions += game.rooms.totalExclusions;
+    totalRooms += game.rooms.totalRooms;
     whisperRounds += game.rooms.whisperRounds;
     pairs.push(...game.rooms.pairs);
     whisperSessions.push(...game.rooms.whisperSessions);
@@ -773,7 +776,7 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
     council,
     endgame,
     rooms: {
-      totalRooms: pairs.length,
+      totalRooms,
       whisperRounds,
       participationByPlayer,
       exclusionsByPlayer,
