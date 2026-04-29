@@ -112,6 +112,7 @@ export const transcripts = pgTable("transcripts", {
   scope: text("scope").notNull().$type<TranscriptScope>().default("public"),
   toPlayerIds: text("to_player_ids"), // JSON array for whispers, null otherwise
   roomId: integer("room_id"), // Whisper room ID (1-indexed), null for non-whisper entries
+  roomMetadata: text("room_metadata"), // JSON allocation metadata for whisper room system events
   text: text("text").notNull(),
   thinking: text("thinking"), // Per-message thinking (null for old entries / system messages)
   timestamp: bigint("timestamp", { mode: "number" }).notNull(), // Unix ms

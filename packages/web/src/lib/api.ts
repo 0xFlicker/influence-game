@@ -494,6 +494,43 @@ export interface GamePlayer {
 
 export type TranscriptScope = "public" | "whisper" | "system" | "diary" | "thinking";
 
+export interface WhisperRoomPlayerRef {
+  id: string;
+  name: string;
+}
+
+export interface WhisperRoomAllocation {
+  roomId: number;
+  round: number;
+  beat: number;
+  playerIds: string[];
+}
+
+export interface WhisperSessionDiagnostics {
+  round: number;
+  beat: number;
+  roomCount: number;
+  eligiblePlayers: WhisperRoomPlayerRef[];
+  choices: Array<{
+    player: WhisperRoomPlayerRef;
+    requestedRoomId: number | null;
+    assignedRoomId: number;
+    status: "valid" | "missing" | "invalid";
+  }>;
+  allocatedRooms: Array<{
+    roomId: number;
+    beat: number;
+    players: WhisperRoomPlayerRef[];
+    conversationRan: boolean;
+  }>;
+}
+
+export interface WhisperRoomMetadata {
+  rooms: WhisperRoomAllocation[];
+  excluded: string[];
+  diagnostics?: WhisperSessionDiagnostics;
+}
+
 export interface TranscriptEntry {
   id: number;
   gameId: string;
@@ -504,6 +541,7 @@ export interface TranscriptEntry {
   scope: TranscriptScope;
   toPlayerIds: string[] | null;
   roomId?: number;
+  roomMetadata?: WhisperRoomMetadata;
   text: string;
   thinking?: string | null;
   timestamp: number;
@@ -537,7 +575,9 @@ export interface WsTranscriptEntry {
   scope: TranscriptScope;
   to?: string[];
   roomId?: number;
+  roomMetadata?: WhisperRoomMetadata;
   text: string;
+  thinking?: string | null;
   timestamp: number;
 }
 

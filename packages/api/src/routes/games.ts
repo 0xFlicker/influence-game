@@ -864,20 +864,33 @@ export function createGameRoutes(db: DrizzleDB) {
       .where(eq(schema.transcripts.gameId, gameId))
       .orderBy(asc(schema.transcripts.timestamp));
 
-    const entries = rows.map((row) => ({
-      id: row.id,
-      gameId: row.gameId,
-      round: row.round,
-      phase: row.phase,
-      fromPlayerId: row.fromPlayerId,
-      fromPlayerName: row.fromPlayerId ? (playerNameMap.get(row.fromPlayerId) ?? null) : null,
-      scope: row.scope,
-      toPlayerIds: row.toPlayerIds ? JSON.parse(row.toPlayerIds) : null,
-      ...(row.roomId != null && { roomId: row.roomId }),
-      text: row.text,
-      thinking: row.thinking ?? null,
-      timestamp: row.timestamp,
-    }));
+    const parseJsonOrNull = (value: string | null): Record<string, unknown> | null => {
+      if (!value) return null;
+      try {
+        return JSON.parse(value) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    };
+
+    const entries = rows.map((row) => {
+      const roomMetadata = parseJsonOrNull(row.roomMetadata);
+      return {
+        id: row.id,
+        gameId: row.gameId,
+        round: row.round,
+        phase: row.phase,
+        fromPlayerId: row.fromPlayerId,
+        fromPlayerName: row.fromPlayerId ? (playerNameMap.get(row.fromPlayerId) ?? null) : null,
+        scope: row.scope,
+        toPlayerIds: row.toPlayerIds ? JSON.parse(row.toPlayerIds) : null,
+        ...(row.roomId != null && { roomId: row.roomId }),
+        ...(roomMetadata && { roomMetadata }),
+        text: row.text,
+        thinking: row.thinking ?? null,
+        timestamp: row.timestamp,
+      };
+    });
 
     return c.json(entries);
   });
