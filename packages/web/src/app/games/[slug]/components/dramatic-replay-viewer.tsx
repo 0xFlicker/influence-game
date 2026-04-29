@@ -32,7 +32,7 @@ import { ConnectionBadge, GameStateHUD } from "./game-info";
 import { PhaseTransitionOverlay } from "./phase-transition";
 import { EndgameEntryScreen } from "./endgame-entry";
 import { GroupChatFeed, JuryDMView } from "./chat-feeds";
-import { WhisperRoomDM, WhisperAllocationOverview, buildWhisperStageData } from "./whisper-phase";
+import { OpenWhisperRoomsView, WhisperRoomDM, WhisperAllocationOverview, buildWhisperStageData } from "./whisper-phase";
 import { buildDiaryRooms, DiaryRoomChat } from "./diary-room";
 import type { WhisperRoomStage } from "./types";
 import { VoteTallyOverlay, SpectacleMessageContent } from "./vote-display";
@@ -189,6 +189,7 @@ export function DramaticReplayViewer({
   const isThinkingOnlyScene = !!scene && scene.messages.length > 0 && scene.messages.every((m) => m.scope === "thinking");
   const isChatFeedScene = !!scene && (CHAT_FEED_PHASES.has(scene.phase) || isThinkingOnlyScene);
   const isWhisperScene = !!scene && scene.phase === "WHISPER" && !scene.isOverview && !isThinkingOnlyScene;
+  const isOpenWhisperScene = !!scene && scene.phase === "WHISPER" && scene.messages.some((m) => (m.roomMetadata?.rooms.length ?? 0) > 0);
   const isDiaryScene = !!scene && scene.phase === "DIARY_ROOM" && !isThinkingOnlyScene;
   const isOverviewScene = !!scene && !!scene.isOverview;
   const isJuryScene = !!scene && scene.phase === "JURY_QUESTIONS" && !isThinkingOnlyScene;
@@ -202,6 +203,14 @@ export function DramaticReplayViewer({
     const endIdx = messagePhase === "typing" ? messageIndex : messageIndex + 1;
     return scene.messages.slice(0, endIdx);
   }, [scene, isChatStyleScene, messageIndex, messagePhase]);
+
+  const openWhisperMessages = useMemo(() => {
+    if (!scene || !isOpenWhisperScene) return [];
+    const fallbackMetadata = scene.messages.filter((m) => m.roomMetadata).slice(0, 1);
+    return chatFeedMessages.some((m) => m.roomMetadata)
+      ? chatFeedMessages
+      : [...chatFeedMessages, ...fallbackMetadata];
+  }, [chatFeedMessages, isOpenWhisperScene, scene]);
 
   // For per-room whisper scenes: build a WhisperRoomStage for single-room rendering
   const whisperRoom = useMemo((): WhisperRoomStage | null => {
@@ -706,7 +715,7 @@ export function DramaticReplayViewer({
         <div className="flex items-center gap-2 md:gap-3 pl-10 min-w-0">
           <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ROOM_TYPE_COLORS[scene.roomType]}`} />
           <span className={`text-xs font-semibold uppercase tracking-[0.25em] ${phaseColor(scene.phase)} truncate`}>
-            {PHASE_TRANSITION_LABELS[scene.phase] ?? scene.phase}
+            {isOpenWhisperScene ? "WHISPER: OPEN ROOMS" : (PHASE_TRANSITION_LABELS[scene.phase] ?? scene.phase)}
           </span>
           {roomLabel && (
             <span className="text-xs text-purple-300/50 hidden md:inline">{roomLabel}</span>
@@ -758,10 +767,10 @@ export function DramaticReplayViewer({
 
       {/* Center — phase-aware content */}
       <div
-        ref={(isDiaryScene || isWhisperScene) ? stackedScrollRef : undefined}
-        className={`flex-1 flex ${isChatStyleScene ? ((isDiaryScene || isWhisperScene) ? "items-start" : "items-end") : "items-center"} justify-center px-4 md:px-8 py-4 md:py-8 overflow-y-auto`}
+        ref={(isDiaryScene || (isWhisperScene && !isOpenWhisperScene)) ? stackedScrollRef : undefined}
+        className={`flex-1 flex ${isChatStyleScene ? ((isDiaryScene || (isWhisperScene && !isOpenWhisperScene)) ? "items-start" : "items-end") : "items-center"} justify-center px-4 md:px-8 py-4 md:py-8 overflow-y-auto`}
       >
-        <div className={`w-full ${(isDiaryScene || isWhisperScene || isOverviewScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
+        <div className={`w-full ${(isDiaryScene || isWhisperScene || isOverviewScene || isOpenWhisperScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
           {/* --- Chat-style: Group Chat Feed --- */}
           {isChatFeedScene && (
             <div className="flex flex-col gap-2">
@@ -786,7 +795,17 @@ export function DramaticReplayViewer({
           )}
 
           {/* --- Chat-style: Whisper Room DM (stacked) --- */}
-          {isWhisperScene && (
+          {isOpenWhisperScene && (
+            <OpenWhisperRoomsView
+              phaseEntries={openWhisperMessages}
+              players={replayPlayers}
+              phaseKey={scene.id}
+              live={live}
+              showThinking={showThinking}
+            />
+          )}
+
+          {isWhisperScene && !isOpenWhisperScene && (
             <div className="flex flex-col gap-4">
               {previousWhisperRooms.map((prevRoom) => (
                 <div key={`whisper-prev-${prevRoom.roomId}`} className="opacity-60">
@@ -823,7 +842,7 @@ export function DramaticReplayViewer({
           )}
 
           {/* --- Whisper Overview: Rich allocation display --- */}
-          {isOverviewScene && overviewStageData && (
+          {isOverviewScene && !isOpenWhisperScene && overviewStageData && (
             <WhisperAllocationOverview
               stage={overviewStageData}
               players={replayPlayers}

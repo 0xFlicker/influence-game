@@ -2,11 +2,13 @@
 
 **Author:** Lead Game Designer
 **Date:** 2026-03-19
-**Status:** v1 — Design Recommendation (pending board approval)
+**Status:** Superseded for whisper-room mechanics by the neutral open-room direction from [INF-200](/INF/issues/INF-200). Anonymous Rumors guidance remains relevant.
 **Related Issues:** [INF-99](/issues/INF-99) (this spec), [INF-96](/issues/INF-96) (parent: viewer improvements)
 **References:** [Viewer Experience Spec](./viewer-experience-spec.md), [Replay Experience Spec](./replay-experience-spec.md), project game specification
 
 ---
+
+> **Current implementation note (2026-04-29):** New games no longer use pair appointments, mutual partner requests, or commons exclusion for WHISPER. The active rule is neutral open rooms: rooms start at `5+` alive, scale as `Math.ceil(aliveCount / 3)`, players choose room numbers directly, empty and singleton rooms are valid, and group whisper messages run only in rooms with `2+` players. Pair-room behavior may appear only in historical replay records.
 
 ## Overview
 
