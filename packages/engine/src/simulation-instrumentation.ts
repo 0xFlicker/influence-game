@@ -28,6 +28,8 @@ export interface SimulatorArgsSnapshot {
   personas: string[] | null;
   model: string;
   variant: string;
+  gameTimeoutMs: number;
+  llmTimeoutMs: number;
 }
 
 export interface GitMetadata {
