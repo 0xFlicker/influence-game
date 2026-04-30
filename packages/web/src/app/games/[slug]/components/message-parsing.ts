@@ -100,12 +100,14 @@ export function wsEntryToTranscriptEntry(
     gameId,
     round: entry.round,
     phase: entry.phase as PhaseKey,
-    fromPlayerId: entry.from === "SYSTEM" ? null : entry.from,
+    fromPlayerId: entry.from === "SYSTEM" || entry.from === "House" ? null : entry.from,
     fromPlayerName: null, // resolved by MessageBubble via player lookup
     scope: entry.scope as TranscriptScope,
     toPlayerIds: entry.to ?? null,
     roomId: entry.roomId,
+    roomMetadata: entry.roomMetadata,
     text: entry.text,
+    thinking: entry.thinking ?? null,
     timestamp: entry.timestamp,
   };
 }

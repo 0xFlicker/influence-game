@@ -11,10 +11,11 @@ import { schema } from "../db/index.js";
 import type { DrizzleDB } from "../db/index.js";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { GameRunner } from "@influence/engine";
+import { GameRunner, Phase } from "@influence/engine";
 import type { AgentResponse, IAgent, PhaseContext } from "@influence/engine";
 import type { UUID, PowerAction, GameConfig } from "@influence/engine";
 import { setupTestDB } from "./test-utils.js";
+import { serializeTranscriptEntry } from "../services/game-lifecycle.js";
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -166,6 +167,26 @@ async function createGameInDB(
 // ---------------------------------------------------------------------------
 
 describe("Game lifecycle integration", () => {
+  test("serializeTranscriptEntry preserves room metadata", () => {
+    const roomMetadata = {
+      rooms: [{ roomId: 1, round: 1, beat: 1, playerIds: ["p1", "p2"] }],
+      excluded: [],
+    };
+
+    const row = serializeTranscriptEntry("game-rooms", {
+      round: 1,
+      phase: Phase.WHISPER,
+      timestamp: 123,
+      from: "House",
+      scope: "system",
+      text: "Beat 1: Room 1: Alpha, Beta",
+      roomMetadata,
+    });
+
+    expect(row.fromPlayerId).toBeNull();
+    expect(row.roomMetadata ? JSON.parse(row.roomMetadata) : null).toEqual(roomMetadata);
+  });
+
   test("GameRunner produces transcript and results", async () => {
     const db = await setupTestDB();
     const { gameId, agents, config } = await createGameInDB(db, 4);

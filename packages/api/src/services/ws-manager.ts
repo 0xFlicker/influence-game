@@ -6,7 +6,7 @@
  */
 
 import type { ServerWebSocket } from "bun";
-import type { GameStreamEvent, GameStateSnapshot } from "@influence/engine";
+import type { GameStreamEvent, GameStateSnapshot, TranscriptEntry } from "@influence/engine";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -20,7 +20,7 @@ export interface WsConnectionData {
 export type WsOutboundEvent =
   | { type: "game_state"; snapshot: GameStateSnapshot }
   | { type: "phase_change"; phase: string; round: number; alivePlayers: string[] }
-  | { type: "message"; entry: { round: number; phase: string; from: string; scope: string; to?: string[]; roomId?: number; text: string; timestamp: number; anonymous?: boolean; displayOrder?: number } }
+  | { type: "message"; entry: TranscriptEntry }
   | { type: "player_eliminated"; playerId: string; playerName: string; round: number }
   | { type: "game_over"; winner?: string; winnerName?: string; totalRounds: number }
   | { type: "players_filled"; gameId: string; players: Array<{ id: string; name: string; archetype: string }>; totalPlayers: number }

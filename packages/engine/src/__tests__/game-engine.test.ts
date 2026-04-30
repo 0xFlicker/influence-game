@@ -178,6 +178,50 @@ describe("Whisper Rooms", () => {
     expect(whispers.every((entry) => entry.from !== "Alpha")).toBe(true);
     expect(whispers).toHaveLength(4);
   });
+
+  it("passes open-room whispers into the following phase context", async () => {
+    const seenWhispers = new Map<string, string[]>();
+
+    class InboxProbeAgent extends MockAgent {
+      async chooseWhisperRoom(): Promise<number> {
+        return 1;
+      }
+
+      async sendRoomMessage(
+        _ctx: PhaseContext,
+        roomMates: string[],
+        conversationHistory?: Array<{ from: string; text: string }>,
+      ): Promise<AgentResponse | null> {
+        const alreadySpoke = conversationHistory?.some((message) => message.from === this.name) ?? false;
+        if (alreadySpoke) return null;
+        const others = roomMates.filter((name) => name !== this.name);
+        return others.length > 0
+          ? { thinking: "", message: `${this.name} shares private voting intel.` }
+          : null;
+      }
+
+      async getRumorMessage(ctx: PhaseContext): Promise<AgentResponse> {
+        if (!seenWhispers.has(this.name)) {
+          seenWhispers.set(this.name, ctx.whisperMessages.map((message) => message.from));
+        }
+        return super.getRumorMessage(ctx);
+      }
+    }
+
+    const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map(
+      (name) => new InboxProbeAgent(createUUID(), name),
+    );
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 1 });
+    await runner.run();
+
+    expect(seenWhispers.size).toBe(5);
+    for (const name of ["Alpha", "Beta", "Gamma", "Delta", "Echo"]) {
+      const senders = seenWhispers.get(name);
+      expect(senders).toBeDefined();
+      expect(senders).toHaveLength(4);
+      expect(senders).not.toContain(name);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

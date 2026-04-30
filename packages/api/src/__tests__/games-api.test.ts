@@ -696,6 +696,31 @@ describe("Game REST API", () => {
       const body = (await res.json()) as Array<{ toPlayerIds: string[] | null }>;
       expect(body[0]!.toPlayerIds).toEqual([p2]);
     });
+
+    test("system whisper entries include parsed roomMetadata", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      const { playerId: p1 } = await joinTestPlayer(app, id, "Atlas", userToken);
+      const { playerId: p2 } = await joinTestPlayer(app, id, "Vera", userToken);
+      const roomMetadata = {
+        rooms: [{ roomId: 1, round: 1, beat: 1, playerIds: [p1, p2] }],
+        excluded: [],
+      };
+
+      await db.insert(schema.transcripts)
+        .values({
+          gameId: id,
+          round: 1,
+          phase: "WHISPER",
+          scope: "system",
+          roomMetadata: JSON.stringify(roomMetadata),
+          text: "Beat 1: Room 1: Atlas, Vera",
+          timestamp: Date.now(),
+        });
+
+      const res = await app.request(`/api/games/${id}/transcript`);
+      const body = (await res.json()) as Array<{ roomMetadata?: typeof roomMetadata }>;
+      expect(body[0]!.roomMetadata).toEqual(roomMetadata);
+    });
   });
 
   // =========================================================================

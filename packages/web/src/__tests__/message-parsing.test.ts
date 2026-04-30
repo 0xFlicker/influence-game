@@ -235,12 +235,14 @@ describe("wsEntryToTranscriptEntry", () => {
       scope: "public",
       toPlayerIds: ["player-uuid-2"],
       roomId: 1,
+      roomMetadata: undefined,
       text: "Hello everyone",
+      thinking: null,
       timestamp: 1700000000000,
     });
   });
 
-  it("sets fromPlayerId to null for SYSTEM messages", () => {
+  it("sets fromPlayerId to null for system messages", () => {
     const wsEntry = {
       round: 1,
       phase: "VOTE",
@@ -253,6 +255,9 @@ describe("wsEntryToTranscriptEntry", () => {
     const result = wsEntryToTranscriptEntry(wsEntry, "game-456", 1);
 
     expect(result.fromPlayerId).toBeNull();
+
+    const houseResult = wsEntryToTranscriptEntry({ ...wsEntry, from: "House" }, "game-456", 2);
+    expect(houseResult.fromPlayerId).toBeNull();
   });
 
   it("sets toPlayerIds to null when 'to' is undefined", () => {
@@ -268,5 +273,27 @@ describe("wsEntryToTranscriptEntry", () => {
     const result = wsEntryToTranscriptEntry(wsEntry, "game-789", 5);
 
     expect(result.toPlayerIds).toBeNull();
+  });
+
+  it("preserves whisper room metadata from live events", () => {
+    const roomMetadata = {
+      rooms: [
+        { roomId: 1, round: 1, beat: 1, playerIds: ["player-1", "player-2", "player-3"] },
+        { roomId: 2, round: 1, beat: 1, playerIds: [] },
+      ],
+      excluded: [],
+    };
+
+    const result = wsEntryToTranscriptEntry({
+      round: 1,
+      phase: "WHISPER",
+      from: "House",
+      scope: "system" as const,
+      roomMetadata,
+      text: "Beat 1: Room 1: Atlas, Vera, Finn | Room 2: Empty",
+      timestamp: 1700000000000,
+    }, "game-rooms", 7);
+
+    expect(result.roomMetadata).toEqual(roomMetadata);
   });
 });

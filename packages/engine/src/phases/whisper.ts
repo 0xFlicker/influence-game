@@ -153,7 +153,10 @@ export async function runWhisperPhase(
   logger.logSystem("=== WHISPER PHASE ===", Phase.WHISPER);
   const alivePlayers = gameState.getAlivePlayers();
 
-  ctx.whisperInbox = new Map(alivePlayers.map((p) => [p.id, []]));
+  ctx.whisperInbox.clear();
+  for (const player of alivePlayers) {
+    ctx.whisperInbox.set(player.id, []);
+  }
   contextBuilder.currentRoomAllocations = [];
   contextBuilder.currentExcludedPlayerIds = [];
 

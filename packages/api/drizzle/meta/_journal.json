@@ -50,6 +50,13 @@
       "when": 1776000000000,
       "tag": "0006_cleanup_public_email_display_names",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1777425600000,
+      "tag": "0007_add_room_metadata",
+      "breakpoints": true
     }
   ]
 }

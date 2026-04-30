@@ -20,6 +20,7 @@ import type {
   Personality,
   GameConfig,
   GameStateSnapshot,
+  TranscriptEntry,
   ViewerMode,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
@@ -85,6 +86,25 @@ function resolvePersonality(key: string | null | undefined): Personality {
     return key as Personality;
   }
   return "strategic";
+}
+
+export function serializeTranscriptEntry(
+  gameId: string,
+  entry: TranscriptEntry,
+): typeof schema.transcripts.$inferInsert {
+  return {
+    gameId,
+    round: entry.round,
+    phase: entry.phase,
+    fromPlayerId: entry.from === "SYSTEM" || entry.from === "House" ? null : entry.from,
+    scope: entry.scope,
+    toPlayerIds: entry.to ? JSON.stringify(entry.to) : null,
+    roomId: entry.roomId ?? null,
+    roomMetadata: entry.roomMetadata ? JSON.stringify(entry.roomMetadata) : null,
+    text: entry.text,
+    thinking: entry.thinking ?? null,
+    timestamp: entry.timestamp,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -239,18 +259,7 @@ async function runGameAsync(
         const chunk = transcriptEntries.slice(i, i + CHUNK_SIZE);
         await db.insert(schema.transcripts)
           .values(
-            chunk.map((entry) => ({
-              gameId,
-              round: entry.round,
-              phase: entry.phase,
-              fromPlayerId: entry.from === "SYSTEM" ? null : entry.from,
-              scope: entry.scope,
-              toPlayerIds: entry.to ? JSON.stringify(entry.to) : null,
-              roomId: entry.roomId ?? null,
-              text: entry.text,
-              thinking: entry.thinking ?? null,
-              timestamp: entry.timestamp,
-            })),
+            chunk.map((entry) => serializeTranscriptEntry(gameId, entry)),
           );
       }
     }
@@ -405,18 +414,7 @@ async function runGameAsync(
           const chunk = partialTranscript.slice(i, i + CHUNK_SIZE);
           await db.insert(schema.transcripts)
             .values(
-              chunk.map((entry) => ({
-                gameId,
-                round: entry.round,
-                phase: entry.phase,
-                fromPlayerId: entry.from === "SYSTEM" ? null : entry.from,
-                scope: entry.scope,
-                toPlayerIds: entry.to ? JSON.stringify(entry.to) : null,
-                roomId: entry.roomId ?? null,
-                text: entry.text,
-                thinking: entry.thinking ?? null,
-                timestamp: entry.timestamp,
-              })),
+              chunk.map((entry) => serializeTranscriptEntry(gameId, entry)),
             );
         }
         console.error(`[game-lifecycle] Saved ${partialTranscript.length} partial transcript entries for game ${gameId}`);
