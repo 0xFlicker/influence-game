@@ -112,6 +112,8 @@ describe("buildWhisperStageData", () => {
     expect(html).toContain("BACKCHANNEL");
     expect(html).toContain("SINGLE");
     expect(html).toContain("EMPTY");
+    expect(html).toContain("flex h-full min-h-0 w-full flex-col");
+    expect(html).toContain("min-h-0 flex-1 overflow-y-auto");
     expect(html).not.toContain("Whisper Room 12");
   });
 });

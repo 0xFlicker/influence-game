@@ -768,9 +768,13 @@ export function DramaticReplayViewer({
       {/* Center — phase-aware content */}
       <div
         ref={(isDiaryScene || (isWhisperScene && !isOpenWhisperScene)) ? stackedScrollRef : undefined}
-        className={`flex-1 flex ${isChatStyleScene ? ((isDiaryScene || (isWhisperScene && !isOpenWhisperScene)) ? "items-start" : "items-end") : "items-center"} justify-center px-4 md:px-8 py-4 md:py-8 overflow-y-auto`}
+        className={`flex-1 min-h-0 flex ${
+          isOpenWhisperScene
+            ? "items-stretch overflow-hidden"
+            : `${isChatStyleScene ? ((isDiaryScene || isWhisperScene) ? "items-start" : "items-end") : "items-center"} overflow-y-auto`
+        } justify-center px-4 md:px-8 py-4 md:py-8`}
       >
-        <div className={`w-full ${(isDiaryScene || isWhisperScene || isOverviewScene || isOpenWhisperScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
+        <div className={`w-full min-h-0 ${isOpenWhisperScene ? "h-full" : ""} ${(isDiaryScene || isWhisperScene || isOverviewScene || isOpenWhisperScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
           {/* --- Chat-style: Group Chat Feed --- */}
           {isChatFeedScene && (
             <div className="flex flex-col gap-2">

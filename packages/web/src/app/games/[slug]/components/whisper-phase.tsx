@@ -440,7 +440,7 @@ function ActiveRoomFeed({
   const state = roomStateLabel(room);
 
   return (
-    <div className="rounded-2xl border border-purple-500/25 bg-black/35 min-h-[28rem] overflow-hidden flex flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-purple-500/25 bg-black/35">
       <div className="border-b border-white/10 px-4 py-4 md:px-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -467,9 +467,9 @@ function ActiveRoomFeed({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-5 md:px-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-5">
         {room.messages.length === 0 ? (
-          <div className="flex min-h-72 items-center justify-center rounded-xl border border-white/10 bg-white/[0.025] p-6 text-center">
+          <div className="flex min-h-56 items-center justify-center rounded-xl border border-white/10 bg-white/[0.025] p-6 text-center md:min-h-72">
             <p className="max-w-sm text-sm leading-relaxed text-white/40">
               {state === "EMPTY"
                 ? "No one chose this room. That absence is public information."
@@ -555,9 +555,9 @@ export function OpenWhisperRoomsView({
   }
 
   return (
-    <div data-controls className="w-full p-3 md:p-0">
-      <div className="mx-auto flex max-w-7xl flex-col gap-3 md:gap-4">
-        <div className="rounded-2xl border border-white/10 bg-black/35 px-4 py-3 md:px-5">
+    <div data-controls className="flex h-full min-h-0 w-full flex-col p-3 md:p-0">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-3 md:gap-4">
+        <div className="flex-shrink-0 rounded-2xl border border-white/10 bg-black/35 px-4 py-3 md:px-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-purple-200/80">WHISPER: OPEN ROOMS</p>
@@ -585,18 +585,18 @@ export function OpenWhisperRoomsView({
           </div>
         </div>
 
-        <div className="md:hidden">
+        <div className="flex-shrink-0 md:hidden">
           <RoomRail rooms={currentRooms} players={players} selectedRoomId={selectedRoomId} onSelectRoom={selectRoom} />
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(18rem,0.9fr)_minmax(28rem,1.4fr)_minmax(16rem,0.7fr)]">
-          <div className="hidden lg:block">
+        <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(18rem,0.9fr)_minmax(28rem,1.4fr)_minmax(16rem,0.7fr)]">
+          <div className="hidden min-h-0 overflow-y-auto pr-1 lg:block">
             <HouseMap rooms={currentRooms} players={players} selectedRoomId={selectedRoomId} onSelectRoom={selectRoom} />
           </div>
 
           <ActiveRoomFeed room={activeRoom} players={players} showThinking={showThinking} />
 
-          <div className="hidden gap-4 md:grid">
+          <div className="hidden min-h-0 gap-4 overflow-y-auto pr-1 md:grid">
             <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/75">Other Rooms</p>
