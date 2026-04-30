@@ -113,9 +113,10 @@ Used for `WHISPER` phase.
 
 **Layout:**
 - **Unlock banner** at top: "The operatives went dark. These are their private conversations."
-- Messages grouped by whisper thread (sender ↔ recipients pair)
-- Each thread is a card with: sender name + persona emoji, recipient(s), conversation text
-- Threads fade in sequentially with 600ms stagger
+- Current open-room games group messages by `roomMetadata.rooms` and `roomId`, including empty, singleton, and group rooms.
+- Historical pair-room replays without `roomMetadata` fall back to sender/recipient grouping.
+- Each room is a card with room number, occupants, and conversation text when `2+` players exchanged messages.
+- Rooms fade in sequentially with 600ms stagger
 - Purple ambient border (`border-purple-900/20 bg-purple-950/10`)
 - Full whisper text visible (unlike live mode which shows only "X is whispering to Y...")
 
@@ -421,6 +422,6 @@ The dramatic replay viewer needs:
 
 2. **House overlay text:** V1 uses static strings. Should we pre-generate dynamic commentary server-side when a game completes, store in DB, and serve as part of the game record? This avoids LLM calls on replay load.
 
-3. **Whisper threading:** The transcript stores `toPlayerIds[]` on whisper entries. A whisper from Atlas to Vera is one entry; there is no "reply." How should we group? Recommendation: group by `(fromPlayerId, toPlayerIds.sort().join(','))` to create directional threads, then pair them chronologically. A "conversation" between Atlas and Vera is two separate one-way entries that the UI presents as a dialogue.
+3. **Whisper threading:** Resolved for current games by `roomMetadata.rooms` plus per-message `roomId`. Replays should preserve empty and singleton rooms from metadata, and use sender/recipient pair grouping only as a historical fallback for older transcripts.
 
 4. **Mobile layout:** The control bar is complex for mobile. Recommendation: mobile gets simplified controls (play/pause, prev/next scene, speed toggle). Full scrubber is desktop-only in V1.
