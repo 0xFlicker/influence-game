@@ -52,6 +52,16 @@ describe("simulation variant config", () => {
     expect(config.whisperSessionsPerRound).toBe(2);
   });
 
+  it("applies simulator-only LLM call bounds", () => {
+    const config = buildSimulationConfig("open-whisper");
+
+    expect(config.lobbyMessagesPerPlayer).toBe(1);
+    expect(config.maxDiaryFollowUps).toBe(0);
+    expect(config.diaryRoomAfterPhases).toEqual([]);
+    expect(config.enableLobbyIntent).toBe(false);
+    expect(config.enableStrategicReflections).toBe(false);
+  });
+
   it("maps single-feature simulator variants to the correct flags", () => {
     expect(isPowerLobbyVariant("power-lobby")).toBe(true);
     expect(isOpenWhisperVariant("power-lobby")).toBe(false);

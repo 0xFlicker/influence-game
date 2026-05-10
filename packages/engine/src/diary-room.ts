@@ -35,6 +35,10 @@ export class DiaryRoom {
    * reflections are still a separate step that updates agent memory.
    */
   async runStrategicReflections(phase: Phase): Promise<void> {
+    if (this.config.enableStrategicReflections === false) {
+      return;
+    }
+
     const alivePlayers = this.gameState.getAlivePlayers();
     try {
       await Promise.all(
@@ -74,19 +78,7 @@ export class DiaryRoom {
     );
 
     // Strategic reflections after diary room
-    try {
-      await Promise.all(
-        alivePlayers.map(async (player) => {
-          const agent = this.agents.get(player.id);
-          if (agent?.getStrategicReflection) {
-            const ctx = this.contextBuilder.buildPhaseContext(player.id, Phase.DIARY_ROOM);
-            await agent.getStrategicReflection(ctx);
-          }
-        }),
-      );
-    } catch (error) {
-      console.error(`[DiaryRoom] Strategic reflections failed, continuing:`, error);
-    }
+    await this.runStrategicReflections(Phase.DIARY_ROOM);
 
     // During Judgment, also interview active jury members
     if (this.gameState.endgameStage === "judgment") {

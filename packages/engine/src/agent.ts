@@ -938,7 +938,7 @@ Keep TALK to 1-3 sentences. Use the mingle_turn tool.`;
         gotoRoomId?: number | null;
       }>(
         prompt, TOOL_MINGLE_TURN, 300, sys,
-        { action: "mingle-turn", reasoningEffort: "medium" },
+        { action: "mingle-turn", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
       );
       const msg = result.noReply ? null : (result.message?.trim() || null);
       const gotoRoomId = Number.isInteger(result.gotoRoomId) ? result.gotoRoomId : null;
@@ -1029,7 +1029,7 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
     try {
       const result = await this.callTool<{ empower: string; expose: string }>(
         prompt, TOOL_CAST_VOTES, 100, sys,
-        { action: "vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" },
+        { action: "vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
       );
 
       const empowerPlayer = findByName(others, result.empower);
@@ -1171,7 +1171,7 @@ Use the use_power tool to declare your final hidden action.`;
     try {
       const result = await this.callTool<{ action: string; target: string }>(
         prompt, TOOL_POWER_ACTION, 100, sys,
-        { action: "power", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" },
+        { action: "power", reasoningEffort: "medium" },
       );
 
       const targetPlayer =
@@ -1220,7 +1220,7 @@ Who should be eliminated? Consider your alliances, threats, and long-term strate
 Use the council_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" });
+      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
       if (normalizeName(result.eliminate) === normalizeName(c1Name)) return c1;
       if (normalizeName(result.eliminate) === normalizeName(c2Name)) return c2;
       const fallback = candidates[Math.floor(Math.random() * 2)];
@@ -1343,7 +1343,7 @@ Who should be eliminated? Consider everything that has happened in the game.
 Use the elimination_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, { action: "elimination-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" });
+      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, { action: "elimination-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
       const target = findByName(others, result.eliminate);
       if (target) return target.id;
       const fallback = others[Math.floor(Math.random() * others.length)];
@@ -1528,7 +1528,7 @@ Consider their gameplay, their answers to the jury, and the full arc of the game
 Use the jury_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ winner: string }>(prompt, TOOL_JURY_VOTE, 80, sys, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" });
+      const result = await this.callTool<{ winner: string }>(prompt, TOOL_JURY_VOTE, 80, sys, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
       const target = findByName(finalists, result.winner);
       const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
       if (!randomFinalist) throw new Error("No finalist available for jury vote");
