@@ -16,18 +16,49 @@ import { diaryPlayerName } from "./diary-room";
  * Lightweight version for scene-building (no player UUID resolution needed).
  */
 function parseWhisperRooms(msgs: TranscriptEntry[]): Array<{ roomId: number; playerNames: string[] }> {
-  const allocationEntry = [...msgs]
-    .reverse()
-    .find((e) => e.scope === "system" && /Room\s+\d+:/.test(e.text));
-  if (!allocationEntry) return [];
+  const playerByIdOrName = new Map<string, string>();
+  for (const msg of msgs) {
+    if (msg.fromPlayerId && msg.fromPlayerName) playerByIdOrName.set(msg.fromPlayerId, msg.fromPlayerName);
+    if (msg.fromPlayerName) playerByIdOrName.set(msg.fromPlayerName, msg.fromPlayerName);
+  }
 
-  const rooms: Array<{ roomId: number; playerNames: string[] }> = [];
-  for (const match of allocationEntry.text.matchAll(/Room\s+(\d+):\s*([^|]+?)\s*&\s*([^|]+?)(?=\s*\||$)/g)) {
-    const roomId = Number(match[1]);
-    const leftName = match[2]?.trim();
-    const rightName = match[3]?.trim();
-    if (!leftName || !rightName || Number.isNaN(roomId)) continue;
-    rooms.push({ roomId, playerNames: [leftName, rightName] });
+  const roomsById = new Map<number, { roomId: number; playerNames: string[] }>();
+
+  for (const msg of msgs) {
+    for (const room of msg.roomMetadata?.diagnostics?.allocatedRooms ?? []) {
+      roomsById.set(room.roomId, {
+        roomId: room.roomId,
+        playerNames: room.players.map((player) => player.name),
+      });
+    }
+    for (const room of msg.roomMetadata?.rooms ?? []) {
+      if (!roomsById.has(room.roomId)) {
+        roomsById.set(room.roomId, {
+          roomId: room.roomId,
+          playerNames: room.playerIds.map((id) => playerByIdOrName.get(id) ?? id),
+        });
+      }
+    }
+  }
+
+  const rooms: Array<{ roomId: number; playerNames: string[] }> = Array.from(roomsById.values())
+    .sort((left, right) => left.roomId - right.roomId);
+  if (rooms.length > 0) return rooms;
+
+  const allocationEntries = msgs.filter((e) => e.scope === "system" && /Room\s+\d+:/.test(e.text));
+  for (const allocationEntry of allocationEntries) {
+    for (const match of allocationEntry.text.matchAll(/Room\s+(\d+):\s*([^|]+?)(?=\s*\||$)/g)) {
+      const roomId = Number(match[1]);
+      const occupantsText = match[2]?.trim();
+      if (!occupantsText || Number.isNaN(roomId)) continue;
+      const playerNames = occupantsText.toLowerCase() === "empty"
+        ? []
+        : occupantsText
+            .split(/\s*(?:,|&)\s*/)
+            .map((name) => name.trim())
+            .filter(Boolean);
+      rooms.push({ roomId, playerNames });
+    }
   }
   return rooms;
 }
@@ -60,6 +91,18 @@ export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] 
     const roomType = phaseToRoomType(phase);
 
     if (phase === "WHISPER") {
+      if (msgs.some((m) => (m.roomMetadata?.rooms.length ?? 0) > 0)) {
+        scenes.push({
+          id,
+          round,
+          phase,
+          roomType,
+          messages: msgs,
+          houseIntro: HOUSE_INTROS[phase] ?? null,
+        });
+        continue;
+      }
+
       // Sequential: overview scene → one scene per room
       const rooms = parseWhisperRooms(msgs);
       const systemMsgs = msgs.filter((m) => m.scope === "system");

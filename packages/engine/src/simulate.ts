@@ -15,9 +15,9 @@
 import OpenAI from "openai";
 import { randomUUID } from "crypto";
 import { execFileSync } from "child_process";
-import { mkdirSync, writeFileSync } from "fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import { GameRunner, type TranscriptEntry } from "./game-runner";
+import { GameRunner, type GameStreamEvent, type TranscriptEntry } from "./game-runner";
 import { InfluenceAgent, type Personality } from "./agent";
 import { LLMHouseInterviewer } from "./house-interviewer";
 import { DEFAULT_CONFIG, type GameConfig, type UUID } from "./types";
@@ -40,22 +40,34 @@ import {
 // CLI argument parsing
 // ---------------------------------------------------------------------------
 
-interface SimArgs {
+const DEFAULT_GAME_TIMEOUT_MS = 10 * 60 * 1000;
+const DEFAULT_LLM_TIMEOUT_MS = 45 * 1000;
+
+export interface SimArgs {
   games: number;
   players: number;
   personas: string[] | null;
   model: string;
   variant: string;
+  gameTimeoutMs: number;
+  llmTimeoutMs: number;
 }
 
-function parseArgs(): SimArgs {
-  const argv = process.argv.slice(2);
+function readPositiveInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function parseArgs(argv = process.argv.slice(2)): SimArgs {
   const args: SimArgs = {
     games: 3,
     players: 6,
     personas: null,
     model: "gpt-5-nano",
     variant: process.env.INFLUENCE_SIM_VARIANT ?? "baseline",
+    gameTimeoutMs: readPositiveInt(process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS, DEFAULT_GAME_TIMEOUT_MS),
+    llmTimeoutMs: readPositiveInt(process.env.INFLUENCE_SIM_LLM_TIMEOUT_MS, DEFAULT_LLM_TIMEOUT_MS),
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -76,12 +88,26 @@ function parseArgs(): SimArgs {
     } else if (arg === "--variant" && next) {
       args.variant = next;
       i++;
+    } else if (arg === "--game-timeout-ms" && next) {
+      args.gameTimeoutMs = parseInt(next, 10);
+      i++;
+    } else if (arg === "--game-timeout-sec" && next) {
+      args.gameTimeoutMs = parseInt(next, 10) * 1000;
+      i++;
+    } else if (arg === "--llm-timeout-ms" && next) {
+      args.llmTimeoutMs = parseInt(next, 10);
+      i++;
+    } else if (arg === "--llm-timeout-sec" && next) {
+      args.llmTimeoutMs = parseInt(next, 10) * 1000;
+      i++;
     }
   }
 
   if (isNaN(args.games) || args.games < 1) args.games = 3;
   if (isNaN(args.players) || args.players < 4) args.players = 4;
-  if (args.players > 10) args.players = 10;
+  if (args.players > DEFAULT_CONFIG.maxPlayers) args.players = DEFAULT_CONFIG.maxPlayers;
+  if (isNaN(args.gameTimeoutMs) || args.gameTimeoutMs < 1) args.gameTimeoutMs = DEFAULT_GAME_TIMEOUT_MS;
+  if (isNaN(args.llmTimeoutMs) || args.llmTimeoutMs < 1) args.llmTimeoutMs = DEFAULT_LLM_TIMEOUT_MS;
 
   return args;
 }
@@ -123,6 +149,8 @@ function buildRunMetadata(args: SimArgs, timestamp: string): SimulationRunMetada
       personas: args.personas,
       model: args.model,
       variant: args.variant,
+      gameTimeoutMs: args.gameTimeoutMs,
+      llmTimeoutMs: args.llmTimeoutMs,
     },
   };
 }
@@ -248,6 +276,7 @@ export interface GameResult {
   durationMs: number;
   transcriptPath: string;
   jsonPath: string;
+  progressPath: string;
   error?: string;
   tokenUsage: {
     perAgent: Record<string, TokenUsage>;
@@ -446,6 +475,7 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
   if (stats.failedGames > 0) lines.push(`**Failed games:** ${stats.failedGames}`);
   if (stats.partial) lines.push("**Partial batch:** yes");
   lines.push(`**Model:** ${stats.model}`);
+  lines.push(`**Timeouts:** game ${(stats.metadata.args.gameTimeoutMs / 1000).toFixed(0)}s, LLM request ${(stats.metadata.args.llmTimeoutMs / 1000).toFixed(0)}s`);
   lines.push(`**Avg game length:** ${stats.overall.avgGameLength.toFixed(1)} rounds`);
   lines.push(
     `**Avg duration:** ${(stats.overall.avgDurationMs / 1000).toFixed(0)}s per game`,
@@ -654,12 +684,26 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
   // Individual game results
   lines.push("## Individual Games");
   lines.push("");
-  lines.push("| # | Winner | Persona | Rounds | Endgame | Duration | Tokens | LLM Calls |");
-  lines.push("|---|--------|---------|--------|---------|----------|--------|-----------|");
+  lines.push("| # | Status | Winner | Persona | Rounds | Endgame | Duration | Tokens | LLM Calls |");
+  lines.push("|---|--------|--------|---------|--------|---------|----------|--------|-----------|");
   for (const r of results) {
     lines.push(
-      `| ${r.gameNumber} | ${r.winnerName ?? "draw"} | ${r.winnerPersona ?? "-"} | ${r.rounds} | ${r.endgameType} | ${(r.durationMs / 1000).toFixed(0)}s | ${r.tokenUsage.total.totalTokens.toLocaleString()} | ${r.tokenUsage.total.callCount} |`,
+      `| ${r.gameNumber} | ${r.status} | ${r.winnerName ?? "draw"} | ${r.winnerPersona ?? "-"} | ${r.rounds} | ${r.endgameType} | ${(r.durationMs / 1000).toFixed(0)}s | ${r.tokenUsage.total.totalTokens.toLocaleString()} | ${r.tokenUsage.total.callCount} |`,
     );
+  }
+
+  const failed = results.filter((result) => result.status === "failed");
+  if (failed.length > 0) {
+    lines.push("");
+    lines.push("## Failed Game Diagnostics");
+    lines.push("");
+    lines.push("| # | Error | Progress Log | Transcript |");
+    lines.push("|---|-------|--------------|------------|");
+    for (const result of failed) {
+      lines.push(
+        `| ${result.gameNumber} | ${(result.error ?? "unknown").replace(/\|/g, "\\|")} | ${result.progressPath} | ${result.transcriptPath} |`,
+      );
+    }
   }
 
   lines.push("");
@@ -694,6 +738,118 @@ function writeBatchArtifacts(
   return { stats, markdown };
 }
 
+class SimulationTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Simulation game timed out after ${timeoutMs}ms`);
+    this.name = "SimulationTimeoutError";
+  }
+}
+
+function runWithTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => void,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      onTimeout();
+      reject(new SimulationTimeoutError(timeoutMs));
+    }, timeoutMs);
+  });
+
+  return Promise.race([operation, timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
+}
+
+function summarizeProgressEvent(event: GameStreamEvent): Record<string, unknown> {
+  if (event.type === "phase_change") {
+    return {
+      event: event.type,
+      phase: event.phase,
+      round: event.round,
+      alivePlayers: event.alivePlayers.map((player) => player.name),
+    };
+  }
+
+  if (event.type === "transcript_entry") {
+    const entry = event.entry;
+    return {
+      event: event.type,
+      round: entry.round,
+      phase: entry.phase,
+      scope: entry.scope,
+      from: entry.from,
+      textPreview: entry.text.replace(/\s+/g, " ").slice(0, 160),
+      ...(entry.to && { to: entry.to }),
+      ...(entry.roomId != null && { roomId: entry.roomId }),
+      ...(entry.roomMetadata && {
+        roomMetadata: {
+          rooms: entry.roomMetadata.rooms.map((room) => ({
+            roomId: room.roomId,
+            playerCount: room.playerIds.length,
+          })),
+          excluded: entry.roomMetadata.excluded,
+        },
+      }),
+    };
+  }
+
+  if (event.type === "player_eliminated") {
+    return {
+      event: event.type,
+      round: event.round,
+      playerName: event.playerName,
+    };
+  }
+
+  return {
+    event: event.type,
+    winnerName: event.winnerName,
+    totalRounds: event.totalRounds,
+  };
+}
+
+function writeProgress(
+  progressPath: string,
+  gameNumber: number,
+  startedAt: number,
+  event: Record<string, unknown>,
+): void {
+  appendFileSync(
+    progressPath,
+    `${JSON.stringify({
+      timestamp: new Date().toISOString(),
+      elapsedMs: Date.now() - startedAt,
+      gameNumber,
+      ...event,
+    })}\n`,
+  );
+}
+
+function attachProgressLogger(
+  runner: GameRunner,
+  progressPath: string,
+  gameNumber: number,
+  startedAt: number,
+): void {
+  runner.setStreamListener((event) => {
+    const progress = summarizeProgressEvent(event);
+    writeProgress(progressPath, gameNumber, startedAt, progress);
+
+    if (event.type === "phase_change") {
+      console.log(
+        `  Progress: R${event.round} ${event.phase} | alive=${event.alivePlayers.map((player) => player.name).join(", ")}`,
+      );
+    } else if (event.type === "transcript_entry" && event.entry.roomMetadata) {
+      console.log(
+        `  Progress: R${event.entry.round} room allocation | rooms=${event.entry.roomMetadata.rooms.length} | excluded=${event.entry.roomMetadata.excluded.join(", ") || "none"}`,
+      );
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -710,10 +866,15 @@ async function main() {
     process.exit(1);
   }
 
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    timeout: args.llmTimeoutMs,
+    maxRetries: 0,
+  });
 
   console.log(`\n=== Influence Batch Simulation ===`);
   console.log(`Games: ${args.games} | Players per game: ${args.players} | Model: ${args.model} | Variant: ${args.variant}`);
+  console.log(`Timeouts: game ${(args.gameTimeoutMs / 1000).toFixed(0)}s | LLM request ${(args.llmTimeoutMs / 1000).toFixed(0)}s`);
   console.log(`Git: ${metadata.git.commitShortSha ?? "unknown"} (${metadata.git.branch ?? "unknown branch"}${metadata.git.isDirty ? ", dirty" : ""})`);
   if (args.personas) console.log(`Personas: ${args.personas.join(", ")}`);
   console.log("");
@@ -725,8 +886,11 @@ async function main() {
   const timestamp = runTimestamp.replace(/[:.]/g, "-").slice(0, 19);
   const batchDir = join(import.meta.dir, "..", "docs", "simulations", `batch-${timestamp}`);
   mkdirSync(batchDir, { recursive: true });
+  console.log(`Artifacts: ${batchDir}`);
+  console.log("");
 
   const results: GameResult[] = [];
+  let timedOutGame = false;
   const flushPartialAndExit = (signal: "SIGINT" | "SIGTERM"): void => {
     writeBatchArtifacts(batchDir, metadata, args.model, results, true);
     console.error(
@@ -759,9 +923,33 @@ async function main() {
     const runner = new GameRunner(agents, simConfig, houseInterviewer);
     const transcriptPath = join(batchDir, `game-${g}.txt`);
     const jsonPath = join(batchDir, `game-${g}.json`);
+    const progressPath = join(batchDir, `game-${g}-progress.jsonl`);
+    writeProgress(progressPath, g, startTime, {
+      event: "game_start",
+      players: agents.map((agent) => agent.name),
+      variant: args.variant,
+      model: args.model,
+      gameTimeoutMs: args.gameTimeoutMs,
+      llmTimeoutMs: args.llmTimeoutMs,
+      transcriptPath,
+      jsonPath,
+    });
+    attachProgressLogger(runner, progressPath, g, startTime);
+    console.log(`  Progress log: ${progressPath}`);
 
     try {
-      const result = await runner.run();
+      const result = await runWithTimeout(
+        runner.run(),
+        args.gameTimeoutMs,
+        () => {
+          runner.abort();
+          writeProgress(progressPath, g, startTime, {
+            event: "game_timeout",
+            timeoutMs: args.gameTimeoutMs,
+            transcriptEntries: runner.transcriptLog.length,
+          });
+        },
+      );
       const durationMs = Date.now() - startTime;
 
       const eliminationOrder = result.eliminationOrder;
@@ -782,6 +970,7 @@ async function main() {
         durationMs,
         transcriptPath,
         jsonPath,
+        progressPath,
         tokenUsage: {
           perAgent: perAgentUsage,
           total: gameTotalUsage,
@@ -789,6 +978,12 @@ async function main() {
         instrumentation,
       };
       results.push(gameResult);
+      writeProgress(progressPath, g, startTime, {
+        event: "game_completed",
+        winnerName: result.winnerName ?? "draw",
+        rounds: result.rounds,
+        transcriptEntries: result.transcript.length,
+      });
 
       console.log(
         `  Winner: ${result.winnerName ?? "draw"} (${gameResult.winnerPersona ?? "-"}) | Rounds: ${result.rounds} | ${(durationMs / 1000).toFixed(0)}s | ${gameTotalUsage.totalTokens.toLocaleString()} tokens (${gameTotalUsage.callCount} calls)`,
@@ -810,6 +1005,7 @@ async function main() {
       );
       writeBatchArtifacts(batchDir, metadata, args.model, results, g < args.games);
     } catch (err) {
+      if (err instanceof SimulationTimeoutError) timedOutGame = true;
       const durationMs = Date.now() - startTime;
       console.error(`  Game ${g} FAILED after ${(durationMs / 1000).toFixed(0)}s: ${err}`);
       const transcript = [...runner.transcriptLog];
@@ -827,6 +1023,7 @@ async function main() {
         durationMs,
         transcriptPath,
         jsonPath,
+        progressPath,
         error: err instanceof Error ? err.message : String(err),
         tokenUsage: {
           perAgent: perAgentUsage,
@@ -835,6 +1032,11 @@ async function main() {
         instrumentation,
       };
       results.push(gameResult);
+      writeProgress(progressPath, g, startTime, {
+        event: "game_failed",
+        error: gameResult.error ?? "unknown error",
+        transcriptEntries: transcript.length,
+      });
       writeFileSync(transcriptPath, formatTranscript(transcript));
       writeFileSync(
         jsonPath,
@@ -849,6 +1051,7 @@ async function main() {
         ),
       );
       writeBatchArtifacts(batchDir, metadata, args.model, results, g < args.games);
+      if (timedOutGame) break;
     }
   }
 
@@ -863,6 +1066,11 @@ async function main() {
   console.log("\n" + markdown);
 
   console.log(`\nSimulation artifacts saved to: ${batchDir}`);
+  if (stats.failedGames > 0) {
+    console.error(`Simulation completed with ${stats.failedGames} failed game(s). See progress logs in: ${batchDir}`);
+    if (timedOutGame) process.exit(1);
+    process.exitCode = 1;
+  }
 }
 
 if (import.meta.main) {

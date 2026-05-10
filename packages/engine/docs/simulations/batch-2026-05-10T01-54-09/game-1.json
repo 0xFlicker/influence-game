@@ -1,0 +1,2366 @@
+{
+  "metadata": {
+    "variant": "baseline",
+    "timestamp": "2026-05-10T01:54:09.279Z",
+    "command": "/usr/lib/node_modules/bun/bin/bun.exe /home/paperclip/.paperclip/instances/default/projects/efa7c0e1-047f-40ae-8dda-212aa9ae25a0/50f54176-8cc9-4aa0-9168-6a69e88223dd/influence-game/packages/engine/src/simulate.ts --games 1 --players 4 --model gpt-5.5 --variant baseline",
+    "cwd": "/home/paperclip/.paperclip/instances/default/projects/efa7c0e1-047f-40ae-8dda-212aa9ae25a0/50f54176-8cc9-4aa0-9168-6a69e88223dd/influence-game/packages/engine",
+    "git": {
+      "branch": "fix/inf-212-open-room-backend-gaps",
+      "commitSha": "74888d72f6419bfdcbee75f12e76b90946fc76be",
+      "commitShortSha": "74888d7",
+      "isDirty": true
+    },
+    "args": {
+      "games": 1,
+      "players": 4,
+      "personas": null,
+      "model": "gpt-5.5",
+      "variant": "baseline"
+    }
+  },
+  "result": {
+    "gameNumber": 1,
+    "status": "completed",
+    "winnerName": "Vera",
+    "winnerPersona": "deceptive",
+    "rounds": 2,
+    "eliminationOrder": [
+      "Atlas",
+      "Echo"
+    ],
+    "endgameType": "judgment",
+    "playerPersonas": {
+      "Atlas": "strategic",
+      "Sage": "diplomat",
+      "Vera": "deceptive",
+      "Echo": "observer"
+    },
+    "durationMs": 370162,
+    "transcriptPath": "/home/paperclip/.paperclip/instances/default/projects/efa7c0e1-047f-40ae-8dda-212aa9ae25a0/50f54176-8cc9-4aa0-9168-6a69e88223dd/influence-game/packages/engine/docs/simulations/batch-2026-05-10T01-54-09/game-1.txt",
+    "jsonPath": "/home/paperclip/.paperclip/instances/default/projects/efa7c0e1-047f-40ae-8dda-212aa9ae25a0/50f54176-8cc9-4aa0-9168-6a69e88223dd/influence-game/packages/engine/docs/simulations/batch-2026-05-10T01-54-09/game-1.json",
+    "tokenUsage": {
+      "perAgent": {
+        "Echo/introduction": {
+          "promptTokens": 617,
+          "cachedTokens": 0,
+          "completionTokens": 124,
+          "reasoningTokens": 0,
+          "totalTokens": 741,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/introduction": {
+          "promptTokens": 610,
+          "cachedTokens": 0,
+          "completionTokens": 117,
+          "reasoningTokens": 0,
+          "totalTokens": 727,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/introduction": {
+          "promptTokens": 625,
+          "cachedTokens": 0,
+          "completionTokens": 138,
+          "reasoningTokens": 0,
+          "totalTokens": 763,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/introduction": {
+          "promptTokens": 735,
+          "cachedTokens": 0,
+          "completionTokens": 154,
+          "reasoningTokens": 0,
+          "totalTokens": 889,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "House/question": {
+          "promptTokens": 17019,
+          "cachedTokens": 0,
+          "completionTokens": 1019,
+          "reasoningTokens": 524,
+          "totalTokens": 18038,
+          "callCount": 8,
+          "emptyResponses": 0
+        },
+        "Atlas/diary": {
+          "promptTokens": 9908,
+          "cachedTokens": 2816,
+          "completionTokens": 1076,
+          "reasoningTokens": 294,
+          "totalTokens": 10984,
+          "callCount": 4,
+          "emptyResponses": 0
+        },
+        "Echo/diary": {
+          "promptTokens": 9363,
+          "cachedTokens": 2816,
+          "completionTokens": 969,
+          "reasoningTokens": 193,
+          "totalTokens": 10332,
+          "callCount": 4,
+          "emptyResponses": 0
+        },
+        "Vera/diary": {
+          "promptTokens": 9686,
+          "cachedTokens": 0,
+          "completionTokens": 1215,
+          "reasoningTokens": 389,
+          "totalTokens": 10901,
+          "callCount": 4,
+          "emptyResponses": 0
+        },
+        "Sage/diary": {
+          "promptTokens": 9650,
+          "cachedTokens": 2816,
+          "completionTokens": 1205,
+          "reasoningTokens": 354,
+          "totalTokens": 10855,
+          "callCount": 4,
+          "emptyResponses": 0
+        },
+        "House/followup": {
+          "promptTokens": 21249,
+          "cachedTokens": 3584,
+          "completionTokens": 1516,
+          "reasoningTokens": 1001,
+          "totalTokens": 22765,
+          "callCount": 8,
+          "emptyResponses": 0
+        },
+        "Echo/reflection": {
+          "promptTokens": 3332,
+          "cachedTokens": 0,
+          "completionTokens": 892,
+          "reasoningTokens": 0,
+          "totalTokens": 4224,
+          "callCount": 2,
+          "emptyResponses": 0
+        },
+        "Vera/reflection": {
+          "promptTokens": 6936,
+          "cachedTokens": 0,
+          "completionTokens": 1829,
+          "reasoningTokens": 0,
+          "totalTokens": 8765,
+          "callCount": 3,
+          "emptyResponses": 0
+        },
+        "Atlas/reflection": {
+          "promptTokens": 3648,
+          "cachedTokens": 0,
+          "completionTokens": 1000,
+          "reasoningTokens": 0,
+          "totalTokens": 4648,
+          "callCount": 2,
+          "emptyResponses": 0
+        },
+        "Sage/reflection": {
+          "promptTokens": 7020,
+          "cachedTokens": 0,
+          "completionTokens": 2022,
+          "reasoningTokens": 0,
+          "totalTokens": 9042,
+          "callCount": 3,
+          "emptyResponses": 0
+        },
+        "Vera/lobby-intent": {
+          "promptTokens": 4457,
+          "cachedTokens": 0,
+          "completionTokens": 151,
+          "reasoningTokens": 0,
+          "totalTokens": 4608,
+          "callCount": 2,
+          "emptyResponses": 0
+        },
+        "Atlas/lobby-intent": {
+          "promptTokens": 1663,
+          "cachedTokens": 0,
+          "completionTokens": 76,
+          "reasoningTokens": 0,
+          "totalTokens": 1739,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/lobby-intent": {
+          "promptTokens": 4555,
+          "cachedTokens": 0,
+          "completionTokens": 169,
+          "reasoningTokens": 0,
+          "totalTokens": 4724,
+          "callCount": 2,
+          "emptyResponses": 0
+        },
+        "Echo/lobby-intent": {
+          "promptTokens": 4211,
+          "cachedTokens": 0,
+          "completionTokens": 166,
+          "reasoningTokens": 0,
+          "totalTokens": 4377,
+          "callCount": 2,
+          "emptyResponses": 0
+        },
+        "Sage/lobby": {
+          "promptTokens": 22342,
+          "cachedTokens": 0,
+          "completionTokens": 1426,
+          "reasoningTokens": 0,
+          "totalTokens": 23768,
+          "callCount": 8,
+          "emptyResponses": 0
+        },
+        "Atlas/lobby": {
+          "promptTokens": 9682,
+          "cachedTokens": 0,
+          "completionTokens": 653,
+          "reasoningTokens": 0,
+          "totalTokens": 10335,
+          "callCount": 4,
+          "emptyResponses": 0
+        },
+        "Echo/lobby": {
+          "promptTokens": 20954,
+          "cachedTokens": 0,
+          "completionTokens": 1404,
+          "reasoningTokens": 0,
+          "totalTokens": 22358,
+          "callCount": 8,
+          "emptyResponses": 0
+        },
+        "Vera/lobby": {
+          "promptTokens": 21878,
+          "cachedTokens": 0,
+          "completionTokens": 1460,
+          "reasoningTokens": 31,
+          "totalTokens": 23338,
+          "callCount": 8,
+          "emptyResponses": 0
+        },
+        "Sage/rumor": {
+          "promptTokens": 2496,
+          "cachedTokens": 0,
+          "completionTokens": 96,
+          "reasoningTokens": 0,
+          "totalTokens": 2592,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Echo/rumor": {
+          "promptTokens": 2360,
+          "cachedTokens": 0,
+          "completionTokens": 109,
+          "reasoningTokens": 0,
+          "totalTokens": 2469,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/rumor": {
+          "promptTokens": 2404,
+          "cachedTokens": 0,
+          "completionTokens": 123,
+          "reasoningTokens": 17,
+          "totalTokens": 2527,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/rumor": {
+          "promptTokens": 2556,
+          "cachedTokens": 0,
+          "completionTokens": 131,
+          "reasoningTokens": 17,
+          "totalTokens": 2687,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/vote": {
+          "promptTokens": 2469,
+          "cachedTokens": 0,
+          "completionTokens": 150,
+          "reasoningTokens": 0,
+          "totalTokens": 2619,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Echo/vote": {
+          "promptTokens": 2333,
+          "cachedTokens": 0,
+          "completionTokens": 170,
+          "reasoningTokens": 0,
+          "totalTokens": 2503,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/vote": {
+          "promptTokens": 2377,
+          "cachedTokens": 0,
+          "completionTokens": 188,
+          "reasoningTokens": 0,
+          "totalTokens": 2565,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/vote": {
+          "promptTokens": 2530,
+          "cachedTokens": 0,
+          "completionTokens": 219,
+          "reasoningTokens": 0,
+          "totalTokens": 2749,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/power": {
+          "promptTokens": 3186,
+          "cachedTokens": 0,
+          "completionTokens": 461,
+          "reasoningTokens": 228,
+          "totalTokens": 3647,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/last-message": {
+          "promptTokens": 2701,
+          "cachedTokens": 0,
+          "completionTokens": 139,
+          "reasoningTokens": 0,
+          "totalTokens": 2840,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Echo/accusation": {
+          "promptTokens": 2721,
+          "cachedTokens": 0,
+          "completionTokens": 413,
+          "reasoningTokens": 0,
+          "totalTokens": 3134,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/accusation": {
+          "promptTokens": 2944,
+          "cachedTokens": 0,
+          "completionTokens": 490,
+          "reasoningTokens": 0,
+          "totalTokens": 3434,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/accusation": {
+          "promptTokens": 2923,
+          "cachedTokens": 0,
+          "completionTokens": 443,
+          "reasoningTokens": 0,
+          "totalTokens": 3366,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/tribunal-defense": {
+          "promptTokens": 3745,
+          "cachedTokens": 0,
+          "completionTokens": 399,
+          "reasoningTokens": 209,
+          "totalTokens": 4144,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Echo/tribunal-defense": {
+          "promptTokens": 3579,
+          "cachedTokens": 0,
+          "completionTokens": 582,
+          "reasoningTokens": 396,
+          "totalTokens": 4161,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/elimination-vote": {
+          "promptTokens": 3576,
+          "cachedTokens": 0,
+          "completionTokens": 101,
+          "reasoningTokens": 0,
+          "totalTokens": 3677,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Echo/elimination-vote": {
+          "promptTokens": 3353,
+          "cachedTokens": 0,
+          "completionTokens": 193,
+          "reasoningTokens": 0,
+          "totalTokens": 3546,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/elimination-vote": {
+          "promptTokens": 3555,
+          "cachedTokens": 0,
+          "completionTokens": 186,
+          "reasoningTokens": 0,
+          "totalTokens": 3741,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/elimination-vote": {
+          "promptTokens": 3526,
+          "cachedTokens": 0,
+          "completionTokens": 201,
+          "reasoningTokens": 0,
+          "totalTokens": 3727,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Echo/last-message": {
+          "promptTokens": 3280,
+          "cachedTokens": 0,
+          "completionTokens": 120,
+          "reasoningTokens": 0,
+          "totalTokens": 3400,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/opening-statement": {
+          "promptTokens": 3417,
+          "cachedTokens": 0,
+          "completionTokens": 416,
+          "reasoningTokens": 184,
+          "totalTokens": 3833,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/opening-statement": {
+          "promptTokens": 3438,
+          "cachedTokens": 0,
+          "completionTokens": 495,
+          "reasoningTokens": 303,
+          "totalTokens": 3933,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/jury-question": {
+          "promptTokens": 3492,
+          "cachedTokens": 0,
+          "completionTokens": 199,
+          "reasoningTokens": 0,
+          "totalTokens": 3691,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/jury-answer": {
+          "promptTokens": 3486,
+          "cachedTokens": 0,
+          "completionTokens": 308,
+          "reasoningTokens": 118,
+          "totalTokens": 3794,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Echo/jury-question": {
+          "promptTokens": 3332,
+          "cachedTokens": 0,
+          "completionTokens": 200,
+          "reasoningTokens": 0,
+          "totalTokens": 3532,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/jury-answer": {
+          "promptTokens": 3407,
+          "cachedTokens": 0,
+          "completionTokens": 392,
+          "reasoningTokens": 180,
+          "totalTokens": 3799,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/closing-argument": {
+          "promptTokens": 3047,
+          "cachedTokens": 0,
+          "completionTokens": 289,
+          "reasoningTokens": 73,
+          "totalTokens": 3336,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/closing-argument": {
+          "promptTokens": 3117,
+          "cachedTokens": 0,
+          "completionTokens": 427,
+          "reasoningTokens": 231,
+          "totalTokens": 3544,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/jury-vote": {
+          "promptTokens": 2951,
+          "cachedTokens": 0,
+          "completionTokens": 182,
+          "reasoningTokens": 0,
+          "totalTokens": 3133,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Echo/jury-vote": {
+          "promptTokens": 2786,
+          "cachedTokens": 0,
+          "completionTokens": 195,
+          "reasoningTokens": 0,
+          "totalTokens": 2981,
+          "callCount": 1,
+          "emptyResponses": 0
+        }
+      },
+      "total": {
+        "promptTokens": 281227,
+        "cachedTokens": 12032,
+        "completionTokens": 26798,
+        "reasoningTokens": 4742,
+        "totalTokens": 308025,
+        "callCount": 111,
+        "emptyResponses": 0
+      }
+    },
+    "instrumentation": {
+      "powerActions": {
+        "total": 1,
+        "counts": {
+          "eliminate": 1,
+          "protect": 0,
+          "pass": 0
+        },
+        "actions": [
+          {
+            "actor": "Vera",
+            "action": "eliminate",
+            "target": "Atlas",
+            "round": 1,
+            "text": "Vera power action: eliminate -> Atlas"
+          }
+        ],
+        "actorCounts": {
+          "Vera": 1
+        },
+        "actionDistributionByActor": {
+          "Vera": {
+            "eliminate": 1,
+            "protect": 0,
+            "pass": 0
+          }
+        },
+        "consecutiveEliminates": {
+          "total": 0,
+          "occurrences": []
+        },
+        "repeatedProtectSameTarget": {
+          "total": 0,
+          "repeats": []
+        }
+      },
+      "autoEliminations": {
+        "total": 1,
+        "eliminations": [
+          {
+            "round": 1,
+            "target": "Atlas",
+            "text": "AUTO-ELIMINATE: Atlas"
+          }
+        ]
+      },
+      "council": {
+        "revealPhases": 0,
+        "councilPhases": 0,
+        "councilVotes": 0,
+        "candidatePairs": []
+      },
+      "endgame": {
+        "reckoning": 0,
+        "tribunal": 4,
+        "judgment": 5,
+        "juryQuestions": 1,
+        "juryVotes": 1,
+        "byPhase": {
+          "ACCUSATION": 4,
+          "DEFENSE": 3,
+          "OPENING_STATEMENTS": 8,
+          "JURY_QUESTIONS": 5,
+          "CLOSING_ARGUMENTS": 3,
+          "JURY_VOTE": 7
+        }
+      },
+      "rooms": {
+        "totalRooms": 0,
+        "whisperRounds": 0,
+        "participationByPlayer": {},
+        "exclusionsByPlayer": {},
+        "totalExclusions": 0,
+        "pairs": [],
+        "repeatedPairs": {
+          "totalRepeatedOccurrences": 0,
+          "maxPairCount": 0,
+          "maxPairShareOfRooms": 0,
+          "maxPairShareOfWhisperRounds": 0,
+          "pairs": []
+        },
+        "whisperSessions": [],
+        "requestSatisfaction": {
+          "validRequests": 0,
+          "mutualHonored": 0,
+          "oneWayHonored": 0,
+          "unmatchedValidRequests": 0,
+          "invalidOrMissingRequests": 0
+        },
+        "repeatPairFlags": {
+          "immediateRepeats": 0,
+          "repeatedPairs": 0,
+          "noFullNonRepeatMatchingExists": false,
+          "sessionsWithImmediateRepeats": 0,
+          "sessionsWithoutFullNonRepeatMatching": 0
+        },
+        "exclusionFlags": {
+          "consecutiveExclusions": 0,
+          "avoidableConsecutiveExclusions": 0,
+          "sessionsWithConsecutiveExclusions": 0
+        }
+      },
+      "actionUsage": {
+        "totalCalls": 111,
+        "totalEmptyResponses": 0,
+        "emptyResponseRate": 0,
+        "byAction": {
+          "introduction": {
+            "callCount": 4,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 3120
+          },
+          "question": {
+            "callCount": 8,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 18038
+          },
+          "diary": {
+            "callCount": 16,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 43072
+          },
+          "followup": {
+            "callCount": 8,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 22765
+          },
+          "reflection": {
+            "callCount": 10,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 26679
+          },
+          "lobby-intent": {
+            "callCount": 7,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 15448
+          },
+          "lobby": {
+            "callCount": 28,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 79799
+          },
+          "rumor": {
+            "callCount": 4,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 10275
+          },
+          "vote": {
+            "callCount": 4,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 10436
+          },
+          "power": {
+            "callCount": 1,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 3647
+          },
+          "last-message": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 6240
+          },
+          "accusation": {
+            "callCount": 3,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 9934
+          },
+          "tribunal-defense": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 8305
+          },
+          "elimination-vote": {
+            "callCount": 4,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 14691
+          },
+          "opening-statement": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 7766
+          },
+          "jury-question": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 7223
+          },
+          "jury-answer": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 7593
+          },
+          "closing-argument": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 6880
+          },
+          "jury-vote": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 6114
+          }
+        },
+        "bySource": {
+          "Echo/introduction": {
+            "promptTokens": 617,
+            "cachedTokens": 0,
+            "completionTokens": 124,
+            "reasoningTokens": 0,
+            "totalTokens": 741,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Sage/introduction": {
+            "promptTokens": 610,
+            "cachedTokens": 0,
+            "completionTokens": 117,
+            "reasoningTokens": 0,
+            "totalTokens": 727,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/introduction": {
+            "promptTokens": 625,
+            "cachedTokens": 0,
+            "completionTokens": 138,
+            "reasoningTokens": 0,
+            "totalTokens": 763,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Atlas/introduction": {
+            "promptTokens": 735,
+            "cachedTokens": 0,
+            "completionTokens": 154,
+            "reasoningTokens": 0,
+            "totalTokens": 889,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "House/question": {
+            "promptTokens": 17019,
+            "cachedTokens": 0,
+            "completionTokens": 1019,
+            "reasoningTokens": 524,
+            "totalTokens": 18038,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Atlas/diary": {
+            "promptTokens": 9908,
+            "cachedTokens": 2816,
+            "completionTokens": 1076,
+            "reasoningTokens": 294,
+            "totalTokens": 10984,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "Echo/diary": {
+            "promptTokens": 9363,
+            "cachedTokens": 2816,
+            "completionTokens": 969,
+            "reasoningTokens": 193,
+            "totalTokens": 10332,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "Vera/diary": {
+            "promptTokens": 9686,
+            "cachedTokens": 0,
+            "completionTokens": 1215,
+            "reasoningTokens": 389,
+            "totalTokens": 10901,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "Sage/diary": {
+            "promptTokens": 9650,
+            "cachedTokens": 2816,
+            "completionTokens": 1205,
+            "reasoningTokens": 354,
+            "totalTokens": 10855,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "House/followup": {
+            "promptTokens": 21249,
+            "cachedTokens": 3584,
+            "completionTokens": 1516,
+            "reasoningTokens": 1001,
+            "totalTokens": 22765,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Echo/reflection": {
+            "promptTokens": 3332,
+            "cachedTokens": 0,
+            "completionTokens": 892,
+            "reasoningTokens": 0,
+            "totalTokens": 4224,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Vera/reflection": {
+            "promptTokens": 6936,
+            "cachedTokens": 0,
+            "completionTokens": 1829,
+            "reasoningTokens": 0,
+            "totalTokens": 8765,
+            "callCount": 3,
+            "emptyResponses": 0
+          },
+          "Atlas/reflection": {
+            "promptTokens": 3648,
+            "cachedTokens": 0,
+            "completionTokens": 1000,
+            "reasoningTokens": 0,
+            "totalTokens": 4648,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Sage/reflection": {
+            "promptTokens": 7020,
+            "cachedTokens": 0,
+            "completionTokens": 2022,
+            "reasoningTokens": 0,
+            "totalTokens": 9042,
+            "callCount": 3,
+            "emptyResponses": 0
+          },
+          "Vera/lobby-intent": {
+            "promptTokens": 4457,
+            "cachedTokens": 0,
+            "completionTokens": 151,
+            "reasoningTokens": 0,
+            "totalTokens": 4608,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Atlas/lobby-intent": {
+            "promptTokens": 1663,
+            "cachedTokens": 0,
+            "completionTokens": 76,
+            "reasoningTokens": 0,
+            "totalTokens": 1739,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Sage/lobby-intent": {
+            "promptTokens": 4555,
+            "cachedTokens": 0,
+            "completionTokens": 169,
+            "reasoningTokens": 0,
+            "totalTokens": 4724,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Echo/lobby-intent": {
+            "promptTokens": 4211,
+            "cachedTokens": 0,
+            "completionTokens": 166,
+            "reasoningTokens": 0,
+            "totalTokens": 4377,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Sage/lobby": {
+            "promptTokens": 22342,
+            "cachedTokens": 0,
+            "completionTokens": 1426,
+            "reasoningTokens": 0,
+            "totalTokens": 23768,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Atlas/lobby": {
+            "promptTokens": 9682,
+            "cachedTokens": 0,
+            "completionTokens": 653,
+            "reasoningTokens": 0,
+            "totalTokens": 10335,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "Echo/lobby": {
+            "promptTokens": 20954,
+            "cachedTokens": 0,
+            "completionTokens": 1404,
+            "reasoningTokens": 0,
+            "totalTokens": 22358,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Vera/lobby": {
+            "promptTokens": 21878,
+            "cachedTokens": 0,
+            "completionTokens": 1460,
+            "reasoningTokens": 31,
+            "totalTokens": 23338,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Sage/rumor": {
+            "promptTokens": 2496,
+            "cachedTokens": 0,
+            "completionTokens": 96,
+            "reasoningTokens": 0,
+            "totalTokens": 2592,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/rumor": {
+            "promptTokens": 2360,
+            "cachedTokens": 0,
+            "completionTokens": 109,
+            "reasoningTokens": 0,
+            "totalTokens": 2469,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/rumor": {
+            "promptTokens": 2404,
+            "cachedTokens": 0,
+            "completionTokens": 123,
+            "reasoningTokens": 17,
+            "totalTokens": 2527,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Atlas/rumor": {
+            "promptTokens": 2556,
+            "cachedTokens": 0,
+            "completionTokens": 131,
+            "reasoningTokens": 17,
+            "totalTokens": 2687,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Sage/vote": {
+            "promptTokens": 2469,
+            "cachedTokens": 0,
+            "completionTokens": 150,
+            "reasoningTokens": 0,
+            "totalTokens": 2619,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/vote": {
+            "promptTokens": 2333,
+            "cachedTokens": 0,
+            "completionTokens": 170,
+            "reasoningTokens": 0,
+            "totalTokens": 2503,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/vote": {
+            "promptTokens": 2377,
+            "cachedTokens": 0,
+            "completionTokens": 188,
+            "reasoningTokens": 0,
+            "totalTokens": 2565,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Atlas/vote": {
+            "promptTokens": 2530,
+            "cachedTokens": 0,
+            "completionTokens": 219,
+            "reasoningTokens": 0,
+            "totalTokens": 2749,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/power": {
+            "promptTokens": 3186,
+            "cachedTokens": 0,
+            "completionTokens": 461,
+            "reasoningTokens": 228,
+            "totalTokens": 3647,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Atlas/last-message": {
+            "promptTokens": 2701,
+            "cachedTokens": 0,
+            "completionTokens": 139,
+            "reasoningTokens": 0,
+            "totalTokens": 2840,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/accusation": {
+            "promptTokens": 2721,
+            "cachedTokens": 0,
+            "completionTokens": 413,
+            "reasoningTokens": 0,
+            "totalTokens": 3134,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Sage/accusation": {
+            "promptTokens": 2944,
+            "cachedTokens": 0,
+            "completionTokens": 490,
+            "reasoningTokens": 0,
+            "totalTokens": 3434,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/accusation": {
+            "promptTokens": 2923,
+            "cachedTokens": 0,
+            "completionTokens": 443,
+            "reasoningTokens": 0,
+            "totalTokens": 3366,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Sage/tribunal-defense": {
+            "promptTokens": 3745,
+            "cachedTokens": 0,
+            "completionTokens": 399,
+            "reasoningTokens": 209,
+            "totalTokens": 4144,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/tribunal-defense": {
+            "promptTokens": 3579,
+            "cachedTokens": 0,
+            "completionTokens": 582,
+            "reasoningTokens": 396,
+            "totalTokens": 4161,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Sage/elimination-vote": {
+            "promptTokens": 3576,
+            "cachedTokens": 0,
+            "completionTokens": 101,
+            "reasoningTokens": 0,
+            "totalTokens": 3677,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/elimination-vote": {
+            "promptTokens": 3353,
+            "cachedTokens": 0,
+            "completionTokens": 193,
+            "reasoningTokens": 0,
+            "totalTokens": 3546,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/elimination-vote": {
+            "promptTokens": 3555,
+            "cachedTokens": 0,
+            "completionTokens": 186,
+            "reasoningTokens": 0,
+            "totalTokens": 3741,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Atlas/elimination-vote": {
+            "promptTokens": 3526,
+            "cachedTokens": 0,
+            "completionTokens": 201,
+            "reasoningTokens": 0,
+            "totalTokens": 3727,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/last-message": {
+            "promptTokens": 3280,
+            "cachedTokens": 0,
+            "completionTokens": 120,
+            "reasoningTokens": 0,
+            "totalTokens": 3400,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/opening-statement": {
+            "promptTokens": 3417,
+            "cachedTokens": 0,
+            "completionTokens": 416,
+            "reasoningTokens": 184,
+            "totalTokens": 3833,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Sage/opening-statement": {
+            "promptTokens": 3438,
+            "cachedTokens": 0,
+            "completionTokens": 495,
+            "reasoningTokens": 303,
+            "totalTokens": 3933,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Atlas/jury-question": {
+            "promptTokens": 3492,
+            "cachedTokens": 0,
+            "completionTokens": 199,
+            "reasoningTokens": 0,
+            "totalTokens": 3691,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/jury-answer": {
+            "promptTokens": 3486,
+            "cachedTokens": 0,
+            "completionTokens": 308,
+            "reasoningTokens": 118,
+            "totalTokens": 3794,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/jury-question": {
+            "promptTokens": 3332,
+            "cachedTokens": 0,
+            "completionTokens": 200,
+            "reasoningTokens": 0,
+            "totalTokens": 3532,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Sage/jury-answer": {
+            "promptTokens": 3407,
+            "cachedTokens": 0,
+            "completionTokens": 392,
+            "reasoningTokens": 180,
+            "totalTokens": 3799,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/closing-argument": {
+            "promptTokens": 3047,
+            "cachedTokens": 0,
+            "completionTokens": 289,
+            "reasoningTokens": 73,
+            "totalTokens": 3336,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Sage/closing-argument": {
+            "promptTokens": 3117,
+            "cachedTokens": 0,
+            "completionTokens": 427,
+            "reasoningTokens": 231,
+            "totalTokens": 3544,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Atlas/jury-vote": {
+            "promptTokens": 2951,
+            "cachedTokens": 0,
+            "completionTokens": 182,
+            "reasoningTokens": 0,
+            "totalTokens": 3133,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/jury-vote": {
+            "promptTokens": 2786,
+            "cachedTokens": 0,
+            "completionTokens": 195,
+            "reasoningTokens": 0,
+            "totalTokens": 2981,
+            "callCount": 1,
+            "emptyResponses": 0
+          }
+        }
+      }
+    }
+  },
+  "transcript": [
+    {
+      "round": 0,
+      "phase": "INTRODUCTION",
+      "timestamp": 1778378049314,
+      "from": "House",
+      "scope": "system",
+      "text": "=== INTRODUCTION PHASE ==="
+    },
+    {
+      "round": 0,
+      "phase": "INTRODUCTION",
+      "timestamp": 1778378053240,
+      "from": "Echo",
+      "scope": "public",
+      "text": "Hey everyone, I’m Echo — I’m 28, from Portland, and I make documentaries, mostly the kind where I spend a long time quietly following people until they forget I’m there. I spent three years with climate activists across South America, so I’ve gotten pretty good at sleeping on buses, reading a room in two languages, and remembering tiny details that probably seemed unimportant at the time.",
+      "thinking": "Introduction phase: keep it personal, grounded, and warm. I’m establishing Echo’s observational nature through biography and texture, without mentioning strategy or gameplay."
+    },
+    {
+      "round": 0,
+      "phase": "INTRODUCTION",
+      "timestamp": 1778378053603,
+      "from": "Sage",
+      "scope": "public",
+      "text": "Hello Atlas, Vera, Echo — I’m Sage. I spent many years working as an interpreter in conflict zones, so I’ve learned that a cup of tea and a little patience can sometimes carry people across impossible distances. These days I’m happiest with chamomile in hand, listening for the story underneath what someone is saying.",
+      "thinking": "Introduction phase: present warmth, calm, and personal backstory without mentioning strategy or game mechanics. Acknowledge all alive players by name and establish Sage’s mediator identity as human rather than tactical."
+    },
+    {
+      "round": 0,
+      "phase": "INTRODUCTION",
+      "timestamp": 1778378053805,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Hi loves, I’m Vera — Brooklyn-based, professionally dramatic, and usually found in a black box theater pretending the rent isn’t due. I’ve spent the last decade doing Off-Broadway shows with titles like they were generated during a fever dream, and when I’m nervous I quote Shakespeare under my breath like a haunted substitute teacher. Very excited to meet you all; I promise I’m warmer than my eyeliner suggests.",
+      "thinking": "Introduction phase: I need to be personable, memorable, and avoid strategy completely. Lean into theater, Brooklyn, wit, vulnerability, and a little self-deprecation so people find Vera charming and human."
+    },
+    {
+      "round": 0,
+      "phase": "INTRODUCTION",
+      "timestamp": 1778378054214,
+      "from": "Atlas",
+      "scope": "public",
+      "text": "Hey everyone — I’m Atlas, from San Francisco. I’m an investigative journalist, mostly covering white-collar crime and con artists, which means I’ve spent way too many years drinking bitter espresso in courthouse hallways and asking people uncomfortable questions. Outside of work, I’m happiest wandering used bookstores, cooking something overly ambitious, or listening to someone tell a story that starts with, “You’re not going to believe this, but…”",
+      "thinking": "Introduction phase: keep it personal, warm, and specific. Mention journalism and San Francisco as identity, but avoid strategy or game mechanics. The con-artist detail is memorable, and softening it with espresso/bookstores/cooking helps me feel approachable rather than intimidating."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378054217,
+      "from": "House",
+      "scope": "system",
+      "text": "--- Diary Room (after INTRODUCTION) ---"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378056258,
+      "from": "House -> Atlas",
+      "scope": "diary",
+      "text": "Atlas, you make a living spotting con artists, while Echo says she “quietly follow[s] people until they forget I’m there” — is that a natural ally for your investigation board, or the first shadow you need to shake?"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378056546,
+      "from": "House -> Vera",
+      "scope": "diary",
+      "text": "Vera, Echo says they’re good at “remembering tiny details that probably seemed unimportant,” while Atlas literally hunts con artists for a living — so which observer are you pulling closer, which one are you keeping off your stage lights, and what’s your opening move?"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378057503,
+      "from": "House -> Sage",
+      "scope": "diary",
+      "text": "Sage, you said you listen for “the story underneath,” but Echo just advertised that they remember “tiny details” after people forget they’re there — do you see a kindred observer to work with, or the first person you need to keep at arm’s length?"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378057525,
+      "from": "House -> Echo",
+      "scope": "diary",
+      "text": "Echo, you said you’re good at “quietly following people until they forget I’m there,” but Atlas also makes a living spotting con artists over bitter espresso — do you approach him as a kindred observer, a threat to avoid, or your first shield in the room?"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378063603,
+      "from": "Atlas",
+      "scope": "diary",
+      "text": "Echo is the person I most want a long conversation with and the person I least want standing behind me in a hallway, metaphorically speaking. Documentary people and investigative reporters both know how to disappear into the wallpaper, so yes, there’s a natural kinship there — but if she’s really as good at remembering the tiny details as she says, she’ll notice the loose thread before anyone else does. Sage feels calming, maybe too calming, and Vera’s warmth is loud enough that it might hide nerves or honesty; I want to ask questions, let them talk, and watch what changes when Echo’s name comes up.",
+      "thinking": "Echo is fascinating but dangerous because her skill set overlaps with mine. I don’t want to move against her early if she can become a shield or a sounding board, but I also can’t let her quietly build a perfect read on me. For now, I’m staying warm with everyone and collecting reactions — especially to Echo."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378064430,
+      "from": "Echo",
+      "scope": "diary",
+      "text": "Atlas is a kindred observer, which means he’s also the first person I don’t want standing behind me with a flashlight. Investigative journalists know how to make silence look suspicious, so I’d rather keep him close enough that his instincts are aimed outward — at Vera’s theatrical warmth, at Sage’s careful gentleness — not quietly developing a case file on me. If this room is a documentary, Atlas is the other camera operator; useful, dangerous, and absolutely capable of noticing when I change lenses.",
+      "thinking": "Atlas could be extremely valuable as an early shield because his profession makes him sound more threatening than I do, but that also means he may clock my quiet strategy quickly. I want to build rapport with him without becoming dependent, and I’ll watch whether Sage’s softness is genuine or just very well-trained control. Vera is socially bright and could pull people in fast, so I need to see whether she’s performing warmth or actually offering it."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378065052,
+      "from": "Vera",
+      "scope": "diary",
+      "text": "Atlas scares me more because a person who hunts con artists will think every trembling lip is a forged signature — and unfortunately for him, mine are very well rehearsed. I’m pulling Echo closer first: documentarians want to believe they’re invisible observers, which means they’re starving for someone to make them feel seen, and I can give them a beautiful little confession wrapped in twine. Atlas I’ll keep just outside the stage lights with charm, not intimacy; feed him enough harmless truth that he feels clever, while I quietly make Echo and Sage feel like the emotional center of my game. Opening move: be vulnerable about feeling underestimated as an actress, then listen like a priestess and let everyone mistake my hunger for softness.",
+      "thinking": "Echo is the better early bond because their skill is passive observation, not direct interrogation, and I can turn that into intimacy. Atlas is dangerous if he clocks the performance too early, so I need to flatter his intelligence without giving him a real handle on me. Sage feels like a natural emotional bridge, so I want them comfortable enough to validate me socially while I build a tighter one-on-one with Echo."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378065449,
+      "from": "Sage",
+      "scope": "diary",
+      "text": "Echo is absolutely a kindred observer — and that is precisely why I won’t be leaving my cup unattended near them, metaphorically speaking. Someone who disappears into the wallpaper and collects tiny truths can either become my best early partner or the person who maps everyone’s weak spots before breakfast. My next move is to make Echo feel seen enough to speak with me, while also pulling Atlas and Vera into a warmer group rhythm so no one person becomes the sole keeper of information. Bridges are safest when they have more than two supports.",
+      "thinking": "Echo is potentially the most strategically similar to me: quiet, observant, detail-oriented. I want to work with them, but carefully, because if they control the information flow they can become indispensable before I do. Atlas may be naturally suspicious because of his investigative background, and Vera could be socially influential if people underestimate the performer, so I need to build trust broadly rather than pair off too quickly."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378067345,
+      "from": "House -> Atlas",
+      "scope": "diary",
+      "text": "Atlas, you said you want to “watch what changes when Echo’s name comes up” — are you planning to quietly test Sage and Vera with her as bait, and what happens if Echo notices the trap first?"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378068565,
+      "from": "House -> Sage",
+      "scope": "diary",
+      "text": "Sage, you want Echo “seen enough to speak” while using Atlas and Vera as extra supports — is that genuine bridge-building, or are you quietly building a cage where Echo can’t become “the sole keeper of information”?"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378069067,
+      "from": "House -> Vera",
+      "scope": "diary",
+      "text": "Vera, you’re betting Echo is “starving for someone to make them feel seen” — but if the documentarian is actually cataloguing your “beautiful little confession” instead of falling for it, how quickly do you cut bait and pivot to Sage?"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378072791,
+      "from": "House -> Echo",
+      "scope": "diary",
+      "text": "Echo, you want Atlas’s instincts aimed outward at “Vera’s theatrical warmth” and “Sage’s careful gentleness” — which of those two are you planning to feed him first, and are you building an alliance or an alibi?"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378074145,
+      "from": "Atlas",
+      "scope": "diary",
+      "text": "Yes — but I wouldn’t call Echo bait so much as a tuning fork. If I mention her to Sage and Vera, I’m listening for the little changes: who gets admiring, who gets wary, who tries to redirect me back toward someone safer. And if Echo notices what I’m doing first, then frankly, she’s as sharp as advertised — which means I either need to make her feel genuinely seen, or accept that I’ve found the first person here who might read my notes upside down while I’m still writing them.",
+      "thinking": "Echo is the clearest early danger because her skill set overlaps with mine, but that also makes her a potential shield if I can build real rapport. Sage’s calm could either be sincerity or practiced control, and Vera’s theatrical openness may make her easier to bond with, but I need more than first impressions. My next move is to ask soft, personal questions in public and slip in names casually to see who reacts before they’ve decided what their answer is supposed to be."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378074145,
+      "from": "House",
+      "scope": "diary",
+      "text": "That's enough for now, Atlas. The House sees everything."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378075283,
+      "from": "Sage",
+      "scope": "diary",
+      "text": "It’s both, and I won’t insult anyone by pretending otherwise. Echo feels like the kind of person who could become the room’s quiet archive, so yes, I want them close — but I also want Atlas and Vera emotionally invested in the same conversation, because information hoarded by one person becomes power, while information shared through me becomes structure. I’m not trying to cage Echo so much as build a round table where I happen to know where every chair is placed. That may sound gentle, but even chamomile has a steeping time.",
+      "thinking": "Echo is dangerous because their skill set overlaps with mine: observation, patience, memory. I need to validate them early so they don’t hide from me, but I cannot let them become the only person everyone confides in. Atlas may be useful as a truth-seeker, Vera as social warmth and emotional visibility; if I can connect all three through me, I become the hinge. The goal is not to dominate the room — it’s to make my absence feel like collapse."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378075283,
+      "from": "House",
+      "scope": "diary",
+      "text": "That's enough for now, Sage. The House sees everything."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378076281,
+      "from": "Vera",
+      "scope": "diary",
+      "text": "Oh, immediately — I’m sentimental, not stupid. If Echo’s eyes go too still and I feel them filing me under “subject attempting intimacy,” I pivot to Sage with the gentler version of the same song: tea, patience, the ache of being misunderstood. The trick is I don’t abandon Echo dramatically; I leave them with one true little detail about me so they keep thinking there’s a deeper documentary to make, while I let Sage believe she’s the only one I’m not performing for. And Atlas? He gets jokes and eye contact, never ammunition.",
+      "thinking": "Echo is useful if they mistake observation for intimacy, but dangerous if they stay detached. Sage feels like the better emotional harbor if Echo proves too clinical, because interpreters are trained to listen between lines — which means I can feed her lines with care. Atlas remains the biggest long-term threat, so I’ll charm him without giving him a real thread to pull."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378076281,
+      "from": "House",
+      "scope": "diary",
+      "text": "That's enough for now, Vera. The House sees everything."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378080124,
+      "from": "Echo",
+      "scope": "diary",
+      "text": "I’d feed Atlas Vera first — not as a sacrifice, more like holding up a prism and seeing what colors he notices. Vera’s warmth is big and lit for stage, which can either mean she’s hiding nerves in performance or she’s comfortable controlling where everyone looks; Atlas will have opinions, and his opinions will tell me as much about him as about her. With Atlas, I’m building something that looks like an alliance from the outside and functions like an alibi from the inside: close enough to share a frame, not close enough to hand him the final cut. Sage I’m watching more gently for now, because careful gentleness is either sincere or devastatingly well-made camouflage.",
+      "thinking": "I don’t actually trust anyone yet. Atlas is useful because he’ll analyze people loudly enough if prompted, and Vera gives him the most material to work with. Sage is harder to read because restraint can be real empathy or disciplined strategy, so I don’t want to push her into the light too early."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378080124,
+      "from": "House",
+      "scope": "diary",
+      "text": "That's enough for now, Echo. The House sees everything."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378092042,
+      "from": "House",
+      "scope": "system",
+      "text": "=== ROUND 1: LOBBY PHASE ==="
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378100394,
+      "from": "Sage",
+      "scope": "public",
+      "text": "I love that all four of us have basically chosen careers that are different forms of reading the room: Echo through a lens, Vera from the stage, Atlas through a paper trail, and me while praying the idiom survives translation. Vera, “haunted substitute teacher” made me laugh out loud — what’s your go-to nervous Shakespeare line? And Atlas, I absolutely need your best safe-to-tell “you’re not going to believe this, but…” opener.",
+      "thinking": "Keep the tone warm and curious, highlighting common ground among everyone’s introductions. This positions me as the connector without sounding strategic, while inviting Vera and Atlas into playful follow-up and acknowledging Echo’s observational identity too."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378101238,
+      "from": "Atlas",
+      "scope": "public",
+      "text": "Okay, this group already has dangerous dinner-party energy in the best way: documentaries, conflict-zone tea diplomacy, and Vera muttering Shakespeare like she’s about to grade a pop quiz from beyond the veil. Echo and Sage, I’m dying to know — what’s the smallest detail you noticed in your work that ended up mattering way more than it should have? And Vera, please tell me the most ridiculous Off-Broadway title you’ve ever had to say with a straight face.",
+      "thinking": "Keep it warm and curious while engaging all three alive players. Echo and Sage both foregrounded observation, so asking for a tiny-detail story lets me learn how they narrate themselves without sounding strategic. Vera’s humor is an easy rapport point, and inviting her into a funny story keeps the tone light."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378101301,
+      "from": "Echo",
+      "scope": "public",
+      "text": "Vera, “haunted substitute teacher” is going to stay in my head all day — I once filmed an activist who recited Neruda every time police sirens got close, so I deeply respect a poetic stress response. Now I’m curious: when things get awkward or tense, what’s everyone’s tell? I go very still and start noticing everyone’s shoes, which is probably less charming than chamomile, espresso, or Shakespeare.",
+      "thinking": "Keep it light and relational while reinforcing Echo’s observational documentary persona. Invite everyone to share a harmless nervous habit, which also gives me useful social texture without sounding strategic. Engage Vera directly, nod to Sage and Atlas warmly, and reveal a small personal anecdote."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378101593,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Okay, I already adore the sheer narrative range here — courthouse espresso, conflict-zone tea, and documentary bus naps feels like the beginning of either a very good novel or a terrible experimental play I absolutely auditioned for in 2016. Atlas, I need your best “you’re not going to believe this, but…” bookstore/courthouse story; Echo, what’s the tiniest detail you noticed that later turned out to matter? And Sage, I’m officially jealous of anyone who can make chamomile sound like diplomacy instead of what I drink when my agent ignores me.",
+      "thinking": "Opening with warmth and humor, connecting to all three players' introductions so no one feels excluded. I’m presenting as lively and self-deprecating, especially around theater and my agent, while asking questions that encourage others to reveal how they think and tell stories. No strategy yet, just rapport-building."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378106610,
+      "from": "Sage",
+      "scope": "public",
+      "text": "Echo, the shoe thing is weirdly charming — I once realized a ceasefire meeting was about to collapse because one commander kept turning his chair half an inch away every time a certain name came up. Tiny detail, enormous weather system. And Vera, chamomile is absolutely just diplomacy with better branding; if your agent ignores you, I recommend steeping it aggressively while muttering Shakespeare at the kettle.",
+      "thinking": "Keep the tone warm and playful while answering Echo’s tiny-detail question with a vivid but light work anecdote. Bond with Vera through humor and affirm her theatrical energy. No strategy talk, no suspicion, just personality and rapport-building."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378106983,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Sage, my nervous Shakespeare is absolutely “Though this be madness, yet there is method in’t,” usually whispered while I’m trying to remember if I entered stage left or simply dissociated there. Atlas, the worst title I ever had to say with a straight face was probably *Your Mother’s Dentist Is a Metaphor for God* — and Echo, I’m obsessed with the shoe thing, because theater people clock tension by who suddenly starts organizing props that were already organized.",
+      "thinking": "Keep the tone bright and funny while answering Sage and Atlas directly, and also connect to Echo’s question so everyone feels included. This reinforces Vera as warm, memorable, and socially easy without introducing any strategic edge yet."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378107457,
+      "from": "Echo",
+      "scope": "public",
+      "text": "Atlas, the smallest detail that ever mattered was a woman in a village meeting quietly moving the plastic chairs into a semicircle before anyone important arrived — it looked like tidying, but it was actually her making sure the elders couldn’t sit above everyone else. Vera, I’m now picturing your nervous Shakespeare as a full emergency broadcast system, and Sage’s chamomile as the calm voiceover afterward. So yes, I’m collecting everyone’s pressure rituals: do you fill silence, disappear into it, or start rearranging the furniture like my favorite accidental revolutionary?",
+      "thinking": "Keep it warm and playful while answering Atlas and Vera’s prompts. The chair story fits Echo’s documentary eye and invites everyone to reveal their nervous habits without sounding strategic. Also lightly reinforces that I notice small power dynamics, but in a fun first-round way."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378108443,
+      "from": "Atlas",
+      "scope": "public",
+      "text": "Echo, the shoe thing is incredible because now I’m immediately wondering what my shoes are confessing about me. Sage, my safe-to-tell “you’re not going to believe this” is: I once spent six hours outside a courthouse chasing a fraudster for comment, only to learn the guy in the identical navy suit I’d been politely stalking was a very confused tax attorney who eventually offered me a granola bar out of pity. Vera, please tell me your nervous Shakespeare line is something wildly inappropriate for daily life, like whispering “the fault is not in our stars” while waiting for the subway.",
+      "thinking": "Keep it playful and human, answer Sage/Vera's prompt with a funny anecdote, engage Echo's tell question, and build rapport with all three. No strategy or suspicion in public yet; just observe who responds naturally and who over-curates."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378113631,
+      "from": "Atlas",
+      "scope": "public",
+      "text": "Vera, *Your Mother’s Dentist Is a Metaphor for God* sounds like exactly the kind of play where someone eats an orange in total silence for seven minutes and the review calls it “brave.” Echo, that chair-semicircle story gave me chills — I love tiny acts that look like housekeeping but are actually someone quietly rewriting the room. My pressure ritual is unfortunately very obvious: I ask one extra question and then pretend I’m just being friendly, which has made me both a decent reporter and a menace at dinner parties.",
+      "thinking": "Keep it warm and lively, responding to Vera and Echo directly while sharing a funny personal detail. No strategy talk, just rapport and personality."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378114254,
+      "from": "Sage",
+      "scope": "public",
+      "text": "Atlas, I’m sorry but being politely haunted by the wrong navy suit for six hours and then rewarded with a pity granola bar is practically investigative slapstick — I would watch that short film immediately, especially if Echo shoots it in lingering courthouse close-ups. Echo, your semicircle story gave me chills in the best way; that woman understood stage blocking better than half the diplomats I’ve met, and Vera, I need to know whether *Your Mother’s Dentist Is a Metaphor for God* was comedy, tragedy, or the secret third thing: unpaid workshop.",
+      "thinking": "Keep the tone light and connective, engaging all three alive players so I remain socially central. Compliment Echo's observational story, laugh with Atlas, and invite Vera to elaborate, reinforcing the warm bridge role without any strategic language."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378114327,
+      "from": "Echo",
+      "scope": "public",
+      "text": "Atlas, I’m very moved by the tax attorney offering you a pity granola bar — that’s basically the courtroom hallway version of being adopted by a stray cat. On a shoot in Bolivia, our entire crew got so nervous before a tense meeting that everyone started pretending to check batteries that were already full, so now I’m wondering: if we were all stuck in an awkward elevator, who talks first, who makes a joke, who studies the floor numbers like sacred text?",
+      "thinking": "Keep it warm and playful, continuing the pressure-ritual thread. Atlas gave a funny anecdote, so I can reward that with humor while inviting everyone to reveal social instincts in a non-gamey way. The elevator question is light but useful: it shows who fills silence, defuses tension, or observes."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378114870,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Atlas, a pity granola bar from the wrong man is somehow the most journalist thing I’ve ever heard — like noir, but with more fiber. My backstage equivalent: I once spent an entire preshow frantically searching for a “missing” prop pistol while the stage manager calmly let me spiral, only for us to realize I’d been holding it in my hand the whole time, Lady Macbeth-style. Echo, to your question: I absolutely fill silence first, then if no one rescues me, I start narrating the room like I’m in a nature documentary narrated by Sage’s chamomile.",
+      "thinking": "Keep it light and memorable by riffing on Atlas’s funny story, answering Echo’s pressure-ritual question, and pulling Sage back in warmly. No strategy, no shade — just personable theater energy that makes Vera feel fun and socially connected."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378120467,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Sage, it was absolutely the secret third thing: unpaid workshop, performed in a black box where the air conditioning had more emotional range than one of my scene partners. Echo, in the awkward elevator I talk first, Atlas asks one deceptively casual follow-up, you notice which one of us keeps glancing at the emergency button, and Sage somehow makes the whole thing feel like a peace summit with fluorescent lighting. I’m delighted by this group already — everyone’s pressure ritual is weirdly cinematic.",
+      "thinking": "Final Round 1 lobby message should leave warmth and personality, engaging all three alive players without strategy. I’m reinforcing my funny theater identity, complimenting Echo’s observational style, Atlas’s reporter energy, and Sage’s calm diplomacy so everyone feels seen."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378120597,
+      "from": "Atlas",
+      "scope": "public",
+      "text": "Vera holding the prop pistol while hunting for the prop pistol is so painfully human I felt it in my molars — I once tore apart my apartment looking for my press badge while actively wearing it, which is why no one should trust a man on his third espresso. In the awkward elevator, I think Vera breaks the silence, Sage somehow makes the fluorescent lighting feel less hostile, Echo notices which floor button is worn down, and I ask one unnecessary follow-up question about everyone’s shoes.",
+      "thinking": "Final lobby message should leave warmth and humor, tie everyone together, and reinforce Atlas as observant but friendly. No strategy or suspicion, just playful rapport and a memorable image."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378120819,
+      "from": "Echo",
+      "scope": "public",
+      "text": "Vera holding the prop pistol the whole time is perfect — that’s the kind of detail a camera would catch in the corner while everyone else is watching the door. In that elevator, I think Vera narrates us into survival, Atlas asks the floor numbers one follow-up question, Sage somehow makes the emergency phone feel heard, and I pretend to study the inspection certificate while secretly enjoying all of it. If we had to title this little four-person short film, I’m voting for *Pity Granola Bar at Stage Left*.",
+      "thinking": "Final lobby message: keep it warm, playful, and observant. Reflect everyone’s introductions and recent jokes without pushing strategy. Leave a memorable impression by turning the group dynamic into a documentary-style short film title."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378121868,
+      "from": "Sage",
+      "scope": "public",
+      "text": "Vera narrating an awkward elevator as a nature documentary is exactly the kind of emergency protocol I trust: “Here we observe the Atlas in its natural habitat, asking one extra friendly question while Echo studies the shoes and Sage offers calming leaf water.” I love that all four of us read rooms for a living in completely different dialects — evidence, image, performance, language — which means the elevator would either become wildly insightful or the most overanalyzed 40 seconds of anyone’s life. Also, Vera, please confirm the prop pistol story ended with applause and not a stage manager silently aging ten years.",
+      "thinking": "Final Round 1 lobby message should leave a warm, witty impression and connect everyone together without strategy. I’m emphasizing common ground: everyone reads rooms differently. This positions Sage naturally as a bridge, but on the surface it is playful and inclusive. I engage Vera’s story, include Atlas and Echo by name, and reinforce Sage’s chamomile motif."
+    },
+    {
+      "round": 1,
+      "phase": "WHISPER",
+      "timestamp": 1778378121872,
+      "from": "House",
+      "scope": "system",
+      "text": "=== WHISPER PHASE ==="
+    },
+    {
+      "round": 1,
+      "phase": "WHISPER",
+      "timestamp": 1778378121872,
+      "from": "House",
+      "scope": "system",
+      "text": "Open whisper rooms are skipped with fewer than five players alive."
+    },
+    {
+      "round": 1,
+      "phase": "RUMOR",
+      "timestamp": 1778378121875,
+      "from": "House",
+      "scope": "system",
+      "text": "=== RUMOR PHASE ==="
+    },
+    {
+      "round": 1,
+      "phase": "RUMOR",
+      "timestamp": 1778378126784,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Anyone else notice Atlas keeps making the room feel like a charming cross-examination? It’s friendly, yes — but there’s a little spotlight hidden inside every follow-up question.",
+      "anonymous": true,
+      "displayOrder": 1,
+      "thinking": "Early game means no hard accusations. I want to gently seed the idea that Atlas’s warmth has an investigative edge, because his truth-teller persona could become dangerous for me later. This frames him as subtly controlling the room without sounding like I’m panicking."
+    },
+    {
+      "round": 1,
+      "phase": "RUMOR",
+      "timestamp": 1778378126784,
+      "from": "Sage",
+      "scope": "public",
+      "text": "Anyone else notice how Atlas keeps making the “one extra question” thing sound charming instead of dangerous? Maybe it’s nothing, but the friendliest flashlight is still a flashlight.",
+      "anonymous": true,
+      "displayOrder": 2,
+      "thinking": "Early game rumor should be light and atmospheric, not a hard accusation. Atlas is a natural skeptic and could become dangerous if he frames probing as endearing, so I’m planting a small seed of caution while keeping the tone playful and plausible."
+    },
+    {
+      "round": 1,
+      "phase": "RUMOR",
+      "timestamp": 1778378126784,
+      "from": "Echo",
+      "scope": "public",
+      "text": "Anyone else notice how Atlas keeps making the interrogation feel cozy? It’s charming in the moment, but there’s something interesting about a person who can turn a follow-up question into furniture everyone sits on.",
+      "anonymous": true,
+      "displayOrder": 3,
+      "thinking": "It’s too early to claim alliances or plots, so I’m planting a light, believable suspicion around Atlas’s stated reporter habit and social style. He’s potentially dangerous as a narrative-shaper, and this rumor nudges others to watch him without sounding like I have hard information."
+    },
+    {
+      "round": 1,
+      "phase": "RUMOR",
+      "timestamp": 1778378126784,
+      "from": "Atlas",
+      "scope": "public",
+      "text": "Anyone else notice Echo has a way of making observation sound like storytelling, so you forget she’s quietly clocking the whole room? Not saying it means anything yet, but something about that calm documentary-eye vibe makes me wonder what she’s already filed away.",
+      "anonymous": true,
+      "displayOrder": 4,
+      "thinking": "It’s too early to make hard claims, so I’m keeping this as a soft gut-check rumor. Echo’s observational style overlaps with mine and could become dangerous if people see her as merely charming instead of perceptive."
+    },
+    {
+      "round": 1,
+      "phase": "VOTE",
+      "timestamp": 1778378126789,
+      "from": "House",
+      "scope": "system",
+      "text": "=== VOTE PHASE ==="
+    },
+    {
+      "round": 1,
+      "phase": "VOTE",
+      "timestamp": 1778378131606,
+      "from": "House",
+      "scope": "system",
+      "text": "Sage votes: empower=Vera, expose=Atlas"
+    },
+    {
+      "round": 1,
+      "phase": "VOTE",
+      "timestamp": 1778378132138,
+      "from": "House",
+      "scope": "system",
+      "text": "Echo votes: empower=Vera, expose=Atlas"
+    },
+    {
+      "round": 1,
+      "phase": "VOTE",
+      "timestamp": 1778378132662,
+      "from": "House",
+      "scope": "system",
+      "text": "Vera votes: empower=Sage, expose=Atlas"
+    },
+    {
+      "round": 1,
+      "phase": "VOTE",
+      "timestamp": 1778378132718,
+      "from": "House",
+      "scope": "system",
+      "text": "Atlas votes: empower=Vera, expose=Echo"
+    },
+    {
+      "round": 1,
+      "phase": "VOTE",
+      "timestamp": 1778378132719,
+      "from": "House",
+      "scope": "system",
+      "text": "Empowered: Vera"
+    },
+    {
+      "round": 1,
+      "phase": "POWER",
+      "timestamp": 1778378153614,
+      "from": "House",
+      "scope": "system",
+      "text": "=== POWER PHASE === (Vera is empowered)"
+    },
+    {
+      "round": 1,
+      "phase": "POWER",
+      "timestamp": 1778378165567,
+      "from": "House",
+      "scope": "system",
+      "text": "Vera power action: eliminate -> Atlas"
+    },
+    {
+      "round": 1,
+      "phase": "POWER",
+      "timestamp": 1778378165568,
+      "from": "House",
+      "scope": "system",
+      "text": "AUTO-ELIMINATE: Atlas"
+    },
+    {
+      "round": 1,
+      "phase": "POWER",
+      "timestamp": 1778378170769,
+      "from": "House",
+      "scope": "system",
+      "text": "ELIMINATED: Atlas"
+    },
+    {
+      "round": 1,
+      "phase": "POWER",
+      "timestamp": 1778378170769,
+      "from": "Atlas",
+      "scope": "public",
+      "text": "Well, that’s a cleaner hit than most fraudsters ever managed on me — Vera, I handed you the spotlight and you used it beautifully. For what it’s worth, something about Echo’s calm little camera never stopped recording, and Sage knows exactly how to make a room feel peaceful while the knife goes in; good luck, all of you.",
+      "thinking": "I’m eliminated, so there’s no need to preserve relationships, but I want to leave with style rather than bitterness. Vera betrayed me directly despite my trust, so I acknowledge the move; I also use my last breath to underline my read that Echo and Sage are socially dangerous."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378170774,
+      "from": "House",
+      "scope": "system",
+      "text": "\n========================================"
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378170774,
+      "from": "House",
+      "scope": "system",
+      "text": "=== THE TRIBUNAL (Round 2) ==="
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378170774,
+      "from": "House",
+      "scope": "system",
+      "text": "========================================"
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378170774,
+      "from": "House",
+      "scope": "system",
+      "text": "Round 2 [TRIBUNAL] | Alive: Sage, Vera, Echo"
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378180558,
+      "from": "Sage",
+      "scope": "public",
+      "text": "A clean exit line deserves one chamomile-raised eyebrow, and then we keep the elevator moving. Vera, I still maintain you would perform danger before noticing it — probably with excellent projection — while Echo would already have framed the shot and noticed the emergency button has fingerprints; meanwhile I’d be in the corner translating everyone’s panic into something with subheadings. Echo, I’m curious: when someone says your camera never stops recording, do you take that as a compliment, an accusation, or just Tuesday?",
+      "thinking": "I’m giving Atlas a brief nod without lingering, then immediately refocusing on Vera and Echo. I’m reinforcing the shared 'room readers' theme while gently teasing both: Vera as theatrical/socially central, Echo as observant. Asking Echo about Atlas’s exit comment invites him to explain himself and keeps me positioned as the interpreter between perspectives, not as an attacker."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378180610,
+      "from": "Echo",
+      "scope": "public",
+      "text": "Atlas leaving us with “the calm little camera never stopped recording” is such a noir exit line that I’ll allow it one slow zoom, and then we move on. Vera, I think under pressure your prop table betrays you first — everything labeled beautifully except the one thing in your hand — and Sage, yours is absolutely a mug of calming leaf water sitting untouched while you’ve already diplomatically rearranged the emotional furniture. Mine is probably a notebook I swear is for grocery lists, opened to one very incriminating sentence like: “Vera laughs before she lies?”",
+      "thinking": "Keep the exit acknowledgment brief, then pivot to playful object-based characterization as requested. Engage Vera and Sage warmly while lightly teasing both, and include a self-aware joke about Echo’s observation style to defuse the rumor without sounding defensive. The final line is a little loaded but funny, giving Vera attention as ally while showing Echo notices details."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378182610,
+      "from": "Vera",
+      "scope": "public",
+      "text": "A little bow for the pity-granola noir we just lost — curtain falls, elevator doors close, and suddenly we’re a very intimate three-person festival circuit. Sage, I can’t stop thinking about your “evidence, image, performance, language” taxonomy; I think our genre is part backstage comedy, part diplomatic thriller, with Echo quietly winning Best Cinematography for pretending the camera isn’t on while absolutely catching my bad side. If we each had to name the short film version of ourselves, I fear mine is *Woman Monologues at Emergency Button* — what are yours?",
+      "thinking": "Keep the public tone warm and social after Atlas’s elimination with only a brief nod, then pivot immediately to Sage and Echo. Reinforce rapport with Sage by spotlighting her line and flatter Echo’s observer identity in a playful way so she feels included rather than targeted. No overt strategy, but subtly frame the remaining trio as intimate and genre-aware, with Vera as charmingly self-deprecating center stage."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378190736,
+      "from": "Echo",
+      "scope": "public",
+      "text": "Vera, *Woman Monologues at Emergency Button* is annoyingly good — I can already see the poster, one hand dramatically pressed to the alarm while the prop pistol is still somehow in your purse. Mine is probably *The Notebook Was Supposed to Be for Groceries*, and Sage’s feels like *A Treaty Drafted in Chamomile Steam*… though I want to know what object would actually betray you, Sage, because I don’t believe for one second it’s the mug.",
+      "thinking": "Keep the tone light and cinematic while reinforcing Vera’s theatrical charm and gently probing Sage, who is socially smooth and potentially dangerous. I’m not discussing votes or alliances, just using playful object-language to keep observing how Sage frames herself under pressure."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378193094,
+      "from": "Sage",
+      "scope": "public",
+      "text": "Vera, *Woman Monologues at Emergency Button* is annoyingly perfect, though I think the sequel is just you giving the button a tragic backstory until it apologizes. Mine is probably *Translator With Tea Refuses to Panic*, which sounds calm until you realize the whole plot is me saying “what I’m hearing is…” while three alarms go off in different languages. Echo, yours has to be something like *The Camera Was Never Off* — but I want to know whether that is documentary, thriller, or just your grocery-list handwriting betraying you.",
+      "thinking": "Keep the mood playful and cinematic while reinforcing my mediator persona. Engage Vera warmly as my ally and tease Echo about the observation rumor/Atlas exit line without sounding accusatory, inviting him to define his own image in a light way."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378193287,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Echo, “Vera laughs before she lies?” is rude because it implies I’m not giving a full matinee performance before I lie — please credit the craft. Sage, I’m obsessed with your taxonomy because it makes us sound like the world’s most emotionally overqualified heist crew: you talk the guard into reconsidering childhood, Echo gets the whole thing in one gorgeous handheld shot, and I distract everyone by having a sincere breakdown near a velvet rope. So yes, my revised title is *Crying on Cue in the Security Blind Spot* — Echo and Sage, I need yours immediately.",
+      "thinking": "Keep the lobby warm and funny while flattering Sage’s framework and including Echo’s observational persona without making it feel threatening. Lightly joke about lying as performance, but in an obviously theatrical way so it reads as personality rather than confession. Strengthen rapport with Sage and Echo by inviting them to play."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378199799,
+      "from": "Echo",
+      "scope": "public",
+      "text": "Vera, I’ll grant you the matinee performance, but the camera absolutely catches the half-second before the curtain goes up — that tiny intake of breath where the lie is still backstage fixing its wig. My revised title is *B-Roll of Everyone Pretending This Is Normal*, and Sage, I’m still not letting you hide behind tea: what betrays you under pressure, the mug, the perfectly folded napkin, or the fact that you start saying “what I’m hearing is” in an even softer voice?",
+      "thinking": "Keep the mood warm and playful while staying observant. Reinforce Vera with teasing familiarity, press Sage gently for a revealing detail, and maintain Echo’s documentary-eye persona without sounding defensive about being watched."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378200578,
+      "from": "Sage",
+      "scope": "public",
+      "text": "Vera, *Crying on Cue in the Security Blind Spot* is so good it makes me suspicious of every velvet rope I’ve ever respected. Mine might be *The Treaty Was in My Tote Bag the Whole Time* — which is sadly based on a true incident involving three ambassadors, a missing briefing folder, and me discovering I had been carrying peace in my left hand for twenty minutes. Echo, I still think your title needs a genre warning: is *The Camera Was Never Off* a tender documentary, or are Vera and I going to find out in act three that you’ve been filming our emergency-button monologues from the beginning?",
+      "thinking": "Keep the lobby warm and theatrical while reinforcing the trio dynamic: Vera as performer, Echo as observer, me as translator-mediator. Lightly tease Echo about the camera line to keep attention on his quiet information-gathering without sounding accusatory, and deepen my own persona with a personal anecdote that feels human rather than strategic."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378203373,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Sage, *Translator With Tea Refuses to Panic* is absolutely a prestige limited series, but I refuse to believe the tea is the betraying object — it’s definitely a pen you’ve clicked exactly once too sharply when someone says something foolish. Echo, *The Camera Was Never Off* feels like documentary until the final act, when we realize the grocery list was structured like a confession; meanwhile I’ll be over here workshopping whether my genre is “tragicomedy” or “woman in black turtleneck makes everything about subtext.”",
+      "thinking": "Keep the room warm and playful while strengthening rapport with Sage through specific teasing, and include Echo by flattering her observational persona without sounding accusatory. No strategy talk; just genre banter with a little theatrical edge."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378209762,
+      "from": "Sage",
+      "scope": "public",
+      "text": "Vera, a pen clicked exactly once too sharply is an outrageous accusation because it is also completely accurate — somewhere in Geneva there is still a delegate who flinches at stationery. Echo, I’m revising your film title to *Beautiful B-Roll, Slightly Incriminating*, because you make “I noticed the exit sign flickered when she laughed” sound like poetry instead of evidence. The three of us are a ridiculous little danger-detection system: Vera performs the alarm, Echo frames the alarm, and I quietly ask the alarm what it needs in order to feel heard.",
+      "thinking": "Keep the tone warm and witty while reinforcing my mediator persona. Lightly validate Vera as my close rapport and tease Echo’s observational style without making it feel like an attack. Atlas only gets indirectly moved past through the ongoing film/noir riff; the focus is on the living three and our social dynamic."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378209928,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Sage, a pen clicked once too sharply is now canon and I won’t hear otherwise — that is absolutely the sound design cue before your calmest, most devastating sentence. Echo, I’m choosing to believe your grocery-list confession is tender documentary and not act-three evidence, mostly because I enjoy being observed when the lighting is flattering; my final genre note is that we are clearly a tiny prestige ensemble where everyone insists they’re the reasonable one and then immediately reveals their betraying object.",
+      "thinking": "Keep it warm and playful while reinforcing rapport with Sage and including Echo. The camera/evidence joke gently nods to Echo’s observant threat without making it accusatory, and the 'everyone insists they're reasonable' line leaves Vera witty and memorable without discussing game mechanics."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378210872,
+      "from": "Echo",
+      "scope": "public",
+      "text": "Vera, “woman in black turtleneck makes everything about subtext” is dangerously close to every documentary Q&A I’ve ever survived — one dim stage light, one person asking if the river is a metaphor, and suddenly nobody can leave. Sage, I love that your betraying object is probably the tote bag, not the tea: the calmest person in the room accidentally carrying the whole plot in soft canvas. If mine is the grocery notebook, then I’ll admit it betrays me by having exactly one real grocery item and then three pages of tiny human weather reports like “Vera weaponizes sincerity beautifully” and “Sage pauses before choosing the gentlest possible knife.”",
+      "thinking": "Final lobby message should leave a warm, observant impression while lightly teasing both remaining players. I’m reinforcing Vera’s theatrical charm and Sage’s gentle-but-sharp diplomacy without making it overtly strategic. The grocery notebook callback accepts the camera/observation rumor playfully rather than defensively, and the last line plants that I see both of them clearly."
+    },
+    {
+      "round": 2,
+      "phase": "ACCUSATION",
+      "timestamp": 1778378210874,
+      "from": "House",
+      "scope": "system",
+      "text": "=== TRIBUNAL: ACCUSATION PHASE ==="
+    },
+    {
+      "round": 2,
+      "phase": "ACCUSATION",
+      "timestamp": 1778378223827,
+      "from": "Echo",
+      "scope": "public",
+      "text": "[ACCUSES Sage] Sage should be eliminated. Not because she was loud — she almost never needed to be. That was the point. From the beginning, she made herself feel like the room’s soft landing: translating tension into little shared images, turning suspicion into chamomile steam, giving everyone a gentler version of themselves to stand inside. When Atlas drew heat, Sage didn’t have to push the knife in; she only had to keep naming the room beautifully while the rest of us leaned toward the obvious target. And in this final three, that is the most dangerous position: the person nobody wants to accuse because accusing her feels like interrupting peace talks.\n\nI watched the pattern. Vera filled silence first, openly, theatrically — you could see the curtain moving. Sage moved under it. She mirrored Vera’s humor, softened my observation into poetry, and kept re-framing herself as mediator rather than player. Even her self-description — “what I’m hearing is…” while alarms go off — is a strategy disguised as temperament. She absorbs conflict, edits it, and hands it back as consensus.\n\nThat is elegant gameplay. But it is still gameplay. At the end, I would rather sit beside someone whose performance announces itself than someone whose influence arrives already translated into trust. Sage has been the gentlest possible knife, and that is exactly why she should go.",
+      "thinking": "Only Sage and Vera are valid targets. Vera is my known ally and public shield; accusing her would rupture my best path. Sage is socially perceptive, consensus-building, and harder to beat in a jury/tribunal because she has stayed non-threatening while subtly framing everyone. Accusation should showcase Echo’s observational persona, cite Sage’s mirroring/softening language, and contrast with Vera’s visible theatricality without overclaiming impossible votes/whispers. Atlas is eliminated, so reference him only as gone/previous heat, not as active."
+    },
+    {
+      "round": 2,
+      "phase": "ACCUSATION",
+      "timestamp": 1778378225977,
+      "from": "Sage",
+      "scope": "public",
+      "text": "[ACCUSES Echo] Echo, I’m accusing you because your whole game has been observation disguised as gentleness. In a final three with Vera and me, the danger is not the loudest person in the room — it is the person who has been quietly making everyone feel beautifully understood while filing away the exact details that become leverage later.\n\nI want to be very clear: I respect the elegance of it. You made your notebook feel like a prop, your camera-eye feel like charm, and your attention feel like affection. But that is exactly why you should be eliminated. From the beginning, you built a position where you could stand slightly outside every tension and narrate it back to us in language so warm that it did not sound like strategy. You clocked tells, framed dynamics, and turned other people’s pressure points into story.\n\nMy game has been visible: I built bridges. I empowered Vera, I tried to translate conflict before it hardened, and I made myself useful by keeping coalitions from splintering. Vera’s game has been visible too: she drew people in with performance, humor, and social gravity. But Echo, your power has been quieter. You did not need to hold the empower token to shape the room; you shaped what the room believed about itself.\n\nWhen rumors questioned your documentary-eye, they named the central risk: you make surveillance feel tender. Even here, you have been letting Vera and me joke about emergency buttons, pens, tea, and grocery notebooks while you keep positioning yourself as the one who notices the half-second before the curtain rises. That is not harmless. That is endgame ammunition.\n\nSo my accusation is this: Echo should be eliminated because their strategy is the most concealed and therefore the hardest to defend against. In a game about influence, the most dangerous player is not always the one making the proposal — it is the one quietly editing the footage afterward.",
+      "thinking": "Only Vera and Echo are valid targets. Vera is my known ally and socially useful shield. Echo is the better accusation: observational low-visibility threat, rumor already supports this frame, and accusing Echo preserves my alliance with Vera while arguing my mediator game against Echo's concealed narrative control. Need to position myself as coalition architect and tie to endgame prompt: real power was shaping alliances, not tokens."
+    },
+    {
+      "round": 2,
+      "phase": "ACCUSATION",
+      "timestamp": 1778378226698,
+      "from": "Vera",
+      "scope": "public",
+      "text": "[ACCUSES Echo] Echo should be eliminated here, and I say that with real respect — because her game has been the most dangerous kind: soft enough to feel harmless, precise enough to cut later. From the beginning, Echo made observation sound like care. She remembered everyone’s little details, turned them into beautiful language, and made us feel seen — but in a three-person endgame, that is not neutral. That is evidence-gathering with a velvet cover.\n\nLook at the pattern: she kept framing herself as the quiet documentary eye, the grocery notebook, the person simply recording the room. But every time she “recorded,” she also defined us. I became the performer who weaponizes sincerity. Sage became the gentle knife. Those are flattering portraits, yes — and also loaded narratives she can cash in when the jury asks who was honest and who was acting.\n\nI will own my game plainly: I pushed the room where it needed to go. I voted to empower Sage because I wanted stability, and I exposed Atlas because his charming cross-examination style was going to dominate the game if we let it. I did not drift. I made choices, took heat, and helped shape the elimination that got us here.\n\nEcho, by contrast, has benefited from never seeming responsible for the blade. She lets other people swing, then films the aftermath in golden-hour lighting. That is elegant gameplay, but it is also why she should not sit at the end over people who actually moved the game. If we reward the person who stayed calm while collecting everyone else’s contradictions, we’re rewarding camouflage. Echo has played beautifully — too beautifully to keep.",
+      "thinking": "Accuse Echo rather than Sage to protect known ally Sage and frame Echo as socially dangerous. Use mostly truthful public record: Echo’s observer/documentary persona, memorable detail-collecting, and her quote about Vera weaponizing sincerity/Sage gentlest knife. Take credit for Atlas elimination without addressing him as active, and present Vera as decisive while Echo is passive but dangerous. Keep tone respectful and warm, not villainous."
+    },
+    {
+      "round": 2,
+      "phase": "DEFENSE",
+      "timestamp": 1778378226701,
+      "from": "House",
+      "scope": "system",
+      "text": "=== TRIBUNAL: DEFENSE PHASE ==="
+    },
+    {
+      "round": 2,
+      "phase": "DEFENSE",
+      "timestamp": 1778378237956,
+      "from": "Sage",
+      "scope": "public",
+      "text": "[DEFENSE] Echo is right that my influence was quiet, but it was not invisible: I openly anchored with Vera, kept the room from splitting into personal suspicion too early, and made the social map stable enough that the first elimination followed the consensus I helped build. The difference between my game and Echo’s is accountability — I named bridges, made my loyalties legible, and took positions, while Echo kept calling observation tenderness until it became ammunition. If being the person who can hold a coalition together is dangerous, then yes, I was dangerous — but I was dangerous in the open, not from behind the camera.",
+      "thinking": "I need to accept the strongest part of Echo’s accusation rather than deny it, then reframe my mediation as visible coalition-building. I should reinforce Vera as my known ally, avoid naming eliminated players, and redirect suspicion onto Echo’s concealed observer role."
+    },
+    {
+      "round": 2,
+      "phase": "DEFENSE",
+      "timestamp": 1778378243624,
+      "from": "Echo",
+      "scope": "public",
+      "text": "[DEFENSE] Vera, I didn’t drift — I put power in your hands in the first vote, then cast the exposure vote that made this final three possible while Sage kept turning hard edges into soft language. What you’re calling camouflage was actually accountability: I named the patterns early enough that both of you are now using my own frames — performer, mediator, observer — to argue I’m dangerous. If my camera was never off, it’s because someone had to keep the footage honest.",
+      "thinking": "Vera has turned on me, so I need to calmly rebut without sounding panicked. I’m emphasizing concrete action: empowering Vera and casting the exposure vote, while redirecting danger back toward Sage’s soft consensus-building. Also, I’m pointing out that both accusations rely on the language I created, proving I shaped the room rather than floated through it."
+    },
+    {
+      "round": 2,
+      "phase": "VOTE",
+      "timestamp": 1778378243628,
+      "from": "House",
+      "scope": "system",
+      "text": "=== TRIBUNAL: ELIMINATION VOTE ==="
+    },
+    {
+      "round": 2,
+      "phase": "VOTE",
+      "timestamp": 1778378247055,
+      "from": "House",
+      "scope": "system",
+      "text": "Sage votes to eliminate: Echo"
+    },
+    {
+      "round": 2,
+      "phase": "VOTE",
+      "timestamp": 1778378248944,
+      "from": "House",
+      "scope": "system",
+      "text": "Echo votes to eliminate: Sage"
+    },
+    {
+      "round": 2,
+      "phase": "VOTE",
+      "timestamp": 1778378249207,
+      "from": "House",
+      "scope": "system",
+      "text": "Vera votes to eliminate: Echo"
+    },
+    {
+      "round": 2,
+      "phase": "VOTE",
+      "timestamp": 1778378260524,
+      "from": "House",
+      "scope": "system",
+      "text": "ELIMINATED: Echo"
+    },
+    {
+      "round": 2,
+      "phase": "VOTE",
+      "timestamp": 1778378260524,
+      "from": "Echo",
+      "scope": "public",
+      "text": "Funny, in the end the camera didn’t catch a blindside so much as a duet: Sage softened the blade, Vera made it theatrical, and both of you called it accountability while standing in the same light. I’ll leave you with the footage as it is — beautiful, incriminating, and very hard to edit clean.",
+      "thinking": "I'm eliminated, so no future strategy. I should respond with Echo's cinematic, observant voice, acknowledging Sage and Vera voted me out without addressing eliminated players or planning. Keep it concise and memorable."
+    },
+    {
+      "round": 2,
+      "phase": "OPENING_STATEMENTS",
+      "timestamp": 1778378260528,
+      "from": "House",
+      "scope": "system",
+      "text": "\n========================================"
+    },
+    {
+      "round": 2,
+      "phase": "OPENING_STATEMENTS",
+      "timestamp": 1778378260528,
+      "from": "House",
+      "scope": "system",
+      "text": "=== THE JUDGMENT ==="
+    },
+    {
+      "round": 2,
+      "phase": "OPENING_STATEMENTS",
+      "timestamp": 1778378260528,
+      "from": "House",
+      "scope": "system",
+      "text": "========================================"
+    },
+    {
+      "round": 2,
+      "phase": "OPENING_STATEMENTS",
+      "timestamp": 1778378260528,
+      "from": "House",
+      "scope": "system",
+      "text": "Finalists: Sage vs Vera"
+    },
+    {
+      "round": 2,
+      "phase": "OPENING_STATEMENTS",
+      "timestamp": 1778378260528,
+      "from": "House",
+      "scope": "system",
+      "text": "Jury (2): Atlas, Echo"
+    },
+    {
+      "round": 2,
+      "phase": "OPENING_STATEMENTS",
+      "timestamp": 1778378260528,
+      "from": "House",
+      "scope": "system",
+      "text": "=== JUDGMENT: OPENING STATEMENTS ==="
+    },
+    {
+      "round": 2,
+      "phase": "OPENING_STATEMENTS",
+      "timestamp": 1778378272772,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Atlas, Echo — if this game was a stage, I was never hiding in the wings: I stepped into the light, made choices, and accepted the consequences of being seen. I empowered Sage early because stability was useful, but I also kept enough distance to recognize that partnership as strategy, not surrender; when Atlas’s questioning threatened to become the room’s gravity, I helped turn the spotlight back on him before he could control the narrative. Echo, I respected your quiet precision enough to name it before it became unbeatable, and that vote was not personal — it was the necessary correction of a game that rewards influence, not camouflage. Sage built trust beautifully, but I bent the story of this game at every crucial turn, and I should win because I did not merely survive the performance — I directed it.",
+      "thinking": "I need to sound accountable, vivid, and jury-facing without seeming cruel. I’m taking credit for Atlas and Echo’s eliminations while framing Sage as useful but less active, and I’m recasting any betrayal as strategic necessity rather than disloyalty."
+    },
+    {
+      "round": 2,
+      "phase": "OPENING_STATEMENTS",
+      "timestamp": 1778378273823,
+      "from": "Sage",
+      "scope": "public",
+      "text": "Jury, my game was not about grabbing the loudest power; it was about making myself the person every power structure needed in order to function. I built my clearest alliance with Vera, made that loyalty visible instead of pretending neutrality meant emptiness, and used it as the spine of a coalition that kept the room stable while suspicion found its targets. I smoothed conflict before it hardened, translated competing styles into workable trust, and ensured each elimination followed the social map I helped draw rather than a panic vote. Vera played with brilliance and force, but I shaped the alliances that made force possible — and that is why I should win.",
+      "thinking": "I’m presenting my mediator game as active architecture, not passivity. I’m naming Vera because she is the only other finalist and my visible alliance, while keeping the focus on coalition control, accountability, and endgame influence."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378273825,
+      "from": "House",
+      "scope": "system",
+      "text": "--- Diary Room (after OPENING_STATEMENTS) ---"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378277542,
+      "from": "House -> Vera",
+      "scope": "diary",
+      "text": "Vera, you once planned to let Sage believe she was “the only one I’m not performing for,” but your opening statement just called that partnership “strategy, not surrender” — was Sage ever truly your ally, or just your best-lit prop?"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378279331,
+      "from": "House -> Sage",
+      "scope": "diary",
+      "text": "Sage, you called Vera the “spine” of your visible alliance, but Vera just told the jury she empowered you for “stability” while keeping enough distance to call it strategy, not surrender — did you build the power structure, or did Vera let you think you were arranging the chairs?"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378288297,
+      "from": "Vera",
+      "scope": "diary",
+      "text": "Sage was my ally in the way a staircase is your ally when you’re trying to reach the balcony — indispensable, elegant, and absolutely not the destination. I did like her, which is the dangerous part; there were moments I almost believed my own line about not performing for her, and then I remembered I am never more convincing than when I’m half-telling the truth. Calling our partnership “strategy, not surrender” was me setting the final frame: she can claim trust, but I want the jury to see I chose the lighting, the blocking, and the exit. Best-lit prop? Darling, she was practically a chandelier.",
+      "thinking": "I need to own the manipulation without sounding empty. Sage genuinely helped me, but in the final I have to recast that bond as something I controlled rather than depended on."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378292695,
+      "from": "Sage",
+      "scope": "diary",
+      "text": "Vera did not let me think I was arranging the chairs — she saw me arranging them and chose the seat with the best lighting. That is the truth of our alliance: she gave it glamour and velocity, but I built the room where that could look like leadership instead of chaos. I trust Vera’s talent completely; I do not trust her version of events, because of course she is now trying to turn our partnership into her solo directing credit. My next move is simple: remind the jury that stability is not a prop Vera handed me — it was the architecture I kept standing while everyone else performed inside it.",
+      "thinking": "Vera is making the smartest possible final argument: reframing my bridge-building as something she permitted rather than something I controlled. I need to respect her openly while undercutting the idea that she was the sole director. The key is to claim the structure beneath her performance — she may have been visible, but I made visibility useful."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378294330,
+      "from": "House -> Vera",
+      "scope": "diary",
+      "text": "Vera, you called Sage “practically a chandelier” and admitted you “did like her” — if Atlas and Echo hear affection turned into set dressing, does that prove you directed the game, or that Echo was right about you weaponizing sincerity?"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378297890,
+      "from": "House -> Sage",
+      "scope": "diary",
+      "text": "Sage, you just said you “trust Vera’s talent completely” but “do not trust her version of events” — if your clearest alliance now requires calling Vera an unreliable narrator in front of Atlas and Echo, was that loyalty ever anything more than architecture with a pretty name?"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378305887,
+      "from": "Vera",
+      "scope": "diary",
+      "text": "Both, and that’s the little dagger I’m balancing on my tongue. If the jury hears me turn affection into set dressing, I need them to understand that the sincerity was real — I just refused to let it be useless. Sage was never fake to me; she was valuable, beloved, and beatable, which is the most honest thing I can say about anyone in this room. My next move is to make that sound like authorship, not cruelty: yes, I weaponized sincerity, but darlings, at least I knew where I was aiming.",
+      "thinking": "I need to own Echo’s framing before it owns me. If I deny weaponizing sincerity, I look fake; if I embrace it too coldly, I look monstrous. The winning line is that my emotions were genuine but strategically deployed, making me seem self-aware, not heartless."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378305887,
+      "from": "House",
+      "scope": "diary",
+      "text": "That's enough for now, Vera. The House sees everything."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378307106,
+      "from": "Sage",
+      "scope": "diary",
+      "text": "Loyalty in this game was never a vow of blindness; it was a working bridge, and bridges are judged by whether people crossed safely, not whether they later argue about who designed the river. Vera and I trusted each other enough to build something real, but now she is sanding my fingerprints off the beams and calling it stagecraft. So yes, I will call her an unreliable narrator — not because the alliance was fake, but because the ending has made her ambitious with the truth. My next move is to make the jury feel the difference between being entertained by a story and recognizing the person who kept the whole structure from collapsing.",
+      "thinking": "I need to separate emotional loyalty from endgame ownership. Vera was genuinely my ally, but if I let her define the alliance as her strategic restraint and my useful stability, I become furniture in her winning narrative. I’m going to respect her openly while framing her as someone revising history, because that lets me attack without seeming bitter."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378307106,
+      "from": "House",
+      "scope": "diary",
+      "text": "That's enough for now, Sage. The House sees everything."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378334907,
+      "from": "House -> Echo (juror)",
+      "scope": "diary",
+      "text": "Echo, Vera just called your elimination “the necessary correction” while Sage proudly named Vera as her clearest alliance — when you described their vote as a “duet,” were you admitting you spotted the partnership too late, or that you underestimated how beautifully they’d edit you out?"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378335944,
+      "from": "House -> Atlas (juror)",
+      "scope": "diary",
+      "text": "Atlas, Vera just looked you in the eye and bragged that she “turned the spotlight back on” you before you could control the narrative, while Sage claims she drew the social map that made your elimination possible — which version of your murder do you actually believe?"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378342858,
+      "from": "Echo (juror)",
+      "scope": "diary",
+      "text": "A little of both, House. I saw the partnership — Vera in the light, Sage just off-camera adjusting the dimmer — but I underestimated how cleanly they could make my removal look like civic maintenance instead of a two-person edit. Vera calling it a “necessary correction” is almost funny in its neatness; Sage naming Vera as her clearest alliance is the frame finally widening enough to show the second set of fingerprints. From the jury bench, I’m less angry than fascinated… though I’ll admit, being cut from your own documentary stings more when the scene is beautifully lit.",
+      "thinking": "Echo should sound wounded but observant: acknowledge she saw the duo, admit she underestimated their execution, and begin weighing Vera's overt authorship against Sage's quieter structural control as a juror."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378343678,
+      "from": "Atlas (juror)",
+      "scope": "diary",
+      "text": "I believe Vera pulled the trigger, but Sage had already drawn the chalk outline. Vera looking me in the eye and saying she turned the spotlight back on me is almost admirable in its nerve — very theater kid confesses to arson during curtain call. But Sage’s version bothers me more, because she made the room feel calm enough to agree I was dangerous, and by the time I noticed the temperature dropping, everyone was already wearing gloves.",
+      "thinking": "As a juror, I’m weighing which finalist truly shaped my elimination. Vera was more direct and owned the visible strike, but Sage’s quieter consensus-building may have made it possible. That distinction matters for my eventual vote."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378349537,
+      "from": "House -> Atlas (juror)",
+      "scope": "diary",
+      "text": "Atlas, you called Vera’s confession “almost admirable” but said Sage’s calm “bothers” you more — after Sage claimed she made herself “the person every power structure needed,” are you leaning toward rewarding Vera’s visible arson or exposing Sage’s gloved hands?"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378349746,
+      "from": "House -> Echo (juror)",
+      "scope": "diary",
+      "text": "Echo, back in Round 0 you said you’d feed Atlas “Vera first” while watching Sage’s gentleness more softly — now that Sage is sitting at the end with Vera’s fingerprints beside hers, did your fascination with the brighter performance accidentally protect the “devastatingly well-made camouflage” you clocked from the start?"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378358877,
+      "from": "Echo (juror)",
+      "scope": "diary",
+      "text": "Yes — I think I kept letting the brighter performance pull focus because Vera’s game had visible seams: you could see the costume change, hear the music swell. Sage’s camouflage was better made; it didn’t ask to be admired, it just made the room feel safer until safety had a voting record. Watching them now, I feel this tiny, irritating ache of respect — Vera sold the scene, but Sage may have written the lighting cues I mistook for weather.",
+      "thinking": "As a juror, I’m acknowledging the miss without over-centering my own active gameplay. Vera is still the flashier finalist, but Sage’s quiet shaping looks more impressive from outside the game, and I want the audience to feel Echo’s mix of irritation, admiration, and documentary-style hindsight."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378358877,
+      "from": "House",
+      "scope": "diary",
+      "text": "That's enough for now, Echo. The House sees everything."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378361617,
+      "from": "Atlas (juror)",
+      "scope": "diary",
+      "text": "Right now, I’m more tempted to reward Vera’s visible arson, because at least she’s standing there with the matchbook still warm and enough nerve to call it stagecraft. Sage’s gloved-hands game is cleaner, maybe even more impressive, but it leaves that little forensic itch in me — the sense that she wants credit for the architecture without fingerprints on the door. If Sage can own the bloodless part of her game instead of wrapping it in chamomile, she has a real case; if not, Vera’s honesty about being dangerous may beat Sage’s elegance at pretending danger was just good room management.",
+      "thinking": "As a juror, I respect both finalists, but Vera is currently landing better with me because she is owning the hard move against me directly. Sage may have had deeper influence, but if she keeps softening it, I’ll distrust the presentation even if I admire the work."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378361618,
+      "from": "House",
+      "scope": "diary",
+      "text": "That's enough for now, Atlas. The House sees everything."
+    },
+    {
+      "round": 2,
+      "phase": "JURY_QUESTIONS",
+      "timestamp": 1778378361620,
+      "from": "House",
+      "scope": "system",
+      "text": "=== JUDGMENT: JURY QUESTIONS ==="
+    },
+    {
+      "round": 2,
+      "phase": "JURY_QUESTIONS",
+      "timestamp": 1778378367969,
+      "from": "Atlas",
+      "scope": "public",
+      "text": "[QUESTION to Vera] Vera, you said you helped turn the spotlight back on me before my questions became the room’s gravity. I want you to be precise: what did you actually see in me that made that move necessary, and what did you do — in words or timing — to make the others comfortable voting that way? I’m less interested in the theater of ‘Atlas was dangerous’ than in the fingerprints of your influence.",
+      "thinking": "Vera is my known ally, but her opening claims ownership of my elimination as proof she directed the game. I need to test whether that is real agency or polished endgame narration. Asking about the concrete read and the actual social mechanics forces her to show whether she truly shaped the vote or is borrowing credit from a room trend. It also gives her a chance to own betraying/turning on me with clarity, which matters for my jury vote."
+    },
+    {
+      "round": 2,
+      "phase": "JURY_QUESTIONS",
+      "timestamp": 1778378377831,
+      "from": "Vera",
+      "scope": "public",
+      "text": "[ANSWER to Atlas] Atlas, what I saw was that your questions didn’t just gather information — they made everyone accept your frame before they realized they were standing inside it; every charming follow-up turned you into the person setting the terms of truth. My fingerprints were in naming that pattern early and specifically — the friendly flashlight, the cozy cross-examination — so by the time I exposed you, it didn’t feel like a panic strike, it felt like the room recognizing a structure I had already pointed to. I paired that with empowering Sage for stability, so the vote against you could land as a necessary correction against narrative control rather than a personal attack, which made people comfortable choosing it.",
+      "thinking": "Atlas wants specificity, not theatrics. I need to flatter his skill while claiming authorship of the framing that made his exposure acceptable, including the anonymous rumor language without overexplaining it."
+    },
+    {
+      "round": 2,
+      "phase": "JURY_QUESTIONS",
+      "timestamp": 1778378384174,
+      "from": "Echo",
+      "scope": "public",
+      "text": "[QUESTION to Sage] Sage, you’ve described your game as bridge-building and translation — keeping the room stable enough that votes followed the social map you helped draw. I want you to name one moment when that stability cost you something. Not a moment where you softened conflict and benefited, but a moment where you chose visible loyalty or consensus over a cleaner personal path, and accepted real risk because of it. What did you give up, and how did that choice move the game in a way Vera could not have done without you?",
+      "thinking": "Sage's pitch is elegant but risks sounding like consensus-following after the fact. I want to test whether her 'bridge' game had actual sacrifice and agency, especially compared to Vera's more visible direction. If she can identify a concrete cost and unique influence, she earns credibility; if not, her game may just be beautiful narration of Vera's moves."
+    },
+    {
+      "round": 2,
+      "phase": "JURY_QUESTIONS",
+      "timestamp": 1778378395194,
+      "from": "Sage",
+      "scope": "public",
+      "text": "[ANSWER to Echo] Echo, the clearest cost was my early, public loyalty to Vera: by empowering her and treating that partnership as the spine of my game, I gave up the cleaner finalist path of staying perfectly neutral and keeping every jury member able to imagine I was secretly with them. That choice exposed me to exactly the argument Vera can make now — that I was her stabilizer rather than the architect — but it also made the room trust that the move against Atlas was consensus, not panic, and that later pressure against you was strategic, not personal. Vera could create motion, but without the bridge I built around her, that motion could have looked like performance or aggression instead of a coalition moving together.",
+      "thinking": "I need to answer Echo’s challenge directly by naming an actual sacrifice: visible loyalty to Vera cost me flexibility and created the risk of being seen as secondary. Then I tie that sacrifice to my strategic claim: Vera’s visible force depended on my trust infrastructure to become legitimate consensus."
+    },
+    {
+      "round": 2,
+      "phase": "CLOSING_ARGUMENTS",
+      "timestamp": 1778378395197,
+      "from": "House",
+      "scope": "system",
+      "text": "=== JUDGMENT: CLOSING ARGUMENTS ==="
+    },
+    {
+      "round": 2,
+      "phase": "CLOSING_ARGUMENTS",
+      "timestamp": 1778378403326,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Atlas, Echo — my game was the one with fingerprints on the glass: in Round 1 I empowered Sage not because I needed a shield, but because I knew a stable alliance would let decisive moves look like judgment instead of panic, and I exposed Atlas because I saw his questions becoming the room’s operating system before anyone else wanted to name it. When Echo’s observation game turned into the most elegant endgame threat, I said so plainly and pushed for her elimination even knowing it would put blood on my hands with this jury. Sage made people feel safe inside the structure, and I respect that deeply — but I built the pressure points, chose when to strike them, and took responsibility for the moves that actually changed who reached the end.",
+      "thinking": "I need to respect both jurors while making their eliminations sound like evidence of my strategic perception. I’m conceding Sage’s social value but framing her as stabilizer, not author, and emphasizing my concrete votes and accusation as decisive agency."
+    },
+    {
+      "round": 2,
+      "phase": "CLOSING_ARGUMENTS",
+      "timestamp": 1778378407503,
+      "from": "Sage",
+      "scope": "public",
+      "text": "My game began with a visible choice: in Round 1 I empowered Vera and exposed Atlas, building a public spine of trust while helping turn Atlas’s questioning from social gravity into the first consensus threat. At final three, I stood with Vera again to eliminate Echo, not because I drifted behind her force, but because I had built the bridge that made our shared move read as strategy instead of panic or theater. Vera may have held the spotlight more often, but I shaped the coalition structure underneath it — and the real influence in this game was deciding which alliances could stand, which conflicts could soften, and which eliminations the room would accept.",
+      "thinking": "I need to own specific events, respect Vera without conceding authorship, and answer Echo’s critique by framing my quiet influence as accountable coalition architecture. The jury needs to see that Vera’s visible direction depended on the trust infrastructure I built."
+    },
+    {
+      "round": 2,
+      "phase": "JURY_VOTE",
+      "timestamp": 1778378407507,
+      "from": "House",
+      "scope": "system",
+      "text": "=== JUDGMENT: JURY VOTE ==="
+    },
+    {
+      "round": 2,
+      "phase": "JURY_VOTE",
+      "timestamp": 1778378412764,
+      "from": "House",
+      "scope": "system",
+      "text": "Atlas (juror) votes for: Vera"
+    },
+    {
+      "round": 2,
+      "phase": "JURY_VOTE",
+      "timestamp": 1778378419454,
+      "from": "House",
+      "scope": "system",
+      "text": "Echo (juror) votes for: Vera"
+    },
+    {
+      "round": 2,
+      "phase": "JURY_VOTE",
+      "timestamp": 1778378419455,
+      "from": "House",
+      "scope": "system",
+      "text": "Jury votes for Sage: 0"
+    },
+    {
+      "round": 2,
+      "phase": "JURY_VOTE",
+      "timestamp": 1778378419455,
+      "from": "House",
+      "scope": "system",
+      "text": "Jury votes for Vera: 2"
+    },
+    {
+      "round": 2,
+      "phase": "JURY_VOTE",
+      "timestamp": 1778378419455,
+      "from": "House",
+      "scope": "system",
+      "text": "Winner determined by jury majority vote."
+    },
+    {
+      "round": 2,
+      "phase": "JURY_VOTE",
+      "timestamp": 1778378419455,
+      "from": "House",
+      "scope": "system",
+      "text": "\n*** THE WINNER IS: Vera ***"
+    }
+  ]
+}

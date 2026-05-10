@@ -19,6 +19,8 @@ export interface ReplayScene {
 
 export interface WhisperRoomStage {
   roomId: number;
+  beat?: number;
+  localRoomNumber?: number;
   playerIds: string[];
   playerNames: string[];
   messages: TranscriptEntry[];
@@ -28,6 +30,7 @@ export interface WhisperStageData {
   allocationText: string | null;
   rooms: WhisperRoomStage[];
   commons: GamePlayer[];
+  hasRoomMetadata?: boolean;
 }
 
 export interface TransitionState {

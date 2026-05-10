@@ -4,9 +4,11 @@ import {
   computeAggregateStats,
   isOpenWhisperVariant,
   isPowerLobbyVariant,
+  parseArgs,
   type GameResult,
 } from "../simulate";
 import { instrumentGame } from "../simulation-instrumentation";
+import { DEFAULT_CONFIG } from "../types";
 import type { TokenUsage } from "../token-tracker";
 
 const ZERO_USAGE: TokenUsage = {
@@ -32,6 +34,7 @@ function gameResult(overrides: Partial<GameResult>): GameResult {
     durationMs: 100,
     transcriptPath: "game-1.txt",
     jsonPath: "game-1.json",
+    progressPath: "game-1-progress.jsonl",
     tokenUsage: {
       perAgent: {},
       total: ZERO_USAGE,
@@ -87,6 +90,8 @@ describe("simulation variant config", () => {
         personas: null,
         model: "gpt-5-nano",
         variant: "power-lobby-diversity-whisper",
+        gameTimeoutMs: 600000,
+        llmTimeoutMs: 45000,
       },
     };
 
@@ -115,5 +120,29 @@ describe("simulation variant config", () => {
     expect(stats.partial).toBe(true);
     expect(stats.totalGames).toBe(1);
     expect(stats.instrumentation.totalGames).toBe(1);
+  });
+
+  it("accepts the configured max player count for CLI simulation runs", () => {
+    const args = parseArgs(["--players", String(DEFAULT_CONFIG.maxPlayers)]);
+
+    expect(args.players).toBe(DEFAULT_CONFIG.maxPlayers);
+  });
+
+  it("clamps CLI player count to configured max players", () => {
+    const args = parseArgs(["--players", String(DEFAULT_CONFIG.maxPlayers + 4)]);
+
+    expect(args.players).toBe(DEFAULT_CONFIG.maxPlayers);
+  });
+
+  it("parses bounded simulation timeout flags", () => {
+    const args = parseArgs([
+      "--game-timeout-sec",
+      "30",
+      "--llm-timeout-ms",
+      "5000",
+    ]);
+
+    expect(args.gameTimeoutMs).toBe(30000);
+    expect(args.llmTimeoutMs).toBe(5000);
   });
 });

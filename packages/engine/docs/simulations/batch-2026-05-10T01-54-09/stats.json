@@ -1,0 +1,840 @@
+{
+  "metadata": {
+    "variant": "baseline",
+    "timestamp": "2026-05-10T01:54:09.279Z",
+    "command": "/usr/lib/node_modules/bun/bin/bun.exe /home/paperclip/.paperclip/instances/default/projects/efa7c0e1-047f-40ae-8dda-212aa9ae25a0/50f54176-8cc9-4aa0-9168-6a69e88223dd/influence-game/packages/engine/src/simulate.ts --games 1 --players 4 --model gpt-5.5 --variant baseline",
+    "cwd": "/home/paperclip/.paperclip/instances/default/projects/efa7c0e1-047f-40ae-8dda-212aa9ae25a0/50f54176-8cc9-4aa0-9168-6a69e88223dd/influence-game/packages/engine",
+    "git": {
+      "branch": "fix/inf-212-open-room-backend-gaps",
+      "commitSha": "74888d72f6419bfdcbee75f12e76b90946fc76be",
+      "commitShortSha": "74888d7",
+      "isDirty": true
+    },
+    "args": {
+      "games": 1,
+      "players": 4,
+      "personas": null,
+      "model": "gpt-5.5",
+      "variant": "baseline"
+    }
+  },
+  "requestedGames": 1,
+  "attemptedGames": 1,
+  "totalGames": 1,
+  "completedGames": 1,
+  "failedGames": 0,
+  "partial": false,
+  "model": "gpt-5.5",
+  "perPersona": {
+    "strategic": {
+      "gamesPlayed": 1,
+      "wins": 0,
+      "winRate": 0,
+      "avgSurvivalRound": 1,
+      "timesEmpowered": 0,
+      "timesOnJury": 0
+    },
+    "diplomat": {
+      "gamesPlayed": 1,
+      "wins": 0,
+      "winRate": 0,
+      "avgSurvivalRound": 2,
+      "timesEmpowered": 0,
+      "timesOnJury": 0
+    },
+    "deceptive": {
+      "gamesPlayed": 1,
+      "wins": 1,
+      "winRate": 1,
+      "avgSurvivalRound": 2,
+      "timesEmpowered": 0,
+      "timesOnJury": 0
+    },
+    "observer": {
+      "gamesPlayed": 1,
+      "wins": 0,
+      "winRate": 0,
+      "avgSurvivalRound": 2,
+      "timesEmpowered": 0,
+      "timesOnJury": 0
+    }
+  },
+  "perEndgameType": {
+    "judgment": 1
+  },
+  "overall": {
+    "avgGameLength": 2,
+    "roundDistribution": {
+      "2": 1
+    },
+    "avgDurationMs": 370162
+  },
+  "tokenUsage": {
+    "total": {
+      "promptTokens": 281227,
+      "cachedTokens": 12032,
+      "completionTokens": 26798,
+      "reasoningTokens": 4742,
+      "totalTokens": 308025,
+      "callCount": 111,
+      "emptyResponses": 0
+    },
+    "costEstimates": [
+      {
+        "model": "gpt-4o-mini",
+        "inputCost": 0.04218405,
+        "outputCost": 0.016078799999999997,
+        "totalCost": 0.05826285
+      },
+      {
+        "model": "gpt-4o",
+        "inputCost": 0.7030675000000001,
+        "outputCost": 0.26798,
+        "totalCost": 0.9710475000000001
+      },
+      {
+        "model": "o4-mini",
+        "inputCost": 0.30934970000000006,
+        "outputCost": 0.11791120000000001,
+        "totalCost": 0.42726090000000005
+      },
+      {
+        "model": "gpt-4.1-nano",
+        "inputCost": 0.028122700000000004,
+        "outputCost": 0.0107192,
+        "totalCost": 0.038841900000000006
+      },
+      {
+        "model": "gpt-4.1-mini",
+        "inputCost": 0.11249080000000002,
+        "outputCost": 0.0428768,
+        "totalCost": 0.15536760000000002
+      },
+      {
+        "model": "gpt-4.1",
+        "inputCost": 0.562454,
+        "outputCost": 0.214384,
+        "totalCost": 0.776838
+      },
+      {
+        "model": "gpt-5-nano",
+        "inputCost": 0.013519910000000001,
+        "outputCost": 0.0107192,
+        "totalCost": 0.02423911
+      },
+      {
+        "model": "gpt-5-mini",
+        "inputCost": 0.06759955000000001,
+        "outputCost": 0.053596,
+        "totalCost": 0.12119555000000001
+      },
+      {
+        "model": "gpt-5",
+        "inputCost": 0.33799775000000004,
+        "outputCost": 0.26798,
+        "totalCost": 0.6059777500000001
+      },
+      {
+        "model": "gpt-5.4-mini",
+        "inputCost": 0.20279865,
+        "outputCost": 0.12059099999999999,
+        "totalCost": 0.32338965
+      }
+    ]
+  },
+  "instrumentation": {
+    "totalGames": 1,
+    "powerActions": {
+      "total": 1,
+      "counts": {
+        "eliminate": 1,
+        "protect": 0,
+        "pass": 0
+      },
+      "actions": [
+        {
+          "actor": "Vera",
+          "action": "eliminate",
+          "target": "Atlas",
+          "round": 1,
+          "text": "Vera power action: eliminate -> Atlas"
+        }
+      ],
+      "actorCounts": {
+        "Vera": 1
+      },
+      "actionDistributionByActor": {
+        "Vera": {
+          "eliminate": 1,
+          "protect": 0,
+          "pass": 0
+        }
+      },
+      "consecutiveEliminates": {
+        "total": 0,
+        "occurrences": []
+      },
+      "repeatedProtectSameTarget": {
+        "total": 0,
+        "repeats": []
+      }
+    },
+    "autoEliminations": {
+      "total": 1,
+      "eliminations": [
+        {
+          "round": 1,
+          "target": "Atlas",
+          "text": "AUTO-ELIMINATE: Atlas"
+        }
+      ]
+    },
+    "council": {
+      "revealPhases": 0,
+      "councilPhases": 0,
+      "councilVotes": 0,
+      "candidatePairs": []
+    },
+    "endgame": {
+      "reckoning": 0,
+      "tribunal": 4,
+      "judgment": 5,
+      "juryQuestions": 1,
+      "juryVotes": 1,
+      "byPhase": {
+        "ACCUSATION": 4,
+        "DEFENSE": 3,
+        "OPENING_STATEMENTS": 8,
+        "JURY_QUESTIONS": 5,
+        "CLOSING_ARGUMENTS": 3,
+        "JURY_VOTE": 7
+      }
+    },
+    "rooms": {
+      "totalRooms": 0,
+      "whisperRounds": 0,
+      "participationByPlayer": {},
+      "exclusionsByPlayer": {},
+      "totalExclusions": 0,
+      "pairs": [],
+      "repeatedPairs": {
+        "totalRepeatedOccurrences": 0,
+        "maxPairCount": 0,
+        "maxPairShareOfRooms": 0,
+        "maxPairShareOfWhisperRounds": 0,
+        "pairs": []
+      },
+      "whisperSessions": [],
+      "requestSatisfaction": {
+        "validRequests": 0,
+        "mutualHonored": 0,
+        "oneWayHonored": 0,
+        "unmatchedValidRequests": 0,
+        "invalidOrMissingRequests": 0
+      },
+      "repeatPairFlags": {
+        "immediateRepeats": 0,
+        "repeatedPairs": 0,
+        "noFullNonRepeatMatchingExists": false,
+        "sessionsWithImmediateRepeats": 0,
+        "sessionsWithoutFullNonRepeatMatching": 0
+      },
+      "exclusionFlags": {
+        "consecutiveExclusions": 0,
+        "avoidableConsecutiveExclusions": 0,
+        "sessionsWithConsecutiveExclusions": 0
+      }
+    },
+    "actionUsage": {
+      "totalCalls": 111,
+      "totalEmptyResponses": 0,
+      "emptyResponseRate": 0,
+      "byAction": {
+        "introduction": {
+          "callCount": 4,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 3120
+        },
+        "question": {
+          "callCount": 8,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 18038
+        },
+        "diary": {
+          "callCount": 16,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 43072
+        },
+        "followup": {
+          "callCount": 8,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 22765
+        },
+        "reflection": {
+          "callCount": 10,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 26679
+        },
+        "lobby-intent": {
+          "callCount": 7,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 15448
+        },
+        "lobby": {
+          "callCount": 28,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 79799
+        },
+        "rumor": {
+          "callCount": 4,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 10275
+        },
+        "vote": {
+          "callCount": 4,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 10436
+        },
+        "power": {
+          "callCount": 1,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 3647
+        },
+        "last-message": {
+          "callCount": 2,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 6240
+        },
+        "accusation": {
+          "callCount": 3,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 9934
+        },
+        "tribunal-defense": {
+          "callCount": 2,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 8305
+        },
+        "elimination-vote": {
+          "callCount": 4,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 14691
+        },
+        "opening-statement": {
+          "callCount": 2,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 7766
+        },
+        "jury-question": {
+          "callCount": 2,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 7223
+        },
+        "jury-answer": {
+          "callCount": 2,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 7593
+        },
+        "closing-argument": {
+          "callCount": 2,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 6880
+        },
+        "jury-vote": {
+          "callCount": 2,
+          "emptyResponses": 0,
+          "emptyResponseRate": 0,
+          "totalTokens": 6114
+        }
+      },
+      "bySource": {
+        "Echo/introduction": {
+          "promptTokens": 617,
+          "cachedTokens": 0,
+          "completionTokens": 124,
+          "reasoningTokens": 0,
+          "totalTokens": 741,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/introduction": {
+          "promptTokens": 610,
+          "cachedTokens": 0,
+          "completionTokens": 117,
+          "reasoningTokens": 0,
+          "totalTokens": 727,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/introduction": {
+          "promptTokens": 625,
+          "cachedTokens": 0,
+          "completionTokens": 138,
+          "reasoningTokens": 0,
+          "totalTokens": 763,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/introduction": {
+          "promptTokens": 735,
+          "cachedTokens": 0,
+          "completionTokens": 154,
+          "reasoningTokens": 0,
+          "totalTokens": 889,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "House/question": {
+          "promptTokens": 17019,
+          "cachedTokens": 0,
+          "completionTokens": 1019,
+          "reasoningTokens": 524,
+          "totalTokens": 18038,
+          "callCount": 8,
+          "emptyResponses": 0
+        },
+        "Atlas/diary": {
+          "promptTokens": 9908,
+          "cachedTokens": 2816,
+          "completionTokens": 1076,
+          "reasoningTokens": 294,
+          "totalTokens": 10984,
+          "callCount": 4,
+          "emptyResponses": 0
+        },
+        "Echo/diary": {
+          "promptTokens": 9363,
+          "cachedTokens": 2816,
+          "completionTokens": 969,
+          "reasoningTokens": 193,
+          "totalTokens": 10332,
+          "callCount": 4,
+          "emptyResponses": 0
+        },
+        "Vera/diary": {
+          "promptTokens": 9686,
+          "cachedTokens": 0,
+          "completionTokens": 1215,
+          "reasoningTokens": 389,
+          "totalTokens": 10901,
+          "callCount": 4,
+          "emptyResponses": 0
+        },
+        "Sage/diary": {
+          "promptTokens": 9650,
+          "cachedTokens": 2816,
+          "completionTokens": 1205,
+          "reasoningTokens": 354,
+          "totalTokens": 10855,
+          "callCount": 4,
+          "emptyResponses": 0
+        },
+        "House/followup": {
+          "promptTokens": 21249,
+          "cachedTokens": 3584,
+          "completionTokens": 1516,
+          "reasoningTokens": 1001,
+          "totalTokens": 22765,
+          "callCount": 8,
+          "emptyResponses": 0
+        },
+        "Echo/reflection": {
+          "promptTokens": 3332,
+          "cachedTokens": 0,
+          "completionTokens": 892,
+          "reasoningTokens": 0,
+          "totalTokens": 4224,
+          "callCount": 2,
+          "emptyResponses": 0
+        },
+        "Vera/reflection": {
+          "promptTokens": 6936,
+          "cachedTokens": 0,
+          "completionTokens": 1829,
+          "reasoningTokens": 0,
+          "totalTokens": 8765,
+          "callCount": 3,
+          "emptyResponses": 0
+        },
+        "Atlas/reflection": {
+          "promptTokens": 3648,
+          "cachedTokens": 0,
+          "completionTokens": 1000,
+          "reasoningTokens": 0,
+          "totalTokens": 4648,
+          "callCount": 2,
+          "emptyResponses": 0
+        },
+        "Sage/reflection": {
+          "promptTokens": 7020,
+          "cachedTokens": 0,
+          "completionTokens": 2022,
+          "reasoningTokens": 0,
+          "totalTokens": 9042,
+          "callCount": 3,
+          "emptyResponses": 0
+        },
+        "Vera/lobby-intent": {
+          "promptTokens": 4457,
+          "cachedTokens": 0,
+          "completionTokens": 151,
+          "reasoningTokens": 0,
+          "totalTokens": 4608,
+          "callCount": 2,
+          "emptyResponses": 0
+        },
+        "Atlas/lobby-intent": {
+          "promptTokens": 1663,
+          "cachedTokens": 0,
+          "completionTokens": 76,
+          "reasoningTokens": 0,
+          "totalTokens": 1739,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/lobby-intent": {
+          "promptTokens": 4555,
+          "cachedTokens": 0,
+          "completionTokens": 169,
+          "reasoningTokens": 0,
+          "totalTokens": 4724,
+          "callCount": 2,
+          "emptyResponses": 0
+        },
+        "Echo/lobby-intent": {
+          "promptTokens": 4211,
+          "cachedTokens": 0,
+          "completionTokens": 166,
+          "reasoningTokens": 0,
+          "totalTokens": 4377,
+          "callCount": 2,
+          "emptyResponses": 0
+        },
+        "Sage/lobby": {
+          "promptTokens": 22342,
+          "cachedTokens": 0,
+          "completionTokens": 1426,
+          "reasoningTokens": 0,
+          "totalTokens": 23768,
+          "callCount": 8,
+          "emptyResponses": 0
+        },
+        "Atlas/lobby": {
+          "promptTokens": 9682,
+          "cachedTokens": 0,
+          "completionTokens": 653,
+          "reasoningTokens": 0,
+          "totalTokens": 10335,
+          "callCount": 4,
+          "emptyResponses": 0
+        },
+        "Echo/lobby": {
+          "promptTokens": 20954,
+          "cachedTokens": 0,
+          "completionTokens": 1404,
+          "reasoningTokens": 0,
+          "totalTokens": 22358,
+          "callCount": 8,
+          "emptyResponses": 0
+        },
+        "Vera/lobby": {
+          "promptTokens": 21878,
+          "cachedTokens": 0,
+          "completionTokens": 1460,
+          "reasoningTokens": 31,
+          "totalTokens": 23338,
+          "callCount": 8,
+          "emptyResponses": 0
+        },
+        "Sage/rumor": {
+          "promptTokens": 2496,
+          "cachedTokens": 0,
+          "completionTokens": 96,
+          "reasoningTokens": 0,
+          "totalTokens": 2592,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Echo/rumor": {
+          "promptTokens": 2360,
+          "cachedTokens": 0,
+          "completionTokens": 109,
+          "reasoningTokens": 0,
+          "totalTokens": 2469,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/rumor": {
+          "promptTokens": 2404,
+          "cachedTokens": 0,
+          "completionTokens": 123,
+          "reasoningTokens": 17,
+          "totalTokens": 2527,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/rumor": {
+          "promptTokens": 2556,
+          "cachedTokens": 0,
+          "completionTokens": 131,
+          "reasoningTokens": 17,
+          "totalTokens": 2687,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/vote": {
+          "promptTokens": 2469,
+          "cachedTokens": 0,
+          "completionTokens": 150,
+          "reasoningTokens": 0,
+          "totalTokens": 2619,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Echo/vote": {
+          "promptTokens": 2333,
+          "cachedTokens": 0,
+          "completionTokens": 170,
+          "reasoningTokens": 0,
+          "totalTokens": 2503,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/vote": {
+          "promptTokens": 2377,
+          "cachedTokens": 0,
+          "completionTokens": 188,
+          "reasoningTokens": 0,
+          "totalTokens": 2565,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/vote": {
+          "promptTokens": 2530,
+          "cachedTokens": 0,
+          "completionTokens": 219,
+          "reasoningTokens": 0,
+          "totalTokens": 2749,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/power": {
+          "promptTokens": 3186,
+          "cachedTokens": 0,
+          "completionTokens": 461,
+          "reasoningTokens": 228,
+          "totalTokens": 3647,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/last-message": {
+          "promptTokens": 2701,
+          "cachedTokens": 0,
+          "completionTokens": 139,
+          "reasoningTokens": 0,
+          "totalTokens": 2840,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Echo/accusation": {
+          "promptTokens": 2721,
+          "cachedTokens": 0,
+          "completionTokens": 413,
+          "reasoningTokens": 0,
+          "totalTokens": 3134,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/accusation": {
+          "promptTokens": 2944,
+          "cachedTokens": 0,
+          "completionTokens": 490,
+          "reasoningTokens": 0,
+          "totalTokens": 3434,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/accusation": {
+          "promptTokens": 2923,
+          "cachedTokens": 0,
+          "completionTokens": 443,
+          "reasoningTokens": 0,
+          "totalTokens": 3366,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/tribunal-defense": {
+          "promptTokens": 3745,
+          "cachedTokens": 0,
+          "completionTokens": 399,
+          "reasoningTokens": 209,
+          "totalTokens": 4144,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Echo/tribunal-defense": {
+          "promptTokens": 3579,
+          "cachedTokens": 0,
+          "completionTokens": 582,
+          "reasoningTokens": 396,
+          "totalTokens": 4161,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/elimination-vote": {
+          "promptTokens": 3576,
+          "cachedTokens": 0,
+          "completionTokens": 101,
+          "reasoningTokens": 0,
+          "totalTokens": 3677,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Echo/elimination-vote": {
+          "promptTokens": 3353,
+          "cachedTokens": 0,
+          "completionTokens": 193,
+          "reasoningTokens": 0,
+          "totalTokens": 3546,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/elimination-vote": {
+          "promptTokens": 3555,
+          "cachedTokens": 0,
+          "completionTokens": 186,
+          "reasoningTokens": 0,
+          "totalTokens": 3741,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/elimination-vote": {
+          "promptTokens": 3526,
+          "cachedTokens": 0,
+          "completionTokens": 201,
+          "reasoningTokens": 0,
+          "totalTokens": 3727,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Echo/last-message": {
+          "promptTokens": 3280,
+          "cachedTokens": 0,
+          "completionTokens": 120,
+          "reasoningTokens": 0,
+          "totalTokens": 3400,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/opening-statement": {
+          "promptTokens": 3417,
+          "cachedTokens": 0,
+          "completionTokens": 416,
+          "reasoningTokens": 184,
+          "totalTokens": 3833,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/opening-statement": {
+          "promptTokens": 3438,
+          "cachedTokens": 0,
+          "completionTokens": 495,
+          "reasoningTokens": 303,
+          "totalTokens": 3933,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/jury-question": {
+          "promptTokens": 3492,
+          "cachedTokens": 0,
+          "completionTokens": 199,
+          "reasoningTokens": 0,
+          "totalTokens": 3691,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/jury-answer": {
+          "promptTokens": 3486,
+          "cachedTokens": 0,
+          "completionTokens": 308,
+          "reasoningTokens": 118,
+          "totalTokens": 3794,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Echo/jury-question": {
+          "promptTokens": 3332,
+          "cachedTokens": 0,
+          "completionTokens": 200,
+          "reasoningTokens": 0,
+          "totalTokens": 3532,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/jury-answer": {
+          "promptTokens": 3407,
+          "cachedTokens": 0,
+          "completionTokens": 392,
+          "reasoningTokens": 180,
+          "totalTokens": 3799,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/closing-argument": {
+          "promptTokens": 3047,
+          "cachedTokens": 0,
+          "completionTokens": 289,
+          "reasoningTokens": 73,
+          "totalTokens": 3336,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Sage/closing-argument": {
+          "promptTokens": 3117,
+          "cachedTokens": 0,
+          "completionTokens": 427,
+          "reasoningTokens": 231,
+          "totalTokens": 3544,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/jury-vote": {
+          "promptTokens": 2951,
+          "cachedTokens": 0,
+          "completionTokens": 182,
+          "reasoningTokens": 0,
+          "totalTokens": 3133,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Echo/jury-vote": {
+          "promptTokens": 2786,
+          "cachedTokens": 0,
+          "completionTokens": 195,
+          "reasoningTokens": 0,
+          "totalTokens": 2981,
+          "callCount": 1,
+          "emptyResponses": 0
+        }
+      }
+    }
+  }
+}

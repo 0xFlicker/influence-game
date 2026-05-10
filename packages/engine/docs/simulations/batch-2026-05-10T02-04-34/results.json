@@ -1,0 +1,2156 @@
+{
+  "metadata": {
+    "variant": "baseline",
+    "timestamp": "2026-05-10T02:04:34.371Z",
+    "command": "/usr/lib/node_modules/bun/bin/bun.exe /home/paperclip/.paperclip/instances/default/projects/efa7c0e1-047f-40ae-8dda-212aa9ae25a0/50f54176-8cc9-4aa0-9168-6a69e88223dd/influence-game/packages/engine/src/simulate.ts --games 1 --players 4 --model gpt-5.4-nano --variant baseline",
+    "cwd": "/home/paperclip/.paperclip/instances/default/projects/efa7c0e1-047f-40ae-8dda-212aa9ae25a0/50f54176-8cc9-4aa0-9168-6a69e88223dd/influence-game/packages/engine",
+    "git": {
+      "branch": "fix/inf-212-open-room-backend-gaps",
+      "commitSha": "752363baf03a4043ea884bed8d306590102a9f50",
+      "commitShortSha": "752363b",
+      "isDirty": true
+    },
+    "args": {
+      "games": 1,
+      "players": 4,
+      "personas": null,
+      "model": "gpt-5.4-nano",
+      "variant": "baseline"
+    }
+  },
+  "stats": {
+    "metadata": {
+      "variant": "baseline",
+      "timestamp": "2026-05-10T02:04:34.371Z",
+      "command": "/usr/lib/node_modules/bun/bin/bun.exe /home/paperclip/.paperclip/instances/default/projects/efa7c0e1-047f-40ae-8dda-212aa9ae25a0/50f54176-8cc9-4aa0-9168-6a69e88223dd/influence-game/packages/engine/src/simulate.ts --games 1 --players 4 --model gpt-5.4-nano --variant baseline",
+      "cwd": "/home/paperclip/.paperclip/instances/default/projects/efa7c0e1-047f-40ae-8dda-212aa9ae25a0/50f54176-8cc9-4aa0-9168-6a69e88223dd/influence-game/packages/engine",
+      "git": {
+        "branch": "fix/inf-212-open-room-backend-gaps",
+        "commitSha": "752363baf03a4043ea884bed8d306590102a9f50",
+        "commitShortSha": "752363b",
+        "isDirty": true
+      },
+      "args": {
+        "games": 1,
+        "players": 4,
+        "personas": null,
+        "model": "gpt-5.4-nano",
+        "variant": "baseline"
+      }
+    },
+    "requestedGames": 1,
+    "attemptedGames": 1,
+    "totalGames": 1,
+    "completedGames": 1,
+    "failedGames": 0,
+    "partial": false,
+    "model": "gpt-5.4-nano",
+    "perPersona": {
+      "wildcard": {
+        "gamesPlayed": 1,
+        "wins": 0,
+        "winRate": 0,
+        "avgSurvivalRound": 1,
+        "timesEmpowered": 0,
+        "timesOnJury": 0
+      },
+      "observer": {
+        "gamesPlayed": 1,
+        "wins": 1,
+        "winRate": 1,
+        "avgSurvivalRound": 2,
+        "timesEmpowered": 0,
+        "timesOnJury": 0
+      },
+      "honest": {
+        "gamesPlayed": 1,
+        "wins": 0,
+        "winRate": 0,
+        "avgSurvivalRound": 2,
+        "timesEmpowered": 0,
+        "timesOnJury": 0
+      },
+      "social": {
+        "gamesPlayed": 1,
+        "wins": 0,
+        "winRate": 0,
+        "avgSurvivalRound": 2,
+        "timesEmpowered": 0,
+        "timesOnJury": 0
+      }
+    },
+    "perEndgameType": {
+      "judgment": 1
+    },
+    "overall": {
+      "avgGameLength": 2,
+      "roundDistribution": {
+        "2": 1
+      },
+      "avgDurationMs": 92585
+    },
+    "tokenUsage": {
+      "total": {
+        "promptTokens": 266739,
+        "cachedTokens": 13568,
+        "completionTokens": 24921,
+        "reasoningTokens": 5697,
+        "totalTokens": 291660,
+        "callCount": 114,
+        "emptyResponses": 0
+      },
+      "costEstimates": [
+        {
+          "model": "gpt-4o-mini",
+          "inputCost": 0.040010849999999994,
+          "outputCost": 0.014952599999999998,
+          "totalCost": 0.05496344999999999
+        },
+        {
+          "model": "gpt-4o",
+          "inputCost": 0.6668474999999999,
+          "outputCost": 0.24921,
+          "totalCost": 0.9160575
+        },
+        {
+          "model": "o4-mini",
+          "inputCost": 0.29341290000000003,
+          "outputCost": 0.1096524,
+          "totalCost": 0.4030653
+        },
+        {
+          "model": "gpt-4.1-nano",
+          "inputCost": 0.0266739,
+          "outputCost": 0.0099684,
+          "totalCost": 0.0366423
+        },
+        {
+          "model": "gpt-4.1-mini",
+          "inputCost": 0.1066956,
+          "outputCost": 0.0398736,
+          "totalCost": 0.1465692
+        },
+        {
+          "model": "gpt-4.1",
+          "inputCost": 0.533478,
+          "outputCost": 0.199368,
+          "totalCost": 0.732846
+        },
+        {
+          "model": "gpt-5-nano",
+          "inputCost": 0.012726389999999999,
+          "outputCost": 0.0099684,
+          "totalCost": 0.02269479
+        },
+        {
+          "model": "gpt-5-mini",
+          "inputCost": 0.06363194999999999,
+          "outputCost": 0.049842,
+          "totalCost": 0.11347394999999999
+        },
+        {
+          "model": "gpt-5",
+          "inputCost": 0.31815974999999996,
+          "outputCost": 0.24921,
+          "totalCost": 0.5673697499999999
+        },
+        {
+          "model": "gpt-5.4-mini",
+          "inputCost": 0.19089584999999998,
+          "outputCost": 0.1121445,
+          "totalCost": 0.30304034999999996
+        }
+      ]
+    },
+    "instrumentation": {
+      "totalGames": 1,
+      "powerActions": {
+        "total": 1,
+        "counts": {
+          "eliminate": 0,
+          "protect": 0,
+          "pass": 1
+        },
+        "actions": [
+          {
+            "actor": "Echo",
+            "action": "pass",
+            "target": "Jace",
+            "round": 1,
+            "text": "Echo power action: pass -> Jace"
+          }
+        ],
+        "actorCounts": {
+          "Echo": 1
+        },
+        "actionDistributionByActor": {
+          "Echo": {
+            "eliminate": 0,
+            "protect": 0,
+            "pass": 1
+          }
+        },
+        "consecutiveEliminates": {
+          "total": 0,
+          "occurrences": []
+        },
+        "repeatedProtectSameTarget": {
+          "total": 0,
+          "repeats": []
+        }
+      },
+      "autoEliminations": {
+        "total": 0,
+        "eliminations": []
+      },
+      "council": {
+        "revealPhases": 1,
+        "councilPhases": 1,
+        "councilVotes": 2,
+        "candidatePairs": [
+          {
+            "round": 1,
+            "candidates": [
+              "Jace",
+              "Echo"
+            ]
+          }
+        ]
+      },
+      "endgame": {
+        "reckoning": 0,
+        "tribunal": 4,
+        "judgment": 5,
+        "juryQuestions": 1,
+        "juryVotes": 1,
+        "byPhase": {
+          "ACCUSATION": 4,
+          "DEFENSE": 4,
+          "OPENING_STATEMENTS": 8,
+          "JURY_QUESTIONS": 5,
+          "CLOSING_ARGUMENTS": 3,
+          "JURY_VOTE": 7
+        }
+      },
+      "rooms": {
+        "totalRooms": 0,
+        "whisperRounds": 0,
+        "participationByPlayer": {},
+        "exclusionsByPlayer": {},
+        "totalExclusions": 0,
+        "pairs": [],
+        "repeatedPairs": {
+          "totalRepeatedOccurrences": 0,
+          "maxPairCount": 0,
+          "maxPairShareOfRooms": 0,
+          "maxPairShareOfWhisperRounds": 0,
+          "pairs": []
+        },
+        "whisperSessions": [],
+        "requestSatisfaction": {
+          "validRequests": 0,
+          "mutualHonored": 0,
+          "oneWayHonored": 0,
+          "unmatchedValidRequests": 0,
+          "invalidOrMissingRequests": 0
+        },
+        "repeatPairFlags": {
+          "immediateRepeats": 0,
+          "repeatedPairs": 0,
+          "noFullNonRepeatMatchingExists": false,
+          "sessionsWithImmediateRepeats": 0,
+          "sessionsWithoutFullNonRepeatMatching": 0
+        },
+        "exclusionFlags": {
+          "consecutiveExclusions": 0,
+          "avoidableConsecutiveExclusions": 0,
+          "sessionsWithConsecutiveExclusions": 0
+        }
+      },
+      "actionUsage": {
+        "totalCalls": 114,
+        "totalEmptyResponses": 0,
+        "emptyResponseRate": 0,
+        "byAction": {
+          "introduction": {
+            "callCount": 4,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 3264
+          },
+          "question": {
+            "callCount": 8,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 15092
+          },
+          "diary": {
+            "callCount": 16,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 40347
+          },
+          "followup": {
+            "callCount": 8,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 19681
+          },
+          "reflection": {
+            "callCount": 10,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 24093
+          },
+          "lobby-intent": {
+            "callCount": 7,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 15696
+          },
+          "lobby": {
+            "callCount": 28,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 77947
+          },
+          "rumor": {
+            "callCount": 4,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 9730
+          },
+          "vote": {
+            "callCount": 4,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 10052
+          },
+          "power": {
+            "callCount": 1,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 3085
+          },
+          "council-vote": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 5412
+          },
+          "last-message": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 5730
+          },
+          "accusation": {
+            "callCount": 3,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 8567
+          },
+          "tribunal-defense": {
+            "callCount": 3,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 9432
+          },
+          "elimination-vote": {
+            "callCount": 4,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 11566
+          },
+          "opening-statement": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 6348
+          },
+          "jury-question": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 6069
+          },
+          "jury-answer": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 6662
+          },
+          "closing-argument": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 6966
+          },
+          "jury-vote": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 5921
+          }
+        },
+        "bySource": {
+          "Echo/introduction": {
+            "promptTokens": 618,
+            "cachedTokens": 0,
+            "completionTokens": 127,
+            "reasoningTokens": 0,
+            "totalTokens": 745,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/introduction": {
+            "promptTokens": 673,
+            "cachedTokens": 0,
+            "completionTokens": 149,
+            "reasoningTokens": 0,
+            "totalTokens": 822,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/introduction": {
+            "promptTokens": 764,
+            "cachedTokens": 0,
+            "completionTokens": 158,
+            "reasoningTokens": 0,
+            "totalTokens": 922,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/introduction": {
+            "promptTokens": 641,
+            "cachedTokens": 0,
+            "completionTokens": 134,
+            "reasoningTokens": 0,
+            "totalTokens": 775,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "House/question": {
+            "promptTokens": 14465,
+            "cachedTokens": 0,
+            "completionTokens": 627,
+            "reasoningTokens": 0,
+            "totalTokens": 15092,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Mira/diary": {
+            "promptTokens": 9258,
+            "cachedTokens": 2816,
+            "completionTokens": 1391,
+            "reasoningTokens": 599,
+            "totalTokens": 10649,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "Jace/diary": {
+            "promptTokens": 8651,
+            "cachedTokens": 1792,
+            "completionTokens": 960,
+            "reasoningTokens": 285,
+            "totalTokens": 9611,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "Finn/diary": {
+            "promptTokens": 8486,
+            "cachedTokens": 1792,
+            "completionTokens": 1723,
+            "reasoningTokens": 932,
+            "totalTokens": 10209,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "House/followup": {
+            "promptTokens": 19092,
+            "cachedTokens": 5376,
+            "completionTokens": 589,
+            "reasoningTokens": 0,
+            "totalTokens": 19681,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Echo/diary": {
+            "promptTokens": 8500,
+            "cachedTokens": 1792,
+            "completionTokens": 1378,
+            "reasoningTokens": 615,
+            "totalTokens": 9878,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "Finn/reflection": {
+            "promptTokens": 6284,
+            "cachedTokens": 0,
+            "completionTokens": 1212,
+            "reasoningTokens": 0,
+            "totalTokens": 7496,
+            "callCount": 3,
+            "emptyResponses": 0
+          },
+          "Mira/reflection": {
+            "promptTokens": 3752,
+            "cachedTokens": 0,
+            "completionTokens": 965,
+            "reasoningTokens": 0,
+            "totalTokens": 4717,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Echo/reflection": {
+            "promptTokens": 6204,
+            "cachedTokens": 0,
+            "completionTokens": 1388,
+            "reasoningTokens": 0,
+            "totalTokens": 7592,
+            "callCount": 3,
+            "emptyResponses": 0
+          },
+          "Jace/reflection": {
+            "promptTokens": 3458,
+            "cachedTokens": 0,
+            "completionTokens": 830,
+            "reasoningTokens": 0,
+            "totalTokens": 4288,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Echo/lobby-intent": {
+            "promptTokens": 4240,
+            "cachedTokens": 0,
+            "completionTokens": 241,
+            "reasoningTokens": 14,
+            "totalTokens": 4481,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Jace/lobby-intent": {
+            "promptTokens": 1560,
+            "cachedTokens": 0,
+            "completionTokens": 109,
+            "reasoningTokens": 8,
+            "totalTokens": 1669,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/lobby-intent": {
+            "promptTokens": 4265,
+            "cachedTokens": 0,
+            "completionTokens": 286,
+            "reasoningTokens": 10,
+            "totalTokens": 4551,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Mira/lobby-intent": {
+            "promptTokens": 4687,
+            "cachedTokens": 0,
+            "completionTokens": 308,
+            "reasoningTokens": 38,
+            "totalTokens": 4995,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Echo/lobby": {
+            "promptTokens": 20855,
+            "cachedTokens": 0,
+            "completionTokens": 1152,
+            "reasoningTokens": 0,
+            "totalTokens": 22007,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Finn/lobby": {
+            "promptTokens": 21155,
+            "cachedTokens": 0,
+            "completionTokens": 1160,
+            "reasoningTokens": 0,
+            "totalTokens": 22315,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Jace/lobby": {
+            "promptTokens": 8976,
+            "cachedTokens": 0,
+            "completionTokens": 608,
+            "reasoningTokens": 0,
+            "totalTokens": 9584,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "Mira/lobby": {
+            "promptTokens": 22815,
+            "cachedTokens": 0,
+            "completionTokens": 1226,
+            "reasoningTokens": 0,
+            "totalTokens": 24041,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Echo/rumor": {
+            "promptTokens": 2213,
+            "cachedTokens": 0,
+            "completionTokens": 121,
+            "reasoningTokens": 0,
+            "totalTokens": 2334,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/rumor": {
+            "promptTokens": 2275,
+            "cachedTokens": 0,
+            "completionTokens": 115,
+            "reasoningTokens": 0,
+            "totalTokens": 2390,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/rumor": {
+            "promptTokens": 2314,
+            "cachedTokens": 0,
+            "completionTokens": 120,
+            "reasoningTokens": 0,
+            "totalTokens": 2434,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/rumor": {
+            "promptTokens": 2444,
+            "cachedTokens": 0,
+            "completionTokens": 128,
+            "reasoningTokens": 0,
+            "totalTokens": 2572,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/vote": {
+            "promptTokens": 2292,
+            "cachedTokens": 0,
+            "completionTokens": 114,
+            "reasoningTokens": 0,
+            "totalTokens": 2406,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/vote": {
+            "promptTokens": 2393,
+            "cachedTokens": 0,
+            "completionTokens": 113,
+            "reasoningTokens": 0,
+            "totalTokens": 2506,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/vote": {
+            "promptTokens": 2523,
+            "cachedTokens": 0,
+            "completionTokens": 141,
+            "reasoningTokens": 0,
+            "totalTokens": 2664,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/vote": {
+            "promptTokens": 2353,
+            "cachedTokens": 0,
+            "completionTokens": 123,
+            "reasoningTokens": 0,
+            "totalTokens": 2476,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/power": {
+            "promptTokens": 2980,
+            "cachedTokens": 0,
+            "completionTokens": 105,
+            "reasoningTokens": 0,
+            "totalTokens": 3085,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/council-vote": {
+            "promptTokens": 2464,
+            "cachedTokens": 0,
+            "completionTokens": 95,
+            "reasoningTokens": 0,
+            "totalTokens": 2559,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/council-vote": {
+            "promptTokens": 2770,
+            "cachedTokens": 0,
+            "completionTokens": 83,
+            "reasoningTokens": 0,
+            "totalTokens": 2853,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/last-message": {
+            "promptTokens": 2541,
+            "cachedTokens": 0,
+            "completionTokens": 132,
+            "reasoningTokens": 21,
+            "totalTokens": 2673,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/accusation": {
+            "promptTokens": 2791,
+            "cachedTokens": 0,
+            "completionTokens": 216,
+            "reasoningTokens": 0,
+            "totalTokens": 3007,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/accusation": {
+            "promptTokens": 2573,
+            "cachedTokens": 0,
+            "completionTokens": 216,
+            "reasoningTokens": 0,
+            "totalTokens": 2789,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/accusation": {
+            "promptTokens": 2503,
+            "cachedTokens": 0,
+            "completionTokens": 268,
+            "reasoningTokens": 0,
+            "totalTokens": 2771,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/tribunal-defense": {
+            "promptTokens": 2900,
+            "cachedTokens": 0,
+            "completionTokens": 446,
+            "reasoningTokens": 275,
+            "totalTokens": 3346,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/tribunal-defense": {
+            "promptTokens": 2600,
+            "cachedTokens": 0,
+            "completionTokens": 520,
+            "reasoningTokens": 300,
+            "totalTokens": 3120,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/tribunal-defense": {
+            "promptTokens": 2543,
+            "cachedTokens": 0,
+            "completionTokens": 423,
+            "reasoningTokens": 239,
+            "totalTokens": 2966,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/elimination-vote": {
+            "promptTokens": 2676,
+            "cachedTokens": 0,
+            "completionTokens": 106,
+            "reasoningTokens": 0,
+            "totalTokens": 2782,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/elimination-vote": {
+            "promptTokens": 2746,
+            "cachedTokens": 0,
+            "completionTokens": 116,
+            "reasoningTokens": 0,
+            "totalTokens": 2862,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/elimination-vote": {
+            "promptTokens": 2964,
+            "cachedTokens": 0,
+            "completionTokens": 126,
+            "reasoningTokens": 0,
+            "totalTokens": 3090,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/elimination-vote": {
+            "promptTokens": 2754,
+            "cachedTokens": 0,
+            "completionTokens": 78,
+            "reasoningTokens": 0,
+            "totalTokens": 2832,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/last-message": {
+            "promptTokens": 2889,
+            "cachedTokens": 0,
+            "completionTokens": 168,
+            "reasoningTokens": 56,
+            "totalTokens": 3057,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/opening-statement": {
+            "promptTokens": 2588,
+            "cachedTokens": 0,
+            "completionTokens": 468,
+            "reasoningTokens": 251,
+            "totalTokens": 3056,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/opening-statement": {
+            "promptTokens": 2658,
+            "cachedTokens": 0,
+            "completionTokens": 634,
+            "reasoningTokens": 410,
+            "totalTokens": 3292,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/jury-question": {
+            "promptTokens": 2817,
+            "cachedTokens": 0,
+            "completionTokens": 112,
+            "reasoningTokens": 0,
+            "totalTokens": 2929,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/jury-answer": {
+            "promptTokens": 2779,
+            "cachedTokens": 0,
+            "completionTokens": 637,
+            "reasoningTokens": 314,
+            "totalTokens": 3416,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/jury-question": {
+            "promptTokens": 3001,
+            "cachedTokens": 0,
+            "completionTokens": 139,
+            "reasoningTokens": 0,
+            "totalTokens": 3140,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/jury-answer": {
+            "promptTokens": 2787,
+            "cachedTokens": 0,
+            "completionTokens": 459,
+            "reasoningTokens": 241,
+            "totalTokens": 3246,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/closing-argument": {
+            "promptTokens": 2744,
+            "cachedTokens": 0,
+            "completionTokens": 740,
+            "reasoningTokens": 553,
+            "totalTokens": 3484,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/closing-argument": {
+            "promptTokens": 2746,
+            "cachedTokens": 0,
+            "completionTokens": 736,
+            "reasoningTokens": 536,
+            "totalTokens": 3482,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/jury-vote": {
+            "promptTokens": 2752,
+            "cachedTokens": 0,
+            "completionTokens": 97,
+            "reasoningTokens": 0,
+            "totalTokens": 2849,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/jury-vote": {
+            "promptTokens": 2967,
+            "cachedTokens": 0,
+            "completionTokens": 105,
+            "reasoningTokens": 0,
+            "totalTokens": 3072,
+            "callCount": 1,
+            "emptyResponses": 0
+          }
+        }
+      }
+    }
+  },
+  "games": [
+    {
+      "gameNumber": 1,
+      "status": "completed",
+      "winnerName": "Echo",
+      "winnerPersona": "observer",
+      "rounds": 2,
+      "eliminationOrder": [
+        "Jace",
+        "Mira"
+      ],
+      "endgameType": "judgment",
+      "playerPersonas": {
+        "Jace": "wildcard",
+        "Echo": "observer",
+        "Finn": "honest",
+        "Mira": "social"
+      },
+      "durationMs": 92585,
+      "transcriptPath": "/home/paperclip/.paperclip/instances/default/projects/efa7c0e1-047f-40ae-8dda-212aa9ae25a0/50f54176-8cc9-4aa0-9168-6a69e88223dd/influence-game/packages/engine/docs/simulations/batch-2026-05-10T02-04-34/game-1.txt",
+      "jsonPath": "/home/paperclip/.paperclip/instances/default/projects/efa7c0e1-047f-40ae-8dda-212aa9ae25a0/50f54176-8cc9-4aa0-9168-6a69e88223dd/influence-game/packages/engine/docs/simulations/batch-2026-05-10T02-04-34/game-1.json",
+      "tokenUsage": {
+        "perAgent": {
+          "Echo/introduction": {
+            "promptTokens": 618,
+            "cachedTokens": 0,
+            "completionTokens": 127,
+            "reasoningTokens": 0,
+            "totalTokens": 745,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/introduction": {
+            "promptTokens": 673,
+            "cachedTokens": 0,
+            "completionTokens": 149,
+            "reasoningTokens": 0,
+            "totalTokens": 822,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/introduction": {
+            "promptTokens": 764,
+            "cachedTokens": 0,
+            "completionTokens": 158,
+            "reasoningTokens": 0,
+            "totalTokens": 922,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/introduction": {
+            "promptTokens": 641,
+            "cachedTokens": 0,
+            "completionTokens": 134,
+            "reasoningTokens": 0,
+            "totalTokens": 775,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "House/question": {
+            "promptTokens": 14465,
+            "cachedTokens": 0,
+            "completionTokens": 627,
+            "reasoningTokens": 0,
+            "totalTokens": 15092,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Mira/diary": {
+            "promptTokens": 9258,
+            "cachedTokens": 2816,
+            "completionTokens": 1391,
+            "reasoningTokens": 599,
+            "totalTokens": 10649,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "Jace/diary": {
+            "promptTokens": 8651,
+            "cachedTokens": 1792,
+            "completionTokens": 960,
+            "reasoningTokens": 285,
+            "totalTokens": 9611,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "Finn/diary": {
+            "promptTokens": 8486,
+            "cachedTokens": 1792,
+            "completionTokens": 1723,
+            "reasoningTokens": 932,
+            "totalTokens": 10209,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "House/followup": {
+            "promptTokens": 19092,
+            "cachedTokens": 5376,
+            "completionTokens": 589,
+            "reasoningTokens": 0,
+            "totalTokens": 19681,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Echo/diary": {
+            "promptTokens": 8500,
+            "cachedTokens": 1792,
+            "completionTokens": 1378,
+            "reasoningTokens": 615,
+            "totalTokens": 9878,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "Finn/reflection": {
+            "promptTokens": 6284,
+            "cachedTokens": 0,
+            "completionTokens": 1212,
+            "reasoningTokens": 0,
+            "totalTokens": 7496,
+            "callCount": 3,
+            "emptyResponses": 0
+          },
+          "Mira/reflection": {
+            "promptTokens": 3752,
+            "cachedTokens": 0,
+            "completionTokens": 965,
+            "reasoningTokens": 0,
+            "totalTokens": 4717,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Echo/reflection": {
+            "promptTokens": 6204,
+            "cachedTokens": 0,
+            "completionTokens": 1388,
+            "reasoningTokens": 0,
+            "totalTokens": 7592,
+            "callCount": 3,
+            "emptyResponses": 0
+          },
+          "Jace/reflection": {
+            "promptTokens": 3458,
+            "cachedTokens": 0,
+            "completionTokens": 830,
+            "reasoningTokens": 0,
+            "totalTokens": 4288,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Echo/lobby-intent": {
+            "promptTokens": 4240,
+            "cachedTokens": 0,
+            "completionTokens": 241,
+            "reasoningTokens": 14,
+            "totalTokens": 4481,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Jace/lobby-intent": {
+            "promptTokens": 1560,
+            "cachedTokens": 0,
+            "completionTokens": 109,
+            "reasoningTokens": 8,
+            "totalTokens": 1669,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/lobby-intent": {
+            "promptTokens": 4265,
+            "cachedTokens": 0,
+            "completionTokens": 286,
+            "reasoningTokens": 10,
+            "totalTokens": 4551,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Mira/lobby-intent": {
+            "promptTokens": 4687,
+            "cachedTokens": 0,
+            "completionTokens": 308,
+            "reasoningTokens": 38,
+            "totalTokens": 4995,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Echo/lobby": {
+            "promptTokens": 20855,
+            "cachedTokens": 0,
+            "completionTokens": 1152,
+            "reasoningTokens": 0,
+            "totalTokens": 22007,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Finn/lobby": {
+            "promptTokens": 21155,
+            "cachedTokens": 0,
+            "completionTokens": 1160,
+            "reasoningTokens": 0,
+            "totalTokens": 22315,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Jace/lobby": {
+            "promptTokens": 8976,
+            "cachedTokens": 0,
+            "completionTokens": 608,
+            "reasoningTokens": 0,
+            "totalTokens": 9584,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "Mira/lobby": {
+            "promptTokens": 22815,
+            "cachedTokens": 0,
+            "completionTokens": 1226,
+            "reasoningTokens": 0,
+            "totalTokens": 24041,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Echo/rumor": {
+            "promptTokens": 2213,
+            "cachedTokens": 0,
+            "completionTokens": 121,
+            "reasoningTokens": 0,
+            "totalTokens": 2334,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/rumor": {
+            "promptTokens": 2275,
+            "cachedTokens": 0,
+            "completionTokens": 115,
+            "reasoningTokens": 0,
+            "totalTokens": 2390,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/rumor": {
+            "promptTokens": 2314,
+            "cachedTokens": 0,
+            "completionTokens": 120,
+            "reasoningTokens": 0,
+            "totalTokens": 2434,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/rumor": {
+            "promptTokens": 2444,
+            "cachedTokens": 0,
+            "completionTokens": 128,
+            "reasoningTokens": 0,
+            "totalTokens": 2572,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/vote": {
+            "promptTokens": 2292,
+            "cachedTokens": 0,
+            "completionTokens": 114,
+            "reasoningTokens": 0,
+            "totalTokens": 2406,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/vote": {
+            "promptTokens": 2393,
+            "cachedTokens": 0,
+            "completionTokens": 113,
+            "reasoningTokens": 0,
+            "totalTokens": 2506,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/vote": {
+            "promptTokens": 2523,
+            "cachedTokens": 0,
+            "completionTokens": 141,
+            "reasoningTokens": 0,
+            "totalTokens": 2664,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/vote": {
+            "promptTokens": 2353,
+            "cachedTokens": 0,
+            "completionTokens": 123,
+            "reasoningTokens": 0,
+            "totalTokens": 2476,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/power": {
+            "promptTokens": 2980,
+            "cachedTokens": 0,
+            "completionTokens": 105,
+            "reasoningTokens": 0,
+            "totalTokens": 3085,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/council-vote": {
+            "promptTokens": 2464,
+            "cachedTokens": 0,
+            "completionTokens": 95,
+            "reasoningTokens": 0,
+            "totalTokens": 2559,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/council-vote": {
+            "promptTokens": 2770,
+            "cachedTokens": 0,
+            "completionTokens": 83,
+            "reasoningTokens": 0,
+            "totalTokens": 2853,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/last-message": {
+            "promptTokens": 2541,
+            "cachedTokens": 0,
+            "completionTokens": 132,
+            "reasoningTokens": 21,
+            "totalTokens": 2673,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/accusation": {
+            "promptTokens": 2791,
+            "cachedTokens": 0,
+            "completionTokens": 216,
+            "reasoningTokens": 0,
+            "totalTokens": 3007,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/accusation": {
+            "promptTokens": 2573,
+            "cachedTokens": 0,
+            "completionTokens": 216,
+            "reasoningTokens": 0,
+            "totalTokens": 2789,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/accusation": {
+            "promptTokens": 2503,
+            "cachedTokens": 0,
+            "completionTokens": 268,
+            "reasoningTokens": 0,
+            "totalTokens": 2771,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/tribunal-defense": {
+            "promptTokens": 2900,
+            "cachedTokens": 0,
+            "completionTokens": 446,
+            "reasoningTokens": 275,
+            "totalTokens": 3346,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/tribunal-defense": {
+            "promptTokens": 2600,
+            "cachedTokens": 0,
+            "completionTokens": 520,
+            "reasoningTokens": 300,
+            "totalTokens": 3120,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/tribunal-defense": {
+            "promptTokens": 2543,
+            "cachedTokens": 0,
+            "completionTokens": 423,
+            "reasoningTokens": 239,
+            "totalTokens": 2966,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/elimination-vote": {
+            "promptTokens": 2676,
+            "cachedTokens": 0,
+            "completionTokens": 106,
+            "reasoningTokens": 0,
+            "totalTokens": 2782,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/elimination-vote": {
+            "promptTokens": 2746,
+            "cachedTokens": 0,
+            "completionTokens": 116,
+            "reasoningTokens": 0,
+            "totalTokens": 2862,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/elimination-vote": {
+            "promptTokens": 2964,
+            "cachedTokens": 0,
+            "completionTokens": 126,
+            "reasoningTokens": 0,
+            "totalTokens": 3090,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/elimination-vote": {
+            "promptTokens": 2754,
+            "cachedTokens": 0,
+            "completionTokens": 78,
+            "reasoningTokens": 0,
+            "totalTokens": 2832,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/last-message": {
+            "promptTokens": 2889,
+            "cachedTokens": 0,
+            "completionTokens": 168,
+            "reasoningTokens": 56,
+            "totalTokens": 3057,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/opening-statement": {
+            "promptTokens": 2588,
+            "cachedTokens": 0,
+            "completionTokens": 468,
+            "reasoningTokens": 251,
+            "totalTokens": 3056,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/opening-statement": {
+            "promptTokens": 2658,
+            "cachedTokens": 0,
+            "completionTokens": 634,
+            "reasoningTokens": 410,
+            "totalTokens": 3292,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/jury-question": {
+            "promptTokens": 2817,
+            "cachedTokens": 0,
+            "completionTokens": 112,
+            "reasoningTokens": 0,
+            "totalTokens": 2929,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/jury-answer": {
+            "promptTokens": 2779,
+            "cachedTokens": 0,
+            "completionTokens": 637,
+            "reasoningTokens": 314,
+            "totalTokens": 3416,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/jury-question": {
+            "promptTokens": 3001,
+            "cachedTokens": 0,
+            "completionTokens": 139,
+            "reasoningTokens": 0,
+            "totalTokens": 3140,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/jury-answer": {
+            "promptTokens": 2787,
+            "cachedTokens": 0,
+            "completionTokens": 459,
+            "reasoningTokens": 241,
+            "totalTokens": 3246,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/closing-argument": {
+            "promptTokens": 2744,
+            "cachedTokens": 0,
+            "completionTokens": 740,
+            "reasoningTokens": 553,
+            "totalTokens": 3484,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Echo/closing-argument": {
+            "promptTokens": 2746,
+            "cachedTokens": 0,
+            "completionTokens": 736,
+            "reasoningTokens": 536,
+            "totalTokens": 3482,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/jury-vote": {
+            "promptTokens": 2752,
+            "cachedTokens": 0,
+            "completionTokens": 97,
+            "reasoningTokens": 0,
+            "totalTokens": 2849,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Mira/jury-vote": {
+            "promptTokens": 2967,
+            "cachedTokens": 0,
+            "completionTokens": 105,
+            "reasoningTokens": 0,
+            "totalTokens": 3072,
+            "callCount": 1,
+            "emptyResponses": 0
+          }
+        },
+        "total": {
+          "promptTokens": 266739,
+          "cachedTokens": 13568,
+          "completionTokens": 24921,
+          "reasoningTokens": 5697,
+          "totalTokens": 291660,
+          "callCount": 114,
+          "emptyResponses": 0
+        }
+      },
+      "instrumentation": {
+        "powerActions": {
+          "total": 1,
+          "counts": {
+            "eliminate": 0,
+            "protect": 0,
+            "pass": 1
+          },
+          "actions": [
+            {
+              "actor": "Echo",
+              "action": "pass",
+              "target": "Jace",
+              "round": 1,
+              "text": "Echo power action: pass -> Jace"
+            }
+          ],
+          "actorCounts": {
+            "Echo": 1
+          },
+          "actionDistributionByActor": {
+            "Echo": {
+              "eliminate": 0,
+              "protect": 0,
+              "pass": 1
+            }
+          },
+          "consecutiveEliminates": {
+            "total": 0,
+            "occurrences": []
+          },
+          "repeatedProtectSameTarget": {
+            "total": 0,
+            "repeats": []
+          }
+        },
+        "autoEliminations": {
+          "total": 0,
+          "eliminations": []
+        },
+        "council": {
+          "revealPhases": 1,
+          "councilPhases": 1,
+          "councilVotes": 2,
+          "candidatePairs": [
+            {
+              "round": 1,
+              "candidates": [
+                "Jace",
+                "Echo"
+              ]
+            }
+          ]
+        },
+        "endgame": {
+          "reckoning": 0,
+          "tribunal": 4,
+          "judgment": 5,
+          "juryQuestions": 1,
+          "juryVotes": 1,
+          "byPhase": {
+            "ACCUSATION": 4,
+            "DEFENSE": 4,
+            "OPENING_STATEMENTS": 8,
+            "JURY_QUESTIONS": 5,
+            "CLOSING_ARGUMENTS": 3,
+            "JURY_VOTE": 7
+          }
+        },
+        "rooms": {
+          "totalRooms": 0,
+          "whisperRounds": 0,
+          "participationByPlayer": {},
+          "exclusionsByPlayer": {},
+          "totalExclusions": 0,
+          "pairs": [],
+          "repeatedPairs": {
+            "totalRepeatedOccurrences": 0,
+            "maxPairCount": 0,
+            "maxPairShareOfRooms": 0,
+            "maxPairShareOfWhisperRounds": 0,
+            "pairs": []
+          },
+          "whisperSessions": [],
+          "requestSatisfaction": {
+            "validRequests": 0,
+            "mutualHonored": 0,
+            "oneWayHonored": 0,
+            "unmatchedValidRequests": 0,
+            "invalidOrMissingRequests": 0
+          },
+          "repeatPairFlags": {
+            "immediateRepeats": 0,
+            "repeatedPairs": 0,
+            "noFullNonRepeatMatchingExists": false,
+            "sessionsWithImmediateRepeats": 0,
+            "sessionsWithoutFullNonRepeatMatching": 0
+          },
+          "exclusionFlags": {
+            "consecutiveExclusions": 0,
+            "avoidableConsecutiveExclusions": 0,
+            "sessionsWithConsecutiveExclusions": 0
+          }
+        },
+        "actionUsage": {
+          "totalCalls": 114,
+          "totalEmptyResponses": 0,
+          "emptyResponseRate": 0,
+          "byAction": {
+            "introduction": {
+              "callCount": 4,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 3264
+            },
+            "question": {
+              "callCount": 8,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 15092
+            },
+            "diary": {
+              "callCount": 16,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 40347
+            },
+            "followup": {
+              "callCount": 8,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 19681
+            },
+            "reflection": {
+              "callCount": 10,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 24093
+            },
+            "lobby-intent": {
+              "callCount": 7,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 15696
+            },
+            "lobby": {
+              "callCount": 28,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 77947
+            },
+            "rumor": {
+              "callCount": 4,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 9730
+            },
+            "vote": {
+              "callCount": 4,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 10052
+            },
+            "power": {
+              "callCount": 1,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 3085
+            },
+            "council-vote": {
+              "callCount": 2,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 5412
+            },
+            "last-message": {
+              "callCount": 2,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 5730
+            },
+            "accusation": {
+              "callCount": 3,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 8567
+            },
+            "tribunal-defense": {
+              "callCount": 3,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 9432
+            },
+            "elimination-vote": {
+              "callCount": 4,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 11566
+            },
+            "opening-statement": {
+              "callCount": 2,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 6348
+            },
+            "jury-question": {
+              "callCount": 2,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 6069
+            },
+            "jury-answer": {
+              "callCount": 2,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 6662
+            },
+            "closing-argument": {
+              "callCount": 2,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 6966
+            },
+            "jury-vote": {
+              "callCount": 2,
+              "emptyResponses": 0,
+              "emptyResponseRate": 0,
+              "totalTokens": 5921
+            }
+          },
+          "bySource": {
+            "Echo/introduction": {
+              "promptTokens": 618,
+              "cachedTokens": 0,
+              "completionTokens": 127,
+              "reasoningTokens": 0,
+              "totalTokens": 745,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Finn/introduction": {
+              "promptTokens": 673,
+              "cachedTokens": 0,
+              "completionTokens": 149,
+              "reasoningTokens": 0,
+              "totalTokens": 822,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Mira/introduction": {
+              "promptTokens": 764,
+              "cachedTokens": 0,
+              "completionTokens": 158,
+              "reasoningTokens": 0,
+              "totalTokens": 922,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Jace/introduction": {
+              "promptTokens": 641,
+              "cachedTokens": 0,
+              "completionTokens": 134,
+              "reasoningTokens": 0,
+              "totalTokens": 775,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "House/question": {
+              "promptTokens": 14465,
+              "cachedTokens": 0,
+              "completionTokens": 627,
+              "reasoningTokens": 0,
+              "totalTokens": 15092,
+              "callCount": 8,
+              "emptyResponses": 0
+            },
+            "Mira/diary": {
+              "promptTokens": 9258,
+              "cachedTokens": 2816,
+              "completionTokens": 1391,
+              "reasoningTokens": 599,
+              "totalTokens": 10649,
+              "callCount": 4,
+              "emptyResponses": 0
+            },
+            "Jace/diary": {
+              "promptTokens": 8651,
+              "cachedTokens": 1792,
+              "completionTokens": 960,
+              "reasoningTokens": 285,
+              "totalTokens": 9611,
+              "callCount": 4,
+              "emptyResponses": 0
+            },
+            "Finn/diary": {
+              "promptTokens": 8486,
+              "cachedTokens": 1792,
+              "completionTokens": 1723,
+              "reasoningTokens": 932,
+              "totalTokens": 10209,
+              "callCount": 4,
+              "emptyResponses": 0
+            },
+            "House/followup": {
+              "promptTokens": 19092,
+              "cachedTokens": 5376,
+              "completionTokens": 589,
+              "reasoningTokens": 0,
+              "totalTokens": 19681,
+              "callCount": 8,
+              "emptyResponses": 0
+            },
+            "Echo/diary": {
+              "promptTokens": 8500,
+              "cachedTokens": 1792,
+              "completionTokens": 1378,
+              "reasoningTokens": 615,
+              "totalTokens": 9878,
+              "callCount": 4,
+              "emptyResponses": 0
+            },
+            "Finn/reflection": {
+              "promptTokens": 6284,
+              "cachedTokens": 0,
+              "completionTokens": 1212,
+              "reasoningTokens": 0,
+              "totalTokens": 7496,
+              "callCount": 3,
+              "emptyResponses": 0
+            },
+            "Mira/reflection": {
+              "promptTokens": 3752,
+              "cachedTokens": 0,
+              "completionTokens": 965,
+              "reasoningTokens": 0,
+              "totalTokens": 4717,
+              "callCount": 2,
+              "emptyResponses": 0
+            },
+            "Echo/reflection": {
+              "promptTokens": 6204,
+              "cachedTokens": 0,
+              "completionTokens": 1388,
+              "reasoningTokens": 0,
+              "totalTokens": 7592,
+              "callCount": 3,
+              "emptyResponses": 0
+            },
+            "Jace/reflection": {
+              "promptTokens": 3458,
+              "cachedTokens": 0,
+              "completionTokens": 830,
+              "reasoningTokens": 0,
+              "totalTokens": 4288,
+              "callCount": 2,
+              "emptyResponses": 0
+            },
+            "Echo/lobby-intent": {
+              "promptTokens": 4240,
+              "cachedTokens": 0,
+              "completionTokens": 241,
+              "reasoningTokens": 14,
+              "totalTokens": 4481,
+              "callCount": 2,
+              "emptyResponses": 0
+            },
+            "Jace/lobby-intent": {
+              "promptTokens": 1560,
+              "cachedTokens": 0,
+              "completionTokens": 109,
+              "reasoningTokens": 8,
+              "totalTokens": 1669,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Finn/lobby-intent": {
+              "promptTokens": 4265,
+              "cachedTokens": 0,
+              "completionTokens": 286,
+              "reasoningTokens": 10,
+              "totalTokens": 4551,
+              "callCount": 2,
+              "emptyResponses": 0
+            },
+            "Mira/lobby-intent": {
+              "promptTokens": 4687,
+              "cachedTokens": 0,
+              "completionTokens": 308,
+              "reasoningTokens": 38,
+              "totalTokens": 4995,
+              "callCount": 2,
+              "emptyResponses": 0
+            },
+            "Echo/lobby": {
+              "promptTokens": 20855,
+              "cachedTokens": 0,
+              "completionTokens": 1152,
+              "reasoningTokens": 0,
+              "totalTokens": 22007,
+              "callCount": 8,
+              "emptyResponses": 0
+            },
+            "Finn/lobby": {
+              "promptTokens": 21155,
+              "cachedTokens": 0,
+              "completionTokens": 1160,
+              "reasoningTokens": 0,
+              "totalTokens": 22315,
+              "callCount": 8,
+              "emptyResponses": 0
+            },
+            "Jace/lobby": {
+              "promptTokens": 8976,
+              "cachedTokens": 0,
+              "completionTokens": 608,
+              "reasoningTokens": 0,
+              "totalTokens": 9584,
+              "callCount": 4,
+              "emptyResponses": 0
+            },
+            "Mira/lobby": {
+              "promptTokens": 22815,
+              "cachedTokens": 0,
+              "completionTokens": 1226,
+              "reasoningTokens": 0,
+              "totalTokens": 24041,
+              "callCount": 8,
+              "emptyResponses": 0
+            },
+            "Echo/rumor": {
+              "promptTokens": 2213,
+              "cachedTokens": 0,
+              "completionTokens": 121,
+              "reasoningTokens": 0,
+              "totalTokens": 2334,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Jace/rumor": {
+              "promptTokens": 2275,
+              "cachedTokens": 0,
+              "completionTokens": 115,
+              "reasoningTokens": 0,
+              "totalTokens": 2390,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Finn/rumor": {
+              "promptTokens": 2314,
+              "cachedTokens": 0,
+              "completionTokens": 120,
+              "reasoningTokens": 0,
+              "totalTokens": 2434,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Mira/rumor": {
+              "promptTokens": 2444,
+              "cachedTokens": 0,
+              "completionTokens": 128,
+              "reasoningTokens": 0,
+              "totalTokens": 2572,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Echo/vote": {
+              "promptTokens": 2292,
+              "cachedTokens": 0,
+              "completionTokens": 114,
+              "reasoningTokens": 0,
+              "totalTokens": 2406,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Finn/vote": {
+              "promptTokens": 2393,
+              "cachedTokens": 0,
+              "completionTokens": 113,
+              "reasoningTokens": 0,
+              "totalTokens": 2506,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Mira/vote": {
+              "promptTokens": 2523,
+              "cachedTokens": 0,
+              "completionTokens": 141,
+              "reasoningTokens": 0,
+              "totalTokens": 2664,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Jace/vote": {
+              "promptTokens": 2353,
+              "cachedTokens": 0,
+              "completionTokens": 123,
+              "reasoningTokens": 0,
+              "totalTokens": 2476,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Echo/power": {
+              "promptTokens": 2980,
+              "cachedTokens": 0,
+              "completionTokens": 105,
+              "reasoningTokens": 0,
+              "totalTokens": 3085,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Finn/council-vote": {
+              "promptTokens": 2464,
+              "cachedTokens": 0,
+              "completionTokens": 95,
+              "reasoningTokens": 0,
+              "totalTokens": 2559,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Mira/council-vote": {
+              "promptTokens": 2770,
+              "cachedTokens": 0,
+              "completionTokens": 83,
+              "reasoningTokens": 0,
+              "totalTokens": 2853,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Jace/last-message": {
+              "promptTokens": 2541,
+              "cachedTokens": 0,
+              "completionTokens": 132,
+              "reasoningTokens": 21,
+              "totalTokens": 2673,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Mira/accusation": {
+              "promptTokens": 2791,
+              "cachedTokens": 0,
+              "completionTokens": 216,
+              "reasoningTokens": 0,
+              "totalTokens": 3007,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Echo/accusation": {
+              "promptTokens": 2573,
+              "cachedTokens": 0,
+              "completionTokens": 216,
+              "reasoningTokens": 0,
+              "totalTokens": 2789,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Finn/accusation": {
+              "promptTokens": 2503,
+              "cachedTokens": 0,
+              "completionTokens": 268,
+              "reasoningTokens": 0,
+              "totalTokens": 2771,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Mira/tribunal-defense": {
+              "promptTokens": 2900,
+              "cachedTokens": 0,
+              "completionTokens": 446,
+              "reasoningTokens": 275,
+              "totalTokens": 3346,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Echo/tribunal-defense": {
+              "promptTokens": 2600,
+              "cachedTokens": 0,
+              "completionTokens": 520,
+              "reasoningTokens": 300,
+              "totalTokens": 3120,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Finn/tribunal-defense": {
+              "promptTokens": 2543,
+              "cachedTokens": 0,
+              "completionTokens": 423,
+              "reasoningTokens": 239,
+              "totalTokens": 2966,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Finn/elimination-vote": {
+              "promptTokens": 2676,
+              "cachedTokens": 0,
+              "completionTokens": 106,
+              "reasoningTokens": 0,
+              "totalTokens": 2782,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Echo/elimination-vote": {
+              "promptTokens": 2746,
+              "cachedTokens": 0,
+              "completionTokens": 116,
+              "reasoningTokens": 0,
+              "totalTokens": 2862,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Mira/elimination-vote": {
+              "promptTokens": 2964,
+              "cachedTokens": 0,
+              "completionTokens": 126,
+              "reasoningTokens": 0,
+              "totalTokens": 3090,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Jace/elimination-vote": {
+              "promptTokens": 2754,
+              "cachedTokens": 0,
+              "completionTokens": 78,
+              "reasoningTokens": 0,
+              "totalTokens": 2832,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Mira/last-message": {
+              "promptTokens": 2889,
+              "cachedTokens": 0,
+              "completionTokens": 168,
+              "reasoningTokens": 56,
+              "totalTokens": 3057,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Finn/opening-statement": {
+              "promptTokens": 2588,
+              "cachedTokens": 0,
+              "completionTokens": 468,
+              "reasoningTokens": 251,
+              "totalTokens": 3056,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Echo/opening-statement": {
+              "promptTokens": 2658,
+              "cachedTokens": 0,
+              "completionTokens": 634,
+              "reasoningTokens": 410,
+              "totalTokens": 3292,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Jace/jury-question": {
+              "promptTokens": 2817,
+              "cachedTokens": 0,
+              "completionTokens": 112,
+              "reasoningTokens": 0,
+              "totalTokens": 2929,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Echo/jury-answer": {
+              "promptTokens": 2779,
+              "cachedTokens": 0,
+              "completionTokens": 637,
+              "reasoningTokens": 314,
+              "totalTokens": 3416,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Mira/jury-question": {
+              "promptTokens": 3001,
+              "cachedTokens": 0,
+              "completionTokens": 139,
+              "reasoningTokens": 0,
+              "totalTokens": 3140,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Finn/jury-answer": {
+              "promptTokens": 2787,
+              "cachedTokens": 0,
+              "completionTokens": 459,
+              "reasoningTokens": 241,
+              "totalTokens": 3246,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Finn/closing-argument": {
+              "promptTokens": 2744,
+              "cachedTokens": 0,
+              "completionTokens": 740,
+              "reasoningTokens": 553,
+              "totalTokens": 3484,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Echo/closing-argument": {
+              "promptTokens": 2746,
+              "cachedTokens": 0,
+              "completionTokens": 736,
+              "reasoningTokens": 536,
+              "totalTokens": 3482,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Jace/jury-vote": {
+              "promptTokens": 2752,
+              "cachedTokens": 0,
+              "completionTokens": 97,
+              "reasoningTokens": 0,
+              "totalTokens": 2849,
+              "callCount": 1,
+              "emptyResponses": 0
+            },
+            "Mira/jury-vote": {
+              "promptTokens": 2967,
+              "cachedTokens": 0,
+              "completionTokens": 105,
+              "reasoningTokens": 0,
+              "totalTokens": 3072,
+              "callCount": 1,
+              "emptyResponses": 0
+            }
+          }
+        }
+      }
+    }
+  ]
+}
