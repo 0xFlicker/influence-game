@@ -715,7 +715,7 @@ export function DramaticReplayViewer({
         <div className="flex items-center gap-2 md:gap-3 pl-10 min-w-0">
           <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ROOM_TYPE_COLORS[scene.roomType]}`} />
           <span className={`text-xs font-semibold uppercase tracking-[0.25em] ${phaseColor(scene.phase)} truncate`}>
-            {isOpenWhisperScene ? "WHISPER: OPEN ROOMS" : (PHASE_TRANSITION_LABELS[scene.phase] ?? scene.phase)}
+            {isOpenWhisperScene ? "MINGLE" : (PHASE_TRANSITION_LABELS[scene.phase] ?? scene.phase)}
           </span>
           {roomLabel && (
             <span className="text-xs text-purple-300/50 hidden md:inline">{roomLabel}</span>

@@ -164,10 +164,10 @@ function roomDisplayLabel(room: WhisperRoomStage): string {
   return `R${room.localRoomNumber ?? room.roomId}`;
 }
 
-function roomStateLabel(room: WhisperRoomStage): "BACKCHANNEL" | "SINGLE" | "EMPTY" {
+function roomStateLabel(room: WhisperRoomStage): "GROUP" | "SINGLE" | "EMPTY" {
   if (room.playerNames.length === 0) return "EMPTY";
   if (room.playerNames.length === 1) return "SINGLE";
-  return "BACKCHANNEL";
+  return "GROUP";
 }
 
 function resolveRoomPlayers(room: WhisperRoomStage, players: GamePlayer[]): GamePlayer[] {
@@ -270,7 +270,7 @@ function buildMovementRows(rooms: WhisperRoomStage[]): Array<{
   return rows.sort((left, right) => left.playerName.localeCompare(right.playerName));
 }
 
-function HouseMap({
+function MingleMap({
   rooms,
   players,
   selectedRoomId,
@@ -285,8 +285,8 @@ function HouseMap({
     <div className="rounded-2xl border border-purple-500/25 bg-black/35 p-4 md:p-5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/80">HOUSE MAP</p>
-          <p className="mt-1 text-xs text-white/35">Rooms are neutral. Occupancy is the signal.</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/80">MINGLE MAP</p>
+          <p className="mt-1 text-xs text-white/35">Agents choose neutral rooms. Occupancy is the signal.</p>
         </div>
         <span className="rounded-full border border-purple-400/25 bg-purple-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-purple-200/80">
           {rooms.length} rooms
@@ -349,7 +349,7 @@ function HouseMap({
 function MovementTrail({ rows }: { rows: ReturnType<typeof buildMovementRows> }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/75">Movement Trail</p>
+      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/75">Mingle Movement</p>
       {rows.length === 0 ? (
         <p className="mt-3 text-xs text-white/35">Initial room choices are still settling.</p>
       ) : (
@@ -364,57 +364,6 @@ function MovementTrail({ rows }: { rows: ReturnType<typeof buildMovementRows> })
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-function RoomRail({
-  rooms,
-  players,
-  selectedRoomId,
-  onSelectRoom,
-}: {
-  rooms: WhisperRoomStage[];
-  players: GamePlayer[];
-  selectedRoomId: number | null;
-  onSelectRoom: (roomId: number) => void;
-}) {
-  return (
-    <div className="flex gap-2 overflow-x-auto pb-2 md:grid md:grid-cols-1 md:overflow-visible md:pb-0">
-      {rooms.map((room) => {
-        const selected = room.roomId === selectedRoomId;
-        const hot = !selected && room.messages.length > 0;
-        const state = roomStateLabel(room);
-        return (
-          <button
-            key={room.roomId}
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onSelectRoom(room.roomId);
-            }}
-            className={`min-w-28 rounded-xl border px-3 py-3 text-left transition-colors md:min-w-0 ${
-              selected
-                ? "border-purple-300/60 bg-purple-500/15"
-                : hot
-                  ? "border-blue-400/50 bg-blue-500/10"
-                  : "border-white/10 bg-white/[0.04] hover:border-purple-300/30"
-            }`}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-white/85">
-                {roomDisplayLabel(room)}
-              </span>
-              <span className={`text-[9px] uppercase tracking-[0.14em] ${hot ? "text-blue-200" : "text-white/35"}`}>
-                {selected ? "LIVE" : hot ? "HOT" : state === "EMPTY" ? "0" : state === "SINGLE" ? "1" : room.messages.length}
-              </span>
-            </div>
-            <div className="mt-3">
-              <RoomAvatarRow room={room} players={players} size="6" />
-            </div>
-          </button>
-        );
-      })}
     </div>
   );
 }
@@ -445,10 +394,10 @@ function ActiveRoomFeed({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-lg font-semibold uppercase tracking-[0.08em] text-white">
-              {roomDisplayLabel(room)} / Private Feed
+              {roomDisplayLabel(room)} / Mingle Feed
             </p>
             <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-yellow-200/70">
-              {state === "BACKCHANNEL" ? "BACKCHANNEL" : state}
+              {state === "GROUP" ? "GROUP ROOM" : state}
             </p>
           </div>
           <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-white/45">
@@ -474,8 +423,8 @@ function ActiveRoomFeed({
               {state === "EMPTY"
                 ? "No one chose this room. That absence is public information."
                 : state === "SINGLE"
-                  ? `${room.playerNames[0]} is alone here. No backchannel conversation runs for singleton rooms.`
-                  : "The room is occupied. Backchannel messages will appear as they arrive."}
+                  ? `${room.playerNames[0]} is alone here. No Mingle conversation runs for singleton rooms.`
+                  : "The room is occupied. Mingle messages will appear as they arrive."}
             </p>
           </div>
         ) : (
@@ -492,7 +441,7 @@ function ActiveRoomFeed({
                   <div className="min-w-0 flex-1">
                     <div className="mb-1 flex items-center gap-2">
                       <span className="text-xs font-semibold uppercase tracking-[0.08em] text-blue-200/80">{senderName}</span>
-                      <span className="text-[10px] uppercase tracking-[0.16em] text-white/25">BACKCHANNEL</span>
+                      <span className="text-[10px] uppercase tracking-[0.16em] text-white/25">MINGLE</span>
                     </div>
                     {showThinking && message.thinking && (
                       <div className="mb-2 border-l-2 border-indigo-500/25 pl-3">
@@ -543,12 +492,10 @@ export function OpenWhisperRoomsView({
   const activeRoom = currentRooms.find((room) => room.roomId === requestedRoomId) ?? currentRooms[0] ?? null;
   const selectedRoomId = activeRoom?.roomId ?? null;
   const movementRows = useMemo(() => buildMovementRows(stage.rooms), [stage.rooms]);
-  const [mapOpen, setMapOpen] = useState(false);
 
   const selectRoom = useCallback((roomId: number) => {
     setSelection({ phaseKey, roomId });
-    setMapOpen(false);
-  }, [phaseKey, setMapOpen, setSelection]);
+  }, [phaseKey, setSelection]);
 
   if (!stage.hasRoomMetadata) {
     return null;
@@ -560,86 +507,33 @@ export function OpenWhisperRoomsView({
         <div className="flex-shrink-0 rounded-2xl border border-white/10 bg-black/35 px-4 py-3 md:px-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-purple-200/80">WHISPER: OPEN ROOMS</p>
-              <p className="mt-1 text-xs text-white/35">Round room telemetry · beat {activeBeat} of {Math.max(beats.length, 1)}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-purple-200/80">MINGLE</p>
+              <p className="mt-1 text-xs text-white/35">Room telemetry · turn {activeBeat} of {Math.max(beats.length, 1)}</p>
             </div>
-            <div className="flex items-center gap-2">
-              <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
-                live
-                  ? "border-red-400/30 bg-red-500/15 text-red-100"
-                  : "border-white/15 bg-white/5 text-white/55"
-              }`}>
-                {live ? "LIVE" : "REPLAY"}
-              </span>
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setMapOpen(true);
-                }}
-                className="rounded-full border border-blue-400/25 bg-blue-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-blue-100 md:hidden"
-              >
-                HOUSE MAP
-              </button>
-            </div>
+            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+              live
+                ? "border-red-400/30 bg-red-500/15 text-red-100"
+                : "border-white/15 bg-white/5 text-white/55"
+            }`}>
+              {live ? "LIVE" : "REPLAY"}
+            </span>
           </div>
         </div>
 
-        <div className="flex-shrink-0 md:hidden">
-          <RoomRail rooms={currentRooms} players={players} selectedRoomId={selectedRoomId} onSelectRoom={selectRoom} />
-        </div>
-
-        <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(18rem,0.9fr)_minmax(28rem,1.4fr)_minmax(16rem,0.7fr)]">
-          <div className="hidden min-h-0 overflow-y-auto pr-1 lg:block">
-            <HouseMap rooms={currentRooms} players={players} selectedRoomId={selectedRoomId} onSelectRoom={selectRoom} />
+        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto lg:grid-cols-[minmax(18rem,0.9fr)_minmax(28rem,1.45fr)_minmax(14rem,0.65fr)] lg:overflow-hidden">
+          <div className="min-h-0 lg:overflow-y-auto lg:pr-1">
+            <MingleMap rooms={currentRooms} players={players} selectedRoomId={selectedRoomId} onSelectRoom={selectRoom} />
           </div>
 
-          <ActiveRoomFeed room={activeRoom} players={players} showThinking={showThinking} />
+          <div className="flex min-h-[24rem] min-w-0 lg:min-h-0">
+            <ActiveRoomFeed room={activeRoom} players={players} showThinking={showThinking} />
+          </div>
 
-          <div className="hidden min-h-0 gap-4 overflow-y-auto pr-1 md:grid">
-            <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/75">Other Rooms</p>
-                <span className="text-[10px] uppercase tracking-[0.16em] text-white/25">{currentRooms.length} total</span>
-              </div>
-              <RoomRail rooms={currentRooms} players={players} selectedRoomId={selectedRoomId} onSelectRoom={selectRoom} />
-            </div>
+          <div className="min-h-0 lg:overflow-y-auto lg:pr-1">
             <MovementTrail rows={movementRows} />
           </div>
         </div>
       </div>
-
-      {mapOpen && (
-        <div
-          className="fixed inset-0 z-[80] bg-black/80 p-4 md:hidden"
-          onClick={(event) => {
-            event.stopPropagation();
-            setMapOpen(false);
-          }}
-        >
-          <div className="mx-auto flex h-full max-w-md flex-col justify-end">
-            <div
-              className="max-h-[88vh] overflow-y-auto rounded-2xl border border-white/10 bg-zinc-950 p-3 shadow-2xl"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="mb-3 flex items-center justify-between px-1">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-white/55">HOUSE MAP</span>
-                <button
-                  type="button"
-                  onClick={() => setMapOpen(false)}
-                  className="rounded-full border border-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-white/45"
-                >
-                  Close
-                </button>
-              </div>
-              <HouseMap rooms={currentRooms} players={players} selectedRoomId={selectedRoomId} onSelectRoom={selectRoom} />
-              <div className="mt-3">
-                <MovementTrail rows={movementRows} />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -856,15 +750,18 @@ export function WhisperAllocationOverview({
   animated?: boolean;
 }) {
   const fadeIn = animated ? "animate-[fadeIn_0.35s_ease-out]" : "";
+  const isMingleStage = !!stage.hasRoomMetadata;
 
   return (
     <div data-controls className="flex-1 overflow-y-auto p-4 md:p-6">
       <div className="text-center mb-6">
         <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-purple-300/70 mb-2">
-          WHISPER: OPEN ROOMS
+          {isMingleStage ? "MINGLE MAP" : "Whisper Room Assignments"}
         </p>
         <p className="text-xs text-white/40 max-w-md mx-auto leading-relaxed">
-          HOUSE MAP: each player chose a neutral room. Empty rooms and solo rooms are part of the signal.
+          {isMingleStage
+            ? "Agents chose neutral rooms. Empty, singleton, and group rooms are part of the signal."
+            : "Each player secretly chose another player to whisper with. Mutual picks share a private room."}
         </p>
       </div>
 
@@ -886,7 +783,9 @@ export function WhisperAllocationOverview({
                   style={animated ? { animationDelay: `${index * 150}ms` } : undefined}
                 >
                   <p className="text-[10px] uppercase tracking-[0.28em] text-purple-300/50 mb-4">
-                    Room {room.roomId} · {room.playerNames.length >= 2 ? "BACKCHANNEL" : room.playerNames.length === 1 ? "SOLO" : "EMPTY"}
+                    Room {room.roomId} · {isMingleStage
+                      ? room.playerNames.length >= 2 ? "GROUP" : room.playerNames.length === 1 ? "SINGLE" : "EMPTY"
+                      : "PRIVATE"}
                   </p>
                   <div className="flex items-center justify-center gap-3 flex-wrap">
                     {room.playerNames.length === 0 ? (
@@ -924,7 +823,9 @@ export function WhisperAllocationOverview({
                   </div>
                 ))}
               </div>
-              <p className="text-[10px] text-white/25 mt-3 italic">No mutual pick — waiting in the Commons this round.</p>
+              <p className="text-[10px] text-white/25 mt-3 italic">
+                {isMingleStage ? "Not in a Mingle room this turn." : "No mutual pick — waiting in the Commons this round."}
+              </p>
             </div>
           )}
         </div>
@@ -998,7 +899,7 @@ export function WhisperPhaseView({
     <div className="flex-1 flex flex-col min-h-0 p-4 md:p-6">
       <div className="flex-shrink-0 text-center mb-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-purple-300/70 mb-1">
-          WHISPER: OPEN ROOMS
+          Whisper Rooms
         </p>
         <p className="text-sm text-white/55 italic min-h-[1.5rem]">
           <Typewriter
