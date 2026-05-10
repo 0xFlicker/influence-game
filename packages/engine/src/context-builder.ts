@@ -6,7 +6,7 @@
 
 import type { GameState } from "./game-state";
 import type { TranscriptLogger } from "./transcript-logger";
-import type { UUID, RoomAllocation, JuryMember } from "./types";
+import type { UUID, RoomAllocation, JuryMember, WhisperRoomCount } from "./types";
 import { Phase } from "./types";
 import type { PhaseContext } from "./game-runner.types";
 import { computeJurySize } from "./types";
@@ -16,6 +16,8 @@ export class ContextBuilder {
   currentRoomAllocations: RoomAllocation[] = [];
   /** Players excluded from rooms this round */
   currentExcludedPlayerIds: UUID[] = [];
+  /** Privacy-safe room counts for the current or most recent Mingle turn */
+  currentRoomCounts: WhisperRoomCount[] = [];
 
   constructor(
     private readonly gameState: GameState,
@@ -44,11 +46,17 @@ export class ContextBuilder {
       eliminationContext?: PhaseContext["eliminationContext"];
     },
     isEliminated?: boolean,
-    roomInfo?: { roomCount?: number; roomMates?: string[] },
+    roomInfo?: {
+      roomCount?: number;
+      roomCounts?: WhisperRoomCount[];
+      currentRoomId?: number;
+      roomMates?: string[];
+      includeRoomAllocations?: boolean;
+    },
   ): PhaseContext {
     const player = this.gameState.getPlayer(agentId)!;
 
-    const roomAllocations = this.currentRoomAllocations.length > 0
+    const roomAllocations = roomInfo?.includeRoomAllocations && this.currentRoomAllocations.length > 0
       ? this.currentRoomAllocations.map((r) => ({
           roomId: r.roomId,
           beat: r.beat,
@@ -69,6 +77,8 @@ export class ContextBuilder {
       empoweredId: extra?.empoweredId ?? this.gameState.empoweredId ?? undefined,
       councilCandidates: extra?.councilCandidates ?? this.gameState.councilCandidates ?? undefined,
       roomCount: roomInfo?.roomCount,
+      roomCounts: roomInfo?.roomCounts ?? (this.currentRoomCounts.length > 0 ? [...this.currentRoomCounts] : undefined),
+      currentRoomId: roomInfo?.currentRoomId,
       roomAllocations,
       roomMates: roomInfo?.roomMates,
       endgameStage: this.gameState.endgameStage ?? undefined,

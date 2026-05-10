@@ -12,6 +12,7 @@ import type {
   RoomAllocation,
   Phase,
   WhisperSessionDiagnostics,
+  WhisperRoomCount,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -43,6 +44,17 @@ export interface AgentResponse {
   message: string;
 }
 
+export interface MingleTurnAction {
+  /** Agent's internal thinking (hidden from players, visible to viewers) */
+  thinking?: string;
+  /** Private room message. Empty/null means no TALK action. */
+  message?: string | null;
+  /** True when the agent intentionally sends NO_REPLY for this turn. */
+  noReply?: boolean;
+  /** Optional local room number to enter for the next turn. */
+  gotoRoomId?: number | null;
+}
+
 export interface PowerLobbyExposure {
   id: UUID;
   name: string;
@@ -72,6 +84,8 @@ export interface IAgent {
   chooseWhisperRoom(context: PhaseContext): Promise<number | null>;
   /** Send a private room message to all other occupants, or null to pass */
   sendRoomMessage(context: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<AgentResponse | null>;
+  /** Mingle turn action: TALK or NO_REPLY, plus optional GOTO ROOM N for the next turn */
+  takeMingleTurn?(context: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<MingleTurnAction>;
   /** Called to collect a rumor message */
   getRumorMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called to collect votes */
@@ -150,6 +164,10 @@ export interface PhaseContext {
   // Room allocation context (whisper rooms)
   /** Number of available rooms this round */
   roomCount?: number;
+  /** Current occupant count for each room. Player identities outside the current room are hidden. */
+  roomCounts?: WhisperRoomCount[];
+  /** This agent's current local room number, if they are in a Mingle room. */
+  currentRoomId?: number;
   /** Room assignments for this round (if whisper phase completed) */
   roomAllocations?: Array<{ roomId: number; beat: number; playerIds: string[]; playerNames: string[] }>;
   /** This agent's current room occupants, including self */

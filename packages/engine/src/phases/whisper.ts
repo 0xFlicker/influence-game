@@ -1,11 +1,15 @@
 import type {
   UUID,
+  MingleTurnActionRecord,
   RoomAllocation,
   WhisperRoomChoiceRecord,
   WhisperRoomPlayerRef,
+  WhisperRoomChoiceStatus,
+  WhisperRoomCount,
   WhisperSessionDiagnostics,
 } from "../types";
 import { Phase } from "../types";
+import type { MingleTurnAction } from "../game-runner.types";
 import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
 
 export interface RoomAllocationOptions {
@@ -110,37 +114,168 @@ function describeRoom(ctx: PhaseRunnerContext, room: RoomAllocation): string {
   return `Room ${room.roomId}: ${occupantNames.length > 0 ? occupantNames.join(", ") : "Empty"}`;
 }
 
-async function runRoomConversation(
-  ctx: PhaseRunnerContext,
-  room: RoomAllocation,
-  roomCountForContext: number,
-): Promise<void> {
-  if (room.playerIds.length < 2) return;
+function buildRoomCounts(localRooms: RoomAllocation[]): WhisperRoomCount[] {
+  return localRooms.map((room) => ({ roomId: room.roomId, count: room.playerIds.length }));
+}
 
-  const { agents, logger, contextBuilder, gameState } = ctx;
-  const roomMates = room.playerIds.map((id) => gameState.getPlayerName(id));
-  const conversationHistory: Array<{ from: string; text: string }> = [];
+function buildRoomsFromAssignments(
+  roomByPlayerId: Map<UUID, number>,
+  alivePlayers: Array<{ id: UUID; name: string }>,
+  roomCount: number,
+  round: number,
+  beat: number,
+): RoomAllocation[] {
+  const rooms: RoomAllocation[] = Array.from({ length: roomCount }, (_, index) => ({
+    roomId: index + 1,
+    round,
+    beat,
+    playerIds: [],
+  }));
 
-  for (const playerId of room.playerIds) {
-    const agent = agents.get(playerId)!;
-    const fromName = gameState.getPlayerName(playerId);
-    const recipientIds = room.playerIds.filter((id) => id !== playerId);
-    const phaseCtx = contextBuilder.buildPhaseContext(playerId, Phase.WHISPER, undefined, undefined, {
-      roomCount: roomCountForContext,
-      roomMates,
-    });
-    const response = await agent.sendRoomMessage(phaseCtx, roomMates, conversationHistory);
-    if (!response) continue;
-
-    for (const recipientId of recipientIds) {
-      const inbox = ctx.whisperInbox.get(recipientId) ?? [];
-      inbox.push({ from: fromName, text: response.message });
-      ctx.whisperInbox.set(recipientId, inbox);
-    }
-
-    conversationHistory.push({ from: fromName, text: response.message });
-    logger.logWhisper(playerId, recipientIds, response.message, room.roomId, response.thinking);
+  for (const player of alivePlayers) {
+    const localRoomId = roomByPlayerId.get(player.id) ?? 1;
+    rooms[localRoomId - 1]?.playerIds.push(player.id);
   }
+
+  return rooms;
+}
+
+function assignGlobalRoomIds(
+  localRooms: RoomAllocation[],
+  firstRoomId: number,
+): { rooms: RoomAllocation[]; roomIdByLocalRoomId: Map<number, number>; nextRoomId: number } {
+  let nextRoomId = firstRoomId;
+  const roomIdByLocalRoomId = new Map<number, number>();
+  const rooms = localRooms.map((room) => {
+    const globalRoomId = nextRoomId++;
+    roomIdByLocalRoomId.set(room.roomId, globalRoomId);
+    return { ...room, roomId: globalRoomId };
+  });
+  return { rooms, roomIdByLocalRoomId, nextRoomId };
+}
+
+function createChoiceRecordsFromAssignments(
+  alivePlayers: Array<{ id: UUID; name: string }>,
+  roomByPlayerId: Map<UUID, number>,
+): WhisperRoomChoiceRecord[] {
+  return alivePlayers.map((player) => {
+    const assignedRoomId = roomByPlayerId.get(player.id) ?? 1;
+    return {
+      player: { id: player.id, name: player.name },
+      requestedRoomId: assignedRoomId,
+      assignedRoomId,
+      status: "valid",
+    };
+  });
+}
+
+function remapDiagnostics(
+  diagnostics: WhisperSessionDiagnostics,
+  roomIdByLocalRoomId: Map<number, number>,
+): WhisperSessionDiagnostics {
+  return {
+    ...diagnostics,
+    allocatedRooms: diagnostics.allocatedRooms.map((room) => ({
+      ...room,
+      roomId: roomIdByLocalRoomId.get(room.roomId) ?? room.roomId,
+    })),
+    choices: diagnostics.choices.map((choice) => ({
+      ...choice,
+      assignedRoomId: roomIdByLocalRoomId.get(choice.assignedRoomId) ?? choice.assignedRoomId,
+    })),
+  };
+}
+
+function normalizeGotoRoomId(
+  gotoRoomId: number | null | undefined,
+  currentRoomId: number,
+  roomCount: number,
+): { roomId: number; status: WhisperRoomChoiceStatus; requestedRoomId: number | null } {
+  if (gotoRoomId == null) {
+    return { roomId: currentRoomId, status: "missing", requestedRoomId: null };
+  }
+  if (!Number.isInteger(gotoRoomId) || gotoRoomId < 1 || gotoRoomId > roomCount) {
+    return { roomId: currentRoomId, status: "invalid", requestedRoomId: gotoRoomId };
+  }
+  return { roomId: gotoRoomId, status: "valid", requestedRoomId: gotoRoomId };
+}
+
+async function runMingleTurn(
+  ctx: PhaseRunnerContext,
+  localRooms: RoomAllocation[],
+  globalRooms: RoomAllocation[],
+  roomCounts: WhisperRoomCount[],
+  roomByPlayerId: Map<UUID, number>,
+  roomCount: number,
+): Promise<MingleTurnActionRecord[]> {
+  const { agents, logger, contextBuilder, gameState } = ctx;
+  const nextRoomByPlayerId = new Map(roomByPlayerId);
+  const globalRoomByLocalId = new Map(localRooms.map((room, index) => [room.roomId, globalRooms[index]?.roomId ?? room.roomId]));
+  const actionRecords: MingleTurnActionRecord[] = [];
+
+  for (const room of localRooms) {
+    if (room.playerIds.length === 0) continue;
+
+    const globalRoomId = globalRoomByLocalId.get(room.roomId) ?? room.roomId;
+    const roomMates = room.playerIds.map((id) => gameState.getPlayerName(id));
+    const conversationHistory: Array<{ from: string; text: string }> = [];
+
+    for (const playerId of room.playerIds) {
+      const agent = agents.get(playerId)!;
+      const fromName = gameState.getPlayerName(playerId);
+      const recipientIds = room.playerIds.filter((id) => id !== playerId);
+      const phaseCtx = contextBuilder.buildPhaseContext(playerId, Phase.WHISPER, undefined, undefined, {
+        roomCount,
+        roomCounts,
+        currentRoomId: room.roomId,
+        roomMates,
+      });
+
+      let resolvedAction: MingleTurnAction;
+      if (agent.takeMingleTurn) {
+        resolvedAction = await agent.takeMingleTurn(phaseCtx, roomMates, conversationHistory);
+      } else {
+        const response = await agent.sendRoomMessage(phaseCtx, roomMates, conversationHistory);
+        resolvedAction = response
+          ? { ...response, noReply: false, gotoRoomId: null }
+          : { thinking: "", message: null, noReply: true, gotoRoomId: null };
+      }
+
+      const normalizedGoto = normalizeGotoRoomId(resolvedAction.gotoRoomId, room.roomId, roomCount);
+      nextRoomByPlayerId.set(playerId, normalizedGoto.roomId);
+
+      const message = resolvedAction.noReply ? null : resolvedAction.message?.trim();
+      const messageSent = Boolean(message && recipientIds.length > 0);
+      if (messageSent && message) {
+        for (const recipientId of recipientIds) {
+          const inbox = ctx.whisperInbox.get(recipientId) ?? [];
+          inbox.push({ from: fromName, text: message });
+          ctx.whisperInbox.set(recipientId, inbox);
+        }
+
+        conversationHistory.push({ from: fromName, text: message });
+        logger.logWhisper(playerId, recipientIds, message, globalRoomId, resolvedAction.thinking);
+      }
+
+      actionRecords.push({
+        player: { id: playerId, name: fromName },
+        turn: room.beat,
+        fromRoomId: room.roomId,
+        toRoomId: normalizedGoto.roomId,
+        moved: normalizedGoto.roomId !== room.roomId,
+        action: messageSent ? "talk" : "no_reply",
+        gotoRoomId: normalizedGoto.requestedRoomId,
+        gotoStatus: normalizedGoto.status,
+      });
+    }
+  }
+
+  roomByPlayerId.clear();
+  for (const [playerId, localRoomId] of nextRoomByPlayerId) {
+    roomByPlayerId.set(playerId, localRoomId);
+  }
+
+  return actionRecords;
 }
 
 export async function runWhisperPhase(
@@ -159,6 +294,7 @@ export async function runWhisperPhase(
   }
   contextBuilder.currentRoomAllocations = [];
   contextBuilder.currentExcludedPlayerIds = [];
+  contextBuilder.currentRoomCounts = [];
 
   const roomCount = computeRoomCount(alivePlayers.length);
   if (roomCount === 0) {
@@ -171,45 +307,80 @@ export async function runWhisperPhase(
 
   const beats = config.whisperSessionsPerRound ?? 2;
   const allRooms: RoomAllocation[] = [];
-  let globalRoomId = 0;
+  let nextGlobalRoomId = 1;
+  const initialRoomCounts: WhisperRoomCount[] = Array.from({ length: roomCount }, (_, index) => ({
+    roomId: index + 1,
+    count: 0,
+  }));
+  contextBuilder.currentRoomCounts = initialRoomCounts;
+
+  const choices = new Map<UUID, number | null>();
+  await Promise.all(
+    alivePlayers.map(async (player) => {
+      const agent = agents.get(player.id)!;
+      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.WHISPER, undefined, undefined, {
+        roomCount,
+        roomCounts: initialRoomCounts,
+      });
+      choices.set(player.id, await agent.chooseWhisperRoom(phaseCtx));
+    }),
+  );
+
+  const initialAllocation = allocateRooms(choices, alivePlayers, roomCount, gameState.round, 1);
+  const roomByPlayerId = new Map<UUID, number>();
+  for (const room of initialAllocation.rooms) {
+    for (const playerId of room.playerIds) {
+      roomByPlayerId.set(playerId, room.roomId);
+    }
+  }
 
   for (let beat = 1; beat <= beats; beat++) {
-    const choices = new Map<UUID, number | null>();
-    await Promise.all(
-      alivePlayers.map(async (player) => {
-        const agent = agents.get(player.id)!;
-        const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.WHISPER, undefined, undefined, { roomCount });
-        choices.set(player.id, await agent.chooseWhisperRoom(phaseCtx));
-      }),
-    );
+    const localRooms = beat === 1
+      ? initialAllocation.rooms
+      : buildRoomsFromAssignments(roomByPlayerId, alivePlayers, roomCount, gameState.round, beat);
+    const roomCounts = buildRoomCounts(localRooms);
+    const globalAssignment = assignGlobalRoomIds(localRooms, nextGlobalRoomId);
+    nextGlobalRoomId = globalAssignment.nextRoomId;
+    const beatRooms = globalAssignment.rooms;
+    const beatDiagnostics: WhisperSessionDiagnostics = beat === 1
+      ? remapDiagnostics(initialAllocation.diagnostics, globalAssignment.roomIdByLocalRoomId)
+      : {
+          round: gameState.round,
+          beat,
+          roomCount,
+          eligiblePlayers: alivePlayers.map((player) => ({ id: player.id, name: player.name })),
+          choices: createChoiceRecordsFromAssignments(alivePlayers, roomByPlayerId).map((choice) => ({
+            ...choice,
+            assignedRoomId: globalAssignment.roomIdByLocalRoomId.get(choice.assignedRoomId) ?? choice.assignedRoomId,
+          })),
+          allocatedRooms: beatRooms.map((room) => ({
+            roomId: room.roomId,
+            beat: room.beat,
+            players: room.playerIds.map((playerId) => ({
+              id: playerId,
+              name: gameState.getPlayerName(playerId),
+            })),
+            conversationRan: room.playerIds.length >= 2,
+          })),
+        };
 
-    const { rooms, diagnostics } = allocateRooms(choices, alivePlayers, roomCount, gameState.round, beat);
-    const beatRooms = rooms.map((room) => {
-      globalRoomId++;
-      return { ...room, roomId: globalRoomId };
-    });
-    const beatDiagnostics: WhisperSessionDiagnostics = {
-      ...diagnostics,
-      allocatedRooms: diagnostics.allocatedRooms.map((room, index) => ({
-        ...room,
-        roomId: beatRooms[index]?.roomId ?? room.roomId,
-      })),
-      choices: diagnostics.choices.map((choice) => ({
-        ...choice,
-        assignedRoomId: beatRooms[choice.assignedRoomId - 1]?.roomId ?? choice.assignedRoomId,
-      })),
-    };
-
+    contextBuilder.currentRoomCounts = roomCounts;
     contextBuilder.currentRoomAllocations = beatRooms;
     allRooms.push(...beatRooms);
 
-    const allocationText = `Beat ${beat}: ${beatRooms.map((room) => describeRoom(ctx, room)).join(" | ")}`;
-    logger.logRoomAllocation(allocationText, beatRooms, [], beatDiagnostics);
-    await Promise.all(beatRooms.map((room) => runRoomConversation(ctx, room, roomCount)));
+    const allocationText = `Turn ${beat}: ${beatRooms.map((room) => describeRoom(ctx, room)).join(" | ")}`;
+    const allocationEntry = logger.logRoomAllocation(allocationText, beatRooms, [], beatDiagnostics);
+    const actions = await runMingleTurn(ctx, localRooms, beatRooms, roomCounts, roomByPlayerId, roomCount);
+    if (allocationEntry.roomMetadata?.diagnostics) {
+      allocationEntry.roomMetadata.diagnostics.actions = actions;
+    }
   }
 
   contextBuilder.currentRoomAllocations = allRooms;
   contextBuilder.currentExcludedPlayerIds = [];
+  contextBuilder.currentRoomCounts = buildRoomCounts(
+    buildRoomsFromAssignments(roomByPlayerId, alivePlayers, roomCount, gameState.round, beats),
+  );
   gameState.recordRoomAllocations(allRooms, []);
 
   actor.send({ type: "PHASE_COMPLETE" });

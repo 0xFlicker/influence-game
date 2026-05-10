@@ -12,7 +12,7 @@ import type {
   ChatCompletionMessageToolCall,
 } from "openai/resources/chat/completions";
 import type { ReasoningEffort } from "openai/resources/shared";
-import type { AgentResponse, IAgent, PhaseContext, PowerLobbyExposure } from "./game-runner";
+import type { AgentResponse, IAgent, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "./game-runner";
 import { Phase } from "./types";
 import type { UUID, PowerAction } from "./types";
 import type { MemoryStore } from "./memory-store";
@@ -294,6 +294,35 @@ const TOOL_SEND_ROOM_MESSAGE: ChatCompletionTool = {
         },
       },
       required: ["thinking", "message", "pass"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+};
+
+const TOOL_MINGLE_TURN: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "mingle_turn",
+    description: "Take one Mingle turn: TALK, NO_REPLY, and optionally GOTO another room next turn",
+    parameters: {
+      type: "object",
+      properties: {
+        thinking: { type: "string", description: "Your internal reasoning for this turn (hidden from other players)" },
+        message: {
+          type: ["string", "null"],
+          description: "TALK message for current room occupants, or null for NO_REPLY",
+        },
+        noReply: {
+          type: "boolean",
+          description: "Set true when you intentionally say nothing this turn",
+        },
+        gotoRoomId: {
+          type: ["number", "null"],
+          description: "Optional local room number to enter after this turn, or null to stay",
+        },
+      },
+      required: ["thinking", "message", "noReply", "gotoRoomId"],
       additionalProperties: false,
     },
     strict: true,
@@ -780,25 +809,21 @@ Use the send_whispers tool to submit your whisper messages. Use player NAMES (no
     if (roomCount < 1) return null;
     const rooms = Array.from({ length: roomCount }, (_, index) => index + 1);
 
-    const previousOccupancy = ctx.roomAllocations && ctx.roomAllocations.length > 0
-      ? `\n## Previous Room Occupancy\n${ctx.roomAllocations
-          .slice(-roomCount)
-          .map((room) => {
-            const occupants = room.playerNames.length > 0 ? room.playerNames.join(", ") : "Empty";
-            return `- Room ${room.roomId}: ${occupants}`;
-          })
+    const currentCounts = ctx.roomCounts && ctx.roomCounts.length > 0
+      ? `\n## Current Room Counts\n${ctx.roomCounts
+          .map((room) => `- Room ${room.roomId}: ${room.count} player${room.count === 1 ? "" : "s"}`)
           .join("\n")}`
       : "";
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task
-Choose one neutral whisper room to enter for this beat.
+Choose one neutral Mingle room to enter.
 
 Available rooms: ${rooms.map((roomId) => `Room ${roomId}`).join(", ")}
-${previousOccupancy}
+${currentCounts}
 
-Rooms have no theme and no occupancy cap. You may stay, move, pile into a crowded room, or sit alone.
+Rooms have no theme and no occupancy cap. You can pile into a crowded room, split off, or sit alone.
 Use the choose_whisper_room tool to submit one room number.`;
 
     try {
@@ -865,6 +890,74 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
         return { thinking: "", message: `${otherRoomMates.join(", ")}, let's compare notes and watch the vote together.` };
       }
       return null;
+    }
+  }
+
+  async takeMingleTurn(ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<MingleTurnAction> {
+    const otherRoomMates = roomMates.filter((name) => name !== this.name);
+    const history = conversationHistory ?? [];
+    const historyText = history.length > 0
+      ? `\n## Conversation This Turn\n${history.map((m) => `${m.from}: "${m.text}"`).join("\n")}\n`
+      : "";
+    const roomCounts = ctx.roomCounts && ctx.roomCounts.length > 0
+      ? `\n## Room Counts\n${ctx.roomCounts
+          .map((room) => `- Room ${room.roomId}: ${room.count} player${room.count === 1 ? "" : "s"}`)
+          .join("\n")}`
+      : "";
+    const currentRoom = ctx.currentRoomId != null ? `Room ${ctx.currentRoomId}` : "your current room";
+    const availableRooms = Array.from({ length: ctx.roomCount ?? 0 }, (_, index) => index + 1);
+
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
+## Your Task — Mingle Turn
+You are in ${currentRoom} with: ${roomMates.join(", ")}.
+${roomCounts}
+${historyText}
+Nobody outside your current room can hear this turn. You only know exact identities in your current room; other rooms are visible as counts only.
+
+Choose exactly one of:
+- TALK: send a private message to the other occupants in your current room.
+- NO_REPLY: say nothing this turn.
+
+You may also optionally GOTO ROOM N after this turn. Movement happens after everyone in the current turn acts, so your current TALK only reaches this room.
+${availableRooms.length > 0 ? `Available GOTO rooms: ${availableRooms.map((roomId) => `Room ${roomId}`).join(", ")}.` : ""}
+
+Guidance:
+- If you are alone, TALK has no audience; use NO_REPLY and consider moving.
+- If the room has people, make TALK specific and strategic.
+- Move when a crowded room is noisy, a private room looks useful, or you want to avoid being predictable.
+- Staying put is valid when the current room conversation is valuable.
+
+Keep TALK to 1-3 sentences. Use the mingle_turn tool.`;
+
+    try {
+      const result = await this.callTool<{
+        thinking?: string;
+        message?: string | null;
+        noReply?: boolean;
+        gotoRoomId?: number | null;
+      }>(
+        prompt, TOOL_MINGLE_TURN, 300, sys,
+        { action: "mingle-turn", reasoningEffort: "medium" },
+      );
+      const msg = result.noReply ? null : (result.message?.trim() || null);
+      const gotoRoomId = Number.isInteger(result.gotoRoomId) ? result.gotoRoomId : null;
+      return {
+        thinking: result.thinking ?? "",
+        message: msg,
+        noReply: result.noReply ?? !msg,
+        gotoRoomId,
+      };
+    } catch {
+      if (otherRoomMates.length > 0 && history.length === 0) {
+        return {
+          thinking: "",
+          message: `${otherRoomMates.join(", ")}, let's compare notes and watch the vote together.`,
+          noReply: false,
+          gotoRoomId: null,
+        };
+      }
+      return { thinking: "", message: null, noReply: true, gotoRoomId: null };
     }
   }
 
@@ -1505,14 +1598,16 @@ IMPORTANT: Only reference alive players in your messages, votes, and strategies.
       .map((m) => `  From ${m.from}: "${m.text}"`)
       .join("\n");
 
-    // Room allocation context (for phases after whisper)
+    // Privacy-safe room context: global counts only, plus identities in the current room.
     let roomSection = "";
-    if (ctx.roomAllocations && ctx.roomAllocations.length > 0) {
-      const roomLines = ctx.roomAllocations.map((r) => {
-        const occupants = r.playerNames.length > 0 ? r.playerNames.join(", ") : "Empty";
-        return `  - Beat ${r.beat}, Room ${r.roomId}: ${occupants}`;
-      });
-      roomSection = `\n## Whisper Rooms This Round\n${roomLines.join("\n")}`;
+    if ((ctx.roomCounts && ctx.roomCounts.length > 0) || ctx.roomMates) {
+      const countLines = ctx.roomCounts && ctx.roomCounts.length > 0
+        ? ctx.roomCounts.map((room) => `  - Room ${room.roomId}: ${room.count} player${room.count === 1 ? "" : "s"}`).join("\n")
+        : "";
+      const localLine = ctx.roomMates
+        ? `\n- Your current room${ctx.currentRoomId != null ? ` (Room ${ctx.currentRoomId})` : ""}: ${ctx.roomMates.join(", ")}`
+        : "";
+      roomSection = `\n## Mingle Room Context\n${countLines}${localLine}`;
     }
 
     const memoryNotes = Array.from(this.memory.notes.entries())

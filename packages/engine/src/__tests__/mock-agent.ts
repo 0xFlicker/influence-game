@@ -3,7 +3,7 @@
  * Uses simple scripted strategies to validate game mechanics.
  */
 
-import type { AgentResponse, IAgent, PhaseContext, PowerLobbyExposure } from "../game-runner";
+import type { AgentResponse, IAgent, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "../game-runner";
 import type { UUID, PowerAction } from "../types";
 
 /** Assert a value is defined — throws in tests if assumption is violated */
@@ -83,6 +83,13 @@ export class MockAgent implements IAgent {
       `${others.join(", ")}, let's compare notes before the vote.`,
       `Open-room group whisper to ${others.join(", ")}`,
     );
+  }
+
+  async takeMingleTurn(ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<MingleTurnAction> {
+    const response = await this.sendRoomMessage(ctx, roomMates, conversationHistory);
+    return response
+      ? { ...response, noReply: false, gotoRoomId: null }
+      : { thinking: "", message: null, noReply: true, gotoRoomId: null };
   }
 
   async getRumorMessage(ctx: PhaseContext): Promise<AgentResponse> {

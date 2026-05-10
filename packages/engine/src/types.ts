@@ -190,6 +190,24 @@ export interface WhisperRoomChoiceRecord {
   status: WhisperRoomChoiceStatus;
 }
 
+export interface WhisperRoomCount {
+  roomId: number;
+  count: number;
+}
+
+export type MingleTurnActionType = "talk" | "no_reply";
+
+export interface MingleTurnActionRecord {
+  player: WhisperRoomPlayerRef;
+  turn: number;
+  fromRoomId: number;
+  toRoomId: number;
+  moved: boolean;
+  action: MingleTurnActionType;
+  gotoRoomId: number | null;
+  gotoStatus: WhisperRoomChoiceStatus;
+}
+
 export interface WhisperAllocatedRoomDiagnostics {
   roomId: number;
   beat: number;
@@ -204,6 +222,7 @@ export interface WhisperSessionDiagnostics {
   eligiblePlayers: WhisperRoomPlayerRef[];
   choices: WhisperRoomChoiceRecord[];
   allocatedRooms: WhisperAllocatedRoomDiagnostics[];
+  actions?: MingleTurnActionRecord[];
 }
 
 /** System event emitted when whisper rooms are allocated for a round */

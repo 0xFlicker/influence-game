@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import { GameState, createUUID } from "../game-state";
 import { GameEventBus } from "../event-bus";
 import { GameRunner } from "../game-runner";
-import type { AgentResponse, PhaseContext, PowerLobbyExposure } from "../game-runner";
+import type { AgentResponse, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "../game-runner";
 import { createPhaseMachine } from "../phase-machine";
 import { createActor } from "xstate";
 import { Phase, PlayerStatus } from "../types";
@@ -135,7 +135,7 @@ describe("Whisper Rooms", () => {
       (entry) => entry.scope === "system" && entry.phase === Phase.WHISPER && entry.roomMetadata,
     );
     expect(allocation).toBeDefined();
-    expect(allocation!.text).toContain("Beat 1:");
+    expect(allocation!.text).toContain("Turn 1:");
     expect(allocation!.roomMetadata!.rooms).toHaveLength(2);
     expect(allocation!.roomMetadata!.rooms[0]!.playerIds.length).toBeGreaterThan(0);
   });
@@ -221,6 +221,179 @@ describe("Whisper Rooms", () => {
       expect(senders).toHaveLength(4);
       expect(senders).not.toContain(name);
     }
+  });
+
+  it("lets agents move rooms between Mingle turns", async () => {
+    class ScriptedMingleAgent extends MockAgent {
+      private turnIndex = 0;
+
+      constructor(
+        id: string,
+        name: string,
+        private readonly initialRoomId: number,
+        private readonly actions: MingleTurnAction[],
+      ) {
+        super(id, name);
+      }
+
+      override async chooseWhisperRoom(): Promise<number> {
+        return this.initialRoomId;
+      }
+
+      override async takeMingleTurn(): Promise<MingleTurnAction> {
+        const action = this.actions[this.turnIndex];
+        this.turnIndex++;
+        return action ?? { thinking: "", message: null, noReply: true, gotoRoomId: null };
+      }
+    }
+
+    const alpha = new ScriptedMingleAgent(createUUID(), "Alpha", 1, [
+      { thinking: "Move after checking in.", message: "Beta, keep me posted. I'm going next door.", noReply: false, gotoRoomId: 2 },
+      { thinking: "Test the larger room.", message: "I crossed over because this room has the numbers.", noReply: false, gotoRoomId: null },
+    ]);
+    const agents = [
+      alpha,
+      new ScriptedMingleAgent(createUUID(), "Beta", 1, []),
+      new ScriptedMingleAgent(createUUID(), "Gamma", 2, []),
+      new ScriptedMingleAgent(createUUID(), "Delta", 2, []),
+      new ScriptedMingleAgent(createUUID(), "Echo", 2, []),
+    ];
+
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 2 });
+    const result = await runner.run();
+
+    const allocations = result.transcript.filter(
+      (entry) => entry.round === 1 && entry.scope === "system" && entry.roomMetadata,
+    );
+    expect(allocations).toHaveLength(2);
+
+    const firstRooms = allocations[0]!.roomMetadata!.rooms;
+    const secondRooms = allocations[1]!.roomMetadata!.rooms;
+    expect(firstRooms[0]!.playerIds).toContain(alpha.id);
+    expect(firstRooms[1]!.playerIds).not.toContain(alpha.id);
+    expect(secondRooms[0]!.playerIds).not.toContain(alpha.id);
+    expect(secondRooms[1]!.playerIds).toContain(alpha.id);
+
+    const alphaMove = allocations[0]!.roomMetadata!.diagnostics!.actions!.find((action) => action.player.name === "Alpha");
+    expect(alphaMove).toMatchObject({ fromRoomId: 1, toRoomId: 2, moved: true, action: "talk" });
+
+    const movedWhisper = result.transcript.find(
+      (entry) => entry.round === 1 && entry.scope === "whisper" && entry.from === "Alpha" && entry.text.includes("crossed over"),
+    );
+    expect(movedWhisper?.roomId).toBe(secondRooms[1]!.roomId);
+    expect(movedWhisper?.to).toEqual(["Gamma", "Delta", "Echo"]);
+  });
+
+  it("passes privacy-safe room counts and only local rosters to agents", async () => {
+    class PrivacyProbeAgent extends MockAgent {
+      readonly choiceContexts: PhaseContext[] = [];
+      readonly turnContexts: PhaseContext[] = [];
+
+      constructor(
+        id: string,
+        name: string,
+        private readonly initialRoomId: number,
+      ) {
+        super(id, name);
+      }
+
+      override async chooseWhisperRoom(ctx: PhaseContext): Promise<number> {
+        this.choiceContexts.push(ctx);
+        return this.initialRoomId;
+      }
+
+      override async takeMingleTurn(ctx: PhaseContext): Promise<MingleTurnAction> {
+        this.turnContexts.push(ctx);
+        return { thinking: "", message: null, noReply: true, gotoRoomId: null };
+      }
+    }
+
+    const alpha = new PrivacyProbeAgent(createUUID(), "Alpha", 1);
+    const gamma = new PrivacyProbeAgent(createUUID(), "Gamma", 2);
+    const agents = [
+      alpha,
+      new PrivacyProbeAgent(createUUID(), "Beta", 1),
+      gamma,
+      new PrivacyProbeAgent(createUUID(), "Delta", 2),
+      new PrivacyProbeAgent(createUUID(), "Echo", 2),
+    ];
+
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 1 });
+    await runner.run();
+
+    expect(alpha.choiceContexts[0]!.roomCounts).toEqual([{ roomId: 1, count: 0 }, { roomId: 2, count: 0 }]);
+    expect(alpha.choiceContexts[0]!.roomAllocations).toBeUndefined();
+
+    expect(alpha.turnContexts[0]!.roomCounts).toEqual([{ roomId: 1, count: 2 }, { roomId: 2, count: 3 }]);
+    expect(alpha.turnContexts[0]!.roomMates).toEqual(["Alpha", "Beta"]);
+    expect(alpha.turnContexts[0]!.currentRoomId).toBe(1);
+    expect(alpha.turnContexts[0]!.roomAllocations).toBeUndefined();
+
+    expect(gamma.turnContexts[0]!.roomCounts).toEqual([{ roomId: 1, count: 2 }, { roomId: 2, count: 3 }]);
+    expect(gamma.turnContexts[0]!.roomMates).toEqual(["Gamma", "Delta", "Echo"]);
+    expect(gamma.turnContexts[0]!.roomMates).not.toContain("Alpha");
+    expect(gamma.turnContexts[0]!.roomAllocations).toBeUndefined();
+  });
+
+  it("preserves empty and singleton room metadata while singleton agents can move", async () => {
+    class SparseMingleAgent extends MockAgent {
+      private turnIndex = 0;
+
+      constructor(
+        id: string,
+        name: string,
+        private readonly initialRoomId: number,
+        private readonly actions: MingleTurnAction[] = [],
+      ) {
+        super(id, name);
+      }
+
+      override async chooseWhisperRoom(): Promise<number> {
+        return this.initialRoomId;
+      }
+
+      override async takeMingleTurn(): Promise<MingleTurnAction> {
+        const action = this.actions[this.turnIndex];
+        this.turnIndex++;
+        return action ?? { thinking: "", message: null, noReply: true, gotoRoomId: null };
+      }
+    }
+
+    const alpha = new SparseMingleAgent(createUUID(), "Alpha", 1, [
+      { thinking: "No audience yet.", message: null, noReply: true, gotoRoomId: 2 },
+      { thinking: "Now there are people here.", message: "I left the quiet room because this is where the vote is.", noReply: false, gotoRoomId: null },
+    ]);
+    const agents = [
+      alpha,
+      new SparseMingleAgent(createUUID(), "Beta", 2),
+      new SparseMingleAgent(createUUID(), "Gamma", 2),
+      new SparseMingleAgent(createUUID(), "Delta", 2),
+      new SparseMingleAgent(createUUID(), "Echo", 2),
+      new SparseMingleAgent(createUUID(), "Finn", 2),
+      new SparseMingleAgent(createUUID(), "Vera", 2),
+    ];
+
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 2 });
+    const result = await runner.run();
+
+    const allocations = result.transcript.filter(
+      (entry) => entry.round === 1 && entry.scope === "system" && entry.roomMetadata,
+    );
+    const firstRooms = allocations[0]!.roomMetadata!.rooms;
+    expect(firstRooms).toHaveLength(3);
+    expect(firstRooms.map((room) => room.playerIds.length)).toEqual([1, 6, 0]);
+    expect(allocations[0]!.roomMetadata!.diagnostics!.allocatedRooms.map((room) => room.conversationRan)).toEqual([false, true, false]);
+
+    const alphaFirstAction = allocations[0]!.roomMetadata!.diagnostics!.actions!.find((action) => action.player.name === "Alpha");
+    expect(alphaFirstAction).toMatchObject({ action: "no_reply", fromRoomId: 1, toRoomId: 2, moved: true });
+    expect(result.transcript.some((entry) => entry.round === 1 && entry.scope === "whisper" && entry.from === "Alpha" && entry.roomId === firstRooms[0]!.roomId)).toBe(false);
+
+    const secondRooms = allocations[1]!.roomMetadata!.rooms;
+    expect(secondRooms[1]!.playerIds).toContain(alpha.id);
+    const alphaSecondWhisper = result.transcript.find(
+      (entry) => entry.round === 1 && entry.scope === "whisper" && entry.from === "Alpha" && entry.text.includes("quiet room"),
+    );
+    expect(alphaSecondWhisper?.roomId).toBe(secondRooms[1]!.roomId);
   });
 });
 
