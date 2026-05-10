@@ -1580,10 +1580,10 @@ ${roomSection}
    * - No temperature parameter (only default 1.0)
    * - Higher token budgets (reasoning tokens consume completion budget)
    *
-   * Applies to: o-series (o1, o3, o4), gpt-5-nano, gpt-5-mini
+   * Applies to: o-series (o1, o3, o4), gpt-5 family
    */
   private isReasoningModel(): boolean {
-    return /^o\d/.test(this.model) || this.model === "gpt-5-nano" || this.model === "gpt-5-mini";
+    return /^o\d/.test(this.model) || this.model.startsWith("gpt-5");
   }
 
   /**
@@ -1592,6 +1592,20 @@ ${roomSection}
    */
   private usesCompletionTokensParam(): boolean {
     return this.isReasoningModel() || this.model.startsWith("gpt-5");
+  }
+
+  /** gpt-5/o-series models only accept the default temperature. */
+  private supportsCustomTemperature(): boolean {
+    return !this.model.startsWith("gpt-5") && !/^o\d/.test(this.model);
+  }
+
+  /**
+   * Chat-completions function tools reject reasoning_effort for GPT-5.4+.
+   * Observed GPT-5.4 setting: gpt-5.4-nano returned "Function tools with
+   * reasoning_effort are not supported" and required this param to be omitted.
+   */
+  private supportsToolReasoningEffort(): boolean {
+    return !/^gpt-5\.[4-9]/.test(this.model);
   }
 
   /**
@@ -1733,8 +1747,8 @@ ${JSON.stringify(tool.function.parameters)}`,
       ...(useCompletionTokens
         ? { max_completion_tokens: effectiveMaxTokens }
         : { max_tokens: effectiveMaxTokens }),
-      ...(!reasoning && { temperature: 0.7 }),
-      ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
+      ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
+      ...(reasoning && this.supportsToolReasoningEffort() && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
       response_format: {
         type: "json_schema",
         json_schema: {
@@ -1802,7 +1816,7 @@ ${JSON.stringify(tool.function.parameters)}`,
           ...(useCompletionTokens
             ? { max_completion_tokens: effectiveMaxTokens }
             : { max_tokens: effectiveMaxTokens }),
-          ...(!reasoning && { temperature: 0.7 }),
+          ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
           ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
         });
 
@@ -1864,7 +1878,7 @@ ${JSON.stringify(tool.function.parameters)}`,
           ...(useCompletionTokens
             ? { max_completion_tokens: effectiveMaxTokens }
             : { max_tokens: effectiveMaxTokens }),
-          ...(!reasoning && { temperature: 0.7 }),
+          ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
           ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
           response_format: InfluenceAgent.AGENT_RESPONSE_FORMAT,
         });
@@ -1938,8 +1952,8 @@ ${JSON.stringify(tool.function.parameters)}`,
           ...(useCompletionTokens
             ? { max_completion_tokens: effectiveMaxTokens }
             : { max_tokens: effectiveMaxTokens }),
-          ...(!reasoning && { temperature: 0.7 }),
-          ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
+          ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
+          ...(reasoning && this.supportsToolReasoningEffort() && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
           tools: [tool],
           tool_choice: { type: "function", function: { name: tool.function.name } },
           parallel_tool_calls: false,
