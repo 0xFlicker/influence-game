@@ -31,7 +31,7 @@ All players speak in the public channel. This is a **social** space -- the unspo
 
 ### 2. Whisper (Private Rooms)
 
-Players are paired into private whisper rooms for one-on-one conversations. Each player can request a preferred partner, and The House matches rooms using a mutual-preference system. Players who don't get matched (or if there's an odd number) wait in the commons.
+When five or more players are alive, The House opens neutral whisper rooms. Each player chooses a room directly, and rooms may end up empty, solo, or crowded. Only rooms with two or more players produce a private backchannel conversation.
 
 This is where strategy lives. Negotiate alliances, share intelligence, plant misinformation, or make secret deals. What's said in whisper stays in whisper -- unless someone leaks it.
 

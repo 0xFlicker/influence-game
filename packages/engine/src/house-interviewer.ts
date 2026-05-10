@@ -98,16 +98,16 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     this.tokenTracker = tracker;
   }
 
-  /** gpt-5 family requires max_completion_tokens; nano/mini don't support temperature */
+  /** gpt-5 family requires max_completion_tokens and only accepts default temperature. */
   private modelParams(maxTokens: number, temperature: number) {
     const isGpt5 = this.model.startsWith("gpt-5");
-    const isReasoning = /^o\d/.test(this.model) || this.model === "gpt-5-nano" || this.model === "gpt-5-mini";
+    const isReasoning = /^o\d/.test(this.model) || isGpt5;
     const budget = isReasoning ? maxTokens + 4000 : maxTokens;
     return {
       ...(isGpt5 || isReasoning
         ? { max_completion_tokens: budget }
         : { max_tokens: budget }),
-      ...(!isReasoning && { temperature }),
+      ...(!isGpt5 && !isReasoning && { temperature }),
     };
   }
 
