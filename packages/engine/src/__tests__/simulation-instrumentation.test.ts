@@ -28,6 +28,10 @@ function systemEntry(round: number, phase: Phase, text: string): TranscriptEntry
   };
 }
 
+function room(roomId: number, playerIds: string[], round: number, beat = 1) {
+  return { roomId, playerIds, round, beat };
+}
+
 describe("simulation instrumentation", () => {
   it("extracts experiment counts from transcript metadata and token usage", () => {
     const transcript: TranscriptEntry[] = [
@@ -39,14 +43,14 @@ describe("simulation instrumentation", () => {
       {
         ...systemEntry(1, Phase.WHISPER, "Room 1: Atlas & Vera | Commons: Finn"),
         roomMetadata: {
-          rooms: [{ roomId: 1, playerA: "p1", playerB: "p2", round: 1 }],
+          rooms: [room(1, ["p1", "p2"], 1)],
           excluded: ["Finn"],
         },
       },
       {
         ...systemEntry(2, Phase.WHISPER, "Room 1: Vera & Atlas"),
         roomMetadata: {
-          rooms: [{ roomId: 1, playerA: "p2", playerB: "p1", round: 2 }],
+          rooms: [room(1, ["p2", "p1"], 2)],
           excluded: [],
         },
       },
@@ -94,7 +98,7 @@ describe("simulation instrumentation", () => {
         {
           ...systemEntry(1, Phase.WHISPER, "Room 1: Atlas & Vera"),
           roomMetadata: {
-            rooms: [{ roomId: 1, playerA: "p1", playerB: "p2", round: 1 }],
+            rooms: [room(1, ["p1", "p2"], 1)],
             excluded: [],
           },
         },
@@ -121,28 +125,30 @@ describe("simulation instrumentation", () => {
   it("preserves whisper request diagnostics and aggregates audit flags", () => {
     const diagnostics = {
       round: 2,
-      sessionIndex: 1,
-      allocationMode: "diversity-weighted" as const,
-      roomCountLimit: 1,
+      beat: 1,
+      roomCount: 1,
       eligiblePlayers: [
         { id: "p1", name: "Atlas" },
         { id: "p2", name: "Vera" },
         { id: "p3", name: "Finn" },
       ],
-      requests: [
+      choices: [
         {
-          requester: { id: "p1", name: "Atlas" },
-          requestedPartner: { id: "p2", name: "Vera" },
+          player: { id: "p1", name: "Atlas" },
+          requestedRoomId: 1,
+          assignedRoomId: 1,
           status: "valid" as const,
         },
         {
-          requester: { id: "p2", name: "Vera" },
-          requestedPartner: { id: "p1", name: "Atlas" },
+          player: { id: "p2", name: "Vera" },
+          requestedRoomId: 1,
+          assignedRoomId: 1,
           status: "valid" as const,
         },
         {
-          requester: { id: "p3", name: "Finn" },
-          requestedPartner: null,
+          player: { id: "p3", name: "Finn" },
+          requestedRoomId: null,
+          assignedRoomId: 1,
           status: "missing" as const,
         },
       ],
@@ -152,53 +158,19 @@ describe("simulation instrumentation", () => {
           players: [
             { id: "p1", name: "Atlas" },
             { id: "p2", name: "Vera" },
-          ] as [{ id: string; name: string }, { id: string; name: string }],
-          immediateRepeat: true,
-          priorRepeatCount: 1,
-          noFullNonRepeatMatchingExisted: false,
+          ],
+          beat: 1,
+          conversationRan: true,
         },
       ],
-      excludedPlayers: [
-        {
-          player: { id: "p3", name: "Finn" },
-          consecutiveExclusion: true,
-          alternativeFullMatchingCouldAvoid: true,
-        },
-      ],
-      priorPairCounts: [
-        {
-          players: [
-            { id: "p1", name: "Atlas" },
-            { id: "p2", name: "Vera" },
-          ] as [{ id: string; name: string }, { id: string; name: string }],
-          count: 1,
-        },
-      ],
-      previousSessionExcludedPlayers: [{ id: "p3", name: "Finn" }],
-      requestSatisfaction: {
-        validRequests: 2,
-        mutualHonored: 1,
-        oneWayHonored: 0,
-        unmatchedValidRequests: 0,
-        invalidOrMissingRequests: 1,
-      },
-      repeatPairFlags: {
-        immediateRepeats: 1,
-        repeatedPairs: 1,
-        noFullNonRepeatMatchingExists: false,
-      },
-      exclusionFlags: {
-        consecutiveExclusions: 1,
-        avoidableConsecutiveExclusions: 1,
-      },
     };
     const game = instrumentGame(
       [
         {
           ...systemEntry(2, Phase.WHISPER, "Room 1: Atlas & Vera | Commons: Finn"),
           roomMetadata: {
-            rooms: [{ roomId: 1, playerA: "p1", playerB: "p2", round: 2 }],
-            excluded: ["Finn"],
+            rooms: [room(1, ["p1", "p2", "p3"], 2)],
+            excluded: [],
             diagnostics,
           },
         },
@@ -208,16 +180,13 @@ describe("simulation instrumentation", () => {
     );
 
     expect(game.rooms.whisperSessions).toEqual([diagnostics]);
-    expect(game.rooms.requestSatisfaction.mutualHonored).toBe(1);
+    expect(game.rooms.requestSatisfaction.validRequests).toBe(2);
     expect(game.rooms.requestSatisfaction.invalidOrMissingRequests).toBe(1);
-    expect(game.rooms.repeatPairFlags.sessionsWithImmediateRepeats).toBe(1);
-    expect(game.rooms.exclusionFlags.avoidableConsecutiveExclusions).toBe(1);
 
     const aggregate = aggregateInstrumentation([game, game]);
     expect(aggregate.rooms.whisperSessions).toHaveLength(2);
     expect(aggregate.rooms.requestSatisfaction.validRequests).toBe(4);
-    expect(aggregate.rooms.repeatPairFlags.immediateRepeats).toBe(2);
-    expect(aggregate.rooms.exclusionFlags.sessionsWithConsecutiveExclusions).toBe(2);
+    expect(aggregate.rooms.requestSatisfaction.invalidOrMissingRequests).toBe(2);
   });
 
   it("summarizes repeated empowered actor and action patterns", () => {
@@ -285,9 +254,9 @@ describe("simulation instrumentation", () => {
         ),
         roomMetadata: {
           rooms: [
-            { roomId: 1, playerA: "p0", playerB: "p1", round: 1 },
-            { roomId: 2, playerA: "p2", playerB: "p3", round: 1 },
-            { roomId: 3, playerA: "p4", playerB: "p5", round: 1 },
+            room(1, ["p0", "p1"], 1),
+            room(2, ["p2", "p3"], 1),
+            room(3, ["p4", "p5"], 1),
           ],
           excluded: ["Kael", "Echo"],
         },
@@ -300,9 +269,9 @@ describe("simulation instrumentation", () => {
         ),
         roomMetadata: {
           rooms: [
-            { roomId: 1, playerA: "p1", playerB: "p0", round: 2 },
-            { roomId: 2, playerA: "p6", playerB: "p7", round: 2 },
-            { roomId: 3, playerA: "p2", playerB: "p4", round: 2 },
+            room(1, ["p1", "p0"], 2),
+            room(2, ["p6", "p7"], 2),
+            room(3, ["p2", "p4"], 2),
           ],
           excluded: ["Mira", "Lyra"],
         },

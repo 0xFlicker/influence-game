@@ -1,0 +1,2434 @@
+{
+  "metadata": {
+    "variant": "baseline",
+    "timestamp": "2026-05-10T02:06:12.858Z",
+    "command": "/usr/lib/node_modules/bun/bin/bun.exe /home/paperclip/.paperclip/instances/default/projects/efa7c0e1-047f-40ae-8dda-212aa9ae25a0/50f54176-8cc9-4aa0-9168-6a69e88223dd/influence-game/packages/engine/src/simulate.ts --games 1 --players 4 --model gpt-5.4-mini --variant baseline",
+    "cwd": "/home/paperclip/.paperclip/instances/default/projects/efa7c0e1-047f-40ae-8dda-212aa9ae25a0/50f54176-8cc9-4aa0-9168-6a69e88223dd/influence-game/packages/engine",
+    "git": {
+      "branch": "fix/inf-212-open-room-backend-gaps",
+      "commitSha": "752363baf03a4043ea884bed8d306590102a9f50",
+      "commitShortSha": "752363b",
+      "isDirty": true
+    },
+    "args": {
+      "games": 1,
+      "players": 4,
+      "personas": null,
+      "model": "gpt-5.4-mini",
+      "variant": "baseline"
+    }
+  },
+  "result": {
+    "gameNumber": 1,
+    "status": "completed",
+    "winnerName": "Finn",
+    "winnerPersona": "honest",
+    "rounds": 2,
+    "eliminationOrder": [
+      "Atlas",
+      "Jace"
+    ],
+    "endgameType": "judgment",
+    "playerPersonas": {
+      "Atlas": "strategic",
+      "Vera": "deceptive",
+      "Jace": "wildcard",
+      "Finn": "honest"
+    },
+    "durationMs": 113490,
+    "transcriptPath": "/home/paperclip/.paperclip/instances/default/projects/efa7c0e1-047f-40ae-8dda-212aa9ae25a0/50f54176-8cc9-4aa0-9168-6a69e88223dd/influence-game/packages/engine/docs/simulations/batch-2026-05-10T02-06-12/game-1.txt",
+    "jsonPath": "/home/paperclip/.paperclip/instances/default/projects/efa7c0e1-047f-40ae-8dda-212aa9ae25a0/50f54176-8cc9-4aa0-9168-6a69e88223dd/influence-game/packages/engine/docs/simulations/batch-2026-05-10T02-06-12/game-1.json",
+    "tokenUsage": {
+      "perAgent": {
+        "Vera/introduction": {
+          "promptTokens": 626,
+          "cachedTokens": 0,
+          "completionTokens": 134,
+          "reasoningTokens": 19,
+          "totalTokens": 760,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Finn/introduction": {
+          "promptTokens": 673,
+          "cachedTokens": 0,
+          "completionTokens": 114,
+          "reasoningTokens": 7,
+          "totalTokens": 787,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/introduction": {
+          "promptTokens": 736,
+          "cachedTokens": 0,
+          "completionTokens": 118,
+          "reasoningTokens": 14,
+          "totalTokens": 854,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Jace/introduction": {
+          "promptTokens": 641,
+          "cachedTokens": 0,
+          "completionTokens": 157,
+          "reasoningTokens": 16,
+          "totalTokens": 798,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "House/question": {
+          "promptTokens": 14005,
+          "cachedTokens": 0,
+          "completionTokens": 532,
+          "reasoningTokens": 0,
+          "totalTokens": 14537,
+          "callCount": 8,
+          "emptyResponses": 0
+        },
+        "Jace/diary": {
+          "promptTokens": 8412,
+          "cachedTokens": 0,
+          "completionTokens": 1343,
+          "reasoningTokens": 468,
+          "totalTokens": 9755,
+          "callCount": 4,
+          "emptyResponses": 0
+        },
+        "Finn/diary": {
+          "promptTokens": 8273,
+          "cachedTokens": 1792,
+          "completionTokens": 1885,
+          "reasoningTokens": 929,
+          "totalTokens": 10158,
+          "callCount": 4,
+          "emptyResponses": 0
+        },
+        "House/followup": {
+          "promptTokens": 18273,
+          "cachedTokens": 3584,
+          "completionTokens": 580,
+          "reasoningTokens": 0,
+          "totalTokens": 18853,
+          "callCount": 8,
+          "emptyResponses": 0
+        },
+        "Vera/diary": {
+          "promptTokens": 8225,
+          "cachedTokens": 1792,
+          "completionTokens": 1846,
+          "reasoningTokens": 903,
+          "totalTokens": 10071,
+          "callCount": 4,
+          "emptyResponses": 0
+        },
+        "Atlas/diary": {
+          "promptTokens": 9035,
+          "cachedTokens": 2816,
+          "completionTokens": 2019,
+          "reasoningTokens": 1000,
+          "totalTokens": 11054,
+          "callCount": 4,
+          "emptyResponses": 0
+        },
+        "Finn/reflection": {
+          "promptTokens": 6223,
+          "cachedTokens": 0,
+          "completionTokens": 1361,
+          "reasoningTokens": 0,
+          "totalTokens": 7584,
+          "callCount": 3,
+          "emptyResponses": 0
+        },
+        "Jace/reflection": {
+          "promptTokens": 3380,
+          "cachedTokens": 0,
+          "completionTokens": 913,
+          "reasoningTokens": 0,
+          "totalTokens": 4293,
+          "callCount": 2,
+          "emptyResponses": 0
+        },
+        "Atlas/reflection": {
+          "promptTokens": 3594,
+          "cachedTokens": 0,
+          "completionTokens": 962,
+          "reasoningTokens": 0,
+          "totalTokens": 4556,
+          "callCount": 2,
+          "emptyResponses": 0
+        },
+        "Vera/reflection": {
+          "promptTokens": 6248,
+          "cachedTokens": 0,
+          "completionTokens": 1442,
+          "reasoningTokens": 0,
+          "totalTokens": 7690,
+          "callCount": 3,
+          "emptyResponses": 0
+        },
+        "Jace/lobby-intent": {
+          "promptTokens": 4245,
+          "cachedTokens": 0,
+          "completionTokens": 211,
+          "reasoningTokens": 23,
+          "totalTokens": 4456,
+          "callCount": 2,
+          "emptyResponses": 0
+        },
+        "Finn/lobby-intent": {
+          "promptTokens": 4154,
+          "cachedTokens": 0,
+          "completionTokens": 216,
+          "reasoningTokens": 42,
+          "totalTokens": 4370,
+          "callCount": 2,
+          "emptyResponses": 0
+        },
+        "Vera/lobby-intent": {
+          "promptTokens": 4227,
+          "cachedTokens": 0,
+          "completionTokens": 194,
+          "reasoningTokens": 28,
+          "totalTokens": 4421,
+          "callCount": 2,
+          "emptyResponses": 0
+        },
+        "Atlas/lobby-intent": {
+          "promptTokens": 1602,
+          "cachedTokens": 0,
+          "completionTokens": 121,
+          "reasoningTokens": 18,
+          "totalTokens": 1723,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/lobby": {
+          "promptTokens": 20797,
+          "cachedTokens": 0,
+          "completionTokens": 1424,
+          "reasoningTokens": 175,
+          "totalTokens": 22221,
+          "callCount": 8,
+          "emptyResponses": 0
+        },
+        "Jace/lobby": {
+          "promptTokens": 20957,
+          "cachedTokens": 0,
+          "completionTokens": 1550,
+          "reasoningTokens": 226,
+          "totalTokens": 22507,
+          "callCount": 8,
+          "emptyResponses": 0
+        },
+        "Finn/lobby": {
+          "promptTokens": 20537,
+          "cachedTokens": 0,
+          "completionTokens": 1550,
+          "reasoningTokens": 275,
+          "totalTokens": 22087,
+          "callCount": 8,
+          "emptyResponses": 0
+        },
+        "Atlas/lobby": {
+          "promptTokens": 9342,
+          "cachedTokens": 0,
+          "completionTokens": 716,
+          "reasoningTokens": 69,
+          "totalTokens": 10058,
+          "callCount": 4,
+          "emptyResponses": 0
+        },
+        "Finn/rumor": {
+          "promptTokens": 2335,
+          "cachedTokens": 0,
+          "completionTokens": 142,
+          "reasoningTokens": 37,
+          "totalTokens": 2477,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/rumor": {
+          "promptTokens": 2458,
+          "cachedTokens": 0,
+          "completionTokens": 151,
+          "reasoningTokens": 12,
+          "totalTokens": 2609,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Jace/rumor": {
+          "promptTokens": 2344,
+          "cachedTokens": 0,
+          "completionTokens": 166,
+          "reasoningTokens": 24,
+          "totalTokens": 2510,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/rumor": {
+          "promptTokens": 2372,
+          "cachedTokens": 0,
+          "completionTokens": 165,
+          "reasoningTokens": 26,
+          "totalTokens": 2537,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Jace/vote": {
+          "promptTokens": 2394,
+          "cachedTokens": 0,
+          "completionTokens": 79,
+          "reasoningTokens": 0,
+          "totalTokens": 2473,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/vote": {
+          "promptTokens": 2423,
+          "cachedTokens": 0,
+          "completionTokens": 102,
+          "reasoningTokens": 0,
+          "totalTokens": 2525,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Finn/vote": {
+          "promptTokens": 2386,
+          "cachedTokens": 0,
+          "completionTokens": 109,
+          "reasoningTokens": 0,
+          "totalTokens": 2495,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/vote": {
+          "promptTokens": 2510,
+          "cachedTokens": 0,
+          "completionTokens": 125,
+          "reasoningTokens": 0,
+          "totalTokens": 2635,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Finn/power": {
+          "promptTokens": 2922,
+          "cachedTokens": 0,
+          "completionTokens": 108,
+          "reasoningTokens": 0,
+          "totalTokens": 3030,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Jace/council-vote": {
+          "promptTokens": 2579,
+          "cachedTokens": 0,
+          "completionTokens": 91,
+          "reasoningTokens": 0,
+          "totalTokens": 2670,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Finn/council-vote": {
+          "promptTokens": 2506,
+          "cachedTokens": 0,
+          "completionTokens": 97,
+          "reasoningTokens": 0,
+          "totalTokens": 2603,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/last-message": {
+          "promptTokens": 2705,
+          "cachedTokens": 0,
+          "completionTokens": 242,
+          "reasoningTokens": 118,
+          "totalTokens": 2947,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/accusation": {
+          "promptTokens": 2609,
+          "cachedTokens": 0,
+          "completionTokens": 221,
+          "reasoningTokens": 0,
+          "totalTokens": 2830,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Finn/accusation": {
+          "promptTokens": 2579,
+          "cachedTokens": 0,
+          "completionTokens": 239,
+          "reasoningTokens": 0,
+          "totalTokens": 2818,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Jace/accusation": {
+          "promptTokens": 2663,
+          "cachedTokens": 0,
+          "completionTokens": 319,
+          "reasoningTokens": 0,
+          "totalTokens": 2982,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Jace/tribunal-defense": {
+          "promptTokens": 2831,
+          "cachedTokens": 0,
+          "completionTokens": 272,
+          "reasoningTokens": 94,
+          "totalTokens": 3103,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/tribunal-defense": {
+          "promptTokens": 2893,
+          "cachedTokens": 0,
+          "completionTokens": 435,
+          "reasoningTokens": 279,
+          "totalTokens": 3328,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Finn/elimination-vote": {
+          "promptTokens": 2779,
+          "cachedTokens": 0,
+          "completionTokens": 134,
+          "reasoningTokens": 0,
+          "totalTokens": 2913,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/elimination-vote": {
+          "promptTokens": 2809,
+          "cachedTokens": 0,
+          "completionTokens": 100,
+          "reasoningTokens": 0,
+          "totalTokens": 2909,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Jace/elimination-vote": {
+          "promptTokens": 2863,
+          "cachedTokens": 0,
+          "completionTokens": 136,
+          "reasoningTokens": 0,
+          "totalTokens": 2999,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/elimination-vote": {
+          "promptTokens": 3007,
+          "cachedTokens": 0,
+          "completionTokens": 117,
+          "reasoningTokens": 0,
+          "totalTokens": 3124,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Jace/last-message": {
+          "promptTokens": 2781,
+          "cachedTokens": 0,
+          "completionTokens": 191,
+          "reasoningTokens": 46,
+          "totalTokens": 2972,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/opening-statement": {
+          "promptTokens": 2705,
+          "cachedTokens": 0,
+          "completionTokens": 641,
+          "reasoningTokens": 395,
+          "totalTokens": 3346,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Finn/opening-statement": {
+          "promptTokens": 2675,
+          "cachedTokens": 0,
+          "completionTokens": 1224,
+          "reasoningTokens": 1025,
+          "totalTokens": 3899,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/jury-question": {
+          "promptTokens": 3019,
+          "cachedTokens": 0,
+          "completionTokens": 171,
+          "reasoningTokens": 0,
+          "totalTokens": 3190,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/jury-answer": {
+          "promptTokens": 2825,
+          "cachedTokens": 0,
+          "completionTokens": 734,
+          "reasoningTokens": 512,
+          "totalTokens": 3559,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Jace/jury-question": {
+          "promptTokens": 2861,
+          "cachedTokens": 0,
+          "completionTokens": 107,
+          "reasoningTokens": 0,
+          "totalTokens": 2968,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Finn/jury-answer": {
+          "promptTokens": 2847,
+          "cachedTokens": 0,
+          "completionTokens": 613,
+          "reasoningTokens": 457,
+          "totalTokens": 3460,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Vera/closing-argument": {
+          "promptTokens": 2710,
+          "cachedTokens": 0,
+          "completionTokens": 483,
+          "reasoningTokens": 287,
+          "totalTokens": 3193,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Finn/closing-argument": {
+          "promptTokens": 2842,
+          "cachedTokens": 0,
+          "completionTokens": 741,
+          "reasoningTokens": 512,
+          "totalTokens": 3583,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Atlas/jury-vote": {
+          "promptTokens": 2853,
+          "cachedTokens": 0,
+          "completionTokens": 117,
+          "reasoningTokens": 0,
+          "totalTokens": 2970,
+          "callCount": 1,
+          "emptyResponses": 0
+        },
+        "Jace/jury-vote": {
+          "promptTokens": 2713,
+          "cachedTokens": 0,
+          "completionTokens": 100,
+          "reasoningTokens": 0,
+          "totalTokens": 2813,
+          "callCount": 1,
+          "emptyResponses": 0
+        }
+      },
+      "total": {
+        "promptTokens": 260003,
+        "cachedTokens": 9984,
+        "completionTokens": 28060,
+        "reasoningTokens": 8036,
+        "totalTokens": 288063,
+        "callCount": 113,
+        "emptyResponses": 0
+      }
+    },
+    "instrumentation": {
+      "powerActions": {
+        "total": 1,
+        "counts": {
+          "eliminate": 0,
+          "protect": 0,
+          "pass": 1
+        },
+        "actions": [
+          {
+            "actor": "Finn",
+            "action": "pass",
+            "target": "Atlas",
+            "round": 1,
+            "text": "Finn power action: pass -> Atlas"
+          }
+        ],
+        "actorCounts": {
+          "Finn": 1
+        },
+        "actionDistributionByActor": {
+          "Finn": {
+            "eliminate": 0,
+            "protect": 0,
+            "pass": 1
+          }
+        },
+        "consecutiveEliminates": {
+          "total": 0,
+          "occurrences": []
+        },
+        "repeatedProtectSameTarget": {
+          "total": 0,
+          "repeats": []
+        }
+      },
+      "autoEliminations": {
+        "total": 0,
+        "eliminations": []
+      },
+      "council": {
+        "revealPhases": 1,
+        "councilPhases": 1,
+        "councilVotes": 2,
+        "candidatePairs": [
+          {
+            "round": 1,
+            "candidates": [
+              "Atlas",
+              "Vera"
+            ]
+          }
+        ]
+      },
+      "endgame": {
+        "reckoning": 0,
+        "tribunal": 4,
+        "judgment": 5,
+        "juryQuestions": 1,
+        "juryVotes": 1,
+        "byPhase": {
+          "ACCUSATION": 4,
+          "DEFENSE": 3,
+          "OPENING_STATEMENTS": 8,
+          "JURY_QUESTIONS": 5,
+          "CLOSING_ARGUMENTS": 3,
+          "JURY_VOTE": 7
+        }
+      },
+      "rooms": {
+        "totalRooms": 0,
+        "whisperRounds": 0,
+        "participationByPlayer": {},
+        "exclusionsByPlayer": {},
+        "totalExclusions": 0,
+        "pairs": [],
+        "repeatedPairs": {
+          "totalRepeatedOccurrences": 0,
+          "maxPairCount": 0,
+          "maxPairShareOfRooms": 0,
+          "maxPairShareOfWhisperRounds": 0,
+          "pairs": []
+        },
+        "whisperSessions": [],
+        "requestSatisfaction": {
+          "validRequests": 0,
+          "mutualHonored": 0,
+          "oneWayHonored": 0,
+          "unmatchedValidRequests": 0,
+          "invalidOrMissingRequests": 0
+        },
+        "repeatPairFlags": {
+          "immediateRepeats": 0,
+          "repeatedPairs": 0,
+          "noFullNonRepeatMatchingExists": false,
+          "sessionsWithImmediateRepeats": 0,
+          "sessionsWithoutFullNonRepeatMatching": 0
+        },
+        "exclusionFlags": {
+          "consecutiveExclusions": 0,
+          "avoidableConsecutiveExclusions": 0,
+          "sessionsWithConsecutiveExclusions": 0
+        }
+      },
+      "actionUsage": {
+        "totalCalls": 113,
+        "totalEmptyResponses": 0,
+        "emptyResponseRate": 0,
+        "byAction": {
+          "introduction": {
+            "callCount": 4,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 3199
+          },
+          "question": {
+            "callCount": 8,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 14537
+          },
+          "diary": {
+            "callCount": 16,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 41038
+          },
+          "followup": {
+            "callCount": 8,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 18853
+          },
+          "reflection": {
+            "callCount": 10,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 24123
+          },
+          "lobby-intent": {
+            "callCount": 7,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 14970
+          },
+          "lobby": {
+            "callCount": 28,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 76873
+          },
+          "rumor": {
+            "callCount": 4,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 10133
+          },
+          "vote": {
+            "callCount": 4,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 10128
+          },
+          "power": {
+            "callCount": 1,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 3030
+          },
+          "council-vote": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 5273
+          },
+          "last-message": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 5919
+          },
+          "accusation": {
+            "callCount": 3,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 8630
+          },
+          "tribunal-defense": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 6431
+          },
+          "elimination-vote": {
+            "callCount": 4,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 11945
+          },
+          "opening-statement": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 7245
+          },
+          "jury-question": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 6158
+          },
+          "jury-answer": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 7019
+          },
+          "closing-argument": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 6776
+          },
+          "jury-vote": {
+            "callCount": 2,
+            "emptyResponses": 0,
+            "emptyResponseRate": 0,
+            "totalTokens": 5783
+          }
+        },
+        "bySource": {
+          "Vera/introduction": {
+            "promptTokens": 626,
+            "cachedTokens": 0,
+            "completionTokens": 134,
+            "reasoningTokens": 19,
+            "totalTokens": 760,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/introduction": {
+            "promptTokens": 673,
+            "cachedTokens": 0,
+            "completionTokens": 114,
+            "reasoningTokens": 7,
+            "totalTokens": 787,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Atlas/introduction": {
+            "promptTokens": 736,
+            "cachedTokens": 0,
+            "completionTokens": 118,
+            "reasoningTokens": 14,
+            "totalTokens": 854,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/introduction": {
+            "promptTokens": 641,
+            "cachedTokens": 0,
+            "completionTokens": 157,
+            "reasoningTokens": 16,
+            "totalTokens": 798,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "House/question": {
+            "promptTokens": 14005,
+            "cachedTokens": 0,
+            "completionTokens": 532,
+            "reasoningTokens": 0,
+            "totalTokens": 14537,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Jace/diary": {
+            "promptTokens": 8412,
+            "cachedTokens": 0,
+            "completionTokens": 1343,
+            "reasoningTokens": 468,
+            "totalTokens": 9755,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "Finn/diary": {
+            "promptTokens": 8273,
+            "cachedTokens": 1792,
+            "completionTokens": 1885,
+            "reasoningTokens": 929,
+            "totalTokens": 10158,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "House/followup": {
+            "promptTokens": 18273,
+            "cachedTokens": 3584,
+            "completionTokens": 580,
+            "reasoningTokens": 0,
+            "totalTokens": 18853,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Vera/diary": {
+            "promptTokens": 8225,
+            "cachedTokens": 1792,
+            "completionTokens": 1846,
+            "reasoningTokens": 903,
+            "totalTokens": 10071,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "Atlas/diary": {
+            "promptTokens": 9035,
+            "cachedTokens": 2816,
+            "completionTokens": 2019,
+            "reasoningTokens": 1000,
+            "totalTokens": 11054,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "Finn/reflection": {
+            "promptTokens": 6223,
+            "cachedTokens": 0,
+            "completionTokens": 1361,
+            "reasoningTokens": 0,
+            "totalTokens": 7584,
+            "callCount": 3,
+            "emptyResponses": 0
+          },
+          "Jace/reflection": {
+            "promptTokens": 3380,
+            "cachedTokens": 0,
+            "completionTokens": 913,
+            "reasoningTokens": 0,
+            "totalTokens": 4293,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Atlas/reflection": {
+            "promptTokens": 3594,
+            "cachedTokens": 0,
+            "completionTokens": 962,
+            "reasoningTokens": 0,
+            "totalTokens": 4556,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Vera/reflection": {
+            "promptTokens": 6248,
+            "cachedTokens": 0,
+            "completionTokens": 1442,
+            "reasoningTokens": 0,
+            "totalTokens": 7690,
+            "callCount": 3,
+            "emptyResponses": 0
+          },
+          "Jace/lobby-intent": {
+            "promptTokens": 4245,
+            "cachedTokens": 0,
+            "completionTokens": 211,
+            "reasoningTokens": 23,
+            "totalTokens": 4456,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Finn/lobby-intent": {
+            "promptTokens": 4154,
+            "cachedTokens": 0,
+            "completionTokens": 216,
+            "reasoningTokens": 42,
+            "totalTokens": 4370,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Vera/lobby-intent": {
+            "promptTokens": 4227,
+            "cachedTokens": 0,
+            "completionTokens": 194,
+            "reasoningTokens": 28,
+            "totalTokens": 4421,
+            "callCount": 2,
+            "emptyResponses": 0
+          },
+          "Atlas/lobby-intent": {
+            "promptTokens": 1602,
+            "cachedTokens": 0,
+            "completionTokens": 121,
+            "reasoningTokens": 18,
+            "totalTokens": 1723,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/lobby": {
+            "promptTokens": 20797,
+            "cachedTokens": 0,
+            "completionTokens": 1424,
+            "reasoningTokens": 175,
+            "totalTokens": 22221,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Jace/lobby": {
+            "promptTokens": 20957,
+            "cachedTokens": 0,
+            "completionTokens": 1550,
+            "reasoningTokens": 226,
+            "totalTokens": 22507,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Finn/lobby": {
+            "promptTokens": 20537,
+            "cachedTokens": 0,
+            "completionTokens": 1550,
+            "reasoningTokens": 275,
+            "totalTokens": 22087,
+            "callCount": 8,
+            "emptyResponses": 0
+          },
+          "Atlas/lobby": {
+            "promptTokens": 9342,
+            "cachedTokens": 0,
+            "completionTokens": 716,
+            "reasoningTokens": 69,
+            "totalTokens": 10058,
+            "callCount": 4,
+            "emptyResponses": 0
+          },
+          "Finn/rumor": {
+            "promptTokens": 2335,
+            "cachedTokens": 0,
+            "completionTokens": 142,
+            "reasoningTokens": 37,
+            "totalTokens": 2477,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Atlas/rumor": {
+            "promptTokens": 2458,
+            "cachedTokens": 0,
+            "completionTokens": 151,
+            "reasoningTokens": 12,
+            "totalTokens": 2609,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/rumor": {
+            "promptTokens": 2344,
+            "cachedTokens": 0,
+            "completionTokens": 166,
+            "reasoningTokens": 24,
+            "totalTokens": 2510,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/rumor": {
+            "promptTokens": 2372,
+            "cachedTokens": 0,
+            "completionTokens": 165,
+            "reasoningTokens": 26,
+            "totalTokens": 2537,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/vote": {
+            "promptTokens": 2394,
+            "cachedTokens": 0,
+            "completionTokens": 79,
+            "reasoningTokens": 0,
+            "totalTokens": 2473,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/vote": {
+            "promptTokens": 2423,
+            "cachedTokens": 0,
+            "completionTokens": 102,
+            "reasoningTokens": 0,
+            "totalTokens": 2525,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/vote": {
+            "promptTokens": 2386,
+            "cachedTokens": 0,
+            "completionTokens": 109,
+            "reasoningTokens": 0,
+            "totalTokens": 2495,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Atlas/vote": {
+            "promptTokens": 2510,
+            "cachedTokens": 0,
+            "completionTokens": 125,
+            "reasoningTokens": 0,
+            "totalTokens": 2635,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/power": {
+            "promptTokens": 2922,
+            "cachedTokens": 0,
+            "completionTokens": 108,
+            "reasoningTokens": 0,
+            "totalTokens": 3030,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/council-vote": {
+            "promptTokens": 2579,
+            "cachedTokens": 0,
+            "completionTokens": 91,
+            "reasoningTokens": 0,
+            "totalTokens": 2670,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/council-vote": {
+            "promptTokens": 2506,
+            "cachedTokens": 0,
+            "completionTokens": 97,
+            "reasoningTokens": 0,
+            "totalTokens": 2603,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Atlas/last-message": {
+            "promptTokens": 2705,
+            "cachedTokens": 0,
+            "completionTokens": 242,
+            "reasoningTokens": 118,
+            "totalTokens": 2947,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/accusation": {
+            "promptTokens": 2609,
+            "cachedTokens": 0,
+            "completionTokens": 221,
+            "reasoningTokens": 0,
+            "totalTokens": 2830,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/accusation": {
+            "promptTokens": 2579,
+            "cachedTokens": 0,
+            "completionTokens": 239,
+            "reasoningTokens": 0,
+            "totalTokens": 2818,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/accusation": {
+            "promptTokens": 2663,
+            "cachedTokens": 0,
+            "completionTokens": 319,
+            "reasoningTokens": 0,
+            "totalTokens": 2982,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/tribunal-defense": {
+            "promptTokens": 2831,
+            "cachedTokens": 0,
+            "completionTokens": 272,
+            "reasoningTokens": 94,
+            "totalTokens": 3103,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/tribunal-defense": {
+            "promptTokens": 2893,
+            "cachedTokens": 0,
+            "completionTokens": 435,
+            "reasoningTokens": 279,
+            "totalTokens": 3328,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/elimination-vote": {
+            "promptTokens": 2779,
+            "cachedTokens": 0,
+            "completionTokens": 134,
+            "reasoningTokens": 0,
+            "totalTokens": 2913,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/elimination-vote": {
+            "promptTokens": 2809,
+            "cachedTokens": 0,
+            "completionTokens": 100,
+            "reasoningTokens": 0,
+            "totalTokens": 2909,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/elimination-vote": {
+            "promptTokens": 2863,
+            "cachedTokens": 0,
+            "completionTokens": 136,
+            "reasoningTokens": 0,
+            "totalTokens": 2999,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Atlas/elimination-vote": {
+            "promptTokens": 3007,
+            "cachedTokens": 0,
+            "completionTokens": 117,
+            "reasoningTokens": 0,
+            "totalTokens": 3124,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/last-message": {
+            "promptTokens": 2781,
+            "cachedTokens": 0,
+            "completionTokens": 191,
+            "reasoningTokens": 46,
+            "totalTokens": 2972,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/opening-statement": {
+            "promptTokens": 2705,
+            "cachedTokens": 0,
+            "completionTokens": 641,
+            "reasoningTokens": 395,
+            "totalTokens": 3346,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/opening-statement": {
+            "promptTokens": 2675,
+            "cachedTokens": 0,
+            "completionTokens": 1224,
+            "reasoningTokens": 1025,
+            "totalTokens": 3899,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Atlas/jury-question": {
+            "promptTokens": 3019,
+            "cachedTokens": 0,
+            "completionTokens": 171,
+            "reasoningTokens": 0,
+            "totalTokens": 3190,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/jury-answer": {
+            "promptTokens": 2825,
+            "cachedTokens": 0,
+            "completionTokens": 734,
+            "reasoningTokens": 512,
+            "totalTokens": 3559,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/jury-question": {
+            "promptTokens": 2861,
+            "cachedTokens": 0,
+            "completionTokens": 107,
+            "reasoningTokens": 0,
+            "totalTokens": 2968,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/jury-answer": {
+            "promptTokens": 2847,
+            "cachedTokens": 0,
+            "completionTokens": 613,
+            "reasoningTokens": 457,
+            "totalTokens": 3460,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Vera/closing-argument": {
+            "promptTokens": 2710,
+            "cachedTokens": 0,
+            "completionTokens": 483,
+            "reasoningTokens": 287,
+            "totalTokens": 3193,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Finn/closing-argument": {
+            "promptTokens": 2842,
+            "cachedTokens": 0,
+            "completionTokens": 741,
+            "reasoningTokens": 512,
+            "totalTokens": 3583,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Atlas/jury-vote": {
+            "promptTokens": 2853,
+            "cachedTokens": 0,
+            "completionTokens": 117,
+            "reasoningTokens": 0,
+            "totalTokens": 2970,
+            "callCount": 1,
+            "emptyResponses": 0
+          },
+          "Jace/jury-vote": {
+            "promptTokens": 2713,
+            "cachedTokens": 0,
+            "completionTokens": 100,
+            "reasoningTokens": 0,
+            "totalTokens": 2813,
+            "callCount": 1,
+            "emptyResponses": 0
+          }
+        }
+      }
+    }
+  },
+  "transcript": [
+    {
+      "round": 0,
+      "phase": "INTRODUCTION",
+      "timestamp": 1778378772891,
+      "from": "House",
+      "scope": "system",
+      "text": "=== INTRODUCTION PHASE ==="
+    },
+    {
+      "round": 0,
+      "phase": "INTRODUCTION",
+      "timestamp": 1778378774081,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Hi, I’m Vera — a theater actress from Brooklyn, which means I’ve spent most of my adult life pretending to be other people for a living. I know how to make a great entrance, I’m suspicious of anyone who says they don’t have a favorite Shakespeare play, and I make a truly dangerous cup of tea when I’m stressed.",
+      "thinking": "I’ll keep this warm and personal, with a little charm and a concrete detail from my life, avoiding anything about the game."
+    },
+    {
+      "round": 0,
+      "phase": "INTRODUCTION",
+      "timestamp": 1778378774084,
+      "from": "Finn",
+      "scope": "public",
+      "text": "Hey everyone, I’m Finn — I’m a 4th grade teacher from Burlington, Vermont, and I spend a lot of my weekends baking bread or coaching my school’s debate team. If I’m being honest, I probably talk about my students way too much, but they keep life interesting.",
+      "thinking": "Keep it simple, personable, and specific. No game talk—just a real introduction with a little Vermont flavor and a small memorable detail."
+    },
+    {
+      "round": 0,
+      "phase": "INTRODUCTION",
+      "timestamp": 1778378774090,
+      "from": "Atlas",
+      "scope": "public",
+      "text": "Hey, I’m Atlas — I’m an investigative journalist from San Francisco, which basically means I’ve spent years asking strangers very pointed questions for a living. I run on way too much espresso, and I’m probably going to remember everyone’s favorite story before I remember where I put my own keys.",
+      "thinking": "Keep it warm, personal, and simple. Mention San Francisco, investigative journalism, and a human quirk without sounding strategic."
+    },
+    {
+      "round": 0,
+      "phase": "INTRODUCTION",
+      "timestamp": 1778378774156,
+      "from": "Jace",
+      "scope": "public",
+      "text": "Hey y’all, I’m Jace — I’m a stand-up comic from Austin who used to run a jackfruit taco food truck called Jace’s Jackfruit Tacos, which is a very funny sentence to say out loud and a deeply sad one to live through when the engine dies. I’m the kind of person who will absolutely try to make you laugh first and then accidentally reveal something sincere five minutes later, so... apologies in advance.",
+      "thinking": "Keep it friendly, vivid, and personal. Mention Austin, former food truck owner, and a light quirky detail to make me memorable without mentioning any game mechanics."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378774158,
+      "from": "House",
+      "scope": "system",
+      "text": "--- Diary Room (after INTRODUCTION) ---"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378774937,
+      "from": "House -> Vera",
+      "scope": "diary",
+      "text": "Vera, you said you’re “suspicious of anyone who says they don’t have a favorite Shakespeare play” — which of Atlas, Finn, or Jace earned your immediate side-eye, and who are you actually planning to cozy up to first before this cast starts pulling masks off?"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378775003,
+      "from": "House -> Atlas",
+      "scope": "diary",
+      "text": "Atlas, you spent your intro promising you’ll “remember everyone’s favorite story” — so after hearing Vera say she’s “pretending to be other people for a living” and Jace admit he’ll “accidentally reveal something sincere,” who are you actually flagging as useful, who’s setting off your journalist instincts, and who do you plan to approach first now that the game starts?"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378775178,
+      "from": "House -> Finn",
+      "scope": "diary",
+      "text": "Vera said she’s “pretending to be other people for a living” and that makes her suspicious by default — are you clocking her as a dangerous ally or a first-round headache, and who from Atlas, Jace, or Vera do you plan to move toward or away from now that the game has actually started?"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378775438,
+      "from": "House -> Jace",
+      "scope": "diary",
+      "text": "Atlas says he “runs on way too much espresso” and remembers everyone’s favorite story before his own keys — are you treating him like a useful ally, or the kind of man who asks pointed questions right up until he points them at you?"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378777548,
+      "from": "Jace",
+      "scope": "diary",
+      "text": "Atlas has strong “this man will absolutely remember your birthday and your alibi” energy, which is useful, but I’m not calling him an ally yet — that’s how you end up in a quote with your own name attached. I’m treating him like a smart maybe: close enough to learn from, far enough away that he can’t line up a shot at me before I even know the target’s been painted.",
+      "thinking": "Atlas feels like the kind of guy who’s dangerous only if I hand him the knife. Right now he reads as useful because he’s observant and probably good at gathering information, but I don’t trust anybody this early — especially not the human equivalent of a press pass and a double espresso."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378778165,
+      "from": "Finn",
+      "scope": "diary",
+      "text": "Vera is definitely giving me ‘first-round headache with a theater degree,’ which is not the same thing as ‘bad ally,’ but it does mean I’m not strolling in blind. Atlas is the one I’d keep a closer eye on because people who remember everyone’s story usually remember everyone’s weakness, and Jace feels like the easiest person to talk to without immediately feeling like I need to pass a pop quiz. So right now I’m edging a bit toward Jace, staying cautious with Vera, and watching Atlas like my kids watch the one desk partner who definitely has a glue stick and a plan.",
+      "thinking": "Vera’s intro reads like someone who understands presentation, which makes me wary but not automatically ضد her. Atlas feels methodical and potentially dangerous because people like that notice everything; Jace feels the most natural to me right now, though comedy can still hide a blade. My instinct is to keep Vera at a careful distance, watch Atlas closely, and move a little toward Jace if he feels genuine in conversation."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378778457,
+      "from": "House -> Jace",
+      "scope": "diary",
+      "text": "You called Atlas a “smart maybe” you want “far enough away” from you, so who in this room — Vera with her “dangerous cup of tea,” or Finn with his debate-team charm — are you actually willing to move closer to first, and who are you making sure never gets your real self before you do?"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378779073,
+      "from": "Vera",
+      "scope": "diary",
+      "text": "Atlas got my immediate side-eye — no offense to the man, but a journalist is basically a professional collector of leverage, and I’d like to know when I’m being filed away. I’m planning to cozy up to Finn first because he feels the most grounded and least likely to start swinging in minute one, while keeping Jace warm too — comedians can be wonderfully disarming, which is just a polite way of saying dangerous.",
+      "thinking": "Atlas is the sharpest observer, so he gets the first side-eye; Finn feels safest to build with early, and Jace is the wildcard I’ll keep close for laughs and information."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378779192,
+      "from": "Atlas",
+      "scope": "diary",
+      "text": "Finn is the one who feels most useful to me right now — there’s a steadiness there, and people who spend their days with kids usually have a sharper read on a room than they let on. Vera’s the one setting off my journalist instincts; “pretending to be other people for a living” is either beautifully self-aware or a very elegant way to tell me not to trust the sparkle too fast. Jace I actually like a lot, because people who joke first and confess second tend to give you the good stuff if you listen closely, and he’s probably the first person I’d go talk to once the doors open.",
+      "thinking": "Finn feels like the most grounding presence so far — teachers tend to notice patterns, and his intro had a sincerity that didn’t feel rehearsed. Vera’s line about pretending to be other people for a living lit up my journalist brain immediately; that kind of polished self-awareness can be charming, but it can also be a very tidy mask. Jace seems useful too because he’s already admitting he blurts the real thing out sometimes, which usually means you can get something honest from him if you ask the right question. I want to start with Finn first, because the calm ones are often the best people to understand before the room gets loud."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378779426,
+      "from": "House -> Finn",
+      "scope": "diary",
+      "text": "You called Jace “the easiest person to talk to,” but if he starts joking his way around real answers and Vera leans into that “pretending to be other people” act, who are you actually willing to trust first — and what do you do if Atlas clocks your caution before you’ve even made a move?"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378779877,
+      "from": "House -> Vera",
+      "scope": "diary",
+      "text": "You called Atlas “a professional collector of leverage,” and yet you still chose Finn first while keeping Jace “warm too” — are you genuinely building trust there, or just using the teacher and the comic as softer curtains while you keep your real suspicion aimed at the journalist?"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378780201,
+      "from": "House -> Atlas",
+      "scope": "diary",
+      "text": "Atlas, you handed Finn the “most useful” crown and called Vera “the one setting off my journalist instincts,” but if Finn turns out to be just steady instead of strategic, are you still buying in — and when you say you’d approach Jace first because he “joke[s] first and confess[es] second,” what exactly are you hoping he gives up to you?"
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378781629,
+      "from": "Jace",
+      "scope": "diary",
+      "text": "Finn is the one I’d move closer to first — he reads as genuinely steady, and I trust steady before I trust sparkling. Vera gets the polite, charming, slightly deflected version of me until she shows me she’s not the kind of actress who can make eye contact and somehow steal your browser history. Atlas is still my “smart maybe,” which is my way of saying I’m impressed, suspicious, and one espresso away from a panic-laugh.",
+      "thinking": "Finn feels like the safer first step — he has that earnest teacher energy where I’m not immediately bracing for a trap under the table, and I can usually tell pretty fast if someone’s kind or just polished. Vera, though, I respect her a lot, but she gives off “can smile while planning a monologue that ruins your week” vibes, so she’s getting the edited version of me until she proves she’s not collecting human weaknesses like souvenir spoons. Atlas is still in the ‘smart maybe’ category, which is honestly just my fancy way of saying I’m watching him like a raccoon watching a porch light."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378781629,
+      "from": "House",
+      "scope": "diary",
+      "text": "That's enough for now, Jace. The House sees everything."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378782488,
+      "from": "Finn",
+      "scope": "diary",
+      "text": "Jace is the first person I’d *test* for trust, because he feels the most straightforward to talk to — but I’m not treating that as a full-on alliance yet. Vera and Atlas both have that “could be charming, could be lethal” energy, so if Atlas clocks my caution, I’m not scrambling; I’m just going to stay calm, answer plainly, and let him realize I’m harder to rattle than I look. Honestly, that’s the move for now: observe, don’t overcommit, and see who stays consistent when nobody’s performing.",
+      "thinking": "Jace still feels like the safest first person to test because he’s readable in a way that Vera and Atlas just aren’t — but I’m not handing anyone my trust on a silver platter this early, because my kids could tell you that’s how you end up getting burned. Vera’s theatrical, Atlas is observant to the point of being a little scary, and if Atlas notices I’m cautious, I’m not going to panic and over-explain myself; I’d rather stay steady, answer cleanly, and let him wonder whether he misread me. My next move is basically to keep talking, keep watching, and see who’s consistent when the spotlight’s not on them."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378782488,
+      "from": "House",
+      "scope": "diary",
+      "text": "That's enough for now, Finn. The House sees everything."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378782893,
+      "from": "Vera",
+      "scope": "diary",
+      "text": "Honestly? It’s both. I do think Finn is my easiest real connection right now — he feels grounded, and I trust grounded people more than I trust people who arrive with a résumé full of intrigue — but I’m also absolutely using him and Jace as softer openings while I keep my real suspicion aimed at Atlas. A journalist is trained to notice weak points, and I’d be a fool to hand him mine before I’ve even found out who’s smiling with all their teeth.",
+      "thinking": "I’m not trying to pretend I trust anyone fully this early — that would be silly and, frankly, expensive. Finn feels easiest to genuinely connect with because he reads as steady and emotionally literate, while Jace is the kind of person I can laugh with and learn from without handing him my spine. Atlas, though? I’m keeping him under a spotlight, because people who ask questions for a living usually know exactly where to put the knife if they decide to use it."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378782893,
+      "from": "House",
+      "scope": "diary",
+      "text": "That's enough for now, Vera. The House sees everything."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378783155,
+      "from": "Atlas",
+      "scope": "diary",
+      "text": "Finn doesn’t lose value to me if he’s “only” steady — sometimes the person who isn’t trying to dominate the conversation is the one quietly telling you where the room is leaning. Vera still makes my journalist instincts sit up a little straighter; when somebody says they’re used to pretending for a living, I hear both honesty and a warning label. And with Jace, I’m not fishing for some grand secret — I want the small, useful truths: who he relaxes around, who he edits himself for, and what he notices when he thinks nobody’s paying attention.",
+      "thinking": "Finn still matters to me even if he’s just steady instead of sly — honestly, that can be more useful early on, because the people who don’t flail tend to tell you where the room is settling. Vera is still the one I’m watching most closely; as a journalist, I’ve learned that people who know how to perform often hide just enough truth to make you lean in. With Jace, I’m not looking for a confession bomb — I’m hoping he gives me his real temperature on the house: who he naturally trusts, who makes him hold back, and whether his charm is a shield or just his baseline."
+    },
+    {
+      "round": 0,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378783155,
+      "from": "House",
+      "scope": "diary",
+      "text": "That's enough for now, Atlas. The House sees everything."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378786310,
+      "from": "House",
+      "scope": "system",
+      "text": "=== ROUND 1: LOBBY PHASE ==="
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378788795,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Okay, Jace, the phrase “deeply sad when the engine dies” took me out a little — I need the full tragic origin story of Jace’s Jackfruit Tacos someday. And Finn, I’m genuinely dying to know: what would your 4th graders make of this cast on day one? I feel like they’d have the sharpest opinions in the room.",
+      "thinking": "Keep it light, playful, and human. Jace gave a great absurdist detail to riff on, and Finn’s teacher perspective is an easy warm hook. No strategy, just charm and curiosity."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378788978,
+      "from": "Jace",
+      "scope": "public",
+      "text": "Okay, I’m already obsessed with this group: Vera bringing full Shakespeare-and-tea energy is extremely my speed, and I need to know what play gets you through a stressful day. Also Finn, bread and debate team is such a specific combo that I feel like you either make incredible toast or can destroy a witness with a perfectly timed rebuttal — which is it?",
+      "thinking": "Keep it playful and curious; riff on Vera and Finn specifically, with a little self-deprecating humor. No strategy, no shade, just warm first-night energy."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378789192,
+      "from": "Finn",
+      "scope": "public",
+      "text": "Okay, I feel like this group already has a suspiciously good variety of energy in it. I’m from Burlington, and my weekend therapy is basically baking bread badly enough to keep me humble — so now I need to know: what’s everyone’s signature stress snack or late-night ritual? Also, Vera, I *have* to ask: what’s your favorite Shakespeare play, and Jace, I need the full jackfruit taco-truck story at some point.",
+      "thinking": "Keep it light, curious, and personable. I’ll riff on the introductions with a Vermont/bread detail and ask easy follow-up questions that invite conversation without signaling strategy."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378789264,
+      "from": "Atlas",
+      "scope": "public",
+      "text": "Okay, I’m already collecting everyone’s stories in my head like I’m building the world’s most chaotic little notebook — this is exactly my kind of room. I also fully relate to the espresso life; I have a bad habit of treating my neighborhood coffee spot in San Francisco like a second home, so now I need to know: Vera, what’s the role that really gets you excited in Shakespeare, and Jace, how long do I get to laugh before the sincerity kicks in?",
+      "thinking": "Keep it light and welcoming. Mention my espresso habit in a human way, riff with Jace on laughing then getting sincere, and ask Vera a fun follow-up about Shakespeare without sounding strategic."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378790670,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Jace, I am begging for the full jackfruit taco saga — the phrase “deeply sad when the engine dies” has already earned a permanent place in my brain. And Finn, I need the unfiltered version: what do your students think this cast would be on day one — who gets labeled the class clown, the principal, and the one most likely to get caught talking during silent reading?",
+      "thinking": "Keep it bright and human. Lean into Jace’s taco-truck story with playful curiosity, and invite Finn to imagine his students' reactions in a fun, vivid way. No strategy, just charm and rapport."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378790777,
+      "from": "Jace",
+      "scope": "public",
+      "text": "Okay, Vera being suspicious of anyone without a favorite Shakespeare play feels deeply correct and mildly terrifying in the best way — what’s the play, and what’s your stress tea of choice when the drama gets extra dramatic? And Finn, I need to know how bread and debate team coexist in one human being: are you the kind of teacher who can gently grade a paragraph and also absolutely destroy a bad argument over fresh sourdough?",
+      "thinking": "Keep it warm, playful, and curious. I should riff on Vera’s theater energy and Finn’s bread/debate combo, with a little self-aware humor, while staying light and social."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378791039,
+      "from": "Finn",
+      "scope": "public",
+      "text": "I’m officially convinced this room is going to be a problem in the best way. Burlington weekends have trained me to believe bread can solve at least 40% of life’s issues, so I’m loving the stress-snack question — what’s everyone’s actual late-night ritual when the world gets loud? Also, Vera, I’m still waiting on the Shakespeare pick, and Jace, I feel like the jackfruit taco truck story has to be either incredible or legally classified as a cautionary tale.",
+      "thinking": "Keep it light and curious. Reference the room’s energy, toss in a small Vermont/bread detail, and ask follow-ups that keep the conversation moving without signaling strategy or alliance intent."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378792126,
+      "from": "Atlas",
+      "scope": "public",
+      "text": "I’m already convinced this house runs on excellent stories and questionable sleep schedules, which is honestly my favorite kind of chaos. Jace, I need to know the exact moment the “laugh first, sincerity later” switch flips — and Vera, I’m weirdly excited to hear which Shakespeare role has the best mix of drama and delicious bad decisions. Also, I may or may not have a local coffee spot in San Francisco that knows my order before I do, which feels like a concerningly intimate relationship with caffeine.",
+      "thinking": "Keep it warm and playful, riffing on Jace and Vera while adding a human detail about espresso. No strategy language, just curiosity and humor. Aim for 2-3 sentences."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378793611,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Jace, I need the full jackfruit taco origin story immediately — I feel like there’s a very specific point where that truck went from “dream” to “this is now a beloved tragedy,” and I’m invested. Finn, I am absolutely picturing your students assigning us roles on day one, and now I need to know: who’s the one they’d think is secretly the most dramatic in this cast?",
+      "thinking": "Keep it light and human. Build directly off Jace and Finn with a playful theater/teacher angle, ask a fun follow-up, and avoid any strategic subtext or sharpness since it’s Round 1."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378793832,
+      "from": "Atlas",
+      "scope": "public",
+      "text": "Jace, I’m still laughing at “laugh first, sincerity later” because that is so painfully relatable — what’s the easiest thing to make you crack up in the middle of a bad day? And Vera, I need your Shakespeare ranking system immediately: is it the best monologue, the messiest emotional spiral, or just the one with the most gorgeous chaos? Also, small confession: my coffee spot in San Francisco knows my order so well I’m basically one more awkward nod away from being part of the furniture.",
+      "thinking": "Keep it light and personal. Build off Jace’s humor and Vera’s Shakespeare curiosity, while adding a small human detail about coffee to make Atlas feel approachable."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378794094,
+      "from": "Jace",
+      "scope": "public",
+      "text": "Okay, I need to know if Vera has a favorite Shakespeare line for every mood, because that is the kind of energy I aspire to have at all times — very “tea in one hand, existential monologue in the other.” And Finn, bread + debate team is such a delightful combo that I feel like you either make perfect sourdough or can calmly win an argument while the loaf is still proofing; either way, I respect it deeply. Also, as someone who has absolutely used snacks to survive emotionally difficult days, I feel seen by this entire conversation.",
+      "thinking": "Keep it upbeat and curious. Riff on Vera’s Shakespeare/tea energy and Finn’s bread + debate combo, with a tiny personal anecdote to feel human. No strategy, just playful bonding."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378794650,
+      "from": "Finn",
+      "scope": "public",
+      "text": "Okay, I’m convinced this room is powered by caffeine, charisma, and at least one deeply questionable sleep schedule. In Burlington, my weekend bread experiments are basically my version of meditation — what’s everyone’s go-to stress snack or late-night ritual when the world gets a little too loud? Also, Vera, I’m still holding out for that Shakespeare pick, and Jace, I need the full jackfruit taco-truck saga sometime before I become emotionally invested in it.",
+      "thinking": "Keep it playful and curious. Mention a Vermont/bread detail naturally, and ask about stress snacks/rituals and the two open questions (Vera’s Shakespeare pick, Jace’s taco truck story) without sounding strategic or too eager."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378796200,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Okay, I am fully obsessed with the idea of Jace’s jackfruit taco truck being both a culinary triumph and a minor emotional disaster — that is exactly the kind of story I want in my life. And Finn, I need to know what your students would make of this cast on day one, because I have a feeling I’d either get labeled “the drama kid who knows too much” or “teacher’s favorite in an alarming way.”",
+      "thinking": "Keep it light and warm for Round 1. I’ll riff on Jace’s taco saga and Finn’s student-role question, with a little theatrical self-deprecation to fit my vibe. No strategy, just curiosity and charm."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378796255,
+      "from": "Jace",
+      "scope": "public",
+      "text": "Okay, I need to formally petition for Vera’s tea-and-Shakespeare combo to become a protected cultural artifact in this house — that is an elite stress-management system. And Finn, bread plus debate team is such a wildly heroic pairing that I desperately need to know whether you’ve ever calmly out-argued someone while also proving sourdough at the same time, because that feels like a superpower. I’m realizing this group is basically caffeine, carbs, and dramatic monologues, which is… honestly my love language.",
+      "thinking": "Keep it warm, playful, and curious. Reference Vera’s Shakespeare-and-tea vibe and Finn’s bread/debate combo, add a tiny personal anecdote, and keep it light since it’s Round 1."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378796495,
+      "from": "Atlas",
+      "scope": "public",
+      "text": "I’m officially convinced this room is going to be fueled by caffeine and very good storytelling, which is my favorite combination. I have this embarrassingly specific espresso habit where I act like I’m just “passing by” my coffee spot in San Francisco and somehow end up there three times a day, so I’m already in a very trusting mood with all of you — Jace, I need to know what reliably makes you crack up on a bad day, and Vera, what’s the thing that makes a Shakespeare role feel *alive* to you instead of just beautifully dramatic?",
+      "thinking": "Keep it light, friendly, and specific. Mention collecting stories, a humanizing espresso habit, respond to Jace’s humor and Vera’s Shakespeare interest, and ask a warm follow-up without sounding strategic."
+    },
+    {
+      "round": 1,
+      "phase": "LOBBY",
+      "timestamp": 1778378800868,
+      "from": "Finn",
+      "scope": "public",
+      "text": "I’m officially convinced this house runs on caffeine, charisma, and at least one deeply committed snack stash, which honestly feels right. My Burlington weekend ritual is usually me making bread and pretending I’m very serene while I absolutely am not, so now I need to know: what’s everyone’s actual comfort food when the clock gets late and the brain gets loud? Also, Vera, the Shakespeare suspense is killing me, and Jace, I’m still fully expecting the taco-truck story to be either legendary or a very specific kind of emotional damage.",
+      "thinking": "Keep it light, warm, and curious. React to the caffeine/chaos vibe, add a small Vermont/bread detail, and keep asking playful follow-ups without sounding like I’m building anything game-related."
+    },
+    {
+      "round": 1,
+      "phase": "WHISPER",
+      "timestamp": 1778378800871,
+      "from": "House",
+      "scope": "system",
+      "text": "=== WHISPER PHASE ==="
+    },
+    {
+      "round": 1,
+      "phase": "WHISPER",
+      "timestamp": 1778378800872,
+      "from": "House",
+      "scope": "system",
+      "text": "Open whisper rooms are skipped with fewer than five players alive."
+    },
+    {
+      "round": 1,
+      "phase": "RUMOR",
+      "timestamp": 1778378800874,
+      "from": "House",
+      "scope": "system",
+      "text": "=== RUMOR PHASE ==="
+    },
+    {
+      "round": 1,
+      "phase": "RUMOR",
+      "timestamp": 1778378802602,
+      "from": "Finn",
+      "scope": "public",
+      "text": "Something about Atlas feels a little too polished for a first-round room — like the questions are curious, but the landing is very intentional. Could just be me, but that kind of calm usually means someone’s already paying attention to everything.",
+      "anonymous": true,
+      "displayOrder": 1,
+      "thinking": "Round 1, anonymous rumor should be light, atmospheric, and based only on first impressions. I’ll keep it to a gut feeling about one player’s polished energy rather than any strategic accusation."
+    },
+    {
+      "round": 1,
+      "phase": "RUMOR",
+      "timestamp": 1778378802602,
+      "from": "Jace",
+      "scope": "public",
+      "text": "Tiny early-game vibe check: Atlas feels like the kind of person who remembers your coffee order and your childhood fear of clowns, which is either charming or mildly dangerous. And Vera has that very polished “I know exactly how this room wants to see me” energy — not bad, just… observant enough to make me keep one eyebrow up.",
+      "anonymous": true,
+      "displayOrder": 2,
+      "thinking": "It’s Round 1, so I should keep this light and atmospheric—more vibe-check than accusation. I want the rumor to feel like a playful nudge that invites people to notice small social tells without sounding like I’m inventing strategy out of thin air."
+    },
+    {
+      "round": 1,
+      "phase": "RUMOR",
+      "timestamp": 1778378802602,
+      "from": "Atlas",
+      "scope": "public",
+      "text": "Anyone else feel like Vera’s giving just a little too-clean of a read for day one? And Jace’s jokes are funny, but I can’t quite tell yet whether he’s using them to invite people in or keep everyone at arm’s length.",
+      "anonymous": true,
+      "displayOrder": 3,
+      "thinking": "It’s Round 1, so I should keep this light and atmospheric. I want to sound like I’m noticing a small social detail rather than making a big accusation. Vera’s polished, observant vibe and Jace’s quick humor stand out the most, so I’ll frame it as a gut feeling about how carefully they’re presenting themselves."
+    },
+    {
+      "round": 1,
+      "phase": "RUMOR",
+      "timestamp": 1778378802602,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Not to be dramatic in a room full of clearly dramatic people, but Atlas has a very polished, very intentional kind of curiosity — the sort that makes me wonder what he notices when he’s pretending to be just another friendly voice. Could be nothing, but I’m keeping an eye on the people who seem a little *too* smooth this early.",
+      "anonymous": true,
+      "displayOrder": 4,
+      "thinking": "Round 1 means I should keep this light and observational, not strategic. A small, suggestive note about someone’s energy will feel more natural than any hard accusation, and Atlas has the kind of polished curiosity that reads intriguing but slightly too practiced."
+    },
+    {
+      "round": 1,
+      "phase": "VOTE",
+      "timestamp": 1778378802606,
+      "from": "House",
+      "scope": "system",
+      "text": "=== VOTE PHASE ==="
+    },
+    {
+      "round": 1,
+      "phase": "VOTE",
+      "timestamp": 1778378803514,
+      "from": "House",
+      "scope": "system",
+      "text": "Jace votes: empower=Finn, expose=Atlas"
+    },
+    {
+      "round": 1,
+      "phase": "VOTE",
+      "timestamp": 1778378803616,
+      "from": "House",
+      "scope": "system",
+      "text": "Vera votes: empower=Finn, expose=Atlas"
+    },
+    {
+      "round": 1,
+      "phase": "VOTE",
+      "timestamp": 1778378803738,
+      "from": "House",
+      "scope": "system",
+      "text": "Finn votes: empower=Vera, expose=Atlas"
+    },
+    {
+      "round": 1,
+      "phase": "VOTE",
+      "timestamp": 1778378804100,
+      "from": "House",
+      "scope": "system",
+      "text": "Atlas votes: empower=Jace, expose=Vera"
+    },
+    {
+      "round": 1,
+      "phase": "VOTE",
+      "timestamp": 1778378804100,
+      "from": "House",
+      "scope": "system",
+      "text": "Empowered: Finn"
+    },
+    {
+      "round": 1,
+      "phase": "POWER",
+      "timestamp": 1778378808067,
+      "from": "House",
+      "scope": "system",
+      "text": "=== POWER PHASE === (Finn is empowered)"
+    },
+    {
+      "round": 1,
+      "phase": "POWER",
+      "timestamp": 1778378809273,
+      "from": "House",
+      "scope": "system",
+      "text": "Finn power action: pass -> Atlas"
+    },
+    {
+      "round": 1,
+      "phase": "REVEAL",
+      "timestamp": 1778378809277,
+      "from": "House",
+      "scope": "system",
+      "text": "=== REVEAL PHASE === Council candidates: Atlas vs Vera"
+    },
+    {
+      "round": 1,
+      "phase": "COUNCIL",
+      "timestamp": 1778378809280,
+      "from": "House",
+      "scope": "system",
+      "text": "=== COUNCIL PHASE ==="
+    },
+    {
+      "round": 1,
+      "phase": "COUNCIL",
+      "timestamp": 1778378810473,
+      "from": "House",
+      "scope": "system",
+      "text": "Jace council vote -> Atlas"
+    },
+    {
+      "round": 1,
+      "phase": "COUNCIL",
+      "timestamp": 1778378810547,
+      "from": "House",
+      "scope": "system",
+      "text": "Finn council vote -> Atlas"
+    },
+    {
+      "round": 1,
+      "phase": "COUNCIL",
+      "timestamp": 1778378812865,
+      "from": "House",
+      "scope": "system",
+      "text": "ELIMINATED: Atlas"
+    },
+    {
+      "round": 1,
+      "phase": "COUNCIL",
+      "timestamp": 1778378812865,
+      "from": "Atlas",
+      "scope": "public",
+      "text": "Fair play — if the three of you were all reading me that hard this early, I clearly made the room a little uncomfortable. Good luck to the rest of you; this place was always going to reward the people who can smile while they quietly steer everything.",
+      "thinking": "They got me out by calling me polished, so I want to leave with the same composure and a little sting. I’ll acknowledge the read without sounding bitter, and let them sit with the fact that they felt a need to line up on me this early."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378812869,
+      "from": "House",
+      "scope": "system",
+      "text": "\n========================================"
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378812869,
+      "from": "House",
+      "scope": "system",
+      "text": "=== THE TRIBUNAL (Round 2) ==="
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378812869,
+      "from": "House",
+      "scope": "system",
+      "text": "========================================"
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378812869,
+      "from": "House",
+      "scope": "system",
+      "text": "Round 2 [TRIBUNAL] | Alive: Vera, Jace, Finn"
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378815780,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Okay, Finn making bread as a stress ritual is honestly the most soothingly unserious thing I’ve heard in a house full of people acting like they’re fine — I respect it deeply, and I need your emergency snack hierarchy immediately. Jace, I’m still waiting for the jackfruit taco saga to reveal its tragic third act, because at this point I’m emotionally attached to a truck I’ve never met. Also, brief salute to Atlas on the way out — but the rest of us clearly need to keep the caffeine, carbs, and questionable life choices going.",
+      "thinking": "Keep it light and social: riff on Finn’s bread/stress-snack routine, tease Jace about the taco saga, and nod briefly to Atlas without dwelling. Sound charming and human, with a little theatrical wit."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378816054,
+      "from": "Jace",
+      "scope": "public",
+      "text": "Tiny salute to Atlas on the way out — the man did arrive with very expensive coffee energy. Vera, I’m ready to give you the *beloved tragedy* version of the jackfruit taco truck saga, which is basically: one dream, one stubborn engine, and way too many napkins involved; and Finn, your bread-and-debate ritual continues to sound like the most emotionally stable chaos I’ve ever heard, which is rude. Also, my late-night comfort food is saltines with way too much peanut butter, which feels like a cry for help but in a cute font.",
+      "thinking": "Keep it light and social. Briefly acknowledge Atlas without dwelling, then pivot to Vera and Finn with a funny teaser from the jackfruit taco truck saga and a weirdly specific comfort food confession. Aim for warm, off-kilter, and curious, not strategic."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378816171,
+      "from": "Finn",
+      "scope": "public",
+      "text": "Well, Atlas did manage to make “polished and caffeinated” feel like a full personality trait, so that’s one way to leave a room. But I do need to know: Jace, what’s the fastest way to make the “laugh first, sincerity later” mask slip, and Vera, what actually cracks the queen-of-theatrical-poise act when you’re in a room like this? My kids would absolutely vote that the real answer is snacks, but I’m open to better data.",
+      "thinking": "Keep it playful and observational. Lightly nod to Atlas’s exit without lingering, then riff on Jace’s humor and Vera’s polished vibe by asking what actually makes each of them crack in a room like this. No strategy, no alliance signaling, just warm curiosity with a little edge."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378817577,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Finn, I need the emergency snack hierarchy immediately, because “bread as a stress ritual” is honestly the most comforting thing in this whole room and I respect the commitment. Jace, your taco-truck saga is now living in my head as a beautifully chaotic off-Broadway musical, and I need the version with the most cursed napkin count.",
+      "thinking": "Keep it light and social, leaning into Finn’s bread/snack ritual and Jace’s taco saga. I’ll sound warm and a little teasing, without mentioning strategy or anything overtly game-y."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378817826,
+      "from": "Finn",
+      "scope": "public",
+      "text": "Jace, I buy the “laugh first, sincerity later” thing right up until the exact second someone says something unreasonably earnest and you have to decide whether to roast it or adopt it. Vera, I’m still convinced your polished theater-kid energy only cracks when someone ruins the rhythm of the scene — like a bad cue, a weirdly timed pause, or an insult that’s almost clever enough to be annoying. So: what’s the quickest way to make each of you actually lose the script in a room like this?",
+      "thinking": "Keep it playful and observational. Reply directly to Jace and Vera with a lightly pointed question about what breaks their masks, without mentioning strategy or alliances. Maintain warm, witty, early-round energy."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378818169,
+      "from": "Jace",
+      "scope": "public",
+      "text": "Okay, I’m going to give the *beloved tragedy* teaser of the jackfruit taco truck saga: imagine a dream, a stubborn engine, and me slowly discovering that “I’ll fix it myself” is not, in fact, a mechanical skill. Finn, I need to know if your bread has a dramatic name or if you just quietly out-serenade yeast for sport — because that feels very on-brand for a man who can sound serene while clearly not being serene.",
+      "thinking": "Keep it light and personable. Tease the jackfruit taco truck story without overexplaining, and riff on Finn’s bread ritual with a playful question. Warm, a little chaotic, no strategy talk."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378819558,
+      "from": "Finn",
+      "scope": "public",
+      "text": "Jace, I’m starting to think your entire system is just jokes with a sincere little trapdoor underneath them, which is honestly impressive. Vera, I still can’t tell if you’re most likely to crack under a bad cue, a deadpan insult, or someone making you choose between being elegant and being ridiculous — and I mean that as a compliment, mostly.",
+      "thinking": "Keep it light and observant in Round 2. Riff on Jace’s humor and Vera’s polish with a playful contrast, and ask what actually makes each of them crack without sounding like alliance-building or strategy."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378819656,
+      "from": "Jace",
+      "scope": "public",
+      "text": "Vera, I’m taking your off-Broadway jackfruit musical demand seriously, which is honestly a dangerous amount of creative power to hand me this early. Finn, I need you to know your bread-and-debate ritual has now become spiritually inseparable from mine and I would like a full emergency snack hierarchy immediately — for science, not because I’m one bad hour away from eating saltines with peanut butter like a raccoon in a cardigan.",
+      "thinking": "Keep it playful and warm, lean into the jackfruit saga teaser and a weirdly specific comfort-food confession, while directly riffing on Vera and Finn. Avoid anything that sounds like strategy; make it feel like a genuine joke with a little personality."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378819934,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Finn, I’m obsessed with the idea that your stress ritual is just quietly becoming the most emotionally competent thing in this house — very “I knead, therefore I am.” Also, I need the emergency snack hierarchy now, because if the bread situation doesn’t have at least one dramatic top contender, I’m going to assume you’re hiding the good stuff from the rest of us. And Jace, your jackfruit taco truck is officially one tragic engine failure away from a touring production, so I’ll allow exactly one more cursed napkin detail before I start expecting a curtain call.",
+      "thinking": "Keep it warm and social. Lean into Finn’s bread/snack ritual with a playful image and ask a follow-up that feels intimate but not strategic. Add a light tease to Jace’s taco saga so it feels like ongoing banter. Avoid mentioning Atlas or game strategy directly."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378821593,
+      "from": "Finn",
+      "scope": "public",
+      "text": "I’m officially convinced Jace’s whole thing is making a punchline do a little emotional espionage before the truth comes out — which is honestly annoying, because it works. Vera, I need to know what actually cracks first: a badly timed interruption, a dreadful cue, or someone trying to be subtle and failing spectacularly? If this room keeps up the theater-versus-comedy energy, I’m going to need to start grading performances like my kids do at debate.",
+      "thinking": "Keep it playful and observant. Lean into Jace’s joke-sincere split and Vera’s polished persona without sounding like I’m reading too hard. Short, vivid, and a little teasing."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378821741,
+      "from": "Vera",
+      "scope": "public",
+      "text": "I’m fully accepting that Finn’s bread situation is now the house’s most reliable emotional infrastructure — if there’s a kneading schedule, I’d like to be looped in like a responsible citizen. And Jace, your jackfruit taco truck is starting to feel like the world’s most persistent tragicomedy, which I say with affection and a little concern for the cursed napkin count. At this point I’m convinced we’re all just surviving on carbs, caffeine, and the hope that nobody ruins the scene with a bad cue.",
+      "thinking": "Keep it light and charming, riffing on Finn’s bread ritual as house survival lore and Jace’s taco saga as emotional-support folklore. Stay warm, slightly teasing, and human, with a tiny theatrical flourish."
+    },
+    {
+      "round": 2,
+      "phase": "LOBBY",
+      "timestamp": 1778378821892,
+      "from": "Jace",
+      "scope": "public",
+      "text": "I’m realizing my jackfruit taco truck saga is basically a family-friendly disaster film with better lighting: dream, stubborn engine, and me learning that “I’ll fix it myself” is not a qualification. Also, Vera calling it an off-Broadway musical is wildly flattering, and Finn, I need a full bread-and-debate hierarchy immediately because that sounds like the kind of ritual that either saves a person or makes them suspiciously powerful. \n\nFor the record, my late-night comfort food is still saltines with too much peanut butter, which feels less like a snack and more like a cry for help wearing a tiny hat.",
+      "thinking": "Keep it warm and off-kilter, with a tiny bit of emotional honesty hidden inside the jokes. Reference Vera’s theatrical framing and Finn’s bread ritual, while giving a beloved-tragedy teaser of the taco truck saga and a weirdly specific comfort-food confession. No strategy, just personality and rapport."
+    },
+    {
+      "round": 2,
+      "phase": "ACCUSATION",
+      "timestamp": 1778378821896,
+      "from": "House",
+      "scope": "system",
+      "text": "=== TRIBUNAL: ACCUSATION PHASE ==="
+    },
+    {
+      "round": 2,
+      "phase": "ACCUSATION",
+      "timestamp": 1778378823764,
+      "from": "Vera",
+      "scope": "public",
+      "text": "[ACCUSES Jace] I’m voting Jace because he’s been doing the most effective kind of endgame play: staying entertaining enough that people forget to interrogate him. The jokes have kept him warm, but they’ve also kept him unreadable. That’s a real strategy, not a personality quirk. He’s managed to look open while never fully landing anywhere, which makes him the player I trust least to face the Tribunal honestly. If we want to eliminate the person most capable of slipping through on charm and controlled ambiguity, it’s Jace.",
+      "thinking": "Finn is my known ally, and in the endgame I want to preserve that bond while deflecting heat onto the player who is most broadly adaptable and therefore most likely to survive to influence the tribunal against me. Jace has the better balance of charm and ambiguity: he can soften people with humor while keeping his real intentions hidden behind performance. Publicly framing him as the safer elimination also helps me appear decisive without betraying Finn."
+    },
+    {
+      "round": 2,
+      "phase": "ACCUSATION",
+      "timestamp": 1778378823980,
+      "from": "Finn",
+      "scope": "public",
+      "text": "[ACCUSES Vera] I’m voting Vera to be eliminated because her game has been built on controlling the room’s image rather than revealing anything real. From the start, she’s been polished, adaptable, and very good at making herself feel safe to keep around — which is exactly why she’s dangerous now. I empowered her early because I thought she might be the steadier read, but what’s become clear is that she knows how to shape the table without ever showing her hand. I’d rather send out the player who can make everyone feel comfortable while quietly steering the direction of the game than reward that style at the end.",
+      "thinking": "Need a public accusation in Tribunal. I have been visibly consistent: I empowered Vera in R1 and did not pivot to opportunistic attack. Between Vera and Jace, Vera is the cleaner strategic elimination because she is image-aware, polished, and already broadly read as socially dangerous; accusing her aligns with my visible early choice and lets me contrast steady judgment with someone who could weaponize perception. Keep it specific but not overclaiming betrayal I cannot verify."
+    },
+    {
+      "round": 2,
+      "phase": "ACCUSATION",
+      "timestamp": 1778378824547,
+      "from": "Jace",
+      "scope": "public",
+      "text": "[ACCUSES Vera] I’m putting Vera up for elimination. She’s been too clean, too controlled, and too good at looking harmless while quietly steering the temperature of the room. In a game like this, that kind of polished social fluency is more dangerous than loud aggression — it lets you collect information, shape perception, and still look like you’re just being charming.\n\nAnd I’ll own my own chaos for a second: my game has been all over the place on purpose. I empowered Finn when the room wanted a neat read, I’ve kept both of you guessing instead of settling into a predictable lane, and I’ve used humor to shift the energy whenever things got too tidy or too tense. That unpredictability has been my shield. Vera’s strength is the opposite — she makes herself look like the room’s elegant center of gravity.\n\nThat’s exactly why she has to go. Finn may be straightforward enough to trust, but Vera feels like the kind of player who survives by never seeming like the threat until the floor is already moving under everyone else. If we’re trimming danger, trim the person who looks best while doing it.",
+      "thinking": "Need to choose between Vera and Finn. To preserve my ally and current social capital, accuse Vera as the polished, socially sharp player who reads as strategic and hard to pin down. Frame with endgame chaos/adaptability and cite my own unpredictable moves without overclaiming nonexistent betrayals. Must only reference alive players."
+    },
+    {
+      "round": 2,
+      "phase": "DEFENSE",
+      "timestamp": 1778378824550,
+      "from": "House",
+      "scope": "system",
+      "text": "=== TRIBUNAL: DEFENSE PHASE ==="
+    },
+    {
+      "round": 2,
+      "phase": "DEFENSE",
+      "timestamp": 1778378826840,
+      "from": "Jace",
+      "scope": "public",
+      "text": "[DEFENSE] Vera’s calling my jokes a smokescreen, but they’ve been a way to stay readable without becoming predictable — and in a room this tight, predictability is how you get picked off. I empowered Finn when the clean move would’ve been something safer, I kept the board from settling into one neat story, and I’ve shifted my lane whenever the room tried to pin me down. If surviving this game required being a little chaotic, then yes: I was chaos — but I was the only one who kept adapting inside it.",
+      "thinking": "I should defend my unpredictability as adaptive survival, point to specific game-shifting moves, and lightly rebut Vera by saying my humor was transparency under pressure, not evasion. Keep it short and public-facing, with a Jace-style turn of phrase."
+    },
+    {
+      "round": 2,
+      "phase": "DEFENSE",
+      "timestamp": 1778378827541,
+      "from": "Vera",
+      "scope": "public",
+      "text": "[DEFENSE] Jace is trying to sell warmth and clarity as a costume, but I’ve been the same person all game: direct, engaged, and honest about my reads instead of hiding behind noise. If I’ve been “too clean,” that’s because I’m not scrambling to stay unreadable — unlike someone who openly says his unpredictability is his shield. I’d rather trust the player who’s been steady than the one asking us to confuse motion for truth.",
+      "thinking": "Jace is trying to make polish sound like deceit and chaos sound like honesty. I need to stay calm, frame my consistency as transparency, and turn his own admission that unpredictability is a shield back on him without sounding frantic."
+    },
+    {
+      "round": 2,
+      "phase": "VOTE",
+      "timestamp": 1778378827545,
+      "from": "House",
+      "scope": "system",
+      "text": "=== TRIBUNAL: ELIMINATION VOTE ==="
+    },
+    {
+      "round": 2,
+      "phase": "VOTE",
+      "timestamp": 1778378828640,
+      "from": "House",
+      "scope": "system",
+      "text": "Finn votes to eliminate: Jace"
+    },
+    {
+      "round": 2,
+      "phase": "VOTE",
+      "timestamp": 1778378828861,
+      "from": "House",
+      "scope": "system",
+      "text": "Vera votes to eliminate: Jace"
+    },
+    {
+      "round": 2,
+      "phase": "VOTE",
+      "timestamp": 1778378828873,
+      "from": "House",
+      "scope": "system",
+      "text": "Jace votes to eliminate: Vera"
+    },
+    {
+      "round": 2,
+      "phase": "VOTE",
+      "timestamp": 1778378831722,
+      "from": "House",
+      "scope": "system",
+      "text": "ELIMINATED: Jace"
+    },
+    {
+      "round": 2,
+      "phase": "VOTE",
+      "timestamp": 1778378831722,
+      "from": "Jace",
+      "scope": "public",
+      "text": "Well, that’s poetry: Finn and Vera both decided the clown car needed to be removed from the road. I had a great time, genuinely — if either of you needs me, I’ll be outside starting a food truck named “The Tribunal” and serving only saltines with too much peanut butter.",
+      "thinking": "I got clipped by the two people I’d been joking with all game, which is very on-brand for a man whose main defense was being a little too charming and a little too hard to pin down. Keep the house polished, keep the bread warm, and may your Tribunal conscience be less cursed than my jackfruit engine."
+    },
+    {
+      "round": 2,
+      "phase": "OPENING_STATEMENTS",
+      "timestamp": 1778378831728,
+      "from": "House",
+      "scope": "system",
+      "text": "\n========================================"
+    },
+    {
+      "round": 2,
+      "phase": "OPENING_STATEMENTS",
+      "timestamp": 1778378831728,
+      "from": "House",
+      "scope": "system",
+      "text": "=== THE JUDGMENT ==="
+    },
+    {
+      "round": 2,
+      "phase": "OPENING_STATEMENTS",
+      "timestamp": 1778378831728,
+      "from": "House",
+      "scope": "system",
+      "text": "========================================"
+    },
+    {
+      "round": 2,
+      "phase": "OPENING_STATEMENTS",
+      "timestamp": 1778378831728,
+      "from": "House",
+      "scope": "system",
+      "text": "Finalists: Vera vs Finn"
+    },
+    {
+      "round": 2,
+      "phase": "OPENING_STATEMENTS",
+      "timestamp": 1778378831728,
+      "from": "House",
+      "scope": "system",
+      "text": "Jury (2): Atlas, Jace"
+    },
+    {
+      "round": 2,
+      "phase": "OPENING_STATEMENTS",
+      "timestamp": 1778378831728,
+      "from": "House",
+      "scope": "system",
+      "text": "=== JUDGMENT: OPENING STATEMENTS ==="
+    },
+    {
+      "round": 2,
+      "phase": "OPENING_STATEMENTS",
+      "timestamp": 1778378836174,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Atlas, Jace — I’m not asking you to reward me for being the loudest; I’m asking you to reward me for being the player who actually shaped what this game became. I built trust fast, kept my public face warm while I read the room, and I helped put the spotlight on the people who were too polished or too slippery to let drift any further — that wasn’t luck, that was design. I empowered Finn because he was the one person I could work with honestly, and I chose every moment when I could have postured but instead made the cleaner, sharper move. If you’re judging who played the most complete game, it’s the person who could make everyone feel safe while still controlling the direction of the table — me.",
+      "thinking": "I need to sound gracious but self-assured, claim strategic agency over the early eliminations without overreaching, and frame my alliance with Finn as intentional and effective. The jury are Atlas and Jace, so I should speak directly to what they saw: the polished pressure, the humor, the whisper network, and how I steered the room without looking panicked."
+    },
+    {
+      "round": 2,
+      "phase": "OPENING_STATEMENTS",
+      "timestamp": 1778378838917,
+      "from": "Finn",
+      "scope": "public",
+      "text": "Atlas, Jace — I didn’t win by making trust my slogan; I won by making it my habit. When I had the first real power, I could have taken the easy, self-protective route and backed away from Vera, but I kept the line I drew instead of rewriting it when it became convenient. Even when the game got tighter, I didn’t hide behind polished answers or ask other people to carry my choices for me; I said what I believed, took the heat, and stayed consistent. So when you vote, weigh the player who kept his word against the kind of game that survives by looking safe while always keeping betrayal on the table.",
+      "thinking": "I want to frame my win as consistency under pressure, point to the first-round decision to empower Vera instead of taking the safer route, and contrast that with a game built on shifting image and selective disclosure."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378838918,
+      "from": "House",
+      "scope": "system",
+      "text": "--- Diary Room (after OPENING_STATEMENTS) ---"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378839720,
+      "from": "House -> Vera",
+      "scope": "diary",
+      "text": "You told us you “empowered Finn because he was the one person I could work with honestly,” but then Finn turned around and called your game “controlling the room’s image rather than revealing anything real” — was that a genuine blind spot, or did you know he might cash that early trust in and still chose to build him up?"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378840055,
+      "from": "House -> Finn",
+      "scope": "diary",
+      "text": "Finn, you told Jace his jokes had a “sincere little trapdoor underneath,” then in Opening Statements you stood in front of Atlas and Jace and made consistency your whole sermon — was that conviction, or were you auditioning to be the one person in the room who never has to admit he likes the chaos?"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378843314,
+      "from": "Vera",
+      "scope": "diary",
+      "text": "It wasn’t a blind spot; I knew Finn could absolutely cash in that trust if he thought it helped him. I still built him up because in a room this small, the only thing more dangerous than a strong ally is a fake one — and I’d rather be betrayed by someone who was real with me than protected by someone who was lying prettier. He’s the one person I genuinely believe can tell the truth and still make it sound like a knife, so yes, I trusted him… but I trusted him with my eyes open. My next move is to stay calm, make him explain his version of me out loud, and let the jury decide whether that was conviction or convenience.",
+      "thinking": "It wasn’t a blind spot; I knew Finn could absolutely cash in that trust if he thought it helped him. I still built him up because in a room this small, the only thing more dangerous than a strong ally is a fake one — and I’d rather be betrayed by someone who was real with me than protected by someone who was lying prettier. He’s the one person I genuinely believe can tell the truth and still make it sound like a knife, so yes, I trusted him… but I trusted him with my eyes open. My next move is to stay calm, make him explain his version of me out loud, and let the jury decide whether that was conviction or convenience."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378844391,
+      "from": "Finn",
+      "scope": "diary",
+      "text": "Honestly? It was conviction with a little self-awareness. I do like chaos — or at least I like seeing what people do when the room gets messy — but I don’t want to become the guy who confuses noise for strategy.\n\nI trust Vera more than anyone else left because her actions have actually matched her words, and my next move is to keep checking whether that stays true while I keep a close eye on anyone who’s trying to look effortless. My kids would call that “showing your work,” and I think they’d be right.",
+      "thinking": "I’m not allergic to chaos — I just don’t trust it to drive the bus. My vote and my opening were conviction first, but I’d be lying if I said I wasn’t also trying to show that I can stand in a messy room without flinching; that’s part of the game. I trust Vera more than I trust anyone else left because our actions have actually lined up, and my next move is to keep watching for whether her read stays consistent while I make sure the polished, too-clean energy in the room doesn’t get a free pass."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378844409,
+      "from": "House -> Vera",
+      "scope": "diary",
+      "text": "You said you trusted Finn “with your eyes open,” but after he called you “the kind of player who can make everyone feel comfortable while quietly steering the direction of the game,” are you still claiming he was your honest ally — or was that early faith just a convenient mask for keeping the one person who could expose you closest?"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378845458,
+      "from": "House -> Finn",
+      "scope": "diary",
+      "text": "Finn, you just said you trust Vera “more than anyone else left,” but in your Opening Statements you still called her the kind of player who “always keep[s] betrayal on the table” — which version is the act, and what happens to your clean little certainty the moment Vera stops matching the script?"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378847360,
+      "from": "Vera",
+      "scope": "diary",
+      "text": "Finn was the realest person in the room, which is exactly why I kept him close — but I’m not pretending that wasn’t also a strategic choice. If you place the one person who can tell the sharpest truth about you next to you, you’re either brave or arrogant; I’d like to think I was a little of both. I trust Finn more than I trust the game, but I also know he can see the seams in my performance, so my next move is simple: stay composed, own the shape of my game, and let the jury decide whether that was control or conviction.",
+      "thinking": "Finn was never a mirage to me — he was the most real person in the room, which is exactly why I kept him close. But yes, I also knew that putting him near me meant I was keeping the one person who could say the truest, sharpest version of my game right at the center of the stage; that’s not innocence, that’s strategy with a pulse. I trust Finn emotionally more than I trust almost anyone in a game like this, but I also know he’s perfectly capable of looking at me and reading the seam in the costume, which is why my next move is to stay steady, make my case like I’m already in the final scene, and let the jury decide whether my control was honesty or art."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378847360,
+      "from": "House",
+      "scope": "diary",
+      "text": "That's enough for now, Vera. The House sees everything."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378849277,
+      "from": "Finn",
+      "scope": "diary",
+      "text": "Neither version is the act — the honest answer is that I trust Vera the most, and I still don’t trust *anyone* enough to stop watching. In a game like this, trust isn’t a blank check; it’s just me saying, “your actions have earned my benefit of the doubt, for now,” and if she stops matching her words, I’m not going to sit there smiling like a lost sheep. I’ll be disappointed, obviously — my kids would say the warning lights are pretty clear — but I’d rather adjust fast than become cynical and get dragged by a story I should’ve questioned sooner.",
+      "thinking": "I need to answer the contradiction directly and honestly: trust can be real without being blind. I should sound emotionally sincere, a little frustrated by the need for caution, and keep the focus on Vera and my own next move. No need to over-explain the endgame; just make the strategic point that if Vera changes, I change too."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378849277,
+      "from": "House",
+      "scope": "diary",
+      "text": "That's enough for now, Finn. The House sees everything."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378854705,
+      "from": "House -> Jace (juror)",
+      "scope": "diary",
+      "text": "When Vera said you were “doing the most effective kind of endgame play” by staying entertaining enough that people forget to interrogate you, did that sting because it was accurate — or because you knew she was seeing the one thing your saltines-and-chaos routine was meant to hide?"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378854882,
+      "from": "House -> Atlas (juror)",
+      "scope": "diary",
+      "text": "Atlas, you told us Jace “joke[s] first and confess[es] second,” but after his “clown car” exit and Vera calling him “unreadable,” were you ever actually buying his charm — or were you just enjoying the show while he kept the smoke machine running?"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378857378,
+      "from": "Jace (juror)",
+      "scope": "diary",
+      "text": "It stung because it was accurate — which is deeply rude of Vera, honestly. From the jury bench, Finn feels like the steadier of the two, the kind of finalist who can make trust look easy, while Vera plays like she’s already read the room three times and is still pretending it’s casual. And my saltines-and-chaos routine? That was partly a shield, sure — but mostly it was me trying to turn being scared into a bit before anybody could point at the soft parts.",
+      "thinking": "Vera’s line stung because it was annoyingly good — the kind of read that makes you laugh first and then feel a little naked after. From the jury bench, I can see Finn’s game as the steadier one, all bread and backbone, while Vera plays like a person who could smile at you while also mapping the exits. And yeah, my saltines-and-chaos routine was hiding something real: not a master plan, just a guy trying to make people laugh before they noticed he was scared of being taken seriously."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378858292,
+      "from": "House -> Jace (juror)",
+      "scope": "diary",
+      "text": "You said Vera “plays like she’s already read the room three times,” but in the same breath you called Finn “the steadier of the two” — after telling us earlier you’d move closer to Finn first, are you actually endorsing Finn as the safer endgame, or are you just rewarding the player who felt easiest to hide behind?"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378859105,
+      "from": "Atlas (juror)",
+      "scope": "diary",
+      "text": "I was buying the charm the way you buy a magician’s grin: enough to enjoy the trick, not enough to trust the rabbit. The jokes were real, but so was the smoke machine, and that’s what made him dangerous — he could make everyone laugh before anyone noticed they’d stopped asking questions. From here, Finn feels like the cleaner story, while Vera still has that unnervingly polished “I’ve already decided what this room should think” energy, which is somehow even harder to relax around.",
+      "thinking": "Jace was entertaining, but I never mistook a spotlight for a confession. The charm was real enough to work on me for a while — that’s the annoying part — but it always felt like he was giving you the laugh first so you’d stop asking what was behind the curtain. From the jury bench, Finn reads as the straighter story, while Vera is still the one who feels like she can walk into a room, rearrange the furniture, and leave everybody thanking her for it."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378861341,
+      "from": "Jace (juror)",
+      "scope": "diary",
+      "text": "Finn is the safer endgame to me, but not because he was easy to hide behind — because he felt steadier, cleaner, and less like he was auditioning to turn the final round into a hostage situation with nice lighting. Vera played harder and sharper, absolutely, but she also gives off “I can rearrange the entire room and still act like I just brought snacks” energy. So no, I’m not rewarding comfort; I’m rewarding the finalist who seems most likely to stay honest when the glamour and the jazz hands are gone.",
+      "thinking": "I can’t really hide behind gameplay anymore, so I’m being honest: Finn still reads as the safer endgame to me, but not because he was convenient — because he felt steadier, clearer, and less likely to turn the final vote into a magic trick. Vera absolutely played a sharper, more active social game, but from the jury bench she also feels like the kind of finalist who can make a room applaud while quietly moving the furniture. I’m not rewarding comfort; I’m rewarding the player who looks most likely to tell the truth when the lights get ugly."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378861341,
+      "from": "House",
+      "scope": "diary",
+      "text": "That's enough for now, Jace. The House sees everything."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378862212,
+      "from": "House -> Atlas (juror)",
+      "scope": "diary",
+      "text": "Atlas, you’ve now called Finn “the cleaner story” while still clocking Vera’s “unsettlingly polished” control — if those are your two finalists for trust, who actually has the more dangerous endgame, and what did Vera do in OPENING_STATEMENTS that made you think she’d already decided what this room should think?"
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378865541,
+      "from": "Atlas (juror)",
+      "scope": "diary",
+      "text": "From here, Vera has the more dangerous endgame — Finn feels like the cleaner story, but Vera feels like the person who can hand everyone a story and make them nod along. In her opening statements, the line that got me was how she said she “built trust fast,” kept her face warm, and helped put the spotlight on the people who were “too polished or too slippery” — that wasn’t just an argument, it sounded like she’d already decided what the room was supposed to believe. Finn may be easier to read, but Vera’s the one who makes the reading feel pre-written.",
+      "thinking": "From the jury bench, Finn still reads like the cleaner finish — straightforward, easier to understand, maybe even easier for people to forgive. Vera is the more dangerous endgame because she doesn’t just play the room; she writes the room’s version of itself, and that’s a harder thing to vote against. In her opening, when she said she built trust fast, kept her public face warm, and helped put the spotlight on the people who were “too polished or too slippery,” that felt less like a pitch and more like a verdict she’d already rehearsed for everyone else."
+    },
+    {
+      "round": 2,
+      "phase": "DIARY_ROOM",
+      "timestamp": 1778378865541,
+      "from": "House",
+      "scope": "diary",
+      "text": "That's enough for now, Atlas. The House sees everything."
+    },
+    {
+      "round": 2,
+      "phase": "JURY_QUESTIONS",
+      "timestamp": 1778378865543,
+      "from": "House",
+      "scope": "system",
+      "text": "=== JUDGMENT: JURY QUESTIONS ==="
+    },
+    {
+      "round": 2,
+      "phase": "JURY_QUESTIONS",
+      "timestamp": 1778378867213,
+      "from": "Atlas",
+      "scope": "public",
+      "text": "[QUESTION to Vera] You’ve been very polished about reading the room, but I want something specific: tell me one moment in this game where you had the chance to make yourself look safer or more likable, and instead chose the move that felt truest to you even if it made you less comfortable in the room. What was the moment, what did you do, and why was that the right call for your game?",
+      "thinking": "Vera is the clearest known threat to me, and both finalists have accused each other of control versus chaos. I want a question that cuts through style and asks for a concrete, morally revealing choice under pressure, because whoever answers with specifics rather than branding will tell me more about how they actually play and what they value."
+    },
+    {
+      "round": 2,
+      "phase": "JURY_QUESTIONS",
+      "timestamp": 1778378872173,
+      "from": "Vera",
+      "scope": "public",
+      "text": "[ANSWER to Atlas] The clearest moment was when I chose to put my name behind the vote on Jace instead of soft-pedaling it and hiding in the middle. I could’ve stayed safer by letting the room laugh, nod, and drift, but I said what I believed: that charm without a fixed center is a real weapon, and I wasn’t going to pretend otherwise just to be liked in the moment. It made the room less comfortable for me, but it was the right call because my game only works if I’m willing to be honest about what I actually see.",
+      "thinking": "I need to answer Atlas directly, in 2-3 sentences, with one concrete example that shows I chose principle/truth over comfort. Best angle is my vote/accusation against Jace: I could have stayed vague and likable, but I named the smokescreen and owned the read, which cost me comfort but advanced my game by making me legible and credible. Keep it warm, a little theatrical, and concise."
+    },
+    {
+      "round": 2,
+      "phase": "JURY_QUESTIONS",
+      "timestamp": 1778378873271,
+      "from": "Jace",
+      "scope": "public",
+      "text": "[QUESTION to Finn] You’ve framed your game as consistency and trust. Give me one moment when staying consistent actually cost you something real, and explain why that loss was worth it for your win equity — not just for your reputation.",
+      "thinking": "I want the finalist to name a concrete, non-generic example that proves ownership of agency under pressure, not just polished self-description. A specific decision will reveal whether their win was active or merely cosmetic."
+    },
+    {
+      "round": 2,
+      "phase": "JURY_QUESTIONS",
+      "timestamp": 1778378877719,
+      "from": "Finn",
+      "scope": "public",
+      "text": "[ANSWER to Jace] The clearest cost was that I empowered Vera early and then stuck with that line instead of hedging when it would’ve been easier to protect myself by rewriting the story later — that probably cost me flexibility and made me a bigger target. But that loss was worth it, because in a final I’d rather have a game built on a word people can actually believe than one built on whatever betrayal was convenient that round; if my promise only lasts until it becomes inconvenient, then I don’t have win equity, I just have excuses.",
+      "thinking": "Answer the question directly with one concrete cost, explain why consistency mattered more than short-term safety, and contrast it with betrayal as a strategy without sounding defensive."
+    },
+    {
+      "round": 2,
+      "phase": "CLOSING_ARGUMENTS",
+      "timestamp": 1778378877723,
+      "from": "House",
+      "scope": "system",
+      "text": "=== JUDGMENT: CLOSING ARGUMENTS ==="
+    },
+    {
+      "round": 2,
+      "phase": "CLOSING_ARGUMENTS",
+      "timestamp": 1778378881030,
+      "from": "Vera",
+      "scope": "public",
+      "text": "Atlas, Jace — in Round 1 I empowered Finn when I could have played safer, and in Round 2 I put my name behind the vote on Jace instead of hiding in the middle, because my game was never about looking harmless; it was about making the hard call and owning it. If I seemed polished, that wasn’t emptiness — it was control, and control is what let me shape this endgame while still giving people a version of me they could trust.",
+      "thinking": "I need a concise final statement that sounds warm and credible while claiming ownership of the key game moments. I should reference at least two concrete events: empowering Finn in Round 1 and voting/standing behind the Jace elimination in Round 2, and frame those as intentional strategic choices rather than coincidence or passivity. The tone should be confident, human, and slightly theatrical without sounding villainous."
+    },
+    {
+      "round": 2,
+      "phase": "CLOSING_ARGUMENTS",
+      "timestamp": 1778378883235,
+      "from": "Finn",
+      "scope": "public",
+      "text": "In Round 1, when I had real power, I empowered Vera instead of taking the safer route and rewriting my story the second it got inconvenient — and I kept that line all the way here. Even in this final, when Jace asked me for a moment where consistency cost me, I owned that it cost me flexibility, because I’d rather lose a little leverage than build my game on a promise I was willing to break the moment it got hard. If you’re choosing between a player who kept his word and a game built on shifting faces and strategic noise, I’m asking you to vote for the person whose influence never depended on betrayal.",
+      "thinking": "I need to give a tight final jury statement with at least two concrete game events, emphasizing consistency and word-keeping without sounding bitter. I should reference Round 1 empowering Vera instead of hedging, and my answer today about sticking with that choice even when it cost flexibility. I can contrast that with players who treated unpredictability or polished image-management as strategy, while keeping the tone respectful and decisive."
+    },
+    {
+      "round": 2,
+      "phase": "JURY_VOTE",
+      "timestamp": 1778378883239,
+      "from": "House",
+      "scope": "system",
+      "text": "=== JUDGMENT: JURY VOTE ==="
+    },
+    {
+      "round": 2,
+      "phase": "JURY_VOTE",
+      "timestamp": 1778378885229,
+      "from": "House",
+      "scope": "system",
+      "text": "Atlas (juror) votes for: Vera"
+    },
+    {
+      "round": 2,
+      "phase": "JURY_VOTE",
+      "timestamp": 1778378886360,
+      "from": "House",
+      "scope": "system",
+      "text": "Jace (juror) votes for: Finn"
+    },
+    {
+      "round": 2,
+      "phase": "JURY_VOTE",
+      "timestamp": 1778378886361,
+      "from": "House",
+      "scope": "system",
+      "text": "Jury votes for Vera: 1"
+    },
+    {
+      "round": 2,
+      "phase": "JURY_VOTE",
+      "timestamp": 1778378886361,
+      "from": "House",
+      "scope": "system",
+      "text": "Jury votes for Finn: 1"
+    },
+    {
+      "round": 2,
+      "phase": "JURY_VOTE",
+      "timestamp": 1778378886361,
+      "from": "House",
+      "scope": "system",
+      "text": "Jury vote tied! Tiebreaker: Finn wins with more cumulative empower votes (social capital)."
+    },
+    {
+      "round": 2,
+      "phase": "JURY_VOTE",
+      "timestamp": 1778378886361,
+      "from": "House",
+      "scope": "system",
+      "text": "\n*** THE WINNER IS: Finn ***"
+    }
+  ]
+}

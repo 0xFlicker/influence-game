@@ -6,7 +6,7 @@
 
 import type { GameState } from "./game-state";
 import type { TranscriptLogger } from "./transcript-logger";
-import type { UUID, RoomAllocation, JuryMember } from "./types";
+import type { UUID, RoomAllocation, JuryMember, WhisperRoomCount } from "./types";
 import { Phase } from "./types";
 import type { PhaseContext } from "./game-runner.types";
 import { computeJurySize } from "./types";
@@ -16,6 +16,8 @@ export class ContextBuilder {
   currentRoomAllocations: RoomAllocation[] = [];
   /** Players excluded from rooms this round */
   currentExcludedPlayerIds: UUID[] = [];
+  /** Privacy-safe room counts for the current or most recent Mingle turn */
+  currentRoomCounts: WhisperRoomCount[] = [];
 
   constructor(
     private readonly gameState: GameState,
@@ -44,19 +46,23 @@ export class ContextBuilder {
       eliminationContext?: PhaseContext["eliminationContext"];
     },
     isEliminated?: boolean,
-    roomInfo?: { roomCount?: number; roomPartner?: string },
+    roomInfo?: {
+      roomCount?: number;
+      roomCounts?: WhisperRoomCount[];
+      currentRoomId?: number;
+      roomMates?: string[];
+      includeRoomAllocations?: boolean;
+    },
   ): PhaseContext {
     const player = this.gameState.getPlayer(agentId)!;
 
-    const roomAllocations = this.currentRoomAllocations.length > 0
+    const roomAllocations = roomInfo?.includeRoomAllocations && this.currentRoomAllocations.length > 0
       ? this.currentRoomAllocations.map((r) => ({
           roomId: r.roomId,
-          playerA: this.gameState.getPlayerName(r.playerA),
-          playerB: this.gameState.getPlayerName(r.playerB),
+          beat: r.beat,
+          playerIds: [...r.playerIds],
+          playerNames: r.playerIds.map((id) => this.gameState.getPlayerName(id)),
         }))
-      : undefined;
-    const excludedPlayers = this.currentExcludedPlayerIds.length > 0
-      ? this.currentExcludedPlayerIds.map((id) => this.gameState.getPlayerName(id))
       : undefined;
 
     return {
@@ -71,9 +77,10 @@ export class ContextBuilder {
       empoweredId: extra?.empoweredId ?? this.gameState.empoweredId ?? undefined,
       councilCandidates: extra?.councilCandidates ?? this.gameState.councilCandidates ?? undefined,
       roomCount: roomInfo?.roomCount,
+      roomCounts: roomInfo?.roomCounts ?? (this.currentRoomCounts.length > 0 ? [...this.currentRoomCounts] : undefined),
+      currentRoomId: roomInfo?.currentRoomId,
       roomAllocations,
-      excludedPlayers,
-      roomPartner: roomInfo?.roomPartner,
+      roomMates: roomInfo?.roomMates,
       endgameStage: this.gameState.endgameStage ?? undefined,
       jury: this.gameState.jury.length > 0 ? [...this.getActiveJury()] : undefined,
       finalists: (() => {

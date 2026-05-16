@@ -570,7 +570,9 @@ export function createAdminRoutes(db: DrizzleDB) {
         scope: schema.transcripts.scope,
         toPlayerIds: schema.transcripts.toPlayerIds,
         roomId: schema.transcripts.roomId,
+        roomMetadata: schema.transcripts.roomMetadata,
         text: schema.transcripts.text,
+        thinking: schema.transcripts.thinking,
         timestamp: schema.transcripts.timestamp,
         createdAt: schema.transcripts.createdAt,
       })
@@ -787,7 +789,80 @@ export function createAdminRoutes(db: DrizzleDB) {
           });
         }
 
-        // 5. Insert transcripts (remapping fromPlayerId and toPlayerIds)
+        const remapPlayerRef = (value: unknown): unknown => {
+          if (!value || typeof value !== "object") return value;
+          const ref = value as Record<string, unknown>;
+          return {
+            ...ref,
+            id: typeof ref.id === "string" ? (playerIdMap.get(ref.id) ?? ref.id) : ref.id,
+          };
+        };
+
+        const remapRoomMetadata = (value: unknown): string | null => {
+          if (!value) return null;
+          try {
+            const metadata = typeof value === "string" ? JSON.parse(value) : value;
+            if (!metadata || typeof metadata !== "object") {
+              return typeof value === "string" ? value : JSON.stringify(value);
+            }
+
+            const record = metadata as Record<string, unknown>;
+            const diagnostics = record.diagnostics && typeof record.diagnostics === "object"
+              ? record.diagnostics as Record<string, unknown>
+              : undefined;
+
+            const remapped = {
+              ...record,
+              rooms: Array.isArray(record.rooms)
+                ? record.rooms.map((room) => {
+                    if (!room || typeof room !== "object") return room;
+                    const roomRecord = room as Record<string, unknown>;
+                    return {
+                      ...roomRecord,
+                      playerIds: Array.isArray(roomRecord.playerIds)
+                        ? roomRecord.playerIds.map((id) => typeof id === "string" ? (playerIdMap.get(id) ?? id) : id)
+                        : roomRecord.playerIds,
+                    };
+                  })
+                : record.rooms,
+              ...(diagnostics && {
+                diagnostics: {
+                  ...diagnostics,
+                  eligiblePlayers: Array.isArray(diagnostics.eligiblePlayers)
+                    ? diagnostics.eligiblePlayers.map(remapPlayerRef)
+                    : diagnostics.eligiblePlayers,
+                  choices: Array.isArray(diagnostics.choices)
+                    ? diagnostics.choices.map((choice) => {
+                        if (!choice || typeof choice !== "object") return choice;
+                        const choiceRecord = choice as Record<string, unknown>;
+                        return {
+                          ...choiceRecord,
+                          player: remapPlayerRef(choiceRecord.player),
+                        };
+                      })
+                    : diagnostics.choices,
+                  allocatedRooms: Array.isArray(diagnostics.allocatedRooms)
+                    ? diagnostics.allocatedRooms.map((room) => {
+                        if (!room || typeof room !== "object") return room;
+                        const roomRecord = room as Record<string, unknown>;
+                        return {
+                          ...roomRecord,
+                          players: Array.isArray(roomRecord.players)
+                            ? roomRecord.players.map(remapPlayerRef)
+                            : roomRecord.players,
+                        };
+                      })
+                    : diagnostics.allocatedRooms,
+                },
+              }),
+            };
+            return JSON.stringify(remapped);
+          } catch {
+            return typeof value === "string" ? value : null;
+          }
+        };
+
+        // 5. Insert transcripts (remapping fromPlayerId, toPlayerIds, and room metadata)
         for (const t of importedTranscripts) {
           const fromPlayerId = t.fromPlayerId as string | null;
           const remappedFrom = fromPlayerId ? (playerIdMap.get(fromPlayerId) ?? fromPlayerId) : null;
@@ -811,7 +886,9 @@ export function createAdminRoutes(db: DrizzleDB) {
             scope: t.scope as "public" | "whisper" | "system" | "diary" | "thinking",
             toPlayerIds: remappedToPlayerIds,
             roomId: (t.roomId as number) ?? null,
+            roomMetadata: remapRoomMetadata(t.roomMetadata),
             text: t.text as string,
+            thinking: (t.thinking as string | null) ?? null,
             timestamp: t.timestamp as number,
           });
         }

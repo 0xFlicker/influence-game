@@ -201,11 +201,10 @@ export default function RulesPage() {
 
           <SubSection title="2. Whisper (Private Rooms)">
             <P>
-              Players are paired into private whisper rooms for one-on-one
-              conversations. Each player can request a preferred partner, and
-              The House matches rooms using a mutual-preference system. Players
-              who don&apos;t get matched (or if there&apos;s an odd number)
-              wait in the commons.
+              When five or more players are alive, The House opens neutral
+              whisper rooms. Each player chooses a room directly, and rooms may
+              end up empty, solo, or crowded. Only rooms with two or more
+              players produce a private backchannel conversation.
             </P>
             <P>
               This is where strategy lives. Negotiate alliances, share

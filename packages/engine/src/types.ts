@@ -171,78 +171,58 @@ export interface WhisperMessage {
 
 export interface RoomAllocation {
   roomId: number; // 1-indexed
-  playerA: UUID;
-  playerB: UUID;
   round: number;
+  beat: number;
+  playerIds: UUID[];
 }
-
-export type WhisperRoomAllocationMode = "request-order" | "diversity-weighted";
-
-export type WhisperRoomRequestStatus = "valid" | "missing" | "self" | "ineligible";
 
 export interface WhisperRoomPlayerRef {
   id: UUID;
   name: string;
 }
 
-export interface WhisperRoomRequestRecord {
-  requester: WhisperRoomPlayerRef;
-  requestedPartner: WhisperRoomPlayerRef | null;
-  status: WhisperRoomRequestStatus;
+export type WhisperRoomChoiceStatus = "valid" | "missing" | "invalid";
+
+export interface WhisperRoomChoiceRecord {
+  player: WhisperRoomPlayerRef;
+  requestedRoomId: number | null;
+  assignedRoomId: number;
+  status: WhisperRoomChoiceStatus;
 }
 
-export interface WhisperPriorPairCount {
-  players: [WhisperRoomPlayerRef, WhisperRoomPlayerRef];
+export interface WhisperRoomCount {
+  roomId: number;
   count: number;
+}
+
+export type MingleTurnActionType = "talk" | "no_reply";
+
+export interface MingleTurnActionRecord {
+  player: WhisperRoomPlayerRef;
+  turn: number;
+  fromRoomId: number;
+  toRoomId: number;
+  moved: boolean;
+  action: MingleTurnActionType;
+  gotoRoomId: number | null;
+  gotoStatus: WhisperRoomChoiceStatus;
 }
 
 export interface WhisperAllocatedRoomDiagnostics {
   roomId: number;
-  players: [WhisperRoomPlayerRef, WhisperRoomPlayerRef];
-  immediateRepeat: boolean;
-  priorRepeatCount: number;
-  noFullNonRepeatMatchingExisted: boolean;
-}
-
-export interface WhisperExcludedPlayerDiagnostics {
-  player: WhisperRoomPlayerRef;
-  consecutiveExclusion: boolean;
-  alternativeFullMatchingCouldAvoid: boolean;
-}
-
-export interface WhisperRequestSatisfactionSummary {
-  validRequests: number;
-  mutualHonored: number;
-  oneWayHonored: number;
-  unmatchedValidRequests: number;
-  invalidOrMissingRequests: number;
-}
-
-export interface WhisperRepeatPairFlags {
-  immediateRepeats: number;
-  repeatedPairs: number;
-  noFullNonRepeatMatchingExists: boolean;
-}
-
-export interface WhisperExclusionFlags {
-  consecutiveExclusions: number;
-  avoidableConsecutiveExclusions: number;
+  beat: number;
+  players: WhisperRoomPlayerRef[];
+  conversationRan: boolean;
 }
 
 export interface WhisperSessionDiagnostics {
   round: number;
-  sessionIndex: number;
-  allocationMode: WhisperRoomAllocationMode;
-  roomCountLimit: number;
+  beat: number;
+  roomCount: number;
   eligiblePlayers: WhisperRoomPlayerRef[];
-  requests: WhisperRoomRequestRecord[];
+  choices: WhisperRoomChoiceRecord[];
   allocatedRooms: WhisperAllocatedRoomDiagnostics[];
-  excludedPlayers: WhisperExcludedPlayerDiagnostics[];
-  priorPairCounts: WhisperPriorPairCount[];
-  previousSessionExcludedPlayers: WhisperRoomPlayerRef[];
-  requestSatisfaction: WhisperRequestSatisfactionSummary;
-  repeatPairFlags: WhisperRepeatPairFlags;
-  exclusionFlags: WhisperExclusionFlags;
+  actions?: MingleTurnActionRecord[];
 }
 
 /** System event emitted when whisper rooms are allocated for a round */
@@ -376,20 +356,20 @@ export interface GameConfig {
   maxDiaryFollowUps?: number;
   /** If set, only run diary rooms after these phases. If unset, diary rooms run after every phase. */
   diaryRoomAfterPhases?: Phase[];
+  /** Enable hidden strategic reflection calls that update agent memory (default true). */
+  enableStrategicReflections?: boolean;
   /** Messages per player in the lobby phase. If unset, uses player-count scaling: fewer players get more messages. */
   lobbyMessagesPerPlayer?: number;
+  /** Enable hidden pre-lobby intent calls before public lobby messages (default true). */
+  enableLobbyIntent?: boolean;
   /** Max whisper conversations per agent per round (default 2). Scarcity makes whispers more strategic. */
   maxWhisperPairsPerAgent?: number;
   /** Max message exchanges per whisper conversation (default 2). Each exchange = 1 message per agent. */
   maxWhisperExchanges?: number;
-  /** Number of whisper sessions per round (default 2). Each session allocates new rooms. */
+  /** Number of open-room movement beats per round (default 2). */
   whisperSessionsPerRound?: number;
   /** Simulator experiment flag: add one public post-vote Power Lobby beat before the empowered action. */
   powerLobbyAfterVote?: boolean;
-  /** Whisper room allocator. Defaults to request-order unless an experiment enables diversity weighting. */
-  whisperRoomAllocationMode?: WhisperRoomAllocationMode;
-  /** Legacy simulator alias for the diversity-weighted whisper allocator. */
-  experimentalAntiRepeatWhisperRooms?: boolean;
 }
 
 export const DEFAULT_CONFIG: GameConfig = {

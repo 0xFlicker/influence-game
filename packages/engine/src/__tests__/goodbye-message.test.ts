@@ -306,7 +306,7 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     ]);
     const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
 
-    const result = await agent.sendRoomMessage(makeAgentContext(Phase.WHISPER), "Vera");
+    const result = await agent.sendRoomMessage(makeAgentContext(Phase.WHISPER), ["Atlas", "Vera"]);
 
     expect(result).toEqual({
       thinking: "Build trust, then steer the next vote.",

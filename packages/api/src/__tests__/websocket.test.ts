@@ -133,6 +133,37 @@ describe("WebSocket Manager", () => {
     expect(parsed.entry.text).toBe("Hello everyone!");
   });
 
+  test("broadcastGameEvent preserves room metadata on transcript entries", () => {
+    const { server, published } = createMockServer();
+    setServer(server);
+
+    const event: GameStreamEvent = {
+      type: "transcript_entry",
+      entry: {
+        round: 1,
+        phase: Phase.WHISPER,
+        timestamp: Date.now(),
+        from: "House",
+        scope: "system",
+        text: "Beat 1: Room 1: Alice, Bob | Room 2: Empty",
+        roomMetadata: {
+          rooms: [
+            { roomId: 1, round: 1, beat: 1, playerIds: ["p1", "p2"] },
+            { roomId: 2, round: 1, beat: 1, playerIds: [] },
+          ],
+          excluded: [],
+        },
+      },
+    };
+
+    broadcastGameEvent("game-rooms", event);
+
+    const parsed = JSON.parse(published[0]!.data);
+    expect(parsed.type).toBe("message");
+    expect(parsed.entry.roomMetadata.rooms).toHaveLength(2);
+    expect(parsed.entry.roomMetadata.rooms[1].playerIds).toEqual([]);
+  });
+
   test("broadcastGameEvent translates phase_change", () => {
     const { server, published } = createMockServer();
     setServer(server);

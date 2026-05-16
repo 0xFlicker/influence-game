@@ -11,10 +11,11 @@ import { schema } from "../db/index.js";
 import type { DrizzleDB } from "../db/index.js";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { GameRunner } from "@influence/engine";
+import { GameRunner, Phase } from "@influence/engine";
 import type { AgentResponse, IAgent, PhaseContext } from "@influence/engine";
 import type { UUID, PowerAction, GameConfig } from "@influence/engine";
 import { setupTestDB } from "./test-utils.js";
+import { serializeTranscriptEntry } from "../services/game-lifecycle.js";
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -50,14 +51,15 @@ class LifecycleMockAgent implements IAgent {
     if (others.length === 0) return [];
     return [{ to: [others[0]!.id], text: "secret" }];
   }
-  async requestRoom(ctx: PhaseContext) {
-    const others = ctx.alivePlayers.filter(p => p.id !== this.id);
-    return others[0]?.id ?? null;
+  async chooseWhisperRoom(ctx: PhaseContext) {
+    const roomCount = ctx.roomCount ?? 1;
+    return roomCount > 0 ? 1 : null;
   }
-  async sendRoomMessage(_ctx: PhaseContext, partnerName: string, conversationHistory?: Array<{ from: string; text: string }>) {
+  async sendRoomMessage(_ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>) {
     const alreadySpoke = conversationHistory?.some((m) => m.from === this.name) ?? false;
     if (alreadySpoke) return null;
-    return r(`whisper to ${partnerName}`);
+    const others = roomMates.filter((name) => name !== this.name);
+    return others.length > 0 ? r(`whisper to ${others.join(", ")}`) : null;
   }
   async getRumorMessage() { return r("rumor"); }
   async getVotes(ctx: PhaseContext) {
@@ -165,6 +167,26 @@ async function createGameInDB(
 // ---------------------------------------------------------------------------
 
 describe("Game lifecycle integration", () => {
+  test("serializeTranscriptEntry preserves room metadata", () => {
+    const roomMetadata = {
+      rooms: [{ roomId: 1, round: 1, beat: 1, playerIds: ["p1", "p2"] }],
+      excluded: [],
+    };
+
+    const row = serializeTranscriptEntry("game-rooms", {
+      round: 1,
+      phase: Phase.WHISPER,
+      timestamp: 123,
+      from: "House",
+      scope: "system",
+      text: "Beat 1: Room 1: Alpha, Beta",
+      roomMetadata,
+    });
+
+    expect(row.fromPlayerId).toBeNull();
+    expect(row.roomMetadata ? JSON.parse(row.roomMetadata) : null).toEqual(roomMetadata);
+  });
+
   test("GameRunner produces transcript and results", async () => {
     const db = await setupTestDB();
     const { gameId, agents, config } = await createGameInDB(db, 4);

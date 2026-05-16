@@ -2,11 +2,13 @@ import { describe, expect, it } from "bun:test";
 import {
   buildSimulationConfig,
   computeAggregateStats,
-  isAntiRepeatWhisperVariant,
+  isOpenWhisperVariant,
   isPowerLobbyVariant,
+  parseArgs,
   type GameResult,
 } from "../simulate";
 import { instrumentGame } from "../simulation-instrumentation";
+import { DEFAULT_CONFIG } from "../types";
 import type { TokenUsage } from "../token-tracker";
 
 const ZERO_USAGE: TokenUsage = {
@@ -32,6 +34,7 @@ function gameResult(overrides: Partial<GameResult>): GameResult {
     durationMs: 100,
     transcriptPath: "game-1.txt",
     jsonPath: "game-1.json",
+    progressPath: "game-1-progress.jsonl",
     tokenUsage: {
       perAgent: {},
       total: ZERO_USAGE,
@@ -46,35 +49,37 @@ describe("simulation variant config", () => {
     const config = buildSimulationConfig("baseline");
 
     expect(config.powerLobbyAfterVote).toBe(false);
-    expect(config.experimentalAntiRepeatWhisperRooms).toBe(false);
-    expect(config.whisperRoomAllocationMode).toBe("request-order");
+    expect(config.whisperSessionsPerRound).toBe(2);
+  });
+
+  it("applies simulator-only LLM call bounds", () => {
+    const config = buildSimulationConfig("open-whisper");
+
+    expect(config.lobbyMessagesPerPlayer).toBe(1);
+    expect(config.maxDiaryFollowUps).toBe(0);
+    expect(config.diaryRoomAfterPhases).toEqual([]);
+    expect(config.enableLobbyIntent).toBe(false);
+    expect(config.enableStrategicReflections).toBe(false);
   });
 
   it("maps single-feature simulator variants to the correct flags", () => {
     expect(isPowerLobbyVariant("power-lobby")).toBe(true);
-    expect(isAntiRepeatWhisperVariant("power-lobby")).toBe(false);
+    expect(isOpenWhisperVariant("power-lobby")).toBe(false);
     expect(buildSimulationConfig("power-lobby").powerLobbyAfterVote).toBe(true);
-    expect(buildSimulationConfig("power-lobby").experimentalAntiRepeatWhisperRooms).toBe(false);
 
-    expect(isPowerLobbyVariant("anti-repeat")).toBe(false);
-    expect(isAntiRepeatWhisperVariant("anti-repeat")).toBe(true);
-    expect(buildSimulationConfig("anti-repeat").powerLobbyAfterVote).toBe(false);
-    expect(buildSimulationConfig("anti-repeat").experimentalAntiRepeatWhisperRooms).toBe(true);
-    expect(buildSimulationConfig("anti-repeat").whisperRoomAllocationMode).toBe("diversity-weighted");
-
-    expect(isPowerLobbyVariant("diversity-whisper")).toBe(false);
-    expect(isAntiRepeatWhisperVariant("diversity-whisper")).toBe(true);
-    expect(buildSimulationConfig("diversity-whisper").whisperRoomAllocationMode).toBe("diversity-weighted");
+    expect(isPowerLobbyVariant("open-whisper")).toBe(false);
+    expect(isOpenWhisperVariant("open-whisper")).toBe(true);
+    expect(buildSimulationConfig("open-whisper").powerLobbyAfterVote).toBe(false);
+    expect(buildSimulationConfig("open-whisper").whisperSessionsPerRound).toBe(2);
   });
 
   it("maps combined simulator variants to both experimental flags", () => {
-    const config = buildSimulationConfig("power-lobby-diversity-whisper");
+    const config = buildSimulationConfig("power-lobby-open-whisper");
 
-    expect(isPowerLobbyVariant("power-lobby-diversity-whisper")).toBe(true);
-    expect(isAntiRepeatWhisperVariant("power-lobby-diversity-whisper")).toBe(true);
+    expect(isPowerLobbyVariant("power-lobby-open-whisper")).toBe(true);
+    expect(isOpenWhisperVariant("power-lobby-open-whisper")).toBe(true);
     expect(config.powerLobbyAfterVote).toBe(true);
-    expect(config.experimentalAntiRepeatWhisperRooms).toBe(true);
-    expect(config.whisperRoomAllocationMode).toBe("diversity-weighted");
+    expect(config.whisperSessionsPerRound).toBe(2);
   });
 
   it("computes partial aggregate stats from completed games only", () => {
@@ -95,6 +100,8 @@ describe("simulation variant config", () => {
         personas: null,
         model: "gpt-5-nano",
         variant: "power-lobby-diversity-whisper",
+        gameTimeoutMs: 600000,
+        llmTimeoutMs: 45000,
       },
     };
 
@@ -123,5 +130,29 @@ describe("simulation variant config", () => {
     expect(stats.partial).toBe(true);
     expect(stats.totalGames).toBe(1);
     expect(stats.instrumentation.totalGames).toBe(1);
+  });
+
+  it("accepts the configured max player count for CLI simulation runs", () => {
+    const args = parseArgs(["--players", String(DEFAULT_CONFIG.maxPlayers)]);
+
+    expect(args.players).toBe(DEFAULT_CONFIG.maxPlayers);
+  });
+
+  it("clamps CLI player count to configured max players", () => {
+    const args = parseArgs(["--players", String(DEFAULT_CONFIG.maxPlayers + 4)]);
+
+    expect(args.players).toBe(DEFAULT_CONFIG.maxPlayers);
+  });
+
+  it("parses bounded simulation timeout flags", () => {
+    const args = parseArgs([
+      "--game-timeout-sec",
+      "30",
+      "--llm-timeout-ms",
+      "5000",
+    ]);
+
+    expect(args.gameTimeoutMs).toBe(30000);
+    expect(args.llmTimeoutMs).toBe(5000);
   });
 });

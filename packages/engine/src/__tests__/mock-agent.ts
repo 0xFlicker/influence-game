@@ -3,7 +3,7 @@
  * Uses simple scripted strategies to validate game mechanics.
  */
 
-import type { AgentResponse, IAgent, PhaseContext, PowerLobbyExposure } from "../game-runner";
+import type { AgentResponse, IAgent, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "../game-runner";
 import type { UUID, PowerAction } from "../types";
 
 /** Assert a value is defined — throws in tests if assumption is violated */
@@ -66,25 +66,30 @@ export class MockAgent implements IAgent {
     ];
   }
 
-  async requestRoom(ctx: PhaseContext): Promise<UUID | null> {
-    // Pair agents by position: 0↔1, 2↔3, 4↔5, etc. (creates mutual matches)
+  async chooseWhisperRoom(ctx: PhaseContext): Promise<number | null> {
+    const roomCount = ctx.roomCount ?? 1;
+    if (roomCount < 1) return null;
     const myIndex = ctx.alivePlayers.findIndex((p) => p.id === this.id);
-    const partnerIndex = myIndex % 2 === 0 ? myIndex + 1 : myIndex - 1;
-    const partner = ctx.alivePlayers[partnerIndex];
-    if (partner && partner.id !== this.id) return partner.id;
-    // Fallback to first other player
-    const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
-    return others[0]?.id ?? null;
+    return (myIndex % roomCount) + 1;
   }
 
-  async sendRoomMessage(_ctx: PhaseContext, partnerName: string, conversationHistory?: Array<{ from: string; text: string }>): Promise<AgentResponse | null> {
+  async sendRoomMessage(_ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<AgentResponse | null> {
     // Send one message, then pass on subsequent turns
     const alreadySpoke = conversationHistory?.some((m) => m.from === this.name) ?? false;
     if (alreadySpoke) return null;
+    const others = roomMates.filter((name) => name !== this.name);
+    if (others.length === 0) return null;
     return respond(
-      `Hey ${partnerName}, want to work together? Let's not target each other.`,
-      `Want to build alliance with ${partnerName}`,
+      `${others.join(", ")}, let's compare notes before the vote.`,
+      `Open-room group whisper to ${others.join(", ")}`,
     );
+  }
+
+  async takeMingleTurn(ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<MingleTurnAction> {
+    const response = await this.sendRoomMessage(ctx, roomMates, conversationHistory);
+    return response
+      ? { ...response, noReply: false, gotoRoomId: null }
+      : { thinking: "", message: null, noReply: true, gotoRoomId: null };
   }
 
   async getRumorMessage(ctx: PhaseContext): Promise<AgentResponse> {

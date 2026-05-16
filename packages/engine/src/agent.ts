@@ -12,7 +12,7 @@ import type {
   ChatCompletionMessageToolCall,
 } from "openai/resources/chat/completions";
 import type { ReasoningEffort } from "openai/resources/shared";
-import type { AgentResponse, IAgent, PhaseContext, PowerLobbyExposure } from "./game-runner";
+import type { AgentResponse, IAgent, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "./game-runner";
 import { Phase } from "./types";
 import type { UUID, PowerAction } from "./types";
 import type { MemoryStore } from "./memory-store";
@@ -257,20 +257,20 @@ const TOOL_SEND_WHISPERS: ChatCompletionTool = {
   },
 };
 
-const TOOL_REQUEST_ROOM: ChatCompletionTool = {
+const TOOL_CHOOSE_WHISPER_ROOM: ChatCompletionTool = {
   type: "function",
   function: {
-    name: "request_room",
-    description: "Request a private room with another player for a whisper conversation",
+    name: "choose_whisper_room",
+    description: "Choose a neutral open whisper room by room number",
     parameters: {
       type: "object",
       properties: {
-        partner: {
-          type: "string",
-          description: "Name of the player you want to meet with privately",
+        roomId: {
+          type: "number",
+          description: "Room number to enter",
         },
       },
-      required: ["partner"],
+      required: ["roomId"],
     },
   },
 };
@@ -279,7 +279,7 @@ const TOOL_SEND_ROOM_MESSAGE: ChatCompletionTool = {
   type: "function",
   function: {
     name: "send_room_message",
-    description: "Send your private message to your room partner, or pass to end the conversation",
+    description: "Send your private message to everyone else in your room, or pass",
     parameters: {
       type: "object",
       properties: {
@@ -294,6 +294,35 @@ const TOOL_SEND_ROOM_MESSAGE: ChatCompletionTool = {
         },
       },
       required: ["thinking", "message", "pass"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+};
+
+const TOOL_MINGLE_TURN: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "mingle_turn",
+    description: "Take one Mingle turn: TALK, NO_REPLY, and optionally GOTO another room next turn",
+    parameters: {
+      type: "object",
+      properties: {
+        thinking: { type: "string", description: "Your internal reasoning for this turn (hidden from other players)" },
+        message: {
+          type: ["string", "null"],
+          description: "TALK message for current room occupants, or null for NO_REPLY",
+        },
+        noReply: {
+          type: "boolean",
+          description: "Set true when you intentionally say nothing this turn",
+        },
+        gotoRoomId: {
+          type: ["number", "null"],
+          description: "Optional local room number to enter after this turn, or null to stay",
+        },
+      },
+      required: ["thinking", "message", "noReply", "gotoRoomId"],
       additionalProperties: false,
     },
     strict: true,
@@ -775,53 +804,43 @@ Use the send_whispers tool to submit your whisper messages. Use player NAMES (no
     }
   }
 
-  async requestRoom(ctx: PhaseContext): Promise<UUID | null> {
-    const otherPlayers = ctx.alivePlayers.filter((p) => p.id !== this.id);
-    if (otherPlayers.length === 0) return null;
-
+  async chooseWhisperRoom(ctx: PhaseContext): Promise<number | null> {
     const roomCount = ctx.roomCount ?? 1;
-    const aliveCount = ctx.alivePlayers.length;
+    if (roomCount < 1) return null;
+    const rooms = Array.from({ length: roomCount }, (_, index) => index + 1);
+
+    const currentCounts = ctx.roomCounts && ctx.roomCounts.length > 0
+      ? `\n## Current Room Counts\n${ctx.roomCounts
+          .map((room) => `- Room ${room.roomId}: ${room.count} player${room.count === 1 ? "" : "s"}`)
+          .join("\n")}`
+      : "";
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task
-Request a private room for a one-on-one whisper conversation. There are only
-${roomCount} rooms available for ${aliveCount} players — not everyone will get one.
+Choose one neutral Mingle room to enter.
 
-Choose ONE player you want to meet with. Consider:
-- Who do you need to coordinate with?
-- Who might have intelligence you need?
-- Who do you want to manipulate or mislead?
-- Being excluded from rooms means no private communication this round.
+Available rooms: ${rooms.map((roomId) => `Room ${roomId}`).join(", ")}
+${currentCounts}
 
-If your preferred partner also requested you, you're guaranteed a room (mutual match).
-Otherwise, the House assigns rooms by availability.
-
-Available players: ${otherPlayers.map((p) => p.name).join(", ")}
-
-Use the request_room tool to submit your preference.`;
+Rooms have no theme and no occupancy cap. You can pile into a crowded room, split off, or sit alone.
+Use the choose_whisper_room tool to submit one room number.`;
 
     try {
-      const result = await this.callTool<{ partner: string }>(
-        prompt, TOOL_REQUEST_ROOM, 200, sys,
-        { action: "room-request", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
+      const result = await this.callTool<{ roomId: number }>(
+        prompt, TOOL_CHOOSE_WHISPER_ROOM, 150, sys,
+        { action: "room-choice", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
       );
-      const partnerName = result.partner;
-      const partner = findByName(otherPlayers, partnerName);
-      if (!partner) {
-        console.warn(`[vote-fallback] agent="${this.name}" method=requestRoom returned="${partnerName}" available=[${otherPlayers.map((p) => p.name).join(", ")}] fallback=null`);
-      }
-      return partner?.id ?? null;
+      return Number.isInteger(result.roomId) ? result.roomId : null;
     } catch (err) {
-      // Fallback: pick random other player
-      const idx = Math.floor(Math.random() * otherPlayers.length);
-      const fallbackName = otherPlayers[idx]?.name ?? "none";
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=requestRoom error="${err instanceof Error ? err.message : err}" fallback="${fallbackName}"`);
-      return otherPlayers[idx]?.id ?? null;
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=chooseWhisperRoom error="${err instanceof Error ? err.message : err}" fallback=1`);
+      return 1;
     }
   }
 
-  async sendRoomMessage(ctx: PhaseContext, partnerName: string, conversationHistory?: Array<{ from: string; text: string }>): Promise<AgentResponse | null> {
+  async sendRoomMessage(ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<AgentResponse | null> {
+    const otherRoomMates = roomMates.filter((name) => name !== this.name);
+    if (otherRoomMates.length === 0) return null;
     const history = conversationHistory ?? [];
     const isFirstMessage = history.length === 0;
 
@@ -832,11 +851,11 @@ Use the request_room tool to submit your preference.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task
-You're in a private room with ${partnerName}. Nobody else can hear you — but the audience is watching.
+You're in a private room with ${roomMates.join(", ")}. Nobody outside the room can hear you — but the audience is watching.
 ${historyText}
 ${isFirstMessage
-  ? `This is the start of your private conversation. Open with something strategic.`
-  : `Continue the conversation. You can respond to what ${partnerName} said, steer the discussion, or PASS if you're done talking.`}
+  ? `This is the start of this room beat. Open with something strategic for the group.`
+  : `Continue the conversation. You can respond to the room, steer the discussion, or PASS if you're done talking.`}
 
 Craft your message carefully:
 - Build or test an alliance
@@ -845,9 +864,9 @@ Craft your message carefully:
 - Probe for information about their plans
 - Form specific plans you can execute together in later phases (lobby, rumor, votes)
 
-Think ahead: what will you and this person DO after this conversation? Agree on a target, a signal, a vote, or a story to tell publicly. Plans that carry into the lobby and vote phases are more powerful than vague promises.
+Think ahead: what will this room DO after this conversation? Agree on a target, a signal, a vote, or a story to tell publicly. Plans that carry into the lobby and vote phases are more powerful than vague promises.
 
-Keep it to 2-4 sentences. Make every word count.
+Keep it to 1-3 sentences. Make every word count.
 ${!isFirstMessage ? `\nIf you have nothing more to say, use pass: true to end your side of the conversation.\nThe room closes when BOTH of you pass consecutively.` : ""}
 
 Use the send_room_message tool to send your message${!isFirstMessage ? " or pass" : ""}.`;
@@ -861,16 +880,84 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
       const msg = result.message?.trim();
       if (!msg) {
         const fallbackMsg = isFirstMessage
-          ? `I wanted to speak with you privately, ${partnerName}. Let's watch each other's backs.`
+          ? `${otherRoomMates.join(", ")}, let's compare notes and watch the vote together.`
           : null;
         return fallbackMsg ? { thinking: result.thinking ?? "", message: fallbackMsg } : null;
       }
       return { thinking: result.thinking ?? "", message: msg };
     } catch {
       if (isFirstMessage) {
-        return { thinking: "", message: `I wanted to speak with you privately, ${partnerName}. Let's watch each other's backs.` };
+        return { thinking: "", message: `${otherRoomMates.join(", ")}, let's compare notes and watch the vote together.` };
       }
       return null;
+    }
+  }
+
+  async takeMingleTurn(ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<MingleTurnAction> {
+    const otherRoomMates = roomMates.filter((name) => name !== this.name);
+    const history = conversationHistory ?? [];
+    const historyText = history.length > 0
+      ? `\n## Conversation This Turn\n${history.map((m) => `${m.from}: "${m.text}"`).join("\n")}\n`
+      : "";
+    const roomCounts = ctx.roomCounts && ctx.roomCounts.length > 0
+      ? `\n## Room Counts\n${ctx.roomCounts
+          .map((room) => `- Room ${room.roomId}: ${room.count} player${room.count === 1 ? "" : "s"}`)
+          .join("\n")}`
+      : "";
+    const currentRoom = ctx.currentRoomId != null ? `Room ${ctx.currentRoomId}` : "your current room";
+    const availableRooms = Array.from({ length: ctx.roomCount ?? 0 }, (_, index) => index + 1);
+
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
+## Your Task — Mingle Turn
+You are in ${currentRoom} with: ${roomMates.join(", ")}.
+${roomCounts}
+${historyText}
+Nobody outside your current room can hear this turn. You only know exact identities in your current room; other rooms are visible as counts only.
+
+Choose exactly one of:
+- TALK: send a private message to the other occupants in your current room.
+- NO_REPLY: say nothing this turn.
+
+You may also optionally GOTO ROOM N after this turn. Movement happens after everyone in the current turn acts, so your current TALK only reaches this room.
+${availableRooms.length > 0 ? `Available GOTO rooms: ${availableRooms.map((roomId) => `Room ${roomId}`).join(", ")}.` : ""}
+
+Guidance:
+- If you are alone, TALK has no audience; use NO_REPLY and consider moving.
+- If the room has people, make TALK specific and strategic.
+- Move when a crowded room is noisy, a private room looks useful, or you want to avoid being predictable.
+- Staying put is valid when the current room conversation is valuable.
+
+Keep TALK to 1-3 sentences. Use the mingle_turn tool.`;
+
+    try {
+      const result = await this.callTool<{
+        thinking?: string;
+        message?: string | null;
+        noReply?: boolean;
+        gotoRoomId?: number | null;
+      }>(
+        prompt, TOOL_MINGLE_TURN, 300, sys,
+        { action: "mingle-turn", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
+      );
+      const msg = result.noReply ? null : (result.message?.trim() || null);
+      const gotoRoomId = Number.isInteger(result.gotoRoomId) ? result.gotoRoomId : null;
+      return {
+        thinking: result.thinking ?? "",
+        message: msg,
+        noReply: result.noReply ?? !msg,
+        gotoRoomId,
+      };
+    } catch {
+      if (otherRoomMates.length > 0 && history.length === 0) {
+        return {
+          thinking: "",
+          message: `${otherRoomMates.join(", ")}, let's compare notes and watch the vote together.`,
+          noReply: false,
+          gotoRoomId: null,
+        };
+      }
+      return { thinking: "", message: null, noReply: true, gotoRoomId: null };
     }
   }
 
@@ -942,7 +1029,7 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
     try {
       const result = await this.callTool<{ empower: string; expose: string }>(
         prompt, TOOL_CAST_VOTES, 100, sys,
-        { action: "vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" },
+        { action: "vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
       );
 
       const empowerPlayer = findByName(others, result.empower);
@@ -1084,7 +1171,7 @@ Use the use_power tool to declare your final hidden action.`;
     try {
       const result = await this.callTool<{ action: string; target: string }>(
         prompt, TOOL_POWER_ACTION, 100, sys,
-        { action: "power", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" },
+        { action: "power", reasoningEffort: "medium" },
       );
 
       const targetPlayer =
@@ -1133,7 +1220,7 @@ Who should be eliminated? Consider your alliances, threats, and long-term strate
 Use the council_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" });
+      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
       if (normalizeName(result.eliminate) === normalizeName(c1Name)) return c1;
       if (normalizeName(result.eliminate) === normalizeName(c2Name)) return c2;
       const fallback = candidates[Math.floor(Math.random() * 2)];
@@ -1256,7 +1343,7 @@ Who should be eliminated? Consider everything that has happened in the game.
 Use the elimination_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, { action: "elimination-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" });
+      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, { action: "elimination-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
       const target = findByName(others, result.eliminate);
       if (target) return target.id;
       const fallback = others[Math.floor(Math.random() * others.length)];
@@ -1441,7 +1528,7 @@ Consider their gameplay, their answers to the jury, and the full arc of the game
 Use the jury_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ winner: string }>(prompt, TOOL_JURY_VOTE, 80, sys, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" });
+      const result = await this.callTool<{ winner: string }>(prompt, TOOL_JURY_VOTE, 80, sys, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
       const target = findByName(finalists, result.winner);
       const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
       if (!randomFinalist) throw new Error("No finalist available for jury vote");
@@ -1511,16 +1598,16 @@ IMPORTANT: Only reference alive players in your messages, votes, and strategies.
       .map((m) => `  From ${m.from}: "${m.text}"`)
       .join("\n");
 
-    // Room allocation context (for phases after whisper)
+    // Privacy-safe room context: global counts only, plus identities in the current room.
     let roomSection = "";
-    if (ctx.roomAllocations && ctx.roomAllocations.length > 0) {
-      const roomLines = ctx.roomAllocations.map(
-        (r) => `  - Room ${r.roomId}: ${r.playerA} & ${r.playerB}`,
-      );
-      const excludedLine = ctx.excludedPlayers && ctx.excludedPlayers.length > 0
-        ? `  - Commons (no room): ${ctx.excludedPlayers.join(", ")}`
+    if ((ctx.roomCounts && ctx.roomCounts.length > 0) || ctx.roomMates) {
+      const countLines = ctx.roomCounts && ctx.roomCounts.length > 0
+        ? ctx.roomCounts.map((room) => `  - Room ${room.roomId}: ${room.count} player${room.count === 1 ? "" : "s"}`).join("\n")
         : "";
-      roomSection = `\n## Whisper Rooms This Round\n${roomLines.join("\n")}${excludedLine ? "\n" + excludedLine : ""}`;
+      const localLine = ctx.roomMates
+        ? `\n- Your current room${ctx.currentRoomId != null ? ` (Room ${ctx.currentRoomId})` : ""}: ${ctx.roomMates.join(", ")}`
+        : "";
+      roomSection = `\n## Mingle Room Context\n${countLines}${localLine}`;
     }
 
     const memoryNotes = Array.from(this.memory.notes.entries())
@@ -1588,10 +1675,10 @@ ${roomSection}
    * - No temperature parameter (only default 1.0)
    * - Higher token budgets (reasoning tokens consume completion budget)
    *
-   * Applies to: o-series (o1, o3, o4), gpt-5-nano, gpt-5-mini
+   * Applies to: o-series (o1, o3, o4), gpt-5 family
    */
   private isReasoningModel(): boolean {
-    return /^o\d/.test(this.model) || this.model === "gpt-5-nano" || this.model === "gpt-5-mini";
+    return /^o\d/.test(this.model) || this.model.startsWith("gpt-5");
   }
 
   /**
@@ -1600,6 +1687,20 @@ ${roomSection}
    */
   private usesCompletionTokensParam(): boolean {
     return this.isReasoningModel() || this.model.startsWith("gpt-5");
+  }
+
+  /** gpt-5/o-series models only accept the default temperature. */
+  private supportsCustomTemperature(): boolean {
+    return !this.model.startsWith("gpt-5") && !/^o\d/.test(this.model);
+  }
+
+  /**
+   * Chat-completions function tools reject reasoning_effort for GPT-5.4+.
+   * Observed GPT-5.4 setting: gpt-5.4-nano returned "Function tools with
+   * reasoning_effort are not supported" and required this param to be omitted.
+   */
+  private supportsToolReasoningEffort(): boolean {
+    return !/^gpt-5\.[4-9]/.test(this.model);
   }
 
   /**
@@ -1741,8 +1842,8 @@ ${JSON.stringify(tool.function.parameters)}`,
       ...(useCompletionTokens
         ? { max_completion_tokens: effectiveMaxTokens }
         : { max_tokens: effectiveMaxTokens }),
-      ...(!reasoning && { temperature: 0.7 }),
-      ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
+      ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
+      ...(reasoning && this.supportsToolReasoningEffort() && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
       response_format: {
         type: "json_schema",
         json_schema: {
@@ -1810,7 +1911,7 @@ ${JSON.stringify(tool.function.parameters)}`,
           ...(useCompletionTokens
             ? { max_completion_tokens: effectiveMaxTokens }
             : { max_tokens: effectiveMaxTokens }),
-          ...(!reasoning && { temperature: 0.7 }),
+          ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
           ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
         });
 
@@ -1872,7 +1973,7 @@ ${JSON.stringify(tool.function.parameters)}`,
           ...(useCompletionTokens
             ? { max_completion_tokens: effectiveMaxTokens }
             : { max_tokens: effectiveMaxTokens }),
-          ...(!reasoning && { temperature: 0.7 }),
+          ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
           ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
           response_format: InfluenceAgent.AGENT_RESPONSE_FORMAT,
         });
@@ -1946,8 +2047,8 @@ ${JSON.stringify(tool.function.parameters)}`,
           ...(useCompletionTokens
             ? { max_completion_tokens: effectiveMaxTokens }
             : { max_tokens: effectiveMaxTokens }),
-          ...(!reasoning && { temperature: 0.7 }),
-          ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
+          ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
+          ...(reasoning && this.supportsToolReasoningEffort() && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
           tools: [tool],
           tool_choice: { type: "function", function: { name: tool.function.name } },
           parallel_tool_calls: false,
