@@ -190,6 +190,24 @@ export interface WhisperRoomChoiceRecord {
   status: WhisperRoomChoiceStatus;
 }
 
+export interface WhisperRoomCount {
+  roomId: number;
+  count: number;
+}
+
+export type MingleTurnActionType = "talk" | "no_reply";
+
+export interface MingleTurnActionRecord {
+  player: WhisperRoomPlayerRef;
+  turn: number;
+  fromRoomId: number;
+  toRoomId: number;
+  moved: boolean;
+  action: MingleTurnActionType;
+  gotoRoomId: number | null;
+  gotoStatus: WhisperRoomChoiceStatus;
+}
+
 export interface WhisperAllocatedRoomDiagnostics {
   roomId: number;
   beat: number;
@@ -204,6 +222,7 @@ export interface WhisperSessionDiagnostics {
   eligiblePlayers: WhisperRoomPlayerRef[];
   choices: WhisperRoomChoiceRecord[];
   allocatedRooms: WhisperAllocatedRoomDiagnostics[];
+  actions?: MingleTurnActionRecord[];
 }
 
 /** System event emitted when whisper rooms are allocated for a round */
@@ -337,8 +356,12 @@ export interface GameConfig {
   maxDiaryFollowUps?: number;
   /** If set, only run diary rooms after these phases. If unset, diary rooms run after every phase. */
   diaryRoomAfterPhases?: Phase[];
+  /** Enable hidden strategic reflection calls that update agent memory (default true). */
+  enableStrategicReflections?: boolean;
   /** Messages per player in the lobby phase. If unset, uses player-count scaling: fewer players get more messages. */
   lobbyMessagesPerPlayer?: number;
+  /** Enable hidden pre-lobby intent calls before public lobby messages (default true). */
+  enableLobbyIntent?: boolean;
   /** Max whisper conversations per agent per round (default 2). Scarcity makes whispers more strategic. */
   maxWhisperPairsPerAgent?: number;
   /** Max message exchanges per whisper conversation (default 2). Each exchange = 1 message per agent. */

@@ -86,7 +86,7 @@ export class TranscriptLogger {
     rooms: RoomAllocation[],
     excludedNames: string[],
     diagnostics?: WhisperSessionDiagnostics,
-  ): void {
+  ): TranscriptEntry {
     const entry: TranscriptEntry = {
       round: this.gameState.round,
       phase: Phase.WHISPER,
@@ -102,6 +102,7 @@ export class TranscriptLogger {
     };
     this.transcript.push(entry);
     this.emitStream({ type: "transcript_entry", entry });
+    return entry;
   }
 
   logSystem(text: string, phase: Phase): void {

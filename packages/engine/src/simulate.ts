@@ -202,6 +202,12 @@ export function buildSimulationConfig(variant: string): GameConfig {
       juryVote: 0,
     },
     maxRounds: 10,
+    // Keep release-validation sims bounded; these hidden calls are flavor/memory, not core rules.
+    maxDiaryFollowUps: 0,
+    diaryRoomAfterPhases: [],
+    enableLobbyIntent: false,
+    enableStrategicReflections: false,
+    lobbyMessagesPerPlayer: 1,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),
     whisperSessionsPerRound: isOpenWhisperVariant(variant) ? 2 : DEFAULT_CONFIG.whisperSessionsPerRound,
   };

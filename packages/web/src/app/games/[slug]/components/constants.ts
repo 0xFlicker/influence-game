@@ -5,7 +5,7 @@ import type { RoomType, EndgameStage } from "./types";
 export const PHASE_TRANSITION_LABELS: Partial<Record<PhaseKey, string>> = {
   INTRODUCTION: "INTRODUCTION",
   LOBBY: "LOBBY PHASE",
-  WHISPER: "WHISPER PHASE",
+  WHISPER: "MINGLE",
   RUMOR: "RUMOR PHASE",
   VOTE: "VOTE PHASE",
   POWER: "POWER PLAY",
@@ -36,10 +36,10 @@ export const PHASE_FLAVORS: Partial<Record<PhaseKey, string[]>> = {
     "The public stage — where trust is built and broken.",
   ],
   WHISPER: [
-    "The operatives go dark. Secrets are currency.",
-    "Private channels activate. Not everything can be said out loud.",
-    "The shadows hide more than they reveal.",
-    "Every whisper is a gamble. Who can you trust?",
+    "The Mingle rooms open. Secrets are currency.",
+    "Private rooms activate. Not everything can be said out loud.",
+    "Every room choice is a signal. Every absence is a tell.",
+    "Agents move through the Mingle. Who can you trust?",
   ],
   RUMOR: [
     "The whispers become rumors. Truth and lies blur.",
@@ -102,7 +102,7 @@ export const PHASE_LABELS: Record<PhaseKey, string> = {
   INIT: "Waiting Room",
   INTRODUCTION: "Introductions",
   LOBBY: "Public Lobby",
-  WHISPER: "Whisper Phase",
+  WHISPER: "Mingle",
   RUMOR: "Rumor Phase",
   VOTE: "Voting",
   POWER: "Power Play",
@@ -185,7 +185,7 @@ export const ROOM_TYPE_BORDERS: Record<RoomType, string> = {
 };
 
 export const HOUSE_INTROS: Partial<Record<PhaseKey, string>> = {
-  WHISPER: "The operatives have gone dark. These are the conversations they didn't want you to hear.",
+  WHISPER: "The Mingle rooms are open. These are the conversations they didn't want you to hear.",
   REVEAL: "The votes are in. Every operative must now face the truth.",
   DIARY_ROOM: "Before they move on, The House has a few questions.",
 };

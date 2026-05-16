@@ -22,15 +22,17 @@ async function runLobbyMessages(
   const messagesPerPlayer = computeLobbyMessagesPerPlayer(alivePlayers.length, config.lobbyMessagesPerPlayer);
 
   // Pre-lobby intent
-  await Promise.all(
-    alivePlayers.map(async (player) => {
-      const agent = agents.get(player.id)!;
-      if (agent.getLobbyIntent) {
-        const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.LOBBY);
-        await agent.getLobbyIntent(phaseCtx);
-      }
-    }),
-  );
+  if (config.enableLobbyIntent !== false) {
+    await Promise.all(
+      alivePlayers.map(async (player) => {
+        const agent = agents.get(player.id)!;
+        if (agent.getLobbyIntent) {
+          const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.LOBBY);
+          await agent.getLobbyIntent(phaseCtx);
+        }
+      }),
+    );
+  }
 
   // Sub-rounds
   for (let sub = 0; sub < messagesPerPlayer; sub++) {

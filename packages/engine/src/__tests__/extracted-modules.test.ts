@@ -195,12 +195,25 @@ describe("ContextBuilder", () => {
     expect(ctx.roomMates).toEqual(["Alice", "Bob"]);
   });
 
-  it("buildPhaseContext includes room allocations when set", () => {
+  it("buildPhaseContext hides full room allocations by default", () => {
+    const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
+    const bob = gs.getAlivePlayers().find((p) => p.name === "Bob")!;
+    builder.currentRoomAllocations = [{ roomId: 1, playerIds: [alice.id, bob.id], round: 1, beat: 1 }];
+    builder.currentRoomCounts = [{ roomId: 1, count: 2 }];
+
+    const ctx = builder.buildPhaseContext(alice.id, Phase.WHISPER);
+    expect(ctx.roomAllocations).toBeUndefined();
+    expect(ctx.roomCounts).toEqual([{ roomId: 1, count: 2 }]);
+  });
+
+  it("buildPhaseContext can include room allocations for compatibility when explicitly requested", () => {
     const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
     const bob = gs.getAlivePlayers().find((p) => p.name === "Bob")!;
     builder.currentRoomAllocations = [{ roomId: 1, playerIds: [alice.id, bob.id], round: 1, beat: 1 }];
 
-    const ctx = builder.buildPhaseContext(alice.id, Phase.WHISPER);
+    const ctx = builder.buildPhaseContext(alice.id, Phase.WHISPER, undefined, undefined, {
+      includeRoomAllocations: true,
+    });
     expect(ctx.roomAllocations).toHaveLength(1);
     expect(ctx.roomAllocations![0]!.playerNames).toEqual(["Alice", "Bob"]);
   });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { renderToString } from "react-dom/server";
 import type { GamePlayer, TranscriptEntry } from "../lib/api";
-import { buildWhisperStageData, OpenWhisperRoomsView } from "../app/games/[slug]/components/whisper-phase";
+import { buildWhisperStageData, OpenWhisperRoomsView, WhisperAllocationOverview } from "../app/games/[slug]/components/whisper-phase";
 
 const players: GamePlayer[] = [
   { id: "p1", name: "Atlas", persona: "strategic", status: "alive", shielded: false },
@@ -105,15 +105,32 @@ describe("buildWhisperStageData", () => {
       />,
     );
 
-    expect(html).toContain("WHISPER: OPEN ROOMS");
-    expect(html).toContain("HOUSE MAP");
+    expect(html).toContain("MINGLE");
+    expect(html).toContain("MINGLE MAP");
     expect(html).toContain("R1");
-    expect(html).toContain("Private Feed");
-    expect(html).toContain("BACKCHANNEL");
+    expect(html).toContain("Mingle Feed");
+    expect(html).toContain("GROUP");
     expect(html).toContain("SINGLE");
     expect(html).toContain("EMPTY");
+    expect(html).toContain("Mingle Movement");
     expect(html).toContain("flex h-full min-h-0 w-full flex-col");
     expect(html).toContain("min-h-0 flex-1 overflow-y-auto");
     expect(html).not.toContain("Whisper Room 12");
+    expect(html).not.toContain("WHISPER: OPEN ROOMS");
+    expect(html).not.toContain("HOUSE MAP");
+    expect(html).not.toContain("Other Rooms");
+  });
+
+  it("keeps historical pair-room replay copy out of Mingle mode", () => {
+    const stage = buildWhisperStageData([
+      entry({ text: "Room 1: Atlas & Vera | Commons: Finn" }),
+    ], players);
+    const html = renderToString(
+      <WhisperAllocationOverview stage={stage} players={players} />,
+    );
+
+    expect(html).toContain("Whisper Room Assignments");
+    expect(html).toContain("Mutual picks share a private room");
+    expect(html).not.toContain("MINGLE MAP");
   });
 });
