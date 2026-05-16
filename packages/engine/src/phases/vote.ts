@@ -6,6 +6,32 @@ import {
   handleElimination,
 } from "./elimination";
 
+async function withEndgameVoteTimeout(
+  ctx: PhaseRunnerContext,
+  label: string,
+  operation: Promise<UUID>,
+  fallback: () => UUID,
+): Promise<UUID> {
+  const timeoutMs = ctx.config.agentActionTimeoutMs;
+  if (!timeoutMs || timeoutMs < 1) return operation;
+
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<UUID>((resolve) => {
+    timeout = setTimeout(() => {
+      ctx.logger.logSystem(`${label} timed out after ${timeoutMs}ms; using House fallback.`, Phase.VOTE);
+      resolve(fallback());
+    }, timeoutMs);
+  });
+
+  return Promise.race([operation, timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
+}
+
+function fallbackEliminationTarget(ctx: PhaseRunnerContext, voterId: UUID): UUID {
+  return ctx.gameState.getAlivePlayerIds().find((id) => id !== voterId) ?? voterId;
+}
+
 export async function runVotePhase(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
@@ -122,7 +148,12 @@ export async function runReckoningVote(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
-      const vote = await agent.getEndgameEliminationVote(phaseCtx);
+      const vote = await withEndgameVoteTimeout(
+        ctx,
+        `${player.name} reckoning vote`,
+        agent.getEndgameEliminationVote(phaseCtx),
+        () => fallbackEliminationTarget(ctx, player.id),
+      );
       gameState.recordEndgameEliminationVote(player.id, vote);
       logger.logSystem(
         `${player.name} votes to eliminate: ${gameState.getPlayerName(vote)}`,
@@ -157,7 +188,12 @@ export async function runTribunalVote(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
-      const vote = await agent.getEndgameEliminationVote(phaseCtx);
+      const vote = await withEndgameVoteTimeout(
+        ctx,
+        `${player.name} tribunal vote`,
+        agent.getEndgameEliminationVote(phaseCtx),
+        () => fallbackEliminationTarget(ctx, player.id),
+      );
       gameState.recordEndgameEliminationVote(player.id, vote);
       logger.logSystem(
         `${player.name} votes to eliminate: ${gameState.getPlayerName(vote)}`,
@@ -175,7 +211,12 @@ export async function runTribunalVote(
       const jurorAgent = agents.get(juror.playerId);
       if (jurorAgent) {
         const phaseCtx = contextBuilder.buildPhaseContext(juror.playerId, Phase.VOTE);
-        const vote = await jurorAgent.getEndgameEliminationVote(phaseCtx);
+        const vote = await withEndgameVoteTimeout(
+          ctx,
+          `${juror.playerName} tribunal jury tiebreaker vote`,
+          jurorAgent.getEndgameEliminationVote(phaseCtx),
+          () => fallbackEliminationTarget(ctx, juror.playerId),
+        );
         juryTiebreakerVotes[juror.playerId] = vote;
       }
     }

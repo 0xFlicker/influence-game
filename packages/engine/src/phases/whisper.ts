@@ -10,10 +10,12 @@ import type {
 } from "../types";
 import { Phase } from "../types";
 import type { MingleTurnAction } from "../game-runner.types";
+import type { GameState } from "../game-state";
 import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
 
 export interface RoomAllocationOptions {
   rawChoices?: Map<UUID, number | null>;
+  cooldownPairKeys?: ReadonlySet<string>;
 }
 
 /**
@@ -46,12 +48,142 @@ function normalizeRoomChoice(choice: number | null | undefined, roomCount: numbe
   return { roomId: choice, status: "valid" };
 }
 
+function pairKey(a: UUID, b: UUID): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+function addRoomPairKeys(keys: Set<string>, rooms: readonly RoomAllocation[]): void {
+  for (const room of rooms) {
+    for (let i = 0; i < room.playerIds.length; i++) {
+      for (let j = i + 1; j < room.playerIds.length; j++) {
+        const first = room.playerIds[i];
+        const second = room.playerIds[j];
+        if (first && second) keys.add(pairKey(first, second));
+      }
+    }
+  }
+}
+
+function buildRecentCooldownPairKeys(
+  gameState: GameState,
+  cooldownRounds: number,
+): Set<string> {
+  const keys = new Set<string>();
+  if (cooldownRounds < 1) return keys;
+
+  const firstRound = Math.max(1, gameState.round - cooldownRounds);
+  for (let round = firstRound; round < gameState.round; round++) {
+    const allocations = gameState.getRoomAllocations(round);
+    if (allocations) addRoomPairKeys(keys, allocations.rooms);
+  }
+
+  return keys;
+}
+
+function countCooldownPairConflicts(
+  rooms: readonly RoomAllocation[],
+  cooldownPairKeys: ReadonlySet<string>,
+): number {
+  let conflicts = 0;
+  for (const room of rooms) {
+    for (let i = 0; i < room.playerIds.length; i++) {
+      for (let j = i + 1; j < room.playerIds.length; j++) {
+        const first = room.playerIds[i];
+        const second = room.playerIds[j];
+        if (first && second && cooldownPairKeys.has(pairKey(first, second))) {
+          conflicts += 1;
+        }
+      }
+    }
+  }
+  return conflicts;
+}
+
+function movePlayerToRoom(
+  rooms: readonly RoomAllocation[],
+  playerId: UUID,
+  toRoomId: number,
+): RoomAllocation[] {
+  return rooms.map((room) => {
+    if (room.playerIds.includes(playerId)) {
+      return { ...room, playerIds: room.playerIds.filter((id) => id !== playerId) };
+    }
+    if (room.roomId === toRoomId) {
+      return { ...room, playerIds: [...room.playerIds, playerId] };
+    }
+    return { ...room, playerIds: [...room.playerIds] };
+  });
+}
+
+function applyPairCooldown(
+  rooms: RoomAllocation[],
+  roomCount: number,
+  cooldownPairKeys: ReadonlySet<string> | undefined,
+): RoomAllocation[] {
+  if (!cooldownPairKeys || cooldownPairKeys.size === 0 || roomCount < 2) {
+    return rooms;
+  }
+
+  let adjusted = rooms.map((room) => ({ ...room, playerIds: [...room.playerIds] }));
+  let currentConflicts = countCooldownPairConflicts(adjusted, cooldownPairKeys);
+  const maxIterations = adjusted.reduce((sum, room) => sum + room.playerIds.length, 0) * roomCount;
+
+  for (let iteration = 0; iteration < maxIterations && currentConflicts > 0; iteration++) {
+    let bestMove:
+      | { playerId: UUID; fromRoomId: number; toRoomId: number; conflicts: number; destinationSize: number }
+      | null = null;
+
+    for (const room of adjusted) {
+      for (const playerId of room.playerIds) {
+        for (let toRoomId = 1; toRoomId <= roomCount; toRoomId++) {
+          if (toRoomId === room.roomId) continue;
+
+          const candidate = movePlayerToRoom(adjusted, playerId, toRoomId);
+          const conflicts = countCooldownPairConflicts(candidate, cooldownPairKeys);
+          if (conflicts >= currentConflicts) continue;
+
+          const destinationSize = adjusted.find((candidateRoom) => candidateRoom.roomId === toRoomId)?.playerIds.length ?? 0;
+          if (
+            !bestMove ||
+            conflicts < bestMove.conflicts ||
+            (conflicts === bestMove.conflicts && destinationSize < bestMove.destinationSize) ||
+            (conflicts === bestMove.conflicts &&
+              destinationSize === bestMove.destinationSize &&
+              `${playerId}:${toRoomId}` < `${bestMove.playerId}:${bestMove.toRoomId}`)
+          ) {
+            bestMove = { playerId, fromRoomId: room.roomId, toRoomId, conflicts, destinationSize };
+          }
+        }
+      }
+    }
+
+    if (!bestMove) break;
+    adjusted = movePlayerToRoom(adjusted, bestMove.playerId, bestMove.toRoomId);
+    currentConflicts = bestMove.conflicts;
+  }
+
+  return adjusted;
+}
+
+function syncRoomAssignments(
+  roomByPlayerId: Map<UUID, number>,
+  rooms: readonly RoomAllocation[],
+): void {
+  roomByPlayerId.clear();
+  for (const room of rooms) {
+    for (const playerId of room.playerIds) {
+      roomByPlayerId.set(playerId, room.roomId);
+    }
+  }
+}
+
 export function allocateRooms(
   choices: Map<UUID, number | null>,
   alivePlayers: Array<{ id: UUID; name: string }>,
   roomCount: number,
   round: number,
   beat = 1,
+  options: RoomAllocationOptions = {},
 ): {
   rooms: RoomAllocation[];
   diagnostics: WhisperSessionDiagnostics;
@@ -91,15 +223,26 @@ export function allocateRooms(
     });
   }
 
+  const adjustedRooms = applyPairCooldown(rooms, roomCount, options.cooldownPairKeys);
+  const assignedRoomByPlayerId = new Map<UUID, number>();
+  for (const room of adjustedRooms) {
+    for (const playerId of room.playerIds) {
+      assignedRoomByPlayerId.set(playerId, room.roomId);
+    }
+  }
+
   return {
-    rooms,
+    rooms: adjustedRooms,
     diagnostics: {
       round,
       beat,
       roomCount,
       eligiblePlayers: alivePlayers.map((player) => buildPlayerRef(playerById, player.id)),
-      choices: choiceRecords,
-      allocatedRooms: rooms.map((room) => ({
+      choices: choiceRecords.map((choice) => ({
+        ...choice,
+        assignedRoomId: assignedRoomByPlayerId.get(choice.player.id) ?? choice.assignedRoomId,
+      })),
+      allocatedRooms: adjustedRooms.map((room) => ({
         roomId: room.roomId,
         beat: room.beat,
         players: room.playerIds.map((playerId) => buildPlayerRef(playerById, playerId)),
@@ -313,6 +456,8 @@ export async function runWhisperPhase(
     count: 0,
   }));
   contextBuilder.currentRoomCounts = initialRoomCounts;
+  const cooldownRounds = config.minglePairCooldownRounds ?? 0;
+  const cooldownPairKeys = buildRecentCooldownPairKeys(gameState, cooldownRounds);
 
   const choices = new Map<UUID, number | null>();
   await Promise.all(
@@ -326,7 +471,9 @@ export async function runWhisperPhase(
     }),
   );
 
-  const initialAllocation = allocateRooms(choices, alivePlayers, roomCount, gameState.round, 1);
+  const initialAllocation = allocateRooms(choices, alivePlayers, roomCount, gameState.round, 1, {
+    cooldownPairKeys,
+  });
   const roomByPlayerId = new Map<UUID, number>();
   for (const room of initialAllocation.rooms) {
     for (const playerId of room.playerIds) {
@@ -335,9 +482,13 @@ export async function runWhisperPhase(
   }
 
   for (let beat = 1; beat <= beats; beat++) {
-    const localRooms = beat === 1
+    let localRooms = beat === 1
       ? initialAllocation.rooms
       : buildRoomsFromAssignments(roomByPlayerId, alivePlayers, roomCount, gameState.round, beat);
+    if (beat > 1 && cooldownRounds > 0) {
+      localRooms = applyPairCooldown(localRooms, roomCount, cooldownPairKeys);
+      syncRoomAssignments(roomByPlayerId, localRooms);
+    }
     const roomCounts = buildRoomCounts(localRooms);
     const globalAssignment = assignGlobalRoomIds(localRooms, nextGlobalRoomId);
     nextGlobalRoomId = globalAssignment.nextRoomId;
@@ -371,6 +522,9 @@ export async function runWhisperPhase(
     const allocationText = `Turn ${beat}: ${beatRooms.map((room) => describeRoom(ctx, room)).join(" | ")}`;
     const allocationEntry = logger.logRoomAllocation(allocationText, beatRooms, [], beatDiagnostics);
     const actions = await runMingleTurn(ctx, localRooms, beatRooms, roomCounts, roomByPlayerId, roomCount);
+    if (cooldownRounds > 0) {
+      addRoomPairKeys(cooldownPairKeys, localRooms);
+    }
     if (allocationEntry.roomMetadata?.diagnostics) {
       allocationEntry.roomMetadata.diagnostics.actions = actions;
     }

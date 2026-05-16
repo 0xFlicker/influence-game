@@ -368,6 +368,10 @@ export interface GameConfig {
   maxWhisperExchanges?: number;
   /** Number of open-room movement beats per round (default 2). */
   whisperSessionsPerRound?: number;
+  /** Number of previous Mingle rounds whose exact player pairs should be avoided when practical. */
+  minglePairCooldownRounds?: number;
+  /** Max milliseconds to wait for a single endgame agent action before using a House fallback. */
+  agentActionTimeoutMs?: number;
   /** Simulator experiment flag: add one public post-vote Power Lobby beat before the empowered action. */
   powerLobbyAfterVote?: boolean;
 }

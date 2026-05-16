@@ -60,6 +60,13 @@ describe("simulation variant config", () => {
     expect(config.diaryRoomAfterPhases).toEqual([]);
     expect(config.enableLobbyIntent).toBe(false);
     expect(config.enableStrategicReflections).toBe(false);
+    expect(config.agentActionTimeoutMs).toBe(90_000);
+  });
+
+  it("enables mild pair cooldown for open-whisper simulator variants", () => {
+    expect(buildSimulationConfig("baseline").minglePairCooldownRounds).toBe(1);
+    expect(buildSimulationConfig("open-whisper").minglePairCooldownRounds).toBe(1);
+    expect(buildSimulationConfig("power-lobby").minglePairCooldownRounds).toBe(0);
   });
 
   it("maps single-feature simulator variants to the correct flags", () => {
@@ -154,5 +161,27 @@ describe("simulation variant config", () => {
 
     expect(args.gameTimeoutMs).toBe(30000);
     expect(args.llmTimeoutMs).toBe(5000);
+  });
+
+  it("uses a larger default timeout for 8-player simulation batches", () => {
+    const previous = process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
+    delete process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
+    try {
+      const args = parseArgs(["--players", "8"]);
+
+      expect(args.gameTimeoutMs).toBe(900000);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
+      } else {
+        process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS = previous;
+      }
+    }
+  });
+
+  it("honors explicit large simulation timeout overrides", () => {
+    const args = parseArgs(["--players", "8", "--game-timeout-ms", "1200000"]);
+
+    expect(args.gameTimeoutMs).toBe(1200000);
   });
 });

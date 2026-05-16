@@ -16,6 +16,7 @@ import { createActor } from "xstate";
 import { Phase, PlayerStatus } from "../types";
 import type { GameConfig, RoomAllocation } from "../types";
 import { MockAgent } from "./mock-agent";
+import { allocateRooms } from "../phases/whisper";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -29,6 +30,10 @@ function defined<T>(value: T | undefined, msg = "Expected value to be defined"):
 
 function makeState(playerNames: string[]) {
   return new GameState(playerNames.map((name) => ({ id: createUUID(), name })));
+}
+
+function cooldownPairKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
 class PowerLobbyProbeAgent extends MockAgent {
@@ -284,6 +289,29 @@ describe("Whisper Rooms", () => {
     expect(movedWhisper?.to).toEqual(["Gamma", "Delta", "Echo"]);
   });
 
+  it("redirects avoidable repeated Mingle pairs when cooldown is configured", () => {
+    const players = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map((name) => ({
+      id: createUUID(),
+      name,
+    }));
+    const alpha = defined(players.find((player) => player.name === "Alpha"));
+    const beta = defined(players.find((player) => player.name === "Beta"));
+    const choices = new Map(players.map((player) => [player.id, player.name === "Gamma" ? 2 : 1]));
+
+    const allocation = allocateRooms(choices, players, 2, 2, 1, {
+      cooldownPairKeys: new Set([cooldownPairKey(alpha.id, beta.id)]),
+    });
+
+    const alphaRoom = defined(allocation.rooms.find((room) => room.playerIds.includes(alpha.id)));
+    const betaRoom = defined(allocation.rooms.find((room) => room.playerIds.includes(beta.id)));
+    expect(alphaRoom.roomId).not.toBe(betaRoom.roomId);
+    expect(allocation.rooms.flatMap((room) => room.playerIds).sort()).toEqual(players.map((player) => player.id).sort());
+
+    const alphaChoice = defined(allocation.diagnostics.choices.find((choice) => choice.player.id === alpha.id));
+    const betaChoice = defined(allocation.diagnostics.choices.find((choice) => choice.player.id === beta.id));
+    expect(alphaChoice.assignedRoomId).not.toBe(betaChoice.assignedRoomId);
+  });
+
   it("passes privacy-safe room counts and only local rosters to agents", async () => {
     class PrivacyProbeAgent extends MockAgent {
       readonly choiceContexts: PhaseContext[] = [];
@@ -394,6 +422,30 @@ describe("Whisper Rooms", () => {
       (entry) => entry.round === 1 && entry.scope === "whisper" && entry.from === "Alpha" && entry.text.includes("quiet room"),
     );
     expect(alphaSecondWhisper?.roomId).toBe(secondRooms[1]!.roomId);
+  });
+
+  it("uses House fallbacks when endgame actions exceed the configured timeout", async () => {
+    class TimeoutPleaAgent extends MockAgent {
+      override async getPlea(): Promise<AgentResponse> {
+        return new Promise(() => {});
+      }
+    }
+
+    const agents = [
+      new TimeoutPleaAgent(createUUID(), "Alpha"),
+      new MockAgent(createUUID(), "Beta"),
+      new MockAgent(createUUID(), "Gamma"),
+      new MockAgent(createUUID(), "Delta"),
+      new MockAgent(createUUID(), "Echo"),
+    ];
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, agentActionTimeoutMs: 5 });
+    const result = await Promise.race([
+      runner.run(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("runner did not finish")), 2_000)),
+    ]);
+
+    expect(result.winnerName).toBeDefined();
+    expect(result.transcript.some((entry) => entry.text.includes("Alpha plea timed out after 5ms"))).toBe(true);
   });
 });
 
