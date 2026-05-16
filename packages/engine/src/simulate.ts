@@ -41,6 +41,8 @@ import {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_GAME_TIMEOUT_MS = 10 * 60 * 1000;
+const DEFAULT_LARGE_GAME_TIMEOUT_MS = 15 * 60 * 1000;
+const LARGE_GAME_TIMEOUT_PLAYER_THRESHOLD = 8;
 const DEFAULT_LLM_TIMEOUT_MS = 45 * 1000;
 
 export interface SimArgs {
@@ -60,13 +62,15 @@ function readPositiveInt(value: string | undefined, fallback: number): number {
 }
 
 export function parseArgs(argv = process.argv.slice(2)): SimArgs {
+  const envGameTimeout = process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
+  let gameTimeoutOverridden = Boolean(envGameTimeout);
   const args: SimArgs = {
     games: 3,
     players: 6,
     personas: null,
     model: "gpt-5-nano",
     variant: process.env.INFLUENCE_SIM_VARIANT ?? "baseline",
-    gameTimeoutMs: readPositiveInt(process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS, DEFAULT_GAME_TIMEOUT_MS),
+    gameTimeoutMs: readPositiveInt(envGameTimeout, DEFAULT_GAME_TIMEOUT_MS),
     llmTimeoutMs: readPositiveInt(process.env.INFLUENCE_SIM_LLM_TIMEOUT_MS, DEFAULT_LLM_TIMEOUT_MS),
   };
 
@@ -90,9 +94,11 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       i++;
     } else if (arg === "--game-timeout-ms" && next) {
       args.gameTimeoutMs = parseInt(next, 10);
+      gameTimeoutOverridden = true;
       i++;
     } else if (arg === "--game-timeout-sec" && next) {
       args.gameTimeoutMs = parseInt(next, 10) * 1000;
+      gameTimeoutOverridden = true;
       i++;
     } else if (arg === "--llm-timeout-ms" && next) {
       args.llmTimeoutMs = parseInt(next, 10);
@@ -106,6 +112,9 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
   if (isNaN(args.games) || args.games < 1) args.games = 3;
   if (isNaN(args.players) || args.players < 4) args.players = 4;
   if (args.players > DEFAULT_CONFIG.maxPlayers) args.players = DEFAULT_CONFIG.maxPlayers;
+  if (!gameTimeoutOverridden && args.players >= LARGE_GAME_TIMEOUT_PLAYER_THRESHOLD) {
+    args.gameTimeoutMs = DEFAULT_LARGE_GAME_TIMEOUT_MS;
+  }
   if (isNaN(args.gameTimeoutMs) || args.gameTimeoutMs < 1) args.gameTimeoutMs = DEFAULT_GAME_TIMEOUT_MS;
   if (isNaN(args.llmTimeoutMs) || args.llmTimeoutMs < 1) args.llmTimeoutMs = DEFAULT_LLM_TIMEOUT_MS;
 
@@ -182,7 +191,11 @@ export function isOpenWhisperVariant(variant: string): boolean {
   return OPEN_WHISPER_VARIANTS.has(variant.toLowerCase());
 }
 
-export function buildSimulationConfig(variant: string): GameConfig {
+export function buildSimulationConfig(
+  variant: string,
+  options: { agentActionTimeoutMs?: number } = {},
+): GameConfig {
+  const openWhisper = isOpenWhisperVariant(variant);
   return {
     ...DEFAULT_CONFIG,
     timers: {
@@ -209,7 +222,9 @@ export function buildSimulationConfig(variant: string): GameConfig {
     enableStrategicReflections: false,
     lobbyMessagesPerPlayer: 1,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),
-    whisperSessionsPerRound: isOpenWhisperVariant(variant) ? 2 : DEFAULT_CONFIG.whisperSessionsPerRound,
+    whisperSessionsPerRound: openWhisper ? 2 : DEFAULT_CONFIG.whisperSessionsPerRound,
+    minglePairCooldownRounds: openWhisper ? 1 : 0,
+    agentActionTimeoutMs: options.agentActionTimeoutMs ?? 90_000,
   };
 }
 
@@ -886,7 +901,9 @@ async function main() {
   console.log("");
 
   // Simulation config: no timers (agents respond as fast as they can)
-  const simConfig = buildSimulationConfig(args.variant);
+  const simConfig = buildSimulationConfig(args.variant, {
+    agentActionTimeoutMs: Math.max(args.llmTimeoutMs * 2, args.llmTimeoutMs + 5_000),
+  });
 
   // Create output directory
   const timestamp = runTimestamp.replace(/[:.]/g, "-").slice(0, 19);

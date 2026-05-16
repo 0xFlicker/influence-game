@@ -195,6 +195,9 @@ export class GameRunner {
 
   private async runGameLoop(actor: PhaseActor): Promise<void> {
     let done = false;
+    let lastLoopKey = "";
+    let repeatedLoopCount = 0;
+    const maxRepeatedLoopCount = 25;
 
     const completionPromise = new Promise<void>((resolve) => {
       actor.subscribe((snapshot) => {
@@ -214,6 +217,16 @@ export class GameRunner {
     while (!done && !this._aborted) {
       const snapshot = actor.getSnapshot();
       const state = snapshot.value as string;
+      const loopKey = `${state}:${this.gameState.round}:${this.logger.transcript.length}`;
+      if (loopKey === lastLoopKey) {
+        repeatedLoopCount += 1;
+        if (repeatedLoopCount >= maxRepeatedLoopCount) {
+          throw new Error(`Game loop stalled in phase-machine state "${state}" after ${repeatedLoopCount} unchanged iterations`);
+        }
+      } else {
+        lastLoopKey = loopKey;
+        repeatedLoopCount = 0;
+      }
 
       // --- Normal round phases ---
       if (state === "introduction") {
@@ -271,12 +284,14 @@ export class GameRunner {
       } else if (state === "end" || done) {
         break;
       } else {
-        break;
+        throw new Error(`Game loop reached unknown phase-machine state "${state}"`);
       }
 
       await new Promise((r) => setTimeout(r, 0));
     }
 
-    await completionPromise;
+    if (!this._aborted) {
+      await completionPromise;
+    }
   }
 }
