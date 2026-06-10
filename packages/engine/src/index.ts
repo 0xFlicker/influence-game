@@ -29,7 +29,7 @@ export type { AgentResponse, IAgent, PhaseContext, PowerLobbyExposure, Transcrip
 
 // Agent
 export { InfluenceAgent, createAgentCast } from "./agent";
-export type { Personality } from "./agent";
+export type { InfluenceAgentOptions, Personality } from "./agent";
 
 // House interviewer
 export { LLMHouseInterviewer, TemplateHouseInterviewer } from "./house-interviewer";
@@ -38,6 +38,15 @@ export type { IHouseInterviewer, DiaryRoomContext, FollowUpResult } from "./hous
 // Persona generator
 export { generatePersona, pickAgentNames, pickArchetypes } from "./persona-generator";
 export type { GeneratedPersona } from "./persona-generator";
+
+// LLM provider configuration
+export {
+  createLlmClientFromEnv,
+  describeLlmProvider,
+  resolveModelForTier,
+  resolveToolChoiceMode,
+} from "./llm-client";
+export type { LlmClientConfig, LlmToolChoiceMode, ModelTier } from "./llm-client";
 
 // Memory store
 export { InMemoryMemoryStore } from "./memory-store";

@@ -30,7 +30,7 @@ export async function setupTestDB(): Promise<DrizzleDB> {
   return db;
 }
 
-// All Influence table names (from schema) — truncate only these, not Paperclip system tables
+// All Influence table names (from schema) — truncate only these, not unrelated tables.
 const INFLUENCE_TABLES = [
   "free_track_ratings",
   "free_game_queue",

@@ -626,6 +626,8 @@ Expressions used for:
 
 ### 7.3 Budget vs. Premium Spectacle
 
+> Historical model note: this matrix uses older model examples. Current model/provider configuration is documented in `docs/local-model-evaluation.md`.
+
 | Feature | Budget (gpt-4o-mini, no extras) | Premium (gpt-4o + audio + TTS + avatars) |
 |:--------|:-------------------------------|:----------------------------------------|
 | LLM model | gpt-4o-mini | gpt-4o or o1-mini |

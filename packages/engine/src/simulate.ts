@@ -12,7 +12,7 @@
  *   bun run simulate -- --variant power-lobby-open-whisper
  */
 
-import OpenAI from "openai";
+import type OpenAI from "openai";
 import { randomUUID } from "crypto";
 import { execFileSync } from "child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "fs";
@@ -35,6 +35,8 @@ import {
   type GitMetadata,
   type SimulationRunMetadata,
 } from "./simulation-instrumentation";
+import { createLlmClientFromEnv, describeLlmProvider } from "./llm-client";
+import type { LlmToolChoiceMode } from "./llm-client";
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing
@@ -254,6 +256,7 @@ function selectCast(
   requestedPersonas: string[] | null,
   openai: OpenAI,
   model: string,
+  toolChoiceMode: LlmToolChoiceMode = "named",
 ): InfluenceAgent[] {
   let selected: Array<{ name: string; personality: Personality }>;
 
@@ -277,7 +280,9 @@ function selectCast(
 
   return selected.map(({ name, personality }) => {
     const id: UUID = randomUUID();
-    return new InfluenceAgent(id, name, personality, openai, model);
+    return new InfluenceAgent(id, name, personality, openai, model, undefined, undefined, {
+      toolChoiceMode,
+    });
   });
 }
 
@@ -880,21 +885,22 @@ async function main() {
   const runTimestamp = new Date().toISOString();
   const metadata = buildRunMetadata(args, runTimestamp);
 
-  if (!process.env.OPENAI_API_KEY) {
+  const llmConfig = createLlmClientFromEnv(process.env, {
+    timeout: args.llmTimeoutMs,
+    maxRetries: 0,
+  });
+  if (!llmConfig) {
     console.error(
-      "Error: OPENAI_API_KEY not set. Run from the repo root via: bun run simulate",
+      "Error: no LLM provider configured. Set OPENAI_API_KEY for OpenAI, or INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 for LM Studio.",
     );
     process.exit(1);
   }
 
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-    timeout: args.llmTimeoutMs,
-    maxRetries: 0,
-  });
+  const openai = llmConfig.client;
 
   console.log(`\n=== Influence Batch Simulation ===`);
   console.log(`Games: ${args.games} | Players per game: ${args.players} | Model: ${args.model} | Variant: ${args.variant}`);
+  console.log(`Provider: ${describeLlmProvider(llmConfig)} | API key: ${llmConfig.apiKeySource} | Tool choice: ${llmConfig.toolChoiceMode}`);
   console.log(`Timeouts: game ${(args.gameTimeoutMs / 1000).toFixed(0)}s | LLM request ${(args.llmTimeoutMs / 1000).toFixed(0)}s`);
   console.log(`Git: ${metadata.git.commitShortSha ?? "unknown"} (${metadata.git.branch ?? "unknown branch"}${metadata.git.isDirty ? ", dirty" : ""})`);
   if (args.personas) console.log(`Personas: ${args.personas.join(", ")}`);
@@ -929,7 +935,7 @@ async function main() {
     const startTime = Date.now();
 
     // Create fresh agents for each game
-    const agents = selectCast(args.players, args.personas, openai, args.model);
+    const agents = selectCast(args.players, args.personas, openai, args.model, llmConfig.toolChoiceMode);
     const playerPersonas: Record<string, string> = {};
     const playerNameById: Record<string, string> = {};
     const gameTracker = new TokenTracker();

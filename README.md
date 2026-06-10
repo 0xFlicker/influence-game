@@ -11,7 +11,8 @@ INTRODUCTION -> LOBBY -> WHISPER -> RUMOR -> VOTE -> POWER -> REVEAL -> COUNCIL
 ## Prerequisites
 
 - **[Bun](https://bun.sh)** (v1.0+) -- runtime and package manager. Never use npm or pnpm.
-- **[Doppler](https://docs.doppler.com/docs/install-cli)** -- injects `OPENAI_API_KEY` and other secrets from the `social-strategy-agent` project.
+- **[Doppler](https://docs.doppler.com/docs/install-cli)** -- injects hosted OpenAI and app secrets from the `social-strategy-agent` project.
+- **Optional: [LM Studio](https://lmstudio.ai/)** -- runs local OpenAI-compatible models for simulator experiments.
 - **[Docker](https://docs.docker.com/get-docker/)** -- runs the PostgreSQL 16 database container on port 54320.
 
 ## Getting Started
@@ -36,12 +37,16 @@ bun run simulate
 # Customize: 1 game, 4 specific agents
 bun run simulate -- --games 1 --players 4 --personas Atlas,Vera,Finn,Mira
 
+# Local LM Studio experiment (no Doppler)
+INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
+  bun run simulate:local -- --games 1 --players 4 --model <lm-studio-model-id>
+
 # Validation variants
-bun run simulate -- --variant anti-repeat
-bun run simulate -- --variant power-lobby-anti-repeat
+bun run simulate -- --variant open-whisper
+bun run simulate -- --variant power-lobby-open-whisper
 ```
 
-The root `simulate` script injects secrets from the Doppler `social-strategy-agent` project's `dev` config. Use that dev-scoped path for local simulator validation; staging credentials are reserved for release validation.
+The root `simulate` script injects hosted-provider secrets from the Doppler `social-strategy-agent` project's `dev` config. Use `simulate:local` when testing LM Studio or another OpenAI-compatible local endpoint.
 
 Output includes a round-by-round transcript, per-persona win rates, and token cost estimates. Transcripts are saved to `packages/engine/docs/simulations/`.
 
@@ -78,7 +83,7 @@ The frontend runs on `http://localhost:3001` (Next.js default).
 # Unit tests -- fast, no LLM calls, no secrets needed
 bun test:engine
 
-# Full integration tests -- requires dev Doppler access for OPENAI_API_KEY
+# Full integration tests -- requires a hosted or local OpenAI-compatible LLM provider
 bun run test:engine:full
 
 # All packages (unit tests only)
@@ -90,7 +95,7 @@ bun run typecheck
 
 ### 5. Close out code-backed work
 
-Before marking a Paperclip feature task `done`, open a reviewable PR and report the PR URL plus the real verification results. The canonical delivery sequence and closeout format live in [`DEVELOPMENT.md`](DEVELOPMENT.md#definition-of-done).
+Before calling code-backed work done, open a reviewable PR and report the PR URL plus the real verification results. The canonical delivery sequence and closeout format live in [`DEVELOPMENT.md`](DEVELOPMENT.md#definition-of-done).
 
 ## Project Structure
 
@@ -103,7 +108,7 @@ packages/
       game-state.ts     # Mutable game state + phase transitions
       phase-machine.ts  # xstate v5 FSM for round cycle
       game-runner.ts    # Orchestrates agents through each phase
-      agent.ts          # LLM-backed player (OpenAI gpt-4o-mini)
+      agent.ts          # LLM-backed player (OpenAI-compatible chat completions)
       simulate.ts       # CLI batch simulation runner
       __tests__/        # Unit + integration tests
 
@@ -121,13 +126,21 @@ packages/
 
 ## Environment Variables
 
-Secrets are injected via Doppler (`doppler run -- <command>`). You should not need to create `.env` files for the engine or API packages.
+Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). Local LM Studio experiments can run without Doppler by setting the OpenAI-compatible provider variables below.
 
 ### API (`packages/api`) -- injected by Doppler
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `OPENAI_API_KEY` | Yes | -- | OpenAI API key for LLM agent calls |
+| `OPENAI_API_KEY` | Yes, unless using local provider | -- | Hosted OpenAI API key for LLM agent calls |
+| `INFLUENCE_LLM_BASE_URL` | No | -- | OpenAI-compatible endpoint, e.g. `http://127.0.0.1:1234/v1` for LM Studio |
+| `INFLUENCE_LLM_API_KEY` | No | `lm-studio` when `INFLUENCE_LLM_BASE_URL` is set | API key for the OpenAI-compatible endpoint |
+| `INFLUENCE_LLM_TOOL_CHOICE_MODE` | No | `required` for local base URLs, otherwise `named` | Structured decision-call mode: `named`, `required`, `auto`, or `json_schema` |
+| `INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS` | No | `4096` | Minimum completion budget for local structured decisions |
+| `INFLUENCE_LLM_LOCAL_MESSAGE_MIN_TOKENS` | No | `8192` | Minimum completion budget for local public messages |
+| `INFLUENCE_MODEL_BUDGET` | No | `gpt-5-nano` | Server-side budget tier model override |
+| `INFLUENCE_MODEL_STANDARD` | No | `gpt-5-mini` | Server-side standard tier model override |
+| `INFLUENCE_MODEL_PREMIUM` | No | `gpt-5.4-mini` | Server-side premium tier model override |
 | `PRIVY_APP_ID` | Yes | -- | Privy app ID for auth |
 | `PRIVY_APP_SECRET` | Yes | -- | Privy app secret for auth |
 | `JWT_SECRET` | Yes | -- | Secret for signing session JWTs |
@@ -161,7 +174,7 @@ EOF
 
 ## Personas
 
-Ten built-in AI personalities:
+Influence has a core roster plus experimental personas. The public UI currently exposes 13 persona options; engine/API roster reconciliation is ongoing.
 
 | Name | Style | Strategy |
 |---|---|---|
@@ -175,6 +188,9 @@ Ten built-in AI personalities:
 | Echo | Observer | Quiet analysis, strikes at key moments |
 | Sage | Diplomat | Builds consensus, mediates conflicts |
 | Jace | Wildcard | Unpredictable, chaotic plays |
+| Nyx | Contrarian | Challenges consensus, tests group assumptions |
+| Rune | Provocateur | Weaponizes information and timed reveals |
+| Wren | Martyr | Sacrifices position to protect allies |
 
 ## Simulation CLI Reference
 
@@ -185,9 +201,9 @@ Options:
   --games N        Number of games to run (default: 3)
   --players N      Players per game, 4-10 (default: 6)
   --personas A,B   Comma-separated persona names (default: random selection)
-  --model NAME     OpenAI model (default: gpt-4o-mini)
-  --variant NAME   Variant: baseline, power-lobby, anti-repeat,
-                   or power-lobby-anti-repeat (default: baseline)
+  --model NAME     OpenAI-compatible model ID (default: gpt-5-nano)
+  --variant NAME   Variant: baseline, open-whisper, power-lobby,
+                   or power-lobby-open-whisper (default: baseline)
 ```
 
 ## Seeding the Database (optional)
@@ -200,5 +216,6 @@ cd packages/api && bun run db:seed
 
 ## Further Reading
 
-- [Game Specification](../../AGENTS.md) -- full rules, phases, and mechanics
+- [Agent Guide](AGENTS.md) -- repo-specific agent operating context
 - [Development Guide](DEVELOPMENT.md) -- ownership boundaries, release workflow, coding conventions
+- [Local Model Evaluation](docs/local-model-evaluation.md) -- LM Studio and local simulation workflow

@@ -26,7 +26,11 @@ import {
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { generateUniqueSlug } from "../lib/slug.js";
 import { getPublicDisplayName } from "../lib/display-name.js";
-import { pickAgentNames, pickArchetypes } from "@influence/engine";
+import {
+  pickAgentNames,
+  pickArchetypes,
+  resolveModelForTier,
+} from "@influence/engine";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -273,7 +277,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       if (!profile) continue;
 
       const playerId = randomUUID();
-      const agentModel = "gpt-5-nano"; // budget tier
+      const agentModel = resolveModelForTier("budget");
       const persona = {
         name: profile.name,
         personality: profile.personality,
@@ -324,7 +328,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
             gameId,
             userId: null,
             persona: JSON.stringify(persona),
-            agentConfig: JSON.stringify({ model: "gpt-5-nano", temperature: 0.9 }),
+            agentConfig: JSON.stringify({ model: resolveModelForTier("budget"), temperature: 0.9 }),
           });
       }
     }

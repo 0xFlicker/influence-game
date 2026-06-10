@@ -6,14 +6,15 @@
  * and persisting transcripts + results back to the database.
  */
 
-import OpenAI from "openai";
 import { eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
   GameRunner,
   InfluenceAgent,
   TokenTracker,
+  createLlmClientFromEnv,
   estimateCost,
+  resolveModelForTier,
 } from "@influence/engine";
 import type {
   IAgent,
@@ -148,11 +149,11 @@ export async function startGame(
   const gameConfig = JSON.parse(game.config) as Record<string, unknown>;
 
   // Create OpenAI client
-  const openaiApiKey = process.env.OPENAI_API_KEY;
-  if (!openaiApiKey) {
-    return { error: "OPENAI_API_KEY not configured" };
+  const llmConfig = createLlmClientFromEnv();
+  if (!llmConfig) {
+    return { error: "LLM provider not configured" };
   }
-  const openai = new OpenAI({ apiKey: openaiApiKey });
+  const openai = llmConfig.client;
 
   // Create token tracker
   const tokenTracker = new TokenTracker();
@@ -173,7 +174,7 @@ export async function startGame(
     const personality = resolvePersonality(
       persona.personaKey ?? persona.personality,
     );
-    const model = agentCfg.model ?? "gpt-5-nano";
+    const model = agentCfg.model ?? resolveModelForTier(gameConfig.modelTier as string | undefined);
 
     const memoryStore = new PgMemoryStore(db);
     const agent = new InfluenceAgent(
@@ -184,6 +185,7 @@ export async function startGame(
       model,
       undefined,
       memoryStore,
+      { toolChoiceMode: llmConfig.toolChoiceMode },
     );
     agent.setTokenTracker(tokenTracker);
     return agent;
@@ -266,7 +268,7 @@ async function runGameAsync(
 
     // Compute token usage
     const usage = tokenTracker.getTotalUsage();
-    const model = (gameConfig.modelTier === "premium" ? "gpt-5.4-mini" : gameConfig.modelTier === "standard" ? "gpt-5-mini" : "gpt-5-nano") as string;
+    const model = resolveModelForTier(gameConfig.modelTier as string | undefined);
     const cost = estimateCost(usage, model);
 
     // Write game results

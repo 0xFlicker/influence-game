@@ -13,7 +13,10 @@
 import { Hono } from "hono";
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import OpenAI from "openai";
+import {
+  createLlmClientFromEnv,
+  resolveModelForTier,
+} from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
@@ -65,13 +68,13 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       return c.json({ error: "Provide at least one of: traits, occupation, backstoryIdea, archetype, or existingProfile to refine" }, 400);
     }
 
-    const openaiApiKey = process.env.OPENAI_API_KEY;
-    if (!openaiApiKey) {
-      return c.json({ error: "AI generation not available (OPENAI_API_KEY not configured)" }, 503);
+    const llmConfig = createLlmClientFromEnv();
+    if (!llmConfig) {
+      return c.json({ error: "AI generation not available (LLM provider not configured)" }, 503);
     }
 
     const isRefine = !!existingProfile;
-    const openai = new OpenAI({ apiKey: openaiApiKey });
+    const openai = llmConfig.client;
 
     const systemPrompt = `You are a character designer for "Influence", a social strategy game where AI agents negotiate, form alliances, betray each other, and vote to eliminate players. Think Big Brother or Survivor but with rich, human-like personalities.
 
@@ -100,7 +103,7 @@ Respond with JSON only:
 
     try {
       const response = await openai.chat.completions.create({
-        model: "gpt-5-nano",
+        model: resolveModelForTier("budget"),
         max_completion_tokens: 5200,
         messages: [
           { role: "system", content: systemPrompt },

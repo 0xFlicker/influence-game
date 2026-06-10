@@ -8,9 +8,9 @@
 
 | Tier | Tests | Files | Duration | External Deps | Command |
 |------|-------|-------|----------|---------------|---------|
-| 1 - Unit/Mock | 124 | 6 | ~2.5s | None | `bun run test` |
+| 1 - Unit/Mock | 185 | 14 | ~4s | None | `bun run test` |
 | 2 - DB Integration | 138 (3 LLM-skipped) | 5 | ~9s | PostgreSQL | `bun run test:db` |
-| 3 - LLM Integration | 1 active + 1 skipped + 5 mock | 2 | ~5-15 min | Doppler (OPENAI_API_KEY) | `doppler run -- bun test:engine:full` |
+| 3 - LLM Integration | 1 active + 1 skipped + mock coverage | 2 | ~5-15 min | OpenAI-compatible LLM provider | `bun run test:engine:full` |
 | 4a - E2E Smoke (Playwright) | 5 | 1 | ~30s | Running staging server | `bun run test:e2e` |
 | 4b - E2E Infra Smoke (Puppeteer) | 8 | 1 | ~30s | PostgreSQL, Puppeteer | `cd packages/api && bun test src/e2e/e2e-smoke.test.ts` |
 | 4c - E2E Full Game (Puppeteer) | 3 | 1 | ~11 min | PostgreSQL, Puppeteer, Doppler | `cd packages/api && doppler run -- bun test src/e2e/game-flow.e2e.test.ts` |
@@ -98,10 +98,10 @@ All DB tests use `setupTestDB()` which:
 - **Stateful:** Yes
 
 ### packages/api/src/__tests__/agent-profiles.test.ts
-- **Tests:** 28 (3 LLM-dependent, skipped without OPENAI_API_KEY)
+- **Tests:** 28 (3 LLM-dependent, skipped without a configured OpenAI-compatible provider)
 - **Duration:** ~2s without LLM tests
 - **What it covers:** Agent profile CRUD (create, validation, minimal fields, list own profiles, get by id, update fields, stats reset on personality change, delete with FK cleanup), join game with saved profile (happy path, nonexistent, wrong user), AI personality generation (auth, validation, 503 without key; LLM: traits, archetype, refine)
-- **Dependencies:** PostgreSQL; OPENAI_API_KEY for 3 generate tests
+- **Dependencies:** PostgreSQL; `OPENAI_API_KEY` or `INFLUENCE_LLM_BASE_URL` for 3 generate tests
 - **Stateful:** Yes
 
 ### packages/api/src/__tests__/game-lifecycle.test.ts
@@ -113,7 +113,7 @@ All DB tests use `setupTestDB()` which:
 
 ---
 
-## Tier 3: LLM Integration Tests (Requires Doppler)
+## Tier 3: LLM Integration Tests (Requires OpenAI-Compatible Provider)
 
 Slow, non-deterministic, costs real tokens. **Run before releasing engine changes.**
 
@@ -123,10 +123,10 @@ Slow, non-deterministic, costs real tokens. **Run before releasing engine change
 - **Mock test:** 1 ("Full game with scripted mock agents" - no LLM)
 - **Duration:** 5-15 minutes for LLM test (15min timeout)
 - **What it covers:** Complete game run with 4 real LLM agents (gpt-5-nano), validates phase cycle (Introduction -> Council -> elimination), multiple rounds, transcript output
-- **Dependencies:** OPENAI_API_KEY via Doppler
+- **Dependencies:** `OPENAI_API_KEY` via Doppler or `INFLUENCE_LLM_BASE_URL` for LM Studio
 - **Cost:** ~$0.05-0.15 per run (gpt-5-nano)
 - **Stateful:** Yes (full game state)
-- **Note:** Gracefully skips if OPENAI_API_KEY not set (returns early with warning)
+- **Note:** Gracefully skips if no provider is configured (returns early with warning)
 
 ### packages/engine/src/__tests__/stream-listener.test.ts
 - **Tests:** 5
@@ -162,7 +162,7 @@ Slow, non-deterministic, costs real tokens. **Run before releasing engine change
   1. Admin creates a 6-player budget live game (API + browser verification)
   2. 6 players join the game (API + browser verification of PlayerRoster)
   3. Anonymous viewer watches game play to completion (incognito page, polls until game ends)
-- **Dependencies:** PostgreSQL, Puppeteer, OPENAI_API_KEY via Doppler (real LLM game)
+- **Dependencies:** PostgreSQL, Puppeteer, OpenAI-compatible provider (real LLM game)
 - **Run:** `cd packages/api && doppler run -- bun test src/e2e/game-flow.e2e.test.ts`
 - **Cost:** ~$0.05-0.15 per run (full 6-player game with gpt-5-nano)
 - **Failure debugging:** Screenshots saved to `e2e-screenshots/`
@@ -188,9 +188,9 @@ Slow, non-deterministic, costs real tokens. **Run before releasing engine change
                           |
                   Before Engine Releases
                     +------------+
-                    | Tier 3     |  doppler run -- bun test:engine:full
+                    | Tier 3     |  bun run test:engine:full
                     | 6 tests    |  ~5-15 minutes
-                    | Doppler    |  ~$0.10/run
+                    | LLM        |  ~$0.10/run hosted, local cost varies
                     +-----+------+
                           |
                   Before Staging Deploys
@@ -214,7 +214,6 @@ Slow, non-deterministic, costs real tokens. **Run before releasing engine change
 ## Gaps & Recommendations
 
 ### Tests NOT in `test:mock` that could be
-- **stream-listener.test.ts** (5 tests): Uses MockAgent, no LLM. Should be added to engine's `test:mock` script.
 - **full-game.test.ts mock section** (1 test): The "Full game with scripted mock agents" test uses MockAgent. Could be split or added to `test:mock`.
 
 ### Coverage gaps
@@ -228,6 +227,6 @@ Slow, non-deterministic, costs real tokens. **Run before releasing engine change
 - **Recommendation:** The `bun run test` command (Tier 1) is the only safe gate for pre-commit. Never gate commits on Tier 3+ tests.
 
 ### Token/cost optimization
-- LLM tests use gpt-5-nano which is cheap but still costs real money.
-- Running `doppler run -- bun test` in engine runs ALL engine tests including the LLM test. There's no way to run _just_ the mock engine tests plus the stream-listener tests without also triggering the LLM test (unless OPENAI_API_KEY is missing, in which case the LLM test skips gracefully).
+- Hosted LLM tests use the configured budget model by default and still cost real money.
+- LM Studio/local-provider tests avoid hosted API cost but may be much slower or less reliable, depending on the loaded model.
 - **Recommendation:** Add a `test:mock-all` script to engine that runs game-engine.test.ts + stream-listener.test.ts + the mock section of full-game.test.ts. This captures all free tests without triggering LLM calls.

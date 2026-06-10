@@ -4,6 +4,8 @@
 **Date:** 2026-03-17
 **Author:** Lead Game Designer
 
+> Historical snapshot: model names, pricing, and recommendations in this report reflect March 2026 evidence. Current local/provider configuration lives in `docs/local-model-evaluation.md` and `packages/engine/src/llm-client.ts`.
+
 ---
 
 ## Executive Summary

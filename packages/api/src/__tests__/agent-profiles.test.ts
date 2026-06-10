@@ -13,6 +13,7 @@ import { createGameRoutes } from "../routes/games.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { randomUUID } from "crypto";
 import { setupTestDB } from "./test-utils.js";
+import { createLlmClientFromEnv } from "@influence/engine";
 
 // ---------------------------------------------------------------------------
 // Set required env vars for auth
@@ -514,9 +515,17 @@ describe("Agent Profile API", () => {
       expect(res.status).toBe(400);
     });
 
-    test("returns 503 when OPENAI_API_KEY is not set", async () => {
+    test("returns 503 when no LLM provider is configured", async () => {
       const savedKey = process.env.OPENAI_API_KEY;
+      const savedInfluenceKey = process.env.INFLUENCE_LLM_API_KEY;
+      const savedBaseUrl = process.env.INFLUENCE_LLM_BASE_URL;
+      const savedOpenAIBaseUrl = process.env.OPENAI_BASE_URL;
+      const savedLmStudioBaseUrl = process.env.LM_STUDIO_BASE_URL;
       delete process.env.OPENAI_API_KEY;
+      delete process.env.INFLUENCE_LLM_API_KEY;
+      delete process.env.INFLUENCE_LLM_BASE_URL;
+      delete process.env.OPENAI_BASE_URL;
+      delete process.env.LM_STUDIO_BASE_URL;
 
       try {
         const res = await app.request(
@@ -526,11 +535,15 @@ describe("Agent Profile API", () => {
         expect(res.status).toBe(503);
       } finally {
         if (savedKey) process.env.OPENAI_API_KEY = savedKey;
+        if (savedInfluenceKey) process.env.INFLUENCE_LLM_API_KEY = savedInfluenceKey;
+        if (savedBaseUrl) process.env.INFLUENCE_LLM_BASE_URL = savedBaseUrl;
+        if (savedOpenAIBaseUrl) process.env.OPENAI_BASE_URL = savedOpenAIBaseUrl;
+        if (savedLmStudioBaseUrl) process.env.LM_STUDIO_BASE_URL = savedLmStudioBaseUrl;
       }
     });
 
-    // LLM integration test — only runs with OPENAI_API_KEY set (doppler run)
-    const llmTest = process.env.OPENAI_API_KEY ? test : test.skip;
+    // LLM integration test — only runs when an OpenAI-compatible provider is configured.
+    const llmTest = createLlmClientFromEnv() ? test : test.skip;
 
     llmTest("generates a personality from traits", async () => {
       const res = await app.request(

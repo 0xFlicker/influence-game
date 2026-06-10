@@ -13,7 +13,6 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import OpenAI from "openai";
 import { GameRunner, type TranscriptEntry } from "../game-runner";
 import { InfluenceAgent, createAgentCast } from "../agent";
 import { LLMHouseInterviewer } from "../house-interviewer";
@@ -21,6 +20,7 @@ import { DEFAULT_CONFIG } from "../types";
 import { Phase } from "../types";
 import type { GameConfig } from "../types";
 import { createUUID } from "../game-state";
+import { createLlmClientFromEnv, resolveModelForTier } from "../llm-client";
 
 // ---------------------------------------------------------------------------
 // Test configuration
@@ -82,29 +82,29 @@ describe("Full Influence Game", () => {
   it(
     "runs a complete game with 4 LLM agents",
     async () => {
-      // Require OpenAI API key
-      const apiKey = process.env.OPENAI_API_KEY;
-      if (!apiKey) {
-        console.warn("⚠️  OPENAI_API_KEY not set — skipping LLM game test");
-        console.warn("   Run with: doppler run -- bun test");
+      const llmConfig = createLlmClientFromEnv();
+      if (!llmConfig) {
+        console.warn("⚠️  LLM provider not configured — skipping LLM game test");
+        console.warn("   Set OPENAI_API_KEY or INFLUENCE_LLM_BASE_URL");
         return;
       }
 
-      const openai = new OpenAI({ apiKey });
+      const openai = llmConfig.client;
+      const model = process.env.INFLUENCE_TEST_MODEL ?? resolveModelForTier("budget");
 
       // Create 4 agents with distinct personalities
       const agents = [
-        new InfluenceAgent(createUUID(), "Atlas", "strategic", openai),
-        new InfluenceAgent(createUUID(), "Vera", "deceptive", openai),
-        new InfluenceAgent(createUUID(), "Finn", "honest", openai),
-        new InfluenceAgent(createUUID(), "Mira", "social", openai),
+        new InfluenceAgent(createUUID(), "Atlas", "strategic", openai, model, undefined, undefined, { toolChoiceMode: llmConfig.toolChoiceMode }),
+        new InfluenceAgent(createUUID(), "Vera", "deceptive", openai, model, undefined, undefined, { toolChoiceMode: llmConfig.toolChoiceMode }),
+        new InfluenceAgent(createUUID(), "Finn", "honest", openai, model, undefined, undefined, { toolChoiceMode: llmConfig.toolChoiceMode }),
+        new InfluenceAgent(createUUID(), "Mira", "social", openai, model, undefined, undefined, { toolChoiceMode: llmConfig.toolChoiceMode }),
       ];
 
       console.log("\n🎮 Starting Influence game with 4 agents:");
       console.log(`   Players: ${agents.map((a) => `${a.name} (${a.personality})`).join(", ")}`);
       console.log(`   Max rounds: ${TEST_CONFIG.maxRounds}\n`);
 
-      const houseInterviewer = new LLMHouseInterviewer(openai);
+      const houseInterviewer = new LLMHouseInterviewer(openai, model);
       const runner = new GameRunner(agents, TEST_CONFIG, houseInterviewer);
       const result = await runner.run();
 
@@ -148,15 +148,16 @@ describe("Full Influence Game", () => {
   it.skip(
     "runs a complete game with 6 LLM agents (full cast) — slow, run manually",
     async () => {
-      const apiKey = process.env.OPENAI_API_KEY;
-      if (!apiKey) {
-        console.warn("⚠️  OPENAI_API_KEY not set — skipping LLM game test");
+      const llmConfig = createLlmClientFromEnv();
+      if (!llmConfig) {
+        console.warn("⚠️  LLM provider not configured — skipping LLM game test");
         return;
       }
 
-      const openai = new OpenAI({ apiKey });
-      const agents = createAgentCast(openai);
-      const houseInterviewer = new LLMHouseInterviewer(openai);
+      const openai = llmConfig.client;
+      const model = process.env.INFLUENCE_TEST_MODEL ?? resolveModelForTier("budget");
+      const agents = createAgentCast(openai, model);
+      const houseInterviewer = new LLMHouseInterviewer(openai, model);
 
       console.log("\n🎮 Starting Influence game with 6 agents:");
       console.log(`   Players: ${agents.map((a) => a.name).join(", ")}`);
