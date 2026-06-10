@@ -10,6 +10,15 @@
  *   bun run simulate -- --games 3 --players 4 --personas Atlas,Vera,Finn,Mira
  *   bun run simulate -- --variant open-whisper
  *   bun run simulate -- --variant power-lobby-open-whisper
+ *
+ * Focused Mingle testing (tight Mingle -> Vote loop until 4 players, then standard):
+ *   bun run simulate:local -- --games 1 --players 8 --model google/gemma-4-26b-a4b-qat \
+ *     --variant mingle-loop --mingle-until-players 4
+ *
+ * Pure Mingle data collection 12->4 or 8->4 (lots of room movement + conversation):
+ *   INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
+ *   bun run simulate:local -- --games 1 --players 12 --model <local-model> \
+ *     --mingle-until-players 4 --game-timeout-sec 900000 --llm-timeout-sec 360
  */
 
 import type OpenAI from "openai";
@@ -55,6 +64,8 @@ export interface SimArgs {
   variant: string;
   gameTimeoutMs: number;
   llmTimeoutMs: number;
+  /** If set, run Mingle-focused behavior until this many players remain (then normal or stop). */
+  mingleUntilPlayers?: number;
 }
 
 function readPositiveInt(value: string | undefined, fallback: number): number {
@@ -74,6 +85,7 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
     variant: process.env.INFLUENCE_SIM_VARIANT ?? "baseline",
     gameTimeoutMs: readPositiveInt(envGameTimeout, DEFAULT_GAME_TIMEOUT_MS),
     llmTimeoutMs: readPositiveInt(process.env.INFLUENCE_SIM_LLM_TIMEOUT_MS, DEFAULT_LLM_TIMEOUT_MS),
+    mingleUntilPlayers: undefined,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -107,6 +119,10 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       i++;
     } else if (arg === "--llm-timeout-sec" && next) {
       args.llmTimeoutMs = parseInt(next, 10) * 1000;
+      i++;
+    } else if ((arg === "--mingle-until-players" || arg === "--mingle-until") && next) {
+      const n = parseInt(next, 10);
+      if (!isNaN(n) && n >= 2) args.mingleUntilPlayers = n;
       i++;
     }
   }
@@ -162,6 +178,7 @@ function buildRunMetadata(args: SimArgs, timestamp: string): SimulationRunMetada
       variant: args.variant,
       gameTimeoutMs: args.gameTimeoutMs,
       llmTimeoutMs: args.llmTimeoutMs,
+      mingleUntilPlayers: args.mingleUntilPlayers,
     },
   };
 }
@@ -183,6 +200,8 @@ const OPEN_WHISPER_VARIANTS = new Set([
   "open-whisper-power-lobby",
   "power-lobby-v2-open-whisper",
   "open-whisper-power-lobby-v2",
+  "mingle-loop",
+  "mingle",
 ]);
 
 export function isPowerLobbyVariant(variant: string): boolean {
@@ -195,9 +214,12 @@ export function isOpenWhisperVariant(variant: string): boolean {
 
 export function buildSimulationConfig(
   variant: string,
-  options: { agentActionTimeoutMs?: number } = {},
+  options: { agentActionTimeoutMs?: number; mingleUntilPlayers?: number } = {},
 ): GameConfig {
   const openWhisper = isOpenWhisperVariant(variant);
+  const isMingleLoop = variant.toLowerCase() === "mingle-loop" || variant.toLowerCase() === "mingle";
+  const mingleUntil = options.mingleUntilPlayers;
+
   return {
     ...DEFAULT_CONFIG,
     timers: {
@@ -224,9 +246,12 @@ export function buildSimulationConfig(
     enableStrategicReflections: false,
     lobbyMessagesPerPlayer: 1,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),
-    whisperSessionsPerRound: openWhisper ? 2 : DEFAULT_CONFIG.whisperSessionsPerRound,
-    minglePairCooldownRounds: openWhisper ? 1 : 0,
+    whisperSessionsPerRound: openWhisper || isMingleLoop ? 2 : DEFAULT_CONFIG.whisperSessionsPerRound,
+    minglePairCooldownRounds: openWhisper || isMingleLoop ? 1 : 0,
     agentActionTimeoutMs: options.agentActionTimeoutMs ?? 90_000,
+    // Mingle-focused testing support
+    mingleUntilPlayers: mingleUntil,
+    forceMingleVoteCycle: isMingleLoop || !!mingleUntil,
   };
 }
 
@@ -899,7 +924,7 @@ async function main() {
   const openai = llmConfig.client;
 
   console.log(`\n=== Influence Batch Simulation ===`);
-  console.log(`Games: ${args.games} | Players per game: ${args.players} | Model: ${args.model} | Variant: ${args.variant}`);
+  console.log(`Games: ${args.games} | Players per game: ${args.players} | Model: ${args.model} | Variant: ${args.variant}${args.mingleUntilPlayers ? ` | Mingle until ${args.mingleUntilPlayers}` : ""}`);
   console.log(`Provider: ${describeLlmProvider(llmConfig)} | API key: ${llmConfig.apiKeySource} | Tool choice: ${llmConfig.toolChoiceMode}`);
   console.log(`Timeouts: game ${(args.gameTimeoutMs / 1000).toFixed(0)}s | LLM request ${(args.llmTimeoutMs / 1000).toFixed(0)}s`);
   console.log(`Git: ${metadata.git.commitShortSha ?? "unknown"} (${metadata.git.branch ?? "unknown branch"}${metadata.git.isDirty ? ", dirty" : ""})`);
@@ -909,6 +934,7 @@ async function main() {
   // Simulation config: no timers (agents respond as fast as they can)
   const simConfig = buildSimulationConfig(args.variant, {
     agentActionTimeoutMs: Math.max(args.llmTimeoutMs * 2, args.llmTimeoutMs + 5_000),
+    mingleUntilPlayers: args.mingleUntilPlayers,
   });
 
   // Create output directory

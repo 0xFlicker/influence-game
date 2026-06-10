@@ -374,6 +374,21 @@ export interface GameConfig {
   agentActionTimeoutMs?: number;
   /** Simulator experiment flag: add one public post-vote Power Lobby beat before the empowered action. */
   powerLobbyAfterVote?: boolean;
+
+  /**
+   * When set (e.g. 4), keep Mingle (open whisper rooms + movement) active while
+   * alive players >= this number. Perfect for focused "Mingle until 4" testing
+   * (12->4, 8->4, etc).
+   */
+  mingleUntilPlayers?: number;
+
+  /**
+   * When combined with mingleUntilPlayers, after each Mingle whisper the runner
+   * will execute a tight minimal VOTE + EMPOWER + COUNCIL elimination instead of
+   * the full rumor/power/etc cycle. This creates a repeatable "Mingle -> Vote loop"
+   * for pure Mingle performance data while still reducing the player count.
+   */
+  forceMingleVoteCycle?: boolean;
 }
 
 export const DEFAULT_CONFIG: GameConfig = {

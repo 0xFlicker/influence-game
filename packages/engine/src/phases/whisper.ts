@@ -439,7 +439,15 @@ export async function runWhisperPhase(
   contextBuilder.currentExcludedPlayerIds = [];
   contextBuilder.currentRoomCounts = [];
 
-  const roomCount = computeRoomCount(alivePlayers.length);
+  const rawRoomCount = computeRoomCount(alivePlayers.length);
+  const forceMingle = config.mingleUntilPlayers != null && alivePlayers.length >= config.mingleUntilPlayers;
+
+  let roomCount = rawRoomCount;
+  if (roomCount === 0 && forceMingle) {
+    // Force at least a couple of rooms so Mingle testing can continue down to the target count (e.g. 4).
+    roomCount = Math.max(2, Math.ceil(alivePlayers.length / 2));
+  }
+
   if (roomCount === 0) {
     logger.logSystem("Open whisper rooms are skipped with fewer than five players alive.", Phase.WHISPER);
     gameState.recordRoomAllocations([], []);
