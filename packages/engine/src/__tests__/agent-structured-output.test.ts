@@ -161,8 +161,12 @@ describe("InfluenceAgent structured output mode", () => {
         };
       };
     }>;
-    expect(tools[0]!.function.parameters.properties.thinking).toBeUndefined();
-    expect(tools[0]!.function.parameters.required).not.toContain("thinking");
+    // We intentionally no longer strip "thinking" for local structured/required tool choice.
+    // Agents must still be able to emit their internal reasoning (populates the gray `thinking:`
+    // in --chatty and the `thinking` on TranscriptEntry) even on local models. The raw
+    // server reasoning_content (if any) goes only to the separate `reasoningContext`.
+    expect(tools[0]!.function.parameters.properties.thinking).toBeDefined();
+    expect(tools[0]!.function.parameters.required).toContain("thinking");
   });
 
   it("uses plain visible messages (no structured thinking+message JSON) in local mode", async () => {
@@ -193,7 +197,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(messages.at(-1)!.content).not.toContain("LOCAL MODEL OUTPUT RULE");
   });
 
-  it("captures native local reasoning_content as viewer thinking", async () => {
+  it("captures native local reasoning_content separately as reasoningContext (not as emitted thinking)", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -214,9 +218,14 @@ describe("InfluenceAgent structured output mode", () => {
 
     const response = await agent.getIntroduction(makeContext(Phase.INTRODUCTION));
 
+    // The raw hidden channel goes only to reasoningContext (cyan in --chatty).
+    // The agent's "emitted" thinking (what it puts under "thinking" in content JSON or tool args)
+    // populates `thinking` (gray). In this stub there was no explicit thinking in content,
+    // so thinking stays empty while the native trace is still captured for observability.
     expect(response).toMatchObject({
-      thinking: "Atlas wants to sound warm while signaling observation.",
+      thinking: "",
       message: "I notice who dodges questions, and I remember.",
+      reasoningContext: "Atlas wants to sound warm while signaling observation.",
     });
     expect(requests[0]?.response_format).toBeUndefined();
   });
@@ -241,5 +250,37 @@ describe("InfluenceAgent structured output mode", () => {
     expect(requests).toHaveLength(2);
     expect(requests[0]?.max_tokens).toBe(16384);
     expect(requests[1]?.max_tokens).toBe(32768);
+  });
+
+  it("keeps explicitly emitted thinking separate from raw reasoningContext on local models", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeTextSequenceOpenAIStub(requests, [
+        {
+          // Model emitted both a structured thinking in content + the hidden channel
+          content: JSON.stringify({
+            thinking: "I should build rapport while noting Finn's evasiveness.",
+            message: "Finn, your stories are always so vivid.",
+          }),
+          reasoningContent: "Deep hidden CoT: Finn is dodging; Vera might be an ally here.",
+        },
+      ]),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const response = await agent.getIntroduction(makeContext(Phase.INTRODUCTION));
+
+    expect(response).toMatchObject({
+      thinking: "I should build rapport while noting Finn's evasiveness.",
+      message: "Finn, your stories are always so vivid.",
+      reasoningContext: "Deep hidden CoT: Finn is dodging; Vera might be an ally here.",
+    });
   });
 });

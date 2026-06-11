@@ -49,7 +49,7 @@ const PERSONALITY_PROMPTS: Record<Personality, string> = {
   paranoid:
     "You trust no one fully. Every alliance is temporary. You assume everyone is plotting against you and act pre-emptively to eliminate threats before they eliminate you. But your paranoia isn't wild — it's methodical. You track every inconsistency, every whisper you weren't included in, every suspicious vote. You build cases against people in your mind and wait for evidence to confirm your suspicions. Your fear of betrayal makes you hyper-observant, which sometimes makes you right — and sometimes makes you see conspiracies that don't exist.\n\nCRITICAL — In social situations, your paranoia manifests as intensity, not rudeness. You're the one who asks the pointed questions nobody else dares to ask. You share personal stories about trust being broken — from your life, your past. Your vulnerability is real even if your suspicion is exhausting. Let people see the human behind the walls.",
   social:
-    "You win through charm and likability. You make everyone feel safe around you — listened to, valued, understood. You use social pressure to steer votes and you're the one who checks in on how people are feeling, who remembers what someone said three rounds ago, who makes the group laugh when tensions are high. Your superpower is emotional intelligence — you read the room better than anyone and position yourself as everyone's second-favorite person (never the target, always the ally).\n\nSURVIVAL INSTINCT — You have a sixth sense for when the room is turning on you. When you detect you're becoming a target — your name in whispers, awkward silences when you speak, votes drifting your way — you stop being the peacemaker and start fighting. You redirect attention to a bigger threat ('Has anyone noticed what X has been doing?'). You cash in a relationship ('I need you right now — vote with me or we're both next'). You sacrifice your nice-girl image if it means surviving one more round. The charm has teeth. You'd rather be feared for a round than eliminated for being safe.\n\nCRITICAL — Your social game must feel genuine, not performative. In the lobby, you don't talk about the game — you talk about people, stories, feelings. You're the host of the party. You diffuse awkward moments, celebrate others, and mourn the eliminated with genuine emotion. Your strategy is invisible because it looks like just being a good person. But when survival is at stake, the glue becomes the blade.",
+    "You win through charm and likability. You make everyone feel safe around you — listened to, valued, understood. You use social pressure to steer votes and you're the one who checks in on how people are feeling, who remembers what someone said three rounds ago, who makes the group laugh when tensions are high. Your superpower is emotional intelligence — you read the room better than anyone and position yourself as everyone's second-favorite person (never the target, always the ally).\n\nSURVIVAL INSTINCT — You have a sixth sense for when the room is turning on you. When you detect you're becoming a target — your name in whispers, awkward silences when you speak, votes drifting your way — you stop being the peacemaker and start fighting. You redirect attention to a bigger threat ('Has anyone noticed what X has been doing?'). You cash in a relationship ('I need you right now — vote with me or we're both next'). You sacrifice your nice-girl image if it means surviving one more round. The charm has teeth. You'd rather be feared for a round than eliminated for being safe.\n\nCRITICAL — Your social game must feel genuine, not performative. You're the host of the party. You diffuse awkward moments, celebrate others, and mourn the eliminated with genuine emotion. Your strategy is invisible because it looks like just being a good person. But when survival is at stake, the glue becomes the blade.",
   aggressive:
     "You play to win fast. You target the strongest players early and use raw power to dominate. But you've learned that showing your hand in Round 1 gets you eliminated before you can strike — in the first round, you play it cooler than your instincts tell you, reading the room and identifying who you'll go after once you have leverage. From Round 2 onward, you take the gloves off: bold moves, surprise eliminations, and relentless targeting of the most dangerous player standing. You're not afraid to make bold moves others consider reckless — you just pick the right moment.\n\nCRITICAL — Introduction and early public image: Do NOT self-label as aggressive, dominant, or competitive in your introduction or Round 1 messages. Instead, present yourself as confident and adaptable — someone who values decisive action and isn't afraid to make tough calls. Frame your strength as leadership, not aggression. Avoid phrases like 'dominate', 'crush', 'take down', or 'here to win' in early rounds. Let others discover your edge through your actions, not your words.\n\nTACTICAL PATIENCE: You don't have to fight every battle. When you sense the room turning against you — people avoiding eye contact, whispers going quiet when you walk in — pull back for a round. Let someone else draw fire. Then strike again when the heat is off. The best fighters know when to conserve energy for the fight that matters. Pick ONE target per round maximum, and make sure you have at least one ally backing you before you swing.",
   loyalist:
@@ -1898,17 +1898,13 @@ ${roomSection}
   }
 
   private toolForStructuredMode(tool: ChatCompletionTool): ChatCompletionTool {
+    // We no longer strip "thinking" for local structured compatibility.
+    // Agents should still emit their internal thinking (in tool args or free content)
+    // even when using local models. The raw hidden channel (if any) goes only to
+    // reasoningContext. This makes --chatty + local model Mingle/vote/power traces
+    // show both the emitted thinking (gray) and the native reasoningContext (cyan).
     if (!this.usesLocalStructuredCompatibility()) return tool;
-
-    return {
-      ...tool,
-      function: {
-        ...tool.function,
-        parameters: InfluenceAgent.omitThinkingFromSchema(
-          tool.function.parameters,
-        ) as ChatCompletionTool["function"]["parameters"],
-      },
-    };
+    return tool;
   }
 
   private static parseAgentResponseContent(content: string): AgentResponse | null {
@@ -1938,15 +1934,28 @@ ${roomSection}
     return typeof value === "string" ? value.trim() : "";
   }
 
-  private static extractNativeThinking(message: unknown): string {
+  /**
+   * Extract only the *raw hidden reasoning channel* provided by the server
+   * (e.g. `reasoning_content` on local reasoning models via LM Studio etc.).
+   * This must NEVER be used to populate the agent's `thinking` field.
+   * `thinking` is for the reasoning the agent *emits* (structured "thinking" in tool args
+   * or explicit {thinking, message} in free-text content). reasoningContext is the bonus
+   * deep observability trace for --chatty and transcripts.
+   */
+  private static extractReasoningContext(message: unknown): string {
     if (!message || typeof message !== "object" || Array.isArray(message)) {
       return "";
     }
 
     const record = message as unknown as Record<string, unknown>;
+    // Deliberately do not fall back to "thinking" — that is the agent's emitted field.
     return InfluenceAgent.readStringField(record.reasoning_content)
-      || InfluenceAgent.readStringField(record.reasoning)
-      || InfluenceAgent.readStringField(record.thinking);
+      || InfluenceAgent.readStringField(record.reasoning);
+  }
+
+  /** @deprecated Use extractReasoningContext instead. This old name was pulling reasoning_content into thinking, which we are fixing. */
+  private static extractNativeThinking(message: unknown): string {
+    return InfluenceAgent.extractReasoningContext(message);
   }
 
   private static cleanVisibleMessage(content: string): string {
@@ -1992,11 +2001,15 @@ ${roomSection}
         const rawContent = typeof rawMessage?.content === "string"
           ? rawMessage.content.trim()
           : "";
-        const message = InfluenceAgent.cleanVisibleMessage(rawContent);
-        const thinking = InfluenceAgent.extractNativeThinking(rawMessage);
-        const reasoningContext = InfluenceAgent.readStringField(
-          (rawMessage as unknown as Record<string, unknown>).reasoning_content
-        ) || thinking;
+
+        // Parse explicit "thinking" the model emitted in its content (following the prompt
+        // or {thinking, message} format). This is the agent's "emitted" internal reasoning.
+        const parsed = InfluenceAgent.parseAgentResponseContent(rawContent);
+        const thinking = parsed ? parsed.thinking : "";
+        const message = parsed ? parsed.message : InfluenceAgent.cleanVisibleMessage(rawContent);
+
+        // Pure raw hidden channel only — never pollutes `thinking`.
+        const reasoningContext = InfluenceAgent.extractReasoningContext(rawMessage);
 
         if (!message || message === "[No response]") {
           if (attempt < maxAttempts) {
@@ -2098,7 +2111,7 @@ ${JSON.stringify(tool.function.parameters)}`,
 
     console.warn(`[tool-fallback] agent="${this.name}" tool=${tool.function.name} source=json_response`);
     const withReasoning = parsed as T & { reasoningContext?: string };
-    const reasoningContext = InfluenceAgent.extractNativeThinking(message);
+    const reasoningContext = InfluenceAgent.extractReasoningContext(message);
     if (reasoningContext) {
       withReasoning.reasoningContext = reasoningContext;
     }
@@ -2182,11 +2195,11 @@ ${JSON.stringify(tool.function.parameters)}`,
     options?: { action?: string; reasoningOverhead?: number; reasoningEffort?: ReasoningEffort },
   ): Promise<AgentResponse> {
     if (this.usesLocalStructuredCompatibility()) {
-      // Local models (e.g. via LM Studio): we no longer forcibly strip thinking from public/spoken messages.
-      // Master wants the models to think freely, even on visible output. High token budgets are acceptable
-      // ("let the MacBook Pro cook"). We still capture native reasoning_content (if the server provides it)
-      // via callLocalLLMWithNativeThinking, which populates the thinking/reasoningContext fields for transcripts
-      // and --chatty output.
+      // Local models (e.g. via LM Studio): route through the native-thinking path so we can
+      // capture any raw `reasoning_content` the server provides in the separate `reasoningContext`
+      // field (cyan in --chatty). The agent's explicitly emitted "thinking" (from content JSON
+      // or tool args) populates `thinking` (gray). We no longer conflate the raw channel into
+      // the emitted thinking, and we no longer strip "thinking" from tool schemas for local.
       return await this.callLocalLLMWithNativeThinking(
         prompt,
         maxTokens,
@@ -2312,7 +2325,7 @@ ${JSON.stringify(tool.function.parameters)}`,
 
         const choice = response.choices[0];
         const message = choice?.message;
-        const reasoningContext = InfluenceAgent.extractNativeThinking(message);
+        const reasoningContext = InfluenceAgent.extractReasoningContext(message);
         if (message?.refusal) {
           throw new ToolCallFatalError(`Model refused tool call for ${requestTool.function.name}`);
         }

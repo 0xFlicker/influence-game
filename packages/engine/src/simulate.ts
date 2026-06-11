@@ -501,11 +501,21 @@ function formatEntry(e: TranscriptEntry): string {
   const prefix = `R${e.round}/${e.phase}`;
   const scopeTag = e.scope === "mingle" ? ` [mingle→${e.to?.join(",") || ""}]` : e.scope === "whisper" ? ` [whisper→${e.to?.join(",") || ""}]` : e.scope === "thinking" ? " [thinking]" : "";
   let line = `${prefix} ${e.from}${scopeTag}: ${e.text}`;
-  if (e.thinking) {
-    line += `\n    ${dim}${gray}thinking: ${e.thinking}${reset}`;
-  }
-  if (e.reasoningContext) {
+  const t = (e.thinking || "").trim();
+  const r = (e.reasoningContext || "").trim();
+  if (t && r && t === r) {
+    // Identical content (common for local reasoning models + tool "thinking" schema):
+    // show the raw native reasoningContext once (cyan). Streaming reasoning contexts
+    // are first-class for --chatty Mingle/local model observability; duplicate reprint
+    // after the message (e.g. under "summary prompt" history in takeMingleTurn) is not needed.
     line += `\n    ${cyan}reasoning: ${e.reasoningContext}${reset}`;
+  } else {
+    if (e.thinking) {
+      line += `\n    ${dim}${gray}thinking: ${e.thinking}${reset}`;
+    }
+    if (e.reasoningContext) {
+      line += `\n    ${cyan}reasoning: ${e.reasoningContext}${reset}`;
+    }
   }
   // Color system/House lines for better readability
   if (e.from === "House" || e.scope === "system") {

@@ -331,7 +331,8 @@ export interface GameConfig {
   timers: {
     introduction: number;
     lobby: number;
-    whisper: number;
+    whisper: number; // legacy key for the private-room phase duration (still used internally by engine)
+    mingle?: number; // current key for MINGLE room phase (preferred for new games; mapped to whisper internally in api layer)
     rumor: number;
     vote: number;
     power: number;
