@@ -76,7 +76,14 @@ export async function runPowerPhase(
 
   const scores = gameState.getExposeScores();
   const aliveIds = gameState.getAlivePlayerIds();
-  const sorted = [...aliveIds].sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0));
+
+  // Provisional council candidates must never include the empowered player
+  // (empowered cannot be exposed or considered for council). Compute the
+  // "top exposed" for the block from the non-empowered pool only. Raw
+  // exposePressure (for the diagnostic "Top expose pressure" line) still
+  // reflects all cast votes.
+  const candidatePool = empoweredId ? aliveIds.filter((id) => id !== empoweredId) : aliveIds;
+  const sorted = [...candidatePool].sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0));
   const sorted0 = sorted[0];
   const sorted1 = sorted[1];
   if (!sorted0) throw new Error("No players to sort for power phase preliminary candidates");

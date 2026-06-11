@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   buildSimulationConfig,
   computeAggregateStats,
-  isOpenWhisperVariant,
+  isMingleVariant,
   isPowerLobbyVariant,
   parseArgs,
   type GameResult,
@@ -49,7 +49,7 @@ describe("simulation variant config", () => {
     const config = buildSimulationConfig("baseline");
 
     expect(config.powerLobbyAfterVote).toBe(false);
-    expect(config.whisperSessionsPerRound).toBe(2);
+    expect(config.mingleSessionsPerRound).toBe(2);
   });
 
   it("applies simulator-only LLM call bounds", () => {
@@ -71,22 +71,22 @@ describe("simulation variant config", () => {
 
   it("maps single-feature simulator variants to the correct flags", () => {
     expect(isPowerLobbyVariant("power-lobby")).toBe(true);
-    expect(isOpenWhisperVariant("power-lobby")).toBe(false);
+    expect(isMingleVariant("power-lobby")).toBe(false);
     expect(buildSimulationConfig("power-lobby").powerLobbyAfterVote).toBe(true);
 
     expect(isPowerLobbyVariant("mingle")).toBe(false);
-    expect(isOpenWhisperVariant("mingle")).toBe(true);
+    expect(isMingleVariant("mingle")).toBe(true);
     expect(buildSimulationConfig("mingle").powerLobbyAfterVote).toBe(false);
-    expect(buildSimulationConfig("mingle").whisperSessionsPerRound).toBe(2);
+    expect(buildSimulationConfig("mingle").mingleSessionsPerRound).toBe(2);
   });
 
   it("maps combined simulator variants to both experimental flags", () => {
     const config = buildSimulationConfig("power-lobby-mingle");
 
     expect(isPowerLobbyVariant("power-lobby-mingle")).toBe(true);
-    expect(isOpenWhisperVariant("power-lobby-mingle")).toBe(true);
+    expect(isMingleVariant("power-lobby-mingle")).toBe(true);
     expect(config.powerLobbyAfterVote).toBe(true);
-    expect(config.whisperSessionsPerRound).toBe(2);
+    expect(config.mingleSessionsPerRound).toBe(2);
   });
 
   it("computes partial aggregate stats from completed games only", () => {

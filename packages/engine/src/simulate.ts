@@ -11,10 +11,6 @@
  *   bun run simulate -- --variant mingle
  *   bun run simulate -- --variant power-lobby-mingle
  *
- * Focused Mingle testing (tight Mingle -> Vote loop until 4 players, then standard):
- *   bun run simulate:local -- --games 1 --players 8 --model google/gemma-4-26b-a4b-qat \
- *     --variant mingle-loop --mingle-until-players 4
- *
  * Chatty / live formatted transcript (great for watching local model Mingle behavior and per-decision reasoning):
  *   INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
  *   bun run simulate:local -- --games 1 --players 8 --model google/gemma-4-26b-a4b-qat \
@@ -194,7 +190,7 @@ const POWER_LOBBY_VARIANTS = new Set([
   "mingle-power-lobby-v2",
 ]);
 
-const OPEN_WHISPER_VARIANTS = new Set([
+const MINGLE_VARIANTS = new Set([
   "baseline",
   "mingle",
   "power-lobby-mingle",
@@ -207,22 +203,22 @@ export function isPowerLobbyVariant(variant: string): boolean {
   return POWER_LOBBY_VARIANTS.has(variant.toLowerCase());
 }
 
-export function isOpenWhisperVariant(variant: string): boolean {
-  return OPEN_WHISPER_VARIANTS.has(variant.toLowerCase());
+export function isMingleVariant(variant: string): boolean {
+  return MINGLE_VARIANTS.has(variant.toLowerCase());
 }
 
 export function buildSimulationConfig(
   variant: string,
   options: { agentActionTimeoutMs?: number } = {},
 ): GameConfig {
-  const openWhisper = isOpenWhisperVariant(variant);
+  const mingle = isMingleVariant(variant);
 
   return {
     ...DEFAULT_CONFIG,
     timers: {
       introduction: 0,
       lobby: 0,
-      whisper: 0,
+      mingle: 0,
       rumor: 0,
       vote: 0,
       power: 0,
@@ -243,8 +239,8 @@ export function buildSimulationConfig(
     enableStrategicReflections: false,
     lobbyMessagesPerPlayer: 1,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),
-    whisperSessionsPerRound: openWhisper ? 2 : DEFAULT_CONFIG.whisperSessionsPerRound,
-    minglePairCooldownRounds: openWhisper ? 1 : 0,
+    mingleSessionsPerRound: mingle ? 2 : DEFAULT_CONFIG.mingleSessionsPerRound,
+    minglePairCooldownRounds: mingle ? 1 : 0,
     agentActionTimeoutMs: options.agentActionTimeoutMs ?? 90_000,
   };
 }

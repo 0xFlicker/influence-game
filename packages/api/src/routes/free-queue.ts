@@ -230,8 +230,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
     const timerPresets = {
       introduction: 30000,
       lobby: 30000,
-      whisper: 45000, // legacy key (tolerated)
-      mingle: 45000,  // current Mingle room phase timer key per plan
+      mingle: 45000,
       rumor: 30000,
       vote: 20000,
       power: 15000,

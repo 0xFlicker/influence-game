@@ -9,21 +9,23 @@ import {
 async function withEndgameVoteTimeout(
   ctx: PhaseRunnerContext,
   label: string,
-  operation: Promise<UUID>,
+  operation: (signal: AbortSignal) => Promise<UUID>,
   fallback: () => UUID,
 ): Promise<UUID> {
   const timeoutMs = ctx.config.agentActionTimeoutMs;
-  if (!timeoutMs || timeoutMs < 1) return operation;
+  if (!timeoutMs || timeoutMs < 1) return operation(new AbortController().signal);
 
+  const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<UUID>((resolve) => {
     timeout = setTimeout(() => {
       ctx.logger.logSystem(`${label} timed out after ${timeoutMs}ms; using House fallback.`, Phase.VOTE);
       resolve(fallback());
+      controller.abort();
     }, timeoutMs);
   });
 
-  return Promise.race([operation, timeoutPromise]).finally(() => {
+  return Promise.race([operation(controller.signal), timeoutPromise]).finally(() => {
     if (timeout) clearTimeout(timeout);
   });
 }
@@ -153,7 +155,7 @@ export async function runReckoningVote(
       const vote = await withEndgameVoteTimeout(
         ctx,
         `${player.name} reckoning vote`,
-        agent.getEndgameEliminationVote(phaseCtx),
+        (signal) => agent.getEndgameEliminationVote(phaseCtx, { signal }),
         () => fallbackEliminationTarget(ctx, player.id),
       );
       gameState.recordEndgameEliminationVote(player.id, vote);
@@ -193,7 +195,7 @@ export async function runTribunalVote(
       const vote = await withEndgameVoteTimeout(
         ctx,
         `${player.name} tribunal vote`,
-        agent.getEndgameEliminationVote(phaseCtx),
+        (signal) => agent.getEndgameEliminationVote(phaseCtx, { signal }),
         () => fallbackEliminationTarget(ctx, player.id),
       );
       gameState.recordEndgameEliminationVote(player.id, vote);
@@ -216,7 +218,7 @@ export async function runTribunalVote(
         const vote = await withEndgameVoteTimeout(
           ctx,
           `${juror.playerName} tribunal jury tiebreaker vote`,
-          jurorAgent.getEndgameEliminationVote(phaseCtx),
+          (signal) => jurorAgent.getEndgameEliminationVote(phaseCtx, { signal }),
           () => fallbackEliminationTarget(ctx, juror.playerId),
         );
         juryTiebreakerVotes[juror.playerId] = vote;

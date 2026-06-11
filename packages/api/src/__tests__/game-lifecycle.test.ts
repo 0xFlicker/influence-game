@@ -124,8 +124,7 @@ async function createGameInDB(
     timers: {
       introduction: 0,
       lobby: 0,
-      whisper: 0, // legacy key ok for test duration=0
-      mingle: 0,  // current key also exercised
+      mingle: 0,
       rumor: 0,
       vote: 0,
       power: 0,

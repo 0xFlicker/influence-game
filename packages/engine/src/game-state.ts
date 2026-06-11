@@ -323,7 +323,14 @@ export class GameState {
     }
 
     const scores = this.getExposeScores();
-    const sorted = alive.sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0));
+
+    // Empowered player cannot be exposed or considered for council (per rule).
+    // Exclude them from eligibility *before* sorting so the top exposed are always
+    // chosen from non-empowered players. (Raw expose votes on them are still
+    // recorded for memory/transcripts, but do not create council pressure.)
+    const empowered = this._empoweredId;
+    const eligibleForCouncil = alive.filter((id) => id !== empowered);
+    const sorted = eligibleForCouncil.sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0));
 
     const action = this._powerAction?.action ?? "pass";
     const target = this._powerAction?.target;
@@ -333,13 +340,19 @@ export class GameState {
       return { candidates: null, autoEliminated: target, shieldGranted: null };
     }
 
-    // Start with top 2
+    // Start with top 2 (guaranteed non-empowered by the eligible sort above)
     let candidateList = [...sorted];
 
     // Remove shielded players from eligibility
     candidateList = candidateList.filter(
       (id) => !this._players.get(id)?.shielded,
     );
+
+    // Explicit defense-in-depth: never allow the empowered into the final list
+    // (in case of any future path that re-introduces them).
+    if (empowered) {
+      candidateList = candidateList.filter((id) => id !== empowered);
+    }
 
     if (action === "protect" && target && this._empoweredId) {
       // Protected player is not a candidate; they gain a shield

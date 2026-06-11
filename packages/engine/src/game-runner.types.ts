@@ -68,6 +68,10 @@ export interface PowerLobbyExposure {
   score: number;
 }
 
+export interface AgentCallOptions {
+  signal?: AbortSignal;
+}
+
 // ---------------------------------------------------------------------------
 // Agent interface (implemented by InfluenceAgent in agent.ts)
 // ---------------------------------------------------------------------------
@@ -122,23 +126,23 @@ export interface IAgent {
 
   // --- Endgame methods ---
   /** Reckoning: public plea to the group */
-  getPlea(context: PhaseContext): Promise<AgentResponse>;
+  getPlea(context: PhaseContext, options?: AgentCallOptions): Promise<AgentResponse>;
   /** Reckoning/Tribunal: vote to eliminate one player (simple plurality) */
-  getEndgameEliminationVote(context: PhaseContext): Promise<UUID>;
+  getEndgameEliminationVote(context: PhaseContext, options?: AgentCallOptions): Promise<UUID>;
   /** Tribunal: publicly accuse one player */
-  getAccusation(context: PhaseContext): Promise<{ targetId: UUID; text: string; thinking?: string; reasoningContext?: string }>;
+  getAccusation(context: PhaseContext, options?: AgentCallOptions): Promise<{ targetId: UUID; text: string; thinking?: string; reasoningContext?: string }>;
   /** Tribunal: defend against an accusation */
-  getDefense(context: PhaseContext, accusation: string, accuserName: string): Promise<AgentResponse>;
+  getDefense(context: PhaseContext, accusation: string, accuserName: string, options?: AgentCallOptions): Promise<AgentResponse>;
   /** Judgment: opening statement to the jury */
-  getOpeningStatement(context: PhaseContext): Promise<AgentResponse>;
+  getOpeningStatement(context: PhaseContext, options?: AgentCallOptions): Promise<AgentResponse>;
   /** Judgment: juror asks one question to one finalist */
-  getJuryQuestion(context: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string; thinking?: string; reasoningContext?: string }>;
+  getJuryQuestion(context: PhaseContext, finalistIds: [UUID, UUID], options?: AgentCallOptions): Promise<{ targetFinalistId: UUID; question: string; thinking?: string; reasoningContext?: string }>;
   /** Judgment: finalist answers a jury question */
-  getJuryAnswer(context: PhaseContext, question: string, jurorName: string): Promise<AgentResponse>;
+  getJuryAnswer(context: PhaseContext, question: string, jurorName: string, options?: AgentCallOptions): Promise<AgentResponse>;
   /** Judgment: closing argument to the jury */
-  getClosingArgument(context: PhaseContext): Promise<AgentResponse>;
+  getClosingArgument(context: PhaseContext, options?: AgentCallOptions): Promise<AgentResponse>;
   /** Judgment: juror votes for the winner */
-  getJuryVote(context: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID>;
+  getJuryVote(context: PhaseContext, finalistIds: [UUID, UUID], options?: AgentCallOptions): Promise<UUID>;
 
   // --- Strategic reflection (called after diary room) ---
   /** Produce a strategic reflection after diary room interview */
@@ -171,14 +175,14 @@ export interface PhaseContext {
   mingleMessages: Array<{ from: string; text: string }>;
   empoweredId?: UUID;
   councilCandidates?: [UUID, UUID];
-  // Room allocation context (whisper rooms)
+  // Mingle room allocation context
   /** Number of available rooms this round */
   roomCount?: number;
   /** Current occupant count for each room. Player identities outside the current room are hidden. */
   roomCounts?: WhisperRoomCount[];
   /** This agent's current local room number, if they are in a Mingle room. */
   currentRoomId?: number;
-  /** Room assignments for this round (if whisper phase completed) */
+  /** Room assignments for this round (if Mingle phase completed) */
   roomAllocations?: Array<{ roomId: number; beat: number; playerIds: string[]; playerNames: string[] }>;
   /** This agent's current room occupants, including self */
   roomMates?: string[];
@@ -225,7 +229,7 @@ export interface TranscriptEntry {
   anonymous?: boolean;
   /** Shuffled display position for anonymous rumors */
   displayOrder?: number;
-  /** Room ID this whisper happened in (room-based whisper system) */
+  /** Room ID for this private-room message */
   roomId?: number;
   /** Room allocation metadata attached to system events */
   roomMetadata?: {

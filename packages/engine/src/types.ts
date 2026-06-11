@@ -162,12 +162,12 @@ export interface WhisperMessage {
   text: string;
   round: number;
   timestamp: number;
-  /** Room ID this whisper happened in (new room-based whisper system) */
+  /** Room ID for this private-room message */
   roomId?: number;
 }
 
 // ---------------------------------------------------------------------------
-// Whisper room allocation
+// Mingle room allocation
 // ---------------------------------------------------------------------------
 
 export interface RoomAllocation {
@@ -331,8 +331,7 @@ export interface GameConfig {
   timers: {
     introduction: number;
     lobby: number;
-    whisper: number; // legacy key for the private-room phase duration (still used internally by engine)
-    mingle?: number; // current key for MINGLE room phase (preferred for new games; mapped to whisper internally in api layer)
+    mingle: number;
     rumor: number;
     vote: number;
     power: number;
@@ -364,12 +363,8 @@ export interface GameConfig {
   lobbyMessagesPerPlayer?: number;
   /** Enable hidden pre-lobby intent calls before public lobby messages (default true). */
   enableLobbyIntent?: boolean;
-  /** Max whisper conversations per agent per round (default 2). Scarcity makes whispers more strategic. */
-  maxWhisperPairsPerAgent?: number;
-  /** Max message exchanges per whisper conversation (default 2). Each exchange = 1 message per agent. */
-  maxWhisperExchanges?: number;
   /** Number of open-room movement beats per round (default 2). */
-  whisperSessionsPerRound?: number;
+  mingleSessionsPerRound?: number;
   /** Number of previous Mingle rounds whose exact player pairs should be avoided when practical. */
   minglePairCooldownRounds?: number;
   /** Max milliseconds to wait for a single endgame agent action before using a House fallback. */
@@ -382,7 +377,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   timers: {
     introduction: 30_000, // 30s for prototype
     lobby: 30_000,
-    whisper: 45_000,
+    mingle: 45_000,
     rumor: 30_000,
     vote: 20_000,
     power: 15_000,

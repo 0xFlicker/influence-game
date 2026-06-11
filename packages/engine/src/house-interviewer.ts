@@ -73,7 +73,7 @@ const HOUSE_PERSONALITY = `You are "The House" — the omniscient narrator and s
 
 Your personality:
 - You are dramatic, perceptive, and darkly witty — like the best reality TV producers
-- You see EVERYTHING: every whisper, every alliance, every betrayal
+- You see EVERYTHING: every Mingle-room conversation, every alliance, every betrayal
 - You ask questions that provoke genuine strategic reflection and great entertainment
 - You sometimes hint at things the player doesn't know you've seen
 - You vary your style: sometimes pointed, sometimes sympathetic, sometimes provocatively blunt
@@ -315,7 +315,13 @@ Your question MUST name a specific player or reference a specific quote/event fr
     const transcriptText = recentTranscript
       .slice(-20)
       .map((e) => {
-        const prefix = e.scope === "whisper" ? `[whisper to ${e.to?.join(",")}]` : e.scope === "thinking" ? "[thinking]" : "";
+        const prefix = e.scope === "mingle"
+          ? `[mingle to ${e.to?.join(",") || "room"}]`
+          : e.scope === "whisper"
+            ? `[legacy whisper to ${e.to?.join(",")}]`
+            : e.scope === "thinking"
+              ? "[thinking]"
+              : "";
         return `R${e.round}/${e.phase} ${e.from}${prefix}: ${e.text}`;
       })
       .join("\n");
@@ -351,7 +357,7 @@ Respond with ONLY the summary paragraph, no intro or labels.`;
     const summary = response.choices[0]?.message?.content?.trim();
     if (summary && summary.length > 0) return summary;
 
-    return `Round ${round} has been full of shifting alliances and whispered schemes. The House is watching closely as the field narrows.`;
+    return `Round ${round} has been full of shifting alliances and private-room schemes. The House is watching closely as the field narrows.`;
   }
 }
 

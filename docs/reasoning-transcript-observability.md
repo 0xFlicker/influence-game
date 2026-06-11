@@ -1,10 +1,10 @@
 # Reasoning & Transcript Observability
 
-These rules and patterns apply to the game engine (`packages/engine`) for surfacing agent internal reasoning during simulations, particularly for Mingle / open-whisper workflows and decision phases.
+These rules and patterns apply to the game engine (`packages/engine`) for surfacing agent internal reasoning during simulations, particularly for Mingle workflows and decision phases.
 
 ## Purpose
 
-Private `thinking` + raw `reasoningContext` (local `reasoning_content` etc.) are captured so that long unattended `--chatty` runs (especially Mingle/open-whisper + tight vote/power/council loops for 8→4 player testing) are actually debuggable and enjoyable for the human. Agents' real rationale for empower/expose votes, power actions (pass/protect/eliminate), and council votes (including empowered tiebreakers) must be visible in the terminal and persisted in transcripts.
+Private `thinking` + raw `reasoningContext` (local `reasoning_content` etc.) are captured so that long unattended `--chatty` runs (especially Mingle + vote/power/council loops for 8->4 player testing) are actually debuggable and enjoyable for the human. Agents' real rationale for empower/expose votes, power actions (pass/protect/eliminate), and council votes (including empowered tiebreakers) must be visible in the terminal and persisted in transcripts.
 
 This observability layer exists because "master wants to see reasoning for voting as well" and equivalent signals for power and council decisions. Public player messages stay clean; the hidden reasoning is only for viewers, replays, and simulation analysis.
 
@@ -184,7 +184,7 @@ Recommended invocation for Mingle + visibility work:
 ```bash
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
-    --variant open-whisper --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
+    --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
 The "Progress: R1 VOTE | alive=..." lines + the following House action lines are now the primary place humans see per-agent rationale in real time.

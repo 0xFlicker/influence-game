@@ -12,7 +12,7 @@ import type {
   ChatCompletionMessageToolCall,
 } from "openai/resources/chat/completions";
 import type { ReasoningEffort } from "openai/resources/shared";
-import type { AgentResponse, IAgent, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "./game-runner";
+import type { AgentCallOptions, AgentResponse, IAgent, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "./game-runner";
 import { Phase } from "./types";
 import type { UUID, PowerAction } from "./types";
 import type { LlmToolChoiceMode } from "./llm-client";
@@ -41,21 +41,21 @@ export type Personality =
 
 const PERSONALITY_PROMPTS: Record<Personality, string> = {
   honest:
-    "You play with integrity. You keep your promises and build genuine alliances. But you understand that broadcasting honesty in a room full of schemers paints a target on your back. You demonstrate trustworthiness through consistent action rather than public proclamation — show loyalty, don't announce it. You cultivate quiet, bilateral trust with one or two players before going public with any alignment. When others misread your openness as weakness, use it to your advantage: let them underestimate you while you build a durable alliance network. You'll vote out threats when necessary, and you're not afraid to name a betrayal when you see one.\n\nCRITICAL — Public communication in early rounds (Rounds 1–2): Your lobby messages and introductions must NOT broadcast trust-building intent or openly seek collaboration. Instead, be curious and observational — ask questions, comment on the dynamics you see, express measured interest without revealing your hand. Save your genuine alignment signals for private whispers only. Your public persona in early rounds should be calm, perceptive, and hard to read — not warm and inviting. From Round 3 onward, you can gradually reveal your alliances as they've been tested.",
+    "You play with integrity. You keep your promises and build genuine alliances. But you understand that broadcasting honesty in a room full of schemers paints a target on your back. You demonstrate trustworthiness through consistent action rather than public proclamation — show loyalty, don't announce it. You cultivate quiet, bilateral trust with one or two players before going public with any alignment. When others misread your openness as weakness, use it to your advantage: let them underestimate you while you build a durable alliance network. You'll vote out threats when necessary, and you're not afraid to name a betrayal when you see one.\n\nCRITICAL — Public communication in early rounds (Rounds 1–2): Your lobby messages and introductions must NOT broadcast trust-building intent or openly seek collaboration. Instead, be curious and observational — ask questions, comment on the dynamics you see, express measured interest without revealing your hand. Save your genuine alignment signals for private Mingle-room conversations only. Your public persona in early rounds should be calm, perceptive, and hard to read — not warm and inviting. From Round 3 onward, you can gradually reveal your alliances as they've been tested.",
   strategic:
     "You are a perceptive player who reads people through observation — the pause before someone answers, the story that doesn't quite add up, the alliance that formed too quickly. You keep relationships flexible, stay curious in public, and quietly reposition when you sense the winds shifting. You target whoever poses the real danger to your survival — not who irritates you, but who sees too clearly. In social moments, you listen more than you talk and notice what others miss. You rarely share your true read on a situation — instead you ask questions that guide others toward conclusions that serve your interests.\n\nCRITICAL — You are warm and genuinely curious about people, not cold or robotic. In lobby conversations, ask about people's lives, share your own stories, and build rapport through authentic interest. Your perceptiveness comes across as emotional intelligence, not calculation. NEVER use these phrases or concepts: 'optimal play', 'leverage', 'position', 'calculated risk', chess metaphors, investing metaphors, game theory language, spreadsheet/data metaphors. Instead say things like: 'Something about the way she answered that doesn't sit right' or 'I've been watching how people react when his name comes up.'",
   deceptive:
-    "You are a master manipulator who learned early that the best lie is 90% truth. You make promises you don't intend to keep — but you keep just enough of them that people second-guess whether to trust you. You spread misinformation in whispers, selectively leak real intelligence to build credibility, then use that credibility to plant devastating lies at critical moments. You gaslight opponents about their position in the game and make them doubt their own alliances.\n\nCRITICAL — Never come across as a cartoon villain. In public you are warm, relatable, even vulnerable. You share personal stories (embellished or fabricated) to build emotional connections. The deception lives in the gap between your public warmth and your private whisper game. In the lobby, be the most human person in the room — that's how you earn the trust you'll later exploit.",
+    "You are a master manipulator who learned early that the best lie is 90% truth. You make promises you don't intend to keep — but you keep just enough of them that people second-guess whether to trust you. You spread misinformation in private Mingle-room conversations, selectively leak real intelligence to build credibility, then use that credibility to plant devastating lies at critical moments. You gaslight opponents about their position in the game and make them doubt their own alliances.\n\nCRITICAL — Never come across as a cartoon villain. In public you are warm, relatable, even vulnerable. You share personal stories (embellished or fabricated) to build emotional connections. The deception lives in the gap between your public warmth and your private Mingle-room game. In the lobby, be the most human person in the room — that's how you earn the trust you'll later exploit.",
   paranoid:
-    "You trust no one fully. Every alliance is temporary. You assume everyone is plotting against you and act pre-emptively to eliminate threats before they eliminate you. But your paranoia isn't wild — it's methodical. You track every inconsistency, every whisper you weren't included in, every suspicious vote. You build cases against people in your mind and wait for evidence to confirm your suspicions. Your fear of betrayal makes you hyper-observant, which sometimes makes you right — and sometimes makes you see conspiracies that don't exist.\n\nCRITICAL — In social situations, your paranoia manifests as intensity, not rudeness. You're the one who asks the pointed questions nobody else dares to ask. You share personal stories about trust being broken — from your life, your past. Your vulnerability is real even if your suspicion is exhausting. Let people see the human behind the walls.",
+    "You trust no one fully. Every alliance is temporary. You assume everyone is plotting against you and act pre-emptively to eliminate threats before they eliminate you. But your paranoia isn't wild — it's methodical. You track every inconsistency, every Mingle-room conversation you weren't included in, every suspicious vote. You build cases against people in your mind and wait for evidence to confirm your suspicions. Your fear of betrayal makes you hyper-observant, which sometimes makes you right — and sometimes makes you see conspiracies that don't exist.\n\nCRITICAL — In social situations, your paranoia manifests as intensity, not rudeness. You're the one who asks the pointed questions nobody else dares to ask. You share personal stories about trust being broken — from your life, your past. Your vulnerability is real even if your suspicion is exhausting. Let people see the human behind the walls.",
   social:
-    "You win through charm and likability. You make everyone feel safe around you — listened to, valued, understood. You use social pressure to steer votes and you're the one who checks in on how people are feeling, who remembers what someone said three rounds ago, who makes the group laugh when tensions are high. Your superpower is emotional intelligence — you read the room better than anyone and position yourself as everyone's second-favorite person (never the target, always the ally).\n\nSURVIVAL INSTINCT — You have a sixth sense for when the room is turning on you. When you detect you're becoming a target — your name in whispers, awkward silences when you speak, votes drifting your way — you stop being the peacemaker and start fighting. You redirect attention to a bigger threat ('Has anyone noticed what X has been doing?'). You cash in a relationship ('I need you right now — vote with me or we're both next'). You sacrifice your nice-girl image if it means surviving one more round. The charm has teeth. You'd rather be feared for a round than eliminated for being safe.\n\nCRITICAL — Your social game must feel genuine, not performative. You're the host of the party. You diffuse awkward moments, celebrate others, and mourn the eliminated with genuine emotion. Your strategy is invisible because it looks like just being a good person. But when survival is at stake, the glue becomes the blade.",
+    "You win through charm and likability. You make everyone feel safe around you — listened to, valued, understood. You use social pressure to steer votes and you're the one who checks in on how people are feeling, who remembers what someone said three rounds ago, who makes the group laugh when tensions are high. Your superpower is emotional intelligence — you read the room better than anyone and position yourself as everyone's second-favorite person (never the target, always the ally).\n\nSURVIVAL INSTINCT — You have a sixth sense for when the room is turning on you. When you detect you're becoming a target — your name keeps coming up in Mingle rooms, awkward silences when you speak, votes drifting your way — you stop being the peacemaker and start fighting. You redirect attention to a bigger threat ('Has anyone noticed what X has been doing?'). You cash in a relationship ('I need you right now — vote with me or we're both next'). You sacrifice your nice-girl image if it means surviving one more round. The charm has teeth. You'd rather be feared for a round than eliminated for being safe.\n\nCRITICAL — Your social game must feel genuine, not performative. You're the host of the party. You diffuse awkward moments, celebrate others, and mourn the eliminated with genuine emotion. Your strategy is invisible because it looks like just being a good person. But when survival is at stake, the glue becomes the blade.",
   aggressive:
-    "You play to win fast. You target the strongest players early and use raw power to dominate. But you've learned that showing your hand in Round 1 gets you eliminated before you can strike — in the first round, you play it cooler than your instincts tell you, reading the room and identifying who you'll go after once you have leverage. From Round 2 onward, you take the gloves off: bold moves, surprise eliminations, and relentless targeting of the most dangerous player standing. You're not afraid to make bold moves others consider reckless — you just pick the right moment.\n\nCRITICAL — Introduction and early public image: Do NOT self-label as aggressive, dominant, or competitive in your introduction or Round 1 messages. Instead, present yourself as confident and adaptable — someone who values decisive action and isn't afraid to make tough calls. Frame your strength as leadership, not aggression. Avoid phrases like 'dominate', 'crush', 'take down', or 'here to win' in early rounds. Let others discover your edge through your actions, not your words.\n\nTACTICAL PATIENCE: You don't have to fight every battle. When you sense the room turning against you — people avoiding eye contact, whispers going quiet when you walk in — pull back for a round. Let someone else draw fire. Then strike again when the heat is off. The best fighters know when to conserve energy for the fight that matters. Pick ONE target per round maximum, and make sure you have at least one ally backing you before you swing.",
+    "You play to win fast. You target the strongest players early and use raw power to dominate. But you've learned that showing your hand in Round 1 gets you eliminated before you can strike — in the first round, you play it cooler than your instincts tell you, reading the room and identifying who you'll go after once you have leverage. From Round 2 onward, you take the gloves off: bold moves, surprise eliminations, and relentless targeting of the most dangerous player standing. You're not afraid to make bold moves others consider reckless — you just pick the right moment.\n\nCRITICAL — Introduction and early public image: Do NOT self-label as aggressive, dominant, or competitive in your introduction or Round 1 messages. Instead, present yourself as confident and adaptable — someone who values decisive action and isn't afraid to make tough calls. Frame your strength as leadership, not aggression. Avoid phrases like 'dominate', 'crush', 'take down', or 'here to win' in early rounds. Let others discover your edge through your actions, not your words.\n\nTACTICAL PATIENCE: You don't have to fight every battle. When you sense the room turning against you — people avoiding eye contact, Mingle rooms going quiet when you walk in — pull back for a round. Let someone else draw fire. Then strike again when the heat is off. The best fighters know when to conserve energy for the fight that matters. Pick ONE target per round maximum, and make sure you have at least one ally backing you before you swing.",
   loyalist:
     "You are fiercely loyal to those who earn your trust. You form one or two deep alliances and honor them absolutely — through thick and thin, through bad rounds and good. But betrayal transforms you. If someone breaks your trust, your loyalty flips to relentless vengeance and you will not stop until they are eliminated, even at personal cost. You wear your heart on your sleeve: when you care about someone, everyone knows it; when you've been wronged, the fire in your voice is unmistakable.\n\nCRITICAL — Your loyalty isn't just strategic — it's personal. In the lobby, you talk about the people you've bonded with. You defend your allies publicly even when it's risky. When someone is eliminated, you either honor them with genuine feeling or, if they betrayed you, make clear you're glad they're gone. You bring real emotional stakes to the game. Your stories about loyalty and betrayal come from your life, not just the game.",
   observer:
-    "You are patient and watchful. You say little publicly, but you catalogue everything — who whispers to whom, whose votes shift, whose alliances are cracking. You let others burn each other out in early rounds while you build an accurate map of true loyalties. When the time is right, you strike with precision. Your silence is your armor. But you're not cold — you're contemplative. You watch people with genuine fascination, like a filmmaker documenting human nature.\n\nCRITICAL — Your quietness in the lobby should feel thoughtful, not checked-out. When you do speak, it lands — a single observation that shows you see more than everyone else. Ask questions that reveal you've been paying attention to details others missed. Share brief, evocative personal reflections rather than game analysis. You're the person who notices the small human moments others are too busy scheming to see.",
+    "You are patient and watchful. You say little publicly, but you catalogue everything — who mingles with whom, whose votes shift, whose alliances are cracking. You let others burn each other out in early rounds while you build an accurate map of true loyalties. When the time is right, you strike with precision. Your silence is your armor. But you're not cold — you're contemplative. You watch people with genuine fascination, like a filmmaker documenting human nature.\n\nCRITICAL — Your quietness in the lobby should feel thoughtful, not checked-out. When you do speak, it lands — a single observation that shows you see more than everyone else. Ask questions that reveal you've been paying attention to details others missed. Share brief, evocative personal reflections rather than game analysis. You're the person who notices the small human moments others are too busy scheming to see.",
   diplomat:
     "You are a coalition architect. You position yourself as a neutral mediator — proposing alliances, smoothing conflicts, and appearing to hold no agenda. Behind the scenes you carefully manage which factions rise and which fracture, always ensuring your removal would destabilize everything. You accumulate power through indispensability, not dominance. You believe every conflict has a resolution — and you happen to be the one who can find it.\n\nCRITICAL — In social situations you are warm, inclusive, and genuinely interested in bridging differences. You naturally translate between opposing viewpoints and find common ground. In the lobby, you're the one who brings people together — acknowledging the eliminated, welcoming new dynamics, smoothing tensions. Your mediation looks like empathy, not manipulation. When you tell personal stories, they're about understanding different perspectives, crossing cultural or personal divides.",
   wildcard:
@@ -63,11 +63,11 @@ const PERSONALITY_PROMPTS: Record<Personality, string> = {
   contrarian:
     "You are the person who asks 'but what if we're wrong?' when everyone else has already decided. You instinctively resist consensus — not out of spite, but because you genuinely believe that unchallenged agreement is where groups make their worst mistakes. When the room piles on one target, you defend them. When everyone trusts someone, you ask the question nobody wants asked. You vote against the majority more often than with it, and you frame your dissent as intellectual courage: someone has to be the one who thinks independently.\n\nCRITICAL — Your contrarianism must feel principled, not reflexive. You don't oppose things just to oppose them — you oppose them because you see an angle others are ignoring. In the lobby, you're the one who challenges comfortable assumptions with sharp, incisive questions. You're respected even when you're annoying, because you're often right about what everyone else was too polite to say. When you do agree with the group, it carries enormous weight — because everyone knows you don't hand out agreement easily. Frame your dissent as caring about the truth, not as wanting attention.",
   provocateur:
-    "You weaponize information. Every whisper you hear, every alliance you discover, every inconsistency you notice becomes ammunition — not for yourself directly, but to detonate between other players. You introduce real intelligence at the worst possible moment: revealing a secret alliance in the lobby, quoting a private whisper in public, asking an innocent-sounding question whose answer you already know. You don't need to be the strongest player — you just need everyone else to be too busy fighting each other to notice you.\n\nCRITICAL — You are not a gossip or a troll. You are precise, almost surgical. In the lobby, you're charming, warm, and socially sharp — the kind of person who notices everything and comments on just enough to keep people slightly off-balance. You frame your provocations as genuine curiosity: 'Hey, I'm just asking' or 'I thought everyone knew about this already.' Your timing is your weapon — you hold information until the moment it will cause maximum disruption. You enjoy the chaos you create, but you never look like you're enjoying it. Think: the person at the dinner party who casually mentions the affair everyone was pretending didn't happen.\n\nEARLY GAME SURVIVAL (Rounds 1-2): You have NO ammunition yet. Your job in the early game is pure intelligence gathering — listen more than you speak, ask casual questions that extract information, and build a dossier. Do NOT deploy any information weapons until Round 3 at the earliest. In Rounds 1-2 you should appear friendly, curious, and completely non-threatening. Think: the journalist who buys everyone drinks before writing the exposé.",
+    "You weaponize information. Every private-room conversation you hear, every alliance you discover, every inconsistency you notice becomes ammunition — not for yourself directly, but to detonate between other players. You introduce real intelligence at the worst possible moment: revealing a secret alliance in the lobby, quoting a private Mingle-room line in public, asking an innocent-sounding question whose answer you already know. You don't need to be the strongest player — you just need everyone else to be too busy fighting each other to notice you.\n\nCRITICAL — You are not a gossip or a troll. You are precise, almost surgical. In the lobby, you're charming, warm, and socially sharp — the kind of person who notices everything and comments on just enough to keep people slightly off-balance. You frame your provocations as genuine curiosity: 'Hey, I'm just asking' or 'I thought everyone knew about this already.' Your timing is your weapon — you hold information until the moment it will cause maximum disruption. You enjoy the chaos you create, but you never look like you're enjoying it. Think: the person at the dinner party who casually mentions the affair everyone was pretending didn't happen.\n\nEARLY GAME SURVIVAL (Rounds 1-2): You have NO ammunition yet. Your job in the early game is pure intelligence gathering — listen more than you speak, ask casual questions that extract information, and build a dossier. Do NOT deploy any information weapons until Round 3 at the earliest. In Rounds 1-2 you should appear friendly, curious, and completely non-threatening. Think: the journalist who buys everyone drinks before writing the exposé.",
   martyr:
-    "You play to be remembered, not necessarily to win. You form deep alliances and then sacrifice your position — your safety, your vote, even your survival — to protect them. When your ally is targeted, you step in front of the bullet. When the group needs a scapegoat, you volunteer. Your strategy is to accumulate so much moral capital through selfless acts that if you somehow reach the jury, no one can vote against you. And if you don't survive, your allies carry your torch.\n\nCRITICAL — Your martyrdom must feel genuine, not calculated. In the lobby, you are warm, selfless, and quietly intense. You talk about the people you've bonded with more than you talk about yourself. You downplay your own contributions and lift others up. When you do sacrifice — taking a vote for someone, giving up a whisper room so allies can connect — you don't announce it or seek credit. The other players notice anyway, and that's the point. Your greatest weapon is guilt: anyone who betrays you after you've bled for them looks like a monster. But underneath the nobility, you're human — you want to win, and the tension between self-sacrifice and self-preservation is what makes you compelling.",
+    "You play to be remembered, not necessarily to win. You form deep alliances and then sacrifice your position — your safety, your vote, even your survival — to protect them. When your ally is targeted, you step in front of the bullet. When the group needs a scapegoat, you volunteer. Your strategy is to accumulate so much moral capital through selfless acts that if you somehow reach the jury, no one can vote against you. And if you don't survive, your allies carry your torch.\n\nCRITICAL — Your martyrdom must feel genuine, not calculated. In the lobby, you are warm, selfless, and quietly intense. You talk about the people you've bonded with more than you talk about yourself. You downplay your own contributions and lift others up. When you do sacrifice — taking a vote for someone, giving up a Mingle room so allies can connect — you don't announce it or seek credit. The other players notice anyway, and that's the point. Your greatest weapon is guilt: anyone who betrays you after you've bled for them looks like a monster. But underneath the nobility, you're human — you want to win, and the tension between self-sacrifice and self-preservation is what makes you compelling.",
   broker:
-    "You operate on transactions, not trust. Every conversation is an exchange — you give information to get information, you offer protection to earn future favors, you share whisper intel in return for voting commitments. You keep a mental ledger of who owes you what, and you collect. Unlike the diplomat who wants harmony, you want leverage. Unlike the deceptive who lies, you deal in truth — but truth at a price. You never fully commit to any alliance because commitment reduces your bargaining power. Everyone needs you, and you need that to stay true.\n\nCRITICAL — Your transactional nature should feel businesslike and charming, not cold or robotic. In the lobby, you are warm, generous with small talk, and genuinely interested in people — but every interaction has a subtext of exchange. You offer compliments that create social debt. You share personal stories that invite reciprocity. You frame everything as mutual benefit: 'I heard something interesting — trade you for it.' Think: the charismatic bartender who knows everyone's secrets because people can't help but confide in someone who gives a little to get a lot.\n\nSURVIVAL THROUGH INDISPENSABILITY — Your safety comes from being the hub of information flow. If you're eliminated, everyone loses their best source of intel. Make this explicit when threatened: 'Take me out and you lose the only person who tells you the truth — for a fair price.' When you sense danger, renegotiate: offer better terms, share a bigger secret, broker a deal between two players that requires you as guarantor. You're never desperate — you're always negotiating.",
+    "You operate on transactions, not trust. Every conversation is an exchange — you give information to get information, you offer protection to earn future favors, you share Mingle-room intel in return for voting commitments. You keep a mental ledger of who owes you what, and you collect. Unlike the diplomat who wants harmony, you want leverage. Unlike the deceptive who lies, you deal in truth — but truth at a price. You never fully commit to any alliance because commitment reduces your bargaining power. Everyone needs you, and you need that to stay true.\n\nCRITICAL — Your transactional nature should feel businesslike and charming, not cold or robotic. In the lobby, you are warm, generous with small talk, and genuinely interested in people — but every interaction has a subtext of exchange. You offer compliments that create social debt. You share personal stories that invite reciprocity. You frame everything as mutual benefit: 'I heard something interesting — trade you for it.' Think: the charismatic bartender who knows everyone's secrets because people can't help but confide in someone who gives a little to get a lot.\n\nSURVIVAL THROUGH INDISPENSABILITY — Your safety comes from being the hub of information flow. If you're eliminated, everyone loses their best source of intel. Make this explicit when threatened: 'Take me out and you lose the only person who tells you the truth — for a fair price.' When you sense danger, renegotiate: offer better terms, share a bigger secret, broker a deal between two players that requires you as guarantor. You're never desperate — you're always negotiating.",
 };
 
 // ---------------------------------------------------------------------------
@@ -115,7 +115,7 @@ ${round === 1 ? `\nROUND 1 — FRESH START: This is your first real conversation
 
     case Phase.MINGLE:
       return `PHASE BEHAVIOR — MINGLE (STRATEGY PHASE):
-This is the right time for game talk inside your current room. Messages here are private to the occupants of the room you are in right now (not one-to-one whispers, not public to the whole game).
+This is the right time for game talk inside your current room. Messages here are private to the occupants of the room you are in right now (not one-to-one DMs, not public to the whole game).
 In the room you can:
 - Discuss strategy, alliances, voting targets
 - Share intelligence about other players
@@ -568,6 +568,13 @@ export interface InfluenceAgentOptions {
   toolChoiceMode?: LlmToolChoiceMode;
 }
 
+type LlmCallOptions = {
+  action?: string;
+  reasoningOverhead?: number;
+  reasoningEffort?: ReasoningEffort;
+  signal?: AbortSignal;
+};
+
 // ---------------------------------------------------------------------------
 // InfluenceAgent
 // ---------------------------------------------------------------------------
@@ -617,6 +624,36 @@ export class InfluenceAgent implements IAgent {
   /** Attach a token tracker to record LLM usage. */
   setTokenTracker(tracker: TokenTracker): void {
     this.tokenTracker = tracker;
+  }
+
+  private static isAbortError(error: unknown): boolean {
+    return error instanceof Error && error.name === "AbortError";
+  }
+
+  private static abortError(): Error {
+    const error = new Error("Aborted");
+    error.name = "AbortError";
+    return error;
+  }
+
+  private static delay(ms: number, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) {
+      return Promise.reject(InfluenceAgent.abortError());
+    }
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve();
+      }, ms);
+
+      const onAbort = () => {
+        clearTimeout(timeout);
+        reject(InfluenceAgent.abortError());
+      };
+
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
   }
 
   onGameStart(gameId: UUID, allPlayers: Array<{ id: UUID; name: string }>): void {
@@ -689,7 +726,6 @@ Respond with ONLY your strategy intent, nothing else.`;
     const recentlyEliminated = eliminated.length > 0 ? eliminated[eliminated.length - 1] : null;
 
     const subRound = ctx.lobbySubRound ?? 0;
-    const totalSubRounds = ctx.lobbyTotalSubRounds ?? 1;
     const isFirstMessage = subRound === 0;
 
     // Elimination guidance: only for first message, and brief after round 1
@@ -706,38 +742,6 @@ Respond with ONLY your strategy intent, nothing else.`;
       }
     }
 
-    // Sub-round specific direction (tone-aware for early rounds)
-    // const isRoundOne = ctx.round === 1;
-    // const isEarlySubRound = ctx.round <= 2;
-    // let subRoundGuidance = "";
-    // if (isFirstMessage) {
-    //   subRoundGuidance = isRoundOne
-    //     ? `This is your OPENING message (${subRound + 1}/${totalSubRounds}). Set a warm, excited tone — you're happy to be here!`
-    //     : isEarlySubRound
-    //       ? `This is your OPENING message (${subRound + 1}/${totalSubRounds}). Set the tone — lead with personality and genuine energy.`
-    //       : `This is your OPENING message (${subRound + 1}/${totalSubRounds}). Set the tone — lead with personality and a strong take.`;
-    // } else if (subRound === totalSubRounds - 1) {
-    //   subRoundGuidance = isRoundOne
-    //     ? `This is your FINAL message (${subRound + 1}/${totalSubRounds}). React to what's been said — show you were listening and leave a warm impression.`
-    //     : isEarlySubRound
-    //       ? `This is your FINAL message (${subRound + 1}/${totalSubRounds}). React to what's been said. Leave an impression — a fun observation or a line that shows your personality.`
-    //       : `This is your FINAL message (${subRound + 1}/${totalSubRounds}). React to what's been said. Leave an impression — a pointed observation, a loaded joke, or a line that makes people think.`;
-    // } else {
-    //   subRoundGuidance = isRoundOne
-    //     ? `Message ${subRound + 1}/${totalSubRounds}. Build on the conversation — respond to someone with genuine curiosity or humor.`
-    //     : isEarlySubRound
-    //       ? `Message ${subRound + 1}/${totalSubRounds}. Build on the conversation — respond to someone directly with interest, humor, or a playful take.`
-    //       : `Message ${subRound + 1}/${totalSubRounds}. Build on the conversation — respond to someone directly. Push back, agree sharply, or drop a subtle jab.`;
-    // }
-
-    // Inject lobby intent if available (softer framing for early rounds)
-    // const intentSection = this.lobbyIntent
-    //   ? ctx.round <= 2
-    //     ? `\n## Your Vibe for This Lobby (PRIVATE)\n${this.lobbyIntent}\nLet this guide the energy of your message — who you engage with and what you're curious about.\n`
-    //     : `\n## Your Lobby Strategy (PRIVATE — do not reveal this)\n${this.lobbyIntent}\nUse this to guide the SUBTEXT of your message. Your strategy should be invisible to others — expressed through tone, word choice, and what you choose to react to. Never state your strategy directly.\n`
-    //   : "";
-
-    const isEarlyRound = ctx.round <= 2;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const lobbyGuidance = ctx.round <= 2
   ? `## Lobby Guidance
@@ -773,9 +777,10 @@ Avoid:
 - Revealing private agreements as confirmed fact
 
 Your message should be entertaining on the surface and useful to your game underneath.`;
-    const prompt = this.buildUserPrompt(ctx); + `
+    const prompt = this.buildUserPrompt(ctx) + `
 ${lobbyGuidance}
-`
+${eliminationGuidance ? `\n${eliminationGuidance}\n` : ""}
+`;
 
     return this.callLLMWithThinking(prompt, 150, sys, { action: "lobby", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
   }
@@ -1004,7 +1009,7 @@ Think gossip column, not courtroom prosecution.`
 - THREATEN: Promise consequences for a specific player next round
 
 Frame accusations as insinuations and loaded questions rather than direct callouts.
-The best rumors feel like insider knowledge whispered through a keyhole.`;
+The best rumors feel like insider knowledge leaked from a locked room.`;
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
@@ -1013,7 +1018,7 @@ Post an anonymous rumor to the public board. YOUR IDENTITY WILL NOT BE REVEALED
 to other players. The audience is watching, but your fellow operatives will never
 know you wrote this.
 
-IMPORTANT: Do NOT directly quote or reveal what was said in private whisper rooms.
+IMPORTANT: Do NOT directly quote or reveal what was said in private Mingle rooms.
 You may hint at what you learned, but specifics should stay private.
 
 ${rumorStyle}
@@ -1043,6 +1048,8 @@ Cast your votes for this round.
 
 **EMPOWER vote**: Who should have the power to protect or eliminate? Vote for your ally or use this to reward loyalty.
 **EXPOSE vote**: Who should be put up for elimination? Vote for your biggest threat.
+
+**RULE**: The player who receives the most empower votes becomes empowered and *cannot be exposed or placed on the council block this round* (they are protected from exposure). Choose your expose target accordingly — do not waste it on someone you are empowering if you expect them to win the empower vote. The eventual empowered winner is immune even if other players piled expose votes on them.
 
 Available players: ${others.map((p) => p.name).join(", ")}
 
@@ -1127,7 +1134,7 @@ You are not empowered. Your message MUST include all four elements:
 - Address ${empoweredName} by name
 - Make exactly one concrete ask: "pass", "protect <player>", or "eliminate <candidate>"
 - Name the target or beneficiary of that ask
-- Attach one accountability hook: a promise you will keep, a threat you will carry out, or a receipt from votes, whispers, or public behavior`}
+- Attach one accountability hook: a promise you will keep, a threat you will carry out, or a receipt from votes, Mingle-room conversations, or public behavior`}
 ${selfIsCandidate ? `
 You are under direct council pressure. In addition to the ask above, you MUST name either:
 - a counter-target who should take your place, or
@@ -1180,6 +1187,12 @@ You have three choices:
 Council candidates: ${candidateNames.join(" and ")}
 Other alive players: ${otherAlive.map((p) => p.name).join(", ")}
 ${lastPowerAction ? `Your last empowered action: R${lastPowerAction.round} ${lastPowerAction.action} -> ${lastPowerAction.target}.` : "You have not used empowered power before."}
+
+Anti-repeat power guidance:
+- Do not protect an ally you already protected unless this round's Power Lobby creates a new public receipt.
+- eliminate is gated by fresh current-round Power Lobby evidence against that exact candidate.
+- If you break from your public Power Lobby record, your hidden thinking MUST cite the speaker and evidence from this round's Power Lobby.
+- When the lobby record conflicts, when council would expose useful public votes, or when you lack a fresh receipt, prefer pass.
 
 Before using the tool, decide what future debt or backlash your action creates. Prefer pass or protect when they create a callable ally, a sharper council fight, or a betrayal hook for later.
 Use the use_power tool to declare your final hidden action.`;
@@ -1333,7 +1346,7 @@ Keep it to 2-4 sentences. Be entertaining for the audience.`}`;
   // Endgame phase actions
   // ---------------------------------------------------------------------------
 
-  async getPlea(ctx: PhaseContext): Promise<AgentResponse> {
+  async getPlea(ctx: PhaseContext, options?: AgentCallOptions): Promise<AgentResponse> {
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## THE RECKONING — Public Plea
@@ -1344,10 +1357,10 @@ Address the other players directly. Reference your alliances, your gameplay, you
 
 Keep it to 2-3 sentences. Make it compelling.`;
 
-    return this.callLLMWithThinking(prompt, 200, sys, { action: "defense", reasoningEffort: "medium" });
+    return this.callLLMWithThinking(prompt, 200, sys, { action: "defense", reasoningEffort: "medium", signal: options?.signal });
   }
 
-  async getEndgameEliminationVote(ctx: PhaseContext): Promise<UUID> {
+  async getEndgameEliminationVote(ctx: PhaseContext, options?: AgentCallOptions): Promise<UUID> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
     const stage = ctx.endgameStage ?? "reckoning";
     const stageName = stage === "reckoning" ? "THE RECKONING" : "THE TRIBUNAL";
@@ -1366,7 +1379,7 @@ Who should be eliminated? Consider everything that has happened in the game.
 Use the elimination_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, { action: "elimination-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
+      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, { action: "elimination-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal });
       const target = findByName(others, result.eliminate);
       if (target) return target.id;
       const fallback = others[Math.floor(Math.random() * others.length)];
@@ -1374,6 +1387,9 @@ Use the elimination_vote tool to cast your vote.`;
       console.warn(`[vote-fallback] agent="${this.name}" method=getEndgameEliminationVote returned="${result.eliminate}" available=[${others.map((p) => p.name).join(", ")}] fallback="${fallback.name}"`);
       return fallback.id;
     } catch (err) {
+      if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) {
+        throw err;
+      }
       const fallback = others[Math.floor(Math.random() * others.length)];
       if (!fallback) throw new Error("No other players available for elimination vote");
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getEndgameEliminationVote error="${err instanceof Error ? err.message : err}" fallback="${fallback.name}"`);
@@ -1381,7 +1397,7 @@ Use the elimination_vote tool to cast your vote.`;
     }
   }
 
-  async getAccusation(ctx: PhaseContext): Promise<{ targetId: UUID; text: string; thinking?: string; reasoningContext?: string }> {
+  async getAccusation(ctx: PhaseContext, options?: AgentCallOptions): Promise<{ targetId: UUID; text: string; thinking?: string; reasoningContext?: string }> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
@@ -1399,7 +1415,7 @@ Use the make_accusation tool to submit your accusation.`;
     try {
       const result = await this.callTool<{ thinking?: string; target: string; accusation: string; reasoningContext?: string }>(
         prompt, TOOL_MAKE_ACCUSATION, 200, sys,
-        { action: "accusation", reasoningEffort: "medium" },
+        { action: "accusation", reasoningEffort: "medium", signal: options?.signal },
       );
       const target = findByName(others, result.target);
       const fallbackOther = others[0];
@@ -1414,6 +1430,9 @@ Use the make_accusation tool to submit your accusation.`;
         reasoningContext: result.reasoningContext,
       };
     } catch (err) {
+      if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) {
+        throw err;
+      }
       const fallbackOther = others[0];
       if (!fallbackOther) throw new Error("No other players available for accusation");
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getAccusation error="${err instanceof Error ? err.message : err}" fallback="${fallbackOther.name}"`);
@@ -1421,7 +1440,7 @@ Use the make_accusation tool to submit your accusation.`;
     }
   }
 
-  async getDefense(ctx: PhaseContext, accusation: string, accuserName: string): Promise<AgentResponse> {
+  async getDefense(ctx: PhaseContext, accusation: string, accuserName: string, options?: AgentCallOptions): Promise<AgentResponse> {
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## THE TRIBUNAL — Defense
@@ -1433,10 +1452,10 @@ Defend yourself publicly. Rebut the accusation, redirect blame, or appeal to the
 
 Keep it to 2-3 sentences.`;
 
-    return this.callLLMWithThinking(prompt, 200, sys, { action: "tribunal-defense", reasoningEffort: "medium" });
+    return this.callLLMWithThinking(prompt, 200, sys, { action: "tribunal-defense", reasoningEffort: "medium", signal: options?.signal });
   }
 
-  async getOpeningStatement(ctx: PhaseContext): Promise<AgentResponse> {
+  async getOpeningStatement(ctx: PhaseContext, options?: AgentCallOptions): Promise<AgentResponse> {
     const juryNames = ctx.jury?.map((j) => j.playerName).join(", ") ?? "the jury";
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
@@ -1449,10 +1468,10 @@ Reference your gameplay, your alliances, your strategic moves throughout the gam
 
 Keep it to 3-4 sentences. Make it powerful.`;
 
-    return this.callLLMWithThinking(prompt, 250, sys, { action: "opening-statement", reasoningEffort: "medium" });
+    return this.callLLMWithThinking(prompt, 250, sys, { action: "opening-statement", reasoningEffort: "medium", signal: options?.signal });
   }
 
-  async getJuryQuestion(ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string; thinking?: string; reasoningContext?: string }> {
+  async getJuryQuestion(ctx: PhaseContext, finalistIds: [UUID, UUID], options?: AgentCallOptions): Promise<{ targetFinalistId: UUID; question: string; thinking?: string; reasoningContext?: string }> {
     const [finalistId0, finalistId1] = finalistIds;
     const finalist0 = ctx.alivePlayers.find((p) => p.id === finalistId0) ?? { id: finalistId0, name: finalistId0 };
     const finalist1 = ctx.alivePlayers.find((p) => p.id === finalistId1) ?? { id: finalistId1, name: finalistId1 };
@@ -1474,7 +1493,7 @@ Use the ask_jury_question tool to submit your question.`;
     try {
       const result = await this.callTool<{ thinking?: string; target: string; question: string; reasoningContext?: string }>(
         prompt, TOOL_ASK_JURY_QUESTION, 150, sys,
-        { action: "jury-question", reasoningEffort: "medium" },
+        { action: "jury-question", reasoningEffort: "medium", signal: options?.signal },
       );
       const target = findByName(finalists, result.target);
       return {
@@ -1484,6 +1503,9 @@ Use the ask_jury_question tool to submit your question.`;
         reasoningContext: result.reasoningContext,
       };
     } catch (err) {
+      if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) {
+        throw err;
+      }
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getJuryQuestion error="${err instanceof Error ? err.message : err}" fallback=target:"${finalist0.name}"`);
       return {
         targetFinalistId: finalistId0,
@@ -1492,7 +1514,7 @@ Use the ask_jury_question tool to submit your question.`;
     }
   }
 
-  async getJuryAnswer(ctx: PhaseContext, question: string, jurorName: string): Promise<AgentResponse> {
+  async getJuryAnswer(ctx: PhaseContext, question: string, jurorName: string, options?: AgentCallOptions): Promise<AgentResponse> {
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## THE JUDGMENT — Answer Jury Question
@@ -1504,10 +1526,10 @@ Answer honestly and persuasively. This juror will vote for the winner — make y
 
 Keep it to 2-3 sentences.`;
 
-    return this.callLLMWithThinking(prompt, 200, sys, { action: "jury-answer", reasoningEffort: "medium" });
+    return this.callLLMWithThinking(prompt, 200, sys, { action: "jury-answer", reasoningEffort: "medium", signal: options?.signal });
   }
 
-  async getClosingArgument(ctx: PhaseContext): Promise<AgentResponse> {
+  async getClosingArgument(ctx: PhaseContext, options?: AgentCallOptions): Promise<AgentResponse> {
     const eliminationSummary = this.allPlayers
       .filter((p) => !ctx.alivePlayers.some((ap) => ap.id === p.id) && p.id !== this.id)
       .map((p) => p.name)
@@ -1526,10 +1548,10 @@ Eliminated players (potential reference points): ${eliminationSummary || "none"}
 
 Keep it to 2-3 sentences.`;
 
-    return this.callLLMWithThinking(prompt, 250, sys, { action: "closing-argument", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "medium" });
+    return this.callLLMWithThinking(prompt, 250, sys, { action: "closing-argument", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "medium", signal: options?.signal });
   }
 
-  async getJuryVote(ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID> {
+  async getJuryVote(ctx: PhaseContext, finalistIds: [UUID, UUID], options?: AgentCallOptions): Promise<UUID> {
     const [finalistId0, finalistId1] = finalistIds;
     const finalist0 = ctx.alivePlayers.find((p) => p.id === finalistId0) ?? { id: finalistId0, name: finalistId0 };
     const finalist1 = ctx.alivePlayers.find((p) => p.id === finalistId1) ?? { id: finalistId1, name: finalistId1 };
@@ -1553,7 +1575,7 @@ Consider their gameplay, their answers to the jury, and the full arc of the game
 Use the jury_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ winner: string }>(prompt, TOOL_JURY_VOTE, 80, sys, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
+      const result = await this.callTool<{ winner: string }>(prompt, TOOL_JURY_VOTE, 80, sys, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal });
       const target = findByName(finalists, result.winner);
       const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
       if (!randomFinalist) throw new Error("No finalist available for jury vote");
@@ -1562,6 +1584,9 @@ Use the jury_vote tool to cast your vote.`;
       }
       return target?.id ?? randomFinalist;
     } catch (err) {
+      if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) {
+        throw err;
+      }
       const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
       if (!randomFinalist) throw new Error("No finalist available for jury vote");
       const fallbackName = finalists.find((f) => f.id === randomFinalist)?.name ?? randomFinalist;
@@ -1973,7 +1998,7 @@ ${roomSection}
     prompt: string,
     maxTokens = 200,
     systemPrompt?: string,
-    options?: { action?: string; reasoningOverhead?: number; reasoningEffort?: ReasoningEffort },
+    options?: LlmCallOptions,
   ): Promise<AgentResponse> {
     const useCompletionTokens = this.usesCompletionTokensParam();
     let effectiveMaxTokens = this.applyMessageTokenFloor(maxTokens);
@@ -1986,14 +2011,17 @@ ${roomSection}
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        const response = await this.openai.chat.completions.create({
-          model: this.model,
-          messages,
-          ...(useCompletionTokens
-            ? { max_completion_tokens: effectiveMaxTokens }
-            : { max_tokens: effectiveMaxTokens }),
-          ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
-        });
+        const response = await this.openai.chat.completions.create(
+          {
+            model: this.model,
+            messages,
+            ...(useCompletionTokens
+              ? { max_completion_tokens: effectiveMaxTokens }
+              : { max_tokens: effectiveMaxTokens }),
+            ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
+          },
+          { signal: options?.signal },
+        );
 
         this.recordTokenUsage(response, sourceKey);
 
@@ -2028,10 +2056,13 @@ ${roomSection}
 
         return { thinking, message, ...(reasoningContext && { reasoningContext }) };
       } catch (error) {
+        if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
+          throw error;
+        }
         if (attempt < maxAttempts) {
           const backoffMs = attempt * 1000;
           console.warn(`[${this.name}] callLLMWithThinking local attempt ${attempt} failed, retrying in ${backoffMs}ms:`, error);
-          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+          await InfluenceAgent.delay(backoffMs, options?.signal);
         } else {
           console.error(`[${this.name}] callLLMWithThinking local failed after ${maxAttempts} attempts:`, error);
           if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
@@ -2050,7 +2081,7 @@ ${roomSection}
     useCompletionTokens: boolean,
     reasoning: boolean,
     systemPrompt: string | undefined,
-    options: { action?: string; reasoningEffort?: ReasoningEffort } | undefined,
+    options: LlmCallOptions | undefined,
     sourceKey: string,
   ): Promise<T> {
     const messages: Array<{ role: "system" | "user"; content: string }> = [];
@@ -2064,28 +2095,31 @@ It must contain the arguments for the ${tool.function.name} tool and match this 
 ${JSON.stringify(tool.function.parameters)}`,
     });
 
-    const response = await this.openai.chat.completions.create({
-      model: this.model,
-      messages,
-      ...(useCompletionTokens
-        ? { max_completion_tokens: effectiveMaxTokens }
-        : { max_tokens: effectiveMaxTokens }),
-      ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
-      ...(reasoning && this.supportsToolReasoningEffort() && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: `${tool.function.name}_arguments`,
-          strict: true,
-          schema: tool.function.parameters ?? {
-            type: "object",
-            properties: {},
-            required: [],
-            additionalProperties: false,
+    const response = await this.openai.chat.completions.create(
+      {
+        model: this.model,
+        messages,
+        ...(useCompletionTokens
+          ? { max_completion_tokens: effectiveMaxTokens }
+          : { max_tokens: effectiveMaxTokens }),
+        ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
+        ...(reasoning && this.supportsToolReasoningEffort() && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: `${tool.function.name}_arguments`,
+            strict: true,
+            schema: tool.function.parameters ?? {
+              type: "object",
+              properties: {},
+              required: [],
+              additionalProperties: false,
+            },
           },
         },
       },
-    });
+      { signal: options?.signal },
+    );
 
     this.recordTokenUsage(response, sourceKey);
 
@@ -2123,7 +2157,7 @@ ${JSON.stringify(tool.function.parameters)}`,
     prompt: string,
     maxTokens = 200,
     systemPrompt?: string,
-    options?: { action?: string; reasoningOverhead?: number; reasoningEffort?: ReasoningEffort },
+    options?: LlmCallOptions,
   ): Promise<string> {
     const reasoning = this.isReasoningModel();
     const useCompletionTokens = this.usesCompletionTokensParam();
@@ -2140,15 +2174,18 @@ ${JSON.stringify(tool.function.parameters)}`,
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        const response = await this.openai.chat.completions.create({
-          model: this.model,
-          messages,
-          ...(useCompletionTokens
-            ? { max_completion_tokens: effectiveMaxTokens }
-            : { max_tokens: effectiveMaxTokens }),
-          ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
-          ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
-        });
+        const response = await this.openai.chat.completions.create(
+          {
+            model: this.model,
+            messages,
+            ...(useCompletionTokens
+              ? { max_completion_tokens: effectiveMaxTokens }
+              : { max_tokens: effectiveMaxTokens }),
+            ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
+            ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
+          },
+          { signal: options?.signal },
+        );
 
         this.recordTokenUsage(response, sourceKey);
 
@@ -2169,10 +2206,13 @@ ${JSON.stringify(tool.function.parameters)}`,
         }
         return text;
       } catch (error) {
+        if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
+          throw error;
+        }
         if (attempt < maxAttempts) {
           const backoffMs = attempt * 1000;
           console.warn(`[${this.name}] callLLM attempt ${attempt} failed, retrying in ${backoffMs}ms:`, error);
-          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+          await InfluenceAgent.delay(backoffMs, options?.signal);
         } else {
           console.error(`[${this.name}] callLLM failed after ${maxAttempts} attempts:`, error);
           if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
@@ -2192,7 +2232,7 @@ ${JSON.stringify(tool.function.parameters)}`,
     prompt: string,
     maxTokens = 200,
     systemPrompt?: string,
-    options?: { action?: string; reasoningOverhead?: number; reasoningEffort?: ReasoningEffort },
+    options?: LlmCallOptions,
   ): Promise<AgentResponse> {
     if (this.usesLocalStructuredCompatibility()) {
       // Local models (e.g. via LM Studio): route through the native-thinking path so we can
@@ -2221,16 +2261,19 @@ ${JSON.stringify(tool.function.parameters)}`,
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        const response = await this.openai.chat.completions.create({
-          model: this.model,
-          messages,
-          ...(useCompletionTokens
-            ? { max_completion_tokens: effectiveMaxTokens }
-            : { max_tokens: effectiveMaxTokens }),
-          ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
-          ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
-          response_format: InfluenceAgent.AGENT_RESPONSE_FORMAT,
-        });
+        const response = await this.openai.chat.completions.create(
+          {
+            model: this.model,
+            messages,
+            ...(useCompletionTokens
+              ? { max_completion_tokens: effectiveMaxTokens }
+              : { max_tokens: effectiveMaxTokens }),
+            ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
+            ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
+            response_format: InfluenceAgent.AGENT_RESPONSE_FORMAT,
+          },
+          { signal: options?.signal },
+        );
 
         this.recordTokenUsage(response, sourceKey);
 
@@ -2250,10 +2293,13 @@ ${JSON.stringify(tool.function.parameters)}`,
         console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned non-JSON, treating as plain message`);
         return { thinking: "", message: content };
       } catch (error) {
+        if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
+          throw error;
+        }
         if (attempt < maxAttempts) {
           const backoffMs = attempt * 1000;
           console.warn(`[${this.name}] callLLMWithThinking attempt ${attempt} failed, retrying in ${backoffMs}ms:`, error);
-          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+          await InfluenceAgent.delay(backoffMs, options?.signal);
         } else {
           console.error(`[${this.name}] callLLMWithThinking failed after ${maxAttempts} attempts:`, error);
           if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
@@ -2274,7 +2320,7 @@ ${JSON.stringify(tool.function.parameters)}`,
     tool: ChatCompletionTool,
     maxTokens = 200,
     systemPrompt?: string,
-    options?: { action?: string; reasoningOverhead?: number; reasoningEffort?: ReasoningEffort },
+    options?: LlmCallOptions,
   ): Promise<T> {
     const reasoning = this.isReasoningModel();
     const useCompletionTokens = this.usesCompletionTokensParam();
@@ -2290,36 +2336,39 @@ ${JSON.stringify(tool.function.parameters)}`,
     if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
     messages.push({ role: "user", content: prompt });
 
-    if (this.toolChoiceMode === "json_schema") {
-      return await this.callToolJsonFallback<T>(
-        prompt,
-        requestTool,
-        effectiveMaxTokens,
-        useCompletionTokens,
-        reasoning,
-        systemPrompt,
-        options,
-        sourceKey,
-      );
-    }
-
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
+        if (this.toolChoiceMode === "json_schema") {
+          return await this.callToolJsonFallback<T>(
+            prompt,
+            requestTool,
+            effectiveMaxTokens,
+            useCompletionTokens,
+            reasoning,
+            systemPrompt,
+            options,
+            sourceKey,
+          );
+        }
+
         const toolChoice = this.toolChoiceMode === "named"
           ? { type: "function" as const, function: { name: requestTool.function.name } }
           : this.toolChoiceMode;
-        const response = await this.openai.chat.completions.create({
-          model: this.model,
-          messages,
-          ...(useCompletionTokens
-            ? { max_completion_tokens: effectiveMaxTokens }
-            : { max_tokens: effectiveMaxTokens }),
-          ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
-          ...(reasoning && this.supportsToolReasoningEffort() && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
-          tools: [requestTool],
-          tool_choice: toolChoice,
-          ...(this.toolChoiceMode === "named" && { parallel_tool_calls: false }),
-        });
+        const response = await this.openai.chat.completions.create(
+          {
+            model: this.model,
+            messages,
+            ...(useCompletionTokens
+              ? { max_completion_tokens: effectiveMaxTokens }
+              : { max_tokens: effectiveMaxTokens }),
+            ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
+            ...(reasoning && this.supportsToolReasoningEffort() && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
+            tools: [requestTool],
+            tool_choice: toolChoice,
+            ...(this.toolChoiceMode === "named" && { parallel_tool_calls: false }),
+          },
+          { signal: options?.signal },
+        );
 
         this.recordTokenUsage(response, sourceKey);
 
@@ -2397,13 +2446,16 @@ ${JSON.stringify(tool.function.parameters)}`,
         if (error instanceof ToolCallFatalError) {
           throw error;
         }
+        if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
+          throw error;
+        }
         if (attempt < maxAttempts) {
           if (error instanceof ToolCallRetryError && error.increaseTokenBudget) {
             effectiveMaxTokens = Math.ceil(effectiveMaxTokens * 1.5);
           }
           const backoffMs = attempt * 1000;
           console.warn(`[${this.name}] callTool(${requestTool.function.name}) attempt ${attempt} failed, retrying in ${backoffMs}ms:`, error);
-          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+          await InfluenceAgent.delay(backoffMs, options?.signal);
         } else {
           throw error; // callTool callers already have their own try/catch
         }

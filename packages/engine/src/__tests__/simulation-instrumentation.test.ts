@@ -41,14 +41,14 @@ describe("simulation instrumentation", () => {
       systemEntry(2, Phase.COUNCIL, "=== COUNCIL PHASE ==="),
       systemEntry(2, Phase.COUNCIL, "Atlas council vote -> Rex"),
       {
-        ...systemEntry(1, Phase.WHISPER, "Room 1: Atlas & Vera | Commons: Finn"),
+        ...systemEntry(1, Phase.MINGLE, "Room 1: Atlas & Vera | Commons: Finn"),
         roomMetadata: {
           rooms: [room(1, ["p1", "p2"], 1)],
           excluded: ["Finn"],
         },
       },
       {
-        ...systemEntry(2, Phase.WHISPER, "Room 1: Vera & Atlas"),
+        ...systemEntry(2, Phase.MINGLE, "Room 1: Vera & Atlas"),
         roomMetadata: {
           rooms: [room(1, ["p2", "p1"], 2)],
           excluded: [],
@@ -96,7 +96,7 @@ describe("simulation instrumentation", () => {
       [
         systemEntry(1, Phase.POWER, "Atlas power action: protect -> Vera"),
         {
-          ...systemEntry(1, Phase.WHISPER, "Room 1: Atlas & Vera"),
+          ...systemEntry(1, Phase.MINGLE, "Room 1: Atlas & Vera"),
           roomMetadata: {
             rooms: [room(1, ["p1", "p2"], 1)],
             excluded: [],
@@ -167,7 +167,7 @@ describe("simulation instrumentation", () => {
     const game = instrumentGame(
       [
         {
-          ...systemEntry(2, Phase.WHISPER, "Room 1: Atlas & Vera | Commons: Finn"),
+          ...systemEntry(2, Phase.MINGLE, "Room 1: Atlas & Vera | Commons: Finn"),
           roomMetadata: {
             rooms: [room(1, ["p1", "p2", "p3"], 2)],
             excluded: [],
@@ -249,7 +249,7 @@ describe("simulation instrumentation", () => {
       {
         ...systemEntry(
           1,
-          Phase.WHISPER,
+          Phase.MINGLE,
           "Room 1: Atlas & Vera | Room 2: Finn & Mira | Room 3: Rex & Lyra | Commons: Kael, Echo",
         ),
         roomMetadata: {
@@ -264,7 +264,7 @@ describe("simulation instrumentation", () => {
       {
         ...systemEntry(
           2,
-          Phase.WHISPER,
+          Phase.MINGLE,
           "Room 1: Vera & Atlas | Room 2: Kael & Echo | Room 3: Finn & Rex | Commons: Mira, Lyra",
         ),
         roomMetadata: {

@@ -386,12 +386,12 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 # Chatty mode (live colored transcript with agent thinking + native reasoningContext on votes, power actions, council votes — essential for Mingle observability):
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
-    --variant open-whisper --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
+    --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
 `InfluenceAgent` uses OpenAI-compatible chat completions. Hosted OpenAI runs use `OPENAI_API_KEY`; local runs can use `INFLUENCE_LLM_BASE_URL` with LM Studio. Current repo defaults are budget `gpt-5-nano`, standard `gpt-5-mini`, and premium `gpt-5.4-mini`; override server-side tiers with `INFLUENCE_MODEL_BUDGET`, `INFLUENCE_MODEL_STANDARD`, and `INFLUENCE_MODEL_PREMIUM` when testing local models.
 
-Structured decision calls default to named OpenAI tool forcing for hosted OpenAI. Local base URLs default to `INFLUENCE_LLM_TOOL_CHOICE_MODE=required`, which sends the LM Studio-compatible string `tool_choice`, omits hidden `thinking` from decision schemas, and applies `INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS` (default `4096`) so local reasoning models have enough room to produce tool arguments. Local public messages apply `INFLUENCE_LLM_LOCAL_MESSAGE_MIN_TOKENS` (default `8192`) for the same reason and retry once with a doubled budget when visible content is empty. They request visible speech in `message.content` and preserve native local reasoning metadata such as `reasoning_content` as transcript thinking. If a local server supports JSON schema better than tools, set `INFLUENCE_LLM_TOOL_CHOICE_MODE=json_schema`.
+Structured decision calls default to named OpenAI tool forcing for hosted OpenAI. Local base URLs default to `INFLUENCE_LLM_TOOL_CHOICE_MODE=required`, which sends the LM Studio-compatible string `tool_choice`, omits hidden `thinking` from decision schemas, and applies `INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS` (default `4096`) so local reasoning models have enough room to produce tool arguments. Local public messages apply `INFLUENCE_LLM_LOCAL_MESSAGE_MIN_TOKENS` (default `8192`) for the same reason and retry once with a doubled budget when visible content is empty. They request visible speech in `message.content` and preserve native local reasoning metadata such as `reasoning_content` as transcript `reasoningContext`. If a local server supports JSON schema better than tools, set `INFLUENCE_LLM_TOOL_CHOICE_MODE=json_schema`.
 
 ### Environment Strategy
 

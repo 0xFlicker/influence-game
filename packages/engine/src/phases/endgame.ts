@@ -7,21 +7,23 @@ async function withEndgameActionTimeout<T>(
   ctx: PhaseRunnerContext,
   phase: Phase,
   label: string,
-  operation: Promise<T>,
+  operation: (signal: AbortSignal) => Promise<T>,
   fallback: () => T,
 ): Promise<T> {
   const timeoutMs = ctx.config.agentActionTimeoutMs;
-  if (!timeoutMs || timeoutMs < 1) return operation;
+  if (!timeoutMs || timeoutMs < 1) return operation(new AbortController().signal);
 
+  const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<T>((resolve) => {
     timeout = setTimeout(() => {
       ctx.logger.logSystem(`${label} timed out after ${timeoutMs}ms; using House fallback.`, phase);
       resolve(fallback());
+      controller.abort();
     }, timeoutMs);
   });
 
-  return Promise.race([operation, timeoutPromise]).finally(() => {
+  return Promise.race([operation(controller.signal), timeoutPromise]).finally(() => {
     if (timeout) clearTimeout(timeout);
   });
 }
@@ -48,7 +50,7 @@ export async function runReckoningPlea(
         ctx,
         Phase.PLEA,
         `${player.name} plea`,
-        agent.getPlea(phaseCtx),
+        (signal) => agent.getPlea(phaseCtx, { signal }),
         () => fallbackMessage("I have no further plea."),
       );
       logger.logPublic(player.id, message, Phase.PLEA, { thinking, reasoningContext });
@@ -76,11 +78,11 @@ export async function runTribunalAccusation(
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.ACCUSATION);
       const fallbackTarget = alivePlayers.find((candidate) => candidate.id !== player.id) ?? player;
-      const { targetId, text, thinking, reasoningContext } = await withEndgameActionTimeout(
+      const { targetId, text, thinking, reasoningContext } = await withEndgameActionTimeout<{ targetId: UUID; text: string; thinking?: string; reasoningContext?: string }>(
         ctx,
         Phase.ACCUSATION,
         `${player.name} accusation`,
-        agent.getAccusation(phaseCtx),
+        (signal) => agent.getAccusation(phaseCtx, { signal }),
         () => ({
           targetId: fallbackTarget.id,
           text: `I accuse ${fallbackTarget.name}.`,
@@ -123,7 +125,7 @@ export async function runTribunalDefense(
         ctx,
         Phase.DEFENSE,
         `${player.name} defense`,
-        agent.getDefense(phaseCtx, accusation.text, accusation.accuserName),
+        (signal) => agent.getDefense(phaseCtx, accusation.text, accusation.accuserName, { signal }),
         () => fallbackMessage("I stand by my game."),
       );
       logger.logPublic(player.id, `[DEFENSE] ${defense}`, Phase.DEFENSE, { thinking, reasoningContext });
@@ -166,7 +168,7 @@ export async function runJudgmentOpening(
         ctx,
         Phase.OPENING_STATEMENTS,
         `${player.name} opening statement`,
-        agent.getOpeningStatement(phaseCtx),
+        (signal) => agent.getOpeningStatement(phaseCtx, { signal }),
         () => fallbackMessage("I will let my game speak for itself."),
       );
       logger.logPublic(player.id, message, Phase.OPENING_STATEMENTS, { thinking, reasoningContext });
@@ -196,11 +198,11 @@ export async function runJudgmentJuryQuestions(
     if (!jurorAgent) continue;
 
     const jurorCtx = contextBuilder.buildPhaseContext(juror.playerId, Phase.JURY_QUESTIONS);
-    const { targetFinalistId, question, thinking: questionThinking, reasoningContext: questionReasoning } = await withEndgameActionTimeout(
+    const { targetFinalistId, question, thinking: questionThinking, reasoningContext: questionReasoning } = await withEndgameActionTimeout<{ targetFinalistId: UUID; question: string; thinking?: string; reasoningContext?: string }>(
       ctx,
       Phase.JURY_QUESTIONS,
       `${juror.playerName} jury question`,
-      jurorAgent.getJuryQuestion(jurorCtx, finalistIds),
+      (signal) => jurorAgent.getJuryQuestion(jurorCtx, finalistIds, { signal }),
       () => ({
         targetFinalistId: finalist0.id,
         question: "Why should the jury trust your game?",
@@ -217,7 +219,7 @@ export async function runJudgmentJuryQuestions(
         ctx,
         Phase.JURY_QUESTIONS,
         `${finalistName} jury answer`,
-        finalistAgent.getJuryAnswer(finalistCtx, question, juror.playerName),
+        (signal) => finalistAgent.getJuryAnswer(finalistCtx, question, juror.playerName, { signal }),
         () => fallbackMessage("I played the best game I could."),
       );
       logger.logPublic(targetFinalistId, `[ANSWER to ${juror.playerName}] ${answer}`, Phase.JURY_QUESTIONS, { thinking: answerThinking, reasoningContext: answerReasoning });
@@ -246,7 +248,7 @@ export async function runJudgmentClosing(
         ctx,
         Phase.CLOSING_ARGUMENTS,
         `${player.name} closing argument`,
-        agent.getClosingArgument(phaseCtx),
+        (signal) => agent.getClosingArgument(phaseCtx, { signal }),
         () => fallbackMessage("Vote for the game you respect most."),
       );
       logger.logPublic(player.id, message, Phase.CLOSING_ARGUMENTS, { thinking, reasoningContext });
@@ -282,7 +284,7 @@ export async function runJudgmentJuryVote(
       ctx,
       Phase.JURY_VOTE,
       `${juror.playerName} jury vote`,
-      jurorAgent.getJuryVote(phaseCtx, finalistIds),
+      (signal) => jurorAgent.getJuryVote(phaseCtx, finalistIds, { signal }),
       () => finalist0.id,
     );
     gameState.recordJuryVote(juror.playerId, vote);

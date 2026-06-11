@@ -195,7 +195,7 @@ export async function startGame(
   const defaultTimers = {
     introduction: 30000,
     lobby: 30000,
-    whisper: 45000, // legacy key for room phase (tolerated for old games)
+    mingle: 45000,
     rumor: 30000,
     vote: 20000,
     power: 15000,
@@ -203,7 +203,8 @@ export async function startGame(
   };
   const storedTimers = (gameConfig.timers ?? {}) as Record<string, number>;
 
-  const roomPhaseTimer = storedTimers.mingle ?? storedTimers.whisper ?? 45000;
+  const roomPhaseTimer = storedTimers.mingle ?? defaultTimers.mingle;
+  const { whisper: _unsupportedWhisperTimer, ...currentTimers } = storedTimers;
 
   const engineConfig: GameConfig = {
     maxRounds: (gameConfig.maxRounds as number) ?? 10,
@@ -211,8 +212,8 @@ export async function startGame(
     maxPlayers: game.maxPlayers,
     timers: {
       ...defaultTimers,
-      ...storedTimers,
-      whisper: roomPhaseTimer, // engine still uses 'whisper' key internally for the room phase duration; new games supply via 'mingle'
+      ...currentTimers,
+      mingle: roomPhaseTimer,
     },
   };
 

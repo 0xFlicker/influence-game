@@ -111,6 +111,44 @@ function makeTextSequenceOpenAIStub(
   } as unknown as OpenAI;
 }
 
+function makeJsonFallbackRetryStub(requests: Array<Record<string, unknown>>): OpenAI {
+  return {
+    chat: {
+      completions: {
+        create: async (params: Record<string, unknown>) => {
+          requests.push(params);
+          if (requests.length === 1) {
+            return {
+              choices: [
+                {
+                  finish_reason: "length",
+                  message: { role: "assistant", content: "" },
+                },
+              ],
+            };
+          }
+
+          return {
+            choices: [
+              {
+                finish_reason: "stop",
+                message: {
+                  role: "assistant",
+                  content: JSON.stringify({
+                    thinking: "Retry with enough room to choose targets.",
+                    empower: "Mira",
+                    expose: "Vera",
+                  }),
+                },
+              },
+            ],
+          };
+        },
+      },
+    },
+  } as unknown as OpenAI;
+}
+
 describe("InfluenceAgent structured output mode", () => {
   it("uses named tool choice by default", async () => {
     const requests: Array<Record<string, unknown>> = [];
@@ -167,6 +205,34 @@ describe("InfluenceAgent structured output mode", () => {
     // server reasoning_content (if any) goes only to the separate `reasoningContext`.
     expect(tools[0]!.function.parameters.properties.thinking).toBeDefined();
     expect(tools[0]!.function.parameters.required).toContain("thinking");
+  });
+
+  it("runs JSON schema fallback through the common retry handler", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeJsonFallbackRetryStub(requests),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "json_schema" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const votes = await agent.getVotes(makeContext());
+
+    expect(votes).toEqual({
+      empowerTarget: "mira-id",
+      exposeTarget: "vera-id",
+      thinking: "Retry with enough room to choose targets.",
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.response_format).toBeDefined();
+    expect(requests[0]?.tools).toBeUndefined();
+    expect(requests[0]?.max_tokens).toBe(8192);
+    expect(requests[1]?.max_tokens).toBe(12288);
   });
 
   it("uses plain visible messages (no structured thinking+message JSON) in local mode", async () => {

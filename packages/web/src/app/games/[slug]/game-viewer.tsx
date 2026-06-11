@@ -800,7 +800,7 @@ export function GameViewer({
     (message) =>
       message.phase === "MINGLE" &&
       message.round === replayGame.currentRound &&
-      (message.scope === "whisper" || message.scope === "system"),
+      (message.scope === "mingle" || message.scope === "whisper" || message.scope === "system"),
   );
 
   // Group chat messages for INTRODUCTION/LOBBY phases (live mode)

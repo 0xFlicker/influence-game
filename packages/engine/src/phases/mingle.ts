@@ -448,7 +448,7 @@ export async function runMinglePhase(
     return;
   }
 
-  const beats = config.whisperSessionsPerRound ?? 2;
+  const beats = config.mingleSessionsPerRound ?? 2;
   const allRooms: RoomAllocation[] = [];
   let nextGlobalRoomId = 1;
   const initialRoomCounts: WhisperRoomCount[] = Array.from({ length: roomCount }, (_, index) => ({

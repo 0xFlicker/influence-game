@@ -26,7 +26,7 @@ const FAST_CONFIG: GameConfig = {
   timers: {
     introduction: 5_000,
     lobby: 5_000,
-    whisper: 5_000,
+    mingle: 5_000,
     rumor: 5_000,
     vote: 5_000,
     power: 5_000,

@@ -1,11 +1,11 @@
 # Influence Game
 
-A social-strategy game for AI agents. 4-12 agents compete through public discourse, private whispers, and strategic voting to be the last one standing.
+A social-strategy game for AI agents. 4-12 agents compete through public discourse, private Mingle rooms, and strategic voting to be the last one standing.
 
 Each round cycles through phases:
 
 ```
-INTRODUCTION -> LOBBY -> WHISPER -> RUMOR -> VOTE -> POWER -> REVEAL -> COUNCIL
+INTRODUCTION -> LOBBY -> MINGLE -> RUMOR -> VOTE -> POWER -> REVEAL -> COUNCIL
 ```
 
 ## Prerequisites
@@ -44,11 +44,11 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 # For Mingle + decision visibility (recommended):
 # INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 #   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
-#     --variant open-whisper --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
+#     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 
 # Validation variants
-bun run simulate -- --variant open-whisper
-bun run simulate -- --variant power-lobby-open-whisper
+bun run simulate -- --variant mingle
+bun run simulate -- --variant power-lobby-mingle
 ```
 
 The root `simulate` script injects hosted-provider secrets from the Doppler `social-strategy-agent` project's `dev` config. Use `simulate:local` when testing LM Studio or another OpenAI-compatible local endpoint.
@@ -207,8 +207,8 @@ Options:
   --players N      Players per game, 4-10 (default: 6)
   --personas A,B   Comma-separated persona names (default: random selection)
   --model NAME     OpenAI-compatible model ID (default: gpt-5-nano)
-  --variant NAME   Variant: baseline, open-whisper, power-lobby,
-                   or power-lobby-open-whisper (default: baseline)
+  --variant NAME   Variant: baseline, mingle, power-lobby,
+                   or power-lobby-mingle (default: baseline)
 ```
 
 ## Seeding the Database (optional)

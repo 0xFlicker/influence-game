@@ -883,7 +883,7 @@ export function createAdminRoutes(db: DrizzleDB) {
             round: t.round as number,
             phase: t.phase as string,
             fromPlayerId: remappedFrom,
-            scope: t.scope as "public" | "whisper" | "system" | "diary" | "thinking",
+            scope: t.scope as "public" | "mingle" | "whisper" | "system" | "diary" | "thinking",
             toPlayerIds: remappedToPlayerIds,
             roomId: (t.roomId as number) ?? null,
             roomMetadata: remapRoomMetadata(t.roomMetadata),

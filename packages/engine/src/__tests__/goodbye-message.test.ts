@@ -69,7 +69,7 @@ function makePhaseRunnerContext(agents: GoodbyeProbeAgent[]): PhaseRunnerContext
       timers: {
         introduction: 1,
         lobby: 1,
-        whisper: 1,
+        mingle: 1,
         rumor: 1,
         vote: 1,
         power: 1,
@@ -306,7 +306,7 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     ]);
     const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
 
-    const result = await agent.sendRoomMessage(makeAgentContext(Phase.WHISPER), ["Atlas", "Vera"]);
+    const result = await agent.sendRoomMessage(makeAgentContext(Phase.MINGLE), ["Atlas", "Vera"]);
 
     expect(result).toEqual({
       thinking: "Build trust, then steer the next vote.",

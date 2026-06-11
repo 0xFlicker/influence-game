@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import { GameState, createUUID } from "../game-state";
 import { GameEventBus } from "../event-bus";
 import { GameRunner } from "../game-runner";
-import type { AgentResponse, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "../game-runner";
+import type { AgentCallOptions, AgentResponse, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "../game-runner";
 import { createPhaseMachine } from "../phase-machine";
 import { createActor } from "xstate";
 import { Phase, PlayerStatus } from "../types";
@@ -113,7 +113,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     timers: {
       introduction: 0,
       lobby: 0,
-      whisper: 0,
+      mingle: 0,
       rumor: 0,
       vote: 0,
       power: 0,
@@ -155,7 +155,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map(
       (name) => new PileOnAgent(createUUID(), name),
     );
-    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 1 });
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, mingleSessionsPerRound: 1 });
     const result = await runner.run();
 
     const allocation = result.transcript.find((entry) => entry.roomMetadata);
@@ -176,7 +176,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map(
       (name) => new SpreadAgent(createUUID(), name),
     );
-    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 1 });
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, mingleSessionsPerRound: 1 });
     const result = await runner.run();
 
     const roomMessages = result.transcript.filter((entry) => entry.scope === "mingle" && entry.phase === Phase.MINGLE);
@@ -216,7 +216,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map(
       (name) => new InboxProbeAgent(createUUID(), name),
     );
-    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 1 });
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, mingleSessionsPerRound: 1 });
     await runner.run();
 
     expect(seenWhispers.size).toBe(5);
@@ -264,7 +264,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
       new ScriptedMingleAgent(createUUID(), "Echo", 2, []),
     ];
 
-    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 2 });
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, mingleSessionsPerRound: 2 });
     const result = await runner.run();
 
     const allocations = result.transcript.filter(
@@ -346,7 +346,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
       new PrivacyProbeAgent(createUUID(), "Echo", 2),
     ];
 
-    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 1 });
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, mingleSessionsPerRound: 1 });
     await runner.run();
 
     expect(alpha.choiceContexts[0]!.roomCounts).toEqual([{ roomId: 1, count: 0 }, { roomId: 2, count: 0 }]);
@@ -401,7 +401,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
       new SparseMingleAgent(createUUID(), "Vera", 2),
     ];
 
-    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 2 });
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, mingleSessionsPerRound: 2 });
     const result = await runner.run();
 
     const allocations = result.transcript.filter(
@@ -425,8 +425,13 @@ describe("Mingle Rooms (current open-room phase)", () => {
   });
 
   it("uses House fallbacks when endgame actions exceed the configured timeout", async () => {
+    let abortObserved = false;
+
     class TimeoutPleaAgent extends MockAgent {
-      override async getPlea(): Promise<AgentResponse> {
+      override async getPlea(_ctx: PhaseContext, options?: AgentCallOptions): Promise<AgentResponse> {
+        options?.signal?.addEventListener("abort", () => {
+          abortObserved = true;
+        }, { once: true });
         return new Promise(() => {});
       }
     }
@@ -446,6 +451,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
 
     expect(result.winnerName).toBeDefined();
     expect(result.transcript.some((entry) => entry.text.includes("Alpha plea timed out after 5ms"))).toBe(true);
+    expect(abortObserved).toBe(true);
   });
 });
 
@@ -604,6 +610,29 @@ describe("GameState - POWER phase", () => {
     }
   });
 
+  it("empowered player cannot be a council candidate (even with expose votes on them)", () => {
+    // Fresh round where we deliberately pile expose votes on the player who will be empowered (bob).
+    gs.startRound();
+    // Expose votes all target bob (the future empowered); empower votes make bob win.
+    gs.recordVote(alice, bob, bob);
+    gs.recordVote(bob, alice, bob);
+    gs.recordVote(charlie, dave, bob);
+    gs.recordVote(dave, bob, bob);
+    gs.tallyEmpowerVotes(); // bob is empowered
+
+    gs.setPowerAction({ action: "pass", target: charlie });
+    const { candidates } = gs.determineCandidates();
+
+    // Bob (empowered) must not be a candidate, even though they received all the expose votes.
+    // The top non-empowered (by the remaining expose distribution) should be selected instead.
+    expect(candidates).not.toBeNull();
+    if (candidates) {
+      expect(candidates.includes(bob)).toBe(false);
+      // At least one real player made it (tests that filler / next-highest logic worked).
+      expect(candidates.length).toBe(2);
+    }
+  });
+
   it("expire shields clears shielded status", () => {
     gs.setPowerAction({ action: "protect", target: charlie });
     gs.determineCandidates();
@@ -623,7 +652,7 @@ describe("GameRunner - Power Lobby after vote experiment", () => {
     timers: {
       introduction: 0,
       lobby: 0,
-      whisper: 0,
+      mingle: 0,
       rumor: 0,
       vote: 0,
       power: 0,
@@ -633,8 +662,7 @@ describe("GameRunner - Power Lobby after vote experiment", () => {
     minPlayers: 4,
     maxPlayers: 12,
     lobbyMessagesPerPlayer: 1,
-    whisperSessionsPerRound: 1,
-    maxWhisperExchanges: 1,
+    mingleSessionsPerRound: 1,
   };
 
   function makeAgents(): PowerLobbyProbeAgent[] {
@@ -1369,7 +1397,7 @@ describe("Diary Room - interview mechanics", () => {
     timers: {
       introduction: 0,
       lobby: 0,
-      whisper: 0,
+      mingle: 0,
       rumor: 0,
       vote: 0,
       power: 0,
@@ -1500,7 +1528,7 @@ describe("Full game - endgame integration", () => {
     timers: {
       introduction: 0,
       lobby: 0,
-      whisper: 0,
+      mingle: 0,
       rumor: 0,
       vote: 0,
       power: 0,
@@ -1597,7 +1625,7 @@ describe("Anonymous Rumors", () => {
     timers: {
       introduction: 0,
       lobby: 0,
-      whisper: 0,
+      mingle: 0,
       rumor: 0,
       vote: 0,
       power: 0,

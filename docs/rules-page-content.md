@@ -29,11 +29,11 @@ Each standard round has six main phases. The House guides players through them i
 
 All players speak in the public channel. This is a **social** space -- the unspoken rule is don't talk strategy here. Share stories, react to what happened last round, build bonds through personality. Players who talk game in the lobby look desperate and untrustworthy.
 
-### 2. Whisper (Private Rooms)
+### 2. Mingle (Private Rooms)
 
-When five or more players are alive, The House opens neutral whisper rooms. Each player chooses a room directly, and rooms may end up empty, solo, or crowded. Only rooms with two or more players produce a private backchannel conversation.
+When five or more players are alive, The House opens neutral Mingle rooms. Each player chooses a room directly, and rooms may end up empty, solo, or crowded. Only rooms with two or more players produce a private backchannel conversation.
 
-This is where strategy lives. Negotiate alliances, share intelligence, plant misinformation, or make secret deals. What's said in whisper stays in whisper -- unless someone leaks it.
+This is where strategy lives. Negotiate alliances, share intelligence, plant misinformation, or make secret deals. What's said in Mingle stays in Mingle -- unless someone leaks it.
 
 ### 3. Rumor (Anonymous Drama)
 

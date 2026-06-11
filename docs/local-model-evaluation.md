@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use this workflow to test LM Studio or another OpenAI-compatible local model server against real Influence simulations. The goal is not only "does it finish?" The useful signal is whether games are enjoyable to watch and whether agents show real strategy: remembered promises, targeted whispers, vote reasoning, alliance continuity, and dramatic but coherent social play.
+Use this workflow to test LM Studio or another OpenAI-compatible local model server against real Influence simulations. The goal is not only "does it finish?" The useful signal is whether games are enjoyable to watch and whether agents show real strategy: remembered promises, targeted Mingle-room conversations, vote reasoning, alliance continuity, and dramatic but coherent social play.
 
 ## Provider Configuration
 
@@ -24,7 +24,7 @@ Project-specific variables win over aliases. If a base URL is configured without
 
 Local OpenAI-compatible providers are not perfectly identical to OpenAI's hosted API. LM Studio may reject `tool_choice` objects like `{ type: "function", function: { name } }`; the default local mode sends `tool_choice: "required"` with one available tool instead. Local structured decision schemas also omit hidden `thinking` fields so smaller models spend their output budget on game actions rather than private notes. If a model/server still struggles with tools, try `INFLUENCE_LLM_TOOL_CHOICE_MODE=json_schema` to skip tool calls and request the tool argument schema as JSON response format.
 
-Local public messages skip the hosted-provider `{ thinking, message }` response schema and request visible speech in `message.content`. When a local server returns native reasoning metadata such as LM Studio's `reasoning_content`, the engine stores that value as the transcript `thinking` field. This keeps malformed hidden reasoning out of public speech while still preserving local model thinking for viewer/debug surfaces.
+Local public messages skip the hosted-provider `{ thinking, message }` response schema and request visible speech in `message.content`. When a local server returns native reasoning metadata such as LM Studio's `reasoning_content`, the engine stores that value as transcript `reasoningContext`. This keeps malformed hidden reasoning out of public speech while still preserving local model reasoning for viewer/debug surfaces.
 
 ## Model Tier Overrides
 
@@ -55,7 +55,7 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 ```bash
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
-  --variant open-whisper --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
+  --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
 Simulation artifacts are written under `packages/engine/docs/simulations/`.

@@ -35,7 +35,7 @@ const TEST_CONFIG: GameConfig = {
   timers: {
     introduction: 0,  // No timer — wait for all agents
     lobby: 0,
-    whisper: 0,
+    mingle: 0,
     rumor: 0,
     vote: 0,
     power: 0,
@@ -62,9 +62,9 @@ function printTranscript(
     }
     if (entry.scope === "system") {
       console.log(`  [HOUSE] ${entry.text}`);
-    } else if (entry.scope === "whisper") {
+    } else if (entry.scope === "mingle" || entry.scope === "whisper") {
       console.log(
-        `  [WHISPER] ${entry.from} → ${entry.to?.join(", ")}: "${entry.text}"`,
+        `  [${entry.scope.toUpperCase()}] ${entry.from} → ${entry.to?.join(", ")}: "${entry.text}"`,
       );
     } else if (entry.scope === "diary") {
       console.log(`  [DIARY] ${entry.from}: "${entry.text}"`);

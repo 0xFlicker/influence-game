@@ -20,7 +20,7 @@ import type { UUID, GameConfig } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 
 // Re-export types from the extracted module for backward compatibility
-export type { AgentResponse, GameStreamEvent, GameStateSnapshot, IAgent, MingleTurnAction, PhaseContext, PowerLobbyExposure, TranscriptEntry } from "./game-runner.types";
+export type { AgentCallOptions, AgentResponse, GameStreamEvent, GameStateSnapshot, IAgent, MingleTurnAction, PhaseContext, PowerLobbyExposure, TranscriptEntry } from "./game-runner.types";
 import type { GameStreamEvent, GameStateSnapshot, IAgent, TranscriptEntry } from "./game-runner.types";
 
 // Internal modules
@@ -55,7 +55,7 @@ export class GameRunner {
   private readonly contextBuilder: ContextBuilder;
   private readonly diaryRoom: DiaryRoom;
   private readonly houseInterviewer: IHouseInterviewer;
-  /** Whisper messages keyed by recipient */
+  /** Mingle room messages keyed by recipient */
   private mingleInbox = new Map<UUID, Array<{ from: string; text: string }>>();
   /** Ordered list of eliminated player names */
   private readonly eliminationOrder: string[] = [];
