@@ -884,7 +884,7 @@ ${!isFirstMessage ? `\nIf you have nothing more to say, use pass: true to end yo
 Use the send_room_message tool to send your message${!isFirstMessage ? " or pass" : ""}.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; message?: string; pass?: boolean }>(
+      const result = await this.callTool<{ thinking?: string; message?: string; pass?: boolean; reasoningContext?: string }>(
         prompt, TOOL_SEND_ROOM_MESSAGE, 300, sys,
         { action: "room-message", reasoningEffort: "medium" },
       );
@@ -894,9 +894,9 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
         const fallbackMsg = isFirstMessage
           ? `${otherRoomMates.join(", ")}, let's compare notes and watch the vote together.`
           : null;
-        return fallbackMsg ? { thinking: result.thinking ?? "", message: fallbackMsg } : null;
+        return fallbackMsg ? { thinking: result.thinking ?? "", message: fallbackMsg, reasoningContext: result.reasoningContext } : null;
       }
-      return { thinking: result.thinking ?? "", message: msg };
+      return { thinking: result.thinking ?? "", message: msg, reasoningContext: result.reasoningContext };
     } catch {
       if (isFirstMessage) {
         return { thinking: "", message: `${otherRoomMates.join(", ")}, let's compare notes and watch the vote together.` };
@@ -948,6 +948,7 @@ Keep TALK to 1-3 sentences. Use the mingle_turn tool.`;
         message?: string | null;
         noReply?: boolean;
         gotoRoomId?: number | null;
+        reasoningContext?: string;
       }>(
         prompt, TOOL_MINGLE_TURN, 300, sys,
         { action: "mingle-turn", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
@@ -959,6 +960,7 @@ Keep TALK to 1-3 sentences. Use the mingle_turn tool.`;
         message: msg,
         noReply: result.noReply ?? !msg,
         gotoRoomId,
+        reasoningContext: result.reasoningContext,
       };
     } catch {
       if (otherRoomMates.length > 0 && history.length === 0) {
@@ -1012,12 +1014,12 @@ Keep it to 1-2 sentences. One sharp claim is better than two weak ones.`;
 
     const response = await this.callLLMWithThinking(prompt, 150, sys, { action: "rumor", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
     // Strip "The shadows whisper: " prefix if the LLM included it
-    return { thinking: response.thinking, message: response.message.replace(/^the\s+shadows?\s+whispers?:\s*/i, "") };
+    return { thinking: response.thinking, message: response.message.replace(/^the\s+shadows?\s+whispers?:\s*/i, ""), reasoningContext: response.reasoningContext };
   }
 
   async getVotes(
     ctx: PhaseContext,
-  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID }> {
+  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string }> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
 
     const randomOther = () => {
@@ -1039,7 +1041,7 @@ Available players: ${others.map((p) => p.name).join(", ")}
 Use the cast_votes tool. Both votes are required. Use player names exactly as listed.`;
 
     try {
-      const result = await this.callTool<{ empower: string; expose: string }>(
+      const result = await this.callTool<{ thinking?: string; empower: string; expose: string; reasoningContext?: string }>(
         prompt, TOOL_CAST_VOTES, 100, sys,
         { action: "vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
       );
@@ -1074,12 +1076,12 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
       this.memory.roundHistory.push(voteEntry);
       this.persistMemory("vote_history", null, JSON.stringify(voteEntry));
 
-      return { empowerTarget, exposeTarget };
+      return { empowerTarget, exposeTarget, thinking: result.thinking, reasoningContext: result.reasoningContext };
     } catch (err) {
       const empFallback = randomOther();
       const expFallback = randomOther();
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getVotes error="${err instanceof Error ? err.message : err}" fallback=empower:"${empFallback.name}",expose:"${expFallback.name}"`);
-      return { empowerTarget: empFallback.id, exposeTarget: expFallback.id };
+      return { empowerTarget: empFallback.id, exposeTarget: expFallback.id, thinking: undefined, reasoningContext: undefined };
     }
   }
 
@@ -1137,7 +1139,7 @@ Keep it to 1-2 sentences.`;
   async getPowerAction(
     ctx: PhaseContext,
     candidates: [UUID, UUID],
-  ): Promise<PowerAction> {
+  ): Promise<PowerAction & { thinking?: string; reasoningContext?: string }> {
     const candidateNames = candidates.map(
       (id) => ctx.alivePlayers.find((p) => p.id === id)?.name ?? id,
     );
@@ -1181,7 +1183,7 @@ Before using the tool, decide what future debt or backlash your action creates. 
 Use the use_power tool to declare your final hidden action.`;
 
     try {
-      const result = await this.callTool<{ action: string; target: string }>(
+      const result = await this.callTool<{ thinking?: string; action: string; target: string; reasoningContext?: string }>(
         prompt, TOOL_POWER_ACTION, 100, sys,
         { action: "power", reasoningEffort: "medium" },
       );
@@ -1206,13 +1208,18 @@ Use the use_power tool to declare your final hidden action.`;
       return {
         action: validAction,
         target: targetPlayer?.id ?? candidates[0],
+        thinking: result.thinking,
+        reasoningContext: result.reasoningContext,
       };
     } catch {
-      return { action: "pass", target: candidates[0] };
+      return { action: "pass", target: candidates[0], thinking: "fallback to pass under pressure" };
     }
   }
 
-  async getCouncilVote(ctx: PhaseContext, candidates: [UUID, UUID]): Promise<UUID> {
+  async getCouncilVote(
+    ctx: PhaseContext,
+    candidates: [UUID, UUID],
+  ): Promise<{ target: UUID; thinking?: string; reasoningContext?: string }> {
     const [c1, c2] = candidates;
     const c1Name = ctx.alivePlayers.find((p) => p.id === c1)?.name ?? c1;
     const c2Name = ctx.alivePlayers.find((p) => p.id === c2)?.name ?? c2;
@@ -1232,20 +1239,22 @@ Who should be eliminated? Consider your alliances, threats, and long-term strate
 Use the council_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
-      if (normalizeName(result.eliminate) === normalizeName(c1Name)) return c1;
-      if (normalizeName(result.eliminate) === normalizeName(c2Name)) return c2;
-      const fallback = candidates[Math.floor(Math.random() * 2)];
-      if (!fallback) throw new Error("No council candidate available");
+      const result = await this.callTool<{ thinking?: string; eliminate: string; reasoningContext?: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
+      const target = normalizeName(result.eliminate) === normalizeName(c1Name) ? c1
+        : normalizeName(result.eliminate) === normalizeName(c2Name) ? c2
+        : undefined;
+      if (target) {
+        return { target, thinking: result.thinking, reasoningContext: result.reasoningContext };
+      }
+      const fallback = candidates[Math.floor(Math.random() * 2)]!;
       const fallbackName = ctx.alivePlayers.find((p) => p.id === fallback)?.name ?? fallback;
       console.warn(`[vote-fallback] agent="${this.name}" method=getCouncilVote returned="${result.eliminate}" available=[${c1Name}, ${c2Name}] fallback="${fallbackName}"`);
-      return fallback;
+      return { target: fallback, thinking: result.thinking, reasoningContext: result.reasoningContext };
     } catch (err) {
-      const fallback = candidates[Math.floor(Math.random() * 2)];
-      if (!fallback) throw new Error("No council candidate available");
+      const fallback = candidates[Math.floor(Math.random() * 2)]!;
       const fallbackName = ctx.alivePlayers.find((p) => p.id === fallback)?.name ?? fallback;
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getCouncilVote error="${err instanceof Error ? err.message : err}" fallback="${fallbackName}"`);
-      return fallback;
+      return { target: fallback, thinking: "fallback council decision due to error", reasoningContext: undefined };
     }
   }
 
@@ -1370,7 +1379,7 @@ Use the elimination_vote tool to cast your vote.`;
     }
   }
 
-  async getAccusation(ctx: PhaseContext): Promise<{ targetId: UUID; text: string; thinking?: string }> {
+  async getAccusation(ctx: PhaseContext): Promise<{ targetId: UUID; text: string; thinking?: string; reasoningContext?: string }> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
@@ -1386,7 +1395,7 @@ Available players: ${others.map((p) => p.name).join(", ")}
 Use the make_accusation tool to submit your accusation.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; target: string; accusation: string }>(
+      const result = await this.callTool<{ thinking?: string; target: string; accusation: string; reasoningContext?: string }>(
         prompt, TOOL_MAKE_ACCUSATION, 200, sys,
         { action: "accusation", reasoningEffort: "medium" },
       );
@@ -1400,6 +1409,7 @@ Use the make_accusation tool to submit your accusation.`;
         targetId: target?.id ?? fallbackOther.id,
         text: result.accusation ?? `I accuse ${target?.name ?? fallbackOther.name}.`,
         thinking: result.thinking,
+        reasoningContext: result.reasoningContext,
       };
     } catch (err) {
       const fallbackOther = others[0];
@@ -1440,7 +1450,7 @@ Keep it to 3-4 sentences. Make it powerful.`;
     return this.callLLMWithThinking(prompt, 250, sys, { action: "opening-statement", reasoningEffort: "medium" });
   }
 
-  async getJuryQuestion(ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string; thinking?: string }> {
+  async getJuryQuestion(ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string; thinking?: string; reasoningContext?: string }> {
     const [finalistId0, finalistId1] = finalistIds;
     const finalist0 = ctx.alivePlayers.find((p) => p.id === finalistId0) ?? { id: finalistId0, name: finalistId0 };
     const finalist1 = ctx.alivePlayers.find((p) => p.id === finalistId1) ?? { id: finalistId1, name: finalistId1 };
@@ -1460,7 +1470,7 @@ Ask a pointed, revealing question. You want to know who truly deserves to win.
 Use the ask_jury_question tool to submit your question.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; target: string; question: string }>(
+      const result = await this.callTool<{ thinking?: string; target: string; question: string; reasoningContext?: string }>(
         prompt, TOOL_ASK_JURY_QUESTION, 150, sys,
         { action: "jury-question", reasoningEffort: "medium" },
       );
@@ -1469,6 +1479,7 @@ Use the ask_jury_question tool to submit your question.`;
         targetFinalistId: target?.id ?? finalistId0,
         question: result.question ?? "Why do you deserve to win?",
         thinking: result.thinking,
+        reasoningContext: result.reasoningContext,
       };
     } catch (err) {
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getJuryQuestion error="${err instanceof Error ? err.message : err}" fallback=target:"${finalist0.name}"`);
@@ -1729,11 +1740,9 @@ ${roomSection}
    * lobby chat) and more headroom for complex decisions (votes, strategic reflection).
    * Structured output (JSON schema) adds ~200-400 tokens of formatting overhead.
    */
-  private static REASONING_TOKEN_OVERHEAD = 3000;
-  private static REASONING_OVERHEAD_HIGH = 5000;
-  private static REASONING_OVERHEAD_LOW = 1500;
-  private static LOCAL_STRUCTURED_MIN_TOKENS = 4096;
-  private static LOCAL_MESSAGE_MIN_TOKENS = 8192;
+  private static REASONING_TOKEN_OVERHEAD = 8192;
+  private static REASONING_OVERHEAD_HIGH = 16384;
+  private static REASONING_OVERHEAD_LOW = 4096;
 
   /** JSON Schema for structured AgentResponse output (thinking + message) */
   private static readonly AGENT_RESPONSE_FORMAT = {
@@ -1840,7 +1849,7 @@ ${roomSection}
     const parsed = configured ? parseInt(configured, 10) : NaN;
     return Number.isFinite(parsed) && parsed > 0
       ? parsed
-      : InfluenceAgent.LOCAL_STRUCTURED_MIN_TOKENS;
+      : InfluenceAgent.REASONING_TOKEN_OVERHEAD;
   }
 
   private localMessageMinTokens(): number {
@@ -1850,7 +1859,7 @@ ${roomSection}
     const parsed = configured ? parseInt(configured, 10) : NaN;
     return Number.isFinite(parsed) && parsed > 0
       ? parsed
-      : InfluenceAgent.LOCAL_MESSAGE_MIN_TOKENS;
+      : InfluenceAgent.REASONING_OVERHEAD_HIGH;
   }
 
   private applyStructuredTokenFloor(effectiveMaxTokens: number): number {
@@ -1932,7 +1941,7 @@ ${roomSection}
       return "";
     }
 
-    const record = message as Record<string, unknown>;
+    const record = message as unknown as Record<string, unknown>;
     return InfluenceAgent.readStringField(record.reasoning_content)
       || InfluenceAgent.readStringField(record.reasoning)
       || InfluenceAgent.readStringField(record.thinking);
@@ -1983,6 +1992,9 @@ ${roomSection}
           : "";
         const message = InfluenceAgent.cleanVisibleMessage(rawContent);
         const thinking = InfluenceAgent.extractNativeThinking(rawMessage);
+        const reasoningContext = InfluenceAgent.readStringField(
+          (rawMessage as unknown as Record<string, unknown>).reasoning_content
+        ) || thinking;
 
         if (!message || message === "[No response]") {
           if (attempt < maxAttempts) {
@@ -1992,10 +2004,14 @@ ${roomSection}
           }
           console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned empty local message`);
           if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
-          return { thinking, message: "[No response]" };
+          return {
+            thinking,
+            message: "[No response]",
+            ...(reasoningContext && { reasoningContext }),
+          };
         }
 
-        return { thinking, message };
+        return { thinking, message, ...(reasoningContext && { reasoningContext }) };
       } catch (error) {
         if (attempt < maxAttempts) {
           const backoffMs = attempt * 1000;
@@ -2079,7 +2095,12 @@ ${JSON.stringify(tool.function.parameters)}`,
     }
 
     console.warn(`[tool-fallback] agent="${this.name}" tool=${tool.function.name} source=json_response`);
-    return parsed;
+    const withReasoning = parsed as T & { reasoningContext?: string };
+    const reasoningContext = InfluenceAgent.extractNativeThinking(message);
+    if (reasoningContext) {
+      withReasoning.reasoningContext = reasoningContext;
+    }
+    return withReasoning;
   }
 
   /** Free-text LLM call for communication (introductions, lobby, rumor, etc.) */
@@ -2290,6 +2311,7 @@ Start directly with the spoken message.`;
 
         const choice = response.choices[0];
         const message = choice?.message;
+        const reasoningContext = InfluenceAgent.extractNativeThinking(message);
         if (message?.refusal) {
           throw new ToolCallFatalError(`Model refused tool call for ${requestTool.function.name}`);
         }
@@ -2309,10 +2331,14 @@ Start directly with the spoken message.`;
           );
           if (parsedContent) {
             console.warn(`[tool-fallback] agent="${this.name}" tool=${requestTool.function.name} source=message_content`);
-            return parsedContent;
+            const withReasoning = parsedContent as T & { reasoningContext?: string };
+            if (reasoningContext) {
+              withReasoning.reasoningContext = reasoningContext;
+            }
+            return withReasoning;
           }
 
-          return await this.callToolJsonFallback<T>(
+          const jsonFallback = await this.callToolJsonFallback<T>(
             prompt,
             requestTool,
             effectiveMaxTokens,
@@ -2322,11 +2348,16 @@ Start directly with the spoken message.`;
             options,
             sourceKey,
           );
+          const jsonWithReasoning = jsonFallback as T & { reasoningContext?: string };
+          if (reasoningContext) {
+            jsonWithReasoning.reasoningContext = reasoningContext;
+          }
+          return jsonWithReasoning;
         }
 
         if (toolCall.function.name !== requestTool.function.name) {
           console.warn(`[tool-fallback] agent="${this.name}" expected=${requestTool.function.name} got=${toolCall.function.name} source=tool_name_mismatch`);
-          return await this.callToolJsonFallback<T>(
+          const mismatchFallback = await this.callToolJsonFallback<T>(
             prompt,
             requestTool,
             effectiveMaxTokens,
@@ -2336,9 +2367,18 @@ Start directly with the spoken message.`;
             options,
             sourceKey,
           );
+          const mismatchWithReasoning = mismatchFallback as T & { reasoningContext?: string };
+          if (reasoningContext) {
+            mismatchWithReasoning.reasoningContext = reasoningContext;
+          }
+          return mismatchWithReasoning;
         }
 
-        return JSON.parse(toolCall.function.arguments) as T;
+        const args = JSON.parse(toolCall.function.arguments) as T & { reasoningContext?: string };
+        if (reasoningContext) {
+          args.reasoningContext = reasoningContext;
+        }
+        return args;
       } catch (error) {
         if (error instanceof ToolCallFatalError) {
           throw error;

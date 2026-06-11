@@ -30,7 +30,6 @@ export interface SimulatorArgsSnapshot {
   variant: string;
   gameTimeoutMs: number;
   llmTimeoutMs: number;
-  mingleUntilPlayers?: number;
 }
 
 export interface GitMetadata {

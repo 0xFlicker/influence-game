@@ -44,14 +44,14 @@ export async function runReckoningPlea(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.PLEA);
-      const { message, thinking } = await withEndgameActionTimeout(
+      const { message, thinking, reasoningContext } = await withEndgameActionTimeout(
         ctx,
         Phase.PLEA,
         `${player.name} plea`,
         agent.getPlea(phaseCtx),
         () => fallbackMessage("I have no further plea."),
       );
-      logger.logPublic(player.id, message, Phase.PLEA, { thinking });
+      logger.logPublic(player.id, message, Phase.PLEA, { thinking, reasoningContext });
     }),
   );
 
@@ -76,7 +76,7 @@ export async function runTribunalAccusation(
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.ACCUSATION);
       const fallbackTarget = alivePlayers.find((candidate) => candidate.id !== player.id) ?? player;
-      const { targetId, text, thinking } = await withEndgameActionTimeout(
+      const { targetId, text, thinking, reasoningContext } = await withEndgameActionTimeout(
         ctx,
         Phase.ACCUSATION,
         `${player.name} accusation`,
@@ -88,7 +88,7 @@ export async function runTribunalAccusation(
         }),
       );
       const targetName = gameState.getPlayerName(targetId);
-      logger.logPublic(player.id, `[ACCUSES ${targetName}] ${text}`, Phase.ACCUSATION, { thinking });
+      logger.logPublic(player.id, `[ACCUSES ${targetName}] ${text}`, Phase.ACCUSATION, { thinking, reasoningContext });
       accusations.set(targetId, {
         accuserId: player.id,
         accuserName: player.name,
@@ -119,14 +119,14 @@ export async function runTribunalDefense(
 
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.DEFENSE);
-      const { message: defense, thinking } = await withEndgameActionTimeout(
+      const { message: defense, thinking, reasoningContext } = await withEndgameActionTimeout(
         ctx,
         Phase.DEFENSE,
         `${player.name} defense`,
         agent.getDefense(phaseCtx, accusation.text, accusation.accuserName),
         () => fallbackMessage("I stand by my game."),
       );
-      logger.logPublic(player.id, `[DEFENSE] ${defense}`, Phase.DEFENSE, { thinking });
+      logger.logPublic(player.id, `[DEFENSE] ${defense}`, Phase.DEFENSE, { thinking, reasoningContext });
     }),
   );
 
@@ -162,14 +162,14 @@ export async function runJudgmentOpening(
     finalists.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.OPENING_STATEMENTS);
-      const { message, thinking } = await withEndgameActionTimeout(
+      const { message, thinking, reasoningContext } = await withEndgameActionTimeout(
         ctx,
         Phase.OPENING_STATEMENTS,
         `${player.name} opening statement`,
         agent.getOpeningStatement(phaseCtx),
         () => fallbackMessage("I will let my game speak for itself."),
       );
-      logger.logPublic(player.id, message, Phase.OPENING_STATEMENTS, { thinking });
+      logger.logPublic(player.id, message, Phase.OPENING_STATEMENTS, { thinking, reasoningContext });
     }),
   );
 
@@ -196,7 +196,7 @@ export async function runJudgmentJuryQuestions(
     if (!jurorAgent) continue;
 
     const jurorCtx = contextBuilder.buildPhaseContext(juror.playerId, Phase.JURY_QUESTIONS);
-    const { targetFinalistId, question, thinking: questionThinking } = await withEndgameActionTimeout(
+    const { targetFinalistId, question, thinking: questionThinking, reasoningContext: questionReasoning } = await withEndgameActionTimeout(
       ctx,
       Phase.JURY_QUESTIONS,
       `${juror.playerName} jury question`,
@@ -208,19 +208,19 @@ export async function runJudgmentJuryQuestions(
       }),
     );
     const finalistName = gameState.getPlayerName(targetFinalistId);
-    logger.logPublic(juror.playerId, `[QUESTION to ${finalistName}] ${question}`, Phase.JURY_QUESTIONS, { thinking: questionThinking });
+    logger.logPublic(juror.playerId, `[QUESTION to ${finalistName}] ${question}`, Phase.JURY_QUESTIONS, { thinking: questionThinking, reasoningContext: questionReasoning });
 
     const finalistAgent = agents.get(targetFinalistId);
     if (finalistAgent) {
       const finalistCtx = contextBuilder.buildPhaseContext(targetFinalistId, Phase.JURY_QUESTIONS);
-      const { message: answer, thinking: answerThinking } = await withEndgameActionTimeout(
+      const { message: answer, thinking: answerThinking, reasoningContext: answerReasoning } = await withEndgameActionTimeout(
         ctx,
         Phase.JURY_QUESTIONS,
         `${finalistName} jury answer`,
         finalistAgent.getJuryAnswer(finalistCtx, question, juror.playerName),
         () => fallbackMessage("I played the best game I could."),
       );
-      logger.logPublic(targetFinalistId, `[ANSWER to ${juror.playerName}] ${answer}`, Phase.JURY_QUESTIONS, { thinking: answerThinking });
+      logger.logPublic(targetFinalistId, `[ANSWER to ${juror.playerName}] ${answer}`, Phase.JURY_QUESTIONS, { thinking: answerThinking, reasoningContext: answerReasoning });
     }
   }
 
@@ -242,14 +242,14 @@ export async function runJudgmentClosing(
     finalists.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.CLOSING_ARGUMENTS);
-      const { message, thinking } = await withEndgameActionTimeout(
+      const { message, thinking, reasoningContext } = await withEndgameActionTimeout(
         ctx,
         Phase.CLOSING_ARGUMENTS,
         `${player.name} closing argument`,
         agent.getClosingArgument(phaseCtx),
         () => fallbackMessage("Vote for the game you respect most."),
       );
-      logger.logPublic(player.id, message, Phase.CLOSING_ARGUMENTS, { thinking });
+      logger.logPublic(player.id, message, Phase.CLOSING_ARGUMENTS, { thinking, reasoningContext });
     }),
   );
 

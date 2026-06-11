@@ -41,6 +41,7 @@ function makeOpenAIStub(requests: Array<Record<string, unknown>>): OpenAI {
                       function: {
                         name: "cast_votes",
                         arguments: JSON.stringify({
+                          thinking: "I empower my ally Mira because she is loyal, and expose Vera as the threat.",
                           empower: "Mira",
                           expose: "Vera",
                         }),
@@ -108,7 +109,7 @@ describe("InfluenceAgent structured output mode", () => {
 
     const votes = await agent.getVotes(makeContext());
 
-    expect(votes).toEqual({ empowerTarget: "mira-id", exposeTarget: "vera-id" });
+    expect(votes).toEqual({ empowerTarget: "mira-id", exposeTarget: "vera-id", thinking: expect.any(String) });
     expect(requests[0]?.tool_choice).toEqual({
       type: "function",
       function: { name: "cast_votes" },
@@ -132,9 +133,9 @@ describe("InfluenceAgent structured output mode", () => {
 
     const votes = await agent.getVotes(makeContext());
 
-    expect(votes).toEqual({ empowerTarget: "mira-id", exposeTarget: "vera-id" });
+    expect(votes).toEqual({ empowerTarget: "mira-id", exposeTarget: "vera-id", thinking: expect.any(String) });
     expect(requests[0]?.tool_choice).toBe("required");
-    expect(requests[0]?.max_tokens).toBe(4096);
+    expect(requests[0]?.max_tokens).toBe(8192);
     expect("parallel_tool_calls" in requests[0]!).toBe(false);
     const tools = requests[0]?.tools as Array<{
       function: {
@@ -164,11 +165,11 @@ describe("InfluenceAgent structured output mode", () => {
 
     const response = await agent.getIntroduction(makeContext(Phase.INTRODUCTION));
 
-    expect(response).toEqual({
+    expect(response).toMatchObject({
       thinking: "",
       message: "Glad to meet everyone. I ask too many questions, but I promise most of them are useful.",
     });
-    expect(requests[0]?.max_tokens).toBe(8192);
+    expect(requests[0]?.max_tokens).toBe(16384);
     expect(requests[0]?.response_format).toBeUndefined();
     const messages = requests[0]?.messages as Array<{ content: string }>;
     expect(messages.at(-1)!.content).toContain("LOCAL MODEL OUTPUT RULE");
@@ -195,7 +196,7 @@ describe("InfluenceAgent structured output mode", () => {
 
     const response = await agent.getIntroduction(makeContext(Phase.INTRODUCTION));
 
-    expect(response).toEqual({
+    expect(response).toMatchObject({
       thinking: "Atlas wants to sound warm while signaling observation.",
       message: "I notice who dodges questions, and I remember.",
     });
@@ -220,7 +221,7 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(response.message).toBe("Second try, actual words.");
     expect(requests).toHaveLength(2);
-    expect(requests[0]?.max_tokens).toBe(8192);
-    expect(requests[1]?.max_tokens).toBe(16384);
+    expect(requests[0]?.max_tokens).toBe(16384);
+    expect(requests[1]?.max_tokens).toBe(32768);
   });
 });

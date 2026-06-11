@@ -42,6 +42,11 @@ export interface AgentResponse {
   thinking: string;
   /** The actual message content */
   message: string;
+  /**
+   * Raw model-provided reasoning context (e.g. `reasoning_content` from local LLMs).
+   * Captured alongside `thinking` for richer simulation traces.
+   */
+  reasoningContext?: string;
 }
 
 export interface MingleTurnAction {
@@ -53,6 +58,8 @@ export interface MingleTurnAction {
   noReply?: boolean;
   /** Optional local room number to enter for the next turn. */
   gotoRoomId?: number | null;
+  /** Raw model reasoning context from local LLM */
+  reasoningContext?: string;
 }
 
 export interface PowerLobbyExposure {
@@ -91,7 +98,7 @@ export interface IAgent {
   /** Called to collect votes */
   getVotes(
     context: PhaseContext,
-  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID }>;
+  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string }>;
   /** Called during the optional post-vote Power Lobby experiment before the empowered action */
   getPowerLobbyMessage?(
     context: PhaseContext,
@@ -102,9 +109,12 @@ export interface IAgent {
   getPowerAction(
     context: PhaseContext,
     candidates: [UUID, UUID],
-  ): Promise<PowerAction>;
+  ): Promise<PowerAction & { thinking?: string; reasoningContext?: string }>;
   /** Called for council vote (empowered agent also votes as tiebreaker) */
-  getCouncilVote(context: PhaseContext, candidates: [UUID, UUID]): Promise<UUID>;
+  getCouncilVote(
+    context: PhaseContext,
+    candidates: [UUID, UUID],
+  ): Promise<{ target: UUID; thinking?: string; reasoningContext?: string }>;
   /** Called when the agent is about to be eliminated */
   getLastMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called for diary room interviews — the House asks a question, agent responds */
@@ -116,13 +126,13 @@ export interface IAgent {
   /** Reckoning/Tribunal: vote to eliminate one player (simple plurality) */
   getEndgameEliminationVote(context: PhaseContext): Promise<UUID>;
   /** Tribunal: publicly accuse one player */
-  getAccusation(context: PhaseContext): Promise<{ targetId: UUID; text: string; thinking?: string }>;
+  getAccusation(context: PhaseContext): Promise<{ targetId: UUID; text: string; thinking?: string; reasoningContext?: string }>;
   /** Tribunal: defend against an accusation */
   getDefense(context: PhaseContext, accusation: string, accuserName: string): Promise<AgentResponse>;
   /** Judgment: opening statement to the jury */
   getOpeningStatement(context: PhaseContext): Promise<AgentResponse>;
   /** Judgment: juror asks one question to one finalist */
-  getJuryQuestion(context: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string; thinking?: string }>;
+  getJuryQuestion(context: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string; thinking?: string; reasoningContext?: string }>;
   /** Judgment: finalist answers a jury question */
   getJuryAnswer(context: PhaseContext, question: string, jurorName: string): Promise<AgentResponse>;
   /** Judgment: closing argument to the jury */
@@ -206,6 +216,11 @@ export interface TranscriptEntry {
   text: string;
   /** Agent's internal thinking when producing this message (hidden from players, visible to viewers) */
   thinking?: string;
+  /**
+   * Raw model reasoning context (e.g. `reasoning_content` from local models like Gemma via LM Studio).
+   * Captured separately from the agent's "thinking" field for richer simulation traces.
+   */
+  reasoningContext?: string;
   /** When true, author identity is hidden from players (viewers still see it) */
   anonymous?: boolean;
   /** Shuffled display position for anonymous rumors */

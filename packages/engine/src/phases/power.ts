@@ -1,4 +1,4 @@
-import type { UUID } from "../types";
+import type { UUID, PowerAction } from "../types";
 import { Phase } from "../types";
 import type { PowerLobbyExposure } from "../game-runner.types";
 import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
@@ -45,12 +45,12 @@ async function runPowerLobbyMessages(
         empoweredId,
         councilCandidates: provisionalCandidates,
       });
-      const { message, thinking } = await agent.getPowerLobbyMessage(
+      const { message, thinking, reasoningContext } = await agent.getPowerLobbyMessage(
         phaseCtx,
         provisionalCandidates,
         exposePressure,
       );
-      logger.logPublic(player.id, message, Phase.POWER, { thinking });
+      logger.logPublic(player.id, message, Phase.POWER, { thinking, reasoningContext });
     }),
   );
 }
@@ -89,12 +89,14 @@ export async function runPowerPhase(
 
   const empoweredAgent = agents.get(empoweredId)!;
   const phaseCtx = contextBuilder.buildPhaseContext(empoweredId, Phase.POWER, { empoweredId, councilCandidates: prelim });
-  const powerAction = await empoweredAgent.getPowerAction(phaseCtx, prelim);
-
+  const powerActionResult = await empoweredAgent.getPowerAction(phaseCtx, prelim);
+  const powerAction: PowerAction = { action: powerActionResult.action, target: powerActionResult.target };
   gameState.setPowerAction(powerAction);
   logger.logSystem(
     `${gameState.getPlayerName(empoweredId)} power action: ${powerAction.action} -> ${gameState.getPlayerName(powerAction.target)}`,
     Phase.POWER,
+    powerActionResult.thinking,
+    powerActionResult.reasoningContext,
   );
 
   if (powerAction.action === "protect") {

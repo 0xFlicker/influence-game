@@ -55,6 +55,8 @@ export async function runVotePhase(
       logger.logSystem(
         `${player.name} votes: empower=${empowerName}, expose=${exposeName}`,
         Phase.VOTE,
+        votes.thinking,
+        votes.reasoningContext,
       );
     }),
   );
@@ -79,7 +81,7 @@ export async function runVotePhase(
           if (tied.includes(votes.empowerTarget)) {
             gameState.recordEmpowerReVote(player.id, votes.empowerTarget);
             const empowerName = gameState.getPlayerName(votes.empowerTarget);
-            logger.logSystem(`${player.name} re-votes: empower=${empowerName}`, Phase.VOTE);
+            logger.logSystem(`${player.name} re-votes: empower=${empowerName}`, Phase.VOTE, votes.thinking, votes.reasoningContext);
           }
         }),
       );

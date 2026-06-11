@@ -29,12 +29,12 @@ class GoodbyeProbeAgent extends MockAgent {
     this.fixedEndgameVote = fixedEndgameVote;
   }
 
-  override async getVotes(): Promise<{ empowerTarget: string; exposeTarget: string }> {
-    return this.fixedVotes;
+  override async getVotes(): Promise<{ empowerTarget: string; exposeTarget: string; thinking?: string; reasoningContext?: string }> {
+    return { ...this.fixedVotes, thinking: "fixed goodbye probe vote", reasoningContext: undefined };
   }
 
-  override async getCouncilVote(): Promise<string> {
-    return this.fixedCouncilVote;
+  override async getCouncilVote(): Promise<{ target: string; thinking?: string; reasoningContext?: string }> {
+    return { target: this.fixedCouncilVote, thinking: "fixed goodbye probe council", reasoningContext: undefined };
   }
 
   override async getEndgameEliminationVote(): Promise<string> {
@@ -335,9 +335,10 @@ describe("InfluenceAgent tool-call fallbacks", () => {
 
     const votes = await agent.getVotes(makeAgentContext(Phase.VOTE));
 
-    expect(votes).toEqual({
+    expect(votes).toMatchObject({
       empowerTarget: "mira-id",
       exposeTarget: "vera-id",
+      thinking: "Empower an ally and expose the player driving consensus.",
     });
   });
 
@@ -363,6 +364,7 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     expect(action).toEqual({
       action: "eliminate",
       target: "mira-id",
+      thinking: "Take the shot before the council can scatter.",
     });
     expect(calls).toHaveLength(2);
     expect(calls[1]?.max_completion_tokens).toBeGreaterThan(calls[0]?.max_completion_tokens as number);
@@ -389,6 +391,7 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     expect(action).toEqual({
       action: "eliminate",
       target: "mira-id",
+      thinking: "Take the shot before the council can scatter.",
     });
     expect(calls).toHaveLength(2);
     expect(calls[1]?.response_format).toEqual({
@@ -435,6 +438,7 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     expect(action).toEqual({
       action: "pass",
       target: "vera-id",
+      thinking: "fallback to pass under pressure",
     });
     expect(calls).toHaveLength(1);
   });

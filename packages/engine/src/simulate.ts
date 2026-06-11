@@ -15,10 +15,10 @@
  *   bun run simulate:local -- --games 1 --players 8 --model google/gemma-4-26b-a4b-qat \
  *     --variant mingle-loop --mingle-until-players 4
  *
- * Pure Mingle data collection 12->4 or 8->4 (lots of room movement + conversation):
+ * Chatty / live formatted transcript (great for watching local model Mingle behavior):
  *   INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
- *   bun run simulate:local -- --games 1 --players 12 --model <local-model> \
- *     --mingle-until-players 4 --game-timeout-sec 900000 --llm-timeout-sec 360
+ *   bun run simulate:local -- --games 1 --players 8 --model google/gemma-4-26b-a4b-qat \
+ *     --variant open-whisper --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
  */
 
 import type OpenAI from "openai";
@@ -64,8 +64,8 @@ export interface SimArgs {
   variant: string;
   gameTimeoutMs: number;
   llmTimeoutMs: number;
-  /** If set, run Mingle-focused behavior until this many players remain (then normal or stop). */
-  mingleUntilPlayers?: number;
+  /** Chatty mode: print formatted transcript entries live to console as they happen. */
+  chatty: boolean;
 }
 
 function readPositiveInt(value: string | undefined, fallback: number): number {
@@ -85,7 +85,7 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
     variant: process.env.INFLUENCE_SIM_VARIANT ?? "baseline",
     gameTimeoutMs: readPositiveInt(envGameTimeout, DEFAULT_GAME_TIMEOUT_MS),
     llmTimeoutMs: readPositiveInt(process.env.INFLUENCE_SIM_LLM_TIMEOUT_MS, DEFAULT_LLM_TIMEOUT_MS),
-    mingleUntilPlayers: undefined,
+    chatty: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -120,10 +120,8 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
     } else if (arg === "--llm-timeout-sec" && next) {
       args.llmTimeoutMs = parseInt(next, 10) * 1000;
       i++;
-    } else if ((arg === "--mingle-until-players" || arg === "--mingle-until") && next) {
-      const n = parseInt(next, 10);
-      if (!isNaN(n) && n >= 2) args.mingleUntilPlayers = n;
-      i++;
+    } else if (arg === "--chatty" || arg === "--verbose" || arg === "-v") {
+      args.chatty = true;
     }
   }
 
@@ -178,7 +176,6 @@ function buildRunMetadata(args: SimArgs, timestamp: string): SimulationRunMetada
       variant: args.variant,
       gameTimeoutMs: args.gameTimeoutMs,
       llmTimeoutMs: args.llmTimeoutMs,
-      mingleUntilPlayers: args.mingleUntilPlayers,
     },
   };
 }
@@ -200,8 +197,6 @@ const OPEN_WHISPER_VARIANTS = new Set([
   "open-whisper-power-lobby",
   "power-lobby-v2-open-whisper",
   "open-whisper-power-lobby-v2",
-  "mingle-loop",
-  "mingle",
 ]);
 
 export function isPowerLobbyVariant(variant: string): boolean {
@@ -214,11 +209,9 @@ export function isOpenWhisperVariant(variant: string): boolean {
 
 export function buildSimulationConfig(
   variant: string,
-  options: { agentActionTimeoutMs?: number; mingleUntilPlayers?: number } = {},
+  options: { agentActionTimeoutMs?: number } = {},
 ): GameConfig {
   const openWhisper = isOpenWhisperVariant(variant);
-  const isMingleLoop = variant.toLowerCase() === "mingle-loop" || variant.toLowerCase() === "mingle";
-  const mingleUntil = options.mingleUntilPlayers;
 
   return {
     ...DEFAULT_CONFIG,
@@ -246,12 +239,9 @@ export function buildSimulationConfig(
     enableStrategicReflections: false,
     lobbyMessagesPerPlayer: 1,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),
-    whisperSessionsPerRound: openWhisper || isMingleLoop ? 2 : DEFAULT_CONFIG.whisperSessionsPerRound,
-    minglePairCooldownRounds: openWhisper || isMingleLoop ? 1 : 0,
+    whisperSessionsPerRound: openWhisper ? 2 : DEFAULT_CONFIG.whisperSessionsPerRound,
+    minglePairCooldownRounds: openWhisper ? 1 : 0,
     agentActionTimeoutMs: options.agentActionTimeoutMs ?? 90_000,
-    // Mingle-focused testing support
-    mingleUntilPlayers: mingleUntil,
-    forceMingleVoteCycle: isMingleLoop || !!mingleUntil,
   };
 }
 
@@ -498,14 +488,30 @@ export function computeAggregateStats(
 // Transcript formatting
 // ---------------------------------------------------------------------------
 
+function formatEntry(e: TranscriptEntry): string {
+  const reset = "\x1b[0m";
+  const dim = "\x1b[2m";
+  const gray = "\x1b[90m";
+  const cyan = "\x1b[36m";
+  const yellow = "\x1b[33m";
+  const prefix = `R${e.round}/${e.phase}`;
+  const scopeTag = e.scope === "whisper" ? ` [whisper→${e.to?.join(",") || ""}]` : e.scope === "thinking" ? " [thinking]" : "";
+  let line = `${prefix} ${e.from}${scopeTag}: ${e.text}`;
+  if (e.thinking) {
+    line += `\n    ${dim}${gray}thinking: ${e.thinking}${reset}`;
+  }
+  if (e.reasoningContext) {
+    line += `\n    ${cyan}reasoning: ${e.reasoningContext}${reset}`;
+  }
+  // Color system/House lines for better readability
+  if (e.from === "House" || e.scope === "system") {
+    line = `${yellow}${line}${reset}`;
+  }
+  return line;
+}
+
 function formatTranscript(transcript: readonly TranscriptEntry[]): string {
-  return transcript
-    .map((e) => {
-      const prefix = `R${e.round}/${e.phase}`;
-      const scopeTag = e.scope === "whisper" ? ` [whisper→${e.to?.join(",")}]` : "";
-      return `${prefix} ${e.from}${scopeTag}: ${e.text}`;
-    })
-    .join("\n");
+  return transcript.map(formatEntry).join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -884,6 +890,7 @@ function attachProgressLogger(
   progressPath: string,
   gameNumber: number,
   startedAt: number,
+  chatty: boolean,
 ): void {
   runner.setStreamListener((event) => {
     const progress = summarizeProgressEvent(event);
@@ -897,6 +904,11 @@ function attachProgressLogger(
       console.log(
         `  Progress: R${event.entry.round} room allocation | rooms=${event.entry.roomMetadata.rooms.length} | excluded=${event.entry.roomMetadata.excluded.join(", ") || "none"}`,
       );
+    }
+
+    // Chatty mode: print full formatted transcript entries live
+    if (chatty && event.type === "transcript_entry") {
+      console.log(formatEntry(event.entry));
     }
   });
 }
@@ -924,9 +936,10 @@ async function main() {
   const openai = llmConfig.client;
 
   console.log(`\n=== Influence Batch Simulation ===`);
-  console.log(`Games: ${args.games} | Players per game: ${args.players} | Model: ${args.model} | Variant: ${args.variant}${args.mingleUntilPlayers ? ` | Mingle until ${args.mingleUntilPlayers}` : ""}`);
+  console.log(`Games: ${args.games} | Players per game: ${args.players} | Model: ${args.model} | Variant: ${args.variant}`);
   console.log(`Provider: ${describeLlmProvider(llmConfig)} | API key: ${llmConfig.apiKeySource} | Tool choice: ${llmConfig.toolChoiceMode}`);
   console.log(`Timeouts: game ${(args.gameTimeoutMs / 1000).toFixed(0)}s | LLM request ${(args.llmTimeoutMs / 1000).toFixed(0)}s`);
+  if (args.chatty) console.log("Chatty mode enabled: live formatted transcript will be printed to console.");
   console.log(`Git: ${metadata.git.commitShortSha ?? "unknown"} (${metadata.git.branch ?? "unknown branch"}${metadata.git.isDirty ? ", dirty" : ""})`);
   if (args.personas) console.log(`Personas: ${args.personas.join(", ")}`);
   console.log("");
@@ -934,7 +947,6 @@ async function main() {
   // Simulation config: no timers (agents respond as fast as they can)
   const simConfig = buildSimulationConfig(args.variant, {
     agentActionTimeoutMs: Math.max(args.llmTimeoutMs * 2, args.llmTimeoutMs + 5_000),
-    mingleUntilPlayers: args.mingleUntilPlayers,
   });
 
   // Create output directory
@@ -989,7 +1001,7 @@ async function main() {
       transcriptPath,
       jsonPath,
     });
-    attachProgressLogger(runner, progressPath, g, startTime);
+    attachProgressLogger(runner, progressPath, g, startTime, args.chatty);
     console.log(`  Progress log: ${progressPath}`);
 
     try {

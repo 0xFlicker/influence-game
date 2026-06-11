@@ -15,8 +15,8 @@ export async function runRumorPhase(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.RUMOR);
-      const { message, thinking } = await agent.getRumorMessage(phaseCtx);
-      return { playerId: player.id, message, thinking };
+      const { message, thinking, reasoningContext } = await agent.getRumorMessage(phaseCtx);
+      return { playerId: player.id, message, thinking, reasoningContext };
     }),
   );
 
@@ -33,6 +33,7 @@ export async function runRumorPhase(
       anonymous: true,
       displayOrder: i + 1,
       thinking: rumor.thinking,
+      reasoningContext: rumor.reasoningContext,
     });
   }
 

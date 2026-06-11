@@ -121,7 +121,7 @@ export class DiaryRoom {
 
     const ctx = this.contextBuilder.buildPhaseContext(playerId, Phase.DIARY_ROOM, undefined, isJuror || undefined);
     const firstResponse = await agent.getDiaryEntry(ctx, firstQuestion, sessionExchanges);
-    this.logger.logDiary(label, firstResponse.message, firstResponse.thinking);
+    this.logger.logDiary(label, firstResponse.message, firstResponse.thinking, firstResponse.reasoningContext);
 
     sessionExchanges.push({ question: firstQuestion, answer: firstResponse.message });
     this.diaryEntries.push({
@@ -146,7 +146,7 @@ export class DiaryRoom {
       this.logger.logDiary(houseLabel, result.question);
 
       const followUpResponse = await agent.getDiaryEntry(ctx, result.question, sessionExchanges);
-      this.logger.logDiary(label, followUpResponse.message, followUpResponse.thinking);
+      this.logger.logDiary(label, followUpResponse.message, followUpResponse.thinking, followUpResponse.reasoningContext);
 
       sessionExchanges.push({ question: result.question, answer: followUpResponse.message });
       this.diaryEntries.push({

@@ -13,8 +13,8 @@ function defined<T>(value: T | undefined, msg = "Expected value to be defined"):
 }
 
 /** Helper to wrap a message string into an AgentResponse */
-function respond(message: string, thinking = ""): AgentResponse {
-  return { thinking, message };
+function respond(message: string, thinking = "", reasoningContext?: string): AgentResponse {
+  return { thinking, message, ...(reasoningContext && { reasoningContext }) };
 }
 
 export class MockAgent implements IAgent {
@@ -101,16 +101,16 @@ export class MockAgent implements IAgent {
 
   async getVotes(
     ctx: PhaseContext,
-  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID }> {
+  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string }> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
     if (others.length === 0) {
-      return { empowerTarget: this.id, exposeTarget: this.id };
+      return { empowerTarget: this.id, exposeTarget: this.id, thinking: "No one else left", reasoningContext: undefined };
     }
 
     // Always empower the first other player, expose the last
     const empowerTarget = defined(others[0], "Expected at least one other player to empower").id;
     const exposeTarget = defined(others[others.length - 1], "Expected at least one other player to expose").id;
-    return { empowerTarget, exposeTarget };
+    return { empowerTarget, exposeTarget, thinking: `Empower ally, expose threat`, reasoningContext: undefined };
   }
 
   async getPowerLobbyMessage(
@@ -133,14 +133,14 @@ export class MockAgent implements IAgent {
   async getPowerAction(
     ctx: PhaseContext,
     candidates: [UUID, UUID],
-  ): Promise<PowerAction> {
+  ): Promise<PowerAction & { thinking?: string; reasoningContext?: string }> {
     // Always pass to council (simplest action)
-    return { action: "pass", target: candidates[0] };
+    return { action: "pass", target: candidates[0], thinking: "mock: pass to let council expose the field", reasoningContext: undefined };
   }
 
-  async getCouncilVote(ctx: PhaseContext, candidates: [UUID, UUID]): Promise<UUID> {
+  async getCouncilVote(ctx: PhaseContext, candidates: [UUID, UUID]): Promise<{ target: UUID; thinking?: string; reasoningContext?: string }> {
     // Always vote for the first candidate
-    return candidates[0];
+    return { target: candidates[0], thinking: "mock: vote first candidate for council", reasoningContext: undefined };
   }
 
   async getLastMessage(_ctx: PhaseContext): Promise<AgentResponse> {
@@ -175,7 +175,7 @@ export class MockAgent implements IAgent {
     return others[others.length - 1]?.id ?? this.id;
   }
 
-  async getAccusation(ctx: PhaseContext): Promise<{ targetId: UUID; text: string; thinking?: string }> {
+  async getAccusation(ctx: PhaseContext): Promise<{ targetId: UUID; text: string; thinking?: string; reasoningContext?: string }> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
     const target = defined(
       this.accusationTarget
@@ -204,7 +204,7 @@ export class MockAgent implements IAgent {
     );
   }
 
-  async getJuryQuestion(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string; thinking?: string }> {
+  async getJuryQuestion(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string; thinking?: string; reasoningContext?: string }> {
     // Always ask the first finalist
     return {
       targetFinalistId: finalistIds[0],

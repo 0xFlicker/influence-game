@@ -50,7 +50,8 @@ export async function runCouncilPhase(
         empoweredId,
         councilCandidates: candidates,
       });
-      const vote = await agent.getCouncilVote(phaseCtx, candidates);
+      const voteResult = await agent.getCouncilVote(phaseCtx, candidates);
+      const vote = voteResult.target;
       gameState.recordCouncilVote(player.id, vote);
 
       const votedAgainstName = gameState.getPlayerName(vote);
@@ -59,6 +60,8 @@ export async function runCouncilPhase(
       logger.logSystem(
         `${player.name} council vote -> ${votedAgainstName}`,
         Phase.COUNCIL,
+        voteResult.thinking,
+        voteResult.reasoningContext,
       );
     }),
   );

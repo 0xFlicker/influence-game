@@ -72,8 +72,8 @@ class LifecycleMockAgent implements IAgent {
   async getPowerAction(_ctx: PhaseContext, candidates: [UUID, UUID]): Promise<PowerAction> {
     return { action: "protect", target: candidates[0] };
   }
-  async getCouncilVote(_ctx: PhaseContext, candidates: [UUID, UUID]): Promise<UUID> {
-    return candidates[0];
+  async getCouncilVote(_ctx: PhaseContext, candidates: [UUID, UUID]): Promise<{ target: UUID }> {
+    return { target: candidates[0] };
   }
   async getLastMessage() { return r("goodbye"); }
   async getDiaryEntry() { return r("diary entry"); }
