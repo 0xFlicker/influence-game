@@ -69,10 +69,10 @@ export class TranscriptLogger {
     const toNames = toIds.map((id) => this.gameState.getPlayerName(id));
     const entry: TranscriptEntry = {
       round: this.gameState.round,
-      phase: Phase.WHISPER,
+      phase: Phase.MINGLE,
       timestamp: Date.now(),
       from: fromName,
-      scope: "whisper",
+      scope: "mingle",
       to: toNames,
       text,
       ...(roomId != null && { roomId }),
@@ -91,7 +91,7 @@ export class TranscriptLogger {
   ): TranscriptEntry {
     const entry: TranscriptEntry = {
       round: this.gameState.round,
-      phase: Phase.WHISPER,
+      phase: Phase.MINGLE,
       timestamp: Date.now(),
       from: "House",
       scope: "system",

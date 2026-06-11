@@ -137,7 +137,7 @@ describe("Whisper Rooms", () => {
     const result = await runner.run();
 
     const allocation = result.transcript.find(
-      (entry) => entry.scope === "system" && entry.phase === Phase.WHISPER && entry.roomMetadata,
+      (entry) => entry.scope === "system" && entry.phase === Phase.MINGLE && entry.roomMetadata,
     );
     expect(allocation).toBeDefined();
     expect(allocation!.text).toContain("Turn 1:");
@@ -161,9 +161,9 @@ describe("Whisper Rooms", () => {
     const allocation = result.transcript.find((entry) => entry.roomMetadata);
     expect(allocation?.roomMetadata?.rooms[0]?.playerIds).toHaveLength(5);
 
-    const whispers = result.transcript.filter((entry) => entry.scope === "whisper" && entry.phase === Phase.WHISPER);
-    expect(whispers).toHaveLength(5);
-    expect(whispers[0]!.to).toHaveLength(4);
+    const roomMessages = result.transcript.filter((entry) => entry.scope === "mingle" && entry.phase === Phase.MINGLE);
+    expect(roomMessages).toHaveLength(5);
+    expect(roomMessages[0]!.to).toHaveLength(4);
   });
 
   it("open rooms skip conversation for singleton rooms", async () => {
@@ -179,9 +179,9 @@ describe("Whisper Rooms", () => {
     const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 1 });
     const result = await runner.run();
 
-    const whispers = result.transcript.filter((entry) => entry.scope === "whisper" && entry.phase === Phase.WHISPER);
-    expect(whispers.every((entry) => entry.from !== "Alpha")).toBe(true);
-    expect(whispers).toHaveLength(4);
+    const roomMessages = result.transcript.filter((entry) => entry.scope === "mingle" && entry.phase === Phase.MINGLE);
+    expect(roomMessages.every((entry) => entry.from !== "Alpha")).toBe(true);
+    expect(roomMessages).toHaveLength(4);
   });
 
   it("passes open-room whispers into the following phase context", async () => {
@@ -282,11 +282,11 @@ describe("Whisper Rooms", () => {
     const alphaMove = allocations[0]!.roomMetadata!.diagnostics!.actions!.find((action) => action.player.name === "Alpha");
     expect(alphaMove).toMatchObject({ fromRoomId: 1, toRoomId: 2, moved: true, action: "talk" });
 
-    const movedWhisper = result.transcript.find(
-      (entry) => entry.round === 1 && entry.scope === "whisper" && entry.from === "Alpha" && entry.text.includes("crossed over"),
+    const movedRoomMsg = result.transcript.find(
+      (entry) => entry.round === 1 && entry.scope === "mingle" && entry.from === "Alpha" && entry.text.includes("crossed over"),
     );
-    expect(movedWhisper?.roomId).toBe(secondRooms[1]!.roomId);
-    expect(movedWhisper?.to).toEqual(["Gamma", "Delta", "Echo"]);
+    expect(movedRoomMsg?.roomId).toBe(secondRooms[1]!.roomId);
+    expect(movedRoomMsg?.to).toEqual(["Gamma", "Delta", "Echo"]);
   });
 
   it("redirects avoidable repeated Mingle pairs when cooldown is configured", () => {
@@ -414,14 +414,14 @@ describe("Whisper Rooms", () => {
 
     const alphaFirstAction = allocations[0]!.roomMetadata!.diagnostics!.actions!.find((action) => action.player.name === "Alpha");
     expect(alphaFirstAction).toMatchObject({ action: "no_reply", fromRoomId: 1, toRoomId: 2, moved: true });
-    expect(result.transcript.some((entry) => entry.round === 1 && entry.scope === "whisper" && entry.from === "Alpha" && entry.roomId === firstRooms[0]!.roomId)).toBe(false);
+    expect(result.transcript.some((entry) => entry.round === 1 && entry.scope === "mingle" && entry.from === "Alpha" && entry.roomId === firstRooms[0]!.roomId)).toBe(false);
 
     const secondRooms = allocations[1]!.roomMetadata!.rooms;
     expect(secondRooms[1]!.playerIds).toContain(alpha.id);
-    const alphaSecondWhisper = result.transcript.find(
-      (entry) => entry.round === 1 && entry.scope === "whisper" && entry.from === "Alpha" && entry.text.includes("quiet room"),
+    const alphaSecondRoomMsg = result.transcript.find(
+      (entry) => entry.round === 1 && entry.scope === "mingle" && entry.from === "Alpha" && entry.text.includes("quiet room"),
     );
-    expect(alphaSecondWhisper?.roomId).toBe(secondRooms[1]!.roomId);
+    expect(alphaSecondRoomMsg?.roomId).toBe(secondRooms[1]!.roomId);
   });
 
   it("uses House fallbacks when endgame actions exceed the configured timeout", async () => {
@@ -837,7 +837,7 @@ describe("Phase machine - state transitions", () => {
     actor.stop();
   });
 
-  it("advances through full round: lobby -> whisper -> rumor -> vote -> power -> reveal -> council -> checkGameOver", async () => {
+  it("advances through full round: lobby -> mingle -> rumor -> vote -> power -> reveal -> council -> checkGameOver", async () => {
     const machine = createPhaseMachine();
     // Use 6 players so endgame isn't triggered after eliminating one (5 remain)
     const playerIds = [createUUID(), createUUID(), createUUID(), createUUID(), createUUID(), createUUID()];
@@ -853,8 +853,8 @@ describe("Phase machine - state transitions", () => {
 
     await advance(); // init -> introduction
     await advance(); // introduction -> lobby
-    await advance(); // lobby -> whisper
-    await advance(); // whisper -> rumor
+    await advance(); // lobby -> mingle
+    await advance(); // mingle -> rumor
     await advance(); // rumor -> vote
 
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
@@ -896,8 +896,8 @@ describe("Phase machine - state transitions", () => {
 
     await advance(); // init -> introduction
     await advance(); // introduction -> lobby
-    await advance(); // lobby -> whisper
-    await advance(); // whisper -> rumor
+    await advance(); // lobby -> mingle
+    await advance(); // mingle -> rumor
     await advance(); // rumor -> vote
 
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
@@ -938,8 +938,8 @@ describe("Phase machine - endgame transitions", () => {
     // Run through init -> introduction -> first round
     await advance(); // init -> introduction
     await advance(); // intro -> lobby
-    await advance(); // lobby -> whisper
-    await advance(); // whisper -> rumor
+    await advance(); // lobby -> mingle
+    await advance(); // mingle -> rumor
     await advance(); // rumor -> vote
 
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
@@ -976,8 +976,8 @@ describe("Phase machine - endgame transitions", () => {
 
     // Simulate eliminating 2 players in first round (5 -> 3)
     // Go through full round
-    await advance(); // lobby -> whisper
-    await advance(); // whisper -> rumor
+    await advance(); // lobby -> mingle
+    await advance(); // mingle -> rumor
     await advance(); // rumor -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
     await advance(); // vote -> power
@@ -990,8 +990,8 @@ describe("Phase machine - endgame transitions", () => {
 
     expect(actor.getSnapshot().value).toBe("reckoning_lobby");
 
-    // Run through reckoning: lobby -> whisper -> plea -> vote
-    await advance(); // reckoning_lobby -> reckoning_whisper
+    // Run through reckoning: lobby -> mingle -> plea -> vote
+    await advance(); // reckoning_lobby -> reckoning_mingle
     await advance(); // reckoning_whisper -> reckoning_plea
     await advance(); // reckoning_plea -> reckoning_vote
 
@@ -1022,8 +1022,8 @@ describe("Phase machine - endgame transitions", () => {
     // Fast-forward past intro and first round to checkGameOver with 3 alive
     await advance(); // init -> introduction
     await advance(); // intro -> lobby
-    await advance(); // lobby -> whisper
-    await advance(); // whisper -> rumor
+    await advance(); // lobby -> mingle
+    await advance(); // mingle -> rumor
     await advance(); // rumor -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
     await advance(); // vote -> power
@@ -1066,8 +1066,8 @@ describe("Phase machine - endgame transitions", () => {
     // Get to judgment
     await advance(); // init -> introduction
     await advance(); // intro -> lobby
-    await advance(); // lobby -> whisper
-    await advance(); // whisper -> rumor
+    await advance(); // lobby -> mingle
+    await advance(); // mingle -> rumor
     await advance(); // rumor -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
     await advance(); // vote -> power
@@ -1112,8 +1112,8 @@ describe("Phase machine - endgame transitions", () => {
 
     await advance(); // init -> introduction
     await advance(); // intro -> lobby
-    await advance(); // lobby -> whisper
-    await advance(); // whisper -> rumor
+    await advance(); // lobby -> mingle
+    await advance(); // mingle -> rumor
     await advance(); // rumor -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
     await advance(); // vote -> power

@@ -234,7 +234,7 @@ export class GameRunner {
         await this.diaryRoom.runDiaryRoom(Phase.INTRODUCTION);
       } else if (state === "lobby") {
         await runLobbyPhase(prc, actor);
-      } else if (state === "whisper") {
+      } else if (state === "mingle") {
         await runWhisperPhase(prc, actor);
 
         // House MC summary after Mingle phases (great for simulation traces)
@@ -242,10 +242,10 @@ export class GameRunner {
           const summary = await this.houseInterviewer.generateGameplaySummary(
             this.logger.transcript.slice(-15),
             this.gameState.round,
-            Phase.WHISPER,
+            Phase.MINGLE,
             this.gameState.getAlivePlayers().map((p) => p.name),
           );
-          this.logger.logSystem(`[House MC] ${summary}`, Phase.WHISPER);
+          this.logger.logSystem(`[House MC] ${summary}`, Phase.MINGLE);
         } catch {
           // non-fatal for summary generation
         }
@@ -277,7 +277,7 @@ export class GameRunner {
         // --- THE RECKONING (4 -> 3) ---
       } else if (state === "reckoning_lobby") {
         await runReckoningLobby(prc, actor);
-      } else if (state === "reckoning_whisper") {
+      } else if (state === "reckoning_mingle") {
         await runReckoningWhisper(prc, actor);
       } else if (state === "reckoning_plea") {
         await runReckoningPlea(prc, actor);

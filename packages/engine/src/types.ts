@@ -14,6 +14,7 @@ export enum Phase {
   INIT = "INIT",
   INTRODUCTION = "INTRODUCTION",
   LOBBY = "LOBBY",
+  MINGLE = "MINGLE",
   WHISPER = "WHISPER",
   RUMOR = "RUMOR",
   VOTE = "VOTE",
@@ -139,7 +140,7 @@ export interface PowerAction {
 // Messages passed between agents and the House
 // ---------------------------------------------------------------------------
 
-export type MessageScope = "public" | "whisper" | "system" | "thinking";
+export type MessageScope = "public" | "mingle" | "whisper" | "system" | "thinking";
 
 export interface PublicMessage {
   type: "public";
@@ -225,13 +226,13 @@ export interface WhisperSessionDiagnostics {
   actions?: MingleTurnActionRecord[];
 }
 
-/** System event emitted when whisper rooms are allocated for a round */
+/** System event emitted when mingle rooms are allocated for a round */
 export interface RoomAllocationEvent {
   type: "system";
   scope: "system";
   text: string; // e.g. "Room 1: Atlas & Vera | Room 2: Finn & Mira | Commons: Lyra, Rex"
   round: number;
-  phase: "WHISPER";
+  phase: Phase;
   timestamp: number;
   metadata: {
     rooms: RoomAllocation[];

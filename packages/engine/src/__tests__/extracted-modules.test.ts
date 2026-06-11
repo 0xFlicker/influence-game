@@ -59,13 +59,14 @@ describe("TranscriptLogger", () => {
     expect(logger.publicMessages[0]!.displayOrder).toBe(3);
   });
 
-  it("logWhisper adds whisper transcript entry", () => {
+  it("logWhisper (current room phase path) adds MINGLE transcript entry with mingle scope", () => {
     const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
     const bob = gs.getAlivePlayers().find((p) => p.name === "Bob")!;
     logger.logWhisper(alice.id, [bob.id], "Secret message", 1);
 
     expect(logger.transcript).toHaveLength(1);
-    expect(logger.transcript[0]!.scope).toBe("whisper");
+    expect(logger.transcript[0]!.scope).toBe("mingle");
+    expect(logger.transcript[0]!.phase).toBe(Phase.MINGLE);
     expect(logger.transcript[0]!.from).toBe("Alice");
     expect(logger.transcript[0]!.to).toEqual(["Bob"]);
     expect(logger.transcript[0]!.roomId).toBe(1);

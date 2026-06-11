@@ -367,7 +367,7 @@ async function runMingleTurn(
       const agent = agents.get(playerId)!;
       const fromName = gameState.getPlayerName(playerId);
       const recipientIds = room.playerIds.filter((id) => id !== playerId);
-      const phaseCtx = contextBuilder.buildPhaseContext(playerId, Phase.WHISPER, undefined, undefined, {
+      const phaseCtx = contextBuilder.buildPhaseContext(playerId, Phase.MINGLE, undefined, undefined, {
         roomCount,
         roomCounts,
         currentRoomId: room.roomId,
@@ -427,8 +427,8 @@ export async function runWhisperPhase(
 ): Promise<void> {
   const { gameState, agents, logger, contextBuilder, config } = ctx;
 
-  logger.emitPhaseChange(Phase.WHISPER);
-  logger.logSystem("=== WHISPER PHASE ===", Phase.WHISPER);
+  logger.emitPhaseChange(Phase.MINGLE);
+  logger.logSystem("=== MINGLE PHASE ===", Phase.MINGLE);
   const alivePlayers = gameState.getAlivePlayers();
 
   ctx.whisperInbox.clear();
@@ -441,7 +441,7 @@ export async function runWhisperPhase(
 
   const roomCount = computeRoomCount(alivePlayers.length);
   if (roomCount === 0) {
-    logger.logSystem("Open whisper rooms are skipped with fewer than five players alive.", Phase.WHISPER);
+    logger.logSystem("Open rooms are skipped with fewer than five players alive.", Phase.MINGLE);
     gameState.recordRoomAllocations([], []);
     actor.send({ type: "PHASE_COMPLETE" });
     await new Promise((r) => setTimeout(r, 0));
@@ -463,7 +463,7 @@ export async function runWhisperPhase(
   await Promise.all(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
-      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.WHISPER, undefined, undefined, {
+      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.MINGLE, undefined, undefined, {
         roomCount,
         roomCounts: initialRoomCounts,
       });

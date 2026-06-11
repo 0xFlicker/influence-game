@@ -211,7 +211,7 @@ export interface TranscriptEntry {
   phase: Phase;
   timestamp: number;
   from: string;
-  scope: "public" | "whisper" | "system" | "diary" | "thinking";
+  scope: "public" | "mingle" | "whisper" | "system" | "diary" | "thinking";
   to?: string[];
   text: string;
   /** Agent's internal thinking when producing this message (hidden from players, visible to viewers) */
