@@ -54,11 +54,11 @@ function makePhaseRunnerContext(agents: GoodbyeProbeAgent[]): PhaseRunnerContext
   const gameState = new GameState(agents.map((agent) => ({ id: agent.id, name: agent.name })));
   gameState.startRound();
   const logger = new TranscriptLogger(gameState);
-  const whisperInbox = new Map();
+  const mingleInbox = new Map();
   const contextBuilder = new ContextBuilder(
     gameState,
     logger,
-    whisperInbox,
+    mingleInbox,
     agents.length,
   );
 
@@ -83,7 +83,7 @@ function makePhaseRunnerContext(agents: GoodbyeProbeAgent[]): PhaseRunnerContext
     logger,
     contextBuilder,
     diaryRoom: { lastEliminatedName: null } as PhaseRunnerContext["diaryRoom"],
-    whisperInbox,
+    mingleInbox,
     eliminationOrder: [],
   };
 }
@@ -122,7 +122,7 @@ describe("goodbye message handling", () => {
         { id: "vera-id", name: "Vera" },
       ],
       publicMessages: [],
-      whisperMessages: [],
+      mingleMessages: [],
       isEliminated: true,
       eliminationContext: {
         mode: "council",
@@ -284,7 +284,7 @@ function makeAgentContext(phase: Phase = Phase.VOTE): PhaseContext {
       { id: "finn-id", name: "Finn" },
     ],
     publicMessages: [],
-    whisperMessages: [],
+    mingleMessages: [],
   };
 }
 

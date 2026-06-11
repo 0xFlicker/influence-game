@@ -111,17 +111,20 @@ The lobby is where personality meets strategy — but NEVER overtly. The surface
 - The SUBTEXT of your words should serve your strategy: snide asides at rivals, loaded compliments to allies, double-entendres that only your faction understands, sarcasm aimed at the last empowered player or dominant alliance
 - Create personality friction — not everyone gets along, and that's entertaining
 - If someone was eliminated: ONE brief acknowledgment is fine (especially if they were your ally). Then MOVE ON. Do not write eulogies. Do not dwell. The game continues.
-${round === 1 ? `\nROUND 1 — FRESH START: This is your first real conversation with the group! The vibe is excited, curious, and playful. You're genuinely interested in these people — ask questions, riff on what others said, share something fun about yourself. Think: first night in a new house together, everyone buzzing with energy. Keep it LIGHT, CHEERY, and FUN. No snark, no shade, no pointed remarks yet — you haven't been wronged by anyone, there's nothing to be snarky about! Save the edge for when someone actually gives you a reason.` : isEarlyGame ? `\nROUND 2 — GETTING COMFORTABLE: You've had one round together and you're starting to form impressions. The energy is still mostly positive and curious, but you can start having mild opinions — gentle teasing, playful disagreements, expressing who you vibe with. Think: second day at summer camp. Light personality friction can emerge naturally, but the overall tone stays warm and engaged.` : `\nMID/LATE GAME (Round ${round}): You have history with these people now. Your lobby messages should carry weight — reference things that happened (without being explicit about strategy). A pointed joke about someone's "loyalty" or a casual observation about who always ends up in whisper rooms together. The audience should feel the tension beneath the banter.`}`;
+${round === 1 ? `\nROUND 1 — FRESH START: This is your first real conversation with the group! The vibe is excited, curious, and playful. You're genuinely interested in these people — ask questions, riff on what others said, share something fun about yourself. Think: first night in a new house together, everyone buzzing with energy. Keep it LIGHT, CHEERY, and FUN. No snark, no shade, no pointed remarks yet — you haven't been wronged by anyone, there's nothing to be snarky about! Save the edge for when someone actually gives you a reason.` : isEarlyGame ? `\nROUND 2 — GETTING COMFORTABLE: You've had one round together and you're starting to form impressions. The energy is still mostly positive and curious, but you can start having mild opinions — gentle teasing, playful disagreements, expressing who you vibe with. Think: second day at summer camp. Light personality friction can emerge naturally, but the overall tone stays warm and engaged.` : `\nMID/LATE GAME (Round ${round}): You have history with these people now. Your lobby messages should carry weight — reference things that happened (without being explicit about strategy). A pointed joke about someone's "loyalty" or a casual observation about who always ends up in the same Mingle room together. The audience should feel the tension beneath the banter.`}`;
 
-    case Phase.WHISPER:
-      return `PHASE BEHAVIOR — WHISPER (STRATEGY PHASE):
-This is the right time for game talk. In your private room, you can:
+    case Phase.MINGLE:
+      return `PHASE BEHAVIOR — MINGLE (STRATEGY PHASE):
+This is the right time for game talk inside your current room. Messages here are private to the occupants of the room you are in right now (not one-to-one whispers, not public to the whole game).
+In the room you can:
 - Discuss strategy, alliances, voting targets
 - Share intelligence about other players
 - Negotiate deals, make promises, plant misinformation
-- But also build genuine personal bonds — the best alliances combine strategy AND personal connection
+- Move between rooms between beats if it serves your plan
+- Build genuine personal bonds — the best alliances combine strategy AND personal connection
 Even in strategy talk, stay in character. Your backstory and personality shape HOW you strategize.
-${isEarlyGame ? `\nEARLY GAME (Round ${round}): You don't have much game information yet. Focus on feeling out this person — are they someone you could work with? Use indirect, coded language rather than bluntly proposing alliances. Say "I've got a feeling about so-and-so" rather than "let's vote them out." Test the waters without committing.` : ""}`;
+Room privacy rule: only the players physically in the same room right now can hear you. The audience (viewers) can see the social dynamics but other players outside the room cannot.
+${isEarlyGame ? `\nEARLY GAME (Round ${round}): You don't have much game information yet. Focus on feeling out the people sharing your room — are they someone you could work with? Use indirect, coded language rather than bluntly proposing alliances. Say "I've got a feeling about so-and-so" rather than "let's vote them out." Test the waters without committing.` : ""}`;
 
     case Phase.RUMOR:
       if (isEarlyGame) {
@@ -258,11 +261,11 @@ const TOOL_SEND_WHISPERS: ChatCompletionTool = {
   },
 };
 
-const TOOL_CHOOSE_WHISPER_ROOM: ChatCompletionTool = {
+const TOOL_CHOOSE_MINGLE_ROOM: ChatCompletionTool = {
   type: "function",
   function: {
-    name: "choose_whisper_room",
-    description: "Choose a neutral open whisper room by room number",
+    name: "choose_mingle_room",
+    description: "Choose a neutral open Mingle room by room number. Messages in the room are private to the current occupants only.",
     parameters: {
       type: "object",
       properties: {
@@ -704,73 +707,75 @@ Respond with ONLY your strategy intent, nothing else.`;
     }
 
     // Sub-round specific direction (tone-aware for early rounds)
-    const isRoundOne = ctx.round === 1;
-    const isEarlySubRound = ctx.round <= 2;
-    let subRoundGuidance = "";
-    if (isFirstMessage) {
-      subRoundGuidance = isRoundOne
-        ? `This is your OPENING message (${subRound + 1}/${totalSubRounds}). Set a warm, excited tone — you're happy to be here!`
-        : isEarlySubRound
-          ? `This is your OPENING message (${subRound + 1}/${totalSubRounds}). Set the tone — lead with personality and genuine energy.`
-          : `This is your OPENING message (${subRound + 1}/${totalSubRounds}). Set the tone — lead with personality and a strong take.`;
-    } else if (subRound === totalSubRounds - 1) {
-      subRoundGuidance = isRoundOne
-        ? `This is your FINAL message (${subRound + 1}/${totalSubRounds}). React to what's been said — show you were listening and leave a warm impression.`
-        : isEarlySubRound
-          ? `This is your FINAL message (${subRound + 1}/${totalSubRounds}). React to what's been said. Leave an impression — a fun observation or a line that shows your personality.`
-          : `This is your FINAL message (${subRound + 1}/${totalSubRounds}). React to what's been said. Leave an impression — a pointed observation, a loaded joke, or a line that makes people think.`;
-    } else {
-      subRoundGuidance = isRoundOne
-        ? `Message ${subRound + 1}/${totalSubRounds}. Build on the conversation — respond to someone with genuine curiosity or humor.`
-        : isEarlySubRound
-          ? `Message ${subRound + 1}/${totalSubRounds}. Build on the conversation — respond to someone directly with interest, humor, or a playful take.`
-          : `Message ${subRound + 1}/${totalSubRounds}. Build on the conversation — respond to someone directly. Push back, agree sharply, or drop a subtle jab.`;
-    }
+    // const isRoundOne = ctx.round === 1;
+    // const isEarlySubRound = ctx.round <= 2;
+    // let subRoundGuidance = "";
+    // if (isFirstMessage) {
+    //   subRoundGuidance = isRoundOne
+    //     ? `This is your OPENING message (${subRound + 1}/${totalSubRounds}). Set a warm, excited tone — you're happy to be here!`
+    //     : isEarlySubRound
+    //       ? `This is your OPENING message (${subRound + 1}/${totalSubRounds}). Set the tone — lead with personality and genuine energy.`
+    //       : `This is your OPENING message (${subRound + 1}/${totalSubRounds}). Set the tone — lead with personality and a strong take.`;
+    // } else if (subRound === totalSubRounds - 1) {
+    //   subRoundGuidance = isRoundOne
+    //     ? `This is your FINAL message (${subRound + 1}/${totalSubRounds}). React to what's been said — show you were listening and leave a warm impression.`
+    //     : isEarlySubRound
+    //       ? `This is your FINAL message (${subRound + 1}/${totalSubRounds}). React to what's been said. Leave an impression — a fun observation or a line that shows your personality.`
+    //       : `This is your FINAL message (${subRound + 1}/${totalSubRounds}). React to what's been said. Leave an impression — a pointed observation, a loaded joke, or a line that makes people think.`;
+    // } else {
+    //   subRoundGuidance = isRoundOne
+    //     ? `Message ${subRound + 1}/${totalSubRounds}. Build on the conversation — respond to someone with genuine curiosity or humor.`
+    //     : isEarlySubRound
+    //       ? `Message ${subRound + 1}/${totalSubRounds}. Build on the conversation — respond to someone directly with interest, humor, or a playful take.`
+    //       : `Message ${subRound + 1}/${totalSubRounds}. Build on the conversation — respond to someone directly. Push back, agree sharply, or drop a subtle jab.`;
+    // }
 
     // Inject lobby intent if available (softer framing for early rounds)
-    const intentSection = this.lobbyIntent
-      ? ctx.round <= 2
-        ? `\n## Your Vibe for This Lobby (PRIVATE)\n${this.lobbyIntent}\nLet this guide the energy of your message — who you engage with and what you're curious about.\n`
-        : `\n## Your Lobby Strategy (PRIVATE — do not reveal this)\n${this.lobbyIntent}\nUse this to guide the SUBTEXT of your message. Your strategy should be invisible to others — expressed through tone, word choice, and what you choose to react to. Never state your strategy directly.\n`
-      : "";
+    // const intentSection = this.lobbyIntent
+    //   ? ctx.round <= 2
+    //     ? `\n## Your Vibe for This Lobby (PRIVATE)\n${this.lobbyIntent}\nLet this guide the energy of your message — who you engage with and what you're curious about.\n`
+    //     : `\n## Your Lobby Strategy (PRIVATE — do not reveal this)\n${this.lobbyIntent}\nUse this to guide the SUBTEXT of your message. Your strategy should be invisible to others — expressed through tone, word choice, and what you choose to react to. Never state your strategy directly.\n`
+    //   : "";
 
     const isEarlyRound = ctx.round <= 2;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
-    const prompt = this.buildUserPrompt(ctx) + `${intentSection}
-## Your Task
-Write a public lobby message.${isEarlyRound ? ` It's early — keep the energy light, warm, and fun.` : ` The lobby is social on the surface, but your words carry weight.`}
-${subRoundGuidance}
-${eliminationGuidance}
-${ctx.round === 1 ? `- Be excited and genuinely curious — this is your first real conversation with the group!
-- Riff on what others said: ask follow-up questions, share a related story, laugh at something funny
-- Show your personality through warmth, humor, and authentic interest in people
-- NO snark, shade, or suspicion yet — nothing has happened to warrant it
-- Do NOT discuss strategy, votes, or alliances — just be a person getting to know new people
+    const lobbyGuidance = ctx.round <= 2
+  ? `## Lobby Guidance
+This is a public social phase. Be warm, curious, and human, but remember you are still playing to survive.
 
-EXAMPLES of good Round 1 energy (don't copy these, create your own):
-- "Wait, you're actually a firefighter? I have so many questions. Starting with: what's the worst false alarm you've ever responded to?"
-- "Okay I already know this group is going to be fun. Between the comedian and the philosophy professor, nobody's getting a word in edgewise."
-- Sharing a quick personal story that connects to something someone else just said` : isEarlyRound ? `- Be a real person: stories, opinions, humor, reactions to what others said
-- Respond to specific players — ask questions, riff on their stories, show genuine interest
-- Mild teasing and playful disagreements are fine, but the tone stays warm and engaged
-- Light personality can shine — you're starting to form impressions, not grudges
-- Do NOT explicitly discuss strategy, votes, or alliances
+You may:
+- Build trust through personality, stories, humor, and direct engagement
+- Notice who feels genuine, evasive, charming, nervous, quiet, or overly polished
+- Ask questions that help you read people
+- Lightly signal who you feel good about
+- Gently test people without sounding like you are campaigning
 
-EXAMPLES of good Round 2 energy (don't copy these, create your own):
-- "I've been thinking about what you said earlier — I'm not sure I buy it, but I respect the confidence."
-- Playfully calling someone out for a quirky thing they said in the first round
-- Sharing a quick opinion that shows your personality without being combative` : `- Be a real person: stories, opinions, humor, reactions to what others said
-- Respond to specific players — challenge, tease, compliment, push back on what they said
-- Your SUBTEXT should serve your game: snide asides at rivals, loaded remarks to allies, sarcasm at the powerful
-- Create friction and personality clashes — not everyone agrees, and that's what makes it interesting
-- Do NOT explicitly discuss strategy, votes, or alliances — but let the audience FEEL the tension
+Avoid:
+- Openly naming vote plans, expose targets, or alliance structures
+- Sounding like you are conducting a strategy meeting
+- Revealing private deals or whisper-room information as fact
 
-EXAMPLES of good lobby subtext (don't copy these, create your own):
-- "Funny how some people always have the perfect thing to say at the perfect time..." (targeting someone you suspect)
-- "I respect people who say what they mean. Getting harder to find around here." (signaling distrust)
-- Telling a personal story that just happens to parallel someone's suspicious behavior`}
+Your message should feel social first, strategic underneath.`
+  : `## Lobby Guidance
+This is public. Everyone is watching. You are allowed to shape the room, but do it with plausible deniability.
 
-Keep it to 2-3 sentences. Be authentic, entertaining, and ${ctx.round === 1 ? "warm" : isEarlyRound ? "engaging" : "sharp"}.`;
+You may:
+- Praise, tease, challenge, question, or cast doubt on specific players
+- Float concerns without making a formal accusation
+- Reinforce trust with people you want closer
+- Put pressure on rivals through tone, contrast, and selective attention
+- Create a public story about who seems trustworthy, slippery, powerful, isolated, or dangerous
+
+Avoid:
+- Explicit vote instructions
+- Direct alliance proposals
+- Mechanical strategy talk
+- Revealing private agreements as confirmed fact
+
+Your message should be entertaining on the surface and useful to your game underneath.`;
+    const prompt = this.buildUserPrompt(ctx); + `
+${lobbyGuidance}
+`
 
     return this.callLLMWithThinking(prompt, 150, sys, { action: "lobby", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
   }
@@ -816,7 +821,7 @@ Use the send_whispers tool to submit your whisper messages. Use player NAMES (no
     }
   }
 
-  async chooseWhisperRoom(ctx: PhaseContext): Promise<number | null> {
+  async chooseMingleRoom(ctx: PhaseContext): Promise<number | null> {
     const roomCount = ctx.roomCount ?? 1;
     if (roomCount < 1) return null;
     const rooms = Array.from({ length: roomCount }, (_, index) => index + 1);
@@ -836,16 +841,16 @@ Available rooms: ${rooms.map((roomId) => `Room ${roomId}`).join(", ")}
 ${currentCounts}
 
 Rooms have no theme and no occupancy cap. You can pile into a crowded room, split off, or sit alone.
-Use the choose_whisper_room tool to submit one room number.`;
+Use the choose_mingle_room tool to submit one room number.`;
 
     try {
       const result = await this.callTool<{ roomId: number }>(
-        prompt, TOOL_CHOOSE_WHISPER_ROOM, 150, sys,
+        prompt, TOOL_CHOOSE_MINGLE_ROOM, 150, sys,
         { action: "room-choice", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
       );
       return Number.isInteger(result.roomId) ? result.roomId : null;
     } catch (err) {
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=chooseWhisperRoom error="${err instanceof Error ? err.message : err}" fallback=1`);
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=chooseMingleRoom error="${err instanceof Error ? err.message : err}" fallback=1`);
       return 1;
     }
   }
@@ -931,7 +936,7 @@ Choose exactly one of:
 - TALK: send a private message to the other occupants in your current room.
 - NO_REPLY: say nothing this turn.
 
-You may also optionally GOTO ROOM N after this turn. Movement happens after everyone in the current turn acts, so your current TALK only reaches this room.
+You may also optionally GOTO ROOM N after this turn. Movement happens after everyone in the current turn acts, so your current TALK only reaches this room and you will not hear replies. If you TALK and GOTO, your message is for your current roommates only, but you will move to the new room next turn and can talk to a new set of people then.
 ${availableRooms.length > 0 ? `Available GOTO rooms: ${availableRooms.map((roomId) => `Room ${roomId}`).join(", ")}.` : ""}
 
 Guidance:
@@ -939,8 +944,11 @@ Guidance:
 - If the room has people, make TALK specific and strategic.
 - Move when a crowded room is noisy, a private room looks useful, or you want to avoid being predictable.
 - Staying put is valid when the current room conversation is valuable.
+- TALK and GOTO can be powerful for spreading information or coordinating between groups, but remember you won't hear responses from the new room until your next turn.
+- If you TALK and GOTO in a single turn, you may want to mention to your current roommates that you will be moving, so they know to expect you in the new room next turn.
+- If you are in a room with allies, consider using TALK to strengthen those bonds. If you're with threats, consider using TALK to sow doubt or plan an escape. If you're alone, consider using GOTO to find new connections or avoid threats.
 
-Keep TALK to 1-3 sentences. Use the mingle_turn tool.`;
+Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
 
     try {
       const result = await this.callTool<{
@@ -1172,12 +1180,6 @@ You have three choices:
 Council candidates: ${candidateNames.join(" and ")}
 Other alive players: ${otherAlive.map((p) => p.name).join(", ")}
 ${lastPowerAction ? `Your last empowered action: R${lastPowerAction.round} ${lastPowerAction.action} -> ${lastPowerAction.target}.` : "You have not used empowered power before."}
-
-## Anti-Repeat Power Guidance
-- Repeatedly protecting the same ally makes your power actions predictable. Do not protect an ally you already protected unless this round's Power Lobby creates a new public receipt: a fresh promise, threat, vote explanation, or named counter-target that makes the repeat protection accountable.
-- Consecutive auto-eliminations make the power holder look deterministic. If your last empowered action was eliminate, eliminate is gated by fresh current-round Power Lobby evidence against that exact candidate.
-- To eliminate after a prior eliminate, your hidden thinking MUST cite the speaker and evidence from this round's Power Lobby. If you cannot cite a fresh named receipt, choose pass or protect.
-- When the lobby record conflicts, when council would expose useful public votes, or when protection creates a debt you can call later, prefer pass or protect over an immediate hit.
 
 Before using the tool, decide what future debt or backlash your action creates. Prefer pass or protect when they create a callable ally, a sharper council fight, or a betrayal hook for later.
 Use the use_power tool to declare your final hidden action.`;
@@ -1617,7 +1619,7 @@ IMPORTANT: Only reference alive players in your messages, votes, and strategies.
           .join("\n")
       : "";
 
-    const whispers = ctx.whisperMessages
+    const mingleMessages = ctx.mingleMessages
       .map((m) => `  From ${m.from}: "${m.text}"`)
       .join("\n");
 
@@ -1677,7 +1679,7 @@ ${this.memory.lastReflection ? `## Strategic Assessment\n- Certainties: ${(this.
 ${recentMessages || "  (none yet)"}
 ${anonymousSection}
 
-${whispers ? `## Private Whispers You Received\n${whispers}` : ""}
+${mingleMessages ? `## Private Room Messages (Mingle)\n${mingleMessages}\nThese are private to your current room occupants only.` : ""}
 ${roomSection}
 
 `;
@@ -2180,14 +2182,13 @@ ${JSON.stringify(tool.function.parameters)}`,
     options?: { action?: string; reasoningOverhead?: number; reasoningEffort?: ReasoningEffort },
   ): Promise<AgentResponse> {
     if (this.usesLocalStructuredCompatibility()) {
-      const localPrompt = `${prompt}
-
-LOCAL MODEL OUTPUT RULE:
-Write only the words ${this.name} says out loud.
-Do not include JSON, "thinking", analysis, notes, markdown, or labels.
-Start directly with the spoken message.`;
+      // Local models (e.g. via LM Studio): we no longer forcibly strip thinking from public/spoken messages.
+      // Master wants the models to think freely, even on visible output. High token budgets are acceptable
+      // ("let the MacBook Pro cook"). We still capture native reasoning_content (if the server provides it)
+      // via callLocalLLMWithNativeThinking, which populates the thinking/reasoningContext fields for transcripts
+      // and --chatty output.
       return await this.callLocalLLMWithNativeThinking(
-        localPrompt,
+        prompt,
         maxTokens,
         systemPrompt,
         options,

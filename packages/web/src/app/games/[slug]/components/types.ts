@@ -9,7 +9,7 @@ export interface ReplayScene {
   roomType: RoomType;
   messages: TranscriptEntry[];
   houseIntro: string | null;
-  /** Present on per-room whisper scenes (sequential presentation). */
+  /** Present on per-room scenes (sequential presentation). Field name retained for historical data shape compatibility (see whisper-phase.tsx header comment). */
   whisperRoom?: { roomId: number; playerNames: string[] };
   /** Present on per-player diary scenes (sequential presentation). */
   diaryPlayer?: { playerName: string };

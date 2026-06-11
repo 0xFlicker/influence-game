@@ -75,7 +75,8 @@ const defaultConfig = {
   timers: {
     introduction: 30000,
     lobby: 30000,
-    whisper: 45000,
+    whisper: 45000, // legacy
+    mingle: 45000,  // current Mingle room phase
     rumor: 30000,
     vote: 20000,
     power: 15000,

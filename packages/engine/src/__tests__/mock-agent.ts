@@ -66,7 +66,7 @@ export class MockAgent implements IAgent {
     ];
   }
 
-  async chooseWhisperRoom(ctx: PhaseContext): Promise<number | null> {
+  async chooseMingleRoom(ctx: PhaseContext): Promise<number | null> {
     const roomCount = ctx.roomCount ?? 1;
     if (roomCount < 1) return null;
     const myIndex = ctx.alivePlayers.findIndex((p) => p.id === this.id);

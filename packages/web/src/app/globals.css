@@ -97,7 +97,7 @@
   --phase-glass-alpha: 0.07;
 }
 
-:root[data-phase="WHISPER"] {
+:root[data-phase="MINGLE"] {
   --phase-rgb: 168 85 247;
   --phase-glow-alpha: 0.08;
   --phase-glow-alpha-strong: 0.16;

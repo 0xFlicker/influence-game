@@ -55,6 +55,10 @@ class LifecycleMockAgent implements IAgent {
     const roomCount = ctx.roomCount ?? 1;
     return roomCount > 0 ? 1 : null;
   }
+  async chooseMingleRoom(ctx: PhaseContext) {
+    const roomCount = ctx.roomCount ?? 1;
+    return roomCount > 0 ? 1 : null;
+  }
   async sendRoomMessage(_ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>) {
     const alreadySpoke = conversationHistory?.some((m) => m.from === this.name) ?? false;
     if (alreadySpoke) return null;
@@ -120,7 +124,8 @@ async function createGameInDB(
     timers: {
       introduction: 0,
       lobby: 0,
-      whisper: 0,
+      whisper: 0, // legacy key ok for test duration=0
+      mingle: 0,  // current key also exercised
       rumor: 0,
       vote: 0,
       power: 0,
@@ -175,7 +180,7 @@ describe("Game lifecycle integration", () => {
 
     const row = serializeTranscriptEntry("game-rooms", {
       round: 1,
-      phase: Phase.WHISPER,
+      phase: Phase.MINGLE,
       timestamp: 123,
       from: "House",
       scope: "system",

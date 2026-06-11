@@ -16,7 +16,7 @@ import { createActor } from "xstate";
 import { Phase, PlayerStatus } from "../types";
 import type { GameConfig, RoomAllocation } from "../types";
 import { MockAgent } from "./mock-agent";
-import { allocateRooms } from "../phases/whisper";
+import { allocateRooms } from "../phases/mingle";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -88,7 +88,7 @@ describe("GameState - player management", () => {
     expect(gs.getWinner()?.name).toBe(defined(alive[1]).name);
   });
 
-  it("tracks final whisper-session exclusions separately from round exclusions", () => {
+  it("tracks final mingle-session exclusions separately from round exclusions", () => {
     const gs = makeState(["Alice", "Bob", "Charlie", "Dave"]);
     gs.startRound();
     const players = gs.getAlivePlayers();
@@ -108,7 +108,7 @@ describe("GameState - player management", () => {
   });
 });
 
-describe("Whisper Rooms", () => {
+describe("Mingle Rooms (current open-room phase)", () => {
   const TEST_CONFIG: GameConfig = {
     timers: {
       introduction: 0,
@@ -145,9 +145,9 @@ describe("Whisper Rooms", () => {
     expect(allocation!.roomMetadata!.rooms[0]!.playerIds.length).toBeGreaterThan(0);
   });
 
-  it("open rooms generate group whispers for rooms with multiple occupants", async () => {
+  it("open rooms generate group room messages for rooms with multiple occupants", async () => {
     class PileOnAgent extends MockAgent {
-      async chooseWhisperRoom(): Promise<number> {
+      async chooseMingleRoom(): Promise<number> {
         return 1;
       }
     }
@@ -168,7 +168,7 @@ describe("Whisper Rooms", () => {
 
   it("open rooms skip conversation for singleton rooms", async () => {
     class SpreadAgent extends MockAgent {
-      async chooseWhisperRoom(ctx: PhaseContext): Promise<number> {
+      async chooseMingleRoom(ctx: PhaseContext): Promise<number> {
         return ctx.selfName === "Alpha" ? 1 : 2;
       }
     }
@@ -184,11 +184,11 @@ describe("Whisper Rooms", () => {
     expect(roomMessages).toHaveLength(4);
   });
 
-  it("passes open-room whispers into the following phase context", async () => {
+  it("passes open-room Mingle messages into the following phase context", async () => {
     const seenWhispers = new Map<string, string[]>();
 
     class InboxProbeAgent extends MockAgent {
-      async chooseWhisperRoom(): Promise<number> {
+      async chooseMingleRoom(): Promise<number> {
         return 1;
       }
 
@@ -207,7 +207,7 @@ describe("Whisper Rooms", () => {
 
       async getRumorMessage(ctx: PhaseContext): Promise<AgentResponse> {
         if (!seenWhispers.has(this.name)) {
-          seenWhispers.set(this.name, ctx.whisperMessages.map((message) => message.from));
+          seenWhispers.set(this.name, ctx.mingleMessages.map((message) => message.from));
         }
         return super.getRumorMessage(ctx);
       }
@@ -241,7 +241,7 @@ describe("Whisper Rooms", () => {
         super(id, name);
       }
 
-      override async chooseWhisperRoom(): Promise<number> {
+      override async chooseMingleRoom(): Promise<number> {
         return this.initialRoomId;
       }
 
@@ -325,7 +325,7 @@ describe("Whisper Rooms", () => {
         super(id, name);
       }
 
-      override async chooseWhisperRoom(ctx: PhaseContext): Promise<number> {
+      override async chooseMingleRoom(ctx: PhaseContext): Promise<number> {
         this.choiceContexts.push(ctx);
         return this.initialRoomId;
       }
@@ -376,7 +376,7 @@ describe("Whisper Rooms", () => {
         super(id, name);
       }
 
-      override async chooseWhisperRoom(): Promise<number> {
+      override async chooseMingleRoom(): Promise<number> {
         return this.initialRoomId;
       }
 

@@ -87,8 +87,8 @@ export interface IAgent {
   getLobbyMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called to collect whisper actions (list of {to, text}) — DEPRECATED, use room methods */
   getWhispers(context: PhaseContext): Promise<Array<{ to: UUID[]; text: string }>>;
-  /** Choose a neutral whisper room by room number */
-  chooseWhisperRoom(context: PhaseContext): Promise<number | null>;
+  /** Choose a Mingle room by room number (current active method for the Mingle phase) */
+  chooseMingleRoom(context: PhaseContext): Promise<number | null>;
   /** Send a private room message to all other occupants, or null to pass */
   sendRoomMessage(context: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<AgentResponse | null>;
   /** Mingle turn action: TALK or NO_REPLY, plus optional GOTO ROOM N for the next turn */
@@ -167,8 +167,8 @@ export interface PhaseContext {
   selfName: string;
   alivePlayers: Array<{ id: UUID; name: string }>;
   publicMessages: Array<{ from: string; text: string; phase: Phase; round?: number; anonymous?: boolean; displayOrder?: number }>;
-  /** Messages this agent received as whispers */
-  whisperMessages: Array<{ from: string; text: string }>;
+  /** Messages this agent received in the current Mingle/private room */
+  mingleMessages: Array<{ from: string; text: string }>;
   empoweredId?: UUID;
   councilCandidates?: [UUID, UUID];
   // Room allocation context (whisper rooms)

@@ -465,7 +465,7 @@ export function GameViewer({
           }
           // Audio zone transitions
           if (ev.phase === "INTRODUCTION") audioCue.zone("ambient");
-          else if (ev.phase === "WHISPER" || ev.phase === "VOTE")
+          else if (ev.phase === "MINGLE" || ev.phase === "VOTE")
             audioCue.zone("tension");
           else if (ev.phase === "REVEAL" || ev.phase === "COUNCIL")
             audioCue.zone("drama");
@@ -474,7 +474,7 @@ export function GameViewer({
           // Show transition overlay in live mode (not on END phase — no point)
           if (ev.phase !== "END" && ev.phase !== "INIT") {
             const flavorText =
-              prevPhase === "WHISPER" && ev.phase === "RUMOR"
+              prevPhase === "MINGLE" && ev.phase === "RUMOR"
                 ? "The rooms are sealed. Time to face the group."
                 : (() => {
                     const flavors = PHASE_FLAVORS[ev.phase] ?? [];
@@ -523,7 +523,7 @@ export function GameViewer({
             if (phase === "REVEAL" || phase === "COUNCIL") {
               setRevealQueue((q) => [...q, msg]);
             } else if (
-              phase !== "WHISPER" &&
+              phase !== "MINGLE" &&
               phase !== "INTRODUCTION" &&
               phase !== "LOBBY" &&
               phase !== "JURY_QUESTIONS" &&
@@ -798,7 +798,7 @@ export function GameViewer({
 
   const currentWhisperEntries = visibleMessages.filter(
     (message) =>
-      message.phase === "WHISPER" &&
+      message.phase === "MINGLE" &&
       message.round === replayGame.currentRound &&
       (message.scope === "whisper" || message.scope === "system"),
   );
@@ -824,7 +824,7 @@ export function GameViewer({
 
   // Phases that use dedicated views instead of spectacle spotlight
   const DEDICATED_VIEW_PHASES: ReadonlySet<PhaseKey> = new Set([
-    "WHISPER",
+    "MINGLE",
     "REVEAL",
     "COUNCIL",
     "INTRODUCTION",
@@ -942,7 +942,7 @@ export function GameViewer({
             />
           )}
         {mobileTab === "chat" &&
-          replayGame.currentPhase === "WHISPER" &&
+          replayGame.currentPhase === "MINGLE" &&
           !isReplay && (
             <WhisperPhaseView
               phaseEntries={currentWhisperEntries}
@@ -1199,7 +1199,7 @@ export function GameViewer({
 
           {/* Main Stage: Whisper phase — DM grid */}
           {activeTab === "stage" &&
-            replayGame.currentPhase === "WHISPER" &&
+            replayGame.currentPhase === "MINGLE" &&
             !isReplay && (
               <WhisperPhaseView
                 phaseEntries={currentWhisperEntries}

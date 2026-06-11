@@ -23,6 +23,7 @@
 
 - Local LM Studio experiments are a first-class development lane. Use the OpenAI-compatible provider env vars documented in `docs/local-model-evaluation.md`.
 - Simulation outputs should be stored locally, usually under `packages/engine/docs/simulations/`, unless a task says to publish or attach them elsewhere.
+- `--chatty` mode + the reasoning / transcript observability layer (`docs/reasoning-transcript-observability.md`) is now the expected way to inspect agent decision quality (Mingle turns, votes, power actions, council votes). The surfaced `thinking` and native `reasoningContext` on system transcript entries are first-class artifacts for local model work.
 
 ## Validation
 
@@ -30,3 +31,4 @@
 - Fast baseline: `bun run test`.
 - Broader local baseline: `bun run check`.
 - For code-backed work that will merge, run the repo's required checks and report real results.
+- When changing agent decision surfaces, transcript logging, or simulation output formatting, also update `docs/reasoning-transcript-observability.md`, the relevant usage examples in `docs/local-model-evaluation.md` / `DEVELOPMENT.md` / `README.md`, and the JSDoc in `packages/engine/src/simulate.ts`. Keep the "no `as any`" and direct-House-call disciplines visible in docs and code.

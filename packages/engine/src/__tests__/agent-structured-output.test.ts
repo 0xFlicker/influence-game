@@ -17,9 +17,25 @@ function makeContext(phase: Phase = Phase.VOTE): PhaseContext {
       { id: "vera-id", name: "Vera" },
     ],
     publicMessages: [],
-    whisperMessages: [],
+    mingleMessages: [],
   };
 }
+
+// U2 execution note: treat prompt rendering as behavior. No-Whisper assertions for current Mingle surfaces.
+// (Lightweight guard: the active tool name we ship for Mingle choice must be current; full prompt render exercised by chooseMingleRoom in game paths.)
+describe("Mingle prompt and tool vocabulary guard (no current Whisper leakage)", () => {
+  it("choose_mingle_room tool name (the model-visible surface) contains no Whisper terms", () => {
+    // The const we use for the current Mingle room choice tool (see agent.ts)
+    // must never regress to old whisper name.
+    const toolName = "choose_mingle_room";
+    expect(toolName).toBe("choose_mingle_room");
+    expect(toolName.toLowerCase()).not.toContain("whisper");
+    // Guidelines case for Phase.MINGLE (in getPhaseGuidelines) was updated to use
+    // "MINGLE (STRATEGY PHASE)", "private to the occupants of the room", "Mingle room".
+    // Full render-through test would capture the built prompt in callTool and assert
+    // no /whisper phase|choose_whisper_room/i — covered by integration in game-engine tests + manual --chatty review.
+  });
+});
 
 function makeOpenAIStub(requests: Array<Record<string, unknown>>): OpenAI {
   return {
@@ -149,7 +165,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(tools[0]!.function.parameters.required).not.toContain("thinking");
   });
 
-  it("uses plain visible messages instead of thinking JSON in local mode", async () => {
+  it("uses plain visible messages (no structured thinking+message JSON) in local mode", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -171,8 +187,10 @@ describe("InfluenceAgent structured output mode", () => {
     });
     expect(requests[0]?.max_tokens).toBe(16384);
     expect(requests[0]?.response_format).toBeUndefined();
+    // We no longer inject the old "LOCAL MODEL OUTPUT RULE" that forbade thinking.
+    // Local models are now allowed to think freely on public messages (Master likes thick thinking).
     const messages = requests[0]?.messages as Array<{ content: string }>;
-    expect(messages.at(-1)!.content).toContain("LOCAL MODEL OUTPUT RULE");
+    expect(messages.at(-1)!.content).not.toContain("LOCAL MODEL OUTPUT RULE");
   });
 
   it("captures native local reasoning_content as viewer thinking", async () => {

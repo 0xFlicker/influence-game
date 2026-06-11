@@ -22,7 +22,7 @@ export class ContextBuilder {
   constructor(
     private readonly gameState: GameState,
     private readonly logger: TranscriptLogger,
-    private readonly whisperInbox: Map<UUID, Array<{ from: string; text: string }>>,
+    private readonly mingleInbox: Map<UUID, Array<{ from: string; text: string }>>,
     private readonly totalPlayerCount: number,
   ) {}
 
@@ -73,7 +73,7 @@ export class ContextBuilder {
       selfName: player.name,
       alivePlayers: this.gameState.getAlivePlayers().map((p) => ({ id: p.id, name: p.name })),
       publicMessages: [...this.logger.publicMessages],
-      whisperMessages: this.whisperInbox.get(agentId) ?? [],
+      mingleMessages: this.mingleInbox.get(agentId) ?? [],
       empoweredId: extra?.empoweredId ?? this.gameState.empoweredId ?? undefined,
       councilCandidates: extra?.councilCandidates ?? this.gameState.councilCandidates ?? undefined,
       roomCount: roomInfo?.roomCount,

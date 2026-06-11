@@ -8,17 +8,21 @@
  *   bun run simulate
  *   bun run simulate -- --games 5 --players 6
  *   bun run simulate -- --games 3 --players 4 --personas Atlas,Vera,Finn,Mira
- *   bun run simulate -- --variant open-whisper
- *   bun run simulate -- --variant power-lobby-open-whisper
+ *   bun run simulate -- --variant mingle
+ *   bun run simulate -- --variant power-lobby-mingle
  *
  * Focused Mingle testing (tight Mingle -> Vote loop until 4 players, then standard):
  *   bun run simulate:local -- --games 1 --players 8 --model google/gemma-4-26b-a4b-qat \
  *     --variant mingle-loop --mingle-until-players 4
  *
- * Chatty / live formatted transcript (great for watching local model Mingle behavior):
+ * Chatty / live formatted transcript (great for watching local model Mingle behavior and per-decision reasoning):
  *   INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
  *   bun run simulate:local -- --games 1 --players 8 --model google/gemma-4-26b-a4b-qat \
- *     --variant open-whisper --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
+ *     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
+ *
+ * The --chatty output (and written transcripts) now interleave House action lines
+ * ("X votes: ...", "Y power action: ...", "Z council vote -> ...") with the agent's
+ * hidden `thinking` (dim gray) and raw native `reasoningContext` (cyan) when present.
  */
 
 import type OpenAI from "openai";
@@ -184,19 +188,19 @@ const POWER_LOBBY_VARIANTS = new Set([
   "power-lobby",
   "power-lobby-after-vote",
   "power-lobby-v2",
-  "power-lobby-open-whisper",
-  "open-whisper-power-lobby",
-  "power-lobby-v2-open-whisper",
-  "open-whisper-power-lobby-v2",
+  "power-lobby-mingle",
+  "mingle-power-lobby",
+  "power-lobby-v2-mingle",
+  "mingle-power-lobby-v2",
 ]);
 
 const OPEN_WHISPER_VARIANTS = new Set([
   "baseline",
-  "open-whisper",
-  "power-lobby-open-whisper",
-  "open-whisper-power-lobby",
-  "power-lobby-v2-open-whisper",
-  "open-whisper-power-lobby-v2",
+  "mingle",
+  "power-lobby-mingle",
+  "mingle-power-lobby",
+  "power-lobby-v2-mingle",
+  "mingle-power-lobby-v2",
 ]);
 
 export function isPowerLobbyVariant(variant: string): boolean {
@@ -495,7 +499,7 @@ function formatEntry(e: TranscriptEntry): string {
   const cyan = "\x1b[36m";
   const yellow = "\x1b[33m";
   const prefix = `R${e.round}/${e.phase}`;
-  const scopeTag = e.scope === "whisper" ? ` [whisper→${e.to?.join(",") || ""}]` : e.scope === "thinking" ? " [thinking]" : "";
+  const scopeTag = e.scope === "mingle" ? ` [mingle→${e.to?.join(",") || ""}]` : e.scope === "whisper" ? ` [whisper→${e.to?.join(",") || ""}]` : e.scope === "thinking" ? " [thinking]" : "";
   let line = `${prefix} ${e.from}${scopeTag}: ${e.text}`;
   if (e.thinking) {
     line += `\n    ${dim}${gray}thinking: ${e.thinking}${reset}`;
@@ -558,7 +562,7 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
   lines.push(`| Reckoning markers | ${stats.instrumentation.endgame.reckoning} |`);
   lines.push(`| Tribunal markers | ${stats.instrumentation.endgame.tribunal} |`);
   lines.push(`| Judgment markers | ${stats.instrumentation.endgame.judgment} |`);
-  lines.push(`| Whisper rooms | ${stats.instrumentation.rooms.totalRooms} |`);
+  lines.push(`| Mingle rooms | ${stats.instrumentation.rooms.totalRooms} |`);
   lines.push(`| Whisper sessions instrumented | ${stats.instrumentation.rooms.whisperSessions.length} |`);
   lines.push(`| Room exclusions | ${stats.instrumentation.rooms.totalExclusions} |`);
   lines.push(`| Repeated room-pair occurrences | ${stats.instrumentation.rooms.repeatedPairs.totalRepeatedOccurrences} |`);

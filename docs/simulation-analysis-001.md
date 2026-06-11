@@ -184,6 +184,8 @@ Then pass this structured history into the base prompt so the LLM can reason fro
 
 ## Next Steps
 
+**Observability note (added during Mingle hardening):** Later work on `feat/inf-228-mingle-hardening` made per-agent `thinking` + native `reasoningContext` visible on VOTE / POWER / COUNCIL system entries (and House MC summaries) via `--chatty` and the full transcript. See `docs/reasoning-transcript-observability.md` for the patterns, core rules, and recommended `--chatty` usage when evaluating decision quality in simulation batches. Future analyses should call out the legibility and strategic content of the surfaced private reasoning, not only public messages and outcomes.
+
 1. Propose prompt revisions for Social, Strategic, Deceptive, Rex, and Lyra archetypes for CEO review
 2. Design auto-eliminate constraint options with tradeoff analysis
 3. Draft expanded agent memory schema for engineer implementation review

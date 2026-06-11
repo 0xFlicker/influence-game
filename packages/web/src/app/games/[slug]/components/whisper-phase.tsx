@@ -6,6 +6,26 @@ import { AgentAvatar } from "@/components/agent-avatar";
 import { Typewriter } from "@/components/typewriter";
 import type { WhisperRoomStage, WhisperStageData } from "./types";
 
+/**
+ * NOTE ON NAMING (per cutover plan U4):
+ * The file, exported component names (WhisperPhaseView, OpenWhisperRoomsView, etc.),
+ * internal data fields (whisperRoom, isWhisperScene), and some helper names still contain
+ * "whisper" / "Whisper".
+ *
+ * This is intentional and allowed by the plan:
+ *   "Rename component exports/tests where practical, but prioritize current behavior
+ *    over perfect mechanical file renames. Historical Whisper replay polish remains out of scope."
+ *
+ * Current games always use phase === "MINGLE" (never "WHISPER").
+ * All user-facing labels, flavors, and logic for *new* Mingle execution say "Mingle".
+ * The "whisper*" names are retained only for:
+ *   - The internal data shape that describes a room scene (built during original Mingle hardening).
+ *   - Compatibility with old replay/transcript data that may still contain "WHISPER".
+ *   - Avoiding a huge mechanical rename that doesn't improve behavior.
+ *
+ * If you are here because you see "whisper" in current MINGLE paths: that is a bug — please fix the string/condition.
+ */
+
 export function canonicalPairKey(a: string, b: string): string {
   return [a, b].sort((left, right) => left.localeCompare(right)).join("::");
 }
@@ -115,7 +135,7 @@ export function buildWhisperStageData(
   }
 
   for (const entry of ordered) {
-    if (entry.scope !== "whisper" || !entry.fromPlayerId) continue;
+    if (entry.scope !== "mingle" || !entry.fromPlayerId) continue;
     const recipientIds = entry.toPlayerIds ?? [];
     let room = entry.roomId != null ? roomsById.get(entry.roomId) : undefined;
 
@@ -737,8 +757,8 @@ export function WhisperRoomDM({
 
 /**
  * Rich allocation overview — used by the dramatic viewer for overview scenes
- * and as the opening screen in the sequential whisper view.
- * Explains whisper room mechanics and shows who ended up where.
+ * and as the opening screen in the sequential Mingle room view.
+ * Explains Mingle room mechanics and shows who ended up where.
  */
 export function WhisperAllocationOverview({
   stage,
@@ -834,7 +854,7 @@ export function WhisperAllocationOverview({
   );
 }
 
-/** Sequential whisper view for the classic game viewer — overview then one room at a time. */
+/** Sequential Mingle room view for the game viewer — overview then one room at a time. */
 export function WhisperPhaseView({
   phaseEntries,
   players,

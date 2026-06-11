@@ -391,13 +391,13 @@ async function runMingleTurn(
       const messageSent = Boolean(message && recipientIds.length > 0);
       if (messageSent && message) {
         for (const recipientId of recipientIds) {
-          const inbox = ctx.whisperInbox.get(recipientId) ?? [];
+          const inbox = ctx.mingleInbox.get(recipientId) ?? [];
           inbox.push({ from: fromName, text: message });
-          ctx.whisperInbox.set(recipientId, inbox);
+          ctx.mingleInbox.set(recipientId, inbox);
         }
 
         conversationHistory.push({ from: fromName, text: message });
-        logger.logWhisper(playerId, recipientIds, message, globalRoomId, resolvedAction.thinking, resolvedAction.reasoningContext);
+        logger.logMingleMessage(playerId, recipientIds, message, globalRoomId, resolvedAction.thinking, resolvedAction.reasoningContext);
       }
 
       actionRecords.push({
@@ -421,7 +421,7 @@ async function runMingleTurn(
   return actionRecords;
 }
 
-export async function runWhisperPhase(
+export async function runMinglePhase(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
 ): Promise<void> {
@@ -431,9 +431,9 @@ export async function runWhisperPhase(
   logger.logSystem("=== MINGLE PHASE ===", Phase.MINGLE);
   const alivePlayers = gameState.getAlivePlayers();
 
-  ctx.whisperInbox.clear();
+  ctx.mingleInbox.clear();
   for (const player of alivePlayers) {
-    ctx.whisperInbox.set(player.id, []);
+    ctx.mingleInbox.set(player.id, []);
   }
   contextBuilder.currentRoomAllocations = [];
   contextBuilder.currentExcludedPlayerIds = [];
@@ -467,7 +467,7 @@ export async function runWhisperPhase(
         roomCount,
         roomCounts: initialRoomCounts,
       });
-      choices.set(player.id, await agent.chooseWhisperRoom(phaseCtx));
+      choices.set(player.id, await agent.chooseMingleRoom(phaseCtx));
     }),
   );
 
@@ -541,9 +541,9 @@ export async function runWhisperPhase(
   await new Promise((r) => setTimeout(r, 0));
 }
 
-export async function runReckoningWhisper(
+export async function runReckoningMingle(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
 ): Promise<void> {
-  await runWhisperPhase(ctx, actor);
+  await runMinglePhase(ctx, actor);
 }

@@ -31,7 +31,7 @@ import type { PhaseRunnerContext, PhaseActor } from "./phases";
 import {
   runIntroductionPhase,
   runLobbyPhase, runReckoningLobby, runTribunalLobby,
-  runWhisperPhase, runReckoningWhisper,
+  runMinglePhase, runReckoningMingle,
   runRumorPhase,
   runVotePhase, runReckoningVote, runTribunalVote,
   runPowerPhase,
@@ -56,7 +56,7 @@ export class GameRunner {
   private readonly diaryRoom: DiaryRoom;
   private readonly houseInterviewer: IHouseInterviewer;
   /** Whisper messages keyed by recipient */
-  private whisperInbox = new Map<UUID, Array<{ from: string; text: string }>>();
+  private mingleInbox = new Map<UUID, Array<{ from: string; text: string }>>();
   /** Ordered list of eliminated player names */
   private readonly eliminationOrder: string[] = [];
   /** When true, the game loop will exit at the next phase boundary. */
@@ -80,7 +80,7 @@ export class GameRunner {
     this.contextBuilder = new ContextBuilder(
       this.gameState,
       this.logger,
-      this.whisperInbox,
+      this.mingleInbox,
       this.totalPlayerCount,
     );
     this.diaryRoom = new DiaryRoom(
@@ -188,7 +188,7 @@ export class GameRunner {
       logger: this.logger,
       contextBuilder: this.contextBuilder,
       diaryRoom: this.diaryRoom,
-      whisperInbox: this.whisperInbox,
+      mingleInbox: this.mingleInbox,
       eliminationOrder: this.eliminationOrder,
     };
   }
@@ -235,7 +235,7 @@ export class GameRunner {
       } else if (state === "lobby") {
         await runLobbyPhase(prc, actor);
       } else if (state === "mingle") {
-        await runWhisperPhase(prc, actor);
+        await runMinglePhase(prc, actor);
 
         // House MC summary after Mingle phases (great for simulation traces)
         try {
@@ -278,7 +278,7 @@ export class GameRunner {
       } else if (state === "reckoning_lobby") {
         await runReckoningLobby(prc, actor);
       } else if (state === "reckoning_mingle") {
-        await runReckoningWhisper(prc, actor);
+        await runReckoningMingle(prc, actor);
       } else if (state === "reckoning_plea") {
         await runReckoningPlea(prc, actor);
       } else if (state === "reckoning_vote") {

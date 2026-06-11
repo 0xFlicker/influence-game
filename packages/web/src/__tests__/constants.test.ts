@@ -16,8 +16,8 @@ describe("phaseToRoomType", () => {
     expect(phaseToRoomType("RUMOR")).toBe("lobby");
   });
 
-  it("maps whisper to 'private_rooms'", () => {
-    expect(phaseToRoomType("WHISPER")).toBe("private_rooms");
+  it("maps MINGLE to 'private_rooms'", () => {
+    expect(phaseToRoomType("MINGLE")).toBe("private_rooms");
   });
 
   it("maps vote/power/reveal/council to 'tribunal'", () => {
@@ -70,7 +70,7 @@ describe("ENDGAME_PHASES", () => {
 describe("PHASE_LABELS", () => {
   it("has a label for every PhaseKey", () => {
     const allPhases: PhaseKey[] = [
-      "INIT", "INTRODUCTION", "LOBBY", "WHISPER", "RUMOR", "VOTE",
+      "INIT", "INTRODUCTION", "LOBBY", "MINGLE", "RUMOR", "VOTE",
       "POWER", "REVEAL", "COUNCIL", "DIARY_ROOM", "PLEA", "ACCUSATION",
       "DEFENSE", "OPENING_STATEMENTS", "JURY_QUESTIONS", "CLOSING_ARGUMENTS",
       "JURY_VOTE", "END",

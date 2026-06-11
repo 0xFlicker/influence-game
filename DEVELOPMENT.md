@@ -382,6 +382,11 @@ bun run simulate -- --games 1 --players 4 --model gpt-5-nano
 # Local LM Studio validation bypasses Doppler:
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 4 --model <lm-studio-model-id>
+
+# Chatty mode (live colored transcript with agent thinking + native reasoningContext on votes, power actions, council votes — essential for Mingle observability):
+INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
+  bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
+    --variant open-whisper --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
 `InfluenceAgent` uses OpenAI-compatible chat completions. Hosted OpenAI runs use `OPENAI_API_KEY`; local runs can use `INFLUENCE_LLM_BASE_URL` with LM Studio. Current repo defaults are budget `gpt-5-nano`, standard `gpt-5-mini`, and premium `gpt-5.4-mini`; override server-side tiers with `INFLUENCE_MODEL_BUDGET`, `INFLUENCE_MODEL_STANDARD`, and `INFLUENCE_MODEL_PREMIUM` when testing local models.

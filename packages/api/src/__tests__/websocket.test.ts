@@ -141,7 +141,7 @@ describe("WebSocket Manager", () => {
       type: "transcript_entry",
       entry: {
         round: 1,
-        phase: Phase.WHISPER,
+        phase: Phase.MINGLE,
         timestamp: Date.now(),
         from: "House",
         scope: "system",

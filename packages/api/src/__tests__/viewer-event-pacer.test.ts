@@ -78,7 +78,7 @@ describe("ViewerEventPacer", () => {
       councilEndMs: 50,
       eliminationMs: 50,
       diaryEndMs: 50,
-      whisperEndMs: 50,
+      roomEndMs: 50,
     };
 
     it("holds before POWER phase_change (vote end hold)", async () => {
@@ -109,7 +109,7 @@ describe("ViewerEventPacer", () => {
         councilEndMs: 80,
         eliminationMs: 80,
         diaryEndMs: 80,
-        whisperEndMs: 80,
+        roomEndMs: 80,
       });
 
       // Emit VOTE first to set phase context, then POWER (held), then transcript, then REVEAL (held)
@@ -199,21 +199,21 @@ describe("ViewerEventPacer", () => {
       expect((received[1]!.event as { phase: Phase }).phase).toBe(Phase.VOTE);
     });
 
-    it("holds after WHISPER phase ends (whisper end hold)", async () => {
+    it("holds after MINGLE room phase ends (room end hold)", async () => {
       const { received, fn } = createCollector();
       const pacer = new ViewerEventPacer("live", fn, SHORT_HOLDS);
 
-      // Simulate: WHISPER → RUMOR transition
-      pacer.emit(phaseChange(Phase.WHISPER));
+      // Simulate: MINGLE → RUMOR transition
+      pacer.emit(phaseChange(Phase.MINGLE));
       pacer.emit(phaseChange(Phase.RUMOR));
 
       await waitForDrain(10);
-      // WHISPER arrives immediately, RUMOR is held
+      // MINGLE arrives immediately, RUMOR is held
       expect(received.length).toBe(1);
-      expect((received[0]!.event as { phase: Phase }).phase).toBe(Phase.WHISPER);
+      expect((received[0]!.event as { phase: Phase }).phase).toBe(Phase.MINGLE);
 
       await waitForDrain(100);
-      // RUMOR arrives after whisper end hold
+      // RUMOR arrives after room end hold
       expect(received.length).toBe(2);
       expect((received[1]!.event as { phase: Phase }).phase).toBe(Phase.RUMOR);
     });
@@ -239,13 +239,13 @@ describe("ViewerEventPacer", () => {
         councilEndMs: 30,
         eliminationMs: 30,
         diaryEndMs: 30,
-        whisperEndMs: 30,
+        roomEndMs: 30,
       });
 
       // Full round sequence
       pacer.emit(phaseChange(Phase.LOBBY));
-      pacer.emit(phaseChange(Phase.WHISPER));
-      pacer.emit(phaseChange(Phase.RUMOR));        // hold: whisperEnd
+      pacer.emit(phaseChange(Phase.MINGLE));
+      pacer.emit(phaseChange(Phase.RUMOR));        // hold: roomEnd
       pacer.emit(phaseChange(Phase.VOTE));
       pacer.emit(phaseChange(Phase.POWER));        // hold: voteEnd
       pacer.emit(elimination("Bob"));              // hold: elimination
@@ -266,7 +266,7 @@ describe("ViewerEventPacer", () => {
       });
       expect(types).toEqual([
         "phase:LOBBY",
-        "phase:WHISPER",
+        "phase:MINGLE",
         "phase:RUMOR",
         "phase:VOTE",
         "phase:POWER",
@@ -286,7 +286,7 @@ describe("ViewerEventPacer", () => {
       expect(DEFAULT_LIVE_HOLDS.councilEndMs).toBe(2000);
       expect(DEFAULT_LIVE_HOLDS.eliminationMs).toBe(3000);
       expect(DEFAULT_LIVE_HOLDS.diaryEndMs).toBe(4000);
-      expect(DEFAULT_LIVE_HOLDS.whisperEndMs).toBe(4000);
+      expect(DEFAULT_LIVE_HOLDS.roomEndMs).toBe(4000);
     });
 
     it("allows partial override of hold timings", async () => {

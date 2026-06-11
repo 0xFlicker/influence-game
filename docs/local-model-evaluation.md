@@ -50,12 +50,12 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   --game-timeout-sec 600 --llm-timeout-sec 90
 ```
 
-4. If the model finishes, run a larger test:
+4. If the model finishes, run a larger test (add `--chatty` for live colored transcript with per-decision thinking/reasoning visibility — highly recommended for Mingle and vote/power/council work):
 
 ```bash
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
-  bun run simulate:local -- --games 1 --players 6 --model <lm-studio-model-id> \
-  --variant open-whisper --game-timeout-sec 900 --llm-timeout-sec 120
+  bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
+  --variant open-whisper --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
 Simulation artifacts are written under `packages/engine/docs/simulations/`.
@@ -80,13 +80,16 @@ The API still needs app/database/auth secrets from Doppler unless you provide eq
 Create a dated note in `docs/simulations/` or near the generated batch artifacts with:
 
 - model ID and quantization
-- command run
+- command run (include `--chatty` when used)
 - player count, variant, timeout settings
 - whether the game completed
 - duration and token/call counts if available
-- examples of good strategy
+- examples of good strategy (especially visible in the surfaced `thinking` / `reasoningContext` on VOTE / POWER / COUNCIL lines)
 - examples of bad strategy, repetition, incoherence, or empty responses
 - whether the output was enjoyable to watch
+- quality and usefulness of the per-agent `thinking` and native `reasoningContext` captured in the transcript (this is now first-class signal for Mingle and decision-loop debugging)
+
+When running with `--chatty`, the live terminal (and the written `game-*.txt`) will interleave House action lines with dim-gray `thinking:` and cyan `reasoning:` blocks. These are the primary human-readable artifacts for evaluating whether the model is producing legible, strategic private reasoning.
 
 ## Current Product Context
 

@@ -744,8 +744,8 @@ export function SpectacleMessageContent({
             {isAnonymousRumor && (
               <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">rumor</span>
             )}
-            {message.scope === "whisper" && (
-              <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
+            {message.scope === "mingle" && (
+              <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">mingle</span>
             )}
           </div>
         )}

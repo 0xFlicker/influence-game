@@ -74,7 +74,8 @@ export function createGameRoutes(db: DrizzleDB) {
       fast: {
         introduction: 15000,
         lobby: 15000,
-        whisper: 20000,
+        whisper: 20000, // legacy
+        mingle: 20000,  // current
         rumor: 15000,
         vote: 10000,
         power: 10000,
@@ -83,7 +84,8 @@ export function createGameRoutes(db: DrizzleDB) {
       standard: {
         introduction: 30000,
         lobby: 30000,
-        whisper: 45000,
+        whisper: 45000, // legacy
+        mingle: 45000,  // current
         rumor: 30000,
         vote: 20000,
         power: 15000,
@@ -92,7 +94,8 @@ export function createGameRoutes(db: DrizzleDB) {
       slow: {
         introduction: 60000,
         lobby: 60000,
-        whisper: 90000,
+        whisper: 90000, // legacy
+        mingle: 90000,  // current
         rumor: 60000,
         vote: 40000,
         power: 30000,

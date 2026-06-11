@@ -465,7 +465,7 @@ export type PhaseKey =
   | "INIT"
   | "INTRODUCTION"
   | "LOBBY"
-  | "WHISPER"
+  | "MINGLE" | "WHISPER"
   | "RUMOR"
   | "VOTE"
   | "POWER"
@@ -492,7 +492,7 @@ export interface GamePlayer {
   avatarUrl?: string;
 }
 
-export type TranscriptScope = "public" | "whisper" | "system" | "diary" | "thinking";
+export type TranscriptScope = "public" | "mingle" | "whisper" | "system" | "diary" | "thinking";
 
 export interface WhisperRoomPlayerRef {
   id: string;

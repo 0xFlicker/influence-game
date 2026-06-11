@@ -53,7 +53,7 @@ describe("simulation variant config", () => {
   });
 
   it("applies simulator-only LLM call bounds", () => {
-    const config = buildSimulationConfig("open-whisper");
+    const config = buildSimulationConfig("mingle");
 
     expect(config.lobbyMessagesPerPlayer).toBe(1);
     expect(config.maxDiaryFollowUps).toBe(0);
@@ -63,9 +63,9 @@ describe("simulation variant config", () => {
     expect(config.agentActionTimeoutMs).toBe(90_000);
   });
 
-  it("enables mild pair cooldown for open-whisper simulator variants", () => {
+  it("enables mild pair cooldown for mingle simulator variants", () => {
     expect(buildSimulationConfig("baseline").minglePairCooldownRounds).toBe(1);
-    expect(buildSimulationConfig("open-whisper").minglePairCooldownRounds).toBe(1);
+    expect(buildSimulationConfig("mingle").minglePairCooldownRounds).toBe(1);
     expect(buildSimulationConfig("power-lobby").minglePairCooldownRounds).toBe(0);
   });
 
@@ -74,24 +74,24 @@ describe("simulation variant config", () => {
     expect(isOpenWhisperVariant("power-lobby")).toBe(false);
     expect(buildSimulationConfig("power-lobby").powerLobbyAfterVote).toBe(true);
 
-    expect(isPowerLobbyVariant("open-whisper")).toBe(false);
-    expect(isOpenWhisperVariant("open-whisper")).toBe(true);
-    expect(buildSimulationConfig("open-whisper").powerLobbyAfterVote).toBe(false);
-    expect(buildSimulationConfig("open-whisper").whisperSessionsPerRound).toBe(2);
+    expect(isPowerLobbyVariant("mingle")).toBe(false);
+    expect(isOpenWhisperVariant("mingle")).toBe(true);
+    expect(buildSimulationConfig("mingle").powerLobbyAfterVote).toBe(false);
+    expect(buildSimulationConfig("mingle").whisperSessionsPerRound).toBe(2);
   });
 
   it("maps combined simulator variants to both experimental flags", () => {
-    const config = buildSimulationConfig("power-lobby-open-whisper");
+    const config = buildSimulationConfig("power-lobby-mingle");
 
-    expect(isPowerLobbyVariant("power-lobby-open-whisper")).toBe(true);
-    expect(isOpenWhisperVariant("power-lobby-open-whisper")).toBe(true);
+    expect(isPowerLobbyVariant("power-lobby-mingle")).toBe(true);
+    expect(isOpenWhisperVariant("power-lobby-mingle")).toBe(true);
     expect(config.powerLobbyAfterVote).toBe(true);
     expect(config.whisperSessionsPerRound).toBe(2);
   });
 
   it("computes partial aggregate stats from completed games only", () => {
     const metadata = {
-      variant: "power-lobby-diversity-whisper",
+      variant: "power-lobby-diversity-mingle",
       timestamp: "2026-04-26T00:00:00.000Z",
       command: "bun run simulate -- --games 2",
       cwd: "/repo",
@@ -106,7 +106,7 @@ describe("simulation variant config", () => {
         players: 6,
         personas: null,
         model: "gpt-5-nano",
-        variant: "power-lobby-diversity-whisper",
+        variant: "power-lobby-diversity-mingle",
         gameTimeoutMs: 600000,
         llmTimeoutMs: 45000,
       },

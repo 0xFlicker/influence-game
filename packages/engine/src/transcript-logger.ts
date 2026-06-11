@@ -64,7 +64,7 @@ export class TranscriptLogger {
     this.emitStream({ type: "transcript_entry", entry });
   }
 
-  logWhisper(fromId: string, toIds: string[], text: string, roomId?: number, thinking?: string, reasoningContext?: string): void {
+  logMingleMessage(fromId: string, toIds: string[], text: string, roomId?: number, thinking?: string, reasoningContext?: string): void {
     const fromName = this.gameState.getPlayerName(fromId);
     const toNames = toIds.map((id) => this.gameState.getPlayerName(id));
     const entry: TranscriptEntry = {

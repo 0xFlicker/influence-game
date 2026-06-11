@@ -21,6 +21,6 @@ export interface PhaseRunnerContext {
   logger: TranscriptLogger;
   contextBuilder: ContextBuilder;
   diaryRoom: DiaryRoom;
-  whisperInbox: Map<UUID, Array<{ from: string; text: string }>>;
+  mingleInbox: Map<UUID, Array<{ from: string; text: string }>>;
   eliminationOrder: string[];
 }
