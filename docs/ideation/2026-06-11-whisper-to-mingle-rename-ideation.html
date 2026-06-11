@@ -1,0 +1,867 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>WHISPER to MINGLE Rename Ideation</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1d2433;
+        --muted: #5c667a;
+        --line: #d8deea;
+        --soft: #f5f7fb;
+        --blue: #285cc4;
+        --green: #1d7d55;
+        --amber: #986a13;
+        --red: #b33a3a;
+        --panel: #ffffff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #eef2f8;
+        color: var(--ink);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.55;
+      }
+
+      main {
+        width: min(1120px, calc(100vw - 40px));
+        margin: 0 auto;
+        padding: 42px 0 64px;
+      }
+
+      header {
+        padding: 34px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        line-height: 1.16;
+      }
+
+      h1 {
+        max-width: 900px;
+        font-size: clamp(2rem, 5vw, 3.7rem);
+        letter-spacing: 0;
+      }
+
+      h2 {
+        font-size: 1.55rem;
+        margin-bottom: 14px;
+      }
+
+      h3 {
+        font-size: 1.05rem;
+        margin-bottom: 8px;
+      }
+
+      p {
+        margin: 0 0 12px;
+      }
+
+      a {
+        color: var(--blue);
+      }
+
+      code {
+        padding: 0.05rem 0.25rem;
+        border-radius: 4px;
+        background: #e8edf7;
+        color: #22314f;
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.92em;
+      }
+
+      .subtitle {
+        max-width: 860px;
+        margin-top: 16px;
+        color: var(--muted);
+        font-size: 1.08rem;
+      }
+
+      .meta {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 24px;
+      }
+
+      .meta div,
+      section,
+      .idea,
+      .note,
+      .flow {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .meta div {
+        padding: 12px 14px;
+      }
+
+      .meta span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.78rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      section {
+        margin-top: 18px;
+        padding: 26px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .five {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .axis {
+        min-height: 118px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--soft);
+      }
+
+      .axis strong {
+        display: block;
+        margin-bottom: 6px;
+        color: #23304c;
+      }
+
+      .inventory {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .inventory div,
+      .requirement {
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--soft);
+      }
+
+      .inventory ul,
+      .requirement ul,
+      .idea ul,
+      .note ul,
+      .acceptance ul {
+        margin: 8px 0 0;
+        padding-left: 20px;
+      }
+
+      .ideas {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+
+      .idea {
+        padding: 18px;
+      }
+
+      .idea-title {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 8px;
+      }
+
+      .rank {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        margin-right: 10px;
+        border-radius: 50%;
+        background: #dfe8fb;
+        color: #173f8f;
+        font-weight: 750;
+      }
+
+      .badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #edf1f7;
+        color: #3e4a5d;
+        font-size: 0.8rem;
+        font-weight: 650;
+      }
+
+      .badge.high {
+        background: #dff1e9;
+        color: var(--green);
+      }
+
+      .badge.med {
+        background: #fff1d1;
+        color: var(--amber);
+      }
+
+      .badge.risk {
+        background: #f9dedf;
+        color: var(--red);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        overflow: hidden;
+        border-radius: 8px;
+      }
+
+      th,
+      td {
+        padding: 11px 12px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: #edf2fa;
+        color: #26324a;
+        font-size: 0.82rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .note,
+      .flow {
+        margin-top: 14px;
+        padding: 16px;
+      }
+
+      .flow svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .callout {
+        border-left: 4px solid var(--blue);
+        padding: 14px 16px;
+        background: #edf3ff;
+        border-radius: 6px;
+      }
+
+      .footer {
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      @media (max-width: 900px) {
+        main {
+          width: min(100vw - 24px, 760px);
+          padding-top: 20px;
+        }
+
+        header,
+        section {
+          padding: 20px;
+        }
+
+        .meta,
+        .grid,
+        .five,
+        .inventory {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>WHISPER to MINGLE Rename Ideation</h1>
+        <p class="subtitle">
+          Requirements capture for finishing the semantic rename across the engine,
+          prompts, persistence boundaries, frontend surfaces, simulator, tests, and docs.
+        </p>
+        <div class="meta">
+          <div><span>Date</span>2026-06-11</div>
+          <div><span>Run</span>3531427f</div>
+          <div><span>Mode</span>Repo-grounded ce-ideate</div>
+          <div><span>Raw Ideas</span>36 generated, 7 survivors</div>
+        </div>
+      </header>
+
+      <section>
+        <h2>Executive Takeaways</h2>
+        <div class="callout">
+          <p>
+            The rename should treat <code>MINGLE</code> as the canonical domain
+            concept for new runtime behavior, while leaving <code>WHISPER</code>
+            and <code>whisper</code> as legacy residue rather than supported current
+            aliases. The central risk is not cosmetic copy; it is model-facing
+            language that implies private whisper semantics during an open-room
+            Mingle phase.
+          </p>
+        </div>
+        <div class="callout" style="margin-top: 14px;">
+          <p>
+            Follow-up requirements decision: Mingle is an entirely new current
+            phase because it is better for the game. Do not purge old games, but
+            do not build ceremony around supporting Whisper as a parallel phase.
+            See <code>docs/brainstorms/2026-06-11-mingle-phase-requirements.md</code>.
+          </p>
+        </div>
+        <div class="grid" style="margin-top: 14px;">
+          <div class="note">
+            <h3>Core Product Requirement</h3>
+            <p>
+              Agents, viewers, docs, simulator output, and current-game state should
+              say Mingle. Historical records may remain, but polished old-game
+              display is not required for the Mingle cutover.
+            </p>
+          </div>
+          <div class="note">
+            <h3>Top Implementation Shape</h3>
+            <p>
+              Move the active engine, events, rows, prompts, and types to Mingle.
+              Keep any Whisper handling narrow and local to historical artifacts
+              that are still useful.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Grounding Context</h2>
+        <p>
+          The current branch already presents pieces of the experience as Mingle, but
+          repo internals still encode Whisper as the active domain name.
+        </p>
+        <div class="inventory">
+          <div>
+            <h3>Engine</h3>
+            <ul>
+              <li><code>packages/engine/src/types.ts</code> defines <code>Phase.WHISPER = "WHISPER"</code>.</li>
+              <li><code>packages/engine/src/phase-machine.ts</code> still has <code>whisper</code> and <code>reckoning_whisper</code> states.</li>
+              <li><code>packages/engine/src/phases/whisper.ts</code> emits <code>Phase.WHISPER</code> and logs "WHISPER PHASE".</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Agent Prompts</h3>
+            <ul>
+              <li><code>getPhaseGuidelines(Phase.WHISPER)</code> still says "PHASE BEHAVIOR -- WHISPER".</li>
+              <li>Model-visible tool names include <code>choose_whisper_room</code>.</li>
+              <li>Context objects still expose <code>whisperMessages</code>.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Persistence and API</h3>
+            <ul>
+              <li>Transcript scope allows <code>"whisper"</code> in API and web types.</li>
+              <li>Stored historical records can contain <code>WHISPER</code>.</li>
+              <li>Config still uses <code>timers.whisper</code> and <code>whisperSessionsPerRound</code>.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Frontend</h3>
+            <ul>
+              <li>Labels often display "Mingle", but selectors still compare <code>phase === "WHISPER"</code>.</li>
+              <li>Component and helper names still use <code>WhisperPhaseView</code> and <code>buildWhisperStageData</code>.</li>
+              <li>Viewer flavor text still says "whispers become rumors".</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Docs and Simulator</h3>
+            <ul>
+              <li><code>README.md</code> still lists <code>INTRODUCTION -> LOBBY -> WHISPER</code>.</li>
+              <li>Rules docs still call the phase "Whisper (Private Rooms)".</li>
+              <li><code>simulate.ts</code> still exposes <code>open-whisper</code> and prints <code>[whisper->...]</code>.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>External Semantics</h3>
+            <ul>
+              <li><a href="https://en.wikipedia.org/wiki/Whispering">Whispering</a> commonly implies limiting speech to nearby listeners.</li>
+              <li><a href="https://en.wikipedia.org/wiki/Social_deduction_game">Social deduction</a> depends on public/private discussion clarity.</li>
+              <li>Mingle better names movement through rooms, shared social context, and watchable strategy.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Topic Axes</h2>
+        <div class="five">
+          <div class="axis">
+            <strong>1. Agent-facing semantics</strong>
+            Prompts, tools, reasoning context, transcript text, and model-visible labels.
+          </div>
+          <div class="axis">
+            <strong>2. Engine identity</strong>
+            Phase enum, state machine IDs, phase runner names, logs, and diagnostics.
+          </div>
+          <div class="axis">
+            <strong>3. Compatibility</strong>
+            DB rows, API payloads, config aliases, replay data, and historical simulation files.
+          </div>
+          <div class="axis">
+            <strong>4. Frontend presentation</strong>
+            Viewer routes, labels, component names, message filtering, room taxonomy, and CSS state.
+          </div>
+          <div class="axis">
+            <strong>5. Docs and validation</strong>
+            README, CONCEPTS, rules, local-model docs, tests, and terminology regression gates.
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Ranked Survivor Requirements</h2>
+        <div class="ideas">
+          <article class="idea">
+            <div class="idea-title">
+              <h3><span class="rank">1</span>Canonical MINGLE phase with WHISPER left as legacy residue</h3>
+            </div>
+            <p>
+              New runtime behavior should use <code>Phase.MINGLE = "MINGLE"</code>
+              and Mingle-named phase state. Historical <code>WHISPER</code> values
+              may remain in old artifacts, but they should not be treated as an
+              equal current phase.
+            </p>
+            <ul>
+              <li>New games emit <code>MINGLE</code>, not <code>WHISPER</code>.</li>
+              <li>Move XState IDs toward <code>mingle</code> and <code>reckoning_mingle</code>.</li>
+              <li>New system logs and phase-change events should say Mingle.</li>
+            </ul>
+            <div class="badge-row">
+              <span class="badge high">Confidence: high</span>
+              <span class="badge risk">Complexity: high</span>
+              <span class="badge">Axis: engine</span>
+            </div>
+          </article>
+
+          <article class="idea">
+            <div class="idea-title">
+              <h3><span class="rank">2</span>Agent-facing Mingle vocabulary firewall</h3>
+            </div>
+            <p>
+              Agent prompts, phase guidelines, tool names/descriptions, private-room
+              context labels, and generated transcript text should not expose the old
+              Whisper vocabulary for new Mingle decisions.
+            </p>
+            <ul>
+              <li>Rename model-visible <code>choose_whisper_room</code> to <code>choose_mingle_room</code>.</li>
+              <li>Rename prompt context such as <code>whisperMessages</code> to <code>mingleMessages</code> or <code>privateRoomMessages</code>.</li>
+              <li>Describe room privacy as "private to room occupants", not as "whispers".</li>
+            </ul>
+            <div class="badge-row">
+              <span class="badge high">Confidence: high</span>
+              <span class="badge med">Complexity: medium</span>
+              <span class="badge">Axis: prompts</span>
+            </div>
+          </article>
+
+          <article class="idea">
+            <div class="idea-title">
+              <h3><span class="rank">3</span>Narrow legacy quarantine instead of broad compatibility normalization</h3>
+            </div>
+            <p>
+              Prefer current Mingle names in events, rows, config, and types. Keep
+              old Whisper handling only where a historical artifact or test would
+              otherwise create pointless breakage.
+            </p>
+            <ul>
+              <li>Avoid presenting <code>WHISPER</code> as a supported synonym for <code>MINGLE</code>.</li>
+              <li>Use <code>timers.mingle</code> and <code>mingleSessionsPerRound</code> for current configuration.</li>
+              <li>Keep legacy allowances documented and allowlisted when they remain.</li>
+            </ul>
+            <div class="badge-row">
+              <span class="badge high">Confidence: high</span>
+              <span class="badge risk">Complexity: high</span>
+              <span class="badge">Axis: compatibility</span>
+            </div>
+          </article>
+
+          <article class="idea">
+            <div class="idea-title">
+              <h3><span class="rank">4</span>Frontend Mingle presentation pass with legacy selectors</h3>
+            </div>
+            <p>
+              Viewer labels, stage views, filters, component names, room taxonomy,
+              CSS state, diary/replay timing constants, and message parsing should
+              present Mingle consistently for current games.
+            </p>
+            <ul>
+              <li>Replace user-visible "Whisper" language with "Mingle" or "Mingle room".</li>
+              <li>Use canonical display helpers rather than repeated manual maps.</li>
+              <li>Do not require polished rendering for historical Whisper games as part of this cutover.</li>
+            </ul>
+            <div class="badge-row">
+              <span class="badge high">Confidence: high</span>
+              <span class="badge med">Complexity: medium</span>
+              <span class="badge">Axis: frontend</span>
+            </div>
+          </article>
+
+          <article class="idea">
+            <div class="idea-title">
+              <h3><span class="rank">5</span>Simulator, diagnostics, and variant rename with aliases</h3>
+            </div>
+            <p>
+              Local model simulations are part of the product workflow, so terminal
+              output, markdown summaries, diagnostics types, and CLI variants should
+              move to Mingle vocabulary.
+            </p>
+            <ul>
+              <li>Prefer <code>mingle</code> or <code>power-lobby-mingle</code> over <code>open-whisper</code>.</li>
+              <li>Print <code>[mingle->room]</code> in chatty output for new entries.</li>
+              <li>Rename <code>WhisperSessionDiagnostics</code> style metrics to Mingle names for current outputs.</li>
+            </ul>
+            <div class="badge-row">
+              <span class="badge high">Confidence: high</span>
+              <span class="badge med">Complexity: medium</span>
+              <span class="badge">Axis: simulator</span>
+            </div>
+          </article>
+
+          <article class="idea">
+            <div class="idea-title">
+              <h3><span class="rank">6</span>Docs and rules rewrite anchored in shared vocabulary</h3>
+            </div>
+            <p>
+              Update root vocabulary and user-facing rules so Mingle is the named
+              phase everywhere current behavior is described. Historical Whisper docs
+              should be marked as superseded rather than left as live guidance.
+            </p>
+            <ul>
+              <li>Update <code>README.md</code>, <code>CONCEPTS.md</code>, rules docs, and reasoning observability docs.</li>
+              <li>Clarify that Mingle rooms can be solo, crowded, strategic, or quiet.</li>
+              <li>Keep implementation docs aligned with local model reasoning capture.</li>
+            </ul>
+            <div class="badge-row">
+              <span class="badge high">Confidence: high</span>
+              <span class="badge med">Complexity: medium</span>
+              <span class="badge">Axis: docs</span>
+            </div>
+          </article>
+
+          <article class="idea">
+            <div class="idea-title">
+              <h3><span class="rank">7</span>Terminology regression tests and allowlist</h3>
+            </div>
+            <p>
+              Add validation that fails when old Whisper vocabulary re-enters
+              agent-facing prompts, new transcript text, current docs, or display
+              surfaces. Keep a narrow allowlist for adapters, historical specs,
+              migrations, and compatibility tests.
+            </p>
+            <ul>
+              <li>Snapshot or render tests should verify Mingle prompts contain no old phase names.</li>
+              <li>An <code>rg</code>-based allowlist can catch accidental leaks in docs and code.</li>
+              <li>Acceptance should include simulator output checks, not only unit tests.</li>
+            </ul>
+            <div class="badge-row">
+              <span class="badge high">Confidence: high</span>
+              <span class="badge med">Complexity: medium</span>
+              <span class="badge">Axis: validation</span>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section>
+        <h2>Detailed Requirement Set</h2>
+        <div class="grid">
+          <div class="requirement">
+            <h3>R1. Canonical Domain Name</h3>
+            <p>
+              <code>MINGLE</code> is the canonical phase for new games, state machine
+              transitions, logs, prompt context, display labels, and docs.
+            </p>
+          </div>
+          <div class="requirement">
+            <h3>R2. Legacy Boundary Contract</h3>
+            <p>
+              <code>WHISPER</code> and <code>whisper</code> may remain in historical
+              artifacts, but they are not supported current aliases for Mingle.
+            </p>
+          </div>
+          <div class="requirement">
+            <h3>R3. Prompt Safety</h3>
+            <p>
+              New agent prompt text, tool names, system messages, and reasoning context
+              must not say "Whisper" unless quoting historical data.
+            </p>
+          </div>
+          <div class="requirement">
+            <h3>R4. Room Semantics</h3>
+            <p>
+              Mingle prompts should specify exactly who can hear a room message:
+              private to current room occupants, not globally public, and not implied
+              to be a one-to-one whisper.
+            </p>
+          </div>
+          <div class="requirement">
+            <h3>R5. Config Aliasing</h3>
+            <p>
+              Current config keys use <code>mingle</code>. Legacy
+              <code>whisper</code> keys are not part of the current game contract.
+            </p>
+          </div>
+          <div class="requirement">
+            <h3>R6. Simulator Observability</h3>
+            <p>
+              <code>--chatty</code>, markdown summaries, simulation diagnostics, and
+              local-model docs should use Mingle terms so reasoning review matches the
+              current product.
+            </p>
+          </div>
+          <div class="requirement">
+            <h3>R7. Frontend Replay Compatibility</h3>
+            <p>
+              Current games display Mingle. Old games that store
+              <code>WHISPER</code> do not need polished display as part of this
+              rename.
+            </p>
+          </div>
+          <div class="requirement">
+            <h3>R8. Documentation Source of Truth</h3>
+            <p>
+              Root docs should define Mingle once and mark older Whisper-room docs as
+              historical or superseded where they no longer describe live behavior.
+            </p>
+          </div>
+          <div class="requirement">
+            <h3>R9. Regression Gate</h3>
+            <p>
+              A terminology check should distinguish allowed legacy references from
+              accidental current-facing references.
+            </p>
+          </div>
+          <div class="requirement">
+            <h3>R10. Reviewable Sequencing</h3>
+            <p>
+              Compatibility helpers and prompt changes should land before broad file
+              renames so review can separate behavior from mechanical movement.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Compatibility Boundary</h2>
+        <div class="callout" style="margin-bottom: 14px;">
+          <p>
+            Data retention decision: do not purge old games as part of this rename.
+            Existing rows may keep <code>WHISPER</code> phases,
+            <code>whisper</code> scopes, and old room metadata. The current product
+            contract moves forward: new runtime output emits Mingle vocabulary and
+            old Whisper display is not guaranteed.
+          </p>
+        </div>
+        <div class="flow" aria-label="Compatibility diagram">
+          <svg viewBox="0 0 960 230" role="img">
+            <rect x="20" y="38" width="210" height="132" rx="8" fill="#f5f7fb" stroke="#d8deea"></rect>
+            <text x="125" y="80" text-anchor="middle" font-size="18" font-weight="700" fill="#1d2433">Legacy Inputs</text>
+            <text x="125" y="112" text-anchor="middle" font-size="14" fill="#5c667a">WHISPER phase</text>
+            <text x="125" y="136" text-anchor="middle" font-size="14" fill="#5c667a">whisper scope</text>
+            <text x="125" y="160" text-anchor="middle" font-size="14" fill="#5c667a">open-whisper config</text>
+
+            <rect x="374" y="30" width="212" height="148" rx="8" fill="#edf3ff" stroke="#a8bdeb"></rect>
+            <text x="480" y="76" text-anchor="middle" font-size="18" font-weight="700" fill="#173f8f">Normalizer</text>
+            <text x="480" y="110" text-anchor="middle" font-size="14" fill="#3e4a5d">normalizePhase</text>
+            <text x="480" y="134" text-anchor="middle" font-size="14" fill="#3e4a5d">isMingleScope</text>
+            <text x="480" y="158" text-anchor="middle" font-size="14" fill="#3e4a5d">config aliases</text>
+
+            <rect x="730" y="38" width="210" height="132" rx="8" fill="#f1fbf6" stroke="#b9dfcd"></rect>
+            <text x="835" y="80" text-anchor="middle" font-size="18" font-weight="700" fill="#1d7d55">Current Domain</text>
+            <text x="835" y="112" text-anchor="middle" font-size="14" fill="#365a48">MINGLE phase</text>
+            <text x="835" y="136" text-anchor="middle" font-size="14" fill="#365a48">Mingle room</text>
+            <text x="835" y="160" text-anchor="middle" font-size="14" fill="#365a48">mingle config</text>
+
+            <path d="M230 104 L365 104" fill="none" stroke="#285cc4" stroke-width="3"></path>
+            <path d="M354 96 L371 104 L354 112 Z" fill="#285cc4"></path>
+            <path d="M586 104 L721 104" fill="none" stroke="#285cc4" stroke-width="3"></path>
+            <path d="M710 96 L727 104 L710 112 Z" fill="#285cc4"></path>
+          </svg>
+        </div>
+        <div class="note">
+          <h3>Allowed Legacy References</h3>
+          <ul>
+            <li>Narrow legacy guards and their tests.</li>
+            <li>Historical specs explicitly marked superseded.</li>
+            <li>Database migrations, replay fixtures, and old simulation fixtures.</li>
+            <li>External-facing release notes or docs that explain the rename history.</li>
+          </ul>
+        </div>
+        <div class="note">
+          <h3>Data Retention Contract</h3>
+          <ul>
+            <li>Persisted historical transcript rows do not need to be rewritten or deleted.</li>
+            <li>New writes should use canonical Mingle phase/config vocabulary once the runtime rename lands.</li>
+            <li>Readers may tolerate old <code>WHISPER</code> values where needed to prevent unnecessary breakage, but should not advertise Whisper as a current phase.</li>
+            <li>A future cleanup can be considered only if old artifacts create real maintenance cost.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section>
+        <h2>Rejection Ledger</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Rejected Path</th>
+              <th>Why It Lost</th>
+              <th>Useful Piece Kept</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Destructive purge</td>
+              <td>Deleting old games adds risk without helping Mingle become the current phase.</td>
+              <td>Leave old artifacts alone unless they block current work.</td>
+            </tr>
+            <tr>
+              <td>Full DB migration first</td>
+              <td>High operational cost before the product behavior is fully settled.</td>
+              <td>Keep a read normalizer so a migration can be optional later.</td>
+            </tr>
+            <tr>
+              <td>Visible-label-only rename</td>
+              <td>Already partially done and does not solve agent prompt confusion.</td>
+              <td>Keep display helpers as part of the frontend pass.</td>
+            </tr>
+            <tr>
+              <td>Compatibility forever</td>
+              <td>Would leave two domain languages active indefinitely.</td>
+              <td>Define an allowlist with clear compatibility-only locations.</td>
+            </tr>
+            <tr>
+              <td>Blind global replace</td>
+              <td>Review noise would hide semantic behavior and likely damage historical docs/tests.</td>
+              <td>Use <code>rg</code> inventories as validation, not as the implementation strategy.</td>
+            </tr>
+            <tr>
+              <td>Prompt-only hotfix</td>
+              <td>Directly helps the reported bug but leaves runtime/docs/tests inconsistent.</td>
+              <td>Make prompt firewall the first user-visible implementation slice.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="acceptance">
+        <h2>Acceptance Criteria</h2>
+        <div class="grid">
+          <div class="note">
+            <h3>Must Pass</h3>
+            <ul>
+              <li>New game runtime emits <code>MINGLE</code> phase identity.</li>
+              <li>Rendered Mingle prompts and tool schemas contain no current-facing Whisper wording.</li>
+              <li>New persisted rows and current events use Mingle phase vocabulary.</li>
+              <li>Simulator chatty output and summaries use Mingle vocabulary.</li>
+              <li>Docs define Mingle as the current phase and mark old Whisper material as historical.</li>
+            </ul>
+          </div>
+          <div class="note">
+            <h3>Suggested Validation</h3>
+            <ul>
+              <li><code>bun run test</code> for fast baseline.</li>
+              <li><code>bun run check</code> before merge.</li>
+              <li>Prompt-rendering test with a no-Whisper assertion.</li>
+              <li>Persistence/API fixture showing new games write <code>MINGLE</code>.</li>
+              <li>Simulator smoke using the new Mingle variant.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Suggested Implementation Order</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Step</th>
+              <th>Intent</th>
+              <th>Representative Files</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1. Define compatibility helpers</td>
+              <td>Create the explicit boundary for old phase/scope/config names.</td>
+              <td><code>packages/engine/src/types.ts</code>, API/web shared helpers</td>
+            </tr>
+            <tr>
+              <td>2. Seal prompt vocabulary</td>
+              <td>Fix the active agent confusion before broad mechanical renames.</td>
+              <td><code>packages/engine/src/agent.ts</code>, prompt tests</td>
+            </tr>
+            <tr>
+              <td>3. Rename runtime phase/state</td>
+              <td>Make the engine call sheet canonical.</td>
+              <td><code>phase-machine.ts</code>, <code>phases/whisper.ts</code> to <code>mingle.ts</code></td>
+            </tr>
+            <tr>
+              <td>4. Normalize API/web/simulator</td>
+              <td>Make current display and local-model observability say Mingle.</td>
+              <td><code>simulate.ts</code>, viewer components, DB/API schemas</td>
+            </tr>
+            <tr>
+              <td>5. Rewrite docs and add gates</td>
+              <td>Prevent drift and make the rename reviewable.</td>
+              <td><code>README.md</code>, <code>CONCEPTS.md</code>, rules docs, terminology tests</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <p class="footer">
+        Composition signal: 36 candidates generated across five axes; seven
+        survivor requirements selected; zero axes left without a survivor.
+      </p>
+    </main>
+  </body>
+</html>
