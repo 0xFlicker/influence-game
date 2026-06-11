@@ -10,12 +10,13 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import { GameState, createUUID } from "../game-state";
 import { GameEventBus } from "../event-bus";
 import { GameRunner } from "../game-runner";
-import type { AgentResponse, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "../game-runner";
+import type { AgentCallOptions, AgentResponse, MingleRoomChoiceAction, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "../game-runner";
 import { createPhaseMachine } from "../phase-machine";
 import { createActor } from "xstate";
 import { Phase, PlayerStatus } from "../types";
 import type { GameConfig, RoomAllocation } from "../types";
 import { MockAgent } from "./mock-agent";
+import { allocateRooms } from "../phases/mingle";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -29,6 +30,10 @@ function defined<T>(value: T | undefined, msg = "Expected value to be defined"):
 
 function makeState(playerNames: string[]) {
   return new GameState(playerNames.map((name) => ({ id: createUUID(), name })));
+}
+
+function cooldownPairKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
 class PowerLobbyProbeAgent extends MockAgent {
@@ -83,7 +88,7 @@ describe("GameState - player management", () => {
     expect(gs.getWinner()?.name).toBe(defined(alive[1]).name);
   });
 
-  it("tracks final whisper-session exclusions separately from round exclusions", () => {
+  it("tracks final mingle-session exclusions separately from round exclusions", () => {
     const gs = makeState(["Alice", "Bob", "Charlie", "Dave"]);
     gs.startRound();
     const players = gs.getAlivePlayers();
@@ -103,12 +108,12 @@ describe("GameState - player management", () => {
   });
 });
 
-describe("Whisper Rooms", () => {
+describe("Mingle Rooms (current open-room phase)", () => {
   const TEST_CONFIG: GameConfig = {
     timers: {
       introduction: 0,
       lobby: 0,
-      whisper: 0,
+      mingle: 0,
       rumor: 0,
       vote: 0,
       power: 0,
@@ -132,7 +137,7 @@ describe("Whisper Rooms", () => {
     const result = await runner.run();
 
     const allocation = result.transcript.find(
-      (entry) => entry.scope === "system" && entry.phase === Phase.WHISPER && entry.roomMetadata,
+      (entry) => entry.scope === "system" && entry.phase === Phase.MINGLE && entry.roomMetadata,
     );
     expect(allocation).toBeDefined();
     expect(allocation!.text).toContain("Turn 1:");
@@ -140,51 +145,51 @@ describe("Whisper Rooms", () => {
     expect(allocation!.roomMetadata!.rooms[0]!.playerIds.length).toBeGreaterThan(0);
   });
 
-  it("open rooms generate group whispers for rooms with multiple occupants", async () => {
+  it("open rooms generate group room messages for rooms with multiple occupants", async () => {
     class PileOnAgent extends MockAgent {
-      async chooseWhisperRoom(): Promise<number> {
-        return 1;
+      async chooseMingleRoom(): Promise<MingleRoomChoiceAction> {
+        return { roomId: 1, thinking: "pile into room 1" };
       }
     }
 
     const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map(
       (name) => new PileOnAgent(createUUID(), name),
     );
-    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 1 });
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, mingleSessionsPerRound: 1 });
     const result = await runner.run();
 
     const allocation = result.transcript.find((entry) => entry.roomMetadata);
     expect(allocation?.roomMetadata?.rooms[0]?.playerIds).toHaveLength(5);
 
-    const whispers = result.transcript.filter((entry) => entry.scope === "whisper" && entry.phase === Phase.WHISPER);
-    expect(whispers).toHaveLength(5);
-    expect(whispers[0]!.to).toHaveLength(4);
+    const roomMessages = result.transcript.filter((entry) => entry.scope === "mingle" && entry.phase === Phase.MINGLE);
+    expect(roomMessages).toHaveLength(5);
+    expect(roomMessages[0]!.to).toHaveLength(4);
   });
 
   it("open rooms skip conversation for singleton rooms", async () => {
     class SpreadAgent extends MockAgent {
-      async chooseWhisperRoom(ctx: PhaseContext): Promise<number> {
-        return ctx.selfName === "Alpha" ? 1 : 2;
+      async chooseMingleRoom(ctx: PhaseContext): Promise<MingleRoomChoiceAction> {
+        return { roomId: ctx.selfName === "Alpha" ? 1 : 2, thinking: "spread singleton test room choice" };
       }
     }
 
     const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map(
       (name) => new SpreadAgent(createUUID(), name),
     );
-    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 1 });
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, mingleSessionsPerRound: 1 });
     const result = await runner.run();
 
-    const whispers = result.transcript.filter((entry) => entry.scope === "whisper" && entry.phase === Phase.WHISPER);
-    expect(whispers.every((entry) => entry.from !== "Alpha")).toBe(true);
-    expect(whispers).toHaveLength(4);
+    const roomMessages = result.transcript.filter((entry) => entry.scope === "mingle" && entry.phase === Phase.MINGLE);
+    expect(roomMessages.every((entry) => entry.from !== "Alpha")).toBe(true);
+    expect(roomMessages).toHaveLength(4);
   });
 
-  it("passes open-room whispers into the following phase context", async () => {
+  it("passes open-room Mingle messages into the following phase context", async () => {
     const seenWhispers = new Map<string, string[]>();
 
     class InboxProbeAgent extends MockAgent {
-      async chooseWhisperRoom(): Promise<number> {
-        return 1;
+      async chooseMingleRoom(): Promise<MingleRoomChoiceAction> {
+        return { roomId: 1, thinking: "join shared inbox probe room" };
       }
 
       async sendRoomMessage(
@@ -202,7 +207,7 @@ describe("Whisper Rooms", () => {
 
       async getRumorMessage(ctx: PhaseContext): Promise<AgentResponse> {
         if (!seenWhispers.has(this.name)) {
-          seenWhispers.set(this.name, ctx.whisperMessages.map((message) => message.from));
+          seenWhispers.set(this.name, ctx.mingleMessages.map((message) => message.from));
         }
         return super.getRumorMessage(ctx);
       }
@@ -211,7 +216,7 @@ describe("Whisper Rooms", () => {
     const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map(
       (name) => new InboxProbeAgent(createUUID(), name),
     );
-    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 1 });
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, mingleSessionsPerRound: 1 });
     await runner.run();
 
     expect(seenWhispers.size).toBe(5);
@@ -236,8 +241,8 @@ describe("Whisper Rooms", () => {
         super(id, name);
       }
 
-      override async chooseWhisperRoom(): Promise<number> {
-        return this.initialRoomId;
+      override async chooseMingleRoom(): Promise<MingleRoomChoiceAction> {
+        return { roomId: this.initialRoomId, thinking: "scripted initial room" };
       }
 
       override async takeMingleTurn(): Promise<MingleTurnAction> {
@@ -259,7 +264,7 @@ describe("Whisper Rooms", () => {
       new ScriptedMingleAgent(createUUID(), "Echo", 2, []),
     ];
 
-    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 2 });
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, mingleSessionsPerRound: 2 });
     const result = await runner.run();
 
     const allocations = result.transcript.filter(
@@ -277,11 +282,34 @@ describe("Whisper Rooms", () => {
     const alphaMove = allocations[0]!.roomMetadata!.diagnostics!.actions!.find((action) => action.player.name === "Alpha");
     expect(alphaMove).toMatchObject({ fromRoomId: 1, toRoomId: 2, moved: true, action: "talk" });
 
-    const movedWhisper = result.transcript.find(
-      (entry) => entry.round === 1 && entry.scope === "whisper" && entry.from === "Alpha" && entry.text.includes("crossed over"),
+    const movedRoomMsg = result.transcript.find(
+      (entry) => entry.round === 1 && entry.scope === "mingle" && entry.from === "Alpha" && entry.text.includes("crossed over"),
     );
-    expect(movedWhisper?.roomId).toBe(secondRooms[1]!.roomId);
-    expect(movedWhisper?.to).toEqual(["Gamma", "Delta", "Echo"]);
+    expect(movedRoomMsg?.roomId).toBe(secondRooms[1]!.roomId);
+    expect(movedRoomMsg?.to).toEqual(["Gamma", "Delta", "Echo"]);
+  });
+
+  it("redirects avoidable repeated Mingle pairs when cooldown is configured", () => {
+    const players = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map((name) => ({
+      id: createUUID(),
+      name,
+    }));
+    const alpha = defined(players.find((player) => player.name === "Alpha"));
+    const beta = defined(players.find((player) => player.name === "Beta"));
+    const choices = new Map(players.map((player) => [player.id, player.name === "Gamma" ? 2 : 1]));
+
+    const allocation = allocateRooms(choices, players, 2, 2, 1, {
+      cooldownPairKeys: new Set([cooldownPairKey(alpha.id, beta.id)]),
+    });
+
+    const alphaRoom = defined(allocation.rooms.find((room) => room.playerIds.includes(alpha.id)));
+    const betaRoom = defined(allocation.rooms.find((room) => room.playerIds.includes(beta.id)));
+    expect(alphaRoom.roomId).not.toBe(betaRoom.roomId);
+    expect(allocation.rooms.flatMap((room) => room.playerIds).sort()).toEqual(players.map((player) => player.id).sort());
+
+    const alphaChoice = defined(allocation.diagnostics.choices.find((choice) => choice.player.id === alpha.id));
+    const betaChoice = defined(allocation.diagnostics.choices.find((choice) => choice.player.id === beta.id));
+    expect(alphaChoice.assignedRoomId).not.toBe(betaChoice.assignedRoomId);
   });
 
   it("passes privacy-safe room counts and only local rosters to agents", async () => {
@@ -297,9 +325,9 @@ describe("Whisper Rooms", () => {
         super(id, name);
       }
 
-      override async chooseWhisperRoom(ctx: PhaseContext): Promise<number> {
+      override async chooseMingleRoom(ctx: PhaseContext): Promise<MingleRoomChoiceAction> {
         this.choiceContexts.push(ctx);
-        return this.initialRoomId;
+        return { roomId: this.initialRoomId, thinking: "privacy probe initial room" };
       }
 
       override async takeMingleTurn(ctx: PhaseContext): Promise<MingleTurnAction> {
@@ -318,7 +346,7 @@ describe("Whisper Rooms", () => {
       new PrivacyProbeAgent(createUUID(), "Echo", 2),
     ];
 
-    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 1 });
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, mingleSessionsPerRound: 1 });
     await runner.run();
 
     expect(alpha.choiceContexts[0]!.roomCounts).toEqual([{ roomId: 1, count: 0 }, { roomId: 2, count: 0 }]);
@@ -348,8 +376,8 @@ describe("Whisper Rooms", () => {
         super(id, name);
       }
 
-      override async chooseWhisperRoom(): Promise<number> {
-        return this.initialRoomId;
+      override async chooseMingleRoom(): Promise<MingleRoomChoiceAction> {
+        return { roomId: this.initialRoomId, thinking: "sparse initial room" };
       }
 
       override async takeMingleTurn(): Promise<MingleTurnAction> {
@@ -373,7 +401,7 @@ describe("Whisper Rooms", () => {
       new SparseMingleAgent(createUUID(), "Vera", 2),
     ];
 
-    const runner = new GameRunner(agents, { ...TEST_CONFIG, whisperSessionsPerRound: 2 });
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, mingleSessionsPerRound: 2 });
     const result = await runner.run();
 
     const allocations = result.transcript.filter(
@@ -386,14 +414,44 @@ describe("Whisper Rooms", () => {
 
     const alphaFirstAction = allocations[0]!.roomMetadata!.diagnostics!.actions!.find((action) => action.player.name === "Alpha");
     expect(alphaFirstAction).toMatchObject({ action: "no_reply", fromRoomId: 1, toRoomId: 2, moved: true });
-    expect(result.transcript.some((entry) => entry.round === 1 && entry.scope === "whisper" && entry.from === "Alpha" && entry.roomId === firstRooms[0]!.roomId)).toBe(false);
+    expect(result.transcript.some((entry) => entry.round === 1 && entry.scope === "mingle" && entry.from === "Alpha" && entry.roomId === firstRooms[0]!.roomId)).toBe(false);
 
     const secondRooms = allocations[1]!.roomMetadata!.rooms;
     expect(secondRooms[1]!.playerIds).toContain(alpha.id);
-    const alphaSecondWhisper = result.transcript.find(
-      (entry) => entry.round === 1 && entry.scope === "whisper" && entry.from === "Alpha" && entry.text.includes("quiet room"),
+    const alphaSecondRoomMsg = result.transcript.find(
+      (entry) => entry.round === 1 && entry.scope === "mingle" && entry.from === "Alpha" && entry.text.includes("quiet room"),
     );
-    expect(alphaSecondWhisper?.roomId).toBe(secondRooms[1]!.roomId);
+    expect(alphaSecondRoomMsg?.roomId).toBe(secondRooms[1]!.roomId);
+  });
+
+  it("uses House fallbacks when endgame actions exceed the configured timeout", async () => {
+    let abortObserved = false;
+
+    class TimeoutPleaAgent extends MockAgent {
+      override async getPlea(_ctx: PhaseContext, options?: AgentCallOptions): Promise<AgentResponse> {
+        options?.signal?.addEventListener("abort", () => {
+          abortObserved = true;
+        }, { once: true });
+        return new Promise(() => {});
+      }
+    }
+
+    const agents = [
+      new TimeoutPleaAgent(createUUID(), "Alpha"),
+      new MockAgent(createUUID(), "Beta"),
+      new MockAgent(createUUID(), "Gamma"),
+      new MockAgent(createUUID(), "Delta"),
+      new MockAgent(createUUID(), "Echo"),
+    ];
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, agentActionTimeoutMs: 5 });
+    const result = await Promise.race([
+      runner.run(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("runner did not finish")), 2_000)),
+    ]);
+
+    expect(result.winnerName).toBeDefined();
+    expect(result.transcript.some((entry) => entry.text.includes("Alpha plea timed out after 5ms"))).toBe(true);
+    expect(abortObserved).toBe(true);
   });
 });
 
@@ -552,6 +610,29 @@ describe("GameState - POWER phase", () => {
     }
   });
 
+  it("empowered player cannot be a council candidate (even with expose votes on them)", () => {
+    // Fresh round where we deliberately pile expose votes on the player who will be empowered (bob).
+    gs.startRound();
+    // Expose votes all target bob (the future empowered); empower votes make bob win.
+    gs.recordVote(alice, bob, bob);
+    gs.recordVote(bob, alice, bob);
+    gs.recordVote(charlie, dave, bob);
+    gs.recordVote(dave, bob, bob);
+    gs.tallyEmpowerVotes(); // bob is empowered
+
+    gs.setPowerAction({ action: "pass", target: charlie });
+    const { candidates } = gs.determineCandidates();
+
+    // Bob (empowered) must not be a candidate, even though they received all the expose votes.
+    // The top non-empowered (by the remaining expose distribution) should be selected instead.
+    expect(candidates).not.toBeNull();
+    if (candidates) {
+      expect(candidates.includes(bob)).toBe(false);
+      // At least one real player made it (tests that filler / next-highest logic worked).
+      expect(candidates.length).toBe(2);
+    }
+  });
+
   it("expire shields clears shielded status", () => {
     gs.setPowerAction({ action: "protect", target: charlie });
     gs.determineCandidates();
@@ -571,7 +652,7 @@ describe("GameRunner - Power Lobby after vote experiment", () => {
     timers: {
       introduction: 0,
       lobby: 0,
-      whisper: 0,
+      mingle: 0,
       rumor: 0,
       vote: 0,
       power: 0,
@@ -581,8 +662,7 @@ describe("GameRunner - Power Lobby after vote experiment", () => {
     minPlayers: 4,
     maxPlayers: 12,
     lobbyMessagesPerPlayer: 1,
-    whisperSessionsPerRound: 1,
-    maxWhisperExchanges: 1,
+    mingleSessionsPerRound: 1,
   };
 
   function makeAgents(): PowerLobbyProbeAgent[] {
@@ -785,7 +865,7 @@ describe("Phase machine - state transitions", () => {
     actor.stop();
   });
 
-  it("advances through full round: lobby -> whisper -> rumor -> vote -> power -> reveal -> council -> checkGameOver", async () => {
+  it("advances through full round: lobby -> mingle -> rumor -> vote -> power -> reveal -> council -> checkGameOver", async () => {
     const machine = createPhaseMachine();
     // Use 6 players so endgame isn't triggered after eliminating one (5 remain)
     const playerIds = [createUUID(), createUUID(), createUUID(), createUUID(), createUUID(), createUUID()];
@@ -801,8 +881,8 @@ describe("Phase machine - state transitions", () => {
 
     await advance(); // init -> introduction
     await advance(); // introduction -> lobby
-    await advance(); // lobby -> whisper
-    await advance(); // whisper -> rumor
+    await advance(); // lobby -> mingle
+    await advance(); // mingle -> rumor
     await advance(); // rumor -> vote
 
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
@@ -844,8 +924,8 @@ describe("Phase machine - state transitions", () => {
 
     await advance(); // init -> introduction
     await advance(); // introduction -> lobby
-    await advance(); // lobby -> whisper
-    await advance(); // whisper -> rumor
+    await advance(); // lobby -> mingle
+    await advance(); // mingle -> rumor
     await advance(); // rumor -> vote
 
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
@@ -886,8 +966,8 @@ describe("Phase machine - endgame transitions", () => {
     // Run through init -> introduction -> first round
     await advance(); // init -> introduction
     await advance(); // intro -> lobby
-    await advance(); // lobby -> whisper
-    await advance(); // whisper -> rumor
+    await advance(); // lobby -> mingle
+    await advance(); // mingle -> rumor
     await advance(); // rumor -> vote
 
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
@@ -924,8 +1004,8 @@ describe("Phase machine - endgame transitions", () => {
 
     // Simulate eliminating 2 players in first round (5 -> 3)
     // Go through full round
-    await advance(); // lobby -> whisper
-    await advance(); // whisper -> rumor
+    await advance(); // lobby -> mingle
+    await advance(); // mingle -> rumor
     await advance(); // rumor -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
     await advance(); // vote -> power
@@ -938,8 +1018,8 @@ describe("Phase machine - endgame transitions", () => {
 
     expect(actor.getSnapshot().value).toBe("reckoning_lobby");
 
-    // Run through reckoning: lobby -> whisper -> plea -> vote
-    await advance(); // reckoning_lobby -> reckoning_whisper
+    // Run through reckoning: lobby -> mingle -> plea -> vote
+    await advance(); // reckoning_lobby -> reckoning_mingle
     await advance(); // reckoning_whisper -> reckoning_plea
     await advance(); // reckoning_plea -> reckoning_vote
 
@@ -970,8 +1050,8 @@ describe("Phase machine - endgame transitions", () => {
     // Fast-forward past intro and first round to checkGameOver with 3 alive
     await advance(); // init -> introduction
     await advance(); // intro -> lobby
-    await advance(); // lobby -> whisper
-    await advance(); // whisper -> rumor
+    await advance(); // lobby -> mingle
+    await advance(); // mingle -> rumor
     await advance(); // rumor -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
     await advance(); // vote -> power
@@ -1014,8 +1094,8 @@ describe("Phase machine - endgame transitions", () => {
     // Get to judgment
     await advance(); // init -> introduction
     await advance(); // intro -> lobby
-    await advance(); // lobby -> whisper
-    await advance(); // whisper -> rumor
+    await advance(); // lobby -> mingle
+    await advance(); // mingle -> rumor
     await advance(); // rumor -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
     await advance(); // vote -> power
@@ -1060,8 +1140,8 @@ describe("Phase machine - endgame transitions", () => {
 
     await advance(); // init -> introduction
     await advance(); // intro -> lobby
-    await advance(); // lobby -> whisper
-    await advance(); // whisper -> rumor
+    await advance(); // lobby -> mingle
+    await advance(); // mingle -> rumor
     await advance(); // rumor -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
     await advance(); // vote -> power
@@ -1317,7 +1397,7 @@ describe("Diary Room - interview mechanics", () => {
     timers: {
       introduction: 0,
       lobby: 0,
-      whisper: 0,
+      mingle: 0,
       rumor: 0,
       vote: 0,
       power: 0,
@@ -1448,7 +1528,7 @@ describe("Full game - endgame integration", () => {
     timers: {
       introduction: 0,
       lobby: 0,
-      whisper: 0,
+      mingle: 0,
       rumor: 0,
       vote: 0,
       power: 0,
@@ -1545,7 +1625,7 @@ describe("Anonymous Rumors", () => {
     timers: {
       introduction: 0,
       lobby: 0,
-      whisper: 0,
+      mingle: 0,
       rumor: 0,
       vote: 0,
       power: 0,

@@ -1,4 +1,4 @@
-import type { UUID } from "../types";
+import type { UUID, PowerAction } from "../types";
 import { Phase } from "../types";
 import type { PowerLobbyExposure } from "../game-runner.types";
 import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
@@ -45,12 +45,27 @@ async function runPowerLobbyMessages(
         empoweredId,
         councilCandidates: provisionalCandidates,
       });
-      const { message, thinking } = await agent.getPowerLobbyMessage(
+      const { message, thinking, reasoningContext } = await agent.getPowerLobbyMessage(
         phaseCtx,
         provisionalCandidates,
         exposePressure,
       );
-      logger.logPublic(player.id, message, Phase.POWER, { thinking });
+      logger.logPublic(player.id, message, Phase.POWER, { thinking, reasoningContext });
+      logger.emitAgentTurn({
+        phase: Phase.POWER,
+        action: "power-lobby-message",
+        actor: { id: player.id, name: player.name, role: "player" },
+        visibility: "public",
+        response: {
+          message,
+          empowered: { id: empoweredId, name: gameState.getPlayerName(empoweredId) },
+          provisionalCandidates: provisionalCandidates.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+        },
+        thinking,
+        reasoningContext,
+        scope: "public",
+        text: message,
+      });
     }),
   );
 }
@@ -76,7 +91,14 @@ export async function runPowerPhase(
 
   const scores = gameState.getExposeScores();
   const aliveIds = gameState.getAlivePlayerIds();
-  const sorted = [...aliveIds].sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0));
+
+  // Provisional council candidates must never include the empowered player
+  // (empowered cannot be exposed or considered for council). Compute the
+  // "top exposed" for the block from the non-empowered pool only. Raw
+  // exposePressure (for the diagnostic "Top expose pressure" line) still
+  // reflects all cast votes.
+  const candidatePool = empoweredId ? aliveIds.filter((id) => id !== empoweredId) : aliveIds;
+  const sorted = [...candidatePool].sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0));
   const sorted0 = sorted[0];
   const sorted1 = sorted[1];
   if (!sorted0) throw new Error("No players to sort for power phase preliminary candidates");
@@ -89,13 +111,30 @@ export async function runPowerPhase(
 
   const empoweredAgent = agents.get(empoweredId)!;
   const phaseCtx = contextBuilder.buildPhaseContext(empoweredId, Phase.POWER, { empoweredId, councilCandidates: prelim });
-  const powerAction = await empoweredAgent.getPowerAction(phaseCtx, prelim);
-
+  const powerActionResult = await empoweredAgent.getPowerAction(phaseCtx, prelim);
+  const powerAction: PowerAction = { action: powerActionResult.action, target: powerActionResult.target };
   gameState.setPowerAction(powerAction);
   logger.logSystem(
     `${gameState.getPlayerName(empoweredId)} power action: ${powerAction.action} -> ${gameState.getPlayerName(powerAction.target)}`,
     Phase.POWER,
+    powerActionResult.thinking,
+    powerActionResult.reasoningContext,
   );
+  logger.emitAgentTurn({
+    phase: Phase.POWER,
+    action: "power-action",
+    actor: { id: empoweredId, name: gameState.getPlayerName(empoweredId), role: "player" },
+    visibility: "private",
+    response: {
+      action: powerAction.action,
+      target: { id: powerAction.target, name: gameState.getPlayerName(powerAction.target) },
+      candidates: prelim.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+    },
+    thinking: powerActionResult.thinking,
+    reasoningContext: powerActionResult.reasoningContext,
+    scope: "system",
+    text: `${gameState.getPlayerName(empoweredId)} power action: ${powerAction.action} -> ${gameState.getPlayerName(powerAction.target)}`,
+  });
 
   if (powerAction.action === "protect") {
     empoweredAgent.updateAlly(gameState.getPlayerName(powerAction.target));

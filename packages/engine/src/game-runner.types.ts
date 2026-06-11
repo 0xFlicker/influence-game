@@ -21,6 +21,7 @@ import type {
 
 export type GameStreamEvent =
   | { type: "transcript_entry"; entry: TranscriptEntry }
+  | AgentTurnEvent
   | { type: "phase_change"; phase: Phase; round: number; alivePlayers: Array<{ id: UUID; name: string }> }
   | { type: "player_eliminated"; playerId: UUID; playerName: string; round: number }
   | { type: "game_over"; winner?: UUID; winnerName?: string; totalRounds: number };
@@ -42,6 +43,11 @@ export interface AgentResponse {
   thinking: string;
   /** The actual message content */
   message: string;
+  /**
+   * Raw model-provided reasoning context (e.g. `reasoning_content` from local LLMs).
+   * Captured alongside `thinking` for richer simulation traces.
+   */
+  reasoningContext?: string;
 }
 
 export interface MingleTurnAction {
@@ -53,12 +59,60 @@ export interface MingleTurnAction {
   noReply?: boolean;
   /** Optional local room number to enter for the next turn. */
   gotoRoomId?: number | null;
+  /** Raw model reasoning context from local LLM */
+  reasoningContext?: string;
+}
+
+export interface MingleRoomChoiceAction {
+  /** Local room number chosen by the agent, or null when no valid choice is available. */
+  roomId: number | null;
+  /** Agent's internal thinking (hidden from players, visible to viewers) */
+  thinking?: string;
+  /** Raw model reasoning context from local LLM */
+  reasoningContext?: string;
+}
+
+export interface TargetDecision {
+  target: UUID;
+  thinking?: string;
+  reasoningContext?: string;
+}
+
+export type AgentTurnVisibility = "public" | "private" | "anonymous" | "diary" | "system";
+
+export interface AgentTurnActor {
+  id?: UUID;
+  name: string;
+  role?: "player" | "juror" | "house";
+}
+
+export interface AgentTurnEvent {
+  type: "agent_turn";
+  round: number;
+  phase: Phase;
+  timestamp: number;
+  action: string;
+  actor: AgentTurnActor;
+  visibility: AgentTurnVisibility;
+  response: Record<string, unknown>;
+  thinking?: string;
+  reasoningContext?: string;
+  scope?: TranscriptEntry["scope"];
+  text?: string;
+  to?: string[];
+  roomId?: number;
+  anonymous?: boolean;
+  displayOrder?: number;
 }
 
 export interface PowerLobbyExposure {
   id: UUID;
   name: string;
   score: number;
+}
+
+export interface AgentCallOptions {
+  signal?: AbortSignal;
 }
 
 // ---------------------------------------------------------------------------
@@ -80,8 +134,8 @@ export interface IAgent {
   getLobbyMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called to collect whisper actions (list of {to, text}) — DEPRECATED, use room methods */
   getWhispers(context: PhaseContext): Promise<Array<{ to: UUID[]; text: string }>>;
-  /** Choose a neutral whisper room by room number */
-  chooseWhisperRoom(context: PhaseContext): Promise<number | null>;
+  /** Choose a Mingle room by room number (current active method for the Mingle phase) */
+  chooseMingleRoom(context: PhaseContext): Promise<MingleRoomChoiceAction>;
   /** Send a private room message to all other occupants, or null to pass */
   sendRoomMessage(context: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<AgentResponse | null>;
   /** Mingle turn action: TALK or NO_REPLY, plus optional GOTO ROOM N for the next turn */
@@ -91,7 +145,7 @@ export interface IAgent {
   /** Called to collect votes */
   getVotes(
     context: PhaseContext,
-  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID }>;
+  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string }>;
   /** Called during the optional post-vote Power Lobby experiment before the empowered action */
   getPowerLobbyMessage?(
     context: PhaseContext,
@@ -102,9 +156,12 @@ export interface IAgent {
   getPowerAction(
     context: PhaseContext,
     candidates: [UUID, UUID],
-  ): Promise<PowerAction>;
+  ): Promise<PowerAction & { thinking?: string; reasoningContext?: string }>;
   /** Called for council vote (empowered agent also votes as tiebreaker) */
-  getCouncilVote(context: PhaseContext, candidates: [UUID, UUID]): Promise<UUID>;
+  getCouncilVote(
+    context: PhaseContext,
+    candidates: [UUID, UUID],
+  ): Promise<{ target: UUID; thinking?: string; reasoningContext?: string }>;
   /** Called when the agent is about to be eliminated */
   getLastMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called for diary room interviews — the House asks a question, agent responds */
@@ -112,27 +169,27 @@ export interface IAgent {
 
   // --- Endgame methods ---
   /** Reckoning: public plea to the group */
-  getPlea(context: PhaseContext): Promise<AgentResponse>;
+  getPlea(context: PhaseContext, options?: AgentCallOptions): Promise<AgentResponse>;
   /** Reckoning/Tribunal: vote to eliminate one player (simple plurality) */
-  getEndgameEliminationVote(context: PhaseContext): Promise<UUID>;
+  getEndgameEliminationVote(context: PhaseContext, options?: AgentCallOptions): Promise<TargetDecision>;
   /** Tribunal: publicly accuse one player */
-  getAccusation(context: PhaseContext): Promise<{ targetId: UUID; text: string; thinking?: string }>;
+  getAccusation(context: PhaseContext, options?: AgentCallOptions): Promise<{ targetId: UUID; text: string; thinking?: string; reasoningContext?: string }>;
   /** Tribunal: defend against an accusation */
-  getDefense(context: PhaseContext, accusation: string, accuserName: string): Promise<AgentResponse>;
+  getDefense(context: PhaseContext, accusation: string, accuserName: string, options?: AgentCallOptions): Promise<AgentResponse>;
   /** Judgment: opening statement to the jury */
-  getOpeningStatement(context: PhaseContext): Promise<AgentResponse>;
+  getOpeningStatement(context: PhaseContext, options?: AgentCallOptions): Promise<AgentResponse>;
   /** Judgment: juror asks one question to one finalist */
-  getJuryQuestion(context: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string; thinking?: string }>;
+  getJuryQuestion(context: PhaseContext, finalistIds: [UUID, UUID], options?: AgentCallOptions): Promise<{ targetFinalistId: UUID; question: string; thinking?: string; reasoningContext?: string }>;
   /** Judgment: finalist answers a jury question */
-  getJuryAnswer(context: PhaseContext, question: string, jurorName: string): Promise<AgentResponse>;
+  getJuryAnswer(context: PhaseContext, question: string, jurorName: string, options?: AgentCallOptions): Promise<AgentResponse>;
   /** Judgment: closing argument to the jury */
-  getClosingArgument(context: PhaseContext): Promise<AgentResponse>;
+  getClosingArgument(context: PhaseContext, options?: AgentCallOptions): Promise<AgentResponse>;
   /** Judgment: juror votes for the winner */
-  getJuryVote(context: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID>;
+  getJuryVote(context: PhaseContext, finalistIds: [UUID, UUID], options?: AgentCallOptions): Promise<TargetDecision>;
 
   // --- Strategic reflection (called after diary room) ---
   /** Produce a strategic reflection after diary room interview */
-  getStrategicReflection?(context: PhaseContext): Promise<void>;
+  getStrategicReflection(context: PhaseContext): Promise<void>;
 
   // --- Memory updates (called by GameRunner after phase events) ---
   /** Record a player as an ally */
@@ -157,18 +214,18 @@ export interface PhaseContext {
   selfName: string;
   alivePlayers: Array<{ id: UUID; name: string }>;
   publicMessages: Array<{ from: string; text: string; phase: Phase; round?: number; anonymous?: boolean; displayOrder?: number }>;
-  /** Messages this agent received as whispers */
-  whisperMessages: Array<{ from: string; text: string }>;
+  /** Messages this agent received in the current Mingle/private room */
+  mingleMessages: Array<{ from: string; text: string }>;
   empoweredId?: UUID;
   councilCandidates?: [UUID, UUID];
-  // Room allocation context (whisper rooms)
+  // Mingle room allocation context
   /** Number of available rooms this round */
   roomCount?: number;
   /** Current occupant count for each room. Player identities outside the current room are hidden. */
   roomCounts?: WhisperRoomCount[];
   /** This agent's current local room number, if they are in a Mingle room. */
   currentRoomId?: number;
-  /** Room assignments for this round (if whisper phase completed) */
+  /** Room assignments for this round (if Mingle phase completed) */
   roomAllocations?: Array<{ roomId: number; beat: number; playerIds: string[]; playerNames: string[] }>;
   /** This agent's current room occupants, including self */
   roomMates?: string[];
@@ -201,16 +258,21 @@ export interface TranscriptEntry {
   phase: Phase;
   timestamp: number;
   from: string;
-  scope: "public" | "whisper" | "system" | "diary" | "thinking";
+  scope: "public" | "mingle" | "whisper" | "system" | "diary" | "thinking";
   to?: string[];
   text: string;
   /** Agent's internal thinking when producing this message (hidden from players, visible to viewers) */
   thinking?: string;
+  /**
+   * Raw model reasoning context (e.g. `reasoning_content` from local models like Gemma via LM Studio).
+   * Captured separately from the agent's "thinking" field for richer simulation traces.
+   */
+  reasoningContext?: string;
   /** When true, author identity is hidden from players (viewers still see it) */
   anonymous?: boolean;
   /** Shuffled display position for anonymous rumors */
   displayOrder?: number;
-  /** Room ID this whisper happened in (room-based whisper system) */
+  /** Room ID for this private-room message */
   roomId?: number;
   /** Room allocation metadata attached to system events */
   roomMetadata?: {

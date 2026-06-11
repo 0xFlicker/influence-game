@@ -141,7 +141,7 @@ describe("WebSocket Manager", () => {
       type: "transcript_entry",
       entry: {
         round: 1,
-        phase: Phase.WHISPER,
+        phase: Phase.MINGLE,
         timestamp: Date.now(),
         from: "House",
         scope: "system",
@@ -162,6 +162,30 @@ describe("WebSocket Manager", () => {
     expect(parsed.type).toBe("message");
     expect(parsed.entry.roomMetadata.rooms).toHaveLength(2);
     expect(parsed.entry.roomMetadata.rooms[1].playerIds).toEqual([]);
+  });
+
+  test("broadcastGameEvent ignores internal agent_turn events", () => {
+    const { server, published } = createMockServer();
+    setServer(server);
+
+    const event: GameStreamEvent = {
+      type: "agent_turn",
+      round: 1,
+      phase: Phase.VOTE,
+      timestamp: Date.now(),
+      action: "vote",
+      actor: { id: "p1", name: "Alice", role: "player" },
+      visibility: "private",
+      response: {
+        empowerTarget: { id: "p2", name: "Bob" },
+        exposeTarget: { id: "p3", name: "Charlie" },
+      },
+      thinking: "Keep Bob close and pressure Charlie.",
+    };
+
+    broadcastGameEvent("game-123", event);
+
+    expect(published).toHaveLength(0);
   });
 
   test("broadcastGameEvent translates phase_change", () => {

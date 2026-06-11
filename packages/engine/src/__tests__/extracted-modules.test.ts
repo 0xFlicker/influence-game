@@ -13,7 +13,7 @@ import { Phase } from "../types";
 import type { UUID, RoomAllocation } from "../types";
 import type { GameStreamEvent } from "../game-runner.types";
 import { computeLobbyMessagesPerPlayer } from "../phases/lobby";
-import { computeRoomCount, allocateRooms } from "../phases/whisper";
+import { computeRoomCount, allocateRooms } from "../phases/mingle";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -59,13 +59,14 @@ describe("TranscriptLogger", () => {
     expect(logger.publicMessages[0]!.displayOrder).toBe(3);
   });
 
-  it("logWhisper adds whisper transcript entry", () => {
+  it("logMingleMessage (current room phase path) adds MINGLE transcript entry with mingle scope", () => {
     const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
     const bob = gs.getAlivePlayers().find((p) => p.name === "Bob")!;
-    logger.logWhisper(alice.id, [bob.id], "Secret message", 1);
+    logger.logMingleMessage(alice.id, [bob.id], "Secret message", 1);
 
     expect(logger.transcript).toHaveLength(1);
-    expect(logger.transcript[0]!.scope).toBe("whisper");
+    expect(logger.transcript[0]!.scope).toBe("mingle");
+    expect(logger.transcript[0]!.phase).toBe(Phase.MINGLE);
     expect(logger.transcript[0]!.from).toBe("Alice");
     expect(logger.transcript[0]!.to).toEqual(["Bob"]);
     expect(logger.transcript[0]!.roomId).toBe(1);
@@ -139,15 +140,15 @@ describe("TranscriptLogger", () => {
 describe("ContextBuilder", () => {
   let gs: GameState;
   let logger: TranscriptLogger;
-  let whisperInbox: Map<UUID, Array<{ from: string; text: string }>>;
+  let mingleInbox: Map<UUID, Array<{ from: string; text: string }>>;
   let builder: ContextBuilder;
 
   beforeEach(() => {
     gs = makeGameState(["Alice", "Bob", "Charlie", "Dave", "Eve"]);
     gs.startRound();
     logger = new TranscriptLogger(gs);
-    whisperInbox = new Map();
-    builder = new ContextBuilder(gs, logger, whisperInbox, 5);
+    mingleInbox = new Map();
+    builder = new ContextBuilder(gs, logger, mingleInbox, 5);
   });
 
   it("buildPhaseContext returns correct basic fields", () => {
@@ -162,13 +163,13 @@ describe("ContextBuilder", () => {
     expect(ctx.isEliminated).toBe(false);
   });
 
-  it("buildPhaseContext includes whisper inbox", () => {
+  it("buildPhaseContext includes current mingle room inbox (mingleMessages)", () => {
     const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
-    whisperInbox.set(alice.id, [{ from: "Bob", text: "Secret" }]);
-    const ctx = builder.buildPhaseContext(alice.id, Phase.WHISPER);
+    mingleInbox.set(alice.id, [{ from: "Bob", text: "Secret" }]);
+    const ctx = builder.buildPhaseContext(alice.id, Phase.MINGLE);
 
-    expect(ctx.whisperMessages).toHaveLength(1);
-    expect(ctx.whisperMessages[0]!.from).toBe("Bob");
+    expect(ctx.mingleMessages).toHaveLength(1);
+    expect(ctx.mingleMessages[0]!.from).toBe("Bob");
   });
 
   it("buildPhaseContext includes extra empowered/candidates", () => {
@@ -186,7 +187,7 @@ describe("ContextBuilder", () => {
 
   it("buildPhaseContext includes room info", () => {
     const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
-    const ctx = builder.buildPhaseContext(alice.id, Phase.WHISPER, undefined, undefined, {
+    const ctx = builder.buildPhaseContext(alice.id, Phase.MINGLE, undefined, undefined, {
       roomCount: 2,
       roomMates: ["Alice", "Bob"],
     });
@@ -201,7 +202,7 @@ describe("ContextBuilder", () => {
     builder.currentRoomAllocations = [{ roomId: 1, playerIds: [alice.id, bob.id], round: 1, beat: 1 }];
     builder.currentRoomCounts = [{ roomId: 1, count: 2 }];
 
-    const ctx = builder.buildPhaseContext(alice.id, Phase.WHISPER);
+    const ctx = builder.buildPhaseContext(alice.id, Phase.MINGLE);
     expect(ctx.roomAllocations).toBeUndefined();
     expect(ctx.roomCounts).toEqual([{ roomId: 1, count: 2 }]);
   });
@@ -211,7 +212,7 @@ describe("ContextBuilder", () => {
     const bob = gs.getAlivePlayers().find((p) => p.name === "Bob")!;
     builder.currentRoomAllocations = [{ roomId: 1, playerIds: [alice.id, bob.id], round: 1, beat: 1 }];
 
-    const ctx = builder.buildPhaseContext(alice.id, Phase.WHISPER, undefined, undefined, {
+    const ctx = builder.buildPhaseContext(alice.id, Phase.MINGLE, undefined, undefined, {
       includeRoomAllocations: true,
     });
     expect(ctx.roomAllocations).toHaveLength(1);

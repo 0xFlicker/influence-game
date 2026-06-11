@@ -9,6 +9,7 @@
 import type OpenAI from "openai";
 import { Phase } from "./types";
 import type { TokenTracker } from "./token-tracker";
+import type { TranscriptEntry } from "./game-runner.types";
 
 // ---------------------------------------------------------------------------
 // Interview context passed to the House
@@ -56,6 +57,12 @@ export interface IHouseInterviewer {
     context: DiaryRoomContext,
     conversationSoFar: Array<{ question: string; answer: string }>,
   ): Promise<FollowUpResult>;
+
+  /**
+   * Generate a dramatic House MC-style narrative summary of recent gameplay.
+   * Used for in-progress simulation traces to make them more engaging.
+   */
+  generateGameplaySummary(recentTranscript: TranscriptEntry[], round: number, phase: Phase, alivePlayers: string[]): Promise<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -66,7 +73,7 @@ const HOUSE_PERSONALITY = `You are "The House" — the omniscient narrator and s
 
 Your personality:
 - You are dramatic, perceptive, and darkly witty — like the best reality TV producers
-- You see EVERYTHING: every whisper, every alliance, every betrayal
+- You see EVERYTHING: every Mingle-room conversation, every alliance, every betrayal
 - You ask questions that provoke genuine strategic reflection and great entertainment
 - You sometimes hint at things the player doesn't know you've seen
 - You vary your style: sometimes pointed, sometimes sympathetic, sometimes provocatively blunt
@@ -298,6 +305,60 @@ ${prevDiaryText ? `\n## ${agentName}'s Previous Diary Entries\n${prevDiaryText}\
 
 Your question MUST name a specific player or reference a specific quote/event from the messages above. If you cannot find anything specific, pick the most interesting player name from the alive list and ask ${agentName} what they REALLY think about that person.`;
   }
+
+  async generateGameplaySummary(
+    recentTranscript: TranscriptEntry[],
+    round: number,
+    phase: Phase,
+    alivePlayers: string[],
+  ): Promise<string> {
+    const transcriptText = recentTranscript
+      .slice(-20)
+      .map((e) => {
+        const prefix = e.scope === "mingle"
+          ? `[mingle to ${e.to?.join(",") || "room"}]`
+          : e.scope === "whisper"
+            ? `[legacy whisper to ${e.to?.join(",")}]`
+            : e.scope === "thinking"
+              ? "[thinking]"
+              : "";
+        return `R${e.round}/${e.phase} ${e.from}${prefix}: ${e.text}`;
+      })
+      .join("\n");
+
+    const summaryPrompt = `You are the House MC — the dramatic narrator and showrunner for "Influence".
+
+Generate a concise, engaging 3-5 sentence in-progress summary of the current game state for the audience.
+
+Round: ${round}
+Current phase: ${phase}
+Alive: ${alivePlayers.join(", ")}
+
+Recent events/transcript (last ~20 entries):
+${transcriptText}
+
+Focus on:
+- Key social dynamics, alliances, betrayals, or standout Mingle room conversations/movements
+- Who is rising or falling in power/influence
+- Dramatic tension or ironic moments
+- Keep it witty, perceptive, and in the style of a reality TV narrator
+
+Respond with ONLY the summary paragraph, no intro or labels.`;
+
+    const response = await this.openai.chat.completions.create({
+      model: this.model,
+      messages: [
+        { role: "system", content: "You are the House MC — omniscient, dramatic reality TV narrator." },
+        { role: "user", content: summaryPrompt },
+      ],
+      ...this.modelParams(32768, 0.9),
+    });
+
+    const summary = response.choices[0]?.message?.content?.trim();
+    if (summary && summary.length > 0) return summary;
+
+    return `Round ${round} has been full of shifting alliances and private-room schemes. The House is watching closely as the field narrows.`;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -341,5 +402,14 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
       default:
         return `${agentName}, tell the audience what's on your mind. What's your strategy going forward?`;
     }
+  }
+
+  async generateGameplaySummary(
+    _recentTranscript: TranscriptEntry[],
+    round: number,
+    phase: Phase,
+    alivePlayers: string[],
+  ): Promise<string> {
+    return `Round ${round} (${phase}): ${alivePlayers.length} players remain. The game continues with shifting power and hidden motives. The House sees all.`;
   }
 }

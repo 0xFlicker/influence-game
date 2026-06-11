@@ -23,7 +23,7 @@ export interface TestDB {
 
 let migrated = false;
 
-// All Influence table names — truncate only these, not Paperclip system tables
+// All Influence table names — truncate only these, not unrelated tables.
 const INFLUENCE_TABLES = [
   "free_track_ratings",
   "free_game_queue",

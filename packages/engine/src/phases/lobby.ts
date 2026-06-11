@@ -28,7 +28,15 @@ async function runLobbyMessages(
         const agent = agents.get(player.id)!;
         if (agent.getLobbyIntent) {
           const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.LOBBY);
-          await agent.getLobbyIntent(phaseCtx);
+          const intent = await agent.getLobbyIntent(phaseCtx);
+          logger.emitAgentTurn({
+            phase: Phase.LOBBY,
+            action: "lobby-intent",
+            actor: { id: player.id, name: player.name, role: "player" },
+            visibility: "private",
+            response: { intent },
+            text: intent,
+          });
         }
       }),
     );
@@ -42,8 +50,23 @@ async function runLobbyMessages(
         const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.LOBBY);
         phaseCtx.lobbySubRound = sub;
         phaseCtx.lobbyTotalSubRounds = messagesPerPlayer;
-        const { message, thinking } = await agent.getLobbyMessage(phaseCtx);
-        logger.logPublic(player.id, message, Phase.LOBBY, { thinking });
+        const { message, thinking, reasoningContext } = await agent.getLobbyMessage(phaseCtx);
+        logger.logPublic(player.id, message, Phase.LOBBY, { thinking, reasoningContext });
+        logger.emitAgentTurn({
+          phase: Phase.LOBBY,
+          action: "lobby-message",
+          actor: { id: player.id, name: player.name, role: "player" },
+          visibility: "public",
+          response: {
+            message,
+            subRound: sub,
+            totalSubRounds: messagesPerPlayer,
+          },
+          thinking,
+          reasoningContext,
+          scope: "public",
+          text: message,
+        });
       }),
     );
   }

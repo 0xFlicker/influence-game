@@ -14,6 +14,7 @@ export enum Phase {
   INIT = "INIT",
   INTRODUCTION = "INTRODUCTION",
   LOBBY = "LOBBY",
+  MINGLE = "MINGLE",
   WHISPER = "WHISPER",
   RUMOR = "RUMOR",
   VOTE = "VOTE",
@@ -139,7 +140,7 @@ export interface PowerAction {
 // Messages passed between agents and the House
 // ---------------------------------------------------------------------------
 
-export type MessageScope = "public" | "whisper" | "system" | "thinking";
+export type MessageScope = "public" | "mingle" | "whisper" | "system" | "thinking";
 
 export interface PublicMessage {
   type: "public";
@@ -161,12 +162,12 @@ export interface WhisperMessage {
   text: string;
   round: number;
   timestamp: number;
-  /** Room ID this whisper happened in (new room-based whisper system) */
+  /** Room ID for this private-room message */
   roomId?: number;
 }
 
 // ---------------------------------------------------------------------------
-// Whisper room allocation
+// Mingle room allocation
 // ---------------------------------------------------------------------------
 
 export interface RoomAllocation {
@@ -225,13 +226,13 @@ export interface WhisperSessionDiagnostics {
   actions?: MingleTurnActionRecord[];
 }
 
-/** System event emitted when whisper rooms are allocated for a round */
+/** System event emitted when mingle rooms are allocated for a round */
 export interface RoomAllocationEvent {
   type: "system";
   scope: "system";
   text: string; // e.g. "Room 1: Atlas & Vera | Room 2: Finn & Mira | Commons: Lyra, Rex"
   round: number;
-  phase: "WHISPER";
+  phase: Phase;
   timestamp: number;
   metadata: {
     rooms: RoomAllocation[];
@@ -330,7 +331,7 @@ export interface GameConfig {
   timers: {
     introduction: number;
     lobby: number;
-    whisper: number;
+    mingle: number;
     rumor: number;
     vote: number;
     power: number;
@@ -362,12 +363,12 @@ export interface GameConfig {
   lobbyMessagesPerPlayer?: number;
   /** Enable hidden pre-lobby intent calls before public lobby messages (default true). */
   enableLobbyIntent?: boolean;
-  /** Max whisper conversations per agent per round (default 2). Scarcity makes whispers more strategic. */
-  maxWhisperPairsPerAgent?: number;
-  /** Max message exchanges per whisper conversation (default 2). Each exchange = 1 message per agent. */
-  maxWhisperExchanges?: number;
   /** Number of open-room movement beats per round (default 2). */
-  whisperSessionsPerRound?: number;
+  mingleSessionsPerRound?: number;
+  /** Number of previous Mingle rounds whose exact player pairs should be avoided when practical. */
+  minglePairCooldownRounds?: number;
+  /** Max milliseconds to wait for a single endgame agent action before using a House fallback. */
+  agentActionTimeoutMs?: number;
   /** Simulator experiment flag: add one public post-vote Power Lobby beat before the empowered action. */
   powerLobbyAfterVote?: boolean;
 }
@@ -376,7 +377,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   timers: {
     introduction: 30_000, // 30s for prototype
     lobby: 30_000,
-    whisper: 45_000,
+    mingle: 45_000,
     rumor: 30_000,
     vote: 20_000,
     power: 15_000,

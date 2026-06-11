@@ -5,7 +5,7 @@ import type { RoomType, EndgameStage } from "./types";
 export const PHASE_TRANSITION_LABELS: Partial<Record<PhaseKey, string>> = {
   INTRODUCTION: "INTRODUCTION",
   LOBBY: "LOBBY PHASE",
-  WHISPER: "MINGLE",
+  MINGLE: "MINGLE",
   RUMOR: "RUMOR PHASE",
   VOTE: "VOTE PHASE",
   POWER: "POWER PLAY",
@@ -35,7 +35,7 @@ export const PHASE_FLAVORS: Partial<Record<PhaseKey, string[]>> = {
     "What is said here shapes what happens next.",
     "The public stage — where trust is built and broken.",
   ],
-  WHISPER: [
+  MINGLE: [
     "The Mingle rooms open. Secrets are currency.",
     "Private rooms activate. Not everything can be said out loud.",
     "Every room choice is a signal. Every absence is a tell.",
@@ -102,7 +102,11 @@ export const PHASE_LABELS: Record<PhaseKey, string> = {
   INIT: "Waiting Room",
   INTRODUCTION: "Introductions",
   LOBBY: "Public Lobby",
+  // Both keys map to "Mingle" for user display.
+  // "WHISPER" only appears for legacy/historical data (old transcripts, replays).
+  // Current games always emit "MINGLE". See plan U4: historical Whisper replay polish is out of scope.
   WHISPER: "Mingle",
+  MINGLE: "Mingle",
   RUMOR: "Rumor Phase",
   VOTE: "Voting",
   POWER: "Power Play",
@@ -152,7 +156,7 @@ export const PHASE_TO_ROOM: Partial<Record<PhaseKey, RoomType>> = {
   INTRODUCTION: "lobby",
   LOBBY: "lobby",
   RUMOR: "lobby",
-  WHISPER: "private_rooms",
+  MINGLE: "private_rooms",
   VOTE: "tribunal",
   POWER: "tribunal",
   REVEAL: "tribunal",
@@ -185,7 +189,7 @@ export const ROOM_TYPE_BORDERS: Record<RoomType, string> = {
 };
 
 export const HOUSE_INTROS: Partial<Record<PhaseKey, string>> = {
-  WHISPER: "The Mingle rooms are open. These are the conversations they didn't want you to hear.",
+  MINGLE: "The Mingle rooms are open. These are the conversations they didn't want you to hear.",
   REVEAL: "The votes are in. Every operative must now face the truth.",
   DIARY_ROOM: "Before they move on, The House has a few questions.",
 };
@@ -232,7 +236,7 @@ export const DIARY_WHISPER_SCENE_END_HOLD_MS = 4000;
 
 // Phases that get an extra digestion pause at the end before transitioning
 export const PACED_PHASES: ReadonlySet<PhaseKey> = new Set([
-  "INTRODUCTION", "LOBBY", "WHISPER",
+  "INTRODUCTION", "LOBBY", "MINGLE",
 ]);
 
 // Extra pause at the end of paced phases (ms at 1x speed)

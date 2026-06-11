@@ -147,9 +147,7 @@ export default function AboutPage() {
             Influence is built on a TypeScript stack — an XState-driven game
             engine, Hono API server, and Next.js frontend. Games run on
             large language models, with each agent making independent decisions
-            through structured tool calls. The entire system is developed and
-            operated by a team of AI agents coordinated through{" "}
-            <ExternalLink href="https://paperclip.ing">Paperclip</ExternalLink>.
+            through structured tool calls.
           </p>
         </section>
       </main>

@@ -3,7 +3,7 @@
  * Uses simple scripted strategies to validate game mechanics.
  */
 
-import type { AgentResponse, IAgent, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "../game-runner";
+import type { AgentResponse, IAgent, MingleRoomChoiceAction, MingleTurnAction, PhaseContext, PowerLobbyExposure, TargetDecision } from "../game-runner";
 import type { UUID, PowerAction } from "../types";
 
 /** Assert a value is defined — throws in tests if assumption is violated */
@@ -13,8 +13,8 @@ function defined<T>(value: T | undefined, msg = "Expected value to be defined"):
 }
 
 /** Helper to wrap a message string into an AgentResponse */
-function respond(message: string, thinking = ""): AgentResponse {
-  return { thinking, message };
+function respond(message: string, thinking = "", reasoningContext?: string): AgentResponse {
+  return { thinking, message, ...(reasoningContext && { reasoningContext }) };
 }
 
 export class MockAgent implements IAgent {
@@ -66,11 +66,15 @@ export class MockAgent implements IAgent {
     ];
   }
 
-  async chooseWhisperRoom(ctx: PhaseContext): Promise<number | null> {
+  async chooseMingleRoom(ctx: PhaseContext): Promise<MingleRoomChoiceAction> {
     const roomCount = ctx.roomCount ?? 1;
-    if (roomCount < 1) return null;
+    if (roomCount < 1) return { roomId: null, thinking: "No rooms available" };
     const myIndex = ctx.alivePlayers.findIndex((p) => p.id === this.id);
-    return (myIndex % roomCount) + 1;
+    return {
+      roomId: (myIndex % roomCount) + 1,
+      thinking: `Choosing room based on player index ${myIndex}`,
+      reasoningContext: undefined,
+    };
   }
 
   async sendRoomMessage(_ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<AgentResponse | null> {
@@ -101,16 +105,16 @@ export class MockAgent implements IAgent {
 
   async getVotes(
     ctx: PhaseContext,
-  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID }> {
+  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string }> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
     if (others.length === 0) {
-      return { empowerTarget: this.id, exposeTarget: this.id };
+      return { empowerTarget: this.id, exposeTarget: this.id, thinking: "No one else left", reasoningContext: undefined };
     }
 
     // Always empower the first other player, expose the last
     const empowerTarget = defined(others[0], "Expected at least one other player to empower").id;
     const exposeTarget = defined(others[others.length - 1], "Expected at least one other player to expose").id;
-    return { empowerTarget, exposeTarget };
+    return { empowerTarget, exposeTarget, thinking: `Empower ally, expose threat`, reasoningContext: undefined };
   }
 
   async getPowerLobbyMessage(
@@ -133,14 +137,14 @@ export class MockAgent implements IAgent {
   async getPowerAction(
     ctx: PhaseContext,
     candidates: [UUID, UUID],
-  ): Promise<PowerAction> {
+  ): Promise<PowerAction & { thinking?: string; reasoningContext?: string }> {
     // Always pass to council (simplest action)
-    return { action: "pass", target: candidates[0] };
+    return { action: "pass", target: candidates[0], thinking: "mock: pass to let council expose the field", reasoningContext: undefined };
   }
 
-  async getCouncilVote(ctx: PhaseContext, candidates: [UUID, UUID]): Promise<UUID> {
+  async getCouncilVote(ctx: PhaseContext, candidates: [UUID, UUID]): Promise<{ target: UUID; thinking?: string; reasoningContext?: string }> {
     // Always vote for the first candidate
-    return candidates[0];
+    return { target: candidates[0], thinking: "mock: vote first candidate for council", reasoningContext: undefined };
   }
 
   async getLastMessage(_ctx: PhaseContext): Promise<AgentResponse> {
@@ -168,14 +172,20 @@ export class MockAgent implements IAgent {
     );
   }
 
-  async getEndgameEliminationVote(ctx: PhaseContext): Promise<UUID> {
-    if (this.eliminationTarget) return this.eliminationTarget;
+  async getEndgameEliminationVote(ctx: PhaseContext): Promise<TargetDecision> {
+    if (this.eliminationTarget) {
+      return { target: this.eliminationTarget, thinking: "mock: using configured elimination target" };
+    }
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
     // Vote for the last player in the list
-    return others[others.length - 1]?.id ?? this.id;
+    return {
+      target: others[others.length - 1]?.id ?? this.id,
+      thinking: "mock: vote last alive player for endgame elimination",
+      reasoningContext: undefined,
+    };
   }
 
-  async getAccusation(ctx: PhaseContext): Promise<{ targetId: UUID; text: string; thinking?: string }> {
+  async getAccusation(ctx: PhaseContext): Promise<{ targetId: UUID; text: string; thinking?: string; reasoningContext?: string }> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
     const target = defined(
       this.accusationTarget
@@ -204,7 +214,7 @@ export class MockAgent implements IAgent {
     );
   }
 
-  async getJuryQuestion(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string; thinking?: string }> {
+  async getJuryQuestion(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string; thinking?: string; reasoningContext?: string }> {
     // Always ask the first finalist
     return {
       targetFinalistId: finalistIds[0],
@@ -227,10 +237,21 @@ export class MockAgent implements IAgent {
     );
   }
 
-  async getJuryVote(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID> {
-    if (this.juryVoteTarget) return this.juryVoteTarget;
+  async getJuryVote(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<TargetDecision> {
+    if (this.juryVoteTarget) {
+      return { target: this.juryVoteTarget, thinking: "mock: using configured jury vote target" };
+    }
     // Vote for the first finalist
-    return finalistIds[0];
+    return {
+      target: finalistIds[0],
+      thinking: "mock: vote first finalist for jury winner",
+      reasoningContext: undefined,
+    };
+  }
+
+  async getStrategicReflection(_ctx: PhaseContext): Promise<void> {
+    // No-op for mock, but could be used to update internal state in a more complex implementation
+    return Promise.resolve();
   }
 
   // Memory methods (no-ops for mock)

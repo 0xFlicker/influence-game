@@ -258,14 +258,14 @@ export function createPhaseMachine() {
         ],
         exit: [{ type: "emitPhaseEnded", params: { phase: Phase.LOBBY } }],
         on: {
-          PHASE_COMPLETE: "whisper",
+          PHASE_COMPLETE: "mingle",
           UPDATE_ALIVE_PLAYERS: { actions: ["updateAlivePlayers"] },
         },
       },
 
-      whisper: {
-        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.WHISPER } }],
-        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.WHISPER } }],
+      mingle: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.MINGLE } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.MINGLE } }],
         on: {
           PHASE_COMPLETE: "rumor",
         },
@@ -380,14 +380,14 @@ export function createPhaseMachine() {
         ],
         exit: [{ type: "emitPhaseEnded", params: { phase: Phase.LOBBY } }],
         on: {
-          PHASE_COMPLETE: "reckoning_whisper",
+          PHASE_COMPLETE: "reckoning_mingle",
           UPDATE_ALIVE_PLAYERS: { actions: ["updateAlivePlayers"] },
         },
       },
 
-      reckoning_whisper: {
-        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.WHISPER } }],
-        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.WHISPER } }],
+      reckoning_mingle: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.MINGLE } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.MINGLE } }],
         on: {
           PHASE_COMPLETE: "reckoning_plea",
         },

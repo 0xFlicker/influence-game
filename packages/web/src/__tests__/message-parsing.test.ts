@@ -286,7 +286,7 @@ describe("wsEntryToTranscriptEntry", () => {
 
     const result = wsEntryToTranscriptEntry({
       round: 1,
-      phase: "WHISPER",
+      phase: "MINGLE",
       from: "House",
       scope: "system" as const,
       roomMetadata,

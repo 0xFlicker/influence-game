@@ -44,7 +44,7 @@ export class DiaryRoom {
       await Promise.all(
         alivePlayers.map(async (player) => {
           const agent = this.agents.get(player.id);
-          if (agent?.getStrategicReflection) {
+          if (agent) {
             const ctx = this.contextBuilder.buildPhaseContext(player.id, phase);
             await agent.getStrategicReflection(ctx);
           }
@@ -121,7 +121,23 @@ export class DiaryRoom {
 
     const ctx = this.contextBuilder.buildPhaseContext(playerId, Phase.DIARY_ROOM, undefined, isJuror || undefined);
     const firstResponse = await agent.getDiaryEntry(ctx, firstQuestion, sessionExchanges);
-    this.logger.logDiary(label, firstResponse.message, firstResponse.thinking);
+    this.logger.logDiary(label, firstResponse.message, firstResponse.thinking, firstResponse.reasoningContext);
+    this.logger.emitAgentTurn({
+      phase: Phase.DIARY_ROOM,
+      action: "diary-answer",
+      actor: { id: playerId, name: playerName, role: isJuror ? "juror" : "player" },
+      visibility: "diary",
+      response: {
+        question: firstQuestion,
+        message: firstResponse.message,
+        precedingPhase,
+        followUpIndex: 0,
+      },
+      thinking: firstResponse.thinking,
+      reasoningContext: firstResponse.reasoningContext,
+      scope: "diary",
+      text: firstResponse.message,
+    });
 
     sessionExchanges.push({ question: firstQuestion, answer: firstResponse.message });
     this.diaryEntries.push({
@@ -146,7 +162,23 @@ export class DiaryRoom {
       this.logger.logDiary(houseLabel, result.question);
 
       const followUpResponse = await agent.getDiaryEntry(ctx, result.question, sessionExchanges);
-      this.logger.logDiary(label, followUpResponse.message, followUpResponse.thinking);
+      this.logger.logDiary(label, followUpResponse.message, followUpResponse.thinking, followUpResponse.reasoningContext);
+      this.logger.emitAgentTurn({
+        phase: Phase.DIARY_ROOM,
+        action: "diary-answer",
+        actor: { id: playerId, name: playerName, role: isJuror ? "juror" : "player" },
+        visibility: "diary",
+        response: {
+          question: result.question,
+          message: followUpResponse.message,
+          precedingPhase,
+          followUpIndex: i,
+        },
+        thinking: followUpResponse.thinking,
+        reasoningContext: followUpResponse.reasoningContext,
+        scope: "diary",
+        text: followUpResponse.message,
+      });
 
       sessionExchanges.push({ question: result.question, answer: followUpResponse.message });
       this.diaryEntries.push({

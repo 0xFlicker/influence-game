@@ -99,7 +99,7 @@ export const gamePlayers = pgTable("game_players", {
 // Transcripts
 // ---------------------------------------------------------------------------
 
-export type TranscriptScope = "public" | "whisper" | "system" | "diary" | "thinking";
+export type TranscriptScope = "public" | "mingle" | "whisper" | "system" | "diary" | "thinking";
 
 export const transcripts = pgTable("transcripts", {
   id: serial("id").primaryKey(),
@@ -110,9 +110,9 @@ export const transcripts = pgTable("transcripts", {
   phase: text("phase").notNull(), // Phase enum value
   fromPlayerId: text("from_player_id"), // null for system messages
   scope: text("scope").notNull().$type<TranscriptScope>().default("public"),
-  toPlayerIds: text("to_player_ids"), // JSON array for whispers, null otherwise
-  roomId: integer("room_id"), // Whisper room ID (1-indexed), null for non-whisper entries
-  roomMetadata: text("room_metadata"), // JSON allocation metadata for whisper room system events
+  toPlayerIds: text("to_player_ids"), // JSON array for Mingle room messages (or legacy whispers), null otherwise
+  roomId: integer("room_id"), // Mingle room ID (1-indexed; legacy whisper too), null for non-room entries
+  roomMetadata: text("room_metadata"), // JSON allocation metadata for Mingle room system events (legacy whisper too)
   text: text("text").notNull(),
   thinking: text("thinking"), // Per-message thinking (null for old entries / system messages)
   timestamp: bigint("timestamp", { mode: "number" }).notNull(), // Unix ms

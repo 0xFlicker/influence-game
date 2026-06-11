@@ -15,8 +15,8 @@ export async function runRumorPhase(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.RUMOR);
-      const { message, thinking } = await agent.getRumorMessage(phaseCtx);
-      return { playerId: player.id, message, thinking };
+      const { message, thinking, reasoningContext } = await agent.getRumorMessage(phaseCtx);
+      return { playerId: player.id, message, thinking, reasoningContext };
     }),
   );
 
@@ -29,10 +29,28 @@ export async function runRumorPhase(
 
   for (let i = 0; i < shuffled.length; i++) {
     const rumor = shuffled[i]!;
+    const playerName = gameState.getPlayerName(rumor.playerId);
     logger.logPublic(rumor.playerId, rumor.message, Phase.RUMOR, {
       anonymous: true,
       displayOrder: i + 1,
       thinking: rumor.thinking,
+      reasoningContext: rumor.reasoningContext,
+    });
+    logger.emitAgentTurn({
+      phase: Phase.RUMOR,
+      action: "rumor",
+      actor: { id: rumor.playerId, name: playerName, role: "player" },
+      visibility: "anonymous",
+      response: {
+        message: rumor.message,
+        displayOrder: i + 1,
+      },
+      thinking: rumor.thinking,
+      reasoningContext: rumor.reasoningContext,
+      scope: "public",
+      text: rumor.message,
+      anonymous: true,
+      displayOrder: i + 1,
     });
   }
 

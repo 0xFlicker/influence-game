@@ -9,7 +9,7 @@ import { formatTime } from "./constants";
 export function MessageBubble({ msg, players, showThinking }: { msg: TranscriptEntry; players: GamePlayer[]; showThinking?: boolean }) {
   const isSystem = msg.scope === "system";
   const isDiary = msg.scope === "diary";
-  const isWhisper = msg.scope === "whisper";
+  const isWhisper = msg.scope === "mingle";
 
   // Backward compat: old games with scope='thinking' entries — hide entirely
   if (msg.scope === "thinking") return null;
@@ -83,7 +83,7 @@ export function MessageBubble({ msg, players, showThinking }: { msg: TranscriptE
               <span className="text-[10px] text-purple-400/50 uppercase tracking-wider">rumor</span>
             )}
             {isWhisper && (
-              <span className="text-xs text-purple-400/70">🤫 whisper</span>
+              <span className="text-xs text-purple-400/70">🤫 mingle</span>
             )}
             <span className="text-white/20 text-xs ml-auto flex-shrink-0">{formatTime(msg.timestamp)}</span>
           </div>

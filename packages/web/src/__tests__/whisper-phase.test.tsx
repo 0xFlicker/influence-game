@@ -14,7 +14,7 @@ function entry(overrides: Partial<TranscriptEntry>): TranscriptEntry {
     id: 1,
     gameId: "game-1",
     round: 1,
-    phase: "WHISPER",
+    phase: "MINGLE",
     fromPlayerId: null,
     fromPlayerName: null,
     scope: "system",
@@ -43,7 +43,7 @@ describe("buildWhisperStageData", () => {
         id: 2,
         fromPlayerId: "p1",
         fromPlayerName: "Atlas",
-        scope: "whisper",
+        scope: "mingle",
         toPlayerIds: ["p2"],
         roomId: 1,
         text: "Vera, this room is hot.",
@@ -77,7 +77,7 @@ describe("buildWhisperStageData", () => {
   it("renders open-room telemetry instead of pair-room sequence chrome", () => {
     const html = renderToString(
       <OpenWhisperRoomsView
-        phaseKey="round-1-whisper"
+        phaseKey="round-1-mingle"
         players={players}
         phaseEntries={[
           entry({
@@ -95,7 +95,7 @@ describe("buildWhisperStageData", () => {
             id: 2,
             fromPlayerId: "p1",
             fromPlayerName: "Atlas",
-            scope: "whisper",
+            scope: "mingle",
             toPlayerIds: ["p2"],
             roomId: 12,
             text: "Vera, this room is hot.",
@@ -116,7 +116,7 @@ describe("buildWhisperStageData", () => {
     expect(html).toContain("flex h-full min-h-0 w-full flex-col");
     expect(html).toContain("min-h-0 flex-1 overflow-y-auto");
     expect(html).not.toContain("Whisper Room 12");
-    expect(html).not.toContain("WHISPER: OPEN ROOMS");
+    expect(html).not.toContain("MINGLE: OPEN ROOMS");
     expect(html).not.toContain("HOUSE MAP");
     expect(html).not.toContain("Other Rooms");
   });

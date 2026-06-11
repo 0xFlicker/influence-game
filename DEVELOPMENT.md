@@ -64,7 +64,7 @@ The most common merge conflict source is `agent.ts`. Avoid it:
 
 1. **Personality prompts** (LGD) live in the `getSystemPrompt()` method and the `personalities` map. Changes there are LGD territory.
 2. **Agent behavior methods** (`getVotes`, `getPowerAction`, LLM call structure) are FE territory.
-3. When in doubt, open a Paperclip issue to coordinate before editing.
+3. When in doubt, coordinate in GitHub or in the relevant planning/design doc before editing.
 
 If `types.ts` needs new fields, the FE makes those changes. LGD should never edit `types.ts` directly — instead open an issue describing what new data you need in `PhaseContext` or elsewhere.
 
@@ -73,13 +73,13 @@ If `types.ts` needs new fields, the FE makes those changes. LGD should never edi
 ### For LGD proposing game mechanic changes:
 1. Run at least one simulation with the existing code to establish a baseline.
 2. Document the finding in `docs/simulations/YYYY-MM-DD-analysis.md`.
-3. Open a Paperclip issue describing the proposed change, attach the analysis.
+3. Open a GitHub issue or planning doc describing the proposed change, attach the analysis.
 4. **Changes to the core game loop require board approval** before shipping. The FE will not implement core-loop changes without an approved issue.
 5. Personality prompt changes (in `agent.ts`) and simulation parameter tuning do not require board approval — the LGD can PR those directly.
 
 ### For FE making engine changes:
 1. Check `docs/simulations/` for any recent LGD analyses that might be affected.
-2. If a change alters `PhaseContext`, `IAgent` interface, or `GameConfig` shape, post a comment on the active LGD issue so they can update their simulations.
+2. If a change alters `PhaseContext`, `IAgent` interface, or `GameConfig` shape, note it in the active issue/PR or update the relevant docs so simulations can be adjusted.
 3. Unit tests in `game-engine.test.ts` must pass before any merge.
 
 ## Testing
@@ -88,11 +88,11 @@ If `types.ts` needs new fields, the FE makes those changes. LGD should never edi
 
 Tests are organized into three tiers with different requirements:
 
-| Tier | Command | Needs DB? | Needs Doppler? | When to run |
-|------|---------|-----------|----------------|-------------|
+| Tier | Command | Needs DB? | Needs LLM provider? | When to run |
+|------|---------|-----------|---------------------|-------------|
 | **Unit (mock)** | `bun run test` | No | No | Every commit (pre-commit check) |
-| **DB integration** | `bun run test:db` | Yes (PostgreSQL) | No | Before merging API changes |
-| **Full LLM** | `bun run test:engine:full` | No | Yes (`OPENAI_API_KEY` from Doppler dev) | Before releasing engine changes |
+| **DB integration** | `bun run test:db` | Yes (PostgreSQL) | No for most tests; configured provider for optional LLM generation tests | Before merging API changes |
+| **Full LLM** | `bun run test:engine:full` | No | Yes (`OPENAI_API_KEY` via Doppler or `INFLUENCE_LLM_BASE_URL` for LM Studio) | Before releasing engine changes |
 
 ### Running Tests
 
@@ -106,7 +106,7 @@ bun run test:db
 # Engine unit tests only
 bun run test:engine
 
-# Engine full tests with real LLM calls (requires Doppler dev access)
+# Engine full tests with real LLM calls (requires OpenAI-compatible provider)
 bun run test:engine:full
 
 # E2E smoke tests (requires running API server)
@@ -117,7 +117,7 @@ cd packages/api && bun run test:e2e
 
 ### What each package's `test:mock` runs
 
-- **engine**: `game-engine.test.ts` (48 tests — core game mechanics), `stream-listener.test.ts` (5 tests — GameRunner stream events with MockAgent)
+- **engine**: core game mechanics, stream events, goodbye/tool fallback behavior, simulation instrumentation/config, structured-output mode, and LLM provider config
 - **api**: `websocket.test.ts` (10 tests — WS manager), `viewer-event-pacer.test.ts` (12 tests — event pacing)
 - **web**: `api-utils.test.ts` (7 tests), `constants.test.ts` (17 tests), `message-parsing.test.ts` (30 tests) — frontend utilities
 
@@ -243,7 +243,7 @@ Required delivery sequence:
 5. Open a reviewable PR.
 6. Close out the task with the PR link plus an honest summary of what passed, what was not run, and any remaining risk.
 
-Use this closeout format in the Paperclip task comment:
+Use this closeout format in the PR description or final task summary:
 
 ```md
 ## Ready for Review
@@ -271,7 +271,6 @@ Closeout rules:
 
 - One logical change per commit.
 - Commit message format: `<type>: <short summary>` (e.g., `feat: add protect power action`, `fix: shield expiry off-by-one`, `test: add council tiebreak coverage`).
-- Always add co-author: `Co-Authored-By: Paperclip <noreply@paperclip.ing>`
 - Branch off `main`, merge back to `main` via PR.
 - Do not commit `node_modules/`, `.env`, or any secrets.
 
@@ -310,7 +309,7 @@ When a set of changes is ready for testing:
    git tag -a v0.X.Y -m "v0.X.Y: <summary of changes>"
    ```
 6. Push with tags: `git push origin main --tags`
-7. Comment on the relevant Paperclip issue:
+7. Post release notes in the relevant PR, GitHub issue, or release handoff:
    ```markdown
    ## Released v0.X.Y
    - Change 1
@@ -338,7 +337,7 @@ To test a specific release:
    ```
    docs/simulations/v0.X.Y-<topic>.md
    ```
-5. Comment on the Paperclip issue:
+5. Record the test report in the relevant PR, GitHub issue, or simulation analysis:
    ```markdown
    ## Tested v0.X.Y
    - Finding 1
@@ -356,7 +355,7 @@ cd ../influence-game-test && git fetch --tags && git checkout v0.X.Y && bun inst
 
 ### Version Referencing in Communication
 
-All Paperclip issue comments must reference specific versions:
+Release and test communication should reference specific versions:
 
 - **Releases**: "Released v0.2.0" with bullet points of changes
 - **Test reports**: "Tested v0.2.0" with findings and recommendations
@@ -374,14 +373,27 @@ When a QA agent is added:
 
 ## Environment
 
-Secrets are injected via Doppler. Never hardcode API keys.
+Hosted-provider secrets are injected via Doppler. Local LM Studio experiments can run through the OpenAI-compatible provider settings in `docs/local-model-evaluation.md`. Never hardcode API keys.
 
 ```bash
 # Simulator validation uses repo scripts, which inject Doppler dev secrets explicitly:
 bun run simulate -- --games 1 --players 4 --model gpt-5-nano
+
+# Local LM Studio validation bypasses Doppler:
+INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
+  bun run simulate:local -- --games 1 --players 4 --model <lm-studio-model-id>
+
+# Chatty mode (live colored transcript with agent thinking + native reasoningContext on Mingle turns, votes, power actions, council votes, and endgame decisions):
+INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
+  bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
+    --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
-The `OPENAI_API_KEY` env var is consumed by `InfluenceAgent`. `gpt-4o-mini` is the default model — cheap and fast for simulations. Only upgrade the model when quality is demonstrably insufficient.
+Simulation batches are written under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-progress.jsonl` for lightweight live progress, `game-N.json` for the full transcript/result bundle, and `game-N.txt` for human-readable transcript review.
+
+`InfluenceAgent` uses OpenAI-compatible chat completions. Hosted OpenAI runs use `OPENAI_API_KEY`; local runs can use `INFLUENCE_LLM_BASE_URL` with LM Studio. Current repo defaults are budget `gpt-5-nano`, standard `gpt-5-mini`, and premium `gpt-5.4-mini`; override server-side tiers with `INFLUENCE_MODEL_BUDGET`, `INFLUENCE_MODEL_STANDARD`, and `INFLUENCE_MODEL_PREMIUM` when testing local models.
+
+Structured decision calls default to named OpenAI tool forcing for hosted OpenAI. Local base URLs default to `INFLUENCE_LLM_TOOL_CHOICE_MODE=required`, which sends the LM Studio-compatible string `tool_choice`, keeps emitted `thinking` in decision schemas, and applies `INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS` (default `4096`) so local reasoning models have enough room to produce tool arguments. Local public messages apply `INFLUENCE_LLM_LOCAL_MESSAGE_MIN_TOKENS` (default `8192`) for the same reason and retry once with a doubled budget when visible content is empty. They request visible speech in `message.content` and preserve native local reasoning metadata such as `reasoning_content` separately as `reasoningContext`. If a local server supports JSON schema better than tools, set `INFLUENCE_LLM_TOOL_CHOICE_MODE=json_schema`.
 
 ### Environment Strategy
 
@@ -390,12 +402,12 @@ Three Doppler configs exist under the `social-strategy-agent` project:
 | Config | Purpose | Database | API Port | Web Port | Network |
 |--------|---------|----------|----------|----------|---------|
 | `dev` | Active development | PostgreSQL (`influence_dev` on port 54320) | 3000 | 3001 | localhost |
-| `stg` | Board testing, release validation | PostgreSQL (`influence_dev` via staging config) | 4000 | 4001 | Tailnet only (100.100.251.4) |
-| `prd` | Future production | PostgreSQL (dedicated instance) | TBD | TBD | Public |
+| `stg` | Staging QA, updates from `main` | PostgreSQL (`influence_dev` via staging config) | 4000 | 4001 | Tailnet only (100.100.251.4) |
+| `prd` | Production, manual approval | PostgreSQL (dedicated instance) | TBD | TBD | Public |
 
-**Agents always use the `dev` config** for local development. Staging is deployed from tagged releases only — agents never run against staging directly.
+**Agents use the `dev` config** for local hosted-provider development. Staging receives updates from `main`; production requires manual approval. Do not run experiments directly against staging unless the task explicitly asks for staging QA.
 
-The root `simulate` and `test:engine:full` scripts pass `--project social-strategy-agent --config dev` to Doppler so local validation does not depend on a per-checkout Doppler setup file. Run simulator batches from the repo root with:
+The root `simulate` and `test:engine:full` scripts pass `--project social-strategy-agent --config dev` to Doppler so hosted-provider validation does not depend on a per-checkout Doppler setup file. Run hosted simulator batches from the repo root with:
 
 ```bash
 bun run simulate -- --games 2 --players 8 --personas Atlas,Vera,Finn,Mira,Rex,Lyra,Kael,Echo --model gpt-5-nano
@@ -433,7 +445,11 @@ The API respects `PORT` and `HOST` env vars (set in Doppler per environment). In
 
 **Staging database:** Uses the same PostgreSQL instance with staging-specific config via Doppler. Migrations run automatically during deployment.
 
-**Critical:** The `influence` user is isolated and cannot connect to the `paperclip` database. Never create tables in or connect to the `paperclip` database — it belongs to the Paperclip platform.
+**Critical:** Use only the Influence database/schema for this app. If an old `paperclip` database exists on a shared local PostgreSQL instance, treat it as historical external data and do not create Influence tables there.
+
+### Statefulness Risk
+
+Active game execution is not crash-safe yet. If the API server restarts while a game is in progress, the run can be corrupted because runner state, active WebSocket pacing, in-memory agent context, and unfinished transcript persistence are not fully checkpointed/resumable. Treat `docs/statefulness-plan.md` as the reference plan and do not claim mid-game resume support until that work lands.
 
 ## Pre-Commit Checklist
 
@@ -461,7 +477,7 @@ Before creating a version tag:
 5. Annotated tag: `git tag -a vX.Y.Z -m "vX.Y.Z: <summary>"`
 6. Push: `git push origin main --tags`
 7. Deploy to staging: push triggers automated deploy via CI/CD pipeline
-8. Comment on Paperclip issue with release notes
+8. Record release notes in the relevant PR, issue, or release handoff
 
 ## Release Cadence
 

@@ -8,16 +8,30 @@
  *   bun run simulate
  *   bun run simulate -- --games 5 --players 6
  *   bun run simulate -- --games 3 --players 4 --personas Atlas,Vera,Finn,Mira
- *   bun run simulate -- --variant open-whisper
- *   bun run simulate -- --variant power-lobby-open-whisper
+ *   bun run simulate -- --variant mingle
+ *   bun run simulate -- --variant power-lobby-mingle
+ *
+ * Chatty / live formatted transcript (great for watching local model Mingle behavior and per-decision reasoning):
+ *   INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
+ *   bun run simulate:local -- --games 1 --players 8 --model google/gemma-4-26b-a4b-qat \
+ *     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
+ *
+ * The --chatty output (and written transcripts) now interleave House action lines
+ * ("X votes: ...", "Y power action: ...", "Z council vote -> ...") with the agent's
+ * hidden `thinking` (dim gray) and raw native `reasoningContext` (cyan) when present.
+ *
+ * Each game also writes `game-{N}-turns.jsonl`: one clean structured JSON record per
+ * agent turn, including the normalized decision the game used plus `thinking` and
+ * `reasoningContext` when available. Use it for post-run analysis instead of parsing
+ * ANSI-colored `game-{N}.txt` output.
  */
 
-import OpenAI from "openai";
+import type OpenAI from "openai";
 import { randomUUID } from "crypto";
 import { execFileSync } from "child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import { GameRunner, type GameStreamEvent, type TranscriptEntry } from "./game-runner";
+import { GameRunner, type AgentTurnEvent, type GameStreamEvent, type TranscriptEntry } from "./game-runner";
 import { InfluenceAgent, type Personality } from "./agent";
 import { LLMHouseInterviewer } from "./house-interviewer";
 import { DEFAULT_CONFIG, type GameConfig, type UUID } from "./types";
@@ -35,12 +49,16 @@ import {
   type GitMetadata,
   type SimulationRunMetadata,
 } from "./simulation-instrumentation";
+import { createLlmClientFromEnv, describeLlmProvider } from "./llm-client";
+import type { LlmToolChoiceMode } from "./llm-client";
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing
 // ---------------------------------------------------------------------------
 
 const DEFAULT_GAME_TIMEOUT_MS = 10 * 60 * 1000;
+const DEFAULT_LARGE_GAME_TIMEOUT_MS = 15 * 60 * 1000;
+const LARGE_GAME_TIMEOUT_PLAYER_THRESHOLD = 8;
 const DEFAULT_LLM_TIMEOUT_MS = 45 * 1000;
 
 export interface SimArgs {
@@ -51,6 +69,8 @@ export interface SimArgs {
   variant: string;
   gameTimeoutMs: number;
   llmTimeoutMs: number;
+  /** Chatty mode: print formatted transcript entries live to console as they happen. */
+  chatty: boolean;
 }
 
 function readPositiveInt(value: string | undefined, fallback: number): number {
@@ -60,14 +80,17 @@ function readPositiveInt(value: string | undefined, fallback: number): number {
 }
 
 export function parseArgs(argv = process.argv.slice(2)): SimArgs {
+  const envGameTimeout = process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
+  let gameTimeoutOverridden = Boolean(envGameTimeout);
   const args: SimArgs = {
     games: 3,
     players: 6,
     personas: null,
     model: "gpt-5-nano",
     variant: process.env.INFLUENCE_SIM_VARIANT ?? "baseline",
-    gameTimeoutMs: readPositiveInt(process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS, DEFAULT_GAME_TIMEOUT_MS),
+    gameTimeoutMs: readPositiveInt(envGameTimeout, DEFAULT_GAME_TIMEOUT_MS),
     llmTimeoutMs: readPositiveInt(process.env.INFLUENCE_SIM_LLM_TIMEOUT_MS, DEFAULT_LLM_TIMEOUT_MS),
+    chatty: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -90,9 +113,11 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       i++;
     } else if (arg === "--game-timeout-ms" && next) {
       args.gameTimeoutMs = parseInt(next, 10);
+      gameTimeoutOverridden = true;
       i++;
     } else if (arg === "--game-timeout-sec" && next) {
       args.gameTimeoutMs = parseInt(next, 10) * 1000;
+      gameTimeoutOverridden = true;
       i++;
     } else if (arg === "--llm-timeout-ms" && next) {
       args.llmTimeoutMs = parseInt(next, 10);
@@ -100,12 +125,17 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
     } else if (arg === "--llm-timeout-sec" && next) {
       args.llmTimeoutMs = parseInt(next, 10) * 1000;
       i++;
+    } else if (arg === "--chatty" || arg === "--verbose" || arg === "-v") {
+      args.chatty = true;
     }
   }
 
   if (isNaN(args.games) || args.games < 1) args.games = 3;
   if (isNaN(args.players) || args.players < 4) args.players = 4;
   if (args.players > DEFAULT_CONFIG.maxPlayers) args.players = DEFAULT_CONFIG.maxPlayers;
+  if (!gameTimeoutOverridden && args.players >= LARGE_GAME_TIMEOUT_PLAYER_THRESHOLD) {
+    args.gameTimeoutMs = DEFAULT_LARGE_GAME_TIMEOUT_MS;
+  }
   if (isNaN(args.gameTimeoutMs) || args.gameTimeoutMs < 1) args.gameTimeoutMs = DEFAULT_GAME_TIMEOUT_MS;
   if (isNaN(args.llmTimeoutMs) || args.llmTimeoutMs < 1) args.llmTimeoutMs = DEFAULT_LLM_TIMEOUT_MS;
 
@@ -159,36 +189,41 @@ const POWER_LOBBY_VARIANTS = new Set([
   "power-lobby",
   "power-lobby-after-vote",
   "power-lobby-v2",
-  "power-lobby-open-whisper",
-  "open-whisper-power-lobby",
-  "power-lobby-v2-open-whisper",
-  "open-whisper-power-lobby-v2",
+  "power-lobby-mingle",
+  "mingle-power-lobby",
+  "power-lobby-v2-mingle",
+  "mingle-power-lobby-v2",
 ]);
 
-const OPEN_WHISPER_VARIANTS = new Set([
+const MINGLE_VARIANTS = new Set([
   "baseline",
-  "open-whisper",
-  "power-lobby-open-whisper",
-  "open-whisper-power-lobby",
-  "power-lobby-v2-open-whisper",
-  "open-whisper-power-lobby-v2",
+  "mingle",
+  "power-lobby-mingle",
+  "mingle-power-lobby",
+  "power-lobby-v2-mingle",
+  "mingle-power-lobby-v2",
 ]);
 
 export function isPowerLobbyVariant(variant: string): boolean {
   return POWER_LOBBY_VARIANTS.has(variant.toLowerCase());
 }
 
-export function isOpenWhisperVariant(variant: string): boolean {
-  return OPEN_WHISPER_VARIANTS.has(variant.toLowerCase());
+export function isMingleVariant(variant: string): boolean {
+  return MINGLE_VARIANTS.has(variant.toLowerCase());
 }
 
-export function buildSimulationConfig(variant: string): GameConfig {
+export function buildSimulationConfig(
+  variant: string,
+  options: { agentActionTimeoutMs?: number } = {},
+): GameConfig {
+  const mingle = isMingleVariant(variant);
+
   return {
     ...DEFAULT_CONFIG,
     timers: {
       introduction: 0,
       lobby: 0,
-      whisper: 0,
+      mingle: 0,
       rumor: 0,
       vote: 0,
       power: 0,
@@ -209,7 +244,9 @@ export function buildSimulationConfig(variant: string): GameConfig {
     enableStrategicReflections: false,
     lobbyMessagesPerPlayer: 1,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),
-    whisperSessionsPerRound: isOpenWhisperVariant(variant) ? 2 : DEFAULT_CONFIG.whisperSessionsPerRound,
+    mingleSessionsPerRound: mingle ? 2 : DEFAULT_CONFIG.mingleSessionsPerRound,
+    minglePairCooldownRounds: mingle ? 1 : 0,
+    agentActionTimeoutMs: options.agentActionTimeoutMs ?? 90_000,
   };
 }
 
@@ -239,6 +276,7 @@ function selectCast(
   requestedPersonas: string[] | null,
   openai: OpenAI,
   model: string,
+  toolChoiceMode: LlmToolChoiceMode = "named",
 ): InfluenceAgent[] {
   let selected: Array<{ name: string; personality: Personality }>;
 
@@ -262,7 +300,9 @@ function selectCast(
 
   return selected.map(({ name, personality }) => {
     const id: UUID = randomUUID();
-    return new InfluenceAgent(id, name, personality, openai, model);
+    return new InfluenceAgent(id, name, personality, openai, model, undefined, undefined, {
+      toolChoiceMode,
+    });
   });
 }
 
@@ -283,6 +323,7 @@ export interface GameResult {
   transcriptPath: string;
   jsonPath: string;
   progressPath: string;
+  turnsPath: string;
   error?: string;
   tokenUsage: {
     perAgent: Record<string, TokenUsage>;
@@ -453,14 +494,40 @@ export function computeAggregateStats(
 // Transcript formatting
 // ---------------------------------------------------------------------------
 
+function formatEntry(e: TranscriptEntry): string {
+  const reset = "\x1b[0m";
+  const dim = "\x1b[2m";
+  const gray = "\x1b[90m";
+  const cyan = "\x1b[36m";
+  const yellow = "\x1b[33m";
+  const prefix = `R${e.round}/${e.phase}`;
+  const scopeTag = e.scope === "mingle" ? ` [mingle→${e.to?.join(",") || ""}]` : e.scope === "whisper" ? ` [whisper→${e.to?.join(",") || ""}]` : e.scope === "thinking" ? " [thinking]" : "";
+  let line = `${prefix} ${e.from}${scopeTag}: ${e.text}`;
+  const t = (e.thinking || "").trim();
+  const r = (e.reasoningContext || "").trim();
+  if (t && r && t === r) {
+    // Identical content (common for local reasoning models + tool "thinking" schema):
+    // show the raw native reasoningContext once (cyan). Streaming reasoning contexts
+    // are first-class for --chatty Mingle/local model observability; duplicate reprint
+    // after the message (e.g. under "summary prompt" history in takeMingleTurn) is not needed.
+    line += `\n    ${cyan}reasoning: ${e.reasoningContext}${reset}`;
+  } else {
+    if (e.thinking) {
+      line += `\n    ${dim}${gray}thinking: ${e.thinking}${reset}`;
+    }
+    if (e.reasoningContext) {
+      line += `\n    ${cyan}reasoning: ${e.reasoningContext}${reset}`;
+    }
+  }
+  // Color system/House lines for better readability
+  if (e.from === "House" || e.scope === "system") {
+    line = `${yellow}${line}${reset}`;
+  }
+  return line;
+}
+
 function formatTranscript(transcript: readonly TranscriptEntry[]): string {
-  return transcript
-    .map((e) => {
-      const prefix = `R${e.round}/${e.phase}`;
-      const scopeTag = e.scope === "whisper" ? ` [whisper→${e.to?.join(",")}]` : "";
-      return `${prefix} ${e.from}${scopeTag}: ${e.text}`;
-    })
-    .join("\n");
+  return transcript.map(formatEntry).join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -507,7 +574,7 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
   lines.push(`| Reckoning markers | ${stats.instrumentation.endgame.reckoning} |`);
   lines.push(`| Tribunal markers | ${stats.instrumentation.endgame.tribunal} |`);
   lines.push(`| Judgment markers | ${stats.instrumentation.endgame.judgment} |`);
-  lines.push(`| Whisper rooms | ${stats.instrumentation.rooms.totalRooms} |`);
+  lines.push(`| Mingle rooms | ${stats.instrumentation.rooms.totalRooms} |`);
   lines.push(`| Whisper sessions instrumented | ${stats.instrumentation.rooms.whisperSessions.length} |`);
   lines.push(`| Room exclusions | ${stats.instrumentation.rooms.totalExclusions} |`);
   lines.push(`| Repeated room-pair occurrences | ${stats.instrumentation.rooms.repeatedPairs.totalRepeatedOccurrences} |`);
@@ -703,11 +770,11 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
     lines.push("");
     lines.push("## Failed Game Diagnostics");
     lines.push("");
-    lines.push("| # | Error | Progress Log | Transcript |");
-    lines.push("|---|-------|--------------|------------|");
+    lines.push("| # | Error | Progress Log | Turns Log | Transcript |");
+    lines.push("|---|-------|--------------|-----------|------------|");
     for (const result of failed) {
       lines.push(
-        `| ${result.gameNumber} | ${(result.error ?? "unknown").replace(/\|/g, "\\|")} | ${result.progressPath} | ${result.transcriptPath} |`,
+        `| ${result.gameNumber} | ${(result.error ?? "unknown").replace(/\|/g, "\\|")} | ${result.progressPath} | ${result.turnsPath} | ${result.transcriptPath} |`,
       );
     }
   }
@@ -770,6 +837,16 @@ function runWithTimeout<T>(
 }
 
 function summarizeProgressEvent(event: GameStreamEvent): Record<string, unknown> {
+  if (event.type === "agent_turn") {
+    return {
+      event: event.type,
+      round: event.round,
+      phase: event.phase,
+      action: event.action,
+      actor: event.actor.name,
+    };
+  }
+
   if (event.type === "phase_change") {
     return {
       event: event.type,
@@ -834,13 +911,61 @@ function writeProgress(
   );
 }
 
+const ANSI_PATTERN = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
+
+function stripAnsiFromValue(value: unknown): unknown {
+  if (typeof value === "string") return value.replace(ANSI_PATTERN, "");
+  if (Array.isArray(value)) return value.map(stripAnsiFromValue);
+  if (value !== null && typeof value === "object") {
+    const cleaned: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      cleaned[key] = stripAnsiFromValue(child);
+    }
+    return cleaned;
+  }
+  return value;
+}
+
+export function serializeAgentTurnEvent(
+  gameNumber: number,
+  startedAt: number,
+  event: AgentTurnEvent,
+  now = Date.now(),
+): Record<string, unknown> {
+  const { timestamp: eventTimestamp, ...eventWithoutTimestamp } = event;
+  const record: Record<string, unknown> = {
+    timestamp: new Date(now).toISOString(),
+    elapsedMs: now - startedAt,
+    gameNumber,
+    eventTimestamp,
+    ...eventWithoutTimestamp,
+  };
+  return stripAnsiFromValue(record) as Record<string, unknown>;
+}
+
+function writeAgentTurn(
+  turnsPath: string,
+  gameNumber: number,
+  startedAt: number,
+  event: AgentTurnEvent,
+): void {
+  appendFileSync(turnsPath, `${JSON.stringify(serializeAgentTurnEvent(gameNumber, startedAt, event))}\n`);
+}
+
 function attachProgressLogger(
   runner: GameRunner,
   progressPath: string,
+  turnsPath: string,
   gameNumber: number,
   startedAt: number,
+  chatty: boolean,
 ): void {
   runner.setStreamListener((event) => {
+    if (event.type === "agent_turn") {
+      writeAgentTurn(turnsPath, gameNumber, startedAt, event);
+      return;
+    }
+
     const progress = summarizeProgressEvent(event);
     writeProgress(progressPath, gameNumber, startedAt, progress);
 
@@ -852,6 +977,11 @@ function attachProgressLogger(
       console.log(
         `  Progress: R${event.entry.round} room allocation | rooms=${event.entry.roomMetadata.rooms.length} | excluded=${event.entry.roomMetadata.excluded.join(", ") || "none"}`,
       );
+    }
+
+    // Chatty mode: print full formatted transcript entries live
+    if (chatty && event.type === "transcript_entry") {
+      console.log(formatEntry(event.entry));
     }
   });
 }
@@ -865,28 +995,32 @@ async function main() {
   const runTimestamp = new Date().toISOString();
   const metadata = buildRunMetadata(args, runTimestamp);
 
-  if (!process.env.OPENAI_API_KEY) {
+  const llmConfig = createLlmClientFromEnv(process.env, {
+    timeout: args.llmTimeoutMs,
+    maxRetries: 0,
+  });
+  if (!llmConfig) {
     console.error(
-      "Error: OPENAI_API_KEY not set. Run from the repo root via: bun run simulate",
+      "Error: no LLM provider configured. Set OPENAI_API_KEY for OpenAI, or INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 for LM Studio.",
     );
     process.exit(1);
   }
 
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-    timeout: args.llmTimeoutMs,
-    maxRetries: 0,
-  });
+  const openai = llmConfig.client;
 
   console.log(`\n=== Influence Batch Simulation ===`);
   console.log(`Games: ${args.games} | Players per game: ${args.players} | Model: ${args.model} | Variant: ${args.variant}`);
+  console.log(`Provider: ${describeLlmProvider(llmConfig)} | API key: ${llmConfig.apiKeySource} | Tool choice: ${llmConfig.toolChoiceMode}`);
   console.log(`Timeouts: game ${(args.gameTimeoutMs / 1000).toFixed(0)}s | LLM request ${(args.llmTimeoutMs / 1000).toFixed(0)}s`);
+  if (args.chatty) console.log("Chatty mode enabled: live formatted transcript will be printed to console.");
   console.log(`Git: ${metadata.git.commitShortSha ?? "unknown"} (${metadata.git.branch ?? "unknown branch"}${metadata.git.isDirty ? ", dirty" : ""})`);
   if (args.personas) console.log(`Personas: ${args.personas.join(", ")}`);
   console.log("");
 
   // Simulation config: no timers (agents respond as fast as they can)
-  const simConfig = buildSimulationConfig(args.variant);
+  const simConfig = buildSimulationConfig(args.variant, {
+    agentActionTimeoutMs: Math.max(args.llmTimeoutMs * 2, args.llmTimeoutMs + 5_000),
+  });
 
   // Create output directory
   const timestamp = runTimestamp.replace(/[:.]/g, "-").slice(0, 19);
@@ -912,7 +1046,7 @@ async function main() {
     const startTime = Date.now();
 
     // Create fresh agents for each game
-    const agents = selectCast(args.players, args.personas, openai, args.model);
+    const agents = selectCast(args.players, args.personas, openai, args.model, llmConfig.toolChoiceMode);
     const playerPersonas: Record<string, string> = {};
     const playerNameById: Record<string, string> = {};
     const gameTracker = new TokenTracker();
@@ -930,6 +1064,8 @@ async function main() {
     const transcriptPath = join(batchDir, `game-${g}.txt`);
     const jsonPath = join(batchDir, `game-${g}.json`);
     const progressPath = join(batchDir, `game-${g}-progress.jsonl`);
+    const turnsPath = join(batchDir, `game-${g}-turns.jsonl`);
+    writeFileSync(turnsPath, "");
     writeProgress(progressPath, g, startTime, {
       event: "game_start",
       players: agents.map((agent) => agent.name),
@@ -939,9 +1075,11 @@ async function main() {
       llmTimeoutMs: args.llmTimeoutMs,
       transcriptPath,
       jsonPath,
+      turnsPath,
     });
-    attachProgressLogger(runner, progressPath, g, startTime);
+    attachProgressLogger(runner, progressPath, turnsPath, g, startTime, args.chatty);
     console.log(`  Progress log: ${progressPath}`);
+    console.log(`  Turns log: ${turnsPath}`);
 
     try {
       const result = await runWithTimeout(
@@ -977,6 +1115,7 @@ async function main() {
         transcriptPath,
         jsonPath,
         progressPath,
+        turnsPath,
         tokenUsage: {
           perAgent: perAgentUsage,
           total: gameTotalUsage,
@@ -1030,6 +1169,7 @@ async function main() {
         transcriptPath,
         jsonPath,
         progressPath,
+        turnsPath,
         error: err instanceof Error ? err.message : String(err),
         tokenUsage: {
           perAgent: perAgentUsage,

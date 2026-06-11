@@ -9,6 +9,8 @@
 
 ## Overview
 
+> Historical note: model tier names and costs in this MVP wireframe predate the current OpenAI-compatible provider configuration. Treat the model labels here as UX examples, not source-of-truth model policy.
+
 Three surfaces define the Influence MVP user experience:
 
 | Surface | Route | Access |

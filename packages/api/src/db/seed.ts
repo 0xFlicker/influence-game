@@ -75,7 +75,7 @@ const defaultConfig = {
   timers: {
     introduction: 30000,
     lobby: 30000,
-    whisper: 45000,
+    mingle: 45000,
     rumor: 30000,
     vote: 20000,
     power: 15000,

@@ -80,6 +80,8 @@ export function broadcastGameEvent(gameId: string, event: GameStreamEvent): void
 
   let outbound: WsOutboundEvent;
   switch (event.type) {
+    case "agent_turn":
+      return;
     case "transcript_entry":
       outbound = { type: "message", entry: event.entry };
       break;

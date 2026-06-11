@@ -12,7 +12,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { GameRunner, Phase } from "@influence/engine";
-import type { AgentResponse, IAgent, PhaseContext } from "@influence/engine";
+import type { AgentResponse, IAgent, MingleRoomChoiceAction, PhaseContext, TargetDecision } from "@influence/engine";
 import type { UUID, PowerAction, GameConfig } from "@influence/engine";
 import { setupTestDB } from "./test-utils.js";
 import { serializeTranscriptEntry } from "../services/game-lifecycle.js";
@@ -55,6 +55,10 @@ class LifecycleMockAgent implements IAgent {
     const roomCount = ctx.roomCount ?? 1;
     return roomCount > 0 ? 1 : null;
   }
+  async chooseMingleRoom(ctx: PhaseContext): Promise<MingleRoomChoiceAction> {
+    const roomCount = ctx.roomCount ?? 1;
+    return { roomId: roomCount > 0 ? 1 : null, thinking: "lifecycle mock room choice" };
+  }
   async sendRoomMessage(_ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>) {
     const alreadySpoke = conversationHistory?.some((m) => m.from === this.name) ?? false;
     if (alreadySpoke) return null;
@@ -72,15 +76,15 @@ class LifecycleMockAgent implements IAgent {
   async getPowerAction(_ctx: PhaseContext, candidates: [UUID, UUID]): Promise<PowerAction> {
     return { action: "protect", target: candidates[0] };
   }
-  async getCouncilVote(_ctx: PhaseContext, candidates: [UUID, UUID]): Promise<UUID> {
-    return candidates[0];
+  async getCouncilVote(_ctx: PhaseContext, candidates: [UUID, UUID]): Promise<{ target: UUID }> {
+    return { target: candidates[0] };
   }
   async getLastMessage() { return r("goodbye"); }
   async getDiaryEntry() { return r("diary entry"); }
   async getPlea() { return r("please keep me"); }
-  async getEndgameEliminationVote(ctx: PhaseContext): Promise<UUID> {
+  async getEndgameEliminationVote(ctx: PhaseContext): Promise<TargetDecision> {
     const others = ctx.alivePlayers.filter(p => p.id !== this.id);
-    return others[0]?.id ?? this.id;
+    return { target: others[0]?.id ?? this.id, thinking: "lifecycle mock endgame vote" };
   }
   async getAccusation(ctx: PhaseContext) {
     const others = ctx.alivePlayers.filter(p => p.id !== this.id);
@@ -93,8 +97,8 @@ class LifecycleMockAgent implements IAgent {
   }
   async getJuryAnswer() { return r("because"); }
   async getClosingArgument() { return r("closing"); }
-  async getJuryVote(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID> {
-    return finalistIds[0];
+  async getJuryVote(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<TargetDecision> {
+    return { target: finalistIds[0], thinking: "lifecycle mock jury vote" };
   }
 
   // Memory methods (no-ops for mock)
@@ -120,7 +124,7 @@ async function createGameInDB(
     timers: {
       introduction: 0,
       lobby: 0,
-      whisper: 0,
+      mingle: 0,
       rumor: 0,
       vote: 0,
       power: 0,
@@ -175,7 +179,7 @@ describe("Game lifecycle integration", () => {
 
     const row = serializeTranscriptEntry("game-rooms", {
       round: 1,
-      phase: Phase.WHISPER,
+      phase: Phase.MINGLE,
       timestamp: 123,
       from: "House",
       scope: "system",

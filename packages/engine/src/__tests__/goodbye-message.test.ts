@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import { InfluenceAgent } from "../agent";
 import { ContextBuilder } from "../context-builder";
 import { GameState, createUUID } from "../game-state";
-import type { AgentResponse, PhaseContext } from "../game-runner.types";
+import type { AgentResponse, PhaseContext, TargetDecision } from "../game-runner.types";
 import { TranscriptLogger } from "../transcript-logger";
 import { Phase } from "../types";
 import { runCouncilPhase, runPowerPhase, runReckoningVote, runVotePhase } from "../phases";
@@ -29,16 +29,20 @@ class GoodbyeProbeAgent extends MockAgent {
     this.fixedEndgameVote = fixedEndgameVote;
   }
 
-  override async getVotes(): Promise<{ empowerTarget: string; exposeTarget: string }> {
-    return this.fixedVotes;
+  override async getVotes(): Promise<{ empowerTarget: string; exposeTarget: string; thinking?: string; reasoningContext?: string }> {
+    return { ...this.fixedVotes, thinking: "fixed goodbye probe vote", reasoningContext: undefined };
   }
 
-  override async getCouncilVote(): Promise<string> {
-    return this.fixedCouncilVote;
+  override async getCouncilVote(): Promise<{ target: string; thinking?: string; reasoningContext?: string }> {
+    return { target: this.fixedCouncilVote, thinking: "fixed goodbye probe council", reasoningContext: undefined };
   }
 
-  override async getEndgameEliminationVote(): Promise<string> {
-    return this.fixedEndgameVote ?? this.fixedCouncilVote;
+  override async getEndgameEliminationVote(): Promise<TargetDecision> {
+    return {
+      target: this.fixedEndgameVote ?? this.fixedCouncilVote,
+      thinking: "fixed goodbye probe endgame vote",
+      reasoningContext: undefined,
+    };
   }
 
   override async getLastMessage(ctx: PhaseContext): Promise<AgentResponse> {
@@ -54,11 +58,11 @@ function makePhaseRunnerContext(agents: GoodbyeProbeAgent[]): PhaseRunnerContext
   const gameState = new GameState(agents.map((agent) => ({ id: agent.id, name: agent.name })));
   gameState.startRound();
   const logger = new TranscriptLogger(gameState);
-  const whisperInbox = new Map();
+  const mingleInbox = new Map();
   const contextBuilder = new ContextBuilder(
     gameState,
     logger,
-    whisperInbox,
+    mingleInbox,
     agents.length,
   );
 
@@ -69,7 +73,7 @@ function makePhaseRunnerContext(agents: GoodbyeProbeAgent[]): PhaseRunnerContext
       timers: {
         introduction: 1,
         lobby: 1,
-        whisper: 1,
+        mingle: 1,
         rumor: 1,
         vote: 1,
         power: 1,
@@ -83,7 +87,7 @@ function makePhaseRunnerContext(agents: GoodbyeProbeAgent[]): PhaseRunnerContext
     logger,
     contextBuilder,
     diaryRoom: { lastEliminatedName: null } as PhaseRunnerContext["diaryRoom"],
-    whisperInbox,
+    mingleInbox,
     eliminationOrder: [],
   };
 }
@@ -122,7 +126,7 @@ describe("goodbye message handling", () => {
         { id: "vera-id", name: "Vera" },
       ],
       publicMessages: [],
-      whisperMessages: [],
+      mingleMessages: [],
       isEliminated: true,
       eliminationContext: {
         mode: "council",
@@ -284,7 +288,7 @@ function makeAgentContext(phase: Phase = Phase.VOTE): PhaseContext {
       { id: "finn-id", name: "Finn" },
     ],
     publicMessages: [],
-    whisperMessages: [],
+    mingleMessages: [],
   };
 }
 
@@ -306,7 +310,7 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     ]);
     const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
 
-    const result = await agent.sendRoomMessage(makeAgentContext(Phase.WHISPER), ["Atlas", "Vera"]);
+    const result = await agent.sendRoomMessage(makeAgentContext(Phase.MINGLE), ["Atlas", "Vera"]);
 
     expect(result).toEqual({
       thinking: "Build trust, then steer the next vote.",
@@ -335,9 +339,10 @@ describe("InfluenceAgent tool-call fallbacks", () => {
 
     const votes = await agent.getVotes(makeAgentContext(Phase.VOTE));
 
-    expect(votes).toEqual({
+    expect(votes).toMatchObject({
       empowerTarget: "mira-id",
       exposeTarget: "vera-id",
+      thinking: "Empower an ally and expose the player driving consensus.",
     });
   });
 
@@ -363,6 +368,7 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     expect(action).toEqual({
       action: "eliminate",
       target: "mira-id",
+      thinking: "Take the shot before the council can scatter.",
     });
     expect(calls).toHaveLength(2);
     expect(calls[1]?.max_completion_tokens).toBeGreaterThan(calls[0]?.max_completion_tokens as number);
@@ -389,6 +395,7 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     expect(action).toEqual({
       action: "eliminate",
       target: "mira-id",
+      thinking: "Take the shot before the council can scatter.",
     });
     expect(calls).toHaveLength(2);
     expect(calls[1]?.response_format).toEqual({
@@ -435,6 +442,7 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     expect(action).toEqual({
       action: "pass",
       target: "vera-id",
+      thinking: "fallback to pass under pressure",
     });
     expect(calls).toHaveLength(1);
   });

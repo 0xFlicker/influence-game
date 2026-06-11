@@ -28,9 +28,14 @@ import { startGame, isGameRunning } from "../services/game-lifecycle.js";
 import { broadcastRaw } from "../services/ws-manager.js";
 import { generateUniqueSlug } from "../lib/slug.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
-import { generatePersona, pickAgentNames, pickArchetypes } from "@influence/engine";
+import {
+  createLlmClientFromEnv,
+  generatePersona,
+  pickAgentNames,
+  pickArchetypes,
+  resolveModelForTier,
+} from "@influence/engine";
 import type { Personality } from "@influence/engine";
-import OpenAI from "openai";
 
 // ---------------------------------------------------------------------------
 // Factory — creates a Hono sub-app with injected DB
@@ -69,7 +74,7 @@ export function createGameRoutes(db: DrizzleDB) {
       fast: {
         introduction: 15000,
         lobby: 15000,
-        whisper: 20000,
+        mingle: 20000,
         rumor: 15000,
         vote: 10000,
         power: 10000,
@@ -78,7 +83,7 @@ export function createGameRoutes(db: DrizzleDB) {
       standard: {
         introduction: 30000,
         lobby: 30000,
-        whisper: 45000,
+        mingle: 45000,
         rumor: 30000,
         vote: 20000,
         power: 15000,
@@ -87,7 +92,7 @@ export function createGameRoutes(db: DrizzleDB) {
       slow: {
         introduction: 60000,
         lobby: 60000,
-        whisper: 90000,
+        mingle: 90000,
         rumor: 60000,
         vote: 40000,
         power: 30000,
@@ -385,12 +390,7 @@ export function createGameRoutes(db: DrizzleDB) {
     // Resolve model from game config
     // -----------------------------------------------------------------------
     const gameConfig = JSON.parse(game.config);
-    const agentModel =
-      gameConfig.modelTier === "premium"
-        ? "gpt-5.4-mini"
-        : gameConfig.modelTier === "standard"
-          ? "gpt-5-mini"
-          : "gpt-5-nano";
+    const agentModel = resolveModelForTier(gameConfig.modelTier);
 
     const playerId = randomUUID();
     const persona = {
@@ -461,12 +461,7 @@ export function createGameRoutes(db: DrizzleDB) {
     const archetypes = pickArchetypes(slotsToFill, existingArchetypes);
 
     const config = JSON.parse(game.config);
-    const agentModel =
-      config.modelTier === "premium"
-        ? "gpt-5.4-mini"
-        : config.modelTier === "standard"
-          ? "gpt-5-mini"
-          : "gpt-5-nano";
+    const agentModel = resolveModelForTier(config.modelTier);
 
     // Step 1: Create placeholder players immediately (no LLM needed)
     const addedPlayers: Array<{ id: string; name: string; archetype: string }> = [];
@@ -524,8 +519,7 @@ export function createGameRoutes(db: DrizzleDB) {
     });
 
     // Step 3: Fire-and-forget persona generation in background
-    const openaiApiKey = process.env.OPENAI_API_KEY;
-    const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
+    const openai = createLlmClientFromEnv()?.client ?? null;
 
     if (openai) {
       void (async () => {
@@ -533,7 +527,7 @@ export function createGameRoutes(db: DrizzleDB) {
 
         for (const player of addedPlayers) {
           try {
-            const generated = await generatePersona(openai, player.name, player.archetype as Personality, "gpt-5-nano");
+            const generated = await generatePersona(openai, player.name, player.archetype as Personality, resolveModelForTier("budget"));
 
             const existing = (await db
               .select()

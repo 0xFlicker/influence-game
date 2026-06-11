@@ -26,7 +26,7 @@ const FAST_CONFIG: GameConfig = {
   timers: {
     introduction: 5_000,
     lobby: 5_000,
-    whisper: 5_000,
+    mingle: 5_000,
     rumor: 5_000,
     vote: 5_000,
     power: 5_000,
@@ -116,6 +116,34 @@ describe("GameRunner stream listener", () => {
         expect(elim.playerName).toBeTruthy();
         expect(typeof elim.round).toBe("number");
       }
+    }
+  });
+
+  it("emits structured agent_turn events for agent decisions", async () => {
+    const agents = makeAgents(5);
+    const runner = new GameRunner(agents, { ...FAST_CONFIG, mingleSessionsPerRound: 1 });
+
+    const events: GameStreamEvent[] = [];
+    runner.setStreamListener((event) => events.push(event));
+
+    await runner.run();
+
+    const agentTurns = events.filter((e) => e.type === "agent_turn");
+    expect(agentTurns.length).toBeGreaterThan(0);
+
+    const voteTurn = agentTurns.find((e) => e.type === "agent_turn" && e.action === "vote");
+    expect(voteTurn).toBeDefined();
+    if (voteTurn?.type === "agent_turn") {
+      expect(voteTurn.actor.name).toBeTruthy();
+      expect(voteTurn.response).toHaveProperty("empowerTarget");
+      expect(voteTurn.thinking).toBeTruthy();
+    }
+
+    const mingleTurn = agentTurns.find((e) => e.type === "agent_turn" && e.action === "mingle-turn");
+    expect(mingleTurn).toBeDefined();
+    if (mingleTurn?.type === "agent_turn") {
+      expect(mingleTurn.response).toHaveProperty("action");
+      expect(mingleTurn.response).toHaveProperty("messageDelivered");
     }
   });
 

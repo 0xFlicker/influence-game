@@ -73,7 +73,7 @@ export function DramaticReplayViewer({
   const [controlsVisible, setControlsVisible] = useState(true);
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const liveInitializedRef = useRef(false);
-  // Scroll ref for stacked diary/whisper content (INF-93)
+  // Scroll ref for stacked diary/mingle content (INF-93)
   const stackedScrollRef = useRef<HTMLDivElement>(null);
 
   const scene = scenes[sceneIndex];
@@ -184,12 +184,12 @@ export function DramaticReplayViewer({
   }, [scenes, sceneIndex, messageIndex]);
 
   // Determine rendering mode for current scene
-  // Thinking-only scenes (from WHISPER/DIARY phases) should render as a chat feed,
-  // not through whisper/diary-specific paths that expect room data.
+  // Thinking-only scenes (from MINGLE/DIARY phases) should render as a chat feed,
+  // not through mingle/diary-specific paths that expect room data.
   const isThinkingOnlyScene = !!scene && scene.messages.length > 0 && scene.messages.every((m) => m.scope === "thinking");
   const isChatFeedScene = !!scene && (CHAT_FEED_PHASES.has(scene.phase) || isThinkingOnlyScene);
-  const isWhisperScene = !!scene && scene.phase === "WHISPER" && !scene.isOverview && !isThinkingOnlyScene;
-  const isOpenWhisperScene = !!scene && scene.phase === "WHISPER" && scene.messages.some((m) => (m.roomMetadata?.rooms.length ?? 0) > 0);
+  const isWhisperScene = !!scene && scene.phase === "MINGLE" && !scene.isOverview && !isThinkingOnlyScene;
+  const isOpenWhisperScene = !!scene && scene.phase === "MINGLE" && scene.messages.some((m) => (m.roomMetadata?.rooms.length ?? 0) > 0);
   const isDiaryScene = !!scene && scene.phase === "DIARY_ROOM" && !isThinkingOnlyScene;
   const isOverviewScene = !!scene && !!scene.isOverview;
   const isJuryScene = !!scene && scene.phase === "JURY_QUESTIONS" && !isThinkingOnlyScene;
@@ -212,7 +212,7 @@ export function DramaticReplayViewer({
       : [...chatFeedMessages, ...fallbackMetadata];
   }, [chatFeedMessages, isOpenWhisperScene, scene]);
 
-  // For per-room whisper scenes: build a WhisperRoomStage for single-room rendering
+  // For per-room mingle scenes: build a WhisperRoomStage for single-room rendering
   const whisperRoom = useMemo((): WhisperRoomStage | null => {
     if (!scene || !scene.whisperRoom || !isWhisperScene) return null;
     const endIdx = messagePhase === "typing" ? messageIndex : messageIndex + 1;
@@ -224,14 +224,14 @@ export function DramaticReplayViewer({
     };
   }, [scene, isWhisperScene, messageIndex, messagePhase]);
 
-  // For overview scenes: build full whisper stage data for rich allocation display
+  // For overview scenes: build full mingle stage data for rich allocation display
   const overviewStageData = useMemo(() => {
     if (!scene || !isOverviewScene) return null;
-    // Gather all entries from this round's WHISPER phase to parse allocation
-    const whisperEntries = messages.filter(
-      (m) => m.phase === "WHISPER" && m.round === scene.round,
+    // Gather all entries from this round's MINGLE phase to parse allocation
+    const mingleEntries = messages.filter(
+      (m) => m.phase === "MINGLE" && m.round === scene.round,
     );
-    return buildWhisperStageData(whisperEntries, players);
+    return buildWhisperStageData(mingleEntries, players);
   }, [scene, isOverviewScene, messages, players]);
 
   // Rumor messages for current round (for vote reveal — show voter's rumor alongside vote)
@@ -284,13 +284,13 @@ export function DramaticReplayViewer({
     return rooms;
   }, [scene, isDiaryScene, sceneIndex, scenes, replayPlayers]);
 
-  // Stacked whisper rooms: completed whisper scenes from the same round (INF-93)
+  // Stacked mingle rooms: completed mingle scenes from the same round (INF-93)
   const previousWhisperRooms = useMemo((): WhisperRoomStage[] => {
     if (!scene || !isWhisperScene) return [];
     const rooms: WhisperRoomStage[] = [];
     for (let i = 0; i < sceneIndex; i++) {
       const s = scenes[i]!;
-      if (s.phase === "WHISPER" && s.round === scene.round && s.whisperRoom) {
+      if (s.phase === "MINGLE" && s.round === scene.round && s.whisperRoom) {
         rooms.push({
           roomId: s.whisperRoom.roomId,
           playerIds: s.whisperRoom.playerNames,
@@ -388,7 +388,7 @@ export function DramaticReplayViewer({
         const timer = setTimeout(() => setMessagePhase("done"), CHAT_TYPING_HOLD_MS / speed);
         return () => clearTimeout(timer);
       }
-      // Overview scenes (e.g. whisper allocation) render a static component, not
+      // Overview scenes (e.g. mingle allocation) render a static component, not
       // a Typewriter, so skip straight to "done" — there is no onComplete to fire.
       if (isOverviewScene) {
         setMessagePhase("done");
@@ -812,7 +812,7 @@ export function DramaticReplayViewer({
           {isWhisperScene && !isOpenWhisperScene && (
             <div className="flex flex-col gap-4">
               {previousWhisperRooms.map((prevRoom) => (
-                <div key={`whisper-prev-${prevRoom.roomId}`} className="opacity-60">
+                <div key={`mingle-prev-${prevRoom.roomId}`} className="opacity-60">
                   <WhisperRoomDM room={prevRoom} players={replayPlayers} showThinking={showThinking} />
                 </div>
               ))}
@@ -869,8 +869,8 @@ export function DramaticReplayViewer({
                     {isCurrentRumor && (
                       <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">rumor</span>
                     )}
-                    {currentMessage.scope === "whisper" && (
-                      <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
+                    {currentMessage.scope === "mingle" && (
+                      <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">mingle</span>
                     )}
                   </div>
                   <div className="flex items-center justify-center gap-1.5">

@@ -1,10 +1,46 @@
 import type { UUID } from "../types";
 import { Phase } from "../types";
+import type { TargetDecision } from "../game-runner.types";
 import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
 import {
   getEndgameEliminationVoterNames,
   handleElimination,
 } from "./elimination";
+
+async function withEndgameVoteTimeout(
+  ctx: PhaseRunnerContext,
+  label: string,
+  operation: (signal: AbortSignal) => Promise<TargetDecision>,
+  fallback: () => TargetDecision,
+): Promise<TargetDecision> {
+  const timeoutMs = ctx.config.agentActionTimeoutMs;
+  if (!timeoutMs || timeoutMs < 1) return operation(new AbortController().signal);
+
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<TargetDecision>((resolve) => {
+    timeout = setTimeout(() => {
+      ctx.logger.logSystem(`${label} timed out after ${timeoutMs}ms; using House fallback.`, Phase.VOTE);
+      resolve(fallback());
+      controller.abort();
+    }, timeoutMs);
+  });
+
+  return Promise.race([operation(controller.signal), timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
+}
+
+function fallbackEliminationTarget(ctx: PhaseRunnerContext, voterId: UUID): UUID {
+  return ctx.gameState.getAlivePlayerIds().find((id) => id !== voterId) ?? voterId;
+}
+
+function fallbackEliminationDecision(ctx: PhaseRunnerContext, voterId: UUID): TargetDecision {
+  return {
+    target: fallbackEliminationTarget(ctx, voterId),
+    thinking: "House fallback after unresolved endgame vote.",
+  };
+}
 
 export async function runVotePhase(
   ctx: PhaseRunnerContext,
@@ -29,7 +65,23 @@ export async function runVotePhase(
       logger.logSystem(
         `${player.name} votes: empower=${empowerName}, expose=${exposeName}`,
         Phase.VOTE,
+        votes.thinking,
+        votes.reasoningContext,
       );
+      logger.emitAgentTurn({
+        phase: Phase.VOTE,
+        action: "vote",
+        actor: { id: player.id, name: player.name, role: "player" },
+        visibility: "private",
+        response: {
+          empowerTarget: { id: votes.empowerTarget, name: empowerName },
+          exposeTarget: { id: votes.exposeTarget, name: exposeName },
+        },
+        thinking: votes.thinking,
+        reasoningContext: votes.reasoningContext,
+        scope: "system",
+        text: `${player.name} votes: empower=${empowerName}, expose=${exposeName}`,
+      });
     }),
   );
 
@@ -53,7 +105,21 @@ export async function runVotePhase(
           if (tied.includes(votes.empowerTarget)) {
             gameState.recordEmpowerReVote(player.id, votes.empowerTarget);
             const empowerName = gameState.getPlayerName(votes.empowerTarget);
-            logger.logSystem(`${player.name} re-votes: empower=${empowerName}`, Phase.VOTE);
+            logger.logSystem(`${player.name} re-votes: empower=${empowerName}`, Phase.VOTE, votes.thinking, votes.reasoningContext);
+            logger.emitAgentTurn({
+              phase: Phase.VOTE,
+              action: "empower-revote",
+              actor: { id: player.id, name: player.name, role: "player" },
+              visibility: "private",
+              response: {
+                empowerTarget: { id: votes.empowerTarget, name: empowerName },
+                eligibleTargets: tied.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+              },
+              thinking: votes.thinking,
+              reasoningContext: votes.reasoningContext,
+              scope: "system",
+              text: `${player.name} re-votes: empower=${empowerName}`,
+            });
           }
         }),
       );
@@ -122,12 +188,34 @@ export async function runReckoningVote(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
-      const vote = await agent.getEndgameEliminationVote(phaseCtx);
-      gameState.recordEndgameEliminationVote(player.id, vote);
-      logger.logSystem(
-        `${player.name} votes to eliminate: ${gameState.getPlayerName(vote)}`,
-        Phase.VOTE,
+      const vote = await withEndgameVoteTimeout(
+        ctx,
+        `${player.name} reckoning vote`,
+        (signal) => agent.getEndgameEliminationVote(phaseCtx, { signal }),
+        () => fallbackEliminationDecision(ctx, player.id),
       );
+      gameState.recordEndgameEliminationVote(player.id, vote.target);
+      const targetName = gameState.getPlayerName(vote.target);
+      logger.logSystem(
+        `${player.name} votes to eliminate: ${targetName}`,
+        Phase.VOTE,
+        vote.thinking,
+        vote.reasoningContext,
+      );
+      logger.emitAgentTurn({
+        phase: Phase.VOTE,
+        action: "endgame-elimination-vote",
+        actor: { id: player.id, name: player.name, role: "player" },
+        visibility: "private",
+        response: {
+          target: { id: vote.target, name: targetName },
+          stage: "reckoning",
+        },
+        thinking: vote.thinking,
+        reasoningContext: vote.reasoningContext,
+        scope: "system",
+        text: `${player.name} votes to eliminate: ${targetName}`,
+      });
     }),
   );
 
@@ -157,12 +245,34 @@ export async function runTribunalVote(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
-      const vote = await agent.getEndgameEliminationVote(phaseCtx);
-      gameState.recordEndgameEliminationVote(player.id, vote);
-      logger.logSystem(
-        `${player.name} votes to eliminate: ${gameState.getPlayerName(vote)}`,
-        Phase.VOTE,
+      const vote = await withEndgameVoteTimeout(
+        ctx,
+        `${player.name} tribunal vote`,
+        (signal) => agent.getEndgameEliminationVote(phaseCtx, { signal }),
+        () => fallbackEliminationDecision(ctx, player.id),
       );
+      gameState.recordEndgameEliminationVote(player.id, vote.target);
+      const targetName = gameState.getPlayerName(vote.target);
+      logger.logSystem(
+        `${player.name} votes to eliminate: ${targetName}`,
+        Phase.VOTE,
+        vote.thinking,
+        vote.reasoningContext,
+      );
+      logger.emitAgentTurn({
+        phase: Phase.VOTE,
+        action: "endgame-elimination-vote",
+        actor: { id: player.id, name: player.name, role: "player" },
+        visibility: "private",
+        response: {
+          target: { id: vote.target, name: targetName },
+          stage: "tribunal",
+        },
+        thinking: vote.thinking,
+        reasoningContext: vote.reasoningContext,
+        scope: "system",
+        text: `${player.name} votes to eliminate: ${targetName}`,
+      });
     }),
   );
 
@@ -175,8 +285,28 @@ export async function runTribunalVote(
       const jurorAgent = agents.get(juror.playerId);
       if (jurorAgent) {
         const phaseCtx = contextBuilder.buildPhaseContext(juror.playerId, Phase.VOTE);
-        const vote = await jurorAgent.getEndgameEliminationVote(phaseCtx);
-        juryTiebreakerVotes[juror.playerId] = vote;
+        const vote = await withEndgameVoteTimeout(
+          ctx,
+          `${juror.playerName} tribunal jury tiebreaker vote`,
+          (signal) => jurorAgent.getEndgameEliminationVote(phaseCtx, { signal }),
+          () => fallbackEliminationDecision(ctx, juror.playerId),
+        );
+        juryTiebreakerVotes[juror.playerId] = vote.target;
+        const targetName = gameState.getPlayerName(vote.target);
+        logger.emitAgentTurn({
+          phase: Phase.VOTE,
+          action: "tribunal-jury-tiebreaker-vote",
+          actor: { id: juror.playerId, name: juror.playerName, role: "juror" },
+          visibility: "private",
+          response: {
+            target: { id: vote.target, name: targetName },
+            stage: "tribunal",
+          },
+          thinking: vote.thinking,
+          reasoningContext: vote.reasoningContext,
+          scope: "system",
+          text: `${juror.playerName} jury tiebreaker vote -> ${targetName}`,
+        });
       }
     }
   }

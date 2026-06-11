@@ -7,7 +7,9 @@
 import type { GameState } from "./game-state";
 import type { RoomAllocation, WhisperSessionDiagnostics } from "./types";
 import { Phase } from "./types";
-import type { TranscriptEntry, GameStreamEvent } from "./game-runner.types";
+import type { AgentTurnEvent, TranscriptEntry, GameStreamEvent } from "./game-runner.types";
+
+type AgentTurnInput = Omit<AgentTurnEvent, "type" | "round" | "timestamp">;
 
 export class TranscriptLogger {
   readonly transcript: TranscriptEntry[] = [];
@@ -33,11 +35,21 @@ export class TranscriptLogger {
     this.emitStream({ type: "phase_change", phase, round: this.gameState.round, alivePlayers });
   }
 
+  emitAgentTurn(input: AgentTurnInput): void {
+    const event: AgentTurnEvent = {
+      type: "agent_turn",
+      round: this.gameState.round,
+      timestamp: Date.now(),
+      ...input,
+    };
+    this.emitStream(event);
+  }
+
   logPublic(
     fromId: string,
     text: string,
     phase: Phase,
-    opts?: { anonymous?: boolean; displayOrder?: number; thinking?: string },
+    opts?: { anonymous?: boolean; displayOrder?: number; thinking?: string; reasoningContext?: string },
   ): void {
     const name = this.gameState.getPlayerName(fromId);
     this.publicMessages.push({
@@ -58,24 +70,26 @@ export class TranscriptLogger {
       ...(opts?.anonymous && { anonymous: true }),
       ...(opts?.displayOrder != null && { displayOrder: opts.displayOrder }),
       ...(opts?.thinking && { thinking: opts.thinking }),
+      ...(opts?.reasoningContext && { reasoningContext: opts.reasoningContext }),
     };
     this.transcript.push(entry);
     this.emitStream({ type: "transcript_entry", entry });
   }
 
-  logWhisper(fromId: string, toIds: string[], text: string, roomId?: number, thinking?: string): void {
+  logMingleMessage(fromId: string, toIds: string[], text: string, roomId?: number, thinking?: string, reasoningContext?: string): void {
     const fromName = this.gameState.getPlayerName(fromId);
     const toNames = toIds.map((id) => this.gameState.getPlayerName(id));
     const entry: TranscriptEntry = {
       round: this.gameState.round,
-      phase: Phase.WHISPER,
+      phase: Phase.MINGLE,
       timestamp: Date.now(),
       from: fromName,
-      scope: "whisper",
+      scope: "mingle",
       to: toNames,
       text,
       ...(roomId != null && { roomId }),
       ...(thinking && { thinking }),
+      ...(reasoningContext && { reasoningContext }),
     };
     this.transcript.push(entry);
     this.emitStream({ type: "transcript_entry", entry });
@@ -89,7 +103,7 @@ export class TranscriptLogger {
   ): TranscriptEntry {
     const entry: TranscriptEntry = {
       round: this.gameState.round,
-      phase: Phase.WHISPER,
+      phase: Phase.MINGLE,
       timestamp: Date.now(),
       from: "House",
       scope: "system",
@@ -105,7 +119,7 @@ export class TranscriptLogger {
     return entry;
   }
 
-  logSystem(text: string, phase: Phase): void {
+  logSystem(text: string, phase: Phase, thinking?: string, reasoningContext?: string): void {
     const entry: TranscriptEntry = {
       round: this.gameState.round,
       phase,
@@ -113,12 +127,14 @@ export class TranscriptLogger {
       from: "House",
       scope: "system",
       text,
+      ...(thinking && { thinking }),
+      ...(reasoningContext && { reasoningContext }),
     };
     this.transcript.push(entry);
     this.emitStream({ type: "transcript_entry", entry });
   }
 
-  logDiary(from: string, text: string, thinking?: string): void {
+  logDiary(from: string, text: string, thinking?: string, reasoningContext?: string): void {
     const entry: TranscriptEntry = {
       round: this.gameState.round,
       phase: Phase.DIARY_ROOM,
@@ -127,12 +143,13 @@ export class TranscriptLogger {
       scope: "diary",
       text,
       ...(thinking && { thinking }),
+      ...(reasoningContext && { reasoningContext }),
     };
     this.transcript.push(entry);
     this.emitStream({ type: "transcript_entry", entry });
   }
 
-  logThinking(fromId: string, text: string, phase: Phase): void {
+  logThinking(fromId: string, text: string, phase: Phase, reasoningContext?: string): void {
     const name = this.gameState.getPlayerName(fromId);
     const entry: TranscriptEntry = {
       round: this.gameState.round,
@@ -141,6 +158,7 @@ export class TranscriptLogger {
       from: name,
       scope: "thinking",
       text,
+      ...(reasoningContext && { reasoningContext }),
     };
     this.transcript.push(entry);
     this.emitStream({ type: "transcript_entry", entry });

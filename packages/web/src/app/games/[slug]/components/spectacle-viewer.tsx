@@ -12,7 +12,7 @@ import { diaryPlayerName } from "./diary-room";
 // ---------------------------------------------------------------------------
 
 /**
- * Parse whisper allocation text to extract room assignments.
+ * Parse mingle allocation text to extract room assignments.
  * Lightweight version for scene-building (no player UUID resolution needed).
  */
 function parseWhisperRooms(msgs: TranscriptEntry[]): Array<{ roomId: number; playerNames: string[] }> {
@@ -90,7 +90,7 @@ export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] 
     const { round, phase } = msgs[0]!;
     const roomType = phaseToRoomType(phase);
 
-    if (phase === "WHISPER") {
+    if (phase === "MINGLE") {
       if (msgs.some((m) => (m.roomMetadata?.rooms.length ?? 0) > 0)) {
         scenes.push({
           id,
@@ -124,7 +124,7 @@ export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] 
         for (const room of rooms) {
           const nameSet = new Set(room.playerNames.map((n) => n.toLowerCase()));
           const roomMsgs = msgs.filter((m) => {
-            if (m.scope !== "whisper") return false;
+            if (m.scope !== "mingle") return false;
             if (m.roomId != null) return m.roomId === room.roomId;
             // Fallback: match by sender/recipient names
             const from = (m.fromPlayerId ?? m.fromPlayerName ?? "").toLowerCase();
@@ -143,15 +143,15 @@ export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] 
           });
         }
       } else {
-        // Fallback: no allocation parsed — single scene with all whisper messages
-        const whisperMsgs = msgs.filter((m) => m.scope === "whisper");
-        if (whisperMsgs.length > 0) {
+        // Fallback: no allocation parsed — single scene with all mingle messages
+        const mingleMsgs = msgs.filter((m) => m.scope === "mingle");
+        if (mingleMsgs.length > 0) {
           scenes.push({
             id: `${id}-all`,
             round,
             phase,
             roomType,
-            messages: whisperMsgs,
+            messages: mingleMsgs,
             houseIntro: null,
           });
         }
@@ -262,8 +262,8 @@ export function SpectacleMessageSpotlight({
               {isAnonymousRumor && (
                 <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">rumor</span>
               )}
-              {message.scope === "whisper" && (
-                <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
+              {message.scope === "mingle" && (
+                <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">mingle</span>
               )}
             </div>
             <div className="flex items-center justify-center gap-1.5">
@@ -288,8 +288,8 @@ export function SpectacleMessageSpotlight({
                 {isAnonymousRumor && (
                   <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">rumor</span>
                 )}
-                {message.scope === "whisper" && (
-                  <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">whisper</span>
+                {message.scope === "mingle" && (
+                  <span className="text-xs text-purple-400/50 uppercase tracking-wider ml-1">mingle</span>
                 )}
               </div>
             )}

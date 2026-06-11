@@ -20,7 +20,7 @@ import type { UUID, GameConfig } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 
 // Re-export types from the extracted module for backward compatibility
-export type { AgentResponse, GameStreamEvent, GameStateSnapshot, IAgent, MingleTurnAction, PhaseContext, PowerLobbyExposure, TranscriptEntry } from "./game-runner.types";
+export type { AgentCallOptions, AgentResponse, AgentTurnEvent, GameStreamEvent, GameStateSnapshot, IAgent, MingleRoomChoiceAction, MingleTurnAction, PhaseContext, PowerLobbyExposure, TargetDecision, TranscriptEntry } from "./game-runner.types";
 import type { GameStreamEvent, GameStateSnapshot, IAgent, TranscriptEntry } from "./game-runner.types";
 
 // Internal modules
@@ -31,7 +31,7 @@ import type { PhaseRunnerContext, PhaseActor } from "./phases";
 import {
   runIntroductionPhase,
   runLobbyPhase, runReckoningLobby, runTribunalLobby,
-  runWhisperPhase, runReckoningWhisper,
+  runMinglePhase, runReckoningMingle,
   runRumorPhase,
   runVotePhase, runReckoningVote, runTribunalVote,
   runPowerPhase,
@@ -55,8 +55,8 @@ export class GameRunner {
   private readonly contextBuilder: ContextBuilder;
   private readonly diaryRoom: DiaryRoom;
   private readonly houseInterviewer: IHouseInterviewer;
-  /** Whisper messages keyed by recipient */
-  private whisperInbox = new Map<UUID, Array<{ from: string; text: string }>>();
+  /** Mingle room messages keyed by recipient */
+  private mingleInbox = new Map<UUID, Array<{ from: string; text: string }>>();
   /** Ordered list of eliminated player names */
   private readonly eliminationOrder: string[] = [];
   /** When true, the game loop will exit at the next phase boundary. */
@@ -80,7 +80,7 @@ export class GameRunner {
     this.contextBuilder = new ContextBuilder(
       this.gameState,
       this.logger,
-      this.whisperInbox,
+      this.mingleInbox,
       this.totalPlayerCount,
     );
     this.diaryRoom = new DiaryRoom(
@@ -188,13 +188,16 @@ export class GameRunner {
       logger: this.logger,
       contextBuilder: this.contextBuilder,
       diaryRoom: this.diaryRoom,
-      whisperInbox: this.whisperInbox,
+      mingleInbox: this.mingleInbox,
       eliminationOrder: this.eliminationOrder,
     };
   }
 
   private async runGameLoop(actor: PhaseActor): Promise<void> {
     let done = false;
+    let lastLoopKey = "";
+    let repeatedLoopCount = 0;
+    const maxRepeatedLoopCount = 25;
 
     const completionPromise = new Promise<void>((resolve) => {
       actor.subscribe((snapshot) => {
@@ -214,6 +217,16 @@ export class GameRunner {
     while (!done && !this._aborted) {
       const snapshot = actor.getSnapshot();
       const state = snapshot.value as string;
+      const loopKey = `${state}:${this.gameState.round}:${this.logger.transcript.length}`;
+      if (loopKey === lastLoopKey) {
+        repeatedLoopCount += 1;
+        if (repeatedLoopCount >= maxRepeatedLoopCount) {
+          throw new Error(`Game loop stalled in phase-machine state "${state}" after ${repeatedLoopCount} unchanged iterations`);
+        }
+      } else {
+        lastLoopKey = loopKey;
+        repeatedLoopCount = 0;
+      }
 
       // --- Normal round phases ---
       if (state === "introduction") {
@@ -221,8 +234,21 @@ export class GameRunner {
         await this.diaryRoom.runDiaryRoom(Phase.INTRODUCTION);
       } else if (state === "lobby") {
         await runLobbyPhase(prc, actor);
-      } else if (state === "whisper") {
-        await runWhisperPhase(prc, actor);
+      } else if (state === "mingle") {
+        await runMinglePhase(prc, actor);
+
+        // House MC summary after Mingle phases (great for simulation traces)
+        try {
+          const summary = await this.houseInterviewer.generateGameplaySummary(
+            this.logger.transcript.slice(-15),
+            this.gameState.round,
+            Phase.MINGLE,
+            this.gameState.getAlivePlayers().map((p) => p.name),
+          );
+          this.logger.logSystem(`[House MC] ${summary}`, Phase.MINGLE);
+        } catch {
+          // non-fatal for summary generation
+        }
       } else if (state === "rumor") {
         await runRumorPhase(prc, actor);
       } else if (state === "vote") {
@@ -235,17 +261,30 @@ export class GameRunner {
       } else if (state === "council") {
         await runCouncilPhase(prc, actor);
 
-      // --- THE RECKONING (4 -> 3) ---
+        // House MC summary after key elimination moments for richer simulation traces
+        try {
+          const summary = await this.houseInterviewer.generateGameplaySummary(
+            this.logger.transcript.slice(-30),
+            this.gameState.round,
+            Phase.COUNCIL,
+            this.gameState.getAlivePlayers().map((p) => p.name),
+          );
+          this.logger.logSystem(`[House MC] ${summary}`, Phase.COUNCIL);
+        } catch {
+          // non-fatal for summary generation
+        }
+
+        // --- THE RECKONING (4 -> 3) ---
       } else if (state === "reckoning_lobby") {
         await runReckoningLobby(prc, actor);
-      } else if (state === "reckoning_whisper") {
-        await runReckoningWhisper(prc, actor);
+      } else if (state === "reckoning_mingle") {
+        await runReckoningMingle(prc, actor);
       } else if (state === "reckoning_plea") {
         await runReckoningPlea(prc, actor);
       } else if (state === "reckoning_vote") {
         await runReckoningVote(prc, actor);
 
-      // --- THE TRIBUNAL (3 -> 2) ---
+        // --- THE TRIBUNAL (3 -> 2) ---
       } else if (state === "tribunal_lobby") {
         await runTribunalLobby(prc, actor);
       } else if (state === "tribunal_accusation") {
@@ -255,7 +294,7 @@ export class GameRunner {
       } else if (state === "tribunal_vote") {
         await runTribunalVote(prc, actor);
 
-      // --- THE JUDGMENT (2 finalists) ---
+        // --- THE JUDGMENT (2 finalists) ---
       } else if (state === "judgment_opening") {
         await runJudgmentOpening(prc, actor);
         await this.diaryRoom.runDiaryRoom(Phase.OPENING_STATEMENTS);
@@ -271,12 +310,14 @@ export class GameRunner {
       } else if (state === "end" || done) {
         break;
       } else {
-        break;
+        throw new Error(`Game loop reached unknown phase-machine state "${state}"`);
       }
 
       await new Promise((r) => setTimeout(r, 0));
     }
 
-    await completionPromise;
+    if (!this._aborted) {
+      await completionPromise;
+    }
   }
 }

@@ -26,8 +26,8 @@ export interface DisplayHoldConfig {
   eliminationMs: number;
   /** Hold after DIARY_ROOM phase ends (ms) */
   diaryEndMs: number;
-  /** Hold after WHISPER phase ends (ms) */
-  whisperEndMs: number;
+  /** Hold after the room phase (MINGLE) ends (ms) -- formerly whisperEndMs */
+  roomEndMs: number;
 }
 
 export const DEFAULT_LIVE_HOLDS: DisplayHoldConfig = {
@@ -36,7 +36,7 @@ export const DEFAULT_LIVE_HOLDS: DisplayHoldConfig = {
   councilEndMs: 2000,
   eliminationMs: 3000,
   diaryEndMs: 4000,
-  whisperEndMs: 4000,
+  roomEndMs: 4000,
 };
 
 const ZERO_HOLDS: DisplayHoldConfig = {
@@ -45,7 +45,7 @@ const ZERO_HOLDS: DisplayHoldConfig = {
   councilEndMs: 0,
   eliminationMs: 0,
   diaryEndMs: 0,
-  whisperEndMs: 0,
+  roomEndMs: 0,
 };
 
 // ---------------------------------------------------------------------------
@@ -136,12 +136,12 @@ export class ViewerEventPacer {
           return this.holds.diaryEndMs;
         }
 
-        // Transitioning away from WHISPER → pause so viewers can read last message
+        // Transitioning away from MINGLE (room phase) → pause so viewers can read last messages in the rooms
         if (
-          this.currentPhase === Phase.WHISPER &&
-          phase !== Phase.WHISPER
+          this.currentPhase === Phase.MINGLE &&
+          phase !== Phase.MINGLE
         ) {
-          return this.holds.whisperEndMs;
+          return this.holds.roomEndMs;
         }
 
         return 0;
