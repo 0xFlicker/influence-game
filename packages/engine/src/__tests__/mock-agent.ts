@@ -249,6 +249,11 @@ export class MockAgent implements IAgent {
     };
   }
 
+  async getStrategicReflection(_ctx: PhaseContext): Promise<void> {
+    // No-op for mock, but could be used to update internal state in a more complex implementation
+    return Promise.resolve();
+  }
+
   // Memory methods (no-ops for mock)
   updateAlly(_playerName: string): void { /* no-op */ }
   updateThreat(_playerName: string): void { /* no-op */ }

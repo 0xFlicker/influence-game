@@ -1497,7 +1497,7 @@ Use the ask_jury_question tool to submit your question.`;
 
     try {
       const result = await this.callTool<{ thinking?: string; target: string; question: string; reasoningContext?: string }>(
-        prompt, TOOL_ASK_JURY_QUESTION, 150, sys,
+        prompt, TOOL_ASK_JURY_QUESTION, 4096, sys,
         { action: "jury-question", reasoningEffort: "medium", signal: options?.signal },
       );
       const target = findByName(finalists, result.target);
@@ -1695,7 +1695,7 @@ IMPORTANT: Only reference alive players in your messages, votes, and strategies.
 - Round: ${ctx.round}
 - Phase: ${ctx.phase}
 - Alive players (ONLY these players are still in the game): ${ctx.alivePlayers.map((p) => p.name + (p.id === this.id ? " (YOU)" : "")).join(", ")}
-${eliminated.length > 0 ? `- ELIMINATED (out of the game — do NOT address or strategize about them as if they are active): ${eliminated.join(", ")}` : ""}
+${eliminated.length > 0 ? `- ELIMINATED (out of the game — they are no longer in the game): ${eliminated.join(", ")}` : ""}
 ${ctx.empoweredId ? `- Empowered player: ${ctx.alivePlayers.find((p) => p.id === ctx.empoweredId)?.name ?? "unknown"}` : ""}
 ${endgameInfo}
 

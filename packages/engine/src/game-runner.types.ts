@@ -189,7 +189,7 @@ export interface IAgent {
 
   // --- Strategic reflection (called after diary room) ---
   /** Produce a strategic reflection after diary room interview */
-  getStrategicReflection?(context: PhaseContext): Promise<void>;
+  getStrategicReflection(context: PhaseContext): Promise<void>;
 
   // --- Memory updates (called by GameRunner after phase events) ---
   /** Record a player as an ally */

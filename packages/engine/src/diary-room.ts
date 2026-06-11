@@ -44,7 +44,7 @@ export class DiaryRoom {
       await Promise.all(
         alivePlayers.map(async (player) => {
           const agent = this.agents.get(player.id);
-          if (agent?.getStrategicReflection) {
+          if (agent) {
             const ctx = this.contextBuilder.buildPhaseContext(player.id, phase);
             await agent.getStrategicReflection(ctx);
           }
