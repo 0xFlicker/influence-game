@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import { GameState, createUUID } from "../game-state";
 import { GameEventBus } from "../event-bus";
 import { GameRunner } from "../game-runner";
-import type { AgentCallOptions, AgentResponse, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "../game-runner";
+import type { AgentCallOptions, AgentResponse, MingleRoomChoiceAction, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "../game-runner";
 import { createPhaseMachine } from "../phase-machine";
 import { createActor } from "xstate";
 import { Phase, PlayerStatus } from "../types";
@@ -147,8 +147,8 @@ describe("Mingle Rooms (current open-room phase)", () => {
 
   it("open rooms generate group room messages for rooms with multiple occupants", async () => {
     class PileOnAgent extends MockAgent {
-      async chooseMingleRoom(): Promise<number> {
-        return 1;
+      async chooseMingleRoom(): Promise<MingleRoomChoiceAction> {
+        return { roomId: 1, thinking: "pile into room 1" };
       }
     }
 
@@ -168,8 +168,8 @@ describe("Mingle Rooms (current open-room phase)", () => {
 
   it("open rooms skip conversation for singleton rooms", async () => {
     class SpreadAgent extends MockAgent {
-      async chooseMingleRoom(ctx: PhaseContext): Promise<number> {
-        return ctx.selfName === "Alpha" ? 1 : 2;
+      async chooseMingleRoom(ctx: PhaseContext): Promise<MingleRoomChoiceAction> {
+        return { roomId: ctx.selfName === "Alpha" ? 1 : 2, thinking: "spread singleton test room choice" };
       }
     }
 
@@ -188,8 +188,8 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const seenWhispers = new Map<string, string[]>();
 
     class InboxProbeAgent extends MockAgent {
-      async chooseMingleRoom(): Promise<number> {
-        return 1;
+      async chooseMingleRoom(): Promise<MingleRoomChoiceAction> {
+        return { roomId: 1, thinking: "join shared inbox probe room" };
       }
 
       async sendRoomMessage(
@@ -241,8 +241,8 @@ describe("Mingle Rooms (current open-room phase)", () => {
         super(id, name);
       }
 
-      override async chooseMingleRoom(): Promise<number> {
-        return this.initialRoomId;
+      override async chooseMingleRoom(): Promise<MingleRoomChoiceAction> {
+        return { roomId: this.initialRoomId, thinking: "scripted initial room" };
       }
 
       override async takeMingleTurn(): Promise<MingleTurnAction> {
@@ -325,9 +325,9 @@ describe("Mingle Rooms (current open-room phase)", () => {
         super(id, name);
       }
 
-      override async chooseMingleRoom(ctx: PhaseContext): Promise<number> {
+      override async chooseMingleRoom(ctx: PhaseContext): Promise<MingleRoomChoiceAction> {
         this.choiceContexts.push(ctx);
-        return this.initialRoomId;
+        return { roomId: this.initialRoomId, thinking: "privacy probe initial room" };
       }
 
       override async takeMingleTurn(ctx: PhaseContext): Promise<MingleTurnAction> {
@@ -376,8 +376,8 @@ describe("Mingle Rooms (current open-room phase)", () => {
         super(id, name);
       }
 
-      override async chooseMingleRoom(): Promise<number> {
-        return this.initialRoomId;
+      override async chooseMingleRoom(): Promise<MingleRoomChoiceAction> {
+        return { roomId: this.initialRoomId, thinking: "sparse initial room" };
       }
 
       override async takeMingleTurn(): Promise<MingleTurnAction> {

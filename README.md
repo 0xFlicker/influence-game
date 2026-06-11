@@ -53,7 +53,7 @@ bun run simulate -- --variant power-lobby-mingle
 
 The root `simulate` script injects hosted-provider secrets from the Doppler `social-strategy-agent` project's `dev` config. Use `simulate:local` when testing LM Studio or another OpenAI-compatible local endpoint.
 
-Output includes a round-by-round transcript, per-persona win rates, and token cost estimates. Transcripts are saved to `packages/engine/docs/simulations/`.
+Output includes a round-by-round transcript, per-persona win rates, token cost estimates, and per-game artifacts under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis with `thinking` / `reasoningContext`, `game-N-progress.jsonl` for lightweight progress, and `game-N.txt` for human-readable transcript review.
 
 ### 3. Run the full stack (API + Web UI)
 

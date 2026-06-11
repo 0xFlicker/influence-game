@@ -63,6 +63,20 @@ export async function runCouncilPhase(
         voteResult.thinking,
         voteResult.reasoningContext,
       );
+      logger.emitAgentTurn({
+        phase: Phase.COUNCIL,
+        action: "council-vote",
+        actor: { id: player.id, name: player.name, role: "player" },
+        visibility: "private",
+        response: {
+          target: { id: vote, name: votedAgainstName },
+          candidates: candidates.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+        },
+        thinking: voteResult.thinking,
+        reasoningContext: voteResult.reasoningContext,
+        scope: "system",
+        text: `${player.name} council vote -> ${votedAgainstName}`,
+      });
     }),
   );
 

@@ -12,7 +12,7 @@ import type {
   ChatCompletionMessageToolCall,
 } from "openai/resources/chat/completions";
 import type { ReasoningEffort } from "openai/resources/shared";
-import type { AgentCallOptions, AgentResponse, IAgent, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "./game-runner";
+import type { AgentCallOptions, AgentResponse, IAgent, MingleRoomChoiceAction, MingleTurnAction, PhaseContext, PowerLobbyExposure, TargetDecision } from "./game-runner";
 import { Phase } from "./types";
 import type { UUID, PowerAction } from "./types";
 import type { LlmToolChoiceMode } from "./llm-client";
@@ -269,12 +269,13 @@ const TOOL_CHOOSE_MINGLE_ROOM: ChatCompletionTool = {
     parameters: {
       type: "object",
       properties: {
+        thinking: { type: "string", description: "Your internal reasoning for this room choice (hidden from other players)" },
         roomId: {
           type: "number",
           description: "Room number to enter",
         },
       },
-      required: ["roomId"],
+      required: ["thinking", "roomId"],
     },
   },
 };
@@ -826,9 +827,9 @@ Use the send_whispers tool to submit your whisper messages. Use player NAMES (no
     }
   }
 
-  async chooseMingleRoom(ctx: PhaseContext): Promise<number | null> {
+  async chooseMingleRoom(ctx: PhaseContext): Promise<MingleRoomChoiceAction> {
     const roomCount = ctx.roomCount ?? 1;
-    if (roomCount < 1) return null;
+    if (roomCount < 1) return { roomId: null, thinking: "No Mingle rooms are available." };
     const rooms = Array.from({ length: roomCount }, (_, index) => index + 1);
 
     const currentCounts = ctx.roomCounts && ctx.roomCounts.length > 0
@@ -849,14 +850,18 @@ Rooms have no theme and no occupancy cap. You can pile into a crowded room, spli
 Use the choose_mingle_room tool to submit one room number.`;
 
     try {
-      const result = await this.callTool<{ roomId: number }>(
+      const result = await this.callTool<{ thinking?: string; roomId: number; reasoningContext?: string }>(
         prompt, TOOL_CHOOSE_MINGLE_ROOM, 150, sys,
         { action: "room-choice", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
       );
-      return Number.isInteger(result.roomId) ? result.roomId : null;
+      return {
+        roomId: Number.isInteger(result.roomId) ? result.roomId : null,
+        thinking: result.thinking,
+        reasoningContext: result.reasoningContext,
+      };
     } catch (err) {
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=chooseMingleRoom error="${err instanceof Error ? err.message : err}" fallback=1`);
-      return 1;
+      return { roomId: 1, thinking: "fallback room choice due to error", reasoningContext: undefined };
     }
   }
 
@@ -1360,7 +1365,7 @@ Keep it to 2-3 sentences. Make it compelling.`;
     return this.callLLMWithThinking(prompt, 200, sys, { action: "defense", reasoningEffort: "medium", signal: options?.signal });
   }
 
-  async getEndgameEliminationVote(ctx: PhaseContext, options?: AgentCallOptions): Promise<UUID> {
+  async getEndgameEliminationVote(ctx: PhaseContext, options?: AgentCallOptions): Promise<TargetDecision> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
     const stage = ctx.endgameStage ?? "reckoning";
     const stageName = stage === "reckoning" ? "THE RECKONING" : "THE TRIBUNAL";
@@ -1379,13 +1384,13 @@ Who should be eliminated? Consider everything that has happened in the game.
 Use the elimination_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ eliminate: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, { action: "elimination-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal });
+      const result = await this.callTool<{ thinking?: string; eliminate: string; reasoningContext?: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, { action: "elimination-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal });
       const target = findByName(others, result.eliminate);
-      if (target) return target.id;
+      if (target) return { target: target.id, thinking: result.thinking, reasoningContext: result.reasoningContext };
       const fallback = others[Math.floor(Math.random() * others.length)];
       if (!fallback) throw new Error("No other players available for elimination vote");
       console.warn(`[vote-fallback] agent="${this.name}" method=getEndgameEliminationVote returned="${result.eliminate}" available=[${others.map((p) => p.name).join(", ")}] fallback="${fallback.name}"`);
-      return fallback.id;
+      return { target: fallback.id, thinking: result.thinking, reasoningContext: result.reasoningContext };
     } catch (err) {
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) {
         throw err;
@@ -1393,7 +1398,7 @@ Use the elimination_vote tool to cast your vote.`;
       const fallback = others[Math.floor(Math.random() * others.length)];
       if (!fallback) throw new Error("No other players available for elimination vote");
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getEndgameEliminationVote error="${err instanceof Error ? err.message : err}" fallback="${fallback.name}"`);
-      return fallback.id;
+      return { target: fallback.id, thinking: "fallback endgame elimination vote due to error", reasoningContext: undefined };
     }
   }
 
@@ -1551,7 +1556,7 @@ Keep it to 2-3 sentences.`;
     return this.callLLMWithThinking(prompt, 250, sys, { action: "closing-argument", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "medium", signal: options?.signal });
   }
 
-  async getJuryVote(ctx: PhaseContext, finalistIds: [UUID, UUID], options?: AgentCallOptions): Promise<UUID> {
+  async getJuryVote(ctx: PhaseContext, finalistIds: [UUID, UUID], options?: AgentCallOptions): Promise<TargetDecision> {
     const [finalistId0, finalistId1] = finalistIds;
     const finalist0 = ctx.alivePlayers.find((p) => p.id === finalistId0) ?? { id: finalistId0, name: finalistId0 };
     const finalist1 = ctx.alivePlayers.find((p) => p.id === finalistId1) ?? { id: finalistId1, name: finalistId1 };
@@ -1575,14 +1580,14 @@ Consider their gameplay, their answers to the jury, and the full arc of the game
 Use the jury_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ winner: string }>(prompt, TOOL_JURY_VOTE, 80, sys, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal });
+      const result = await this.callTool<{ thinking?: string; winner: string; reasoningContext?: string }>(prompt, TOOL_JURY_VOTE, 80, sys, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal });
       const target = findByName(finalists, result.winner);
       const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
       if (!randomFinalist) throw new Error("No finalist available for jury vote");
       if (!target) {
         console.warn(`[vote-fallback] agent="${this.name}" method=getJuryVote returned="${result.winner}" available=[${finalists.map((f) => f.name).join(", ")}] fallback="${finalists.find((f) => f.id === randomFinalist)?.name ?? randomFinalist}"`);
       }
-      return target?.id ?? randomFinalist;
+      return { target: target?.id ?? randomFinalist, thinking: result.thinking, reasoningContext: result.reasoningContext };
     } catch (err) {
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) {
         throw err;
@@ -1591,7 +1596,7 @@ Use the jury_vote tool to cast your vote.`;
       if (!randomFinalist) throw new Error("No finalist available for jury vote");
       const fallbackName = finalists.find((f) => f.id === randomFinalist)?.name ?? randomFinalist;
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getJuryVote error="${err instanceof Error ? err.message : err}" fallback="${fallbackName}"`);
-      return randomFinalist;
+      return { target: randomFinalist, thinking: "fallback jury vote due to error", reasoningContext: undefined };
     }
   }
 

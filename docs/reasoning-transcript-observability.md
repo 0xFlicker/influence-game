@@ -4,7 +4,7 @@ These rules and patterns apply to the game engine (`packages/engine`) for surfac
 
 ## Purpose
 
-Private `thinking` + raw `reasoningContext` (local `reasoning_content` etc.) are captured so that long unattended `--chatty` runs (especially Mingle + vote/power/council loops for 8->4 player testing) are actually debuggable and enjoyable for the human. Agents' real rationale for empower/expose votes, power actions (pass/protect/eliminate), and council votes (including empowered tiebreakers) must be visible in the terminal and persisted in transcripts.
+Private `thinking` + raw `reasoningContext` (local `reasoning_content` etc.) are captured so that long unattended `--chatty` runs (especially Mingle + vote/power/council loops for 8->4 player testing) are actually debuggable and enjoyable for the human. Agents' real rationale for room choices, Mingle turns, empower/expose votes, power actions (pass/protect/eliminate), council votes, direct endgame votes, and jury votes must be visible in the terminal when useful and persisted in structured simulation artifacts.
 
 This observability layer exists because "master wants to see reasoning for voting as well" and equivalent signals for power and council decisions. Public player messages stay clean; the hidden reasoning is only for viewers, replays, and simulation analysis.
 
@@ -22,17 +22,42 @@ This observability layer exists because "master wants to see reasoning for votin
 
 Decision methods on `IAgent` / `InfluenceAgent` return the extra fields (typed on the interface and impl):
 
+- `chooseMingleRoom(...)` → `{ roomId: number | null; thinking?: string; reasoningContext?: string }`
+- `takeMingleTurn(...)` → `{ thinking?: string; message?: string | null; noReply?: boolean; gotoRoomId?: number | null; reasoningContext?: string }`
 - `getVotes(...)` → `{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string }`
 - `getPowerAction(...)` → `PowerAction & { thinking?: string; reasoningContext?: string }`
 - `getCouncilVote(...)` → `{ target: UUID; thinking?: string; reasoningContext?: string }`
+- `getEndgameEliminationVote(...)` / `getJuryVote(...)` → `{ target: UUID; thinking?: string; reasoningContext?: string }`
 
-(Similar treatment for `takeMingleTurn`, `getPowerLobbyMessage`, diary entries, etc.)
+(Similar treatment for public messages, `getPowerLobbyMessage`, diary entries, accusations, jury questions, etc.)
 
 Phase runners receive the rich result, record only the narrow game-state value when required, then forward the reasoning fields:
 
 - `phases/vote.ts`: `logger.logSystem(..., votes.thinking, votes.reasoningContext)`
 - `phases/power.ts`: `logger.logSystem(..., powerActionResult.thinking, powerActionResult.reasoningContext)`
 - `phases/council.ts`: `logger.logSystem(..., voteResult.thinking, voteResult.reasoningContext)`
+- Every phase runner that resolves an agent call also emits an `agent_turn` stream event via `logger.emitAgentTurn(...)` with the normalized response the game used.
+
+`AgentTurnEvent` (game-runner.types.ts) is the structured simulation-analysis shape:
+
+```ts
+export interface AgentTurnEvent {
+  type: "agent_turn";
+  round: number;
+  phase: Phase;
+  timestamp: number;
+  action: string;
+  actor: { id?: UUID; name: string; role?: "player" | "juror" | "house" };
+  visibility: "public" | "private" | "anonymous" | "diary" | "system";
+  response: Record<string, unknown>;
+  thinking?: string;
+  reasoningContext?: string;
+  scope?: TranscriptEntry["scope"];
+  text?: string;
+  to?: string[];
+  roomId?: number;
+}
+```
 
 `TranscriptLogger` (all `log*` methods, especially `logSystem`):
 
@@ -47,7 +72,7 @@ logSystem(text: string, phase: Phase, thinking?: string, reasoningContext?: stri
 }
 ```
 
-`TranscriptEntry` (game-runner.types.ts) is the canonical persisted + streamed shape:
+`TranscriptEntry` (game-runner.types.ts) remains the canonical replay/human-viewing shape:
 
 ```ts
 export interface TranscriptEntry {
@@ -97,7 +122,7 @@ export interface PowerAction {
 }
 ```
 
-The extras live only on the agent return value and the `TranscriptEntry`. Game state and tally logic never see them.
+The extras live only on the agent return value, `TranscriptEntry`, and `AgentTurnEvent`. Game state and tally logic never see them.
 
 ## Core Style & Safety Rules
 
@@ -109,7 +134,7 @@ The extras live only on the agent return value and the `TranscriptEntry`. Game s
 
 4. Public player-visible output (`message` in `AgentResponse`, whisper/rumor text) must never contain the hidden thinking; it is stripped or kept in a separate field.
 
-5. Terminal UX for `--chatty` (and persisted `game-*.txt` / `.json`) is a first-class output. Colors and indentation exist so a human can scan long runs without losing the model's rationale.
+5. Terminal UX for `--chatty` (and persisted `game-*.txt` / `.json`) is a first-class human output. `game-*-turns.jsonl` is the machine-analysis output and must stay clean JSON without ANSI formatting.
 
 6. When backing out experiments (e.g. the old `mingle-loop` variant that caused phase pollution / extra INTRODUCTION/LOBBY/RUMOR entries), prefer clean removal over more guards. The state machine must remain understandable.
 
@@ -177,7 +202,12 @@ try {
 
 ## What To Record / Usage
 
-In simulation batches under `packages/engine/docs/simulations/`, the full transcript JSON (and the `.txt` when using `--chatty`) now contains the `thinking` and `reasoningContext` fields on VOTE, POWER, and COUNCIL `"system"` entries (plus any House MC summaries).
+In simulation batches under `packages/engine/docs/simulations/`, each game writes:
+
+- `game-N.txt`: human-readable formatted transcript; includes ANSI colors for `--chatty`.
+- `game-N.json`: full transcript JSON plus result metadata.
+- `game-N-progress.jsonl`: lightweight progress events for monitoring a running game.
+- `game-N-turns.jsonl`: one clean structured JSON record per agent turn, including the normalized response the game used plus `thinking` and `reasoningContext` when available.
 
 Recommended invocation for Mingle + visibility work:
 
@@ -187,25 +217,25 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
-The "Progress: R1 VOTE | alive=..." lines + the following House action lines are now the primary place humans see per-agent rationale in real time.
+The "Progress: R1 VOTE | alive=..." lines + the following House action lines are the primary place humans see per-agent rationale in real time. After the run, use `game-N-turns.jsonl` for structured analysis instead of parsing colored terminal output.
 
-Update simulation batch notes (the dated `.md` next to `results.json` etc.) with observations about the quality of the surfaced reasoning, not just win rates or token counts.
+Update simulation batch notes (the dated `.md` next to `results.json` etc.) with observations about the quality of the surfaced reasoning, not just win rates or token counts. When writing scripts, read `game-N-turns.jsonl` for per-turn decisions and `game-N.json` for full transcript context.
 
 ## Review Checklist
 
-- Did we thread both thinking and reasoningContext all the way from the LLM response through the agent method, the phase log call, TranscriptEntry, and formatEntry?
+- Did we thread both thinking and reasoningContext all the way from the LLM response through the agent method, the phase log call, TranscriptEntry, AgentTurnEvent, and formatEntry?
 - Is there any `as any` left in the changed paths?
 - Are House calls still direct?
 - Do mocks and tests compile and pass with the new shapes?
-- Are the ANSI color rules and terminal output expectations documented?
+- Are the ANSI color rules, terminal output expectations, and clean `game-*-turns.jsonl` artifact documented?
 - Did we update the cross-referenced usage docs and AGENTS.md where the contract changed?
 - Can a future reader understand why this observability layer exists (Mingle debugging + "master wants to see reasoning for voting as well")?
 
 ## Related
 
 - `docs/local-model-evaluation.md` — primary reference for local provider setup and what makes a useful `--chatty` run.
-- `packages/engine/src/simulate.ts` — chatty entry point and `formatEntry`.
+- `packages/engine/src/simulate.ts` — chatty entry point, `formatEntry`, and `game-N-turns.jsonl` writer.
 - `packages/engine/src/agent.ts` — `callTool` and the decision methods.
-- `packages/engine/src/transcript-logger.ts` and `game-runner.types.ts` — the data model.
+- `packages/engine/src/transcript-logger.ts` and `game-runner.types.ts` — the transcript and agent-turn data models.
 - `CONCEPTS.md` — project vocabulary for `TranscriptEntry`, `reasoningContext`, `chatty` mode, `House MC`, and the `callTool` reasoning augmentation.
 - `feat/inf-228-mingle-hardening` branch context: this observability work was driven by the need to debug and enjoy the new Mingle room system + the full decision loop down to 4 players.

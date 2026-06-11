@@ -19,6 +19,11 @@
  * The --chatty output (and written transcripts) now interleave House action lines
  * ("X votes: ...", "Y power action: ...", "Z council vote -> ...") with the agent's
  * hidden `thinking` (dim gray) and raw native `reasoningContext` (cyan) when present.
+ *
+ * Each game also writes `game-{N}-turns.jsonl`: one clean structured JSON record per
+ * agent turn, including the normalized decision the game used plus `thinking` and
+ * `reasoningContext` when available. Use it for post-run analysis instead of parsing
+ * ANSI-colored `game-{N}.txt` output.
  */
 
 import type OpenAI from "openai";
@@ -26,7 +31,7 @@ import { randomUUID } from "crypto";
 import { execFileSync } from "child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import { GameRunner, type GameStreamEvent, type TranscriptEntry } from "./game-runner";
+import { GameRunner, type AgentTurnEvent, type GameStreamEvent, type TranscriptEntry } from "./game-runner";
 import { InfluenceAgent, type Personality } from "./agent";
 import { LLMHouseInterviewer } from "./house-interviewer";
 import { DEFAULT_CONFIG, type GameConfig, type UUID } from "./types";
@@ -318,6 +323,7 @@ export interface GameResult {
   transcriptPath: string;
   jsonPath: string;
   progressPath: string;
+  turnsPath: string;
   error?: string;
   tokenUsage: {
     perAgent: Record<string, TokenUsage>;
@@ -764,11 +770,11 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
     lines.push("");
     lines.push("## Failed Game Diagnostics");
     lines.push("");
-    lines.push("| # | Error | Progress Log | Transcript |");
-    lines.push("|---|-------|--------------|------------|");
+    lines.push("| # | Error | Progress Log | Turns Log | Transcript |");
+    lines.push("|---|-------|--------------|-----------|------------|");
     for (const result of failed) {
       lines.push(
-        `| ${result.gameNumber} | ${(result.error ?? "unknown").replace(/\|/g, "\\|")} | ${result.progressPath} | ${result.transcriptPath} |`,
+        `| ${result.gameNumber} | ${(result.error ?? "unknown").replace(/\|/g, "\\|")} | ${result.progressPath} | ${result.turnsPath} | ${result.transcriptPath} |`,
       );
     }
   }
@@ -831,6 +837,16 @@ function runWithTimeout<T>(
 }
 
 function summarizeProgressEvent(event: GameStreamEvent): Record<string, unknown> {
+  if (event.type === "agent_turn") {
+    return {
+      event: event.type,
+      round: event.round,
+      phase: event.phase,
+      action: event.action,
+      actor: event.actor.name,
+    };
+  }
+
   if (event.type === "phase_change") {
     return {
       event: event.type,
@@ -895,14 +911,61 @@ function writeProgress(
   );
 }
 
+const ANSI_PATTERN = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
+
+function stripAnsiFromValue(value: unknown): unknown {
+  if (typeof value === "string") return value.replace(ANSI_PATTERN, "");
+  if (Array.isArray(value)) return value.map(stripAnsiFromValue);
+  if (value !== null && typeof value === "object") {
+    const cleaned: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      cleaned[key] = stripAnsiFromValue(child);
+    }
+    return cleaned;
+  }
+  return value;
+}
+
+export function serializeAgentTurnEvent(
+  gameNumber: number,
+  startedAt: number,
+  event: AgentTurnEvent,
+  now = Date.now(),
+): Record<string, unknown> {
+  const { timestamp: eventTimestamp, ...eventWithoutTimestamp } = event;
+  const record: Record<string, unknown> = {
+    timestamp: new Date(now).toISOString(),
+    elapsedMs: now - startedAt,
+    gameNumber,
+    eventTimestamp,
+    ...eventWithoutTimestamp,
+  };
+  return stripAnsiFromValue(record) as Record<string, unknown>;
+}
+
+function writeAgentTurn(
+  turnsPath: string,
+  gameNumber: number,
+  startedAt: number,
+  event: AgentTurnEvent,
+): void {
+  appendFileSync(turnsPath, `${JSON.stringify(serializeAgentTurnEvent(gameNumber, startedAt, event))}\n`);
+}
+
 function attachProgressLogger(
   runner: GameRunner,
   progressPath: string,
+  turnsPath: string,
   gameNumber: number,
   startedAt: number,
   chatty: boolean,
 ): void {
   runner.setStreamListener((event) => {
+    if (event.type === "agent_turn") {
+      writeAgentTurn(turnsPath, gameNumber, startedAt, event);
+      return;
+    }
+
     const progress = summarizeProgressEvent(event);
     writeProgress(progressPath, gameNumber, startedAt, progress);
 
@@ -1001,6 +1064,8 @@ async function main() {
     const transcriptPath = join(batchDir, `game-${g}.txt`);
     const jsonPath = join(batchDir, `game-${g}.json`);
     const progressPath = join(batchDir, `game-${g}-progress.jsonl`);
+    const turnsPath = join(batchDir, `game-${g}-turns.jsonl`);
+    writeFileSync(turnsPath, "");
     writeProgress(progressPath, g, startTime, {
       event: "game_start",
       players: agents.map((agent) => agent.name),
@@ -1010,9 +1075,11 @@ async function main() {
       llmTimeoutMs: args.llmTimeoutMs,
       transcriptPath,
       jsonPath,
+      turnsPath,
     });
-    attachProgressLogger(runner, progressPath, g, startTime, args.chatty);
+    attachProgressLogger(runner, progressPath, turnsPath, g, startTime, args.chatty);
     console.log(`  Progress log: ${progressPath}`);
+    console.log(`  Turns log: ${turnsPath}`);
 
     try {
       const result = await runWithTimeout(
@@ -1048,6 +1115,7 @@ async function main() {
         transcriptPath,
         jsonPath,
         progressPath,
+        turnsPath,
         tokenUsage: {
           perAgent: perAgentUsage,
           total: gameTotalUsage,
@@ -1101,6 +1169,7 @@ async function main() {
         transcriptPath,
         jsonPath,
         progressPath,
+        turnsPath,
         error: err instanceof Error ? err.message : String(err),
         tokenUsage: {
           perAgent: perAgentUsage,

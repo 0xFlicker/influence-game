@@ -17,6 +17,17 @@ export async function runIntroductionPhase(
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.INTRODUCTION);
       const { message, thinking, reasoningContext } = await agent.getIntroduction(phaseCtx);
       logger.logPublic(player.id, message, Phase.INTRODUCTION, { thinking, reasoningContext });
+      logger.emitAgentTurn({
+        phase: Phase.INTRODUCTION,
+        action: "introduction",
+        actor: { id: player.id, name: player.name, role: "player" },
+        visibility: "public",
+        response: { message },
+        thinking,
+        reasoningContext,
+        scope: "public",
+        text: message,
+      });
     }),
   );
 

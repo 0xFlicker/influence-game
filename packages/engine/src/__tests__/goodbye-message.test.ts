@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import { InfluenceAgent } from "../agent";
 import { ContextBuilder } from "../context-builder";
 import { GameState, createUUID } from "../game-state";
-import type { AgentResponse, PhaseContext } from "../game-runner.types";
+import type { AgentResponse, PhaseContext, TargetDecision } from "../game-runner.types";
 import { TranscriptLogger } from "../transcript-logger";
 import { Phase } from "../types";
 import { runCouncilPhase, runPowerPhase, runReckoningVote, runVotePhase } from "../phases";
@@ -37,8 +37,12 @@ class GoodbyeProbeAgent extends MockAgent {
     return { target: this.fixedCouncilVote, thinking: "fixed goodbye probe council", reasoningContext: undefined };
   }
 
-  override async getEndgameEliminationVote(): Promise<string> {
-    return this.fixedEndgameVote ?? this.fixedCouncilVote;
+  override async getEndgameEliminationVote(): Promise<TargetDecision> {
+    return {
+      target: this.fixedEndgameVote ?? this.fixedCouncilVote,
+      thinking: "fixed goodbye probe endgame vote",
+      reasoningContext: undefined,
+    };
   }
 
   override async getLastMessage(ctx: PhaseContext): Promise<AgentResponse> {

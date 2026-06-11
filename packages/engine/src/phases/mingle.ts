@@ -9,7 +9,7 @@ import type {
   WhisperSessionDiagnostics,
 } from "../types";
 import { Phase } from "../types";
-import type { MingleTurnAction } from "../game-runner.types";
+import type { MingleRoomChoiceAction, MingleTurnAction } from "../game-runner.types";
 import type { GameState } from "../game-state";
 import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
 
@@ -367,6 +367,7 @@ async function runMingleTurn(
       const agent = agents.get(playerId)!;
       const fromName = gameState.getPlayerName(playerId);
       const recipientIds = room.playerIds.filter((id) => id !== playerId);
+      const recipientNames = recipientIds.map((id) => gameState.getPlayerName(id));
       const phaseCtx = contextBuilder.buildPhaseContext(playerId, Phase.MINGLE, undefined, undefined, {
         roomCount,
         roomCounts,
@@ -389,6 +390,7 @@ async function runMingleTurn(
 
       const message = resolvedAction.noReply ? null : resolvedAction.message?.trim();
       const messageSent = Boolean(message && recipientIds.length > 0);
+      const turnAction = message ? "talk" : "no_reply";
       if (messageSent && message) {
         for (const recipientId of recipientIds) {
           const inbox = ctx.mingleInbox.get(recipientId) ?? [];
@@ -399,6 +401,31 @@ async function runMingleTurn(
         conversationHistory.push({ from: fromName, text: message });
         logger.logMingleMessage(playerId, recipientIds, message, globalRoomId, resolvedAction.thinking, resolvedAction.reasoningContext);
       }
+
+      logger.emitAgentTurn({
+        phase: Phase.MINGLE,
+        action: "mingle-turn",
+        actor: { id: playerId, name: fromName, role: "player" },
+        visibility: "private",
+        response: {
+          action: turnAction,
+          message: message ?? null,
+          noReply: resolvedAction.noReply ?? !message,
+          messageDelivered: messageSent,
+          fromRoomId: room.roomId,
+          roomId: globalRoomId,
+          toRoomId: normalizedGoto.roomId,
+          moved: normalizedGoto.roomId !== room.roomId,
+          gotoRoomId: normalizedGoto.requestedRoomId,
+          gotoStatus: normalizedGoto.status,
+        },
+        thinking: resolvedAction.thinking,
+        reasoningContext: resolvedAction.reasoningContext,
+        scope: "mingle",
+        ...(message && { text: message }),
+        to: recipientNames,
+        roomId: globalRoomId,
+      });
 
       actionRecords.push({
         player: { id: playerId, name: fromName },
@@ -459,6 +486,7 @@ export async function runMinglePhase(
   const cooldownRounds = config.minglePairCooldownRounds ?? 0;
   const cooldownPairKeys = buildRecentCooldownPairKeys(gameState, cooldownRounds);
 
+  const roomChoiceResults = new Map<UUID, MingleRoomChoiceAction>();
   const choices = new Map<UUID, number | null>();
   await Promise.all(
     alivePlayers.map(async (player) => {
@@ -467,13 +495,32 @@ export async function runMinglePhase(
         roomCount,
         roomCounts: initialRoomCounts,
       });
-      choices.set(player.id, await agent.chooseMingleRoom(phaseCtx));
+      const choice = await agent.chooseMingleRoom(phaseCtx);
+      roomChoiceResults.set(player.id, choice);
+      choices.set(player.id, choice.roomId);
     }),
   );
 
   const initialAllocation = allocateRooms(choices, alivePlayers, roomCount, gameState.round, 1, {
     cooldownPairKeys,
   });
+  for (const choice of initialAllocation.diagnostics.choices) {
+    const choiceResult = roomChoiceResults.get(choice.player.id);
+    logger.emitAgentTurn({
+      phase: Phase.MINGLE,
+      action: "mingle-room-choice",
+      actor: { id: choice.player.id, name: choice.player.name, role: "player" },
+      visibility: "private",
+      response: {
+        requestedRoomId: choice.requestedRoomId,
+        assignedRoomId: choice.assignedRoomId,
+        status: choice.status,
+        roomCount,
+      },
+      thinking: choiceResult?.thinking,
+      reasoningContext: choiceResult?.reasoningContext,
+    });
+  }
   const roomByPlayerId = new Map<UUID, number>();
   for (const room of initialAllocation.rooms) {
     for (const playerId of room.playerIds) {

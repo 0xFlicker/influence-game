@@ -383,15 +383,17 @@ bun run simulate -- --games 1 --players 4 --model gpt-5-nano
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 4 --model <lm-studio-model-id>
 
-# Chatty mode (live colored transcript with agent thinking + native reasoningContext on votes, power actions, council votes — essential for Mingle observability):
+# Chatty mode (live colored transcript with agent thinking + native reasoningContext on Mingle turns, votes, power actions, council votes, and endgame decisions):
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
+Simulation batches are written under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-progress.jsonl` for lightweight live progress, `game-N.json` for the full transcript/result bundle, and `game-N.txt` for human-readable transcript review.
+
 `InfluenceAgent` uses OpenAI-compatible chat completions. Hosted OpenAI runs use `OPENAI_API_KEY`; local runs can use `INFLUENCE_LLM_BASE_URL` with LM Studio. Current repo defaults are budget `gpt-5-nano`, standard `gpt-5-mini`, and premium `gpt-5.4-mini`; override server-side tiers with `INFLUENCE_MODEL_BUDGET`, `INFLUENCE_MODEL_STANDARD`, and `INFLUENCE_MODEL_PREMIUM` when testing local models.
 
-Structured decision calls default to named OpenAI tool forcing for hosted OpenAI. Local base URLs default to `INFLUENCE_LLM_TOOL_CHOICE_MODE=required`, which sends the LM Studio-compatible string `tool_choice`, omits hidden `thinking` from decision schemas, and applies `INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS` (default `4096`) so local reasoning models have enough room to produce tool arguments. Local public messages apply `INFLUENCE_LLM_LOCAL_MESSAGE_MIN_TOKENS` (default `8192`) for the same reason and retry once with a doubled budget when visible content is empty. They request visible speech in `message.content` and preserve native local reasoning metadata such as `reasoning_content` as transcript `reasoningContext`. If a local server supports JSON schema better than tools, set `INFLUENCE_LLM_TOOL_CHOICE_MODE=json_schema`.
+Structured decision calls default to named OpenAI tool forcing for hosted OpenAI. Local base URLs default to `INFLUENCE_LLM_TOOL_CHOICE_MODE=required`, which sends the LM Studio-compatible string `tool_choice`, keeps emitted `thinking` in decision schemas, and applies `INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS` (default `4096`) so local reasoning models have enough room to produce tool arguments. Local public messages apply `INFLUENCE_LLM_LOCAL_MESSAGE_MIN_TOKENS` (default `8192`) for the same reason and retry once with a doubled budget when visible content is empty. They request visible speech in `message.content` and preserve native local reasoning metadata such as `reasoning_content` separately as `reasoningContext`. If a local server supports JSON schema better than tools, set `INFLUENCE_LLM_TOOL_CHOICE_MODE=json_schema`.
 
 ### Environment Strategy
 

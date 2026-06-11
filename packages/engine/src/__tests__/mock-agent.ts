@@ -3,7 +3,7 @@
  * Uses simple scripted strategies to validate game mechanics.
  */
 
-import type { AgentResponse, IAgent, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "../game-runner";
+import type { AgentResponse, IAgent, MingleRoomChoiceAction, MingleTurnAction, PhaseContext, PowerLobbyExposure, TargetDecision } from "../game-runner";
 import type { UUID, PowerAction } from "../types";
 
 /** Assert a value is defined — throws in tests if assumption is violated */
@@ -66,11 +66,15 @@ export class MockAgent implements IAgent {
     ];
   }
 
-  async chooseMingleRoom(ctx: PhaseContext): Promise<number | null> {
+  async chooseMingleRoom(ctx: PhaseContext): Promise<MingleRoomChoiceAction> {
     const roomCount = ctx.roomCount ?? 1;
-    if (roomCount < 1) return null;
+    if (roomCount < 1) return { roomId: null, thinking: "No rooms available" };
     const myIndex = ctx.alivePlayers.findIndex((p) => p.id === this.id);
-    return (myIndex % roomCount) + 1;
+    return {
+      roomId: (myIndex % roomCount) + 1,
+      thinking: `Choosing room based on player index ${myIndex}`,
+      reasoningContext: undefined,
+    };
   }
 
   async sendRoomMessage(_ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<AgentResponse | null> {
@@ -168,11 +172,17 @@ export class MockAgent implements IAgent {
     );
   }
 
-  async getEndgameEliminationVote(ctx: PhaseContext): Promise<UUID> {
-    if (this.eliminationTarget) return this.eliminationTarget;
+  async getEndgameEliminationVote(ctx: PhaseContext): Promise<TargetDecision> {
+    if (this.eliminationTarget) {
+      return { target: this.eliminationTarget, thinking: "mock: using configured elimination target" };
+    }
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
     // Vote for the last player in the list
-    return others[others.length - 1]?.id ?? this.id;
+    return {
+      target: others[others.length - 1]?.id ?? this.id,
+      thinking: "mock: vote last alive player for endgame elimination",
+      reasoningContext: undefined,
+    };
   }
 
   async getAccusation(ctx: PhaseContext): Promise<{ targetId: UUID; text: string; thinking?: string; reasoningContext?: string }> {
@@ -227,10 +237,16 @@ export class MockAgent implements IAgent {
     );
   }
 
-  async getJuryVote(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<UUID> {
-    if (this.juryVoteTarget) return this.juryVoteTarget;
+  async getJuryVote(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<TargetDecision> {
+    if (this.juryVoteTarget) {
+      return { target: this.juryVoteTarget, thinking: "mock: using configured jury vote target" };
+    }
     // Vote for the first finalist
-    return finalistIds[0];
+    return {
+      target: finalistIds[0],
+      thinking: "mock: vote first finalist for jury winner",
+      reasoningContext: undefined,
+    };
   }
 
   // Memory methods (no-ops for mock)

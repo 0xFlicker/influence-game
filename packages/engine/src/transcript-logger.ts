@@ -7,7 +7,9 @@
 import type { GameState } from "./game-state";
 import type { RoomAllocation, WhisperSessionDiagnostics } from "./types";
 import { Phase } from "./types";
-import type { TranscriptEntry, GameStreamEvent } from "./game-runner.types";
+import type { AgentTurnEvent, TranscriptEntry, GameStreamEvent } from "./game-runner.types";
+
+type AgentTurnInput = Omit<AgentTurnEvent, "type" | "round" | "timestamp">;
 
 export class TranscriptLogger {
   readonly transcript: TranscriptEntry[] = [];
@@ -31,6 +33,16 @@ export class TranscriptLogger {
   emitPhaseChange(phase: Phase): void {
     const alivePlayers = this.gameState.getAlivePlayers().map((p) => ({ id: p.id, name: p.name }));
     this.emitStream({ type: "phase_change", phase, round: this.gameState.round, alivePlayers });
+  }
+
+  emitAgentTurn(input: AgentTurnInput): void {
+    const event: AgentTurnEvent = {
+      type: "agent_turn",
+      round: this.gameState.round,
+      timestamp: Date.now(),
+      ...input,
+    };
+    this.emitStream(event);
   }
 
   logPublic(

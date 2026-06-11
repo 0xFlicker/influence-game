@@ -38,6 +38,19 @@ describe("Mingle prompt and tool vocabulary guard (no current Whisper leakage)",
 });
 
 function makeOpenAIStub(requests: Array<Record<string, unknown>>): OpenAI {
+  return makeToolOpenAIStub(requests, "cast_votes", {
+    thinking: "I empower my ally Mira because she is loyal, and expose Vera as the threat.",
+    empower: "Mira",
+    expose: "Vera",
+  });
+}
+
+function makeToolOpenAIStub(
+  requests: Array<Record<string, unknown>>,
+  toolName: string,
+  args: Record<string, unknown>,
+  reasoningContent?: string,
+): OpenAI {
   return {
     chat: {
       completions: {
@@ -50,17 +63,14 @@ function makeOpenAIStub(requests: Array<Record<string, unknown>>): OpenAI {
                 message: {
                   role: "assistant",
                   content: null,
+                  ...(reasoningContent !== undefined && { reasoning_content: reasoningContent }),
                   tool_calls: [
                     {
                       id: "call-1",
                       type: "function",
                       function: {
-                        name: "cast_votes",
-                        arguments: JSON.stringify({
-                          thinking: "I empower my ally Mira because she is loyal, and expose Vera as the threat.",
-                          empower: "Mira",
-                          expose: "Vera",
-                        }),
+                        name: toolName,
+                        arguments: JSON.stringify(args),
                       },
                     },
                   ],
@@ -233,6 +243,103 @@ describe("InfluenceAgent structured output mode", () => {
     expect(requests[0]?.tools).toBeUndefined();
     expect(requests[0]?.max_tokens).toBe(8192);
     expect(requests[1]?.max_tokens).toBe(12288);
+  });
+
+  it("preserves thinking and native reasoning for Mingle room choices", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "choose_mingle_room",
+        {
+          thinking: "Room 2 has the right crowd for a quiet alliance check.",
+          roomId: 2,
+        },
+        "Hidden local reasoning for the room choice.",
+      ),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const choice = await agent.chooseMingleRoom({
+      ...makeContext(Phase.MINGLE),
+      roomCount: 2,
+      roomCounts: [{ roomId: 1, count: 1 }, { roomId: 2, count: 1 }],
+    });
+
+    expect(choice).toEqual({
+      roomId: 2,
+      thinking: "Room 2 has the right crowd for a quiet alliance check.",
+      reasoningContext: "Hidden local reasoning for the room choice.",
+    });
+  });
+
+  it("preserves thinking and native reasoning for endgame elimination votes", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "elimination_vote",
+        {
+          thinking: "Vera has too much social cover to let through.",
+          eliminate: "Vera",
+        },
+        "Hidden local reasoning for direct elimination.",
+      ),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const vote = await agent.getEndgameEliminationVote(makeContext(Phase.VOTE));
+
+    expect(vote).toEqual({
+      target: "vera-id",
+      thinking: "Vera has too much social cover to let through.",
+      reasoningContext: "Hidden local reasoning for direct elimination.",
+    });
+  });
+
+  it("preserves thinking and native reasoning for jury votes", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "jury_vote",
+        {
+          thinking: "Vera owned her betrayal and made the sharper case.",
+          winner: "Vera",
+        },
+        "Hidden local reasoning for the winner vote.",
+      ),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const vote = await agent.getJuryVote(makeContext(Phase.JURY_VOTE), ["mira-id", "vera-id"]);
+
+    expect(vote).toEqual({
+      target: "vera-id",
+      thinking: "Vera owned her betrayal and made the sharper case.",
+      reasoningContext: "Hidden local reasoning for the winner vote.",
+    });
   });
 
   it("uses plain visible messages (no structured thinking+message JSON) in local mode", async () => {

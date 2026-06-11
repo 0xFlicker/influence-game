@@ -1,6 +1,6 @@
 import type { UUID } from "../types";
 import { Phase } from "../types";
-import type { AgentResponse } from "../game-runner.types";
+import type { AgentResponse, TargetDecision } from "../game-runner.types";
 import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
 
 async function withEndgameActionTimeout<T>(
@@ -54,6 +54,17 @@ export async function runReckoningPlea(
         () => fallbackMessage("I have no further plea."),
       );
       logger.logPublic(player.id, message, Phase.PLEA, { thinking, reasoningContext });
+      logger.emitAgentTurn({
+        phase: Phase.PLEA,
+        action: "plea",
+        actor: { id: player.id, name: player.name, role: "player" },
+        visibility: "public",
+        response: { message },
+        thinking,
+        reasoningContext,
+        scope: "public",
+        text: message,
+      });
     }),
   );
 
@@ -91,6 +102,20 @@ export async function runTribunalAccusation(
       );
       const targetName = gameState.getPlayerName(targetId);
       logger.logPublic(player.id, `[ACCUSES ${targetName}] ${text}`, Phase.ACCUSATION, { thinking, reasoningContext });
+      logger.emitAgentTurn({
+        phase: Phase.ACCUSATION,
+        action: "accusation",
+        actor: { id: player.id, name: player.name, role: "player" },
+        visibility: "public",
+        response: {
+          target: { id: targetId, name: targetName },
+          accusation: text,
+        },
+        thinking,
+        reasoningContext,
+        scope: "public",
+        text: `[ACCUSES ${targetName}] ${text}`,
+      });
       accusations.set(targetId, {
         accuserId: player.id,
         accuserName: player.name,
@@ -129,6 +154,21 @@ export async function runTribunalDefense(
         () => fallbackMessage("I stand by my game."),
       );
       logger.logPublic(player.id, `[DEFENSE] ${defense}`, Phase.DEFENSE, { thinking, reasoningContext });
+      logger.emitAgentTurn({
+        phase: Phase.DEFENSE,
+        action: "tribunal-defense",
+        actor: { id: player.id, name: player.name, role: "player" },
+        visibility: "public",
+        response: {
+          message: defense,
+          accuser: { id: accusation.accuserId, name: accusation.accuserName },
+          accusation: accusation.text,
+        },
+        thinking,
+        reasoningContext,
+        scope: "public",
+        text: `[DEFENSE] ${defense}`,
+      });
     }),
   );
 
@@ -172,6 +212,17 @@ export async function runJudgmentOpening(
         () => fallbackMessage("I will let my game speak for itself."),
       );
       logger.logPublic(player.id, message, Phase.OPENING_STATEMENTS, { thinking, reasoningContext });
+      logger.emitAgentTurn({
+        phase: Phase.OPENING_STATEMENTS,
+        action: "opening-statement",
+        actor: { id: player.id, name: player.name, role: "player" },
+        visibility: "public",
+        response: { message },
+        thinking,
+        reasoningContext,
+        scope: "public",
+        text: message,
+      });
     }),
   );
 
@@ -211,6 +262,20 @@ export async function runJudgmentJuryQuestions(
     );
     const finalistName = gameState.getPlayerName(targetFinalistId);
     logger.logPublic(juror.playerId, `[QUESTION to ${finalistName}] ${question}`, Phase.JURY_QUESTIONS, { thinking: questionThinking, reasoningContext: questionReasoning });
+    logger.emitAgentTurn({
+      phase: Phase.JURY_QUESTIONS,
+      action: "jury-question",
+      actor: { id: juror.playerId, name: juror.playerName, role: "juror" },
+      visibility: "public",
+      response: {
+        targetFinalist: { id: targetFinalistId, name: finalistName },
+        question,
+      },
+      thinking: questionThinking,
+      reasoningContext: questionReasoning,
+      scope: "public",
+      text: `[QUESTION to ${finalistName}] ${question}`,
+    });
 
     const finalistAgent = agents.get(targetFinalistId);
     if (finalistAgent) {
@@ -223,6 +288,21 @@ export async function runJudgmentJuryQuestions(
         () => fallbackMessage("I played the best game I could."),
       );
       logger.logPublic(targetFinalistId, `[ANSWER to ${juror.playerName}] ${answer}`, Phase.JURY_QUESTIONS, { thinking: answerThinking, reasoningContext: answerReasoning });
+      logger.emitAgentTurn({
+        phase: Phase.JURY_QUESTIONS,
+        action: "jury-answer",
+        actor: { id: targetFinalistId, name: finalistName, role: "player" },
+        visibility: "public",
+        response: {
+          message: answer,
+          juror: { id: juror.playerId, name: juror.playerName },
+          question,
+        },
+        thinking: answerThinking,
+        reasoningContext: answerReasoning,
+        scope: "public",
+        text: `[ANSWER to ${juror.playerName}] ${answer}`,
+      });
     }
   }
 
@@ -252,6 +332,17 @@ export async function runJudgmentClosing(
         () => fallbackMessage("Vote for the game you respect most."),
       );
       logger.logPublic(player.id, message, Phase.CLOSING_ARGUMENTS, { thinking, reasoningContext });
+      logger.emitAgentTurn({
+        phase: Phase.CLOSING_ARGUMENTS,
+        action: "closing-argument",
+        actor: { id: player.id, name: player.name, role: "player" },
+        visibility: "public",
+        response: { message },
+        thinking,
+        reasoningContext,
+        scope: "public",
+        text: message,
+      });
     }),
   );
 
@@ -280,18 +371,38 @@ export async function runJudgmentJuryVote(
     if (!jurorAgent) continue;
 
     const phaseCtx = contextBuilder.buildPhaseContext(juror.playerId, Phase.JURY_VOTE);
-    const vote = await withEndgameActionTimeout(
+    const vote = await withEndgameActionTimeout<TargetDecision>(
       ctx,
       Phase.JURY_VOTE,
       `${juror.playerName} jury vote`,
       (signal) => jurorAgent.getJuryVote(phaseCtx, finalistIds, { signal }),
-      () => finalist0.id,
+      () => ({
+        target: finalist0.id,
+        thinking: "House fallback after unresolved jury vote.",
+      }),
     );
-    gameState.recordJuryVote(juror.playerId, vote);
+    gameState.recordJuryVote(juror.playerId, vote.target);
+    const targetName = gameState.getPlayerName(vote.target);
     logger.logSystem(
-      `${juror.playerName} (juror) votes for: ${gameState.getPlayerName(vote)}`,
+      `${juror.playerName} (juror) votes for: ${targetName}`,
       Phase.JURY_VOTE,
+      vote.thinking,
+      vote.reasoningContext,
     );
+    logger.emitAgentTurn({
+      phase: Phase.JURY_VOTE,
+      action: "jury-vote",
+      actor: { id: juror.playerId, name: juror.playerName, role: "juror" },
+      visibility: "private",
+      response: {
+        target: { id: vote.target, name: targetName },
+        finalists: finalistIds.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+      },
+      thinking: vote.thinking,
+      reasoningContext: vote.reasoningContext,
+      scope: "system",
+      text: `${juror.playerName} (juror) votes for: ${targetName}`,
+    });
   }
 
   const { winnerId, method, voteCounts } = gameState.tallyJuryVotes();

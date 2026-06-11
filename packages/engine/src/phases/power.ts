@@ -51,6 +51,21 @@ async function runPowerLobbyMessages(
         exposePressure,
       );
       logger.logPublic(player.id, message, Phase.POWER, { thinking, reasoningContext });
+      logger.emitAgentTurn({
+        phase: Phase.POWER,
+        action: "power-lobby-message",
+        actor: { id: player.id, name: player.name, role: "player" },
+        visibility: "public",
+        response: {
+          message,
+          empowered: { id: empoweredId, name: gameState.getPlayerName(empoweredId) },
+          provisionalCandidates: provisionalCandidates.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+        },
+        thinking,
+        reasoningContext,
+        scope: "public",
+        text: message,
+      });
     }),
   );
 }
@@ -105,6 +120,21 @@ export async function runPowerPhase(
     powerActionResult.thinking,
     powerActionResult.reasoningContext,
   );
+  logger.emitAgentTurn({
+    phase: Phase.POWER,
+    action: "power-action",
+    actor: { id: empoweredId, name: gameState.getPlayerName(empoweredId), role: "player" },
+    visibility: "private",
+    response: {
+      action: powerAction.action,
+      target: { id: powerAction.target, name: gameState.getPlayerName(powerAction.target) },
+      candidates: prelim.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+    },
+    thinking: powerActionResult.thinking,
+    reasoningContext: powerActionResult.reasoningContext,
+    scope: "system",
+    text: `${gameState.getPlayerName(empoweredId)} power action: ${powerAction.action} -> ${gameState.getPlayerName(powerAction.target)}`,
+  });
 
   if (powerAction.action === "protect") {
     empoweredAgent.updateAlly(gameState.getPlayerName(powerAction.target));

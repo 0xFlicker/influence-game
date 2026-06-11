@@ -22,7 +22,7 @@ The engine and API read LLM provider settings through a shared OpenAI-compatible
 
 Project-specific variables win over aliases. If a base URL is configured without an API key, the client uses `lm-studio` as a local default key.
 
-Local OpenAI-compatible providers are not perfectly identical to OpenAI's hosted API. LM Studio may reject `tool_choice` objects like `{ type: "function", function: { name } }`; the default local mode sends `tool_choice: "required"` with one available tool instead. Local structured decision schemas also omit hidden `thinking` fields so smaller models spend their output budget on game actions rather than private notes. If a model/server still struggles with tools, try `INFLUENCE_LLM_TOOL_CHOICE_MODE=json_schema` to skip tool calls and request the tool argument schema as JSON response format.
+Local OpenAI-compatible providers are not perfectly identical to OpenAI's hosted API. LM Studio may reject `tool_choice` objects like `{ type: "function", function: { name } }`; the default local mode sends `tool_choice: "required"` with one available tool instead. Local structured decision schemas keep the emitted `thinking` field, while raw provider reasoning metadata such as `reasoning_content` is stored separately as `reasoningContext`. If a model/server still struggles with tools, try `INFLUENCE_LLM_TOOL_CHOICE_MODE=json_schema` to skip tool calls and request the tool argument schema as JSON response format.
 
 Local public messages skip the hosted-provider `{ thinking, message }` response schema and request visible speech in `message.content`. When a local server returns native reasoning metadata such as LM Studio's `reasoning_content`, the engine stores that value as transcript `reasoningContext`. This keeps malformed hidden reasoning out of public speech while still preserving local model reasoning for viewer/debug surfaces.
 
@@ -58,7 +58,7 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
-Simulation artifacts are written under `packages/engine/docs/simulations/`.
+Simulation artifacts are written under `packages/engine/docs/simulations/`. For each game, use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N.json` for the full transcript/result bundle, `game-N-progress.jsonl` for lightweight live progress, and `game-N.txt` for human-readable transcript review.
 
 ## Full Stack Local Provider
 
@@ -87,9 +87,9 @@ Create a dated note in `docs/simulations/` or near the generated batch artifacts
 - examples of good strategy (especially visible in the surfaced `thinking` / `reasoningContext` on VOTE / POWER / COUNCIL lines)
 - examples of bad strategy, repetition, incoherence, or empty responses
 - whether the output was enjoyable to watch
-- quality and usefulness of the per-agent `thinking` and native `reasoningContext` captured in the transcript (this is now first-class signal for Mingle and decision-loop debugging)
+- quality and usefulness of the per-agent `thinking` and native `reasoningContext` captured in `game-N-turns.jsonl` and the transcript (this is now first-class signal for Mingle and decision-loop debugging)
 
-When running with `--chatty`, the live terminal (and the written `game-*.txt`) will interleave House action lines with dim-gray `thinking:` and cyan `reasoning:` blocks. These are the primary human-readable artifacts for evaluating whether the model is producing legible, strategic private reasoning.
+When running with `--chatty`, the live terminal (and the written `game-*.txt`) will interleave House action lines with dim-gray `thinking:` and cyan `reasoning:` blocks. These are the primary human-readable artifacts for evaluating whether the model is producing legible, strategic private reasoning. For scripts or post-run scoring, read `game-N-turns.jsonl`; it records each normalized room choice, Mingle turn, vote, power action, diary answer, and endgame decision as clean JSON with `thinking` and `reasoningContext` when available.
 
 ## Current Product Context
 

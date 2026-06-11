@@ -119,6 +119,34 @@ describe("GameRunner stream listener", () => {
     }
   });
 
+  it("emits structured agent_turn events for agent decisions", async () => {
+    const agents = makeAgents(5);
+    const runner = new GameRunner(agents, { ...FAST_CONFIG, mingleSessionsPerRound: 1 });
+
+    const events: GameStreamEvent[] = [];
+    runner.setStreamListener((event) => events.push(event));
+
+    await runner.run();
+
+    const agentTurns = events.filter((e) => e.type === "agent_turn");
+    expect(agentTurns.length).toBeGreaterThan(0);
+
+    const voteTurn = agentTurns.find((e) => e.type === "agent_turn" && e.action === "vote");
+    expect(voteTurn).toBeDefined();
+    if (voteTurn?.type === "agent_turn") {
+      expect(voteTurn.actor.name).toBeTruthy();
+      expect(voteTurn.response).toHaveProperty("empowerTarget");
+      expect(voteTurn.thinking).toBeTruthy();
+    }
+
+    const mingleTurn = agentTurns.find((e) => e.type === "agent_turn" && e.action === "mingle-turn");
+    expect(mingleTurn).toBeDefined();
+    if (mingleTurn?.type === "agent_turn") {
+      expect(mingleTurn.response).toHaveProperty("action");
+      expect(mingleTurn.response).toHaveProperty("messageDelivered");
+    }
+  });
+
   it("emits a game_over event at the end", async () => {
     const agents = makeAgents(4);
     const runner = new GameRunner(agents, FAST_CONFIG);

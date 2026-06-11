@@ -5,10 +5,12 @@ import {
   isMingleVariant,
   isPowerLobbyVariant,
   parseArgs,
+  serializeAgentTurnEvent,
   type GameResult,
 } from "../simulate";
+import type { AgentTurnEvent } from "../game-runner";
 import { instrumentGame } from "../simulation-instrumentation";
-import { DEFAULT_CONFIG } from "../types";
+import { DEFAULT_CONFIG, Phase } from "../types";
 import type { TokenUsage } from "../token-tracker";
 
 const ZERO_USAGE: TokenUsage = {
@@ -35,6 +37,7 @@ function gameResult(overrides: Partial<GameResult>): GameResult {
     transcriptPath: "game-1.txt",
     jsonPath: "game-1.json",
     progressPath: "game-1-progress.jsonl",
+    turnsPath: "game-1-turns.jsonl",
     tokenUsage: {
       perAgent: {},
       total: ZERO_USAGE,
@@ -137,6 +140,41 @@ describe("simulation variant config", () => {
     expect(stats.partial).toBe(true);
     expect(stats.totalGames).toBe(1);
     expect(stats.instrumentation.totalGames).toBe(1);
+  });
+
+  it("serializes agent turns as clean structured JSON records", () => {
+    const event: AgentTurnEvent = {
+      type: "agent_turn",
+      round: 1,
+      phase: Phase.VOTE,
+      timestamp: 1_700_000_000_000,
+      action: "vote",
+      actor: { id: "atlas-id", name: "Atlas", role: "player" },
+      visibility: "private",
+      response: {
+        empowerTarget: { id: "mira-id", name: "\x1b[33mMira\x1b[0m" },
+        exposeTarget: { id: "vera-id", name: "Vera" },
+      },
+      thinking: "\x1b[2mMira is my ally.\x1b[0m",
+      reasoningContext: "\x1b[36mHidden local reasoning.\x1b[0m",
+      scope: "system",
+      text: "\x1b[33mAtlas votes: empower=Mira, expose=Vera\x1b[0m",
+    };
+
+    const serialized = serializeAgentTurnEvent(2, 1_700_000_000_000, event, 1_700_000_001_234);
+    const json = JSON.stringify(serialized);
+
+    expect(serialized).toMatchObject({
+      timestamp: "2023-11-14T22:13:21.234Z",
+      elapsedMs: 1234,
+      gameNumber: 2,
+      type: "agent_turn",
+      action: "vote",
+      thinking: "Mira is my ally.",
+      reasoningContext: "Hidden local reasoning.",
+      text: "Atlas votes: empower=Mira, expose=Vera",
+    });
+    expect(json).not.toContain("\x1b");
   });
 
   it("accepts the configured max player count for CLI simulation runs", () => {

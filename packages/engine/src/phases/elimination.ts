@@ -77,6 +77,25 @@ export async function handleElimination(
   ctx.eliminationOrder.push(eliminated.name);
   logger.logPublic(eliminatedId, lastMsgResponse.message, phase, {
     thinking: lastMsgResponse.thinking,
+    reasoningContext: lastMsgResponse.reasoningContext,
+  });
+  logger.emitAgentTurn({
+    phase,
+    action: "last-message",
+    actor: { id: eliminatedId, name: eliminated.name, role: "player" },
+    visibility: "public",
+    response: {
+      message: lastMsgResponse.message,
+      eliminationMode: eliminationContext?.mode,
+      directExecutor: eliminationContext?.directExecutor,
+      exposedBy: eliminationContext?.exposedBy,
+      councilVoters: eliminationContext?.councilVoters,
+      eliminationVoters: eliminationContext?.eliminationVoters,
+    },
+    thinking: lastMsgResponse.thinking,
+    reasoningContext: lastMsgResponse.reasoningContext,
+    scope: "public",
+    text: lastMsgResponse.message,
   });
   gameState.eliminatePlayer(eliminatedId);
   logger.emitStream({
