@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import { GameState, createUUID } from "../game-state";
 import { GameEventBus } from "../event-bus";
 import { GameRunner } from "../game-runner";
-import type { AgentCallOptions, AgentResponse, MingleRoomChoiceAction, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "../game-runner";
+import type { AgentCallOptions, AgentResponse, GameStreamEvent, MingleIntentAction, MingleRoomChoiceAction, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "../game-runner";
 import { createPhaseMachine } from "../phase-machine";
 import { createActor } from "xstate";
 import { Phase, PlayerStatus } from "../types";
@@ -145,6 +145,78 @@ describe("Mingle Rooms (current open-room phase)", () => {
     expect(allocation!.roomMetadata!.rooms[0]!.playerIds.length).toBeGreaterThan(0);
   });
 
+  it("emits hidden Mingle intent before room choice without leaking it to transcript speech", async () => {
+    class IntentProbeAgent extends MockAgent {
+      readonly choiceContexts: PhaseContext[] = [];
+
+      override async getMingleIntent(): Promise<MingleIntentAction> {
+        return {
+          seekPlayers: ["Beta"],
+          avoidPlayers: ["Gamma"],
+          preferredRoomSize: "small_group",
+          purpose: `${this.name} wants to test whether Beta will name Gamma.`,
+          provisionalTarget: "Gamma",
+          noTargetReason: null,
+          openingAsk: "Ask Beta if Gamma sounds too rehearsed.",
+          thinking: `${this.name} hidden Mingle intent`,
+          reasoningContext: `${this.name} native intent reasoning`,
+        };
+      }
+
+      override async chooseMingleRoom(ctx: PhaseContext): Promise<MingleRoomChoiceAction> {
+        this.choiceContexts.push(ctx);
+        return { roomId: 1, thinking: `${this.name} room choice` };
+      }
+    }
+
+    const alpha = new IntentProbeAgent(createUUID(), "Alpha");
+    const agents = [
+      alpha,
+      new IntentProbeAgent(createUUID(), "Beta"),
+      new IntentProbeAgent(createUUID(), "Gamma"),
+      new IntentProbeAgent(createUUID(), "Delta"),
+      new IntentProbeAgent(createUUID(), "Echo"),
+    ];
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, mingleSessionsPerRound: 1 });
+    const events: GameStreamEvent[] = [];
+    runner.setStreamListener((event) => events.push(event));
+
+    const result = await runner.run();
+
+    const roundOneTurns = events.filter((event) => event.type === "agent_turn" && event.round === 1);
+    const alphaIntent = roundOneTurns.find((event) => event.type === "agent_turn" && event.action === "mingle-intent" && event.actor.name === "Alpha");
+    const alphaChoice = roundOneTurns.find((event) => event.type === "agent_turn" && event.action === "mingle-room-choice" && event.actor.name === "Alpha");
+    expect(alphaIntent).toMatchObject({
+      visibility: "private",
+      response: {
+        purpose: "Alpha wants to test whether Beta will name Gamma.",
+        provisionalTarget: "Gamma",
+        openingAsk: "Ask Beta if Gamma sounds too rehearsed.",
+      },
+      thinking: "Alpha hidden Mingle intent",
+      reasoningContext: "Alpha native intent reasoning",
+    });
+    expect(alphaChoice).toMatchObject({
+      response: {
+        requestedRoomId: 1,
+        assignedRoomId: 1,
+        intent: {
+          purpose: "Alpha wants to test whether Beta will name Gamma.",
+          provisionalTarget: "Gamma",
+        },
+      },
+    });
+    expect(alpha.choiceContexts[0]!.mingleIntent).toMatchObject({
+      purpose: "Alpha wants to test whether Beta will name Gamma.",
+      provisionalTarget: "Gamma",
+    });
+    expect(result.transcript.some((entry) => entry.text.includes("test whether Beta will name Gamma"))).toBe(false);
+    for (const entry of result.transcript.filter((candidate) => candidate.roomMetadata?.diagnostics)) {
+      expect(JSON.stringify(entry.roomMetadata!.diagnostics)).not.toContain("test whether Beta will name Gamma");
+      expect(entry.roomMetadata!.diagnostics!.choices.some((choice) => "intent" in choice)).toBe(false);
+    }
+  });
+
   it("open rooms generate group room messages for rooms with multiple occupants", async () => {
     class PileOnAgent extends MockAgent {
       async chooseMingleRoom(): Promise<MingleRoomChoiceAction> {
@@ -253,7 +325,14 @@ describe("Mingle Rooms (current open-room phase)", () => {
     }
 
     const alpha = new ScriptedMingleAgent(createUUID(), "Alpha", 1, [
-      { thinking: "Move after checking in.", message: "Beta, keep me posted. I'm going next door.", noReply: false, gotoRoomId: 2 },
+      {
+        thinking: "Move after checking in.",
+        message: "Beta, keep me posted. I'm going next door.",
+        noReply: false,
+        gotoRoomId: 2,
+        strategySignal: "coordination-check",
+        movementPurpose: "Join the larger room after leaving Beta a note",
+      },
       { thinking: "Test the larger room.", message: "I crossed over because this room has the numbers.", noReply: false, gotoRoomId: null },
     ]);
     const agents = [
@@ -265,6 +344,8 @@ describe("Mingle Rooms (current open-room phase)", () => {
     ];
 
     const runner = new GameRunner(agents, { ...TEST_CONFIG, mingleSessionsPerRound: 2 });
+    const events: GameStreamEvent[] = [];
+    runner.setStreamListener((event) => events.push(event));
     const result = await runner.run();
 
     const allocations = result.transcript.filter(
@@ -280,7 +361,22 @@ describe("Mingle Rooms (current open-room phase)", () => {
     expect(secondRooms[1]!.playerIds).toContain(alpha.id);
 
     const alphaMove = allocations[0]!.roomMetadata!.diagnostics!.actions!.find((action) => action.player.name === "Alpha");
-    expect(alphaMove).toMatchObject({ fromRoomId: 1, toRoomId: 2, moved: true, action: "talk" });
+    expect(alphaMove).toMatchObject({
+      fromRoomId: 1,
+      toRoomId: 2,
+      moved: true,
+      action: "talk",
+    });
+    expect(alphaMove && "strategySignal" in alphaMove).toBe(false);
+    expect(alphaMove && "movementPurpose" in alphaMove).toBe(false);
+    const alphaTurn = events.find((event) => event.type === "agent_turn" && event.action === "mingle-turn" && event.actor.name === "Alpha");
+    expect(alphaTurn).toBeDefined();
+    if (alphaTurn?.type === "agent_turn") {
+      expect(alphaTurn.response).toMatchObject({
+        strategySignal: "coordination-check",
+        movementPurpose: "Join the larger room after leaving Beta a note",
+      });
+    }
 
     const movedRoomMsg = result.transcript.find(
       (entry) => entry.round === 1 && entry.scope === "mingle" && entry.from === "Alpha" && entry.text.includes("crossed over"),
@@ -310,6 +406,26 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const alphaChoice = defined(allocation.diagnostics.choices.find((choice) => choice.player.id === alpha.id));
     const betaChoice = defined(allocation.diagnostics.choices.find((choice) => choice.player.id === beta.id));
     expect(alphaChoice.assignedRoomId).not.toBe(betaChoice.assignedRoomId);
+  });
+
+  it("spreads missing and invalid room choices across valid rooms", () => {
+    const players = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map((name) => ({
+      id: createUUID(),
+      name,
+    }));
+    const choices = new Map(players.map((player, index) => [player.id, index % 2 === 0 ? null : 99]));
+
+    const allocation = allocateRooms(choices, players, 2, 1, 1);
+
+    expect(allocation.rooms.map((room) => room.playerIds.length)).toEqual([3, 2]);
+    expect(allocation.rooms.every((room) => room.playerIds.length > 0)).toBe(true);
+    expect(allocation.diagnostics.choices.map((choice) => choice.status)).toEqual([
+      "missing",
+      "invalid",
+      "missing",
+      "invalid",
+      "missing",
+    ]);
   });
 
   it("passes privacy-safe room counts and only local rosters to agents", async () => {

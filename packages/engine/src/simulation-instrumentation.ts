@@ -30,6 +30,7 @@ export interface SimulatorArgsSnapshot {
   variant: string;
   gameTimeoutMs: number;
   llmTimeoutMs: number;
+  enableStrategicReflections?: boolean;
 }
 
 export interface GitMetadata {

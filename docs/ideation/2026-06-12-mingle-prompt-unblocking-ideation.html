@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Mingle Prompt Unblocking</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f4ef;
+      --paper: #fffdf8;
+      --ink: #202124;
+      --muted: #62615d;
+      --line: #ded8ce;
+      --accent: #245c73;
+      --accent-soft: #e2f0f3;
+      --green: #276b48;
+      --green-soft: #e4f2e8;
+      --amber: #806018;
+      --amber-soft: #f3ead0;
+      --red: #8a3b34;
+      --red-soft: #f3dfdc;
+      --code: #f0ebe2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 42px 24px 56px;
+    }
+    header {
+      padding: 26px 28px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    h1, h2, h3 { line-height: 1.18; margin: 0; }
+    h1 { font-size: 32px; letter-spacing: 0; }
+    h2 { font-size: 22px; margin-top: 34px; }
+    h3 { font-size: 18px; }
+    p { max-width: 76ch; }
+    a { color: var(--accent); }
+    code {
+      background: var(--code);
+      padding: 0.1rem 0.28rem;
+      border-radius: 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      background: #eee8dc;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #46433e;
+    }
+    tr:last-child td { border-bottom: 0; }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 5px 10px;
+      background: var(--accent-soft);
+      color: #174758;
+      border: 1px solid #c7dce2;
+      font-size: 13px;
+    }
+    .summary {
+      margin-top: 18px;
+      color: var(--muted);
+      max-width: 78ch;
+    }
+    .section {
+      margin-top: 28px;
+      padding: 24px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .axis-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+      padding: 0;
+      list-style: none;
+    }
+    .axis-list li {
+      padding: 12px;
+      background: #f6f1e8;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+    }
+    .jump-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 8px;
+      padding: 0;
+      list-style: none;
+      margin: 16px 0 20px;
+    }
+    .jump-list a {
+      display: block;
+      padding: 10px 12px;
+      border-radius: 7px;
+      background: var(--accent-soft);
+      border: 1px solid #c7dce2;
+      text-decoration: none;
+      font-weight: 650;
+    }
+    article.idea {
+      margin-top: 16px;
+      padding: 18px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fffaf0;
+    }
+    .idea-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .idea-id {
+      font-weight: 800;
+      color: var(--accent);
+    }
+    dl {
+      display: grid;
+      grid-template-columns: minmax(110px, 150px) 1fr;
+      gap: 7px 14px;
+      margin: 14px 0 0;
+    }
+    dt {
+      color: var(--muted);
+      font-weight: 750;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 12px;
+    }
+    dd { margin: 0; }
+    .metric-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .metric {
+      border-radius: 999px;
+      padding: 4px 9px;
+      font-size: 12px;
+      border: 1px solid var(--line);
+      background: #f4efe5;
+      color: #3f3b35;
+    }
+    .high { background: var(--green-soft); color: var(--green); border-color: #c1dec8; }
+    .medium { background: var(--amber-soft); color: var(--amber); border-color: #dfca8c; }
+    .callout {
+      margin-top: 14px;
+      padding: 13px 15px;
+      border-radius: 8px;
+      background: var(--green-soft);
+      border: 1px solid #c1dec8;
+      color: #214d36;
+    }
+    .diagram {
+      margin-top: 18px;
+      padding: 16px;
+      border-radius: 8px;
+      background: #f6f1e8;
+      border: 1px solid var(--line);
+      overflow-x: auto;
+    }
+    svg text {
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      fill: #202124;
+    }
+    footer {
+      margin-top: 34px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media (max-width: 700px) {
+      main { padding: 20px 14px 36px; }
+      header, .section { padding: 18px; }
+      h1 { font-size: 26px; }
+      dl { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Ideation: Mingle Prompt Unblocking</h1>
+      <div class="meta">
+        <span class="pill">Date: <time datetime="2026-06-12">2026-06-12</time></span>
+        <span class="pill">Topic: mingle-prompt-unblocking</span>
+        <span class="pill">Mode: repo-grounded</span>
+      </div>
+      <p class="summary">Focus: open up agents to form real sub-groups in Mingle rooms, talk like players, name targets openly, and generate varied strategy instead of continuing lobby-safe behavior.</p>
+    </header>
+
+    <section class="section" id="grounding-context">
+      <h2>Grounding Context</h2>
+      <p><code>README.md:3</code> frames Influence as a social-strategy game built on public discourse, private Mingle rooms, and strategic voting. The current phase loop also puts <code>MINGLE</code> directly between <code>LOBBY</code> and <code>RUMOR</code>, which means Mingle is the intended bridge from public social theater into concrete voting dynamics.</p>
+      <p>The current agent prompt stack fights that intent. Persona prompts include early public/lobby caution such as <code>agent.ts:44</code>, then <code>buildSystemPrompt</code> injects the full persona prompt for every phase. Mingle guidelines say it is the strategy phase, but early Mingle still asks for indirect coded language at <code>agent.ts:127</code>. That makes the safest model behavior vague read-sharing instead of target naming.</p>
+      <p>Room formation is under-specified. <code>chooseMingleRoom</code> asks agents to pick a neutral room number at <code>agent.ts:844</code>, initial choices run in parallel against empty counts at <code>phases/mingle.ts:491</code>, and the fallback is always Room 1 at <code>agent.ts:863</code>. There is no structured way for an agent to say "I want Mira and Atlas in a pair room to test a Kael vote."</p>
+      <p>The Mingle turn prompt asks for specificity, but it gives little structure to the spectrum between guarded social read and explicit deal-making. <code>takeMingleTurn</code> has only <code>message</code>, <code>noReply</code>, and <code>gotoRoomId</code> in <code>game-runner.types.ts:53</code>, and the call uses low reasoning effort at <code>agent.ts:972</code>. Existing action observability is strong: <code>README.md:56</code> and <code>docs/reasoning-transcript-observability.md:210</code> point to structured turn logs with <code>thinking</code> and <code>reasoningContext</code>, so room choices and turns can be measured after changes.</p>
+      <p>Strategic reflection observability is the validation gap. <code>getStrategicReflection</code> updates agent memory at <code>agent.ts:2477</code>, and <code>DiaryRoom.runStrategicReflections</code> calls it at <code>diary-room.ts:37</code>, but those reflections are not emitted as structured turn records in local simulation artifacts. Without reflection records, the MCP can inspect what agents said and voted, but not whether Mingle changed their broader plans, suspicions, allies, or threats.</p>
+    </section>
+
+    <section class="section" id="topic-axes">
+      <h2>Topic Axes</h2>
+      <ul class="axis-list">
+        <li><strong>Phase Boundary</strong><br>Separate lobby etiquette from private Mingle strategy.</li>
+        <li><strong>Room Formation</strong><br>Make subgroups form around people and purposes, not bare room numbers.</li>
+        <li><strong>Speech Contract</strong><br>Open a spectrum from guarded social probing to explicit private strategy.</li>
+        <li><strong>Memory Carryover</strong><br>Turn Mingle deals, lies, and target reads into future vote pressure.</li>
+        <li><strong>Validation</strong><br>Measure room behavior and strategic reflection changes through simulation artifacts and MCP queries.</li>
+      </ul>
+    </section>
+
+    <section class="section" id="ranked-ideas">
+      <h2>Ranked Ideas</h2>
+      <ul class="jump-list">
+        <li><a href="#i1">I1. Mingle Intent Cards</a></li>
+        <li><a href="#i2">I2. Phase-Scoped Persona Overlays</a></li>
+        <li><a href="#i3">I3. Strategy Spectrum Prompting</a></li>
+        <li><a href="#i4">I4. Preference-Matched Room Formation</a></li>
+        <li><a href="#i5">I5. Mingle Debrief Memory</a></li>
+        <li><a href="#i6">I6. Persona Playbooks</a></li>
+        <li><a href="#i7">I7. Mingle Quality Scorecard</a></li>
+        <li><a href="#i8">I8. Strategic Reflection Records</a></li>
+      </ul>
+
+      <article class="idea" id="i1">
+        <div class="idea-head"><span class="idea-id">I1.</span><h3>Mingle Intent Cards Before Room Choice</h3></div>
+        <p>Add a pre-Mingle structured decision, analogous to lobby intent but actually consumed by room choice and Mingle turns. The card names whom the agent wants to seek, whom they want to avoid, desired room size, purpose, provisional target, and opening ask.</p>
+        <dl>
+          <dt>Axis</dt><dd>Room Formation</dd>
+          <dt>Basis</dt><dd>direct: <code>chooseMingleRoom</code> currently asks for one neutral room number at <code>agent.ts:844</code>; <code>getLobbyIntent</code> exists at <code>agent.ts:686</code> but is lobby-specific and not used to shape Mingle.</dd>
+          <dt>Rationale</dt><dd>This gives agents a strategic object to carry into both room selection and speech. It makes subgroups a consequence of named player preferences, not model vibes.</dd>
+          <dt>Downsides</dt><dd>Requires a new tool schema and tests around intent validity. If over-constrained, agents may sound too mechanical unless the visible speech prompt translates the intent into character voice.</dd>
+        </dl>
+        <div class="metric-row"><span class="metric high">Confidence: 90%</span><span class="metric medium">Complexity: Medium</span></div>
+      </article>
+
+      <article class="idea" id="i2">
+        <div class="idea-head"><span class="idea-id">I2.</span><h3>Phase-Scoped Persona Overlays</h3></div>
+        <p>Split persona guidance into stable identity plus phase overlays. Lobby overlays preserve public warmth and restraint; Mingle overlays explicitly authorize private target naming, deals, suspicion tests, and alliance asks in the persona's own style.</p>
+        <dl>
+          <dt>Axis</dt><dd>Phase Boundary</dd>
+          <dt>Basis</dt><dd>direct: Early public caution appears inside phase-global persona text, such as <code>agent.ts:44</code>, while <code>buildSystemPrompt</code> injects that full persona prompt for every phase.</dd>
+          <dt>Rationale</dt><dd>Agents are not just missing Mingle instructions; they are carrying lobby inhibition into Mingle. Phase overlays let the same character behave socially in public and strategically in private without contradiction.</dd>
+          <dt>Downsides</dt><dd>Touches a broad prompt surface. It should be tested with snapshot/prompt assertions so lobby does not become too blunt and Mingle does not become generic.</dd>
+        </dl>
+        <div class="metric-row"><span class="metric high">Confidence: 88%</span><span class="metric medium">Complexity: Medium</span></div>
+      </article>
+
+      <article class="idea" id="i3">
+        <div class="idea-head"><span class="idea-id">I3.</span><h3>Strategy Spectrum Prompting For Mingle Turns</h3></div>
+        <p>Make Mingle prompts explicitly support a range from guarded social probing to direct private strategy. Agents should be allowed to name a target, name an ally, ask for a commitment, trade information, offer protection, plant doubt, coordinate a public story, or stay more social when that fits intent and persona.</p>
+        <dl>
+          <dt>Axis</dt><dd>Speech Contract</dd>
+          <dt>Basis</dt><dd>direct: <code>takeMingleTurn</code> currently says "make TALK specific and strategic" at <code>agent.ts:954</code>, but the prompt does not define the useful spectrum between soft social reads and explicit deals.</dd>
+          <dt>Rationale</dt><dd>This is the most direct prompt unblock. It gives agents permission to talk game without forcing every agent into hard-targeting or making guarded personalities fail the prompt.</dd>
+          <dt>Downsides</dt><dd>Validation needs to look for a healthy mix, not per-turn compliance. A bad implementation could still over-index on target naming if examples are too aggressive.</dd>
+        </dl>
+        <div class="metric-row"><span class="metric high">Confidence: 86%</span><span class="metric high">Complexity: Low</span></div>
+      </article>
+
+      <article class="idea" id="i4">
+        <div class="idea-head"><span class="idea-id">I4.</span><h3>Preference-Matched Room Formation</h3></div>
+        <p>After agents produce intent cards, allocate initial rooms by matching seek/avoid preferences and desired room size. Room numbers become an output of the allocator rather than the core decision the model has to invent from an empty map.</p>
+        <dl>
+          <dt>Axis</dt><dd>Room Formation</dd>
+          <dt>Basis</dt><dd>direct: Initial room choices are collected with <code>Promise.all</code> at <code>phases/mingle.ts:491</code> while all counts are zero, then <code>allocateRooms</code> places players directly by chosen room number.</dd>
+          <dt>Rationale</dt><dd>Real players form subgroups around people, secrecy, pressure, and escape. A matching allocator makes the social graph legible and reduces the Room 1 attractor without adding fake randomness.</dd>
+          <dt>Downsides</dt><dd>Higher implementation burden and more edge cases. Start with intent cards and diagnostics first; then replace direct room-number allocation once the desired behavior is observable.</dd>
+        </dl>
+        <div class="metric-row"><span class="metric medium">Confidence: 78%</span><span class="metric medium">Complexity: High</span></div>
+      </article>
+
+      <article class="idea" id="i5">
+        <div class="idea-head"><span class="idea-id">I5.</span><h3>Mingle Debrief Memory Extraction</h3></div>
+        <p>At the end of each Mingle phase, run a lightweight private debrief per agent that extracts commitments, named targets, lies told, promises heard, new allies, new threats, and next vote plan into memory.</p>
+        <dl>
+          <dt>Axis</dt><dd>Memory Carryover</dd>
+          <dt>Basis</dt><dd>direct: Agent memory already has allies, threats, notes, and strategic reflection at <code>agent.ts:529</code> and <code>agent.ts:2478</code>, while Mingle inbox messages are included dynamically but not clearly summarized into durable strategic state.</dd>
+          <dt>Rationale</dt><dd>The point of Mingle is not only better room chat; it should change rumors, votes, and later power moves. A debrief turns room talk into consequences.</dd>
+          <dt>Downsides</dt><dd>Another model call per agent per Mingle can add cost. A cheaper extractor or schema-first local call may be enough because the source material is short.</dd>
+        </dl>
+        <div class="metric-row"><span class="metric medium">Confidence: 80%</span><span class="metric medium">Complexity: Medium</span></div>
+      </article>
+
+      <article class="idea" id="i6">
+        <div class="idea-head"><span class="idea-id">I6.</span><h3>Persona Playbooks For Private Strategy</h3></div>
+        <p>Give each personality a compact Mingle playbook: broker trades secrets, aggressive names a strong-player target, social recruits one person, contrarian tests consensus, observer asks one sharp read, paranoid pressure-tests loyalty, and deceptive plants one plausible falsehood.</p>
+        <dl>
+          <dt>Axis</dt><dd>Speech Contract</dd>
+          <dt>Basis</dt><dd>direct: The personality list already distinguishes broker, provocateur, contrarian, observer, social, aggressive, and others, but much of the current tactical instruction is still public/lobby-flavored.</dd>
+          <dt>Rationale</dt><dd>Variety should come from different private incentives, not from telling every agent "be strategic." Playbooks turn target naming into multiple styles of target naming.</dd>
+          <dt>Downsides</dt><dd>Prompt bloat risk. Keep playbooks short and phase-scoped, and prefer verbs over long prose.</dd>
+        </dl>
+        <div class="metric-row"><span class="metric high">Confidence: 84%</span><span class="metric high">Complexity: Low</span></div>
+      </article>
+
+      <article class="idea" id="i7">
+        <div class="idea-head"><span class="idea-id">I7.</span><h3>Mingle Quality Scorecard</h3></div>
+        <p>Add a simulation-analysis script or report that scores Mingle on room entropy, two- and three-player room rate, social-probe rate, named-target rate, explicit deal/ask rate, movement rate, reflection-plan shifts, and carryover into Rumor/Vote.</p>
+        <dl>
+          <dt>Axis</dt><dd>Validation</dd>
+          <dt>Basis</dt><dd>direct: The simulator already writes structured per-agent-turn logs with <code>thinking</code> and <code>reasoningContext</code> per <code>README.md:56</code> and observability docs at <code>docs/reasoning-transcript-observability.md:210</code>.</dd>
+          <dt>Rationale</dt><dd>This prevents vibe-based prompt tuning. The change succeeds only if rooms diversify, strategy signals appear across a spectrum, and reflections or later public phases show plan movement.</dd>
+          <dt>Downsides</dt><dd>Some metrics need heuristics unless Mingle outputs and reflection records expose structured strategy-signal fields. It pairs best with I1, I3, and I8.</dd>
+        </dl>
+        <div class="metric-row"><span class="metric high">Confidence: 87%</span><span class="metric medium">Complexity: Medium</span></div>
+      </article>
+
+      <article class="idea" id="i8">
+        <div class="idea-head"><span class="idea-id">I8.</span><h3>Strategic Reflection Records</h3></div>
+        <p>Emit each strategic reflection as a structured producer/debug record so local simulation artifacts and the game MCP can validate how agents' plans, suspicions, allies, and threats changed after Mingle. This is observability, not player-visible gameplay.</p>
+        <dl>
+          <dt>Axis</dt><dd>Validation</dd>
+          <dt>Basis</dt><dd>direct: <code>getStrategicReflection</code> updates memory at <code>agent.ts:2477</code>, while <code>DiaryRoom.runStrategicReflections</code> calls it at <code>diary-room.ts:37</code>; local turn logs only write emitted <code>agent_turn</code> events from <code>simulate.ts:1001</code>.</dd>
+          <dt>Rationale</dt><dd>Mingle validation needs evidence of changed thinking, not just changed room speech. Reflection records let reviewers compare room interactions against later plans, threats, votes, and rumors through the same MCP-backed workflow.</dd>
+          <dt>Downsides</dt><dd>Needs careful visibility boundaries because reflection content is hidden producer/debug material. The record should be queryable for validation without leaking into player-facing surfaces.</dd>
+        </dl>
+        <div class="metric-row"><span class="metric high">Confidence: 89%</span><span class="metric medium">Complexity: Medium</span></div>
+      </article>
+
+      <div class="diagram" aria-label="Mingle unblocking flow diagram">
+        <svg width="900" height="190" role="img" aria-labelledby="diagram-title diagram-desc" viewBox="0 0 900 190">
+          <title id="diagram-title">Mingle unblocking flow</title>
+          <desc id="diagram-desc">A conceptual flow from phase boundary to intent, room formation, strategy signal, reflection, and validation.</desc>
+          <defs>
+            <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L0,6 L9,3 z" fill="#245c73"></path>
+            </marker>
+          </defs>
+          <rect x="20" y="55" width="130" height="70" rx="8" fill="#e2f0f3" stroke="#9fc6d1"></rect>
+          <text x="85" y="83" text-anchor="middle" font-size="14" font-weight="700">Phase</text>
+          <text x="85" y="103" text-anchor="middle" font-size="13">private strategy</text>
+          <line x1="150" y1="90" x2="205" y2="90" stroke="#245c73" stroke-width="2" marker-end="url(#arrow)"></line>
+          <rect x="215" y="55" width="130" height="70" rx="8" fill="#e4f2e8" stroke="#9dcaad"></rect>
+          <text x="280" y="83" text-anchor="middle" font-size="14" font-weight="700">Intent</text>
+          <text x="280" y="103" text-anchor="middle" font-size="13">who, why, ask</text>
+          <line x1="345" y1="90" x2="400" y2="90" stroke="#245c73" stroke-width="2" marker-end="url(#arrow)"></line>
+          <rect x="410" y="55" width="130" height="70" rx="8" fill="#f3ead0" stroke="#dcc177"></rect>
+          <text x="475" y="83" text-anchor="middle" font-size="14" font-weight="700">Rooms</text>
+          <text x="475" y="103" text-anchor="middle" font-size="13">matched groups</text>
+          <line x1="540" y1="90" x2="595" y2="90" stroke="#245c73" stroke-width="2" marker-end="url(#arrow)"></line>
+          <rect x="605" y="55" width="130" height="70" rx="8" fill="#e2f0f3" stroke="#9fc6d1"></rect>
+          <text x="670" y="83" text-anchor="middle" font-size="14" font-weight="700">Signal</text>
+          <text x="670" y="103" text-anchor="middle" font-size="13">probe/deal/move</text>
+          <line x1="735" y1="90" x2="790" y2="90" stroke="#245c73" stroke-width="2" marker-end="url(#arrow)"></line>
+          <rect x="800" y="55" width="80" height="70" rx="8" fill="#e4f2e8" stroke="#9dcaad"></rect>
+          <text x="840" y="83" text-anchor="middle" font-size="14" font-weight="700">Reflect</text>
+          <text x="840" y="103" text-anchor="middle" font-size="13">plan shift</text>
+          <text x="450" y="158" text-anchor="middle" font-size="13" fill="#62615d">Score with structured logs: room spread, strategy signals, reflection shifts, and vote carryover.</text>
+        </svg>
+      </div>
+
+      <div class="callout"><strong>Top pick:</strong> Implement I1, I3, and I8 together. Intent cards and strategy-spectrum prompting unblock Mingle behavior; strategic reflection records make the change testable through simulation artifacts and the game MCP.</div>
+    </section>
+
+    <section class="section" id="rejection-summary">
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>Randomize initial room choice</td><td>Treats the Room 1 symptom but does not create purposeful subgroups or strategic speech.</td></tr>
+          <tr><td>2</td><td>Make all agents more aggressive globally</td><td>Scope overrun: it would damage lobby tone and flatten persona variety instead of opening private strategy.</td></tr>
+          <tr><td>3</td><td>Remove all early-game caution</td><td>Too blunt; early uncertainty is useful, but it should produce provisional target naming rather than silence.</td></tr>
+          <tr><td>4</td><td>Require an exact vote plan in every Mingle message</td><td>Over-constrained; real strategy also includes testing, recruiting, lying, trading, and moving rooms.</td></tr>
+          <tr><td>5</td><td>Add more Mingle beats only</td><td>Likely repeats the same prompt behavior for longer unless the decision contract changes.</td></tr>
+          <tr><td>6</td><td>Expose all room identities globally</td><td>Breaks the current privacy model where only exact identities in the current room are known.</td></tr>
+          <tr><td>7</td><td>Depend on hidden reasoning as player memory</td><td>Unsafe boundary; use structured visible decisions and private debriefs, not raw hidden reasoning, as durable game state.</td></tr>
+          <tr><td>8</td><td>Switch models and leave prompts alone</td><td>May improve fluency, but the direct evidence points to prompt/interface constraints in the current engine.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer class="composition-signal">Composed 2026-06-12T00:00Z by ce-ideate from the user prompt about unblocking Mingle agents in <code>packages/engine/src/agent.ts</code>.</footer>
+  </main>
+</body>
+</html>

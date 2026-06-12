@@ -10,7 +10,7 @@ import type { ContextBuilder } from "./context-builder";
 import type { IHouseInterviewer, DiaryRoomContext } from "./house-interviewer";
 import type { UUID, GameConfig } from "./types";
 import { Phase } from "./types";
-import type { IAgent } from "./game-runner.types";
+import type { IAgent, StrategicReflectionAction } from "./game-runner.types";
 
 export class DiaryRoom {
   /** Diary room entries: question/answer pairs per agent per phase */
@@ -40,19 +40,47 @@ export class DiaryRoom {
     }
 
     const alivePlayers = this.gameState.getAlivePlayers();
-    try {
-      await Promise.all(
-        alivePlayers.map(async (player) => {
-          const agent = this.agents.get(player.id);
-          if (agent) {
+    await Promise.all(
+      alivePlayers.map(async (player) => {
+        const agent = this.agents.get(player.id);
+        if (!agent) return;
+
+        try {
             const ctx = this.contextBuilder.buildPhaseContext(player.id, phase);
-            await agent.getStrategicReflection(ctx);
-          }
-        }),
-      );
-    } catch (error) {
-      console.error(`[DiaryRoom] Strategic reflections failed, continuing:`, error);
-    }
+            const reflection = await agent.getStrategicReflection(ctx);
+            if (reflection) {
+              this.emitStrategicReflectionTurn(player.id, player.name, phase, reflection);
+            }
+        } catch (error) {
+          console.error(`[DiaryRoom] Strategic reflection failed for ${player.name}, continuing:`, error);
+        }
+      }),
+    );
+  }
+
+  private emitStrategicReflectionTurn(
+    playerId: UUID,
+    playerName: string,
+    reflectedPhase: Phase,
+    reflection: StrategicReflectionAction,
+  ): void {
+    this.logger.emitAgentTurn({
+      phase: reflectedPhase,
+      action: "strategic-reflection",
+      actor: { id: playerId, name: playerName, role: "player" },
+      visibility: "private",
+      response: {
+        reflectedPhase,
+        certainties: reflection.certainties,
+        suspicions: reflection.suspicions,
+        allies: reflection.allies,
+        threats: reflection.threats,
+        plan: reflection.plan,
+      },
+      thinking: reflection.thinking,
+      reasoningContext: reflection.reasoningContext,
+      scope: "thinking",
+    });
   }
 
   /**

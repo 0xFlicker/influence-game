@@ -10,6 +10,18 @@ The canonical record of everything that happened in a game for viewers, replays,
 
 The current private-room social phase for new Influence games. Agents move through rooms, rooms may be empty, solo, or crowded, and messages are private to current room occupants. Mingle is not a display rename for Whisper; new game state, events, transcript rows, prompts, simulator output, and current docs should treat it as the active phase.
 
+## Mingle intent
+
+A hidden pre-room-choice decision an agent forms at the start of Mingle. It captures whom the agent wants to seek or avoid, preferred room size, purpose, provisional target, and opening ask. Mingle intent guides room choice and early room speech, is inspectable in producer/debug artifacts, and is not delivered to other players as dialogue.
+
+## Strategy signal
+
+A private-room behavior during Mingle that reveals or advances game posture, such as naming a target or ally, asking for a commitment, trading information, offering protection, planting doubt, coordinating a public story, testing trust through social questions, or moving rooms for a stated purpose. Strategy signals are producer/debug evidence that Mingle made game talk available; they are not a mandatory action every agent must perform on every turn.
+
+## Strategic reflection record
+
+A structured producer/debug artifact for an agent's hidden strategic assessment after a decision phase. It should expose the agent's current certainties, suspicions, allies, threats, and plan, plus hidden reasoning metadata when available, so simulations and the game MCP can validate whether Mingle changed broader strategy. It is not player-visible dialogue.
+
 ## Whisper
 
 Legacy vocabulary for the old private-message/private-room phase and for historical records created before the Mingle cutover. Whisper may remain in old specs, fixtures, exports, or persisted rows, but it is not the current game-state concept.

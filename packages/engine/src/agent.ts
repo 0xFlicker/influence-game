@@ -12,7 +12,20 @@ import type {
   ChatCompletionMessageToolCall,
 } from "openai/resources/chat/completions";
 import type { ReasoningEffort } from "openai/resources/shared";
-import type { AgentCallOptions, AgentResponse, IAgent, MingleRoomChoiceAction, MingleTurnAction, PhaseContext, PowerLobbyExposure, TargetDecision } from "./game-runner";
+import type {
+  AgentCallOptions,
+  AgentResponse,
+  IAgent,
+  MingleIntentAction,
+  MinglePreferredRoomSize,
+  MingleRoomChoiceAction,
+  MingleTurnAction,
+  PhaseContext,
+  PowerLobbyExposure,
+  StrategicReflectionAction,
+  StrategicReflectionSummary,
+  TargetDecision,
+} from "./game-runner";
 import { Phase } from "./types";
 import type { UUID, PowerAction } from "./types";
 import type { LlmToolChoiceMode } from "./llm-client";
@@ -280,6 +293,54 @@ const TOOL_CHOOSE_MINGLE_ROOM: ChatCompletionTool = {
   },
 };
 
+const TOOL_MINGLE_INTENT: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "form_mingle_intent",
+    description: "Form a hidden private Mingle intent before choosing a room. This is producer/debug strategy, not player-visible speech.",
+    parameters: {
+      type: "object",
+      properties: {
+        thinking: { type: "string", description: "Your internal reasoning for this Mingle intent (hidden from other players)" },
+        seekPlayers: {
+          type: "array",
+          items: { type: "string" },
+          description: "Player names you want to seek out or compare notes with during Mingle",
+        },
+        avoidPlayers: {
+          type: "array",
+          items: { type: "string" },
+          description: "Player names you prefer to avoid during Mingle",
+        },
+        preferredRoomSize: {
+          type: "string",
+          enum: ["solo", "pair", "small_group", "large_group", "any"],
+          description: "Preferred room size for this Mingle phase",
+        },
+        purpose: {
+          type: "string",
+          description: "Your private purpose for this Mingle phase",
+        },
+        provisionalTarget: {
+          type: ["string", "null"],
+          description: "A provisional target or threat to test, or null if you are intentionally not naming one yet",
+        },
+        noTargetReason: {
+          type: ["string", "null"],
+          description: "Why you are not naming a provisional target, or null if you named one",
+        },
+        openingAsk: {
+          type: "string",
+          description: "An opening ask, probe, or information trade you want to try when room context allows",
+        },
+      },
+      required: ["thinking", "seekPlayers", "avoidPlayers", "preferredRoomSize", "purpose", "provisionalTarget", "noTargetReason", "openingAsk"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+};
+
 const TOOL_SEND_ROOM_MESSAGE: ChatCompletionTool = {
   type: "function",
   function: {
@@ -326,8 +387,16 @@ const TOOL_MINGLE_TURN: ChatCompletionTool = {
           type: ["number", "null"],
           description: "Optional local room number to enter after this turn, or null to stay",
         },
+        strategySignal: {
+          type: ["string", "null"],
+          description: "Optional producer/debug label for the strategic signal in this turn, or null for guarded/social/no-reply",
+        },
+        movementPurpose: {
+          type: ["string", "null"],
+          description: "Optional producer/debug reason for GOTO movement, or null when staying put",
+        },
       },
-      required: ["thinking", "message", "noReply", "gotoRoomId"],
+      required: ["thinking", "message", "noReply", "gotoRoomId", "strategySignal", "movementPurpose"],
       additionalProperties: false,
     },
     strict: true,
@@ -473,6 +542,25 @@ function findByName<T extends { name: string }>(
   return players.find((p) => normalizeName(p.name) === n);
 }
 
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === "string").map((entry) => entry.trim()).filter(Boolean);
+}
+
+function normalizeNullableString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizeRequiredString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizePreferredRoomSize(value: unknown): MinglePreferredRoomSize {
+  return value === "solo" || value === "pair" || value === "small_group" || value === "large_group" || value === "any"
+    ? value
+    : "any";
+}
+
 class ToolCallRetryError extends Error {
   constructor(message: string, readonly increaseTokenBudget = false) {
     super(message);
@@ -495,6 +583,7 @@ const TOOL_STRATEGIC_REFLECTION: ChatCompletionTool = {
     parameters: {
       type: "object",
       properties: {
+        thinking: { type: "string", description: "Your internal reasoning for this reflection (hidden from other players)" },
         certainties: {
           type: "array",
           items: { type: "string" },
@@ -520,22 +609,16 @@ const TOOL_STRATEGIC_REFLECTION: ChatCompletionTool = {
           description: "Your plan for the next round in 1-2 sentences",
         },
       },
-      required: ["certainties", "suspicions", "allies", "threats", "plan"],
+      required: ["thinking", "certainties", "suspicions", "allies", "threats", "plan"],
+      additionalProperties: false,
     },
+    strict: true,
   },
 };
 
 // ---------------------------------------------------------------------------
 // Agent memory
 // ---------------------------------------------------------------------------
-
-interface StrategicReflection {
-  certainties: string[];
-  suspicions: string[];
-  allies: string[];
-  threats: string[];
-  plan: string;
-}
 
 interface AgentMemory {
   /** Who this agent has made alliances with */
@@ -558,7 +641,7 @@ interface AgentMemory {
     target: string;
   }>;
   /** Most recent strategic reflection from diary room */
-  lastReflection: StrategicReflection | null;
+  lastReflection: StrategicReflectionSummary | null;
 }
 
 export interface InfluenceAgentOptions {
@@ -827,6 +910,65 @@ Use the send_whispers tool to submit your whisper messages. Use player NAMES (no
     }
   }
 
+  async getMingleIntent(ctx: PhaseContext): Promise<MingleIntentAction | null> {
+    const roomCount = ctx.roomCount ?? 1;
+    if (roomCount < 1) {
+      return null;
+    }
+
+    const currentCounts = ctx.roomCounts && ctx.roomCounts.length > 0
+      ? `\n## Current Room Counts\n${ctx.roomCounts
+          .map((room) => `- Room ${room.roomId}: ${room.count} player${room.count === 1 ? "" : "s"}`)
+          .join("\n")}`
+      : "";
+    const otherPlayers = ctx.alivePlayers.filter((player) => player.id !== this.id).map((player) => player.name);
+
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
+## Your Task
+Before choosing a Mingle room, form your private Mingle intent.
+This is hidden producer/debug strategy, not a message to other players.
+
+Available other players: ${otherPlayers.join(", ") || "none"}
+Available rooms: ${Array.from({ length: roomCount }, (_, index) => `Room ${index + 1}`).join(", ")}
+${currentCounts}
+
+Your intent should describe who you want to seek, who you want to avoid, what room size fits your plan, what you are trying to learn or set up, and what opening ask you might use if room context allows.
+You may name a provisional target if that fits your read. You may also stay provisional, but explain why you are not naming a target yet.
+Use the form_mingle_intent tool.`;
+
+    try {
+      const result = await this.callTool<{
+        thinking?: string;
+        seekPlayers?: unknown;
+        avoidPlayers?: unknown;
+        preferredRoomSize?: unknown;
+        purpose?: unknown;
+        provisionalTarget?: unknown;
+        noTargetReason?: unknown;
+        openingAsk?: unknown;
+        reasoningContext?: string;
+      }>(
+        prompt, TOOL_MINGLE_INTENT, 300, sys,
+        { action: "mingle-intent", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
+      );
+      return {
+        seekPlayers: normalizeStringArray(result.seekPlayers),
+        avoidPlayers: normalizeStringArray(result.avoidPlayers),
+        preferredRoomSize: normalizePreferredRoomSize(result.preferredRoomSize),
+        purpose: normalizeRequiredString(result.purpose),
+        provisionalTarget: normalizeNullableString(result.provisionalTarget),
+        noTargetReason: normalizeNullableString(result.noTargetReason),
+        openingAsk: normalizeRequiredString(result.openingAsk),
+        thinking: result.thinking,
+        reasoningContext: result.reasoningContext,
+      };
+    } catch (err) {
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getMingleIntent error="${err instanceof Error ? err.message : err}" fallback=skipped`);
+      return null;
+    }
+  }
+
   async chooseMingleRoom(ctx: PhaseContext): Promise<MingleRoomChoiceAction> {
     const roomCount = ctx.roomCount ?? 1;
     if (roomCount < 1) return { roomId: null, thinking: "No Mingle rooms are available." };
@@ -837,6 +979,19 @@ Use the send_whispers tool to submit your whisper messages. Use player NAMES (no
           .map((room) => `- Room ${room.roomId}: ${room.count} player${room.count === 1 ? "" : "s"}`)
           .join("\n")}`
       : "";
+    const intent = ctx.mingleIntent;
+    const intentText = intent
+      ? `
+## Your Mingle Intent
+- Seek: ${intent.seekPlayers.length > 0 ? intent.seekPlayers.join(", ") : "no one specific"}
+- Avoid: ${intent.avoidPlayers.length > 0 ? intent.avoidPlayers.join(", ") : "no one specific"}
+- Preferred room size: ${intent.preferredRoomSize}
+- Purpose: ${intent.purpose || "stay flexible and gather social reads"}
+- Provisional target: ${intent.provisionalTarget ?? "none"}
+- No-target reason: ${intent.noTargetReason ?? "not applicable"}
+- Opening ask/probe: ${intent.openingAsk || "none"}
+`
+      : "";
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
@@ -845,6 +1000,7 @@ Choose one neutral Mingle room to enter.
 
 Available rooms: ${rooms.map((roomId) => `Room ${roomId}`).join(", ")}
 ${currentCounts}
+${intentText}
 
 Rooms have no theme and no occupancy cap. You can pile into a crowded room, split off, or sit alone.
 Use the choose_mingle_room tool to submit one room number.`;
@@ -860,8 +1016,8 @@ Use the choose_mingle_room tool to submit one room number.`;
         reasoningContext: result.reasoningContext,
       };
     } catch (err) {
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=chooseMingleRoom error="${err instanceof Error ? err.message : err}" fallback=1`);
-      return { roomId: 1, thinking: "fallback room choice due to error", reasoningContext: undefined };
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=chooseMingleRoom error="${err instanceof Error ? err.message : err}" fallback=missing`);
+      return { roomId: null, thinking: "fallback missing room choice due to error", reasoningContext: undefined };
     }
   }
 
@@ -933,6 +1089,18 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
       : "";
     const currentRoom = ctx.currentRoomId != null ? `Room ${ctx.currentRoomId}` : "your current room";
     const availableRooms = Array.from({ length: ctx.roomCount ?? 0 }, (_, index) => index + 1);
+    const intent = ctx.mingleIntent;
+    const intentText = intent
+      ? `
+## Your Mingle Intent
+- Seek: ${intent.seekPlayers.length > 0 ? intent.seekPlayers.join(", ") : "no one specific"}
+- Avoid: ${intent.avoidPlayers.length > 0 ? intent.avoidPlayers.join(", ") : "no one specific"}
+- Purpose: ${intent.purpose || "stay flexible and gather social reads"}
+- Provisional target: ${intent.provisionalTarget ?? "none"}
+- No-target reason: ${intent.noTargetReason ?? "not applicable"}
+- Opening ask/probe: ${intent.openingAsk || "none"}
+`
+      : "";
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
@@ -940,6 +1108,7 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
 You are in ${currentRoom} with: ${roomMates.join(", ")}.
 ${roomCounts}
 ${historyText}
+${intentText}
 Nobody outside your current room can hear this turn. You only know exact identities in your current room; other rooms are visible as counts only.
 
 Choose exactly one of:
@@ -951,12 +1120,16 @@ ${availableRooms.length > 0 ? `Available GOTO rooms: ${availableRooms.map((roomI
 
 Guidance:
 - If you are alone, TALK has no audience; use NO_REPLY and consider moving.
-- If the room has people, make TALK specific and strategic.
+- If the room has people, make TALK specific to this room and your intent.
+- You may name a target or ally, ask for commitment, trade information, offer protection, plant doubt, coordinate a story, or test trust through a social question.
+- You do not have to name a target. Guarded, social, playful, or no-reply turns are valid when they fit your intent and current room.
 - Move when a crowded room is noisy, a private room looks useful, or you want to avoid being predictable.
 - Staying put is valid when the current room conversation is valuable.
 - TALK and GOTO can be powerful for spreading information or coordinating between groups, but remember you won't hear responses from the new room until your next turn.
 - If you TALK and GOTO in a single turn, you may want to mention to your current roommates that you will be moving, so they know to expect you in the new room next turn.
 - If you are in a room with allies, consider using TALK to strengthen those bonds. If you're with threats, consider using TALK to sow doubt or plan an escape. If you're alone, consider using GOTO to find new connections or avoid threats.
+- Set strategySignal to a short producer/debug label for what your turn is doing, or null when the turn is intentionally social, guarded, or silent.
+- Set movementPurpose to a short producer/debug reason when you use GOTO, or null when you stay.
 
 Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
 
@@ -966,6 +1139,8 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
         message?: string | null;
         noReply?: boolean;
         gotoRoomId?: number | null;
+        strategySignal?: string | null;
+        movementPurpose?: string | null;
         reasoningContext?: string;
       }>(
         prompt, TOOL_MINGLE_TURN, 300, sys,
@@ -978,6 +1153,8 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
         message: msg,
         noReply: result.noReply ?? !msg,
         gotoRoomId,
+        strategySignal: normalizeNullableString(result.strategySignal),
+        movementPurpose: normalizeNullableString(result.movementPurpose),
         reasoningContext: result.reasoningContext,
       };
     } catch {
@@ -2474,7 +2651,7 @@ ${JSON.stringify(tool.function.parameters)}`,
   // Strategic reflection (called after diary room sessions)
   // ---------------------------------------------------------------------------
 
-  async getStrategicReflection(ctx: PhaseContext): Promise<void> {
+  async getStrategicReflection(ctx: PhaseContext): Promise<StrategicReflectionAction | null> {
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## Strategic Reflection
@@ -2485,20 +2662,40 @@ Use the strategic_reflection tool to record your analysis.
 Be specific — name players, cite events, reference conversations.`;
 
     try {
-      const reflection = await this.callTool<StrategicReflection>(
+      const reflection = await this.callTool<{
+        thinking?: string;
+        certainties?: unknown;
+        suspicions?: unknown;
+        allies?: unknown;
+        threats?: unknown;
+        plan?: unknown;
+        reasoningContext?: string;
+      }>(
         prompt, TOOL_STRATEGIC_REFLECTION, 300, sys,
         { action: "reflection", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "medium" },
       );
-      this.memory.lastReflection = {
-        certainties: Array.isArray(reflection.certainties) ? reflection.certainties : [],
-        suspicions: Array.isArray(reflection.suspicions) ? reflection.suspicions : [],
-        allies: Array.isArray(reflection.allies) ? reflection.allies : [],
-        threats: Array.isArray(reflection.threats) ? reflection.threats : [],
-        plan: typeof reflection.plan === "string" ? reflection.plan : "",
+      const normalized: StrategicReflectionAction = {
+        certainties: normalizeStringArray(reflection.certainties),
+        suspicions: normalizeStringArray(reflection.suspicions),
+        allies: normalizeStringArray(reflection.allies),
+        threats: normalizeStringArray(reflection.threats),
+        plan: normalizeRequiredString(reflection.plan),
+        thinking: reflection.thinking,
+        reasoningContext: reflection.reasoningContext,
       };
-      this.persistMemory("reflection", null, JSON.stringify(reflection));
+      const { thinking: _thinking, reasoningContext: _reasoningContext, ...reflectionSummary } = normalized;
+      this.memory.lastReflection = reflectionSummary;
+      this.persistMemory("reflection", null, JSON.stringify({
+        certainties: normalized.certainties,
+        suspicions: normalized.suspicions,
+        allies: normalized.allies,
+        threats: normalized.threats,
+        plan: normalized.plan,
+      }));
+      return normalized;
     } catch (err) {
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getStrategicReflection error="${err instanceof Error ? err.message : err}" fallback=skipped`);
+      return null;
     }
   }
 

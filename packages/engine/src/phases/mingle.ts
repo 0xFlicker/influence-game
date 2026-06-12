@@ -6,10 +6,11 @@ import type {
   MingleRoomPlayerRef,
   MingleRoomChoiceStatus,
   MingleRoomCount,
+  MingleIntentSummary,
   MingleSessionDiagnostics,
 } from "../types";
 import { Phase } from "../types";
-import type { MingleRoomChoiceAction, MingleTurnAction } from "../game-runner.types";
+import type { MingleIntentAction, MingleRoomChoiceAction, MingleTurnAction } from "../game-runner.types";
 import type { GameState } from "../game-state";
 import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
 
@@ -38,14 +39,23 @@ function buildPlayerRef(
 }
 
 function normalizeRoomChoice(choice: number | null | undefined, roomCount: number): {
-  roomId: number;
+  roomId: number | null;
   status: MingleRoomChoiceRecord["status"];
 } {
-  if (choice == null) return { roomId: 1, status: "missing" };
+  if (choice == null) return { roomId: null, status: "missing" };
   if (!Number.isInteger(choice) || choice < 1 || choice > roomCount) {
-    return { roomId: 1, status: "invalid" };
+    return { roomId: null, status: "invalid" };
   }
   return { roomId: choice, status: "valid" };
+}
+
+function leastPopulatedRoomId(rooms: readonly RoomAllocation[]): number {
+  const fallback = rooms[0]?.roomId ?? 1;
+  return rooms.reduce((bestRoom, room) => {
+    if (room.playerIds.length < bestRoom.playerIds.length) return room;
+    if (room.playerIds.length === bestRoom.playerIds.length && room.roomId < bestRoom.roomId) return room;
+    return bestRoom;
+  }, rooms[0] ?? { roomId: fallback, round: 0, beat: 0, playerIds: [] }).roomId;
 }
 
 function pairKey(a: UUID, b: UUID): string {
@@ -214,11 +224,12 @@ export function allocateRooms(
   for (const player of alivePlayers) {
     const rawChoice = choices.get(player.id);
     const normalized = normalizeRoomChoice(rawChoice, roomCount);
-    rooms[normalized.roomId - 1]?.playerIds.push(player.id);
+    const assignedRoomId = normalized.roomId ?? leastPopulatedRoomId(rooms);
+    rooms[assignedRoomId - 1]?.playerIds.push(player.id);
     choiceRecords.push({
       player: buildPlayerRef(playerById, player.id),
       requestedRoomId: rawChoice ?? null,
-      assignedRoomId: normalized.roomId,
+      assignedRoomId,
       status: normalized.status,
     });
   }
@@ -259,6 +270,16 @@ function describeRoom(ctx: PhaseRunnerContext, room: RoomAllocation): string {
 
 function buildRoomCounts(localRooms: RoomAllocation[]): MingleRoomCount[] {
   return localRooms.map((room) => ({ roomId: room.roomId, count: room.playerIds.length }));
+}
+
+function summarizeMingleIntent(intent: MingleIntentAction | null | undefined): MingleIntentSummary | null {
+  if (!intent) return null;
+  const { thinking: _thinking, reasoningContext: _reasoningContext, ...summary } = intent;
+  return {
+    ...summary,
+    seekPlayers: [...summary.seekPlayers],
+    avoidPlayers: [...summary.avoidPlayers],
+  };
 }
 
 function buildRoomsFromAssignments(
@@ -350,6 +371,7 @@ async function runMingleTurn(
   roomCounts: MingleRoomCount[],
   roomByPlayerId: Map<UUID, number>,
   roomCount: number,
+  mingleIntents: ReadonlyMap<UUID, MingleIntentAction | null>,
 ): Promise<MingleTurnActionRecord[]> {
   const { agents, logger, contextBuilder, gameState } = ctx;
   const nextRoomByPlayerId = new Map(roomByPlayerId);
@@ -373,6 +395,7 @@ async function runMingleTurn(
         roomCounts,
         currentRoomId: room.roomId,
         roomMates,
+        mingleIntent: summarizeMingleIntent(mingleIntents.get(playerId) ?? null),
       });
 
       let resolvedAction: MingleTurnAction;
@@ -418,6 +441,8 @@ async function runMingleTurn(
           moved: normalizedGoto.roomId !== room.roomId,
           gotoRoomId: normalizedGoto.requestedRoomId,
           gotoStatus: normalizedGoto.status,
+          strategySignal: resolvedAction.strategySignal ?? null,
+          movementPurpose: resolvedAction.movementPurpose ?? null,
         },
         thinking: resolvedAction.thinking,
         reasoningContext: resolvedAction.reasoningContext,
@@ -487,6 +512,7 @@ export async function runMinglePhase(
   const cooldownPairKeys = buildRecentCooldownPairKeys(gameState, cooldownRounds);
 
   const roomChoiceResults = new Map<UUID, MingleRoomChoiceAction>();
+  const mingleIntents = new Map<UUID, MingleIntentAction | null>();
   const choices = new Map<UUID, number | null>();
   await Promise.all(
     alivePlayers.map(async (player) => {
@@ -494,6 +520,32 @@ export async function runMinglePhase(
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.MINGLE, undefined, undefined, {
         roomCount,
         roomCounts: initialRoomCounts,
+      });
+      const intent = agent.getMingleIntent ? await agent.getMingleIntent(phaseCtx) : null;
+      mingleIntents.set(player.id, intent);
+      if (intent) {
+        const intentSummary = summarizeMingleIntent(intent);
+        logger.emitAgentTurn({
+          phase: Phase.MINGLE,
+          action: "mingle-intent",
+          actor: { id: player.id, name: player.name, role: "player" },
+          visibility: "private",
+          response: { ...intentSummary },
+          thinking: intent.thinking,
+          reasoningContext: intent.reasoningContext,
+        });
+      }
+    }),
+  );
+
+  await Promise.all(
+    alivePlayers.map(async (player) => {
+      const agent = agents.get(player.id)!;
+      const intent = mingleIntents.get(player.id) ?? null;
+      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.MINGLE, undefined, undefined, {
+        roomCount,
+        roomCounts: initialRoomCounts,
+        mingleIntent: summarizeMingleIntent(intent),
       });
       const choice = await agent.chooseMingleRoom(phaseCtx);
       roomChoiceResults.set(player.id, choice);
@@ -506,6 +558,8 @@ export async function runMinglePhase(
   });
   for (const choice of initialAllocation.diagnostics.choices) {
     const choiceResult = roomChoiceResults.get(choice.player.id);
+    const intent = mingleIntents.get(choice.player.id);
+    const intentSummary = intent ? summarizeMingleIntent(intent) : null;
     logger.emitAgentTurn({
       phase: Phase.MINGLE,
       action: "mingle-room-choice",
@@ -516,6 +570,7 @@ export async function runMinglePhase(
         assignedRoomId: choice.assignedRoomId,
         status: choice.status,
         roomCount,
+        ...(intentSummary && { intent: intentSummary }),
       },
       thinking: choiceResult?.thinking,
       reasoningContext: choiceResult?.reasoningContext,
@@ -568,7 +623,7 @@ export async function runMinglePhase(
 
     const allocationText = `Turn ${beat}: ${beatRooms.map((room) => describeRoom(ctx, room)).join(" | ")}`;
     const allocationEntry = logger.logRoomAllocation(allocationText, beatRooms, [], beatDiagnostics);
-    const actions = await runMingleTurn(ctx, localRooms, beatRooms, roomCounts, roomByPlayerId, roomCount);
+    const actions = await runMingleTurn(ctx, localRooms, beatRooms, roomCounts, roomByPlayerId, roomCount, mingleIntents);
     if (cooldownRounds > 0) {
       addRoomPairKeys(cooldownPairKeys, localRooms);
     }

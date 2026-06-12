@@ -13,7 +13,10 @@ import type {
   Phase,
   MingleSessionDiagnostics,
   MingleRoomCount,
+  MingleIntentSummary as MingleIntentSummaryBase,
 } from "./types";
+
+export type { MingleIntentSummary, MinglePreferredRoomSize } from "./types";
 
 // ---------------------------------------------------------------------------
 // Stream events — emitted in real-time for WebSocket observers
@@ -59,6 +62,10 @@ export interface MingleTurnAction {
   noReply?: boolean;
   /** Optional local room number to enter for the next turn. */
   gotoRoomId?: number | null;
+  /** Optional producer/debug label describing the strategic signal in this turn. */
+  strategySignal?: string | null;
+  /** Optional producer/debug explanation for movement, or null when staying put. */
+  movementPurpose?: string | null;
   /** Raw model reasoning context from local LLM */
   reasoningContext?: string;
 }
@@ -71,6 +78,27 @@ export interface MingleRoomChoiceAction {
   /** Raw model reasoning context from local LLM */
   reasoningContext?: string;
 }
+
+export interface MingleIntentAction extends MingleIntentSummaryBase {
+  /** Agent's internal thinking (hidden from players, visible to viewers) */
+  thinking?: string;
+  /** Raw model reasoning context from local LLM */
+  reasoningContext?: string;
+}
+
+export interface StrategicReflectionAction {
+  certainties: string[];
+  suspicions: string[];
+  allies: string[];
+  threats: string[];
+  plan: string;
+  /** Agent's internal thinking (hidden from players, visible to viewers) */
+  thinking?: string;
+  /** Raw model reasoning context from local LLM */
+  reasoningContext?: string;
+}
+
+export type StrategicReflectionSummary = Omit<StrategicReflectionAction, "thinking" | "reasoningContext">;
 
 export interface TargetDecision {
   target: UUID;
@@ -134,6 +162,8 @@ export interface IAgent {
   getLobbyMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called to collect whisper actions (list of {to, text}) — DEPRECATED, use room methods */
   getWhispers(context: PhaseContext): Promise<Array<{ to: UUID[]; text: string }>>;
+  /** Called before initial Mingle room choice to form a hidden private-room strategy intent */
+  getMingleIntent?(context: PhaseContext): Promise<MingleIntentAction | null>;
   /** Choose a Mingle room by room number (current active method for the Mingle phase) */
   chooseMingleRoom(context: PhaseContext): Promise<MingleRoomChoiceAction>;
   /** Send a private room message to all other occupants, or null to pass */
@@ -189,7 +219,7 @@ export interface IAgent {
 
   // --- Strategic reflection (called after diary room) ---
   /** Produce a strategic reflection after diary room interview */
-  getStrategicReflection(context: PhaseContext): Promise<void>;
+  getStrategicReflection(context: PhaseContext): Promise<StrategicReflectionAction | null | void>;
 
   // --- Memory updates (called by GameRunner after phase events) ---
   /** Record a player as an ally */
@@ -229,6 +259,8 @@ export interface PhaseContext {
   roomAllocations?: Array<{ roomId: number; beat: number; playerIds: string[]; playerNames: string[] }>;
   /** This agent's current room occupants, including self */
   roomMates?: string[];
+  /** Hidden Mingle intent formed before initial room choice */
+  mingleIntent?: MingleIntentSummaryBase | null;
   // Endgame context
   endgameStage?: EndgameStage;
   jury?: JuryMember[];

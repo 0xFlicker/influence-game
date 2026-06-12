@@ -10,6 +10,7 @@
  *   bun run simulate -- --games 3 --players 4 --personas Atlas,Vera,Finn,Mira
  *   bun run simulate -- --variant mingle
  *   bun run simulate -- --variant power-lobby-mingle
+ *   bun run simulate -- --variant mingle --strategic-reflections
  *
  * Chatty / live formatted transcript (great for watching local model Mingle behavior and per-decision reasoning):
  *   INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
@@ -28,6 +29,10 @@
  *
  * Use JSONL artifacts for post-run analysis instead of parsing ANSI-colored
  * `game-{N}.txt` output.
+ *
+ * Hidden `mingle-intent` records are always written to `game-{N}-turns.jsonl`.
+ * Hidden `strategic-reflection` records are written there when
+ * `--strategic-reflections` is enabled for validation runs.
  */
 
 import type OpenAI from "openai";
@@ -76,6 +81,8 @@ export interface SimArgs {
   llmTimeoutMs: number;
   /** Chatty mode: print formatted transcript entries live to console as they happen. */
   chatty: boolean;
+  /** Include hidden strategic-reflection agent_turn records in validation artifacts. */
+  enableStrategicReflections?: boolean;
 }
 
 function readPositiveInt(value: string | undefined, fallback: number): number {
@@ -96,6 +103,7 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
     gameTimeoutMs: readPositiveInt(envGameTimeout, DEFAULT_GAME_TIMEOUT_MS),
     llmTimeoutMs: readPositiveInt(process.env.INFLUENCE_SIM_LLM_TIMEOUT_MS, DEFAULT_LLM_TIMEOUT_MS),
     chatty: false,
+    enableStrategicReflections: process.env.INFLUENCE_SIM_STRATEGIC_REFLECTIONS === "true",
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -132,6 +140,10 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       i++;
     } else if (arg === "--chatty" || arg === "--verbose" || arg === "-v") {
       args.chatty = true;
+    } else if (arg === "--strategic-reflections" || arg === "--enable-strategic-reflections") {
+      args.enableStrategicReflections = true;
+    } else if (arg === "--no-strategic-reflections") {
+      args.enableStrategicReflections = false;
     }
   }
 
@@ -186,6 +198,7 @@ function buildRunMetadata(args: SimArgs, timestamp: string): SimulationRunMetada
       variant: args.variant,
       gameTimeoutMs: args.gameTimeoutMs,
       llmTimeoutMs: args.llmTimeoutMs,
+      enableStrategicReflections: args.enableStrategicReflections ?? false,
     },
   };
 }
@@ -219,7 +232,7 @@ export function isMingleVariant(variant: string): boolean {
 
 export function buildSimulationConfig(
   variant: string,
-  options: { agentActionTimeoutMs?: number } = {},
+  options: { agentActionTimeoutMs?: number; enableStrategicReflections?: boolean } = {},
 ): GameConfig {
   const mingle = isMingleVariant(variant);
 
@@ -246,7 +259,7 @@ export function buildSimulationConfig(
     maxDiaryFollowUps: 0,
     diaryRoomAfterPhases: [],
     enableLobbyIntent: false,
-    enableStrategicReflections: false,
+    enableStrategicReflections: options.enableStrategicReflections ?? false,
     lobbyMessagesPerPlayer: 1,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),
     mingleSessionsPerRound: mingle ? 2 : DEFAULT_CONFIG.mingleSessionsPerRound,
@@ -1051,6 +1064,7 @@ async function main() {
   console.log(`Provider: ${describeLlmProvider(llmConfig)} | API key: ${llmConfig.apiKeySource} | Tool choice: ${llmConfig.toolChoiceMode}`);
   console.log(`Timeouts: game ${(args.gameTimeoutMs / 1000).toFixed(0)}s | LLM request ${(args.llmTimeoutMs / 1000).toFixed(0)}s`);
   if (args.chatty) console.log("Chatty mode enabled: live formatted transcript will be printed to console.");
+  if (args.enableStrategicReflections === true) console.log("Strategic reflection capture enabled: hidden reflection agent_turn records will be written to turns JSONL.");
   console.log(`Git: ${metadata.git.commitShortSha ?? "unknown"} (${metadata.git.branch ?? "unknown branch"}${metadata.git.isDirty ? ", dirty" : ""})`);
   if (args.personas) console.log(`Personas: ${args.personas.join(", ")}`);
   console.log("");
@@ -1058,6 +1072,7 @@ async function main() {
   // Simulation config: no timers (agents respond as fast as they can)
   const simConfig = buildSimulationConfig(args.variant, {
     agentActionTimeoutMs: Math.max(args.llmTimeoutMs * 2, args.llmTimeoutMs + 5_000),
+    enableStrategicReflections: args.enableStrategicReflections ?? false,
   });
 
   // Create output directory
@@ -1113,6 +1128,7 @@ async function main() {
       model: args.model,
       gameTimeoutMs: args.gameTimeoutMs,
       llmTimeoutMs: args.llmTimeoutMs,
+      enableStrategicReflections: args.enableStrategicReflections ?? false,
       transcriptPath,
       jsonPath,
       turnsPath,

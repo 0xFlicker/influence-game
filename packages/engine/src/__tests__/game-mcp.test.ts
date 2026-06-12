@@ -176,6 +176,89 @@ describe("game MCP corpus read model", () => {
     expect(linked.turns[0]).toMatchObject({ record: { action: "vote" } });
   });
 
+  it("searches Mingle intent and strategic reflection turn records for strategy validation", () => {
+    const corpusDir = makeTempCorpus();
+    const sessionDir = makeSession(corpusDir, "batch-strategy-validation");
+    writeCanonicalGame(sessionDir);
+    writeFileSync(
+      join(sessionDir, "game-1-turns.jsonl"),
+      [
+        {
+          sequence: 1,
+          type: "agent_turn",
+          action: "mingle-intent",
+          round: 1,
+          phase: Phase.MINGLE,
+          actor: { id: "atlas", name: "Atlas" },
+          visibility: "private",
+          response: {
+            purpose: "Find one player willing to compare Vera reads.",
+            provisionalTarget: null,
+            noTargetReason: "Atlas has only soft social evidence.",
+            openingAsk: "Ask whether Vera's warmth feels rehearsed or genuine.",
+          },
+          thinking: "Atlas should not overcommit yet.",
+        },
+        {
+          sequence: 2,
+          type: "agent_turn",
+          action: "strategic-reflection",
+          round: 1,
+          phase: Phase.VOTE,
+          actor: { id: "atlas", name: "Atlas" },
+          visibility: "private",
+          response: {
+            reflectedPhase: Phase.VOTE,
+            certainties: ["Mira kept her promise"],
+            suspicions: ["Vera avoided naming a vote"],
+            allies: ["Mira"],
+            threats: ["Vera"],
+            plan: "Keep Mira close and test Finn next.",
+          },
+          thinking: "Atlas updates his private map after the vote.",
+        },
+      ].map((record) => JSON.stringify(record)).join("\n") + "\n",
+    );
+    const readModel = new GameMcpReadModel(corpusDir);
+
+    const intentResults = readModel.searchLogs({
+      query: "mingle-intent",
+      sessionId: "batch-strategy-validation",
+      gameNumber: 1,
+      sources: ["turns"],
+    });
+    const reflectionResults = readModel.searchLogs({
+      query: "strategic-reflection",
+      sessionId: "batch-strategy-validation",
+      gameNumber: 1,
+      sources: ["turns"],
+    });
+
+    expect(intentResults).toHaveLength(1);
+    expect(intentResults[0]).toMatchObject({
+      citation: { sourceKind: "turns", line: 1 },
+      record: {
+        action: "mingle-intent",
+        response: {
+          purpose: "Find one player willing to compare Vera reads.",
+          provisionalTarget: null,
+          noTargetReason: "Atlas has only soft social evidence.",
+        },
+      },
+    });
+    expect(reflectionResults).toHaveLength(1);
+    expect(reflectionResults[0]).toMatchObject({
+      citation: { sourceKind: "turns", line: 2 },
+      record: {
+        action: "strategic-reflection",
+        response: {
+          reflectedPhase: Phase.VOTE,
+          plan: "Keep Mira close and test Finn next.",
+        },
+      },
+    });
+  });
+
   it("disambiguates linked turn fallback matches by actor and phase", () => {
     const corpusDir = makeTempCorpus();
     const sessionDir = makeSession(corpusDir, "batch-linked");

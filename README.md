@@ -45,6 +45,9 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 # INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 #   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
 #     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
+#
+# Add --strategic-reflections when validating hidden reflection capture:
+#   --variant mingle --chatty --strategic-reflections --game-timeout-sec 7200 --llm-timeout-sec 300
 
 # Validation variants
 bun run simulate -- --variant mingle
@@ -53,7 +56,7 @@ bun run simulate -- --variant power-lobby-mingle
 
 The root `simulate` script injects hosted-provider secrets from the Doppler `social-strategy-agent` project's `dev` config. Use `simulate:local` when testing LM Studio or another OpenAI-compatible local endpoint.
 
-Output includes a round-by-round transcript, per-persona win rates, token cost estimates, and per-game artifacts under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis with `thinking` / `reasoningContext`, `game-N-events.jsonl` for replayable accepted domain events, `game-N-progress.jsonl` for lightweight progress, and `game-N.txt` for human-readable transcript review.
+Output includes a round-by-round transcript, per-persona win rates, token cost estimates, and per-game artifacts under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis with `thinking` / `reasoningContext`, `game-N-events.jsonl` for replayable accepted domain events, `game-N-progress.jsonl` for lightweight progress, and `game-N.txt` for human-readable transcript review. Mingle intent records are always written to turns JSONL; strategic reflection records are written when `--strategic-reflections` is enabled.
 
 To expose the local simulation corpus to another local MCP client:
 
@@ -62,7 +65,7 @@ cd packages/engine
 bun run mcp:game -- docs/simulations
 ```
 
-The game MCP is read-only. It discovers past and currently-writing simulation batches, addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and can list sessions/games, filter events, search logs, read player timelines, and return cited linked records when source pointers are present. Passing a single batch directory still works for focused inspection, but returned records include a `sessionId`.
+The game MCP is read-only. It discovers past and currently-writing simulation batches, addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and can list sessions/games, filter events, search logs, read player timelines, and return cited linked records when source pointers are present. Passing a single batch directory still works for focused inspection, but returned records include a `sessionId`. For strategy-observability validation, search turns logs for `mingle-intent`, `strategic-reflection`, `strategySignal`, or `movementPurpose`.
 
 ### 3. Run the full stack (API + Web UI)
 
@@ -218,6 +221,9 @@ Options:
   --model NAME     OpenAI-compatible model ID (default: gpt-5-nano)
   --variant NAME   Variant: baseline, mingle, power-lobby,
                    or power-lobby-mingle (default: baseline)
+  --chatty         Print live formatted transcript output
+  --strategic-reflections
+                   Include hidden strategic-reflection turn records in artifacts
 ```
 
 ## Seeding the Database (optional)

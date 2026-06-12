@@ -12,7 +12,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { GameRunner, Phase } from "@influence/engine";
-import type { AgentResponse, IAgent, MingleRoomChoiceAction, PhaseContext, TargetDecision } from "@influence/engine";
+import type { AgentResponse, IAgent, MingleIntentAction, MingleRoomChoiceAction, PhaseContext, StrategicReflectionAction, TargetDecision } from "@influence/engine";
 import type { UUID, PowerAction, GameConfig } from "@influence/engine";
 import { setupTestDB } from "./test-utils.js";
 import { serializeTranscriptEntry } from "../services/game-lifecycle.js";
@@ -59,6 +59,19 @@ class LifecycleMockAgent implements IAgent {
     const roomCount = ctx.roomCount ?? 1;
     return { roomId: roomCount > 0 ? 1 : null, thinking: "lifecycle mock room choice" };
   }
+  async getMingleIntent(ctx: PhaseContext): Promise<MingleIntentAction> {
+    const other = ctx.alivePlayers.find(p => p.id !== this.id)?.name ?? null;
+    return {
+      seekPlayers: other ? [other] : [],
+      avoidPlayers: [],
+      preferredRoomSize: "any",
+      purpose: "lifecycle mock Mingle intent",
+      provisionalTarget: null,
+      noTargetReason: "lifecycle mock does not pick a target",
+      openingAsk: "compare notes",
+      thinking: "lifecycle mock Mingle intent",
+    };
+  }
   async sendRoomMessage(_ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>) {
     const alreadySpoke = conversationHistory?.some((m) => m.from === this.name) ?? false;
     if (alreadySpoke) return null;
@@ -100,8 +113,15 @@ class LifecycleMockAgent implements IAgent {
   async getJuryVote(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<TargetDecision> {
     return { target: finalistIds[0], thinking: "lifecycle mock jury vote" };
   }
-  async getStrategicReflection(_ctx: PhaseContext): Promise<void> {
-    return Promise.resolve();
+  async getStrategicReflection(_ctx: PhaseContext): Promise<StrategicReflectionAction> {
+    return {
+      certainties: [],
+      suspicions: [],
+      allies: [],
+      threats: [],
+      plan: "lifecycle mock plan",
+      thinking: "lifecycle mock strategic reflection",
+    };
   }
 
   // Memory methods (no-ops for mock)

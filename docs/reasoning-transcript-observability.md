@@ -4,7 +4,7 @@ These rules and patterns apply to the game engine (`packages/engine`) for surfac
 
 ## Purpose
 
-Private `thinking` + raw `reasoningContext` (local `reasoning_content` etc.) are captured so that long unattended `--chatty` runs (especially Mingle + vote/power/council loops for 8->4 player testing) are actually debuggable and enjoyable for the human. Agents' real rationale for room choices, Mingle turns, empower/expose votes, power actions (pass/protect/eliminate), council votes, direct endgame votes, and jury votes must be visible in the terminal when useful and persisted in structured simulation artifacts.
+Private `thinking` + raw `reasoningContext` (local `reasoning_content` etc.) are captured so that long unattended `--chatty` runs (especially Mingle + vote/power/council loops for 8->4 player testing) are actually debuggable and enjoyable for the human. Agents' real rationale for hidden Mingle intent, room choices, Mingle turns, empower/expose votes, power actions (pass/protect/eliminate), council votes, strategic reflections, direct endgame votes, and jury votes must be visible in the terminal when useful and persisted in structured simulation artifacts.
 
 This observability layer exists because "master wants to see reasoning for voting as well" and equivalent signals for power and council decisions. Public player messages stay clean; the hidden reasoning is only for viewers, replays, and simulation analysis.
 
@@ -23,10 +23,12 @@ This observability layer exists because "master wants to see reasoning for votin
 Decision methods on `IAgent` / `InfluenceAgent` return the extra fields (typed on the interface and impl):
 
 - `chooseMingleRoom(...)` → `{ roomId: number | null; thinking?: string; reasoningContext?: string }`
-- `takeMingleTurn(...)` → `{ thinking?: string; message?: string | null; noReply?: boolean; gotoRoomId?: number | null; reasoningContext?: string }`
+- `getMingleIntent(...)` → `{ seekPlayers: string[]; avoidPlayers: string[]; preferredRoomSize: ...; purpose: string; provisionalTarget: string | null; noTargetReason: string | null; openingAsk: string; thinking?: string; reasoningContext?: string }`
+- `takeMingleTurn(...)` → `{ thinking?: string; message?: string | null; noReply?: boolean; gotoRoomId?: number | null; strategySignal?: string | null; movementPurpose?: string | null; reasoningContext?: string }`
 - `getVotes(...)` → `{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string }`
 - `getPowerAction(...)` → `PowerAction & { thinking?: string; reasoningContext?: string }`
 - `getCouncilVote(...)` → `{ target: UUID; thinking?: string; reasoningContext?: string }`
+- `getStrategicReflection(...)` → `{ certainties: string[]; suspicions: string[]; allies: string[]; threats: string[]; plan: string; thinking?: string; reasoningContext?: string } | null`
 - `getEndgameEliminationVote(...)` / `getJuryVote(...)` → `{ target: UUID; thinking?: string; reasoningContext?: string }`
 
 (Similar treatment for public messages, `getPowerLobbyMessage`, diary entries, accusations, jury questions, etc.)
@@ -36,6 +38,8 @@ Phase runners receive the rich result, record only the narrow game-state value w
 - `phases/vote.ts`: `logger.logSystem(..., votes.thinking, votes.reasoningContext)`
 - `phases/power.ts`: `logger.logSystem(..., powerActionResult.thinking, powerActionResult.reasoningContext)`
 - `phases/council.ts`: `logger.logSystem(..., voteResult.thinking, voteResult.reasoningContext)`
+- `phases/mingle.ts`: emits hidden `mingle-intent` agent turns before room choice, threads a summary-only intent into room choice/turn context, and records `strategySignal` / `movementPurpose` on private Mingle turn records rather than viewer-facing room metadata.
+- `diary-room.ts`: emits hidden `strategic-reflection` agent turns when `enableStrategicReflections` is enabled.
 - Every phase runner that resolves an agent call also emits an `agent_turn` stream event via `logger.emitAgentTurn(...)` with the normalized response the game used.
 
 `AgentTurnEvent` (game-runner.types.ts) is the structured simulation-analysis shape:
@@ -210,6 +214,8 @@ In simulation batches under `packages/engine/docs/simulations/`, each game write
 - `game-N-turns.jsonl`: one clean structured JSON record per agent turn, including the normalized response the game used plus `thinking` and `reasoningContext` when available.
 - `game-N-events.jsonl`: one clean canonical domain event record per accepted game-state fact. Replay this through `replayCanonicalEvents(...)` to rebuild the game projection; do not parse transcript prose as board state.
 
+`game-N-turns.jsonl` always includes hidden `mingle-intent` records. It includes hidden `strategic-reflection` records when the simulator is run with `--strategic-reflections` (or `INFLUENCE_SIM_STRATEGIC_REFLECTIONS=true`). These records are producer/debug artifacts only; they are not player-visible speech.
+
 Recommended invocation for Mingle + visibility work:
 
 ```bash
@@ -218,9 +224,17 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
+For validation runs that need to prove strategic-reflection capture is working, add `--strategic-reflections`.
+
 The "Progress: R1 VOTE | alive=..." lines + the following House action lines are the primary place humans see per-agent rationale in real time. After the run, use `game-N-turns.jsonl` for structured agent-decision analysis and `game-N-events.jsonl` for replay/projection queries instead of parsing colored terminal output.
 
 For MCP-backed analysis, run `bun run mcp:game -- docs/simulations` from `packages/engine`. The MCP scans the whole local simulation corpus, including old batches and currently-writing batches, and every game query is addressed by `sessionId + gameNumber`.
+
+Useful validation queries:
+
+- `search_logs` over `sources: ["turns"]` for `mingle-intent`
+- `search_logs` over `sources: ["turns"]` for `strategic-reflection`
+- `search_logs` over `sources: ["turns"]` for `strategySignal` or `movementPurpose`
 
 Update simulation batch notes (the dated `.md` next to `results.json` etc.) with observations about the quality of the surfaced reasoning, not just win rates or token counts. When writing scripts, read `game-N-turns.jsonl` for per-turn decisions, `game-N-events.jsonl` for accepted domain facts, and `game-N.json` for full transcript context.
 

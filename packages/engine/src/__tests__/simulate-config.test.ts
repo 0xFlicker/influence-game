@@ -69,6 +69,16 @@ describe("simulation variant config", () => {
     expect(config.agentActionTimeoutMs).toBe(90_000);
   });
 
+  it("can opt simulation runs into strategic-reflection capture", () => {
+    const args = parseArgs(["--strategic-reflections"]);
+    const config = buildSimulationConfig("mingle", {
+      enableStrategicReflections: args.enableStrategicReflections,
+    });
+
+    expect(args.enableStrategicReflections).toBe(true);
+    expect(config.enableStrategicReflections).toBe(true);
+  });
+
   it("enables mild pair cooldown for mingle simulator variants", () => {
     expect(buildSimulationConfig("baseline").minglePairCooldownRounds).toBe(1);
     expect(buildSimulationConfig("mingle").minglePairCooldownRounds).toBe(1);
@@ -115,6 +125,7 @@ describe("simulation variant config", () => {
         variant: "power-lobby-diversity-mingle",
         gameTimeoutMs: 600000,
         llmTimeoutMs: 45000,
+        enableStrategicReflections: false,
       },
     };
 

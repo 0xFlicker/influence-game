@@ -159,6 +159,19 @@ function makeJsonFallbackRetryStub(requests: Array<Record<string, unknown>>): Op
   } as unknown as OpenAI;
 }
 
+function makeRejectingOpenAIStub(requests: Array<Record<string, unknown>>, error = new Error("forced failure")): OpenAI {
+  return {
+    chat: {
+      completions: {
+        create: async (params: Record<string, unknown>) => {
+          requests.push(params);
+          throw error;
+        },
+      },
+    },
+  } as unknown as OpenAI;
+}
+
 describe("InfluenceAgent structured output mode", () => {
   it("uses named tool choice by default", async () => {
     const requests: Array<Record<string, unknown>> = [];
@@ -271,12 +284,200 @@ describe("InfluenceAgent structured output mode", () => {
       ...makeContext(Phase.MINGLE),
       roomCount: 2,
       roomCounts: [{ roomId: 1, count: 1 }, { roomId: 2, count: 1 }],
+      mingleIntent: {
+        seekPlayers: ["Mira"],
+        avoidPlayers: ["Vera"],
+        preferredRoomSize: "pair",
+        purpose: "Find one person willing to compare Vera reads without committing too early.",
+        provisionalTarget: null,
+        noTargetReason: "Atlas has only soft evidence.",
+        openingAsk: "Ask whether Vera's warmth feels rehearsed or genuine.",
+      },
+    });
+
+  expect(choice).toEqual({
+    roomId: 2,
+    thinking: "Room 2 has the right crowd for a quiet alliance check.",
+    reasoningContext: "Hidden local reasoning for the room choice.",
+  });
+  const messages = requests[0]?.messages as Array<{ content: string }>;
+  const prompt = messages.at(-1)!.content;
+  expect(prompt).toContain("## Your Mingle Intent");
+  expect(prompt).toContain("Find one person willing to compare Vera reads without committing too early.");
+  expect(prompt).toContain("No-target reason: Atlas has only soft evidence.");
+  expect(prompt).toContain("Ask whether Vera's warmth feels rehearsed or genuine.");
+});
+
+  it("returns a missing room choice when room-choice tooling fails", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeRejectingOpenAIStub(requests),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const choice = await agent.chooseMingleRoom({
+      ...makeContext(Phase.MINGLE),
+      roomCount: 2,
+      roomCounts: [{ roomId: 1, count: 0 }, { roomId: 2, count: 0 }],
     });
 
     expect(choice).toEqual({
-      roomId: 2,
-      thinking: "Room 2 has the right crowd for a quiet alliance check.",
-      reasoningContext: "Hidden local reasoning for the room choice.",
+      roomId: null,
+      thinking: "fallback missing room choice due to error",
+      reasoningContext: undefined,
+    });
+  });
+
+  it("preserves hidden Mingle intent and native reasoning", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "form_mingle_intent",
+        {
+          thinking: "Mira is useful to compare notes with, while Vera is too slippery to trust yet.",
+          seekPlayers: ["Mira"],
+          avoidPlayers: ["Vera"],
+          preferredRoomSize: "small_group",
+          purpose: "Test whether Mira will commit to watching Vera together.",
+          provisionalTarget: "Vera",
+          noTargetReason: null,
+          openingAsk: "Ask Mira whether Vera's lobby warmth felt rehearsed.",
+        },
+        "Hidden local reasoning for the Mingle intent.",
+      ),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const intent = await agent.getMingleIntent({
+      ...makeContext(Phase.MINGLE),
+      roomCount: 2,
+      roomCounts: [{ roomId: 1, count: 1 }, { roomId: 2, count: 1 }],
+    });
+
+    expect(intent).toEqual({
+      seekPlayers: ["Mira"],
+      avoidPlayers: ["Vera"],
+      preferredRoomSize: "small_group",
+      purpose: "Test whether Mira will commit to watching Vera together.",
+      provisionalTarget: "Vera",
+      noTargetReason: null,
+      openingAsk: "Ask Mira whether Vera's lobby warmth felt rehearsed.",
+      thinking: "Mira is useful to compare notes with, while Vera is too slippery to trust yet.",
+      reasoningContext: "Hidden local reasoning for the Mingle intent.",
+    });
+  });
+
+  it("uses hidden Mingle intent in turn prompts without requiring target naming", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "mingle_turn",
+        {
+          thinking: "No one in this room needs a hard target yet; staying quiet is better than overplaying.",
+          message: null,
+          noReply: true,
+          gotoRoomId: null,
+          strategySignal: null,
+          movementPurpose: null,
+        },
+        "Hidden local reasoning for the Mingle turn.",
+      ),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const turn = await agent.takeMingleTurn({
+      ...makeContext(Phase.MINGLE),
+      roomCount: 2,
+      roomCounts: [{ roomId: 1, count: 1 }, { roomId: 2, count: 2 }],
+      currentRoomId: 1,
+      roomMates: ["Atlas"],
+      mingleIntent: {
+        seekPlayers: ["Mira"],
+        avoidPlayers: [],
+        preferredRoomSize: "pair",
+        purpose: "Find one person willing to compare Vera reads without committing too early.",
+        provisionalTarget: null,
+        noTargetReason: "Atlas has only vibes, not evidence.",
+        openingAsk: "Ask whether Vera's warmth feels rehearsed or genuine.",
+      },
+    }, ["Atlas"], []);
+
+    expect(turn).toEqual({
+      thinking: "No one in this room needs a hard target yet; staying quiet is better than overplaying.",
+      message: null,
+      noReply: true,
+      gotoRoomId: null,
+      strategySignal: null,
+      movementPurpose: null,
+      reasoningContext: "Hidden local reasoning for the Mingle turn.",
+    });
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.at(-1)!.content;
+    expect(prompt).toContain("## Your Mingle Intent");
+    expect(prompt).toContain("Find one person willing to compare Vera reads without committing too early.");
+    expect(prompt).toContain("No-target reason: Atlas has only vibes, not evidence.");
+    expect(prompt).toContain("Ask whether Vera's warmth feels rehearsed or genuine.");
+    expect(prompt).toContain("You may name a target or ally");
+    expect(prompt).toContain("You do not have to name a target");
+    expect(prompt).toContain("TALK has no audience");
+  });
+
+  it("preserves hidden strategic reflections and native reasoning", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "strategic_reflection",
+        {
+          thinking: "Mira is a likely ally and Vera remains the most plausible threat.",
+          certainties: ["Mira protected Atlas in the last vote"],
+          suspicions: ["Vera is overplaying warmth in Mingle"],
+          allies: ["Mira"],
+          threats: ["Vera"],
+          plan: "Keep Mira close and test whether Finn will expose Vera next.",
+        },
+        "Hidden local reasoning for the strategic reflection.",
+      ),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const reflection = await agent.getStrategicReflection(makeContext(Phase.VOTE));
+
+    expect(reflection).toEqual({
+      certainties: ["Mira protected Atlas in the last vote"],
+      suspicions: ["Vera is overplaying warmth in Mingle"],
+      allies: ["Mira"],
+      threats: ["Vera"],
+      plan: "Keep Mira close and test whether Finn will expose Vera next.",
+      thinking: "Mira is a likely ally and Vera remains the most plausible threat.",
+      reasoningContext: "Hidden local reasoning for the strategic reflection.",
     });
   });
 

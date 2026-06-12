@@ -8,7 +8,7 @@ import type { GameState } from "./game-state";
 import type { TranscriptLogger } from "./transcript-logger";
 import type { UUID, RoomAllocation, JuryMember, MingleRoomCount } from "./types";
 import { Phase } from "./types";
-import type { PhaseContext } from "./game-runner.types";
+import type { MingleIntentSummary, PhaseContext } from "./game-runner.types";
 import { computeJurySize } from "./types";
 
 export class ContextBuilder {
@@ -51,6 +51,7 @@ export class ContextBuilder {
       roomCounts?: MingleRoomCount[];
       currentRoomId?: number;
       roomMates?: string[];
+      mingleIntent?: MingleIntentSummary | null;
       includeRoomAllocations?: boolean;
     },
   ): PhaseContext {
@@ -81,6 +82,7 @@ export class ContextBuilder {
       currentRoomId: roomInfo?.currentRoomId,
       roomAllocations,
       roomMates: roomInfo?.roomMates,
+      mingleIntent: roomInfo?.mingleIntent,
       endgameStage: this.gameState.endgameStage ?? undefined,
       jury: this.gameState.jury.length > 0 ? [...this.getActiveJury()] : undefined,
       finalists: (() => {

@@ -184,6 +184,18 @@ export interface MingleRoomPlayerRef {
 
 export type MingleRoomChoiceStatus = "valid" | "missing" | "invalid";
 
+export type MinglePreferredRoomSize = "solo" | "pair" | "small_group" | "large_group" | "any";
+
+export interface MingleIntentSummary {
+  seekPlayers: string[];
+  avoidPlayers: string[];
+  preferredRoomSize: MinglePreferredRoomSize;
+  purpose: string;
+  provisionalTarget: string | null;
+  noTargetReason: string | null;
+  openingAsk: string;
+}
+
 export interface MingleRoomChoiceRecord {
   player: MingleRoomPlayerRef;
   requestedRoomId: number | null;

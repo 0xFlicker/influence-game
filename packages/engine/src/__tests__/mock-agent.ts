@@ -3,7 +3,7 @@
  * Uses simple scripted strategies to validate game mechanics.
  */
 
-import type { AgentResponse, IAgent, MingleRoomChoiceAction, MingleTurnAction, PhaseContext, PowerLobbyExposure, TargetDecision } from "../game-runner";
+import type { AgentResponse, IAgent, MingleIntentAction, MingleRoomChoiceAction, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicReflectionAction, TargetDecision } from "../game-runner";
 import type { UUID, PowerAction } from "../types";
 
 /** Assert a value is defined — throws in tests if assumption is violated */
@@ -73,6 +73,23 @@ export class MockAgent implements IAgent {
     return {
       roomId: (myIndex % roomCount) + 1,
       thinking: `Choosing room based on player index ${myIndex}`,
+      reasoningContext: undefined,
+    };
+  }
+
+  async getMingleIntent(ctx: PhaseContext): Promise<MingleIntentAction> {
+    const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
+    const first = others[0]?.name ?? null;
+    const second = others[1]?.name ?? null;
+    return {
+      seekPlayers: first ? [first] : [],
+      avoidPlayers: second ? [second] : [],
+      preferredRoomSize: "small_group",
+      purpose: first ? `Compare notes with ${first}` : "Stay alert for a useful room",
+      provisionalTarget: second,
+      noTargetReason: second ? null : "No clear target yet",
+      openingAsk: first ? `Ask ${first} who feels too comfortable.` : "Ask whoever arrives what they noticed.",
+      thinking: "mock: form hidden Mingle intent",
       reasoningContext: undefined,
     };
   }
@@ -249,9 +266,16 @@ export class MockAgent implements IAgent {
     };
   }
 
-  async getStrategicReflection(_ctx: PhaseContext): Promise<void> {
-    // No-op for mock, but could be used to update internal state in a more complex implementation
-    return Promise.resolve();
+  async getStrategicReflection(_ctx: PhaseContext): Promise<StrategicReflectionAction> {
+    return {
+      certainties: [`${this.name} is still alive`],
+      suspicions: [],
+      allies: [],
+      threats: [],
+      plan: "mock: keep gathering information",
+      thinking: "mock: reflect on current strategy",
+      reasoningContext: undefined,
+    };
   }
 
   // Memory methods (no-ops for mock)
