@@ -20,10 +20,14 @@
  * ("X votes: ...", "Y power action: ...", "Z council vote -> ...") with the agent's
  * hidden `thinking` (dim gray) and raw native `reasoningContext` (cyan) when present.
  *
- * Each game also writes `game-{N}-turns.jsonl`: one clean structured JSON record per
- * agent turn, including the normalized decision the game used plus `thinking` and
- * `reasoningContext` when available. Use it for post-run analysis instead of parsing
- * ANSI-colored `game-{N}.txt` output.
+ * Each game also writes:
+ * - `game-{N}-turns.jsonl`: clean structured records for normalized agent turns,
+ *   including `thinking` and `reasoningContext` when available.
+ * - `game-{N}-events.jsonl`: clean canonical domain events accepted by the engine,
+ *   suitable for replaying into a game projection or serving through the local game MCP.
+ *
+ * Use JSONL artifacts for post-run analysis instead of parsing ANSI-colored
+ * `game-{N}.txt` output.
  */
 
 import type OpenAI from "openai";
@@ -32,6 +36,7 @@ import { execFileSync } from "child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { GameRunner, type AgentTurnEvent, type GameStreamEvent, type TranscriptEntry } from "./game-runner";
+import type { CanonicalGameEvent } from "./canonical-events";
 import { InfluenceAgent, type Personality } from "./agent";
 import { LLMHouseInterviewer } from "./house-interviewer";
 import { DEFAULT_CONFIG, type GameConfig, type UUID } from "./types";
@@ -324,6 +329,7 @@ export interface GameResult {
   jsonPath: string;
   progressPath: string;
   turnsPath: string;
+  eventsPath: string;
   error?: string;
   tokenUsage: {
     perAgent: Record<string, TokenUsage>;
@@ -575,7 +581,7 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
   lines.push(`| Tribunal markers | ${stats.instrumentation.endgame.tribunal} |`);
   lines.push(`| Judgment markers | ${stats.instrumentation.endgame.judgment} |`);
   lines.push(`| Mingle rooms | ${stats.instrumentation.rooms.totalRooms} |`);
-  lines.push(`| Whisper sessions instrumented | ${stats.instrumentation.rooms.whisperSessions.length} |`);
+  lines.push(`| Mingle sessions instrumented | ${stats.instrumentation.rooms.mingleSessions.length} |`);
   lines.push(`| Room exclusions | ${stats.instrumentation.rooms.totalExclusions} |`);
   lines.push(`| Repeated room-pair occurrences | ${stats.instrumentation.rooms.repeatedPairs.totalRepeatedOccurrences} |`);
   lines.push(`| Request mutual matches honored | ${stats.instrumentation.rooms.requestSatisfaction.mutualHonored} |`);
@@ -770,11 +776,11 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
     lines.push("");
     lines.push("## Failed Game Diagnostics");
     lines.push("");
-    lines.push("| # | Error | Progress Log | Turns Log | Transcript |");
-    lines.push("|---|-------|--------------|-----------|------------|");
+    lines.push("| # | Error | Progress Log | Turns Log | Events Log | Transcript |");
+    lines.push("|---|-------|--------------|-----------|------------|------------|");
     for (const result of failed) {
       lines.push(
-        `| ${result.gameNumber} | ${(result.error ?? "unknown").replace(/\|/g, "\\|")} | ${result.progressPath} | ${result.turnsPath} | ${result.transcriptPath} |`,
+        `| ${result.gameNumber} | ${(result.error ?? "unknown").replace(/\|/g, "\\|")} | ${result.progressPath} | ${result.turnsPath} | ${result.eventsPath} | ${result.transcriptPath} |`,
       );
     }
   }
@@ -943,6 +949,24 @@ export function serializeAgentTurnEvent(
   return stripAnsiFromValue(record) as Record<string, unknown>;
 }
 
+export function serializeCanonicalGameEvent(
+  gameNumber: number,
+  startedAt: number,
+  event: CanonicalGameEvent,
+  now = Date.now(),
+): Record<string, unknown> {
+  return stripAnsiFromValue({
+    timestamp: new Date(now).toISOString(),
+    elapsedMs: now - startedAt,
+    gameNumber,
+    eventSequence: event.sequence,
+    eventType: event.type,
+    visibility: event.visibility,
+    payloadVersion: event.payloadVersion,
+    canonicalEvent: event,
+  }) as Record<string, unknown>;
+}
+
 function writeAgentTurn(
   turnsPath: string,
   gameNumber: number,
@@ -952,14 +976,28 @@ function writeAgentTurn(
   appendFileSync(turnsPath, `${JSON.stringify(serializeAgentTurnEvent(gameNumber, startedAt, event))}\n`);
 }
 
+function writeCanonicalEvent(
+  eventsPath: string,
+  gameNumber: number,
+  startedAt: number,
+  event: CanonicalGameEvent,
+): void {
+  appendFileSync(eventsPath, `${JSON.stringify(serializeCanonicalGameEvent(gameNumber, startedAt, event))}\n`);
+}
+
 function attachProgressLogger(
   runner: GameRunner,
   progressPath: string,
   turnsPath: string,
+  eventsPath: string,
   gameNumber: number,
   startedAt: number,
   chatty: boolean,
 ): void {
+  runner.setCanonicalEventListener((event) => {
+    writeCanonicalEvent(eventsPath, gameNumber, startedAt, event);
+  });
+
   runner.setStreamListener((event) => {
     if (event.type === "agent_turn") {
       writeAgentTurn(turnsPath, gameNumber, startedAt, event);
@@ -1065,7 +1103,9 @@ async function main() {
     const jsonPath = join(batchDir, `game-${g}.json`);
     const progressPath = join(batchDir, `game-${g}-progress.jsonl`);
     const turnsPath = join(batchDir, `game-${g}-turns.jsonl`);
+    const eventsPath = join(batchDir, `game-${g}-events.jsonl`);
     writeFileSync(turnsPath, "");
+    writeFileSync(eventsPath, "");
     writeProgress(progressPath, g, startTime, {
       event: "game_start",
       players: agents.map((agent) => agent.name),
@@ -1076,10 +1116,12 @@ async function main() {
       transcriptPath,
       jsonPath,
       turnsPath,
+      eventsPath,
     });
-    attachProgressLogger(runner, progressPath, turnsPath, g, startTime, args.chatty);
+    attachProgressLogger(runner, progressPath, turnsPath, eventsPath, g, startTime, args.chatty);
     console.log(`  Progress log: ${progressPath}`);
     console.log(`  Turns log: ${turnsPath}`);
+    console.log(`  Events log: ${eventsPath}`);
 
     try {
       const result = await runWithTimeout(
@@ -1116,6 +1158,7 @@ async function main() {
         jsonPath,
         progressPath,
         turnsPath,
+        eventsPath,
         tokenUsage: {
           perAgent: perAgentUsage,
           total: gameTotalUsage,
@@ -1143,6 +1186,7 @@ async function main() {
             metadata,
             result: gameResult,
             transcript: result.transcript,
+            canonicalEvents: runner.getCanonicalEvents(),
           },
           null,
           2,
@@ -1170,6 +1214,7 @@ async function main() {
         jsonPath,
         progressPath,
         turnsPath,
+        eventsPath,
         error: err instanceof Error ? err.message : String(err),
         tokenUsage: {
           perAgent: perAgentUsage,
@@ -1191,6 +1236,7 @@ async function main() {
             metadata,
             result: gameResult,
             transcript,
+            canonicalEvents: runner.getCanonicalEvents(),
           },
           null,
           2,

@@ -26,6 +26,16 @@ The `--chatty` (or `--verbose` / `-v`) flag to the simulation runner that prints
 
 The direct (non-guarded) call to `houseInterviewer.generateGameplaySummary` that produces a post-phase or post-elimination narrative summary from recent transcript entries. The result is logged as a `[House MC]` system entry so it appears in chatty output and persisted transcripts alongside the raw agent reasoning.
 
+## Canonical game event
+
+A durable domain fact accepted by the game engine at the moment game state changes. Canonical game events are emitted by `GameState`, written to simulator `game-N-events.jsonl`, and distinct from transcript entries and `AgentTurnEvent` observability records: they are the replayable source for rebuilding board state, while transcripts and agent turns explain or display what happened.
+
+## Game projection
+
+A derived read model rebuilt from canonical game events, such as current board state, a vote ledger, player timeline, room conversation view, or MCP search index. Projections may be cached or indexed, but they must stay rebuildable from the canonical event log and must not infer XState phase transitions.
+
+The local game MCP is a corpus-level projection host over simulation artifacts. It scans sessions under `packages/engine/docs/simulations/`, addresses games by `sessionId + gameNumber`, and stays read-only.
+
 ## callTool reasoning augmentation
 
 The single choke-point in `InfluenceAgent.callTool<T>` that guarantees every structured decision return and every JSON-fallback path carries the native `reasoningContext` (via `as T & { reasoningContext?: string }` intersections only — never `as any`). Tool schemas for observable decisions (cast_votes, use_power, council_vote, etc.) include a `thinking` field; the engine threads both values out to the phase loggers and `TranscriptEntry`.

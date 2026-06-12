@@ -6,9 +6,11 @@ import {
   isPowerLobbyVariant,
   parseArgs,
   serializeAgentTurnEvent,
+  serializeCanonicalGameEvent,
   type GameResult,
 } from "../simulate";
 import type { AgentTurnEvent } from "../game-runner";
+import type { CanonicalGameEvent } from "../canonical-events";
 import { instrumentGame } from "../simulation-instrumentation";
 import { DEFAULT_CONFIG, Phase } from "../types";
 import type { TokenUsage } from "../token-tracker";
@@ -38,6 +40,7 @@ function gameResult(overrides: Partial<GameResult>): GameResult {
     jsonPath: "game-1.json",
     progressPath: "game-1-progress.jsonl",
     turnsPath: "game-1-turns.jsonl",
+    eventsPath: "game-1-events.jsonl",
     tokenUsage: {
       perAgent: {},
       total: ZERO_USAGE,
@@ -175,6 +178,38 @@ describe("simulation variant config", () => {
       text: "Atlas votes: empower=Mira, expose=Vera",
     });
     expect(json).not.toContain("\x1b");
+  });
+
+  it("serializes canonical game events as clean structured JSON records", () => {
+    const event: CanonicalGameEvent = {
+      sequence: 3,
+      gameId: "game-fixed",
+      round: 1,
+      phase: Phase.VOTE,
+      type: "vote.cast",
+      timestamp: "2026-06-11T00:00:00.000Z",
+      source: "engine",
+      visibility: "producer",
+      payloadVersion: 1,
+      sourcePointers: [{ kind: "agent_turn", sequence: 9, action: "vote" }],
+      payload: {
+        voterId: "atlas-id",
+        empowerTarget: "mira-id",
+        exposeTarget: "vera-id",
+      },
+    };
+
+    const serialized = serializeCanonicalGameEvent(2, 1_700_000_000_000, event, 1_700_000_001_234);
+
+    expect(serialized).toMatchObject({
+      timestamp: "2023-11-14T22:13:21.234Z",
+      elapsedMs: 1234,
+      gameNumber: 2,
+      eventSequence: 3,
+      eventType: "vote.cast",
+      visibility: "producer",
+      payloadVersion: 1,
+    });
   });
 
   it("accepts the configured max player count for CLI simulation runs", () => {

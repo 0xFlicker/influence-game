@@ -134,7 +134,7 @@ The extras live only on the agent return value, `TranscriptEntry`, and `AgentTur
 
 4. Public player-visible output (`message` in `AgentResponse`, whisper/rumor text) must never contain the hidden thinking; it is stripped or kept in a separate field.
 
-5. Terminal UX for `--chatty` (and persisted `game-*.txt` / `.json`) is a first-class human output. `game-*-turns.jsonl` is the machine-analysis output and must stay clean JSON without ANSI formatting.
+5. Terminal UX for `--chatty` (and persisted `game-*.txt` / `.json`) is a first-class human output. `game-*-turns.jsonl` is the per-agent-turn machine-analysis output and `game-*-events.jsonl` is the accepted-domain-event replay output; both must stay clean JSON without ANSI formatting.
 
 6. When backing out experiments (e.g. the old `mingle-loop` variant that caused phase pollution / extra INTRODUCTION/LOBBY/RUMOR entries), prefer clean removal over more guards. The state machine must remain understandable.
 
@@ -208,6 +208,7 @@ In simulation batches under `packages/engine/docs/simulations/`, each game write
 - `game-N.json`: full transcript JSON plus result metadata.
 - `game-N-progress.jsonl`: lightweight progress events for monitoring a running game.
 - `game-N-turns.jsonl`: one clean structured JSON record per agent turn, including the normalized response the game used plus `thinking` and `reasoningContext` when available.
+- `game-N-events.jsonl`: one clean canonical domain event record per accepted game-state fact. Replay this through `replayCanonicalEvents(...)` to rebuild the game projection; do not parse transcript prose as board state.
 
 Recommended invocation for Mingle + visibility work:
 
@@ -217,9 +218,11 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
-The "Progress: R1 VOTE | alive=..." lines + the following House action lines are the primary place humans see per-agent rationale in real time. After the run, use `game-N-turns.jsonl` for structured analysis instead of parsing colored terminal output.
+The "Progress: R1 VOTE | alive=..." lines + the following House action lines are the primary place humans see per-agent rationale in real time. After the run, use `game-N-turns.jsonl` for structured agent-decision analysis and `game-N-events.jsonl` for replay/projection queries instead of parsing colored terminal output.
 
-Update simulation batch notes (the dated `.md` next to `results.json` etc.) with observations about the quality of the surfaced reasoning, not just win rates or token counts. When writing scripts, read `game-N-turns.jsonl` for per-turn decisions and `game-N.json` for full transcript context.
+For MCP-backed analysis, run `bun run mcp:game -- docs/simulations` from `packages/engine`. The MCP scans the whole local simulation corpus, including old batches and currently-writing batches, and every game query is addressed by `sessionId + gameNumber`.
+
+Update simulation batch notes (the dated `.md` next to `results.json` etc.) with observations about the quality of the surfaced reasoning, not just win rates or token counts. When writing scripts, read `game-N-turns.jsonl` for per-turn decisions, `game-N-events.jsonl` for accepted domain facts, and `game-N.json` for full transcript context.
 
 ## Review Checklist
 
@@ -227,14 +230,16 @@ Update simulation batch notes (the dated `.md` next to `results.json` etc.) with
 - Is there any `as any` left in the changed paths?
 - Are House calls still direct?
 - Do mocks and tests compile and pass with the new shapes?
-- Are the ANSI color rules, terminal output expectations, and clean `game-*-turns.jsonl` artifact documented?
+- Are the ANSI color rules, terminal output expectations, clean `game-*-turns.jsonl`, and clean `game-*-events.jsonl` artifacts documented?
 - Did we update the cross-referenced usage docs and AGENTS.md where the contract changed?
 - Can a future reader understand why this observability layer exists (Mingle debugging + "master wants to see reasoning for voting as well")?
 
 ## Related
 
 - `docs/local-model-evaluation.md` — primary reference for local provider setup and what makes a useful `--chatty` run.
-- `packages/engine/src/simulate.ts` — chatty entry point, `formatEntry`, and `game-N-turns.jsonl` writer.
+- `packages/engine/src/simulate.ts` — chatty entry point, `formatEntry`, and JSONL artifact writers.
+- `packages/engine/src/canonical-events.ts`, `canonical-event-log.ts`, `game-projection.ts` — accepted-domain-event envelope, append log, and replay reducer.
+- `packages/engine/src/game-mcp/` — local read-only MCP/query server over simulation event logs.
 - `packages/engine/src/agent.ts` — `callTool` and the decision methods.
 - `packages/engine/src/transcript-logger.ts` and `game-runner.types.ts` — the transcript and agent-turn data models.
 - `CONCEPTS.md` — project vocabulary for `TranscriptEntry`, `reasoningContext`, `chatty` mode, `House MC`, and the `callTool` reasoning augmentation.

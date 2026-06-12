@@ -58,7 +58,16 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
-Simulation artifacts are written under `packages/engine/docs/simulations/`. For each game, use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N.json` for the full transcript/result bundle, `game-N-progress.jsonl` for lightweight live progress, and `game-N.txt` for human-readable transcript review.
+Simulation artifacts are written under `packages/engine/docs/simulations/`. For each game, use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-events.jsonl` for replayable accepted domain facts, `game-N.json` for the full transcript/result bundle, `game-N-progress.jsonl` for lightweight live progress, and `game-N.txt` for human-readable transcript review.
+
+To query completed and still-growing simulation batches from another local MCP client, run:
+
+```bash
+cd packages/engine
+bun run mcp:game -- docs/simulations
+```
+
+The server is read-only and scans the simulation corpus on demand. It addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and exposes tools for listing sessions/games, reading projections, filtering canonical events, searching logs, reading player timelines, and following source pointers to linked turn records when present. Older batches without event logs remain searchable through turns/progress/transcript artifacts, but projection tools require canonical events.
 
 ## Full Stack Local Provider
 
@@ -89,7 +98,7 @@ Create a dated note in `docs/simulations/` or near the generated batch artifacts
 - whether the output was enjoyable to watch
 - quality and usefulness of the per-agent `thinking` and native `reasoningContext` captured in `game-N-turns.jsonl` and the transcript (this is now first-class signal for Mingle and decision-loop debugging)
 
-When running with `--chatty`, the live terminal (and the written `game-*.txt`) will interleave House action lines with dim-gray `thinking:` and cyan `reasoning:` blocks. These are the primary human-readable artifacts for evaluating whether the model is producing legible, strategic private reasoning. For scripts or post-run scoring, read `game-N-turns.jsonl`; it records each normalized room choice, Mingle turn, vote, power action, diary answer, and endgame decision as clean JSON with `thinking` and `reasoningContext` when available.
+When running with `--chatty`, the live terminal (and the written `game-*.txt`) will interleave House action lines with dim-gray `thinking:` and cyan `reasoning:` blocks. These are the primary human-readable artifacts for evaluating whether the model is producing legible, strategic private reasoning. For scripts or post-run scoring, read `game-N-turns.jsonl`; it records each normalized room choice, Mingle turn, vote, power action, diary answer, and endgame decision as clean JSON with `thinking` and `reasoningContext` when available. Use `game-N-events.jsonl` when the question is board state, accepted outcomes, or deterministic replay.
 
 ## Current Product Context
 

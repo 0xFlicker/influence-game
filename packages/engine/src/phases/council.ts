@@ -1,5 +1,5 @@
 import { Phase } from "../types";
-import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
+import { agentTurnSourcePointer, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import { getCouncilVoterNames, getExposeVoterNames, handleElimination } from "./elimination";
 
 export async function runRevealPhase(
@@ -52,7 +52,9 @@ export async function runCouncilPhase(
       });
       const voteResult = await agent.getCouncilVote(phaseCtx, candidates);
       const vote = voteResult.target;
-      gameState.recordCouncilVote(player.id, vote);
+      gameState.recordCouncilVote(player.id, vote, [
+        agentTurnSourcePointer(player.id, "council-vote", gameState.round, Phase.COUNCIL),
+      ]);
 
       const votedAgainstName = gameState.getPlayerName(vote);
       agent.addNote(votedAgainstName, `Voted against in council R${gameState.round}`);

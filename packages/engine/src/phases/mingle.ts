@@ -2,11 +2,11 @@ import type {
   UUID,
   MingleTurnActionRecord,
   RoomAllocation,
-  WhisperRoomChoiceRecord,
-  WhisperRoomPlayerRef,
-  WhisperRoomChoiceStatus,
-  WhisperRoomCount,
-  WhisperSessionDiagnostics,
+  MingleRoomChoiceRecord,
+  MingleRoomPlayerRef,
+  MingleRoomChoiceStatus,
+  MingleRoomCount,
+  MingleSessionDiagnostics,
 } from "../types";
 import { Phase } from "../types";
 import type { MingleRoomChoiceAction, MingleTurnAction } from "../game-runner.types";
@@ -30,7 +30,7 @@ export function computeRoomCount(aliveCount: number): number {
 function buildPlayerRef(
   playerById: Map<UUID, { id: UUID; name: string }>,
   playerId: UUID,
-): WhisperRoomPlayerRef {
+): MingleRoomPlayerRef {
   return {
     id: playerId,
     name: playerById.get(playerId)?.name ?? playerId,
@@ -39,7 +39,7 @@ function buildPlayerRef(
 
 function normalizeRoomChoice(choice: number | null | undefined, roomCount: number): {
   roomId: number;
-  status: WhisperRoomChoiceRecord["status"];
+  status: MingleRoomChoiceRecord["status"];
 } {
   if (choice == null) return { roomId: 1, status: "missing" };
   if (!Number.isInteger(choice) || choice < 1 || choice > roomCount) {
@@ -186,7 +186,7 @@ export function allocateRooms(
   options: RoomAllocationOptions = {},
 ): {
   rooms: RoomAllocation[];
-  diagnostics: WhisperSessionDiagnostics;
+  diagnostics: MingleSessionDiagnostics;
 } {
   const rooms: RoomAllocation[] = Array.from({ length: roomCount }, (_, index) => ({
     roomId: index + 1,
@@ -195,7 +195,7 @@ export function allocateRooms(
     playerIds: [],
   }));
   const playerById = new Map(alivePlayers.map((player) => [player.id, player]));
-  const choiceRecords: WhisperRoomChoiceRecord[] = [];
+  const choiceRecords: MingleRoomChoiceRecord[] = [];
 
   if (roomCount < 1) {
     return {
@@ -257,7 +257,7 @@ function describeRoom(ctx: PhaseRunnerContext, room: RoomAllocation): string {
   return `Room ${room.roomId}: ${occupantNames.length > 0 ? occupantNames.join(", ") : "Empty"}`;
 }
 
-function buildRoomCounts(localRooms: RoomAllocation[]): WhisperRoomCount[] {
+function buildRoomCounts(localRooms: RoomAllocation[]): MingleRoomCount[] {
   return localRooms.map((room) => ({ roomId: room.roomId, count: room.playerIds.length }));
 }
 
@@ -300,7 +300,7 @@ function assignGlobalRoomIds(
 function createChoiceRecordsFromAssignments(
   alivePlayers: Array<{ id: UUID; name: string }>,
   roomByPlayerId: Map<UUID, number>,
-): WhisperRoomChoiceRecord[] {
+): MingleRoomChoiceRecord[] {
   return alivePlayers.map((player) => {
     const assignedRoomId = roomByPlayerId.get(player.id) ?? 1;
     return {
@@ -313,9 +313,9 @@ function createChoiceRecordsFromAssignments(
 }
 
 function remapDiagnostics(
-  diagnostics: WhisperSessionDiagnostics,
+  diagnostics: MingleSessionDiagnostics,
   roomIdByLocalRoomId: Map<number, number>,
-): WhisperSessionDiagnostics {
+): MingleSessionDiagnostics {
   return {
     ...diagnostics,
     allocatedRooms: diagnostics.allocatedRooms.map((room) => ({
@@ -333,7 +333,7 @@ function normalizeGotoRoomId(
   gotoRoomId: number | null | undefined,
   currentRoomId: number,
   roomCount: number,
-): { roomId: number; status: WhisperRoomChoiceStatus; requestedRoomId: number | null } {
+): { roomId: number; status: MingleRoomChoiceStatus; requestedRoomId: number | null } {
   if (gotoRoomId == null) {
     return { roomId: currentRoomId, status: "missing", requestedRoomId: null };
   }
@@ -347,7 +347,7 @@ async function runMingleTurn(
   ctx: PhaseRunnerContext,
   localRooms: RoomAllocation[],
   globalRooms: RoomAllocation[],
-  roomCounts: WhisperRoomCount[],
+  roomCounts: MingleRoomCount[],
   roomByPlayerId: Map<UUID, number>,
   roomCount: number,
 ): Promise<MingleTurnActionRecord[]> {
@@ -478,7 +478,7 @@ export async function runMinglePhase(
   const beats = config.mingleSessionsPerRound ?? 2;
   const allRooms: RoomAllocation[] = [];
   let nextGlobalRoomId = 1;
-  const initialRoomCounts: WhisperRoomCount[] = Array.from({ length: roomCount }, (_, index) => ({
+  const initialRoomCounts: MingleRoomCount[] = Array.from({ length: roomCount }, (_, index) => ({
     roomId: index + 1,
     count: 0,
   }));
@@ -540,7 +540,7 @@ export async function runMinglePhase(
     const globalAssignment = assignGlobalRoomIds(localRooms, nextGlobalRoomId);
     nextGlobalRoomId = globalAssignment.nextRoomId;
     const beatRooms = globalAssignment.rooms;
-    const beatDiagnostics: WhisperSessionDiagnostics = beat === 1
+    const beatDiagnostics: MingleSessionDiagnostics = beat === 1
       ? remapDiagnostics(initialAllocation.diagnostics, globalAssignment.roomIdByLocalRoomId)
       : {
           round: gameState.round,

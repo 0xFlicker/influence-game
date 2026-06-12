@@ -177,21 +177,21 @@ export interface RoomAllocation {
   playerIds: UUID[];
 }
 
-export interface WhisperRoomPlayerRef {
+export interface MingleRoomPlayerRef {
   id: UUID;
   name: string;
 }
 
-export type WhisperRoomChoiceStatus = "valid" | "missing" | "invalid";
+export type MingleRoomChoiceStatus = "valid" | "missing" | "invalid";
 
-export interface WhisperRoomChoiceRecord {
-  player: WhisperRoomPlayerRef;
+export interface MingleRoomChoiceRecord {
+  player: MingleRoomPlayerRef;
   requestedRoomId: number | null;
   assignedRoomId: number;
-  status: WhisperRoomChoiceStatus;
+  status: MingleRoomChoiceStatus;
 }
 
-export interface WhisperRoomCount {
+export interface MingleRoomCount {
   roomId: number;
   count: number;
 }
@@ -199,32 +199,45 @@ export interface WhisperRoomCount {
 export type MingleTurnActionType = "talk" | "no_reply";
 
 export interface MingleTurnActionRecord {
-  player: WhisperRoomPlayerRef;
+  player: MingleRoomPlayerRef;
   turn: number;
   fromRoomId: number;
   toRoomId: number;
   moved: boolean;
   action: MingleTurnActionType;
   gotoRoomId: number | null;
-  gotoStatus: WhisperRoomChoiceStatus;
+  gotoStatus: MingleRoomChoiceStatus;
 }
 
-export interface WhisperAllocatedRoomDiagnostics {
+export interface MingleAllocatedRoomDiagnostics {
   roomId: number;
   beat: number;
-  players: WhisperRoomPlayerRef[];
+  players: MingleRoomPlayerRef[];
   conversationRan: boolean;
 }
 
-export interface WhisperSessionDiagnostics {
+export interface MingleSessionDiagnostics {
   round: number;
   beat: number;
   roomCount: number;
-  eligiblePlayers: WhisperRoomPlayerRef[];
-  choices: WhisperRoomChoiceRecord[];
-  allocatedRooms: WhisperAllocatedRoomDiagnostics[];
+  eligiblePlayers: MingleRoomPlayerRef[];
+  choices: MingleRoomChoiceRecord[];
+  allocatedRooms: MingleAllocatedRoomDiagnostics[];
   actions?: MingleTurnActionRecord[];
 }
+
+/** @deprecated Legacy name kept only for old replay/import compatibility. */
+export type WhisperRoomPlayerRef = MingleRoomPlayerRef;
+/** @deprecated Legacy name kept only for old replay/import compatibility. */
+export type WhisperRoomChoiceStatus = MingleRoomChoiceStatus;
+/** @deprecated Legacy name kept only for old replay/import compatibility. */
+export type WhisperRoomChoiceRecord = MingleRoomChoiceRecord;
+/** @deprecated Legacy name kept only for old replay/import compatibility. */
+export type WhisperRoomCount = MingleRoomCount;
+/** @deprecated Legacy name kept only for old replay/import compatibility. */
+export type WhisperAllocatedRoomDiagnostics = MingleAllocatedRoomDiagnostics;
+/** @deprecated Legacy name kept only for old replay/import compatibility. */
+export type WhisperSessionDiagnostics = MingleSessionDiagnostics;
 
 /** System event emitted when mingle rooms are allocated for a round */
 export interface RoomAllocationEvent {

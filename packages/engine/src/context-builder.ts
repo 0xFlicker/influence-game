@@ -6,7 +6,7 @@
 
 import type { GameState } from "./game-state";
 import type { TranscriptLogger } from "./transcript-logger";
-import type { UUID, RoomAllocation, JuryMember, WhisperRoomCount } from "./types";
+import type { UUID, RoomAllocation, JuryMember, MingleRoomCount } from "./types";
 import { Phase } from "./types";
 import type { PhaseContext } from "./game-runner.types";
 import { computeJurySize } from "./types";
@@ -17,7 +17,7 @@ export class ContextBuilder {
   /** Players excluded from rooms this round */
   currentExcludedPlayerIds: UUID[] = [];
   /** Privacy-safe room counts for the current or most recent Mingle turn */
-  currentRoomCounts: WhisperRoomCount[] = [];
+  currentRoomCounts: MingleRoomCount[] = [];
 
   constructor(
     private readonly gameState: GameState,
@@ -48,7 +48,7 @@ export class ContextBuilder {
     isEliminated?: boolean,
     roomInfo?: {
       roomCount?: number;
-      roomCounts?: WhisperRoomCount[];
+      roomCounts?: MingleRoomCount[];
       currentRoomId?: number;
       roomMates?: string[];
       includeRoomAllocations?: boolean;

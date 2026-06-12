@@ -11,6 +11,8 @@
 
 Every running game holds its entire state in process memory with no mid-game persistence. If the process crashes, is redeployed, or needs to scale horizontally, all active games are irrecoverably lost. The architecture was originally designed around xstate's serializable state model, but the persistence layer was never built.
 
+The engine now emits canonical accepted-domain events for simulator runs and writes them to `game-N-events.jsonl`. Those events can replay into a domain projection for analysis and local MCP queries, but they are not yet production persistence: API games still do not write a durable event table, persist XState actor snapshots, checkpoint runner/agent state, or resume after process loss.
+
 ### Current Risks
 
 | Scenario | Impact |
@@ -81,6 +83,7 @@ After each phase completes in the game loop, serialize the full game state to th
 
 **What to serialize** (a "checkpoint"):
 - `GameState` — all fields via a new `toJSON()` / `fromJSON()` pair
+- Canonical game events or an equivalent persisted event cursor — domain replay can rebuild accepted board facts, but it still needs to be paired with checkpoint metadata for API resume
 - xstate snapshot — `actor.getSnapshot()` (already serializable)
 - `GameRunner` accumulated data — transcript, whisper inbox, public messages, diary entries, elimination order
 - `TokenTracker` usage — cumulative counts
@@ -103,7 +106,7 @@ CREATE INDEX idx_game_checkpoints_game ON game_checkpoints(game_id);
 ```
 
 **Engine changes**:
-- Add `GameState.toJSON(): object` and `static GameState.fromJSON(data): GameState`
+- Add production-ready `GameState.toJSON(): object` / `static GameState.fromJSON(data): GameState` or hydrate from a persisted canonical event log plus checkpoint metadata
 - Add `GameRunner.checkpoint(): CheckpointData` that returns all accumulated runner state
 - Add `GameRunner.toJSON()` / `static GameRunner.fromCheckpoint()` to reconstruct mid-game
 
@@ -111,7 +114,7 @@ CREATE INDEX idx_game_checkpoints_game ON game_checkpoints(game_id);
 - In `runGameAsync`, after each phase boundary (when `runner.run()` yields control between phases), call `saveCheckpoint(db, gameId, runner)`
 - This requires the game loop to expose phase-boundary hooks — either via the existing `streamListener` callback or a new `onPhaseComplete` callback on `GameRunner`
 
-**Estimated complexity**: Medium. The state is already structured and serializable. The main work is writing `toJSON`/`fromJSON` pairs and adding the DB write after each phase.
+**Estimated complexity**: Medium. The state is already structured and partially replayable through canonical events. The remaining work is production persistence, XState snapshot storage, runner/agent checkpoint data, and the DB write after each phase.
 
 #### 1.2 — Game Hydration (Resume from Checkpoint)
 
@@ -230,20 +233,23 @@ Phase 1 makes single-instance deploys safe. Phase 2 enables horizontal scaling. 
 
 ## Key Architecture Decisions
 
-1. **Checkpoint granularity: per-phase, not per-event.** Per-event would add latency to every LLM call. Per-phase (roughly every 30-120 seconds during a game) is frequent enough for minimal data loss and cheap enough to not impact performance.
+1. **Canonical events are a domain replay prerequisite, not resume by themselves.** The simulator event spine proves accepted board facts can rebuild a projection. API crash recovery still needs persisted event storage, XState snapshots, runner state, ownership, and resume orchestration.
 
-2. **LLM context is not recoverable.** Agent conversation history with the LLM is ephemeral. On resume, agents get a transcript-based recap. This is acceptable because games are short (4 rounds typical, ~10 minutes) and agents already handle context well from system prompts.
+2. **Checkpoint granularity: per-phase, not per-event.** Per-event would add latency to every LLM call. Per-phase (roughly every 30-120 seconds during a game) is frequent enough for minimal data loss and cheap enough to not impact performance.
 
-3. **`suspended` vs `cancelled` status.** New status distinguishes intentional pause (deploy) from failure. Suspended games auto-resume on startup; cancelled games do not.
+3. **LLM context is not recoverable.** Agent conversation history with the LLM is ephemeral. On resume, agents get a transcript-based recap. This is acceptable because games are short (4 rounds typical, ~10 minutes) and agents already handle context well from system prompts.
 
-4. **Postgres advisory locks before Redis.** Avoids a new infrastructure dependency. Redis is only needed when we actually want distributed WebSocket pub/sub (Phase 2).
+4. **`suspended` vs `cancelled` status.** New status distinguishes intentional pause (deploy) from failure. Suspended games auto-resume on startup; cancelled games do not.
+
+5. **Postgres advisory locks before Redis.** Avoids a new infrastructure dependency. Redis is only needed when we actually want distributed WebSocket pub/sub (Phase 2).
 
 ---
 
 ## Files That Need Changes
 
 ### Engine (`packages/engine/`)
-- `game-state.ts` — Add `toJSON()` / `static fromJSON()` serialization
+- `game-state.ts` — Add production hydration support from checkpoint/event data
+- `canonical-events.ts`, `canonical-event-log.ts`, `game-projection.ts` — Extend simulator-proven event replay into a persisted API event-store boundary
 - `game-runner.ts` — Add `checkpoint()` method, `static fromCheckpoint()` factory, `onPhaseComplete` callback
 - `token-tracker.ts` — Add `toJSON()` / `static fromJSON()` serialization
 - `phase-machine.ts` — No changes needed (xstate snapshots already work)

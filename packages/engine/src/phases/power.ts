@@ -1,7 +1,7 @@
 import type { UUID, PowerAction } from "../types";
 import { Phase } from "../types";
 import type { PowerLobbyExposure } from "../game-runner.types";
-import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
+import { agentTurnSourcePointer, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import { getExposeVoterNames, handleElimination } from "./elimination";
 
 function buildExposePressure(
@@ -113,7 +113,9 @@ export async function runPowerPhase(
   const phaseCtx = contextBuilder.buildPhaseContext(empoweredId, Phase.POWER, { empoweredId, councilCandidates: prelim });
   const powerActionResult = await empoweredAgent.getPowerAction(phaseCtx, prelim);
   const powerAction: PowerAction = { action: powerActionResult.action, target: powerActionResult.target };
-  gameState.setPowerAction(powerAction);
+  gameState.setPowerAction(powerAction, [
+    agentTurnSourcePointer(empoweredId, "power-action", gameState.round, Phase.POWER),
+  ]);
   logger.logSystem(
     `${gameState.getPlayerName(empoweredId)} power action: ${powerAction.action} -> ${gameState.getPlayerName(powerAction.target)}`,
     Phase.POWER,

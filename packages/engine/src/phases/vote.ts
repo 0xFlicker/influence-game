@@ -1,7 +1,7 @@
 import type { UUID } from "../types";
 import { Phase } from "../types";
 import type { TargetDecision } from "../game-runner.types";
-import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
+import { agentTurnSourcePointer, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import {
   getEndgameEliminationVoterNames,
   handleElimination,
@@ -58,7 +58,9 @@ export async function runVotePhase(
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
       const votes = await agent.getVotes(phaseCtx);
 
-      gameState.recordVote(player.id, votes.empowerTarget, votes.exposeTarget);
+      gameState.recordVote(player.id, votes.empowerTarget, votes.exposeTarget, [
+        agentTurnSourcePointer(player.id, "vote", gameState.round, Phase.VOTE),
+      ]);
 
       const empowerName = gameState.getPlayerName(votes.empowerTarget);
       const exposeName = gameState.getPlayerName(votes.exposeTarget);
@@ -103,7 +105,9 @@ export async function runVotePhase(
           const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
           const votes = await agent.getVotes(phaseCtx);
           if (tied.includes(votes.empowerTarget)) {
-            gameState.recordEmpowerReVote(player.id, votes.empowerTarget);
+            gameState.recordEmpowerReVote(player.id, votes.empowerTarget, [
+              agentTurnSourcePointer(player.id, "empower-revote", gameState.round, Phase.VOTE),
+            ]);
             const empowerName = gameState.getPlayerName(votes.empowerTarget);
             logger.logSystem(`${player.name} re-votes: empower=${empowerName}`, Phase.VOTE, votes.thinking, votes.reasoningContext);
             logger.emitAgentTurn({
@@ -140,11 +144,12 @@ export async function runVotePhase(
     if (reVoteTied.length === 1) {
       empoweredId = reVoteTied[0]!;
       logger.logSystem(`Re-vote resolved: ${gameState.getPlayerName(empoweredId)} empowered`, Phase.VOTE);
+      gameState.setEmpowered(empoweredId, "revote");
     } else {
       empoweredId = reVoteTied[Math.floor(Math.random() * reVoteTied.length)]!;
       logger.logSystem(`Re-vote still tied! THE WHEEL decides: ${gameState.getPlayerName(empoweredId)} empowered`, Phase.VOTE);
+      gameState.setEmpowered(empoweredId, "wheel");
     }
-    gameState.setEmpowered(empoweredId);
   }
 
   logger.logSystem(
@@ -194,7 +199,9 @@ export async function runReckoningVote(
         (signal) => agent.getEndgameEliminationVote(phaseCtx, { signal }),
         () => fallbackEliminationDecision(ctx, player.id),
       );
-      gameState.recordEndgameEliminationVote(player.id, vote.target);
+      gameState.recordEndgameEliminationVote(player.id, vote.target, [
+        agentTurnSourcePointer(player.id, "endgame-elimination-vote", gameState.round, Phase.VOTE),
+      ]);
       const targetName = gameState.getPlayerName(vote.target);
       logger.logSystem(
         `${player.name} votes to eliminate: ${targetName}`,
@@ -251,7 +258,9 @@ export async function runTribunalVote(
         (signal) => agent.getEndgameEliminationVote(phaseCtx, { signal }),
         () => fallbackEliminationDecision(ctx, player.id),
       );
-      gameState.recordEndgameEliminationVote(player.id, vote.target);
+      gameState.recordEndgameEliminationVote(player.id, vote.target, [
+        agentTurnSourcePointer(player.id, "endgame-elimination-vote", gameState.round, Phase.VOTE),
+      ]);
       const targetName = gameState.getPlayerName(vote.target);
       logger.logSystem(
         `${player.name} votes to eliminate: ${targetName}`,

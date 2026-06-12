@@ -7,6 +7,9 @@
  */
 
 import { randomUUID } from "crypto";
+import { CanonicalEventLog, type CanonicalEventListener, type CanonicalEventSubscriptionOptions } from "./canonical-event-log";
+import type { CanonicalEventSource, CanonicalEventVisibility, CanonicalGameEvent, CanonicalGameEventType, CanonicalSourcePointer } from "./canonical-events";
+import { replayCanonicalEvents, type CanonicalGameProjection } from "./game-projection";
 import type {
   UUID,
   Player,
@@ -20,14 +23,29 @@ import type {
   JuryVoteTally,
   RoomAllocation,
 } from "./types";
-import { PlayerStatus } from "./types";
+import { Phase, PlayerStatus } from "./types";
 
 export function createUUID(): UUID {
   return randomUUID();
 }
 
+export interface GameStateOptions {
+  gameId?: UUID;
+  now?: () => number;
+}
+
+interface AppendCanonicalEventOptions {
+  phase?: Phase | null;
+  round?: number;
+  source?: CanonicalEventSource;
+  visibility?: CanonicalEventVisibility;
+  sourcePointers?: CanonicalSourcePointer[];
+}
+
 export class GameState {
   readonly gameId: UUID;
+  private readonly canonicalEvents = new CanonicalEventLog();
+  private readonly now: () => number;
   private _players = new Map<UUID, Player>();
   private _round = 0;
   private _roundResults: RoundResult[] = [];
@@ -57,8 +75,9 @@ export class GameState {
   /** Saved from the last normal round for endgame tiebreakers */
   private _lastEmpoweredFromRegularRounds: UUID | null = null;
 
-  constructor(players: { id: UUID; name: string }[]) {
-    this.gameId = createUUID();
+  constructor(players: { id: UUID; name: string }[], options: GameStateOptions = {}) {
+    this.gameId = options.gameId ?? createUUID();
+    this.now = options.now ?? Date.now;
     for (const p of players) {
       this._players.set(p.id, {
         id: p.id,
@@ -68,6 +87,46 @@ export class GameState {
       });
       this._cumulativeEmpowerVotes.set(p.id, 0);
     }
+    this.appendCanonicalEvent("game.roster_initialized", {
+      players: this.getAllPlayers().map((player) => ({
+        id: player.id,
+        name: player.name,
+        status: player.status,
+        shielded: player.shielded,
+      })),
+    }, { phase: Phase.INIT, visibility: "system" });
+  }
+
+  private appendCanonicalEvent<
+    TType extends CanonicalGameEventType,
+    TPayload extends Record<string, unknown>,
+  >(
+    type: TType,
+    payload: TPayload,
+    options: AppendCanonicalEventOptions = {},
+  ): CanonicalGameEvent {
+    return this.canonicalEvents.append({
+      gameId: this.gameId,
+      round: options.round ?? this._round,
+      phase: options.phase ?? null,
+      type,
+      payload,
+      timestamp: new Date(this.now()).toISOString(),
+      source: options.source,
+      visibility: options.visibility,
+      sourcePointers: options.sourcePointers,
+    });
+  }
+
+  getCanonicalEvents(): readonly CanonicalGameEvent[] {
+    return this.canonicalEvents.list();
+  }
+
+  subscribeCanonicalEvents(
+    listener: CanonicalEventListener,
+    options: CanonicalEventSubscriptionOptions = {},
+  ): () => void {
+    return this.canonicalEvents.subscribe(listener, options);
   }
 
   // ---------------------------------------------------------------------------
@@ -156,7 +215,13 @@ export class GameState {
   // ---------------------------------------------------------------------------
 
   startRound(): void {
-    this._round += 1;
+    const nextRound = this._round + 1;
+    this.appendCanonicalEvent("round.started", { round: nextRound }, {
+      phase: Phase.LOBBY,
+      round: nextRound,
+      visibility: "system",
+    });
+    this._round = nextRound;
     // Reset round-specific state
     this._currentVoteTally = { empowerVotes: {}, exposeVotes: {} };
     this._currentCouncilTally = { votes: {} };
@@ -168,6 +233,15 @@ export class GameState {
   }
 
   expireShields(): void {
+    const expiredPlayerIds = Array.from(this._players.values())
+      .filter((player) => player.shielded)
+      .map((player) => player.id);
+    if (expiredPlayerIds.length > 0) {
+      this.appendCanonicalEvent("shields.expired", { expiredPlayerIds }, {
+        phase: Phase.LOBBY,
+        visibility: "system",
+      });
+    }
     for (const player of this._players.values()) {
       if (player.shielded) {
         this._players.set(player.id, { ...player, shielded: false });
@@ -180,6 +254,15 @@ export class GameState {
   // ---------------------------------------------------------------------------
 
   recordRoomAllocations(rooms: RoomAllocation[], excluded: UUID[], lastSessionExcluded = excluded): void {
+    this.appendCanonicalEvent("mingle.rooms_allocated", {
+      round: this._round,
+      rooms: rooms.map((room) => ({ ...room, playerIds: [...room.playerIds] })),
+      excluded: [...excluded],
+      lastSessionExcluded: [...lastSessionExcluded],
+    }, {
+      phase: Phase.MINGLE,
+      visibility: "producer",
+    });
     this._roomAllocations.set(this._round, { rooms, excluded, lastSessionExcluded });
   }
 
@@ -193,10 +276,20 @@ export class GameState {
   // VOTE phase
   // ---------------------------------------------------------------------------
 
-  recordVote(voterId: UUID, empowerTarget: UUID, exposeTarget: UUID): void {
+  recordVote(
+    voterId: UUID,
+    empowerTarget: UUID,
+    exposeTarget: UUID,
+    sourcePointers: CanonicalSourcePointer[] = [],
+  ): void {
     const voter = this._players.get(voterId);
     if (!voter || voter.status !== PlayerStatus.ALIVE) return;
 
+    this.appendCanonicalEvent("vote.cast", { voterId, empowerTarget, exposeTarget }, {
+      phase: Phase.VOTE,
+      visibility: "producer",
+      sourcePointers,
+    });
     this._currentVoteTally.empowerVotes[voterId] = empowerTarget;
     this._currentVoteTally.exposeVotes[voterId] = exposeTarget;
   }
@@ -204,6 +297,10 @@ export class GameState {
   recordLastMessage(playerId: UUID, message: string): void {
     const player = this._players.get(playerId);
     if (!player) return;
+    this.appendCanonicalEvent("player.last_message_recorded", { playerId, message }, {
+      phase: this.canonicalEvents.list().at(-1)?.phase ?? null,
+      visibility: "public",
+    });
     this._players.set(playerId, { ...player, lastMessage: message });
   }
 
@@ -228,6 +325,7 @@ export class GameState {
       const prev = this._cumulativeEmpowerVotes.get(id) ?? 0;
       this._cumulativeEmpowerVotes.set(id, prev + count);
     }
+    const cumulativeEmpowerVotes = Object.fromEntries(this._cumulativeEmpowerVotes);
 
     const maxVotes = Math.max(...Object.values(counts), 0);
 
@@ -235,6 +333,16 @@ export class GameState {
       // Zero empower votes — pick randomly ("the wheel")
       const empowered = alive[Math.floor(Math.random() * alive.length)];
       if (!empowered) throw new Error("No alive players to empower");
+      this.appendCanonicalEvent("vote.empower_tally_resolved", {
+        counts,
+        empowered,
+        tied: null,
+        method: "wheel",
+        cumulativeEmpowerVotes,
+      }, {
+        phase: Phase.VOTE,
+        visibility: "producer",
+      });
       this._empoweredId = empowered;
       return { empowered, tied: null };
     }
@@ -242,11 +350,31 @@ export class GameState {
     const tied = alive.filter((id) => counts[id] === maxVotes);
     if (tied.length === 1) {
       const empowered = tied[0]!;
+      this.appendCanonicalEvent("vote.empower_tally_resolved", {
+        counts,
+        empowered,
+        tied: null,
+        method: "plurality",
+        cumulativeEmpowerVotes,
+      }, {
+        phase: Phase.VOTE,
+        visibility: "producer",
+      });
       this._empoweredId = empowered;
       return { empowered, tied: null };
     }
 
     // Tie detected — return tied players for re-vote by the runner
+    this.appendCanonicalEvent("vote.empower_tally_resolved", {
+      counts,
+      empowered: tied[0]!,
+      tied,
+      method: "tie_pending",
+      cumulativeEmpowerVotes,
+    }, {
+      phase: Phase.VOTE,
+      visibility: "producer",
+    });
     return { empowered: tied[0]!, tied };
   }
 
@@ -254,7 +382,12 @@ export class GameState {
    * Record an empower re-vote (used when initial empower votes tie).
    * Voters choose among tied candidates only.
    */
-  recordEmpowerReVote(voterId: UUID, target: UUID): void {
+  recordEmpowerReVote(voterId: UUID, target: UUID, sourcePointers: CanonicalSourcePointer[] = []): void {
+    this.appendCanonicalEvent("vote.empower_revote_cast", { voterId, target }, {
+      phase: Phase.VOTE,
+      visibility: "producer",
+      sourcePointers,
+    });
     this._currentVoteTally.empowerVotes[voterId] = target;
   }
 
@@ -262,13 +395,21 @@ export class GameState {
    * Clear a voter's empower vote (used before re-vote to prevent stale votes).
    */
   clearEmpowerVote(voterId: UUID): void {
+    this.appendCanonicalEvent("vote.empower_vote_cleared", { voterId }, {
+      phase: Phase.VOTE,
+      visibility: "producer",
+    });
     delete this._currentVoteTally.empowerVotes[voterId];
   }
 
   /**
    * Set the empowered player directly (after re-vote or wheel).
    */
-  setEmpowered(id: UUID): void {
+  setEmpowered(id: UUID, method: "initial" | "revote" | "wheel" | "manual" = "manual"): void {
+    this.appendCanonicalEvent("vote.empowered_set", { empowered: id, method }, {
+      phase: Phase.VOTE,
+      visibility: "producer",
+    });
     this._empoweredId = id;
   }
 
@@ -293,7 +434,12 @@ export class GameState {
   // POWER phase
   // ---------------------------------------------------------------------------
 
-  setPowerAction(action: PowerAction): void {
+  setPowerAction(action: PowerAction, sourcePointers: CanonicalSourcePointer[] = []): void {
+    this.appendCanonicalEvent("power.action_set", { action: { ...action } }, {
+      phase: Phase.POWER,
+      visibility: "producer",
+      sourcePointers,
+    });
     this._powerAction = action;
   }
 
@@ -313,7 +459,18 @@ export class GameState {
       if (others.length === 1) {
         const onlyOther = others[0];
         if (!onlyOther) throw new Error("Expected one other player but got undefined");
-        this._councilCandidates = [onlyOther, onlyOther]; // only one choice
+        const candidates: [UUID, UUID] = [onlyOther, onlyOther]; // only one choice
+        this.appendCanonicalEvent("power.candidates_resolved", {
+          exposeScores: {},
+          candidates,
+          autoEliminated: null,
+          shieldGranted: null,
+          method: "two_player",
+        }, {
+          phase: Phase.POWER,
+          visibility: "producer",
+        });
+        this._councilCandidates = candidates;
         return {
           candidates: this._councilCandidates,
           autoEliminated: null,
@@ -337,6 +494,16 @@ export class GameState {
 
     if (action === "eliminate" && target) {
       // Auto-eliminate: skip council
+      this.appendCanonicalEvent("power.candidates_resolved", {
+        exposeScores: scores,
+        candidates: null,
+        autoEliminated: target,
+        shieldGranted: null,
+        method: "auto_eliminate",
+      }, {
+        phase: Phase.POWER,
+        visibility: "producer",
+      });
       return { candidates: null, autoEliminated: target, shieldGranted: null };
     }
 
@@ -354,12 +521,10 @@ export class GameState {
       candidateList = candidateList.filter((id) => id !== empowered);
     }
 
+    let shieldGranted: UUID | null = null;
     if (action === "protect" && target && this._empoweredId) {
       // Protected player is not a candidate; they gain a shield
-      const player = this._players.get(target);
-      if (player) {
-        this._players.set(target, { ...player, shielded: true });
-      }
+      shieldGranted = target;
       candidateList = candidateList.filter((id) => id !== target);
     }
 
@@ -387,17 +552,50 @@ export class GameState {
 
     if (top2.length < 2) {
       // Not enough candidates; game should end
-      return { candidates: null, autoEliminated: null, shieldGranted: null };
+      this.appendCanonicalEvent("power.candidates_resolved", {
+        exposeScores: scores,
+        candidates: null,
+        autoEliminated: null,
+        shieldGranted,
+        method: "insufficient_candidates",
+      }, {
+        phase: Phase.POWER,
+        visibility: "producer",
+      });
+      if (shieldGranted) {
+        const player = this._players.get(shieldGranted);
+        if (player) {
+          this._players.set(shieldGranted, { ...player, shielded: true });
+        }
+      }
+      return { candidates: null, autoEliminated: null, shieldGranted };
     }
 
     const candidate0 = top2[0];
     const candidate1 = top2[1];
     if (!candidate0 || !candidate1) throw new Error("Expected 2 council candidates but got fewer");
-    this._councilCandidates = [candidate0, candidate1];
+    const candidates: [UUID, UUID] = [candidate0, candidate1];
+    this.appendCanonicalEvent("power.candidates_resolved", {
+      exposeScores: scores,
+      candidates,
+      autoEliminated: null,
+      shieldGranted,
+      method: "expose_scores",
+    }, {
+      phase: Phase.POWER,
+      visibility: "producer",
+    });
+    if (shieldGranted) {
+      const player = this._players.get(shieldGranted);
+      if (player) {
+        this._players.set(shieldGranted, { ...player, shielded: true });
+      }
+    }
+    this._councilCandidates = candidates;
     return {
       candidates: this._councilCandidates,
       autoEliminated: null,
-      shieldGranted: action === "protect" ? target ?? null : null,
+      shieldGranted,
     };
   }
 
@@ -405,7 +603,12 @@ export class GameState {
   // COUNCIL phase
   // ---------------------------------------------------------------------------
 
-  recordCouncilVote(voterId: UUID, target: UUID): void {
+  recordCouncilVote(voterId: UUID, target: UUID, sourcePointers: CanonicalSourcePointer[] = []): void {
+    this.appendCanonicalEvent("council.vote_cast", { voterId, target }, {
+      phase: Phase.COUNCIL,
+      visibility: "producer",
+      sourcePointers,
+    });
     this._currentCouncilTally.votes[voterId] = target;
   }
 
@@ -430,15 +633,62 @@ export class GameState {
       if (target === c2) c2Votes++;
     }
 
-    if (c1Votes > c2Votes) return c1;
-    if (c2Votes > c1Votes) return c2;
+    if (c1Votes > c2Votes) {
+      this.appendCanonicalEvent("council.elimination_resolved", {
+        empoweredId,
+        candidates,
+        tally: { votes: { ...this._currentCouncilTally.votes } },
+        eliminated: c1,
+        method: "plurality",
+      }, {
+        phase: Phase.COUNCIL,
+        visibility: "producer",
+      });
+      return c1;
+    }
+    if (c2Votes > c1Votes) {
+      this.appendCanonicalEvent("council.elimination_resolved", {
+        empoweredId,
+        candidates,
+        tally: { votes: { ...this._currentCouncilTally.votes } },
+        eliminated: c2,
+        method: "plurality",
+      }, {
+        phase: Phase.COUNCIL,
+        visibility: "producer",
+      });
+      return c2;
+    }
 
     // Tie: empowered decides — use their recorded council vote if any
     const empoweredVote = this._currentCouncilTally.votes[empoweredId];
-    if (empoweredVote === c1 || empoweredVote === c2) return empoweredVote;
+    if (empoweredVote === c1 || empoweredVote === c2) {
+      this.appendCanonicalEvent("council.elimination_resolved", {
+        empoweredId,
+        candidates,
+        tally: { votes: { ...this._currentCouncilTally.votes } },
+        eliminated: empoweredVote,
+        method: "empowered_tiebreaker",
+      }, {
+        phase: Phase.COUNCIL,
+        visibility: "producer",
+      });
+      return empoweredVote;
+    }
 
     // Fallback: random
-    return Math.random() < 0.5 ? c1 : c2;
+    const eliminated = Math.random() < 0.5 ? c1 : c2;
+    this.appendCanonicalEvent("council.elimination_resolved", {
+      empoweredId,
+      candidates,
+      tally: { votes: { ...this._currentCouncilTally.votes } },
+      eliminated,
+      method: "random_tiebreaker",
+    }, {
+      phase: Phase.COUNCIL,
+      visibility: "producer",
+    });
+    return eliminated;
   }
 
   // ---------------------------------------------------------------------------
@@ -448,6 +698,20 @@ export class GameState {
   eliminatePlayer(id: UUID): void {
     const player = this._players.get(id);
     if (!player) return;
+    const juryMember: JuryMember = {
+      playerId: id,
+      playerName: player.name,
+      eliminatedRound: this._round,
+    };
+    this.appendCanonicalEvent("player.eliminated", {
+      playerId: id,
+      playerName: player.name,
+      eliminatedRound: this._round,
+      juryMember,
+    }, {
+      phase: null,
+      visibility: "system",
+    });
     this._players.set(id, { ...player, status: PlayerStatus.ELIMINATED });
     // Add to jury
     this.addToJury(id, this._round);
@@ -469,6 +733,16 @@ export class GameState {
   }
 
   setEndgameStage(stage: EndgameStage): void {
+    const lastEmpoweredFromRegularRounds = this._lastEmpoweredFromRegularRounds === null
+      ? this._empoweredId
+      : this._lastEmpoweredFromRegularRounds;
+    this.appendCanonicalEvent("endgame.stage_set", {
+      stage,
+      lastEmpoweredFromRegularRounds,
+    }, {
+      phase: Phase.LOBBY,
+      visibility: "system",
+    });
     this._endgameStage = stage;
     // Save last empowered on first endgame entry
     if (this._lastEmpoweredFromRegularRounds === null) {
@@ -480,7 +754,12 @@ export class GameState {
   // Endgame: Elimination vote tallying (Reckoning + Tribunal)
   // ---------------------------------------------------------------------------
 
-  recordEndgameEliminationVote(voterId: UUID, target: UUID): void {
+  recordEndgameEliminationVote(voterId: UUID, target: UUID, sourcePointers: CanonicalSourcePointer[] = []): void {
+    this.appendCanonicalEvent("endgame.elimination_vote_cast", { voterId, target }, {
+      phase: Phase.VOTE,
+      visibility: "producer",
+      sourcePointers,
+    });
     this._endgameEliminationTally.votes[voterId] = target;
   }
 
@@ -503,6 +782,15 @@ export class GameState {
       // No votes cast — random elimination
       const randomTarget = alive[Math.floor(Math.random() * alive.length)];
       if (!randomTarget) throw new Error("No alive players to eliminate");
+      this.appendCanonicalEvent("endgame.elimination_resolved", {
+        stage: this._endgameStage,
+        tally: { votes: { ...this._endgameEliminationTally.votes } },
+        eliminated: randomTarget,
+        method: "random_no_votes",
+      }, {
+        phase: Phase.VOTE,
+        visibility: "producer",
+      });
       return randomTarget;
     }
 
@@ -510,6 +798,15 @@ export class GameState {
     const firstTied = tied[0];
     if (tied.length === 1) {
       if (!firstTied) throw new Error("Expected tied player but got undefined");
+      this.appendCanonicalEvent("endgame.elimination_resolved", {
+        stage: this._endgameStage,
+        tally: { votes: { ...this._endgameEliminationTally.votes } },
+        eliminated: firstTied,
+        method: "plurality",
+      }, {
+        phase: Phase.VOTE,
+        visibility: "producer",
+      });
       return firstTied;
     }
 
@@ -520,11 +817,31 @@ export class GameState {
       // The last-empowered is tied — they can't eliminate themselves, pick the other
       const others = tied.filter((id) => id !== lastEmpowered);
       const firstOther = others[0];
-      if (firstOther) return firstOther;
+      if (firstOther) {
+        this.appendCanonicalEvent("endgame.elimination_resolved", {
+          stage: this._endgameStage,
+          tally: { votes: { ...this._endgameEliminationTally.votes } },
+          eliminated: firstOther,
+          method: "last_empowered_tiebreaker",
+        }, {
+          phase: Phase.VOTE,
+          visibility: "producer",
+        });
+        return firstOther;
+      }
     }
 
     // Fallback: first tied player
     if (!firstTied) throw new Error("Expected tied player but got undefined");
+    this.appendCanonicalEvent("endgame.elimination_resolved", {
+      stage: this._endgameStage,
+      tally: { votes: { ...this._endgameEliminationTally.votes } },
+      eliminated: firstTied,
+      method: "fallback_first_tied",
+    }, {
+      phase: Phase.VOTE,
+      visibility: "producer",
+    });
     return firstTied;
   }
 
@@ -546,6 +863,16 @@ export class GameState {
     if (maxVotes === 0) {
       const randomTarget = alive[Math.floor(Math.random() * alive.length)];
       if (!randomTarget) throw new Error("No alive players to eliminate in tribunal");
+      this.appendCanonicalEvent("endgame.elimination_resolved", {
+        stage: this._endgameStage,
+        tally: { votes: { ...this._endgameEliminationTally.votes } },
+        juryTiebreakerVotes,
+        eliminated: randomTarget,
+        method: "random_no_votes",
+      }, {
+        phase: Phase.VOTE,
+        visibility: "producer",
+      });
       return randomTarget;
     }
 
@@ -553,6 +880,16 @@ export class GameState {
     const firstTied = tied[0];
     if (tied.length === 1) {
       if (!firstTied) throw new Error("Expected tied player but got undefined");
+      this.appendCanonicalEvent("endgame.elimination_resolved", {
+        stage: this._endgameStage,
+        tally: { votes: { ...this._endgameEliminationTally.votes } },
+        juryTiebreakerVotes,
+        eliminated: firstTied,
+        method: "plurality",
+      }, {
+        phase: Phase.VOTE,
+        visibility: "producer",
+      });
       return firstTied;
     }
 
@@ -570,6 +907,16 @@ export class GameState {
       const firstJuryTied = juryTied[0];
       if (juryTied.length === 1) {
         if (!firstJuryTied) throw new Error("Expected jury-tied player but got undefined");
+        this.appendCanonicalEvent("endgame.elimination_resolved", {
+          stage: this._endgameStage,
+          tally: { votes: { ...this._endgameEliminationTally.votes } },
+          juryTiebreakerVotes,
+          eliminated: firstJuryTied,
+          method: "jury_tiebreaker",
+        }, {
+          phase: Phase.VOTE,
+          visibility: "producer",
+        });
         return firstJuryTied;
       }
     }
@@ -579,10 +926,32 @@ export class GameState {
     if (lastEmpowered && tied.includes(lastEmpowered)) {
       const others = tied.filter((id) => id !== lastEmpowered);
       const firstOther = others[0];
-      if (firstOther) return firstOther;
+      if (firstOther) {
+        this.appendCanonicalEvent("endgame.elimination_resolved", {
+          stage: this._endgameStage,
+          tally: { votes: { ...this._endgameEliminationTally.votes } },
+          juryTiebreakerVotes,
+          eliminated: firstOther,
+          method: "last_empowered_tiebreaker",
+        }, {
+          phase: Phase.VOTE,
+          visibility: "producer",
+        });
+        return firstOther;
+      }
     }
 
     if (!firstTied) throw new Error("Expected tied player but got undefined");
+    this.appendCanonicalEvent("endgame.elimination_resolved", {
+      stage: this._endgameStage,
+      tally: { votes: { ...this._endgameEliminationTally.votes } },
+      juryTiebreakerVotes,
+      eliminated: firstTied,
+      method: "fallback_first_tied",
+    }, {
+      phase: Phase.VOTE,
+      visibility: "producer",
+    });
     return firstTied;
   }
 
@@ -590,7 +959,12 @@ export class GameState {
   // Endgame: Jury vote tallying (Judgment)
   // ---------------------------------------------------------------------------
 
-  recordJuryVote(jurorId: UUID, finalistId: UUID): void {
+  recordJuryVote(jurorId: UUID, finalistId: UUID, sourcePointers: CanonicalSourcePointer[] = []): void {
+    this.appendCanonicalEvent("jury.vote_cast", { jurorId, finalistId }, {
+      phase: Phase.JURY_VOTE,
+      visibility: "producer",
+      sourcePointers,
+    });
     this._juryVoteTally.votes[jurorId] = finalistId;
   }
 
@@ -620,18 +994,71 @@ export class GameState {
       { id: f2, name: this.getPlayerName(f2), votes: f2Votes },
     ];
 
-    if (f1Votes > f2Votes) return { winnerId: f1, method: "majority", voteCounts };
-    if (f2Votes > f1Votes) return { winnerId: f2, method: "majority", voteCounts };
+    if (f1Votes > f2Votes) {
+      this.appendCanonicalEvent("jury.winner_determined", {
+        tally: { votes: { ...this._juryVoteTally.votes } },
+        winnerId: f1,
+        method: "majority",
+        voteCounts,
+      }, {
+        phase: Phase.JURY_VOTE,
+        visibility: "system",
+      });
+      return { winnerId: f1, method: "majority", voteCounts };
+    }
+    if (f2Votes > f1Votes) {
+      this.appendCanonicalEvent("jury.winner_determined", {
+        tally: { votes: { ...this._juryVoteTally.votes } },
+        winnerId: f2,
+        method: "majority",
+        voteCounts,
+      }, {
+        phase: Phase.JURY_VOTE,
+        visibility: "system",
+      });
+      return { winnerId: f2, method: "majority", voteCounts };
+    }
 
     // Tiebreaker: cumulative empower votes (social capital)
     const f1Empower = this.getCumulativeEmpowerVotes(f1);
     const f2Empower = this.getCumulativeEmpowerVotes(f2);
 
-    if (f1Empower > f2Empower) return { winnerId: f1, method: "empower_tiebreaker", voteCounts };
-    if (f2Empower > f1Empower) return { winnerId: f2, method: "empower_tiebreaker", voteCounts };
+    if (f1Empower > f2Empower) {
+      this.appendCanonicalEvent("jury.winner_determined", {
+        tally: { votes: { ...this._juryVoteTally.votes } },
+        winnerId: f1,
+        method: "empower_tiebreaker",
+        voteCounts,
+      }, {
+        phase: Phase.JURY_VOTE,
+        visibility: "system",
+      });
+      return { winnerId: f1, method: "empower_tiebreaker", voteCounts };
+    }
+    if (f2Empower > f1Empower) {
+      this.appendCanonicalEvent("jury.winner_determined", {
+        tally: { votes: { ...this._juryVoteTally.votes } },
+        winnerId: f2,
+        method: "empower_tiebreaker",
+        voteCounts,
+      }, {
+        phase: Phase.JURY_VOTE,
+        visibility: "system",
+      });
+      return { winnerId: f2, method: "empower_tiebreaker", voteCounts };
+    }
 
     // Ultimate fallback: random
     const winnerId = Math.random() < 0.5 ? f1 : f2;
+    this.appendCanonicalEvent("jury.winner_determined", {
+      tally: { votes: { ...this._juryVoteTally.votes } },
+      winnerId,
+      method: "random_tiebreaker",
+      voteCounts,
+    }, {
+      phase: Phase.JURY_VOTE,
+      visibility: "system",
+    });
     return { winnerId, method: "random_tiebreaker", voteCounts };
   }
 
@@ -640,7 +1067,15 @@ export class GameState {
   // ---------------------------------------------------------------------------
 
   recordRoundResult(result: RoundResult): void {
+    this.appendCanonicalEvent("round.result_recorded", { result: { ...result } }, {
+      phase: Phase.COUNCIL,
+      visibility: "system",
+    });
     this._roundResults.push(result);
+  }
+
+  getDomainProjection(): CanonicalGameProjection {
+    return replayCanonicalEvents(this.getCanonicalEvents());
   }
 
   // ---------------------------------------------------------------------------

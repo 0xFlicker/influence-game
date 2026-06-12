@@ -1,9 +1,9 @@
 import type { TranscriptEntry } from "./game-runner.types";
 import type { TokenUsage } from "./token-tracker";
-import type { WhisperSessionDiagnostics } from "./types";
+import type { MingleSessionDiagnostics } from "./types";
 import { Phase } from "./types";
 
-interface WhisperRequestSatisfactionSummary {
+interface MingleRequestSatisfactionSummary {
   validRequests: number;
   mutualHonored: number;
   oneWayHonored: number;
@@ -11,13 +11,13 @@ interface WhisperRequestSatisfactionSummary {
   invalidOrMissingRequests: number;
 }
 
-interface WhisperRepeatPairFlags {
+interface MingleRepeatPairFlags {
   immediateRepeats: number;
   repeatedPairs: number;
   noFullNonRepeatMatchingExists: boolean;
 }
 
-interface WhisperExclusionFlags {
+interface MingleExclusionFlags {
   consecutiveExclusions: number;
   avoidableConsecutiveExclusions: number;
 }
@@ -106,7 +106,7 @@ export interface RepeatedPairInstrumentation {
   totalRepeatedOccurrences: number;
   maxPairCount: number;
   maxPairShareOfRooms: number;
-  maxPairShareOfWhisperRounds: number;
+  maxPairShareOfMingleRounds: number;
   pairs: Array<{
     pair: [string, string];
     count: number;
@@ -116,19 +116,19 @@ export interface RepeatedPairInstrumentation {
 
 export interface RoomInstrumentation {
   totalRooms: number;
-  whisperRounds: number;
+  mingleRounds: number;
   participationByPlayer: Record<string, number>;
   exclusionsByPlayer: Record<string, number>;
   totalExclusions: number;
   pairs: RoomPairObservation[];
   repeatedPairs: RepeatedPairInstrumentation;
-  whisperSessions: WhisperSessionDiagnostics[];
-  requestSatisfaction: WhisperRequestSatisfactionSummary;
-  repeatPairFlags: WhisperRepeatPairFlags & {
+  mingleSessions: MingleSessionDiagnostics[];
+  requestSatisfaction: MingleRequestSatisfactionSummary;
+  repeatPairFlags: MingleRepeatPairFlags & {
     sessionsWithImmediateRepeats: number;
     sessionsWithoutFullNonRepeatMatching: number;
   };
-  exclusionFlags: WhisperExclusionFlags & {
+  exclusionFlags: MingleExclusionFlags & {
     sessionsWithConsecutiveExclusions: number;
   };
 }
@@ -354,7 +354,7 @@ function mergeUsage(left: TokenUsage, right: TokenUsage): TokenUsage {
 
 function buildRepeatedPairInstrumentation(
   pairs: RoomPairObservation[],
-  whisperRounds: number,
+  mingleRounds: number,
 ): RepeatedPairInstrumentation {
   const counts = new Map<string, { pair: [string, string]; count: number; rounds: Set<number> }>();
 
@@ -383,12 +383,12 @@ function buildRepeatedPairInstrumentation(
     totalRepeatedOccurrences: repeated.reduce((sum, entry) => sum + entry.count - 1, 0),
     maxPairCount,
     maxPairShareOfRooms: rate(maxPairCount, pairs.length),
-    maxPairShareOfWhisperRounds: rate(maxPairRoundCount, whisperRounds),
+    maxPairShareOfMingleRounds: rate(maxPairRoundCount, mingleRounds),
     pairs: repeated,
   };
 }
 
-function emptyRequestSatisfaction(): WhisperRequestSatisfactionSummary {
+function emptyRequestSatisfaction(): MingleRequestSatisfactionSummary {
   return {
     validRequests: 0,
     mutualHonored: 0,
@@ -398,8 +398,8 @@ function emptyRequestSatisfaction(): WhisperRequestSatisfactionSummary {
   };
 }
 
-function summarizeWhisperSessions(
-  sessions: readonly WhisperSessionDiagnostics[],
+function summarizeMingleSessions(
+  sessions: readonly MingleSessionDiagnostics[],
 ): Pick<RoomInstrumentation, "requestSatisfaction" | "repeatPairFlags" | "exclusionFlags"> {
   const requestSatisfaction = emptyRequestSatisfaction();
   const repeatPairFlags: RoomInstrumentation["repeatPairFlags"] = {
@@ -488,8 +488,8 @@ export function instrumentGame(
   const participationByPlayer: Record<string, number> = {};
   const exclusionsByPlayer: Record<string, number> = {};
   const pairs: RoomPairObservation[] = [];
-  const whisperSessions: WhisperSessionDiagnostics[] = [];
-  const whisperRounds = new Set<number>();
+  const mingleSessions: MingleSessionDiagnostics[] = [];
+  const mingleRounds = new Set<number>();
   let totalRooms = 0;
   let totalExclusions = 0;
 
@@ -547,9 +547,9 @@ export function instrumentGame(
     }
 
     if (entry.roomMetadata) {
-      whisperRounds.add(entry.round);
+      mingleRounds.add(entry.round);
       if (entry.roomMetadata.diagnostics) {
-        whisperSessions.push(entry.roomMetadata.diagnostics);
+        mingleSessions.push(entry.roomMetadata.diagnostics);
       }
       for (const room of entry.roomMetadata.rooms) {
         totalRooms += 1;
@@ -585,14 +585,14 @@ export function instrumentGame(
     endgame,
     rooms: {
       totalRooms,
-      whisperRounds: whisperRounds.size,
+      mingleRounds: mingleRounds.size,
       participationByPlayer,
       exclusionsByPlayer,
       totalExclusions,
       pairs,
-      repeatedPairs: buildRepeatedPairInstrumentation(pairs, whisperRounds.size),
-      whisperSessions,
-      ...summarizeWhisperSessions(whisperSessions),
+      repeatedPairs: buildRepeatedPairInstrumentation(pairs, mingleRounds.size),
+      mingleSessions,
+      ...summarizeMingleSessions(mingleSessions),
     },
     actionUsage: buildActionUsageInstrumentation(perSourceUsage),
   };
@@ -635,15 +635,15 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
   const participationByPlayer: Record<string, number> = {};
   const exclusionsByPlayer: Record<string, number> = {};
   const pairs: RoomPairObservation[] = [];
-  const whisperSessions: WhisperSessionDiagnostics[] = [];
+  const mingleSessions: MingleSessionDiagnostics[] = [];
   const repeatedPairTotals = new Map<string, { pair: [string, string]; count: number; rounds: Set<number> }>();
   let totalRepeatedOccurrences = 0;
   let maxPairCount = 0;
   let maxPairShareOfRooms = 0;
-  let maxPairShareOfWhisperRounds = 0;
+  let maxPairShareOfMingleRounds = 0;
   let totalRooms = 0;
   let totalExclusions = 0;
-  let whisperRounds = 0;
+  let mingleRounds = 0;
   let totalCalls = 0;
   let totalEmptyResponses = 0;
   const byAction: ActionUsageInstrumentation["byAction"] = {};
@@ -714,18 +714,18 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
     }
     totalExclusions += game.rooms.totalExclusions;
     totalRooms += game.rooms.totalRooms;
-    whisperRounds += game.rooms.whisperRounds;
+    mingleRounds += game.rooms.mingleRounds;
     pairs.push(...game.rooms.pairs);
-    whisperSessions.push(...game.rooms.whisperSessions);
+    mingleSessions.push(...game.rooms.mingleSessions);
     totalRepeatedOccurrences += game.rooms.repeatedPairs.totalRepeatedOccurrences;
     maxPairCount = Math.max(maxPairCount, game.rooms.repeatedPairs.maxPairCount);
     maxPairShareOfRooms = Math.max(
       maxPairShareOfRooms,
       game.rooms.repeatedPairs.maxPairShareOfRooms,
     );
-    maxPairShareOfWhisperRounds = Math.max(
-      maxPairShareOfWhisperRounds,
-      game.rooms.repeatedPairs.maxPairShareOfWhisperRounds,
+    maxPairShareOfMingleRounds = Math.max(
+      maxPairShareOfMingleRounds,
+      game.rooms.repeatedPairs.maxPairShareOfMingleRounds,
     );
     for (const repeatedPair of game.rooms.repeatedPairs.pairs) {
       const key = pairKey(repeatedPair.pair);
@@ -779,7 +779,7 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
     endgame,
     rooms: {
       totalRooms,
-      whisperRounds,
+      mingleRounds,
       participationByPlayer,
       exclusionsByPlayer,
       totalExclusions,
@@ -788,7 +788,7 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
         totalRepeatedOccurrences,
         maxPairCount,
         maxPairShareOfRooms,
-        maxPairShareOfWhisperRounds,
+        maxPairShareOfMingleRounds,
         pairs: [...repeatedPairTotals.values()]
           .map((entry) => ({
             pair: entry.pair,
@@ -797,8 +797,8 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
           }))
           .sort((a, b) => b.count - a.count || pairKey(a.pair).localeCompare(pairKey(b.pair))),
       },
-      whisperSessions,
-      ...summarizeWhisperSessions(whisperSessions),
+      mingleSessions,
+      ...summarizeMingleSessions(mingleSessions),
     },
     actionUsage: {
       totalCalls,

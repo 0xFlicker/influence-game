@@ -13,6 +13,9 @@
 import { createActor } from "xstate";
 import { GameEventBus } from "./event-bus";
 import { GameState } from "./game-state";
+import type { CanonicalEventListener } from "./canonical-event-log";
+import type { CanonicalGameEvent } from "./canonical-events";
+import type { CanonicalGameProjection } from "./game-projection";
 import { createPhaseMachine } from "./phase-machine";
 import { TemplateHouseInterviewer } from "./house-interviewer";
 import type { IHouseInterviewer } from "./house-interviewer";
@@ -108,6 +111,21 @@ export class GameRunner {
   /** Register a listener for real-time game events (for WebSocket streaming). */
   setStreamListener(listener: (event: GameStreamEvent) => void): void {
     this.logger.setStreamListener(listener);
+  }
+
+  /** Register a listener for canonical accepted domain events. */
+  setCanonicalEventListener(listener: CanonicalEventListener): () => void {
+    return this.gameState.subscribeCanonicalEvents(listener, { replayExisting: true });
+  }
+
+  /** Read the canonical accepted domain events emitted so far. */
+  getCanonicalEvents(): readonly CanonicalGameEvent[] {
+    return this.gameState.getCanonicalEvents();
+  }
+
+  /** Read the live domain projection used by replay parity tests. */
+  getDomainProjection(): CanonicalGameProjection {
+    return this.gameState.getDomainProjection();
   }
 
   /** Get a snapshot of the current game state (for late-joining observers). */

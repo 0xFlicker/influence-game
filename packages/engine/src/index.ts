@@ -9,6 +9,59 @@ export * from "./types";
 
 // Game state
 export { GameState, createUUID } from "./game-state";
+export type { GameStateOptions } from "./game-state";
+
+// Canonical accepted domain events and projections
+export { CanonicalEventLog } from "./canonical-event-log";
+export type { CanonicalEventListener } from "./canonical-event-log";
+export {
+  assertCanonicalGameEvent,
+  canonicalEventIsVisibleTo,
+  validateCanonicalGameEvent,
+} from "./canonical-events";
+export type {
+  CanonicalEventEnvelope,
+  CanonicalEventQueryMode,
+  CanonicalEventSource,
+  CanonicalEventVisibility,
+  CanonicalGameEvent,
+  CanonicalGameEventType,
+  CanonicalSourcePointer,
+  CanonicalSourcePointerKind,
+} from "./canonical-events";
+export {
+  applyCanonicalEvent,
+  createEmptyProjection,
+  replayCanonicalEvents,
+} from "./game-projection";
+export type {
+  CanonicalGameProjection,
+  ProjectedPlayer,
+  ProjectedRoomAllocation,
+} from "./game-projection";
+export {
+  createGameMcpServer,
+  GameMcpJsonRpcServer,
+  GameMcpReadModel,
+  runStdioGameMcpServer,
+} from "./game-mcp";
+export type {
+  GameMcpEventFilter,
+  GameMcpEventResult,
+  GameMcpGameFilter,
+  GameMcpGameSummary,
+  GameMcpLinkedRecords,
+  GameMcpLogRecord,
+  GameMcpSearchOptions,
+  GameMcpSearchResult,
+  GameMcpSessionFilter,
+  GameMcpSessionStatus,
+  GameMcpSessionSummary,
+  GameMcpSourceCitation,
+  GameMcpSourceKind,
+  JsonRpcRequest,
+  JsonRpcResponse,
+} from "./game-mcp";
 
 // Event bus
 export { GameEventBus } from "./event-bus";

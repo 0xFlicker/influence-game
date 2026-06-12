@@ -1,7 +1,7 @@
 import type { UUID } from "../types";
 import { Phase } from "../types";
 import type { AgentResponse, TargetDecision } from "../game-runner.types";
-import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
+import { agentTurnSourcePointer, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 
 async function withEndgameActionTimeout<T>(
   ctx: PhaseRunnerContext,
@@ -381,7 +381,9 @@ export async function runJudgmentJuryVote(
         thinking: "House fallback after unresolved jury vote.",
       }),
     );
-    gameState.recordJuryVote(juror.playerId, vote.target);
+    gameState.recordJuryVote(juror.playerId, vote.target, [
+      agentTurnSourcePointer(juror.playerId, "jury-vote", gameState.round, Phase.JURY_VOTE),
+    ]);
     const targetName = gameState.getPlayerName(vote.target);
     logger.logSystem(
       `${juror.playerName} (juror) votes for: ${targetName}`,

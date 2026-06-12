@@ -11,8 +11,8 @@ import type {
   EndgameStage,
   RoomAllocation,
   Phase,
-  WhisperSessionDiagnostics,
-  WhisperRoomCount,
+  MingleSessionDiagnostics,
+  MingleRoomCount,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -222,7 +222,7 @@ export interface PhaseContext {
   /** Number of available rooms this round */
   roomCount?: number;
   /** Current occupant count for each room. Player identities outside the current room are hidden. */
-  roomCounts?: WhisperRoomCount[];
+  roomCounts?: MingleRoomCount[];
   /** This agent's current local room number, if they are in a Mingle room. */
   currentRoomId?: number;
   /** Room assignments for this round (if Mingle phase completed) */
@@ -278,6 +278,6 @@ export interface TranscriptEntry {
   roomMetadata?: {
     rooms: RoomAllocation[];
     excluded: string[];
-    diagnostics?: WhisperSessionDiagnostics;
+    diagnostics?: MingleSessionDiagnostics;
   };
 }

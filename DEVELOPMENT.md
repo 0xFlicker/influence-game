@@ -117,7 +117,7 @@ cd packages/api && bun run test:e2e
 
 ### What each package's `test:mock` runs
 
-- **engine**: core game mechanics, stream events, goodbye/tool fallback behavior, simulation instrumentation/config, structured-output mode, and LLM provider config
+- **engine**: core game mechanics, canonical event replay, stream events, goodbye/tool fallback behavior, simulation instrumentation/config, structured-output mode, and LLM provider config
 - **api**: `websocket.test.ts` (10 tests — WS manager), `viewer-event-pacer.test.ts` (12 tests — event pacing)
 - **web**: `api-utils.test.ts` (7 tests), `constants.test.ts` (17 tests), `message-parsing.test.ts` (30 tests) — frontend utilities
 
@@ -389,7 +389,9 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
-Simulation batches are written under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-progress.jsonl` for lightweight live progress, `game-N.json` for the full transcript/result bundle, and `game-N.txt` for human-readable transcript review.
+Simulation batches are written under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-events.jsonl` for canonical accepted domain events that replay into a projection, `game-N-progress.jsonl` for lightweight live progress, `game-N.json` for the full transcript/result bundle, and `game-N.txt` for human-readable transcript review.
+
+For local MCP queries across past and current simulations, run `cd packages/engine && bun run mcp:game -- docs/simulations`. The MCP is read-only, scans the corpus on demand, and requires `sessionId + gameNumber` for game-specific projection/timeline queries.
 
 `InfluenceAgent` uses OpenAI-compatible chat completions. Hosted OpenAI runs use `OPENAI_API_KEY`; local runs can use `INFLUENCE_LLM_BASE_URL` with LM Studio. Current repo defaults are budget `gpt-5-nano`, standard `gpt-5-mini`, and premium `gpt-5.4-mini`; override server-side tiers with `INFLUENCE_MODEL_BUDGET`, `INFLUENCE_MODEL_STANDARD`, and `INFLUENCE_MODEL_PREMIUM` when testing local models.
 
@@ -449,7 +451,7 @@ The API respects `PORT` and `HOST` env vars (set in Doppler per environment). In
 
 ### Statefulness Risk
 
-Active game execution is not crash-safe yet. If the API server restarts while a game is in progress, the run can be corrupted because runner state, active WebSocket pacing, in-memory agent context, and unfinished transcript persistence are not fully checkpointed/resumable. Treat `docs/statefulness-plan.md` as the reference plan and do not claim mid-game resume support until that work lands.
+Active game execution is not crash-safe yet. If the API server restarts while a game is in progress, the run can be corrupted because runner state, active WebSocket pacing, in-memory agent context, and unfinished transcript persistence are not fully checkpointed/resumable. Canonical engine events can rebuild a domain projection for simulator runs, but they are not API resume/checkpoint support. Treat `docs/statefulness-plan.md` as the reference plan and do not claim mid-game resume support until that work lands.
 
 ## Pre-Commit Checklist
 

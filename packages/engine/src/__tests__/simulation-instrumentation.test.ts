@@ -122,7 +122,7 @@ describe("simulation instrumentation", () => {
     expect(aggregate.actionUsage.bySource["Atlas/power"]?.totalTokens).toBe(50);
   });
 
-  it("preserves whisper request diagnostics and aggregates audit flags", () => {
+  it("preserves Mingle request diagnostics and aggregates audit flags", () => {
     const diagnostics = {
       round: 2,
       beat: 1,
@@ -179,12 +179,12 @@ describe("simulation instrumentation", () => {
       { p1: "Atlas", p2: "Vera", p3: "Finn" },
     );
 
-    expect(game.rooms.whisperSessions).toEqual([diagnostics]);
+    expect(game.rooms.mingleSessions).toEqual([diagnostics]);
     expect(game.rooms.requestSatisfaction.validRequests).toBe(2);
     expect(game.rooms.requestSatisfaction.invalidOrMissingRequests).toBe(1);
 
     const aggregate = aggregateInstrumentation([game, game]);
-    expect(aggregate.rooms.whisperSessions).toHaveLength(2);
+    expect(aggregate.rooms.mingleSessions).toHaveLength(2);
     expect(aggregate.rooms.requestSatisfaction.validRequests).toBe(4);
     expect(aggregate.rooms.requestSatisfaction.invalidOrMissingRequests).toBe(2);
   });
@@ -289,7 +289,7 @@ describe("simulation instrumentation", () => {
     );
 
     expect(instrumentation.rooms.totalRooms).toBe(6);
-    expect(instrumentation.rooms.whisperRounds).toBe(2);
+    expect(instrumentation.rooms.mingleRounds).toBe(2);
     expect(instrumentation.rooms.totalExclusions).toBe(4);
     expect(instrumentation.rooms.participationByPlayer.Atlas).toBe(2);
     expect(instrumentation.rooms.participationByPlayer.Vera).toBe(2);
@@ -302,7 +302,7 @@ describe("simulation instrumentation", () => {
     expect(instrumentation.rooms.repeatedPairs.totalRepeatedOccurrences).toBe(1);
     expect(instrumentation.rooms.repeatedPairs.maxPairCount).toBe(2);
     expect(instrumentation.rooms.repeatedPairs.maxPairShareOfRooms).toBeCloseTo(2 / 6);
-    expect(instrumentation.rooms.repeatedPairs.maxPairShareOfWhisperRounds).toBe(1);
+    expect(instrumentation.rooms.repeatedPairs.maxPairShareOfMingleRounds).toBe(1);
     expect(instrumentation.rooms.repeatedPairs.pairs[0]?.pair).toEqual(["Atlas", "Vera"]);
     expect(instrumentation.powerActions.counts.pass).toBe(1);
     expect(instrumentation.actionUsage.byAction["room-request"]?.callCount).toBe(2);

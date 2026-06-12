@@ -1,0 +1,1026 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Ideation: Game MCP, Replayable Events, and House MC</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0c0b10;
+      --panel: #17151d;
+      --panel-2: #211d29;
+      --ink: #f4efe4;
+      --muted: #b9ac9a;
+      --soft: #8b8175;
+      --line: #3b3344;
+      --gold: #f2b84b;
+      --gold-soft: #3a2b18;
+      --teal: #61d6c8;
+      --teal-soft: #173a39;
+      --rose: #f27692;
+      --rose-soft: #3d1b25;
+      --violet: #a98bff;
+      --violet-soft: #2b2144;
+      --green: #9fd06f;
+      --green-soft: #25351d;
+      --shadow: rgba(0, 0, 0, 0.32);
+      --radius: 14px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(242, 184, 75, 0.10), transparent 34rem),
+        linear-gradient(180deg, #0c0b10 0%, #111017 46%, #0c0b10 100%);
+      color: var(--ink);
+      line-height: 1.6;
+      font-size: 16px;
+    }
+
+    a {
+      color: var(--teal);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+      color: #f6d899;
+      background: rgba(242, 184, 75, 0.10);
+      border: 1px solid rgba(242, 184, 75, 0.18);
+      border-radius: 6px;
+      padding: 0.08rem 0.28rem;
+    }
+
+    .page {
+      width: min(1120px, calc(100vw - 36px));
+      margin: 0 auto;
+      padding: 48px 0 56px;
+    }
+
+    header.hero {
+      padding: 34px;
+      border: 1px solid rgba(242, 184, 75, 0.28);
+      border-radius: 18px;
+      background:
+        linear-gradient(135deg, rgba(242, 184, 75, 0.12), rgba(97, 214, 200, 0.08)),
+        rgba(23, 21, 29, 0.90);
+      box-shadow: 0 24px 70px var(--shadow);
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--gold);
+      text-transform: uppercase;
+      letter-spacing: 0.13em;
+      font-size: 0.76rem;
+      font-weight: 700;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      line-height: 1.16;
+    }
+
+    h1 {
+      font-size: clamp(2.1rem, 4vw, 4rem);
+      max-width: 920px;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      font-size: 1.65rem;
+      margin-bottom: 16px;
+    }
+
+    h3 {
+      font-size: 1.18rem;
+      margin-bottom: 10px;
+    }
+
+    p {
+      max-width: 74ch;
+      margin: 0 0 1rem;
+      color: var(--muted);
+    }
+
+    .lede {
+      margin-top: 18px;
+      color: #e9dfcf;
+      font-size: 1.08rem;
+    }
+
+    .meta-row, .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 30px;
+      border-radius: 999px;
+      padding: 0.24rem 0.72rem;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #f8efd8;
+      font-size: 0.84rem;
+      font-weight: 650;
+    }
+
+    .chip.teal {
+      background: rgba(97, 214, 200, 0.12);
+      border-color: rgba(97, 214, 200, 0.24);
+      color: #bff5ee;
+    }
+
+    .chip.gold {
+      background: rgba(242, 184, 75, 0.14);
+      border-color: rgba(242, 184, 75, 0.28);
+      color: #ffe0a3;
+    }
+
+    .chip.rose {
+      background: rgba(242, 118, 146, 0.12);
+      border-color: rgba(242, 118, 146, 0.26);
+      color: #ffc6d1;
+    }
+
+    section {
+      margin-top: 34px;
+      padding: 30px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(23, 21, 29, 0.88);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.20);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 22px;
+    }
+
+    .stat {
+      border-radius: var(--radius);
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.055);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+    }
+
+    .stat strong {
+      display: block;
+      color: var(--ink);
+      font-size: 1.55rem;
+      line-height: 1.1;
+    }
+
+    .stat span {
+      display: block;
+      color: var(--soft);
+      font-size: 0.82rem;
+      margin-top: 5px;
+    }
+
+    .grid-two {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 0.72fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    .axis-list {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin: 14px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .axis-list li {
+      min-height: 86px;
+      border-radius: 12px;
+      padding: 13px;
+      background: rgba(97, 214, 200, 0.09);
+      border: 1px solid rgba(97, 214, 200, 0.20);
+      color: #d7fffb;
+      font-weight: 650;
+      font-size: 0.92rem;
+    }
+
+    .idea-nav {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 12px 0 24px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .idea-nav a {
+      display: block;
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: #f4efe4;
+      background: rgba(255, 255, 255, 0.055);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+    }
+
+    article.idea {
+      margin-top: 18px;
+      padding: 22px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.035));
+    }
+
+    article.idea.top {
+      border-color: rgba(242, 184, 75, 0.36);
+      background:
+        linear-gradient(180deg, rgba(242, 184, 75, 0.10), rgba(255, 255, 255, 0.035));
+    }
+
+    .idea-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    .idea-title {
+      display: flex;
+      gap: 10px;
+      align-items: baseline;
+      flex-wrap: wrap;
+    }
+
+    .idea-id {
+      display: inline-flex;
+      border-radius: 999px;
+      padding: 0.16rem 0.55rem;
+      color: #251b0b;
+      background: var(--gold);
+      font-size: 0.82rem;
+      font-weight: 800;
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .field {
+      border-radius: 12px;
+      padding: 13px 14px;
+      background: rgba(12, 11, 16, 0.50);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .field dt {
+      color: var(--gold);
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      margin-bottom: 5px;
+    }
+
+    .field dd {
+      margin: 0;
+      color: #dfd5c7;
+    }
+
+    .diagram {
+      margin: 16px 0;
+      overflow: auto;
+      border-radius: 14px;
+      background: rgba(12, 11, 16, 0.62);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      padding: 12px;
+    }
+
+    svg {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
+
+    .svg-label {
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      fill: #f4efe4;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .svg-small {
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      fill: #cbbfae;
+      font-size: 11px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 0.92rem;
+    }
+
+    th, td {
+      padding: 10px 11px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      color: #ffe0a3;
+      background: rgba(242, 184, 75, 0.08);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    td {
+      color: #d9d0c2;
+    }
+
+    .callout {
+      border-radius: 14px;
+      padding: 16px;
+      background: rgba(97, 214, 200, 0.10);
+      border: 1px solid rgba(97, 214, 200, 0.22);
+      color: #d9fffb;
+    }
+
+    .callout strong {
+      color: #d9fffb;
+    }
+
+    .refs {
+      columns: 2 320px;
+      column-gap: 34px;
+      padding-left: 18px;
+    }
+
+    .refs li {
+      break-inside: avoid;
+      margin-bottom: 9px;
+      color: var(--muted);
+    }
+
+    footer {
+      margin-top: 30px;
+      padding: 18px 6px;
+      color: var(--soft);
+      font-size: 0.88rem;
+    }
+
+    @media (max-width: 880px) {
+      .stats, .axis-list, .field-grid, .idea-nav, .grid-two {
+        grid-template-columns: 1fr;
+      }
+
+      .page {
+        width: min(100% - 22px, 1120px);
+        padding-top: 22px;
+      }
+
+      header.hero, section {
+        padding: 22px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">Ideation Artifact</p>
+      <h1>Game MCP, Replayable Events, and House MC</h1>
+      <p class="lede">
+        A ranked direction set for turning live and completed simulation artifacts into a queryable MCP surface, then tightening the scope toward a canonical event stream that can rebuild game state without creating a parallel phase machine.
+      </p>
+      <div class="meta-row">
+        <span class="chip gold">Date: 2026-06-11</span>
+        <span class="chip teal">Topic: game-mcp-house-mc</span>
+        <span class="chip">Mode: repo-grounded</span>
+        <span class="chip rose">Focus: House MC over simulator logs</span>
+        <span class="chip teal">Rerun: reducer + XState boundary</span>
+      </div>
+      <div class="stats" aria-label="Ideation stats">
+        <div class="stat"><strong>76</strong><span>raw candidates across passes</span></div>
+        <div class="stat"><strong>14</strong><span>ranked survivors across passes</span></div>
+        <div class="stat"><strong>7</strong><span>new reducer/event survivors</span></div>
+        <div class="stat"><strong>0</strong><span>axis gaps</span></div>
+      </div>
+    </header>
+
+    <section id="grounding-context">
+      <p class="eyebrow">Grounding Context</p>
+      <div class="grid-two">
+        <div>
+          <h2>Codebase Context</h2>
+          <p>
+            The simulator already produces the core raw material. Each game writes clean structured turn records to <code>game-N-turns.jsonl</code>, lightweight progress events to <code>game-N-progress.jsonl</code>, a full transcript/result bundle to <code>game-N.json</code>, and a human-readable transcript to <code>game-N.txt</code>. The docs explicitly tell humans and scripts to use the turn JSONL for structured analysis rather than parsing colored terminal output.
+          </p>
+          <p>
+            The strongest existing seam is <code>AgentTurnEvent</code>: round, phase, action, actor, visibility, normalized response, optional <code>thinking</code>, optional <code>reasoningContext</code>, scope, text, recipients, room id, anonymity, and display order. The simulator attaches a stream listener, writes turn events to the turns JSONL, and writes progress/transcript-preview events to the progress JSONL.
+          </p>
+          <p>
+            The House MC currently gets recent transcript slices directly and emits freeform summaries after Mingle and Council. Meanwhile, agent prompt construction contains richer state than the turn log preserves: memory, notes, vote history, strategic assessment, recent public messages, private Mingle messages, and room context. Strategic reflections already produce useful strategy objects, but simulator config currently disables them to keep validation runs bounded.
+          </p>
+          <p>
+            Statefulness is a separate risk. A live MCP can tail and query logs during a run, but it should not be described as crash-safe recovery. The existing statefulness plan is explicit that mid-game process loss still kills active games until checkpoint/resume work lands.
+          </p>
+        </div>
+        <aside class="callout">
+          <strong>External MCP fit.</strong>
+          MCP maps neatly to this problem: resources can expose sessions, logs, transcripts, and derived fact files; tools can provide filtered search and domain queries; stdio is the simplest local transport; Streamable HTTP becomes useful later for multiple live clients or server-sent updates. Official MCP guidance also makes security and access boundaries first-class, which matters because hidden reasoning and Mingle privacy should not leak into player-visible surfaces.
+        </aside>
+      </div>
+    </section>
+
+    <section id="topic-axes">
+      <p class="eyebrow">Topic Axes</p>
+      <h2>Surface Map</h2>
+      <ul class="axis-list">
+        <li>Live log ingestion and indexing</li>
+        <li>MCP API and query grammar</li>
+        <li>House integration and information boundaries</li>
+        <li>Richer strategy and log schema</li>
+        <li>Multi-session analysis and replay leverage</li>
+      </ul>
+    </section>
+
+    <section id="reducer-rerun">
+      <p class="eyebrow">Rerun: Event Stream Scope</p>
+      <h2>Seven New Survivors</h2>
+      <p>
+        The first pass treated the MCP as a local production-booth sidecar over the logs that already exist. The rerun keeps that useful read-only direction, but changes the center of gravity: the strongest next scope is a canonical domain event stream under <code>GameState</code>, with MCP indexes as projections over that stream. XState should remain the phase authority and resume cursor; the reducer should rebuild board/domain state only.
+      </p>
+      <ul class="axis-list">
+        <li>Canonical event spine and schema</li>
+        <li>Reducer and projection correctness</li>
+        <li>XState and resume boundary</li>
+        <li>MCP read-model query surface</li>
+        <li>Simulator and API migration</li>
+      </ul>
+
+      <div class="diagram" aria-label="Canonical event spine with XState boundary">
+        <svg viewBox="0 0 860 260" role="img">
+          <defs>
+            <marker id="arrow-rerun" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+              <path d="M0,0 L8,3 L0,6 Z" fill="#61d6c8"></path>
+            </marker>
+            <marker id="arrow-rerun-gold" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+              <path d="M0,0 L8,3 L0,6 Z" fill="#f2b84b"></path>
+            </marker>
+          </defs>
+          <rect x="26" y="70" width="142" height="70" rx="14" fill="#3a2b18" stroke="#f2b84b"></rect>
+          <text x="97" y="99" text-anchor="middle" class="svg-label">Phase Runner</text>
+          <text x="97" y="119" text-anchor="middle" class="svg-small">accepted action</text>
+
+          <rect x="218" y="48" width="152" height="114" rx="14" fill="#173a39" stroke="#61d6c8"></rect>
+          <text x="294" y="80" text-anchor="middle" class="svg-label">GameEvent Log</text>
+          <text x="294" y="101" text-anchor="middle" class="svg-small">seq + payload</text>
+          <text x="294" y="120" text-anchor="middle" class="svg-small">visibility</text>
+          <text x="294" y="139" text-anchor="middle" class="svg-small">source pointer</text>
+
+          <rect x="424" y="70" width="132" height="70" rx="14" fill="#25351d" stroke="#9fd06f"></rect>
+          <text x="490" y="99" text-anchor="middle" class="svg-label">Reducer</text>
+          <text x="490" y="119" text-anchor="middle" class="svg-small">GameState only</text>
+
+          <rect x="616" y="28" width="196" height="64" rx="14" fill="#2b2144" stroke="#a98bff"></rect>
+          <text x="714" y="58" text-anchor="middle" class="svg-label">MCP / FTS Projections</text>
+          <text x="714" y="77" text-anchor="middle" class="svg-small">queryable read models</text>
+
+          <rect x="616" y="130" width="196" height="64" rx="14" fill="#3d1b25" stroke="#f27692"></rect>
+          <text x="714" y="160" text-anchor="middle" class="svg-label">API Snapshot / Resume</text>
+          <text x="714" y="179" text-anchor="middle" class="svg-small">domain projection cache</text>
+
+          <rect x="218" y="198" width="338" height="40" rx="12" fill="rgba(242,184,75,0.10)" stroke="#f2b84b"></rect>
+          <text x="387" y="223" text-anchor="middle" class="svg-label">XState persisted snapshot stays beside the domain log</text>
+
+          <path d="M168 105 H210" stroke="#61d6c8" stroke-width="3" marker-end="url(#arrow-rerun)"></path>
+          <path d="M370 105 H416" stroke="#61d6c8" stroke-width="3" marker-end="url(#arrow-rerun)"></path>
+          <path d="M556 93 C584 69 594 62 608 60" stroke="#61d6c8" stroke-width="3" fill="none" marker-end="url(#arrow-rerun)"></path>
+          <path d="M556 118 C586 144 596 157 608 162" stroke="#61d6c8" stroke-width="3" fill="none" marker-end="url(#arrow-rerun)"></path>
+          <path d="M294 162 V190" stroke="#f2b84b" stroke-width="3" marker-end="url(#arrow-rerun-gold)"></path>
+        </svg>
+      </div>
+
+      <ul class="idea-nav" aria-label="Jump to rerun idea">
+        <li><a href="#rerun-1">R1. Canonical Game Event Spine Under GameState</a></li>
+        <li><a href="#rerun-2">R2. Append-Then-Apply GameState Facade</a></li>
+        <li><a href="#rerun-3">R3. Projection Parity Test Harness</a></li>
+        <li><a href="#rerun-4">R4. Dual Timeline: Domain Events Plus XState Snapshot</a></li>
+        <li><a href="#rerun-5">R5. Event-Backed MCP Read Models</a></li>
+        <li><a href="#rerun-6">R6. Source Pointers and Visibility on Every Event</a></li>
+        <li><a href="#rerun-7">R7. Simulator-to-API Event Log Migration Ladder</a></li>
+      </ul>
+
+      <article class="idea top" id="rerun-1">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">R1</span>
+            <h3>Canonical Game Event Spine Under GameState</h3>
+          </div>
+          <div class="chip-row">
+            <span class="chip teal">Conf 88%</span>
+            <span class="chip gold">Cx Medium</span>
+          </div>
+        </div>
+        <p>
+          Introduce a typed <code>GameEvent</code> stream for accepted domain facts at the exact points where the game mutates: round start, room allocation, vote cast, empower tally resolved, power action set, shield granted, council candidates chosen, council vote cast, player eliminated, endgame stage set, jury vote cast, and winner determined. The key is that events represent accepted outcomes, not model suggestions or transcript text. This lets a reducer rebuild board state without re-implementing phase flow.
+        </p>
+        <dl class="field-grid">
+          <div class="field"><dt>Axis</dt><dd>Canonical event spine and schema</dd></div>
+          <div class="field"><dt>Basis</dt><dd>direct: <code>phase-machine.ts:4</code> says XState sequences phases while game logic lives in <code>GameState</code>; <code>game-state.ts:29</code> owns the mutable domain fields.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>It avoids the parallel-state-machine trap by placing the event spine at the current domain authority rather than outside the engine.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Requires discipline around event vocabulary and versioning. Random/fallback outcomes must be recorded as accepted facts, not recomputed during replay.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea" id="rerun-2">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">R2</span>
+            <h3>Append-Then-Apply GameState Facade</h3>
+          </div>
+          <div class="chip-row">
+            <span class="chip teal">Conf 82%</span>
+            <span class="chip gold">Cx Medium</span>
+          </div>
+        </div>
+        <p>
+          Add a small evented facade around <code>GameState</code> so phase modules call intentful methods like <code>recordVote</code>, <code>resolveEmpowered</code>, <code>grantShield</code>, and <code>eliminatePlayer</code> through append-then-apply. The first implementation can delegate to existing <code>GameState</code> internals after appending, but the event reducer and live mutation path should share one apply function as soon as practical.
+        </p>
+        <dl class="field-grid">
+          <div class="field"><dt>Axis</dt><dd>Reducer and projection correctness</dd></div>
+          <div class="field"><dt>Basis</dt><dd>direct: phase modules currently call mutators directly, for example <code>runVotePhase</code> records votes and <code>runPowerPhase</code> calls <code>setPowerAction</code> then <code>determineCandidates</code>.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>This is a contained migration path: the engine keeps running normally while the canonical log is created at the mutation source.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>There is a temporary dual path risk until direct mutator calls are removed or guarded by tests.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea" id="rerun-3">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">R3</span>
+            <h3>Projection Parity Test Harness</h3>
+          </div>
+          <div class="chip-row">
+            <span class="chip teal">Conf 86%</span>
+            <span class="chip gold">Cx Medium</span>
+          </div>
+        </div>
+        <p>
+          Build tests that replay canonical events into a fresh reducer projection and compare the result against <code>GameRunner.getStateSnapshot()</code> at phase boundaries and at game end. Start with deterministic unit scenarios, then run a short full-game fixture. This makes the reducer prove it is a read model of the engine, not an alternate engine with flattering assumptions.
+        </p>
+        <dl class="field-grid">
+          <div class="field"><dt>Axis</dt><dd>Reducer and projection correctness</dd></div>
+          <div class="field"><dt>Basis</dt><dd>direct: existing stream-listener tests already capture <code>getStateSnapshot()</code> during a run, but do not replay events or compare projections.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>The parity harness is the safety rail that lets the event stream become more authoritative over time.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Snapshot comparison needs stable normalization so timestamps, transcript ordering, and non-state observability fields do not create noise.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea" id="rerun-4">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">R4</span>
+            <h3>Dual Timeline: Domain Events Plus XState Snapshot</h3>
+          </div>
+          <div class="chip-row">
+            <span class="chip teal">Conf 84%</span>
+            <span class="chip gold">Cx Medium</span>
+          </div>
+        </div>
+        <p>
+          Persist two complementary records: the domain event log rebuilds <code>GameState</code>, while the XState persisted snapshot records where the phase actor is and which transition context it owns. On resume, rebuild or load the domain projection, restore the XState actor from its snapshot, and reconnect runner extras like transcript, Mingle inbox, diary entries, token usage, and recap context.
+        </p>
+        <dl class="field-grid">
+          <div class="field"><dt>Axis</dt><dd>XState and resume boundary</dd></div>
+          <div class="field"><dt>Basis</dt><dd>direct: <code>docs/statefulness-plan.md:80</code> already calls for serializing <code>GameState</code>, XState snapshot, runner data, and token usage; external: XState docs support actor persisted snapshots and restore.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>This answers the redesign question: the event stream does not prime XState from scratch; it resumes beside XState and feeds domain projections.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Mid-phase resume remains hard because in-flight LLM calls and per-agent conversation state are not fully recoverable.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea" id="rerun-5">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">R5</span>
+            <h3>Event-Backed MCP Read Models</h3>
+          </div>
+          <div class="chip-row">
+            <span class="chip teal">Conf 80%</span>
+            <span class="chip gold">Cx Medium</span>
+          </div>
+        </div>
+        <p>
+          Reframe the Game MCP as a read-model host over canonical events and derived projections: transcript view, player timeline, relationship graph, vote ledger, room conversations, strategy snapshots, and FTS search. Existing JSONL sidecar indexing can still ship first, but the durable target is that every MCP answer can point back to a canonical event, not only a transcript line.
+        </p>
+        <dl class="field-grid">
+          <div class="field"><dt>Axis</dt><dd>MCP read-model query surface</dd></div>
+          <div class="field"><dt>Basis</dt><dd>direct: <code>GameStreamEvent</code> and <code>AgentTurnEvent</code> already expose rich observability fields; external: MCP resources and tools are designed for application-specific context and callable structured queries.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>The House can learn from the same projection infrastructure as post-run analysis, instead of getting a bespoke prompt-stuffing path.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Early projections may lag the canonical event schema. Keep derived facts rebuildable and citation-backed.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea" id="rerun-6">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">R6</span>
+            <h3>Source Pointers and Visibility on Every Event</h3>
+          </div>
+          <div class="chip-row">
+            <span class="chip teal">Conf 90%</span>
+            <span class="chip gold">Cx Low</span>
+          </div>
+        </div>
+        <p>
+          Put source pointers and visibility on the canonical event envelope from day one: sequence number, timestamp, round, phase, actor, causation/correlation IDs, visibility tier, source file/line for simulator artifacts when applicable, and payload version. The visibility tier should feed MCP access modes like <code>producer</code>, <code>audience</code>, and <code>player-visible</code>.
+        </p>
+        <dl class="field-grid">
+          <div class="field"><dt>Axis</dt><dd>MCP read-model query surface</dd></div>
+          <div class="field"><dt>Basis</dt><dd>direct: reasoning observability docs require hidden thinking to stay separate from player-visible output, and existing turn events already carry visibility/scope fields.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>It keeps House and analysis queries powerful without accidentally giving active players omniscient access.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Visibility mistakes are subtle; tests should cover player-visible, audience, and producer queries before live use.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea" id="rerun-7">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">R7</span>
+            <h3>Simulator-to-API Event Log Migration Ladder</h3>
+          </div>
+          <div class="chip-row">
+            <span class="chip teal">Conf 78%</span>
+            <span class="chip gold">Cx Medium</span>
+          </div>
+        </div>
+        <p>
+          Sequence adoption in three steps: first write canonical event JSONL from simulator runs, then persist the same events for API games in Postgres, then let API snapshots/checkpoints be projections over the event stream. This keeps the first implementation local and observable while making it a real springboard toward stateless app servers.
+        </p>
+        <dl class="field-grid">
+          <div class="field"><dt>Axis</dt><dd>Simulator and API migration</dd></div>
+          <div class="field"><dt>Basis</dt><dd>direct: simulator artifacts are already local JSONL, while API games still depend on an in-memory <code>activeGames</code> map and transcript persistence drops full <code>AgentTurnEvent.response</code> / <code>reasoningContext</code>.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>This makes the stateless-backend path incremental: stateless servers become plausible only after events are durable for API games too.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Requires schema/migration work and careful ownership rules so two API instances cannot append conflicting events for the same game.</dd></div>
+        </dl>
+      </article>
+    </section>
+
+    <section id="ranked-ideas">
+      <p class="eyebrow">Ranked Ideas</p>
+      <h2>Original Seven Survivors</h2>
+      <ul class="idea-nav" aria-label="Jump to idea">
+        <li><a href="#idea-1">I1. Local Production-Booth MCP</a></li>
+        <li><a href="#idea-2">I2. Evidence-Backed House MC</a></li>
+        <li><a href="#idea-3">I3. Strategy Snapshot Stream</a></li>
+        <li><a href="#idea-4">I4. SQLite FTS Event Index With Source Pointers</a></li>
+        <li><a href="#idea-5">I5. Conversation and Relationship Query Pack</a></li>
+        <li><a href="#idea-6">I6. Role-Based Visibility Contract</a></li>
+        <li><a href="#idea-7">I7. Multi-Session Model Evaluation Corpus</a></li>
+      </ul>
+
+      <article class="idea top" id="idea-1">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I1</span>
+            <h3>Local Production-Booth MCP</h3>
+          </div>
+          <div class="chip-row">
+            <span class="chip teal">Conf 90%</span>
+            <span class="chip gold">Cx Medium</span>
+          </div>
+        </div>
+        <p>
+          Build the first game MCP as a local, read-only sidecar over existing simulation artifacts. It lists sessions and games, exposes logs/transcripts as MCP resources, and provides narrow query tools over the current batch directory without changing the game loop. This is the best first direction because it creates a real connection point for the House or another agent while keeping the simulator semantics stable.
+        </p>
+        <div class="diagram" aria-label="Production booth MCP conceptual flow">
+          <svg viewBox="0 0 760 220" role="img">
+            <defs>
+              <marker id="arrow-gold" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+                <path d="M0,0 L8,3 L0,6 Z" fill="#f2b84b"></path>
+              </marker>
+            </defs>
+            <rect x="24" y="42" width="150" height="70" rx="14" fill="#3a2b18" stroke="#f2b84b"></rect>
+            <text x="99" y="73" text-anchor="middle" class="svg-label">Simulator</text>
+            <text x="99" y="93" text-anchor="middle" class="svg-small">stream listener</text>
+            <rect x="226" y="22" width="165" height="64" rx="14" fill="#173a39" stroke="#61d6c8"></rect>
+            <text x="308" y="53" text-anchor="middle" class="svg-label">Turns JSONL</text>
+            <text x="308" y="72" text-anchor="middle" class="svg-small">agent decisions</text>
+            <rect x="226" y="118" width="165" height="64" rx="14" fill="#173a39" stroke="#61d6c8"></rect>
+            <text x="308" y="149" text-anchor="middle" class="svg-label">Progress JSONL</text>
+            <text x="308" y="168" text-anchor="middle" class="svg-small">phase and paths</text>
+            <rect x="452" y="58" width="146" height="88" rx="14" fill="#2b2144" stroke="#a98bff"></rect>
+            <text x="525" y="93" text-anchor="middle" class="svg-label">Game MCP</text>
+            <text x="525" y="113" text-anchor="middle" class="svg-small">resources + tools</text>
+            <rect x="650" y="58" width="86" height="88" rx="14" fill="#3d1b25" stroke="#f27692"></rect>
+            <text x="693" y="93" text-anchor="middle" class="svg-label">House</text>
+            <text x="693" y="113" text-anchor="middle" class="svg-small">or agent</text>
+            <path d="M174 77 H218" stroke="#f2b84b" stroke-width="3" marker-end="url(#arrow-gold)"></path>
+            <path d="M174 82 C196 132 204 150 218 150" stroke="#f2b84b" stroke-width="3" fill="none" marker-end="url(#arrow-gold)"></path>
+            <path d="M391 54 C425 62 433 77 444 88" stroke="#f2b84b" stroke-width="3" fill="none" marker-end="url(#arrow-gold)"></path>
+            <path d="M391 150 C425 142 433 127 444 116" stroke="#f2b84b" stroke-width="3" fill="none" marker-end="url(#arrow-gold)"></path>
+            <path d="M598 102 H642" stroke="#f2b84b" stroke-width="3" marker-end="url(#arrow-gold)"></path>
+          </svg>
+        </div>
+        <dl class="field-grid">
+          <div class="field"><dt>Axis</dt><dd>MCP API and query grammar</dd></div>
+          <div class="field"><dt>Basis</dt><dd>direct: <code>simulate.ts</code> writes <code>game-N-turns.jsonl</code> and <code>game-N-progress.jsonl</code>; <code>AgentTurnEvent</code> already has queryable fields.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>A sidecar lets you connect external agents immediately while keeping the game loop and state machine understandable.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>It will initially answer from logs only. It will not solve checkpoint/resume, and it may need careful path discovery for partial batches.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-2">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I2</span>
+            <h3>Evidence-Backed House MC</h3>
+          </div>
+          <div class="chip-row">
+            <span class="chip teal">Conf 82%</span>
+            <span class="chip gold">Cx Medium</span>
+          </div>
+        </div>
+        <p>
+          Change the House from "summarize the last N transcript entries" to "ask the game MCP for cited evidence, then narrate." The House could query recent Mingle conversations, vote reasoning, player timelines, contradictions, or standout moments, and the tool result would include event IDs and source pointers. This should make summaries and diary questions sharper while reducing prompt stuffing.
+        </p>
+        <div class="diagram" aria-label="Evidence backed House conceptual flow">
+          <svg viewBox="0 0 760 180" role="img">
+            <defs>
+              <marker id="arrow-teal" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+                <path d="M0,0 L8,3 L0,6 Z" fill="#61d6c8"></path>
+              </marker>
+            </defs>
+            <rect x="28" y="54" width="164" height="72" rx="14" fill="#173a39" stroke="#61d6c8"></rect>
+            <text x="110" y="84" text-anchor="middle" class="svg-label">House asks</text>
+            <text x="110" y="104" text-anchor="middle" class="svg-small">What changed?</text>
+            <rect x="246" y="34" width="156" height="112" rx="14" fill="#2b2144" stroke="#a98bff"></rect>
+            <text x="324" y="72" text-anchor="middle" class="svg-label">MCP tools</text>
+            <text x="324" y="94" text-anchor="middle" class="svg-small">conversation</text>
+            <text x="324" y="113" text-anchor="middle" class="svg-small">timeline</text>
+            <text x="324" y="132" text-anchor="middle" class="svg-small">reasoning</text>
+            <rect x="454" y="54" width="128" height="72" rx="14" fill="#3a2b18" stroke="#f2b84b"></rect>
+            <text x="518" y="84" text-anchor="middle" class="svg-label">Evidence</text>
+            <text x="518" y="104" text-anchor="middle" class="svg-small">event IDs</text>
+            <rect x="634" y="54" width="100" height="72" rx="14" fill="#3d1b25" stroke="#f27692"></rect>
+            <text x="684" y="84" text-anchor="middle" class="svg-label">Narration</text>
+            <text x="684" y="104" text-anchor="middle" class="svg-small">with receipts</text>
+            <path d="M192 90 H238" stroke="#61d6c8" stroke-width="3" marker-end="url(#arrow-teal)"></path>
+            <path d="M402 90 H446" stroke="#61d6c8" stroke-width="3" marker-end="url(#arrow-teal)"></path>
+            <path d="M582 90 H626" stroke="#61d6c8" stroke-width="3" marker-end="url(#arrow-teal)"></path>
+          </svg>
+        </div>
+        <dl class="field-grid">
+          <div class="field"><dt>Axis</dt><dd>House integration and information boundaries</dd></div>
+          <div class="field"><dt>Basis</dt><dd>direct: <code>house-interviewer.ts</code> builds House summaries from recent transcript slices, while House prompts demand specific players, quotes, or events.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>Evidence-backed retrieval lets the House be more perceptive without overloading every prompt with raw logs.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>The House can become too omniscient or spoilery unless paired with a visibility contract.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-3">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I3</span>
+            <h3>Strategy Snapshot Stream</h3>
+          </div>
+          <div class="chip-row">
+            <span class="chip teal">Conf 78%</span>
+            <span class="chip gold">Cx Medium</span>
+          </div>
+        </div>
+        <p>
+          Add a structured stream of player strategy snapshots: certainties, suspicions, allies, threats, plan, and optionally a redacted prompt-context summary. The code already has a strategic reflection tool shape, but simulator validation currently disables it. Making this opt-in for local analysis would let a future House ask "what did Vera believe before this vote?" or "which plan did Atlas abandon?"
+        </p>
+        <dl class="field-grid">
+          <div class="field"><dt>Axis</dt><dd>Richer strategy and log schema</dd></div>
+          <div class="field"><dt>Basis</dt><dd>direct: <code>getStrategicReflection</code> records certainties, suspicions, allies, threats, and plan; <code>buildUserPrompt</code> contains the dynamic memory and Mingle context that later queries want.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>Raw decisions explain what happened. Strategy snapshots explain what changed in a player's model of the game.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Extra LLM calls are expensive and may slow long local runs. Start with opt-in local flags or low-frequency snapshots.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-4">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I4</span>
+            <h3>SQLite FTS Event Index With Source Pointers</h3>
+          </div>
+          <div class="chip-row">
+            <span class="chip teal">Conf 84%</span>
+            <span class="chip gold">Cx Medium</span>
+          </div>
+        </div>
+        <p>
+          Materialize JSONL records into a small local SQLite database with FTS over text, thinking, reasoning, and normalized response fields. Keep source pointers on every row: batch directory, game number, file path, line or byte offset, event timestamp, phase, action, actor, scope, and visibility. The MCP tools can then answer quickly across one live run or many completed sessions.
+        </p>
+        <dl class="field-grid">
+          <div class="field"><dt>Axis</dt><dd>Live log ingestion and indexing</dd></div>
+          <div class="field"><dt>Basis</dt><dd>reasoned: JSONL scans are fine for one game, but cross-session questions and live tailing benefit from structured filters plus lexical search.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>FTS handles exact names, quotes, phases, and action vocabulary before adding semantic embeddings.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Needs schema versioning and tailer correctness. It also introduces a derived store that must stay rebuildable from source logs.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-5">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I5</span>
+            <h3>Conversation and Relationship Query Pack</h3>
+          </div>
+          <div class="chip-row">
+            <span class="chip teal">Conf 86%</span>
+            <span class="chip gold">Cx Medium</span>
+          </div>
+        </div>
+        <p>
+          Do not expose only a generic search box. Give agents a small set of game-native tools: <code>search_turns</code>, <code>get_conversation</code>, <code>get_player_timeline</code>, <code>get_reasoning</code>, <code>find_commitments</code>, and <code>summarize_relationship</code>. Each tool should return structured results plus citations, so a downstream House or analysis agent can move from "what happened?" to "what did this mean socially?"
+        </p>
+        <dl class="field-grid">
+          <div class="field"><dt>Axis</dt><dd>MCP API and query grammar</dd></div>
+          <div class="field"><dt>Basis</dt><dd>direct: turn records include actor, text, phase, recipients, room id, visibility, action, response, thinking, and reasoningContext.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>Game-native tools make the MCP useful to agents that need social meaning, not just keyword hits.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Derived relationship facts can hallucinate confidence if extraction is not citation-backed. Keep derived claims auditable.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-6">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I6</span>
+            <h3>Role-Based Visibility Contract</h3>
+          </div>
+          <div class="chip-row">
+            <span class="chip teal">Conf 88%</span>
+            <span class="chip gold">Cx Low</span>
+          </div>
+        </div>
+        <p>
+          Define access modes before the MCP touches any active agent: <code>producer</code> can inspect full logs for debugging and House MC, <code>audience</code> can see viewer-safe private-room content but not privileged native reasoning by default, and <code>player-visible</code> sees only what a contestant would know. Hidden <code>thinking</code> and <code>reasoningContext</code> require explicit tool arguments and should be off by default.
+        </p>
+        <div class="diagram" aria-label="Visibility layers conceptual diagram">
+          <svg viewBox="0 0 760 190" role="img">
+            <rect x="58" y="34" width="644" height="42" rx="12" fill="#25351d" stroke="#9fd06f"></rect>
+            <text x="380" y="60" text-anchor="middle" class="svg-label">player-visible: public facts, own room context, own memory</text>
+            <rect x="104" y="86" width="552" height="42" rx="12" fill="#173a39" stroke="#61d6c8"></rect>
+            <text x="380" y="112" text-anchor="middle" class="svg-label">audience: viewer-safe transcript, Mingle content, summaries</text>
+            <rect x="150" y="138" width="460" height="42" rx="12" fill="#3d1b25" stroke="#f27692"></rect>
+            <text x="380" y="164" text-anchor="middle" class="svg-label">producer: full trace, thinking, reasoningContext</text>
+          </svg>
+        </div>
+        <dl class="field-grid">
+          <div class="field"><dt>Axis</dt><dd>House integration and information boundaries</dd></div>
+          <div class="field"><dt>Basis</dt><dd>direct: project docs say hidden reasoning is for viewers, replays, and debug surfaces, and public player text must never contain hidden thinking.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>This keeps the query surface from accidentally turning Mingle into omniscient gameplay.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Requires discipline in tool defaults and tests. It may feel slower than simply exposing everything.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-7">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I7</span>
+            <h3>Multi-Session Model Evaluation Corpus</h3>
+          </div>
+          <div class="chip-row">
+            <span class="chip teal">Conf 75%</span>
+            <span class="chip gold">Cx Medium</span>
+          </div>
+        </div>
+        <p>
+          Let the same MCP query multiple simulation batches after the fact: "show all places this model repeated lobby filler," "which Mingle turns contained real alliance movement?", "where did reasoning mention a plan that the public message ignored?", or "compare Gemma runs by completion and watchability." This turns local model experimentation into an accumulating corpus rather than isolated text files.
+        </p>
+        <dl class="field-grid">
+          <div class="field"><dt>Axis</dt><dd>Multi-session analysis and replay leverage</dd></div>
+          <div class="field"><dt>Basis</dt><dd>direct: local model docs ask evaluators to record good strategy, bad strategy, repetition, empty responses, completion, and reasoning usefulness.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>The same MCP that helps the House live can become the post-run analyst for model quality and game watchability.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Cross-session comparisons need normalized metadata for model, variant, players, branch, and dirty state to avoid misleading conclusions.</dd></div>
+        </dl>
+      </article>
+    </section>
+
+    <section id="rejection-summary">
+      <p class="eyebrow">Rejection Summary</p>
+      <h2>Considered and Cut</h2>
+      <p>
+        The strongest rejected ideas were not bad ideas; most were merged into broader survivors. The main cut rule was whether an idea stood as a direction worth choosing, rather than an implementation detail of a stronger direction.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Idea</th>
+            <th>Reason Rejected</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Read-only MCP over existing batch artifacts</td><td>Folded into I1. Local Production-Booth MCP.</td></tr>
+          <tr><td>Session registry resource</td><td>Folded into I1. It is a feature of the production-booth surface.</td></tr>
+          <tr><td>Conversation slice tool</td><td>Folded into I5. The stronger direction is a query pack, not one tool.</td></tr>
+          <tr><td>Reasoning ledger tool</td><td>Folded into I5 and I6. Reasoning access needs both a tool and an access contract.</td></tr>
+          <tr><td>Promises and commitments extractor</td><td>Folded into I5 as <code>find_commitments</code>.</td></tr>
+          <tr><td>Phase summary cards</td><td>Folded into I2. House evidence retrieval should own phase summaries.</td></tr>
+          <tr><td>Prompt-context snapshot hash</td><td>Folded into I3. A hash alone is too weak without a strategy/context snapshot shape.</td></tr>
+          <tr><td><code>--mcp</code> simulation flag</td><td>Good follow-on implementation detail, but not a standalone idea.</td></tr>
+          <tr><td>No new simulation code first</td><td>Folded into I1 as MVP posture.</td></tr>
+          <tr><td>Query plans instead of giant search</td><td>Folded into I5.</td></tr>
+          <tr><td>Stored derived facts</td><td>Folded into I4 and I5.</td></tr>
+          <tr><td>Separate House roles by knowledge boundary</td><td>Folded into I6.</td></tr>
+          <tr><td>MCP as production booth, not player memory</td><td>Folded into I1 and I6.</td></tr>
+          <tr><td>Let the House ask evidence-backed questions</td><td>Folded into I2.</td></tr>
+          <tr><td>Make logs answer "why now?"</td><td>Folded into I3.</td></tr>
+          <tr><td>Treat reasoning as privileged trace data</td><td>Folded into I6.</td></tr>
+          <tr><td>Unified event envelope</td><td>Implementation detail inside I4.</td></tr>
+          <tr><td>Source pointers everywhere</td><td>Folded into I2 and I4.</td></tr>
+          <tr><td>Model-evaluation dashboards via same index</td><td>Folded into I7.</td></tr>
+          <tr><td>Replay assistant</td><td>Useful later, but weaker than I7 for the current House/log query ask.</td></tr>
+          <tr><td>House prompt budget reducer</td><td>Folded into I2.</td></tr>
+          <tr><td>Durable query tests from real logs</td><td>Implementation practice, not standalone ideation direction.</td></tr>
+          <tr><td>Sports broadcast stat truck</td><td>Kept as analogy inside I1, not a separate product direction.</td></tr>
+          <tr><td>Observability trace explorer</td><td>Too broad; folded into I4.</td></tr>
+          <tr><td>Court evidence binder</td><td>Folded into I2 as cited evidence cards.</td></tr>
+          <tr><td>Video game fog-of-war rules</td><td>Folded into I6.</td></tr>
+          <tr><td>Zero-dependency stdio MCP first</td><td>Implementation choice inside I1.</td></tr>
+          <tr><td>Streamable HTTP only when multi-client live viewing matters</td><td>Transport sequencing detail, not standalone direction.</td></tr>
+          <tr><td>Embeddings later, FTS now</td><td>Folded into I4.</td></tr>
+          <tr><td>Read-only forever unless explicitly promoted</td><td>Folded into I6.</td></tr>
+          <tr><td>Simulation observability index</td><td>Folded into I4.</td></tr>
+          <tr><td>Multi-session game memory corpus</td><td>Folded into I7.</td></tr>
+          <tr><td>Mutation coverage audit</td><td>Folded into R1 and R2. It is required groundwork for the event spine, not a separate direction.</td></tr>
+          <tr><td>Deterministic outcome events</td><td>Folded into R1. Random/wheel/fallback results must be recorded as accepted event payloads.</td></tr>
+          <tr><td>Raw agent turns are enough</td><td>Rejected. Agent turns are rich observability records, but they do not cover every domain mutation or XState resume boundary.</td></tr>
+          <tr><td>Replay by parsing transcript text</td><td>Rejected. It would create a brittle exterior state machine and duplicate game rules outside the engine.</td></tr>
+          <tr><td>MCP as runtime authority</td><td>Rejected as scope overrun. MCP should query read models; gameplay authority stays in engine/XState/GameState.</td></tr>
+          <tr><td>Full event-sourced runtime immediately</td><td>Too large for the next move. Folded into the migration ladder after parity tests exist.</td></tr>
+          <tr><td>Phase-boundary-only events</td><td>Too coarse to rebuild <code>GameState</code>. Useful for checkpoints, insufficient for reducer replay.</td></tr>
+          <tr><td>Every prompt-context snapshot as canonical event</td><td>Interesting for strategy analysis, but too expensive and privacy-sensitive as core game state.</td></tr>
+          <tr><td>Fresh verifier pass</td><td>Degraded in this run: filtering was orchestrator-only against repo evidence and official MCP docs.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sources">
+      <p class="eyebrow">Sources and References</p>
+      <h2>Evidence Used</h2>
+      <ul class="refs">
+        <li><code>packages/engine/src/simulate.ts:23</code> documents <code>game-N-turns.jsonl</code> as clean structured per-agent-turn output.</li>
+        <li><code>packages/engine/src/simulate.ts:239</code> shows simulator config disabling strategic reflections for bounded validation runs.</li>
+        <li><code>packages/engine/src/simulate.ts:946</code> writes serialized agent turns to the turns JSONL.</li>
+        <li><code>packages/engine/src/simulate.ts:1064</code> creates transcript, JSON, progress, and turns paths per game.</li>
+        <li><code>packages/engine/src/phase-machine.ts:4</code> defines XState as the phase sequencer while game logic lives in <code>GameState</code>.</li>
+        <li><code>packages/engine/src/phase-machine.ts:59</code> shows the phase-machine event surface is transition/control oriented, not a full domain event log.</li>
+        <li><code>packages/engine/src/game-state.ts:29</code> holds the mutable board/domain fields a reducer would need to rebuild.</li>
+        <li><code>packages/engine/src/game-state.ts:215</code>, <code>game-state.ts:303</code>, and <code>game-state.ts:417</code> show tally/candidate methods that can resolve outcomes and sometimes use fallback randomness.</li>
+        <li><code>packages/engine/src/game-runner.types.ts:89</code> defines <code>AgentTurnEvent</code>.</li>
+        <li><code>packages/engine/src/game-runner.types.ts:22</code> defines the current <code>GameStreamEvent</code> observability stream.</li>
+        <li><code>packages/engine/src/agent.ts:1630</code> builds the dynamic prompt context with memory, messages, Mingle context, and strategic assessment.</li>
+        <li><code>packages/engine/src/house-interviewer.ts:309</code> builds House MC summaries from recent transcript entries.</li>
+        <li><code>packages/engine/src/game-runner.ts:240</code> calls House MC after Mingle and Council.</li>
+        <li><code>packages/engine/src/diary-room.ts:37</code> runs strategic reflections when enabled.</li>
+        <li><code>packages/api/src/services/game-lifecycle.ts:46</code> stores live API runners in the process-local <code>activeGames</code> map.</li>
+        <li><code>packages/api/src/services/game-lifecycle.ts:92</code> persists transcript entries without the full <code>AgentTurnEvent.response</code> or <code>reasoningContext</code>.</li>
+        <li><code>packages/api/src/services/ws-manager.ts:83</code> intentionally ignores <code>agent_turn</code> events for WebSocket broadcast.</li>
+        <li><code>docs/reasoning-transcript-observability.md:205</code> names the simulation artifact set and analysis use.</li>
+        <li><code>docs/statefulness-plan.md:14</code> records mid-game process-loss risks that this MCP should not overclaim solving.</li>
+        <li><code>docs/statefulness-plan.md:80</code> already proposes checkpointing <code>GameState</code>, XState snapshot, runner data, and token usage.</li>
+        <li><a href="https://modelcontextprotocol.io/docs/getting-started/intro">MCP introduction</a> for the standard's role connecting AI applications to external systems.</li>
+        <li><a href="https://modelcontextprotocol.io/specification/2025-06-18/server/resources">MCP Resources specification</a> for exposing application-specific data as resources.</li>
+        <li><a href="https://modelcontextprotocol.io/specification/2025-06-18/server/tools">MCP Tools specification</a> for model-invoked tools and structured results.</li>
+        <li><a href="https://modelcontextprotocol.io/specification/2025-06-18/basic/transports">MCP Transports specification</a> for stdio and Streamable HTTP transport tradeoffs.</li>
+        <li><a href="https://stately.ai/docs/persistence">XState persistence documentation</a> for persisted actor snapshots and restore.</li>
+        <li><a href="https://martinfowler.com/eaaDev/EventSourcing.html">Martin Fowler on Event Sourcing</a> for the rebuild/projection model behind canonical event logs.</li>
+      </ul>
+    </section>
+
+    <footer class="composition-signal">
+      Composed 2026-06-11T22:18:23Z by ce-ideate from the user prompt about a game MCP for House MC and simulator logs. Updated 2026-06-11T23:20:00Z by ce-ideate rerun for reducer-replay, XState boundary, and stateless-backend scope.
+    </footer>
+  </main>
+</body>
+</html>

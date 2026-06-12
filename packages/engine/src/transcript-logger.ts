@@ -5,7 +5,7 @@
  */
 
 import type { GameState } from "./game-state";
-import type { RoomAllocation, WhisperSessionDiagnostics } from "./types";
+import type { MingleSessionDiagnostics, RoomAllocation } from "./types";
 import { Phase } from "./types";
 import type { AgentTurnEvent, TranscriptEntry, GameStreamEvent } from "./game-runner.types";
 
@@ -99,7 +99,7 @@ export class TranscriptLogger {
     text: string,
     rooms: RoomAllocation[],
     excludedNames: string[],
-    diagnostics?: WhisperSessionDiagnostics,
+    diagnostics?: MingleSessionDiagnostics,
   ): TranscriptEntry {
     const entry: TranscriptEntry = {
       round: this.gameState.round,
