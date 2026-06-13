@@ -6,6 +6,8 @@
 - Prefer Compound Engineering skills for planning, implementation, review, and PR work. Speckit may be used only if its workflow/tooling is explicitly available and selected for the task.
 - Old `INF-###` identifiers are not authoritative anymore. Use GitHub, git history, and current repo docs as the source of truth unless the user provides extra context.
 - Keep docs current while working. If behavior, model policy, deployment flow, or validation expectations change, update or extend docs in the same branch.
+- `docs/solutions/` contains documented solution learnings organized by category with YAML frontmatter (`module`, `tags`, `problem_type`); relevant when implementing or debugging in documented areas.
+- `CONCEPTS.md` contains shared domain vocabulary for Influence concepts, agent decision artifacts, and game-state terms; relevant when orienting to the codebase or discussing domain behavior.
 
 ## Product Direction
 

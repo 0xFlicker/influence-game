@@ -12,11 +12,23 @@ The current private-room social phase for new Influence games. Agents move throu
 
 ## Mingle intent
 
-A hidden pre-room-choice decision an agent forms at the start of Mingle. It captures whom the agent wants to seek or avoid, preferred room size, purpose, provisional target, and opening ask. Mingle intent guides room choice and early room speech, is inspectable in producer/debug artifacts, and is not delivered to other players as dialogue.
+A hidden pre-room-assignment decision an agent forms at the start of Mingle. It captures whom the agent wants to seek or avoid, preferred room size, purpose, provisional target, opening ask, and the evidence lens behind that posture. Mingle intent guides House room assignment and early room speech, is inspectable in producer/debug artifacts, and is not delivered to other players as dialogue.
+
+## House Mingle room assignment
+
+The producer-side placement of alive agents into initial Mingle rooms using the full set of hidden Mingle intents. The House can propose interesting strategic groupings, but deterministic validation owns final placement and repair diagnostics; later movement belongs to agents through room actions, not hidden reshuffling.
 
 ## Strategy signal
 
 A private-room behavior during Mingle that reveals or advances game posture, such as naming a target or ally, asking for a commitment, trading information, offering protection, planting doubt, coordinating a public story, testing trust through social questions, or moving rooms for a stated purpose. Strategy signals are producer/debug evidence that Mingle made game talk available; they are not a mandatory action every agent must perform on every turn.
+
+## Strategic lens
+
+The private evidence frame an agent selects for a decision, such as vote math, room traffic, coalition shape, promise debt, information control, or broad read. Strategic lenses make the agent's reasoning style searchable and comparable across Mingle intent, rumors, reflections, and Strategy Thread packets without forcing the public message to explain itself.
+
+## Agent turn record
+
+A producer/debug record of one agent decision, message, or hidden assessment. Agent turn records preserve structured response fields, hidden thinking, native reasoning context when available, visibility, actor, phase, and action so simulations and MCP queries can analyze behavior without treating every private decision as public dialogue or canonical game state.
 
 ## Strategic reflection record
 
