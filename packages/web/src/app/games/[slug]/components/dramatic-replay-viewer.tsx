@@ -850,6 +850,7 @@ export function DramaticReplayViewer({
             <WhisperAllocationOverview
               stage={overviewStageData}
               players={replayPlayers}
+              mode={scene.phase === "MINGLE" ? "mingle" : "legacy-whisper"}
             />
           )}
 

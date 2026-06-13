@@ -9,6 +9,17 @@ const players: GamePlayer[] = [
   { id: "p3", name: "Finn", persona: "strategic", status: "alive", shielded: false },
 ];
 
+const crowdedPlayers: GamePlayer[] = [
+  ...players,
+  { id: "p4", name: "Echo", persona: "strategic", status: "alive", shielded: false },
+  { id: "p5", name: "Kael", persona: "strategic", status: "alive", shielded: false },
+  { id: "p6", name: "Jace", persona: "strategic", status: "alive", shielded: false },
+  { id: "p7", name: "Iris", persona: "strategic", status: "alive", shielded: false },
+  { id: "p8", name: "Nyx", persona: "strategic", status: "alive", shielded: false },
+  { id: "p9", name: "Lyra", persona: "strategic", status: "alive", shielded: false },
+  { id: "p10", name: "Sage", persona: "strategic", status: "alive", shielded: false },
+];
+
 function entry(overrides: Partial<TranscriptEntry>): TranscriptEntry {
   return {
     id: 1,
@@ -119,6 +130,45 @@ describe("buildWhisperStageData", () => {
     expect(html).not.toContain("MINGLE: OPEN ROOMS");
     expect(html).not.toContain("HOUSE MAP");
     expect(html).not.toContain("Other Rooms");
+  });
+
+  it("summarizes crowded room cards without rendering every occupant inline", () => {
+    const html = renderToString(
+      <OpenWhisperRoomsView
+        phaseKey="round-1-mingle"
+        players={crowdedPlayers}
+        phaseEntries={[
+          entry({
+            text: "Turn 2: Room 6: Atlas, Vera, Finn, Echo, Kael, Jace, Iris, Nyx, Lyra, Sage | Room 7: Empty",
+            roomMetadata: {
+              rooms: [
+                { roomId: 6, round: 1, beat: 2, playerIds: crowdedPlayers.map((player) => player.id) },
+                { roomId: 7, round: 1, beat: 2, playerIds: [] },
+              ],
+              excluded: [],
+            },
+          }),
+        ]}
+      />,
+    );
+
+    expect(html).toContain("+<!-- -->4");
+    expect(html).toContain("Atlas, Vera, Finn<!-- --> + <!-- -->7<!-- --> more");
+    expect(html).toContain(">10<");
+    expect(html).toContain("overflow-hidden rounded-xl");
+  });
+
+  it("uses Mingle copy for the empty pre-load overview", () => {
+    const stage = buildWhisperStageData([], players);
+    const html = renderToString(
+      <WhisperAllocationOverview stage={stage} players={players} mode="mingle" />,
+    );
+
+    expect(html).toContain("MINGLE MAP");
+    expect(html).toContain("The House assigns agents to Mingle rooms");
+    expect(html).toContain("Waiting for the House to finish assigning Mingle rooms");
+    expect(html).not.toContain("Whisper Room Assignments");
+    expect(html).not.toContain("secretly chose another player to whisper with");
   });
 
   it("keeps historical pair-room replay copy out of Mingle mode", () => {

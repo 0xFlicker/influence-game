@@ -229,19 +229,33 @@ function RoomAvatarRow({
   size?: "6" | "8" | "10";
 }) {
   const resolved = resolveRoomPlayers(room, players);
+  const visibleCount = size === "6" ? 6 : 5;
+  const visibleNames = room.playerNames.slice(0, visibleCount);
+  const hiddenCount = Math.max(0, room.playerNames.length - visibleNames.length);
   if (room.playerNames.length === 0) {
     return <span className="text-[11px] text-white/25">0 occupants</span>;
   }
 
   return (
-    <div className="flex items-center -space-x-1.5">
-      {room.playerNames.slice(0, 5).map((name, index) => (
-        <span key={`${room.roomId}-${name}-${index}`} className="rounded-full ring-2 ring-black/70">
-          <AgentInitial player={resolved[index]} name={name} size={size} />
-        </span>
-      ))}
-      {room.playerNames.length > 5 && (
-        <span className="ml-2 text-[10px] text-white/35">+{room.playerNames.length - 5}</span>
+    <div className="min-w-0">
+      <div className="flex max-w-full items-center overflow-hidden">
+        <div className="flex min-w-0 items-center -space-x-1.5">
+          {visibleNames.map((name, index) => (
+            <span key={`${room.roomId}-${name}-${index}`} className="shrink-0 rounded-full ring-2 ring-black/70">
+              <AgentInitial player={resolved[index]} name={name} size={size} />
+            </span>
+          ))}
+        </div>
+        {hiddenCount > 0 && (
+          <span className="ml-2 shrink-0 rounded-full border border-white/10 bg-black/35 px-1.5 py-0.5 text-[10px] font-semibold text-white/45">
+            +{hiddenCount}
+          </span>
+        )}
+      </div>
+      {room.playerNames.length > 3 && (
+        <p className="mt-2 truncate text-[10px] leading-4 text-white/35">
+          {room.playerNames.slice(0, 3).join(", ")} + {room.playerNames.length - 3} more
+        </p>
       )}
     </div>
   );
@@ -326,7 +340,7 @@ function MingleMap({
                 event.stopPropagation();
                 onSelectRoom(room.roomId);
               }}
-              className={`min-h-32 rounded-xl border p-3 text-left transition-colors ${
+              className={`min-h-32 overflow-hidden rounded-xl border p-3 text-left transition-colors ${
                 selected
                   ? "border-purple-300/70 bg-purple-500/15"
                   : hot
@@ -341,10 +355,15 @@ function MingleMap({
                   </p>
                   <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/35">{state}</p>
                 </div>
-                <span className={`h-2 w-2 rounded-full ${hot ? "bg-blue-300" : selected ? "bg-purple-300" : "bg-white/20"}`} />
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <span className="rounded-full border border-white/10 bg-black/25 px-1.5 py-0.5 text-[10px] font-semibold text-white/45">
+                    {room.playerNames.length}
+                  </span>
+                  <span className={`h-2 w-2 rounded-full ${hot ? "bg-blue-300" : selected ? "bg-purple-300" : "bg-white/20"}`} />
+                </div>
               </div>
               <div className="mt-4">
-                <RoomAvatarRow room={room} players={players} size="8" />
+                <RoomAvatarRow room={room} players={players} size="6" />
               </div>
               <div className="mt-4 flex items-center gap-1">
                 {[0, 1, 2, 3].map((index) => (
@@ -764,13 +783,15 @@ export function WhisperAllocationOverview({
   stage,
   players,
   animated = true,
+  mode,
 }: {
   stage: WhisperStageData;
   players: GamePlayer[];
   animated?: boolean;
+  mode?: "mingle" | "legacy-whisper";
 }) {
   const fadeIn = animated ? "animate-[fadeIn_0.35s_ease-out]" : "";
-  const isMingleStage = !!stage.hasRoomMetadata;
+  const isMingleStage = mode === "mingle" || (mode === undefined && !!stage.hasRoomMetadata);
 
   return (
     <div data-controls className="flex-1 overflow-y-auto p-4 md:p-6">
@@ -780,14 +801,16 @@ export function WhisperAllocationOverview({
         </p>
         <p className="text-xs text-white/40 max-w-md mx-auto leading-relaxed">
           {isMingleStage
-            ? "Agents chose neutral rooms. Empty, singleton, and group rooms are part of the signal."
+            ? "The House assigns agents to Mingle rooms. Empty, singleton, and group rooms are part of the signal."
             : "Each player secretly chose another player to whisper with. Mutual picks share a private room."}
         </p>
       </div>
 
       {stage.rooms.length === 0 ? (
         <div className="rounded-2xl border border-purple-900/20 bg-black/20 p-8 text-center text-white/45">
-          Waiting for the House to finish assigning rooms.
+          {isMingleStage
+            ? "Waiting for the House to finish assigning Mingle rooms."
+            : "Waiting for the House to finish assigning rooms."}
         </div>
       ) : (
         <div className="space-y-4">
@@ -919,12 +942,12 @@ export function WhisperPhaseView({
     <div className="flex-1 flex flex-col min-h-0 p-4 md:p-6">
       <div className="flex-shrink-0 text-center mb-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-purple-300/70 mb-1">
-          Whisper Rooms
+          Mingle Rooms
         </p>
         <p className="text-sm text-white/55 italic min-h-[1.5rem]">
           <Typewriter
             key={phaseKey}
-            text="The House has assigned private rooms. Every secret has an audience."
+            text="The House is assigning Mingle rooms. Every room has its own signal."
             rate="house"
           />
         </p>
@@ -966,7 +989,7 @@ export function WhisperPhaseView({
 
       {/* Content: overview or single room */}
       {activeIndex === -1 ? (
-        <WhisperAllocationOverview stage={stage} players={players} />
+        <WhisperAllocationOverview stage={stage} players={players} mode="mingle" />
       ) : activeRoom ? (
         isReplay ? (
           <div className="flex-1 min-h-0 flex flex-col max-w-2xl w-full mx-auto animate-[fadeIn_0.3s_ease-out]">
@@ -979,7 +1002,7 @@ export function WhisperPhaseView({
         )
       ) : (
         <div className="rounded-2xl border border-purple-900/20 bg-black/20 p-8 text-center text-white/45">
-          Waiting for the House to finish assigning rooms.
+          Waiting for the House to finish assigning Mingle rooms.
         </div>
       )}
 
