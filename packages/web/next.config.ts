@@ -17,7 +17,7 @@ const nextConfig: NextConfig = {
   // Uses API_BACKEND_URL (not NEXT_PUBLIC_API_URL) to avoid self-referencing loops.
   async rewrites() {
     const backendUrl =
-      process.env.API_BACKEND_URL ?? "http://127.0.0.1:3001";
+      process.env.API_BACKEND_URL ?? "http://127.0.0.1:3000";
     return [
       {
         source: "/api/:path*",

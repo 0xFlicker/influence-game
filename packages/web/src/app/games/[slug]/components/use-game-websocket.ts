@@ -5,7 +5,7 @@ import type { WsGameEvent } from "@/lib/api";
 import type { ConnStatus } from "./types";
 
 let WS_BASE =
-  process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3000";
+  process.env.NEXT_PUBLIC_WS_URL ?? "ws://127.0.0.1:3000";
 
 /** Called by RuntimeConfigProvider once runtime config is fetched. */
 export function setWsBase(url: string): void {

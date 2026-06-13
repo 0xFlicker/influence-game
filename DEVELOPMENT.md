@@ -431,6 +431,33 @@ The root `simulate` and `test:engine:full` scripts pass `--project social-strate
 bun run simulate -- --games 2 --players 8 --personas Atlas,Vera,Finn,Mira,Rex,Lyra,Kael,Echo --model gpt-5-nano
 ```
 
+Run the local browser stack with explicit Doppler dev config:
+
+```bash
+doppler run --project social-strategy-agent --config dev -- \
+  env PORT=3000 HOST=127.0.0.1 CORS_ORIGINS=http://localhost:3001 \
+  bun run dev:api
+
+doppler run --project social-strategy-agent --config dev -- \
+  env PORT=3001 API_URL=http://127.0.0.1:3000 WS_URL=ws://127.0.0.1:3000 API_BACKEND_URL=http://127.0.0.1:3000 \
+  bun run dev:web
+```
+
+The web command is Doppler-wrapped because runtime config such as Privy, admin address, API URL, and websocket URL may come from the shared dev config. The API URL uses `127.0.0.1` rather than `localhost` so Chrome does not resolve the API to IPv6 `[::1]` and accidentally hit another local dev server.
+
+### Local Upload Storage
+
+Profile-picture uploads use Linode Object Storage when `LINODE_OBJ_ENDPOINT`, `LINODE_OBJ_ACCESS_KEY`, `LINODE_OBJ_SECRET_KEY`, and `LINODE_OBJ_BUCKET` are present. In local dev, if those vars are absent, the API automatically uses a filesystem-backed upload endpoint instead and writes files under `packages/api/.local-uploads/` by default.
+
+Useful overrides:
+
+```bash
+INFLUENCE_STORAGE_BACKEND=local      # force local filesystem uploads
+INFLUENCE_STORAGE_BACKEND=s3         # require Linode/S3 vars
+INFLUENCE_STORAGE_BACKEND=disabled   # disable uploads
+INFLUENCE_LOCAL_UPLOAD_DIR=/tmp/influence-uploads
+```
+
 ### Staging Deployment
 
 Staging deploys are automated via the CI/CD pipeline:

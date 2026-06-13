@@ -85,18 +85,22 @@ To watch games live in a browser:
 **Terminal 1 -- Start the API server:**
 
 ```bash
-doppler run -- bun run dev:api
+doppler run --project social-strategy-agent --config dev -- \
+  env PORT=3000 HOST=127.0.0.1 CORS_ORIGINS=http://localhost:3001 \
+  bun run dev:api
 ```
 
-The API runs on `http://localhost:3000` by default. It connects to a local PostgreSQL database (`influence_dev` on port 54320).
+The API runs on `http://127.0.0.1:3000` by default. It connects to a local PostgreSQL database (`influence_dev` on port 54320).
 
 **Terminal 2 -- Start the web frontend:**
 
 ```bash
-bun run dev:web
+doppler run --project social-strategy-agent --config dev -- \
+  env PORT=3001 API_URL=http://127.0.0.1:3000 WS_URL=ws://127.0.0.1:3000 API_BACKEND_URL=http://127.0.0.1:3000 \
+  bun run dev:web
 ```
 
-The frontend runs on `http://localhost:3001` (Next.js default).
+The frontend runs on `http://localhost:3001`. Doppler injects Privy/admin/runtime config for the web app; the `env ...` overrides keep Next.js off the API port and make browser API calls use IPv4 `127.0.0.1` instead of `localhost`.
 
 **Then:**
 
@@ -177,16 +181,24 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `CORS_ORIGIN` | No | -- | Allowed CORS origin when using a single origin |
 | `CORS_ORIGINS` | No | -- | Comma-separated list of allowed CORS origins. Overrides `CORS_ORIGIN` when set |
 | `DATABASE_URL` | No | `postgresql://influence:influence@127.0.0.1:54320/influence_dev` | PostgreSQL connection string |
+| `INFLUENCE_STORAGE_BACKEND` | No | auto | `s3`, `local`, or `disabled`; auto uses S3 when Linode vars exist and local filesystem in local dev |
+| `INFLUENCE_LOCAL_UPLOAD_DIR` | No | `.local-uploads` | Directory for local filesystem profile-picture uploads |
+| `LINODE_OBJ_ENDPOINT` | Required for S3 | -- | S3-compatible Linode Object Storage endpoint |
+| `LINODE_OBJ_ACCESS_KEY` | Required for S3 | -- | Linode Object Storage access key |
+| `LINODE_OBJ_SECRET_KEY` | Required for S3 | -- | Linode Object Storage secret key |
+| `LINODE_OBJ_BUCKET` | Required for S3 | -- | Linode Object Storage bucket |
+
+When the Linode variables are absent in local dev, the API falls back to filesystem-backed upload URLs and stores files under `packages/api/.local-uploads/` by default. Staging/production should use the S3 backend.
 
 ### Web (`packages/web`) -- set in `packages/web/.env.local`
 
-Create this file manually:
+If you are not running the web app through Doppler, create this file manually:
 
 ```bash
 cat > packages/web/.env.local << 'EOF'
 NEXT_PUBLIC_PRIVY_APP_ID=<your-privy-app-id>
-NEXT_PUBLIC_API_URL=http://localhost:3000
-NEXT_PUBLIC_WS_URL=ws://localhost:3000
+NEXT_PUBLIC_API_URL=http://127.0.0.1:3000
+NEXT_PUBLIC_WS_URL=ws://127.0.0.1:3000
 NEXT_PUBLIC_ADMIN_ADDRESS=<your-wallet-address>
 EOF
 ```

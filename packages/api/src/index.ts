@@ -19,6 +19,7 @@ import { createAdminRoutes } from "./routes/admin.js";
 import { createFreeQueueRoutes } from "./routes/free-queue.js";
 import { createUploadRoutes } from "./routes/upload.js";
 import { createProfileRoutes } from "./routes/profile.js";
+import { getStorageStatus } from "./lib/storage.js";
 import { getGameSnapshot } from "./services/game-lifecycle.js";
 import {
   setServer,
@@ -57,17 +58,15 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
-// Optional: Linode Object Storage for PFP uploads
-const STORAGE_ENV = [
-  "LINODE_OBJ_ENDPOINT",
-  "LINODE_OBJ_ACCESS_KEY",
-  "LINODE_OBJ_SECRET_KEY",
-  "LINODE_OBJ_BUCKET",
-] as const;
-const missingStorage = STORAGE_ENV.filter((key) => !process.env[key]);
-if (missingStorage.length > 0) {
+// Optional: object storage for PFP uploads.
+const storageStatus = getStorageStatus();
+if (storageStatus.backend === "s3") {
+  console.info("[startup] PFP uploads using Linode Object Storage");
+} else if (storageStatus.backend === "local") {
+  console.warn(`[startup] PFP uploads using local filesystem: ${storageStatus.localDir}`);
+} else {
   console.warn(
-    `[startup] PFP upload disabled — missing env vars: ${missingStorage.join(", ")}`,
+    `[startup] PFP upload disabled — missing env vars: ${storageStatus.missingS3Env.join(", ")}`,
   );
 }
 

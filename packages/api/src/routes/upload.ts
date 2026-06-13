@@ -8,7 +8,15 @@ import { Hono } from "hono";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { requireAuth, type AuthEnv } from "../middleware/auth.js";
-import { generatePresignedUpload, isStorageConfigured } from "../lib/storage.js";
+import {
+  generatePresignedUpload,
+  getStorageBackend,
+  isStorageConfigured,
+  LocalUploadError,
+  readLocalUpload,
+  verifyLocalUploadToken,
+  writeLocalUpload,
+} from "../lib/storage.js";
 
 // Allowed image MIME types for PFPs
 const ALLOWED_CONTENT_TYPES = new Set([
@@ -30,6 +38,74 @@ const MIME_TO_EXT: Record<string, string> = {
 
 export function createUploadRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
+
+  app.put("/api/upload/local", async (c) => {
+    if (getStorageBackend() !== "local") {
+      return c.json({ error: "Local file upload is not enabled" }, 404);
+    }
+
+    const key = c.req.query("key");
+    const contentType = c.req.query("contentType");
+    const expiresAt = Number(c.req.query("expiresAt"));
+    const token = c.req.query("token");
+
+    if (!key || !contentType || !token) {
+      return c.json({ error: "Missing upload parameters" }, 400);
+    }
+
+    if (!ALLOWED_CONTENT_TYPES.has(contentType)) {
+      return c.json({ error: "Unsupported upload content type" }, 400);
+    }
+
+    if (!verifyLocalUploadToken(key, contentType, expiresAt, token)) {
+      return c.json({ error: "Upload URL expired or invalid" }, 403);
+    }
+
+    const requestContentType = c.req.header("content-type")?.split(";")[0] ?? contentType;
+    if (requestContentType !== contentType) {
+      return c.json({ error: "Content-Type does not match signed upload" }, 400);
+    }
+
+    try {
+      await writeLocalUpload(key, contentType, await c.req.arrayBuffer());
+      return c.body(null, 204);
+    } catch (error) {
+      if (error instanceof LocalUploadError) {
+        return c.json({ error: error.message }, error.status);
+      }
+      throw error;
+    }
+  });
+
+  app.get("/api/uploads/local", async (c) => {
+    if (getStorageBackend() !== "local") {
+      return c.json({ error: "Local file upload is not enabled" }, 404);
+    }
+
+    const key = c.req.query("key");
+    if (!key) {
+      return c.json({ error: "Missing upload key" }, 400);
+    }
+
+    try {
+      const file = await readLocalUpload(key);
+      if (!file) {
+        return c.json({ error: "File not found" }, 404);
+      }
+
+      return new Response(file.body, {
+        headers: {
+          "Cache-Control": "public, max-age=31536000, immutable",
+          "Content-Type": file.contentType,
+        },
+      });
+    } catch (error) {
+      if (error instanceof LocalUploadError) {
+        return c.json({ error: error.message }, error.status);
+      }
+      throw error;
+    }
+  });
 
   // -------------------------------------------------------------------------
   // POST /api/upload/pfp — get presigned URL for profile picture upload

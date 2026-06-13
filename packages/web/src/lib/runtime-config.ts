@@ -33,8 +33,8 @@ const hasLocalDefaults = !!process.env.NEXT_PUBLIC_PRIVY_APP_ID;
 
 const defaults: RuntimeConfig = {
   PRIVY_APP_ID: process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "",
-  API_URL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000",
-  WS_URL: process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:3000",
+  API_URL: process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:3000",
+  WS_URL: process.env.NEXT_PUBLIC_WS_URL ?? "ws://127.0.0.1:3000",
   ADMIN_ADDRESS: process.env.NEXT_PUBLIC_ADMIN_ADDRESS ?? "",
   EPHEMERAL: false,
   EPHEMERAL_PR: "",
