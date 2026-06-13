@@ -69,7 +69,7 @@ cd packages/engine
 bun run mcp:game -- docs/simulations
 ```
 
-The server is read-only and scans the simulation corpus on demand. It addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and exposes tools for listing sessions/games, reading projections, filtering canonical events, searching logs, reading player timelines, and following source pointers to linked turn records when present. Older batches without event logs remain searchable through turns/progress/transcript artifacts, but projection tools require canonical events. To validate open strategy choices after a run, use `search_logs` with `sources: ["turns"]` for `mingle-intent`, `strategic-reflection`, `strategy-packet`, `strategyPacketUse`, `strategySignal`, or `movementPurpose`.
+The server is read-only and scans the simulation corpus on demand. It addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and exposes tools for listing sessions/games, reading projections, filtering canonical events, searching logs, reading player timelines, and following source pointers to linked turn records when present. Older batches without event logs remain searchable through turns/progress/transcript artifacts, but projection tools require canonical events. To validate open strategy choices after a run, use `search_logs` with `sources: ["turns"]` for `mingle-intent`, `mingle-room-assignment`, `strategic-reflection`, `strategy-packet`, `strategyPacketUse`, `strategySignal`, `movementPurpose`, or `empower-revote`.
 
 ## Full Stack Local Provider
 
@@ -99,10 +99,10 @@ Create a dated note in `docs/simulations/` or near the generated batch artifacts
 - examples of bad strategy, repetition, incoherence, or empty responses
 - whether the output was enjoyable to watch
 - quality and usefulness of the per-agent `thinking` and native `reasoningContext` captured in `game-N-turns.jsonl` and the transcript (this is now first-class signal for Mingle and decision-loop debugging)
-- whether hidden `mingle-intent` records and, when enabled, `strategic-reflection` / `strategy-packet` records show agents exploring a range of guarded, social, and explicit strategic choices
+- whether hidden `mingle-intent` records and House `mingle-room-assignment` records show varied initial rooms, assignment sources, repair notes, and a range of guarded, social, and explicit strategic choices
 - whether later `strategyPacketUse` markers show agents following, revising, ignoring, or deferring Strategy Thread context in a way that matches current evidence
 
-When running with `--chatty`, the live terminal (and the written `game-*.txt`) will interleave House action lines with dim-gray `thinking:` and cyan `reasoning:` blocks. These are the primary human-readable artifacts for evaluating whether the model is producing legible, strategic private reasoning. For scripts or post-run scoring, read `game-N-turns.jsonl`; it records each hidden Mingle intent, normalized room choice, Mingle turn, vote, power action, diary answer, strategic reflection when enabled, Strategy Thread packet update when produced, and endgame decision as clean JSON with `thinking` and `reasoningContext` when available. Use `game-N-events.jsonl` when the question is board state, accepted outcomes, or deterministic replay.
+When running with `--chatty`, the live terminal (and the written `game-*.txt`) will interleave House action lines with dim-gray `thinking:` and cyan `reasoning:` blocks. These are the primary human-readable artifacts for evaluating whether the model is producing legible, strategic private reasoning. For scripts or post-run scoring, read `game-N-turns.jsonl`; it records each hidden Mingle intent, House Mingle room assignment, Mingle turn, vote, empower revote, power action, diary answer, strategic reflection when enabled, Strategy Thread packet update when produced, and endgame decision as clean JSON with `thinking` and `reasoningContext` when available. Use `game-N-events.jsonl` when the question is board state, accepted outcomes, or deterministic replay.
 
 ## Current Product Context
 

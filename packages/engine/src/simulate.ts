@@ -18,7 +18,7 @@
  *     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
  *
  * The --chatty output (and written transcripts) now interleave House action lines
- * ("X votes: ...", "Y power action: ...", "Z council vote -> ...") with the agent's
+ * ("X votes: ...", "Y re-votes: ...", "Z power action: ...") with the agent's
  * hidden `thinking` (dim gray) and raw native `reasoningContext` (cyan) when present.
  *
  * Each game also writes:
@@ -30,7 +30,9 @@
  * Use JSONL artifacts for post-run analysis instead of parsing ANSI-colored
  * `game-{N}.txt` output.
  *
- * Hidden `mingle-intent` records are always written to `game-{N}-turns.jsonl`.
+ * Hidden `mingle-intent` and House `mingle-room-assignment` records are always
+ * written to `game-{N}-turns.jsonl`, including assignment source/repair metadata.
+ * Specialized `empower-revote` records are written when an empower tie occurs.
  * Hidden `strategic-reflection` and `strategy-packet` records are written there
  * when `--strategic-reflections` is enabled for validation runs. Later private
  * decisions may include `strategyPacketUse` markers linking back to a packet
@@ -265,7 +267,6 @@ export function buildSimulationConfig(
     lobbyMessagesPerPlayer: 1,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),
     mingleSessionsPerRound: mingle ? 2 : DEFAULT_CONFIG.mingleSessionsPerRound,
-    minglePairCooldownRounds: mingle ? 1 : 0,
     agentActionTimeoutMs: options.agentActionTimeoutMs ?? 90_000,
   };
 }
@@ -599,10 +600,11 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
   lines.push(`| Mingle sessions instrumented | ${stats.instrumentation.rooms.mingleSessions.length} |`);
   lines.push(`| Room exclusions | ${stats.instrumentation.rooms.totalExclusions} |`);
   lines.push(`| Repeated room-pair occurrences | ${stats.instrumentation.rooms.repeatedPairs.totalRepeatedOccurrences} |`);
-  lines.push(`| Request mutual matches honored | ${stats.instrumentation.rooms.requestSatisfaction.mutualHonored} |`);
-  lines.push(`| Request one-way matches honored | ${stats.instrumentation.rooms.requestSatisfaction.oneWayHonored} |`);
-  lines.push(`| Unmatched valid room requests | ${stats.instrumentation.rooms.requestSatisfaction.unmatchedValidRequests} |`);
-  lines.push(`| Invalid/missing room requests | ${stats.instrumentation.rooms.requestSatisfaction.invalidOrMissingRequests} |`);
+  lines.push(`| House room assignments | ${stats.instrumentation.rooms.assignmentSources.house} |`);
+  lines.push(`| Repaired room assignments | ${stats.instrumentation.rooms.assignmentSources.repaired} |`);
+  lines.push(`| Fallback room assignments | ${stats.instrumentation.rooms.assignmentSources.fallback} |`);
+  lines.push(`| Movement-derived room records | ${stats.instrumentation.rooms.assignmentSources.movement} |`);
+  lines.push(`| Room assignment repair notes | ${stats.instrumentation.rooms.assignmentSources.repairNotes} |`);
   lines.push(`| Immediate repeat rooms flagged | ${stats.instrumentation.rooms.repeatPairFlags.immediateRepeats} |`);
   lines.push(`| Avoidable consecutive exclusions flagged | ${stats.instrumentation.rooms.exclusionFlags.avoidableConsecutiveExclusions} |`);
   lines.push(`| LLM empty/fallback responses | ${stats.instrumentation.actionUsage.totalEmptyResponses} |`);

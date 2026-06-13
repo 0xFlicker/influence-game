@@ -2,7 +2,8 @@ import type {
   UUID,
   MingleTurnActionRecord,
   RoomAllocation,
-  MingleRoomChoiceRecord,
+  MingleRoomAssignmentRecord,
+  MingleRoomAssignmentSource,
   MingleRoomPlayerRef,
   MingleRoomChoiceStatus,
   MingleRoomCount,
@@ -10,14 +11,9 @@ import type {
   MingleSessionDiagnostics,
 } from "../types";
 import { Phase } from "../types";
-import type { MingleIntentAction, MingleRoomChoiceAction, MingleTurnAction } from "../game-runner.types";
-import type { GameState } from "../game-state";
+import type { MingleIntentAction, MingleTurnAction } from "../game-runner.types";
+import type { HouseMingleAssignmentResult } from "../house-interviewer";
 import { strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
-
-export interface RoomAllocationOptions {
-  rawChoices?: Map<UUID, number | null>;
-  cooldownPairKeys?: ReadonlySet<string>;
-}
 
 /**
  * Neutral open rooms replace pair matching. Rooms are available only while the
@@ -38,174 +34,193 @@ function buildPlayerRef(
   };
 }
 
-function normalizeRoomChoice(choice: number | null | undefined, roomCount: number): {
-  roomId: number | null;
-  status: MingleRoomChoiceRecord["status"];
-} {
-  if (choice == null) return { roomId: null, status: "missing" };
-  if (!Number.isInteger(choice) || choice < 1 || choice > roomCount) {
-    return { roomId: null, status: "invalid" };
-  }
-  return { roomId: choice, status: "valid" };
-}
-
-function leastPopulatedRoomId(rooms: readonly RoomAllocation[]): number {
-  const fallback = rooms[0]?.roomId ?? 1;
-  return rooms.reduce((bestRoom, room) => {
-    if (room.playerIds.length < bestRoom.playerIds.length) return room;
-    if (room.playerIds.length === bestRoom.playerIds.length && room.roomId < bestRoom.roomId) return room;
-    return bestRoom;
-  }, rooms[0] ?? { roomId: fallback, round: 0, beat: 0, playerIds: [] }).roomId;
-}
-
-function pairKey(a: UUID, b: UUID): string {
-  return a < b ? `${a}|${b}` : `${b}|${a}`;
-}
-
-function addRoomPairKeys(keys: Set<string>, rooms: readonly RoomAllocation[]): void {
-  for (const room of rooms) {
-    for (let i = 0; i < room.playerIds.length; i++) {
-      for (let j = i + 1; j < room.playerIds.length; j++) {
-        const first = room.playerIds[i];
-        const second = room.playerIds[j];
-        if (first && second) keys.add(pairKey(first, second));
-      }
-    }
-  }
-}
-
-function buildRecentCooldownPairKeys(
-  gameState: GameState,
-  cooldownRounds: number,
-): Set<string> {
-  const keys = new Set<string>();
-  if (cooldownRounds < 1) return keys;
-
-  const firstRound = Math.max(1, gameState.round - cooldownRounds);
-  for (let round = firstRound; round < gameState.round; round++) {
-    const allocations = gameState.getRoomAllocations(round);
-    if (allocations) addRoomPairKeys(keys, allocations.rooms);
-  }
-
-  return keys;
-}
-
-function countCooldownPairConflicts(
-  rooms: readonly RoomAllocation[],
-  cooldownPairKeys: ReadonlySet<string>,
-): number {
-  let conflicts = 0;
-  for (const room of rooms) {
-    for (let i = 0; i < room.playerIds.length; i++) {
-      for (let j = i + 1; j < room.playerIds.length; j++) {
-        const first = room.playerIds[i];
-        const second = room.playerIds[j];
-        if (first && second && cooldownPairKeys.has(pairKey(first, second))) {
-          conflicts += 1;
-        }
-      }
-    }
-  }
-  return conflicts;
-}
-
-function movePlayerToRoom(
-  rooms: readonly RoomAllocation[],
-  playerId: UUID,
-  toRoomId: number,
-): RoomAllocation[] {
-  return rooms.map((room) => {
-    if (room.playerIds.includes(playerId)) {
-      return { ...room, playerIds: room.playerIds.filter((id) => id !== playerId) };
-    }
-    if (room.roomId === toRoomId) {
-      return { ...room, playerIds: [...room.playerIds, playerId] };
-    }
-    return { ...room, playerIds: [...room.playerIds] };
-  });
-}
-
-function applyPairCooldown(
-  rooms: RoomAllocation[],
-  roomCount: number,
-  cooldownPairKeys: ReadonlySet<string> | undefined,
-): RoomAllocation[] {
-  if (!cooldownPairKeys || cooldownPairKeys.size === 0 || roomCount < 2) {
-    return rooms;
-  }
-
-  let adjusted = rooms.map((room) => ({ ...room, playerIds: [...room.playerIds] }));
-  let currentConflicts = countCooldownPairConflicts(adjusted, cooldownPairKeys);
-  const maxIterations = adjusted.reduce((sum, room) => sum + room.playerIds.length, 0) * roomCount;
-
-  for (let iteration = 0; iteration < maxIterations && currentConflicts > 0; iteration++) {
-    let bestMove:
-      | { playerId: UUID; fromRoomId: number; toRoomId: number; conflicts: number; destinationSize: number }
-      | null = null;
-
-    for (const room of adjusted) {
-      for (const playerId of room.playerIds) {
-        for (let toRoomId = 1; toRoomId <= roomCount; toRoomId++) {
-          if (toRoomId === room.roomId) continue;
-
-          const candidate = movePlayerToRoom(adjusted, playerId, toRoomId);
-          const conflicts = countCooldownPairConflicts(candidate, cooldownPairKeys);
-          if (conflicts >= currentConflicts) continue;
-
-          const destinationSize = adjusted.find((candidateRoom) => candidateRoom.roomId === toRoomId)?.playerIds.length ?? 0;
-          if (
-            !bestMove ||
-            conflicts < bestMove.conflicts ||
-            (conflicts === bestMove.conflicts && destinationSize < bestMove.destinationSize) ||
-            (conflicts === bestMove.conflicts &&
-              destinationSize === bestMove.destinationSize &&
-              `${playerId}:${toRoomId}` < `${bestMove.playerId}:${bestMove.toRoomId}`)
-          ) {
-            bestMove = { playerId, fromRoomId: room.roomId, toRoomId, conflicts, destinationSize };
-          }
-        }
-      }
-    }
-
-    if (!bestMove) break;
-    adjusted = movePlayerToRoom(adjusted, bestMove.playerId, bestMove.toRoomId);
-    currentConflicts = bestMove.conflicts;
-  }
-
-  return adjusted;
-}
-
-function syncRoomAssignments(
-  roomByPlayerId: Map<UUID, number>,
-  rooms: readonly RoomAllocation[],
-): void {
-  roomByPlayerId.clear();
-  for (const room of rooms) {
-    for (const playerId of room.playerIds) {
-      roomByPlayerId.set(playerId, room.roomId);
-    }
-  }
-}
-
-export function allocateRooms(
-  choices: Map<UUID, number | null>,
-  alivePlayers: Array<{ id: UUID; name: string }>,
+function buildLocalRooms(
   roomCount: number,
   round: number,
-  beat = 1,
-  options: RoomAllocationOptions = {},
-): {
-  rooms: RoomAllocation[];
-  diagnostics: MingleSessionDiagnostics;
-} {
-  const rooms: RoomAllocation[] = Array.from({ length: roomCount }, (_, index) => ({
+  beat: number,
+): RoomAllocation[] {
+  return Array.from({ length: roomCount }, (_, index) => ({
     roomId: index + 1,
     round,
     beat,
     playerIds: [],
   }));
+}
+
+function namesToIds(
+  names: readonly string[] | undefined,
+  playerIdByName: ReadonlyMap<string, UUID>,
+): UUID[] {
+  if (!names) return [];
+  return names
+    .map((name) => playerIdByName.get(name.toLowerCase()))
+    .filter((id): id is UUID => id !== undefined);
+}
+
+function preferredSizeScore(intent: MingleIntentSummary | null | undefined, currentSize: number): number {
+  switch (intent?.preferredRoomSize) {
+    case "solo":
+      return currentSize === 0 ? 5 : -4 * currentSize;
+    case "pair":
+      return currentSize === 1 ? 5 : currentSize === 0 ? 1 : -2 * Math.abs(currentSize - 1);
+    case "small_group":
+      return currentSize >= 1 && currentSize <= 3 ? 4 : currentSize === 0 ? 1 : -2;
+    case "large_group":
+      return currentSize >= 3 ? 4 : currentSize;
+    case "any":
+    default:
+      return 0;
+  }
+}
+
+function roomAffinityScore(
+  playerId: UUID,
+  room: RoomAllocation,
+  intents: ReadonlyMap<UUID, MingleIntentSummary | null>,
+  playerIdByName: ReadonlyMap<string, UUID>,
+  roomCount: number,
+  aliveCount: number,
+): number {
+  const intent = intents.get(playerId) ?? null;
+  const seekIds = new Set(namesToIds(intent?.seekPlayers, playerIdByName));
+  const avoidIds = new Set(namesToIds(intent?.avoidPlayers, playerIdByName));
+  let score = 0;
+
+  if (aliveCount >= roomCount && room.playerIds.length === 0) score += 12;
+  score -= room.playerIds.length * 2;
+  score += preferredSizeScore(intent, room.playerIds.length);
+
+  for (const occupantId of room.playerIds) {
+    if (seekIds.has(occupantId)) score += 6;
+    if (avoidIds.has(occupantId)) score -= 9;
+
+    const occupantIntent = intents.get(occupantId) ?? null;
+    const occupantSeekIds = new Set(namesToIds(occupantIntent?.seekPlayers, playerIdByName));
+    const occupantAvoidIds = new Set(namesToIds(occupantIntent?.avoidPlayers, playerIdByName));
+    if (occupantSeekIds.has(playerId)) score += 3;
+    if (occupantAvoidIds.has(playerId)) score -= 6;
+  }
+
+  return score;
+}
+
+function bestRoomIdForPlayer(
+  playerId: UUID,
+  rooms: readonly RoomAllocation[],
+  intents: ReadonlyMap<UUID, MingleIntentSummary | null>,
+  playerIdByName: ReadonlyMap<string, UUID>,
+  roomCount: number,
+  aliveCount: number,
+): number {
+  let bestRoom = rooms[0];
+  let bestScore = Number.NEGATIVE_INFINITY;
+  for (const room of rooms) {
+    const score = roomAffinityScore(playerId, room, intents, playerIdByName, roomCount, aliveCount);
+    if (
+      !bestRoom ||
+      score > bestScore ||
+      (score === bestScore && room.playerIds.length < bestRoom.playerIds.length) ||
+      (score === bestScore && room.playerIds.length === bestRoom.playerIds.length && room.roomId < bestRoom.roomId)
+    ) {
+      bestRoom = room;
+      bestScore = score;
+    }
+  }
+  return bestRoom?.roomId ?? 1;
+}
+
+function addPlayerToRoom(rooms: RoomAllocation[], playerId: UUID, roomId: number): void {
+  rooms[roomId - 1]?.playerIds.push(playerId);
+}
+
+function setAssignment(
+  records: Map<UUID, MingleRoomAssignmentRecord>,
+  player: { id: UUID; name: string },
+  roomId: number,
+  source: MingleRoomAssignmentSource,
+  intent: MingleIntentSummary | null,
+  repairNote?: string,
+): void {
+  const existing = records.get(player.id);
+  records.set(player.id, {
+    player: { id: player.id, name: player.name },
+    assignedRoomId: roomId,
+    source,
+    intent,
+    repairNotes: [...(existing?.repairNotes ?? []), ...(repairNote ? [repairNote] : [])],
+  });
+}
+
+function lowestAffinityMovablePlayer(
+  room: RoomAllocation,
+  intents: ReadonlyMap<UUID, MingleIntentSummary | null>,
+  playerIdByName: ReadonlyMap<string, UUID>,
+  roomCount: number,
+  aliveCount: number,
+): UUID | null {
+  if (room.playerIds.length <= 1) return null;
+
+  let lowestPlayer: UUID | null = null;
+  let lowestScore = Number.POSITIVE_INFINITY;
+  for (const playerId of room.playerIds) {
+    const score = roomAffinityScore(playerId, room, intents, playerIdByName, roomCount, aliveCount);
+    if (score < lowestScore || (score === lowestScore && playerId < (lowestPlayer ?? playerId))) {
+      lowestPlayer = playerId;
+      lowestScore = score;
+    }
+  }
+  return lowestPlayer;
+}
+
+function fillEmptyRooms(
+  rooms: RoomAllocation[],
+  alivePlayers: Array<{ id: UUID; name: string }>,
+  intents: ReadonlyMap<UUID, MingleIntentSummary | null>,
+  playerIdByName: ReadonlyMap<string, UUID>,
+  assignmentRecords: Map<UUID, MingleRoomAssignmentRecord>,
+): void {
+  if (alivePlayers.length < rooms.length) return;
+
+  for (const emptyRoom of rooms.filter((room) => room.playerIds.length === 0)) {
+    const sourceRoom = [...rooms]
+      .filter((room) => room.playerIds.length > 1)
+      .sort((a, b) => b.playerIds.length - a.playerIds.length || a.roomId - b.roomId)[0];
+    if (!sourceRoom) return;
+
+    const movedPlayerId = lowestAffinityMovablePlayer(sourceRoom, intents, playerIdByName, rooms.length, alivePlayers.length);
+    if (!movedPlayerId) return;
+
+    sourceRoom.playerIds = sourceRoom.playerIds.filter((id) => id !== movedPlayerId);
+    emptyRoom.playerIds.push(movedPlayerId);
+    const player = alivePlayers.find((candidate) => candidate.id === movedPlayerId);
+    if (player) {
+      setAssignment(
+        assignmentRecords,
+        player,
+        emptyRoom.roomId,
+        "repaired",
+        intents.get(player.id) ?? null,
+        `Moved from Room ${sourceRoom.roomId} to fill empty Room ${emptyRoom.roomId}.`,
+      );
+    }
+  }
+}
+
+export function allocateRooms(
+  houseAssignment: HouseMingleAssignmentResult | null | undefined,
+  alivePlayers: Array<{ id: UUID; name: string }>,
+  roomCount: number,
+  round: number,
+  beat = 1,
+  mingleIntents: ReadonlyMap<UUID, MingleIntentSummary | null> = new Map(),
+): {
+  rooms: RoomAllocation[];
+  diagnostics: MingleSessionDiagnostics;
+} {
+  const rooms = buildLocalRooms(roomCount, round, beat);
   const playerById = new Map(alivePlayers.map((player) => [player.id, player]));
-  const choiceRecords: MingleRoomChoiceRecord[] = [];
+  const playerIdByName = new Map(alivePlayers.map((player) => [player.name.toLowerCase(), player.id]));
+  const assignmentRecords = new Map<UUID, MingleRoomAssignmentRecord>();
 
   if (roomCount < 1) {
     return {
@@ -215,45 +230,92 @@ export function allocateRooms(
         beat,
         roomCount,
         eligiblePlayers: alivePlayers.map((player) => buildPlayerRef(playerById, player.id)),
-        choices: [],
+        assignments: [],
         allocatedRooms: [],
       },
     };
   }
 
-  for (const player of alivePlayers) {
-    const rawChoice = choices.get(player.id);
-    const normalized = normalizeRoomChoice(rawChoice, roomCount);
-    const assignedRoomId = normalized.roomId ?? leastPopulatedRoomId(rooms);
-    rooms[assignedRoomId - 1]?.playerIds.push(player.id);
-    choiceRecords.push({
-      player: buildPlayerRef(playerById, player.id),
-      requestedRoomId: rawChoice ?? null,
-      assignedRoomId,
-      status: normalized.status,
-    });
-  }
+  const seenPlayerIds = new Set<UUID>();
+  const rejectedAssignmentNotesByPlayerId = new Map<UUID, string[]>();
+  let validHousePlacements = 0;
 
-  const adjustedRooms = applyPairCooldown(rooms, roomCount, options.cooldownPairKeys);
-  const assignedRoomByPlayerId = new Map<UUID, number>();
-  for (const room of adjustedRooms) {
-    for (const playerId of room.playerIds) {
-      assignedRoomByPlayerId.set(playerId, room.roomId);
+  for (const proposedRoom of houseAssignment?.rooms ?? []) {
+    if (!Number.isInteger(proposedRoom.roomId) || proposedRoom.roomId < 1 || proposedRoom.roomId > roomCount) {
+      for (const playerId of proposedRoom.playerIds) {
+        if (playerById.has(playerId) && !seenPlayerIds.has(playerId)) {
+          const notes = rejectedAssignmentNotesByPlayerId.get(playerId) ?? [];
+          notes.push(`House proposed invalid Room ${proposedRoom.roomId}; repaired placement.`);
+          rejectedAssignmentNotesByPlayerId.set(playerId, notes);
+        }
+      }
+      continue;
+    }
+
+    for (const playerId of proposedRoom.playerIds) {
+      const player = playerById.get(playerId);
+      if (!player) continue;
+      if (seenPlayerIds.has(playerId)) {
+        const existing = assignmentRecords.get(playerId);
+        if (existing) {
+          existing.repairNotes = [
+            ...(existing.repairNotes ?? []),
+            `Ignored duplicate House placement in Room ${proposedRoom.roomId}.`,
+          ];
+        }
+        continue;
+      }
+
+      seenPlayerIds.add(playerId);
+      addPlayerToRoom(rooms, playerId, proposedRoom.roomId);
+      setAssignment(assignmentRecords, player, proposedRoom.roomId, "house", mingleIntents.get(playerId) ?? null);
+      validHousePlacements += 1;
     }
   }
 
+  const initialSource: MingleRoomAssignmentSource = validHousePlacements > 0 ? "repaired" : "fallback";
+  for (const player of alivePlayers) {
+    if (seenPlayerIds.has(player.id)) continue;
+
+    const assignedRoomId = bestRoomIdForPlayer(player.id, rooms, mingleIntents, playerIdByName, roomCount, alivePlayers.length);
+    addPlayerToRoom(rooms, player.id, assignedRoomId);
+    seenPlayerIds.add(player.id);
+    setAssignment(
+      assignmentRecords,
+      player,
+      assignedRoomId,
+      initialSource,
+      mingleIntents.get(player.id) ?? null,
+      [
+        ...(rejectedAssignmentNotesByPlayerId.get(player.id) ?? []),
+        validHousePlacements > 0 ? "Filled missing House assignment." : "No usable House assignment; deterministic fallback placed player.",
+      ].join(" "),
+    );
+  }
+
+  fillEmptyRooms(rooms, alivePlayers, mingleIntents, playerIdByName, assignmentRecords);
+
+  const assignments = alivePlayers.map((player) => {
+    const assignedRoomId = rooms.find((room) => room.playerIds.includes(player.id))?.roomId ?? 1;
+    const record = assignmentRecords.get(player.id);
+    return record ?? {
+      player: buildPlayerRef(playerById, player.id),
+      assignedRoomId,
+      source: "fallback" as const,
+      intent: mingleIntents.get(player.id) ?? null,
+      repairNotes: ["Assignment record missing; deterministic fallback recorded final room."],
+    };
+  });
+
   return {
-    rooms: adjustedRooms,
+    rooms,
     diagnostics: {
       round,
       beat,
       roomCount,
       eligiblePlayers: alivePlayers.map((player) => buildPlayerRef(playerById, player.id)),
-      choices: choiceRecords.map((choice) => ({
-        ...choice,
-        assignedRoomId: assignedRoomByPlayerId.get(choice.player.id) ?? choice.assignedRoomId,
-      })),
-      allocatedRooms: adjustedRooms.map((room) => ({
+      assignments,
+      allocatedRooms: rooms.map((room) => ({
         roomId: room.roomId,
         beat: room.beat,
         players: room.playerIds.map((playerId) => buildPlayerRef(playerById, playerId)),
@@ -318,17 +380,18 @@ function assignGlobalRoomIds(
   return { rooms, roomIdByLocalRoomId, nextRoomId };
 }
 
-function createChoiceRecordsFromAssignments(
+function createAssignmentRecordsFromAssignments(
   alivePlayers: Array<{ id: UUID; name: string }>,
   roomByPlayerId: Map<UUID, number>,
-): MingleRoomChoiceRecord[] {
+  mingleIntents: ReadonlyMap<UUID, MingleIntentAction | null>,
+): MingleRoomAssignmentRecord[] {
   return alivePlayers.map((player) => {
     const assignedRoomId = roomByPlayerId.get(player.id) ?? 1;
     return {
       player: { id: player.id, name: player.name },
-      requestedRoomId: assignedRoomId,
       assignedRoomId,
-      status: "valid",
+      source: "movement",
+      intent: summarizeMingleIntent(mingleIntents.get(player.id) ?? null),
     };
   });
 }
@@ -343,9 +406,9 @@ function remapDiagnostics(
       ...room,
       roomId: roomIdByLocalRoomId.get(room.roomId) ?? room.roomId,
     })),
-    choices: diagnostics.choices.map((choice) => ({
-      ...choice,
-      assignedRoomId: roomIdByLocalRoomId.get(choice.assignedRoomId) ?? choice.assignedRoomId,
+    assignments: diagnostics.assignments.map((assignment) => ({
+      ...assignment,
+      assignedRoomId: roomIdByLocalRoomId.get(assignment.assignedRoomId) ?? assignment.assignedRoomId,
     })),
   };
 }
@@ -510,12 +573,8 @@ export async function runMinglePhase(
     count: 0,
   }));
   contextBuilder.currentRoomCounts = initialRoomCounts;
-  const cooldownRounds = config.minglePairCooldownRounds ?? 0;
-  const cooldownPairKeys = buildRecentCooldownPairKeys(gameState, cooldownRounds);
 
-  const roomChoiceResults = new Map<UUID, MingleRoomChoiceAction>();
   const mingleIntents = new Map<UUID, MingleIntentAction | null>();
-  const choices = new Map<UUID, number | null>();
   await Promise.all(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
@@ -543,43 +602,36 @@ export async function runMinglePhase(
     }),
   );
 
-  await Promise.all(
-    alivePlayers.map(async (player) => {
-      const agent = agents.get(player.id)!;
-      const intent = mingleIntents.get(player.id) ?? null;
-      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.MINGLE, undefined, undefined, {
-        roomCount,
-        roomCounts: initialRoomCounts,
-        mingleIntent: summarizeMingleIntent(intent),
-      });
-      const choice = await agent.chooseMingleRoom(phaseCtx);
-      roomChoiceResults.set(player.id, choice);
-      choices.set(player.id, choice.roomId);
-    }),
-  );
-
-  const initialAllocation = allocateRooms(choices, alivePlayers, roomCount, gameState.round, 1, {
-    cooldownPairKeys,
+  const houseAssignment = await ctx.houseInterviewer.assignMingleRooms({
+    round: gameState.round,
+    roomCount,
+    players: alivePlayers.map((player) => ({
+      id: player.id,
+      name: player.name,
+      intent: summarizeMingleIntent(mingleIntents.get(player.id) ?? null),
+    })),
   });
-  for (const choice of initialAllocation.diagnostics.choices) {
-    const choiceResult = roomChoiceResults.get(choice.player.id);
-    const intent = mingleIntents.get(choice.player.id);
-    const intentSummary = intent ? summarizeMingleIntent(intent) : null;
+
+  const intentSummaries = new Map<UUID, MingleIntentSummary | null>(
+    alivePlayers.map((player) => [player.id, summarizeMingleIntent(mingleIntents.get(player.id) ?? null)]),
+  );
+  const initialAllocation = allocateRooms(houseAssignment, alivePlayers, roomCount, gameState.round, 1, intentSummaries);
+  for (const assignment of initialAllocation.diagnostics.assignments) {
     logger.emitAgentTurn({
       phase: Phase.MINGLE,
-      action: "mingle-room-choice",
-      actor: { id: choice.player.id, name: choice.player.name, role: "player" },
+      action: "mingle-room-assignment",
+      actor: { id: assignment.player.id, name: assignment.player.name, role: "player" },
       visibility: "private",
       response: {
-        requestedRoomId: choice.requestedRoomId,
-        assignedRoomId: choice.assignedRoomId,
-        status: choice.status,
+        assignedRoomId: assignment.assignedRoomId,
+        assignmentSource: assignment.source,
+        repairNotes: assignment.repairNotes ?? [],
         roomCount,
-        ...(intentSummary && { intent: intentSummary }),
-        ...strategyPacketUseResponse(choiceResult?.strategyPacketUse),
+        ...(assignment.intent && { intent: assignment.intent }),
+        ...(houseAssignment.rationale && { houseRationale: houseAssignment.rationale }),
       },
-      thinking: choiceResult?.thinking,
-      reasoningContext: choiceResult?.reasoningContext,
+      thinking: houseAssignment.thinking,
+      reasoningContext: houseAssignment.reasoningContext,
     });
   }
   const roomByPlayerId = new Map<UUID, number>();
@@ -590,13 +642,9 @@ export async function runMinglePhase(
   }
 
   for (let beat = 1; beat <= beats; beat++) {
-    let localRooms = beat === 1
+    const localRooms = beat === 1
       ? initialAllocation.rooms
       : buildRoomsFromAssignments(roomByPlayerId, alivePlayers, roomCount, gameState.round, beat);
-    if (beat > 1 && cooldownRounds > 0) {
-      localRooms = applyPairCooldown(localRooms, roomCount, cooldownPairKeys);
-      syncRoomAssignments(roomByPlayerId, localRooms);
-    }
     const roomCounts = buildRoomCounts(localRooms);
     const globalAssignment = assignGlobalRoomIds(localRooms, nextGlobalRoomId);
     nextGlobalRoomId = globalAssignment.nextRoomId;
@@ -608,9 +656,9 @@ export async function runMinglePhase(
           beat,
           roomCount,
           eligiblePlayers: alivePlayers.map((player) => ({ id: player.id, name: player.name })),
-          choices: createChoiceRecordsFromAssignments(alivePlayers, roomByPlayerId).map((choice) => ({
-            ...choice,
-            assignedRoomId: globalAssignment.roomIdByLocalRoomId.get(choice.assignedRoomId) ?? choice.assignedRoomId,
+          assignments: createAssignmentRecordsFromAssignments(alivePlayers, roomByPlayerId, mingleIntents).map((assignment) => ({
+            ...assignment,
+            assignedRoomId: globalAssignment.roomIdByLocalRoomId.get(assignment.assignedRoomId) ?? assignment.assignedRoomId,
           })),
           allocatedRooms: beatRooms.map((room) => ({
             roomId: room.roomId,
@@ -630,9 +678,6 @@ export async function runMinglePhase(
     const allocationText = `Turn ${beat}: ${beatRooms.map((room) => describeRoom(ctx, room)).join(" | ")}`;
     const allocationEntry = logger.logRoomAllocation(allocationText, beatRooms, [], beatDiagnostics);
     const actions = await runMingleTurn(ctx, localRooms, beatRooms, roomCounts, roomByPlayerId, roomCount, mingleIntents);
-    if (cooldownRounds > 0) {
-      addRoomPairKeys(cooldownPairKeys, localRooms);
-    }
     if (allocationEntry.roomMetadata?.diagnostics) {
       allocationEntry.roomMetadata.diagnostics.actions = actions;
     }

@@ -109,17 +109,6 @@ export interface MingleTurnAction {
   strategyPacketUse?: StrategyPacketUseMarker;
 }
 
-export interface MingleRoomChoiceAction {
-  /** Local room number chosen by the agent, or null when no valid choice is available. */
-  roomId: number | null;
-  /** Agent's internal thinking (hidden from players, visible to viewers) */
-  thinking?: string;
-  /** Raw model reasoning context from local LLM */
-  reasoningContext?: string;
-  /** Private producer/debug linkage to the current strategy packet, if one was present. */
-  strategyPacketUse?: StrategyPacketUseMarker;
-}
-
 export interface MingleIntentAction extends MingleIntentSummaryBase {
   /** Agent's internal thinking (hidden from players, visible to viewers) */
   thinking?: string;
@@ -147,6 +136,13 @@ export type StrategicReflectionSummary = Pick<StrategicReflectionAction, "certai
 
 export interface TargetDecision {
   target: UUID;
+  thinking?: string;
+  reasoningContext?: string;
+  strategyPacketUse?: StrategyPacketUseMarker;
+}
+
+export interface EmpowerRevoteAction {
+  empowerTarget: UUID;
   thinking?: string;
   reasoningContext?: string;
   strategyPacketUse?: StrategyPacketUseMarker;
@@ -208,10 +204,8 @@ export interface IAgent {
   getLobbyMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called to collect whisper actions (list of {to, text}) — DEPRECATED, use room methods */
   getWhispers(context: PhaseContext): Promise<Array<{ to: UUID[]; text: string }>>;
-  /** Called before initial Mingle room choice to form a hidden private-room strategy intent */
+  /** Called before House initial Mingle room assignment to form a hidden private-room strategy intent */
   getMingleIntent?(context: PhaseContext): Promise<MingleIntentAction | null>;
-  /** Choose a Mingle room by room number (current active method for the Mingle phase) */
-  chooseMingleRoom(context: PhaseContext): Promise<MingleRoomChoiceAction>;
   /** Send a private room message to all other occupants, or null to pass */
   sendRoomMessage(context: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<AgentResponse | null>;
   /** Mingle turn action: TALK or NO_REPLY, plus optional GOTO ROOM N for the next turn */
@@ -222,6 +216,12 @@ export interface IAgent {
   getVotes(
     context: PhaseContext,
   ): Promise<{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }>;
+  /** Called only for an empower tie revote. Expose vote is already recorded and does not change. */
+  getEmpowerRevote(
+    context: PhaseContext,
+    tiedCandidates: UUID[],
+    originalVote: { empowerTarget: UUID; exposeTarget: UUID },
+  ): Promise<EmpowerRevoteAction>;
   /** Called during the optional post-vote Power Lobby experiment before the empowered action */
   getPowerLobbyMessage?(
     context: PhaseContext,
@@ -307,7 +307,7 @@ export interface PhaseContext {
   roomAllocations?: Array<{ roomId: number; beat: number; playerIds: string[]; playerNames: string[] }>;
   /** This agent's current room occupants, including self */
   roomMates?: string[];
-  /** Hidden Mingle intent formed before initial room choice */
+  /** Hidden Mingle intent formed before initial House room assignment */
   mingleIntent?: MingleIntentSummaryBase | null;
   // Endgame context
   endgameStage?: EndgameStage;

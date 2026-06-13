@@ -297,7 +297,7 @@ describe("computeRoomCount", () => {
 });
 
 describe("allocateRooms", () => {
-  it("honors valid neutral room choices exactly", () => {
+  it("honors valid House assignments exactly", () => {
     const a = createUUID(), b = createUUID(), c = createUUID(), d = createUUID(), e = createUUID();
     const players = [
       { id: a, name: "A" },
@@ -306,25 +306,43 @@ describe("allocateRooms", () => {
       { id: d, name: "D" },
       { id: e, name: "E" },
     ];
-    const choices = new Map<UUID, number | null>([[a, 2], [b, 2], [c, 1], [d, 1], [e, 2]]);
-    const { rooms } = allocateRooms(choices, players, 2, 1, 1);
+    const { rooms, diagnostics } = allocateRooms({
+      rooms: [
+        { roomId: 2, playerIds: [a, b, e] },
+        { roomId: 1, playerIds: [c, d] },
+      ],
+    }, players, 2, 1, 1);
     expect(rooms).toHaveLength(2);
     expect(rooms[0]!.playerIds).toEqual([c, d]);
     expect(rooms[1]!.playerIds).toEqual([a, b, e]);
+    expect(diagnostics.assignments.map((assignment) => assignment.source)).toEqual([
+      "house",
+      "house",
+      "house",
+      "house",
+      "house",
+    ]);
   });
 
-  it("falls back invalid and missing choices to Room 1", () => {
+  it("repairs invalid, unknown, duplicate, and missing House assignments", () => {
     const a = createUUID(), b = createUUID(), c = createUUID();
     const players = [
       { id: a, name: "A" },
       { id: b, name: "B" },
       { id: c, name: "C" },
     ];
-    const choices = new Map<UUID, number | null>([[a, 0], [b, 3], [c, null]]);
-    const { rooms, diagnostics } = allocateRooms(choices, players, 2, 1, 1);
-    expect(rooms[0]!.playerIds).toEqual([a, b, c]);
-    expect(rooms[1]!.playerIds).toEqual([]);
-    expect(diagnostics.choices.map((choice) => choice.status)).toEqual(["invalid", "invalid", "missing"]);
+    const { rooms, diagnostics } = allocateRooms({
+      rooms: [
+        { roomId: 0, playerIds: [a] },
+        { roomId: 3, playerIds: [b] },
+        { roomId: 1, playerIds: [a, "unknown", a] },
+      ],
+    }, players, 2, 1, 1);
+    expect(rooms.flatMap((room) => room.playerIds).sort()).toEqual([a, b, c].sort());
+    expect(rooms.every((room) => room.playerIds.length > 0)).toBe(true);
+    expect(diagnostics.assignments.find((assignment) => assignment.player.id === a)?.source).toBe("house");
+    expect(diagnostics.assignments.find((assignment) => assignment.player.id === b)?.source).toBe("repaired");
+    expect(diagnostics.assignments.find((assignment) => assignment.player.id === c)?.source).toBe("repaired");
   });
 
   it("represents empty and singleton rooms", () => {
@@ -333,7 +351,12 @@ describe("allocateRooms", () => {
       { id: a, name: "A" },
       { id: b, name: "B" },
     ];
-    const { rooms, diagnostics } = allocateRooms(new Map([[a, 2], [b, 1]]), players, 3, 4, 2);
+    const { rooms, diagnostics } = allocateRooms({
+      rooms: [
+        { roomId: 2, playerIds: [a] },
+        { roomId: 1, playerIds: [b] },
+      ],
+    }, players, 3, 4, 2);
     expect(rooms).toHaveLength(3);
     expect(rooms[0]).toMatchObject({ roomId: 1, round: 4, beat: 2, playerIds: [b] });
     expect(rooms[1]).toMatchObject({ roomId: 2, round: 4, beat: 2, playerIds: [a] });

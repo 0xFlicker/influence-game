@@ -9,6 +9,7 @@ import type { CanonicalSourcePointer } from "../canonical-events";
 import type { TranscriptLogger } from "../transcript-logger";
 import type { ContextBuilder } from "../context-builder";
 import type { DiaryRoom } from "../diary-room";
+import type { IHouseInterviewer } from "../house-interviewer";
 import type { createPhaseMachine } from "../phase-machine";
 import type { UUID, GameConfig, Phase } from "../types";
 import type { IAgent, StrategyPacketUseMarker } from "../game-runner.types";
@@ -22,6 +23,7 @@ export interface PhaseRunnerContext {
   logger: TranscriptLogger;
   contextBuilder: ContextBuilder;
   diaryRoom: DiaryRoom;
+  houseInterviewer: IHouseInterviewer;
   mingleInbox: Map<UUID, Array<{ from: string; text: string }>>;
   eliminationOrder: string[];
 }

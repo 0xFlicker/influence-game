@@ -23,7 +23,7 @@ import type { UUID, GameConfig } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 
 // Re-export types from the extracted module for backward compatibility
-export type { AgentCallOptions, AgentResponse, AgentTurnEvent, GameStreamEvent, GameStateSnapshot, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleRoomChoiceAction, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TranscriptEntry } from "./game-runner.types";
+export type { AgentCallOptions, AgentResponse, AgentTurnEvent, EmpowerRevoteAction, GameStreamEvent, GameStateSnapshot, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TranscriptEntry } from "./game-runner.types";
 import type { GameStreamEvent, GameStateSnapshot, IAgent, TranscriptEntry } from "./game-runner.types";
 
 // Internal modules
@@ -206,6 +206,7 @@ export class GameRunner {
       logger: this.logger,
       contextBuilder: this.contextBuilder,
       diaryRoom: this.diaryRoom,
+      houseInterviewer: this.houseInterviewer,
       mingleInbox: this.mingleInbox,
       eliminationOrder: this.eliminationOrder,
     };

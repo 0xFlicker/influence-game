@@ -8,6 +8,7 @@
 
 import type OpenAI from "openai";
 import { Phase } from "./types";
+import type { MingleIntentSummary, UUID } from "./types";
 import type { TokenTracker } from "./token-tracker";
 import type { TranscriptEntry } from "./game-runner.types";
 
@@ -40,6 +41,30 @@ export interface DiaryRoomContext {
   playerMessages?: Array<{ text: string; phase: Phase }>;
 }
 
+export interface HouseMingleAssignmentPlayer {
+  id: UUID;
+  name: string;
+  intent: MingleIntentSummary | null;
+}
+
+export interface HouseMingleAssignmentContext {
+  round: number;
+  roomCount: number;
+  players: HouseMingleAssignmentPlayer[];
+}
+
+export interface HouseMingleRoomAssignment {
+  roomId: number;
+  playerIds: UUID[];
+}
+
+export interface HouseMingleAssignmentResult {
+  rooms: HouseMingleRoomAssignment[];
+  rationale?: string;
+  thinking?: string;
+  reasoningContext?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Interface
 // ---------------------------------------------------------------------------
@@ -50,6 +75,8 @@ export type FollowUpResult =
   | { type: "close"; message: string };
 
 export interface IHouseInterviewer {
+  /** Assign initial Mingle rooms from all hidden Mingle intents. The phase validator repairs/finalizes output. */
+  assignMingleRooms(context: HouseMingleAssignmentContext): Promise<HouseMingleAssignmentResult>;
   /** Generate the first diary room interview question for an agent */
   generateQuestion(context: DiaryRoomContext): Promise<string>;
   /** Decide whether to ask a follow-up or close the session. */
@@ -90,6 +117,55 @@ Rules:
 - If you have their previous diary answers, call out a specific contradiction or broken promise
 - Respond with ONLY the question text, nothing else`;
 
+function extractJsonObject(raw: string): Record<string, unknown> | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  try {
+    return JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    const first = trimmed.indexOf("{");
+    const last = trimmed.lastIndexOf("}");
+    if (first === -1 || last <= first) return null;
+    try {
+      return JSON.parse(trimmed.slice(first, last + 1)) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function parseHouseMingleAssignment(raw: string): HouseMingleAssignmentResult {
+  const parsed = extractJsonObject(raw);
+  if (!parsed) {
+    return { rooms: [], rationale: "House assignment response was not parseable JSON." };
+  }
+
+  const rawRooms = Array.isArray(parsed.rooms) ? parsed.rooms : [];
+  const rooms = rawRooms
+    .map((room): HouseMingleRoomAssignment | null => {
+      if (!room || typeof room !== "object") return null;
+      const roomRecord = room as Record<string, unknown>;
+      const roomId = Number(roomRecord.roomId);
+      const rawPlayers = Array.isArray(roomRecord.playerIds)
+        ? roomRecord.playerIds
+        : Array.isArray(roomRecord.players)
+          ? roomRecord.players
+          : [];
+      const playerIds = rawPlayers.filter((value): value is string => typeof value === "string");
+      if (!Number.isInteger(roomId)) return null;
+      return { roomId, playerIds };
+    })
+    .filter((room): room is HouseMingleRoomAssignment => room !== null);
+
+  return {
+    rooms,
+    rationale: typeof parsed.rationale === "string" ? parsed.rationale : undefined,
+    thinking: typeof parsed.thinking === "string" ? parsed.thinking : undefined,
+    reasoningContext: typeof parsed.reasoningContext === "string" ? parsed.reasoningContext : undefined,
+  };
+}
+
 export class LLMHouseInterviewer implements IHouseInterviewer {
   private readonly openai: OpenAI;
   private readonly model: string;
@@ -116,6 +192,81 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
         : { max_tokens: budget }),
       ...(!isGpt5 && !isReasoning && { temperature }),
     };
+  }
+
+  async assignMingleRooms(context: HouseMingleAssignmentContext): Promise<HouseMingleAssignmentResult> {
+    const playerLines = context.players
+      .map((player) => {
+        const intent = player.intent;
+        const intentText = intent
+          ? [
+              `seek=${intent.seekPlayers.length > 0 ? intent.seekPlayers.join(", ") : "none"}`,
+              `avoid=${intent.avoidPlayers.length > 0 ? intent.avoidPlayers.join(", ") : "none"}`,
+              `preferredSize=${intent.preferredRoomSize}`,
+              `purpose=${intent.purpose || "not stated"}`,
+              `provisionalTarget=${intent.provisionalTarget ?? "none"}`,
+              `noTargetReason=${intent.noTargetReason ?? "n/a"}`,
+              `openingAsk=${intent.openingAsk || "not stated"}`,
+            ].join("; ")
+          : "no intent available";
+        return `- ${player.name} (${player.id}): ${intentText}`;
+      })
+      .join("\n");
+
+    const roomList = Array.from({ length: context.roomCount }, (_, index) => index + 1).join(", ");
+    const prompt = `Assign initial Mingle rooms for Round ${context.round}.
+
+Rooms available: ${roomList}
+Alive players and hidden Mingle intents:
+${playerLines}
+
+Your job:
+- Form interesting, strategic, roughly balanced rooms from seek/avoid/preferred-size/purpose signals.
+- Prefer rooms that create useful conversations: tests, coalition repair, pressure checks, information trades, and unresolved tensions.
+- Do not hide everyone in Room 1. Room numbers are neutral containers; assign people based on the full set of intents.
+- Assign every listed player exactly once.
+- Use only the exact player IDs above and room IDs from the available room list.
+
+Respond with JSON only:
+{
+  "rooms": [
+    { "roomId": 1, "playerIds": ["player-id"] }
+  ],
+  "rationale": "short producer/debug rationale for the allocation"
+}`;
+
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: this.model,
+        messages: [
+          { role: "system", content: "You are the House producer assigning private Mingle rooms. Return JSON only." },
+          { role: "user", content: prompt },
+        ],
+        response_format: { type: "json_object" },
+        ...this.modelParams(1200, 0.4),
+      });
+
+      if (this.tokenTracker && response.usage) {
+        const reasoningTk = (response.usage as unknown as Record<string, unknown>).completion_tokens_details
+          ? ((response.usage as unknown as Record<string, unknown>).completion_tokens_details as Record<string, number>)?.reasoning_tokens ?? 0
+          : 0;
+        this.tokenTracker.record(
+          "House/mingle-assignment",
+          response.usage.prompt_tokens,
+          response.usage.completion_tokens,
+          response.usage.prompt_tokens_details?.cached_tokens ?? 0,
+          reasoningTk,
+        );
+      }
+
+      const raw = response.choices[0]?.message?.content?.trim() ?? "";
+      return parseHouseMingleAssignment(raw);
+    } catch (err) {
+      return {
+        rooms: [],
+        rationale: `House assignment failed; deterministic fallback will assign rooms (${err instanceof Error ? err.message : String(err)}).`,
+      };
+    }
   }
 
   async generateQuestion(context: DiaryRoomContext): Promise<string> {
@@ -366,6 +517,23 @@ Respond with ONLY the summary paragraph, no intro or labels.`;
 // ---------------------------------------------------------------------------
 
 export class TemplateHouseInterviewer implements IHouseInterviewer {
+  async assignMingleRooms(context: HouseMingleAssignmentContext): Promise<HouseMingleAssignmentResult> {
+    const rooms = Array.from({ length: context.roomCount }, (_, index) => ({
+      roomId: index + 1,
+      playerIds: [] as UUID[],
+    }));
+
+    for (const [index, player] of context.players.entries()) {
+      const room = rooms[index % Math.max(1, context.roomCount)];
+      room?.playerIds.push(player.id);
+    }
+
+    return {
+      rooms,
+      rationale: "Template House assigned players by deterministic player order.",
+    };
+  }
+
   async generateFollowUpOrClose(
     context: DiaryRoomContext,
     _conversationSoFar: Array<{ question: string; answer: string }>,

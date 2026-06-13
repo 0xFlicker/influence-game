@@ -183,6 +183,7 @@ export interface MingleRoomPlayerRef {
 }
 
 export type MingleRoomChoiceStatus = "valid" | "missing" | "invalid";
+export type MingleRoomAssignmentSource = "house" | "repaired" | "fallback" | "movement";
 
 export type MinglePreferredRoomSize = "solo" | "pair" | "small_group" | "large_group" | "any";
 
@@ -196,11 +197,12 @@ export interface MingleIntentSummary {
   openingAsk: string;
 }
 
-export interface MingleRoomChoiceRecord {
+export interface MingleRoomAssignmentRecord {
   player: MingleRoomPlayerRef;
-  requestedRoomId: number | null;
   assignedRoomId: number;
-  status: MingleRoomChoiceStatus;
+  source: MingleRoomAssignmentSource;
+  repairNotes?: string[];
+  intent?: MingleIntentSummary | null;
 }
 
 export interface MingleRoomCount {
@@ -233,7 +235,7 @@ export interface MingleSessionDiagnostics {
   beat: number;
   roomCount: number;
   eligiblePlayers: MingleRoomPlayerRef[];
-  choices: MingleRoomChoiceRecord[];
+  assignments: MingleRoomAssignmentRecord[];
   allocatedRooms: MingleAllocatedRoomDiagnostics[];
   actions?: MingleTurnActionRecord[];
 }
@@ -243,7 +245,7 @@ export type WhisperRoomPlayerRef = MingleRoomPlayerRef;
 /** @deprecated Legacy name kept only for old replay/import compatibility. */
 export type WhisperRoomChoiceStatus = MingleRoomChoiceStatus;
 /** @deprecated Legacy name kept only for old replay/import compatibility. */
-export type WhisperRoomChoiceRecord = MingleRoomChoiceRecord;
+export type WhisperRoomChoiceRecord = MingleRoomAssignmentRecord;
 /** @deprecated Legacy name kept only for old replay/import compatibility. */
 export type WhisperRoomCount = MingleRoomCount;
 /** @deprecated Legacy name kept only for old replay/import compatibility. */
@@ -390,8 +392,6 @@ export interface GameConfig {
   enableLobbyIntent?: boolean;
   /** Number of open-room movement beats per round (default 2). */
   mingleSessionsPerRound?: number;
-  /** Number of previous Mingle rounds whose exact player pairs should be avoided when practical. */
-  minglePairCooldownRounds?: number;
   /** Max milliseconds to wait for a single endgame agent action before using a House fallback. */
   agentActionTimeoutMs?: number;
   /** Simulator experiment flag: add one public post-vote Power Lobby beat before the empowered action. */

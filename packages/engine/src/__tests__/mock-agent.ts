@@ -3,7 +3,7 @@
  * Uses simple scripted strategies to validate game mechanics.
  */
 
-import type { AgentResponse, IAgent, MingleIntentAction, MingleRoomChoiceAction, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicReflectionAction, StrategyPacketSummary, StrategyPacketUseMarker, TargetDecision } from "../game-runner";
+import type { AgentResponse, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicReflectionAction, StrategyPacketSummary, StrategyPacketUseMarker, TargetDecision } from "../game-runner";
 import type { UUID, PowerAction } from "../types";
 
 /** Assert a value is defined — throws in tests if assumption is violated */
@@ -80,18 +80,6 @@ export class MockAgent implements IAgent {
     ];
   }
 
-  async chooseMingleRoom(ctx: PhaseContext): Promise<MingleRoomChoiceAction> {
-    const roomCount = ctx.roomCount ?? 1;
-    if (roomCount < 1) return { roomId: null, thinking: "No rooms available" };
-    const myIndex = ctx.alivePlayers.findIndex((p) => p.id === this.id);
-    return {
-      roomId: (myIndex % roomCount) + 1,
-      thinking: `Choosing room based on player index ${myIndex}`,
-      reasoningContext: undefined,
-      strategyPacketUse: this.strategyPacketUse("deferred"),
-    };
-  }
-
   async getMingleIntent(ctx: PhaseContext): Promise<MingleIntentAction> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
     const first = others[0]?.name ?? null;
@@ -148,6 +136,20 @@ export class MockAgent implements IAgent {
     const empowerTarget = defined(others[0], "Expected at least one other player to empower").id;
     const exposeTarget = defined(others[others.length - 1], "Expected at least one other player to expose").id;
     return { empowerTarget, exposeTarget, thinking: `Empower ally, expose threat`, reasoningContext: undefined, strategyPacketUse: this.strategyPacketUse("followed") };
+  }
+
+  async getEmpowerRevote(
+    ctx: PhaseContext,
+    tiedCandidates: UUID[],
+    _originalVote: { empowerTarget: UUID; exposeTarget: UUID },
+  ): Promise<{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }> {
+    const target = tiedCandidates[0] ?? ctx.alivePlayers.find((p) => p.id !== this.id)?.id ?? this.id;
+    return {
+      empowerTarget: target,
+      thinking: "mock: empower first tied candidate in revote",
+      reasoningContext: undefined,
+      strategyPacketUse: this.strategyPacketUse("followed"),
+    };
   }
 
   async getPowerLobbyMessage(

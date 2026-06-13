@@ -57,7 +57,7 @@ bun run simulate -- --variant power-lobby-mingle
 
 The root `simulate` script injects hosted-provider secrets from the Doppler `social-strategy-agent` project's `dev` config. Use `simulate:local` when testing LM Studio or another OpenAI-compatible local endpoint.
 
-Output includes a round-by-round transcript, per-persona win rates, token cost estimates, and per-game artifacts under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis with `thinking` / `reasoningContext`, `game-N-events.jsonl` for replayable accepted domain events, `game-N-progress.jsonl` for lightweight progress, and `game-N.txt` for human-readable transcript review. Mingle intent records are always written to turns JSONL; strategic reflection and `strategy-packet` records are written when `--strategic-reflections` is enabled, and later private decisions may include `strategyPacketUse` markers.
+Output includes a round-by-round transcript, per-persona win rates, token cost estimates, and per-game artifacts under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis with `thinking` / `reasoningContext`, `game-N-events.jsonl` for replayable accepted domain events, `game-N-progress.jsonl` for lightweight progress, and `game-N.txt` for human-readable transcript review. Mingle intent and House room-assignment records are always written to turns JSONL; strategic reflection and `strategy-packet` records are written when `--strategic-reflections` is enabled, and later private decisions may include `strategyPacketUse` markers.
 
 To expose the local simulation corpus to another local MCP client:
 
@@ -66,7 +66,7 @@ cd packages/engine
 bun run mcp:game -- docs/simulations
 ```
 
-The game MCP is read-only. It discovers past and currently-writing simulation batches, addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and can list sessions/games, filter events, search logs, read player timelines, and return cited linked records when source pointers are present. Passing a single batch directory still works for focused inspection, but returned records include a `sessionId`. For strategy-observability validation, search turns logs for `mingle-intent`, `strategic-reflection`, `strategy-packet`, `strategyPacketUse`, `strategySignal`, or `movementPurpose`.
+The game MCP is read-only. It discovers past and currently-writing simulation batches, addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and can list sessions/games, filter events, search logs, read player timelines, and return cited linked records when source pointers are present. Passing a single batch directory still works for focused inspection, but returned records include a `sessionId`. For strategy-observability validation, search turns logs for `mingle-intent`, `mingle-room-assignment`, `strategic-reflection`, `strategy-packet`, `strategyPacketUse`, `strategySignal`, `movementPurpose`, or `empower-revote`.
 
 ### 3. Run the full stack (API + Web UI)
 

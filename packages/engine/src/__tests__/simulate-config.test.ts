@@ -79,10 +79,11 @@ describe("simulation variant config", () => {
     expect(config.enableStrategicReflections).toBe(true);
   });
 
-  it("enables mild pair cooldown for mingle simulator variants", () => {
-    expect(buildSimulationConfig("baseline").minglePairCooldownRounds).toBe(1);
-    expect(buildSimulationConfig("mingle").minglePairCooldownRounds).toBe(1);
-    expect(buildSimulationConfig("power-lobby").minglePairCooldownRounds).toBe(0);
+  it("does not configure hidden pair cooldown for simulator variants", () => {
+    expect("minglePairCooldownRounds" in buildSimulationConfig("baseline")).toBe(false);
+    expect("minglePairCooldownRounds" in buildSimulationConfig("mingle")).toBe(false);
+    expect("minglePairCooldownRounds" in buildSimulationConfig("power-lobby")).toBe(false);
+    expect(buildSimulationConfig("mingle").mingleSessionsPerRound).toBe(2);
   });
 
   it("maps single-feature simulator variants to the correct flags", () => {

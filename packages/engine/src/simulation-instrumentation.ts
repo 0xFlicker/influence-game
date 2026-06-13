@@ -3,12 +3,12 @@ import type { TokenUsage } from "./token-tracker";
 import type { MingleSessionDiagnostics } from "./types";
 import { Phase } from "./types";
 
-interface MingleRequestSatisfactionSummary {
-  validRequests: number;
-  mutualHonored: number;
-  oneWayHonored: number;
-  unmatchedValidRequests: number;
-  invalidOrMissingRequests: number;
+interface MingleAssignmentSourceSummary {
+  house: number;
+  repaired: number;
+  fallback: number;
+  movement: number;
+  repairNotes: number;
 }
 
 interface MingleRepeatPairFlags {
@@ -124,7 +124,7 @@ export interface RoomInstrumentation {
   pairs: RoomPairObservation[];
   repeatedPairs: RepeatedPairInstrumentation;
   mingleSessions: MingleSessionDiagnostics[];
-  requestSatisfaction: MingleRequestSatisfactionSummary;
+  assignmentSources: MingleAssignmentSourceSummary;
   repeatPairFlags: MingleRepeatPairFlags & {
     sessionsWithImmediateRepeats: number;
     sessionsWithoutFullNonRepeatMatching: number;
@@ -389,20 +389,20 @@ function buildRepeatedPairInstrumentation(
   };
 }
 
-function emptyRequestSatisfaction(): MingleRequestSatisfactionSummary {
+function emptyAssignmentSources(): MingleAssignmentSourceSummary {
   return {
-    validRequests: 0,
-    mutualHonored: 0,
-    oneWayHonored: 0,
-    unmatchedValidRequests: 0,
-    invalidOrMissingRequests: 0,
+    house: 0,
+    repaired: 0,
+    fallback: 0,
+    movement: 0,
+    repairNotes: 0,
   };
 }
 
 function summarizeMingleSessions(
   sessions: readonly MingleSessionDiagnostics[],
-): Pick<RoomInstrumentation, "requestSatisfaction" | "repeatPairFlags" | "exclusionFlags"> {
-  const requestSatisfaction = emptyRequestSatisfaction();
+): Pick<RoomInstrumentation, "assignmentSources" | "repeatPairFlags" | "exclusionFlags"> {
+  const assignmentSources = emptyAssignmentSources();
   const repeatPairFlags: RoomInstrumentation["repeatPairFlags"] = {
     immediateRepeats: 0,
     repeatedPairs: 0,
@@ -417,14 +417,14 @@ function summarizeMingleSessions(
   };
 
   for (const session of sessions) {
-    requestSatisfaction.validRequests += session.choices.filter((choice) => choice.status === "valid").length;
-    requestSatisfaction.invalidOrMissingRequests += session.choices.filter(
-      (choice) => choice.status === "missing" || choice.status === "invalid",
-    ).length;
+    for (const assignment of session.assignments) {
+      assignmentSources[assignment.source] += 1;
+      assignmentSources.repairNotes += assignment.repairNotes?.length ?? 0;
+    }
   }
 
   return {
-    requestSatisfaction,
+    assignmentSources,
     repeatPairFlags,
     exclusionFlags,
   };

@@ -132,24 +132,22 @@ describe("simulation instrumentation", () => {
         { id: "p2", name: "Vera" },
         { id: "p3", name: "Finn" },
       ],
-      choices: [
+      assignments: [
         {
           player: { id: "p1", name: "Atlas" },
-          requestedRoomId: 1,
           assignedRoomId: 1,
-          status: "valid" as const,
+          source: "house" as const,
         },
         {
           player: { id: "p2", name: "Vera" },
-          requestedRoomId: 1,
           assignedRoomId: 1,
-          status: "valid" as const,
+          source: "house" as const,
         },
         {
           player: { id: "p3", name: "Finn" },
-          requestedRoomId: null,
           assignedRoomId: 1,
-          status: "missing" as const,
+          source: "repaired" as const,
+          repairNotes: ["Filled missing House assignment."],
         },
       ],
       allocatedRooms: [
@@ -180,13 +178,15 @@ describe("simulation instrumentation", () => {
     );
 
     expect(game.rooms.mingleSessions).toEqual([diagnostics]);
-    expect(game.rooms.requestSatisfaction.validRequests).toBe(2);
-    expect(game.rooms.requestSatisfaction.invalidOrMissingRequests).toBe(1);
+    expect(game.rooms.assignmentSources.house).toBe(2);
+    expect(game.rooms.assignmentSources.repaired).toBe(1);
+    expect(game.rooms.assignmentSources.repairNotes).toBe(1);
 
     const aggregate = aggregateInstrumentation([game, game]);
     expect(aggregate.rooms.mingleSessions).toHaveLength(2);
-    expect(aggregate.rooms.requestSatisfaction.validRequests).toBe(4);
-    expect(aggregate.rooms.requestSatisfaction.invalidOrMissingRequests).toBe(2);
+    expect(aggregate.rooms.assignmentSources.house).toBe(4);
+    expect(aggregate.rooms.assignmentSources.repaired).toBe(2);
+    expect(aggregate.rooms.assignmentSources.repairNotes).toBe(2);
   });
 
   it("summarizes repeated empowered actor and action patterns", () => {

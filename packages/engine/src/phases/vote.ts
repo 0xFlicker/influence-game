@@ -97,6 +97,14 @@ export async function runVotePhase(
     logger.logSystem(`Empower TIED between: ${tiedNames}. Re-vote!`, Phase.VOTE);
 
     const reVoters = alivePlayers.filter((p) => !tied.includes(p.id));
+    const originalVotesByPlayerId = new Map<UUID, { empowerTarget: UUID; exposeTarget: UUID }>();
+    for (const player of reVoters) {
+      const empowerTarget = gameState.currentVoteTally.empowerVotes[player.id];
+      const exposeTarget = gameState.currentVoteTally.exposeVotes[player.id];
+      if (empowerTarget && exposeTarget) {
+        originalVotesByPlayerId.set(player.id, { empowerTarget, exposeTarget });
+      }
+    }
     for (const rv of reVoters) {
       gameState.clearEmpowerVote(rv.id);
     }
@@ -105,30 +113,38 @@ export async function runVotePhase(
         reVoters.map(async (player) => {
           const agent = agents.get(player.id)!;
           const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
-          const votes = await agent.getVotes(phaseCtx);
-          if (tied.includes(votes.empowerTarget)) {
-            gameState.recordEmpowerReVote(player.id, votes.empowerTarget, [
-              agentTurnSourcePointer(player.id, "empower-revote", gameState.round, Phase.VOTE),
-            ]);
-            const empowerName = gameState.getPlayerName(votes.empowerTarget);
-            const transcriptThinking = transcriptThinkingFor(agent, votes.thinking, votes.reasoningContext);
-            logger.logSystem(`${player.name} re-votes: empower=${empowerName}`, Phase.VOTE, transcriptThinking.thinking, transcriptThinking.reasoningContext);
-            logger.emitAgentTurn({
-              phase: Phase.VOTE,
-              action: "empower-revote",
-              actor: { id: player.id, name: player.name, role: "player" },
-              visibility: "private",
-              response: {
-                empowerTarget: { id: votes.empowerTarget, name: empowerName },
-                eligibleTargets: tied.map((id) => ({ id, name: gameState.getPlayerName(id) })),
-                ...strategyPacketUseResponse(votes.strategyPacketUse),
+          const originalVote = originalVotesByPlayerId.get(player.id) ?? {
+            empowerTarget: gameState.currentVoteTally.empowerVotes[player.id] ?? tied[0]!,
+            exposeTarget: gameState.currentVoteTally.exposeVotes[player.id] ?? tied[0]!,
+          };
+          const revote = await agent.getEmpowerRevote(phaseCtx, tied, originalVote);
+          const empowerTarget = tied.includes(revote.empowerTarget) ? revote.empowerTarget : tied[0]!;
+          gameState.recordEmpowerReVote(player.id, empowerTarget, [
+            agentTurnSourcePointer(player.id, "empower-revote", gameState.round, Phase.VOTE),
+          ]);
+          const empowerName = gameState.getPlayerName(empowerTarget);
+          const transcriptThinking = transcriptThinkingFor(agent, revote.thinking, revote.reasoningContext);
+          logger.logSystem(`${player.name} re-votes: empower=${empowerName}`, Phase.VOTE, transcriptThinking.thinking, transcriptThinking.reasoningContext);
+          logger.emitAgentTurn({
+            phase: Phase.VOTE,
+            action: "empower-revote",
+            actor: { id: player.id, name: player.name, role: "player" },
+            visibility: "private",
+            response: {
+              empowerTarget: { id: empowerTarget, name: empowerName },
+              eligibleTargets: tied.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+              originalVote: {
+                empowerTarget: { id: originalVote.empowerTarget, name: gameState.getPlayerName(originalVote.empowerTarget) },
+                exposeTarget: { id: originalVote.exposeTarget, name: gameState.getPlayerName(originalVote.exposeTarget) },
               },
-              thinking: votes.thinking,
-              reasoningContext: votes.reasoningContext,
-              scope: "system",
-              text: `${player.name} re-votes: empower=${empowerName}`,
-            });
-          }
+              fallbackApplied: empowerTarget !== revote.empowerTarget,
+              ...strategyPacketUseResponse(revote.strategyPacketUse),
+            },
+            thinking: revote.thinking,
+            reasoningContext: revote.reasoningContext,
+            scope: "system",
+            text: `${player.name} re-votes: empower=${empowerName}`,
+          });
         }),
       );
     }

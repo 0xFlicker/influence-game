@@ -22,18 +22,14 @@ function makeContext(phase: Phase = Phase.VOTE): PhaseContext {
 }
 
 // U2 execution note: treat prompt rendering as behavior. No-Whisper assertions for current Mingle surfaces.
-// (Lightweight guard: the active tool name we ship for Mingle choice must be current; full prompt render exercised by chooseMingleRoom in game paths.)
 describe("Mingle prompt and tool vocabulary guard (no current Whisper leakage)", () => {
-  it("choose_mingle_room tool name (the model-visible surface) contains no Whisper terms", () => {
-    // The const we use for the current Mingle room choice tool (see agent.ts)
-    // must never regress to old whisper name.
-    const toolName = "choose_mingle_room";
-    expect(toolName).toBe("choose_mingle_room");
-    expect(toolName.toLowerCase()).not.toContain("whisper");
-    // Guidelines case for Phase.MINGLE (in getPhaseGuidelines) was updated to use
-    // "MINGLE (STRATEGY PHASE)", "private to the occupants of the room", "Mingle room".
-    // Full render-through test would capture the built prompt in callTool and assert
-    // no /whisper phase|choose_whisper_room/i — covered by integration in game-engine tests + manual --chatty review.
+  it("current Mingle tool names contain no Whisper terms", () => {
+    const toolNames = ["form_mingle_intent", "mingle_turn"];
+    expect(toolNames).toContain("form_mingle_intent");
+    expect(toolNames).toContain("mingle_turn");
+    for (const toolName of toolNames) {
+      expect(toolName.toLowerCase()).not.toContain("whisper");
+    }
   });
 });
 
@@ -297,7 +293,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(requests[1]?.max_tokens).toBe(12288);
   });
 
-  it("preserves thinking and native reasoning for Mingle room choices", async () => {
+  it("preserves thinking and native reasoning for empower revotes", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -305,12 +301,12 @@ describe("InfluenceAgent structured output mode", () => {
       "strategic",
       makeToolOpenAIStub(
         requests,
-        "choose_mingle_room",
+        "cast_empower_revote",
         {
-          thinking: "Room 2 has the right crowd for a quiet alliance check.",
-          roomId: 2,
+          thinking: "Mira is the better tie-break because she is less likely to panic.",
+          empower: "Mira",
         },
-        "Hidden local reasoning for the room choice.",
+        "Hidden local reasoning for the empower revote.",
       ),
       "google/gemma-4-26b-a4b-qat",
       undefined,
@@ -319,35 +315,28 @@ describe("InfluenceAgent structured output mode", () => {
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    const choice = await agent.chooseMingleRoom({
-      ...makeContext(Phase.MINGLE),
-      roomCount: 2,
-      roomCounts: [{ roomId: 1, count: 1 }, { roomId: 2, count: 1 }],
-      mingleIntent: {
-        seekPlayers: ["Mira"],
-        avoidPlayers: ["Vera"],
-        preferredRoomSize: "pair",
-        purpose: "Find one person willing to compare Vera reads without committing too early.",
-        provisionalTarget: null,
-        noTargetReason: "Atlas has only soft evidence.",
-        openingAsk: "Ask whether Vera's warmth feels rehearsed or genuine.",
-      },
+    const revote = await agent.getEmpowerRevote(
+      makeContext(Phase.VOTE),
+      ["mira-id", "vera-id"],
+      { empowerTarget: "vera-id", exposeTarget: "mira-id" },
+    );
+
+    expect(revote).toEqual({
+      empowerTarget: "mira-id",
+      thinking: "Mira is the better tie-break because she is less likely to panic.",
+      reasoningContext: "Hidden local reasoning for the empower revote.",
     });
-
-  expect(choice).toEqual({
-    roomId: 2,
-    thinking: "Room 2 has the right crowd for a quiet alliance check.",
-    reasoningContext: "Hidden local reasoning for the room choice.",
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.at(-1)!.content;
+    expect(prompt).toContain("## Empower Revote");
+    expect(prompt).toContain("This is NOT a new normal vote.");
+    expect(prompt).toContain("Original empower: Vera");
+    expect(prompt).toContain("Original expose: Mira");
+    expect(prompt).toContain("Eligible tied empower candidates: Mira, Vera");
+    expect(prompt).toContain("the wheel randomly chooses");
   });
-  const messages = requests[0]?.messages as Array<{ content: string }>;
-  const prompt = messages.at(-1)!.content;
-  expect(prompt).toContain("## Your Mingle Intent");
-  expect(prompt).toContain("Find one person willing to compare Vera reads without committing too early.");
-  expect(prompt).toContain("No-target reason: Atlas has only soft evidence.");
-  expect(prompt).toContain("Ask whether Vera's warmth feels rehearsed or genuine.");
-});
 
-  it("returns a missing room choice when room-choice tooling fails", async () => {
+  it("falls back to a tied candidate when empower-revote tooling fails", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -358,15 +347,15 @@ describe("InfluenceAgent structured output mode", () => {
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    const choice = await agent.chooseMingleRoom({
-      ...makeContext(Phase.MINGLE),
-      roomCount: 2,
-      roomCounts: [{ roomId: 1, count: 0 }, { roomId: 2, count: 0 }],
-    });
+    const revote = await agent.getEmpowerRevote(
+      makeContext(Phase.VOTE),
+      ["mira-id", "vera-id"],
+      { empowerTarget: "vera-id", exposeTarget: "mira-id" },
+    );
 
-    expect(choice).toEqual({
-      roomId: null,
-      thinking: "fallback missing room choice due to error",
+    expect(revote).toEqual({
+      empowerTarget: "mira-id",
+      thinking: "fallback empower revote due to error",
       reasoningContext: undefined,
     });
   });
@@ -486,6 +475,32 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("You may name a target or ally");
     expect(prompt).toContain("You do not have to name a target");
     expect(prompt).toContain("TALK has no audience");
+  });
+
+  it("early rumor prompt avoids hard example phrases while preserving early-game constraints", async () => {
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeOpenAIStub([]),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    let capturedPrompt = "";
+    (agent as unknown as {
+      callLLMWithThinking: (prompt: string) => Promise<{ thinking: string; message: string }>;
+    }).callLLMWithThinking = async (prompt: string) => {
+      capturedPrompt = prompt;
+      return { thinking: "", message: "Someone is trying very hard to seem harmless." };
+    };
+
+    await agent.getRumorMessage(makeContext(Phase.RUMOR));
+
+    expect(capturedPrompt).toContain("Do NOT accuse anyone of forming alliances");
+    for (const banned of ["rehearsed", "script", "performance", "polished", "curated"]) {
+      expect(capturedPrompt.toLowerCase()).not.toContain(banned);
+    }
   });
 
   it("preserves hidden strategic reflections and native reasoning", async () => {

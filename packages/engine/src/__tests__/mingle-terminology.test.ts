@@ -6,10 +6,12 @@ import { describe, expect, it } from "bun:test";
 // Historical/legacy "whisper" is allowed only when explicitly for old fixtures or compat.
 
 describe("Mingle terminology guard (U7 - plan)", () => {
-  it("current Mingle room choice tool name contains Mingle and no Whisper", () => {
-    const toolName = "choose_mingle_room";
-    expect(toolName).toMatch(/mingle/i);
-    expect(toolName.toLowerCase()).not.toMatch(/whisper|choose_whisper_room/);
+  it("current Mingle tool names contain Mingle and no Whisper", () => {
+    const toolNames = ["form_mingle_intent", "mingle_turn"];
+    for (const toolName of toolNames) {
+      expect(toolName).toMatch(/mingle/i);
+      expect(toolName.toLowerCase()).not.toMatch(/whisper|choose_whisper_room/);
+    }
   });
 
   it("current Mingle phase guidelines (sampled) use room-occupant language", () => {

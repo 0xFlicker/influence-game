@@ -8,6 +8,7 @@ import { TranscriptLogger } from "../transcript-logger";
 import { Phase } from "../types";
 import { runCouncilPhase, runPowerPhase, runReckoningVote, runVotePhase } from "../phases";
 import type { PhaseRunnerContext } from "../phases";
+import { TemplateHouseInterviewer } from "../house-interviewer";
 import { MockAgent } from "./mock-agent";
 
 class GoodbyeProbeAgent extends MockAgent {
@@ -87,6 +88,7 @@ function makePhaseRunnerContext(agents: GoodbyeProbeAgent[]): PhaseRunnerContext
     logger,
     contextBuilder,
     diaryRoom: { lastEliminatedName: null } as PhaseRunnerContext["diaryRoom"],
+    houseInterviewer: new TemplateHouseInterviewer(),
     mingleInbox,
     eliminationOrder: [],
   };

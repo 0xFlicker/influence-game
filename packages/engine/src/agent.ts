@@ -18,7 +18,6 @@ import type {
   IAgent,
   MingleIntentAction,
   MinglePreferredRoomSize,
-  MingleRoomChoiceAction,
   MingleTurnAction,
   PhaseContext,
   PowerLobbyExposure,
@@ -294,26 +293,6 @@ const STRATEGY_PACKET_USE_TOOL_PROPERTIES = {
 
 const STRATEGY_PACKET_USE_REQUIRED = ["strategyPacketUse", "strategyPacketUseRationale"];
 
-const TOOL_CHOOSE_MINGLE_ROOM: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "choose_mingle_room",
-    description: "Choose a neutral open Mingle room by room number. Messages in the room are private to the current occupants only.",
-    parameters: {
-      type: "object",
-      properties: {
-        thinking: { type: "string", description: "Your internal reasoning for this room choice (hidden from other players)" },
-        roomId: {
-          type: "number",
-          description: "Room number to enter",
-        },
-        ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
-      },
-      required: ["thinking", "roomId", ...STRATEGY_PACKET_USE_REQUIRED],
-    },
-  },
-};
-
 const TOOL_MINGLE_INTENT: ChatCompletionTool = {
   type: "function",
   function: {
@@ -440,6 +419,25 @@ const TOOL_CAST_VOTES: ChatCompletionTool = {
         ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
       },
       required: ["thinking", "empower", "expose", ...STRATEGY_PACKET_USE_REQUIRED],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+};
+
+const TOOL_EMPOWER_REVOTE: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "cast_empower_revote",
+    description: "Resolve an empower tie by choosing only one of the tied empower candidates",
+    parameters: {
+      type: "object",
+      properties: {
+        thinking: { type: "string", description: "Your internal reasoning for this empower revote (hidden from other players)" },
+        empower: { type: "string", description: "One tied candidate name to empower" },
+        ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
+      },
+      required: ["thinking", "empower", ...STRATEGY_PACKET_USE_REQUIRED],
       additionalProperties: false,
     },
     strict: true,
@@ -1106,14 +1104,14 @@ Use the send_whispers tool to submit your whisper messages. Use player NAMES (no
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task
-Before choosing a Mingle room, form your private Mingle intent.
+Before the House assigns Mingle rooms, form your private Mingle intent.
 This is hidden producer/debug strategy, not a message to other players.
 
 Available other players: ${otherPlayers.join(", ") || "none"}
 Available rooms: ${Array.from({ length: roomCount }, (_, index) => `Room ${index + 1}`).join(", ")}
 ${currentCounts}
 
-Your intent should describe who you want to seek, who you want to avoid, what room size fits your plan, what you are trying to learn or set up, and what opening ask you might use if room context allows.
+Your intent should describe who you want to seek, who you want to avoid, what room size fits your plan, what you are trying to learn or set up, and what opening ask you might use if the assigned room context allows.
 You may name a provisional target if that fits your read. You may also stay provisional, but explain why you are not naming a target yet.
 Standing target check:
 - A standing target is one living player you are currently pressure-testing as your default threat/read, not a forced vote.
@@ -1154,59 +1152,6 @@ Use the form_mingle_intent tool.`;
     } catch (err) {
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getMingleIntent error="${err instanceof Error ? err.message : err}" fallback=skipped`);
       return null;
-    }
-  }
-
-  async chooseMingleRoom(ctx: PhaseContext): Promise<MingleRoomChoiceAction> {
-    const roomCount = ctx.roomCount ?? 1;
-    if (roomCount < 1) return { roomId: null, thinking: "No Mingle rooms are available." };
-    const rooms = Array.from({ length: roomCount }, (_, index) => index + 1);
-
-    const currentCounts = ctx.roomCounts && ctx.roomCounts.length > 0
-      ? `\n## Current Room Counts\n${ctx.roomCounts
-          .map((room) => `- Room ${room.roomId}: ${room.count} player${room.count === 1 ? "" : "s"}`)
-          .join("\n")}`
-      : "";
-    const intent = ctx.mingleIntent;
-    const intentText = intent
-      ? `
-## Your Mingle Intent
-- Seek: ${intent.seekPlayers.length > 0 ? intent.seekPlayers.join(", ") : "no one specific"}
-- Avoid: ${intent.avoidPlayers.length > 0 ? intent.avoidPlayers.join(", ") : "no one specific"}
-- Preferred room size: ${intent.preferredRoomSize}
-- Purpose: ${intent.purpose || "stay flexible and gather social reads"}
-- Provisional target: ${intent.provisionalTarget ?? "none"}
-- No-target reason: ${intent.noTargetReason ?? "not applicable"}
-- Opening ask/probe: ${intent.openingAsk || "none"}
-`
-      : "";
-
-    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
-    const prompt = this.buildUserPrompt(ctx) + `
-## Your Task
-Choose one neutral Mingle room to enter.
-
-Available rooms: ${rooms.map((roomId) => `Room ${roomId}`).join(", ")}
-${currentCounts}
-${intentText}
-
-Rooms have no theme and no occupancy cap. You can pile into a crowded room, split off, or sit alone.
-Use the choose_mingle_room tool to submit one room number.`;
-
-    try {
-      const result = await this.callTool<{ thinking?: string; roomId: number; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown; reasoningContext?: string }>(
-        prompt, TOOL_CHOOSE_MINGLE_ROOM, 150, sys,
-        { action: "room-choice", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
-      );
-      return {
-        roomId: Number.isInteger(result.roomId) ? result.roomId : null,
-        thinking: result.thinking,
-        reasoningContext: result.reasoningContext,
-        strategyPacketUse: this.strategyPacketUseMarker(result.strategyPacketUse, result.strategyPacketUseRationale),
-      };
-    } catch (err) {
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=chooseMingleRoom error="${err instanceof Error ? err.message : err}" fallback=missing`);
-      return { roomId: null, thinking: "fallback missing room choice due to error", reasoningContext: undefined };
     }
   }
 
@@ -1368,10 +1313,11 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
     const rumorStyle = isEarlyGame
       ? `This is EARLY in the game — Round ${ctx.round}. You barely know these people.
 Your rumor should be subtle and suggestive, not a bold accusation:
-- Share a gut feeling or surface observation: "Something about [name]'s introduction felt rehearsed..."
-- Question someone's vibe or energy: "Did anyone else catch the look on [name]'s face when..."
-- Light, coded insinuation — NOT direct alliance accusations or strategic claims
-- You don't have enough information for bold claims yet. Keep it atmospheric and intriguing.
+- Share a grounded gut feeling or surface observation from public behavior.
+- Question someone's vibe, timing, confidence, silence, warmth, nervousness, or follow-through.
+- Use light, coded insinuation — NOT direct alliance accusations or unsupported strategic claims.
+- Base the rumor on something you actually observed or plausibly noticed.
+- You don't have enough information for bold claims yet. Keep it subtle and intriguing.
 
 Do NOT accuse anyone of forming alliances, making deals, or plotting — it's too early for that.
 Think gossip column, not courtroom prosecution.`
@@ -1467,7 +1413,15 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
           expose: exposePlayer?.name ?? "unknown",
         },
       };
-      this.memory.roundHistory.push(voteEntry);
+      const existingRoundIndex = this.memory.roundHistory.findIndex((entry) => entry.round === ctx.round);
+      if (existingRoundIndex >= 0) {
+        this.memory.roundHistory[existingRoundIndex] = {
+          ...this.memory.roundHistory[existingRoundIndex]!,
+          ...voteEntry,
+        };
+      } else {
+        this.memory.roundHistory.push(voteEntry);
+      }
       this.persistMemory("vote_history", null, JSON.stringify(voteEntry));
 
       return {
@@ -1482,6 +1436,64 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
       const expFallback = randomOther();
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getVotes error="${err instanceof Error ? err.message : err}" fallback=empower:"${empFallback.name}",expose:"${expFallback.name}"`);
       return { empowerTarget: empFallback.id, exposeTarget: expFallback.id, thinking: undefined, reasoningContext: undefined };
+    }
+  }
+
+  async getEmpowerRevote(
+    ctx: PhaseContext,
+    tiedCandidates: UUID[],
+    originalVote: { empowerTarget: UUID; exposeTarget: UUID },
+  ): Promise<{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }> {
+    const tiedPlayers = tiedCandidates
+      .map((id) => ctx.alivePlayers.find((player) => player.id === id))
+      .filter((player): player is { id: UUID; name: string } => player !== undefined);
+    const fallbackTarget = tiedPlayers[0] ?? ctx.alivePlayers.find((player) => player.id !== this.id);
+    if (!fallbackTarget) {
+      return { empowerTarget: this.id, thinking: "No eligible revote target available.", reasoningContext: undefined };
+    }
+
+    const originalEmpowerName = ctx.alivePlayers.find((player) => player.id === originalVote.empowerTarget)?.name ?? originalVote.empowerTarget;
+    const originalExposeName = ctx.alivePlayers.find((player) => player.id === originalVote.exposeTarget)?.name ?? originalVote.exposeTarget;
+
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
+## Empower Revote
+This is NOT a new normal vote. You already cast your Round ${ctx.round} vote:
+- Original empower: ${originalEmpowerName}
+- Original expose: ${originalExposeName}
+
+Only the empower result tied. Your expose vote is locked and will not change.
+
+Eligible tied empower candidates: ${tiedPlayers.map((player) => player.name).join(", ")}
+
+Choose exactly one eligible tied candidate to empower. If this revote is still tied, the wheel randomly chooses the empowered player from the still-tied candidates.
+
+Use the cast_empower_revote tool. Return only an empower target from the eligible tied candidates.`;
+
+    try {
+      const result = await this.callTool<{ thinking?: string; empower: string; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown; reasoningContext?: string }>(
+        prompt, TOOL_EMPOWER_REVOTE, 100, sys,
+        { action: "empower-revote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
+      );
+
+      const empowerPlayer = findByName(tiedPlayers, result.empower);
+      if (!empowerPlayer) {
+        console.warn(`[vote-fallback] agent="${this.name}" method=getEmpowerRevote returned="${result.empower}" eligible=[${tiedPlayers.map((p) => p.name).join(", ")}] fallback="${fallbackTarget.name}"`);
+      }
+
+      return {
+        empowerTarget: empowerPlayer?.id ?? fallbackTarget.id,
+        thinking: result.thinking,
+        reasoningContext: result.reasoningContext,
+        strategyPacketUse: this.strategyPacketUseMarker(result.strategyPacketUse, result.strategyPacketUseRationale),
+      };
+    } catch (err) {
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getEmpowerRevote error="${err instanceof Error ? err.message : err}" fallback="${fallbackTarget.name}"`);
+      return {
+        empowerTarget: fallbackTarget.id,
+        thinking: "fallback empower revote due to error",
+        reasoningContext: undefined,
+      };
     }
   }
 
@@ -2009,6 +2021,22 @@ IMPORTANT: Only reference alive players in your messages, votes, and strategies.
    * This changes every call — placed after the system prompt so it doesn't
    * break the cached prefix.
    */
+  private buildVoteHistorySection(currentRound: number): string {
+    const formatEntry = (r: AgentMemory["roundHistory"][number]) =>
+      `  R${r.round}: empower=${r.myVotes.empower}, expose=${r.myVotes.expose}${r.empowered ? `, empowered=${r.empowered}` : ""}${r.eliminated ? `, eliminated=${r.eliminated}` : ""}`;
+    const pastRounds = this.memory.roundHistory.filter((entry) => entry.round < currentRound);
+    const currentRoundVotes = this.memory.roundHistory.filter((entry) => entry.round === currentRound);
+
+    const pastSection = pastRounds.length > 0
+      ? `## Past Vote History\n${pastRounds.map(formatEntry).join("\n")}`
+      : "";
+    const currentSection = currentRoundVotes.length > 0
+      ? `## Current Round Recorded Vote\nThis is already recorded state from Round ${currentRound}. It is not an instruction to cast another normal vote.\n${currentRoundVotes.map(formatEntry).join("\n")}`
+      : "";
+
+    return [pastSection, currentSection].filter(Boolean).join("\n");
+  }
+
   private buildUserPrompt(ctx: PhaseContext): string {
     const eliminated = this.allPlayers
       .filter((p) => !ctx.alivePlayers.some((ap) => ap.id === p.id))
@@ -2054,6 +2082,7 @@ IMPORTANT: Only reference alive players in your messages, votes, and strategies.
     const allies = Array.from(this.memory.allies).join(", ") || "none";
     const threats = Array.from(this.memory.threats).join(", ") || "none";
     const strategyPacket = this.strategyPacketForPrompt(ctx);
+    const voteHistorySection = this.buildVoteHistorySection(ctx.round);
 
     let endgameInfo = "";
     if (ctx.endgameStage) {
@@ -2086,7 +2115,7 @@ ${endgameInfo}
 - Known allies: ${allies}
 - Known threats: ${threats}
 ${memoryNotes ? `- Notes:\n${memoryNotes}` : ""}
-${this.memory.roundHistory.length > 0 ? `## Your Vote History\n${this.memory.roundHistory.map((r) => `  R${r.round}: empower=${r.myVotes.empower}, expose=${r.myVotes.expose}${r.empowered ? `, empowered=${r.empowered}` : ""}${r.eliminated ? `, eliminated=${r.eliminated}` : ""}`).join("\n")}` : ""}
+${voteHistorySection ? `${voteHistorySection}\n` : ""}
 ${strategyPacket ? `## Strategy Thread\nThis is your private carry-forward strategy context, not an order. You may follow it, test it, revise it, ignore it, or defer it when current evidence warrants.\n- Revision: ${strategyPacket.revisionId}${strategyPacket.previousRevisionId ? ` (previous ${strategyPacket.previousRevisionId})` : ""}\n- Objective: ${strategyPacket.objective || "stay flexible"}\n- Target posture: ${strategyPacket.targetPosture || "no named target yet"}\n- Coalition posture: ${strategyPacket.coalitionPosture || "keep relationships flexible"}\n- Next social probe: ${strategyPacket.nextSocialProbe || "look for new evidence"}\n- Uncertainty: ${strategyPacket.uncertainty || "none recorded"}\n- Revise if: ${strategyPacket.reviseTrigger || "new evidence contradicts the plan"}\n- Changed since previous: ${strategyPacket.changedSincePrevious || "none recorded"}\nStanding target discipline:\n- A standing target is your current living default pressure/read target. It can be a quiet watch target, a Mingle probe, an expose candidate, or no target yet.\n- Never treat an eliminated player as an active standing target. If the packet names someone marked eliminated, use that as stale history and pivot to a living replacement or explicitly no standing target.\n- Do not force target naming. Soft reads, alliance repair, and information-gathering are valid when the evidence is not there.\nWhen a tool asks for strategyPacketUse, report how this decision used revision ${strategyPacket.revisionId} as self-reported linkage evidence, with a compact rationale tied to current evidence.` : ""}
 ${this.memory.lastReflection ? `## Strategic Assessment\n- Certainties: ${(this.memory.lastReflection.certainties ?? []).join("; ") || "none"}\n- Suspicions: ${(this.memory.lastReflection.suspicions ?? []).join("; ") || "none"}\n- Allies: ${(this.memory.lastReflection.allies ?? []).join("; ") || "none"}\n- Threats: ${(this.memory.lastReflection.threats ?? []).join("; ") || "none"}\n- Plan: ${this.memory.lastReflection.plan ?? "none"}` : ""}
 ## Recent Public Messages

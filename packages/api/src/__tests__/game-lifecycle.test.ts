@@ -12,7 +12,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { GameRunner, Phase } from "@influence/engine";
-import type { AgentResponse, IAgent, MingleIntentAction, MingleRoomChoiceAction, PhaseContext, StrategicReflectionAction, TargetDecision } from "@influence/engine";
+import type { AgentResponse, IAgent, MingleIntentAction, PhaseContext, StrategicReflectionAction, TargetDecision } from "@influence/engine";
 import type { UUID, PowerAction, GameConfig } from "@influence/engine";
 import { setupTestDB } from "./test-utils.js";
 import { serializeTranscriptEntry } from "../services/game-lifecycle.js";
@@ -51,14 +51,6 @@ class LifecycleMockAgent implements IAgent {
     if (others.length === 0) return [];
     return [{ to: [others[0]!.id], text: "secret" }];
   }
-  async chooseWhisperRoom(ctx: PhaseContext) {
-    const roomCount = ctx.roomCount ?? 1;
-    return roomCount > 0 ? 1 : null;
-  }
-  async chooseMingleRoom(ctx: PhaseContext): Promise<MingleRoomChoiceAction> {
-    const roomCount = ctx.roomCount ?? 1;
-    return { roomId: roomCount > 0 ? 1 : null, thinking: "lifecycle mock room choice" };
-  }
   async getMingleIntent(ctx: PhaseContext): Promise<MingleIntentAction> {
     const other = ctx.alivePlayers.find(p => p.id !== this.id)?.name ?? null;
     return {
@@ -84,6 +76,12 @@ class LifecycleMockAgent implements IAgent {
     return {
       empowerTarget: others[0]?.id ?? this.id,
       exposeTarget: others[others.length - 1]?.id ?? this.id,
+    };
+  }
+  async getEmpowerRevote(ctx: PhaseContext, tiedCandidates: UUID[]) {
+    return {
+      empowerTarget: tiedCandidates[0] ?? ctx.alivePlayers.find(p => p.id !== this.id)?.id ?? this.id,
+      thinking: "lifecycle mock empower revote",
     };
   }
   async getPowerAction(_ctx: PhaseContext, candidates: [UUID, UUID]): Promise<PowerAction> {
