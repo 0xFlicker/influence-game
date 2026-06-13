@@ -92,6 +92,8 @@ export class MockAgent implements IAgent {
       provisionalTarget: second,
       noTargetReason: second ? null : "No clear target yet",
       openingAsk: first ? `Ask ${first} who feels too comfortable.` : "Ask whoever arrives what they noticed.",
+      strategicLens: "room_traffic",
+      strategicLensRationale: "mock: use Mingle rooms to compare who seeks or avoids whom",
       thinking: "mock: form hidden Mingle intent",
       reasoningContext: undefined,
       strategyPacketUse: this.strategyPacketUse("followed"),
@@ -118,10 +120,14 @@ export class MockAgent implements IAgent {
   }
 
   async getRumorMessage(ctx: PhaseContext): Promise<AgentResponse> {
-    return respond(
-      `Round ${ctx.round} rumor from ${this.name}: Keep your friends close!`,
-      `Spreading a general rumor`,
-    );
+    return {
+      ...respond(
+        `Round ${ctx.round} rumor from ${this.name}: Keep your friends close!`,
+        `Spreading a general rumor`,
+      ),
+      strategicLens: "broad_read",
+      strategicLensRationale: "mock: keep rumor broad",
+    };
   }
 
   async getVotes(
@@ -294,6 +300,8 @@ export class MockAgent implements IAgent {
       targetPosture: "mock: no named target yet",
       coalitionPosture: "mock: keep first ally close",
       nextSocialProbe: "mock: ask who feels too comfortable",
+      strategicLens: "broad_read",
+      strategicLensRationale: "mock: broad strategic scan",
       uncertainty: "mock: unclear who is coordinating",
       reviseTrigger: "mock: revise if votes contradict room talk",
       changedSincePrevious: "initial packet",
@@ -304,6 +312,8 @@ export class MockAgent implements IAgent {
       allies: [],
       threats: [],
       plan: "mock: keep gathering information",
+      strategicLens: "broad_read",
+      strategicLensRationale: "mock: broad strategic scan",
       thinking: "mock: reflect on current strategy",
       reasoningContext: undefined,
       strategyPacket: this.strategyPacket,

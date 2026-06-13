@@ -21,7 +21,7 @@ import { strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type
  */
 export function computeRoomCount(aliveCount: number): number {
   if (aliveCount < 5) return 0;
-  return Math.ceil(aliveCount / 3);
+  return Math.ceil(aliveCount / 3) + 1;
 }
 
 function buildPlayerRef(

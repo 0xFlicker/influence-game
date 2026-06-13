@@ -22,13 +22,14 @@ This observability layer exists because "master wants to see reasoning for votin
 
 Decision methods on `IAgent` / `InfluenceAgent` return the extra fields (typed on the interface and impl):
 
-- `getMingleIntent(...)` → `{ seekPlayers: string[]; avoidPlayers: string[]; preferredRoomSize: ...; purpose: string; provisionalTarget: string | null; noTargetReason: string | null; openingAsk: string; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
+- `getMingleIntent(...)` → `{ seekPlayers: string[]; avoidPlayers: string[]; preferredRoomSize: ...; purpose: string; provisionalTarget: string | null; noTargetReason: string | null; openingAsk: string; strategicLens: StrategicLens; strategicLensRationale: string; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
 - `takeMingleTurn(...)` → `{ thinking?: string; message?: string | null; noReply?: boolean; gotoRoomId?: number | null; strategySignal?: string | null; movementPurpose?: string | null; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
+- `getRumorMessage(...)` → `{ thinking: string; message: string; strategicLens?: StrategicLens; strategicLensRationale?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
 - `getVotes(...)` → `{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
 - `getEmpowerRevote(...)` → `{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
 - `getPowerAction(...)` → `PowerAction & { thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
 - `getCouncilVote(...)` → `{ target: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
-- `getStrategicReflection(...)` → `{ certainties: string[]; suspicions: string[]; allies: string[]; threats: string[]; plan: string; strategyPacket?: StrategyPacketSummary; thinking?: string; reasoningContext?: string } | null`
+- `getStrategicReflection(...)` → `{ certainties: string[]; suspicions: string[]; allies: string[]; threats: string[]; plan: string; strategicLens: StrategicLens; strategicLensRationale: string; strategyPacket?: StrategyPacketSummary; thinking?: string; reasoningContext?: string } | null`
 - `getEndgameEliminationVote(...)` / `getJuryVote(...)` → `{ target: UUID; thinking?: string; reasoningContext?: string }`
 
 (Similar treatment for public messages, `getPowerLobbyMessage`, diary entries, accusations, jury questions, etc.)
@@ -38,10 +39,12 @@ Phase runners receive the rich result, record only the narrow game-state value w
 - `phases/vote.ts`: `logger.logSystem(..., votes.thinking, votes.reasoningContext)`
 - `phases/power.ts`: `logger.logSystem(..., powerActionResult.thinking, powerActionResult.reasoningContext)`
 - `phases/council.ts`: `logger.logSystem(..., voteResult.thinking, voteResult.reasoningContext)`
-- `phases/mingle.ts`: emits hidden `mingle-intent` agent turns before House room assignment, records private `mingle-room-assignment` turns with `assignmentSource` (`house`, `repaired`, `fallback`, or later-beat `movement`), repair notes, and summary-only intent metadata, then records `strategySignal` / `movementPurpose` on private Mingle turn records rather than viewer-facing room text.
-- `diary-room.ts`: emits hidden `strategic-reflection` and `strategy-packet` agent turns when `enableStrategicReflections` is enabled and the reflection produces a packet.
+- `phases/mingle.ts`: emits hidden `mingle-intent` agent turns before House room assignment, records private `mingle-room-assignment` turns with `assignmentSource` (`house`, `repaired`, `fallback`, or later-beat `movement`), repair notes, and summary-only intent metadata including `strategicLens`, then records `strategySignal` / `movementPurpose` on private Mingle turn records rather than viewer-facing room text.
+- `phases/rumor.ts`: emits anonymous rumor turns with public rumor text plus private `strategicLens` / `strategicLensRationale` metadata for producer/debug review.
+- `diary-room.ts`: emits hidden `strategic-reflection` and `strategy-packet` agent turns when `enableStrategicReflections` is enabled and the reflection produces a packet. Reflection and packet records include the selected strategic lens.
 - Every phase runner that resolves an agent call also emits an `agent_turn` stream event via `logger.emitAgentTurn(...)` with the normalized response the game used.
 - Decision agent turns include `response.strategyPacketUse` only when a live Strategy Thread packet existed and the model self-reported how the decision used it (`followed`, `revised`, `ignored`, or `deferred`).
+- Mingle intent, rumor, and strategic-reflection records include `response.strategicLens` and `response.strategicLensRationale` so validation can distinguish vote math, room traffic, coalition geometry, promise debt, social cover, broad reads, and sparse presentation reads without parsing prose.
 
 `AgentTurnEvent` (game-runner.types.ts) is the structured simulation-analysis shape:
 

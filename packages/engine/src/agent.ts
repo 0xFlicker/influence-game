@@ -23,6 +23,7 @@ import type {
   PowerLobbyExposure,
   StrategicReflectionAction,
   StrategicReflectionSummary,
+  StrategicLens,
   StrategyPacketSummary,
   StrategyPacketUpdateAction,
   StrategyPacketUse,
@@ -293,6 +294,58 @@ const STRATEGY_PACKET_USE_TOOL_PROPERTIES = {
 
 const STRATEGY_PACKET_USE_REQUIRED = ["strategyPacketUse", "strategyPacketUseRationale"];
 
+const STRATEGIC_LENSES: readonly StrategicLens[] = [
+  "vote_math",
+  "room_traffic",
+  "promise_debt",
+  "power_position",
+  "private_inconsistency",
+  "coalition_geometry",
+  "information_control",
+  "jury_threat",
+  "loyalty_stress",
+  "retaliation_risk",
+  "social_cover",
+  "timing_pattern",
+  "presentation_read",
+  "relationship_repair",
+  "broad_read",
+];
+
+const STRATEGIC_LENS_TOOL_PROPERTIES = {
+  strategicLens: {
+    type: "string",
+    enum: [...STRATEGIC_LENSES],
+    description: "Primary evidence frame for this decision. Prefer concrete game lenses over presentation_read when evidence supports them.",
+  },
+  strategicLensRationale: {
+    type: "string",
+    description: "One compact sentence explaining why this lens fits the current evidence.",
+  },
+};
+
+const STRATEGIC_LENS_REQUIRED = ["strategicLens", "strategicLensRationale"];
+
+const STRATEGIC_LENS_GUIDANCE = `## Strategic Lens
+Choose the main evidence frame for this decision:
+- vote_math: vote totals, expose/council math, incentives, or immunity consequences
+- room_traffic: who seeks, avoids, follows, leaves, or repeats rooms
+- promise_debt: promises, favors, debts, and broken commitments
+- power_position: empower/protect/eliminate leverage and downstream pressure
+- private_inconsistency: mismatch between private and public statements
+- coalition_geometry: blocs, bridges, swing positions, and isolation
+- information_control: who knows, withholds, leaks, or times information
+- jury_threat: endgame credibility, jury danger, and finalist threat level
+- loyalty_stress: loyalty under pressure or trust being tested
+- retaliation_risk: who may strike back if pressured
+- social_cover: who is being shielded, hidden, or given cover
+- timing_pattern: sudden pivots, delays, and sequence/timing tells
+- presentation_read: style, polish, or authenticity read; use sparingly when no stronger evidence exists
+- relationship_repair: calming, rebuilding, or preserving a useful tie
+- broad_read: intentionally broad scan because evidence is thin
+
+Prefer a non-presentation lens when current evidence supports it. Do not let every decision become a style or authenticity audit.`;
+
 const TOOL_MINGLE_INTENT: ChatCompletionTool = {
   type: "function",
   function: {
@@ -333,9 +386,33 @@ const TOOL_MINGLE_INTENT: ChatCompletionTool = {
           type: "string",
           description: "An opening ask, probe, or information trade you want to try when room context allows",
         },
+        ...STRATEGIC_LENS_TOOL_PROPERTIES,
         ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
       },
-      required: ["thinking", "seekPlayers", "avoidPlayers", "preferredRoomSize", "purpose", "provisionalTarget", "noTargetReason", "openingAsk", ...STRATEGY_PACKET_USE_REQUIRED],
+      required: ["thinking", "seekPlayers", "avoidPlayers", "preferredRoomSize", "purpose", "provisionalTarget", "noTargetReason", "openingAsk", ...STRATEGIC_LENS_REQUIRED, ...STRATEGY_PACKET_USE_REQUIRED],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+};
+
+const TOOL_RUMOR: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "spread_rumor",
+    description: "Write an anonymous rumor with private producer/debug strategic-lens metadata.",
+    parameters: {
+      type: "object",
+      properties: {
+        thinking: { type: "string", description: "Your internal reasoning for this anonymous rumor (hidden from other players)" },
+        message: {
+          type: "string",
+          description: "The anonymous rumor text shown publicly",
+        },
+        ...STRATEGIC_LENS_TOOL_PROPERTIES,
+        ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
+      },
+      required: ["thinking", "message", ...STRATEGIC_LENS_REQUIRED, ...STRATEGY_PACKET_USE_REQUIRED],
       additionalProperties: false,
     },
     strict: true,
@@ -590,17 +667,32 @@ function normalizeStrategyPacketUpdate(value: unknown): StrategyPacketUpdateActi
     targetPosture: normalizeRequiredString(value.targetPosture),
     coalitionPosture: normalizeRequiredString(value.coalitionPosture),
     nextSocialProbe: normalizeRequiredString(value.nextSocialProbe),
+    strategicLens: normalizeStrategicLens(value.strategicLens),
+    strategicLensRationale: normalizeRequiredString(value.strategicLensRationale),
     uncertainty: normalizeRequiredString(value.uncertainty),
     reviseTrigger: normalizeRequiredString(value.reviseTrigger),
     changedSincePrevious: normalizeRequiredString(value.changedSincePrevious),
   };
-  return Object.values(update).some((entry) => entry.length > 0) ? update : null;
+  return [
+    update.objective,
+    update.targetPosture,
+    update.coalitionPosture,
+    update.nextSocialProbe,
+    update.strategicLensRationale,
+    update.uncertainty,
+    update.reviseTrigger,
+    update.changedSincePrevious,
+  ].some((entry) => entry.length > 0) ? update : null;
 }
 
 function normalizePreferredRoomSize(value: unknown): MinglePreferredRoomSize {
   return value === "solo" || value === "pair" || value === "small_group" || value === "large_group" || value === "any"
     ? value
     : "any";
+}
+
+function normalizeStrategicLens(value: unknown): StrategicLens {
+  return STRATEGIC_LENSES.includes(value as StrategicLens) ? value as StrategicLens : "broad_read";
 }
 
 function normalizeStrategyPacketUseValue(value: unknown): StrategyPacketUse | null {
@@ -656,6 +748,7 @@ const TOOL_STRATEGIC_REFLECTION: ChatCompletionTool = {
           type: "string",
           description: "Your plan for the next round in 1-2 sentences",
         },
+        ...STRATEGIC_LENS_TOOL_PROPERTIES,
         strategyPacket: {
           type: "object",
           description: "Compact private strategy state to carry forward into future prompts. This is producer/debug state, not player-visible speech.",
@@ -676,6 +769,7 @@ const TOOL_STRATEGIC_REFLECTION: ChatCompletionTool = {
               type: "string",
               description: "The next social question, room move, information trade, or trust test you want to try.",
             },
+            ...STRATEGIC_LENS_TOOL_PROPERTIES,
             uncertainty: {
               type: "string",
               description: "The most important uncertainty or read that could be wrong.",
@@ -689,11 +783,11 @@ const TOOL_STRATEGIC_REFLECTION: ChatCompletionTool = {
               description: "What changed from the previous Strategy Thread, or 'initial packet' if this is the first one.",
             },
           },
-          required: ["objective", "targetPosture", "coalitionPosture", "nextSocialProbe", "uncertainty", "reviseTrigger", "changedSincePrevious"],
+          required: ["objective", "targetPosture", "coalitionPosture", "nextSocialProbe", ...STRATEGIC_LENS_REQUIRED, "uncertainty", "reviseTrigger", "changedSincePrevious"],
           additionalProperties: false,
         },
       },
-      required: ["thinking", "certainties", "suspicions", "allies", "threats", "plan", "strategyPacket"],
+      required: ["thinking", "certainties", "suspicions", "allies", "threats", "plan", ...STRATEGIC_LENS_REQUIRED, "strategyPacket"],
       additionalProperties: false,
     },
     strict: true,
@@ -861,6 +955,8 @@ export class InfluenceAgent implements IAgent {
       targetPosture: update.targetPosture,
       coalitionPosture: update.coalitionPosture,
       nextSocialProbe: update.nextSocialProbe,
+      strategicLens: update.strategicLens,
+      strategicLensRationale: update.strategicLensRationale,
       uncertainty: update.uncertainty,
       reviseTrigger: update.reviseTrigger,
       changedSincePrevious: update.changedSincePrevious || (previousRevisionId ? "Updated after reflection." : "initial packet"),
@@ -921,6 +1017,8 @@ export class InfluenceAgent implements IAgent {
       targetPosture: this.scrubEliminatedPlayerNames(packet.targetPosture, eliminatedNames),
       coalitionPosture: this.scrubEliminatedPlayerNames(packet.coalitionPosture, eliminatedNames),
       nextSocialProbe: this.scrubEliminatedPlayerNames(packet.nextSocialProbe, eliminatedNames),
+      strategicLens: packet.strategicLens,
+      strategicLensRationale: this.scrubEliminatedPlayerNames(packet.strategicLensRationale, eliminatedNames),
       uncertainty: this.scrubEliminatedPlayerNames(packet.uncertainty, eliminatedNames),
       reviseTrigger: this.scrubEliminatedPlayerNames(packet.reviseTrigger, eliminatedNames),
       changedSincePrevious: this.scrubEliminatedPlayerNames(packet.changedSincePrevious, eliminatedNames),
@@ -1118,6 +1216,9 @@ Standing target check:
 - If you name provisionalTarget, use exactly one name from Available other players. Never name yourself or anyone listed as eliminated.
 - If your prior Strategy Thread points at an eliminated player or stale target, treat that as evidence to revise: either pick a living replacement to test, or set provisionalTarget to null and explain what living evidence is still missing.
 - It is valid to leave provisionalTarget null when your plan is relationship-building, alliance repair, or broad read gathering. The reason should be concrete.
+
+${STRATEGIC_LENS_GUIDANCE}
+
 Use the form_mingle_intent tool.`;
 
     try {
@@ -1130,6 +1231,8 @@ Use the form_mingle_intent tool.`;
         provisionalTarget?: unknown;
         noTargetReason?: unknown;
         openingAsk?: unknown;
+        strategicLens?: unknown;
+        strategicLensRationale?: unknown;
         strategyPacketUse?: unknown;
         strategyPacketUseRationale?: unknown;
         reasoningContext?: string;
@@ -1145,6 +1248,8 @@ Use the form_mingle_intent tool.`;
         provisionalTarget: normalizeNullableString(result.provisionalTarget),
         noTargetReason: normalizeNullableString(result.noTargetReason),
         openingAsk: normalizeRequiredString(result.openingAsk),
+        strategicLens: normalizeStrategicLens(result.strategicLens),
+        strategicLensRationale: normalizeRequiredString(result.strategicLensRationale),
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         strategyPacketUse: this.strategyPacketUseMarker(result.strategyPacketUse, result.strategyPacketUseRationale),
@@ -1233,6 +1338,8 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
 - Provisional target: ${intent.provisionalTarget ?? "none"}
 - No-target reason: ${intent.noTargetReason ?? "not applicable"}
 - Opening ask/probe: ${intent.openingAsk || "none"}
+- Strategic lens: ${intent.strategicLens}
+- Lens rationale: ${intent.strategicLensRationale || "none recorded"}
 `
       : "";
 
@@ -1343,16 +1450,42 @@ You may hint at what you learned, but specifics should stay private.
 
 ${rumorStyle}
 
-Keep it to 1-2 sentences. One sharp claim is better than two weak ones.`;
+${STRATEGIC_LENS_GUIDANCE}
 
-    const response = await this.callLLMWithThinking(prompt, 150, sys, { action: "rumor", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
-    // Strip "The shadows whisper: " prefix if the LLM included it
-    return {
-      thinking: response.thinking,
-      message: response.message.replace(/^the\s+shadows?\s+whispers?:\s*/i, ""),
-      reasoningContext: response.reasoningContext,
-      strategyPacketUse: response.strategyPacketUse,
-    };
+Keep it to 1-2 sentences. One sharp claim is better than two weak ones.
+Use the spread_rumor tool.`;
+
+    try {
+      const result = await this.callTool<{
+        thinking?: string;
+        message?: unknown;
+        strategicLens?: unknown;
+        strategicLensRationale?: unknown;
+        strategyPacketUse?: unknown;
+        strategyPacketUseRationale?: unknown;
+        reasoningContext?: string;
+      }>(
+        prompt, TOOL_RUMOR, 180, sys,
+        { action: "rumor", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
+      );
+      // Strip "The shadows whisper: " prefix if the LLM included it.
+      return {
+        thinking: result.thinking ?? "",
+        message: normalizeRequiredString(result.message).replace(/^the\s+shadows?\s+whispers?:\s*/i, ""),
+        reasoningContext: result.reasoningContext,
+        strategicLens: normalizeStrategicLens(result.strategicLens),
+        strategicLensRationale: normalizeRequiredString(result.strategicLensRationale),
+        strategyPacketUse: this.strategyPacketUseMarker(result.strategyPacketUse, result.strategyPacketUseRationale),
+      };
+    } catch (err) {
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getRumorMessage error="${err instanceof Error ? err.message : err}" fallback=generic-rumor`);
+      return {
+        thinking: "",
+        message: "Someone is quieter than their position should allow.",
+        strategicLens: "broad_read",
+        strategicLensRationale: "Fallback rumor after structured rumor generation failed.",
+      };
+    }
   }
 
   async getVotes(
@@ -2116,8 +2249,8 @@ ${endgameInfo}
 - Known threats: ${threats}
 ${memoryNotes ? `- Notes:\n${memoryNotes}` : ""}
 ${voteHistorySection ? `${voteHistorySection}\n` : ""}
-${strategyPacket ? `## Strategy Thread\nThis is your private carry-forward strategy context, not an order. You may follow it, test it, revise it, ignore it, or defer it when current evidence warrants.\n- Revision: ${strategyPacket.revisionId}${strategyPacket.previousRevisionId ? ` (previous ${strategyPacket.previousRevisionId})` : ""}\n- Objective: ${strategyPacket.objective || "stay flexible"}\n- Target posture: ${strategyPacket.targetPosture || "no named target yet"}\n- Coalition posture: ${strategyPacket.coalitionPosture || "keep relationships flexible"}\n- Next social probe: ${strategyPacket.nextSocialProbe || "look for new evidence"}\n- Uncertainty: ${strategyPacket.uncertainty || "none recorded"}\n- Revise if: ${strategyPacket.reviseTrigger || "new evidence contradicts the plan"}\n- Changed since previous: ${strategyPacket.changedSincePrevious || "none recorded"}\nStanding target discipline:\n- A standing target is your current living default pressure/read target. It can be a quiet watch target, a Mingle probe, an expose candidate, or no target yet.\n- Never treat an eliminated player as an active standing target. If the packet names someone marked eliminated, use that as stale history and pivot to a living replacement or explicitly no standing target.\n- Do not force target naming. Soft reads, alliance repair, and information-gathering are valid when the evidence is not there.\nWhen a tool asks for strategyPacketUse, report how this decision used revision ${strategyPacket.revisionId} as self-reported linkage evidence, with a compact rationale tied to current evidence.` : ""}
-${this.memory.lastReflection ? `## Strategic Assessment\n- Certainties: ${(this.memory.lastReflection.certainties ?? []).join("; ") || "none"}\n- Suspicions: ${(this.memory.lastReflection.suspicions ?? []).join("; ") || "none"}\n- Allies: ${(this.memory.lastReflection.allies ?? []).join("; ") || "none"}\n- Threats: ${(this.memory.lastReflection.threats ?? []).join("; ") || "none"}\n- Plan: ${this.memory.lastReflection.plan ?? "none"}` : ""}
+${strategyPacket ? `## Strategy Thread\nThis is your private carry-forward strategy context, not an order. You may follow it, test it, revise it, ignore it, or defer it when current evidence warrants.\n- Revision: ${strategyPacket.revisionId}${strategyPacket.previousRevisionId ? ` (previous ${strategyPacket.previousRevisionId})` : ""}\n- Objective: ${strategyPacket.objective || "stay flexible"}\n- Target posture: ${strategyPacket.targetPosture || "no named target yet"}\n- Coalition posture: ${strategyPacket.coalitionPosture || "keep relationships flexible"}\n- Next social probe: ${strategyPacket.nextSocialProbe || "look for new evidence"}\n- Strategic lens: ${strategyPacket.strategicLens || "broad_read"}\n- Lens rationale: ${strategyPacket.strategicLensRationale || "none recorded"}\n- Uncertainty: ${strategyPacket.uncertainty || "none recorded"}\n- Revise if: ${strategyPacket.reviseTrigger || "new evidence contradicts the plan"}\n- Changed since previous: ${strategyPacket.changedSincePrevious || "none recorded"}\nStanding target discipline:\n- A standing target is your current living default pressure/read target. It can be a quiet watch target, a Mingle probe, an expose candidate, or no target yet.\n- Never treat an eliminated player as an active standing target. If the packet names someone marked eliminated, use that as stale history and pivot to a living replacement or explicitly no standing target.\n- Do not force target naming. Soft reads, alliance repair, and information-gathering are valid when the evidence is not there.\nWhen a tool asks for strategyPacketUse, report how this decision used revision ${strategyPacket.revisionId} as self-reported linkage evidence, with a compact rationale tied to current evidence.` : ""}
+${this.memory.lastReflection ? `## Strategic Assessment\n- Certainties: ${(this.memory.lastReflection.certainties ?? []).join("; ") || "none"}\n- Suspicions: ${(this.memory.lastReflection.suspicions ?? []).join("; ") || "none"}\n- Allies: ${(this.memory.lastReflection.allies ?? []).join("; ") || "none"}\n- Threats: ${(this.memory.lastReflection.threats ?? []).join("; ") || "none"}\n- Plan: ${this.memory.lastReflection.plan ?? "none"}\n- Strategic lens: ${this.memory.lastReflection.strategicLens ?? "broad_read"}\n- Lens rationale: ${this.memory.lastReflection.strategicLensRationale ?? "none recorded"}` : ""}
 ## Recent Public Messages
 ${recentMessages || "  (none yet)"}
 ${anonymousSection}
@@ -2906,6 +3039,8 @@ Use the strategic_reflection tool to record your analysis.
 
 Be specific — name players, cite events, reference conversations.
 
+${STRATEGIC_LENS_GUIDANCE}
+
 For strategyPacket.targetPosture, choose a standing target posture:
 - If you have enough evidence, name one living player as the current default pressure/read target and say how hard the pressure should be.
 - If you do not have enough evidence, explicitly say there is no standing target yet and name what evidence would change that.
@@ -2919,6 +3054,8 @@ For strategyPacket.targetPosture, choose a standing target posture:
         allies?: unknown;
         threats?: unknown;
         plan?: unknown;
+        strategicLens?: unknown;
+        strategicLensRationale?: unknown;
         strategyPacket?: unknown;
         reasoningContext?: string;
       }>(
@@ -2931,6 +3068,8 @@ For strategyPacket.targetPosture, choose a standing target posture:
         allies: normalizeStringArray(reflection.allies),
         threats: normalizeStringArray(reflection.threats),
         plan: normalizeRequiredString(reflection.plan),
+        strategicLens: normalizeStrategicLens(reflection.strategicLens),
+        strategicLensRationale: normalizeRequiredString(reflection.strategicLensRationale),
         thinking: reflection.thinking,
         reasoningContext: reflection.reasoningContext,
       };
@@ -2948,6 +3087,8 @@ For strategyPacket.targetPosture, choose a standing target posture:
         allies: reflectionSummary.allies,
         threats: reflectionSummary.threats,
         plan: reflectionSummary.plan,
+        strategicLens: reflectionSummary.strategicLens,
+        strategicLensRationale: reflectionSummary.strategicLensRationale,
       };
       this.persistMemory("reflection", null, JSON.stringify({
         certainties: normalized.certainties,
@@ -2955,6 +3096,8 @@ For strategyPacket.targetPosture, choose a standing target posture:
         allies: normalized.allies,
         threats: normalized.threats,
         plan: normalized.plan,
+        strategicLens: normalized.strategicLens,
+        strategicLensRationale: normalized.strategicLensRationale,
       }));
       return normalized;
     } catch (err) {
@@ -2995,6 +3138,7 @@ For strategyPacket.targetPosture, choose a standing target posture:
         targetPosture: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.targetPosture, [playerName]),
         coalitionPosture: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.coalitionPosture, [playerName]),
         nextSocialProbe: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.nextSocialProbe, [playerName]),
+        strategicLensRationale: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.strategicLensRationale, [playerName]),
         uncertainty: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.uncertainty, [playerName]),
         reviseTrigger: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.reviseTrigger, [playerName]),
         changedSincePrevious: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.changedSincePrevious, [playerName]),

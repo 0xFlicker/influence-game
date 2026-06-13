@@ -15,8 +15,8 @@ export async function runRumorPhase(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.RUMOR);
-      const { message, thinking, reasoningContext, strategyPacketUse } = await agent.getRumorMessage(phaseCtx);
-      return { playerId: player.id, message, thinking, reasoningContext, strategyPacketUse };
+      const { message, thinking, reasoningContext, strategyPacketUse, strategicLens, strategicLensRationale } = await agent.getRumorMessage(phaseCtx);
+      return { playerId: player.id, message, thinking, reasoningContext, strategyPacketUse, strategicLens, strategicLensRationale };
     }),
   );
 
@@ -45,6 +45,8 @@ export async function runRumorPhase(
       response: {
         message: rumor.message,
         displayOrder: i + 1,
+        strategicLens: rumor.strategicLens ?? null,
+        strategicLensRationale: rumor.strategicLensRationale ?? null,
         ...strategyPacketUseResponse(rumor.strategyPacketUse),
       },
       thinking: rumor.thinking,

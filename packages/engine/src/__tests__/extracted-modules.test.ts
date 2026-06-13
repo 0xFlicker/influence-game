@@ -285,14 +285,14 @@ describe("computeRoomCount", () => {
     expect(computeRoomCount(4)).toBe(0);
   });
 
-  it("scales open rooms by ceil(alive / 3)", () => {
-    expect(computeRoomCount(5)).toBe(2);
-    expect(computeRoomCount(6)).toBe(2);
-    expect(computeRoomCount(7)).toBe(3);
-    expect(computeRoomCount(9)).toBe(3);
-    expect(computeRoomCount(10)).toBe(4);
-    expect(computeRoomCount(12)).toBe(4);
-    expect(computeRoomCount(16)).toBe(6);
+  it("scales open rooms by ceil(alive / 3) plus one", () => {
+    expect(computeRoomCount(5)).toBe(3);
+    expect(computeRoomCount(6)).toBe(3);
+    expect(computeRoomCount(7)).toBe(4);
+    expect(computeRoomCount(9)).toBe(4);
+    expect(computeRoomCount(10)).toBe(5);
+    expect(computeRoomCount(12)).toBe(5);
+    expect(computeRoomCount(16)).toBe(7);
   });
 });
 

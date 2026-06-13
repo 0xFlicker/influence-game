@@ -378,6 +378,8 @@ describe("InfluenceAgent structured output mode", () => {
           provisionalTarget: "Vera",
           noTargetReason: null,
           openingAsk: "Ask Mira whether Vera's lobby warmth felt rehearsed.",
+          strategicLens: "coalition_geometry",
+          strategicLensRationale: "Atlas is testing whether Mira will join a Vera pressure lane.",
         },
         "Hidden local reasoning for the Mingle intent.",
       ),
@@ -402,6 +404,8 @@ describe("InfluenceAgent structured output mode", () => {
       provisionalTarget: "Vera",
       noTargetReason: null,
       openingAsk: "Ask Mira whether Vera's lobby warmth felt rehearsed.",
+      strategicLens: "coalition_geometry",
+      strategicLensRationale: "Atlas is testing whether Mira will join a Vera pressure lane.",
       thinking: "Mira is useful to compare notes with, while Vera is too slippery to trust yet.",
       reasoningContext: "Hidden local reasoning for the Mingle intent.",
     });
@@ -409,6 +413,9 @@ describe("InfluenceAgent structured output mode", () => {
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.at(-1)!.content;
     expect(prompt).toContain("Standing target check:");
+    expect(prompt).toContain("## Strategic Lens");
+    expect(prompt).toContain("coalition_geometry");
+    expect(prompt).toContain("Prefer a non-presentation lens");
     expect(prompt).toContain("one living player");
     expect(prompt).toContain("Never name yourself or anyone listed as eliminated.");
     expect(prompt).toContain("It is valid to leave provisionalTarget null");
@@ -454,6 +461,8 @@ describe("InfluenceAgent structured output mode", () => {
         provisionalTarget: null,
         noTargetReason: "Atlas has only vibes, not evidence.",
         openingAsk: "Ask whether Vera's warmth feels rehearsed or genuine.",
+        strategicLens: "room_traffic",
+        strategicLensRationale: "Atlas wants to watch who seeks or avoids Vera.",
       },
     }, ["Atlas"], []);
 
@@ -472,32 +481,47 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("Find one person willing to compare Vera reads without committing too early.");
     expect(prompt).toContain("No-target reason: Atlas has only vibes, not evidence.");
     expect(prompt).toContain("Ask whether Vera's warmth feels rehearsed or genuine.");
+    expect(prompt).toContain("Strategic lens: room_traffic");
+    expect(prompt).toContain("Lens rationale: Atlas wants to watch who seeks or avoids Vera.");
     expect(prompt).toContain("You may name a target or ally");
     expect(prompt).toContain("You do not have to name a target");
     expect(prompt).toContain("TALK has no audience");
   });
 
   it("early rumor prompt avoids hard example phrases while preserving early-game constraints", async () => {
+    const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
       "Atlas",
       "strategic",
-      makeOpenAIStub([]),
+      makeToolOpenAIStub(
+        requests,
+        "spread_rumor",
+        {
+          thinking: "Keep it soft because it is early.",
+          message: "Someone is trying very hard to seem harmless.",
+          strategicLens: "broad_read",
+          strategicLensRationale: "Early evidence is thin.",
+          strategyPacketUse: null,
+          strategyPacketUseRationale: null,
+        },
+      ),
       "gpt-5-nano",
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    let capturedPrompt = "";
-    (agent as unknown as {
-      callLLMWithThinking: (prompt: string) => Promise<{ thinking: string; message: string }>;
-    }).callLLMWithThinking = async (prompt: string) => {
-      capturedPrompt = prompt;
-      return { thinking: "", message: "Someone is trying very hard to seem harmless." };
-    };
+    const rumor = await agent.getRumorMessage(makeContext(Phase.RUMOR));
 
-    await agent.getRumorMessage(makeContext(Phase.RUMOR));
-
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const capturedPrompt = messages.at(-1)!.content;
+    expect(rumor).toMatchObject({
+      message: "Someone is trying very hard to seem harmless.",
+      strategicLens: "broad_read",
+      strategicLensRationale: "Early evidence is thin.",
+    });
     expect(capturedPrompt).toContain("Do NOT accuse anyone of forming alliances");
+    expect(capturedPrompt).toContain("Use the spread_rumor tool.");
+    expect(capturedPrompt).toContain("Prefer a non-presentation lens");
     for (const banned of ["rehearsed", "script", "performance", "polished", "curated"]) {
       expect(capturedPrompt.toLowerCase()).not.toContain(banned);
     }
@@ -519,6 +543,19 @@ describe("InfluenceAgent structured output mode", () => {
           allies: ["Mira"],
           threats: ["Vera"],
           plan: "Keep Mira close and test whether Finn will expose Vera next.",
+          strategicLens: "private_inconsistency",
+          strategicLensRationale: "Vera's private posture is not matching her public warmth.",
+          strategyPacket: {
+            objective: "Keep Mira close while testing Vera's inconsistent posture.",
+            targetPosture: "Vera is the soft pressure target.",
+            coalitionPosture: "Mira is a working ally.",
+            nextSocialProbe: "Ask Finn whether Vera gave a clear vote answer.",
+            strategicLens: "private_inconsistency",
+            strategicLensRationale: "The next move depends on whether Vera's private story matches public warmth.",
+            uncertainty: "Finn may be exaggerating Vera's evasiveness.",
+            reviseTrigger: "Revise if Finn says Vera was direct.",
+            changedSincePrevious: "initial packet",
+          },
         },
         "Hidden local reasoning for the strategic reflection.",
       ),
@@ -537,8 +574,14 @@ describe("InfluenceAgent structured output mode", () => {
       allies: ["Mira"],
       threats: ["Vera"],
       plan: "Keep Mira close and test whether Finn will expose Vera next.",
+      strategicLens: "private_inconsistency",
+      strategicLensRationale: "Vera's private posture is not matching her public warmth.",
       thinking: "Mira is a likely ally and Vera remains the most plausible threat.",
       reasoningContext: "Hidden local reasoning for the strategic reflection.",
+      strategyPacket: expect.objectContaining({
+        revisionId: "r1-vote-1",
+        strategicLens: "private_inconsistency",
+      }),
     });
   });
 
@@ -558,11 +601,15 @@ describe("InfluenceAgent structured output mode", () => {
             allies: ["Mira"],
             threats: ["Vera"],
             plan: "Keep Mira close and test whether Vera is coordinating.",
+            strategicLens: "social_cover",
+            strategicLensRationale: "Atlas is checking whether Vera has protection from Mira.",
             strategyPacket: {
               objective: "Keep Mira close while testing Vera's social cover.",
               targetPosture: "Pressure Vera only if she dodges the next probe.",
               coalitionPosture: "Treat Mira as a working ally, not a final commitment.",
               nextSocialProbe: "Ask Mira whether Vera's warmth feels rehearsed.",
+              strategicLens: "social_cover",
+              strategicLensRationale: "Atlas is checking whether Vera is being shielded by Mira.",
               uncertainty: "Mira may be shielding Vera instead of helping Atlas.",
               reviseTrigger: "Revise if Mira refuses to compare Vera reads.",
               changedSincePrevious: "initial packet",
@@ -595,12 +642,15 @@ describe("InfluenceAgent structured output mode", () => {
       revisionId: "r1-vote-1",
       objective: "Keep Mira close while testing Vera's social cover.",
       targetPosture: "Pressure Vera only if she dodges the next probe.",
+      strategicLens: "social_cover",
+      strategicLensRationale: "Atlas is checking whether Vera is being shielded by Mira.",
     });
     expect(agent.getStrategyPacket()).toEqual(strategyPacket);
 
     const reflectionMessages = requests[0]?.messages as Array<{ content: string }>;
     const reflectionPrompt = reflectionMessages.at(-1)!.content;
     expect(reflectionPrompt).toContain("For strategyPacket.targetPosture, choose a standing target posture:");
+    expect(reflectionPrompt).toContain("## Strategic Lens");
     expect(reflectionPrompt).toContain("name one living player");
     expect(reflectionPrompt).toContain("If a prior target is now eliminated, do not carry them as active.");
 
@@ -622,6 +672,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(votePrompt).toContain("## Strategy Thread");
     expect(votePrompt).toContain("- Revision: r1-vote-1");
     expect(votePrompt).toContain("Keep Mira close while testing Vera's social cover.");
+    expect(votePrompt).toContain("- Strategic lens: social_cover");
     expect(votePrompt).toContain("Standing target discipline:");
     expect(votePrompt).toContain("Never treat an eliminated player as an active standing target.");
     expect(votePrompt).toContain("self-reported linkage evidence");
@@ -644,11 +695,15 @@ describe("InfluenceAgent structured output mode", () => {
             allies: [],
             threats: ["Mira"],
             plan: "Pressure Mira unless the field changes.",
+            strategicLens: "vote_math",
+            strategicLensRationale: "The vote frame changed after elimination.",
             strategyPacket: {
               objective: "Push Mira into the open before the next vote.",
               targetPosture: "Mira is the working target.",
               coalitionPosture: "Keep Vera flexible until Mira is exposed.",
               nextSocialProbe: "Ask Vera whether Mira promised her safety.",
+              strategicLens: "vote_math",
+              strategicLensRationale: "The stale target needs to be revised after elimination math changes.",
               uncertainty: "Mira may already have lost enough social cover.",
               reviseTrigger: "Revise if Mira leaves the game.",
               changedSincePrevious: "initial packet",

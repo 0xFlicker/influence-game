@@ -61,6 +61,8 @@ class LifecycleMockAgent implements IAgent {
       provisionalTarget: null,
       noTargetReason: "lifecycle mock does not pick a target",
       openingAsk: "compare notes",
+      strategicLens: "room_traffic",
+      strategicLensRationale: "lifecycle mock watches room traffic",
       thinking: "lifecycle mock Mingle intent",
     };
   }
@@ -118,6 +120,8 @@ class LifecycleMockAgent implements IAgent {
       allies: [],
       threats: [],
       plan: "lifecycle mock plan",
+      strategicLens: "broad_read",
+      strategicLensRationale: "lifecycle mock broad reflection",
       thinking: "lifecycle mock strategic reflection",
     };
   }

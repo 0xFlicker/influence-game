@@ -157,7 +157,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     );
     expect(allocation).toBeDefined();
     expect(allocation!.text).toContain("Turn 1:");
-    expect(allocation!.roomMetadata!.rooms).toHaveLength(2);
+    expect(allocation!.roomMetadata!.rooms).toHaveLength(3);
     expect(allocation!.roomMetadata!.rooms[0]!.playerIds.length).toBeGreaterThan(0);
   });
 
@@ -172,6 +172,8 @@ describe("Mingle Rooms (current open-room phase)", () => {
           provisionalTarget: "Gamma",
           noTargetReason: null,
           openingAsk: "Ask Beta whether Gamma seems too comfortable.",
+          strategicLens: "coalition_geometry",
+          strategicLensRationale: `${this.name} is testing whether Beta and Gamma sit in the same pressure pattern.`,
           thinking: `${this.name} hidden Mingle intent`,
           reasoningContext: `${this.name} native intent reasoning`,
         };
@@ -201,6 +203,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
         purpose: "Alpha wants to test whether Beta will name Gamma.",
         provisionalTarget: "Gamma",
         openingAsk: "Ask Beta whether Gamma seems too comfortable.",
+        strategicLens: "coalition_geometry",
       },
       thinking: "Alpha hidden Mingle intent",
       reasoningContext: "Alpha native intent reasoning",
@@ -212,6 +215,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
         intent: {
           purpose: "Alpha wants to test whether Beta will name Gamma.",
           provisionalTarget: "Gamma",
+          strategicLens: "coalition_geometry",
         },
       },
     });
@@ -233,11 +237,11 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const result = await runner.run();
 
     const allocation = result.transcript.find((entry) => entry.roomMetadata);
-    expect(allocation?.roomMetadata?.rooms.map((room) => room.playerIds.length)).toEqual([4, 1]);
+    expect(allocation?.roomMetadata?.rooms.map((room) => room.playerIds.length)).toEqual([3, 1, 1]);
 
     const roomMessages = result.transcript.filter((entry) => entry.scope === "mingle" && entry.phase === Phase.MINGLE);
-    expect(roomMessages).toHaveLength(4);
-    expect(roomMessages[0]!.to).toHaveLength(3);
+    expect(roomMessages).toHaveLength(3);
+    expect(roomMessages[0]!.to).toHaveLength(2);
   });
 
   it("open rooms skip conversation for singleton rooms", async () => {
@@ -259,7 +263,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
 
     const roomMessages = result.transcript.filter((entry) => entry.scope === "mingle" && entry.phase === Phase.MINGLE);
     expect(roomMessages.every((entry) => entry.from !== "Alpha")).toBe(true);
-    expect(roomMessages).toHaveLength(4);
+    expect(roomMessages).toHaveLength(3);
   });
 
   it("passes open-room Mingle messages into the following phase context", async () => {
@@ -352,6 +356,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
       new ScriptedMingleAgent(createUUID(), "Gamma", []),
       new ScriptedMingleAgent(createUUID(), "Delta", []),
       new ScriptedMingleAgent(createUUID(), "Echo", []),
+      new ScriptedMingleAgent(createUUID(), "Finn", []),
     ];
 
     const runner = new GameRunner(
@@ -363,6 +368,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
         Gamma: 2,
         Delta: 2,
         Echo: 2,
+        Finn: 3,
       }),
     );
     const events: GameStreamEvent[] = [];
@@ -476,18 +482,18 @@ describe("Mingle Rooms (current open-room phase)", () => {
         Beta: 1,
         Gamma: 2,
         Delta: 2,
-        Echo: 2,
+        Echo: 3,
       }),
     );
     await runner.run();
 
-    expect(alpha.turnContexts[0]!.roomCounts).toEqual([{ roomId: 1, count: 2 }, { roomId: 2, count: 3 }]);
+    expect(alpha.turnContexts[0]!.roomCounts).toEqual([{ roomId: 1, count: 2 }, { roomId: 2, count: 2 }, { roomId: 3, count: 1 }]);
     expect(alpha.turnContexts[0]!.roomMates).toEqual(["Alpha", "Beta"]);
     expect(alpha.turnContexts[0]!.currentRoomId).toBe(1);
     expect(alpha.turnContexts[0]!.roomAllocations).toBeUndefined();
 
-    expect(gamma.turnContexts[0]!.roomCounts).toEqual([{ roomId: 1, count: 2 }, { roomId: 2, count: 3 }]);
-    expect(gamma.turnContexts[0]!.roomMates).toEqual(["Gamma", "Delta", "Echo"]);
+    expect(gamma.turnContexts[0]!.roomCounts).toEqual([{ roomId: 1, count: 2 }, { roomId: 2, count: 2 }, { roomId: 3, count: 1 }]);
+    expect(gamma.turnContexts[0]!.roomMates).toEqual(["Gamma", "Delta"]);
     expect(gamma.turnContexts[0]!.roomMates).not.toContain("Alpha");
     expect(gamma.turnContexts[0]!.roomAllocations).toBeUndefined();
   });
@@ -544,9 +550,9 @@ describe("Mingle Rooms (current open-room phase)", () => {
       (entry) => entry.round === 1 && entry.scope === "system" && entry.roomMetadata,
     );
     const firstRooms = allocations[0]!.roomMetadata!.rooms;
-    expect(firstRooms).toHaveLength(3);
-    expect(firstRooms.map((room) => room.playerIds.length)).toEqual([1, 5, 1]);
-    expect(allocations[0]!.roomMetadata!.diagnostics!.allocatedRooms.map((room) => room.conversationRan)).toEqual([false, true, false]);
+    expect(firstRooms).toHaveLength(4);
+    expect(firstRooms.map((room) => room.playerIds.length)).toEqual([1, 4, 1, 1]);
+    expect(allocations[0]!.roomMetadata!.diagnostics!.allocatedRooms.map((room) => room.conversationRan)).toEqual([false, true, false, false]);
 
     const alphaFirstAction = allocations[0]!.roomMetadata!.diagnostics!.actions!.find((action) => action.player.name === "Alpha");
     expect(alphaFirstAction).toMatchObject({ action: "no_reply", fromRoomId: 1, toRoomId: 2, moved: true });

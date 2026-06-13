@@ -14,9 +14,10 @@ import type {
   MingleSessionDiagnostics,
   MingleRoomCount,
   MingleIntentSummary as MingleIntentSummaryBase,
+  StrategicLens,
 } from "./types";
 
-export type { MingleIntentSummary, MinglePreferredRoomSize } from "./types";
+export type { MingleIntentSummary, MinglePreferredRoomSize, StrategicLens } from "./types";
 
 // ---------------------------------------------------------------------------
 // Stream events — emitted in real-time for WebSocket observers
@@ -53,6 +54,10 @@ export interface AgentResponse {
   reasoningContext?: string;
   /** Private producer/debug linkage describing how the current strategy packet informed this response. */
   strategyPacketUse?: StrategyPacketUseMarker;
+  /** Private producer/debug frame describing the main evidence lens for this response. */
+  strategicLens?: StrategicLens;
+  /** Compact private rationale for the selected strategic lens. */
+  strategicLensRationale?: string;
 }
 
 export type StrategyPacketUse = "followed" | "revised" | "ignored" | "deferred";
@@ -75,6 +80,8 @@ export interface StrategyPacketSummary {
   targetPosture: string;
   coalitionPosture: string;
   nextSocialProbe: string;
+  strategicLens: StrategicLens;
+  strategicLensRationale: string;
   uncertainty: string;
   reviseTrigger: string;
   changedSincePrevious: string;
@@ -85,6 +92,8 @@ export interface StrategyPacketUpdateAction {
   targetPosture: string;
   coalitionPosture: string;
   nextSocialProbe: string;
+  strategicLens: StrategicLens;
+  strategicLensRationale: string;
   uncertainty: string;
   reviseTrigger: string;
   changedSincePrevious: string;
@@ -124,6 +133,8 @@ export interface StrategicReflectionAction {
   allies: string[];
   threats: string[];
   plan: string;
+  strategicLens: StrategicLens;
+  strategicLensRationale: string;
   /** Agent's internal thinking (hidden from players, visible to viewers) */
   thinking?: string;
   /** Raw model reasoning context from local LLM */
@@ -132,7 +143,7 @@ export interface StrategicReflectionAction {
   strategyPacket?: StrategyPacketSummary | null;
 }
 
-export type StrategicReflectionSummary = Pick<StrategicReflectionAction, "certainties" | "suspicions" | "allies" | "threats" | "plan">;
+export type StrategicReflectionSummary = Pick<StrategicReflectionAction, "certainties" | "suspicions" | "allies" | "threats" | "plan" | "strategicLens" | "strategicLensRationale">;
 
 export interface TargetDecision {
   target: UUID;

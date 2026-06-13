@@ -80,6 +80,8 @@ export class DiaryRoom {
         allies: reflection.allies,
         threats: reflection.threats,
         plan: reflection.plan,
+        strategicLens: reflection.strategicLens,
+        strategicLensRationale: reflection.strategicLensRationale,
       },
       thinking: reflection.thinking,
       reasoningContext: reflection.reasoningContext,

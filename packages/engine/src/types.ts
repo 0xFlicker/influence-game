@@ -187,6 +187,23 @@ export type MingleRoomAssignmentSource = "house" | "repaired" | "fallback" | "mo
 
 export type MinglePreferredRoomSize = "solo" | "pair" | "small_group" | "large_group" | "any";
 
+export type StrategicLens =
+  | "vote_math"
+  | "room_traffic"
+  | "promise_debt"
+  | "power_position"
+  | "private_inconsistency"
+  | "coalition_geometry"
+  | "information_control"
+  | "jury_threat"
+  | "loyalty_stress"
+  | "retaliation_risk"
+  | "social_cover"
+  | "timing_pattern"
+  | "presentation_read"
+  | "relationship_repair"
+  | "broad_read";
+
 export interface MingleIntentSummary {
   seekPlayers: string[];
   avoidPlayers: string[];
@@ -195,6 +212,8 @@ export interface MingleIntentSummary {
   provisionalTarget: string | null;
   noTargetReason: string | null;
   openingAsk: string;
+  strategicLens: StrategicLens;
+  strategicLensRationale: string;
 }
 
 export interface MingleRoomAssignmentRecord {

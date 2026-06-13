@@ -31,12 +31,13 @@
  * `game-{N}.txt` output.
  *
  * Hidden `mingle-intent` and House `mingle-room-assignment` records are always
- * written to `game-{N}-turns.jsonl`, including assignment source/repair metadata.
+ * written to `game-{N}-turns.jsonl`, including strategic-lens and assignment
+ * source/repair metadata.
  * Specialized `empower-revote` records are written when an empower tie occurs.
  * Hidden `strategic-reflection` and `strategy-packet` records are written there
  * when `--strategic-reflections` is enabled for validation runs. Later private
- * decisions may include `strategyPacketUse` markers linking back to a packet
- * revision as self-reported follow/revise/ignore/defer evidence.
+ * decisions, including rumors, may include `strategicLens` and `strategyPacketUse`
+ * markers for searchable producer/debug validation.
  */
 
 import type OpenAI from "openai";

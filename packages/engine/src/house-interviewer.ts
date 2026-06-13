@@ -207,6 +207,8 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
               `provisionalTarget=${intent.provisionalTarget ?? "none"}`,
               `noTargetReason=${intent.noTargetReason ?? "n/a"}`,
               `openingAsk=${intent.openingAsk || "not stated"}`,
+              `strategicLens=${intent.strategicLens}`,
+              `lensRationale=${intent.strategicLensRationale || "not stated"}`,
             ].join("; ")
           : "no intent available";
         return `- ${player.name} (${player.id}): ${intentText}`;
