@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Ideation: House MC Strategy Carry-Forward</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --void: #0b0c10;
+      --surface: #151821;
+      --surface-raised: #202633;
+      --surface-soft: #26303f;
+      --ink: #f6f0e8;
+      --muted: #c8bdad;
+      --soft: #938a7d;
+      --line: #3d4657;
+      --gold: #f4bd53;
+      --gold-soft: #3a2c16;
+      --teal: #68d8cf;
+      --teal-soft: #173a3b;
+      --rose: #ef7894;
+      --rose-soft: #3a1c28;
+      --violet: #a895ff;
+      --violet-soft: #2b2447;
+      --green: #a9d978;
+      --green-soft: #24361c;
+      --blue: #7ab7ff;
+      --blue-soft: #172a42;
+      --shadow: rgba(0, 0, 0, 0.34);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 14% 0%, rgba(244, 189, 83, 0.12), transparent 28rem),
+        radial-gradient(circle at 90% 12%, rgba(104, 216, 207, 0.08), transparent 24rem),
+        linear-gradient(180deg, #0b0c10 0%, #11141b 48%, #0b0c10 100%);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    a {
+      color: var(--teal);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    code {
+      color: #ffe1a3;
+      background: rgba(244, 189, 83, 0.10);
+      border: 1px solid rgba(244, 189, 83, 0.18);
+      border-radius: 6px;
+      padding: 0.08rem 0.28rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+    }
+
+    .page {
+      width: min(1080px, calc(100vw - 36px));
+      margin: 0 auto;
+      padding: 42px 0 56px;
+    }
+
+    header {
+      border: 1px solid rgba(244, 189, 83, 0.30);
+      border-radius: 18px;
+      padding: 32px;
+      background:
+        linear-gradient(135deg, rgba(244, 189, 83, 0.13), rgba(104, 216, 207, 0.07)),
+        rgba(21, 24, 33, 0.92);
+      box-shadow: 0 22px 70px var(--shadow);
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--gold);
+      text-transform: uppercase;
+      letter-spacing: 0.13em;
+      font-size: 0.76rem;
+      font-weight: 800;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      line-height: 1.16;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 900px;
+      font-size: clamp(2rem, 4vw, 3.8rem);
+    }
+
+    h2 {
+      margin-bottom: 16px;
+      font-size: 1.55rem;
+    }
+
+    h3 {
+      margin-bottom: 10px;
+      font-size: 1.12rem;
+    }
+
+    p {
+      max-width: 75ch;
+      margin: 0 0 1rem;
+      color: var(--muted);
+    }
+
+    .lede {
+      margin-top: 18px;
+      color: #eadfce;
+      font-size: 1.05rem;
+    }
+
+    .meta-row, .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      border-radius: 999px;
+      padding: 0.24rem 0.72rem;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #f8efd8;
+      font-size: 0.84rem;
+      font-weight: 700;
+    }
+
+    .chip.gold {
+      color: #ffe0a3;
+      background: rgba(244, 189, 83, 0.14);
+      border-color: rgba(244, 189, 83, 0.28);
+    }
+
+    .chip.teal {
+      color: #c1f4ee;
+      background: rgba(104, 216, 207, 0.12);
+      border-color: rgba(104, 216, 207, 0.25);
+    }
+
+    .chip.rose {
+      color: #ffc4d0;
+      background: rgba(239, 120, 148, 0.12);
+      border-color: rgba(239, 120, 148, 0.26);
+    }
+
+    section {
+      margin-top: 30px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(21, 24, 33, 0.90);
+      box-shadow: 0 18px 52px rgba(0, 0, 0, 0.22);
+    }
+
+    .grid-two {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 0.72fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    .axis-list {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin: 14px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .axis-list li {
+      min-height: 86px;
+      border-radius: 12px;
+      padding: 13px;
+      background: rgba(104, 216, 207, 0.09);
+      border: 1px solid rgba(104, 216, 207, 0.20);
+      color: #d7fffb;
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+
+    .idea-nav {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 12px 0 24px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .idea-nav a {
+      display: block;
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.055);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+    }
+
+    article.idea {
+      margin-top: 18px;
+      padding: 22px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.060), rgba(255, 255, 255, 0.032));
+    }
+
+    article.idea.top {
+      border-color: rgba(244, 189, 83, 0.38);
+      background:
+        linear-gradient(180deg, rgba(244, 189, 83, 0.11), rgba(255, 255, 255, 0.032));
+    }
+
+    .rank-line {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .rank {
+      display: inline-grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      color: #201505;
+      background: var(--gold);
+      font-weight: 850;
+    }
+
+    .tag {
+      border-radius: 999px;
+      padding: 0.16rem 0.54rem;
+      border: 1px solid rgba(255, 255, 255, 0.13);
+      background: rgba(255, 255, 255, 0.06);
+      color: #e9dfcf;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .fields {
+      display: grid;
+      grid-template-columns: 120px minmax(0, 1fr);
+      gap: 8px 12px;
+      margin-top: 14px;
+    }
+
+    .fields dt {
+      color: var(--soft);
+      font-weight: 800;
+    }
+
+    .fields dd {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .diagram {
+      margin: 18px 0 4px;
+      padding: 16px;
+      border-radius: 14px;
+      background: rgba(0, 0, 0, 0.18);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      overflow-x: auto;
+    }
+
+    svg {
+      max-width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      margin-top: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 680px;
+    }
+
+    th, td {
+      padding: 11px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: #fff3d6;
+      background: rgba(244, 189, 83, 0.10);
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    td {
+      color: var(--muted);
+    }
+
+    .note {
+      border-left: 3px solid var(--teal);
+      padding: 12px 14px;
+      background: rgba(104, 216, 207, 0.08);
+      color: #d6f5f1;
+      border-radius: 0 10px 10px 0;
+    }
+
+    footer {
+      margin-top: 28px;
+      color: var(--soft);
+      font-size: 0.86rem;
+    }
+
+    @media (max-width: 760px) {
+      .page {
+        width: min(100% - 24px, 1080px);
+        padding-top: 22px;
+      }
+
+      header, section {
+        padding: 20px;
+      }
+
+      .grid-two, .axis-list, .idea-nav {
+        grid-template-columns: 1fr;
+      }
+
+      .fields {
+        grid-template-columns: 1fr;
+      }
+
+      .fields dt {
+        margin-top: 8px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">Ideation Artifact</p>
+      <h1>House MC Strategy Carry-Forward</h1>
+      <p class="lede">How to upgrade The House from a short-tail narrator into a high-context producer that identifies alliances, names them, dramatizes them, and uses that work to ask better diary-room questions.</p>
+      <div class="meta-row">
+        <span class="chip gold">Date: <time datetime="2026-06-13">2026-06-13</time></span>
+        <span class="chip teal">Mode: repo-grounded</span>
+        <span class="chip rose">Topic: house-mc-strategy-carry-forward</span>
+      </div>
+      <div class="chip-row">
+        <span class="chip">Focus: selected option 3, high-context House producer memory before diary sessions</span>
+      </div>
+    </header>
+
+    <section>
+      <h2>Grounding Context</h2>
+      <div class="grid-two">
+        <div>
+          <p>The current House is split across three responsibilities. In <code>packages/engine/src/house-interviewer.ts</code>, it assigns initial Mingle rooms, asks diary questions, and writes short gameplay summaries. The diary prompt is sharp, but it is still built from a compact <code>DiaryRoomContext</code>: recent public messages, a few player messages, prior diary answers, alive players, eliminations, and current council state.</p>
+          <p>House MC summaries are even more constrained. <code>GameRunner</code> calls <code>generateGameplaySummary</code> after Mingle and Council only, passing <code>this.logger.transcript.slice(-15)</code> or <code>slice(-30)</code>. The method then slices again to the last 20 entries. That means the House cannot reliably carry forward alliances, patterns, dropped promises, or emerging factions across rounds, even if the underlying model can handle much larger context.</p>
+          <p>The simulator currently disables diary rooms by default with <code>diaryRoomAfterPhases: []</code>. Strategic reflection capture is also explicit via <code>--strategic-reflections</code> or <code>INFLUENCE_SIM_STRATEGIC_REFLECTIONS=true</code>. The user's goal to "optionally turn diary back on" and "always see House summaries" should be treated as two related but separate controls.</p>
+          <p>The strongest repo learning is the strategy observability spine: strategy improvements should become typed private evidence, not prompt folklore. The same pattern should apply to The House. If the House is identifying alliances and shaping diary questions, that work needs a structured private record so MCP and simulation artifacts can validate carry-forward instead of judging only the final recap prose.</p>
+        </div>
+        <div class="note">
+          <strong>Core diagnosis:</strong> The House is omniscient in tone but short-memory in implementation. The upgrade is not just "better recap prompt." It is a producer-memory layer that creates a structured House strategy packet before narration and diary interviews consume it.
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Topic Axes</h2>
+      <ul class="axis-list">
+        <li>House memory and packet continuity</li>
+        <li>Alliance detection, naming, and confidence</li>
+        <li>Diary-room question quality</li>
+        <li>Always-on simulation observability</li>
+        <li>Cost and configuration controls</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Ranked Ideas</h2>
+      <ul class="idea-nav">
+        <li><a href="#idea-1">1. House Strategy Bible Packet</a></li>
+        <li><a href="#idea-2">2. Pre-Diary Producer Briefs</a></li>
+        <li><a href="#idea-3">3. Named Alliance Entities</a></li>
+        <li><a href="#idea-4">4. Always-On Round MC Recaps</a></li>
+        <li><a href="#idea-5">5. Diary and Summary Presets</a></li>
+        <li><a href="#idea-6">6. Carry-Forward Validation Surface</a></li>
+        <li><a href="#idea-7">7. Big Evidence Bundle Builder</a></li>
+      </ul>
+
+      <article class="idea top" id="idea-1">
+        <div class="rank-line">
+          <span class="rank">1</span>
+          <h3>House Strategy Bible Packet</h3>
+          <span class="tag">Axis: House memory</span>
+          <span class="tag">Confidence: 92%</span>
+          <span class="tag">Complexity: Medium</span>
+        </div>
+        <p>Create a persistent, producer-private House packet updated between rounds. The packet should summarize named alliances, active tensions, broken promises, vote blocs, Mingle room discoveries, dramatic storylines, next diary angles, dropped threads to revisit, and open uncertainties. The next packet receives the previous packet as first-class input, so carry-forward is explicit rather than dependent on whatever recent transcript slice survives.</p>
+        <dl class="fields">
+          <dt>Description</dt>
+          <dd>Add a House method shaped like <code>generateStrategicHousePacket(context)</code>. It consumes full or large-context evidence plus the previous House packet and returns structured JSON: alliance entities, conflict arcs, player trajectories, producer hypotheses, diary prompts to probe, and summary beats. Store the latest packet on <code>GameRunner</code> or a House context object for the live run, and emit it as a private/system <code>agent_turn</code> for simulation review.</dd>
+          <dt>Basis</dt>
+          <dd>direct: <code>generateGameplaySummary</code> currently receives only recent transcript tails, while <code>DiaryRoomContext</code> carries only a compact slice of public and player-specific messages. direct: repo learning says model-quality complaints should become typed private evidence flowing through prompts, phase runner, artifacts, MCP, and tests.</dd>
+          <dt>Rationale</dt>
+          <dd>This is the central fix for "carry forward was not guaranteed." The House cannot reliably name alliances across rounds if each summary starts from a short recent slice. A packet makes the House's own strategic memory inspectable and reusable by diary questions, recaps, and future MC work.</dd>
+          <dt>Downsides</dt>
+          <dd>Extra LLM call and a new private type contract. It also needs careful visibility discipline: this is producer/debug state, not public game truth and not agent knowledge.</dd>
+        </dl>
+        <div class="diagram" aria-label="House packet flow diagram">
+          <svg viewBox="0 0 900 260" role="img">
+            <defs>
+              <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+                <path d="M0,0 L10,4 L0,8 Z" fill="#68d8cf"></path>
+              </marker>
+              <filter id="soft-glow" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity="0.35"></feDropShadow>
+              </filter>
+            </defs>
+            <rect x="20" y="34" width="170" height="70" rx="12" fill="#172a42" stroke="#7ab7ff"></rect>
+            <text x="105" y="62" fill="#eef7ff" font-size="15" text-anchor="middle" font-weight="700">Transcript</text>
+            <text x="105" y="84" fill="#b9d9ff" font-size="12" text-anchor="middle">public, mingle, diary</text>
+            <rect x="20" y="150" width="170" height="70" rx="12" fill="#173a3b" stroke="#68d8cf"></rect>
+            <text x="105" y="178" fill="#e9fffd" font-size="15" text-anchor="middle" font-weight="700">Agent Turns</text>
+            <text x="105" y="200" fill="#b9efea" font-size="12" text-anchor="middle">intent, votes, packets</text>
+
+            <rect x="260" y="92" width="190" height="92" rx="14" fill="#3a2c16" stroke="#f4bd53" filter="url(#soft-glow)"></rect>
+            <text x="355" y="124" fill="#fff0c9" font-size="16" text-anchor="middle" font-weight="800">House Strategy</text>
+            <text x="355" y="148" fill="#ffe1a3" font-size="16" text-anchor="middle" font-weight="800">Bible Packet</text>
+            <text x="355" y="170" fill="#e7c57c" font-size="12" text-anchor="middle">previous packet in, next packet out</text>
+
+            <rect x="525" y="34" width="160" height="70" rx="12" fill="#2b2447" stroke="#a895ff"></rect>
+            <text x="605" y="62" fill="#f3eeff" font-size="15" text-anchor="middle" font-weight="700">Diary Briefs</text>
+            <text x="605" y="84" fill="#d2c8ff" font-size="12" text-anchor="middle">per player probes</text>
+            <rect x="525" y="150" width="160" height="70" rx="12" fill="#3a1c28" stroke="#ef7894"></rect>
+            <text x="605" y="178" fill="#ffeef3" font-size="15" text-anchor="middle" font-weight="700">MC Recaps</text>
+            <text x="605" y="200" fill="#ffc4d0" font-size="12" text-anchor="middle">storylines, stakes</text>
+
+            <rect x="735" y="92" width="140" height="92" rx="14" fill="#24361c" stroke="#a9d978"></rect>
+            <text x="805" y="124" fill="#f1ffe7" font-size="15" text-anchor="middle" font-weight="800">MCP</text>
+            <text x="805" y="148" fill="#e4ffd3" font-size="15" text-anchor="middle" font-weight="800">Validation</text>
+            <text x="805" y="170" fill="#c5eba6" font-size="12" text-anchor="middle">searchable carry-forward</text>
+
+            <path d="M190 69 C220 70 230 110 260 126" stroke="#68d8cf" stroke-width="3" fill="none" marker-end="url(#arrow)"></path>
+            <path d="M190 185 C220 184 230 156 260 148" stroke="#68d8cf" stroke-width="3" fill="none" marker-end="url(#arrow)"></path>
+            <path d="M450 120 C486 105 498 82 525 70" stroke="#68d8cf" stroke-width="3" fill="none" marker-end="url(#arrow)"></path>
+            <path d="M450 156 C486 166 498 180 525 185" stroke="#68d8cf" stroke-width="3" fill="none" marker-end="url(#arrow)"></path>
+            <path d="M685 70 C715 82 720 112 735 126" stroke="#68d8cf" stroke-width="3" fill="none" marker-end="url(#arrow)"></path>
+            <path d="M685 185 C715 174 720 154 735 148" stroke="#68d8cf" stroke-width="3" fill="none" marker-end="url(#arrow)"></path>
+          </svg>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-2">
+        <div class="rank-line">
+          <span class="rank">2</span>
+          <h3>Pre-Diary Producer Briefs</h3>
+          <span class="tag">Axis: Diary quality</span>
+          <span class="tag">Confidence: 88%</span>
+          <span class="tag">Complexity: Medium</span>
+        </div>
+        <p>Before a diary session, have The House convert its strategy packet into a per-player producer brief. The diary question generator should receive that brief, not just raw recent messages. Each brief names the player's current role in the story, alliances to probe, contradictions to needle, secrets The House knows but should not reveal directly, and one or two sharp question angles.</p>
+        <dl class="fields">
+          <dt>Description</dt>
+          <dd>Add a structured intermediate step: <code>buildDiaryProducerBrief(player, housePacket, context)</code>. The brief is private to the House prompt and simulation artifacts. It can include fields like <code>storyRole</code>, <code>suspectedAllies</code>, <code>pressurePoints</code>, <code>recentContradictions</code>, <code>questionAngles</code>, and <code>doNotReveal</code>.</dd>
+          <dt>Basis</dt>
+          <dd>direct: <code>generateQuestion</code> currently builds from a generic situation switch plus recent messages and prior diary entries. direct: the House prompt already asks for pointed, specific questions, but the available context is not rich enough to guarantee continuity.</dd>
+          <dt>Rationale</dt>
+          <dd>This separates producer analysis from wording. The model can first decide what matters, then ask one clean question. It also creates inspectable evidence when a diary question is great or misses the mark.</dd>
+          <dt>Downsides</dt>
+          <dd>One more internal object to maintain and test. If over-specified, it could make questions too formulaic, so the brief should supply angles, not final scripts.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-3">
+        <div class="rank-line">
+          <span class="rank">3</span>
+          <h3>Named Alliance Entities</h3>
+          <span class="tag">Axis: Alliance detection</span>
+          <span class="tag">Confidence: 85%</span>
+          <span class="tag">Complexity: Medium</span>
+        </div>
+        <p>Make alliances first-class producer hypotheses. The House should identify groups, give them memorable showrunner names, track membership and confidence, cite evidence, and describe fracture lines. Names are for the audience and producer artifacts: "The Glass Table," "Quiet Majority," or "The Debt Circle" can dramatize social structure without exposing omniscient knowledge to players.</p>
+        <dl class="fields">
+          <dt>Description</dt>
+          <dd>Define a <code>HouseAllianceEntity</code> shape with <code>id</code>, <code>name</code>, <code>members</code>, <code>confidence</code>, <code>evidence</code>, <code>status</code>, <code>fractureLines</code>, <code>publicCover</code>, and <code>lastUpdatedRound</code>. The packet update can keep, merge, rename, or retire entities as evidence changes.</dd>
+          <dt>Basis</dt>
+          <dd>direct: the user explicitly wants The House identifying, naming, and dramatizing alliances. direct: existing agent reflections already track allies and threats individually, but no House-level global alliance object exists.</dd>
+          <dt>Rationale</dt>
+          <dd>A named entity gives continuity to recaps and diary sessions. It also avoids repeated generic language like "alliances are shifting" by letting The House say which relationship cluster is actually shifting and why.</dd>
+          <dt>Downsides</dt>
+          <dd>False positives are inevitable. The packet must label confidence and evidence so a producer can distinguish a real alliance from a dramatic but weak read.</dd>
+        </dl>
+        <div class="diagram" aria-label="Named alliance entity diagram">
+          <svg viewBox="0 0 880 230" role="img">
+            <line x1="180" y1="112" x2="320" y2="80" stroke="#68d8cf" stroke-width="3"></line>
+            <line x1="180" y1="112" x2="330" y2="150" stroke="#68d8cf" stroke-width="3"></line>
+            <line x1="320" y1="80" x2="330" y2="150" stroke="#68d8cf" stroke-width="3"></line>
+            <line x1="330" y1="150" x2="520" y2="124" stroke="#ef7894" stroke-width="2" stroke-dasharray="7 7"></line>
+            <line x1="600" y1="76" x2="520" y2="124" stroke="#a895ff" stroke-width="3"></line>
+            <line x1="600" y1="170" x2="520" y2="124" stroke="#a895ff" stroke-width="3"></line>
+            <line x1="600" y1="76" x2="600" y2="170" stroke="#a895ff" stroke-width="3"></line>
+
+            <circle cx="180" cy="112" r="34" fill="#172a42" stroke="#7ab7ff"></circle>
+            <text x="180" y="117" fill="#eef7ff" font-size="14" text-anchor="middle" font-weight="800">Mira</text>
+            <circle cx="320" cy="80" r="34" fill="#172a42" stroke="#7ab7ff"></circle>
+            <text x="320" y="85" fill="#eef7ff" font-size="14" text-anchor="middle" font-weight="800">Finn</text>
+            <circle cx="330" cy="150" r="34" fill="#172a42" stroke="#7ab7ff"></circle>
+            <text x="330" y="155" fill="#eef7ff" font-size="14" text-anchor="middle" font-weight="800">Sage</text>
+
+            <circle cx="520" cy="124" r="34" fill="#3a1c28" stroke="#ef7894"></circle>
+            <text x="520" y="129" fill="#ffeef3" font-size="14" text-anchor="middle" font-weight="800">Vera</text>
+            <circle cx="600" cy="76" r="34" fill="#2b2447" stroke="#a895ff"></circle>
+            <text x="600" y="81" fill="#f3eeff" font-size="14" text-anchor="middle" font-weight="800">Rex</text>
+            <circle cx="600" cy="170" r="34" fill="#2b2447" stroke="#a895ff"></circle>
+            <text x="600" y="175" fill="#f3eeff" font-size="14" text-anchor="middle" font-weight="800">Nyx</text>
+
+            <rect x="96" y="20" width="310" height="32" rx="16" fill="#173a3b" stroke="#68d8cf"></rect>
+            <text x="251" y="41" fill="#d7fffb" font-size="14" text-anchor="middle" font-weight="800">The Quiet Majority - confidence 0.72</text>
+            <rect x="472" y="196" width="240" height="32" rx="16" fill="#2b2447" stroke="#a895ff"></rect>
+            <text x="592" y="217" fill="#f3eeff" font-size="14" text-anchor="middle" font-weight="800">The Pressure Pair - confidence 0.64</text>
+            <text x="426" y="109" fill="#ffc4d0" font-size="13" text-anchor="middle" font-weight="700">fracture line</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-4">
+        <div class="rank-line">
+          <span class="rank">4</span>
+          <h3>Always-On Round MC Recaps</h3>
+          <span class="tag">Axis: Observability</span>
+          <span class="tag">Confidence: 82%</span>
+          <span class="tag">Complexity: Low</span>
+        </div>
+        <p>Emit House MC summaries as normal simulation artifacts, not as something humans only get when a run is chatty. The recap should happen at stable round boundaries and should use the House packet, so the text becomes a visible audience layer over structured producer memory.</p>
+        <dl class="fields">
+          <dt>Description</dt>
+          <dd>Add a round-summary call after each completed round or after each elimination resolution. Keep phase mini-summaries optional if they are useful, but make the end-of-round recap default for simulation output. The summary should be logged through <code>logSystem</code> and serialized into transcript JSON, whether or not <code>--chatty</code> is printing live terminal output.</dd>
+          <dt>Basis</dt>
+          <dd>direct: <code>GameRunner</code> currently calls House MC summaries only after Mingle and Council. direct: the user wants House summaries always visible and suspects they only appear with <code>--chatty</code>.</dd>
+          <dt>Rationale</dt>
+          <dd>This gives every run a human-readable strategic spine. It also creates checkpoints for comparing House memory against actual later decisions.</dd>
+          <dt>Downsides</dt>
+          <dd>More tokens in every simulation unless controlled by config. Summary frequency should be explicit so release-validation runs can stay bounded when needed.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-5">
+        <div class="rank-line">
+          <span class="rank">5</span>
+          <h3>Diary and Summary Presets</h3>
+          <span class="tag">Axis: Cost controls</span>
+          <span class="tag">Confidence: 80%</span>
+          <span class="tag">Complexity: Low</span>
+        </div>
+        <p>Expose diary-room and House-summary behavior as explicit simulator modes. This resolves the current ambiguity where diary is disabled for bounded local runs, strategic reflections are flag-gated, and House summaries are present but sparse.</p>
+        <dl class="fields">
+          <dt>Description</dt>
+          <dd>Add CLI/config presets such as <code>--diary-room off|round|key-phases|all</code>, <code>--house-summaries off|round|phase</code>, and a higher-level <code>--producer-mode</code> preset that enables House packets, round summaries, diary questions, and strategic reflections. Keep fast default behavior deliberate, but make the rich mode one flag instead of a pile of hidden toggles.</dd>
+          <dt>Basis</dt>
+          <dd>direct: <code>buildSimulationConfig</code> sets <code>diaryRoomAfterPhases: []</code> and <code>maxDiaryFollowUps: 0</code>. direct: <code>parseArgs</code> already has strategic-reflection flags, proving this config layer is the right place for simulation validation controls.</dd>
+          <dt>Rationale</dt>
+          <dd>The user wants to turn diary back on but may not know the flag because there is not one. Presets make cost and behavior discoverable while avoiding accidental token explosions.</dd>
+          <dt>Downsides</dt>
+          <dd>CLI surface area grows. Tests need to protect default behavior and each preset.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-6">
+        <div class="rank-line">
+          <span class="rank">6</span>
+          <h3>Carry-Forward Validation Surface</h3>
+          <span class="tag">Axis: Observability</span>
+          <span class="tag">Confidence: 78%</span>
+          <span class="tag">Complexity: Medium</span>
+        </div>
+        <p>Add MCP/search support and instrumentation counters for House packets: alliance entities created, retained, renamed, dropped, contradicted, or revived. The point is to measure whether House carry-forward actually survives from one summary to the next.</p>
+        <dl class="fields">
+          <dt>Description</dt>
+          <dd>Emit <code>house-strategy-packet</code>, <code>house-diary-brief</code>, and <code>house-mc-summary</code> records into the structured turn/progress artifacts. Add generic MCP searches if current log search is enough, or a thin query helper like "show house packets for session/game" if repeated analysis proves awkward. Instrument retention: previous packet alliance IDs appearing in the next packet, dropped-with-reason counts, and summary references to active alliances.</dd>
+          <dt>Basis</dt>
+          <dd>direct: game MCP and <code>game-N-turns.jsonl</code> are already the validation surface for Mingle intent, strategy packets, and strategic lenses. direct: the user specifically wants to validate House carry-forward across summaries.</dd>
+          <dt>Rationale</dt>
+          <dd>Without a validation surface, a better House prompt can still feel good while forgetting half the story. Retention metrics turn "did the House remember?" into something searchable.</dd>
+          <dt>Downsides</dt>
+          <dd>Some metrics will be approximate because House alliance entities are hypotheses, not canonical facts. The artifact should be reviewed as producer evidence, not treated as ground truth.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-7">
+        <div class="rank-line">
+          <span class="rank">7</span>
+          <h3>Big Evidence Bundle Builder</h3>
+          <span class="tag">Axis: Context assembly</span>
+          <span class="tag">Confidence: 76%</span>
+          <span class="tag">Complexity: Medium</span>
+        </div>
+        <p>Build a dedicated House evidence bundle instead of passing raw transcript tails from callers. Since this House turn is allowed to spend more tokens, the bundle should include the full current round, recent prior rounds, all relevant private agent turns, canonical facts, diary answers, vote history, Mingle assignment diagnostics, and the previous House packet.</p>
+        <dl class="fields">
+          <dt>Description</dt>
+          <dd>Add a <code>HouseContextBuilder</code> or a method on the existing context layer that returns a large structured object for the House. The object should preserve evidence type and visibility: public transcript, private producer/debug turns, canonical outcomes, diary Q/A, and agent strategy packets. Do not optimize hard in v1. Make the evidence complete enough for strong House reasoning, then later add pruning if cost forces it.</dd>
+          <dt>Basis</dt>
+          <dd>direct: current callers pass <code>this.logger.transcript.slice(...)</code> directly into <code>generateGameplaySummary</code>. reasoned: prompt size optimization is not the bottleneck for the selected House MC upgrade because the user explicitly accepts large House contexts for better producer intelligence.</dd>
+          <dt>Rationale</dt>
+          <dd>The House needs the right raw material before prompt wording matters. A bundle builder also prevents future call sites from quietly starving the House again.</dd>
+          <dt>Downsides</dt>
+          <dd>Can become a dumping ground if not typed. The bundle should be large, but still structured enough that prompts can explain what each evidence class means.</dd>
+        </dl>
+      </article>
+    </section>
+
+    <section>
+      <h2>Rejection Summary</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Idea</th>
+              <th>Reason Rejected</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td>Make House alliance reads canonical game events</td>
+              <td>Wrong truth tier. House reads are producer hypotheses; canonical events should remain accepted board facts.</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>Share House alliance graph with player agents</td>
+              <td>Hidden-information leak. The House can be omniscient for viewers and producers, but players should not receive global reads they did not earn.</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>Let The House rewrite agent Strategy Thread packets</td>
+              <td>Breaks player agency. Agent packets should remain each player's private intent; House packets can analyze them but not edit them.</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td>Enable full diary after every phase by default</td>
+              <td>Too expensive and noisy as a blanket default. Better as an explicit rich simulation preset or diary mode.</td>
+            </tr>
+            <tr>
+              <td>5</td>
+              <td>Only improve <code>generateGameplaySummary</code> prompt copy</td>
+              <td>Not enough. The main bug is missing durable House memory and thin evidence input, not just weak prose instructions.</td>
+            </tr>
+            <tr>
+              <td>6</td>
+              <td>Keep House summaries visible only through <code>--chatty</code></td>
+              <td>Already causing confusion. Summaries should be serialized artifacts and optionally printed live.</td>
+            </tr>
+            <tr>
+              <td>7</td>
+              <td>Infer alliances only from public transcript text</td>
+              <td>Underuses the available producer/debug spine. Mingle intents, private turns, votes, and strategy packets are essential House evidence.</td>
+            </tr>
+            <tr>
+              <td>8</td>
+              <td>Optimize House context size immediately</td>
+              <td>Premature for this slice. The user explicitly wants to spend context to maximize House knowledge first.</td>
+            </tr>
+            <tr>
+              <td>9</td>
+              <td>Make alliance names player-visible during the game</td>
+              <td>Changes game mechanics and leaks analysis. Use names in producer/debug artifacts and audience recaps unless a future design chooses a public broadcast reveal model.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="composition-signal">
+      Composed 2026-06-13 by ce-ideate from the in-repo House MC / diary-room strategy carry-forward discussion.
+    </footer>
+  </main>
+</body>
+</html>

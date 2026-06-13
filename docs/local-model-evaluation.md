@@ -60,7 +60,23 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 
 Add `--strategic-reflections` when the run is specifically validating private strategic-reflection capture or Strategy Thread carry-forward. This keeps fast release-validation runs bounded by default while still writing `strategic-reflection` records, `strategy-packet` records, and later private `strategyPacketUse` markers when the reflection path produces a packet.
 
-Simulation artifacts are written under `packages/engine/docs/simulations/`. For each game, use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-events.jsonl` for replayable accepted domain facts, `game-N.json` for the full transcript/result bundle, `game-N-progress.jsonl` for lightweight live progress, and `game-N.txt` for human-readable transcript review. Hidden `mingle-intent` records are always written to turns JSONL with `strategicLens` metadata; anonymous `rumor` records also include `strategicLens`; hidden `strategic-reflection` and `strategy-packet` records are written there when `--strategic-reflections` is enabled.
+Use `--house-summaries` when you want the same terminal to print only concise `[House MC]` summary lines without turning on the full `--chatty` transcript or hidden reasoning output. Each line starts with deterministic round facts so you can see who got power, empower/expose vote counts, the power action, shields, Council candidates, Council vote counts, and who left before reading the House's narrative read.
+
+```bash
+INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
+  bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
+  --variant mingle --house-summaries --game-timeout-sec 7200 --llm-timeout-sec 300
+```
+
+Use `--diary` when you only want bounded Council diary sessions. Use `--rich-producer` when the run is validating House strategy carry-forward and diary-room production quality. It enables strategic reflections, bounded Council diary sessions, private `house-strategy-bible` packet updates, `house-long-form-summary` records, and per-player `house-producer-brief` records. The ordinary `house-mc-summary` record and `[House MC]` transcript entry are emitted by default in simulation config so you can follow the game between rounds even without `--chatty`.
+
+```bash
+INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
+  bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
+  --variant mingle --chatty --rich-producer --game-timeout-sec 7200 --llm-timeout-sec 300
+```
+
+Simulation artifacts are written under `packages/engine/docs/simulations/`. For each game, use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-events.jsonl` for replayable accepted domain facts, `game-N.json` for the full transcript/result bundle, `game-N-progress.jsonl` for lightweight live progress, and `game-N.txt` for human-readable transcript review. Hidden `mingle-intent` records are always written to turns JSONL with `strategicLens` metadata; anonymous `rumor` records also include `strategicLens`; `house-mc-summary` records are written by default; hidden `strategic-reflection` and `strategy-packet` records are written there when `--strategic-reflections` is enabled; House Strategy Bible, long-form summary, and producer brief records are written when `--rich-producer` is enabled.
 
 To query completed and still-growing simulation batches from another local MCP client, run:
 
@@ -69,7 +85,7 @@ cd packages/engine
 bun run mcp:game -- docs/simulations
 ```
 
-The server is read-only and scans the simulation corpus on demand. It addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and exposes tools for listing sessions/games, reading projections, filtering canonical events, searching logs, reading player timelines, and following source pointers to linked turn records when present. Older batches without event logs remain searchable through turns/progress/transcript artifacts, but projection tools require canonical events. To validate open strategy choices after a run, use `search_logs` with `sources: ["turns"]` for `mingle-intent`, `mingle-room-assignment`, `rumor`, `strategic-reflection`, `strategy-packet`, `strategicLens`, `strategyPacketUse`, `strategySignal`, `movementPurpose`, or `empower-revote`.
+The server is read-only and scans the simulation corpus on demand. It addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and exposes tools for listing sessions/games, reading projections, filtering canonical events, searching logs, reading player timelines, and following source pointers to linked turn records when present. Older batches without event logs remain searchable through turns/progress/transcript artifacts, but projection tools require canonical events. To validate open strategy choices after a run, use `search_logs` with `sources: ["turns"]` for `mingle-intent`, `mingle-room-assignment`, `rumor`, `strategic-reflection`, `strategy-packet`, `strategicLens`, `strategyPacketUse`, `strategySignal`, `movementPurpose`, or `empower-revote`. To validate House producer carry-forward, search turns/transcript logs for `house-mc-summary`, `[House MC]`, `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or a named House alliance hypothesis.
 
 ## Full Stack Local Provider
 
@@ -102,6 +118,8 @@ Create a dated note in `docs/simulations/` or near the generated batch artifacts
 - whether hidden `mingle-intent` records and House `mingle-room-assignment` records show varied initial rooms, assignment sources, repair notes, and a range of guarded, social, and explicit strategic choices
 - whether `strategicLens` values across Mingle intent, rumor, strategic reflection, and Strategy Thread packets show varied evidence frames instead of collapsing into presentation/style reads
 - whether later `strategyPacketUse` markers show agents following, revising, ignoring, or deferring Strategy Thread context in a way that matches current evidence
+- whether `[House MC]` summaries help keep up with deterministic round facts, teams forming, leverage shifts, and unresolved questions between rounds
+- when using `--rich-producer`, whether House Strategy Bible revisions carry alliance hypotheses forward instead of silently forgetting them, and whether diary producer briefs sharpen questions without leaking private producer reads as fact
 
 When running with `--chatty`, the live terminal (and the written `game-*.txt`) will interleave House action lines with dim-gray `thinking:` and cyan `reasoning:` blocks. These are the primary human-readable artifacts for evaluating whether the model is producing legible, strategic private reasoning. For scripts or post-run scoring, read `game-N-turns.jsonl`; it records each hidden Mingle intent, House Mingle room assignment, Mingle turn, anonymous rumor, vote, empower revote, power action, diary answer, strategic reflection when enabled, Strategy Thread packet update when produced, and endgame decision as clean JSON with `thinking`, `reasoningContext`, and decision-specific producer/debug fields such as `strategicLens` when available. Use `game-N-events.jsonl` when the question is board state, accepted outcomes, or deterministic replay.
 

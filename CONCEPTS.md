@@ -56,7 +56,23 @@ The `--chatty` (or `--verbose` / `-v`) flag to the simulation runner that prints
 
 ## House MC
 
-The direct (non-guarded) call to `houseInterviewer.generateGameplaySummary` that produces a post-phase or post-elimination narrative summary from recent transcript entries. The result is logged as a `[House MC]` system entry so it appears in chatty output and persisted transcripts alongside the raw agent reasoning.
+The House's between-round narrative voice. `GameRunner` emits a `house-mc-summary` agent-turn artifact and a `[House MC]` system transcript entry after a normal round resolves, even outside `--chatty`, so local simulations have a watchable catch-up layer between raw phase output and structured producer/debug records.
+
+## House Strategy Bible Packet
+
+A private producer/debug strategy state The House carries across a live game run. It summarizes named alliance hypotheses, active tensions, broken or pending promises, vote blocs, Mingle discoveries, player trajectory reads, dramatic story arcs, dropped threads, and uncertainties so House MC summaries, House Long-Form Summaries, and diary-room producer briefs share continuous producer memory. It is House-owned analysis, not player-visible dialogue, agent prompt context, canonical board state, or crash-safe persistent memory.
+
+## House Producer Brief
+
+A private per-player diary-room setup derived from the House Strategy Bible Packet and current game context. It identifies the player's story role, pressure points, relevant alliance hypotheses, contradictions, and question angles so The House can ask sharper diary questions without revealing hidden producer analysis as player knowledge.
+
+## House Long-Form Summary
+
+A producer/audience catch-up summary The House emits in rich simulation runs between House Strategy Bible Packet updates. It explains teams forming or weakening, pressure changes, unresolved promises, and the House's open questions about likely next moves. It should be discoverable through simulation artifacts and the local game MCP, while preserving the separation between audience narration, private producer evidence, and player knowledge.
+
+## House alliance hypothesis
+
+A named producer-side read that a set of players may be aligned, fractured, indebted, or coordinating around a shared posture. A House alliance hypothesis should carry confidence and evidence because it is dramatic producer analysis, not canonical game truth.
 
 ## Canonical game event
 

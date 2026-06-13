@@ -10,7 +10,7 @@ import type { ContextBuilder } from "./context-builder";
 import type { IHouseInterviewer, DiaryRoomContext } from "./house-interviewer";
 import type { UUID, GameConfig } from "./types";
 import { Phase } from "./types";
-import type { IAgent, StrategicReflectionAction, StrategyPacketSummary } from "./game-runner.types";
+import type { HouseProducerBrief, HouseStrategyBiblePacket, IAgent, StrategicReflectionAction, StrategyPacketSummary } from "./game-runner.types";
 import { transcriptThinkingFor } from "./phases/phase-runner-context";
 
 export class DiaryRoom {
@@ -28,6 +28,7 @@ export class DiaryRoom {
     private readonly agents: Map<UUID, IAgent>,
     private readonly config: GameConfig,
     private readonly houseInterviewer: IHouseInterviewer,
+    private readonly getHouseStrategyBible?: () => HouseStrategyBiblePacket | null,
   ) {}
 
   /**
@@ -170,6 +171,10 @@ export class DiaryRoom {
 
     const diaryContext = this.buildDiaryRoomContext(precedingPhase, playerName);
     const sessionExchanges: Array<{ question: string; answer: string }> = [];
+    const producerBrief = await this.generateProducerBrief(diaryContext);
+    if (producerBrief) {
+      diaryContext.producerBrief = producerBrief;
+    }
 
     // First question
     const firstQuestion = await this.houseInterviewer.generateQuestion(diaryContext);
@@ -290,5 +295,44 @@ export class DiaryRoom {
       previousDiaryEntries,
       playerMessages,
     };
+  }
+
+  private async generateProducerBrief(context: DiaryRoomContext): Promise<HouseProducerBrief | null> {
+    if (this.config.enableHouseProducerBriefs !== true) {
+      return null;
+    }
+
+    const packet = this.getHouseStrategyBible?.() ?? null;
+    try {
+      const brief = await this.houseInterviewer.generateProducerBrief(context, packet);
+      this.logger.emitAgentTurn({
+        phase: Phase.DIARY_ROOM,
+        action: "house-producer-brief",
+        actor: { name: "House", role: "house" },
+        visibility: "private",
+        response: {
+          precedingPhase: context.precedingPhase,
+          playerName: context.agentName,
+          producerBrief: {
+            playerName: brief.playerName,
+            packetRevisionId: brief.packetRevisionId,
+            storyRole: brief.storyRole,
+            pressurePoints: brief.pressurePoints,
+            relevantAllianceHypotheses: brief.relevantAllianceHypotheses,
+            contradictions: brief.contradictions,
+            questionAngles: brief.questionAngles,
+            safeToReveal: brief.safeToReveal,
+            privateDoNotReveal: brief.privateDoNotReveal,
+          },
+        },
+        thinking: brief.thinking,
+        reasoningContext: brief.reasoningContext,
+        scope: "diary",
+      });
+      return brief;
+    } catch (error) {
+      console.error(`[DiaryRoom] Producer brief failed for ${context.agentName}, continuing:`, error);
+      return null;
+    }
   }
 }

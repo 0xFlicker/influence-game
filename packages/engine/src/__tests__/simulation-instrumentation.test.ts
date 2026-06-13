@@ -122,6 +122,41 @@ describe("simulation instrumentation", () => {
     expect(aggregate.actionUsage.bySource["Atlas/power"]?.totalTokens).toBe(50);
   });
 
+  it("counts House producer calls and MC transcript entries", () => {
+    const game = instrumentGame(
+      [
+        systemEntry(1, Phase.COUNCIL, "[House MC] The Threaded Vote Bloc is forming around Atlas."),
+        systemEntry(1, Phase.COUNCIL, "A normal system line."),
+      ],
+      {
+        "House/strategy-bible": usage({ callCount: 1, totalTokens: 400 }),
+        "House/mc-summary": usage({ callCount: 1, totalTokens: 120 }),
+        "House/long-form-summary": usage({ callCount: 1, totalTokens: 500 }),
+        "House/producer-brief": usage({ callCount: 3, totalTokens: 300 }),
+      },
+      {},
+    );
+
+    expect(game.houseProducer).toEqual({
+      strategyBibleCalls: 1,
+      mcSummaryCalls: 1,
+      longFormSummaryCalls: 1,
+      producerBriefCalls: 3,
+      mcSummaryTranscriptEntries: 1,
+      totalHouseProducerCalls: 6,
+    });
+    expect(game.actionUsage.byAction["strategy-bible"]?.callCount).toBe(1);
+    expect(game.actionUsage.byAction["producer-brief"]?.totalTokens).toBe(300);
+
+    const aggregate = aggregateInstrumentation([game, game]);
+    expect(aggregate.houseProducer.strategyBibleCalls).toBe(2);
+    expect(aggregate.houseProducer.mcSummaryCalls).toBe(2);
+    expect(aggregate.houseProducer.longFormSummaryCalls).toBe(2);
+    expect(aggregate.houseProducer.producerBriefCalls).toBe(6);
+    expect(aggregate.houseProducer.mcSummaryTranscriptEntries).toBe(2);
+    expect(aggregate.houseProducer.totalHouseProducerCalls).toBe(12);
+  });
+
   it("preserves Mingle request diagnostics and aggregates audit flags", () => {
     const diagnostics = {
       round: 2,

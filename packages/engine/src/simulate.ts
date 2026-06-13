@@ -11,6 +11,9 @@
  *   bun run simulate -- --variant mingle
  *   bun run simulate -- --variant power-lobby-mingle
  *   bun run simulate -- --variant mingle --strategic-reflections
+ *   bun run simulate -- --variant mingle --diary
+ *   bun run simulate -- --variant mingle --house-summaries
+ *   bun run simulate -- --variant mingle --rich-producer
  *
  * Chatty / live formatted transcript (great for watching local model Mingle behavior and per-decision reasoning):
  *   INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
@@ -38,6 +41,15 @@
  * when `--strategic-reflections` is enabled for validation runs. Later private
  * decisions, including rumors, may include `strategicLens` and `strategyPacketUse`
  * markers for searchable producer/debug validation.
+ *
+ * `--rich-producer` enables private House Strategy Bible Packet updates,
+ * packet-backed long-form House summaries, bounded Council diary sessions, and
+ * producer-brief records for validating House strategic carry-forward through
+ * the local game MCP.
+ * Use `--diary` when you only want bounded Council diary sessions without the
+ * private rich-producer packet stack.
+ * Use `--house-summaries` when you want concise House MC summaries printed live
+ * without the full `--chatty` transcript or hidden reasoning output.
  */
 
 import type OpenAI from "openai";
@@ -49,7 +61,7 @@ import { GameRunner, type AgentTurnEvent, type GameStreamEvent, type TranscriptE
 import type { CanonicalGameEvent } from "./canonical-events";
 import { InfluenceAgent, type Personality } from "./agent";
 import { LLMHouseInterviewer } from "./house-interviewer";
-import { DEFAULT_CONFIG, type GameConfig, type UUID } from "./types";
+import { DEFAULT_CONFIG, Phase, type GameConfig, type UUID } from "./types";
 import {
   TokenTracker,
   estimateCostAllModels,
@@ -86,8 +98,14 @@ export interface SimArgs {
   llmTimeoutMs: number;
   /** Chatty mode: print formatted transcript entries live to console as they happen. */
   chatty: boolean;
+  /** Print concise House MC summaries live without full chatty transcript output. */
+  houseSummaries: boolean;
   /** Include hidden strategic-reflection agent_turn records in validation artifacts. */
   enableStrategicReflections?: boolean;
+  /** Enable House Strategy Bible, long-form summaries, producer briefs, and bounded diary validation. */
+  richProducer?: boolean;
+  /** Enable bounded diary-room sessions in simulation config. */
+  enableDiary?: boolean;
 }
 
 function readPositiveInt(value: string | undefined, fallback: number): number {
@@ -108,7 +126,10 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
     gameTimeoutMs: readPositiveInt(envGameTimeout, DEFAULT_GAME_TIMEOUT_MS),
     llmTimeoutMs: readPositiveInt(process.env.INFLUENCE_SIM_LLM_TIMEOUT_MS, DEFAULT_LLM_TIMEOUT_MS),
     chatty: false,
+    houseSummaries: process.env.INFLUENCE_SIM_HOUSE_SUMMARIES === "true",
     enableStrategicReflections: process.env.INFLUENCE_SIM_STRATEGIC_REFLECTIONS === "true",
+    richProducer: process.env.INFLUENCE_SIM_RICH_PRODUCER === "true",
+    enableDiary: process.env.INFLUENCE_SIM_DIARY === "true",
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -145,11 +166,30 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       i++;
     } else if (arg === "--chatty" || arg === "--verbose" || arg === "-v") {
       args.chatty = true;
+    } else if (arg === "--house-summaries" || arg === "--summaries") {
+      args.houseSummaries = true;
+    } else if (arg === "--no-house-summaries" || arg === "--no-summaries") {
+      args.houseSummaries = false;
     } else if (arg === "--strategic-reflections" || arg === "--enable-strategic-reflections") {
       args.enableStrategicReflections = true;
     } else if (arg === "--no-strategic-reflections") {
       args.enableStrategicReflections = false;
+    } else if (arg === "--rich-producer") {
+      args.richProducer = true;
+      args.enableStrategicReflections = true;
+      args.enableDiary = true;
+    } else if (arg === "--no-rich-producer") {
+      args.richProducer = false;
+    } else if (arg === "--diary" || arg === "--enable-diary") {
+      args.enableDiary = true;
+    } else if (arg === "--no-diary") {
+      args.enableDiary = false;
     }
+  }
+
+  if (args.richProducer === true) {
+    args.enableStrategicReflections = true;
+    args.enableDiary = true;
   }
 
   if (isNaN(args.games) || args.games < 1) args.games = 3;
@@ -203,7 +243,10 @@ function buildRunMetadata(args: SimArgs, timestamp: string): SimulationRunMetada
       variant: args.variant,
       gameTimeoutMs: args.gameTimeoutMs,
       llmTimeoutMs: args.llmTimeoutMs,
+      houseSummaries: args.houseSummaries,
       enableStrategicReflections: args.enableStrategicReflections ?? false,
+      richProducer: args.richProducer ?? false,
+      enableDiary: args.enableDiary ?? false,
     },
   };
 }
@@ -237,9 +280,16 @@ export function isMingleVariant(variant: string): boolean {
 
 export function buildSimulationConfig(
   variant: string,
-  options: { agentActionTimeoutMs?: number; enableStrategicReflections?: boolean } = {},
+  options: {
+    agentActionTimeoutMs?: number;
+    enableStrategicReflections?: boolean;
+    richProducer?: boolean;
+    enableDiary?: boolean;
+  } = {},
 ): GameConfig {
   const mingle = isMingleVariant(variant);
+  const richProducer = options.richProducer === true;
+  const enableDiary = options.enableDiary === true || richProducer;
 
   return {
     ...DEFAULT_CONFIG,
@@ -262,13 +312,17 @@ export function buildSimulationConfig(
     maxRounds: 10,
     // Keep release-validation sims bounded; these hidden calls are flavor/memory, not core rules.
     maxDiaryFollowUps: 0,
-    diaryRoomAfterPhases: [],
+    diaryRoomAfterPhases: enableDiary ? [Phase.COUNCIL] : [],
     enableLobbyIntent: false,
-    enableStrategicReflections: options.enableStrategicReflections ?? false,
+    enableStrategicReflections: richProducer ? true : options.enableStrategicReflections ?? false,
     lobbyMessagesPerPlayer: 1,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),
     mingleSessionsPerRound: mingle ? 2 : DEFAULT_CONFIG.mingleSessionsPerRound,
     agentActionTimeoutMs: options.agentActionTimeoutMs ?? 90_000,
+    enableHouseRoundSummaries: true,
+    enableHouseStrategyBible: richProducer,
+    enableHouseLongFormSummaries: richProducer,
+    enableHouseProducerBriefs: richProducer,
   };
 }
 
@@ -606,6 +660,11 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
   lines.push(`| Fallback room assignments | ${stats.instrumentation.rooms.assignmentSources.fallback} |`);
   lines.push(`| Movement-derived room records | ${stats.instrumentation.rooms.assignmentSources.movement} |`);
   lines.push(`| Room assignment repair notes | ${stats.instrumentation.rooms.assignmentSources.repairNotes} |`);
+  lines.push(`| House Strategy Bible calls | ${stats.instrumentation.houseProducer.strategyBibleCalls} |`);
+  lines.push(`| House MC summary calls | ${stats.instrumentation.houseProducer.mcSummaryCalls} |`);
+  lines.push(`| House MC transcript entries | ${stats.instrumentation.houseProducer.mcSummaryTranscriptEntries} |`);
+  lines.push(`| House long-form summaries | ${stats.instrumentation.houseProducer.longFormSummaryCalls} |`);
+  lines.push(`| House producer briefs | ${stats.instrumentation.houseProducer.producerBriefCalls} |`);
   lines.push(`| Immediate repeat rooms flagged | ${stats.instrumentation.rooms.repeatPairFlags.immediateRepeats} |`);
   lines.push(`| Avoidable consecutive exclusions flagged | ${stats.instrumentation.rooms.exclusionFlags.avoidableConsecutiveExclusions} |`);
   lines.push(`| LLM empty/fallback responses | ${stats.instrumentation.actionUsage.totalEmptyResponses} |`);
@@ -1003,6 +1062,13 @@ function writeCanonicalEvent(
   appendFileSync(eventsPath, `${JSON.stringify(serializeCanonicalGameEvent(gameNumber, startedAt, event))}\n`);
 }
 
+function getHouseSummaryText(event: AgentTurnEvent): string | null {
+  if (event.action !== "house-mc-summary") return null;
+  const summary = event.response.summary;
+  if (typeof summary === "string" && summary.trim()) return summary.trim();
+  return typeof event.text === "string" && event.text.trim() ? event.text.trim() : null;
+}
+
 function attachProgressLogger(
   runner: GameRunner,
   progressPath: string,
@@ -1011,6 +1077,7 @@ function attachProgressLogger(
   gameNumber: number,
   startedAt: number,
   chatty: boolean,
+  houseSummaries: boolean,
 ): void {
   runner.setCanonicalEventListener((event) => {
     writeCanonicalEvent(eventsPath, gameNumber, startedAt, event);
@@ -1019,6 +1086,10 @@ function attachProgressLogger(
   runner.setStreamListener((event) => {
     if (event.type === "agent_turn") {
       writeAgentTurn(turnsPath, gameNumber, startedAt, event);
+      if (houseSummaries) {
+        const summary = getHouseSummaryText(event);
+        if (summary) console.log(`\n[House MC] ${summary}`);
+      }
       return;
     }
 
@@ -1069,7 +1140,10 @@ async function main() {
   console.log(`Provider: ${describeLlmProvider(llmConfig)} | API key: ${llmConfig.apiKeySource} | Tool choice: ${llmConfig.toolChoiceMode}`);
   console.log(`Timeouts: game ${(args.gameTimeoutMs / 1000).toFixed(0)}s | LLM request ${(args.llmTimeoutMs / 1000).toFixed(0)}s`);
   if (args.chatty) console.log("Chatty mode enabled: live formatted transcript will be printed to console.");
+  if (args.houseSummaries) console.log("House summaries enabled: concise House MC summaries will be printed live without chatty reasoning output.");
   if (args.enableStrategicReflections === true) console.log("Strategic reflection capture enabled: hidden reflection agent_turn records will be written to turns JSONL.");
+  if (args.richProducer === true) console.log("Rich producer mode enabled: House Strategy Bible, long-form summaries, producer briefs, and bounded diary sessions will be captured.");
+  else if (args.enableDiary === true) console.log("Diary mode enabled: bounded diary sessions will run in simulation config.");
   console.log(`Git: ${metadata.git.commitShortSha ?? "unknown"} (${metadata.git.branch ?? "unknown branch"}${metadata.git.isDirty ? ", dirty" : ""})`);
   if (args.personas) console.log(`Personas: ${args.personas.join(", ")}`);
   console.log("");
@@ -1078,6 +1152,8 @@ async function main() {
   const simConfig = buildSimulationConfig(args.variant, {
     agentActionTimeoutMs: Math.max(args.llmTimeoutMs * 2, args.llmTimeoutMs + 5_000),
     enableStrategicReflections: args.enableStrategicReflections ?? false,
+    richProducer: args.richProducer ?? false,
+    enableDiary: args.enableDiary ?? false,
   });
 
   // Create output directory
@@ -1134,12 +1210,22 @@ async function main() {
       gameTimeoutMs: args.gameTimeoutMs,
       llmTimeoutMs: args.llmTimeoutMs,
       enableStrategicReflections: args.enableStrategicReflections ?? false,
+      houseSummaries: args.houseSummaries,
+      richProducer: args.richProducer ?? false,
+      enableDiary: args.enableDiary ?? false,
+      houseProducer: {
+        enableHouseRoundSummaries: simConfig.enableHouseRoundSummaries ?? true,
+        enableHouseStrategyBible: simConfig.enableHouseStrategyBible ?? false,
+        enableHouseLongFormSummaries: simConfig.enableHouseLongFormSummaries ?? false,
+        enableHouseProducerBriefs: simConfig.enableHouseProducerBriefs ?? false,
+        diaryRoomAfterPhases: simConfig.diaryRoomAfterPhases ?? [],
+      },
       transcriptPath,
       jsonPath,
       turnsPath,
       eventsPath,
     });
-    attachProgressLogger(runner, progressPath, turnsPath, eventsPath, g, startTime, args.chatty);
+    attachProgressLogger(runner, progressPath, turnsPath, eventsPath, g, startTime, args.chatty, args.houseSummaries);
     console.log(`  Progress log: ${progressPath}`);
     console.log(`  Turns log: ${turnsPath}`);
     console.log(`  Events log: ${eventsPath}`);

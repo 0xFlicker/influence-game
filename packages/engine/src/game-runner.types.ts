@@ -99,6 +99,147 @@ export interface StrategyPacketUpdateAction {
   changedSincePrevious: string;
 }
 
+export type HouseAllianceStatus = "speculative" | "forming" | "active" | "fracturing" | "retired";
+export type HouseConfidence = "low" | "medium" | "high";
+
+export interface HouseAllianceHypothesis {
+  name: string;
+  members: string[];
+  status: HouseAllianceStatus;
+  confidence: HouseConfidence;
+  evidence: string[];
+  tension?: string | null;
+  openQuestions?: string[];
+}
+
+export interface HousePlayerTrajectory {
+  playerName: string;
+  currentRead: string;
+  pressurePoints: string[];
+  likelyNextMove?: string | null;
+}
+
+export interface HouseStoryArc {
+  title: string;
+  summary: string;
+  involvedPlayers: string[];
+  status: "emerging" | "active" | "resolved" | "dropped";
+}
+
+export interface HouseCoveredWindow {
+  fromRound: number;
+  toRound: number;
+  fromPhase?: Phase;
+  toPhase?: Phase;
+}
+
+export interface HouseVoteCount {
+  playerName: string;
+  votes: number;
+  voters: string[];
+}
+
+export interface HouseRoundFacts {
+  round: number;
+  empoweredName: string | null;
+  empowerMethod: string | null;
+  empowerVoteCounts: HouseVoteCount[];
+  exposeVoteCounts: HouseVoteCount[];
+  councilCandidates: [string, string] | null;
+  powerAction: { action: PowerAction["action"]; targetName: string | null } | null;
+  shieldGrantedName: string | null;
+  autoEliminatedName: string | null;
+  councilVoteCounts: HouseVoteCount[];
+  councilMethod: string | null;
+  eliminatedName: string | null;
+}
+
+export interface HouseStrategyBiblePacket {
+  revisionId: string;
+  previousRevisionId: string | null;
+  updatedAtRound: number;
+  updatedAtPhase: Phase;
+  coveredWindow: HouseCoveredWindow;
+  summary: string;
+  alliances: HouseAllianceHypothesis[];
+  tensions: string[];
+  promises: string[];
+  voteBlocs: string[];
+  mingleDiscoveries: string[];
+  playerTrajectories: HousePlayerTrajectory[];
+  storyArcs: HouseStoryArc[];
+  droppedThreads: string[];
+  openQuestions: string[];
+  changedSincePrevious: string;
+}
+
+export interface HouseEvidenceBundle {
+  round: number;
+  phase: Phase;
+  alivePlayers: string[];
+  eliminatedPlayers: string[];
+  empoweredName: string | null;
+  councilCandidates: [string, string] | null;
+  recentTranscript: TranscriptEntry[];
+  recentPublicMessages: Array<{ from: string; text: string; phase: Phase; round?: number; anonymous?: boolean }>;
+  recentDiaryEntries: Array<{ round: number; precedingPhase: Phase; agentName: string; question: string; answer: string }>;
+  roomAllocations: Array<{ round: number; text: string; rooms: Array<{ roomId: number; players: string[] }>; excluded: string[] }>;
+  roundFacts: HouseRoundFacts;
+  canonicalEventCount: number;
+}
+
+export interface HouseStrategyBibleUpdateContext {
+  round: number;
+  phase: Phase;
+  previousPacket: HouseStrategyBiblePacket | null;
+  evidence: HouseEvidenceBundle;
+  coveredWindow: HouseCoveredWindow;
+}
+
+export interface HouseStrategyBibleUpdateResult {
+  packet: HouseStrategyBiblePacket | null;
+  rationale?: string;
+  thinking?: string;
+  reasoningContext?: string;
+}
+
+export type HouseSummaryKind = "round" | "phase" | "long-form";
+
+export interface HouseGameplaySummaryContext {
+  round: number;
+  phase: Phase;
+  kind: HouseSummaryKind;
+  alivePlayers: string[];
+  packet: HouseStrategyBiblePacket | null;
+  evidence: HouseEvidenceBundle;
+  coveredWindow: HouseCoveredWindow;
+}
+
+export interface HouseGameplaySummaryResult {
+  summary: string;
+  kind: HouseSummaryKind;
+  packetRevisionId: string | null;
+  coveredWindow: HouseCoveredWindow;
+  referencedAllianceNames: string[];
+  openQuestions?: string[];
+  thinking?: string;
+  reasoningContext?: string;
+}
+
+export interface HouseProducerBrief {
+  playerName: string;
+  packetRevisionId: string | null;
+  storyRole: string;
+  pressurePoints: string[];
+  relevantAllianceHypotheses: string[];
+  contradictions: string[];
+  questionAngles: string[];
+  safeToReveal: string[];
+  privateDoNotReveal: string[];
+  thinking?: string;
+  reasoningContext?: string;
+}
+
 export interface MingleTurnAction {
   /** Agent's internal thinking (hidden from players, visible to viewers) */
   thinking?: string;

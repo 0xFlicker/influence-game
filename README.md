@@ -49,6 +49,16 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 # Add --strategic-reflections when validating hidden reflection capture
 # or Strategy Thread carry-forward:
 #   --variant mingle --chatty --strategic-reflections --game-timeout-sec 7200 --llm-timeout-sec 300
+#
+# Add --rich-producer when validating House Strategy Bible carry-forward,
+# long-form summaries, and diary producer briefs:
+#   --variant mingle --chatty --rich-producer --game-timeout-sec 7200 --llm-timeout-sec 300
+#
+# Add --house-summaries to print only House MC summaries live, without
+# --chatty reasoning/transcript output. Each line starts with deterministic
+# round facts: empowered player, vote counts, power action, shield, council,
+# and elimination:
+#   --variant mingle --house-summaries --game-timeout-sec 7200 --llm-timeout-sec 300
 
 # Validation variants
 bun run simulate -- --variant mingle
@@ -57,7 +67,7 @@ bun run simulate -- --variant power-lobby-mingle
 
 The root `simulate` script injects hosted-provider secrets from the Doppler `social-strategy-agent` project's `dev` config. Use `simulate:local` when testing LM Studio or another OpenAI-compatible local endpoint.
 
-Output includes a round-by-round transcript, per-persona win rates, token cost estimates, and per-game artifacts under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis with `thinking` / `reasoningContext`, `game-N-events.jsonl` for replayable accepted domain events, `game-N-progress.jsonl` for lightweight progress, and `game-N.txt` for human-readable transcript review. Mingle intent, anonymous rumor, and House room-assignment records are always written to turns JSONL; Mingle intent, rumor, strategic reflection, and Strategy Thread packet records can include `strategicLens` metadata. Strategic reflection and `strategy-packet` records are written when `--strategic-reflections` is enabled, and later private decisions may include `strategyPacketUse` markers.
+Output includes a round-by-round transcript, per-persona win rates, token cost estimates, and per-game artifacts under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis with `thinking` / `reasoningContext`, `game-N-events.jsonl` for replayable accepted domain events, `game-N-progress.jsonl` for lightweight progress, and `game-N.txt` for human-readable transcript review. Mingle intent, anonymous rumor, House room-assignment, and House MC summary records are written to turns JSONL by default; Mingle intent, rumor, strategic reflection, and Strategy Thread packet records can include `strategicLens` metadata. Strategic reflection and `strategy-packet` records are written when `--strategic-reflections` is enabled, and later private decisions may include `strategyPacketUse` markers. `--rich-producer` also writes private `house-strategy-bible`, `house-long-form-summary`, and `house-producer-brief` records.
 
 To expose the local simulation corpus to another local MCP client:
 
@@ -66,7 +76,7 @@ cd packages/engine
 bun run mcp:game -- docs/simulations
 ```
 
-The game MCP is read-only. It discovers past and currently-writing simulation batches, addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and can list sessions/games, filter events, search logs, read player timelines, and return cited linked records when source pointers are present. Passing a single batch directory still works for focused inspection, but returned records include a `sessionId`. For strategy-observability validation, search turns logs for `mingle-intent`, `mingle-room-assignment`, `rumor`, `strategic-reflection`, `strategy-packet`, `strategicLens`, `strategyPacketUse`, `strategySignal`, `movementPurpose`, or `empower-revote`.
+The game MCP is read-only. It discovers past and currently-writing simulation batches, addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and can list sessions/games, filter events, search logs, read player timelines, and return cited linked records when source pointers are present. Passing a single batch directory still works for focused inspection, but returned records include a `sessionId`. For strategy-observability validation, search turns logs for `mingle-intent`, `mingle-room-assignment`, `rumor`, `strategic-reflection`, `strategy-packet`, `strategicLens`, `strategyPacketUse`, `strategySignal`, `movementPurpose`, or `empower-revote`. For House producer validation, search for `house-mc-summary`, `[House MC]`, `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or named House alliances.
 
 ### 3. Run the full stack (API + Web UI)
 
@@ -223,8 +233,14 @@ Options:
   --variant NAME   Variant: baseline, mingle, power-lobby,
                    or power-lobby-mingle (default: baseline)
   --chatty         Print live formatted transcript output
+  --house-summaries
+                   Print concise House MC summaries with deterministic round facts live
+                   without chatty reasoning output
   --strategic-reflections
                    Include hidden strategic-reflection and Strategy Thread records in artifacts
+  --rich-producer  Enable House Strategy Bible packets, long-form House summaries,
+                   producer briefs, bounded Council diary sessions, and strategic reflections
+  --diary          Enable bounded Council diary sessions without rich producer packets
 ```
 
 ## Seeding the Database (optional)

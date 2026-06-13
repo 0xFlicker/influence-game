@@ -342,6 +342,131 @@ describe("game MCP corpus read model", () => {
     });
   });
 
+  it("searches House producer packet, summary, and diary brief turn records", () => {
+    const corpusDir = makeTempCorpus();
+    const sessionDir = makeSession(corpusDir, "batch-house-producer");
+    writeCanonicalGame(sessionDir);
+    writeFileSync(
+      join(sessionDir, "game-1-turns.jsonl"),
+      [
+        {
+          sequence: 1,
+          type: "agent_turn",
+          action: "house-strategy-bible",
+          round: 1,
+          phase: Phase.COUNCIL,
+          actor: { name: "House", role: "house" },
+          visibility: "private",
+          response: {
+            packet: {
+              revisionId: "house-r1-council-1",
+              previousRevisionId: null,
+              alliances: [
+                {
+                  name: "Threaded Vote Bloc",
+                  members: ["Atlas", "Vera"],
+                  status: "forming",
+                  confidence: "medium",
+                  evidence: ["Atlas and Vera voted together."],
+                },
+              ],
+              openQuestions: ["Will Mira puncture the Threaded Vote Bloc?"],
+            },
+          },
+        },
+        {
+          sequence: 2,
+          type: "agent_turn",
+          action: "house-mc-summary",
+          round: 1,
+          phase: Phase.COUNCIL,
+          actor: { name: "House", role: "house" },
+          visibility: "system",
+          response: {
+            packetRevisionId: "house-r1-council-1",
+            summary: "The Threaded Vote Bloc is beginning to look real, but Mira is still a question.",
+          },
+        },
+        {
+          sequence: 3,
+          type: "agent_turn",
+          action: "house-long-form-summary",
+          round: 1,
+          phase: Phase.COUNCIL,
+          actor: { name: "House", role: "house" },
+          visibility: "private",
+          response: {
+            packetRevisionId: "house-r1-council-1",
+            openQuestions: ["Can Vera keep Atlas aligned?"],
+          },
+        },
+        {
+          sequence: 4,
+          type: "agent_turn",
+          action: "house-producer-brief",
+          round: 1,
+          phase: Phase.DIARY_ROOM,
+          actor: { name: "House", role: "house" },
+          visibility: "private",
+          response: {
+            playerName: "Atlas",
+            producerBrief: {
+              storyRole: "Atlas is the Threaded Vote Bloc's visible anchor.",
+              privateDoNotReveal: ["Do not reveal Vera's producer read directly."],
+            },
+          },
+        },
+      ].map((record) => JSON.stringify(record)).join("\n") + "\n",
+    );
+    const readModel = new GameMcpReadModel(corpusDir);
+
+    const actionResults = readModel.searchLogs({
+      query: "house-strategy-bible",
+      sessionId: "batch-house-producer",
+      gameNumber: 1,
+      sources: ["turns"],
+    });
+    const allianceResults = readModel.searchLogs({
+      query: "Threaded Vote Bloc",
+      sessionId: "batch-house-producer",
+      gameNumber: 1,
+      sources: ["turns"],
+    });
+    const briefResults = readModel.searchLogs({
+      query: "privateDoNotReveal",
+      sessionId: "batch-house-producer",
+      gameNumber: 1,
+      sources: ["turns"],
+    });
+
+    expect(actionResults).toHaveLength(1);
+    expect(actionResults[0]).toMatchObject({
+      citation: { sourceKind: "turns", line: 1 },
+      record: {
+        action: "house-strategy-bible",
+        response: {
+          packet: {
+            revisionId: "house-r1-council-1",
+            alliances: [{ name: "Threaded Vote Bloc" }],
+          },
+        },
+      },
+    });
+    expect(allianceResults.map((result) => result.citation.line).sort()).toEqual([1, 2, 4]);
+    expect(briefResults).toHaveLength(1);
+    expect(briefResults[0]).toMatchObject({
+      citation: { sourceKind: "turns", line: 4 },
+      record: {
+        action: "house-producer-brief",
+        response: {
+          producerBrief: {
+            storyRole: "Atlas is the Threaded Vote Bloc's visible anchor.",
+          },
+        },
+      },
+    });
+  });
+
   it("disambiguates linked turn fallback matches by actor and phase", () => {
     const corpusDir = makeTempCorpus();
     const sessionDir = makeSession(corpusDir, "batch-linked");

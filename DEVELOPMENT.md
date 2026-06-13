@@ -388,15 +388,26 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 
+# House summaries only (live deterministic round facts + House MC summaries without chatty reasoning output):
+INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
+  bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
+    --variant mingle --house-summaries --game-timeout-sec 7200 --llm-timeout-sec 300
+
 # Strategy-observability validation adds hidden strategic-reflection and Strategy Thread records:
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
     --variant mingle --chatty --strategic-reflections --game-timeout-sec 7200 --llm-timeout-sec 300
+
+# Rich producer validation adds House Strategy Bible packets, long-form summaries,
+# diary producer briefs, bounded Council diary sessions, and strategic reflections:
+INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
+  bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
+    --variant mingle --chatty --rich-producer --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
-Simulation batches are written under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-events.jsonl` for canonical accepted domain events that replay into a projection, `game-N-progress.jsonl` for lightweight live progress, `game-N.json` for the full transcript/result bundle, and `game-N.txt` for human-readable transcript review. Hidden `mingle-intent` records are always in turns JSONL; anonymous `rumor` records are included there too; Mingle intent, rumor, strategic reflection, and Strategy Thread packet records can include `strategicLens` metadata. Hidden `strategic-reflection` and `strategy-packet` records are included when `--strategic-reflections` is enabled, and later private decisions may include `strategyPacketUse` markers.
+Simulation batches are written under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-events.jsonl` for canonical accepted domain events that replay into a projection, `game-N-progress.jsonl` for lightweight live progress, `game-N.json` for the full transcript/result bundle, and `game-N.txt` for human-readable transcript review. Hidden `mingle-intent` records are always in turns JSONL; anonymous `rumor`, House room-assignment, and House MC summary records are included there too; Mingle intent, rumor, strategic reflection, and Strategy Thread packet records can include `strategicLens` metadata. Hidden `strategic-reflection` and `strategy-packet` records are included when `--strategic-reflections` is enabled, and later private decisions may include `strategyPacketUse` markers. Rich producer runs also include private `house-strategy-bible`, `house-long-form-summary`, and `house-producer-brief` records.
 
-For local MCP queries across past and current simulations, run `cd packages/engine && bun run mcp:game -- docs/simulations`. The MCP is read-only, scans the corpus on demand, and requires `sessionId + gameNumber` for game-specific projection/timeline queries. Use `search_logs` over `sources: ["turns"]` for `mingle-intent`, `mingle-room-assignment`, `rumor`, `strategic-reflection`, `strategy-packet`, `strategicLens`, `strategyPacketUse`, `strategySignal`, `movementPurpose`, or `empower-revote` when validating whether agents are using open strategic choices.
+For local MCP queries across past and current simulations, run `cd packages/engine && bun run mcp:game -- docs/simulations`. The MCP is read-only, scans the corpus on demand, and requires `sessionId + gameNumber` for game-specific projection/timeline queries. Use `search_logs` over `sources: ["turns"]` for `mingle-intent`, `mingle-room-assignment`, `rumor`, `strategic-reflection`, `strategy-packet`, `strategicLens`, `strategyPacketUse`, `strategySignal`, `movementPurpose`, or `empower-revote` when validating whether agents are using open strategic choices. Use `search_logs` over `sources: ["turns", "transcript"]` for `house-mc-summary`, `[House MC]`, `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or named House alliances when validating House producer carry-forward.
 
 `InfluenceAgent` uses OpenAI-compatible chat completions. Hosted OpenAI runs use `OPENAI_API_KEY`; local runs can use `INFLUENCE_LLM_BASE_URL` with LM Studio. Current repo defaults are budget `gpt-5-nano`, standard `gpt-5-mini`, and premium `gpt-5.4-mini`; override server-side tiers with `INFLUENCE_MODEL_BUDGET`, `INFLUENCE_MODEL_STANDARD`, and `INFLUENCE_MODEL_PREMIUM` when testing local models.
 

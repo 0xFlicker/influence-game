@@ -8,7 +8,7 @@
 import { describe, it, expect, mock } from "bun:test";
 import { GameRunner } from "../game-runner";
 import type { GameStreamEvent, GameStateSnapshot, PhaseContext, StrategicReflectionAction } from "../game-runner";
-import type { GameConfig } from "../types";
+import { Phase, type GameConfig } from "../types";
 import { MockAgent } from "./mock-agent";
 import { createUUID } from "../game-state";
 
@@ -215,6 +215,89 @@ describe("GameRunner stream listener", () => {
 
     expect(events.some((event) => event.type === "agent_turn" && event.action === "strategic-reflection")).toBe(false);
     expect(events.some((event) => event.type === "agent_turn" && event.action === "strategy-packet")).toBe(false);
+  });
+
+  it("emits House Strategy Bible and summary records when enabled", async () => {
+    const agents = makeAgents(5);
+    const runner = new GameRunner(agents, {
+      ...FAST_CONFIG,
+      enableHouseStrategyBible: true,
+      enableHouseLongFormSummaries: true,
+      mingleSessionsPerRound: 1,
+    });
+
+    const events: GameStreamEvent[] = [];
+    runner.setStreamListener((event) => events.push(event));
+
+    await runner.run();
+
+    const packet = events.find((event) => event.type === "agent_turn" && event.action === "house-strategy-bible");
+    expect(packet).toBeDefined();
+    if (packet?.type === "agent_turn") {
+      expect(packet.actor).toMatchObject({ name: "House", role: "house" });
+      expect(packet.visibility).toBe("private");
+      expect(packet.response).toMatchObject({
+        packet: {
+          previousRevisionId: null,
+          alliances: [{ name: "Template Watch Pair" }],
+          openQuestions: ["Who will convert social proximity into a vote?"],
+        },
+      });
+    }
+
+    const summary = events.find((event) => event.type === "agent_turn" && event.action === "house-mc-summary");
+    expect(summary).toBeDefined();
+    if (summary?.type === "agent_turn") {
+      expect(summary.visibility).toBe("system");
+      expect(summary.response).toHaveProperty("packetRevisionId");
+      expect(summary.response).toHaveProperty("summary");
+      expect(summary.response).toHaveProperty("roundFacts");
+      expect(summary.response.summary).toContain("Round facts:");
+      expect(summary.response.summary).toContain("power=pass;");
+      expect(summary.response.summary).not.toContain("power=pass ->");
+      expect(summary.response.roundFacts).toMatchObject({
+        round: expect.any(Number),
+        empoweredName: expect.any(String),
+        empowerVoteCounts: expect.any(Array),
+        exposeVoteCounts: expect.any(Array),
+        powerAction: { action: "pass", targetName: null },
+      });
+    }
+
+    const longForm = events.find((event) => event.type === "agent_turn" && event.action === "house-long-form-summary");
+    expect(longForm).toBeDefined();
+    if (longForm?.type === "agent_turn") {
+      expect(longForm.visibility).toBe("private");
+      expect(longForm.response).toHaveProperty("openQuestions");
+    }
+  });
+
+  it("emits private House producer briefs before configured diary questions", async () => {
+    const agents = makeAgents(5);
+    const runner = new GameRunner(agents, {
+      ...FAST_CONFIG,
+      enableHouseStrategyBible: true,
+      enableHouseProducerBriefs: true,
+      diaryRoomAfterPhases: [Phase.COUNCIL],
+      maxDiaryFollowUps: 0,
+      mingleSessionsPerRound: 1,
+    });
+
+    const events: GameStreamEvent[] = [];
+    runner.setStreamListener((event) => events.push(event));
+
+    await runner.run();
+
+    const briefIndex = events.findIndex((event) => event.type === "agent_turn" && event.action === "house-producer-brief");
+    const answerIndex = events.findIndex((event) => event.type === "agent_turn" && event.action === "diary-answer");
+    expect(briefIndex).toBeGreaterThanOrEqual(0);
+    expect(answerIndex).toBeGreaterThan(briefIndex);
+    const brief = events[briefIndex];
+    if (brief?.type === "agent_turn") {
+      expect(brief.visibility).toBe("private");
+      expect(brief.response).toHaveProperty("producerBrief");
+      expect(JSON.stringify(brief.response)).toContain("privateDoNotReveal");
+    }
   });
 
   it("keeps successful strategic-reflection records when one agent reflection fails", async () => {

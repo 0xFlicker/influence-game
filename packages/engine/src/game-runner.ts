@@ -23,8 +23,8 @@ import type { UUID, GameConfig } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 
 // Re-export types from the extracted module for backward compatibility
-export type { AgentCallOptions, AgentResponse, AgentTurnEvent, EmpowerRevoteAction, GameStreamEvent, GameStateSnapshot, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TranscriptEntry } from "./game-runner.types";
-import type { GameStreamEvent, GameStateSnapshot, IAgent, TranscriptEntry } from "./game-runner.types";
+export type { AgentCallOptions, AgentResponse, AgentTurnEvent, EmpowerRevoteAction, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TranscriptEntry } from "./game-runner.types";
+import type { GameStreamEvent, GameStateSnapshot, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, TranscriptEntry } from "./game-runner.types";
 
 // Internal modules
 import { TranscriptLogger } from "./transcript-logger";
@@ -58,6 +58,8 @@ export class GameRunner {
   private readonly contextBuilder: ContextBuilder;
   private readonly diaryRoom: DiaryRoom;
   private readonly houseInterviewer: IHouseInterviewer;
+  private houseStrategyBible: HouseStrategyBiblePacket | null = null;
+  private readonly completedHouseSummaryRounds = new Set<number>();
   /** Mingle room messages keyed by recipient */
   private mingleInbox = new Map<UUID, Array<{ from: string; text: string }>>();
   /** Ordered list of eliminated player names */
@@ -93,6 +95,7 @@ export class GameRunner {
       this.agents,
       this.config,
       this.houseInterviewer,
+      () => this.houseStrategyBible,
     );
   }
 
@@ -255,19 +258,6 @@ export class GameRunner {
         await runLobbyPhase(prc, actor);
       } else if (state === "mingle") {
         await runMinglePhase(prc, actor);
-
-        // House MC summary after Mingle phases (great for simulation traces)
-        try {
-          const summary = await this.houseInterviewer.generateGameplaySummary(
-            this.logger.transcript.slice(-15),
-            this.gameState.round,
-            Phase.MINGLE,
-            this.gameState.getAlivePlayers().map((p) => p.name),
-          );
-          this.logger.logSystem(`[House MC] ${summary}`, Phase.MINGLE);
-        } catch {
-          // non-fatal for summary generation
-        }
       } else if (state === "rumor") {
         await runRumorPhase(prc, actor);
       } else if (state === "vote") {
@@ -275,23 +265,15 @@ export class GameRunner {
         await this.diaryRoom.runStrategicReflections(Phase.VOTE);
       } else if (state === "power") {
         await runPowerPhase(prc, actor);
+        if (!this.gameState.councilCandidates) {
+          await this.emitHouseRoundInterstitial(Phase.POWER);
+        }
       } else if (state === "reveal") {
         await runRevealPhase(prc, actor);
       } else if (state === "council") {
         await runCouncilPhase(prc, actor);
-
-        // House MC summary after key elimination moments for richer simulation traces
-        try {
-          const summary = await this.houseInterviewer.generateGameplaySummary(
-            this.logger.transcript.slice(-30),
-            this.gameState.round,
-            Phase.COUNCIL,
-            this.gameState.getAlivePlayers().map((p) => p.name),
-          );
-          this.logger.logSystem(`[House MC] ${summary}`, Phase.COUNCIL);
-        } catch {
-          // non-fatal for summary generation
-        }
+        await this.emitHouseRoundInterstitial(Phase.COUNCIL);
+        await this.runConfiguredDiaryRoom(Phase.COUNCIL);
 
         // --- THE RECKONING (4 -> 3) ---
       } else if (state === "reckoning_lobby") {
@@ -338,5 +320,305 @@ export class GameRunner {
     if (!this._aborted) {
       await completionPromise;
     }
+  }
+
+  private houseRoundSummariesEnabled(): boolean {
+    return this.config.enableHouseRoundSummaries !== false;
+  }
+
+  private houseStrategyBibleEnabled(): boolean {
+    return this.config.enableHouseStrategyBible === true;
+  }
+
+  private houseLongFormSummariesEnabled(): boolean {
+    return this.config.enableHouseLongFormSummaries === true;
+  }
+
+  private async emitHouseRoundInterstitial(resolvedPhase: Phase): Promise<void> {
+    const round = this.gameState.round;
+    if (round <= 0 || this.completedHouseSummaryRounds.has(round) || !this.houseRoundSummariesEnabled()) {
+      return;
+    }
+    this.completedHouseSummaryRounds.add(round);
+
+    const coveredWindow = this.buildHouseCoveredWindow(resolvedPhase);
+    const evidence = this.buildHouseEvidenceBundle(resolvedPhase);
+
+    if (this.houseStrategyBibleEnabled()) {
+      try {
+        const update = await this.houseInterviewer.updateStrategyBible({
+          round,
+          phase: resolvedPhase,
+          previousPacket: this.houseStrategyBible,
+          evidence,
+          coveredWindow,
+        });
+        if (update.packet) {
+          this.houseStrategyBible = update.packet;
+          this.logger.emitAgentTurn({
+            phase: resolvedPhase,
+            action: "house-strategy-bible",
+            actor: { name: "House", role: "house" },
+            visibility: "private",
+            response: {
+              packet: update.packet,
+              rationale: update.rationale,
+            },
+            thinking: update.thinking,
+            reasoningContext: update.reasoningContext,
+            scope: "thinking",
+          });
+        }
+      } catch {
+        // House packet generation is producer/debug work; never break the game loop.
+      }
+    }
+
+    const summaryContext = {
+      round,
+      phase: resolvedPhase,
+      kind: "round" as const,
+      alivePlayers: this.gameState.getAlivePlayers().map((player) => player.name),
+      packet: this.houseStrategyBible,
+      evidence,
+      coveredWindow,
+    };
+
+    try {
+      const summary = await this.houseInterviewer.generateHouseSummary(summaryContext);
+      const summaryWithFacts = this.attachRoundFactsToSummary(summary, evidence.roundFacts);
+      this.emitHouseSummaryTurn("house-mc-summary", resolvedPhase, summaryWithFacts, "system", evidence.roundFacts);
+      this.logger.logSystem(`[House MC] ${summaryWithFacts.summary}`, resolvedPhase);
+    } catch {
+      // non-fatal for summary generation
+    }
+
+    if (this.houseLongFormSummariesEnabled()) {
+      try {
+        const longForm = await this.houseInterviewer.generateLongFormGameplaySummary({
+          ...summaryContext,
+          kind: "long-form",
+        });
+        this.emitHouseSummaryTurn("house-long-form-summary", resolvedPhase, longForm, "private", evidence.roundFacts);
+      } catch {
+        // non-fatal for producer catch-up generation
+      }
+    }
+  }
+
+  private emitHouseSummaryTurn(
+    action: "house-mc-summary" | "house-long-form-summary",
+    phase: Phase,
+    summary: HouseGameplaySummaryResult,
+    visibility: "private" | "system",
+    facts?: HouseRoundFacts,
+  ): void {
+    this.logger.emitAgentTurn({
+      phase,
+      action,
+      actor: { name: "House", role: "house" },
+      visibility,
+      response: {
+        summary: summary.summary,
+        kind: summary.kind,
+        packetRevisionId: summary.packetRevisionId,
+        coveredWindow: summary.coveredWindow,
+        referencedAllianceNames: summary.referencedAllianceNames,
+        openQuestions: summary.openQuestions ?? [],
+        ...(facts ? { roundFacts: facts } : {}),
+      },
+      thinking: summary.thinking,
+      reasoningContext: summary.reasoningContext,
+      scope: "system",
+      text: summary.summary,
+    });
+  }
+
+  private buildHouseCoveredWindow(toPhase: Phase): HouseCoveredWindow {
+    return {
+      fromRound: this.houseStrategyBible?.updatedAtRound ?? 1,
+      toRound: this.gameState.round,
+      ...(this.houseStrategyBible?.updatedAtPhase && { fromPhase: this.houseStrategyBible.updatedAtPhase }),
+      toPhase,
+    };
+  }
+
+  private attachRoundFactsToSummary(summary: HouseGameplaySummaryResult, facts: HouseRoundFacts): HouseGameplaySummaryResult {
+    const factsLine = this.formatHouseRoundFacts(facts);
+    return {
+      ...summary,
+      summary: summary.summary.startsWith(factsLine)
+        ? summary.summary
+        : `${factsLine}\n${summary.summary}`,
+    };
+  }
+
+  private formatHouseRoundFacts(facts: HouseRoundFacts): string {
+    const method = facts.empowerMethod ? ` via ${facts.empowerMethod}` : "";
+    const empowered = facts.empoweredName ? `${facts.empoweredName}${method}` : "unknown";
+    const power = facts.powerAction
+      ? `${facts.powerAction.action}${facts.powerAction.targetName ? ` -> ${facts.powerAction.targetName}` : ""}`
+      : "unknown";
+    const candidates = facts.councilCandidates ? facts.councilCandidates.join(" vs ") : "none";
+    const councilMethod = facts.councilMethod ? ` (${facts.councilMethod})` : "";
+    const councilVote = facts.councilVoteCounts.length > 0
+      ? this.formatVoteCounts(facts.councilVoteCounts)
+      : facts.autoEliminatedName
+        ? "skipped"
+        : "none";
+    return [
+      `Round facts: empowered=${empowered}`,
+      `empower vote=${this.formatVoteCounts(facts.empowerVoteCounts)}`,
+      `expose vote=${this.formatVoteCounts(facts.exposeVoteCounts)}`,
+      `power=${power}`,
+      `shield=${facts.shieldGrantedName ?? "none"}`,
+      `council=${candidates}`,
+      `council vote=${councilVote}${councilMethod}`,
+      `eliminated=${facts.eliminatedName ?? facts.autoEliminatedName ?? "none"}`,
+    ].join("; ") + ".";
+  }
+
+  private formatVoteCounts(counts: HouseVoteCount[]): string {
+    if (counts.length === 0) return "none";
+    return counts
+      .map((count) => `${count.playerName} ${count.votes}`)
+      .join(", ");
+  }
+
+  private buildHouseRoundFacts(round: number): HouseRoundFacts {
+    const events = this.gameState.getCanonicalEvents().filter((event) => event.round === round);
+    const empowerTally = this.latestRoundEvent(events, "vote.empower_tally_resolved");
+    const empoweredSet = this.latestRoundEvent(events, "vote.empowered_set");
+    const powerAction = this.latestRoundEvent(events, "power.action_set");
+    const candidatesResolved = this.latestRoundEvent(events, "power.candidates_resolved");
+    const councilResolved = this.latestRoundEvent(events, "council.elimination_resolved");
+    const playerEliminated = this.latestRoundEvent(events, "player.eliminated");
+
+    const councilCandidates = councilResolved?.payload.candidates
+      ?? candidatesResolved?.payload.candidates
+      ?? this.gameState.councilCandidates;
+    const empoweredId = empoweredSet?.payload.empowered
+      ?? councilResolved?.payload.empoweredId
+      ?? this.gameState.empoweredId;
+
+    return {
+      round,
+      empoweredName: empoweredId ? this.gameState.getPlayerName(empoweredId) : null,
+      empowerMethod: empoweredSet?.payload.method ?? empowerTally?.payload.method ?? null,
+      empowerVoteCounts: this.buildVoteCounts(this.gameState.currentVoteTally.empowerVotes),
+      exposeVoteCounts: this.buildVoteCounts(this.gameState.currentVoteTally.exposeVotes),
+      councilCandidates: councilCandidates
+        ? [this.gameState.getPlayerName(councilCandidates[0]), this.gameState.getPlayerName(councilCandidates[1])]
+        : null,
+      powerAction: powerAction
+        ? {
+            action: powerAction.payload.action.action,
+            targetName: powerAction.payload.action.action === "pass"
+              ? null
+              : this.gameState.getPlayerName(powerAction.payload.action.target),
+          }
+        : null,
+      shieldGrantedName: candidatesResolved?.payload.shieldGranted
+        ? this.gameState.getPlayerName(candidatesResolved.payload.shieldGranted)
+        : null,
+      autoEliminatedName: candidatesResolved?.payload.autoEliminated
+        ? this.gameState.getPlayerName(candidatesResolved.payload.autoEliminated)
+        : null,
+      councilVoteCounts: councilCandidates
+        ? this.buildVoteCounts(
+            councilResolved?.payload.tally.votes ?? this.gameState.currentCouncilTally.votes,
+            [...councilCandidates],
+            councilResolved?.payload.empoweredId ?? this.gameState.empoweredId ?? undefined,
+          )
+        : [],
+      councilMethod: councilResolved?.payload.method ?? null,
+      eliminatedName: playerEliminated?.payload.playerName
+        ?? (councilResolved?.payload.eliminated ? this.gameState.getPlayerName(councilResolved.payload.eliminated) : null),
+    };
+  }
+
+  private latestRoundEvent<TType extends CanonicalGameEvent["type"]>(
+    events: readonly CanonicalGameEvent[],
+    type: TType,
+  ): Extract<CanonicalGameEvent, { type: TType }> | null {
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index];
+      if (event?.type === type) {
+        return event as Extract<CanonicalGameEvent, { type: TType }>;
+      }
+    }
+    return null;
+  }
+
+  private buildVoteCounts(
+    votes: Record<UUID, UUID>,
+    knownTargets: UUID[] = [],
+    excludedVoterId?: UUID,
+  ): HouseVoteCount[] {
+    const counts = new Map<UUID, { votes: number; voters: string[]; knownIndex: number }>();
+    for (const [index, targetId] of knownTargets.entries()) {
+      counts.set(targetId, { votes: 0, voters: [], knownIndex: index });
+    }
+
+    for (const [voterId, targetId] of Object.entries(votes) as Array<[UUID, UUID]>) {
+      if (voterId === excludedVoterId) continue;
+      if (knownTargets.length > 0 && !knownTargets.includes(targetId)) continue;
+      const current = counts.get(targetId) ?? { votes: 0, voters: [], knownIndex: Number.MAX_SAFE_INTEGER };
+      current.votes += 1;
+      current.voters.push(this.gameState.getPlayerName(voterId));
+      counts.set(targetId, current);
+    }
+
+    return Array.from(counts.entries())
+      .filter(([, count]) => count.votes > 0 || count.knownIndex !== Number.MAX_SAFE_INTEGER)
+      .sort(([, a], [, b]) => b.votes - a.votes || a.knownIndex - b.knownIndex)
+      .map(([playerId, count]) => ({
+        playerName: this.gameState.getPlayerName(playerId),
+        votes: count.votes,
+        voters: count.voters,
+      }));
+  }
+
+  private buildHouseEvidenceBundle(phase: Phase): HouseEvidenceBundle {
+    const allPlayers = this.gameState.getAllPlayers();
+    const alivePlayers = this.gameState.getAlivePlayers();
+    const roomAllocations = this.logger.transcript
+      .filter((entry) => entry.roomMetadata)
+      .map((entry) => ({
+        round: entry.round,
+        text: entry.text,
+        rooms: entry.roomMetadata?.rooms.map((room) => ({
+          roomId: room.roomId,
+          players: room.playerIds.map((playerId) => this.gameState.getPlayerName(playerId)),
+        })) ?? [],
+        excluded: entry.roomMetadata?.excluded ?? [],
+      }));
+
+    const candidates = this.gameState.councilCandidates;
+    return {
+      round: this.gameState.round,
+      phase,
+      alivePlayers: alivePlayers.map((player) => player.name),
+      eliminatedPlayers: allPlayers
+        .filter((player) => player.status === PlayerStatus.ELIMINATED)
+        .map((player) => player.name),
+      empoweredName: this.gameState.empoweredId ? this.gameState.getPlayerName(this.gameState.empoweredId) : null,
+      councilCandidates: candidates
+        ? [this.gameState.getPlayerName(candidates[0]), this.gameState.getPlayerName(candidates[1])]
+        : null,
+      recentTranscript: [...this.logger.transcript],
+      recentPublicMessages: [...this.logger.publicMessages],
+      recentDiaryEntries: [...this.diaryRoom.diaryEntries],
+      roomAllocations,
+      roundFacts: this.buildHouseRoundFacts(this.gameState.round),
+      canonicalEventCount: this.gameState.getCanonicalEvents().length,
+    };
+  }
+
+  private async runConfiguredDiaryRoom(phase: Phase): Promise<void> {
+    if (!this.config.diaryRoomAfterPhases?.includes(phase)) {
+      return;
+    }
+    await this.diaryRoom.runDiaryRoom(phase);
   }
 }

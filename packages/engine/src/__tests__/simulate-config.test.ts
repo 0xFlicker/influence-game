@@ -79,6 +79,53 @@ describe("simulation variant config", () => {
     expect(config.enableStrategicReflections).toBe(true);
   });
 
+  it("can print live House summaries without chatty transcript output", () => {
+    const args = parseArgs(["--house-summaries"]);
+
+    expect(args.houseSummaries).toBe(true);
+    expect(args.chatty).toBe(false);
+  });
+
+  it("supports the short summaries alias and explicit disable flag", () => {
+    expect(parseArgs(["--summaries"]).houseSummaries).toBe(true);
+    expect(parseArgs(["--summaries", "--no-house-summaries"]).houseSummaries).toBe(false);
+  });
+
+  it("enables rich producer simulation mode from CLI args", () => {
+    const args = parseArgs(["--rich-producer"]);
+    const config = buildSimulationConfig("mingle", {
+      richProducer: args.richProducer,
+      enableDiary: args.enableDiary,
+      enableStrategicReflections: args.enableStrategicReflections,
+    });
+
+    expect(args.richProducer).toBe(true);
+    expect(args.enableDiary).toBe(true);
+    expect(args.enableStrategicReflections).toBe(true);
+    expect(config.enableStrategicReflections).toBe(true);
+    expect(config.diaryRoomAfterPhases).toEqual([Phase.COUNCIL]);
+    expect(config.enableHouseRoundSummaries).toBe(true);
+    expect(config.enableHouseStrategyBible).toBe(true);
+    expect(config.enableHouseLongFormSummaries).toBe(true);
+    expect(config.enableHouseProducerBriefs).toBe(true);
+  });
+
+  it("can enable bounded diary sessions without rich producer packets", () => {
+    const args = parseArgs(["--diary"]);
+    const config = buildSimulationConfig("mingle", {
+      richProducer: args.richProducer,
+      enableDiary: args.enableDiary,
+    });
+
+    expect(args.enableDiary).toBe(true);
+    expect(args.richProducer).toBe(false);
+    expect(config.diaryRoomAfterPhases).toEqual([Phase.COUNCIL]);
+    expect(config.enableHouseRoundSummaries).toBe(true);
+    expect(config.enableHouseStrategyBible).toBe(false);
+    expect(config.enableHouseLongFormSummaries).toBe(false);
+    expect(config.enableHouseProducerBriefs).toBe(false);
+  });
+
   it("does not configure hidden pair cooldown for simulator variants", () => {
     expect("minglePairCooldownRounds" in buildSimulationConfig("baseline")).toBe(false);
     expect("minglePairCooldownRounds" in buildSimulationConfig("mingle")).toBe(false);

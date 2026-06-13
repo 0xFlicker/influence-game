@@ -4,7 +4,7 @@ These rules and patterns apply to the game engine (`packages/engine`) for surfac
 
 ## Purpose
 
-Private `thinking` + raw `reasoningContext` (local `reasoning_content` etc.) are captured so that long unattended `--chatty` runs (especially Mingle + vote/power/council loops for 8->4 player testing) are actually debuggable and enjoyable for the human. Agents' real rationale for hidden Mingle intent, Mingle turns, empower/expose votes, empower revotes, power actions (pass/protect/eliminate), council votes, strategic reflections, Strategy Thread packet updates, direct endgame votes, and jury votes must be visible in local debug artifacts when useful and persisted in structured simulation artifacts. Initial Mingle room assignment is House-authored from all hidden intents and recorded as producer/debug assignment metadata.
+Private `thinking` + raw `reasoningContext` (local `reasoning_content` etc.) are captured so that long unattended `--chatty` runs (especially Mingle + vote/power/council loops for 8->4 player testing) are actually debuggable and enjoyable for the human. Agents' real rationale for hidden Mingle intent, Mingle turns, empower/expose votes, empower revotes, power actions (pass/protect/eliminate), council votes, strategic reflections, Strategy Thread packet updates, direct endgame votes, and jury votes must be visible in local debug artifacts when useful and persisted in structured simulation artifacts. Initial Mingle room assignment is House-authored from all hidden intents and recorded as producer/debug assignment metadata. The House also emits between-round MC summary artifacts by default; rich producer simulations can add private House Strategy Bible packets, long-form summaries, and diary producer briefs for carry-forward validation.
 
 This observability layer exists because "master wants to see reasoning for voting as well" and equivalent signals for power and council decisions. Public player messages stay clean; the hidden reasoning is only for viewers, replays, and simulation analysis.
 
@@ -42,6 +42,8 @@ Phase runners receive the rich result, record only the narrow game-state value w
 - `phases/mingle.ts`: emits hidden `mingle-intent` agent turns before House room assignment, records private `mingle-room-assignment` turns with `assignmentSource` (`house`, `repaired`, `fallback`, or later-beat `movement`), repair notes, and summary-only intent metadata including `strategicLens`, then records `strategySignal` / `movementPurpose` on private Mingle turn records rather than viewer-facing room text.
 - `phases/rumor.ts`: emits anonymous rumor turns with public rumor text plus private `strategicLens` / `strategicLensRationale` metadata for producer/debug review.
 - `diary-room.ts`: emits hidden `strategic-reflection` and `strategy-packet` agent turns when `enableStrategicReflections` is enabled and the reflection produces a packet. Reflection and packet records include the selected strategic lens.
+- `diary-room.ts`: emits private `house-producer-brief` agent turns before diary questions when `enableHouseProducerBriefs` is enabled. The brief can sharpen the House's question but must separate safe-to-reveal material from private producer reads.
+- `game-runner.ts`: emits one House interstitial after each completed normal round. `house-mc-summary` plus a `[House MC]` system transcript entry are on by default unless `enableHouseRoundSummaries` is `false`; `house-strategy-bible` and `house-long-form-summary` are private producer/debug records gated by rich producer config.
 - Every phase runner that resolves an agent call also emits an `agent_turn` stream event via `logger.emitAgentTurn(...)` with the normalized response the game used.
 - Decision agent turns include `response.strategyPacketUse` only when a live Strategy Thread packet existed and the model self-reported how the decision used it (`followed`, `revised`, `ignored`, or `deferred`).
 - Mingle intent, rumor, and strategic-reflection records include `response.strategicLens` and `response.strategicLensRationale` so validation can distinguish vote math, room traffic, coalition geometry, promise debt, social cover, broad reads, and sparse presentation reads without parsing prose.
@@ -114,11 +116,19 @@ function formatEntry(e: TranscriptEntry): string {
 }
 ```
 
-House MC summaries (`house-interviewer.ts` + direct calls in `game-runner.ts`) are logged via the same `logSystem` path (e.g. after COUNCIL) for richer traces:
+For live House narration without transcript/reasoning spam, `--house-summaries` prints only concise `house-mc-summary` turns to the launching terminal. The terminal summary is prefixed with deterministic round facts for empowered player, empower/expose counts, power action, shield, Council candidates/votes, and elimination before the House's prose read. `pass` power actions are rendered without a target because passing declines intervention; it does not transfer power to another player:
+
+```bash
+bun run simulate -- --variant mingle --house-summaries
+```
+
+House MC summaries (`house-interviewer.ts` + direct calls in `game-runner.ts`) are emitted as structured `house-mc-summary` agent-turn records and logged via the same `logSystem` path for richer traces. The same deterministic facts are also stored under `response.roundFacts`, so MCP/replay tooling does not have to parse the summary prose:
 
 ```ts
-const summary = await this.houseInterviewer.generateGameplaySummary(...);
-this.logger.logSystem(`[House MC] ${summary}`, Phase.COUNCIL);
+const summary = await this.houseInterviewer.generateHouseSummary(summaryContext);
+const summaryWithFacts = this.attachRoundFactsToSummary(summary, evidence.roundFacts);
+this.emitHouseSummaryTurn("house-mc-summary", resolvedPhase, summaryWithFacts, "system", evidence.roundFacts);
+this.logger.logSystem(`[House MC] ${summaryWithFacts.summary}`, resolvedPhase);
 ```
 
 `PowerAction` interface itself (types.ts) stays narrow:
@@ -136,7 +146,7 @@ The extras live only on the agent return value, `TranscriptEntry`, and `AgentTur
 
 1. No `as any` anywhere in agent return paths, House calls, or reasoning threading. Use intersections or proper widening of return types. "`as any` scares master."
 
-2. House calls must be direct (`await this.houseInterviewer.generateGameplaySummary(...)`) — no `if (typeof ... === 'function')` guards or `as any`.
+2. House calls must be direct (`await this.houseInterviewer.generateHouseSummary(...)`, `await this.houseInterviewer.updateStrategyBible(...)`, etc.) — no `if (typeof ... === 'function')` guards or `as any`.
 
 3. Every structured decision that should be observable by viewers (votes, power, council, mingle turns, etc.) must solicit `"thinking"` in its tool schema (see `TOOL_CAST_VOTES`, `TOOL_POWER_ACTION`, `TOOL_COUNCIL_VOTE`) and return it + the attached `reasoningContext`.
 
@@ -196,19 +206,15 @@ logger.logSystem(
 
 See `formatEntry` above. Yellow House lines + indented gray thinking + cyan reasoning.
 
-**Direct House summary (non-fatal, after council):**
+**Direct House round interstitial (non-fatal, after a normal round resolves):**
 
 ```ts
 try {
-  const summary = await this.houseInterviewer.generateGameplaySummary(
-    this.logger.transcript.slice(-30),
-    this.gameState.round,
-    Phase.COUNCIL,
-    ...
-  );
-  this.logger.logSystem(`[House MC] ${summary}`, Phase.COUNCIL);
+  const summary = await this.houseInterviewer.generateHouseSummary(summaryContext);
+  this.emitHouseSummaryTurn("house-mc-summary", resolvedPhase, summary, "system");
+  this.logger.logSystem(`[House MC] ${summary.summary}`, resolvedPhase);
 } catch {
-  // non-fatal for summary generation
+  // non-fatal for House narration
 }
 ```
 
@@ -222,7 +228,7 @@ In simulation batches under `packages/engine/docs/simulations/`, each game write
 - `game-N-turns.jsonl`: one clean structured JSON record per agent turn, including the normalized response the game used plus `thinking` and `reasoningContext` when available.
 - `game-N-events.jsonl`: one clean canonical domain event record per accepted game-state fact. Replay this through `replayCanonicalEvents(...)` to rebuild the game projection; do not parse transcript prose as board state.
 
-`game-N-turns.jsonl` always includes hidden `mingle-intent` records. It includes hidden `strategic-reflection` and `strategy-packet` records when the simulator is run with `--strategic-reflections` (or `INFLUENCE_SIM_STRATEGIC_REFLECTIONS=true`) and the reflection produces a packet. Later private decision records may include `response.strategyPacketUse` markers that link a decision back to the packet revision as self-reported linkage evidence. These records are producer/debug artifacts only; they are not player-visible speech.
+`game-N-turns.jsonl` always includes hidden `mingle-intent` records and House `mingle-room-assignment` records. It includes `house-mc-summary` records by default because `enableHouseRoundSummaries` is enabled in simulation config. It includes hidden `strategic-reflection` and `strategy-packet` records when the simulator is run with `--strategic-reflections` (or `INFLUENCE_SIM_STRATEGIC_REFLECTIONS=true`) and the reflection produces a packet. It includes private `house-strategy-bible`, `house-long-form-summary`, and `house-producer-brief` records when the simulator is run with `--rich-producer` (or `INFLUENCE_SIM_RICH_PRODUCER=true`). Later private decision records may include `response.strategyPacketUse` markers that link a decision back to the packet revision as self-reported linkage evidence. These records are producer/debug artifacts only; they are not player-visible speech.
 
 Recommended invocation for Mingle + visibility work:
 
@@ -232,7 +238,7 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
-For validation runs that need to prove strategic-reflection capture or Strategy Thread carry-forward is working, add `--strategic-reflections`.
+For validation runs that need to prove strategic-reflection capture or Strategy Thread carry-forward is working, add `--strategic-reflections`. For House carry-forward validation, use `--rich-producer`; this also enables strategic reflections, bounded Council diary sessions, private House Strategy Bible packets, long-form House summaries, and per-player producer briefs.
 
 The "Progress: R1 VOTE | alive=..." lines + the following House action lines are the primary place humans see per-agent rationale in real time. After the run, use `game-N-turns.jsonl` for structured agent-decision analysis and `game-N-events.jsonl` for replay/projection queries instead of parsing colored terminal output.
 
@@ -245,6 +251,8 @@ Useful validation queries:
 - `search_logs` over `sources: ["turns"]` for `strategy-packet`
 - `search_logs` over `sources: ["turns"]` for `strategyPacketUse` or a packet `revisionId`
 - `search_logs` over `sources: ["turns"]` for `strategySignal` or `movementPurpose`
+- `search_logs` over `sources: ["turns", "transcript"]` for `house-mc-summary` or `[House MC]`
+- `search_logs` over `sources: ["turns"]` for `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or a House alliance name
 
 Update simulation batch notes (the dated `.md` next to `results.json` etc.) with observations about the quality of the surfaced reasoning, not just win rates or token counts. When writing scripts, read `game-N-turns.jsonl` for per-turn decisions, `game-N-events.jsonl` for accepted domain facts, and `game-N.json` for full transcript context.
 
@@ -254,6 +262,7 @@ Update simulation batch notes (the dated `.md` next to `results.json` etc.) with
 - Is there any `as any` left in the changed paths?
 - Are House calls still direct?
 - If Strategy Thread packets changed, can MCP `search_logs` find a `strategy-packet` record plus a later `strategyPacketUse` marker?
+- If House producer carry-forward changed, can MCP `search_logs` find `house-strategy-bible`, `house-mc-summary`, `house-long-form-summary`, and `house-producer-brief` records in a rich producer run?
 - Are packet content and packet-use markers absent from websocket-visible events and canonical board state?
 - Do mocks and tests compile and pass with the new shapes?
 - Are the ANSI color rules, terminal output expectations, clean `game-*-turns.jsonl`, and clean `game-*-events.jsonl` artifacts documented?
@@ -268,5 +277,5 @@ Update simulation batch notes (the dated `.md` next to `results.json` etc.) with
 - `packages/engine/src/game-mcp/` — local read-only MCP/query server over simulation event logs.
 - `packages/engine/src/agent.ts` — `callTool` and the decision methods.
 - `packages/engine/src/transcript-logger.ts` and `game-runner.types.ts` — the transcript and agent-turn data models.
-- `CONCEPTS.md` — project vocabulary for `TranscriptEntry`, `reasoningContext`, `chatty` mode, `House MC`, and the `callTool` reasoning augmentation.
+- `CONCEPTS.md` — project vocabulary for `TranscriptEntry`, `reasoningContext`, `chatty` mode, `House MC`, House Strategy Bible packets, producer briefs, long-form summaries, and the `callTool` reasoning augmentation.
 - `feat/inf-228-mingle-hardening` branch context: this observability work was driven by the need to debug and enjoy the new Mingle room system + the full decision loop down to 4 players.

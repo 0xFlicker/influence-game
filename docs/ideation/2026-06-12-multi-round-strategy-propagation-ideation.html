@@ -337,18 +337,19 @@
     <header>
       <p class="eyebrow">Ideation</p>
       <h1>Multi-Round Strategy Propagation</h1>
-      <p class="lede">The strongest direction is not to make every agent name a target. It is to let each agent carry a compact, evidence-aware private strategy across rounds, revise it when social evidence changes, and validate whether that private strategy actually influences later Mingle, vote, power, and council behavior.</p>
+      <p class="lede">The strongest direction is not to make every agent name a target. It is to let each agent carry a compact, evidence-aware private strategy across rounds, revise it when social evidence changes, and validate whether that private strategy actually influences later Mingle, vote, power, and council behavior. The 2026-06-13 extension adds a second continuity layer: a House-owned producer notebook that can name alliances, dramatize them, and feed sharper diary interviews and always-visible round summaries.</p>
       <div class="meta-row">
         <span class="pill teal">Date: <time datetime="2026-06-12">2026-06-12</time></span>
+        <span class="pill teal">Updated: <time datetime="2026-06-13">2026-06-13</time></span>
         <span class="pill">Topic: <code>multi-round-strategy-propagation</code></span>
         <span class="pill">Focus: multi-round strategy propagation for Influence agents</span>
         <span class="pill">Mode: repo-grounded</span>
       </div>
       <div class="stats">
-        <div class="stat"><strong>24</strong><span>raw candidates considered</span></div>
-        <div class="stat"><strong>7</strong><span>ranked survivors</span></div>
-        <div class="stat"><strong>5</strong><span>topic axes covered</span></div>
-        <div class="stat"><strong>1</strong><span>central constraint: no forced target talk</span></div>
+        <div class="stat"><strong>41</strong><span>raw candidates considered across both passes</span></div>
+        <div class="stat"><strong>14</strong><span>ranked survivors, including 7 House MC extensions</span></div>
+        <div class="stat"><strong>10</strong><span>topic axes covered across both passes</span></div>
+        <div class="stat"><strong>2</strong><span>continuity layers: agent Strategy Thread and House dossier</span></div>
       </div>
     </header>
 
@@ -572,6 +573,193 @@
       </article>
     </section>
 
+    <section id="house-mc-extension">
+      <h2>2026-06-13 Extension: House MC Strategy Steward</h2>
+      <div class="section-grid">
+        <div>
+          <p>This extension treats the House as its own strategic observer, not just a style wrapper over recent transcript text. Today <code>GameRunner</code> asks the House for freeform gameplay summaries after Mingle and Council using recent transcript slices. <code>DiaryRoom</code> asks the House for questions from recent public messages, player messages, and prior diary Q&amp;A. Those are useful surfaces, but neither one gives the House a durable producer notebook that carries alliance hypotheses, faction names, contradictions, or unresolved story questions from one summary to the next.</p>
+          <p>The simulator shape is also important. In the current simulation config, diary interviews are effectively off because <code>diaryRoomAfterPhases</code> is set to an empty list. The <code>--strategic-reflections</code> flag turns on hidden reflection and Strategy Thread packet records; it does not by itself re-enable visible diary interviews. That suggests a clean design split: one option to include strategic reflection capture, and a separate simulation option or preset for actual diary sessions.</p>
+          <p>The explicit user direction for this pass is to spend context on the House. So the best ideas below do not optimize token footprint first. They prefer a broad House context pack, evidence pointers, and a private House dossier, then defer pruning until simulation quality or latency proves it necessary.</p>
+        </div>
+        <aside class="callout">
+          <p><strong>House principle:</strong> the House can name alliances before the agents do, but those names are producer/debug language until the product deliberately exposes them. The House should dramatize social structure without turning its read into canonical game truth.</p>
+        </aside>
+      </div>
+
+      <h3>Extension Axes</h3>
+      <ul class="axis-list">
+        <li><strong>House-Owned Strategic Memory</strong><span>What should the House remember across rounds that no single player can see?</span></li>
+        <li><strong>Alliance Detection and Naming</strong><span>How should the House identify, name, and update factions without freezing them too early?</span></li>
+        <li><strong>Diary Interview Prep</strong><span>How should House strategy work shape questions before diary sessions?</span></li>
+        <li><strong>Always-On Narration</strong><span>How should simulation expose House summaries even when <code>--chatty</code> is off?</span></li>
+        <li><strong>Evidence and Privacy Boundary</strong><span>How do we cite producer reads without leaking hidden reasoning or false certainty?</span></li>
+      </ul>
+
+      <h3>Ranked House MC Ideas</h3>
+      <ul class="jump-list">
+        <li><a href="#idea-house-1">1. House Strategic Dossier</a></li>
+        <li><a href="#idea-house-2">2. Alliance Naming Ledger</a></li>
+        <li><a href="#idea-house-3">3. Diary Pre-Interview Brief</a></li>
+        <li><a href="#idea-house-4">4. Always-On Round Interstitial Summary</a></li>
+        <li><a href="#idea-house-5">5. Open-Pocketbook Context Pack</a></li>
+        <li><a href="#idea-house-6">6. Drama-Safe Narration Grammar</a></li>
+        <li><a href="#idea-house-7">7. House Strategy Trace Validator</a></li>
+      </ul>
+
+      <article class="idea" id="idea-house-1">
+        <div class="idea-head">
+          <span class="idea-id">H1.</span>
+          <h3>House Strategic Dossier</h3>
+        </div>
+        <p><strong>Description:</strong> Give the House a private, round-to-round dossier that carries the producer read of the whole game: active alliances, named factions, rivalries, swing players, exposed contradictions, unresolved questions, likely next pressure points, and citations into recent transcript or turn artifacts. Refresh it before diary sessions and after each round boundary.</p>
+        <dl>
+          <dt>Axis</dt><dd>House-Owned Strategic Memory</dd>
+          <dt>Basis</dt><dd><strong>direct:</strong> current <code>generateGameplaySummary</code> receives a recent transcript slice and returns a paragraph; there is no House-owned carry-forward object analogous to an agent Strategy Thread packet.</dd>
+          <dt>Rationale</dt><dd>This is the missing bridge between "the House saw a good moment" and "the House remembers that moment as part of the season arc." It lets diary questions and summaries build continuity without giving every player omniscience.</dd>
+          <dt>Downsides</dt><dd>It creates a second strategic memory system. The boundary must be explicit: House dossier state is producer/debug state, not canonical game state and not player memory.</dd>
+        </dl>
+        <div class="metric-row">
+          <span class="metric high">Confidence 90%</span>
+          <span class="metric medium">Complexity Medium-High</span>
+        </div>
+        <div class="diagram" aria-label="House strategic dossier flow diagram">
+          <svg width="880" height="184" viewBox="0 0 880 184" role="img">
+            <rect x="24" y="44" width="150" height="72" rx="8" fill="#dff2ef" stroke="#8fc8c1"/>
+            <text x="99" y="70" text-anchor="middle" font-size="13" font-weight="800">Game Evidence</text>
+            <text x="99" y="92" text-anchor="middle" font-size="11">transcript + turns</text>
+            <rect x="232" y="30" width="178" height="100" rx="8" fill="#f4e8c9" stroke="#d8bf78"/>
+            <text x="321" y="60" text-anchor="middle" font-size="13" font-weight="800">House Dossier</text>
+            <text x="321" y="82" text-anchor="middle" font-size="11">alliances, rivals</text>
+            <text x="321" y="102" text-anchor="middle" font-size="11">questions, citations</text>
+            <rect x="468" y="44" width="156" height="72" rx="8" fill="#deebf5" stroke="#a8c8e4"/>
+            <text x="546" y="70" text-anchor="middle" font-size="13" font-weight="800">Diary Briefs</text>
+            <text x="546" y="92" text-anchor="middle" font-size="11">per-player angles</text>
+            <rect x="682" y="44" width="162" height="72" rx="8" fill="#e0f0e6" stroke="#a8ceb8"/>
+            <text x="763" y="70" text-anchor="middle" font-size="13" font-weight="800">MC Summary</text>
+            <text x="763" y="92" text-anchor="middle" font-size="11">season continuity</text>
+            <path d="M174 80 L232 80" stroke="#66736f" stroke-width="2" marker-end="url(#arrow-h1)"/>
+            <path d="M410 80 L468 80" stroke="#66736f" stroke-width="2" marker-end="url(#arrow-h1)"/>
+            <path d="M624 80 L682 80" stroke="#66736f" stroke-width="2" marker-end="url(#arrow-h1)"/>
+            <path d="M763 116 C720 160 380 162 321 130" stroke="#8c3f55" stroke-width="2" fill="none" marker-end="url(#arrow-h1)"/>
+            <text x="530" y="158" text-anchor="middle" font-size="12" fill="#8c3f55">carry forward after each round</text>
+            <defs>
+              <marker id="arrow-h1" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#66736f"/>
+              </marker>
+            </defs>
+          </svg>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-house-2">
+        <div class="idea-head">
+          <span class="idea-id">H2.</span>
+          <h3>Alliance Naming Ledger</h3>
+        </div>
+        <p><strong>Description:</strong> Maintain a House-owned ledger of alliance and faction hypotheses. Each entry has a dramatic name, members, adjacent hangers-on, opposing faction, origin evidence, confidence, current status, last-seen round, and a short "why this matters" read. Names can be theatrical but must be tied to evidence.</p>
+        <dl>
+          <dt>Axis</dt><dd>Alliance Detection and Naming</dd>
+          <dt>Basis</dt><dd><strong>reasoned:</strong> the House has global visibility across rooms, votes, public messages, and private producer artifacts; no single player has enough information to name the whole social topology safely.</dd>
+          <dt>Rationale</dt><dd>Named groups make the game watchable. "Mira and Kael keep orbiting each other while Vex brokers between them" is useful, but "The Velvet Pact is fraying because Vex keeps selling side deals" is the kind of continuity a viewer remembers.</dd>
+          <dt>Downsides</dt><dd>The House can over-name weak ties. Use confidence and status values like forming, active, strained, fractured, decoy, or retired so a colorful label does not harden into fact.</dd>
+        </dl>
+        <div class="metric-row">
+          <span class="metric high">Confidence 86%</span>
+          <span class="metric medium">Complexity Medium</span>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-house-3">
+        <div class="idea-head">
+          <span class="idea-id">H3.</span>
+          <h3>Diary Pre-Interview Brief</h3>
+        </div>
+        <p><strong>Description:</strong> Before each diary session, ask the House to prepare a per-player interview brief from the dossier, current game state, recent messages, and that player's prior diary entries. The brief should choose one or two sharp angles: contradiction to probe, alliance pressure to name, promise to test, target posture to challenge, or story beat to pull into the open.</p>
+        <dl>
+          <dt>Axis</dt><dd>Diary Interview Prep</dd>
+          <dt>Basis</dt><dd><strong>direct:</strong> <code>DiaryRoomContext</code> currently passes recent messages, player messages, and previous diary Q&amp;A, but no House strategic packet, alliance ledger, or producer theory for the player.</dd>
+          <dt>Rationale</dt><dd>This makes diary rooms feel like the House has been paying attention for the whole season, not just the last few lines. It also lets diary ask better questions without forcing every agent answer to be a strategic confession.</dd>
+          <dt>Downsides</dt><dd>Extra House calls before every interview are expensive. For this feature that is acceptable initially, but the brief should be reusable across first question and follow-ups to avoid wasteful duplicate reasoning.</dd>
+        </dl>
+        <div class="metric-row">
+          <span class="metric high">Confidence 88%</span>
+          <span class="metric medium">Complexity Medium</span>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-house-4">
+        <div class="idea-head">
+          <span class="idea-id">H4.</span>
+          <h3>Always-On Round Interstitial Summary</h3>
+        </div>
+        <p><strong>Description:</strong> Emit a House MC summary after every normal round and major endgame boundary, independent of <code>--chatty</code>. Keep <code>--chatty</code> as the live terminal stream, but always persist and print the round summary in the run artifacts / terminal progress so non-chatty simulations still have a narrative spine.</p>
+        <dl>
+          <dt>Axis</dt><dd>Always-On Narration</dd>
+          <dt>Basis</dt><dd><strong>direct:</strong> current summaries are logged after Mingle and Council, while the simulation only prints full transcript entries live when <code>chatty</code> is true. Progress logs get structured transcript summaries, not a guaranteed House interstitial after each round.</dd>
+          <dt>Rationale</dt><dd>Simulation review should not require parsing a whole transcript just to know what happened. A round interstitial gives each batch a watchable recap and creates a stable place to refresh the House dossier.</dd>
+          <dt>Downsides</dt><dd>Can become noisy if every phase gets a summary. Prefer round-level boundaries by default, with phase-level summaries reserved for Mingle/Council or explicit diagnostic mode.</dd>
+        </dl>
+        <div class="metric-row">
+          <span class="metric high">Confidence 84%</span>
+          <span class="metric medium">Complexity Medium</span>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-house-5">
+        <div class="idea-head">
+          <span class="idea-id">H5.</span>
+          <h3>Open-Pocketbook Context Pack</h3>
+        </div>
+        <p><strong>Description:</strong> For the first House MC upgrade, feed the House a deliberately broad context pack: recent transcript, relevant private turn records, latest Strategy Thread packet summaries, vote history, room assignments and movement, rumors, eliminations, prior House dossier, and prior diary highlights. Treat context size as a quality lever, not the first constraint.</p>
+        <dl>
+          <dt>Axis</dt><dd>House-Owned Strategic Memory</dd>
+          <dt>Basis</dt><dd><strong>reasoned:</strong> the user explicitly accepted large House input contexts for this layer; the current failure is continuity and insight loss, not cost overrun.</dd>
+          <dt>Rationale</dt><dd>Optimizing prompt size before we know the right House read risks preserving the wrong abstraction. First prove that the House can produce better continuity; then compress around the fields that actually mattered.</dd>
+          <dt>Downsides</dt><dd>Large contexts can bury the signal and slow local runs. Add section headings and ranked evidence blocks so the House sees the important state before raw transcript volume.</dd>
+        </dl>
+        <div class="metric-row">
+          <span class="metric medium">Confidence 78%</span>
+          <span class="metric medium">Complexity Medium</span>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-house-6">
+        <div class="idea-head">
+          <span class="idea-id">H6.</span>
+          <h3>Drama-Safe Narration Grammar</h3>
+        </div>
+        <p><strong>Description:</strong> Give the House a narration grammar for alliance drama: distinguish confirmed events, House hypotheses, ironic framing, and open questions. It can say "the House suspects", "a quiet triangle is forming", or "this looks like a pact until the votes prove otherwise" instead of presenting every read as fact.</p>
+        <dl>
+          <dt>Axis</dt><dd>Evidence and Privacy Boundary</dd>
+          <dt>Basis</dt><dd><strong>direct:</strong> current architecture already separates player-visible transcript, private <code>agent_turn</code> records, and canonical game events; House alliance labels should respect the same separation.</dd>
+          <dt>Rationale</dt><dd>This keeps the House fun without making it omniscient in the wrong way. The House can dramatize weak signals while preserving uncertainty and avoiding spoilers or fabricated certainty.</dd>
+          <dt>Downsides</dt><dd>If overdone, the summary can become hedgy. The grammar should still allow decisive prose when evidence is strong.</dd>
+        </dl>
+        <div class="metric-row">
+          <span class="metric high">Confidence 82%</span>
+          <span class="metric low">Complexity Low-Medium</span>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-house-7">
+        <div class="idea-head">
+          <span class="idea-id">H7.</span>
+          <h3>House Strategy Trace Validator</h3>
+        </div>
+        <p><strong>Description:</strong> Add a simulation/MCP review query that links House claims to evidence and later behavior. For example: named alliance entry -> cited room/vote evidence -> diary question generated from it -> agent answer -> later vote or Mingle movement that confirms, weakens, or contradicts the House read.</p>
+        <dl>
+          <dt>Axis</dt><dd>Evidence and Privacy Boundary</dd>
+          <dt>Basis</dt><dd><strong>direct:</strong> current local evaluation docs already treat turns JSONL and MCP <code>search_logs</code> as the validation path for <code>mingle-intent</code>, <code>strategy-packet</code>, <code>strategicLens</code>, and packet-use markers.</dd>
+          <dt>Rationale</dt><dd>This prevents the House dossier from becoming vibes in a nice jacket. If the House names an alliance, reviewers should be able to inspect the evidence chain and see whether the read improved diary and summary quality.</dd>
+          <dt>Downsides</dt><dd>Do not start with a hard correctness score. Social reads are fuzzy; the first version should return linked examples, misses, and contradictions for human review.</dd>
+        </dl>
+        <div class="metric-row">
+          <span class="metric high">Confidence 80%</span>
+          <span class="metric medium">Complexity Medium</span>
+        </div>
+      </article>
+    </section>
+
     <section id="rejection-summary">
       <h2>Rejection Summary</h2>
       <table>
@@ -600,6 +788,13 @@
           <tr><td>15</td><td>Win-Rate Optimization Harness</td><td>Misaligned with the product goal of watchable, legible strategy.</td></tr>
           <tr><td>16</td><td>Public Strategy Exposure</td><td>Breaks hidden-intent boundaries and player-visible game integrity.</td></tr>
           <tr><td>17</td><td>Deferred SQLite Strategy Index</td><td>Sensible only after generic MCP search proves insufficient.</td></tr>
+          <tr><td>18</td><td>Player-Visible Alliance Labels During Live Play</td><td>Too likely to leak House producer reads as game truth; keep names private/debug until a viewer-surface design explicitly chooses otherwise.</td></tr>
+          <tr><td>19</td><td>Replace Agent Packets With Only House Strategy</td><td>Subject replacement. The House can observe the whole game, but each agent still needs its own private, partial, revisable intent.</td></tr>
+          <tr><td>20</td><td>Fully Rule-Based Alliance Detector First</td><td>Too brittle before the House's LLM read has an evidence contract; use deterministic validation around outputs rather than deterministic social inference as v1.</td></tr>
+          <tr><td>21</td><td>Token-Minimized House Summaries Now</td><td>Conflicts with the explicit open-pocketbook direction and optimizes before the quality target is known.</td></tr>
+          <tr><td>22</td><td>Force Every Diary Question to Name an Alliance</td><td>Overfits the new capability. House questions should have range: alliance pressure, contradiction, fear, promise, target posture, or emotional reveal.</td></tr>
+          <tr><td>23</td><td>Store Raw Hidden Reasoning in House Memory</td><td>Privacy and quality risk. Raw reasoningContext should remain debug metadata; House memory should carry sanitized evidence and producer summaries.</td></tr>
+          <tr><td>24</td><td>Auto-Score Alliance Correctness as a Leaderboard Metric</td><td>Premature hard metric. Start with linked examples, misses, and contradictions for human review.</td></tr>
         </tbody>
       </table>
     </section>
@@ -608,13 +803,20 @@
       <h2>Sources &amp; References</h2>
       <ul class="references">
         <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/agent.ts">packages/engine/src/agent.ts</a> — agent memory, Mingle prompts, prompt construction, and strategic reflection.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/house-interviewer.ts">packages/engine/src/house-interviewer.ts</a> — House room assignment, diary question generation, follow-up generation, and current House MC summary prompt.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-runner.ts">packages/engine/src/game-runner.ts</a> — current direct House MC summary calls after Mingle and Council.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/simulate.ts">packages/engine/src/simulate.ts</a> — simulation flags, chatty output, artifact writers, and current disabled diary-room simulation config.</li>
         <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/phases/mingle.ts">packages/engine/src/phases/mingle.ts</a> — hidden Mingle intent and Mingle turn event emission.</li>
         <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/memory-store.ts">packages/engine/src/memory-store.ts</a> — operational memory interface and current memory types.</li>
         <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/diary-room.ts">packages/engine/src/diary-room.ts</a> — strategic reflection capture boundary.</li>
         <li><a href="https://github.com/0xFlicker/influence-game/blob/main/CONCEPTS.md">CONCEPTS.md</a> — Mingle intent, strategy signal, strategic reflection, and reasoningContext definitions.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/solutions/architecture-patterns/agent-strategy-observability-spine.md">Agent Strategy Observability Spine</a> — private producer/debug artifact pattern and House room-assignment learnings.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/ideation/2026-06-11-game-mcp-house-mc-ideation.html">2026-06-11 Game MCP / House MC ideation</a> — prior evidence-backed House MC direction.</li>
         <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/plans/2026-06-12-001-feat-mingle-strategy-observability-plan.md">2026-06-12 Mingle strategy observability plan</a> — deferred work and out-of-scope guardrails.</li>
         <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/local-model-evaluation.md">docs/local-model-evaluation.md</a> — simulator artifacts and MCP validation guidance.</li>
         <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/reasoning-transcript-observability.md">docs/reasoning-transcript-observability.md</a> — turns JSONL and hidden reflection observability contract.</li>
+        <li><a href="https://modelcontextprotocol.io/specification/2025-06-18/server/resources">MCP Resources specification</a> — resources as context exposed to clients.</li>
+        <li><a href="https://modelcontextprotocol.io/specification/2025-06-18/server/tools">MCP Tools specification</a> — tools, structured content, output schemas, and validation considerations.</li>
         <li><a href="https://arxiv.org/abs/2304.03442">Generative Agents</a> — memory, reflection, and planning in social simulations.</li>
         <li><a href="https://arxiv.org/abs/2312.03664">Concordia</a> — generative social simulation with agent memory and game-master adjudication.</li>
         <li><a href="https://arxiv.org/abs/2303.11366">Reflexion</a> — post-trial verbal reflection stored in episodic memory.</li>
@@ -625,7 +827,7 @@
       </ul>
     </section>
 
-    <footer class="composition-signal">Composed 2026-06-12T11:34:36-06:00 by ce-ideate from the user prompt: multi-round strategy propagation.</footer>
+    <footer class="composition-signal">Composed 2026-06-12T11:34:36-06:00 by ce-ideate from the user prompt: multi-round strategy propagation. Updated 2026-06-13T01:07:35-06:00 with House MC strategy-steward extension for diary prep, alliance naming, and round interstitial summaries.</footer>
   </main>
 </body>
 </html>

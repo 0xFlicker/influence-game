@@ -1,0 +1,7 @@
+[mcp_servers.influence-game]
+command = "bun"
+args = [
+    "/Users/user/Development/influence-game/packages/engine/src/game-mcp/server.ts",
+    "/Users/user/Development/influence-game/packages/engine/docs/simulations",
+]
+enabled = true

@@ -30,7 +30,10 @@ export interface SimulatorArgsSnapshot {
   variant: string;
   gameTimeoutMs: number;
   llmTimeoutMs: number;
+  houseSummaries?: boolean;
   enableStrategicReflections?: boolean;
+  richProducer?: boolean;
+  enableDiary?: boolean;
 }
 
 export interface GitMetadata {
@@ -150,6 +153,15 @@ export interface ActionUsageInstrumentation {
   bySource: Record<string, TokenUsage>;
 }
 
+export interface HouseProducerInstrumentation {
+  strategyBibleCalls: number;
+  mcSummaryCalls: number;
+  longFormSummaryCalls: number;
+  producerBriefCalls: number;
+  mcSummaryTranscriptEntries: number;
+  totalHouseProducerCalls: number;
+}
+
 export interface GameInstrumentation {
   powerActions: {
     total: number;
@@ -174,6 +186,7 @@ export interface GameInstrumentation {
   endgame: EndgameMarkerInstrumentation;
   rooms: RoomInstrumentation;
   actionUsage: ActionUsageInstrumentation;
+  houseProducer: HouseProducerInstrumentation;
 }
 
 export interface BatchInstrumentation {
@@ -184,6 +197,7 @@ export interface BatchInstrumentation {
   endgame: EndgameMarkerInstrumentation;
   rooms: RoomInstrumentation;
   actionUsage: ActionUsageInstrumentation;
+  houseProducer: HouseProducerInstrumentation;
 }
 
 const EMPTY_USAGE: TokenUsage = {
@@ -464,6 +478,26 @@ export function buildActionUsageInstrumentation(
   };
 }
 
+function buildHouseProducerInstrumentation(
+  transcript: readonly TranscriptEntry[],
+  perSourceUsage: Record<string, TokenUsage>,
+): HouseProducerInstrumentation {
+  const strategyBibleCalls = perSourceUsage["House/strategy-bible"]?.callCount ?? 0;
+  const mcSummaryCalls = perSourceUsage["House/mc-summary"]?.callCount ?? 0;
+  const longFormSummaryCalls = perSourceUsage["House/long-form-summary"]?.callCount ?? 0;
+  const producerBriefCalls = perSourceUsage["House/producer-brief"]?.callCount ?? 0;
+  return {
+    strategyBibleCalls,
+    mcSummaryCalls,
+    longFormSummaryCalls,
+    producerBriefCalls,
+    mcSummaryTranscriptEntries: transcript.filter((entry) =>
+      entry.scope === "system" && entry.from === "House" && entry.text.startsWith("[House MC]"),
+    ).length,
+    totalHouseProducerCalls: strategyBibleCalls + mcSummaryCalls + longFormSummaryCalls + producerBriefCalls,
+  };
+}
+
 export function instrumentGame(
   transcript: readonly TranscriptEntry[],
   perSourceUsage: Record<string, TokenUsage>,
@@ -596,6 +630,7 @@ export function instrumentGame(
       ...summarizeMingleSessions(mingleSessions),
     },
     actionUsage: buildActionUsageInstrumentation(perSourceUsage),
+    houseProducer: buildHouseProducerInstrumentation(transcript, perSourceUsage),
   };
 }
 
@@ -647,6 +682,14 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
   let mingleRounds = 0;
   let totalCalls = 0;
   let totalEmptyResponses = 0;
+  const houseProducer: HouseProducerInstrumentation = {
+    strategyBibleCalls: 0,
+    mcSummaryCalls: 0,
+    longFormSummaryCalls: 0,
+    producerBriefCalls: 0,
+    mcSummaryTranscriptEntries: 0,
+    totalHouseProducerCalls: 0,
+  };
   const byAction: ActionUsageInstrumentation["byAction"] = {};
   const bySource: Record<string, TokenUsage> = {};
   const repeatedProtectTotals = new Map<
@@ -740,6 +783,13 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
       repeatedPairTotals.set(key, existing);
     }
 
+    houseProducer.strategyBibleCalls += game.houseProducer.strategyBibleCalls;
+    houseProducer.mcSummaryCalls += game.houseProducer.mcSummaryCalls;
+    houseProducer.longFormSummaryCalls += game.houseProducer.longFormSummaryCalls;
+    houseProducer.producerBriefCalls += game.houseProducer.producerBriefCalls;
+    houseProducer.mcSummaryTranscriptEntries += game.houseProducer.mcSummaryTranscriptEntries;
+    houseProducer.totalHouseProducerCalls += game.houseProducer.totalHouseProducerCalls;
+
     totalCalls += game.actionUsage.totalCalls;
     totalEmptyResponses += game.actionUsage.totalEmptyResponses;
     for (const [action, usage] of Object.entries(game.actionUsage.byAction)) {
@@ -808,5 +858,6 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
       byAction,
       bySource,
     },
+    houseProducer,
   };
 }
