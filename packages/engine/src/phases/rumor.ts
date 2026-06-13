@@ -1,5 +1,5 @@
 import { Phase } from "../types";
-import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
+import { strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 
 export async function runRumorPhase(
   ctx: PhaseRunnerContext,
@@ -15,8 +15,8 @@ export async function runRumorPhase(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.RUMOR);
-      const { message, thinking, reasoningContext } = await agent.getRumorMessage(phaseCtx);
-      return { playerId: player.id, message, thinking, reasoningContext };
+      const { message, thinking, reasoningContext, strategyPacketUse } = await agent.getRumorMessage(phaseCtx);
+      return { playerId: player.id, message, thinking, reasoningContext, strategyPacketUse };
     }),
   );
 
@@ -30,11 +30,12 @@ export async function runRumorPhase(
   for (let i = 0; i < shuffled.length; i++) {
     const rumor = shuffled[i]!;
     const playerName = gameState.getPlayerName(rumor.playerId);
+    const agent = agents.get(rumor.playerId)!;
+    const transcriptThinking = transcriptThinkingFor(agent, rumor.thinking, rumor.reasoningContext);
     logger.logPublic(rumor.playerId, rumor.message, Phase.RUMOR, {
       anonymous: true,
       displayOrder: i + 1,
-      thinking: rumor.thinking,
-      reasoningContext: rumor.reasoningContext,
+      ...transcriptThinking,
     });
     logger.emitAgentTurn({
       phase: Phase.RUMOR,
@@ -44,6 +45,7 @@ export async function runRumorPhase(
       response: {
         message: rumor.message,
         displayOrder: i + 1,
+        ...strategyPacketUseResponse(rumor.strategyPacketUse),
       },
       thinking: rumor.thinking,
       reasoningContext: rumor.reasoningContext,

@@ -55,6 +55,18 @@ function gameTopic(gameId: string): string {
   return `game:${gameId}`;
 }
 
+function sanitizeTranscriptEntry(entry: TranscriptEntry): TranscriptEntry {
+  const { thinking: _thinking, reasoningContext: _reasoningContext, ...safeEntry } = entry;
+  return safeEntry;
+}
+
+function sanitizeSnapshot(snapshot: GameStateSnapshot): GameStateSnapshot {
+  return {
+    ...snapshot,
+    transcript: snapshot.transcript.map(sanitizeTranscriptEntry),
+  };
+}
+
 /** Called when a new WebSocket connection opens. */
 export function handleOpen(ws: ServerWebSocket<WsConnectionData>): void {
   const { gameId } = ws.data;
@@ -83,7 +95,7 @@ export function broadcastGameEvent(gameId: string, event: GameStreamEvent): void
     case "agent_turn":
       return;
     case "transcript_entry":
-      outbound = { type: "message", entry: event.entry };
+      outbound = { type: "message", entry: sanitizeTranscriptEntry(event.entry) };
       break;
     case "phase_change":
       outbound = {
@@ -125,7 +137,7 @@ export function sendSnapshot(
   ws: ServerWebSocket<WsConnectionData>,
   snapshot: GameStateSnapshot,
 ): void {
-  const outbound: WsOutboundEvent = { type: "game_state", snapshot };
+  const outbound: WsOutboundEvent = { type: "game_state", snapshot: sanitizeSnapshot(snapshot) };
   ws.send(JSON.stringify(outbound));
 }
 

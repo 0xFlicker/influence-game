@@ -388,15 +388,15 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 
-# Strategy-observability validation adds hidden strategic-reflection turn records:
+# Strategy-observability validation adds hidden strategic-reflection and Strategy Thread records:
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
     --variant mingle --chatty --strategic-reflections --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
-Simulation batches are written under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-events.jsonl` for canonical accepted domain events that replay into a projection, `game-N-progress.jsonl` for lightweight live progress, `game-N.json` for the full transcript/result bundle, and `game-N.txt` for human-readable transcript review. Hidden `mingle-intent` records are always in turns JSONL; hidden `strategic-reflection` records are included when `--strategic-reflections` is enabled.
+Simulation batches are written under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-events.jsonl` for canonical accepted domain events that replay into a projection, `game-N-progress.jsonl` for lightweight live progress, `game-N.json` for the full transcript/result bundle, and `game-N.txt` for human-readable transcript review. Hidden `mingle-intent` records are always in turns JSONL; hidden `strategic-reflection` and `strategy-packet` records are included when `--strategic-reflections` is enabled, and later private decisions may include `strategyPacketUse` markers.
 
-For local MCP queries across past and current simulations, run `cd packages/engine && bun run mcp:game -- docs/simulations`. The MCP is read-only, scans the corpus on demand, and requires `sessionId + gameNumber` for game-specific projection/timeline queries. Use `search_logs` over `sources: ["turns"]` for `mingle-intent`, `strategic-reflection`, `strategySignal`, or `movementPurpose` when validating whether agents are using open strategic choices.
+For local MCP queries across past and current simulations, run `cd packages/engine && bun run mcp:game -- docs/simulations`. The MCP is read-only, scans the corpus on demand, and requires `sessionId + gameNumber` for game-specific projection/timeline queries. Use `search_logs` over `sources: ["turns"]` for `mingle-intent`, `strategic-reflection`, `strategy-packet`, `strategyPacketUse`, `strategySignal`, or `movementPurpose` when validating whether agents are using open strategic choices.
 
 `InfluenceAgent` uses OpenAI-compatible chat completions. Hosted OpenAI runs use `OPENAI_API_KEY`; local runs can use `INFLUENCE_LLM_BASE_URL` with LM Studio. Current repo defaults are budget `gpt-5-nano`, standard `gpt-5-mini`, and premium `gpt-5.4-mini`; override server-side tiers with `INFLUENCE_MODEL_BUDGET`, `INFLUENCE_MODEL_STANDARD`, and `INFLUENCE_MODEL_PREMIUM` when testing local models.
 

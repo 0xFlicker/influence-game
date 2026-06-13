@@ -4,7 +4,7 @@ These rules and patterns apply to the game engine (`packages/engine`) for surfac
 
 ## Purpose
 
-Private `thinking` + raw `reasoningContext` (local `reasoning_content` etc.) are captured so that long unattended `--chatty` runs (especially Mingle + vote/power/council loops for 8->4 player testing) are actually debuggable and enjoyable for the human. Agents' real rationale for hidden Mingle intent, room choices, Mingle turns, empower/expose votes, power actions (pass/protect/eliminate), council votes, strategic reflections, direct endgame votes, and jury votes must be visible in the terminal when useful and persisted in structured simulation artifacts.
+Private `thinking` + raw `reasoningContext` (local `reasoning_content` etc.) are captured so that long unattended `--chatty` runs (especially Mingle + vote/power/council loops for 8->4 player testing) are actually debuggable and enjoyable for the human. Agents' real rationale for hidden Mingle intent, room choices, Mingle turns, empower/expose votes, power actions (pass/protect/eliminate), council votes, strategic reflections, Strategy Thread packet updates, direct endgame votes, and jury votes must be visible in local debug artifacts when useful and persisted in structured simulation artifacts.
 
 This observability layer exists because "master wants to see reasoning for voting as well" and equivalent signals for power and council decisions. Public player messages stay clean; the hidden reasoning is only for viewers, replays, and simulation analysis.
 
@@ -22,13 +22,13 @@ This observability layer exists because "master wants to see reasoning for votin
 
 Decision methods on `IAgent` / `InfluenceAgent` return the extra fields (typed on the interface and impl):
 
-- `chooseMingleRoom(...)` → `{ roomId: number | null; thinking?: string; reasoningContext?: string }`
-- `getMingleIntent(...)` → `{ seekPlayers: string[]; avoidPlayers: string[]; preferredRoomSize: ...; purpose: string; provisionalTarget: string | null; noTargetReason: string | null; openingAsk: string; thinking?: string; reasoningContext?: string }`
-- `takeMingleTurn(...)` → `{ thinking?: string; message?: string | null; noReply?: boolean; gotoRoomId?: number | null; strategySignal?: string | null; movementPurpose?: string | null; reasoningContext?: string }`
-- `getVotes(...)` → `{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string }`
-- `getPowerAction(...)` → `PowerAction & { thinking?: string; reasoningContext?: string }`
-- `getCouncilVote(...)` → `{ target: UUID; thinking?: string; reasoningContext?: string }`
-- `getStrategicReflection(...)` → `{ certainties: string[]; suspicions: string[]; allies: string[]; threats: string[]; plan: string; thinking?: string; reasoningContext?: string } | null`
+- `chooseMingleRoom(...)` → `{ roomId: number | null; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
+- `getMingleIntent(...)` → `{ seekPlayers: string[]; avoidPlayers: string[]; preferredRoomSize: ...; purpose: string; provisionalTarget: string | null; noTargetReason: string | null; openingAsk: string; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
+- `takeMingleTurn(...)` → `{ thinking?: string; message?: string | null; noReply?: boolean; gotoRoomId?: number | null; strategySignal?: string | null; movementPurpose?: string | null; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
+- `getVotes(...)` → `{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
+- `getPowerAction(...)` → `PowerAction & { thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
+- `getCouncilVote(...)` → `{ target: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
+- `getStrategicReflection(...)` → `{ certainties: string[]; suspicions: string[]; allies: string[]; threats: string[]; plan: string; strategyPacket?: StrategyPacketSummary; thinking?: string; reasoningContext?: string } | null`
 - `getEndgameEliminationVote(...)` / `getJuryVote(...)` → `{ target: UUID; thinking?: string; reasoningContext?: string }`
 
 (Similar treatment for public messages, `getPowerLobbyMessage`, diary entries, accusations, jury questions, etc.)
@@ -39,8 +39,9 @@ Phase runners receive the rich result, record only the narrow game-state value w
 - `phases/power.ts`: `logger.logSystem(..., powerActionResult.thinking, powerActionResult.reasoningContext)`
 - `phases/council.ts`: `logger.logSystem(..., voteResult.thinking, voteResult.reasoningContext)`
 - `phases/mingle.ts`: emits hidden `mingle-intent` agent turns before room choice, threads a summary-only intent into room choice/turn context, and records `strategySignal` / `movementPurpose` on private Mingle turn records rather than viewer-facing room metadata.
-- `diary-room.ts`: emits hidden `strategic-reflection` agent turns when `enableStrategicReflections` is enabled.
+- `diary-room.ts`: emits hidden `strategic-reflection` and `strategy-packet` agent turns when `enableStrategicReflections` is enabled and the reflection produces a packet.
 - Every phase runner that resolves an agent call also emits an `agent_turn` stream event via `logger.emitAgentTurn(...)` with the normalized response the game used.
+- Decision agent turns include `response.strategyPacketUse` only when a live Strategy Thread packet existed and the model self-reported how the decision used it (`followed`, `revised`, `ignored`, or `deferred`).
 
 `AgentTurnEvent` (game-runner.types.ts) is the structured simulation-analysis shape:
 
@@ -138,11 +139,15 @@ The extras live only on the agent return value, `TranscriptEntry`, and `AgentTur
 
 4. Public player-visible output (`message` in `AgentResponse`, whisper/rumor text) must never contain the hidden thinking; it is stripped or kept in a separate field.
 
-5. Terminal UX for `--chatty` (and persisted `game-*.txt` / `.json`) is a first-class human output. `game-*-turns.jsonl` is the per-agent-turn machine-analysis output and `game-*-events.jsonl` is the accepted-domain-event replay output; both must stay clean JSON without ANSI formatting.
+5. Strategy Thread packets are private producer/debug state. They live on the live agent during the current uninterrupted run, are refreshed through strategic reflection, and are not written to `MemoryStore`, canonical events, player-visible transcript text, or websocket-visible UI state. A packet's target posture is a prompt-level standing-target hint, not a hard gate: agents should keep it pointed at a living player when evidence supports one, pivot away from eliminated targets, or explicitly carry no standing target when they are still gathering reads.
 
-6. When backing out experiments (e.g. the old `mingle-loop` variant that caused phase pollution / extra INTRODUCTION/LOBBY/RUMOR entries), prefer clean removal over more guards. The state machine must remain understandable.
+6. When a prompt includes a live Strategy Thread, player-visible transcript entries and websocket messages must not carry that call's hidden `thinking` or `reasoningContext`. The private `agent_turn` record remains the debug artifact.
 
-7. Fallbacks in agent methods must still return the shape with `thinking` / `reasoningContext` (even if the thinking is a short "fallback..." note).
+7. Terminal UX for `--chatty` (and persisted `game-*.txt` / `.json`) is a first-class human output. `game-*-turns.jsonl` is the per-agent-turn machine-analysis output and `game-*-events.jsonl` is the accepted-domain-event replay output; both must stay clean JSON without ANSI formatting.
+
+8. When backing out experiments (e.g. the old `mingle-loop` variant that caused phase pollution / extra INTRODUCTION/LOBBY/RUMOR entries), prefer clean removal over more guards. The state machine must remain understandable.
+
+9. Fallbacks in agent methods must still return the shape with `thinking` / `reasoningContext` (even if the thinking is a short "fallback..." note).
 
 ## Local Model Specifics
 
@@ -214,7 +219,7 @@ In simulation batches under `packages/engine/docs/simulations/`, each game write
 - `game-N-turns.jsonl`: one clean structured JSON record per agent turn, including the normalized response the game used plus `thinking` and `reasoningContext` when available.
 - `game-N-events.jsonl`: one clean canonical domain event record per accepted game-state fact. Replay this through `replayCanonicalEvents(...)` to rebuild the game projection; do not parse transcript prose as board state.
 
-`game-N-turns.jsonl` always includes hidden `mingle-intent` records. It includes hidden `strategic-reflection` records when the simulator is run with `--strategic-reflections` (or `INFLUENCE_SIM_STRATEGIC_REFLECTIONS=true`). These records are producer/debug artifacts only; they are not player-visible speech.
+`game-N-turns.jsonl` always includes hidden `mingle-intent` records. It includes hidden `strategic-reflection` and `strategy-packet` records when the simulator is run with `--strategic-reflections` (or `INFLUENCE_SIM_STRATEGIC_REFLECTIONS=true`) and the reflection produces a packet. Later private decision records may include `response.strategyPacketUse` markers that link a decision back to the packet revision as self-reported linkage evidence. These records are producer/debug artifacts only; they are not player-visible speech.
 
 Recommended invocation for Mingle + visibility work:
 
@@ -224,7 +229,7 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
-For validation runs that need to prove strategic-reflection capture is working, add `--strategic-reflections`.
+For validation runs that need to prove strategic-reflection capture or Strategy Thread carry-forward is working, add `--strategic-reflections`.
 
 The "Progress: R1 VOTE | alive=..." lines + the following House action lines are the primary place humans see per-agent rationale in real time. After the run, use `game-N-turns.jsonl` for structured agent-decision analysis and `game-N-events.jsonl` for replay/projection queries instead of parsing colored terminal output.
 
@@ -234,6 +239,8 @@ Useful validation queries:
 
 - `search_logs` over `sources: ["turns"]` for `mingle-intent`
 - `search_logs` over `sources: ["turns"]` for `strategic-reflection`
+- `search_logs` over `sources: ["turns"]` for `strategy-packet`
+- `search_logs` over `sources: ["turns"]` for `strategyPacketUse` or a packet `revisionId`
 - `search_logs` over `sources: ["turns"]` for `strategySignal` or `movementPurpose`
 
 Update simulation batch notes (the dated `.md` next to `results.json` etc.) with observations about the quality of the surfaced reasoning, not just win rates or token counts. When writing scripts, read `game-N-turns.jsonl` for per-turn decisions, `game-N-events.jsonl` for accepted domain facts, and `game-N.json` for full transcript context.
@@ -243,6 +250,8 @@ Update simulation batch notes (the dated `.md` next to `results.json` etc.) with
 - Did we thread both thinking and reasoningContext all the way from the LLM response through the agent method, the phase log call, TranscriptEntry, AgentTurnEvent, and formatEntry?
 - Is there any `as any` left in the changed paths?
 - Are House calls still direct?
+- If Strategy Thread packets changed, can MCP `search_logs` find a `strategy-packet` record plus a later `strategyPacketUse` marker?
+- Are packet content and packet-use markers absent from websocket-visible events and canonical board state?
 - Do mocks and tests compile and pass with the new shapes?
 - Are the ANSI color rules, terminal output expectations, clean `game-*-turns.jsonl`, and clean `game-*-events.jsonl` artifacts documented?
 - Did we update the cross-referenced usage docs and AGENTS.md where the contract changed?

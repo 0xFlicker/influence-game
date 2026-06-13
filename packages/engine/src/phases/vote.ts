@@ -1,7 +1,7 @@
 import type { UUID } from "../types";
 import { Phase } from "../types";
 import type { TargetDecision } from "../game-runner.types";
-import { agentTurnSourcePointer, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import { agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import {
   getEndgameEliminationVoterNames,
   handleElimination,
@@ -64,11 +64,12 @@ export async function runVotePhase(
 
       const empowerName = gameState.getPlayerName(votes.empowerTarget);
       const exposeName = gameState.getPlayerName(votes.exposeTarget);
+      const transcriptThinking = transcriptThinkingFor(agent, votes.thinking, votes.reasoningContext);
       logger.logSystem(
         `${player.name} votes: empower=${empowerName}, expose=${exposeName}`,
         Phase.VOTE,
-        votes.thinking,
-        votes.reasoningContext,
+        transcriptThinking.thinking,
+        transcriptThinking.reasoningContext,
       );
       logger.emitAgentTurn({
         phase: Phase.VOTE,
@@ -78,6 +79,7 @@ export async function runVotePhase(
         response: {
           empowerTarget: { id: votes.empowerTarget, name: empowerName },
           exposeTarget: { id: votes.exposeTarget, name: exposeName },
+          ...strategyPacketUseResponse(votes.strategyPacketUse),
         },
         thinking: votes.thinking,
         reasoningContext: votes.reasoningContext,
@@ -109,7 +111,8 @@ export async function runVotePhase(
               agentTurnSourcePointer(player.id, "empower-revote", gameState.round, Phase.VOTE),
             ]);
             const empowerName = gameState.getPlayerName(votes.empowerTarget);
-            logger.logSystem(`${player.name} re-votes: empower=${empowerName}`, Phase.VOTE, votes.thinking, votes.reasoningContext);
+            const transcriptThinking = transcriptThinkingFor(agent, votes.thinking, votes.reasoningContext);
+            logger.logSystem(`${player.name} re-votes: empower=${empowerName}`, Phase.VOTE, transcriptThinking.thinking, transcriptThinking.reasoningContext);
             logger.emitAgentTurn({
               phase: Phase.VOTE,
               action: "empower-revote",
@@ -118,6 +121,7 @@ export async function runVotePhase(
               response: {
                 empowerTarget: { id: votes.empowerTarget, name: empowerName },
                 eligibleTargets: tied.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+                ...strategyPacketUseResponse(votes.strategyPacketUse),
               },
               thinking: votes.thinking,
               reasoningContext: votes.reasoningContext,
@@ -203,11 +207,12 @@ export async function runReckoningVote(
         agentTurnSourcePointer(player.id, "endgame-elimination-vote", gameState.round, Phase.VOTE),
       ]);
       const targetName = gameState.getPlayerName(vote.target);
+      const transcriptThinking = transcriptThinkingFor(agent, vote.thinking, vote.reasoningContext);
       logger.logSystem(
         `${player.name} votes to eliminate: ${targetName}`,
         Phase.VOTE,
-        vote.thinking,
-        vote.reasoningContext,
+        transcriptThinking.thinking,
+        transcriptThinking.reasoningContext,
       );
       logger.emitAgentTurn({
         phase: Phase.VOTE,
@@ -217,6 +222,7 @@ export async function runReckoningVote(
         response: {
           target: { id: vote.target, name: targetName },
           stage: "reckoning",
+          ...strategyPacketUseResponse(vote.strategyPacketUse),
         },
         thinking: vote.thinking,
         reasoningContext: vote.reasoningContext,
@@ -262,11 +268,12 @@ export async function runTribunalVote(
         agentTurnSourcePointer(player.id, "endgame-elimination-vote", gameState.round, Phase.VOTE),
       ]);
       const targetName = gameState.getPlayerName(vote.target);
+      const transcriptThinking = transcriptThinkingFor(agent, vote.thinking, vote.reasoningContext);
       logger.logSystem(
         `${player.name} votes to eliminate: ${targetName}`,
         Phase.VOTE,
-        vote.thinking,
-        vote.reasoningContext,
+        transcriptThinking.thinking,
+        transcriptThinking.reasoningContext,
       );
       logger.emitAgentTurn({
         phase: Phase.VOTE,
@@ -276,6 +283,7 @@ export async function runTribunalVote(
         response: {
           target: { id: vote.target, name: targetName },
           stage: "tribunal",
+          ...strategyPacketUseResponse(vote.strategyPacketUse),
         },
         thinking: vote.thinking,
         reasoningContext: vote.reasoningContext,
@@ -310,6 +318,7 @@ export async function runTribunalVote(
           response: {
             target: { id: vote.target, name: targetName },
             stage: "tribunal",
+            ...strategyPacketUseResponse(vote.strategyPacketUse),
           },
           thinking: vote.thinking,
           reasoningContext: vote.reasoningContext,

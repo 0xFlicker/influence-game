@@ -12,7 +12,7 @@ import type {
 import { Phase } from "../types";
 import type { MingleIntentAction, MingleRoomChoiceAction, MingleTurnAction } from "../game-runner.types";
 import type { GameState } from "../game-state";
-import type { PhaseActor, PhaseRunnerContext } from "./phase-runner-context";
+import { strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 
 export interface RoomAllocationOptions {
   rawChoices?: Map<UUID, number | null>;
@@ -422,7 +422,8 @@ async function runMingleTurn(
         }
 
         conversationHistory.push({ from: fromName, text: message });
-        logger.logMingleMessage(playerId, recipientIds, message, globalRoomId, resolvedAction.thinking, resolvedAction.reasoningContext);
+        const transcriptThinking = transcriptThinkingFor(agent, resolvedAction.thinking, resolvedAction.reasoningContext);
+        logger.logMingleMessage(playerId, recipientIds, message, globalRoomId, transcriptThinking.thinking, transcriptThinking.reasoningContext);
       }
 
       logger.emitAgentTurn({
@@ -443,6 +444,7 @@ async function runMingleTurn(
           gotoStatus: normalizedGoto.status,
           strategySignal: resolvedAction.strategySignal ?? null,
           movementPurpose: resolvedAction.movementPurpose ?? null,
+          ...strategyPacketUseResponse(resolvedAction.strategyPacketUse),
         },
         thinking: resolvedAction.thinking,
         reasoningContext: resolvedAction.reasoningContext,
@@ -530,7 +532,10 @@ export async function runMinglePhase(
           action: "mingle-intent",
           actor: { id: player.id, name: player.name, role: "player" },
           visibility: "private",
-          response: { ...intentSummary },
+          response: {
+            ...intentSummary,
+            ...strategyPacketUseResponse(intent.strategyPacketUse),
+          },
           thinking: intent.thinking,
           reasoningContext: intent.reasoningContext,
         });
@@ -571,6 +576,7 @@ export async function runMinglePhase(
         status: choice.status,
         roomCount,
         ...(intentSummary && { intent: intentSummary }),
+        ...strategyPacketUseResponse(choiceResult?.strategyPacketUse),
       },
       thinking: choiceResult?.thinking,
       reasoningContext: choiceResult?.reasoningContext,

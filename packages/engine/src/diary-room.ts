@@ -10,7 +10,8 @@ import type { ContextBuilder } from "./context-builder";
 import type { IHouseInterviewer, DiaryRoomContext } from "./house-interviewer";
 import type { UUID, GameConfig } from "./types";
 import { Phase } from "./types";
-import type { IAgent, StrategicReflectionAction } from "./game-runner.types";
+import type { IAgent, StrategicReflectionAction, StrategyPacketSummary } from "./game-runner.types";
+import { transcriptThinkingFor } from "./phases/phase-runner-context";
 
 export class DiaryRoom {
   /** Diary room entries: question/answer pairs per agent per phase */
@@ -50,6 +51,9 @@ export class DiaryRoom {
             const reflection = await agent.getStrategicReflection(ctx);
             if (reflection) {
               this.emitStrategicReflectionTurn(player.id, player.name, phase, reflection);
+              if (reflection.strategyPacket) {
+                this.emitStrategyPacketTurn(player.id, player.name, phase, reflection.strategyPacket, reflection);
+              }
             }
         } catch (error) {
           console.error(`[DiaryRoom] Strategic reflection failed for ${player.name}, continuing:`, error);
@@ -76,6 +80,28 @@ export class DiaryRoom {
         allies: reflection.allies,
         threats: reflection.threats,
         plan: reflection.plan,
+      },
+      thinking: reflection.thinking,
+      reasoningContext: reflection.reasoningContext,
+      scope: "thinking",
+    });
+  }
+
+  private emitStrategyPacketTurn(
+    playerId: UUID,
+    playerName: string,
+    reflectedPhase: Phase,
+    strategyPacket: StrategyPacketSummary,
+    reflection: StrategicReflectionAction,
+  ): void {
+    this.logger.emitAgentTurn({
+      phase: reflectedPhase,
+      action: "strategy-packet",
+      actor: { id: playerId, name: playerName, role: "player" },
+      visibility: "private",
+      response: {
+        reflectedPhase,
+        strategyPacket,
       },
       thinking: reflection.thinking,
       reasoningContext: reflection.reasoningContext,
@@ -149,7 +175,8 @@ export class DiaryRoom {
 
     const ctx = this.contextBuilder.buildPhaseContext(playerId, Phase.DIARY_ROOM, undefined, isJuror || undefined);
     const firstResponse = await agent.getDiaryEntry(ctx, firstQuestion, sessionExchanges);
-    this.logger.logDiary(label, firstResponse.message, firstResponse.thinking, firstResponse.reasoningContext);
+    const firstTranscriptThinking = transcriptThinkingFor(agent, firstResponse.thinking, firstResponse.reasoningContext);
+    this.logger.logDiary(label, firstResponse.message, firstTranscriptThinking.thinking, firstTranscriptThinking.reasoningContext);
     this.logger.emitAgentTurn({
       phase: Phase.DIARY_ROOM,
       action: "diary-answer",
@@ -190,7 +217,8 @@ export class DiaryRoom {
       this.logger.logDiary(houseLabel, result.question);
 
       const followUpResponse = await agent.getDiaryEntry(ctx, result.question, sessionExchanges);
-      this.logger.logDiary(label, followUpResponse.message, followUpResponse.thinking, followUpResponse.reasoningContext);
+      const followUpTranscriptThinking = transcriptThinkingFor(agent, followUpResponse.thinking, followUpResponse.reasoningContext);
+      this.logger.logDiary(label, followUpResponse.message, followUpTranscriptThinking.thinking, followUpTranscriptThinking.reasoningContext);
       this.logger.emitAgentTurn({
         phase: Phase.DIARY_ROOM,
         action: "diary-answer",

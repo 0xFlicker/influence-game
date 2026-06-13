@@ -173,6 +173,30 @@ describe("GameRunner stream listener", () => {
       expect(reflection.response).toHaveProperty("certainties");
       expect(reflection.thinking).toBe("mock: reflect on current strategy");
     }
+
+    const packet = events.find((event) => event.type === "agent_turn" && event.action === "strategy-packet");
+    expect(packet).toBeDefined();
+    if (packet?.type === "agent_turn") {
+      expect(packet.visibility).toBe("private");
+      expect(packet.scope).toBe("thinking");
+      expect(packet.response).toMatchObject({
+        reflectedPhase: "VOTE",
+        strategyPacket: {
+          revisionId: "mock-r1",
+          objective: "mock: survive while gathering information",
+          reviseTrigger: "mock: revise if votes contradict room talk",
+        },
+      });
+    }
+
+    const decisionUsingPacket = events.find((event) =>
+      event.type === "agent_turn"
+      && event.action !== "strategy-packet"
+      && event.response.strategyPacketUse
+      && typeof event.response.strategyPacketUse === "object"
+      && "strategyPacketRevision" in event.response.strategyPacketUse
+    );
+    expect(decisionUsingPacket).toBeDefined();
   });
 
   it("does not emit strategic-reflection agent_turn events when disabled", async () => {
@@ -190,6 +214,7 @@ describe("GameRunner stream listener", () => {
     await runner.run();
 
     expect(events.some((event) => event.type === "agent_turn" && event.action === "strategic-reflection")).toBe(false);
+    expect(events.some((event) => event.type === "agent_turn" && event.action === "strategy-packet")).toBe(false);
   });
 
   it("keeps successful strategic-reflection records when one agent reflection fails", async () => {

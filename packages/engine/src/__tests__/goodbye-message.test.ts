@@ -413,8 +413,17 @@ describe("InfluenceAgent tool-call fallbacks", () => {
               description: "The power action to take",
             },
             target: { type: "string", description: "Player name to target" },
+            strategyPacketUse: {
+              type: ["string", "null"],
+              enum: ["followed", "revised", "ignored", "deferred", null],
+              description: "If a Strategy Thread is present, classify how this decision used it: followed, revised, ignored, or deferred. Use null when no Strategy Thread is present.",
+            },
+            strategyPacketUseRationale: {
+              type: ["string", "null"],
+              description: "Compact producer/debug rationale tied to current evidence, or null when no Strategy Thread is present.",
+            },
           },
-          required: ["thinking", "action", "target"],
+          required: ["thinking", "action", "target", "strategyPacketUse", "strategyPacketUseRationale"],
           additionalProperties: false,
         },
       },

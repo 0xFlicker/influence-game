@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Multi-Round Strategy Propagation</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f6f3;
+      --paper: #ffffff;
+      --paper-2: #f8faf7;
+      --ink: #18201f;
+      --muted: #5f6b67;
+      --line: #d9dfda;
+      --line-strong: #b8c5bf;
+      --teal: #126a64;
+      --teal-soft: #dff2ef;
+      --teal-text: #0b514c;
+      --gold: #8a6218;
+      --gold-soft: #f4e8c9;
+      --rose: #8c3f55;
+      --rose-soft: #f2dde4;
+      --blue: #315f8a;
+      --blue-soft: #deebf5;
+      --green: #2f6848;
+      --green-soft: #e0f0e6;
+      --code: #edf1ee;
+      --shadow: rgba(24, 32, 31, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.58 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    a { color: var(--teal); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+    code {
+      background: var(--code);
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: 0.08rem 0.3rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    main {
+      width: min(1040px, calc(100vw - 36px));
+      margin: 0 auto;
+      padding: 42px 0 58px;
+    }
+
+    header {
+      background: linear-gradient(135deg, #ffffff 0%, #f0f7f5 100%);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 18px 48px var(--shadow);
+      padding: 30px;
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--teal-text);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3 { margin: 0; line-height: 1.16; letter-spacing: 0; }
+    h1 { max-width: 900px; font-size: clamp(2rem, 4vw, 3.55rem); }
+    h2 { margin-bottom: 14px; font-size: 1.5rem; }
+    h3 { font-size: 1.1rem; }
+    p { max-width: 78ch; margin: 0 0 1rem; }
+
+    .lede {
+      margin-top: 18px;
+      max-width: 82ch;
+      color: #31403d;
+      font-size: 1.05rem;
+    }
+
+    .meta-row, .metric-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .pill, .metric {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      border: 1px solid var(--line-strong);
+      background: var(--paper);
+      color: #33423f;
+      padding: 0.28rem 0.64rem;
+      font-size: 0.82rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .pill.teal, .metric.high {
+      background: var(--teal-soft);
+      border-color: #b8ded9;
+      color: var(--teal-text);
+    }
+
+    .metric.medium {
+      background: var(--gold-soft);
+      border-color: #e0c984;
+      color: var(--gold);
+    }
+
+    .metric.low {
+      background: var(--green-soft);
+      border-color: #bed9c8;
+      color: var(--green);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .stat {
+      min-height: 84px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.78);
+      padding: 14px;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 1.55rem;
+      line-height: 1.1;
+      color: var(--ink);
+    }
+
+    .stat span {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    section {
+      margin-top: 28px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper);
+      box-shadow: 0 12px 32px var(--shadow);
+      padding: 26px;
+    }
+
+    .section-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 0.42fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    .callout {
+      border: 1px solid #b8ded9;
+      border-radius: 8px;
+      background: var(--teal-soft);
+      color: var(--teal-text);
+      padding: 14px;
+    }
+
+    .callout p { margin: 0; }
+
+    .axis-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      padding: 0;
+      margin: 14px 0 0;
+      list-style: none;
+    }
+
+    .axis-list li {
+      min-height: 94px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--paper-2);
+      padding: 12px;
+    }
+
+    .axis-list strong {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--ink);
+    }
+
+    .axis-list span {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .jump-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 8px;
+      list-style: none;
+      margin: 16px 0 20px;
+      padding: 0;
+    }
+
+    .jump-list a {
+      display: block;
+      min-height: 44px;
+      border: 1px solid #b8ded9;
+      border-radius: 8px;
+      background: var(--teal-soft);
+      color: var(--teal-text);
+      padding: 10px 12px;
+      font-weight: 800;
+      text-decoration: none;
+    }
+
+    article.idea {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fffefd;
+      padding: 18px;
+    }
+
+    .idea-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .idea-id {
+      color: var(--teal-text);
+      font-weight: 900;
+    }
+
+    dl {
+      display: grid;
+      grid-template-columns: minmax(120px, 170px) 1fr;
+      gap: 8px 14px;
+      margin: 14px 0 0;
+    }
+
+    dt {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    dd { margin: 0; }
+
+    .diagram {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f6faf8;
+      overflow-x: auto;
+      padding: 14px;
+    }
+
+    svg { display: block; max-width: 100%; height: auto; }
+
+    svg text {
+      fill: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--paper);
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eef4f1;
+      color: #34423f;
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    .references {
+      columns: 2 320px;
+      padding-left: 18px;
+    }
+
+    .references li { break-inside: avoid; margin-bottom: 8px; }
+
+    footer {
+      margin-top: 30px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 760px) {
+      main { width: min(100vw - 24px, 1040px); padding-top: 22px; }
+      header, section { padding: 18px; }
+      .stats, .section-grid { grid-template-columns: 1fr; }
+      dl { grid-template-columns: 1fr; }
+      .pill, .metric { white-space: normal; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">Ideation</p>
+      <h1>Multi-Round Strategy Propagation</h1>
+      <p class="lede">The strongest direction is not to make every agent name a target. It is to let each agent carry a compact, evidence-aware private strategy across rounds, revise it when social evidence changes, and validate whether that private strategy actually influences later Mingle, vote, power, and council behavior.</p>
+      <div class="meta-row">
+        <span class="pill teal">Date: <time datetime="2026-06-12">2026-06-12</time></span>
+        <span class="pill">Topic: <code>multi-round-strategy-propagation</code></span>
+        <span class="pill">Focus: multi-round strategy propagation for Influence agents</span>
+        <span class="pill">Mode: repo-grounded</span>
+      </div>
+      <div class="stats">
+        <div class="stat"><strong>24</strong><span>raw candidates considered</span></div>
+        <div class="stat"><strong>7</strong><span>ranked survivors</span></div>
+        <div class="stat"><strong>5</strong><span>topic axes covered</span></div>
+        <div class="stat"><strong>1</strong><span>central constraint: no forced target talk</span></div>
+      </div>
+    </header>
+
+    <section id="grounding-context">
+      <h2>Grounding Context</h2>
+      <div class="section-grid">
+        <div>
+          <p>The current engine already has a good single-phase strategic surface. At Mingle start, each agent forms a hidden intent; Mingle room choice and turn prompts receive a summary of that intent; private turn records carry <code>mingle-intent</code>, <code>strategySignal</code>, and <code>movementPurpose</code>. Strategic reflection can also emit hidden records and updates <code>lastReflection</code>.</p>
+          <p>The gap is continuity. <code>AgentMemory</code> currently has allies, threats, notes, round history, power actions, and a most recent reflection, but no first-class strategy thread, commitment ledger, or evolving plan state. The memory store persists operational records during a game, yet the prompt-visible state is still mostly the live agent object. That means Mingle intent can guide the current room but does not automatically become durable social memory unless it turns into speech, notes, vote history, or a later reflection.</p>
+          <p>Existing project docs point in exactly this direction: end-of-Mingle debrief extraction, aggregate strategy scoring, and specialized strategy indexing were deferred follow-up work, while a hard requirement that every Mingle turn names a target was explicitly out of scope.</p>
+        </div>
+        <aside class="callout">
+          <p><strong>Design principle:</strong> carry forward strategy as revisable state, not orders. Agents should remember what they were trying to do, what evidence changed, and what social debts exist, while still allowing guarded, playful, social, or quiet play when that is strategically coherent.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="topic-axes">
+      <h2>Topic Axes</h2>
+      <ul class="axis-list">
+        <li><strong>Durable Strategy State</strong><span>What compact object should survive beyond one Mingle without becoming a rigid script?</span></li>
+        <li><strong>Commitments and Beliefs</strong><span>How should promises, suspicions, claims, and outcomes become useful social memory?</span></li>
+        <li><strong>Reflection and Prompt Surfaces</strong><span>Where should agents revise strategy, and how should future prompts present it?</span></li>
+        <li><strong>Validation and Observability</strong><span>How do we prove strategy propagated through later behavior using simulator/MCP artifacts?</span></li>
+        <li><strong>Persistence Boundary</strong><span>What must survive process reset or API game resume, and what can remain ephemeral?</span></li>
+      </ul>
+    </section>
+
+    <section id="ranked-ideas">
+      <h2>Ranked Ideas</h2>
+      <ul class="jump-list">
+        <li><a href="#idea-1">1. Strategy Thread / Carry-Forward Packet</a></li>
+        <li><a href="#idea-2">2. Commitment Ledger</a></li>
+        <li><a href="#idea-3">3. Reflection Delta Upgrade</a></li>
+        <li><a href="#idea-4">4. Strategy-to-Action Trace Validator</a></li>
+        <li><a href="#idea-5">5. Hypothesis Portfolio</a></li>
+        <li><a href="#idea-6">6. Relationship Graph Memory</a></li>
+        <li><a href="#idea-7">7. Resumable Strategy Hydration</a></li>
+      </ul>
+
+      <article class="idea" id="idea-1">
+        <div class="idea-head">
+          <span class="idea-id">1.</span>
+          <h3>Strategy Thread / Carry-Forward Packet</h3>
+        </div>
+        <p><strong>Description:</strong> Give each agent a compact private strategy packet that persists across rounds: current objective, coalition posture, target posture, next Mingle ask, useful facts to test, promises to revisit, and abort triggers. Update it at reflection boundaries and inject it into later prompts as "live strategy context, not instructions."</p>
+        <dl>
+          <dt>Axis</dt><dd>Durable Strategy State</dd>
+          <dt>Basis</dt><dd><strong>direct:</strong> <code>getMingleIntent</code> exists only as a pre-room-choice/phase context path, while <code>AgentMemory</code> contains no campaign/thread strategy object beyond <code>lastReflection</code>.</dd>
+          <dt>Rationale</dt><dd>This is the smallest object that makes a Mingle idea survive into the next vote, next room choice, or next power action without requiring agents to talk game every turn.</dd>
+          <dt>Downsides</dt><dd>Needs careful size limits and decay so agents do not cling to stale early reads. Badly phrased strategy packets could become orders instead of context.</dd>
+        </dl>
+        <div class="metric-row">
+          <span class="metric high">Confidence 88%</span>
+          <span class="metric medium">Complexity Medium</span>
+        </div>
+        <div class="diagram" aria-label="Strategy thread flow diagram">
+          <svg width="880" height="188" viewBox="0 0 880 188" role="img">
+            <rect x="22" y="36" width="150" height="78" rx="8" fill="#dff2ef" stroke="#8fc8c1"/>
+            <text x="97" y="65" text-anchor="middle" font-size="14" font-weight="800">Mingle Intent</text>
+            <text x="97" y="88" text-anchor="middle" font-size="12">seek, avoid, ask</text>
+            <rect x="234" y="36" width="160" height="78" rx="8" fill="#f4e8c9" stroke="#d8bf78"/>
+            <text x="314" y="64" text-anchor="middle" font-size="14" font-weight="800">Room Behavior</text>
+            <text x="314" y="88" text-anchor="middle" font-size="12">talk, silence, move</text>
+            <rect x="456" y="28" width="172" height="94" rx="8" fill="#deebf5" stroke="#a8c8e4"/>
+            <text x="542" y="58" text-anchor="middle" font-size="14" font-weight="800">Strategy Packet</text>
+            <text x="542" y="82" text-anchor="middle" font-size="12">current plan + tests</text>
+            <text x="542" y="102" text-anchor="middle" font-size="12">decay + abort triggers</text>
+            <rect x="690" y="36" width="162" height="78" rx="8" fill="#e0f0e6" stroke="#a8ceb8"/>
+            <text x="771" y="64" text-anchor="middle" font-size="14" font-weight="800">Later Choice</text>
+            <text x="771" y="88" text-anchor="middle" font-size="12">vote, power, Mingle</text>
+            <path d="M172 75 L234 75" stroke="#66736f" stroke-width="2" fill="none" marker-end="url(#arrow1)"/>
+            <path d="M394 75 L456 75" stroke="#66736f" stroke-width="2" fill="none" marker-end="url(#arrow1)"/>
+            <path d="M628 75 L690 75" stroke="#66736f" stroke-width="2" fill="none" marker-end="url(#arrow1)"/>
+            <path d="M542 122 C542 154 338 164 314 114" stroke="#8c3f55" stroke-width="2" fill="none" marker-end="url(#arrow1)"/>
+            <text x="438" y="162" text-anchor="middle" font-size="12" fill="#8c3f55">replan after evidence</text>
+            <defs>
+              <marker id="arrow1" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#66736f"/>
+              </marker>
+            </defs>
+          </svg>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-2">
+        <div class="idea-head">
+          <span class="idea-id">2.</span>
+          <h3>Commitment Ledger</h3>
+        </div>
+        <p><strong>Description:</strong> Track promises, offers, requests, accusations, and claimed intentions as structured private memories. Each record should include speaker, audience, round, phase, evidence pointer, expected follow-up, status, confidence, and whether the outcome confirmed or contradicted it.</p>
+        <dl>
+          <dt>Axis</dt><dd>Commitments and Beliefs</dd>
+          <dt>Basis</dt><dd><strong>external:</strong> Diplomacy-style social play depends on separating what someone promised, what the agent believes, and what later happened; prior agent-memory work also emphasizes reflection plus retrieval over raw transcript recall.</dd>
+          <dt>Rationale</dt><dd>This gives agents a memory of social debts. It lets strategy emerge from "Mira asked me not to expose Vex and then voted elsewhere" rather than generic suspicion lists.</dd>
+          <dt>Downsides</dt><dd>Commitment extraction can hallucinate intent from jokes or soft language. It needs evidence pointers and statuses such as proposed, accepted, violated, contradicted, expired, or unverified.</dd>
+        </dl>
+        <div class="metric-row">
+          <span class="metric high">Confidence 84%</span>
+          <span class="metric medium">Complexity Medium-High</span>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-3">
+        <div class="idea-head">
+          <span class="idea-id">3.</span>
+          <h3>Reflection Delta Upgrade</h3>
+        </div>
+        <p><strong>Description:</strong> Upgrade strategic reflection from "current certainties/suspicions/allies/threats/plan" into an evidence-cited change log: what changed since the last reflection, what belief was weakened, what belief was strengthened, what promise needs follow-up, and what next experiment the agent should try. Keep the current summary fields, but add the delta so the next prompt can tell continuity from churn.</p>
+        <dl>
+          <dt>Axis</dt><dd>Reflection and Prompt Surfaces</dd>
+          <dt>Basis</dt><dd><strong>direct:</strong> <code>StrategicReflectionAction</code> currently exposes snapshot fields, and <code>getStrategicReflection</code> stores only the summary without <code>thinking</code> or <code>reasoningContext</code>.</dd>
+          <dt>Rationale</dt><dd>Reflection is already the natural boundary for strategy propagation. Adding deltas makes it safer: agents can revise old reads instead of accumulating confident but unsupported narratives.</dd>
+          <dt>Downsides</dt><dd>More schema means more test and prompt maintenance. It also needs explicit contradiction handling so a reflection does not harden a false premise.</dd>
+        </dl>
+        <div class="metric-row">
+          <span class="metric high">Confidence 82%</span>
+          <span class="metric medium">Complexity Medium</span>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-4">
+        <div class="idea-head">
+          <span class="idea-id">4.</span>
+          <h3>Strategy-to-Action Trace Validator</h3>
+        </div>
+        <p><strong>Description:</strong> Add a simulator/MCP validation query that answers whether private strategy propagated: intent shaped room choice, room behavior generated a signal, reflection incorporated or rejected it, and a later vote/power/Mingle action followed or consciously pivoted. Report examples, not just counts.</p>
+        <dl>
+          <dt>Axis</dt><dd>Validation and Observability</dd>
+          <dt>Basis</dt><dd><strong>direct:</strong> Local evaluation docs already point users to <code>game-N-turns.jsonl</code> and MCP <code>search_logs</code> for <code>mingle-intent</code>, <code>strategic-reflection</code>, <code>strategySignal</code>, and <code>movementPurpose</code>.</dd>
+          <dt>Rationale</dt><dd>This is how we avoid vibe-checking agent quality. The validation target becomes "show me a chain of strategic carryover or a clear pivot" instead of "did the prompt mention strategy?"</dd>
+          <dt>Downsides</dt><dd>Automated scoring will be fuzzy at first. The first version should present linked examples for human review before pretending to be a hard metric.</dd>
+        </dl>
+        <div class="metric-row">
+          <span class="metric high">Confidence 86%</span>
+          <span class="metric medium">Complexity Medium</span>
+        </div>
+        <div class="diagram" aria-label="Validation chain diagram">
+          <svg width="880" height="156" viewBox="0 0 880 156" role="img">
+            <rect x="20" y="44" width="128" height="58" rx="8" fill="#dff2ef" stroke="#8fc8c1"/>
+            <text x="84" y="68" text-anchor="middle" font-size="13" font-weight="800">Intent</text>
+            <text x="84" y="88" text-anchor="middle" font-size="11">hidden turn</text>
+            <rect x="184" y="44" width="128" height="58" rx="8" fill="#f4e8c9" stroke="#d8bf78"/>
+            <text x="248" y="68" text-anchor="middle" font-size="13" font-weight="800">Room Choice</text>
+            <text x="248" y="88" text-anchor="middle" font-size="11">placement</text>
+            <rect x="348" y="44" width="128" height="58" rx="8" fill="#deebf5" stroke="#a8c8e4"/>
+            <text x="412" y="68" text-anchor="middle" font-size="13" font-weight="800">Mingle Turn</text>
+            <text x="412" y="88" text-anchor="middle" font-size="11">signal / silence</text>
+            <rect x="512" y="44" width="132" height="58" rx="8" fill="#f2dde4" stroke="#ddb0be"/>
+            <text x="578" y="68" text-anchor="middle" font-size="13" font-weight="800">Reflection</text>
+            <text x="578" y="88" text-anchor="middle" font-size="11">incorporate / reject</text>
+            <rect x="680" y="44" width="160" height="58" rx="8" fill="#e0f0e6" stroke="#a8ceb8"/>
+            <text x="760" y="68" text-anchor="middle" font-size="13" font-weight="800">Later Action</text>
+            <text x="760" y="88" text-anchor="middle" font-size="11">vote, power, room</text>
+            <path d="M148 73 L184 73" stroke="#66736f" stroke-width="2" marker-end="url(#arrow2)"/>
+            <path d="M312 73 L348 73" stroke="#66736f" stroke-width="2" marker-end="url(#arrow2)"/>
+            <path d="M476 73 L512 73" stroke="#66736f" stroke-width="2" marker-end="url(#arrow2)"/>
+            <path d="M644 73 L680 73" stroke="#66736f" stroke-width="2" marker-end="url(#arrow2)"/>
+            <text x="430" y="128" text-anchor="middle" font-size="12">MCP returns linked evidence chains and notable pivots</text>
+            <defs>
+              <marker id="arrow2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#66736f"/>
+              </marker>
+            </defs>
+          </svg>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-5">
+        <div class="idea-head">
+          <span class="idea-id">5.</span>
+          <h3>Hypothesis Portfolio</h3>
+        </div>
+        <p><strong>Description:</strong> Let agents carry two or three competing strategy hypotheses instead of one plan: primary read, alternate read, and chaos/unknown read. Each hypothesis gets confidence, evidence, next test, and switch condition. Later prompts can then ask the agent to choose, update, or abandon a hypothesis based on new observations.</p>
+        <dl>
+          <dt>Axis</dt><dd>Durable Strategy State</dd>
+          <dt>Basis</dt><dd><strong>external:</strong> ReAct-style agents work best when reasoning, action, and observation interleave; in social deduction, premature certainty is often worse than uncertainty carried explicitly.</dd>
+          <dt>Rationale</dt><dd>This avoids the "reflection hardened a bad read" failure. Agents can pursue a line while staying live to contradictory evidence.</dd>
+          <dt>Downsides</dt><dd>More cognitive load in prompts. Small/local models may need tight formatting and a cap on active hypotheses.</dd>
+        </dl>
+        <div class="metric-row">
+          <span class="metric medium">Confidence 76%</span>
+          <span class="metric medium">Complexity Medium</span>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-6">
+        <div class="idea-head">
+          <span class="idea-id">6.</span>
+          <h3>Relationship Graph Memory</h3>
+        </div>
+        <p><strong>Description:</strong> Build a private per-agent relationship graph: trust, suspicion, usefulness, threat, debt, and volatility edges between the agent and other players. Update it from votes, power actions, Mingle commitments, and reflection deltas; summarize only the most relevant edges into prompts.</p>
+        <dl>
+          <dt>Axis</dt><dd>Commitments and Beliefs</dd>
+          <dt>Basis</dt><dd><strong>external:</strong> Graph-informed social deduction is a strong hybrid pattern: structured belief tracking handles consistency while the LLM handles language and social framing.</dd>
+          <dt>Rationale</dt><dd>It gives strategy a substrate. Instead of "known allies: none" until a blunt alliance forms, the agent can remember soft social gradients like "useful but volatile" or "owes me a follow-up."</dd>
+          <dt>Downsides</dt><dd>Higher implementation burden and more room for noisy edge updates. Best as a second layer after the commitment ledger proves useful.</dd>
+        </dl>
+        <div class="metric-row">
+          <span class="metric medium">Confidence 70%</span>
+          <span class="metric high">Complexity High</span>
+        </div>
+      </article>
+
+      <article class="idea" id="idea-7">
+        <div class="idea-head">
+          <span class="idea-id">7.</span>
+          <h3>Resumable Strategy Hydration</h3>
+        </div>
+        <p><strong>Description:</strong> Make persisted memory recall part of agent setup or phase start so API games can hydrate strategy state after process reset. Start with reflection summaries, vote history, and future strategy packet records, then decide which fields are prompt-visible versus producer-only.</p>
+        <dl>
+          <dt>Axis</dt><dd>Persistence Boundary</dd>
+          <dt>Basis</dt><dd><strong>direct:</strong> <code>MemoryStore</code> defines <code>save</code>, <code>recall</code>, and <code>clear</code>, but current prompt construction reads the live <code>InfluenceAgent</code> memory object.</dd>
+          <dt>Rationale</dt><dd>Multi-round strategy is less valuable if an API restart can wipe the live object and produce socially amnesiac agents. Hydration makes the strategy system operationally credible.</dd>
+          <dt>Downsides</dt><dd>Touches state ownership and reset/resume behavior, the known operational risk in this repo. It should follow the gameplay-memory design rather than lead it.</dd>
+        </dl>
+        <div class="metric-row">
+          <span class="metric medium">Confidence 74%</span>
+          <span class="metric high">Complexity High</span>
+        </div>
+      </article>
+    </section>
+
+    <section id="rejection-summary">
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Idea</th>
+            <th>Reason Rejected</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>End-of-Mingle Debrief</td><td>Folded into the Reflection Delta Upgrade; as a standalone prompt it risks more ceremony without durable state.</td></tr>
+          <tr><td>2</td><td>Strategic Memory Budgeting</td><td>Folded into the Strategy Thread as expiry and decay rather than a separate feature.</td></tr>
+          <tr><td>3</td><td>Persona-Specific Strategy Styles</td><td>Useful tuning layer, but weaker than first creating durable strategy state for all personas.</td></tr>
+          <tr><td>4</td><td>Audience-Visible Producer Timeline</td><td>Valuable later storytelling surface, but downstream of trace validation and not needed to unblock agent behavior.</td></tr>
+          <tr><td>5</td><td>Social Debt Reputation Model</td><td>Folded into Commitment Ledger and Relationship Graph Memory.</td></tr>
+          <tr><td>6</td><td>Private Room Goals at Mingle Start</td><td>Interesting, but risks over-scripted subgroup behavior before individual strategy continuity exists.</td></tr>
+          <tr><td>7</td><td>Campaign Plan at Game Start</td><td>Too speculative early; likely anchors agents before they have useful evidence.</td></tr>
+          <tr><td>8</td><td>Target-Naming Quota</td><td>Violates the desired strategy spectrum and the existing out-of-scope boundary against mandatory target naming.</td></tr>
+          <tr><td>9</td><td>Raw Reasoning Long-Term Memory</td><td>Privacy, cost, and quality risk; <code>reasoningContext</code> should stay debug metadata, not agent memory.</td></tr>
+          <tr><td>10</td><td>Always-On Reflection Every Turn</td><td>Too expensive and likely noisy; reflection should happen at meaningful boundaries.</td></tr>
+          <tr><td>11</td><td>Vector Search Over All Transcript</td><td>Retrieval without typed strategy state is too undirected for this problem.</td></tr>
+          <tr><td>12</td><td>Rule-Based Alliance Bot</td><td>Replaces the agent-social-game premise instead of augmenting it.</td></tr>
+          <tr><td>13</td><td>Omniscient Global Social Graph</td><td>Violates private-room knowledge boundaries.</td></tr>
+          <tr><td>14</td><td>Hard-Coded Archetype Scripts</td><td>Would create repetitive roleplay rather than strategic variety.</td></tr>
+          <tr><td>15</td><td>Win-Rate Optimization Harness</td><td>Misaligned with the product goal of watchable, legible strategy.</td></tr>
+          <tr><td>16</td><td>Public Strategy Exposure</td><td>Breaks hidden-intent boundaries and player-visible game integrity.</td></tr>
+          <tr><td>17</td><td>Deferred SQLite Strategy Index</td><td>Sensible only after generic MCP search proves insufficient.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sources-references">
+      <h2>Sources &amp; References</h2>
+      <ul class="references">
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/agent.ts">packages/engine/src/agent.ts</a> — agent memory, Mingle prompts, prompt construction, and strategic reflection.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/phases/mingle.ts">packages/engine/src/phases/mingle.ts</a> — hidden Mingle intent and Mingle turn event emission.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/memory-store.ts">packages/engine/src/memory-store.ts</a> — operational memory interface and current memory types.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/diary-room.ts">packages/engine/src/diary-room.ts</a> — strategic reflection capture boundary.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/CONCEPTS.md">CONCEPTS.md</a> — Mingle intent, strategy signal, strategic reflection, and reasoningContext definitions.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/plans/2026-06-12-001-feat-mingle-strategy-observability-plan.md">2026-06-12 Mingle strategy observability plan</a> — deferred work and out-of-scope guardrails.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/local-model-evaluation.md">docs/local-model-evaluation.md</a> — simulator artifacts and MCP validation guidance.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/reasoning-transcript-observability.md">docs/reasoning-transcript-observability.md</a> — turns JSONL and hidden reflection observability contract.</li>
+        <li><a href="https://arxiv.org/abs/2304.03442">Generative Agents</a> — memory, reflection, and planning in social simulations.</li>
+        <li><a href="https://arxiv.org/abs/2312.03664">Concordia</a> — generative social simulation with agent memory and game-master adjudication.</li>
+        <li><a href="https://arxiv.org/abs/2303.11366">Reflexion</a> — post-trial verbal reflection stored in episodic memory.</li>
+        <li><a href="https://arxiv.org/abs/2210.03629">ReAct</a> — interleaved reasoning, acting, and observation.</li>
+        <li><a href="https://arxiv.org/abs/2310.05036">AvalonBench</a> — social-deduction benchmark with deception and negotiation pressures.</li>
+        <li><a href="https://arxiv.org/abs/2210.05492">Human-regularized Diplomacy planning</a> — strategic communication and cooperation grounding.</li>
+        <li><a href="https://arxiv.org/abs/2506.17788">Graph-informed social deduction</a> — structured belief tracking for social games.</li>
+      </ul>
+    </section>
+
+    <footer class="composition-signal">Composed 2026-06-12T11:34:36-06:00 by ce-ideate from the user prompt: multi-round strategy propagation.</footer>
+  </main>
+</body>
+</html>

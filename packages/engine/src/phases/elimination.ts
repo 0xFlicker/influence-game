@@ -1,7 +1,7 @@
 import type { PhaseContext } from "../game-runner.types";
 import type { UUID } from "../types";
 import { Phase } from "../types";
-import type { PhaseRunnerContext } from "./phase-runner-context";
+import { strategyPacketUseResponse, transcriptThinkingFor, type PhaseRunnerContext } from "./phase-runner-context";
 
 function getVoterNames(
   votes: Record<UUID, UUID>,
@@ -75,10 +75,8 @@ export async function handleElimination(
   logger.logSystem(`ELIMINATED: ${eliminated.name}`, phase);
   ctx.diaryRoom.lastEliminatedName = eliminated.name;
   ctx.eliminationOrder.push(eliminated.name);
-  logger.logPublic(eliminatedId, lastMsgResponse.message, phase, {
-    thinking: lastMsgResponse.thinking,
-    reasoningContext: lastMsgResponse.reasoningContext,
-  });
+  const transcriptThinking = transcriptThinkingFor(eliminatedAgent, lastMsgResponse.thinking, lastMsgResponse.reasoningContext);
+  logger.logPublic(eliminatedId, lastMsgResponse.message, phase, transcriptThinking);
   logger.emitAgentTurn({
     phase,
     action: "last-message",
@@ -91,6 +89,7 @@ export async function handleElimination(
       exposedBy: eliminationContext?.exposedBy,
       councilVoters: eliminationContext?.councilVoters,
       eliminationVoters: eliminationContext?.eliminationVoters,
+      ...strategyPacketUseResponse(lastMsgResponse.strategyPacketUse),
     },
     thinking: lastMsgResponse.thinking,
     reasoningContext: lastMsgResponse.reasoningContext,

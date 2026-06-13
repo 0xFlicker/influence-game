@@ -24,6 +24,10 @@ import type {
   PowerLobbyExposure,
   StrategicReflectionAction,
   StrategicReflectionSummary,
+  StrategyPacketSummary,
+  StrategyPacketUpdateAction,
+  StrategyPacketUse,
+  StrategyPacketUseMarker,
   TargetDecision,
 } from "./game-runner";
 import { Phase } from "./types";
@@ -274,6 +278,22 @@ const TOOL_SEND_WHISPERS: ChatCompletionTool = {
   },
 };
 
+const STRATEGY_PACKET_USE_VALUES = ["followed", "revised", "ignored", "deferred"] as const;
+
+const STRATEGY_PACKET_USE_TOOL_PROPERTIES = {
+  strategyPacketUse: {
+    type: ["string", "null"],
+    enum: [...STRATEGY_PACKET_USE_VALUES, null],
+    description: "If a Strategy Thread is present, classify how this decision used it: followed, revised, ignored, or deferred. Use null when no Strategy Thread is present.",
+  },
+  strategyPacketUseRationale: {
+    type: ["string", "null"],
+    description: "Compact producer/debug rationale tied to current evidence, or null when no Strategy Thread is present.",
+  },
+};
+
+const STRATEGY_PACKET_USE_REQUIRED = ["strategyPacketUse", "strategyPacketUseRationale"];
+
 const TOOL_CHOOSE_MINGLE_ROOM: ChatCompletionTool = {
   type: "function",
   function: {
@@ -287,8 +307,9 @@ const TOOL_CHOOSE_MINGLE_ROOM: ChatCompletionTool = {
           type: "number",
           description: "Room number to enter",
         },
+        ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
       },
-      required: ["thinking", "roomId"],
+      required: ["thinking", "roomId", ...STRATEGY_PACKET_USE_REQUIRED],
     },
   },
 };
@@ -323,18 +344,19 @@ const TOOL_MINGLE_INTENT: ChatCompletionTool = {
         },
         provisionalTarget: {
           type: ["string", "null"],
-          description: "A provisional target or threat to test, or null if you are intentionally not naming one yet",
+          description: "One living provisional target or threat to test, or null if you are intentionally not naming one yet. Never name yourself or an eliminated player.",
         },
         noTargetReason: {
           type: ["string", "null"],
-          description: "Why you are not naming a provisional target, or null if you named one",
+          description: "Why you are not naming a living provisional target, or null if you named one. Explain what evidence is missing, not just that it is early.",
         },
         openingAsk: {
           type: "string",
           description: "An opening ask, probe, or information trade you want to try when room context allows",
         },
+        ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
       },
-      required: ["thinking", "seekPlayers", "avoidPlayers", "preferredRoomSize", "purpose", "provisionalTarget", "noTargetReason", "openingAsk"],
+      required: ["thinking", "seekPlayers", "avoidPlayers", "preferredRoomSize", "purpose", "provisionalTarget", "noTargetReason", "openingAsk", ...STRATEGY_PACKET_USE_REQUIRED],
       additionalProperties: false,
     },
     strict: true,
@@ -395,8 +417,9 @@ const TOOL_MINGLE_TURN: ChatCompletionTool = {
           type: ["string", "null"],
           description: "Optional producer/debug reason for GOTO movement, or null when staying put",
         },
+        ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
       },
-      required: ["thinking", "message", "noReply", "gotoRoomId", "strategySignal", "movementPurpose"],
+      required: ["thinking", "message", "noReply", "gotoRoomId", "strategySignal", "movementPurpose", ...STRATEGY_PACKET_USE_REQUIRED],
       additionalProperties: false,
     },
     strict: true,
@@ -414,8 +437,9 @@ const TOOL_CAST_VOTES: ChatCompletionTool = {
         thinking: { type: "string", description: "Your internal reasoning for these votes (hidden from other players)" },
         empower: { type: "string", description: "Player name to empower" },
         expose: { type: "string", description: "Player name to expose" },
+        ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
       },
-      required: ["thinking", "empower", "expose"],
+      required: ["thinking", "empower", "expose", ...STRATEGY_PACKET_USE_REQUIRED],
       additionalProperties: false,
     },
     strict: true,
@@ -437,8 +461,9 @@ const TOOL_POWER_ACTION: ChatCompletionTool = {
           description: "The power action to take",
         },
         target: { type: "string", description: "Player name to target" },
+        ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
       },
-      required: ["thinking", "action", "target"],
+      required: ["thinking", "action", "target", ...STRATEGY_PACKET_USE_REQUIRED],
       additionalProperties: false,
     },
     strict: true,
@@ -455,8 +480,9 @@ const TOOL_COUNCIL_VOTE: ChatCompletionTool = {
       properties: {
         thinking: { type: "string", description: "Your internal reasoning for this vote (hidden from other players)" },
         eliminate: { type: "string", description: "Player name to eliminate" },
+        ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
       },
-      required: ["thinking", "eliminate"],
+      required: ["thinking", "eliminate", ...STRATEGY_PACKET_USE_REQUIRED],
     },
   },
 };
@@ -555,10 +581,34 @@ function normalizeRequiredString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeStrategyPacketUpdate(value: unknown): StrategyPacketUpdateAction | null {
+  if (!isRecord(value)) return null;
+  const update: StrategyPacketUpdateAction = {
+    objective: normalizeRequiredString(value.objective),
+    targetPosture: normalizeRequiredString(value.targetPosture),
+    coalitionPosture: normalizeRequiredString(value.coalitionPosture),
+    nextSocialProbe: normalizeRequiredString(value.nextSocialProbe),
+    uncertainty: normalizeRequiredString(value.uncertainty),
+    reviseTrigger: normalizeRequiredString(value.reviseTrigger),
+    changedSincePrevious: normalizeRequiredString(value.changedSincePrevious),
+  };
+  return Object.values(update).some((entry) => entry.length > 0) ? update : null;
+}
+
 function normalizePreferredRoomSize(value: unknown): MinglePreferredRoomSize {
   return value === "solo" || value === "pair" || value === "small_group" || value === "large_group" || value === "any"
     ? value
     : "any";
+}
+
+function normalizeStrategyPacketUseValue(value: unknown): StrategyPacketUse | null {
+  return value === "followed" || value === "revised" || value === "ignored" || value === "deferred"
+    ? value
+    : null;
 }
 
 class ToolCallRetryError extends Error {
@@ -608,8 +658,44 @@ const TOOL_STRATEGIC_REFLECTION: ChatCompletionTool = {
           type: "string",
           description: "Your plan for the next round in 1-2 sentences",
         },
+        strategyPacket: {
+          type: "object",
+          description: "Compact private strategy state to carry forward into future prompts. This is producer/debug state, not player-visible speech.",
+          properties: {
+            objective: {
+              type: "string",
+              description: "Current strategic objective, in one short sentence.",
+            },
+            targetPosture: {
+              type: "string",
+              description: "Standing target posture. Name one living player when useful; otherwise state no standing target yet and what evidence would create one. Never carry an eliminated player as an active target.",
+            },
+            coalitionPosture: {
+              type: "string",
+              description: "Who you are trying to work with, test, protect, mislead, or keep flexible.",
+            },
+            nextSocialProbe: {
+              type: "string",
+              description: "The next social question, room move, information trade, or trust test you want to try.",
+            },
+            uncertainty: {
+              type: "string",
+              description: "The most important uncertainty or read that could be wrong.",
+            },
+            reviseTrigger: {
+              type: "string",
+              description: "What evidence or event would make you abandon or revise this plan.",
+            },
+            changedSincePrevious: {
+              type: "string",
+              description: "What changed from the previous Strategy Thread, or 'initial packet' if this is the first one.",
+            },
+          },
+          required: ["objective", "targetPosture", "coalitionPosture", "nextSocialProbe", "uncertainty", "reviseTrigger", "changedSincePrevious"],
+          additionalProperties: false,
+        },
       },
-      required: ["thinking", "certainties", "suspicions", "allies", "threats", "plan"],
+      required: ["thinking", "certainties", "suspicions", "allies", "threats", "plan", "strategyPacket"],
       additionalProperties: false,
     },
     strict: true,
@@ -642,6 +728,8 @@ interface AgentMemory {
   }>;
   /** Most recent strategic reflection from diary room */
   lastReflection: StrategicReflectionSummary | null;
+  /** Compact private strategy state carried across rounds in this live run only. */
+  strategyPacket: StrategyPacketSummary | null;
 }
 
 export interface InfluenceAgentOptions {
@@ -682,8 +770,10 @@ export class InfluenceAgent implements IAgent {
     roundHistory: [],
     powerActions: [],
     lastReflection: null,
+    strategyPacket: null,
   };
   private lobbyIntent: string | null = null;
+  private strategyPacketRevisionCounter = 0;
 
   constructor(
     id: UUID,
@@ -747,6 +837,96 @@ export class InfluenceAgent implements IAgent {
 
   async onPhaseStart(_ctx: PhaseContext): Promise<void> {
     // No-op for now; could be used for strategic pre-phase thinking
+  }
+
+  getStrategyPacket(): StrategyPacketSummary | null {
+    return this.memory.strategyPacket;
+  }
+
+  private nextStrategyPacketRevisionId(ctx: PhaseContext): string {
+    this.strategyPacketRevisionCounter += 1;
+    return `r${ctx.round}-${ctx.phase.toLowerCase()}-${this.strategyPacketRevisionCounter}`;
+  }
+
+  private applyStrategyPacketUpdate(
+    ctx: PhaseContext,
+    update: StrategyPacketUpdateAction | null,
+  ): StrategyPacketSummary | null {
+    if (!update) return null;
+    const previousRevisionId = this.memory.strategyPacket?.revisionId ?? null;
+    const packet: StrategyPacketSummary = {
+      revisionId: this.nextStrategyPacketRevisionId(ctx),
+      previousRevisionId,
+      updatedAtRound: ctx.round,
+      updatedAtPhase: ctx.phase,
+      objective: update.objective,
+      targetPosture: update.targetPosture,
+      coalitionPosture: update.coalitionPosture,
+      nextSocialProbe: update.nextSocialProbe,
+      uncertainty: update.uncertainty,
+      reviseTrigger: update.reviseTrigger,
+      changedSincePrevious: update.changedSincePrevious || (previousRevisionId ? "Updated after reflection." : "initial packet"),
+    };
+    this.memory.strategyPacket = packet;
+    return packet;
+  }
+
+  private strategyPacketUseMarker(use: unknown, rationale: unknown): StrategyPacketUseMarker | undefined {
+    const packet = this.memory.strategyPacket;
+    if (!packet) return undefined;
+    const strategyPacketUse = normalizeStrategyPacketUseValue(use);
+    if (!strategyPacketUse) return undefined;
+    return {
+      strategyPacketRevision: packet.revisionId,
+      strategyPacketUse,
+      strategyPacketUseRationale: normalizeNullableString(rationale) ?? "No rationale provided.",
+    };
+  }
+
+  private attachStrategyPacketRevision(response: AgentResponse): AgentResponse {
+    if (!response.strategyPacketUse || !this.memory.strategyPacket) {
+      const { strategyPacketUse: _strategyPacketUse, ...withoutMarker } = response;
+      return withoutMarker;
+    }
+    return {
+      ...response,
+      strategyPacketUse: {
+        ...response.strategyPacketUse,
+        strategyPacketRevision: this.memory.strategyPacket.revisionId,
+      },
+    };
+  }
+
+  private scrubEliminatedPlayerNames(text: string, eliminatedNames: string[]): string {
+    let scrubbed = text;
+    for (const name of eliminatedNames) {
+      const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      scrubbed = scrubbed.replace(
+        new RegExp(`\\b${escapedName}\\b(?! \\(eliminated; not an active target\\))`, "g"),
+        `${name} (eliminated; not an active target)`,
+      );
+    }
+    return scrubbed;
+  }
+
+  private strategyPacketForPrompt(ctx: PhaseContext): StrategyPacketSummary | null {
+    const packet = this.memory.strategyPacket;
+    if (!packet) return null;
+    const eliminatedNames = this.allPlayers
+      .filter((player) => !ctx.alivePlayers.some((alive) => alive.id === player.id))
+      .map((player) => player.name);
+    if (eliminatedNames.length === 0) return packet;
+
+    return {
+      ...packet,
+      objective: this.scrubEliminatedPlayerNames(packet.objective, eliminatedNames),
+      targetPosture: this.scrubEliminatedPlayerNames(packet.targetPosture, eliminatedNames),
+      coalitionPosture: this.scrubEliminatedPlayerNames(packet.coalitionPosture, eliminatedNames),
+      nextSocialProbe: this.scrubEliminatedPlayerNames(packet.nextSocialProbe, eliminatedNames),
+      uncertainty: this.scrubEliminatedPlayerNames(packet.uncertainty, eliminatedNames),
+      reviseTrigger: this.scrubEliminatedPlayerNames(packet.reviseTrigger, eliminatedNames),
+      changedSincePrevious: this.scrubEliminatedPlayerNames(packet.changedSincePrevious, eliminatedNames),
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -935,6 +1115,11 @@ ${currentCounts}
 
 Your intent should describe who you want to seek, who you want to avoid, what room size fits your plan, what you are trying to learn or set up, and what opening ask you might use if room context allows.
 You may name a provisional target if that fits your read. You may also stay provisional, but explain why you are not naming a target yet.
+Standing target check:
+- A standing target is one living player you are currently pressure-testing as your default threat/read, not a forced vote.
+- If you name provisionalTarget, use exactly one name from Available other players. Never name yourself or anyone listed as eliminated.
+- If your prior Strategy Thread points at an eliminated player or stale target, treat that as evidence to revise: either pick a living replacement to test, or set provisionalTarget to null and explain what living evidence is still missing.
+- It is valid to leave provisionalTarget null when your plan is relationship-building, alliance repair, or broad read gathering. The reason should be concrete.
 Use the form_mingle_intent tool.`;
 
     try {
@@ -947,6 +1132,8 @@ Use the form_mingle_intent tool.`;
         provisionalTarget?: unknown;
         noTargetReason?: unknown;
         openingAsk?: unknown;
+        strategyPacketUse?: unknown;
+        strategyPacketUseRationale?: unknown;
         reasoningContext?: string;
       }>(
         prompt, TOOL_MINGLE_INTENT, 300, sys,
@@ -962,6 +1149,7 @@ Use the form_mingle_intent tool.`;
         openingAsk: normalizeRequiredString(result.openingAsk),
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
+        strategyPacketUse: this.strategyPacketUseMarker(result.strategyPacketUse, result.strategyPacketUseRationale),
       };
     } catch (err) {
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getMingleIntent error="${err instanceof Error ? err.message : err}" fallback=skipped`);
@@ -1006,7 +1194,7 @@ Rooms have no theme and no occupancy cap. You can pile into a crowded room, spli
 Use the choose_mingle_room tool to submit one room number.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; roomId: number; reasoningContext?: string }>(
+      const result = await this.callTool<{ thinking?: string; roomId: number; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown; reasoningContext?: string }>(
         prompt, TOOL_CHOOSE_MINGLE_ROOM, 150, sys,
         { action: "room-choice", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
       );
@@ -1014,6 +1202,7 @@ Use the choose_mingle_room tool to submit one room number.`;
         roomId: Number.isInteger(result.roomId) ? result.roomId : null,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
+        strategyPacketUse: this.strategyPacketUseMarker(result.strategyPacketUse, result.strategyPacketUseRationale),
       };
     } catch (err) {
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=chooseMingleRoom error="${err instanceof Error ? err.message : err}" fallback=missing`);
@@ -1141,6 +1330,8 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
         gotoRoomId?: number | null;
         strategySignal?: string | null;
         movementPurpose?: string | null;
+        strategyPacketUse?: unknown;
+        strategyPacketUseRationale?: unknown;
         reasoningContext?: string;
       }>(
         prompt, TOOL_MINGLE_TURN, 300, sys,
@@ -1156,6 +1347,7 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
         strategySignal: normalizeNullableString(result.strategySignal),
         movementPurpose: normalizeNullableString(result.movementPurpose),
         reasoningContext: result.reasoningContext,
+        strategyPacketUse: this.strategyPacketUseMarker(result.strategyPacketUse, result.strategyPacketUseRationale),
       };
     } catch {
       if (otherRoomMates.length > 0 && history.length === 0) {
@@ -1209,12 +1401,17 @@ Keep it to 1-2 sentences. One sharp claim is better than two weak ones.`;
 
     const response = await this.callLLMWithThinking(prompt, 150, sys, { action: "rumor", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
     // Strip "The shadows whisper: " prefix if the LLM included it
-    return { thinking: response.thinking, message: response.message.replace(/^the\s+shadows?\s+whispers?:\s*/i, ""), reasoningContext: response.reasoningContext };
+    return {
+      thinking: response.thinking,
+      message: response.message.replace(/^the\s+shadows?\s+whispers?:\s*/i, ""),
+      reasoningContext: response.reasoningContext,
+      strategyPacketUse: response.strategyPacketUse,
+    };
   }
 
   async getVotes(
     ctx: PhaseContext,
-  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string }> {
+  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
 
     const randomOther = () => {
@@ -1238,7 +1435,7 @@ Available players: ${others.map((p) => p.name).join(", ")}
 Use the cast_votes tool. Both votes are required. Use player names exactly as listed.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; empower: string; expose: string; reasoningContext?: string }>(
+      const result = await this.callTool<{ thinking?: string; empower: string; expose: string; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown; reasoningContext?: string }>(
         prompt, TOOL_CAST_VOTES, 100, sys,
         { action: "vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
       );
@@ -1273,7 +1470,13 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
       this.memory.roundHistory.push(voteEntry);
       this.persistMemory("vote_history", null, JSON.stringify(voteEntry));
 
-      return { empowerTarget, exposeTarget, thinking: result.thinking, reasoningContext: result.reasoningContext };
+      return {
+        empowerTarget,
+        exposeTarget,
+        thinking: result.thinking,
+        reasoningContext: result.reasoningContext,
+        strategyPacketUse: this.strategyPacketUseMarker(result.strategyPacketUse, result.strategyPacketUseRationale),
+      };
     } catch (err) {
       const empFallback = randomOther();
       const expFallback = randomOther();
@@ -1336,7 +1539,7 @@ Keep it to 1-2 sentences.`;
   async getPowerAction(
     ctx: PhaseContext,
     candidates: [UUID, UUID],
-  ): Promise<PowerAction & { thinking?: string; reasoningContext?: string }> {
+  ): Promise<PowerAction & { thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }> {
     const candidateNames = candidates.map(
       (id) => ctx.alivePlayers.find((p) => p.id === id)?.name ?? id,
     );
@@ -1380,7 +1583,7 @@ Before using the tool, decide what future debt or backlash your action creates. 
 Use the use_power tool to declare your final hidden action.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; action: string; target: string; reasoningContext?: string }>(
+      const result = await this.callTool<{ thinking?: string; action: string; target: string; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown; reasoningContext?: string }>(
         prompt, TOOL_POWER_ACTION, 100, sys,
         { action: "power", reasoningEffort: "medium" },
       );
@@ -1407,6 +1610,7 @@ Use the use_power tool to declare your final hidden action.`;
         target: targetPlayer?.id ?? candidates[0],
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
+        strategyPacketUse: this.strategyPacketUseMarker(result.strategyPacketUse, result.strategyPacketUseRationale),
       };
     } catch {
       return { action: "pass", target: candidates[0], thinking: "fallback to pass under pressure" };
@@ -1416,7 +1620,7 @@ Use the use_power tool to declare your final hidden action.`;
   async getCouncilVote(
     ctx: PhaseContext,
     candidates: [UUID, UUID],
-  ): Promise<{ target: UUID; thinking?: string; reasoningContext?: string }> {
+  ): Promise<{ target: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }> {
     const [c1, c2] = candidates;
     const c1Name = ctx.alivePlayers.find((p) => p.id === c1)?.name ?? c1;
     const c2Name = ctx.alivePlayers.find((p) => p.id === c2)?.name ?? c2;
@@ -1436,17 +1640,18 @@ Who should be eliminated? Consider your alliances, threats, and long-term strate
 Use the council_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; eliminate: string; reasoningContext?: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
+      const result = await this.callTool<{ thinking?: string; eliminate: string; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown; reasoningContext?: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
+      const strategyPacketUse = this.strategyPacketUseMarker(result.strategyPacketUse, result.strategyPacketUseRationale);
       const target = normalizeName(result.eliminate) === normalizeName(c1Name) ? c1
         : normalizeName(result.eliminate) === normalizeName(c2Name) ? c2
         : undefined;
       if (target) {
-        return { target, thinking: result.thinking, reasoningContext: result.reasoningContext };
+        return { target, thinking: result.thinking, reasoningContext: result.reasoningContext, strategyPacketUse };
       }
       const fallback = candidates[Math.floor(Math.random() * 2)]!;
       const fallbackName = ctx.alivePlayers.find((p) => p.id === fallback)?.name ?? fallback;
       console.warn(`[vote-fallback] agent="${this.name}" method=getCouncilVote returned="${result.eliminate}" available=[${c1Name}, ${c2Name}] fallback="${fallbackName}"`);
-      return { target: fallback, thinking: result.thinking, reasoningContext: result.reasoningContext };
+      return { target: fallback, thinking: result.thinking, reasoningContext: result.reasoningContext, strategyPacketUse };
     } catch (err) {
       const fallback = candidates[Math.floor(Math.random() * 2)]!;
       const fallbackName = ctx.alivePlayers.find((p) => p.id === fallback)?.name ?? fallback;
@@ -1848,6 +2053,7 @@ IMPORTANT: Only reference alive players in your messages, votes, and strategies.
 
     const allies = Array.from(this.memory.allies).join(", ") || "none";
     const threats = Array.from(this.memory.threats).join(", ") || "none";
+    const strategyPacket = this.strategyPacketForPrompt(ctx);
 
     let endgameInfo = "";
     if (ctx.endgameStage) {
@@ -1881,6 +2087,7 @@ ${endgameInfo}
 - Known threats: ${threats}
 ${memoryNotes ? `- Notes:\n${memoryNotes}` : ""}
 ${this.memory.roundHistory.length > 0 ? `## Your Vote History\n${this.memory.roundHistory.map((r) => `  R${r.round}: empower=${r.myVotes.empower}, expose=${r.myVotes.expose}${r.empowered ? `, empowered=${r.empowered}` : ""}${r.eliminated ? `, eliminated=${r.eliminated}` : ""}`).join("\n")}` : ""}
+${strategyPacket ? `## Strategy Thread\nThis is your private carry-forward strategy context, not an order. You may follow it, test it, revise it, ignore it, or defer it when current evidence warrants.\n- Revision: ${strategyPacket.revisionId}${strategyPacket.previousRevisionId ? ` (previous ${strategyPacket.previousRevisionId})` : ""}\n- Objective: ${strategyPacket.objective || "stay flexible"}\n- Target posture: ${strategyPacket.targetPosture || "no named target yet"}\n- Coalition posture: ${strategyPacket.coalitionPosture || "keep relationships flexible"}\n- Next social probe: ${strategyPacket.nextSocialProbe || "look for new evidence"}\n- Uncertainty: ${strategyPacket.uncertainty || "none recorded"}\n- Revise if: ${strategyPacket.reviseTrigger || "new evidence contradicts the plan"}\n- Changed since previous: ${strategyPacket.changedSincePrevious || "none recorded"}\nStanding target discipline:\n- A standing target is your current living default pressure/read target. It can be a quiet watch target, a Mingle probe, an expose candidate, or no target yet.\n- Never treat an eliminated player as an active standing target. If the packet names someone marked eliminated, use that as stale history and pivot to a living replacement or explicitly no standing target.\n- Do not force target naming. Soft reads, alliance repair, and information-gathering are valid when the evidence is not there.\nWhen a tool asks for strategyPacketUse, report how this decision used revision ${strategyPacket.revisionId} as self-reported linkage evidence, with a compact rationale tied to current evidence.` : ""}
 ${this.memory.lastReflection ? `## Strategic Assessment\n- Certainties: ${(this.memory.lastReflection.certainties ?? []).join("; ") || "none"}\n- Suspicions: ${(this.memory.lastReflection.suspicions ?? []).join("; ") || "none"}\n- Allies: ${(this.memory.lastReflection.allies ?? []).join("; ") || "none"}\n- Threats: ${(this.memory.lastReflection.threats ?? []).join("; ") || "none"}\n- Plan: ${this.memory.lastReflection.plan ?? "none"}` : ""}
 ## Recent Public Messages
 ${recentMessages || "  (none yet)"}
@@ -1964,8 +2171,9 @@ ${roomSection}
         properties: {
           thinking: { type: "string", description: "Your internal reasoning (hidden from other players, visible to viewers)" },
           message: { type: "string", description: "Your actual message" },
+          ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
         },
-        required: ["thinking", "message"],
+        required: ["thinking", "message", ...STRATEGY_PACKET_USE_REQUIRED],
         additionalProperties: false,
       },
     },
@@ -2122,11 +2330,19 @@ ${roomSection}
 
     for (const candidate of candidates) {
       try {
-        const parsed = JSON.parse(candidate) as { thinking?: unknown; message?: unknown };
+        const parsed = JSON.parse(candidate) as { thinking?: unknown; message?: unknown; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown };
         if (typeof parsed.message === "string" && parsed.message.trim()) {
+          const strategyPacketUse = normalizeStrategyPacketUseValue(parsed.strategyPacketUse);
           return {
             thinking: typeof parsed.thinking === "string" ? parsed.thinking : "",
             message: parsed.message.trim(),
+            ...(strategyPacketUse && {
+              strategyPacketUse: {
+                strategyPacketRevision: "",
+                strategyPacketUse,
+                strategyPacketUseRationale: normalizeNullableString(parsed.strategyPacketUseRationale) ?? "No rationale provided.",
+              },
+            }),
           };
         }
       } catch {
@@ -2229,14 +2445,14 @@ ${roomSection}
           }
           console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned empty local message`);
           if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
-          return {
+          return this.attachStrategyPacketRevision({
             thinking,
             message: "[No response]",
             ...(reasoningContext && { reasoningContext }),
-          };
+          });
         }
 
-        return { thinking, message, ...(reasoningContext && { reasoningContext }) };
+        return this.attachStrategyPacketRevision({ thinking, message, ...(reasoningContext && { reasoningContext }) });
       } catch (error) {
         if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
           throw error;
@@ -2248,12 +2464,12 @@ ${roomSection}
         } else {
           console.error(`[${this.name}] callLLMWithThinking local failed after ${maxAttempts} attempts:`, error);
           if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
-          return { thinking: "", message: "[No response]" };
+          return this.attachStrategyPacketRevision({ thinking: "", message: "[No response]" });
         }
       }
     }
 
-    return { thinking: "", message: "[No response]" };
+    return this.attachStrategyPacketRevision({ thinking: "", message: "[No response]" });
   }
 
   private async callToolJsonFallback<T>(
@@ -2463,17 +2679,17 @@ ${JSON.stringify(tool.function.parameters)}`,
         if (!content) {
           console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned empty content`);
           if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
-          return { thinking: "", message: "[No response]" };
+          return this.attachStrategyPacketRevision({ thinking: "", message: "[No response]" });
         }
 
         const parsed = InfluenceAgent.parseAgentResponseContent(content);
         if (parsed) {
-          return parsed;
+          return this.attachStrategyPacketRevision(parsed);
         }
 
         // Fallback: treat entire content as message (model didn't return valid JSON)
         console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned non-JSON, treating as plain message`);
-        return { thinking: "", message: content };
+        return this.attachStrategyPacketRevision({ thinking: "", message: content });
       } catch (error) {
         if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
           throw error;
@@ -2485,12 +2701,12 @@ ${JSON.stringify(tool.function.parameters)}`,
         } else {
           console.error(`[${this.name}] callLLMWithThinking failed after ${maxAttempts} attempts:`, error);
           if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
-          return { thinking: "", message: "[No response]" };
+          return this.attachStrategyPacketRevision({ thinking: "", message: "[No response]" });
         }
       }
     }
 
-    return { thinking: "", message: "[No response]" };
+    return this.attachStrategyPacketRevision({ thinking: "", message: "[No response]" });
   }
 
   /**
@@ -2659,7 +2875,12 @@ ${JSON.stringify(tool.function.parameters)}`,
 Based on everything you know so far, produce a strategic assessment.
 Use the strategic_reflection tool to record your analysis.
 
-Be specific — name players, cite events, reference conversations.`;
+Be specific — name players, cite events, reference conversations.
+
+For strategyPacket.targetPosture, choose a standing target posture:
+- If you have enough evidence, name one living player as the current default pressure/read target and say how hard the pressure should be.
+- If you do not have enough evidence, explicitly say there is no standing target yet and name what evidence would change that.
+- If a prior target is now eliminated, do not carry them as active. Note the pivot in changedSincePrevious and choose a living replacement only if the current evidence supports one.`;
 
     try {
       const reflection = await this.callTool<{
@@ -2669,6 +2890,7 @@ Be specific — name players, cite events, reference conversations.`;
         allies?: unknown;
         threats?: unknown;
         plan?: unknown;
+        strategyPacket?: unknown;
         reasoningContext?: string;
       }>(
         prompt, TOOL_STRATEGIC_REFLECTION, 300, sys,
@@ -2683,8 +2905,21 @@ Be specific — name players, cite events, reference conversations.`;
         thinking: reflection.thinking,
         reasoningContext: reflection.reasoningContext,
       };
+      const strategyPacket = this.applyStrategyPacketUpdate(
+        ctx,
+        normalizeStrategyPacketUpdate(reflection.strategyPacket),
+      );
+      if (strategyPacket) {
+        normalized.strategyPacket = strategyPacket;
+      }
       const { thinking: _thinking, reasoningContext: _reasoningContext, ...reflectionSummary } = normalized;
-      this.memory.lastReflection = reflectionSummary;
+      this.memory.lastReflection = {
+        certainties: reflectionSummary.certainties,
+        suspicions: reflectionSummary.suspicions,
+        allies: reflectionSummary.allies,
+        threats: reflectionSummary.threats,
+        plan: reflectionSummary.plan,
+      };
       this.persistMemory("reflection", null, JSON.stringify({
         certainties: normalized.certainties,
         suspicions: normalized.suspicions,
@@ -2724,6 +2959,18 @@ Be specific — name players, cite events, reference conversations.`;
     this.memory.allies.delete(playerName);
     this.memory.threats.delete(playerName);
     this.memory.notes.delete(playerName);
+    if (this.memory.strategyPacket) {
+      this.memory.strategyPacket = {
+        ...this.memory.strategyPacket,
+        objective: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.objective, [playerName]),
+        targetPosture: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.targetPosture, [playerName]),
+        coalitionPosture: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.coalitionPosture, [playerName]),
+        nextSocialProbe: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.nextSocialProbe, [playerName]),
+        uncertainty: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.uncertainty, [playerName]),
+        reviseTrigger: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.reviseTrigger, [playerName]),
+        changedSincePrevious: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.changedSincePrevious, [playerName]),
+      };
+    }
   }
 
   private persistMemory(type: "ally" | "threat" | "note" | "vote_history" | "reflection", subject: string | null, content: string): void {

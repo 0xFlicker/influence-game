@@ -22,6 +22,14 @@ A private-room behavior during Mingle that reveals or advances game posture, suc
 
 A structured producer/debug artifact for an agent's hidden strategic assessment after a decision phase. It should expose the agent's current certainties, suspicions, allies, threats, and plan, plus hidden reasoning metadata when available, so simulations and the game MCP can validate whether Mingle changed broader strategy. It is not player-visible dialogue.
 
+## Strategy Thread / Carry-Forward Packet
+
+A compact private strategy state an agent carries across rounds inside a live game run. It summarizes the agent's current objective, target posture, coalition posture, next intended social probe, important uncertainty, abandon-or-revise trigger, and revision metadata so later prompts can show continuity without forcing target naming or overt game talk. It is live-agent producer/debug state, not player-visible dialogue, canonical board state, or crash-safe `MemoryStore` data.
+
+## Strategy packet-use marker
+
+A private producer/debug marker on later agent decision records that says how the current decision used the live Strategy Thread revision: `followed`, `revised`, `ignored`, or `deferred`. It is self-reported linkage evidence for simulation and MCP validation, not a scoring system and not a requirement that agents obey the packet.
+
 ## Whisper
 
 Legacy vocabulary for the old private-message/private-room phase and for historical records created before the Mingle cutover. Whisper may remain in old specs, fixtures, exports, or persisted rows, but it is not the current game-state concept.

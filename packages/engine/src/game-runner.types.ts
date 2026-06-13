@@ -51,6 +51,43 @@ export interface AgentResponse {
    * Captured alongside `thinking` for richer simulation traces.
    */
   reasoningContext?: string;
+  /** Private producer/debug linkage describing how the current strategy packet informed this response. */
+  strategyPacketUse?: StrategyPacketUseMarker;
+}
+
+export type StrategyPacketUse = "followed" | "revised" | "ignored" | "deferred";
+
+export interface StrategyPacketUseMarker {
+  /** Revision ID of the live strategy packet that was visible in the prompt. */
+  strategyPacketRevision: string;
+  /** Self-reported linkage evidence from the same decision call. */
+  strategyPacketUse: StrategyPacketUse;
+  /** Compact rationale tied to the current evidence and decision. */
+  strategyPacketUseRationale: string;
+}
+
+export interface StrategyPacketSummary {
+  revisionId: string;
+  previousRevisionId: string | null;
+  updatedAtRound: number;
+  updatedAtPhase: Phase;
+  objective: string;
+  targetPosture: string;
+  coalitionPosture: string;
+  nextSocialProbe: string;
+  uncertainty: string;
+  reviseTrigger: string;
+  changedSincePrevious: string;
+}
+
+export interface StrategyPacketUpdateAction {
+  objective: string;
+  targetPosture: string;
+  coalitionPosture: string;
+  nextSocialProbe: string;
+  uncertainty: string;
+  reviseTrigger: string;
+  changedSincePrevious: string;
 }
 
 export interface MingleTurnAction {
@@ -68,6 +105,8 @@ export interface MingleTurnAction {
   movementPurpose?: string | null;
   /** Raw model reasoning context from local LLM */
   reasoningContext?: string;
+  /** Private producer/debug linkage to the current strategy packet, if one was present. */
+  strategyPacketUse?: StrategyPacketUseMarker;
 }
 
 export interface MingleRoomChoiceAction {
@@ -77,6 +116,8 @@ export interface MingleRoomChoiceAction {
   thinking?: string;
   /** Raw model reasoning context from local LLM */
   reasoningContext?: string;
+  /** Private producer/debug linkage to the current strategy packet, if one was present. */
+  strategyPacketUse?: StrategyPacketUseMarker;
 }
 
 export interface MingleIntentAction extends MingleIntentSummaryBase {
@@ -84,6 +125,8 @@ export interface MingleIntentAction extends MingleIntentSummaryBase {
   thinking?: string;
   /** Raw model reasoning context from local LLM */
   reasoningContext?: string;
+  /** Private producer/debug linkage to the current strategy packet, if one was present. */
+  strategyPacketUse?: StrategyPacketUseMarker;
 }
 
 export interface StrategicReflectionAction {
@@ -96,14 +139,17 @@ export interface StrategicReflectionAction {
   thinking?: string;
   /** Raw model reasoning context from local LLM */
   reasoningContext?: string;
+  /** New strategy packet revision carried forward from this reflection, if one was produced. */
+  strategyPacket?: StrategyPacketSummary | null;
 }
 
-export type StrategicReflectionSummary = Omit<StrategicReflectionAction, "thinking" | "reasoningContext">;
+export type StrategicReflectionSummary = Pick<StrategicReflectionAction, "certainties" | "suspicions" | "allies" | "threats" | "plan">;
 
 export interface TargetDecision {
   target: UUID;
   thinking?: string;
   reasoningContext?: string;
+  strategyPacketUse?: StrategyPacketUseMarker;
 }
 
 export type AgentTurnVisibility = "public" | "private" | "anonymous" | "diary" | "system";
@@ -175,7 +221,7 @@ export interface IAgent {
   /** Called to collect votes */
   getVotes(
     context: PhaseContext,
-  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string }>;
+  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }>;
   /** Called during the optional post-vote Power Lobby experiment before the empowered action */
   getPowerLobbyMessage?(
     context: PhaseContext,
@@ -186,12 +232,12 @@ export interface IAgent {
   getPowerAction(
     context: PhaseContext,
     candidates: [UUID, UUID],
-  ): Promise<PowerAction & { thinking?: string; reasoningContext?: string }>;
+  ): Promise<PowerAction & { thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }>;
   /** Called for council vote (empowered agent also votes as tiebreaker) */
   getCouncilVote(
     context: PhaseContext,
     candidates: [UUID, UUID],
-  ): Promise<{ target: UUID; thinking?: string; reasoningContext?: string }>;
+  ): Promise<{ target: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }>;
   /** Called when the agent is about to be eliminated */
   getLastMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called for diary room interviews — the House asks a question, agent responds */
@@ -220,6 +266,8 @@ export interface IAgent {
   // --- Strategic reflection (called after diary room) ---
   /** Produce a strategic reflection after diary room interview */
   getStrategicReflection(context: PhaseContext): Promise<StrategicReflectionAction | null | void>;
+  /** Return the live private strategy packet for this game run, if one exists. */
+  getStrategyPacket?(): StrategyPacketSummary | null;
 
   // --- Memory updates (called by GameRunner after phase events) ---
   /** Record a player as an ally */

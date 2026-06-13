@@ -1563,6 +1563,8 @@ describe("Diary Room - interview mechanics", () => {
     ];
 
     const runner = new GameRunner(agents, TEST_CONFIG);
+    const events: GameStreamEvent[] = [];
+    runner.setStreamListener((event) => events.push(event));
     await runner.run();
 
     const diaryLog = runner.diaryLog;
@@ -1582,9 +1584,17 @@ describe("Diary Room - interview mechanics", () => {
     const transcript = runner.transcriptLog;
     const entriesWithThinking = transcript.filter((e) => e.thinking && e.thinking.length > 0);
     expect(entriesWithThinking.length).toBeGreaterThan(0);
-    // Lobby messages should have thinking attached
-    const lobbyThinking = entriesWithThinking.filter((e) => e.phase === Phase.LOBBY);
-    expect(lobbyThinking.length).toBeGreaterThan(0);
+    // Once Strategy Thread packets exist, public transcript entries stay clean while agent_turn keeps debug reasoning.
+    const lobbyTranscriptEntries = transcript.filter((e) => e.phase === Phase.LOBBY && e.scope === "public");
+    expect(lobbyTranscriptEntries.length).toBeGreaterThan(0);
+    expect(lobbyTranscriptEntries.every((e) => !e.thinking && !e.reasoningContext)).toBe(true);
+    const lobbyTurnsWithThinking = events.filter((event) =>
+      event.type === "agent_turn"
+      && event.action === "lobby-message"
+      && typeof event.thinking === "string"
+      && event.thinking.length > 0
+    );
+    expect(lobbyTurnsWithThinking.length).toBeGreaterThan(0);
   });
 
   it("diary entries contain contextual House questions", async () => {

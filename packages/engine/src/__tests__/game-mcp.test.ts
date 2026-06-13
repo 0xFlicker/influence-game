@@ -217,6 +217,51 @@ describe("game MCP corpus read model", () => {
           },
           thinking: "Atlas updates his private map after the vote.",
         },
+        {
+          sequence: 3,
+          type: "agent_turn",
+          action: "strategy-packet",
+          round: 1,
+          phase: Phase.VOTE,
+          actor: { id: "atlas", name: "Atlas" },
+          visibility: "private",
+          response: {
+            reflectedPhase: Phase.VOTE,
+            strategyPacket: {
+              revisionId: "r1-vote-1",
+              previousRevisionId: null,
+              updatedAtRound: 1,
+              updatedAtPhase: Phase.VOTE,
+              objective: "Keep Mira close and test Vera next.",
+              targetPosture: "Vera is a provisional pressure target.",
+              coalitionPosture: "Mira is a working ally.",
+              nextSocialProbe: "Ask Finn whether Vera dodged vote talk.",
+              uncertainty: "Finn may be feeding Vera information.",
+              reviseTrigger: "Revise if Finn confirms Vera was direct.",
+              changedSincePrevious: "initial packet",
+            },
+          },
+          thinking: "Atlas condenses the reflection into carry-forward strategy.",
+        },
+        {
+          sequence: 4,
+          type: "agent_turn",
+          action: "vote",
+          round: 2,
+          phase: Phase.VOTE,
+          actor: { id: "atlas", name: "Atlas" },
+          visibility: "private",
+          response: {
+            empowerTarget: { id: "mira", name: "Mira" },
+            exposeTarget: { id: "vera", name: "Vera" },
+            strategyPacketUse: {
+              strategyPacketRevision: "r1-vote-1",
+              strategyPacketUse: "followed",
+              strategyPacketUseRationale: "Atlas kept Mira close and pressured Vera.",
+            },
+          },
+          thinking: "Atlas follows the packet unless Finn contradicts it.",
+        },
       ].map((record) => JSON.stringify(record)).join("\n") + "\n",
     );
     const readModel = new GameMcpReadModel(corpusDir);
@@ -229,6 +274,18 @@ describe("game MCP corpus read model", () => {
     });
     const reflectionResults = readModel.searchLogs({
       query: "strategic-reflection",
+      sessionId: "batch-strategy-validation",
+      gameNumber: 1,
+      sources: ["turns"],
+    });
+    const packetResults = readModel.searchLogs({
+      query: "strategy-packet",
+      sessionId: "batch-strategy-validation",
+      gameNumber: 1,
+      sources: ["turns"],
+    });
+    const markerResults = readModel.searchLogs({
+      query: "r1-vote-1",
       sessionId: "batch-strategy-validation",
       gameNumber: 1,
       sources: ["turns"],
@@ -254,6 +311,32 @@ describe("game MCP corpus read model", () => {
         response: {
           reflectedPhase: Phase.VOTE,
           plan: "Keep Mira close and test Finn next.",
+        },
+      },
+    });
+    expect(packetResults).toHaveLength(1);
+    expect(packetResults[0]).toMatchObject({
+      citation: { sourceKind: "turns", line: 3 },
+      record: {
+        action: "strategy-packet",
+        response: {
+          strategyPacket: {
+            revisionId: "r1-vote-1",
+            objective: "Keep Mira close and test Vera next.",
+          },
+        },
+      },
+    });
+    expect(markerResults.map((result) => result.citation.line).sort()).toEqual([3, 4]);
+    expect(markerResults[1]).toMatchObject({
+      citation: { sourceKind: "turns", line: 4 },
+      record: {
+        action: "vote",
+        response: {
+          strategyPacketUse: {
+            strategyPacketRevision: "r1-vote-1",
+            strategyPacketUse: "followed",
+          },
         },
       },
     });

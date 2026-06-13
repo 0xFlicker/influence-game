@@ -1,5 +1,5 @@
 import { Phase } from "../types";
-import { agentTurnSourcePointer, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import { agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import { getCouncilVoterNames, getExposeVoterNames, handleElimination } from "./elimination";
 
 export async function runRevealPhase(
@@ -59,11 +59,12 @@ export async function runCouncilPhase(
       const votedAgainstName = gameState.getPlayerName(vote);
       agent.addNote(votedAgainstName, `Voted against in council R${gameState.round}`);
 
+      const transcriptThinking = transcriptThinkingFor(agent, voteResult.thinking, voteResult.reasoningContext);
       logger.logSystem(
         `${player.name} council vote -> ${votedAgainstName}`,
         Phase.COUNCIL,
-        voteResult.thinking,
-        voteResult.reasoningContext,
+        transcriptThinking.thinking,
+        transcriptThinking.reasoningContext,
       );
       logger.emitAgentTurn({
         phase: Phase.COUNCIL,
@@ -73,6 +74,7 @@ export async function runCouncilPhase(
         response: {
           target: { id: vote, name: votedAgainstName },
           candidates: candidates.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+          ...strategyPacketUseResponse(voteResult.strategyPacketUse),
         },
         thinking: voteResult.thinking,
         reasoningContext: voteResult.reasoningContext,

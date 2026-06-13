@@ -133,6 +133,33 @@ describe("WebSocket Manager", () => {
     expect(parsed.entry.text).toBe("Hello everyone!");
   });
 
+  test("broadcastGameEvent strips hidden thinking from transcript entries", () => {
+    const { server, published } = createMockServer();
+    setServer(server);
+
+    const event: GameStreamEvent = {
+      type: "transcript_entry",
+      entry: {
+        round: 1,
+        phase: Phase.MINGLE,
+        timestamp: Date.now(),
+        from: "Alice",
+        scope: "mingle",
+        text: "Let's compare notes.",
+        thinking: "Private strategy packet reasoning.",
+        reasoningContext: "Native hidden reasoning context.",
+      },
+    };
+
+    broadcastGameEvent("game-private", event);
+
+    const parsed = JSON.parse(published[0]!.data);
+    expect(parsed.type).toBe("message");
+    expect(parsed.entry.text).toBe("Let's compare notes.");
+    expect(parsed.entry.thinking).toBeUndefined();
+    expect(parsed.entry.reasoningContext).toBeUndefined();
+  });
+
   test("broadcastGameEvent preserves room metadata on transcript entries", () => {
     const { server, published } = createMockServer();
     setServer(server);
@@ -270,6 +297,8 @@ describe("WebSocket Manager", () => {
           from: "Alice",
           scope: "public",
           text: "Hello!",
+          thinking: "Hidden snapshot thinking.",
+          reasoningContext: "Hidden snapshot reasoning.",
         },
       ],
     };
@@ -283,6 +312,8 @@ describe("WebSocket Manager", () => {
     expect(parsed.snapshot.alivePlayers).toHaveLength(2);
     expect(parsed.snapshot.eliminatedPlayers).toHaveLength(1);
     expect(parsed.snapshot.transcript).toHaveLength(1);
+    expect(parsed.snapshot.transcript[0].thinking).toBeUndefined();
+    expect(parsed.snapshot.transcript[0].reasoningContext).toBeUndefined();
   });
 
   test("broadcastGameEvent does nothing without server", () => {

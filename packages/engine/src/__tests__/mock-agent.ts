@@ -3,7 +3,7 @@
  * Uses simple scripted strategies to validate game mechanics.
  */
 
-import type { AgentResponse, IAgent, MingleIntentAction, MingleRoomChoiceAction, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicReflectionAction, TargetDecision } from "../game-runner";
+import type { AgentResponse, IAgent, MingleIntentAction, MingleRoomChoiceAction, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicReflectionAction, StrategyPacketSummary, StrategyPacketUseMarker, TargetDecision } from "../game-runner";
 import type { UUID, PowerAction } from "../types";
 
 /** Assert a value is defined — throws in tests if assumption is violated */
@@ -20,6 +20,7 @@ function respond(message: string, thinking = "", reasoningContext?: string): Age
 export class MockAgent implements IAgent {
   readonly id: UUID;
   readonly name: string;
+  private strategyPacket: StrategyPacketSummary | null = null;
 
   /** Optional override for endgame elimination vote target */
   eliminationTarget?: UUID;
@@ -36,6 +37,19 @@ export class MockAgent implements IAgent {
   onGameStart(_gameId: UUID, _allPlayers: Array<{ id: UUID; name: string }>): void {}
 
   async onPhaseStart(_ctx: PhaseContext): Promise<void> {}
+
+  getStrategyPacket(): StrategyPacketSummary | null {
+    return this.strategyPacket;
+  }
+
+  private strategyPacketUse(use: StrategyPacketUseMarker["strategyPacketUse"] = "followed"): StrategyPacketUseMarker | undefined {
+    if (!this.strategyPacket) return undefined;
+    return {
+      strategyPacketRevision: this.strategyPacket.revisionId,
+      strategyPacketUse: use,
+      strategyPacketUseRationale: "mock: use current strategy packet",
+    };
+  }
 
   async getIntroduction(_ctx: PhaseContext): Promise<AgentResponse> {
     return respond(`Hello, I'm ${this.name}. I'm here to play strategically and win!`, `Introducing myself as ${this.name}`);
@@ -74,6 +88,7 @@ export class MockAgent implements IAgent {
       roomId: (myIndex % roomCount) + 1,
       thinking: `Choosing room based on player index ${myIndex}`,
       reasoningContext: undefined,
+      strategyPacketUse: this.strategyPacketUse("deferred"),
     };
   }
 
@@ -91,6 +106,7 @@ export class MockAgent implements IAgent {
       openingAsk: first ? `Ask ${first} who feels too comfortable.` : "Ask whoever arrives what they noticed.",
       thinking: "mock: form hidden Mingle intent",
       reasoningContext: undefined,
+      strategyPacketUse: this.strategyPacketUse("followed"),
     };
   }
 
@@ -109,8 +125,8 @@ export class MockAgent implements IAgent {
   async takeMingleTurn(ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<MingleTurnAction> {
     const response = await this.sendRoomMessage(ctx, roomMates, conversationHistory);
     return response
-      ? { ...response, noReply: false, gotoRoomId: null }
-      : { thinking: "", message: null, noReply: true, gotoRoomId: null };
+      ? { ...response, noReply: false, gotoRoomId: null, strategyPacketUse: this.strategyPacketUse("followed") }
+      : { thinking: "", message: null, noReply: true, gotoRoomId: null, strategyPacketUse: this.strategyPacketUse("deferred") };
   }
 
   async getRumorMessage(ctx: PhaseContext): Promise<AgentResponse> {
@@ -122,7 +138,7 @@ export class MockAgent implements IAgent {
 
   async getVotes(
     ctx: PhaseContext,
-  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string }> {
+  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
     if (others.length === 0) {
       return { empowerTarget: this.id, exposeTarget: this.id, thinking: "No one else left", reasoningContext: undefined };
@@ -131,7 +147,7 @@ export class MockAgent implements IAgent {
     // Always empower the first other player, expose the last
     const empowerTarget = defined(others[0], "Expected at least one other player to empower").id;
     const exposeTarget = defined(others[others.length - 1], "Expected at least one other player to expose").id;
-    return { empowerTarget, exposeTarget, thinking: `Empower ally, expose threat`, reasoningContext: undefined };
+    return { empowerTarget, exposeTarget, thinking: `Empower ally, expose threat`, reasoningContext: undefined, strategyPacketUse: this.strategyPacketUse("followed") };
   }
 
   async getPowerLobbyMessage(
@@ -154,14 +170,14 @@ export class MockAgent implements IAgent {
   async getPowerAction(
     ctx: PhaseContext,
     candidates: [UUID, UUID],
-  ): Promise<PowerAction & { thinking?: string; reasoningContext?: string }> {
+  ): Promise<PowerAction & { thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }> {
     // Always pass to council (simplest action)
-    return { action: "pass", target: candidates[0], thinking: "mock: pass to let council expose the field", reasoningContext: undefined };
+    return { action: "pass", target: candidates[0], thinking: "mock: pass to let council expose the field", reasoningContext: undefined, strategyPacketUse: this.strategyPacketUse("deferred") };
   }
 
-  async getCouncilVote(ctx: PhaseContext, candidates: [UUID, UUID]): Promise<{ target: UUID; thinking?: string; reasoningContext?: string }> {
+  async getCouncilVote(ctx: PhaseContext, candidates: [UUID, UUID]): Promise<{ target: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }> {
     // Always vote for the first candidate
-    return { target: candidates[0], thinking: "mock: vote first candidate for council", reasoningContext: undefined };
+    return { target: candidates[0], thinking: "mock: vote first candidate for council", reasoningContext: undefined, strategyPacketUse: this.strategyPacketUse("followed") };
   }
 
   async getLastMessage(_ctx: PhaseContext): Promise<AgentResponse> {
@@ -267,6 +283,19 @@ export class MockAgent implements IAgent {
   }
 
   async getStrategicReflection(_ctx: PhaseContext): Promise<StrategicReflectionAction> {
+    this.strategyPacket = {
+      revisionId: "mock-r1",
+      previousRevisionId: null,
+      updatedAtRound: _ctx.round,
+      updatedAtPhase: _ctx.phase,
+      objective: "mock: survive while gathering information",
+      targetPosture: "mock: no named target yet",
+      coalitionPosture: "mock: keep first ally close",
+      nextSocialProbe: "mock: ask who feels too comfortable",
+      uncertainty: "mock: unclear who is coordinating",
+      reviseTrigger: "mock: revise if votes contradict room talk",
+      changedSincePrevious: "initial packet",
+    };
     return {
       certainties: [`${this.name} is still alive`],
       suspicions: [],
@@ -275,6 +304,7 @@ export class MockAgent implements IAgent {
       plan: "mock: keep gathering information",
       thinking: "mock: reflect on current strategy",
       reasoningContext: undefined,
+      strategyPacket: this.strategyPacket,
     };
   }
 

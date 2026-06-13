@@ -31,8 +31,10 @@
  * `game-{N}.txt` output.
  *
  * Hidden `mingle-intent` records are always written to `game-{N}-turns.jsonl`.
- * Hidden `strategic-reflection` records are written there when
- * `--strategic-reflections` is enabled for validation runs.
+ * Hidden `strategic-reflection` and `strategy-packet` records are written there
+ * when `--strategic-reflections` is enabled for validation runs. Later private
+ * decisions may include `strategyPacketUse` markers linking back to a packet
+ * revision as self-reported follow/revise/ignore/defer evidence.
  */
 
 import type OpenAI from "openai";

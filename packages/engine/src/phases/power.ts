@@ -1,7 +1,7 @@
 import type { UUID, PowerAction } from "../types";
 import { Phase } from "../types";
 import type { PowerLobbyExposure } from "../game-runner.types";
-import { agentTurnSourcePointer, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import { agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import { getExposeVoterNames, handleElimination } from "./elimination";
 
 function buildExposePressure(
@@ -45,12 +45,13 @@ async function runPowerLobbyMessages(
         empoweredId,
         councilCandidates: provisionalCandidates,
       });
-      const { message, thinking, reasoningContext } = await agent.getPowerLobbyMessage(
+      const { message, thinking, reasoningContext, strategyPacketUse } = await agent.getPowerLobbyMessage(
         phaseCtx,
         provisionalCandidates,
         exposePressure,
       );
-      logger.logPublic(player.id, message, Phase.POWER, { thinking, reasoningContext });
+      const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
+      logger.logPublic(player.id, message, Phase.POWER, transcriptThinking);
       logger.emitAgentTurn({
         phase: Phase.POWER,
         action: "power-lobby-message",
@@ -60,6 +61,7 @@ async function runPowerLobbyMessages(
           message,
           empowered: { id: empoweredId, name: gameState.getPlayerName(empoweredId) },
           provisionalCandidates: provisionalCandidates.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+          ...strategyPacketUseResponse(strategyPacketUse),
         },
         thinking,
         reasoningContext,
@@ -116,11 +118,12 @@ export async function runPowerPhase(
   gameState.setPowerAction(powerAction, [
     agentTurnSourcePointer(empoweredId, "power-action", gameState.round, Phase.POWER),
   ]);
+  const transcriptThinking = transcriptThinkingFor(empoweredAgent, powerActionResult.thinking, powerActionResult.reasoningContext);
   logger.logSystem(
     `${gameState.getPlayerName(empoweredId)} power action: ${powerAction.action} -> ${gameState.getPlayerName(powerAction.target)}`,
     Phase.POWER,
-    powerActionResult.thinking,
-    powerActionResult.reasoningContext,
+    transcriptThinking.thinking,
+    transcriptThinking.reasoningContext,
   );
   logger.emitAgentTurn({
     phase: Phase.POWER,
@@ -131,6 +134,7 @@ export async function runPowerPhase(
       action: powerAction.action,
       target: { id: powerAction.target, name: gameState.getPlayerName(powerAction.target) },
       candidates: prelim.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+      ...strategyPacketUseResponse(powerActionResult.strategyPacketUse),
     },
     thinking: powerActionResult.thinking,
     reasoningContext: powerActionResult.reasoningContext,

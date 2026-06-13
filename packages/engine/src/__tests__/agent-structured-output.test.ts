@@ -84,6 +84,45 @@ function makeToolOpenAIStub(
   } as unknown as OpenAI;
 }
 
+function makeToolSequenceOpenAIStub(
+  requests: Array<Record<string, unknown>>,
+  responses: Array<{ toolName: string; args: Record<string, unknown>; reasoningContent?: string }>,
+): OpenAI {
+  return {
+    chat: {
+      completions: {
+        create: async (params: Record<string, unknown>) => {
+          requests.push(params);
+          const response = responses[Math.min(requests.length - 1, responses.length - 1)];
+          if (!response) throw new Error("No tool response configured");
+          return {
+            choices: [
+              {
+                finish_reason: "tool_calls",
+                message: {
+                  role: "assistant",
+                  content: null,
+                  ...(response.reasoningContent !== undefined && { reasoning_content: response.reasoningContent }),
+                  tool_calls: [
+                    {
+                      id: `call-${requests.length}`,
+                      type: "function",
+                      function: {
+                        name: response.toolName,
+                        arguments: JSON.stringify(response.args),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          };
+        },
+      },
+    },
+  } as unknown as OpenAI;
+}
+
 function makeTextOpenAIStub(
   requests: Array<Record<string, unknown>>,
   content: string,
@@ -377,6 +416,13 @@ describe("InfluenceAgent structured output mode", () => {
       thinking: "Mira is useful to compare notes with, while Vera is too slippery to trust yet.",
       reasoningContext: "Hidden local reasoning for the Mingle intent.",
     });
+
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.at(-1)!.content;
+    expect(prompt).toContain("Standing target check:");
+    expect(prompt).toContain("one living player");
+    expect(prompt).toContain("Never name yourself or anyone listed as eliminated.");
+    expect(prompt).toContain("It is valid to leave provisionalTarget null");
   });
 
   it("uses hidden Mingle intent in turn prompts without requiring target naming", async () => {
@@ -479,6 +525,155 @@ describe("InfluenceAgent structured output mode", () => {
       thinking: "Mira is a likely ally and Vera remains the most plausible threat.",
       reasoningContext: "Hidden local reasoning for the strategic reflection.",
     });
+  });
+
+  it("stores Strategy Thread packets from reflection and marks later decision use", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolSequenceOpenAIStub(requests, [
+        {
+          toolName: "strategic_reflection",
+          args: {
+            thinking: "Mira is useful cover and Vera is still the pressure point.",
+            certainties: ["Mira protected Atlas in the last vote"],
+            suspicions: ["Vera avoided making a clear commitment"],
+            allies: ["Mira"],
+            threats: ["Vera"],
+            plan: "Keep Mira close and test whether Vera is coordinating.",
+            strategyPacket: {
+              objective: "Keep Mira close while testing Vera's social cover.",
+              targetPosture: "Pressure Vera only if she dodges the next probe.",
+              coalitionPosture: "Treat Mira as a working ally, not a final commitment.",
+              nextSocialProbe: "Ask Mira whether Vera's warmth feels rehearsed.",
+              uncertainty: "Mira may be shielding Vera instead of helping Atlas.",
+              reviseTrigger: "Revise if Mira refuses to compare Vera reads.",
+              changedSincePrevious: "initial packet",
+            },
+          },
+          reasoningContent: "Hidden reflection reasoning.",
+        },
+        {
+          toolName: "cast_votes",
+          args: {
+            thinking: "The packet still fits: reward Mira and pressure Vera.",
+            empower: "Mira",
+            expose: "Vera",
+            strategyPacketUse: "followed",
+            strategyPacketUseRationale: "The vote keeps Mira close and applies pressure to Vera.",
+          },
+          reasoningContent: "Hidden vote reasoning.",
+        },
+      ]),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const reflection = await agent.getStrategicReflection(makeContext(Phase.VOTE));
+    const strategyPacket = reflection?.strategyPacket ?? null;
+    expect(strategyPacket).toMatchObject({
+      revisionId: "r1-vote-1",
+      objective: "Keep Mira close while testing Vera's social cover.",
+      targetPosture: "Pressure Vera only if she dodges the next probe.",
+    });
+    expect(agent.getStrategyPacket()).toEqual(strategyPacket);
+
+    const reflectionMessages = requests[0]?.messages as Array<{ content: string }>;
+    const reflectionPrompt = reflectionMessages.at(-1)!.content;
+    expect(reflectionPrompt).toContain("For strategyPacket.targetPosture, choose a standing target posture:");
+    expect(reflectionPrompt).toContain("name one living player");
+    expect(reflectionPrompt).toContain("If a prior target is now eliminated, do not carry them as active.");
+
+    const vote = await agent.getVotes(makeContext(Phase.VOTE));
+
+    expect(vote).toMatchObject({
+      empowerTarget: "mira-id",
+      exposeTarget: "vera-id",
+      strategyPacketUse: {
+        strategyPacketRevision: "r1-vote-1",
+        strategyPacketUse: "followed",
+        strategyPacketUseRationale: "The vote keeps Mira close and applies pressure to Vera.",
+      },
+      reasoningContext: "Hidden vote reasoning.",
+    });
+
+    const voteMessages = requests[1]?.messages as Array<{ content: string }>;
+    const votePrompt = voteMessages.at(-1)!.content;
+    expect(votePrompt).toContain("## Strategy Thread");
+    expect(votePrompt).toContain("- Revision: r1-vote-1");
+    expect(votePrompt).toContain("Keep Mira close while testing Vera's social cover.");
+    expect(votePrompt).toContain("Standing target discipline:");
+    expect(votePrompt).toContain("Never treat an eliminated player as an active standing target.");
+    expect(votePrompt).toContain("self-reported linkage evidence");
+    expect(votePrompt).not.toContain("You must follow");
+  });
+
+  it("marks eliminated players as stale when rendering Strategy Thread prompts", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolSequenceOpenAIStub(requests, [
+        {
+          toolName: "strategic_reflection",
+          args: {
+            thinking: "Mira looked like the likely target, but that may change.",
+            certainties: [],
+            suspicions: ["Mira is coordinating votes"],
+            allies: [],
+            threats: ["Mira"],
+            plan: "Pressure Mira unless the field changes.",
+            strategyPacket: {
+              objective: "Push Mira into the open before the next vote.",
+              targetPosture: "Mira is the working target.",
+              coalitionPosture: "Keep Vera flexible until Mira is exposed.",
+              nextSocialProbe: "Ask Vera whether Mira promised her safety.",
+              uncertainty: "Mira may already have lost enough social cover.",
+              reviseTrigger: "Revise if Mira leaves the game.",
+              changedSincePrevious: "initial packet",
+            },
+          },
+        },
+        {
+          toolName: "cast_votes",
+          args: {
+            thinking: "Mira is gone, so choose from the live field.",
+            empower: "Vera",
+            expose: "Vera",
+            strategyPacketUse: "revised",
+            strategyPacketUseRationale: "Mira left the game, so the packet can only guide a pivot.",
+          },
+        },
+      ]),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getStrategicReflection(makeContext(Phase.VOTE));
+    agent.removeFromMemory("Mira");
+    await agent.getVotes({
+      ...makeContext(Phase.VOTE),
+      alivePlayers: [
+        { id: "atlas-id", name: "Atlas" },
+        { id: "vera-id", name: "Vera" },
+      ],
+    });
+
+    const voteMessages = requests[1]?.messages as Array<{ content: string }>;
+    const votePrompt = voteMessages.at(-1)!.content;
+    expect(votePrompt).toContain("Mira (eliminated; not an active target)");
+    expect(votePrompt.match(/Mira \(eliminated; not an active target\)/g)).toHaveLength(6);
+    expect(votePrompt).not.toContain("Mira (eliminated; not an active target) (eliminated; not an active target)");
+    expect(votePrompt).toContain("If the packet names someone marked eliminated, use that as stale history and pivot to a living replacement or explicitly no standing target.");
   });
 
   it("preserves thinking and native reasoning for endgame elimination votes", async () => {
