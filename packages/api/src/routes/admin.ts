@@ -25,6 +25,7 @@ import {
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { generateInviteCode } from "../lib/invite-codes.js";
 import { getRedactedKernelHealthByGameId } from "../services/game-kernel-health.js";
+import { getDurableRunInspection } from "../services/game-durable-run.js";
 import { randomUUID } from "crypto";
 
 // ---------------------------------------------------------------------------
@@ -277,6 +278,14 @@ export function createAdminRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
   // GET /api/admin/games — list all games including hidden ones
   // -------------------------------------------------------------------------
+
+  app.get("/api/admin/games/:idOrSlug/durable-run", requireAdminRead, async (c) => {
+    const result = await getDurableRunInspection(db, c.req.param("idOrSlug"));
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.statusCode);
+    }
+    return c.json(result.response);
+  });
 
   app.get("/api/admin/games", requireAdminRead, async (c) => {
     const rows = await db.select().from(schema.games);

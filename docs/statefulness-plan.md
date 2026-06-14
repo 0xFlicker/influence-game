@@ -11,7 +11,7 @@
 
 Every running game holds its entire state in process memory with no mid-game persistence. If the process crashes, is redeployed, or needs to scale horizontally, all active games are irrecoverably lost. The architecture was originally designed around xstate's serializable state model, but the persistence layer was never built.
 
-The engine now emits canonical accepted-domain events for simulator runs and writes them to `game-N-events.jsonl`. API-backed games also have a first durable game-run kernel: the API game ID is bound into engine events at construction, canonical events are written to Postgres under an owner epoch, and suspended/checkpoint/evidence metadata gives operators something inspectable after failure.
+The engine now emits canonical accepted-domain events for simulator runs and writes them to `game-N-events.jsonl`. API-backed games also have a first durable game-run kernel: the API game ID is bound into engine events at construction, canonical events are written to Postgres under an owner epoch, and suspended/checkpoint/evidence metadata gives operators something inspectable after failure. The admin durable-run inspection read model can now validate the persisted event log, replay the trusted prefix into the canonical projection, and summarize checkpoint/evidence readiness.
 
 This is still not crash-safe resume. API games do not yet persist hydrateable XState snapshots, in-flight phase accumulators, full runner/agent continuity state, or enough token/cost/runtime cursor data to safely continue after process loss. Checkpoint capsules are forensic boundaries keyed to event sequence; they deliberately record `hydrateable=false` until the missing runtime inputs are implemented.
 
@@ -68,7 +68,8 @@ This is still not crash-safe resume. API games do not yet persist hydrateable XS
 1. **Orphaned game classification** (`index.ts`) — On startup, old `in_progress` games are marked `suspended` for inspection because resume is not implemented.
 2. **Durable event append** (`game-events.ts`) — API canonical events are appended in sequence under the active owner epoch and suspend on owner/identity/sequence/hash failure.
 3. **Forensic checkpoint/evidence rows** (`game-checkpoints.ts`, `game-evidence.ts`) — Checkpoint capsules and private evidence manifests provide debug boundaries without making raw evidence public or claiming hydration.
-4. **Memory cleanup** (`game-lifecycle.ts`) — Normal completed/cancelled exits can clear `PgMemoryStore`; suspended runs avoid eager cleanup intended for safe terminal states.
+4. **Durable truth read model** (`game-event-read-model.ts`, `game-projection-read-model.ts`, `game-durable-run.ts`) — Admin-only inspection can explain event-log integrity, replay status, board projection summary, checkpoint readiness, and redacted evidence counts from Postgres.
+5. **Memory cleanup** (`game-lifecycle.ts`) — Normal completed/cancelled exits can clear `PgMemoryStore`; suspended runs avoid eager cleanup intended for safe terminal states.
 
 These are crash-mitigation (cleanup), not crash-recovery (resume).
 
@@ -264,6 +265,8 @@ Phase 1 makes single-instance deploys safe. Phase 2 enables horizontal scaling. 
 - `src/db/schema.ts` — Add `game_checkpoints` table, add `suspended` to game status enum
 - `src/db/migrations/` — New migration for above
 - `src/services/game-lifecycle.ts` — Phase-boundary checkpoint writes now exist as forensic, non-hydrateable capsules; resume logic, graceful shutdown, and safe incremental transcript persistence remain future work
+- `src/services/game-event-read-model.ts`, `src/services/game-projection-read-model.ts`, `src/services/game-durable-run.ts` — Durable-run inspection now validates persisted event rows, replays trusted events into a canonical projection summary, and redacts checkpoint/evidence metadata for operators.
+- `src/routes/admin.ts` — Admin read endpoint now exposes durable-run inspection for a game ID or slug.
 - `src/services/ws-manager.ts` — (Phase 2) Redis pub/sub adapter
 - `src/index.ts` — Startup orphan classification now marks old runs suspended; startup resume logic for `suspended` games and SIGTERM checkpointing remain future work
 

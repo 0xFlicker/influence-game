@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Durable Event Read Model</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f6f2ea;
+      --ink: #182321;
+      --muted: #596763;
+      --soft: #77827d;
+      --line: #d9ded7;
+      --panel: #fffefb;
+      --panel-soft: #eef5f2;
+      --blue: #17689b;
+      --blue-soft: #e5f1f8;
+      --green: #25745d;
+      --green-soft: #e4f1eb;
+      --amber: #9a6412;
+      --amber-soft: #f8ebd1;
+      --plum: #6d4a81;
+      --plum-soft: #efe6f4;
+      --red: #a24a40;
+      --red-soft: #f8e5e1;
+      --shadow: 0 14px 34px rgba(34, 43, 39, 0.09);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-size: 15px;
+      line-height: 1.62;
+    }
+    a {
+      color: var(--blue);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+    code {
+      color: #263d38;
+      background: #edf2ee;
+      border: 1px solid #d8e1db;
+      border-radius: 5px;
+      padding: 0.08rem 0.28rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+    }
+    strong { color: inherit; font-weight: 760; }
+    .page {
+      width: min(1120px, calc(100vw - 36px));
+      margin: 0 auto;
+      padding: 34px 0 54px;
+    }
+    header, section {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    header { padding: 30px; }
+    section {
+      margin-top: 24px;
+      padding: 24px;
+      box-shadow: 0 8px 24px rgba(34, 43, 39, 0.055);
+    }
+    .eyebrow, .section-label {
+      margin: 0 0 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.72rem;
+      font-weight: 820;
+    }
+    .eyebrow { color: var(--green); }
+    .section-label { color: var(--amber); }
+    h1, h2, h3 {
+      margin: 0;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+    h1 {
+      max-width: 900px;
+      font-size: clamp(2rem, 4vw, 3.35rem);
+    }
+    h2 { font-size: 1.55rem; margin-bottom: 14px; }
+    h3 { font-size: 1.16rem; }
+    p {
+      max-width: 78ch;
+      margin: 0 0 1rem;
+      color: var(--muted);
+    }
+    .lede {
+      max-width: 88ch;
+      margin-top: 16px;
+      color: #33413d;
+      font-size: 1.03rem;
+    }
+    .meta-grid, .stats {
+      display: grid;
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .meta-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .stats { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .meta, .stat {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-soft);
+      padding: 12px 14px;
+    }
+    .meta dt, .stat dt {
+      margin: 0;
+      color: var(--soft);
+      font-size: 0.72rem;
+      font-weight: 820;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .meta dd, .stat dd {
+      margin: 2px 0 0;
+      color: var(--ink);
+      font-weight: 760;
+    }
+    .axis-list, .evidence-list {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .axis-list li, .evidence-list li {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfa;
+      padding: 12px 14px;
+      color: var(--muted);
+    }
+    .axis-list strong {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 2px;
+    }
+    .jump-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin: 0 0 18px;
+    }
+    .jump-list a {
+      display: block;
+      border: 1px solid #d4e1dc;
+      border-radius: 8px;
+      background: var(--green-soft);
+      padding: 10px 12px;
+      color: #1f5948;
+      text-decoration: none;
+      font-weight: 760;
+    }
+    .idea-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfa;
+      padding: 18px;
+      margin-top: 14px;
+    }
+    .idea-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 12px;
+    }
+    .rank {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      background: var(--blue-soft);
+      color: var(--blue);
+      font-weight: 820;
+      flex: 0 0 auto;
+    }
+    .idea-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .idea-title h3 { margin-top: 2px; }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      border: 1px solid #d8e2dc;
+      background: #f2f5f1;
+      color: #52635f;
+      padding: 4px 9px;
+      font-size: 0.76rem;
+      font-weight: 760;
+    }
+    .chip.conf { background: var(--blue-soft); border-color: #c9ddea; color: var(--blue); }
+    .chip.cx { background: var(--amber-soft); border-color: #ead3a8; color: var(--amber); }
+    .chip.axis { background: var(--plum-soft); border-color: #dccbe5; color: var(--plum); }
+    .field-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .field {
+      border: 1px solid #e1e6df;
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px;
+    }
+    .field dt {
+      margin: 0 0 4px;
+      color: var(--soft);
+      font-size: 0.72rem;
+      font-weight: 820;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .field dd { margin: 0; color: var(--muted); }
+    .field.wide { grid-column: 1 / -1; }
+    .diagram {
+      margin: 16px 0 4px;
+      border: 1px solid #d8e1db;
+      border-radius: 8px;
+      background: #fcfdfb;
+      padding: 12px;
+      overflow-x: auto;
+    }
+    svg { max-width: 100%; height: auto; display: block; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+    }
+    th, td {
+      border-bottom: 1px solid #e1e6df;
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      color: var(--soft);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 820;
+      background: #f8faf7;
+    }
+    td { color: var(--muted); }
+    .callout {
+      border: 1px solid #ead3a8;
+      border-radius: 8px;
+      background: var(--amber-soft);
+      padding: 14px;
+      margin: 14px 0;
+    }
+    .callout p { margin: 0; color: #6f4a12; }
+    .sources {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding-left: 1.1rem;
+      color: var(--muted);
+    }
+    footer.composition-signal {
+      margin-top: 24px;
+      color: var(--soft);
+      font-size: 0.82rem;
+      text-align: center;
+    }
+    @media (max-width: 820px) {
+      .meta-grid, .stats, .field-grid, .jump-list { grid-template-columns: 1fr; }
+      header, section { padding: 20px; }
+      .idea-head { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">Ideation Artifact</p>
+      <h1>Durable Event Read Model</h1>
+      <p class="lede">Make the persisted Postgres event log useful, not just durable: load API-backed <code>game_events</code>, replay them into the canonical projection, and show an operator the durable truth of a suspended or completed run before attempting full checkpoint resume.</p>
+      <div class="meta-grid">
+        <dl class="meta"><dt>Date</dt><dd><time datetime="2026-06-14">2026-06-14</time></dd></dl>
+        <dl class="meta"><dt>Topic</dt><dd>durable-event-read-model</dd></dl>
+        <dl class="meta"><dt>Mode</dt><dd>repo-grounded</dd></dl>
+        <dl class="meta"><dt>Focus</dt><dd>Postgres event truth before resume</dd></dl>
+      </div>
+      <div class="stats">
+        <dl class="stat"><dt>Raw Ideas</dt><dd>16</dd></dl>
+        <dl class="stat"><dt>Survivors</dt><dd>7</dd></dl>
+        <dl class="stat"><dt>Primary Slice</dt><dd>API/Admin read model</dd></dl>
+        <dl class="stat"><dt>Deferred</dt><dd>Full resume</dd></dl>
+        <dl class="stat"><dt>Top Pick</dt><dd>Durable Truth Service</dd></dl>
+      </div>
+    </header>
+
+    <section id="grounding-context">
+      <p class="section-label">Repo Grounding</p>
+      <h2>Grounding Context</h2>
+      <ul class="evidence-list">
+        <li><strong>API events are durable but not yet queryable as truth.</strong> <code>packages/api/src/services/game-events.ts</code> appends canonical envelopes under owner epoch, validates game identity, enforces contiguous sequences, stores stable hashes, and suspends on append failure. There is no paired read service that loads those rows and turns them back into a projection.</li>
+        <li><strong>The replay reducer already exists.</strong> <code>packages/engine/src/game-projection.ts</code> exposes <code>replayCanonicalEvents(...)</code>, validates contiguous ordering, rejects wrong game IDs and unsupported payload versions, and rebuilds the canonical projection used by engine tests.</li>
+        <li><strong>The simulator side has the model to borrow from.</strong> <code>packages/engine/src/game-mcp/read-model.ts</code> reads simulation event JSONL, validates canonical event records, replays projection, filters events by visibility, and returns source citations. API read paths need the same semantics over Postgres rows, not the filesystem/MCP wrapper.</li>
+        <li><strong>Admin UX has a suspended bucket but not an inspection surface.</strong> <code>packages/api/src/routes/admin.ts</code> and <code>packages/web/src/app/admin/admin-panel.tsx</code> expose redacted kernel counts and a "needs inspection" status. The game viewer currently tells users replay is unavailable for suspended games and only shows durable event/checkpoint/manifest counts.</li>
+        <li><strong>Checkpoint capsules are intentionally forensic.</strong> <code>packages/engine/src/game-runner.types.ts</code> and <code>packages/api/src/services/game-checkpoints.ts</code> record projection summaries and missing hydration inputs while keeping <code>hydrateable=false</code>. The next read model should surface that honestly instead of implying resume.</li>
+        <li><strong>External grounding supports this order.</strong> XState documents persisted actor snapshots and notes caveats around restore/replay; Microsoft Azure's event-sourcing guidance emphasizes ordered event streams, materialized projections, versioned events, and the operational cost of treating events as permanent truth; PostgreSQL's JSONB docs support the current row-plus-envelope shape but warn that JSON documents should have predictable structure.</li>
+      </ul>
+    </section>
+
+    <section id="topic-axes">
+      <p class="section-label">Surface Map</p>
+      <h2>Topic Axes</h2>
+      <ul class="axis-list">
+        <li><strong>Event Retrieval And Integrity</strong> Loading rows, validating envelopes, recomputing hashes, and determining whether the log head is coherent.</li>
+        <li><strong>Projection Replay And Parity</strong> Reusing the engine reducer so API Postgres events and simulator JSONL events prove the same canonical contract.</li>
+        <li><strong>Operator Inspection Surface</strong> Giving admin/operator routes enough summarized truth to debug suspended and completed games without reading raw tables.</li>
+        <li><strong>Checkpoint Hydration Readiness</strong> Making forensic checkpoint capsules inspectable while keeping resume explicitly deferred.</li>
+        <li><strong>Private Evidence And Future Raw Logs</strong> Keeping prompt/response/reasoning evidence behind manifest metadata so Linode S3 raw logs can land later without leaking into UX-facing events.</li>
+      </ul>
+    </section>
+
+    <section id="ranked-ideas">
+      <p class="section-label">Ranked Survivors</p>
+      <h2>Ranked Ideas</h2>
+      <nav class="jump-list" aria-label="Ranked ideas">
+        <a href="#idea-1">1. Durable Truth Read Model Service</a>
+        <a href="#idea-2">2. Admin Durable Run Endpoint</a>
+        <a href="#idea-3">3. Event Integrity Auditor</a>
+        <a href="#idea-4">4. Projection Parity Harness</a>
+        <a href="#idea-5">5. Checkpoint Hydration Matrix</a>
+        <a href="#idea-6">6. Minimal Admin Inspect Panel</a>
+        <a href="#idea-7">7. Evidence Manifest Preview</a>
+      </nav>
+
+      <article class="idea-card" id="idea-1">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">1</span>
+            <div>
+              <h3>Durable Truth Read Model Service</h3>
+              <div class="chips">
+                <span class="chip axis">Event Retrieval And Integrity</span>
+                <span class="chip conf">Confidence 88%</span>
+                <span class="chip cx">Complexity Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p><strong>Description:</strong> Add <code>getPersistedGameEvents(gameId)</code> and <code>getPersistedGameProjection(gameId)</code> in the API service layer. The first loads ordered Postgres <code>game_events</code>, validates that stored metadata agrees with each envelope, recomputes hashes, and returns typed canonical events plus warnings. The second feeds those events into <code>replayCanonicalEvents(...)</code> and returns either a canonical projection or an explicit "no durable projection yet" result for games with no event log.</p>
+        <div class="field-grid">
+          <dl class="field wide"><dt>Basis</dt><dd><strong>direct:</strong> <code>game_events</code> already stores sequence, type, hash, visibility, source pointers, payload version, run source, and JSONB envelope; <code>replayCanonicalEvents(...)</code> already rebuilds a projection from ordered canonical events.</dd></dl>
+          <dl class="field"><dt>Rationale</dt><dd>This is the smallest move that changes the event table from "write-only durability artifact" into a system of record an API/admin path can interrogate.</dd></dl>
+          <dl class="field"><dt>Downsides</dt><dd>It will expose old or manually inserted rows that fail stricter canonical validation; the service must report those as diagnostics instead of crashing admin pages.</dd></dl>
+        </div>
+        <div class="diagram" aria-label="Durable truth service flow">
+          <svg viewBox="0 0 760 160" role="img">
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#67807a"></path>
+              </marker>
+            </defs>
+            <rect x="24" y="42" width="148" height="64" rx="8" fill="#e5f1f8" stroke="#bcd5e5"></rect>
+            <text x="98" y="70" text-anchor="middle" font-size="14" font-weight="700" fill="#17689b">game_events</text>
+            <text x="98" y="91" text-anchor="middle" font-size="12" fill="#4c6675">ordered rows</text>
+            <path d="M 180 74 H 272" stroke="#67807a" stroke-width="2" marker-end="url(#arrow)"></path>
+            <rect x="282" y="42" width="170" height="64" rx="8" fill="#e4f1eb" stroke="#b8d8cc"></rect>
+            <text x="367" y="70" text-anchor="middle" font-size="14" font-weight="700" fill="#25745d">read service</text>
+            <text x="367" y="91" text-anchor="middle" font-size="12" fill="#4f685f">validate + replay</text>
+            <path d="M 460 74 H 552" stroke="#67807a" stroke-width="2" marker-end="url(#arrow)"></path>
+            <rect x="562" y="42" width="174" height="64" rx="8" fill="#efe6f4" stroke="#d6c4e1"></rect>
+            <text x="649" y="70" text-anchor="middle" font-size="14" font-weight="700" fill="#6d4a81">projection truth</text>
+            <text x="649" y="91" text-anchor="middle" font-size="12" fill="#6b5d71">summary + warnings</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-2">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">2</span>
+            <div>
+              <h3>Admin Durable Run Endpoint</h3>
+              <div class="chips">
+                <span class="chip axis">Operator Inspection Surface</span>
+                <span class="chip conf">Confidence 85%</span>
+                <span class="chip cx">Complexity Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p><strong>Description:</strong> Add a producer/admin route such as <code>GET /api/admin/games/:id/durable-run</code>. It should return the latest owner row, event head, replayed projection summary, checkpoint timeline, evidence-manifest summary, and diagnostics. It should not return raw prompts, raw responses, hidden reasoning, private object keys, or a player-facing event stream.</p>
+        <div class="field-grid">
+          <dl class="field wide"><dt>Basis</dt><dd><strong>direct:</strong> <code>/api/admin/games</code> already enriches summaries with redacted kernel health; the current suspended viewer only shows counts and says replay is unavailable.</dd></dl>
+          <dl class="field"><dt>Rationale</dt><dd>Operators need one authoritative payload that answers "where did this run actually stop?" without hand-querying four tables.</dd></dl>
+          <dl class="field"><dt>Downsides</dt><dd>Route response shape can become a kitchen sink. Keep the first version summary-first, with paginated/filterable event rows left to the service or later endpoint.</dd></dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-3">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">3</span>
+            <div>
+              <h3>Event Integrity And Completeness Auditor</h3>
+              <div class="chips">
+                <span class="chip axis">Event Retrieval And Integrity</span>
+                <span class="chip conf">Confidence 82%</span>
+                <span class="chip cx">Complexity Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p><strong>Description:</strong> Layer diagnostics over the read service: sequence continuity, envelope validation, hash recomputation, owner head versus event max sequence, checkpoint boundary hashes, projection last sequence, terminal <code>game_results</code> presence, and <code>games.status</code> consistency. Return warnings with stable codes such as <code>event_gap</code>, <code>hash_mismatch</code>, <code>owner_head_behind</code>, <code>checkpoint_ahead_of_head</code>, and <code>terminal_result_missing</code>.</p>
+        <div class="field-grid">
+          <dl class="field wide"><dt>Basis</dt><dd><strong>direct:</strong> the append path already treats identity, ordering, owner status, and hash as durable-write invariants; the read path should independently verify those invariants before future hydration depends on them.</dd></dl>
+          <dl class="field"><dt>Rationale</dt><dd>This turns suspended games from "something failed" into a precise forensic record and exposes event-completeness gaps before pause/resume uses the log as input.</dd></dl>
+          <dl class="field"><dt>Downsides</dt><dd>Some diagnostics will be noisy for old pre-kernel games or direct test fixtures. The response needs compatibility modes rather than assuming every game should have a projection.</dd></dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-4">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">4</span>
+            <div>
+              <h3>Projection Parity Harness Across API Postgres And Simulator JSONL</h3>
+              <div class="chips">
+                <span class="chip axis">Projection Replay And Parity</span>
+                <span class="chip conf">Confidence 80%</span>
+                <span class="chip cx">Complexity Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p><strong>Description:</strong> Add tests that prove persisted API events replay through the same projection contract as simulator JSONL. The lightweight first version can use a mock or fast deterministic runner, append to Postgres through the durable sink, load via <code>getPersistedGameEvents</code>, replay via <code>getPersistedGameProjection</code>, and compare to the runner's <code>getDomainProjection()</code> or to the existing engine replay fixture.</p>
+        <div class="field-grid">
+          <dl class="field wide"><dt>Basis</dt><dd><strong>direct:</strong> docs now state simulator event JSONL uses the same canonical envelope that API-backed games persist in Postgres; the game MCP already rebuilds projections from JSONL, and engine tests compare replayed projection to live domain projection.</dd></dl>
+          <dl class="field"><dt>Rationale</dt><dd>This is the proof that simulation/API unification is real at the event-contract layer, while preserving the current decision that CLI simulation remains a separate execution/storage path.</dd></dl>
+          <dl class="field"><dt>Downsides</dt><dd>A full API game can be slow or LLM-dependent, so the first tests should avoid hosted model calls and target the projection contract rather than end-to-end game quality.</dd></dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-5">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">5</span>
+            <div>
+              <h3>Checkpoint Timeline And Hydration Readiness Matrix</h3>
+              <div class="chips">
+                <span class="chip axis">Checkpoint Hydration Readiness</span>
+                <span class="chip conf">Confidence 78%</span>
+                <span class="chip cx">Complexity Low-Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p><strong>Description:</strong> Include a checkpoint list in the durable-run response: kind, round, phase, last event sequence, event-head hash, projection hash, transcript cursor, token-cost cursor, <code>hydrateable</code>, degraded reason, and missing hydration inputs. Render this as "readiness, not resume" so the next checkpoint v0 work has a concrete checklist to close.</p>
+        <div class="field-grid">
+          <dl class="field wide"><dt>Basis</dt><dd><strong>direct:</strong> <code>GameCheckpointCapsule</code> already names missing inputs: xstate snapshot, phase accumulators, agent memory state, pending LLM calls, and token cost cursor. The DB stores hydration status, snapshot, transcript cursor, token cost cursor, and degraded reason.</dd></dl>
+          <dl class="field"><dt>Rationale</dt><dd>Checkpoint hydration becomes less spooky when every suspended run can say exactly which state categories are present and which are still absent.</dd></dl>
+          <dl class="field"><dt>Downsides</dt><dd>It may create pressure to flip <code>hydrateable</code> early. The display language should keep "forensic only" obvious until every required field is populated and tested.</dd></dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-6">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">6</span>
+            <div>
+              <h3>Minimal Admin Inspect Panel</h3>
+              <div class="chips">
+                <span class="chip axis">Operator Inspection Surface</span>
+                <span class="chip conf">Confidence 72%</span>
+                <span class="chip cx">Complexity Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p><strong>Description:</strong> Add a small admin-only "Durable Truth" panel reachable from suspended/completed game rows. It should prioritize event head, projection headline, alive/eliminated counts, latest phase/round, latest checkpoint, and diagnostics. The event list can be summarized or paginated later; the first panel is for answering the operator's immediate question quickly.</p>
+        <div class="field-grid">
+          <dl class="field wide"><dt>Basis</dt><dd><strong>direct:</strong> the admin panel already groups suspended games under "Needs Inspection"; the normal suspended viewer has no replay and only displays durable counts.</dd></dl>
+          <dl class="field"><dt>Rationale</dt><dd>A read service without a human-facing operator surface will still leave failures feeling opaque. A compact panel makes the kernel visibly useful without turning it into a public replay product.</dd></dl>
+          <dl class="field"><dt>Downsides</dt><dd>UI can distract from service correctness. Build it after the API payload is stable, and keep it admin-only with private evidence redacted.</dd></dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-7">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">7</span>
+            <div>
+              <h3>Private Evidence Manifest Preview Contract</h3>
+              <div class="chips">
+                <span class="chip axis">Private Evidence And Future Raw Logs</span>
+                <span class="chip conf">Confidence 70%</span>
+                <span class="chip cx">Complexity Low-Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p><strong>Description:</strong> Return evidence manifest summaries in the durable-run endpoint: counts by evidence type, event-sequence coverage, retention class, redaction status, and storage provider presence. Keep raw content and dereferenceable storage keys out of UX-facing events. This prepares for Linode S3 raw prompt/response/reasoning logs while keeping Postgres the canonical event system of record.</p>
+        <div class="field-grid">
+          <dl class="field wide"><dt>Basis</dt><dd><strong>direct:</strong> <code>game_evidence_manifests</code> already has event sequence, evidence type, retention class, access scope, redaction status, storage provider/bucket/key, source pointers, and metadata; prior requirements explicitly keep hidden reasoning out of canonical/public surfaces.</dd></dl>
+          <dl class="field"><dt>Rationale</dt><dd>The operator needs to know whether raw evidence exists for debugging, but this slice should prove metadata and access boundaries before exposing raw evidence retrieval.</dd></dl>
+          <dl class="field"><dt>Downsides</dt><dd>Even manifest metadata can leak if it includes local paths or object keys. The first response should be redacted-by-default and producer/admin-scoped.</dd></dl>
+        </div>
+      </article>
+    </section>
+
+    <section id="rejection-summary">
+      <p class="section-label">Cuts</p>
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>Materialized Projection Cache Table</td><td>Useful later if replay cost becomes real, but premature before on-demand replay and diagnostics prove the event log is complete.</td></tr>
+          <tr><td>2</td><td>Full Event Browser</td><td>Too much UI before the service contract; also increases risk of surfacing producer/private data casually.</td></tr>
+          <tr><td>3</td><td>Postgres MCP Server</td><td>Interesting after API read paths exist, but admin/API is the immediate operator surface for suspended games.</td></tr>
+          <tr><td>4</td><td>Immediate <code>GameRunner.fromCheckpoint()</code></td><td>Rejected as unsafe because checkpoint capsules remain explicitly non-hydrateable and omit XState, accumulators, agent continuity, pending calls, and token-cost state.</td></tr>
+          <tr><td>5</td><td>Redis/PubSub/Horizontal Scaling</td><td>Out of scope for the current question. The urgent gap is durable explanation of one single-writer run, not multi-instance distribution.</td></tr>
+          <tr><td>6</td><td>Public Player Replay API</td><td>Privacy and product-contract risk. Keep producer/admin inspection first; public replay can be designed after visibility semantics are proven.</td></tr>
+          <tr><td>7</td><td>Raw S3 Evidence Browser</td><td>Manifests, access policy, redaction, and read auditing should precede any raw prompt/response/reasoning browser.</td></tr>
+          <tr><td>8</td><td>Simulation Import Now</td><td>Leave the <code>simulation_import</code> door open, but do not make CLI simulation depend on DB/API in this slice.</td></tr>
+          <tr><td>9</td><td>Historical Event Rewrite/Repair Tooling</td><td>Defer until real schema-evolution pain appears. Start with tolerant validation, warnings, and version-aware replay rather than mutation tooling.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sources">
+      <p class="section-label">Reference Index</p>
+      <h2>Sources</h2>
+      <ul class="sources">
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/statefulness-plan.md">docs/statefulness-plan.md</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/brainstorms/2026-06-13-durable-game-run-kernel-requirements.md">docs/brainstorms/2026-06-13-durable-game-run-kernel-requirements.md</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/plans/2026-06-13-002-feat-durable-game-run-kernel-plan.md">docs/plans/2026-06-13-002-feat-durable-game-run-kernel-plan.md</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-events.ts">packages/api/src/services/game-events.ts</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-checkpoints.ts">packages/api/src/services/game-checkpoints.ts</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-kernel-health.ts">packages/api/src/services/game-kernel-health.ts</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/db/schema.ts">packages/api/src/db/schema.ts</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/routes/admin.ts">packages/api/src/routes/admin.ts</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-projection.ts">packages/engine/src/game-projection.ts</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-mcp/read-model.ts">packages/engine/src/game-mcp/read-model.ts</a></li>
+        <li><a href="https://stately.ai/docs/persistence">Stately XState persistence docs</a></li>
+        <li><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing">Microsoft Azure Architecture Center: Event Sourcing pattern</a></li>
+        <li><a href="https://www.postgresql.org/docs/current/datatype-json.html">PostgreSQL documentation: JSON Types</a></li>
+      </ul>
+    </section>
+
+    <footer class="composition-signal">Composed 2026-06-14T00:00Z by ce-ideate from the durable event read model prompt and repo-grounded statefulness context.</footer>
+  </main>
+</body>
+</html>

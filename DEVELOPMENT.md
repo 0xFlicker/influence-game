@@ -495,7 +495,7 @@ The API respects `PORT` and `HOST` env vars (set in Doppler per environment). In
 
 ### Statefulness Risk
 
-Active game execution is not crash-safe yet. If the API server restarts while a game is in progress, the run can be corrupted because runner state, active WebSocket pacing, in-memory agent context, and unfinished transcript persistence are not fully checkpointed/resumable. Canonical engine events can rebuild a domain projection for simulator runs, but they are not API resume/checkpoint support. Treat `docs/statefulness-plan.md` as the reference plan and do not claim mid-game resume support until that work lands.
+Active game execution is not crash-safe yet. If the API server restarts while a game is in progress, the live runner stops because runner state, active WebSocket pacing, in-memory agent context, and unfinished transcript persistence are not fully checkpointed/resumable. Canonical engine events can rebuild a domain projection for simulator runs, and API-backed durable events can now be inspected through the admin durable-run read model, but this is not API resume/checkpoint hydration support. Treat `docs/statefulness-plan.md` as the reference plan and do not claim mid-game resume support until that work lands.
 
 ## Pre-Commit Checklist
 

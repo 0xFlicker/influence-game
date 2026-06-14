@@ -14,10 +14,44 @@ export interface RedactedKernelHealth {
   hasEvidenceManifests: boolean;
 }
 
+export interface BuildRedactedKernelHealthInput {
+  status?: KernelHealthStatus | "unknown";
+  ownerLastPersistedEventSequence?: number;
+  maxEventSequence?: number;
+  durableEventCount?: number;
+  checkpointCount?: number;
+  evidenceManifestCount?: number;
+}
+
 function toCount(value: unknown): number {
   if (typeof value === "number") return value;
-  if (typeof value === "string") return Number.parseInt(value, 10);
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
   return 0;
+}
+
+export function buildRedactedKernelHealth(
+  input: BuildRedactedKernelHealthInput = {},
+): RedactedKernelHealth {
+  const durableEventCount = toCount(input.durableEventCount);
+  const checkpointCount = toCount(input.checkpointCount);
+  const evidenceManifestCount = toCount(input.evidenceManifestCount);
+
+  return {
+    status: input.status ?? "unknown",
+    lastPersistedEventSequence: Math.max(
+      toCount(input.ownerLastPersistedEventSequence),
+      toCount(input.maxEventSequence),
+    ),
+    durableEventCount,
+    checkpointCount,
+    evidenceManifestCount,
+    hasDurableEvents: durableEventCount > 0,
+    hasCheckpoints: checkpointCount > 0,
+    hasEvidenceManifests: evidenceManifestCount > 0,
+  };
 }
 
 export async function getRedactedKernelHealth(
@@ -34,16 +68,7 @@ export async function getRedactedKernelHealthByGameId(
   const ids = [...new Set(gameIds)];
   const result = new Map<string, RedactedKernelHealth>();
   for (const gameId of ids) {
-    result.set(gameId, {
-      status: "unknown",
-      lastPersistedEventSequence: 0,
-      durableEventCount: 0,
-      checkpointCount: 0,
-      evidenceManifestCount: 0,
-      hasDurableEvents: false,
-      hasCheckpoints: false,
-      hasEvidenceManifests: false,
-    });
+    result.set(gameId, buildRedactedKernelHealth());
   }
   if (ids.length === 0) return result;
 
@@ -83,51 +108,54 @@ export async function getRedactedKernelHealthByGameId(
   for (const owner of owners) {
     const current = result.get(owner.gameId);
     if (!current || current.status !== "unknown") continue;
-    result.set(owner.gameId, {
-      ...current,
+    result.set(owner.gameId, buildRedactedKernelHealth({
       status: owner.status,
-      lastPersistedEventSequence: Math.max(
-        current.lastPersistedEventSequence,
-        toCount(owner.lastPersistedEventSequence),
-      ),
-    });
+      ownerLastPersistedEventSequence: owner.lastPersistedEventSequence,
+      maxEventSequence: current.lastPersistedEventSequence,
+      durableEventCount: current.durableEventCount,
+      checkpointCount: current.checkpointCount,
+      evidenceManifestCount: current.evidenceManifestCount,
+    }));
   }
 
   for (const stat of eventStats) {
     const current = result.get(stat.gameId);
     if (!current) continue;
     const durableEventCount = toCount(stat.count);
-    result.set(stat.gameId, {
-      ...current,
+    result.set(stat.gameId, buildRedactedKernelHealth({
+      status: current.status,
+      ownerLastPersistedEventSequence: current.lastPersistedEventSequence,
+      maxEventSequence: stat.maxSequence,
       durableEventCount,
-      hasDurableEvents: durableEventCount > 0,
-      lastPersistedEventSequence: Math.max(
-        current.lastPersistedEventSequence,
-        toCount(stat.maxSequence),
-      ),
-    });
+      checkpointCount: current.checkpointCount,
+      evidenceManifestCount: current.evidenceManifestCount,
+    }));
   }
 
   for (const stat of checkpointStats) {
     const current = result.get(stat.gameId);
     if (!current) continue;
     const checkpointCount = toCount(stat.count);
-    result.set(stat.gameId, {
-      ...current,
+    result.set(stat.gameId, buildRedactedKernelHealth({
+      status: current.status,
+      ownerLastPersistedEventSequence: current.lastPersistedEventSequence,
+      durableEventCount: current.durableEventCount,
       checkpointCount,
-      hasCheckpoints: checkpointCount > 0,
-    });
+      evidenceManifestCount: current.evidenceManifestCount,
+    }));
   }
 
   for (const stat of evidenceStats) {
     const current = result.get(stat.gameId);
     if (!current) continue;
     const evidenceManifestCount = toCount(stat.count);
-    result.set(stat.gameId, {
-      ...current,
+    result.set(stat.gameId, buildRedactedKernelHealth({
+      status: current.status,
+      ownerLastPersistedEventSequence: current.lastPersistedEventSequence,
+      durableEventCount: current.durableEventCount,
+      checkpointCount: current.checkpointCount,
       evidenceManifestCount,
-      hasEvidenceManifests: evidenceManifestCount > 0,
-    });
+    }));
   }
 
   return result;

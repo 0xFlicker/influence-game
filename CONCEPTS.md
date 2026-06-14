@@ -88,6 +88,10 @@ The local game MCP is a corpus-level projection host over simulation artifacts. 
 
 The first durable API runtime layer for live game execution. It binds API game identity into canonical events, persists ordered accepted-domain facts, enforces single-writer ownership, and defines checkpoint/evidence boundaries. It is not itself a claim that stopped games can resume; resume depends on later checkpoint hydration.
 
+## Durable truth read model
+
+An API-side inspection model that reads persisted durable kernel rows, validates canonical event integrity, replays events into the canonical game projection, and reports checkpoint/evidence readiness. It explains what the durable log proves about a run, but it does not resume execution or expose private raw evidence.
+
 ## Checkpoint capsule
 
 A persisted phase-boundary diagnostic artifact keyed to the latest canonical event sequence it covers. The first durable-kernel capsules store replay/projection data, transcript cursors, and explicit missing hydration inputs with `hydrateable=false`; future resume work must add XState snapshot data, phase accumulators, runner/agent continuity state, and token/cost cursors before a checkpoint can become a safe resume boundary.

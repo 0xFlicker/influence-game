@@ -8,6 +8,15 @@ import { getPermissionsForAddress } from "../db/rbac.js";
 import { seedRBAC } from "../db/rbac-seed.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { createAdminRoutes } from "../routes/admin.js";
+import { appendGameEvents } from "../services/game-events.js";
+import { writeGameCheckpoint } from "../services/game-checkpoints.js";
+import { createEvidenceManifest } from "../services/game-evidence.js";
+import {
+  createCheckpointCapsule,
+  createCanonicalEventFixture,
+  insertGame,
+  insertOwner,
+} from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
 
 const ADMIN_ADDRESS = "0xadmin000000000000000000000000000000000001";
@@ -17,6 +26,8 @@ const SYSOP_ADDRESS = "0xsysop000000000000000000000000000000000001";
 beforeAll(() => {
   process.env.JWT_SECRET = "test-jwt-secret-admin-routes";
   process.env.ADMIN_ADDRESS = SYSOP_ADDRESS;
+  process.env.LINODE_OBJ_BUCKET = "public-profile-pictures";
+  process.env.LINODE_PRIVATE_EVIDENCE_BUCKET = "private-evidence";
 });
 
 async function setupDB() {
@@ -157,6 +168,110 @@ describe("admin route RBAC", () => {
     });
 
     expect(res.status).toBe(403);
+  });
+
+  test("allows admin users to inspect a durable run by slug", async () => {
+    const gameId = await insertGame(db, { slug: "admin-durable-run" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const events = createCanonicalEventFixture(gameId);
+    await appendGameEvents(db, { gameId, ownerEpoch, events });
+    const checkpoint = await writeGameCheckpoint(db, {
+      gameId,
+      ownerEpoch,
+      checkpoint: createCheckpointCapsule(events),
+    });
+    const evidence = await createEvidenceManifest(db, {
+      gameId,
+      ownerEpoch,
+      eventSequence: 2,
+      evidenceType: "llm_response",
+      retentionClass: "debug",
+      storage: {
+        provider: "linode_object_storage",
+        bucket: "private-evidence",
+        key: `evidence/${gameId}/round-1/response.json`,
+      },
+      sourcePointers: [{
+        kind: "agent_turn",
+        actorId: "atlas",
+        action: "vote",
+      }],
+      metadata: {
+        prompt: "raw prompt should stay private",
+        response: "raw response should stay private",
+        thinking: "private reasoning should stay private",
+        reasoningContext: "private context should stay private",
+      },
+    });
+
+    expect(checkpoint.ok).toBeTrue();
+    expect(evidence.ok).toBeTrue();
+
+    const res = await app.request("/api/admin/games/admin-durable-run/durable-run", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      schemaVersion: number;
+      game: { id: string };
+      eventLog: { status: string; rowCount: number };
+      projection: { status: string };
+      checkpoints: { count: number };
+      evidence: { totalCount: number; storage: { providerCounts: Record<string, number> } };
+      diagnostics: unknown[];
+    };
+    expect(body.schemaVersion).toBe(1);
+    expect(body.game.id).toBe(gameId);
+    expect(body.eventLog).toMatchObject({
+      status: "complete",
+      rowCount: events.length,
+    });
+    expect(body.projection.status).toBe("complete");
+    expect(body.checkpoints.count).toBe(1);
+    expect(body.evidence).toMatchObject({
+      totalCount: 1,
+      storage: { providerCounts: { linode_object_storage: 1 } },
+    });
+    expect(body.diagnostics).toEqual([]);
+
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain("ownerEpoch");
+    expect(serialized).not.toContain("manifestId");
+    expect(serialized).not.toContain("storageBucket");
+    expect(serialized).not.toContain("storageKey");
+    expect(serialized).not.toContain("sourcePointers");
+    expect(serialized).not.toContain("private-evidence");
+    expect(serialized).not.toContain(`evidence/${gameId}/round-1/response.json`);
+    expect(serialized).not.toContain("raw prompt");
+    expect(serialized).not.toContain("raw response");
+    expect(serialized).not.toContain("thinking");
+    expect(serialized).not.toContain("reasoningContext");
+  });
+
+  test("requires authentication for durable run inspection", async () => {
+    const res = await app.request("/api/admin/games/missing/durable-run");
+
+    expect(res.status).toBe(401);
+  });
+
+  test("denies gamer access to durable run inspection", async () => {
+    const gameId = await insertGame(db, { slug: "gamer-denied-durable-run" });
+
+    const res = await app.request(`/api/admin/games/${gameId}/durable-run`, {
+      headers: { Authorization: `Bearer ${gamerToken}` },
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  test("returns not found for unknown durable run IDs", async () => {
+    const res = await app.request("/api/admin/games/missing-durable-run/durable-run", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "Game not found" });
   });
 
   test("allows sysop to access role-management routes", async () => {
