@@ -28,12 +28,14 @@ function StatusBadge({ status }: { status: AdminGameSummary["status"] }) {
     in_progress: "bg-blue-900/40 text-blue-400",
     completed: "bg-green-900/40 text-green-400",
     cancelled: "bg-red-900/40 text-red-400",
+    suspended: "bg-amber-900/40 text-amber-300",
   };
   const labels: Record<AdminGameSummary["status"], string> = {
     waiting: "waiting",
     in_progress: "live",
     completed: "✓ done",
     cancelled: "✗ void",
+    suspended: "needs inspection",
   };
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full ${styles[status]}`}>
@@ -103,7 +105,14 @@ function GameRow({ game, canHide, onToggleVisibility }: { game: AdminGameSummary
       <td className="py-3 px-4">
         {canHide && (
           <button
-            onClick={(e) => { e.stopPropagation(); game.hidden ? handleToggle() : setConfirmHide(true); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (game.hidden) {
+                handleToggle();
+              } else {
+                setConfirmHide(true);
+              }
+            }}
             disabled={toggling}
             title={game.hidden ? "Restore to public lists" : "Hide from public lists"}
             className={`text-xs opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50 ${
@@ -240,6 +249,7 @@ export function GameHistoryBrowser() {
             { value: "completed", label: "Done" },
             { value: "in_progress", label: "Live" },
             { value: "waiting", label: "Waiting" },
+            { value: "suspended", label: "Needs inspection" },
             { value: "cancelled", label: "Void" },
           ]}
         />

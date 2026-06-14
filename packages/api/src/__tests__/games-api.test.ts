@@ -5,7 +5,7 @@
  * Auth is tested via JWT session tokens created directly (no Privy dependency).
  */
 
-import { describe, test, expect, beforeEach, beforeAll, afterAll } from "bun:test";
+import { describe, test, expect, beforeEach, beforeAll, afterEach, afterAll } from "bun:test";
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
@@ -145,6 +145,12 @@ async function joinTestPlayer(
   return res.json() as Promise<{ playerId: string }>;
 }
 
+async function markGameCompleted(db: DrizzleDB, gameId: string): Promise<void> {
+  await db.update(schema.games)
+    .set({ status: "completed", endedAt: new Date().toISOString() })
+    .where(eq(schema.games.id, gameId));
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -156,7 +162,12 @@ describe("Game REST API", () => {
   let userToken: string;
 
   beforeEach(async () => {
+    await abortAllGames();
     ({ app, db, adminToken, userToken } = await setupApp());
+  });
+
+  afterEach(async () => {
+    await abortAllGames();
   });
 
   // =========================================================================
@@ -209,8 +220,9 @@ describe("Game REST API", () => {
       expect(res.status).toBe(200);
     });
 
-    test("GET /api/games/:id/transcript is public", async () => {
+    test("GET /api/games/:id/transcript is public after terminal status", async () => {
       const { id } = await createTestGame(app, adminToken);
+      await markGameCompleted(db, id);
       const res = await app.request(`/api/games/${id}/transcript`);
       expect(res.status).toBe(200);
     });
@@ -586,14 +598,14 @@ describe("Game REST API", () => {
   // =========================================================================
 
   describe("GET /api/games/:id/transcript", () => {
-    test("returns empty transcript for new game", async () => {
+    test("rejects transcript export for non-terminal games", async () => {
       const { id } = await createTestGame(app, adminToken);
 
       const res = await app.request(`/api/games/${id}/transcript`);
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(403);
 
-      const body = (await res.json()) as unknown[];
-      expect(body).toEqual([]);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain("only available");
     });
 
     test("returns transcript entries with player names", async () => {
@@ -621,6 +633,7 @@ describe("Game REST API", () => {
             timestamp: Date.now() + 1000,
           },
         ]);
+      await markGameCompleted(db, id);
 
       const res = await app.request(`/api/games/${id}/transcript`);
       expect(res.status).toBe(200);
@@ -663,6 +676,7 @@ describe("Game REST API", () => {
             timestamp: now,
           },
         ]);
+      await markGameCompleted(db, id);
 
       const res = await app.request(`/api/games/${id}/transcript`);
       const body = (await res.json()) as Array<{ text: string }>;
@@ -691,6 +705,7 @@ describe("Game REST API", () => {
           text: "Secret message",
           timestamp: Date.now(),
         });
+      await markGameCompleted(db, id);
 
       const res = await app.request(`/api/games/${id}/transcript`);
       const body = (await res.json()) as Array<{ toPlayerIds: string[] | null }>;
@@ -716,6 +731,7 @@ describe("Game REST API", () => {
           text: "Beat 1: Room 1: Atlas, Vera",
           timestamp: Date.now(),
         });
+      await markGameCompleted(db, id);
 
       const res = await app.request(`/api/games/${id}/transcript`);
       const body = (await res.json()) as Array<{ roomMetadata?: typeof roomMetadata }>;

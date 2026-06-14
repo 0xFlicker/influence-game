@@ -11,15 +11,17 @@
 
 Every running game holds its entire state in process memory with no mid-game persistence. If the process crashes, is redeployed, or needs to scale horizontally, all active games are irrecoverably lost. The architecture was originally designed around xstate's serializable state model, but the persistence layer was never built.
 
-The engine now emits canonical accepted-domain events for simulator runs and writes them to `game-N-events.jsonl`. Those events can replay into a domain projection for analysis and local MCP queries, but they are not yet production persistence: API games still do not write a durable event table, persist XState actor snapshots, checkpoint runner/agent state, or resume after process loss.
+The engine now emits canonical accepted-domain events for simulator runs and writes them to `game-N-events.jsonl`. API-backed games also have a first durable game-run kernel: the API game ID is bound into engine events at construction, canonical events are written to Postgres under an owner epoch, and suspended/checkpoint/evidence metadata gives operators something inspectable after failure.
+
+This is still not crash-safe resume. API games do not yet persist hydrateable XState snapshots, in-flight phase accumulators, full runner/agent continuity state, or enough token/cost/runtime cursor data to safely continue after process loss. Checkpoint capsules are forensic boundaries keyed to event sequence; they deliberately record `hydrateable=false` until the missing runtime inputs are implemented.
 
 ### Current Risks
 
 | Scenario | Impact |
 |----------|--------|
-| **Process crash mid-game** | All running games die. Orphaned `in_progress` records cleaned up after 10-min grace period on next startup. No resume. |
-| **Deploy while games active** | Identical to crash — process stops, all in-memory state vanishes. No graceful drain. |
-| **Horizontal scaling** | Impossible — `activeGames` Map is process-local, WebSocket pub/sub is per-process (Bun), no distributed lock for game ownership. |
+| **Process crash mid-game** | The live runner dies. Persisted canonical events/checkpoints/evidence manifests remain inspectable, and old orphaned `in_progress` runs become `suspended`. No resume. |
+| **Deploy while games active** | Identical to crash unless a later graceful drain/resume layer lands. Durable event history may exist; execution cannot continue from it yet. |
+| **Horizontal scaling** | Accepted commits are owner-epoch guarded, but each live run still needs one sequential owner. `activeGames` and WebSocket pub/sub remain process-local caches. |
 
 ---
 
@@ -63,19 +65,22 @@ The engine now emits canonical accepted-domain events for simulator runs and wri
 
 ### Existing Recovery Mechanisms
 
-1. **Orphaned game cleanup** (`index.ts:79-103`) — On startup, cancels `in_progress` games older than 10 minutes.
-2. **Partial transcript save** (`game-lifecycle.ts:412-437`) — On error, attempts to persist transcript before marking cancelled.
-3. **Memory cleanup** (`game-lifecycle.ts:467-472`) — Clears `PgMemoryStore` on game end/error.
+1. **Orphaned game classification** (`index.ts`) — On startup, old `in_progress` games are marked `suspended` for inspection because resume is not implemented.
+2. **Durable event append** (`game-events.ts`) — API canonical events are appended in sequence under the active owner epoch and suspend on owner/identity/sequence/hash failure.
+3. **Forensic checkpoint/evidence rows** (`game-checkpoints.ts`, `game-evidence.ts`) — Checkpoint capsules and private evidence manifests provide debug boundaries without making raw evidence public or claiming hydration.
+4. **Memory cleanup** (`game-lifecycle.ts`) — Normal completed/cancelled exits can clear `PgMemoryStore`; suspended runs avoid eager cleanup intended for safe terminal states.
 
 These are crash-mitigation (cleanup), not crash-recovery (resume).
 
 ---
 
-## Remediation Plan
+## Future Remediation Plan
 
-### Phase 1: Deploy Safety (crash-safe single instance)
+The current durable kernel slice stores API canonical events, owner epochs, non-hydrateable checkpoint capsules, and inspection metadata. It does **not** implement safe resume. The steps below are the remaining work required before suspended games can be hydrated and continued.
 
-**Goal**: A game that was running when the process stopped can be resumed after restart.
+### Phase 1: Resume Safety (single instance)
+
+**Goal**: A game that was running when the process stopped can eventually be resumed after restart once hydrateable checkpoints and runner reconstruction exist.
 
 #### 1.1 — Phase-Boundary Snapshots
 
@@ -144,9 +149,10 @@ On `SIGTERM` (sent by Docker/systemd before kill):
 
 On next startup:
 1. Query for `suspended` games
-2. Load latest checkpoint for each
-3. Resume via `GameRunner.fromCheckpoint()`
-4. Re-register in `activeGames` Map
+2. Leave them suspended for inspection until hydrateable checkpoint support exists
+3. Future work: load latest hydrateable checkpoint for each
+4. Future work: resume via `GameRunner.fromCheckpoint()`
+5. Future work: re-register in `activeGames` Map
 
 **Schema change**: Add `suspended` to the game status enum.
 
@@ -239,7 +245,7 @@ Phase 1 makes single-instance deploys safe. Phase 2 enables horizontal scaling. 
 
 3. **LLM context is not recoverable.** Agent conversation history with the LLM is ephemeral. On resume, agents get a transcript-based recap. This is acceptable because games are short (4 rounds typical, ~10 minutes) and agents already handle context well from system prompts.
 
-4. **`suspended` vs `cancelled` status.** New status distinguishes intentional pause (deploy) from failure. Suspended games auto-resume on startup; cancelled games do not.
+4. **`suspended` vs `cancelled` status.** New status distinguishes inspectable interrupted/failure runs from intentional cancellation. Suspended games do not auto-resume until hydrateable checkpoint support and `GameRunner.fromCheckpoint()` land.
 
 5. **Postgres advisory locks before Redis.** Avoids a new infrastructure dependency. Redis is only needed when we actually want distributed WebSocket pub/sub (Phase 2).
 
@@ -257,9 +263,9 @@ Phase 1 makes single-instance deploys safe. Phase 2 enables horizontal scaling. 
 ### API (`packages/api/`)
 - `src/db/schema.ts` — Add `game_checkpoints` table, add `suspended` to game status enum
 - `src/db/migrations/` — New migration for above
-- `src/services/game-lifecycle.ts` — Phase-boundary checkpoint writes, resume logic, graceful shutdown, incremental transcript persist
+- `src/services/game-lifecycle.ts` — Phase-boundary checkpoint writes now exist as forensic, non-hydrateable capsules; resume logic, graceful shutdown, and safe incremental transcript persistence remain future work
 - `src/services/ws-manager.ts` — (Phase 2) Redis pub/sub adapter
-- `src/index.ts` — Startup resume logic for `suspended` games, SIGTERM handler
+- `src/index.ts` — Startup orphan classification now marks old runs suspended; startup resume logic for `suspended` games and SIGTERM checkpointing remain future work
 
 ---
 

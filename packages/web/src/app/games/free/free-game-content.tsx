@@ -40,23 +40,25 @@ function formatCountdown(ms: number): string {
 }
 
 function StatusBadge({ status }: { status: GameStatus }) {
-  const styles: Record<string, string> = {
+  const styles: Record<GameStatus, string> = {
     waiting: "bg-yellow-900/40 text-yellow-400 border border-yellow-900/60",
     in_progress: "bg-blue-900/40 text-blue-400 border border-blue-900/60",
     completed: "bg-green-900/40 text-green-400 border border-green-900/60",
     cancelled: "bg-red-900/40 text-red-400 border border-red-900/60",
+    suspended: "bg-amber-900/40 text-amber-300 border border-amber-900/60",
   };
-  const labels: Record<string, string> = {
+  const labels: Record<GameStatus, string> = {
     waiting: "Open",
     in_progress: "Live",
     completed: "Done",
     cancelled: "Void",
+    suspended: "Needs inspection",
   };
   return (
     <span
-      className={`text-xs px-2 py-0.5 rounded-full font-medium ${styles[status] ?? ""}`}
+      className={`text-xs px-2 py-0.5 rounded-full font-medium ${styles[status]}`}
     >
-      {labels[status] ?? status}
+      {labels[status]}
     </span>
   );
 }
@@ -245,6 +247,7 @@ function TodayGameSection({
 
   const isLive = todayGame.status === "in_progress";
   const isDone = todayGame.status === "completed";
+  const isSuspended = todayGame.status === "suspended";
 
   return (
     <section>
@@ -263,7 +266,7 @@ function TodayGameSection({
             href={`/games/${todayGame.slug ?? todayGame.id}`}
             className="influence-button-secondary text-xs px-3 py-1.5 rounded-lg"
           >
-            {isLive ? "Watch" : isDone ? "Replay" : "View"}
+            {isLive ? "Watch" : isDone ? "Replay" : isSuspended ? "Inspect" : "View"}
           </Link>
         </div>
       </div>

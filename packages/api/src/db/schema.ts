@@ -6,7 +6,20 @@
  *         permissions, roles, role_permissions, address_roles
  */
 
-import { pgTable, text, integer, primaryKey, serial, bigint } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  boolean,
+  check,
+  foreignKey,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  serial,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 // ---------------------------------------------------------------------------
@@ -32,7 +45,7 @@ export const users = pgTable("users", {
 // Games
 // ---------------------------------------------------------------------------
 
-export type GameStatus = "waiting" | "in_progress" | "completed" | "cancelled";
+export type GameStatus = "waiting" | "in_progress" | "completed" | "cancelled" | "suspended";
 export type TrackType = "custom" | "free";
 
 export const games = pgTable("games", {
@@ -138,6 +151,197 @@ export const gameResults = pgTable("game_results", {
     .notNull()
     .default(sql`now()::text`),
 });
+
+// ---------------------------------------------------------------------------
+// Durable Game Run Kernel
+// ---------------------------------------------------------------------------
+
+export type DurableRunSource = "api" | "simulation_import";
+export type GameRunOwnerStatus = "active" | "closed" | "revoked" | "expired";
+export type KernelHealthStatus = "healthy" | "degraded" | "suspended";
+export type EvidenceRedactionStatus = "active" | "expired" | "redacted";
+
+export const gameRunOwners = pgTable("game_run_owners", {
+  id: text("id").primaryKey(), // UUID
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id),
+  ownerEpoch: text("owner_epoch").notNull(), // Durable stale-writer rejection token
+  status: text("status").notNull().$type<GameRunOwnerStatus>().default("active"),
+  runSource: text("run_source").notNull().$type<DurableRunSource>().default("api"),
+  processId: text("process_id"),
+  acquiredAt: text("acquired_at")
+    .notNull()
+    .default(sql`now()::text`),
+  heartbeatAt: text("heartbeat_at")
+    .notNull()
+    .default(sql`now()::text`),
+  expiresAt: text("expires_at"),
+  closedAt: text("closed_at"),
+  revokedAt: text("revoked_at"),
+  lastPersistedEventSequence: integer("last_persisted_event_sequence").notNull().default(0),
+  kernelHealth: text("kernel_health").notNull().$type<KernelHealthStatus>().default("healthy"),
+  failureReason: text("failure_reason"),
+  failureDetails: jsonb("failure_details").$type<Record<string, unknown>>(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("game_run_owners_owner_epoch_unique").on(table.ownerEpoch),
+  uniqueIndex("game_run_owners_game_owner_epoch_unique").on(table.gameId, table.ownerEpoch),
+  uniqueIndex("game_run_owners_one_active_per_game")
+    .on(table.gameId)
+    .where(sql`${table.status} = 'active'`),
+  index("game_run_owners_game_id_idx").on(table.gameId),
+  check("game_run_owners_status_check", sql`${table.status} IN ('active', 'closed', 'revoked', 'expired')`),
+  check("game_run_owners_run_source_check", sql`${table.runSource} IN ('api', 'simulation_import')`),
+  check("game_run_owners_kernel_health_check", sql`${table.kernelHealth} IN ('healthy', 'degraded', 'suspended')`),
+  check("game_run_owners_last_persisted_event_sequence_check", sql`${table.lastPersistedEventSequence} >= 0`),
+]);
+
+export const gameEvents = pgTable("game_events", {
+  id: serial("id").primaryKey(),
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id),
+  sequence: integer("sequence").notNull(),
+  eventType: text("event_type").notNull(),
+  eventHash: text("event_hash").notNull(),
+  ownerEpoch: text("owner_epoch")
+    .notNull()
+    .references(() => gameRunOwners.ownerEpoch),
+  visibility: text("visibility").notNull(),
+  payloadVersion: integer("payload_version").notNull().default(1),
+  runSource: text("run_source").notNull().$type<DurableRunSource>().default("api"),
+  sourcePointers: jsonb("source_pointers").$type<ReadonlyArray<Record<string, unknown>>>(),
+  envelope: jsonb("envelope").notNull().$type<Record<string, unknown>>(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("game_events_game_id_sequence_unique").on(table.gameId, table.sequence),
+  index("game_events_game_id_idx").on(table.gameId),
+  index("game_events_event_type_idx").on(table.eventType),
+  foreignKey({
+    name: "game_events_game_owner_fk",
+    columns: [table.gameId, table.ownerEpoch],
+    foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
+  }),
+  check("game_events_sequence_positive_check", sql`${table.sequence} > 0`),
+  check("game_events_visibility_check", sql`${table.visibility} IN ('public', 'player', 'producer', 'system')`),
+  check("game_events_run_source_check", sql`${table.runSource} IN ('api', 'simulation_import')`),
+  check("game_events_envelope_game_id_check", sql`${table.envelope} ? 'gameId' AND (${table.envelope}->>'gameId') = ${table.gameId}`),
+  check("game_events_envelope_sequence_check", sql`${table.envelope} ? 'sequence' AND ((${table.envelope}->>'sequence')::integer) = ${table.sequence}`),
+  check("game_events_envelope_type_check", sql`${table.envelope} ? 'type' AND (${table.envelope}->>'type') = ${table.eventType}`),
+  check("game_events_envelope_payload_version_check", sql`${table.envelope} ? 'payloadVersion' AND ((${table.envelope}->>'payloadVersion')::integer) = ${table.payloadVersion}`),
+]);
+
+export const gameCheckpoints = pgTable("game_checkpoints", {
+  id: text("id").primaryKey(), // UUID
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id),
+  ownerEpoch: text("owner_epoch")
+    .notNull()
+    .references(() => gameRunOwners.ownerEpoch),
+  lastEventSequence: integer("last_event_sequence").notNull(),
+  checkpointKind: text("checkpoint_kind").notNull().default("phase_boundary"),
+  phase: text("phase"),
+  round: integer("round"),
+  eventHeadHash: text("event_head_hash").notNull(),
+  projectionHash: text("projection_hash").notNull(),
+  hydrateable: boolean("hydrateable").notNull().default(false),
+  hydrationStatus: jsonb("hydration_status").notNull().$type<Record<string, unknown>>(),
+  snapshot: jsonb("snapshot").notNull().$type<Record<string, unknown>>(),
+  transcriptCursor: jsonb("transcript_cursor").$type<Record<string, unknown>>(),
+  tokenCostCursor: jsonb("token_cost_cursor").$type<Record<string, unknown>>(),
+  degradedReason: text("degraded_reason"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("game_checkpoints_boundary_unique").on(
+    table.gameId,
+    table.lastEventSequence,
+    table.checkpointKind,
+  ),
+  index("game_checkpoints_game_id_idx").on(table.gameId),
+  foreignKey({
+    name: "game_checkpoints_game_owner_fk",
+    columns: [table.gameId, table.ownerEpoch],
+    foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
+  }),
+  foreignKey({
+    name: "game_checkpoints_event_boundary_fk",
+    columns: [table.gameId, table.lastEventSequence],
+    foreignColumns: [gameEvents.gameId, gameEvents.sequence],
+  }),
+  check("game_checkpoints_checkpoint_kind_check", sql`${table.checkpointKind} IN ('initial', 'phase_boundary', 'terminal')`),
+  check("game_checkpoints_last_event_sequence_check", sql`${table.lastEventSequence} >= 0`),
+]);
+
+export const gameEvidenceManifests = pgTable("game_evidence_manifests", {
+  id: text("id").primaryKey(), // UUID
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id),
+  ownerEpoch: text("owner_epoch")
+    .notNull()
+    .references(() => gameRunOwners.ownerEpoch),
+  eventSequence: integer("event_sequence"),
+  evidenceType: text("evidence_type").notNull(),
+  retentionClass: text("retention_class").notNull().default("debug"),
+  accessScope: text("access_scope").notNull().default("producer_admin"),
+  redactionStatus: text("redaction_status").notNull().$type<EvidenceRedactionStatus>().default("active"),
+  expiresAt: text("expires_at"),
+  redactedAt: text("redacted_at"),
+  storageProvider: text("storage_provider"),
+  storageBucket: text("storage_bucket"),
+  storageKey: text("storage_key"),
+  sourcePointers: jsonb("source_pointers").$type<ReadonlyArray<Record<string, unknown>>>(),
+  metadata: jsonb("metadata").notNull().$type<Record<string, unknown>>(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  index("game_evidence_manifests_game_id_idx").on(table.gameId),
+  index("game_evidence_manifests_event_sequence_idx").on(table.gameId, table.eventSequence),
+  foreignKey({
+    name: "game_evidence_manifests_game_owner_fk",
+    columns: [table.gameId, table.ownerEpoch],
+    foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
+  }),
+  foreignKey({
+    name: "game_evidence_manifests_event_boundary_fk",
+    columns: [table.gameId, table.eventSequence],
+    foreignColumns: [gameEvents.gameId, gameEvents.sequence],
+  }),
+  check("game_evidence_manifests_retention_class_check", sql`${table.retentionClass} IN ('debug', 'audit', 'legal_hold')`),
+  check("game_evidence_manifests_access_scope_check", sql`${table.accessScope} IN ('producer_admin')`),
+  check("game_evidence_manifests_redaction_status_check", sql`${table.redactionStatus} IN ('active', 'expired', 'redacted')`),
+  check("game_evidence_manifests_event_sequence_check", sql`${table.eventSequence} IS NULL OR ${table.eventSequence} > 0`),
+]);
+
+export const gameEvidenceManifestReads = pgTable("game_evidence_manifest_reads", {
+  id: serial("id").primaryKey(),
+  manifestId: text("manifest_id")
+    .notNull()
+    .references(() => gameEvidenceManifests.id),
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id),
+  accessorUserId: text("accessor_user_id").references(() => users.id),
+  accessorRole: text("accessor_role"),
+  purpose: text("purpose").notNull(),
+  outcome: text("outcome").notNull(),
+  readAt: text("read_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  index("game_evidence_manifest_reads_manifest_id_idx").on(table.manifestId),
+  index("game_evidence_manifest_reads_game_id_idx").on(table.gameId),
+  check("game_evidence_manifest_reads_outcome_check", sql`${table.outcome} IN ('allowed', 'denied', 'expired', 'redacted')`),
+]);
 
 // ---------------------------------------------------------------------------
 // Agent Memories (operational, per-game)

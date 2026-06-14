@@ -84,6 +84,22 @@ A derived read model rebuilt from canonical game events, such as current board s
 
 The local game MCP is a corpus-level projection host over simulation artifacts. It scans sessions under `packages/engine/docs/simulations/`, addresses games by `sessionId + gameNumber`, and stays read-only.
 
+## Durable game-run kernel
+
+The first durable API runtime layer for live game execution. It binds API game identity into canonical events, persists ordered accepted-domain facts, enforces single-writer ownership, and defines checkpoint/evidence boundaries. It is not itself a claim that stopped games can resume; resume depends on later checkpoint hydration.
+
+## Checkpoint capsule
+
+A persisted phase-boundary diagnostic artifact keyed to the latest canonical event sequence it covers. The first durable-kernel capsules store replay/projection data, transcript cursors, and explicit missing hydration inputs with `hydrateable=false`; future resume work must add XState snapshot data, phase accumulators, runner/agent continuity state, and token/cost cursors before a checkpoint can become a safe resume boundary.
+
+## Owner epoch
+
+The durable single-writer ownership marker for a live game run. An owner epoch lets one worker process and commit accepted game facts while rejecting stale writers; LLM calls may run in parallel inside the owner, but accepted `GameState` and XState mutations stay sequential.
+
+## Private evidence manifest
+
+A producer/debug metadata record that points to raw LLM evidence such as prompts, model responses, `thinking`, `reasoningContext`, and normalized agent-turn objects. The manifest may be stored in Postgres while raw content lives in private object storage; neither the manifest nor the raw evidence is player-visible dialogue or canonical board state.
+
 ## callTool reasoning augmentation
 
 The single choke-point in `InfluenceAgent.callTool<T>` that guarantees every structured decision return and every JSON-fallback path carries the native `reasoningContext` (via `as T & { reasoningContext?: string }` intersections only — never `as any`). Tool schemas for observable decisions (cast_votes, use_power, council_vote, etc.) include a `thinking` field; the engine threads both values out to the phase loggers and `TranscriptEntry`.

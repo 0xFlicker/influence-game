@@ -57,6 +57,13 @@
       "when": 1777425600000,
       "tag": "0007_add_room_metadata",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781394050000,
+      "tag": "0008_durable_game_run_kernel",
+      "breakpoints": true
     }
   ]
 }

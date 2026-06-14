@@ -226,7 +226,7 @@ In simulation batches under `packages/engine/docs/simulations/`, each game write
 - `game-N.json`: full transcript JSON plus result metadata.
 - `game-N-progress.jsonl`: lightweight progress events for monitoring a running game.
 - `game-N-turns.jsonl`: one clean structured JSON record per agent turn, including the normalized response the game used plus `thinking` and `reasoningContext` when available.
-- `game-N-events.jsonl`: one clean canonical domain event record per accepted game-state fact. Replay this through `replayCanonicalEvents(...)` to rebuild the game projection; do not parse transcript prose as board state.
+- `game-N-events.jsonl`: one clean canonical domain event record per accepted game-state fact. Replay this through `replayCanonicalEvents(...)` to rebuild the game projection; do not parse transcript prose as board state. API-backed games persist the same canonical envelope in Postgres for live runs, while CLI simulations remain local JSONL artifacts unless a future import path explicitly loads them.
 
 `game-N-turns.jsonl` always includes hidden `mingle-intent` records and House `mingle-room-assignment` records. It includes `house-mc-summary` records by default because `enableHouseRoundSummaries` is enabled in simulation config. It includes hidden `strategic-reflection` and `strategy-packet` records when the simulator is run with `--strategic-reflections` (or `INFLUENCE_SIM_STRATEGIC_REFLECTIONS=true`) and the reflection produces a packet. It includes private `house-strategy-bible`, `house-long-form-summary`, and `house-producer-brief` records when the simulator is run with `--rich-producer` (or `INFLUENCE_SIM_RICH_PRODUCER=true`). Later private decision records may include `response.strategyPacketUse` markers that link a decision back to the packet revision as self-reported linkage evidence. These records are producer/debug artifacts only; they are not player-visible speech.
 
@@ -264,6 +264,7 @@ Update simulation batch notes (the dated `.md` next to `results.json` etc.) with
 - If Strategy Thread packets changed, can MCP `search_logs` find a `strategy-packet` record plus a later `strategyPacketUse` marker?
 - If House producer carry-forward changed, can MCP `search_logs` find `house-strategy-bible`, `house-mc-summary`, `house-long-form-summary`, and `house-producer-brief` records in a rich producer run?
 - Are packet content and packet-use markers absent from websocket-visible events and canonical board state?
+- Do API durable events, simulator JSONL records, and replay/projection tests still use the same `CanonicalGameEvent` envelope?
 - Do mocks and tests compile and pass with the new shapes?
 - Are the ANSI color rules, terminal output expectations, clean `game-*-turns.jsonl`, and clean `game-*-events.jsonl` artifacts documented?
 - Did we update the cross-referenced usage docs and AGENTS.md where the contract changed?

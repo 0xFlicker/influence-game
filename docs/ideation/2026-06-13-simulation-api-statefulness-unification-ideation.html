@@ -1,0 +1,905 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Simulation/API Statefulness Unification</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f7f5ef;
+      --ink: #1d2524;
+      --muted: #53615f;
+      --soft: #6f7c78;
+      --line: #d8ded6;
+      --panel: #ffffff;
+      --panel-soft: #eef4f0;
+      --blue: #1769a3;
+      --blue-soft: #e6f1fa;
+      --green: #24745a;
+      --green-soft: #e5f2ed;
+      --amber: #94610e;
+      --amber-soft: #f7ead0;
+      --plum: #704c82;
+      --plum-soft: #f0e7f4;
+      --red: #a0473d;
+      --red-soft: #f7e4e1;
+      --shadow: 0 12px 34px rgba(31, 41, 38, 0.10);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    a {
+      color: var(--blue);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+
+    code {
+      color: #2f423f;
+      background: #edf1ee;
+      border: 1px solid #d9e2dc;
+      border-radius: 5px;
+      padding: 0.08rem 0.28rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+    }
+
+    strong {
+      color: inherit;
+      font-weight: 750;
+    }
+
+    .page {
+      width: min(1100px, calc(100vw - 36px));
+      margin: 0 auto;
+      padding: 34px 0 52px;
+    }
+
+    header {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      padding: 28px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--green);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.74rem;
+      font-weight: 800;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 900px;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+    }
+
+    h2 {
+      font-size: 1.55rem;
+      margin-bottom: 14px;
+    }
+
+    h3 {
+      font-size: 1.18rem;
+    }
+
+    p {
+      max-width: 78ch;
+      margin: 0 0 1rem;
+      color: var(--muted);
+    }
+
+    .lede {
+      max-width: 86ch;
+      margin-top: 16px;
+      color: #33403d;
+      font-size: 1.03rem;
+    }
+
+    .meta-grid, .stats {
+      display: grid;
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .meta-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .stats {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .meta, .stat {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-soft);
+      padding: 12px 14px;
+    }
+
+    .meta dt, .stat dt {
+      margin: 0;
+      color: var(--soft);
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .meta dd, .stat dd {
+      margin: 2px 0 0;
+      color: var(--ink);
+      font-weight: 750;
+    }
+
+    section {
+      margin-top: 24px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 8px 24px rgba(31, 41, 38, 0.06);
+      padding: 24px;
+    }
+
+    .section-label {
+      margin: 0 0 6px;
+      color: var(--amber);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.72rem;
+      font-weight: 800;
+    }
+
+    .evidence-list, .axis-list {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .evidence-list li, .axis-list li {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfa;
+      padding: 12px 14px;
+      color: var(--muted);
+    }
+
+    .axis-list strong {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 2px;
+    }
+
+    .jump-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin: 0 0 18px;
+    }
+
+    .jump-list a {
+      display: block;
+      border: 1px solid #d7e2dc;
+      border-radius: 8px;
+      background: var(--green-soft);
+      padding: 10px 12px;
+      color: #1f5948;
+      text-decoration: none;
+      font-weight: 750;
+    }
+
+    .jump-list a span {
+      color: var(--green);
+      margin-right: 4px;
+    }
+
+    .idea {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfa;
+      padding: 18px;
+      margin-top: 14px;
+    }
+
+    .idea-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+
+    .idea-title small {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--green);
+      font-size: 0.78rem;
+      font-weight: 850;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+      min-width: 210px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      border: 1px solid #cfddd6;
+      border-radius: 999px;
+      background: var(--panel);
+      color: var(--ink);
+      padding: 0.18rem 0.68rem;
+      font-size: 0.8rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .pill.high {
+      background: var(--green-soft);
+      border-color: #bfded0;
+      color: #1d634d;
+    }
+
+    .pill.med {
+      background: var(--amber-soft);
+      border-color: #ead29d;
+      color: #775009;
+    }
+
+    .pill.hard {
+      background: var(--plum-soft);
+      border-color: #ddc8e7;
+      color: #674478;
+    }
+
+    .idea dl {
+      display: grid;
+      grid-template-columns: 8.5rem 1fr;
+      gap: 8px 14px;
+      margin: 0;
+    }
+
+    .idea dt {
+      color: var(--soft);
+      font-size: 0.72rem;
+      font-weight: 850;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .idea dd {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .basis-tag {
+      font-weight: 850;
+      color: var(--ink);
+    }
+
+    figure {
+      margin: 16px 0 0;
+      border: 1px solid #d9e2dc;
+      border-radius: 8px;
+      background: #f7faf8;
+      padding: 12px;
+    }
+
+    figcaption {
+      margin-top: 8px;
+      color: var(--soft);
+      font-size: 0.86rem;
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .box-text {
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      font-weight: 800;
+      fill: #1f2b29;
+    }
+
+    .box-sub {
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 11px;
+      fill: #52615d;
+    }
+
+    .label-halo {
+      paint-order: stroke fill;
+      stroke: #f7faf8;
+      stroke-width: 4px;
+      stroke-linejoin: round;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.94rem;
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--soft);
+      font-size: 0.72rem;
+      font-weight: 850;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .sources {
+      columns: 2 320px;
+      column-gap: 28px;
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+
+    .sources li {
+      break-inside: avoid;
+      margin: 0 0 10px;
+    }
+
+    .callout {
+      border: 1px solid #ead29d;
+      border-radius: 8px;
+      background: var(--amber-soft);
+      padding: 14px;
+      color: #5d440c;
+    }
+
+    .callout p {
+      margin: 0;
+      color: #5d440c;
+    }
+
+    footer {
+      margin-top: 24px;
+      color: var(--soft);
+      font-size: 0.84rem;
+      text-align: center;
+    }
+
+    @media (max-width: 760px) {
+      .page {
+        width: min(100vw - 24px, 1100px);
+        padding-top: 18px;
+      }
+
+      header, section {
+        padding: 18px;
+      }
+
+      .meta-grid, .stats, .jump-list {
+        grid-template-columns: 1fr;
+      }
+
+      .idea-head {
+        display: block;
+      }
+
+      .pill-row {
+        justify-content: flex-start;
+        margin-top: 10px;
+      }
+
+      .idea dl {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+
+      .idea dd {
+        margin-bottom: 8px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">Ideation</p>
+      <h1>Simulation/API Statefulness Unification</h1>
+      <p class="lede">The strongest direction is not "make the server stateless" in the abstract. It is to make each game run a resumable, single-writer workflow whose accepted domain facts, checkpoints, public projections, and raw LLM evidence have separate durable ledgers. Simulation JSONL and API Postgres/S3 storage should become adapters over the same runner emission contract.</p>
+      <div class="meta-grid">
+        <dl class="meta">
+          <dt>Date</dt>
+          <dd><time datetime="2026-06-13">2026-06-13</time></dd>
+        </dl>
+        <dl class="meta">
+          <dt>Topic</dt>
+          <dd>simulation-api-statefulness-unification</dd>
+        </dl>
+        <dl class="meta">
+          <dt>Focus</dt>
+          <dd>unifying simulation/API and enacting <code>docs/statefulness-plan.md</code></dd>
+        </dl>
+        <dl class="meta">
+          <dt>Mode</dt>
+          <dd>repo-grounded</dd>
+        </dl>
+      </div>
+      <div class="stats">
+        <dl class="stat">
+          <dt>Raw Candidates</dt>
+          <dd>17</dd>
+        </dl>
+        <dl class="stat">
+          <dt>Ranked Ideas</dt>
+          <dd>7</dd>
+        </dl>
+        <dl class="stat">
+          <dt>Cut or Nested</dt>
+          <dd>10</dd>
+        </dl>
+        <dl class="stat">
+          <dt>Axes Covered</dt>
+          <dd>5</dd>
+        </dl>
+      </div>
+    </header>
+
+    <section id="grounding-context">
+      <p class="section-label">Codebase Context</p>
+      <h2>Grounding Context</h2>
+      <ul class="evidence-list">
+        <li><strong>The current risk is explicitly state loss.</strong> The statefulness plan says running games hold state in process memory with no mid-game persistence, and API games still lack a durable event table, XState snapshots, runner/agent checkpoints, and resume after process loss.</li>
+        <li><strong>Simulation already has the better artifact spine.</strong> Simulator runs write progress, turns, transcripts, and accepted-domain canonical event JSONL; the docs say to replay <code>game-N-events.jsonl</code> through <code>replayCanonicalEvents(...)</code> instead of parsing transcript prose as board state.</li>
+        <li><strong>API lifecycle is still process-local and terminal-persisted.</strong> The API uses an in-memory <code>activeGames</code> map, creates <code>new GameRunner(...)</code>, streams to WebSockets, then batch-inserts transcript/results after <code>runner.run()</code> completes or writes partial transcript on error.</li>
+        <li><strong>Canonical event identity is close but not unified.</strong> <code>GameState</code> can accept a <code>gameId</code> option, but <code>GameRunner</code> currently constructs <code>new GameState(...)</code> without the API <code>games.id</code>; this makes the first production event-store decision an identity decision.</li>
+        <li><strong>The public viewer is doing too much inference.</strong> WebSocket snapshots derive phase from the last transcript entry, and structured game facts are parsed with regex helpers. The engine projection already has typed canonical facts and ordered replay guards.</li>
+        <li><strong>Linode S3 exists, but the current helper is not the raw-evidence store.</strong> The storage helper is for profile-picture uploads and sends <code>ACL: "public-read"</code>. Raw prompts, model responses, reasoning context, and producer records need a private object-storage boundary with Postgres manifests.</li>
+      </ul>
+    </section>
+
+    <section id="topic-axes">
+      <p class="section-label">Decomposition</p>
+      <h2>Topic Axes</h2>
+      <ul class="axis-list">
+        <li><strong>Canonical event truth and run identity</strong> One accepted event stream per game, with API and simulator emitting equivalent facts.</li>
+        <li><strong>Checkpoint/hydration and single-writer lifecycle</strong> Pause safely at known boundaries, resume honestly, and keep XState mutations sequential.</li>
+        <li><strong>Raw LLM evidence and private debug storage</strong> Preserve prompts, responses, reasoning, and producer artifacts without exposing them to UX surfaces.</li>
+        <li><strong>Viewer/public projection and catch-up contract</strong> Let the UX read typed public facts and sequence cursors rather than transcript prose and process-local WebSockets.</li>
+        <li><strong>Operations/storage migration on Linode/Postgres</strong> Use the existing always-on Postgres/Linode shape first, then decide whether heavier workflow infrastructure is warranted.</li>
+      </ul>
+    </section>
+
+    <section id="ranked-ideas">
+      <p class="section-label">Survivors</p>
+      <h2>Ranked Ideas</h2>
+      <nav class="jump-list" aria-label="Ranked ideas">
+        <a href="#i1"><span>I1.</span> Unified Run Artifact Sink Matrix</a>
+        <a href="#i2"><span>I2.</span> Postgres Workflow Kernel Before Temporal</a>
+        <a href="#i3"><span>I3.</span> Canonical Run Identity Adapter</a>
+        <a href="#i4"><span>I4.</span> Checkpoint Capsule With Projection Cursor</a>
+        <a href="#i5"><span>I5.</span> Owner Epoch Lease</a>
+        <a href="#i6"><span>I6.</span> Private Evidence Object Ledger</a>
+        <a href="#i7"><span>I7.</span> Public Projection and Cursor Wake-Up Contract</a>
+      </nav>
+
+      <article class="idea" id="i1">
+        <div class="idea-head">
+          <div class="idea-title">
+            <small>I1. Top pick</small>
+            <h3>Unified Run Artifact Sink Matrix</h3>
+          </div>
+          <div class="pill-row">
+            <span class="pill high">Conf 86%</span>
+            <span class="pill hard">Complexity High</span>
+          </div>
+        </div>
+        <dl>
+          <dt>Description</dt>
+          <dd>Define one runner emission surface for canonical events, transcript entries, agent turns, progress, checkpoints, and outbound viewer notifications. The simulator adapter writes JSONL/text artifacts; the API adapter writes ordered Postgres rows, private object evidence, and outbox/public projection rows. The important move is not a giant abstraction first; it is a shared contract for what a game run emits.</dd>
+          <dt>Axis</dt>
+          <dd>Canonical event truth and run identity; Operations/storage migration on Linode/Postgres.</dd>
+          <dt>Basis</dt>
+          <dd><span class="basis-tag">direct:</span> Simulator <code>attachProgressLogger</code> already wires canonical events, stream events, progress, and agent turns into artifact writers. API lifecycle currently only wires the stream listener to <code>ViewerEventPacer</code> and terminal DB writes. <span class="basis-tag">external:</span> Event sourcing prior art separates the authoritative event store from projections and downstream distribution.</dd>
+          <dt>Rationale</dt>
+          <dd>This is the cleanest unification idea because it makes simulation and API games equivalent consumers of one engine emission protocol. It also gives a parity harness: export API rows back into simulator-shaped artifacts and ask the existing MCP/replay tooling the same questions.</dd>
+          <dt>Downsides</dt>
+          <dd>The name can invite over-abstraction. Keep it as a small interface plus acceptance tests, not a new runtime framework. The API sink must be fail-closed for authoritative events; the current listener pattern is not enough while listener errors can be swallowed.</dd>
+          <dt>Confidence</dt>
+          <dd>86% - strong direct basis, high leverage, and it directly answers the simulation/API split.</dd>
+          <dt>Complexity</dt>
+          <dd>High - touches engine emission boundaries, API persistence, simulator artifacts, and validation.</dd>
+        </dl>
+        <figure>
+          <svg viewBox="0 0 900 260" role="img" aria-labelledby="artifact-sink-title artifact-sink-desc">
+            <title id="artifact-sink-title">Runner emission contract fan-out</title>
+            <desc id="artifact-sink-desc">A shared runner emission contract feeds simulator JSONL, API Postgres, private object storage, and public projection or outbox adapters.</desc>
+            <defs>
+              <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#6f7c78"></path>
+              </marker>
+            </defs>
+            <rect x="30" y="82" width="170" height="80" rx="8" fill="#e5f2ed" stroke="#9fcdbb"></rect>
+            <text x="115" y="112" text-anchor="middle" class="box-text">GameRunner</text>
+            <text x="115" y="134" text-anchor="middle" class="box-sub">accepted emissions</text>
+            <rect x="270" y="72" width="220" height="100" rx="8" fill="#e6f1fa" stroke="#a9cfe8"></rect>
+            <text x="380" y="108" text-anchor="middle" class="box-text">Run Artifact Sink</text>
+            <text x="380" y="130" text-anchor="middle" class="box-sub">events, transcript, turns,</text>
+            <text x="380" y="148" text-anchor="middle" class="box-sub">checkpoints, viewer outbox</text>
+            <rect x="570" y="20" width="250" height="48" rx="8" fill="#ffffff" stroke="#d8ded6"></rect>
+            <text x="695" y="49" text-anchor="middle" class="box-text">Simulator JSONL/Text</text>
+            <rect x="570" y="82" width="250" height="48" rx="8" fill="#ffffff" stroke="#d8ded6"></rect>
+            <text x="695" y="111" text-anchor="middle" class="box-text">API Postgres Events</text>
+            <rect x="570" y="144" width="250" height="48" rx="8" fill="#ffffff" stroke="#d8ded6"></rect>
+            <text x="695" y="173" text-anchor="middle" class="box-text">Private Evidence Objects</text>
+            <rect x="570" y="206" width="250" height="48" rx="8" fill="#ffffff" stroke="#d8ded6"></rect>
+            <text x="695" y="235" text-anchor="middle" class="box-text">Public Projection/Outbox</text>
+            <line x1="200" y1="122" x2="270" y2="122" stroke="#6f7c78" stroke-width="2.4" marker-end="url(#arrow)"></line>
+            <line x1="490" y1="102" x2="570" y2="44" stroke="#6f7c78" stroke-width="2.4" marker-end="url(#arrow)"></line>
+            <line x1="490" y1="114" x2="570" y2="106" stroke="#6f7c78" stroke-width="2.4" marker-end="url(#arrow)"></line>
+            <line x1="490" y1="132" x2="570" y2="168" stroke="#6f7c78" stroke-width="2.4" marker-end="url(#arrow)"></line>
+            <line x1="490" y1="150" x2="570" y2="230" stroke="#6f7c78" stroke-width="2.4" marker-end="url(#arrow)"></line>
+          </svg>
+          <figcaption>The unification target is the emission contract, with storage adapters per runtime. The simulator remains useful because its artifact shape becomes the acceptance oracle for API persistence.</figcaption>
+        </figure>
+      </article>
+
+      <article class="idea" id="i2">
+        <div class="idea-head">
+          <div class="idea-title">
+            <small>I2.</small>
+            <h3>Postgres Workflow Kernel Before Temporal</h3>
+          </div>
+          <div class="pill-row">
+            <span class="pill high">Conf 84%</span>
+            <span class="pill hard">Complexity High</span>
+          </div>
+        </div>
+        <dl>
+          <dt>Description</dt>
+          <dd>Build the first durable workflow kernel in the existing database: <code>game_events</code>, <code>game_checkpoints</code>, <code>game_leases</code>, <code>game_outbox</code>, and <code>game_evidence_manifests</code>. Keep Linode/Postgres as the operational base while modeling the same boundaries a Temporal-style system would eventually require.</dd>
+          <dt>Axis</dt>
+          <dd>Operations/storage migration on Linode/Postgres.</dd>
+          <dt>Basis</dt>
+          <dd><span class="basis-tag">direct:</span> The current schema has game status, players, transcripts, results, and memories but no suspended status or event/checkpoint/outbox tables. <span class="basis-tag">external:</span> Event sourcing guidance explicitly allows a general-purpose relational database as an event store if the application builds stream ordering, optimistic concurrency, and snapshots.</dd>
+          <dt>Rationale</dt>
+          <dd>This keeps the migration close to the infrastructure already running. It gives you ordered facts, checkpoint heads, single-writer ownership, and transactional public delivery before adding a queue, Redis, or workflow engine.</dd>
+          <dt>Downsides</dt>
+          <dd>The team must build some event-store ergonomics itself: unique sequences, replay guards, idempotent consumers, schema evolution, and compaction or snapshot policy. That is still smaller than introducing Temporal before the game event model is proven.</dd>
+          <dt>Confidence</dt>
+          <dd>84% - strong fit with current storage and with the user's preference to stay on Linode if viable.</dd>
+          <dt>Complexity</dt>
+          <dd>High - mostly schema and lifecycle work, but it becomes the durability foundation for everything else.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="i3">
+        <div class="idea-head">
+          <div class="idea-title">
+            <small>I3.</small>
+            <h3>Canonical Run Identity Adapter</h3>
+          </div>
+          <div class="pill-row">
+            <span class="pill high">Conf 88%</span>
+            <span class="pill med">Complexity Medium</span>
+          </div>
+        </div>
+        <dl>
+          <dt>Description</dt>
+          <dd>Make API <code>games.id</code> the required engine/canonical <code>gameId</code> before the first roster event. Every persisted canonical event should be keyed by <code>(game_id, sequence)</code>, and the append path should reject events whose envelope game id does not match the API game row.</dd>
+          <dt>Axis</dt>
+          <dd>Canonical event truth and run identity.</dd>
+          <dt>Basis</dt>
+          <dd><span class="basis-tag">direct:</span> <code>GameState</code> already supports <code>options.gameId</code>, but <code>GameRunner</code> constructs <code>new GameState(...)</code> without passing the API id. The API starts a game by loading <code>gameId</code> from Postgres, then constructs <code>new GameRunner(...)</code>.</dd>
+          <dt>Rationale</dt>
+          <dd>Durable event storage is brittle until identity is settled. This is the first small step that makes simulator events, API rows, projection cursors, object manifests, and debug artifacts all address the same run.</dd>
+          <dt>Downsides</dt>
+          <dd>It forces tests and fixtures to care about game ids earlier. That is a good cost, but it will expose any code that assumed generated internal ids were harmless.</dd>
+          <dt>Confidence</dt>
+          <dd>88% - narrow, directly supported, and prerequisite to a production event table.</dd>
+          <dt>Complexity</dt>
+          <dd>Medium - small surface, but it affects event compatibility and snapshot parity.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="i4">
+        <div class="idea-head">
+          <div class="idea-title">
+            <small>I4.</small>
+            <h3>Checkpoint Capsule With Projection Cursor</h3>
+          </div>
+          <div class="pill-row">
+            <span class="pill high">Conf 82%</span>
+            <span class="pill hard">Complexity High</span>
+          </div>
+        </div>
+        <dl>
+          <dt>Description</dt>
+          <dd>Persist phase-boundary checkpoint capsules keyed to <code>last_event_sequence</code>. A capsule should include the XState persisted snapshot, runner data, token usage, non-replayable private continuity state, and the public/domain projection cursor. First ship forensic checkpoints that can be diffed against live state; only then claim <code>fromCheckpoint()</code> resume.</dd>
+          <dt>Axis</dt>
+          <dd>Checkpoint/hydration and single-writer lifecycle.</dd>
+          <dt>Basis</dt>
+          <dd><span class="basis-tag">direct:</span> The statefulness plan already names GameState, canonical event cursor, XState snapshot, GameRunner accumulated data, and TokenTracker usage as checkpoint inputs. <span class="basis-tag">external:</span> XState exposes persisted actor snapshots and restore-by-snapshot semantics; Temporal's replay model is useful as a mental model for recording outside-world results rather than recomputing them.</dd>
+          <dt>Rationale</dt>
+          <dd>This answers the user's pause/resume question honestly: yes, a singleton game can stop safely and continue later, but only at persisted boundaries. It also keeps canonical events as truth and snapshots as a resume optimization, not a replacement event store.</dd>
+          <dt>Downsides</dt>
+          <dd>Mid-phase resume remains a later problem. In-flight LLM calls and raw provider conversations should not be promised as recoverable; accepted sub-results can be recorded, pending actors can be resumed with recap, and unfinished work can be retried.</dd>
+          <dt>Confidence</dt>
+          <dd>82% - strongly aligned with the plan, but hydration details need careful proof.</dd>
+          <dt>Complexity</dt>
+          <dd>High - requires engine serializers, API transaction boundaries, and resume validation.</dd>
+        </dl>
+        <figure>
+          <svg viewBox="0 0 900 220" role="img" aria-labelledby="checkpoint-title checkpoint-desc">
+            <title id="checkpoint-title">Checkpoint cursor relationship</title>
+            <desc id="checkpoint-desc">The event stream remains truth; checkpoints point to the last durable event and contain recoverable runtime state.</desc>
+            <defs>
+              <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#6f7c78"></path>
+              </marker>
+            </defs>
+            <rect x="40" y="48" width="520" height="52" rx="8" fill="#e6f1fa" stroke="#a9cfe8"></rect>
+            <text x="68" y="80" class="box-text">Event stream: 1, 2, 3, 4, 5, 6, 7...</text>
+            <rect x="245" y="128" width="300" height="62" rx="8" fill="#e5f2ed" stroke="#9fcdbb"></rect>
+            <text x="395" y="155" text-anchor="middle" class="box-text">Checkpoint capsule</text>
+            <text x="395" y="176" text-anchor="middle" class="box-sub">last_event_sequence = 5</text>
+            <line x1="395" y1="128" x2="395" y2="100" stroke="#6f7c78" stroke-width="2.4" marker-end="url(#arrow2)"></line>
+            <rect x="635" y="38" width="220" height="152" rx="8" fill="#f0e7f4" stroke="#ddc8e7"></rect>
+            <text x="745" y="70" text-anchor="middle" class="box-text">Resume inputs</text>
+            <text x="745" y="98" text-anchor="middle" class="box-sub">XState snapshot</text>
+            <text x="745" y="120" text-anchor="middle" class="box-sub">runner data</text>
+            <text x="745" y="142" text-anchor="middle" class="box-sub">token usage</text>
+            <text x="745" y="164" text-anchor="middle" class="box-sub">private continuity</text>
+            <line x1="545" y1="159" x2="635" y2="115" stroke="#6f7c78" stroke-width="2.4" marker-end="url(#arrow2)"></line>
+          </svg>
+          <figcaption>The event stream is still the ordered truth. The checkpoint capsule is a restart accelerator and resume boundary tied to a known event cursor.</figcaption>
+        </figure>
+      </article>
+
+      <article class="idea" id="i5">
+        <div class="idea-head">
+          <div class="idea-title">
+            <small>I5.</small>
+            <h3>Owner Epoch Lease</h3>
+          </div>
+          <div class="pill-row">
+            <span class="pill high">Conf 80%</span>
+            <span class="pill med">Complexity Medium</span>
+          </div>
+        </div>
+        <dl>
+          <dt>Description</dt>
+          <dd>Make the current singleton requirement explicit: one durable owner epoch mutates a game at a time. Before processing, a worker acquires a Postgres lease/advisory lock or lease row, records an owner epoch, and stamps accepted events/checkpoints with that epoch. Parallel LLM calls can happen inside the owner, but accepted state updates append sequentially.</dd>
+          <dt>Axis</dt>
+          <dd>Checkpoint/hydration and single-writer lifecycle.</dd>
+          <dt>Basis</dt>
+          <dd><span class="basis-tag">direct:</span> The statefulness plan says horizontal scaling is impossible today because <code>activeGames</code> is process-local, WebSocket pub/sub is per-process, and there is no distributed lock for game ownership. It recommends starting with Postgres advisory locks.</dd>
+          <dt>Rationale</dt>
+          <dd>This makes the user's intuition precise: event storage gives safe stop/restart and durable catch-up, not safe parallel mutation of the same XState actor. The lease is how the system says "parallel outside, sequential inside" without hand-waving.</dd>
+          <dt>Downsides</dt>
+          <dd>Leases introduce stuck-owner and timeout policy. Epoch stamping helps reject stale writers, but the recovery path needs conservative states like <code>suspended</code> and explicit operator-visible readiness.</dd>
+          <dt>Confidence</dt>
+          <dd>80% - direct plan fit and high operational clarity.</dd>
+          <dt>Complexity</dt>
+          <dd>Medium - the concept is simple, but every append/checkpoint path must enforce it consistently.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="i6">
+        <div class="idea-head">
+          <div class="idea-title">
+            <small>I6.</small>
+            <h3>Private Evidence Object Ledger</h3>
+          </div>
+          <div class="pill-row">
+            <span class="pill high">Conf 83%</span>
+            <span class="pill med">Complexity Medium</span>
+          </div>
+        </div>
+        <dl>
+          <dt>Description</dt>
+          <dd>Use private Linode Object Storage for full raw evidence: original prompt, model response, tool-call result, reasoning context, normalized agent turn, and source packet references. Postgres stores manifests: object key, content hash, event/source pointer, visibility, model, token usage, and redaction/export status.</dd>
+          <dt>Axis</dt>
+          <dd>Raw LLM evidence and private debug storage.</dd>
+          <dt>Basis</dt>
+          <dd><span class="basis-tag">direct:</span> Simulation docs treat <code>game-N-turns.jsonl</code> and hidden producer records as debug artifacts, not player-visible speech. WebSocket sanitization strips <code>thinking</code> and <code>reasoningContext</code>, and drops <code>agent_turn</code>. The current S3 helper uploads public-read PFP files, so this needs a separate private helper.</dd>
+          <dt>Rationale</dt>
+          <dd>This matches the user's proposal: Linode S3 for full raw event logs and Postgres for UX-facing events. The split preserves forensic debugging without turning the relational database into a giant hidden-reasoning blob store.</dd>
+          <dt>Downsides</dt>
+          <dd>Private evidence storage needs retention, encryption/ACL policy, redaction policy, and a producer-only access path. It also needs a clear rule: raw evidence explains accepted events but never becomes public game truth.</dd>
+          <dt>Confidence</dt>
+          <dd>83% - strongly grounded and a clean fit for object storage.</dd>
+          <dt>Complexity</dt>
+          <dd>Medium - storage plumbing is tractable, but privacy/access boundaries matter.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="i7">
+        <div class="idea-head">
+          <div class="idea-title">
+            <small>I7.</small>
+            <h3>Public Projection and Cursor Wake-Up Contract</h3>
+          </div>
+          <div class="pill-row">
+            <span class="pill high">Conf 81%</span>
+            <span class="pill hard">Complexity High</span>
+          </div>
+        </div>
+        <dl>
+          <dt>Description</dt>
+          <dd>Create public projection/event endpoints keyed by sequence cursor. The viewer asks for all public material after cursor N and receives typed phase, vote, room, shield, elimination, jury, winner, and transcript records. WebSocket becomes a wake-up that says "new public material exists after N"; a durable outbox handles delivery and pacing.</dd>
+          <dt>Axis</dt>
+          <dd>Viewer/public projection and catch-up contract.</dd>
+          <dt>Basis</dt>
+          <dd><span class="basis-tag">direct:</span> The current viewer derives snapshot phase from the last transcript entry and parses structured game facts with regex helpers. <code>game-projection.ts</code> already enforces same-game and contiguous-sequence replay for canonical events. <span class="basis-tag">external:</span> CQRS/event-sourcing patterns use materialized views for query/UI surfaces.</dd>
+          <dt>Rationale</dt>
+          <dd>This improves user experience before full engine resume exists. Viewers can refresh, reconnect, or move across API instances and catch up from durable public projections instead of hoping the current process still has the right WebSocket queue.</dd>
+          <dt>Downsides</dt>
+          <dd>The public projection is not free: it needs idempotent reducers, versioning, privacy filters, and migration from current transcript-derived UI logic. It should ship after the canonical event identity and event sink are stable.</dd>
+          <dt>Confidence</dt>
+          <dd>81% - strong direct evidence and high UX resilience payoff.</dd>
+          <dt>Complexity</dt>
+          <dd>High - spans API contracts, viewer state, projection reducers, and delivery semantics.</dd>
+        </dl>
+      </article>
+    </section>
+
+    <section id="rejection-summary">
+      <p class="section-label">Cuts</p>
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Idea</th>
+            <th>Reason Rejected or Nested</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>API flight recorder / canonical event sink</td>
+            <td>Sound, but nested inside I1. It must be fail-closed durable append, not just the current listener hook.</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>Event-store golden path parity harness</td>
+            <td>Sound, but better as the acceptance test for I1 than a standalone architecture direction.</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>Forensic checkpoints before resume</td>
+            <td>Sound, nested into I4 as the migration sequence so the repo does not overclaim crash-safe resume.</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>Phase accumulator resume</td>
+            <td>Weak for first ranking. Good future design spike for mid-phase resumability, but current code lacks a durable accumulator/inbox abstraction.</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>Suspended is first-class</td>
+            <td>Sound, but a lifecycle/status requirement nested under I2/I4 rather than a top-level idea.</td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td>Raw evidence manifests instead of raw DB logs</td>
+            <td>Sound, nested under I6 as the Postgres side of the private evidence ledger.</td>
+          </tr>
+          <tr>
+            <td>7</td>
+            <td>Agent continuity record</td>
+            <td>Weak unless narrowed to existing typed strategy/reflection fields; defer broader commitments/social-debt serialization.</td>
+          </tr>
+          <tr>
+            <td>8</td>
+            <td>Cursor wake-up WebSocket</td>
+            <td>Sound, nested under I7. It is a delivery contract consequence, not the whole idea.</td>
+          </tr>
+          <tr>
+            <td>9</td>
+            <td>Durable outbox after event commit</td>
+            <td>Sound, nested under I7 and I2. It belongs after event append/projection commit rather than before them.</td>
+          </tr>
+          <tr>
+            <td>10</td>
+            <td>Runtime readiness refs</td>
+            <td>Useful migration telemetry, but below the meeting-test as a standalone idea; include as readiness gating in downstream planning.</td>
+          </tr>
+          <tr>
+            <td>11</td>
+            <td>Temporal now</td>
+            <td>Rejected for timing. Temporal is useful prior art, but the repo should prove the Postgres event/checkpoint kernel first.</td>
+          </tr>
+          <tr>
+            <td>12</td>
+            <td>S3 as primary event store</td>
+            <td>Rejected. Object storage is a good raw-evidence/archive layer, not the ordered UX/domain event store.</td>
+          </tr>
+          <tr>
+            <td>13</td>
+            <td>Parallel XState updates</td>
+            <td>Rejected. Parallel LLM calls are fine, but accepted XState/game-state mutations still need one ordered writer.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="callout">
+        <p>No topic axis ended with zero survivors. The ranked set deliberately spreads across identity, storage kernel, checkpoint/resume, private evidence, single-writer ownership, and public viewer catch-up.</p>
+      </div>
+    </section>
+
+    <section id="sources-references">
+      <p class="section-label">Evidence</p>
+      <h2>Sources &amp; References</h2>
+      <ol class="sources">
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/statefulness-plan.md#L10-L15">docs/statefulness-plan.md lines 10-15</a> - problem statement and current API persistence gap.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/statefulness-plan.md#L44-L70">docs/statefulness-plan.md lines 44-70</a> - API in-memory risks and cleanup-only recovery.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/statefulness-plan.md#L80-L151">docs/statefulness-plan.md lines 80-151</a> - checkpoint, hydration, shutdown, and suspended-state plan.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/statefulness-plan.md#L180-L201">docs/statefulness-plan.md lines 180-201</a> - Postgres advisory-lock game ownership recommendation.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-lifecycle.ts#L39-L47">packages/api/src/services/game-lifecycle.ts lines 39-47</a> - process-local <code>activeGames</code>.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-lifecycle.ts#L220-L233">packages/api/src/services/game-lifecycle.ts lines 220-233</a> - API constructs the runner and wires only stream listener/pacer.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-lifecycle.ts#L249-L468">packages/api/src/services/game-lifecycle.ts lines 249-468</a> - terminal transcript/result persistence and error partial transcript handling.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/db/schema.ts#L35-L159">packages/api/src/db/schema.ts lines 35-159</a> - current game/transcript/result/memory schema.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-runner.ts#L51-L122">packages/engine/src/game-runner.ts lines 51-122</a> - GameRunner state ownership and canonical listener surface.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-state.ts#L78-L118">packages/engine/src/game-state.ts lines 78-118</a> - GameState game id option and canonical event append envelope.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/simulate.ts#L1029-L1114">packages/engine/src/simulate.ts lines 1029-1114</a> - simulator canonical events, progress, and agent-turn JSONL writing.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/canonical-events.ts#L15-L103">packages/engine/src/canonical-events.ts lines 15-103</a> - canonical event visibility, source pointers, envelope, and payload version.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-projection.ts#L117-L284">packages/engine/src/game-projection.ts lines 117-284</a> - projection replay checks and reducer.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/ws-manager.ts#L58-L127">packages/api/src/services/ws-manager.ts lines 58-127</a> - public sanitization and process-local publish.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/lib/storage.ts#L1-L147">packages/api/src/lib/storage.ts lines 1-147</a> - current S3 helper for profile-picture uploads and public-read ACL.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/web/src/app/games/%5Bslug%5D/components/message-parsing.ts#L1-L90">packages/web message-parsing.ts lines 1-90</a> - regex parsing of structured game facts.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/web/src/app/games/%5Bslug%5D/game-viewer.tsx#L351-L440">packages/web game-viewer.tsx lines 351-440</a> - snapshot phase derived from transcript and catch-up message handling.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/reasoning-transcript-observability.md#L221-L257">docs/reasoning-transcript-observability.md lines 221-257</a> - simulation artifact split and producer/private artifact guidance.</li>
+        <li><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing">Microsoft Azure Architecture Center: Event Sourcing pattern</a> - event store as system of record, projections, snapshots, ordering, and event-store vs broker distinction.</li>
+        <li><a href="https://docs.temporal.io/workflows">Temporal Workflow documentation</a> - durable event history, deterministic replay, and recording outside-world activity results.</li>
+        <li><a href="https://stately.ai/docs/persistence">XState persistence documentation</a> - persisted actor snapshots and restore-by-snapshot behavior.</li>
+        <li><a href="https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html">Debezium Outbox Event Router documentation</a> - outbox table/event routing prior art.</li>
+      </ol>
+    </section>
+
+    <footer class="composition-signal">Composed 2026-06-13T22:22:34Z by ce-ideate from session context and <code>docs/statefulness-plan.md</code>.</footer>
+  </main>
+</body>
+</html>

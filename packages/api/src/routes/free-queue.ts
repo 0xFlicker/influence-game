@@ -13,7 +13,7 @@
  */
 
 import { Hono } from "hono";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -31,6 +31,12 @@ import {
   pickArchetypes,
   resolveModelForTier,
 } from "@influence/engine";
+import { startGame } from "../services/game-lifecycle.js";
+import {
+  acquireGameRunOwner,
+  markOwnerStartupFailed,
+} from "../services/game-ownership.js";
+import { getRedactedKernelHealth } from "../services/game-kernel-health.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -81,10 +87,38 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       }
     }
 
+    const todayGame = (await db
+      .select({
+        id: schema.games.id,
+        slug: schema.games.slug,
+        status: schema.games.status,
+        createdAt: schema.games.createdAt,
+      })
+      .from(schema.games)
+      .where(eq(schema.games.trackType, "free"))
+      .orderBy(desc(schema.games.createdAt))
+      .limit(1))[0];
+
+    const gameNumber = todayGame
+      ? Number((await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(schema.games)
+          .where(sql`${schema.games.createdAt} <= ${todayGame.createdAt}`))[0]?.count ?? 0)
+      : 0;
+
     return c.json({
       count: allEntries.length,
       userEntry,
       nextGameTime: getNextFreeGameTime(),
+      todayGame: todayGame
+        ? {
+            id: todayGame.id,
+            slug: todayGame.slug ?? todayGame.id,
+            gameNumber,
+            status: todayGame.status,
+            kernelHealth: await getRedactedKernelHealth(db, todayGame.id),
+          }
+        : null,
     });
   });
 
@@ -368,13 +402,6 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
 
     const game = freeGames[0]!;
 
-    // Delegate to the start endpoint pattern
-    const { startGame, isGameRunning } = await import("../services/game-lifecycle.js");
-
-    if (isGameRunning(game.id)) {
-      return c.json({ error: "Game is already running" }, 400);
-    }
-
     const currentPlayers = await db
       .select()
       .from(schema.gamePlayers)
@@ -386,18 +413,14 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       }, 400);
     }
 
-    await db.update(schema.games)
-      .set({
-        status: "in_progress",
-        startedAt: new Date().toISOString(),
-      })
-      .where(eq(schema.games.id, game.id));
+    const owner = await acquireGameRunOwner(db, game.id);
+    if (!owner.ok) {
+      return c.json({ error: owner.error }, owner.statusCode);
+    }
 
-    const result = await startGame(db, game.id);
+    const result = await startGame(db, game.id, owner.claim.ownerEpoch);
     if (result.error) {
-      await db.update(schema.games)
-        .set({ status: "waiting" as const, startedAt: null })
-        .where(eq(schema.games.id, game.id));
+      await markOwnerStartupFailed(db, game.id, owner.claim.ownerEpoch, result.error);
       return c.json({ error: result.error }, 500);
     }
 

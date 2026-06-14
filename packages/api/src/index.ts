@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { eq, or } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { createDB, schema } from "./db/index.js";
 import { runMigrations } from "./db/migrate.js";
 import { seedRBAC } from "./db/rbac-seed.js";
@@ -19,6 +19,7 @@ import { createAdminRoutes } from "./routes/admin.js";
 import { createFreeQueueRoutes } from "./routes/free-queue.js";
 import { createUploadRoutes } from "./routes/upload.js";
 import { createProfileRoutes } from "./routes/profile.js";
+import { verifySessionToken } from "./middleware/auth.js";
 import { getStorageStatus } from "./lib/storage.js";
 import { getGameSnapshot } from "./services/game-lifecycle.js";
 import {
@@ -88,7 +89,7 @@ const db = createDB(databaseUrl);
 await seedRBAC(db);
 
 // ---------------------------------------------------------------------------
-// Startup cleanup — reset orphaned in_progress games
+// Startup cleanup — mark orphaned in_progress games as needing inspection
 // ---------------------------------------------------------------------------
 
 const orphanedGames = await db
@@ -111,10 +112,25 @@ if (orphanedGames.length > 0) {
       continue;
     }
 
-    await db.update(schema.games)
-      .set({ status: "cancelled" as const, endedAt: now.toISOString() })
-      .where(eq(schema.games.id, game.id));
-    console.warn(`[startup] Cancelled orphaned game ${game.id} (started ${Math.round(ageMs / 1000)}s ago)`);
+    await db.transaction(async (tx) => {
+      await tx.update(schema.gameRunOwners)
+        .set({
+          status: "expired",
+          closedAt: now.toISOString(),
+          kernelHealth: "suspended",
+          failureReason: "startup_orphaned",
+          failureDetails: { startedAt: game.startedAt, ageMs },
+        })
+        .where(and(
+          eq(schema.gameRunOwners.gameId, game.id),
+          eq(schema.gameRunOwners.status, "active"),
+        ));
+
+      await tx.update(schema.games)
+        .set({ status: "suspended" as const, endedAt: now.toISOString() })
+        .where(eq(schema.games.id, game.id));
+    });
+    console.warn(`[startup] Suspended orphaned game ${game.id} (started ${Math.round(ageMs / 1000)}s ago)`);
   }
 }
 
@@ -221,12 +237,25 @@ const server = Bun.serve<WsConnectionData>({
 
       // Resolve slug to canonical UUID so WS topics match broadcastGameEvent
       const gameRow = (await db
-        .select({ id: schema.games.id })
+        .select({ id: schema.games.id, status: schema.games.status })
         .from(schema.games)
         .where(or(eq(schema.games.id, slugOrId), eq(schema.games.slug, slugOrId))))[0];
 
       if (!gameRow) {
         return new Response("Game not found", { status: 404 });
+      }
+
+      const hasActiveRunner = getGameSnapshot(gameRow.id) !== null;
+      if (gameRow.status === "in_progress" || hasActiveRunner) {
+        const token = url.searchParams.get("token");
+        const session = token ? await verifySessionToken(token) : null;
+        const canViewLive =
+          session?.roles.includes("sysop") ||
+          session?.roles.includes("admin") ||
+          session?.permissions.includes("view_admin");
+        if (!canViewLive) {
+          return new Response("Live game stream requires admin access", { status: session ? 403 : 401 });
+        }
       }
 
       const gameId = gameRow.id;

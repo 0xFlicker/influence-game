@@ -24,7 +24,16 @@ import {
   requirePermission,
   type AuthEnv,
 } from "../middleware/auth.js";
-import { startGame, isGameRunning } from "../services/game-lifecycle.js";
+import { abortGame, startGame } from "../services/game-lifecycle.js";
+import {
+  acquireGameRunOwner,
+  markOwnerStartupFailed,
+  revokeActiveGameRunOwner,
+} from "../services/game-ownership.js";
+import {
+  getRedactedKernelHealth,
+  getRedactedKernelHealthByGameId,
+} from "../services/game-kernel-health.js";
 import { broadcastRaw } from "../services/ws-manager.js";
 import { generateUniqueSlug } from "../lib/slug.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
@@ -36,6 +45,15 @@ import {
   resolveModelForTier,
 } from "@influence/engine";
 import type { Personality } from "@influence/engine";
+
+const PUBLIC_SUSPENDED_ERROR_INFO = "Game suspended because the run could not safely continue.";
+
+function publicErrorInfo(status: GameStatus, config: Record<string, unknown>): string | undefined {
+  if (status === "suspended") {
+    return PUBLIC_SUSPENDED_ERROR_INFO;
+  }
+  return typeof config.errorInfo === "string" ? config.errorInfo : undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Factory — creates a Hono sub-app with injected DB
@@ -171,6 +189,8 @@ export function createGameRoutes(db: DrizzleDB) {
       rows = await db.select().from(schema.games).where(isNull(schema.games.hiddenAt));
     }
 
+    const kernelHealthByGameId = await getRedactedKernelHealthByGameId(db, rows.map((game) => game.id));
+
     const summaries = await Promise.all(rows.map(async (game) => {
       const config = JSON.parse(game.config);
       const players = await db
@@ -195,7 +215,7 @@ export function createGameRoutes(db: DrizzleDB) {
         playerCount: game.maxPlayers ?? config.maxPlayers ?? players.length,
         currentRound: 0,
         maxRounds: config.maxRounds ?? 10,
-        currentPhase: game.status === "completed" ? "END" : "INIT",
+        currentPhase: game.status === "completed" ? "END" : game.status === "suspended" ? "SUSPENDED" : "INIT",
         phaseTimeRemaining: null,
         alivePlayers: players.length,
         eliminatedPlayers: 0,
@@ -204,7 +224,8 @@ export function createGameRoutes(db: DrizzleDB) {
         viewerMode: config.viewerMode ?? "speedrun",
         trackType: game.trackType,
         winner: winnerPlayer ? JSON.parse(winnerPlayer.persona).name : undefined,
-        errorInfo: config.errorInfo ?? undefined,
+        errorInfo: publicErrorInfo(game.status, config),
+        kernelHealth: kernelHealthByGameId.get(game.id),
         createdAt: game.createdAt,
         startedAt: game.startedAt ?? undefined,
         completedAt: game.endedAt ?? undefined,
@@ -266,7 +287,7 @@ export function createGameRoutes(db: DrizzleDB) {
       status: game.status,
       currentRound: result[0]?.roundsPlayed ?? 0,
       maxRounds: config.maxRounds ?? 10,
-      currentPhase: game.status === "completed" ? "END" : "INIT",
+      currentPhase: game.status === "completed" ? "END" : game.status === "suspended" ? "SUSPENDED" : "INIT",
       players: await Promise.all(players.map(async (p) => {
         const persona = JSON.parse(p.persona);
         // Resolve avatar from linked agent profile if available
@@ -292,6 +313,8 @@ export function createGameRoutes(db: DrizzleDB) {
       viewerMode: config.viewerMode ?? "speedrun",
       winner: winnerPlayer ? JSON.parse(winnerPlayer.persona).name : undefined,
       tokenUsage: result[0]?.tokenUsage ? JSON.parse(result[0].tokenUsage) : undefined,
+      errorInfo: publicErrorInfo(game.status, config),
+      kernelHealth: await getRedactedKernelHealth(db, game.id),
       createdAt: game.createdAt,
       startedAt: game.startedAt ?? undefined,
       completedAt: game.endedAt ?? undefined,
@@ -639,27 +662,17 @@ export function createGameRoutes(db: DrizzleDB) {
       }
     }
 
-    // Check if already running (race condition guard)
-    if (isGameRunning(gameId)) {
-      return c.json({ error: "Game is already running" }, 400);
+    const owner = await acquireGameRunOwner(db, gameId);
+    if (!owner.ok) {
+      return c.json({ error: owner.error }, owner.statusCode);
     }
-
-    await db.update(schema.games)
-      .set({
-        status: "in_progress",
-        startedAt: new Date().toISOString(),
-      })
-      .where(eq(schema.games.id, gameId));
 
     // Await startGame to catch configuration errors (missing API key, etc.)
     // before returning success to the client. The actual game execution
     // (runGameAsync) runs in the background after this returns.
-    const result = await startGame(db, gameId);
+    const result = await startGame(db, gameId, owner.claim.ownerEpoch);
     if (result.error) {
-      // Revert game status — startup failed before execution began
-      await db.update(schema.games)
-        .set({ status: "waiting" as const, startedAt: null })
-        .where(eq(schema.games.id, gameId));
+      await markOwnerStartupFailed(db, gameId, owner.claim.ownerEpoch, result.error);
       return c.json({ error: result.error }, 500);
     }
 
@@ -686,12 +699,36 @@ export function createGameRoutes(db: DrizzleDB) {
       return c.json({ error: "Game is not running or waiting" }, 400);
     }
 
-    await db.update(schema.games)
+    abortGame(gameId);
+    await revokeActiveGameRunOwner(db, gameId, "admin_stop");
+
+    const cancelled = await db.update(schema.games)
       .set({
         status: "cancelled",
         endedAt: new Date().toISOString(),
       })
-      .where(eq(schema.games.id, gameId));
+      .where(and(
+        eq(schema.games.id, gameId),
+        or(eq(schema.games.status, "in_progress"), eq(schema.games.status, "waiting")),
+      ))
+      .returning({ status: schema.games.status });
+
+    if (cancelled.length === 0) {
+      const current = (await db
+        .select({ status: schema.games.status })
+        .from(schema.games)
+        .where(eq(schema.games.id, gameId)))[0];
+      return c.json({ status: current?.status ?? game.status });
+    }
+
+    broadcastRaw(gameId, {
+      type: "game_status",
+      gameId,
+      status: "cancelled",
+      terminal: true,
+      reasonCode: "admin_stop",
+      message: "Game cancelled.",
+    });
 
     return c.json({ status: "cancelled" });
   });
@@ -833,6 +870,10 @@ export function createGameRoutes(db: DrizzleDB) {
       return c.json({ error: "Game not found" }, 404);
     }
 
+    if (game.status !== "completed" && game.status !== "cancelled") {
+      return c.json({ error: "Transcript is only available after replay is public" }, 403);
+    }
+
     const gameId = game.id;
 
     const players = await db
@@ -881,7 +922,6 @@ export function createGameRoutes(db: DrizzleDB) {
         ...(row.roomId != null && { roomId: row.roomId }),
         ...(roomMetadata && { roomMetadata }),
         text: row.text,
-        thinking: row.thinking ?? null,
         timestamp: row.timestamp,
       };
     });

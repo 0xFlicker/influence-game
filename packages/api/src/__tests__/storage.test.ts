@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import type { DrizzleDB } from "../db/index.js";
 import { generatePresignedUpload, getStorageBackend } from "../lib/storage.js";
 import { createUploadRoutes } from "../routes/upload.js";
+import { assertPrivateEvidenceStoragePointer } from "../services/game-evidence.js";
 
 const ENV_KEYS = [
   "NODE_ENV",
@@ -17,6 +18,7 @@ const ENV_KEYS = [
   "LINODE_OBJ_ACCESS_KEY",
   "LINODE_OBJ_SECRET_KEY",
   "LINODE_OBJ_BUCKET",
+  "LINODE_PRIVATE_EVIDENCE_BUCKET",
 ] as const;
 
 describe("local filesystem upload storage", () => {
@@ -37,6 +39,7 @@ describe("local filesystem upload storage", () => {
     delete process.env.LINODE_OBJ_ACCESS_KEY;
     delete process.env.LINODE_OBJ_SECRET_KEY;
     delete process.env.LINODE_OBJ_BUCKET;
+    delete process.env.LINODE_PRIVATE_EVIDENCE_BUCKET;
 
     app = new Hono();
     app.route("/", createUploadRoutes({} as DrizzleDB));
@@ -114,5 +117,40 @@ describe("local filesystem upload storage", () => {
     delete process.env.INFLUENCE_STORAGE_BACKEND;
 
     expect(getStorageBackend()).toBe("disabled");
+  });
+
+  test("keeps private evidence storage separate from public profile-picture storage", () => {
+    process.env.LINODE_OBJ_BUCKET = "public-profile-bucket";
+    process.env.LINODE_PRIVATE_EVIDENCE_BUCKET = "private-evidence-bucket";
+
+    expect(() => assertPrivateEvidenceStoragePointer({
+      provider: "linode_object_storage",
+      bucket: "public-profile-bucket",
+      key: "evidence/game-1/raw.jsonl",
+    })).toThrow("public profile-picture bucket");
+
+    expect(() => assertPrivateEvidenceStoragePointer({
+      provider: "linode_object_storage",
+      bucket: "private-evidence-bucket",
+      key: "pfp/user/avatar.png",
+    })).toThrow("private object key");
+
+    expect(() => assertPrivateEvidenceStoragePointer({
+      provider: "linode_object_storage",
+      bucket: "other-private-bucket",
+      key: "evidence/game-1/raw.jsonl",
+    })).toThrow("configured private evidence bucket");
+
+    expect(() => assertPrivateEvidenceStoragePointer({
+      provider: "linode_object_storage",
+      bucket: "private-evidence-bucket",
+      key: "games/game-1/raw.jsonl",
+    })).toThrow("private object key");
+
+    expect(() => assertPrivateEvidenceStoragePointer({
+      provider: "linode_object_storage",
+      bucket: "private-evidence-bucket",
+      key: "evidence/game-1/raw.jsonl",
+    })).not.toThrow();
   });
 });

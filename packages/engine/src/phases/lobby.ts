@@ -1,5 +1,5 @@
 import { Phase } from "../types";
-import { strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import { assertCanAcceptCommit, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 
 /**
  * Compute messages per player for lobby phase.
@@ -29,6 +29,7 @@ async function runLobbyMessages(
         if (agent.getLobbyIntent) {
           const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.LOBBY);
           const intent = await agent.getLobbyIntent(phaseCtx);
+          await assertCanAcceptCommit(ctx);
           logger.emitAgentTurn({
             phase: Phase.LOBBY,
             action: "lobby-intent",
@@ -51,6 +52,7 @@ async function runLobbyMessages(
         phaseCtx.lobbySubRound = sub;
         phaseCtx.lobbyTotalSubRounds = messagesPerPlayer;
         const { message, thinking, reasoningContext, strategyPacketUse } = await agent.getLobbyMessage(phaseCtx);
+        await assertCanAcceptCommit(ctx);
         const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
         logger.logPublic(player.id, message, Phase.LOBBY, transcriptThinking);
         logger.emitAgentTurn({
@@ -82,6 +84,7 @@ export async function runLobbyPhase(
   actor: PhaseActor,
 ): Promise<void> {
   const { gameState, logger } = ctx;
+  await assertCanAcceptCommit(ctx);
   gameState.startRound();
   gameState.expireShields();
   const round = gameState.round;
@@ -96,6 +99,7 @@ export async function runReckoningLobby(
   actor: PhaseActor,
 ): Promise<void> {
   const { gameState, logger } = ctx;
+  await assertCanAcceptCommit(ctx);
   gameState.startRound();
   gameState.setEndgameStage("reckoning");
   const round = gameState.round;
@@ -113,6 +117,7 @@ export async function runTribunalLobby(
   actor: PhaseActor,
 ): Promise<void> {
   const { gameState, logger } = ctx;
+  await assertCanAcceptCommit(ctx);
   gameState.startRound();
   gameState.setEndgameStage("tribunal");
   const round = gameState.round;

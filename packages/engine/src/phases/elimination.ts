@@ -1,7 +1,7 @@
 import type { PhaseContext } from "../game-runner.types";
 import type { UUID } from "../types";
 import { Phase } from "../types";
-import { strategyPacketUseResponse, transcriptThinkingFor, type PhaseRunnerContext } from "./phase-runner-context";
+import { assertCanAcceptCommit, strategyPacketUseResponse, transcriptThinkingFor, type PhaseRunnerContext } from "./phase-runner-context";
 
 function getVoterNames(
   votes: Record<UUID, UUID>,
@@ -70,6 +70,7 @@ export async function handleElimination(
     true,
   );
   const lastMsgResponse = await eliminatedAgent.getLastMessage(finalWordsContext);
+  await assertCanAcceptCommit(ctx);
   gameState.recordLastMessage(eliminatedId, lastMsgResponse.message);
 
   logger.logSystem(`ELIMINATED: ${eliminated.name}`, phase);
@@ -96,6 +97,7 @@ export async function handleElimination(
     scope: "public",
     text: lastMsgResponse.message,
   });
+  await assertCanAcceptCommit(ctx);
   gameState.eliminatePlayer(eliminatedId);
   logger.emitStream({
     type: "player_eliminated",

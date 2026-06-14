@@ -24,6 +24,7 @@ import {
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { generateInviteCode } from "../lib/invite-codes.js";
+import { getRedactedKernelHealthByGameId } from "../services/game-kernel-health.js";
 import { randomUUID } from "crypto";
 
 // ---------------------------------------------------------------------------
@@ -279,6 +280,7 @@ export function createAdminRoutes(db: DrizzleDB) {
 
   app.get("/api/admin/games", requireAdminRead, async (c) => {
     const rows = await db.select().from(schema.games);
+    const kernelHealthByGameId = await getRedactedKernelHealthByGameId(db, rows.map((game) => game.id));
 
     const summaries = await Promise.all(rows.map(async (game) => {
       const config = JSON.parse(game.config);
@@ -307,7 +309,7 @@ export function createAdminRoutes(db: DrizzleDB) {
         playerCount: game.maxPlayers ?? config.maxPlayers ?? players.length,
         currentRound: 0,
         maxRounds: config.maxRounds ?? 10,
-        currentPhase: game.status === "completed" ? "END" : "INIT",
+        currentPhase: game.status === "completed" ? "END" : game.status === "suspended" ? "SUSPENDED" : "INIT",
         phaseTimeRemaining: null,
         alivePlayers: players.length,
         eliminatedPlayers: 0,
@@ -323,6 +325,7 @@ export function createAdminRoutes(db: DrizzleDB) {
         completedAt: game.endedAt ?? undefined,
         hidden: !!game.hiddenAt,
         hiddenAt: game.hiddenAt ?? undefined,
+        kernelHealth: kernelHealthByGameId.get(game.id),
       };
     }));
 

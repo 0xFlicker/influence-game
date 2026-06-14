@@ -88,7 +88,7 @@ export function GameViewer({
   // Map: playerId → true (present = awaiting last words)
   const awaitingLastWordsRef = useRef<Set<string>>(new Set());
   // Set of message IDs that should render as last-words choreography
-  const [lastWordsIds, setLastWordsIds] = useState<ReadonlySet<number>>(
+  const [, setLastWordsIds] = useState<ReadonlySet<number>>(
     new Set(),
   );
   // Endgame entry screens
@@ -188,7 +188,7 @@ export function GameViewer({
   const feedRef = useRef<HTMLDivElement>(null);
 
   const isReplay =
-    !!game && game.status !== "in_progress" && game.status !== "waiting";
+    !!game && (game.status === "completed" || game.status === "cancelled");
 
   // Auto-scroll: live view on new messages, replay on index change
   useEffect(() => {
@@ -588,6 +588,32 @@ export function GameViewer({
           audioCue.sting("winner_announced");
           audioCue.zone("resolution");
           break;
+        case "game_status":
+          setGame((g) =>
+            g
+              ? {
+                  ...g,
+                  status: ev.status,
+                  currentPhase: ev.status === "suspended" ? "SUSPENDED" : g.currentPhase,
+                  ...(ev.message && { errorInfo: ev.message }),
+                }
+              : g,
+          );
+          setLoadError(null);
+          break;
+        case "error":
+          setGame((g) =>
+            g
+              ? {
+                  ...g,
+                  status: "suspended",
+                  currentPhase: "SUSPENDED",
+                  errorInfo: ev.message,
+                }
+              : g,
+          );
+          setLoadError(null);
+          break;
       }
     },
     [gameId],
@@ -595,7 +621,7 @@ export function GameViewer({
 
   const wsStatus = useGameWebSocket(
     gameId,
-    !!gameId && !!game && !isReplay,
+    !!gameId && game?.status === "in_progress" && isAdmin,
     handleWsEvent,
   );
 
@@ -618,6 +644,35 @@ export function GameViewer({
     return (
       <div className="influence-glass rounded-panel p-12 text-center text-white/20 text-sm">
         Loading game…
+      </div>
+    );
+  }
+
+  if (game.status === "suspended") {
+    const health = game.kernelHealth;
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center px-4">
+        <div className="text-xs px-2 py-1 rounded-full border border-amber-900/60 bg-amber-900/30 text-amber-300 font-medium">
+          Needs inspection
+        </div>
+        <h2 className="text-xl font-semibold text-white">Game suspended</h2>
+        <p className="text-white/50 text-sm max-w-md">
+          This game could not safely continue. Replay is unavailable until an operator inspects the run.
+        </p>
+        {game.errorInfo && (
+          <p className="text-amber-200/60 text-xs max-w-md">{game.errorInfo}</p>
+        )}
+        {health && (
+          <p className="text-white/30 text-xs max-w-md">
+            {health.durableEventCount} durable events · {health.checkpointCount} checkpoints · {health.evidenceManifestCount} evidence manifests
+          </p>
+        )}
+        <button
+          onClick={() => router.push("/games")}
+          className="mt-2 text-sm px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/70 transition-colors"
+        >
+          Browse games
+        </button>
       </div>
     );
   }

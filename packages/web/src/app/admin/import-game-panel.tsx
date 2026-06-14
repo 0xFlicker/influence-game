@@ -272,6 +272,7 @@ function StatusBadge({ status }: { status: string }) {
     in_progress: "bg-blue-500/20 text-blue-400",
     completed: "bg-green-500/20 text-green-400",
     cancelled: "bg-red-500/20 text-red-400",
+    suspended: "bg-amber-500/20 text-amber-300",
   };
   return (
     <span

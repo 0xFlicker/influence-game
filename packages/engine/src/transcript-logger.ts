@@ -15,6 +15,7 @@ export class TranscriptLogger {
   readonly transcript: TranscriptEntry[] = [];
   readonly publicMessages: Array<{ from: string; text: string; phase: Phase; round: number; anonymous?: boolean; displayOrder?: number }> = [];
   private _streamListener?: (event: GameStreamEvent) => void;
+  private streamBuffer: GameStreamEvent[] | null = null;
 
   constructor(private readonly gameState: GameState) {}
 
@@ -22,7 +23,32 @@ export class TranscriptLogger {
     this._streamListener = listener;
   }
 
+  beginStreamBuffering(): void {
+    this.streamBuffer ??= [];
+  }
+
+  flushStreamBuffer(): void {
+    const buffered = this.streamBuffer;
+    this.streamBuffer = null;
+    if (!buffered) return;
+    for (const event of buffered) {
+      this.deliverStreamEvent(event);
+    }
+  }
+
+  dropStreamBuffer(): void {
+    this.streamBuffer = null;
+  }
+
   emitStream(event: GameStreamEvent): void {
+    if (this.streamBuffer) {
+      this.streamBuffer.push(event);
+      return;
+    }
+    this.deliverStreamEvent(event);
+  }
+
+  private deliverStreamEvent(event: GameStreamEvent): void {
     try {
       this._streamListener?.(event);
     } catch (err) {

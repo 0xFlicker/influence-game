@@ -98,21 +98,27 @@ export function VoteTallyOverlay({
                 }`}
               >
                 <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />
-                <span className="text-xs text-white/60 flex-1">{player.name}</span>
-                {empower > 0 && (
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                    isEmpowerLeader ? "text-yellow-300 bg-yellow-900/40 font-bold animate-pulse" : "text-amber-400 bg-amber-900/25"
-                  }`}>
-                    👑 {empower}
-                  </span>
-                )}
-                {expose > 0 && (
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                    expose === maxExpose ? "text-red-300 bg-red-900/40 font-bold" : "text-red-400/70 bg-red-900/20"
-                  }`}>
-                    ⚡ {expose}
-                  </span>
-                )}
+                <span className="min-w-0 flex-1 truncate text-xs text-white/60">{player.name}</span>
+                <div className="ml-auto grid w-[5.5rem] grid-cols-2 items-center gap-1.5 justify-items-end">
+                  <div className="flex h-5 w-10 justify-end">
+                    {empower > 0 && (
+                      <span className={`inline-flex h-5 min-w-9 items-center justify-center rounded px-1.5 text-[10px] ${
+                        isEmpowerLeader ? "animate-pulse bg-yellow-900/40 font-bold text-yellow-300" : "bg-amber-900/25 text-amber-400"
+                      }`}>
+                        👑 {empower}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex h-5 w-10 justify-end">
+                    {expose > 0 && (
+                      <span className={`inline-flex h-5 min-w-9 items-center justify-center rounded px-1.5 text-[10px] ${
+                        expose === maxExpose ? "bg-red-900/40 font-bold text-red-300" : "bg-red-900/20 text-red-400/70"
+                      }`}>
+                        ⚡ {expose}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
             );
           })}

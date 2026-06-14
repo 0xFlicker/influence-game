@@ -6,7 +6,7 @@
  * and persisting transcripts + results back to the database.
  */
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
   GameRunner,
@@ -31,6 +31,13 @@ import { broadcastGameEvent, broadcastRaw } from "./ws-manager.js";
 import { ViewerEventPacer } from "./viewer-event-pacer.js";
 import { calculateEloChanges } from "./elo.js";
 import type { PlayerResult } from "./elo.js";
+import { appendGameEvents } from "./game-events.js";
+import { writeGameCheckpoint } from "./game-checkpoints.js";
+import {
+  assertOwnerActive,
+  markGameSuspended,
+  renewGameRunOwner,
+} from "./game-ownership.js";
 
 // ---------------------------------------------------------------------------
 // Active game tracking
@@ -39,8 +46,54 @@ import type { PlayerResult } from "./elo.js";
 interface ActiveGame {
   gameId: string;
   runner: GameRunner;
+  ownerEpoch?: string;
+  heartbeat?: OwnerHeartbeat;
   startedAt: Date;
   promise: Promise<void>;
+}
+
+const OWNER_LEASE_MS = 10 * 60 * 1000;
+const OWNER_HEARTBEAT_MS = 2 * 60 * 1000;
+
+interface OwnerHeartbeat {
+  stop: () => void;
+}
+
+function startOwnerHeartbeat(
+  db: DrizzleDB,
+  gameId: string,
+  ownerEpoch: string,
+  runner: GameRunner,
+): OwnerHeartbeat {
+  let stopped = false;
+  const interval = setInterval(() => {
+    if (stopped) return;
+    renewGameRunOwner(db, gameId, ownerEpoch, { leaseMs: OWNER_LEASE_MS })
+      .catch(async (error) => {
+        if (stopped) return;
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[game-lifecycle] Owner heartbeat failed for game ${gameId}:`, message);
+        stopped = true;
+        clearInterval(interval);
+        runner.abort();
+        await markGameSuspended(db, gameId, "owner_heartbeat_failed", { message }).catch(() => {});
+        broadcastRaw(gameId, {
+          type: "game_status",
+          gameId,
+          status: "suspended",
+          terminal: true,
+          reasonCode: "owner_heartbeat_failed",
+          message: "Game suspended because the durable owner heartbeat failed.",
+        });
+      });
+  }, OWNER_HEARTBEAT_MS);
+
+  return {
+    stop: () => {
+      stopped = true;
+      clearInterval(interval);
+    },
+  };
 }
 
 /** Map of gameId → active game. Prevents double-starts and enables status queries. */
@@ -52,6 +105,13 @@ export function isGameRunning(gameId: string): boolean {
 
 export function getActiveGameCount(): number {
   return activeGames.size;
+}
+
+export function abortGame(gameId: string): boolean {
+  const active = activeGames.get(gameId);
+  if (!active) return false;
+  active.runner.abort();
+  return true;
 }
 
 /** Abort and await all active games — used by tests to prevent cross-file pollution. */
@@ -108,6 +168,217 @@ export function serializeTranscriptEntry(
   };
 }
 
+interface CompletedGameRunResult {
+  winner?: string;
+  winnerName?: string;
+  rounds: number;
+  transcript: TranscriptEntry[];
+  eliminationOrder: string[];
+}
+
+async function persistCompletedGame(
+  db: DrizzleDB,
+  params: {
+    gameId: string;
+    ownerEpoch?: string;
+    result: CompletedGameRunResult;
+    finalEventSequence: number;
+    tokenTracker: TokenTracker;
+    gameConfig: Record<string, unknown>;
+  },
+): Promise<void> {
+  const now = new Date().toISOString();
+  const model = resolveModelForTier(params.gameConfig.modelTier as string | undefined);
+  const usage = params.tokenTracker.getTotalUsage();
+  const cost = estimateCost(usage, model);
+  const updatedConfig = { ...params.gameConfig, viewerMode: "replay" };
+
+  await db.transaction(async (tx) => {
+    if (params.ownerEpoch) {
+      await tx.execute(sql`
+        SELECT id
+        FROM game_run_owners
+        WHERE game_id = ${params.gameId}
+          AND owner_epoch = ${params.ownerEpoch}
+        FOR UPDATE
+      `);
+
+      const owner = (await tx
+        .select({
+          status: schema.gameRunOwners.status,
+          expiresAt: schema.gameRunOwners.expiresAt,
+          lastPersistedEventSequence: schema.gameRunOwners.lastPersistedEventSequence,
+        })
+        .from(schema.gameRunOwners)
+        .where(and(
+          eq(schema.gameRunOwners.gameId, params.gameId),
+          eq(schema.gameRunOwners.ownerEpoch, params.ownerEpoch),
+        )))[0];
+      if (!owner) {
+        throw new Error(`No durable owner for game ${params.gameId}`);
+      }
+      if (owner.status !== "active") {
+        throw new Error(`Owner epoch ${params.ownerEpoch} is ${owner.status}`);
+      }
+      if (owner.expiresAt && new Date(owner.expiresAt).getTime() <= Date.now()) {
+        throw new Error(`Owner epoch ${params.ownerEpoch} expired`);
+      }
+      if (owner.lastPersistedEventSequence !== params.finalEventSequence) {
+        throw new Error(
+          `Final persisted event head ${owner.lastPersistedEventSequence} does not match runner head ${params.finalEventSequence}`,
+        );
+      }
+    }
+
+    if (params.result.transcript.length > 0) {
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < params.result.transcript.length; i += CHUNK_SIZE) {
+        const chunk = params.result.transcript.slice(i, i + CHUNK_SIZE);
+        await tx.insert(schema.transcripts)
+          .values(
+            chunk.map((entry) => serializeTranscriptEntry(params.gameId, entry)),
+          );
+      }
+    }
+
+    await tx.insert(schema.gameResults)
+      .values({
+        id: randomUUID(),
+        gameId: params.gameId,
+        winnerId: params.result.winner ?? null,
+        roundsPlayed: params.result.rounds,
+        tokenUsage: JSON.stringify({
+          promptTokens: usage.promptTokens,
+          cachedTokens: usage.cachedTokens,
+          completionTokens: usage.completionTokens,
+          reasoningTokens: usage.reasoningTokens,
+          totalTokens: usage.totalTokens,
+          emptyResponses: usage.emptyResponses,
+          estimatedCost: cost.totalCost,
+          perAction: params.tokenTracker.getAllUsage(),
+        }),
+      });
+
+    const playersWithProfiles = (await tx
+      .select()
+      .from(schema.gamePlayers)
+      .where(eq(schema.gamePlayers.gameId, params.gameId)))
+      .filter((p) => p.agentProfileId != null);
+
+    for (const player of playersWithProfiles) {
+      const isWinner = player.id === params.result.winner;
+      await tx.execute(
+        sql`UPDATE agent_profiles
+            SET games_played = games_played + 1,
+                games_won = games_won + ${isWinner ? 1 : 0},
+                updated_at = ${now}
+            WHERE id = ${player.agentProfileId}`,
+      );
+    }
+
+    const gameRecord = (await tx
+      .select({ trackType: schema.games.trackType })
+      .from(schema.games)
+      .where(eq(schema.games.id, params.gameId)))[0];
+
+    if (gameRecord?.trackType === "free") {
+      const allPlayers = await tx
+        .select()
+        .from(schema.gamePlayers)
+        .where(eq(schema.gamePlayers.gameId, params.gameId));
+
+      const seenUsers = new Set<string>();
+      const humanPlayers: PlayerResult[] = [];
+      const totalHumans = allPlayers.filter((p) => p.userId != null).length;
+
+      if (totalHumans >= 2) {
+        for (const p of allPlayers) {
+          if (!p.userId) continue;
+          if (seenUsers.has(p.userId)) continue;
+          seenUsers.add(p.userId);
+
+          const persona = JSON.parse(p.persona) as { name: string };
+          const elimIndex = params.result.eliminationOrder.indexOf(persona.name);
+          let placement: number;
+          if (p.id === params.result.winner) {
+            placement = 1;
+          } else if (elimIndex >= 0) {
+            placement = totalHumans - elimIndex;
+            if (placement < 2) placement = 2;
+          } else {
+            placement = Math.ceil(totalHumans / 2);
+          }
+
+          humanPlayers.push({
+            userId: p.userId,
+            placement,
+            totalPlayers: totalHumans,
+          });
+        }
+
+        const currentRatings = new Map<string, number>();
+        for (const hp of humanPlayers) {
+          const user = (await tx
+            .select({ rating: schema.users.rating })
+            .from(schema.users)
+            .where(eq(schema.users.id, hp.userId)))[0];
+          currentRatings.set(hp.userId, user?.rating ?? 1200);
+        }
+
+        const eloChanges = calculateEloChanges(humanPlayers, currentRatings);
+        for (const change of eloChanges) {
+          const isWinner = humanPlayers.find((p) => p.userId === change.userId)?.placement === 1;
+
+          const user = (await tx
+            .select({ peakRating: schema.users.peakRating })
+            .from(schema.users)
+            .where(eq(schema.users.id, change.userId)))[0];
+
+          const newPeak = Math.max(user?.peakRating ?? 1200, change.newRating);
+          await tx.execute(
+            sql`UPDATE users
+                SET rating = ${change.newRating},
+                    games_played = games_played + 1,
+                    games_won = games_won + ${isWinner ? 1 : 0},
+                    peak_rating = ${newPeak},
+                    last_game_at = ${now}
+                WHERE id = ${change.userId}`,
+          );
+        }
+      }
+    }
+
+    const completed = await tx.update(schema.games)
+      .set({
+        status: "completed",
+        endedAt: now,
+        config: JSON.stringify(updatedConfig),
+      })
+      .where(and(eq(schema.games.id, params.gameId), eq(schema.games.status, "in_progress")))
+      .returning({ id: schema.games.id });
+    if (completed.length === 0) {
+      throw new Error(`Game ${params.gameId} could not be completed from its current status`);
+    }
+
+    if (params.ownerEpoch) {
+      const closedOwner = await tx.update(schema.gameRunOwners)
+        .set({
+          status: "closed",
+          closedAt: now,
+        })
+        .where(and(
+          eq(schema.gameRunOwners.gameId, params.gameId),
+          eq(schema.gameRunOwners.ownerEpoch, params.ownerEpoch),
+          eq(schema.gameRunOwners.status, "active"),
+        ))
+        .returning({ ownerEpoch: schema.gameRunOwners.ownerEpoch });
+      if (closedOwner.length === 0) {
+        throw new Error(`Owner epoch ${params.ownerEpoch} could not be closed`);
+      }
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Start a game
 // ---------------------------------------------------------------------------
@@ -115,6 +386,7 @@ export function serializeTranscriptEntry(
 export async function startGame(
   db: DrizzleDB,
   gameId: string,
+  ownerEpoch?: string,
 ): Promise<{ error?: string }> {
   // Prevent double-start
   if (activeGames.has(gameId)) {
@@ -218,7 +490,19 @@ export async function startGame(
   };
 
   // Create runner
-  const runner = new GameRunner(agents, engineConfig);
+  const runner = new GameRunner(agents, engineConfig, undefined, {
+    gameId,
+    ...(ownerEpoch && {
+      durableEventSink: (events) => appendGameEvents(db, { gameId, ownerEpoch, events }),
+      durableCheckpointSink: async (checkpoint) => {
+        const result = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
+        if (!result.ok) {
+          console.warn(`[game-lifecycle] Checkpoint degraded for game ${gameId}: ${result.error}`);
+        }
+      },
+      beforeAcceptedCommit: () => assertOwnerActive(db, gameId, ownerEpoch),
+    }),
+  });
 
   // Stream game events to WebSocket observers via the display-hold pacer
   const viewerMode: ViewerMode =
@@ -230,11 +514,16 @@ export async function startGame(
   runner.setStreamListener((event) => pacer.emit(event));
 
   // Run game asynchronously
-  const promise = runGameAsync(db, gameId, runner, tokenTracker, gameConfig);
+  const heartbeat = ownerEpoch
+    ? startOwnerHeartbeat(db, gameId, ownerEpoch, runner)
+    : undefined;
+  const promise = runGameAsync(db, gameId, runner, tokenTracker, gameConfig, ownerEpoch, heartbeat);
 
   activeGames.set(gameId, {
     gameId,
     runner,
+    ...(ownerEpoch && { ownerEpoch }),
+    ...(heartbeat && { heartbeat }),
     startedAt: new Date(),
     promise,
   });
@@ -252,186 +541,89 @@ async function runGameAsync(
   runner: GameRunner,
   tokenTracker: TokenTracker,
   gameConfig: Record<string, unknown>,
+  ownerEpoch?: string,
+  heartbeat?: OwnerHeartbeat,
 ): Promise<void> {
+  let clearMemoryOnExit = true;
+  let persistedTranscriptEntries = 0;
   try {
     const result = await runner.run();
-
-    // Persist transcript entries
-    const transcriptEntries = result.transcript;
-    if (transcriptEntries.length > 0) {
-      // Batch insert in chunks to avoid parameter limits
-      const CHUNK_SIZE = 100;
-      for (let i = 0; i < transcriptEntries.length; i += CHUNK_SIZE) {
-        const chunk = transcriptEntries.slice(i, i + CHUNK_SIZE);
-        await db.insert(schema.transcripts)
-          .values(
-            chunk.map((entry) => serializeTranscriptEntry(gameId, entry)),
-          );
-      }
-    }
-
-    // Compute token usage
-    const usage = tokenTracker.getTotalUsage();
-    const model = resolveModelForTier(gameConfig.modelTier as string | undefined);
-    const cost = estimateCost(usage, model);
-
-    // Write game results
-    await db.insert(schema.gameResults)
-      .values({
-        id: randomUUID(),
-        gameId,
-        winnerId: result.winner ?? null,
-        roundsPlayed: result.rounds,
-        tokenUsage: JSON.stringify({
-          promptTokens: usage.promptTokens,
-          cachedTokens: usage.cachedTokens,
-          completionTokens: usage.completionTokens,
-          reasoningTokens: usage.reasoningTokens,
-          totalTokens: usage.totalTokens,
-          emptyResponses: usage.emptyResponses,
-          estimatedCost: cost.totalCost,
-          perAction: tokenTracker.getAllUsage(),
-        }),
+    await persistCompletedGame(db, {
+      gameId,
+      ...(ownerEpoch && { ownerEpoch }),
+      result,
+      finalEventSequence: runner.getCanonicalEvents().at(-1)?.sequence ?? 0,
+      tokenTracker,
+      gameConfig,
+    });
+    persistedTranscriptEntries = result.transcript.length;
+    if (ownerEpoch) {
+      broadcastRaw(gameId, {
+        type: "game_over",
+        winner: result.winner,
+        winnerName: result.winnerName,
+        totalRounds: result.rounds,
       });
-
-    // Update agent profile win/loss stats for players with saved profiles
-    const playersWithProfiles = (await db
-      .select()
-      .from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.gameId, gameId)))
-      .filter((p) => p.agentProfileId != null);
-
-    for (const player of playersWithProfiles) {
-      const isWinner = player.id === result.winner;
-      await db.execute(
-        sql`UPDATE agent_profiles
-            SET games_played = games_played + 1,
-                games_won = games_won + ${isWinner ? 1 : 0},
-                updated_at = ${new Date().toISOString()}
-            WHERE id = ${player.agentProfileId}`,
-      );
     }
-
-    // Update account-level ELO ratings if this is a free game
-    const gameRecord = (await db
-      .select({ trackType: schema.games.trackType })
-      .from(schema.games)
-      .where(eq(schema.games.id, gameId)))[0];
-
-    if (gameRecord?.trackType === "free") {
-      // Build placement from elimination order (names) → player IDs
-      const allPlayers = await db
-        .select()
-        .from(schema.gamePlayers)
-        .where(eq(schema.gamePlayers.gameId, gameId));
-
-      // eliminationOrder: first eliminated = worst placement
-      // Winner is not in eliminationOrder
-      // Deduplicate by userId — one ELO update per account
-      const seenUsers = new Set<string>();
-      const humanPlayers: PlayerResult[] = [];
-      const totalHumans = allPlayers.filter((p) => p.userId != null).length;
-
-      if (totalHumans >= 2) {
-        for (const p of allPlayers) {
-          if (!p.userId) continue; // skip players without accounts
-          if (seenUsers.has(p.userId)) continue; // one entry per account
-          seenUsers.add(p.userId);
-
-          const persona = JSON.parse(p.persona) as { name: string };
-          const elimIndex = result.eliminationOrder.indexOf(persona.name);
-          let placement: number;
-          if (p.id === result.winner) {
-            placement = 1;
-          } else if (elimIndex >= 0) {
-            // First eliminated gets worst placement (totalHumans),
-            // last eliminated before winner gets placement 2
-            placement = totalHumans - elimIndex;
-            // Clamp: at least 2 since 1 is reserved for winner
-            if (placement < 2) placement = 2;
-          } else {
-            // Not eliminated and not winner (shouldn't happen, but default to middle)
-            placement = Math.ceil(totalHumans / 2);
-          }
-
-          humanPlayers.push({
-            userId: p.userId,
-            placement,
-            totalPlayers: totalHumans,
-          });
-        }
-
-        // Fetch current account-level ratings
-        const currentRatings = new Map<string, number>();
-        for (const hp of humanPlayers) {
-          const user = (await db
-            .select({ rating: schema.users.rating })
-            .from(schema.users)
-            .where(eq(schema.users.id, hp.userId)))[0];
-          currentRatings.set(hp.userId, user?.rating ?? 1200);
-        }
-
-        const eloChanges = calculateEloChanges(humanPlayers, currentRatings);
-        const now = new Date().toISOString();
-
-        for (const change of eloChanges) {
-          const isWinner = humanPlayers.find((p) => p.userId === change.userId)?.placement === 1;
-
-          const user = (await db
-            .select({ peakRating: schema.users.peakRating })
-            .from(schema.users)
-            .where(eq(schema.users.id, change.userId)))[0];
-
-          const newPeak = Math.max(user?.peakRating ?? 1200, change.newRating);
-          await db.execute(
-            sql`UPDATE users
-                SET rating = ${change.newRating},
-                    games_played = games_played + 1,
-                    games_won = games_won + ${isWinner ? 1 : 0},
-                    peak_rating = ${newPeak},
-                    last_game_at = ${now}
-                WHERE id = ${change.userId}`,
-          );
-        }
-      }
-    }
-
-    // Update game status to completed and set viewerMode to "replay"
-    const updatedConfig = { ...gameConfig, viewerMode: "replay" };
-    await db.update(schema.games)
-      .set({
-        status: "completed",
-        endedAt: new Date().toISOString(),
-        config: JSON.stringify(updatedConfig),
-      })
-      .where(eq(schema.games.id, gameId));
 
   } catch (err) {
-    // Game failed — mark as cancelled and store error reason in config
+    // Game failed — owner-backed runs suspend for inspection instead of pretending to cancel/complete.
     const errorMessage = err instanceof Error ? err.message : String(err);
     console.error(`[game-lifecycle] Game ${gameId} failed:`, errorMessage);
 
-    // Save partial transcript so viewers can replay what happened before the crash
-    try {
-      const partialTranscript = runner.transcriptLog;
-      if (partialTranscript.length > 0) {
-        const CHUNK_SIZE = 100;
-        for (let i = 0; i < partialTranscript.length; i += CHUNK_SIZE) {
-          const chunk = partialTranscript.slice(i, i + CHUNK_SIZE);
-          await db.insert(schema.transcripts)
-            .values(
-              chunk.map((entry) => serializeTranscriptEntry(gameId, entry)),
-            );
+    if (!ownerEpoch) {
+      // Legacy non-owner path keeps best-effort partial transcripts. Durable runs
+      // only publish transcript rows after event-backed terminal completion.
+      try {
+        const partialTranscript = runner.transcriptLog.slice(persistedTranscriptEntries);
+        if (partialTranscript.length > 0) {
+          const CHUNK_SIZE = 100;
+          for (let i = 0; i < partialTranscript.length; i += CHUNK_SIZE) {
+            const chunk = partialTranscript.slice(i, i + CHUNK_SIZE);
+            await db.insert(schema.transcripts)
+              .values(
+                chunk.map((entry) => serializeTranscriptEntry(gameId, entry)),
+              );
+          }
+          console.error(`[game-lifecycle] Saved ${partialTranscript.length} partial transcript entries for game ${gameId}`);
         }
-        console.error(`[game-lifecycle] Saved ${partialTranscript.length} partial transcript entries for game ${gameId}`);
+      } catch (transcriptErr) {
+        console.error(`[game-lifecycle] Failed to save partial transcript for game ${gameId}:`, transcriptErr);
       }
-    } catch (transcriptErr) {
-      console.error(`[game-lifecycle] Failed to save partial transcript for game ${gameId}:`, transcriptErr);
     }
 
-    // Notify live viewers that the game crashed
-    broadcastRaw(gameId, { type: "error", message: "Game ended unexpectedly due to an error." });
-    broadcastRaw(gameId, { type: "game_over", totalRounds: 0 });
+    if (ownerEpoch && runner.aborted) {
+      const currentGame = (await db
+        .select({ status: schema.games.status })
+        .from(schema.games)
+        .where(eq(schema.games.id, gameId)))[0];
+      if (currentGame?.status === "suspended") {
+        clearMemoryOnExit = false;
+        return;
+      }
+
+      const cancelled = await db.update(schema.games)
+        .set({
+          status: "cancelled",
+          endedAt: new Date().toISOString(),
+        })
+        .where(and(eq(schema.games.id, gameId), eq(schema.games.status, "in_progress")))
+        .returning({ id: schema.games.id });
+      if (cancelled.length > 0) {
+        broadcastRaw(gameId, {
+          type: "game_status",
+          gameId,
+          status: "cancelled",
+          terminal: true,
+          reasonCode: "admin_stop",
+          message: "Game cancelled.",
+        });
+      }
+      return;
+    }
+
+    // Notify live viewers that the game cannot safely continue.
+    broadcastRaw(gameId, { type: "error", message: "Game suspended because the run could not safely continue." });
 
     try {
       // Read current config and append errorInfo
@@ -443,25 +635,45 @@ async function runGameAsync(
       const updatedConfig = {
         ...currentConfig,
         errorInfo: errorMessage,
-        viewerMode: "replay",
       };
 
-      await db.update(schema.games)
-        .set({
-          status: "cancelled",
-          endedAt: new Date().toISOString(),
-          config: JSON.stringify(updatedConfig),
-        })
-        .where(eq(schema.games.id, gameId));
+      if (ownerEpoch) {
+        clearMemoryOnExit = false;
+        await db.update(schema.games)
+          .set({ config: JSON.stringify(updatedConfig) })
+          .where(eq(schema.games.id, gameId));
+        await markGameSuspended(db, gameId, "runner_failed", { message: errorMessage });
+        broadcastRaw(gameId, {
+          type: "game_status",
+          gameId,
+          status: "suspended",
+          terminal: true,
+          reasonCode: "runner_failed",
+          message: "Game suspended because the run could not safely continue.",
+        });
+      } else {
+        const fallbackConfig = { ...updatedConfig, viewerMode: "replay" };
+        broadcastRaw(gameId, { type: "game_over", totalRounds: 0 });
+        await db.update(schema.games)
+          .set({
+            status: "cancelled",
+            endedAt: new Date().toISOString(),
+            config: JSON.stringify(fallbackConfig),
+          })
+          .where(eq(schema.games.id, gameId));
+      }
     } catch (dbErr) {
       console.error(`[game-lifecycle] Failed to update game ${gameId} status after error:`, dbErr);
     }
   } finally {
+    heartbeat?.stop();
     // Clear operational memories — they exist only for game duration
-    try {
-      await new PgMemoryStore(db).clear(gameId);
-    } catch (err) {
-      console.warn(`[game-lifecycle] memory cleanup failed for game=${gameId}:`, err instanceof Error ? err.message : err);
+    if (clearMemoryOnExit) {
+      try {
+        await new PgMemoryStore(db).clear(gameId);
+      } catch (err) {
+        console.warn(`[game-lifecycle] memory cleanup failed for game=${gameId}:`, err instanceof Error ? err.message : err);
+      }
     }
     activeGames.delete(gameId);
   }

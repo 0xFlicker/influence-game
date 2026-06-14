@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { WsGameEvent } from "@/lib/api";
+import { getAuthToken, type WsGameEvent } from "@/lib/api";
 import type { ConnStatus } from "./types";
 
 let WS_BASE =
@@ -32,7 +32,12 @@ export function useGameWebSocket(
     function connect() {
       if (cancelled) return;
 
-      const ws = new WebSocket(`${WS_BASE}/ws/games/${gameId}`);
+      const token = getAuthToken();
+      const url = new URL(`${WS_BASE}/ws/games/${gameId}`);
+      if (token) {
+        url.searchParams.set("token", token);
+      }
+      const ws = new WebSocket(url.toString());
       wsRef.current = ws;
       setStatus("connecting");
 

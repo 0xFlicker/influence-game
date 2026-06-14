@@ -16,6 +16,8 @@ import type {
   MingleIntentSummary as MingleIntentSummaryBase,
   StrategicLens,
 } from "./types";
+import type { CanonicalGameEvent } from "./canonical-events";
+import type { CanonicalGameProjection } from "./game-projection";
 
 export type { MingleIntentSummary, MinglePreferredRoomSize, StrategicLens } from "./types";
 
@@ -36,6 +38,63 @@ export interface GameStateSnapshot {
   alivePlayers: Array<{ id: UUID; name: string; shielded: boolean }>;
   eliminatedPlayers: Array<{ id: UUID; name: string }>;
   transcript: TranscriptEntry[];
+}
+
+export interface GameRunnerOptions {
+  /** Optional external run identity, used by API-backed games before the first canonical event. */
+  gameId?: UUID;
+  /** Awaited durability boundary for API-backed canonical event persistence. */
+  durableEventSink?: (events: readonly CanonicalGameEvent[]) => Promise<void> | void;
+  /** Optional forensic checkpoint writer called after durable event flushes. */
+  durableCheckpointSink?: (checkpoint: GameCheckpointCapsule) => Promise<void> | void;
+  /** Optional owner/lease check before accepting post-LLM commits. */
+  beforeAcceptedCommit?: () => Promise<void> | void;
+}
+
+export type GameCheckpointKind = "initial" | "phase_boundary" | "terminal";
+
+export interface GameCheckpointStateSummary {
+  gameId: UUID;
+  round: number;
+  alivePlayerCount: number;
+  eliminatedPlayerCount: number;
+}
+
+export interface GameCheckpointProjectionSummary {
+  gameId: UUID;
+  lastSequence: number;
+  round: number;
+  phase: Phase | null;
+  alivePlayerCount: number;
+  eliminatedPlayerCount: number;
+  roomAllocationRounds: number;
+  roundResultCount: number;
+}
+
+export interface GameCheckpointCapsule {
+  gameId: UUID;
+  lastEventSequence: number;
+  checkpointKind: GameCheckpointKind;
+  phase: Phase;
+  round: number;
+  eventCount: number;
+  projection: CanonicalGameProjection;
+  state: GameCheckpointStateSummary;
+  projectionSummary: GameCheckpointProjectionSummary;
+  hydrateable: false;
+  hydrationStatus: {
+    replayableProjection: true;
+    xstateSnapshot: false;
+    phaseAccumulators: false;
+    agentMemoryState: false;
+    pendingLlmCalls: false;
+    tokenCostCursor: false;
+    missingInputs: string[];
+  };
+  transcriptCursor: {
+    entries: number;
+  };
+  tokenCostCursor: null;
 }
 
 // ---------------------------------------------------------------------------

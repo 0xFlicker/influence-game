@@ -11,6 +11,8 @@ import {
 } from "../simulate";
 import type { AgentTurnEvent } from "../game-runner";
 import type { CanonicalGameEvent } from "../canonical-events";
+import { GameState } from "../game-state";
+import { replayCanonicalEvents } from "../game-projection";
 import { instrumentGame } from "../simulation-instrumentation";
 import { DEFAULT_CONFIG, Phase } from "../types";
 import type { TokenUsage } from "../token-tracker";
@@ -269,6 +271,37 @@ describe("simulation variant config", () => {
       visibility: "producer",
       payloadVersion: 1,
     });
+  });
+
+  it("replays simulator JSONL records and API persisted envelopes through the same projection contract", () => {
+    let tick = 0;
+    const gameState = new GameState(
+      [
+        { id: "atlas-id", name: "Atlas" },
+        { id: "mira-id", name: "Mira" },
+        { id: "vera-id", name: "Vera" },
+        { id: "rex-id", name: "Rex" },
+      ],
+      {
+        gameId: "game-fixed",
+        now: () => 1_700_000_000_000 + tick++,
+      },
+    );
+    gameState.startRound();
+    gameState.recordVote("atlas-id", "mira-id", "vera-id");
+    const events = gameState.getCanonicalEvents();
+
+    const simulatorJsonlEnvelopes = events.map((event) =>
+      serializeCanonicalGameEvent(1, 1_700_000_000_000, event).canonicalEvent as CanonicalGameEvent
+    );
+    const apiPersistedEnvelopes = events.map((event) => ({
+      sequence: event.sequence,
+      eventType: event.type,
+      envelope: event,
+    }));
+
+    expect(replayCanonicalEvents(simulatorJsonlEnvelopes)).toEqual(gameState.getDomainProjection());
+    expect(replayCanonicalEvents(apiPersistedEnvelopes.map((row) => row.envelope))).toEqual(gameState.getDomainProjection());
   });
 
   it("accepts the configured max player count for CLI simulation runs", () => {

@@ -19,6 +19,7 @@ export const PHASE_TRANSITION_LABELS: Partial<Record<PhaseKey, string>> = {
   JURY_QUESTIONS: "JURY QUESTIONS",
   CLOSING_ARGUMENTS: "CLOSING ARGUMENTS",
   JURY_VOTE: "JURY VOTE",
+  SUSPENDED: "SUSPENDED",
   END: "GAME OVER",
 };
 
@@ -120,6 +121,7 @@ export const PHASE_LABELS: Record<PhaseKey, string> = {
   JURY_QUESTIONS: "Jury Questions",
   CLOSING_ARGUMENTS: "Closing Arguments",
   JURY_VOTE: "Jury Vote",
+  SUSPENDED: "Suspended",
   END: "Game Over",
 };
 

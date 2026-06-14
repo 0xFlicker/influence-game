@@ -23,6 +23,7 @@ export type WsOutboundEvent =
   | { type: "message"; entry: TranscriptEntry }
   | { type: "player_eliminated"; playerId: string; playerName: string; round: number }
   | { type: "game_over"; winner?: string; winnerName?: string; totalRounds: number }
+  | { type: "game_status"; gameId: string; status: "suspended" | "cancelled"; terminal: true; reasonCode: string; message?: string }
   | { type: "players_filled"; gameId: string; players: Array<{ id: string; name: string; archetype: string }>; totalPlayers: number }
   | { type: "players_updated"; gameId: string; players: Array<{ id: string; name: string; archetype: string }> }
   | { type: "error"; message: string };

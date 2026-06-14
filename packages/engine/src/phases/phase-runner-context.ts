@@ -26,6 +26,7 @@ export interface PhaseRunnerContext {
   houseInterviewer: IHouseInterviewer;
   mingleInbox: Map<UUID, Array<{ from: string; text: string }>>;
   eliminationOrder: string[];
+  beforeAcceptedCommit?: () => Promise<void> | void;
 }
 
 export function agentTurnSourcePointer(
@@ -41,6 +42,10 @@ export function agentTurnSourcePointer(
     round,
     phase,
   };
+}
+
+export async function assertCanAcceptCommit(ctx: PhaseRunnerContext): Promise<void> {
+  await ctx.beforeAcceptedCommit?.();
 }
 
 export function transcriptThinkingFor(

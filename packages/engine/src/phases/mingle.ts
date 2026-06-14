@@ -13,7 +13,7 @@ import type {
 import { Phase } from "../types";
 import type { MingleIntentAction, MingleTurnAction } from "../game-runner.types";
 import type { HouseMingleAssignmentResult } from "../house-interviewer";
-import { strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import { assertCanAcceptCommit, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 
 /**
  * Neutral open rooms replace pair matching. Rooms are available only while the
@@ -472,6 +472,7 @@ async function runMingleTurn(
       }
 
       const normalizedGoto = normalizeGotoRoomId(resolvedAction.gotoRoomId, room.roomId, roomCount);
+      await assertCanAcceptCommit(ctx);
       nextRoomByPlayerId.set(playerId, normalizedGoto.roomId);
 
       const message = resolvedAction.noReply ? null : resolvedAction.message?.trim();
@@ -559,6 +560,7 @@ export async function runMinglePhase(
   const roomCount = computeRoomCount(alivePlayers.length);
   if (roomCount === 0) {
     logger.logSystem("Open rooms are skipped with fewer than five players alive.", Phase.MINGLE);
+    await assertCanAcceptCommit(ctx);
     gameState.recordRoomAllocations([], []);
     actor.send({ type: "PHASE_COMPLETE" });
     await new Promise((r) => setTimeout(r, 0));
@@ -586,6 +588,7 @@ export async function runMinglePhase(
       mingleIntents.set(player.id, intent);
       if (intent) {
         const intentSummary = summarizeMingleIntent(intent);
+        await assertCanAcceptCommit(ctx);
         logger.emitAgentTurn({
           phase: Phase.MINGLE,
           action: "mingle-intent",
@@ -616,6 +619,7 @@ export async function runMinglePhase(
     alivePlayers.map((player) => [player.id, summarizeMingleIntent(mingleIntents.get(player.id) ?? null)]),
   );
   const initialAllocation = allocateRooms(houseAssignment, alivePlayers, roomCount, gameState.round, 1, intentSummaries);
+  await assertCanAcceptCommit(ctx);
   for (const assignment of initialAllocation.diagnostics.assignments) {
     logger.emitAgentTurn({
       phase: Phase.MINGLE,
@@ -676,6 +680,7 @@ export async function runMinglePhase(
     allRooms.push(...beatRooms);
 
     const allocationText = `Turn ${beat}: ${beatRooms.map((room) => describeRoom(ctx, room)).join(" | ")}`;
+    await assertCanAcceptCommit(ctx);
     const allocationEntry = logger.logRoomAllocation(allocationText, beatRooms, [], beatDiagnostics);
     const actions = await runMingleTurn(ctx, localRooms, beatRooms, roomCounts, roomByPlayerId, roomCount, mingleIntents);
     if (allocationEntry.roomMetadata?.diagnostics) {
@@ -688,6 +693,7 @@ export async function runMinglePhase(
   contextBuilder.currentRoomCounts = buildRoomCounts(
     buildRoomsFromAssignments(roomByPlayerId, alivePlayers, roomCount, gameState.round, beats),
   );
+  await assertCanAcceptCommit(ctx);
   gameState.recordRoomAllocations(allRooms, []);
 
   actor.send({ type: "PHASE_COMPLETE" });

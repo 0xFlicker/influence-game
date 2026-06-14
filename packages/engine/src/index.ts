@@ -78,7 +78,7 @@ export type {
 
 // Game runner
 export { GameRunner } from "./game-runner";
-export type { AgentResponse, AgentTurnEvent, EmpowerRevoteAction, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TranscriptEntry, GameStreamEvent, GameStateSnapshot } from "./game-runner";
+export type { AgentResponse, AgentTurnEvent, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TranscriptEntry, GameStreamEvent, GameStateSnapshot } from "./game-runner";
 
 // Agent
 export { InfluenceAgent, createAgentCast } from "./agent";

@@ -23,8 +23,8 @@ import type { UUID, GameConfig } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 
 // Re-export types from the extracted module for backward compatibility
-export type { AgentCallOptions, AgentResponse, AgentTurnEvent, EmpowerRevoteAction, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TranscriptEntry } from "./game-runner.types";
-import type { GameStreamEvent, GameStateSnapshot, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, TranscriptEntry } from "./game-runner.types";
+export type { AgentCallOptions, AgentResponse, AgentTurnEvent, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TranscriptEntry } from "./game-runner.types";
+import type { GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, TranscriptEntry } from "./game-runner.types";
 
 // Internal modules
 import { TranscriptLogger } from "./transcript-logger";
@@ -58,6 +58,11 @@ export class GameRunner {
   private readonly contextBuilder: ContextBuilder;
   private readonly diaryRoom: DiaryRoom;
   private readonly houseInterviewer: IHouseInterviewer;
+  private readonly durableEventSink?: GameRunnerOptions["durableEventSink"];
+  private readonly durableCheckpointSink?: GameRunnerOptions["durableCheckpointSink"];
+  private readonly beforeAcceptedCommit?: GameRunnerOptions["beforeAcceptedCommit"];
+  private flushedCanonicalSequence = 0;
+  private readonly writtenCheckpointKeys = new Set<string>();
   private houseStrategyBible: HouseStrategyBiblePacket | null = null;
   private readonly completedHouseSummaryRounds = new Set<number>();
   /** Mingle room messages keyed by recipient */
@@ -71,14 +76,23 @@ export class GameRunner {
   /** Accusations stored for the defense phase */
   private readonly _currentAccusations = new Map<UUID, { accuserId: UUID; accuserName: string; text: string }>();
 
-  constructor(agents: IAgent[], config: GameConfig, houseInterviewer?: IHouseInterviewer) {
+  constructor(
+    agents: IAgent[],
+    config: GameConfig,
+    houseInterviewer?: IHouseInterviewer,
+    options: GameRunnerOptions = {},
+  ) {
     const scaledMaxRounds = computeMaxRounds(agents.length);
     this.config = { ...config, maxRounds: Math.max(config.maxRounds, scaledMaxRounds) };
     this.totalPlayerCount = agents.length;
     this.agents = new Map(agents.map((a) => [a.id, a]));
-    this.gameState = new GameState(agents.map((a) => ({ id: a.id, name: a.name })));
+    const gameStateOptions = options.gameId ? { gameId: options.gameId } : {};
+    this.gameState = new GameState(agents.map((a) => ({ id: a.id, name: a.name })), gameStateOptions);
     this.machine = createPhaseMachine();
     this.houseInterviewer = houseInterviewer ?? new TemplateHouseInterviewer();
+    this.durableEventSink = options.durableEventSink;
+    this.durableCheckpointSink = options.durableCheckpointSink;
+    this.beforeAcceptedCommit = options.beforeAcceptedCommit;
 
     // Initialize extracted modules
     this.logger = new TranscriptLogger(this.gameState);
@@ -97,6 +111,9 @@ export class GameRunner {
       this.houseInterviewer,
       () => this.houseStrategyBible,
     );
+    if (this.durableEventSink) {
+      this.logger.beginStreamBuffering();
+    }
   }
 
   get transcriptLog(): readonly TranscriptEntry[] {
@@ -152,6 +169,11 @@ export class GameRunner {
     this._aborted = true;
   }
 
+  /** Whether the runner has been asked to stop before normal completion. */
+  get aborted(): boolean {
+    return this._aborted;
+  }
+
   // ---------------------------------------------------------------------------
   // Main entry point
   // ---------------------------------------------------------------------------
@@ -159,6 +181,12 @@ export class GameRunner {
   async run(): Promise<{ winner?: UUID; winnerName?: string; rounds: number; transcript: TranscriptEntry[]; eliminationOrder: string[] }> {
     const gameId = this.gameState.gameId;
     const allPlayers = this.gameState.getAllPlayers().map((p) => ({ id: p.id, name: p.name }));
+
+    await this.flushDurableEvents({
+      continueBuffering: true,
+      checkpointKind: "initial",
+      phase: Phase.INIT,
+    });
 
     for (const agent of this.agents.values()) {
       agent.onGameStart(gameId, allPlayers);
@@ -177,17 +205,33 @@ export class GameRunner {
     actor.on("GAME_OVER", (event) => emittedEvents.push(event as unknown as { type: string; [key: string]: unknown }));
 
     actor.start();
-    await this.runGameLoop(actor);
-    actor.stop();
+    try {
+      await this.runGameLoop(actor);
+    } finally {
+      actor.stop();
+    }
     this.bus.complete();
 
-    const winner = this.gameState.getWinner();
-    this.logger.emitStream({
-      type: "game_over",
-      winner: winner?.id,
-      winnerName: winner?.name,
-      totalRounds: this.gameState.round,
+    if (this._aborted && this.durableEventSink) {
+      this.logger.dropStreamBuffer();
+      throw new Error("Game run aborted");
+    }
+
+    await this.flushDurableEvents({
+      continueBuffering: false,
+      checkpointKind: "terminal",
+      phase: Phase.END,
     });
+
+    const winner = this.gameState.getWinner();
+    if (!this.durableEventSink) {
+      this.logger.emitStream({
+        type: "game_over",
+        winner: winner?.id,
+        winnerName: winner?.name,
+        totalRounds: this.gameState.round,
+      });
+    }
     return {
       winner: winner?.id,
       winnerName: winner?.name,
@@ -212,7 +256,99 @@ export class GameRunner {
       houseInterviewer: this.houseInterviewer,
       mingleInbox: this.mingleInbox,
       eliminationOrder: this.eliminationOrder,
+      beforeAcceptedCommit: this.beforeAcceptedCommit,
     };
+  }
+
+  private async flushDurableEvents(options: {
+    continueBuffering: boolean;
+    checkpointKind?: GameCheckpointKind;
+    phase?: Phase;
+  }): Promise<void> {
+    if (!this.durableEventSink) return;
+
+    const pendingEvents = this.gameState
+      .getCanonicalEvents()
+      .filter((event) => event.sequence > this.flushedCanonicalSequence);
+
+    try {
+      if (pendingEvents.length > 0) {
+        await this.durableEventSink(pendingEvents);
+        this.flushedCanonicalSequence = pendingEvents[pendingEvents.length - 1]!.sequence;
+      }
+      if (options.checkpointKind) {
+        await this.writeCheckpoint(options.checkpointKind, options.phase);
+      }
+      this.logger.flushStreamBuffer();
+      if (options.continueBuffering) {
+        this.logger.beginStreamBuffering();
+      }
+    } catch (error) {
+      this.logger.dropStreamBuffer();
+      throw error;
+    }
+  }
+
+  private async writeCheckpoint(kind: GameCheckpointKind, phase?: Phase): Promise<void> {
+    if (!this.durableCheckpointSink) return;
+
+    const canonicalEvents = this.gameState.getCanonicalEvents();
+    const lastEvent = canonicalEvents.findLast((event) => event.sequence <= this.flushedCanonicalSequence);
+    const checkpointPhase = phase ?? lastEvent?.phase ?? Phase.INIT;
+    const checkpointKey = `${kind}:${this.flushedCanonicalSequence}`;
+    if (this.writtenCheckpointKeys.has(checkpointKey)) return;
+
+    const projection = this.getDomainProjection();
+    const allPlayers = this.gameState.getAllPlayers();
+    const alivePlayerCount = allPlayers.filter((player) => player.status === PlayerStatus.ALIVE).length;
+    const eliminatedPlayerCount = allPlayers.length - alivePlayerCount;
+
+    await this.durableCheckpointSink({
+      gameId: this.gameState.gameId,
+      lastEventSequence: this.flushedCanonicalSequence,
+      checkpointKind: kind,
+      phase: checkpointPhase,
+      round: this.gameState.round,
+      eventCount: canonicalEvents.length,
+      projection,
+      state: {
+        gameId: this.gameState.gameId,
+        round: this.gameState.round,
+        alivePlayerCount,
+        eliminatedPlayerCount,
+      },
+      projectionSummary: {
+        gameId: projection.gameId,
+        lastSequence: projection.lastSequence,
+        round: projection.round,
+        phase: projection.phase,
+        alivePlayerCount,
+        eliminatedPlayerCount,
+        roomAllocationRounds: Object.keys(projection.roomAllocations).length,
+        roundResultCount: projection.roundResults.length,
+      },
+      hydrateable: false,
+      hydrationStatus: {
+        replayableProjection: true,
+        xstateSnapshot: false,
+        phaseAccumulators: false,
+        agentMemoryState: false,
+        pendingLlmCalls: false,
+        tokenCostCursor: false,
+        missingInputs: [
+          "xstateSnapshot",
+          "phaseAccumulators",
+          "agentMemoryState",
+          "pendingLlmCalls",
+          "tokenCostCursor",
+        ],
+      },
+      transcriptCursor: {
+        entries: this.logger.transcript.length,
+      },
+      tokenCostCursor: null,
+    });
+    this.writtenCheckpointKeys.add(checkpointKey);
   }
 
   private async runGameLoop(actor: PhaseActor): Promise<void> {
@@ -315,6 +451,15 @@ export class GameRunner {
       }
 
       await new Promise((r) => setTimeout(r, 0));
+      if (this._aborted && this.durableEventSink) {
+        this.logger.dropStreamBuffer();
+        throw new Error("Game run aborted");
+      }
+      await this.flushDurableEvents({
+        continueBuffering: true,
+        checkpointKind: "phase_boundary",
+        phase: this.gameState.getCanonicalEvents().at(-1)?.phase ?? Phase.INIT,
+      });
     }
 
     if (!this._aborted) {

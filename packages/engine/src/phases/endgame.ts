@@ -1,7 +1,7 @@
 import type { UUID } from "../types";
 import { Phase } from "../types";
 import type { AgentResponse, TargetDecision } from "../game-runner.types";
-import { agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import { assertCanAcceptCommit, agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 
 async function withEndgameActionTimeout<T>(
   ctx: PhaseRunnerContext,
@@ -53,6 +53,7 @@ export async function runReckoningPlea(
         (signal) => agent.getPlea(phaseCtx, { signal }),
         () => fallbackMessage("I have no further plea."),
       );
+      await assertCanAcceptCommit(ctx);
       const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
       logger.logPublic(player.id, message, Phase.PLEA, transcriptThinking);
       logger.emitAgentTurn({
@@ -103,6 +104,7 @@ export async function runTribunalAccusation(
       );
       const targetName = gameState.getPlayerName(targetId);
       const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
+      await assertCanAcceptCommit(ctx);
       logger.logPublic(player.id, `[ACCUSES ${targetName}] ${text}`, Phase.ACCUSATION, transcriptThinking);
       logger.emitAgentTurn({
         phase: Phase.ACCUSATION,
@@ -155,6 +157,7 @@ export async function runTribunalDefense(
         (signal) => agent.getDefense(phaseCtx, accusation.text, accusation.accuserName, { signal }),
         () => fallbackMessage("I stand by my game."),
       );
+      await assertCanAcceptCommit(ctx);
       const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
       logger.logPublic(player.id, `[DEFENSE] ${defense}`, Phase.DEFENSE, transcriptThinking);
       logger.emitAgentTurn({
@@ -186,6 +189,7 @@ export async function runJudgmentOpening(
 ): Promise<void> {
   const { gameState, agents, logger, contextBuilder } = ctx;
 
+  await assertCanAcceptCommit(ctx);
   gameState.setEndgameStage("judgment");
   logger.emitPhaseChange(Phase.OPENING_STATEMENTS);
   logger.logSystem(`\n========================================`, Phase.OPENING_STATEMENTS);
@@ -215,6 +219,7 @@ export async function runJudgmentOpening(
         (signal) => agent.getOpeningStatement(phaseCtx, { signal }),
         () => fallbackMessage("I will let my game speak for itself."),
       );
+      await assertCanAcceptCommit(ctx);
       const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
       logger.logPublic(player.id, message, Phase.OPENING_STATEMENTS, transcriptThinking);
       logger.emitAgentTurn({
@@ -267,6 +272,7 @@ export async function runJudgmentJuryQuestions(
     );
     const finalistName = gameState.getPlayerName(targetFinalistId);
     const questionTranscriptThinking = transcriptThinkingFor(jurorAgent, questionThinking, questionReasoning);
+    await assertCanAcceptCommit(ctx);
     logger.logPublic(juror.playerId, `[QUESTION to ${finalistName}] ${question}`, Phase.JURY_QUESTIONS, questionTranscriptThinking);
     logger.emitAgentTurn({
       phase: Phase.JURY_QUESTIONS,
@@ -294,6 +300,7 @@ export async function runJudgmentJuryQuestions(
         () => fallbackMessage("I played the best game I could."),
       );
       const answerTranscriptThinking = transcriptThinkingFor(finalistAgent, answerThinking, answerReasoning);
+      await assertCanAcceptCommit(ctx);
       logger.logPublic(targetFinalistId, `[ANSWER to ${juror.playerName}] ${answer}`, Phase.JURY_QUESTIONS, answerTranscriptThinking);
       logger.emitAgentTurn({
         phase: Phase.JURY_QUESTIONS,
@@ -339,6 +346,7 @@ export async function runJudgmentClosing(
         (signal) => agent.getClosingArgument(phaseCtx, { signal }),
         () => fallbackMessage("Vote for the game you respect most."),
       );
+      await assertCanAcceptCommit(ctx);
       const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
       logger.logPublic(player.id, message, Phase.CLOSING_ARGUMENTS, transcriptThinking);
       logger.emitAgentTurn({
@@ -390,6 +398,7 @@ export async function runJudgmentJuryVote(
         thinking: "House fallback after unresolved jury vote.",
       }),
     );
+    await assertCanAcceptCommit(ctx);
     gameState.recordJuryVote(juror.playerId, vote.target, [
       agentTurnSourcePointer(juror.playerId, "jury-vote", gameState.round, Phase.JURY_VOTE),
     ]);
@@ -417,6 +426,7 @@ export async function runJudgmentJuryVote(
     });
   }
 
+  await assertCanAcceptCommit(ctx);
   const { winnerId, method, voteCounts } = gameState.tallyJuryVotes();
   const winnerName = gameState.getPlayerName(winnerId);
 
@@ -436,6 +446,7 @@ export async function runJudgmentJuryVote(
 
   const loserId = finalistIds.find((id) => id !== winnerId);
   if (loserId) {
+    await assertCanAcceptCommit(ctx);
     gameState.eliminatePlayer(loserId);
   }
 

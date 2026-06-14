@@ -153,6 +153,27 @@ describe("Database Schema", () => {
       expect(rows[0]!.status).toBe("completed");
       expect(rows[0]!.endedAt).toBeTruthy();
     });
+
+    test("game can be marked suspended for inspection", async () => {
+      const gameId = randomUUID();
+      await db.insert(schema.games)
+        .values({ id: gameId, config: "{}", status: "in_progress" });
+
+      await db.update(schema.games)
+        .set({
+          status: "suspended",
+          endedAt: new Date().toISOString(),
+        })
+        .where(eq(schema.games.id, gameId));
+
+      const rows = await db
+        .select()
+        .from(schema.games)
+        .where(eq(schema.games.id, gameId));
+
+      expect(rows[0]!.status).toBe("suspended");
+      expect(rows[0]!.endedAt).toBeTruthy();
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -390,6 +411,259 @@ describe("Database Schema", () => {
         .where(eq(schema.gameResults.gameId, gameId));
 
       expect(rows[0]!.winnerId).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Durable Game Run Kernel
+  // -------------------------------------------------------------------------
+
+  describe("durable game run kernel", () => {
+    async function createGameOwner() {
+      const gameId = randomUUID();
+      const ownerEpoch = randomUUID();
+      await db.insert(schema.games)
+        .values({ id: gameId, config: "{}", status: "in_progress" });
+      await db.insert(schema.gameRunOwners)
+        .values({
+          id: randomUUID(),
+          gameId,
+          ownerEpoch,
+          processId: "test-process",
+        });
+      return { gameId, ownerEpoch };
+    }
+
+    test("owner row tracks active durable head and kernel health", async () => {
+      const { gameId, ownerEpoch } = await createGameOwner();
+
+      const rows = await db
+        .select()
+        .from(schema.gameRunOwners)
+        .where(eq(schema.gameRunOwners.ownerEpoch, ownerEpoch));
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.gameId).toBe(gameId);
+      expect(rows[0]!.status).toBe("active");
+      expect(rows[0]!.runSource).toBe("api");
+      expect(rows[0]!.lastPersistedEventSequence).toBe(0);
+      expect(rows[0]!.kernelHealth).toBe("healthy");
+    });
+
+    test("only one active owner can exist per game", async () => {
+      const { gameId } = await createGameOwner();
+
+      let threw = false;
+      try {
+        await db.insert(schema.gameRunOwners)
+          .values({
+            id: randomUUID(),
+            gameId,
+            ownerEpoch: randomUUID(),
+          });
+      } catch {
+        threw = true;
+      }
+      expect(threw).toBe(true);
+    });
+
+    test("canonical event rows store metadata and JSONB envelope", async () => {
+      const { gameId, ownerEpoch } = await createGameOwner();
+      const envelope = {
+        sequence: 1,
+        gameId,
+        type: "game.roster_initialized",
+        timestamp: new Date().toISOString(),
+        visibility: "public",
+        payloadVersion: 1,
+        source: "engine",
+        payload: { players: [] },
+      };
+
+      await db.insert(schema.gameEvents)
+        .values({
+          gameId,
+          sequence: 1,
+          eventType: "game.roster_initialized",
+          eventHash: "sha256:test",
+          ownerEpoch,
+          visibility: "public",
+          payloadVersion: 1,
+          sourcePointers: [{ kind: "game", id: gameId }],
+          envelope,
+        });
+
+      const rows = await db
+        .select()
+        .from(schema.gameEvents)
+        .where(eq(schema.gameEvents.gameId, gameId));
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.sequence).toBe(1);
+      expect(rows[0]!.eventType).toBe("game.roster_initialized");
+      expect(rows[0]!.eventHash).toBe("sha256:test");
+      expect(rows[0]!.envelope).toEqual(envelope);
+      expect(rows[0]!.sourcePointers).toEqual([{ kind: "game", id: gameId }]);
+    });
+
+    test("event sequence uniqueness detects conflicting duplicates", async () => {
+      const { gameId, ownerEpoch } = await createGameOwner();
+      const envelope = {
+        sequence: 1,
+        gameId,
+        type: "game.roster_initialized",
+        timestamp: new Date().toISOString(),
+        visibility: "public",
+        payloadVersion: 1,
+        source: "engine",
+        payload: { players: [] },
+      };
+
+      await db.insert(schema.gameEvents)
+        .values({
+          gameId,
+          sequence: 1,
+          eventType: "game.roster_initialized",
+          eventHash: "sha256:first",
+          ownerEpoch,
+          visibility: "public",
+          envelope,
+        });
+
+      let threw = false;
+      try {
+        await db.insert(schema.gameEvents)
+          .values({
+            gameId,
+            sequence: 1,
+            eventType: "game.roster_initialized",
+            eventHash: "sha256:different",
+            ownerEpoch,
+            visibility: "public",
+            envelope,
+          });
+      } catch {
+        threw = true;
+      }
+      expect(threw).toBe(true);
+    });
+
+    test("event rows reject envelope metadata disagreement", async () => {
+      const { gameId, ownerEpoch } = await createGameOwner();
+      const wrongGameId = randomUUID();
+
+      let threw = false;
+      try {
+        await db.insert(schema.gameEvents)
+          .values({
+            gameId,
+            sequence: 1,
+            eventType: "game.roster_initialized",
+            eventHash: "sha256:test",
+            ownerEpoch,
+            visibility: "public",
+            envelope: {
+              sequence: 1,
+              gameId: wrongGameId,
+              type: "game.roster_initialized",
+              timestamp: new Date().toISOString(),
+              visibility: "public",
+              payloadVersion: 1,
+              source: "engine",
+              payload: { players: [] },
+            },
+          });
+      } catch {
+        threw = true;
+      }
+      expect(threw).toBe(true);
+    });
+
+    test("checkpoint and evidence manifest rows reference durable boundaries", async () => {
+      const { gameId, ownerEpoch } = await createGameOwner();
+      const eventEnvelope = {
+        sequence: 1,
+        gameId,
+        type: "game.roster_initialized",
+        timestamp: new Date().toISOString(),
+        visibility: "public",
+        payloadVersion: 1,
+        source: "engine",
+        payload: { players: [] },
+      };
+      await db.insert(schema.gameEvents)
+        .values({
+          gameId,
+          sequence: 1,
+          eventType: "game.roster_initialized",
+          eventHash: "sha256:event-1",
+          ownerEpoch,
+          visibility: "public",
+          envelope: eventEnvelope,
+        });
+
+      const checkpointId = randomUUID();
+      await db.insert(schema.gameCheckpoints)
+        .values({
+          id: checkpointId,
+          gameId,
+          ownerEpoch,
+          lastEventSequence: 1,
+          eventHeadHash: "sha256:head-1",
+          projectionHash: "sha256:projection-1",
+          hydrationStatus: { hydrateable: false, missing: ["xstate_snapshot"] },
+          snapshot: { phase: "INTRODUCTION", players: [] },
+        });
+
+      const manifestId = randomUUID();
+      await db.insert(schema.gameEvidenceManifests)
+        .values({
+          id: manifestId,
+          gameId,
+          ownerEpoch,
+          eventSequence: 1,
+          evidenceType: "llm_prompt",
+          retentionClass: "debug",
+          accessScope: "producer_admin",
+          storageProvider: "linode_object_storage",
+          storageBucket: "private-evidence",
+          storageKey: "games/test/raw.jsonl",
+          sourcePointers: [{ kind: "game_event", sequence: 1 }],
+          metadata: { redacted: true, byteLength: 1234 },
+        });
+
+      await db.insert(schema.gameEvidenceManifestReads)
+        .values({
+          manifestId,
+          gameId,
+          accessorRole: "producer",
+          purpose: "debug",
+          outcome: "allowed",
+        });
+
+      const checkpoints = await db
+        .select()
+        .from(schema.gameCheckpoints)
+        .where(eq(schema.gameCheckpoints.gameId, gameId));
+      const manifests = await db
+        .select()
+        .from(schema.gameEvidenceManifests)
+        .where(eq(schema.gameEvidenceManifests.gameId, gameId));
+      const reads = await db
+        .select()
+        .from(schema.gameEvidenceManifestReads)
+        .where(eq(schema.gameEvidenceManifestReads.manifestId, manifestId));
+
+      expect(checkpoints[0]!.lastEventSequence).toBe(1);
+      expect(checkpoints[0]!.hydrateable).toBe(false);
+      expect(checkpoints[0]!.hydrationStatus).toEqual({
+        hydrateable: false,
+        missing: ["xstate_snapshot"],
+      });
+      expect(manifests[0]!.redactionStatus).toBe("active");
+      expect(manifests[0]!.metadata).toEqual({ redacted: true, byteLength: 1234 });
+      expect(reads).toHaveLength(1);
+      expect(reads[0]!.outcome).toBe("allowed");
     });
   });
 

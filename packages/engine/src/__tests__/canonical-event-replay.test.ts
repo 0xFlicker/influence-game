@@ -3,6 +3,7 @@ import { GameRunner } from "../game-runner";
 import { GameState } from "../game-state";
 import { replayCanonicalEvents } from "../game-projection";
 import { DEFAULT_CONFIG, Phase } from "../types";
+import type { UUID } from "../types";
 import type { CanonicalGameEvent } from "../canonical-events";
 import { MockAgent } from "./mock-agent";
 
@@ -118,6 +119,177 @@ describe("canonical event replay", () => {
 });
 
 describe("GameRunner canonical events", () => {
+  it("uses an externally supplied game ID before emitting the roster event", async () => {
+    class CapturingAgent extends MockAgent {
+      startedGameId: UUID | null = null;
+
+      override onGameStart(gameId: UUID, allPlayers: Array<{ id: UUID; name: string }>): void {
+        super.onGameStart(gameId, allPlayers);
+        this.startedGameId = gameId;
+      }
+    }
+
+    const apiGameId = "api-game-fixed";
+    const agents = [
+      new CapturingAgent("alpha", "Alpha"),
+      new CapturingAgent("beta", "Beta"),
+      new CapturingAgent("gamma", "Gamma"),
+      new CapturingAgent("delta", "Delta"),
+    ];
+    const runner = new GameRunner(agents, DEFAULT_CONFIG, undefined, { gameId: apiGameId });
+
+    const firstEvent = runner.getCanonicalEvents()[0];
+
+    expect(firstEvent?.type).toBe("game.roster_initialized");
+    expect(firstEvent?.sequence).toBe(1);
+    expect(firstEvent?.gameId).toBe(apiGameId);
+    expect(runner.getStateSnapshot().gameId).toBe(apiGameId);
+
+    const runPromise = runner.run();
+    runner.abort();
+    await runPromise;
+    for (const agent of agents) {
+      expect(agent.startedGameId).toBe(apiGameId);
+    }
+  });
+
+  it("flushes roster events through the durable sink before agent start", async () => {
+    const sinkBatches: number[][] = [];
+
+    class CapturingAgent extends MockAgent {
+      flushedSequencesAtStart: number[] = [];
+
+      override onGameStart(gameId: UUID, allPlayers: Array<{ id: UUID; name: string }>): void {
+        super.onGameStart(gameId, allPlayers);
+        this.flushedSequencesAtStart = sinkBatches.flat();
+      }
+    }
+
+    const agents = [
+      new CapturingAgent("alpha", "Alpha"),
+      new CapturingAgent("beta", "Beta"),
+      new CapturingAgent("gamma", "Gamma"),
+      new CapturingAgent("delta", "Delta"),
+    ];
+    const runner = new GameRunner(agents, DEFAULT_CONFIG, undefined, {
+      gameId: "api-game-durable",
+      durableEventSink: (events) => {
+        sinkBatches.push(events.map((event) => event.sequence));
+      },
+    });
+    const streamedTypes: string[] = [];
+    runner.setStreamListener((event) => streamedTypes.push(event.type));
+
+    const runPromise = runner.run();
+    runner.abort();
+    await expect(runPromise).rejects.toThrow("Game run aborted");
+
+    expect(streamedTypes).not.toContain("game_over");
+    expect(sinkBatches[0]).toEqual([1]);
+    for (const agent of agents) {
+      expect(agent.flushedSequencesAtStart).toEqual([1]);
+    }
+  });
+
+  it("writes non-hydrateable checkpoint capsules after durable event flushes", async () => {
+    const flushedSequences: number[] = [];
+    const checkpointViews: Array<{
+      kind: string;
+      sequence: number;
+      flushedAtWrite: number[];
+      hydrateable: boolean;
+      missingInputs: string[];
+      transcriptEntries: number;
+    }> = [];
+
+    class CapturingAgent extends MockAgent {
+      checkpointsAtStart = 0;
+
+      override onGameStart(gameId: UUID, allPlayers: Array<{ id: UUID; name: string }>): void {
+        super.onGameStart(gameId, allPlayers);
+        this.checkpointsAtStart = checkpointViews.length;
+      }
+    }
+
+    const agents = [
+      new CapturingAgent("alpha", "Alpha"),
+      new CapturingAgent("beta", "Beta"),
+      new CapturingAgent("gamma", "Gamma"),
+      new CapturingAgent("delta", "Delta"),
+    ];
+    const runner = new GameRunner(agents, DEFAULT_CONFIG, undefined, {
+      gameId: "api-game-checkpoints",
+      durableEventSink: (events) => {
+        flushedSequences.push(...events.map((event) => event.sequence));
+      },
+      durableCheckpointSink: (checkpoint) => {
+        checkpointViews.push({
+          kind: checkpoint.checkpointKind,
+          sequence: checkpoint.lastEventSequence,
+          flushedAtWrite: [...flushedSequences],
+          hydrateable: checkpoint.hydrateable,
+          missingInputs: [...checkpoint.hydrationStatus.missingInputs],
+          transcriptEntries: checkpoint.transcriptCursor.entries,
+        });
+      },
+    });
+
+    const runPromise = runner.run();
+    runner.abort();
+    await expect(runPromise).rejects.toThrow("Game run aborted");
+
+    expect(checkpointViews[0]).toEqual({
+      kind: "initial",
+      sequence: 1,
+      flushedAtWrite: [1],
+      hydrateable: false,
+      missingInputs: [
+        "xstateSnapshot",
+        "phaseAccumulators",
+        "agentMemoryState",
+        "pendingLlmCalls",
+        "tokenCostCursor",
+      ],
+      transcriptEntries: 0,
+    });
+    for (const agent of agents) {
+      expect(agent.checkpointsAtStart).toBe(1);
+    }
+  });
+
+  it("does not start agents when the durable sink rejects the roster event", async () => {
+    class CapturingAgent extends MockAgent {
+      startedGameId: UUID | null = null;
+
+      override onGameStart(gameId: UUID, allPlayers: Array<{ id: UUID; name: string }>): void {
+        super.onGameStart(gameId, allPlayers);
+        this.startedGameId = gameId;
+      }
+    }
+
+    const agents = [
+      new CapturingAgent("alpha", "Alpha"),
+      new CapturingAgent("beta", "Beta"),
+      new CapturingAgent("gamma", "Gamma"),
+      new CapturingAgent("delta", "Delta"),
+    ];
+    const streamedTypes: string[] = [];
+    const runner = new GameRunner(agents, DEFAULT_CONFIG, undefined, {
+      gameId: "api-game-failing-sink",
+      durableEventSink: () => {
+        throw new Error("durable append failed");
+      },
+    });
+    runner.setStreamListener((event) => streamedTypes.push(event.type));
+
+    await expect(runner.run()).rejects.toThrow("durable append failed");
+
+    for (const agent of agents) {
+      expect(agent.startedGameId).toBeNull();
+    }
+    expect(streamedTypes).toEqual([]);
+  });
+
   it("replays existing roster events to listeners and exposes a live domain projection", async () => {
     const agents = [
       new MockAgent("alpha", "Alpha"),
@@ -126,6 +298,7 @@ describe("GameRunner canonical events", () => {
       new MockAgent("delta", "Delta"),
       new MockAgent("echo", "Echo"),
     ];
+    const flushedSequences: number[] = [];
     const runner = new GameRunner(agents, {
       ...DEFAULT_CONFIG,
       timers: {
@@ -142,6 +315,10 @@ describe("GameRunner canonical events", () => {
       maxDiaryFollowUps: 0,
       diaryRoomAfterPhases: [],
       enableStrategicReflections: false,
+    }, undefined, {
+      durableEventSink: (events) => {
+        flushedSequences.push(...events.map((event) => event.sequence));
+      },
     });
 
     const streamedTypes: string[] = [];
@@ -158,5 +335,6 @@ describe("GameRunner canonical events", () => {
       event.type === "vote.cast" &&
       event.sourcePointers.some((pointer) => pointer.kind === "agent_turn" && pointer.action === "vote"),
     )).toBe(true);
+    expect(flushedSequences).toEqual(runner.getCanonicalEvents().map((event) => event.sequence));
   });
 });

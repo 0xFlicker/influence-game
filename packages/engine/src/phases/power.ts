@@ -1,7 +1,7 @@
 import type { UUID, PowerAction } from "../types";
 import { Phase } from "../types";
 import type { PowerLobbyExposure } from "../game-runner.types";
-import { agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import { assertCanAcceptCommit, agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import { getExposeVoterNames, handleElimination } from "./elimination";
 
 function buildExposePressure(
@@ -50,6 +50,7 @@ async function runPowerLobbyMessages(
         provisionalCandidates,
         exposePressure,
       );
+      await assertCanAcceptCommit(ctx);
       const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
       logger.logPublic(player.id, message, Phase.POWER, transcriptThinking);
       logger.emitAgentTurn({
@@ -115,6 +116,7 @@ export async function runPowerPhase(
   const phaseCtx = contextBuilder.buildPhaseContext(empoweredId, Phase.POWER, { empoweredId, councilCandidates: prelim });
   const powerActionResult = await empoweredAgent.getPowerAction(phaseCtx, prelim);
   const powerAction: PowerAction = { action: powerActionResult.action, target: powerActionResult.target };
+  await assertCanAcceptCommit(ctx);
   gameState.setPowerAction(powerAction, [
     agentTurnSourcePointer(empoweredId, "power-action", gameState.round, Phase.POWER),
   ]);
@@ -148,6 +150,7 @@ export async function runPowerPhase(
     empoweredAgent.updateThreat(gameState.getPlayerName(powerAction.target));
   }
 
+  await assertCanAcceptCommit(ctx);
   const { candidates, autoEliminated, shieldGranted } = gameState.determineCandidates();
 
   if (shieldGranted) {

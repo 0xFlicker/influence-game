@@ -101,9 +101,21 @@ export type ModelTier = "budget" | "standard" | "premium";
 export type FillStrategy = "random" | "balanced";
 export type TimingPreset = "fast" | "standard" | "slow" | "custom";
 export type GameVisibility = "public" | "unlisted" | "private";
-export type GameStatus = "waiting" | "in_progress" | "completed" | "cancelled";
+export type GameStatus = "waiting" | "in_progress" | "completed" | "cancelled" | "suspended";
 export type ViewerMode = "live" | "speedrun" | "replay";
 export type TrackType = "custom" | "free";
+export type KernelHealthStatus = "healthy" | "degraded" | "suspended" | "unknown";
+
+export interface KernelHealthSummary {
+  status: KernelHealthStatus;
+  lastPersistedEventSequence: number;
+  durableEventCount: number;
+  checkpointCount: number;
+  evidenceManifestCount: number;
+  hasDurableEvents: boolean;
+  hasCheckpoints: boolean;
+  hasEvidenceManifests: boolean;
+}
 
 export interface CreateGameParams {
   playerCount: 4 | 6 | 8 | 10 | 12;
@@ -137,6 +149,7 @@ export interface GameSummary {
   winner?: string;
   winnerPersona?: string;
   errorInfo?: string;
+  kernelHealth?: KernelHealthSummary;
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
@@ -479,6 +492,7 @@ export type PhaseKey =
   | "JURY_QUESTIONS"
   | "CLOSING_ARGUMENTS"
   | "JURY_VOTE"
+  | "SUSPENDED"
   | "END";
 
 export type PlayerState = "alive" | "eliminated";
@@ -562,6 +576,8 @@ export interface GameDetail {
   winner?: string;
   winnerPersona?: string;
   finalists?: [string, string];
+  errorInfo?: string;
+  kernelHealth?: KernelHealthSummary;
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
@@ -613,6 +629,14 @@ export type WsGameEvent =
       totalRounds: number;
     }
   | {
+      type: "game_status";
+      gameId: string;
+      status: "suspended" | "cancelled";
+      terminal: true;
+      reasonCode: string;
+      message?: string;
+    }
+  | {
       type: "players_filled";
       gameId: string;
       players: Array<{ id: string; name: string; archetype: string }>;
@@ -622,6 +646,10 @@ export type WsGameEvent =
       type: "players_updated";
       gameId: string;
       players: Array<{ id: string; name: string; archetype: string }>;
+    }
+  | {
+      type: "error";
+      message: string;
     };
 
 // ---------------------------------------------------------------------------
@@ -782,6 +810,7 @@ export interface FreeQueueStatus {
     slug: string;
     gameNumber: number;
     status: GameStatus;
+    kernelHealth?: KernelHealthSummary;
   } | null;
 }
 
@@ -919,6 +948,7 @@ export interface RemoteGame {
   playerCount: number;
   currentRound: number;
   maxRounds: number;
+  kernelHealth?: KernelHealthSummary;
   createdAt: string;
 }
 

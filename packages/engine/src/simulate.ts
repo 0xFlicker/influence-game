@@ -29,6 +29,8 @@
  *   including `thinking` and `reasoningContext` when available.
  * - `game-{N}-events.jsonl`: clean canonical domain events accepted by the engine,
  *   suitable for replaying into a game projection or serving through the local game MCP.
+ *   This is the same canonical envelope persisted by API-backed games; CLI
+ *   simulations remain local JSONL runs and do not write API database rows.
  *
  * Use JSONL artifacts for post-run analysis instead of parsing ANSI-colored
  * `game-{N}.txt` output.

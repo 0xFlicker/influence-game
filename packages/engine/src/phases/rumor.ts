@@ -1,5 +1,5 @@
 import { Phase } from "../types";
-import { strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import { assertCanAcceptCommit, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 
 export async function runRumorPhase(
   ctx: PhaseRunnerContext,
@@ -32,6 +32,7 @@ export async function runRumorPhase(
     const playerName = gameState.getPlayerName(rumor.playerId);
     const agent = agents.get(rumor.playerId)!;
     const transcriptThinking = transcriptThinkingFor(agent, rumor.thinking, rumor.reasoningContext);
+    await assertCanAcceptCommit(ctx);
     logger.logPublic(rumor.playerId, rumor.message, Phase.RUMOR, {
       anonymous: true,
       displayOrder: i + 1,

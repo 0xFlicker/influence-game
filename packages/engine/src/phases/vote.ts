@@ -1,7 +1,7 @@
 import type { UUID } from "../types";
 import { Phase } from "../types";
 import type { TargetDecision } from "../game-runner.types";
-import { agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import { assertCanAcceptCommit, agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import {
   getEndgameEliminationVoterNames,
   handleElimination,
@@ -58,6 +58,7 @@ export async function runVotePhase(
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
       const votes = await agent.getVotes(phaseCtx);
 
+      await assertCanAcceptCommit(ctx);
       gameState.recordVote(player.id, votes.empowerTarget, votes.exposeTarget, [
         agentTurnSourcePointer(player.id, "vote", gameState.round, Phase.VOTE),
       ]);
@@ -89,6 +90,7 @@ export async function runVotePhase(
     }),
   );
 
+  await assertCanAcceptCommit(ctx);
   const { empowered: initialEmpowered, tied } = gameState.tallyEmpowerVotes();
   let empoweredId = initialEmpowered;
 
@@ -106,6 +108,7 @@ export async function runVotePhase(
       }
     }
     for (const rv of reVoters) {
+      await assertCanAcceptCommit(ctx);
       gameState.clearEmpowerVote(rv.id);
     }
     if (reVoters.length > 0) {
@@ -119,6 +122,7 @@ export async function runVotePhase(
           };
           const revote = await agent.getEmpowerRevote(phaseCtx, tied, originalVote);
           const empowerTarget = tied.includes(revote.empowerTarget) ? revote.empowerTarget : tied[0]!;
+          await assertCanAcceptCommit(ctx);
           gameState.recordEmpowerReVote(player.id, empowerTarget, [
             agentTurnSourcePointer(player.id, "empower-revote", gameState.round, Phase.VOTE),
           ]);
@@ -164,10 +168,12 @@ export async function runVotePhase(
     if (reVoteTied.length === 1) {
       empoweredId = reVoteTied[0]!;
       logger.logSystem(`Re-vote resolved: ${gameState.getPlayerName(empoweredId)} empowered`, Phase.VOTE);
+      await assertCanAcceptCommit(ctx);
       gameState.setEmpowered(empoweredId, "revote");
     } else {
       empoweredId = reVoteTied[Math.floor(Math.random() * reVoteTied.length)]!;
       logger.logSystem(`Re-vote still tied! THE WHEEL decides: ${gameState.getPlayerName(empoweredId)} empowered`, Phase.VOTE);
+      await assertCanAcceptCommit(ctx);
       gameState.setEmpowered(empoweredId, "wheel");
     }
   }
@@ -219,6 +225,7 @@ export async function runReckoningVote(
         (signal) => agent.getEndgameEliminationVote(phaseCtx, { signal }),
         () => fallbackEliminationDecision(ctx, player.id),
       );
+      await assertCanAcceptCommit(ctx);
       gameState.recordEndgameEliminationVote(player.id, vote.target, [
         agentTurnSourcePointer(player.id, "endgame-elimination-vote", gameState.round, Phase.VOTE),
       ]);
@@ -248,6 +255,7 @@ export async function runReckoningVote(
     }),
   );
 
+  await assertCanAcceptCommit(ctx);
   const eliminatedId = gameState.tallyEndgameEliminationVotes();
   await handleElimination(ctx, eliminatedId, Phase.VOTE, {
     mode: "endgame",
@@ -280,6 +288,7 @@ export async function runTribunalVote(
         (signal) => agent.getEndgameEliminationVote(phaseCtx, { signal }),
         () => fallbackEliminationDecision(ctx, player.id),
       );
+      await assertCanAcceptCommit(ctx);
       gameState.recordEndgameEliminationVote(player.id, vote.target, [
         agentTurnSourcePointer(player.id, "endgame-elimination-vote", gameState.round, Phase.VOTE),
       ]);
@@ -326,6 +335,7 @@ export async function runTribunalVote(
         );
         juryTiebreakerVotes[juror.playerId] = vote.target;
         const targetName = gameState.getPlayerName(vote.target);
+        await assertCanAcceptCommit(ctx);
         logger.emitAgentTurn({
           phase: Phase.VOTE,
           action: "tribunal-jury-tiebreaker-vote",
@@ -345,6 +355,7 @@ export async function runTribunalVote(
     }
   }
 
+  await assertCanAcceptCommit(ctx);
   const eliminatedId = gameState.tallyTribunalVotes(juryTiebreakerVotes);
   await handleElimination(ctx, eliminatedId, Phase.VOTE, {
     mode: "endgame",

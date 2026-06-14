@@ -12,6 +12,7 @@ import {
   handleOpen,
   handleClose,
   broadcastGameEvent,
+  broadcastRaw,
   sendSnapshot,
   getObserverCount,
   type WsConnectionData,
@@ -276,6 +277,31 @@ describe("WebSocket Manager", () => {
     expect(parsed.winner).toBe("p1");
     expect(parsed.winnerName).toBe("Alice");
     expect(parsed.totalRounds).toBe(5);
+  });
+
+  test("broadcastRaw publishes terminal game_status events", () => {
+    const { server, published } = createMockServer();
+    setServer(server);
+
+    broadcastRaw("game-suspended", {
+      type: "game_status",
+      gameId: "game-suspended",
+      status: "suspended",
+      terminal: true,
+      reasonCode: "runner_failed",
+      message: "Game suspended.",
+    });
+
+    expect(published[0]!.topic).toBe("game:game-suspended");
+    const parsed = JSON.parse(published[0]!.data);
+    expect(parsed).toEqual({
+      type: "game_status",
+      gameId: "game-suspended",
+      status: "suspended",
+      terminal: true,
+      reasonCode: "runner_failed",
+      message: "Game suspended.",
+    });
   });
 
   test("sendSnapshot sends game_state event to single client", () => {

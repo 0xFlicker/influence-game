@@ -1,5 +1,5 @@
 import { Phase } from "../types";
-import { agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import { assertCanAcceptCommit, agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import { getCouncilVoterNames, getExposeVoterNames, handleElimination } from "./elimination";
 
 export async function runRevealPhase(
@@ -52,6 +52,7 @@ export async function runCouncilPhase(
       });
       const voteResult = await agent.getCouncilVote(phaseCtx, candidates);
       const vote = voteResult.target;
+      await assertCanAcceptCommit(ctx);
       gameState.recordCouncilVote(player.id, vote, [
         agentTurnSourcePointer(player.id, "council-vote", gameState.round, Phase.COUNCIL),
       ]);
@@ -84,6 +85,7 @@ export async function runCouncilPhase(
     }),
   );
 
+  await assertCanAcceptCommit(ctx);
   const eliminatedId = gameState.tallyCouncilVotes(empoweredId);
   await handleElimination(ctx, eliminatedId, Phase.COUNCIL, {
     mode: "council",

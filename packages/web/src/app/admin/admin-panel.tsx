@@ -125,6 +125,11 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
         setFilling(false);
         onRefresh();
       }
+      if (ev.type === "error") {
+        setFilling(false);
+        setActionError(ev.message);
+        onRefresh();
+      }
     },
     [onRefresh],
   );
@@ -291,20 +296,22 @@ function StatusBadge({ status, errorInfo }: { status: GameSummary["status"]; err
     in_progress: "bg-blue-900/40 text-blue-400",
     completed: "bg-green-900/40 text-green-400",
     cancelled: "bg-red-900/40 text-red-400",
+    suspended: "bg-amber-900/40 text-amber-300",
   };
   const labels: Record<GameSummary["status"], string> = {
     waiting: "waiting",
     in_progress: "live",
     completed: "done",
     cancelled: "void",
+    suspended: "needs inspection",
   };
   return (
     <span
       className={`text-xs px-2 py-0.5 rounded-full ${styles[status]}`}
-      title={status === "cancelled" && errorInfo ? `Error: ${errorInfo}` : undefined}
+      title={(status === "cancelled" || status === "suspended") && errorInfo ? `Error: ${errorInfo}` : undefined}
     >
       {labels[status]}
-      {status === "cancelled" && errorInfo ? " ⚠" : ""}
+      {(status === "cancelled" || status === "suspended") && errorInfo ? " ⚠" : ""}
     </span>
   );
 }
@@ -408,6 +415,7 @@ export function AdminPanel() {
   const canHideGame = hasPermission("hide_game");
 
   const [activeGames, setActiveGames] = useState<GameSummary[]>([]);
+  const [suspendedGames, setSuspendedGames] = useState<GameSummary[]>([]);
   const [waitingGames, setWaitingGames] = useState<GameSummary[]>([]);
   const [recentGames, setRecentGames] = useState<GameSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -418,6 +426,15 @@ export function AdminPanel() {
     try {
       const all = await listGames();
       setActiveGames(all.filter((g) => g.status === "in_progress"));
+      setSuspendedGames(
+        all
+          .filter((g) => g.status === "suspended")
+          .sort(
+            (a, b) =>
+              new Date(b.completedAt ?? b.createdAt).getTime() -
+              new Date(a.completedAt ?? a.createdAt).getTime(),
+          ),
+      );
       setWaitingGames(all.filter((g) => g.status === "waiting"));
       setRecentGames(
         all
@@ -492,6 +509,38 @@ export function AdminPanel() {
           </div>
         )}
       </section>
+
+      {/* Needs inspection */}
+      {suspendedGames.length > 0 && (
+        <section className="mb-8">
+          <h2 className="text-xs font-semibold text-amber-300/80 uppercase tracking-wider mb-3">
+            Needs Inspection ({suspendedGames.length})
+          </h2>
+          <div className="border border-amber-900/40 rounded-xl overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-amber-900/30">
+                  {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", ""].map(
+                    (h) => (
+                      <th
+                        key={h}
+                        className="text-left text-xs font-medium text-amber-200/40 uppercase tracking-wider px-4 py-3"
+                      >
+                        {h}
+                      </th>
+                    ),
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {suspendedGames.map((g) => (
+                  <RecentGameRow key={g.id} game={g} onRefresh={fetchGames} canHide={canHideGame} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {/* Waiting to start */}
       <section className="mb-8">

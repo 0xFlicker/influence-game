@@ -128,6 +128,12 @@ function GameCard({
           alivePlayers: Math.max(current.alivePlayers, event.players.length),
         }));
       }
+
+      if (event.type === "error") {
+        setActionError(event.message);
+        setFilling(false);
+        void onRefresh();
+      }
     },
     [applyFilledState, game.id, onGameUpdate, onRefresh],
   );
@@ -246,6 +252,9 @@ function GameCard({
               {game.status === "completed" && (
                 <span className="text-emerald-400/70">Finished</span>
               )}
+              {game.status === "suspended" && (
+                <span className="text-amber-300/80">Needs inspection</span>
+              )}
               {game.finalists && isLive && (
                 <span>Finalists: {game.finalists.join(", ")}</span>
               )}
@@ -309,7 +318,7 @@ function GameCard({
                 {filling ? "Filling…" : "Fill AI"}
               </button>
             )}
-            {canStop && (
+            {canStop && (isLive || isJoinable) && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -370,12 +379,14 @@ function StatusBadge({ status }: { status: GameStatus }) {
     in_progress: "bg-blue-900/40 text-blue-400 border border-blue-900/60",
     completed: "bg-green-900/40 text-green-400 border border-green-900/60",
     cancelled: "bg-red-900/40 text-red-400 border border-red-900/60",
+    suspended: "bg-amber-900/40 text-amber-300 border border-amber-900/60",
   };
   const labels: Record<GameStatus, string> = {
     waiting: "Open",
     in_progress: "Live",
     completed: "Done",
     cancelled: "Void",
+    suspended: "Needs inspection",
   };
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${styles[status]}`}>
@@ -453,8 +464,9 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
   const STATUS_ORDER: Record<GameStatus, number> = {
     waiting: 0,
     in_progress: 1,
-    completed: 2,
-    cancelled: 3,
+    suspended: 2,
+    completed: 3,
+    cancelled: 4,
   };
 
   const searchQuery = filters.search.toLowerCase();
@@ -479,6 +491,7 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
     { value: "all", label: "All" },
     { value: "waiting", label: "Open" },
     { value: "in_progress", label: "Live" },
+    { value: "suspended", label: "Needs inspection" },
     { value: "completed", label: "Done" },
   ];
 
