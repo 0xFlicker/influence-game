@@ -96,6 +96,22 @@ An API-side inspection model that reads persisted durable kernel rows, validates
 
 A persisted phase-boundary diagnostic artifact keyed to the latest canonical event sequence it covers. The first durable-kernel capsules store replay/projection data, transcript cursors, and explicit missing hydration inputs with `hydrateable=false`; future resume work must add XState snapshot data, phase accumulators, runner/agent continuity state, and token/cost cursors before a checkpoint can become a safe resume boundary.
 
+## Hydration passport
+
+A validator-derived readiness record for a checkpoint capsule. It reports stamp-level status for event/projection truth, boundary safety, snapshot manifest completeness, transcript and token cursors, agent continuity, House continuity, privacy boundaries, and the overall verdict such as forensic-only, blocked, or `hydration_candidate`. A hydration passport is not a resume action.
+
+## Boundary certificate
+
+The hydration-passport stamp that proves a checkpoint was taken at a safe boundary. It verifies that canonical events through that boundary are durably accepted, no pre-boundary LLM call or effect can still commit after the checkpoint, and non-repeatable phase entry or exit effects will not be skipped or duplicated.
+
+## Snapshot manifest
+
+The checkpoint packing list that names which runtime subsystems are represented and how each is judged. It separates replayable canonical projection truth from XState actor state, phase accumulators, agent and House continuity, transcript cursors, token/cost cursors, owner epoch, and intentionally missing or blocked inputs.
+
+## Continuity capsule
+
+Structured private runtime state needed for future resume to preserve strategic behavior. Agent continuity capsules are scoped per player and carry subjective strategy/memory state; the House continuity capsule is scoped per game and carries privileged producer context. Raw prompts, hidden reasoning, and private evidence can link to a capsule but are not themselves continuity state.
+
 ## Owner epoch
 
 The durable single-writer ownership marker for a live game run. An owner epoch lets one worker process and commit accepted game facts while rejecting stale writers; LLM calls may run in parallel inside the owner, but accepted `GameState` and XState mutations stay sequential.

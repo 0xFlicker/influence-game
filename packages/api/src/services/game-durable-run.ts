@@ -22,6 +22,10 @@ import {
   buildRedactedKernelHealth,
   type RedactedKernelHealth,
 } from "./game-kernel-health.js";
+import {
+  deriveHydrationPassport,
+  type HydrationPassport,
+} from "./checkpoint-hydration-passport.js";
 
 type DurableRunReadDB = Pick<DrizzleDB, "select">;
 
@@ -94,6 +98,8 @@ export interface DurableCheckpointSummary {
   tokenCostCursorPresent: boolean;
   degradedReason?: string;
   createdAt: string;
+  /** Validator-derived hydration passport (richer readiness model; candidate != resume). */
+  passport: HydrationPassport;
 }
 
 export interface DurableEvidenceSummary {
@@ -132,6 +138,15 @@ export interface DurableRunInspectionResponse {
 export type GetDurableRunInspectionResult =
   | { ok: true; response: DurableRunInspectionResponse }
   | { ok: false; statusCode: 404; error: string };
+
+// Re-export passport types for route responses and tests
+export type {
+  HydrationPassport,
+  HydrationPassportVerdict,
+  PassportStamp,
+  PassportStampId,
+  PassportStampStatus,
+} from "./checkpoint-hydration-passport.js";
 
 function addCount(target: Record<string, number>, key: string, count: number): void {
   target[key] = (target[key] ?? 0) + count;
@@ -476,12 +491,14 @@ export async function getDurableRunInspection(
       .select({
         lastEventSequence: schema.gameCheckpoints.lastEventSequence,
         checkpointKind: schema.gameCheckpoints.checkpointKind,
+        ownerEpoch: schema.gameCheckpoints.ownerEpoch,
         phase: schema.gameCheckpoints.phase,
         round: schema.gameCheckpoints.round,
         eventHeadHash: schema.gameCheckpoints.eventHeadHash,
         projectionHash: schema.gameCheckpoints.projectionHash,
         hydrateable: schema.gameCheckpoints.hydrateable,
         hydrationStatus: schema.gameCheckpoints.hydrationStatus,
+        snapshot: schema.gameCheckpoints.snapshot,
         transcriptCursor: schema.gameCheckpoints.transcriptCursor,
         tokenCostCursor: schema.gameCheckpoints.tokenCostCursor,
         degradedReason: schema.gameCheckpoints.degradedReason,
@@ -514,6 +531,31 @@ export async function getDurableRunInspection(
         checkpoint.lastEventSequence,
       );
       checkpointDiagnostics.push(...hydration.diagnostics);
+
+      // Derive passport (U1 skeleton uses current forensic shape; later units populate manifest/boundary/continuity)
+      const passportResult = deriveHydrationPassport({
+        lastEventSequence: checkpoint.lastEventSequence,
+        checkpointKind: checkpoint.checkpointKind,
+        hydrateable: checkpoint.hydrateable,
+        hydrationStatus: checkpoint.hydrationStatus,
+        snapshot: checkpoint.snapshot,
+        transcriptCursor: checkpoint.transcriptCursor,
+        tokenCostCursor: checkpoint.tokenCostCursor,
+        eventHeadHash: checkpoint.eventHeadHash,
+        checkpointOwnerEpoch: checkpoint.ownerEpoch,
+        degradedReason: checkpoint.degradedReason ?? null,
+        createdAt: checkpoint.createdAt,
+        eventLogStatus: persistedEvents.status,
+        projectionStatus: projection.status,
+        hasValidEventPrefixUpTo: (seq) =>
+          persistedEvents.status !== "invalid" && persistedEvents.lastTrustedSequence >= seq,
+        hasValidProjectionUpTo: (seq) => {
+          const st = projection.status as string;
+          return (st === "replayed" || st === "complete") && projection.replayedEventCount >= seq;
+        },
+      });
+      checkpointDiagnostics.push(...passportResult.diagnostics);
+
       return {
         lastEventSequence: checkpoint.lastEventSequence,
         checkpointKind: checkpoint.checkpointKind,
@@ -527,6 +569,7 @@ export async function getDurableRunInspection(
         tokenCostCursorPresent: checkpoint.tokenCostCursor !== null,
         ...(checkpoint.degradedReason && { degradedReason: checkpoint.degradedReason }),
         createdAt: checkpoint.createdAt,
+        passport: passportResult.passport,
       };
     });
 

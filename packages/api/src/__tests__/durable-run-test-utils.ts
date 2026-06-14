@@ -130,6 +130,21 @@ export function createCheckpointCapsule(
   const alivePlayerCount = players.filter((player) => player.status !== "eliminated").length;
   const eliminatedPlayerCount = players.length - alivePlayerCount;
 
+  // U2: include versioned manifest (all but projectionTruth missing for forensic fixtures)
+  const snapshotManifest = {
+    version: 1 as const,
+    components: {
+      projectionTruth: { status: "captured" as const, version: 1 },
+      xstateActor: { status: "missing" as const },
+      phaseAccumulators: { status: "missing" as const },
+      playerContinuity: { status: "missing" as const },
+      houseContinuity: { status: "missing" as const },
+      transcriptCursor: { status: "missing" as const },
+      tokenCursor: { status: "missing" as const },
+      ownerEpoch: { status: "missing" as const },
+    },
+  };
+
   return {
     gameId: projection.gameId,
     lastEventSequence: projection.lastSequence,
@@ -154,6 +169,16 @@ export function createCheckpointCapsule(
       roomAllocationRounds: Object.keys(projection.roomAllocations).length,
       roundResultCount: projection.roundResults.length,
     },
+    snapshotManifest,
+    boundaryCertificate: {
+      gameId: projection.gameId,
+      boundarySequence: projection.lastSequence,
+      checkpointReason: checkpointKind,
+      eventCommitReceipt: null,
+      noPendingEffectsAsserted: true,
+    },
+    playerContinuityCapsules: [],
+    houseContinuityCapsule: null,
     hydrateable: false,
     hydrationStatus: {
       replayableProjection: true,
@@ -173,6 +198,10 @@ export function createCheckpointCapsule(
     transcriptCursor: {
       entries: 0,
     },
-    tokenCostCursor: null,
+    tokenCostCursor: {
+      version: 1,
+      totals: { promptTokens: 0, cachedTokens: 0, completionTokens: 0, reasoningTokens: 0, totalTokens: 0, callCount: 0, emptyResponses: 0 },
+      perSource: {},
+    },
   };
 }

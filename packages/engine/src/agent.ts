@@ -29,6 +29,7 @@ import type {
   StrategyPacketUse,
   StrategyPacketUseMarker,
   TargetDecision,
+  PlayerContinuityCapsule,
 } from "./game-runner";
 import { Phase } from "./types";
 import type { UUID, PowerAction } from "./types";
@@ -933,6 +934,22 @@ export class InfluenceAgent implements IAgent {
 
   getStrategyPacket(): StrategyPacketSummary | null {
     return this.memory.strategyPacket;
+  }
+
+  getContinuityCapsule(): Omit<PlayerContinuityCapsule, "playerId" | "playerName"> | null {
+    const m = this.memory;
+    return {
+      strategyPacket: m.strategyPacket ?? null,
+      reflectionSummary: m.lastReflection ?? null,
+      notes: Array.from(m.notes.entries()).map(([subject, note]) => ({ subject, note })),
+      commitments: [],
+      relationships: {
+        allies: Array.from(m.allies),
+        threats: Array.from(m.threats),
+      },
+      powerActionMemory: null,
+      roundHistory: [...(m.roundHistory ?? [])],
+    };
   }
 
   private nextStrategyPacketRevisionId(ctx: PhaseContext): string {

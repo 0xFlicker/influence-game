@@ -78,6 +78,8 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 
 Simulation artifacts are written under `packages/engine/docs/simulations/`. For each game, use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-events.jsonl` for replayable accepted domain facts, `game-N.json` for the full transcript/result bundle, `game-N-progress.jsonl` for lightweight live progress, and `game-N.txt` for human-readable transcript review. `game-N-events.jsonl` uses the same `CanonicalGameEvent` envelope that API-backed games persist in Postgres, but local simulations do not create API database rows unless a future import command is explicitly added. Hidden `mingle-intent` records are always written to turns JSONL with `strategicLens` metadata; anonymous `rumor` records also include `strategicLens`; `house-mc-summary` records are written by default; hidden `strategic-reflection` and `strategy-packet` records are written there when `--strategic-reflections` is enabled; House Strategy Bible, long-form summary, and producer brief records are written when `--rich-producer` is enabled.
 
+For API-backed games, the admin durable-run inspection adds a checkpoint hydration passport on each checkpoint summary. Use it as a readiness report only: it summarizes event/projection replay, boundary certificate, snapshot manifest, transcript/token cursors, private player/House continuity presence, owner epoch proof, and privacy validation. It does not expose the private continuity capsule bodies, and `hydration_candidate` means the available validators passed for a future hydration attempt, not that mid-game resume is implemented.
+
 To query completed and still-growing simulation batches from another local MCP client, run:
 
 ```bash

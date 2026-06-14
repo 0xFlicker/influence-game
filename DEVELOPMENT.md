@@ -497,6 +497,8 @@ The API respects `PORT` and `HOST` env vars (set in Doppler per environment). In
 
 Active game execution is not crash-safe yet. If the API server restarts while a game is in progress, the live runner stops because runner state, active WebSocket pacing, in-memory agent context, and unfinished transcript persistence are not fully checkpointed/resumable. Canonical engine events can rebuild a domain projection for simulator runs, and API-backed durable events can now be inspected through the admin durable-run read model, but this is not API resume/checkpoint hydration support. Treat `docs/statefulness-plan.md` as the reference plan and do not claim mid-game resume support until that work lands.
 
+The admin durable-run read model reports a hydration passport for checkpoint summaries. The passport is status-only readiness metadata: it can say whether event/projection replay, boundary certificate, snapshot manifest, transcript/token cursors, private player/House continuity, owner epoch proof, and privacy validation pass, but it must not expose raw continuity capsules, prompts/responses, storage pointers, `thinking`, or `reasoningContext`. A `hydration_candidate` verdict means the available validators passed for future hydrate work; it is not a resume API.
+
 ## Pre-Commit Checklist
 
 Before EVERY commit, agents MUST run:

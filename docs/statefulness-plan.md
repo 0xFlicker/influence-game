@@ -73,6 +73,9 @@ This is still not crash-safe resume. API games do not yet persist hydrateable XS
 
 These are crash-mitigation (cleanup), not crash-recovery (resume).
 
+Note (as of 2026-06-14 passport work): durable checkpoints now carry a validator-derived `hydration passport` (forensic_only / blocked / hydration_candidate). A positive candidate verdict indicates that all v1 required stamps (event/projection, boundary cert, manifest, cursors, player+House continuity) are present in the persisted capsule; it is explicitly *not* a claim that the game can be resumed. Runtime resume (`GameRunner.fromCheckpoint`) remains out of scope. Active execution is not crash-safe.
+
+
 ---
 
 ## Future Remediation Plan

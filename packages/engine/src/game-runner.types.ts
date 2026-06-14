@@ -18,6 +18,8 @@ import type {
 } from "./types";
 import type { CanonicalGameEvent } from "./canonical-events";
 import type { CanonicalGameProjection } from "./game-projection";
+import type { TokenCostCursor } from "./token-tracker.js";
+export type { TokenCostCursor };
 
 export type { MingleIntentSummary, MinglePreferredRoomSize, StrategicLens } from "./types";
 
@@ -71,6 +73,83 @@ export interface GameCheckpointProjectionSummary {
   roundResultCount: number;
 }
 
+/**
+ * Versioned snapshot manifest (U2+).
+ * Names the runtime subsystems captured for future hydration.
+ * Projection truth is always replayable from events; other components are the non-rebuildable state.
+ */
+export type SnapshotComponentStatus =
+  | "captured"
+  | "missing"
+  | "malformed"
+  | "private_reference_only"
+  | "blocked";
+
+export interface SnapshotManifestComponent {
+  status: SnapshotComponentStatus;
+  /** Optional semantic version of the captured component payload */
+  version?: number;
+}
+
+export interface SnapshotManifest {
+  version: 1;
+  components: {
+    projectionTruth: SnapshotManifestComponent;
+    xstateActor: SnapshotManifestComponent;
+    phaseAccumulators: SnapshotManifestComponent;
+    playerContinuity: SnapshotManifestComponent;
+    houseContinuity: SnapshotManifestComponent;
+    transcriptCursor: SnapshotManifestComponent;
+    tokenCursor: SnapshotManifestComponent;
+    ownerEpoch: SnapshotManifestComponent;
+  };
+}
+
+/** Boundary certificate evidence (U3+). Conservative for v1: asserts write happened after durable flush with no pending pre-boundary effects locally. */
+export interface BoundaryCertificate {
+  gameId: UUID;
+  ownerEpoch?: string;
+  boundarySequence: number;
+  checkpointReason: GameCheckpointKind;
+  eventCommitReceipt: { sequence: number; hash: string } | null;
+  noPendingEffectsAsserted: boolean;
+}
+
+/**
+ * Structured private continuity capsules (U5).
+ * These are producer-only state for future hydration of agent/House behavior.
+ * They must not leak raw thinking or reasoningContext.
+ */
+export interface PlayerContinuityCapsule {
+  playerId: UUID;
+  playerName: string;
+  strategyPacket: StrategyPacketSummary | null;
+  reflectionSummary: StrategicReflectionSummary | null;
+  notes: Array<{ subject: string; note: string }>;
+  commitments: string[];
+  relationships: { allies: string[]; threats: string[] };
+  powerActionMemory: unknown;
+  roundHistory: unknown[];
+}
+
+export interface HouseContinuityCapsule {
+  revisionId: string;
+  previousRevisionId: string | null;
+  updatedAtRound: number;
+  updatedAtPhase: Phase;
+  summary: string;
+  alliances: HouseAllianceHypothesis[];
+  tensions: string[];
+  promises: string[];
+  voteBlocs: string[];
+  mingleDiscoveries: string[];
+  playerTrajectories: HousePlayerTrajectory[];
+  storyArcs: HouseStoryArc[];
+  droppedThreads: string[];
+  openQuestions: string[];
+  changedSincePrevious: string;
+}
+
 export interface GameCheckpointCapsule {
   gameId: UUID;
   lastEventSequence: number;
@@ -81,6 +160,12 @@ export interface GameCheckpointCapsule {
   projection: CanonicalGameProjection;
   state: GameCheckpointStateSummary;
   projectionSummary: GameCheckpointProjectionSummary;
+  /** Structured readiness manifest (replaces loose snapshot blob for hydration analysis). */
+  snapshotManifest?: SnapshotManifest;
+  /** Boundary safety evidence captured at write time (U3+). */
+  boundaryCertificate?: BoundaryCertificate | null;
+  playerContinuityCapsules?: PlayerContinuityCapsule[];
+  houseContinuityCapsule?: HouseContinuityCapsule | null;
   hydrateable: false;
   hydrationStatus: {
     replayableProjection: true;
@@ -93,8 +178,11 @@ export interface GameCheckpointCapsule {
   };
   transcriptCursor: {
     entries: number;
+    version?: number;
+    durableBoundary?: boolean;
+    [key: string]: unknown;
   };
-  tokenCostCursor: null;
+  tokenCostCursor: TokenCostCursor | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -479,6 +567,13 @@ export interface IAgent {
   getStrategicReflection(context: PhaseContext): Promise<StrategicReflectionAction | null | void>;
   /** Return the live private strategy packet for this game run, if one exists. */
   getStrategyPacket?(): StrategyPacketSummary | null;
+
+  /**
+   * (U5) Return structured private continuity capsule for this agent.
+   * Called by runner at durable phase boundaries for checkpoint manifests.
+   * Must not include raw prompts, responses, or reasoningContext.
+   */
+  getContinuityCapsule?(): Omit<PlayerContinuityCapsule, "playerId" | "playerName"> | null;
 
   // --- Memory updates (called by GameRunner after phase events) ---
   /** Record a player as an ally */

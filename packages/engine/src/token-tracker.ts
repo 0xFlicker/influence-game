@@ -181,3 +181,22 @@ export class TokenTracker {
     }
   }
 }
+
+/** Serializable token/cost cursor for checkpoint hydration passports (U4). */
+export interface TokenCostCursor {
+  version: 1;
+  totals: TokenUsage;
+  perSource: Record<string, TokenUsage>;
+}
+
+export interface TokenTracker {
+  toCursor(): TokenCostCursor;
+}
+
+TokenTracker.prototype.toCursor = function (this: TokenTracker): TokenCostCursor {
+  return {
+    version: 1,
+    totals: this.getTotalUsage(),
+    perSource: this.getAllUsage(),
+  };
+};

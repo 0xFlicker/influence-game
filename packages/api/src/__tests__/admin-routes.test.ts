@@ -174,11 +174,107 @@ describe("admin route RBAC", () => {
     const gameId = await insertGame(db, { slug: "admin-durable-run" });
     const ownerEpoch = await insertOwner(db, gameId);
     const events = createCanonicalEventFixture(gameId);
+    const privatePlayerNote = "PRIVATE_PLAYER_CONTINUITY_SENTINEL";
+    const privateStrategyPacket = "PRIVATE_STRATEGY_PACKET_SENTINEL";
+    const privateHouseSummary = "PRIVATE_HOUSE_CONTINUITY_SENTINEL";
     await appendGameEvents(db, { gameId, ownerEpoch, events });
+    const capsule = createCheckpointCapsule(events);
+    capsule.snapshotManifest = {
+      version: 1,
+      components: {
+        projectionTruth: { status: "captured", version: 1 },
+        xstateActor: { status: "captured", version: 1 },
+        phaseAccumulators: { status: "captured", version: 1 },
+        playerContinuity: { status: "private_reference_only", version: 1 },
+        houseContinuity: { status: "private_reference_only", version: 1 },
+        transcriptCursor: { status: "captured", version: 1 },
+        tokenCursor: { status: "captured", version: 1 },
+        ownerEpoch: { status: "captured", version: 1 },
+      },
+    };
+    capsule.boundaryCertificate = {
+      gameId,
+      boundarySequence: capsule.lastEventSequence,
+      checkpointReason: capsule.checkpointKind,
+      eventCommitReceipt: null,
+      noPendingEffectsAsserted: true,
+    };
+    capsule.transcriptCursor = {
+      entries: 12,
+      durableBoundary: true,
+      lastEntryId: "transcript-entry-12",
+    };
+    capsule.playerContinuityCapsules = Object.values(capsule.projection.players)
+      .filter((player) => player.status !== "eliminated")
+      .map((player, index) => ({
+        playerId: player.id,
+        playerName: player.name,
+        strategyPacket: {
+          revisionId: `strategy-packet-${index}`,
+          previousRevisionId: null,
+          updatedAtRound: capsule.round,
+          updatedAtPhase: capsule.phase,
+          objective: `${privateStrategyPacket} ${player.name}`,
+          targetPosture: "keep target pressure private",
+          coalitionPosture: "hold an alliance read",
+          nextSocialProbe: "ask a bounded question",
+          strategicLens: "vote_math",
+          strategicLensRationale: "vote pressure is the current useful frame",
+          uncertainty: "whether the alliance will hold",
+          reviseTrigger: "new contradiction appears",
+          changedSincePrevious: "initial packet",
+        },
+        reflectionSummary: {
+          certainties: ["the board has a vote boundary"],
+          suspicions: ["one player is hedging"],
+          allies: [],
+          threats: [],
+          plan: "preserve private continuity without leaking it",
+          strategicLens: "broad_read",
+          strategicLensRationale: "test fixture only",
+        },
+        notes: [{ subject: "continuity", note: `${privatePlayerNote} ${player.name}` }],
+        commitments: ["keep the promise private"],
+        relationships: { allies: [], threats: [] },
+        powerActionMemory: null,
+        roundHistory: [{ round: capsule.round, note: "private round read" }],
+      }));
+    capsule.houseContinuityCapsule = {
+      revisionId: "house-continuity-1",
+      previousRevisionId: null,
+      updatedAtRound: capsule.round,
+      updatedAtPhase: capsule.phase,
+      summary: privateHouseSummary,
+      alliances: [{
+        name: "test alliance",
+        members: ["Atlas", "Mira"],
+        status: "speculative",
+        confidence: "medium",
+        evidence: ["private alliance read"],
+      }],
+      tensions: ["private tension read"],
+      promises: ["private promise ledger"],
+      voteBlocs: ["private vote bloc"],
+      mingleDiscoveries: ["private room read"],
+      playerTrajectories: [{
+        playerName: "Atlas",
+        currentRead: "private trajectory",
+        pressurePoints: ["private pressure"],
+      }],
+      storyArcs: [{
+        title: "private arc",
+        summary: "private arc summary",
+        involvedPlayers: ["Atlas"],
+        status: "emerging",
+      }],
+      droppedThreads: [],
+      openQuestions: ["private open question"],
+      changedSincePrevious: "initial House continuity",
+    };
     const checkpoint = await writeGameCheckpoint(db, {
       gameId,
       ownerEpoch,
-      checkpoint: createCheckpointCapsule(events),
+      checkpoint: capsule,
     });
     const evidence = await createEvidenceManifest(db, {
       gameId,
@@ -217,7 +313,16 @@ describe("admin route RBAC", () => {
       game: { id: string };
       eventLog: { status: string; rowCount: number };
       projection: { status: string };
-      checkpoints: { count: number };
+      checkpoints: {
+        count: number;
+        entries: Array<{
+          hydrateable: boolean;
+          passport: {
+            verdict: string;
+            stamps: Array<{ id: string; status: string; blocking: boolean }>;
+          };
+        }>;
+      };
       evidence: { totalCount: number; storage: { providerCounts: Record<string, number> } };
       diagnostics: unknown[];
     };
@@ -229,6 +334,13 @@ describe("admin route RBAC", () => {
     });
     expect(body.projection.status).toBe("complete");
     expect(body.checkpoints.count).toBe(1);
+    expect(body.checkpoints.entries[0]).toMatchObject({
+      hydrateable: false,
+      passport: { verdict: "hydration_candidate" },
+    });
+    expect(body.checkpoints.entries[0]?.passport.stamps.every((stamp) => (
+      stamp.status === "passed" && stamp.blocking === false
+    ))).toBeTrue();
     expect(body.evidence).toMatchObject({
       totalCount: 1,
       storage: { providerCounts: { linode_object_storage: 1 } },
@@ -236,11 +348,15 @@ describe("admin route RBAC", () => {
     expect(body.diagnostics).toEqual([]);
 
     const serialized = JSON.stringify(body);
-    expect(serialized).not.toContain("ownerEpoch");
+    expect(serialized).not.toContain(ownerEpoch);
     expect(serialized).not.toContain("manifestId");
     expect(serialized).not.toContain("storageBucket");
     expect(serialized).not.toContain("storageKey");
     expect(serialized).not.toContain("sourcePointers");
+    expect(serialized).not.toContain("strategyPacket");
+    expect(serialized).not.toContain(privatePlayerNote);
+    expect(serialized).not.toContain(privateStrategyPacket);
+    expect(serialized).not.toContain(privateHouseSummary);
     expect(serialized).not.toContain("private-evidence");
     expect(serialized).not.toContain(`evidence/${gameId}/round-1/response.json`);
     expect(serialized).not.toContain("raw prompt");

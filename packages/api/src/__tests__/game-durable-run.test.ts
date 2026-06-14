@@ -174,8 +174,15 @@ describe("durable run inspection read model", () => {
       checkpointKind: "phase_boundary",
       hydrateable: false,
       transcriptCursorPresent: true,
-      tokenCostCursorPresent: false,
+      tokenCostCursorPresent: true,
     });
+    // U6: passport is present, non-candidate for live (continuity missing until full resume work)
+    const cp0 = result.response.checkpoints.entries[0]!;
+    expect(cp0.passport).toBeDefined();
+    expect(cp0.passport.verdict).not.toBe("hydration_candidate");
+    expect(Array.isArray(cp0.passport.stamps)).toBeTrue();
+    // do not leak raw capsules
+    expect(JSON.stringify(result.response)).not.toContain("strategyPacket");
     expect(result.response.evidence).toMatchObject({
       totalCount: 1,
       byEvidenceType: { llm_response: 1 },

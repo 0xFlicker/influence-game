@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Checkpoint Hydration</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f6f2ea;
+      --ink: #182321;
+      --muted: #596763;
+      --soft: #77827d;
+      --line: #d9ded7;
+      --panel: #fffefb;
+      --panel-soft: #eef5f2;
+      --blue: #17689b;
+      --blue-soft: #e5f1f8;
+      --green: #25745d;
+      --green-soft: #e4f1eb;
+      --amber: #9a6412;
+      --amber-soft: #f8ebd1;
+      --plum: #6d4a81;
+      --plum-soft: #efe6f4;
+      --red: #a24a40;
+      --red-soft: #f8e5e1;
+      --shadow: 0 14px 34px rgba(34, 43, 39, 0.09);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-size: 15px;
+      line-height: 1.62;
+    }
+    a {
+      color: var(--blue);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+    code {
+      color: #263d38;
+      background: #edf2ee;
+      border: 1px solid #d8e1db;
+      border-radius: 5px;
+      padding: 0.08rem 0.28rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+    }
+    strong { color: inherit; font-weight: 760; }
+    .page {
+      width: min(1120px, calc(100vw - 36px));
+      margin: 0 auto;
+      padding: 34px 0 54px;
+    }
+    header, section {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    header { padding: 30px; }
+    section {
+      margin-top: 24px;
+      padding: 24px;
+      box-shadow: 0 8px 24px rgba(34, 43, 39, 0.055);
+    }
+    .eyebrow, .section-label {
+      margin: 0 0 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.72rem;
+      font-weight: 820;
+    }
+    .eyebrow { color: var(--green); }
+    .section-label { color: var(--amber); }
+    h1, h2, h3 {
+      margin: 0;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+    h1 {
+      max-width: 900px;
+      font-size: clamp(2rem, 4vw, 3.35rem);
+    }
+    h2 { font-size: 1.55rem; margin-bottom: 14px; }
+    h3 { font-size: 1.16rem; }
+    p {
+      max-width: 78ch;
+      margin: 0 0 1rem;
+      color: var(--muted);
+    }
+    .lede {
+      max-width: 88ch;
+      margin-top: 16px;
+      color: #33413d;
+      font-size: 1.03rem;
+    }
+    .meta-grid, .stats {
+      display: grid;
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .meta-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .stats { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .meta, .stat {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-soft);
+      padding: 12px 14px;
+    }
+    .meta dt, .stat dt {
+      margin: 0;
+      color: var(--soft);
+      font-size: 0.72rem;
+      font-weight: 820;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .meta dd, .stat dd {
+      margin: 2px 0 0;
+      color: var(--ink);
+      font-weight: 760;
+    }
+    .axis-list, .evidence-list {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .axis-list li, .evidence-list li {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfa;
+      padding: 12px 14px;
+      color: var(--muted);
+    }
+    .axis-list strong {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 2px;
+    }
+    .jump-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin: 0 0 18px;
+    }
+    .jump-list a {
+      display: block;
+      border: 1px solid #d4e1dc;
+      border-radius: 8px;
+      background: var(--green-soft);
+      padding: 10px 12px;
+      color: #1f5948;
+      text-decoration: none;
+      font-weight: 760;
+    }
+    .idea-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfa;
+      padding: 18px;
+      margin-top: 14px;
+    }
+    .idea-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 12px;
+    }
+    .rank {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 54px;
+      height: 34px;
+      border-radius: 999px;
+      background: var(--blue-soft);
+      color: var(--blue);
+      font-weight: 820;
+      flex: 0 0 auto;
+      padding: 0 11px;
+    }
+    .idea-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .idea-title h3 { margin-top: 2px; }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      border: 1px solid #d8e2dc;
+      background: #f2f5f1;
+      color: #52635f;
+      padding: 4px 9px;
+      font-size: 0.76rem;
+      font-weight: 760;
+    }
+    .chip.conf { background: var(--blue-soft); border-color: #c9ddea; color: var(--blue); }
+    .chip.cx { background: var(--amber-soft); border-color: #ead3a8; color: var(--amber); }
+    .chip.axis { background: var(--plum-soft); border-color: #dccbe5; color: var(--plum); }
+    .field-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .field {
+      border: 1px solid #e1e6df;
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px;
+    }
+    .field dt {
+      margin: 0 0 4px;
+      color: var(--soft);
+      font-size: 0.72rem;
+      font-weight: 820;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .field dd { margin: 0; color: var(--muted); }
+    .field.wide { grid-column: 1 / -1; }
+    .diagram {
+      margin: 16px 0 4px;
+      border: 1px solid #d8e1db;
+      border-radius: 8px;
+      background: #fcfdfb;
+      padding: 12px;
+      overflow-x: auto;
+    }
+    svg { max-width: 100%; height: auto; display: block; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+    }
+    th, td {
+      border-bottom: 1px solid #e1e6df;
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      color: var(--soft);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 820;
+      background: #f8faf7;
+    }
+    td { color: var(--muted); }
+    .callout {
+      border: 1px solid #ead3a8;
+      border-radius: 8px;
+      background: var(--amber-soft);
+      padding: 14px;
+      margin: 14px 0;
+    }
+    .callout p { margin: 0; color: #6f4a12; }
+    .sources {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding-left: 1.1rem;
+      color: var(--muted);
+    }
+    footer.composition-signal {
+      margin-top: 24px;
+      color: var(--soft);
+      font-size: 0.82rem;
+      text-align: center;
+    }
+    @media (max-width: 820px) {
+      .meta-grid, .stats, .field-grid, .jump-list { grid-template-columns: 1fr; }
+      header, section { padding: 20px; }
+      .idea-head { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">Ideation Artifact</p>
+      <h1>Checkpoint Hydration</h1>
+      <p class="lede">Move from forensic checkpoint capsules toward hydrateable checkpoint candidates without claiming crash-safe resume. The next slice should make every runtime input explicit, validator-derived, and inspectable before any <code>GameRunner.fromCheckpoint()</code> path exists.</p>
+      <div class="meta-grid">
+        <dl class="meta"><dt>Date</dt><dd><time datetime="2026-06-14">2026-06-14</time></dd></dl>
+        <dl class="meta"><dt>Topic</dt><dd>checkpoint-hydration</dd></dl>
+        <dl class="meta"><dt>Mode</dt><dd>repo-grounded</dd></dl>
+        <dl class="meta"><dt>Focus</dt><dd>Hydrateable checkpoint candidates before resume</dd></dl>
+      </div>
+      <div class="stats">
+        <dl class="stat"><dt>Raw Ideas</dt><dd>40</dd></dl>
+        <dl class="stat"><dt>Merged</dt><dd>12</dd></dl>
+        <dl class="stat"><dt>Survivors</dt><dd>7</dd></dl>
+        <dl class="stat"><dt>Axes</dt><dd>5</dd></dl>
+        <dl class="stat"><dt>Top Pick</dt><dd>Hydration Passport</dd></dl>
+      </div>
+    </header>
+
+    <section id="grounding-context">
+      <p class="section-label">Repo Grounding</p>
+      <h2>Grounding Context</h2>
+      <ul class="evidence-list">
+        <li><strong>The current checkpoint is intentionally forensic.</strong> <code>GameCheckpointCapsule</code> records projection summary, transcript entry count, missing inputs, and <code>hydrateable: false</code>. The API persists that posture with a degraded reason rather than pretending the checkpoint can restore a runner.</li>
+        <li><strong>The durable event/read-model lane created an inspection surface, not resume.</strong> The API can persist canonical events, validate owner/event/projection alignment, and summarize durable-run state. It still has no runtime hydration path.</li>
+        <li><strong>The missing runtime inputs are concrete.</strong> The next slice must account for XState actor position, phase-local accumulators, pending LLM/effect work, agent memory and strategy packets, House producer state, transcript/outbox cursors, token/cost cursors, and worker ownership.</li>
+        <li><strong>Canonical events are board truth, but not the whole runtime.</strong> Replaying canonical events can rebuild accepted game facts, but it cannot reconstruct private beliefs, partial phase collections, stream delivery state, token accounting, or in-flight model effects by itself.</li>
+        <li><strong>Private evidence must stay private evidence.</strong> Raw prompts, raw responses, hidden reasoning, Strategy Thread state, and House producer reads may support debugging or continuity, but they should not become public transcript or canonical event truth.</li>
+        <li><strong>The safest next move is validator-derived readiness.</strong> A hydrateable claim should be earned by checks over stored events, projection hashes, runtime subcontracts, cursor reconciliation, and privacy boundaries, not set directly by the writer.</li>
+      </ul>
+    </section>
+
+    <section id="topic-axes">
+      <p class="section-label">Surface Map</p>
+      <h2>Topic Axes</h2>
+      <ul class="axis-list">
+        <li><strong>Runtime Snapshot Contract</strong> Naming the subcontracts that make up a future hydrateable snapshot, without collapsing projection truth, actor state, and private producer continuity into one JSON blob.</li>
+        <li><strong>Phase-Boundary Safety</strong> Proving a checkpoint is taken at a quiet barrier where no old-process LLM call, phase accumulator, or actor entry action can later mutate state.</li>
+        <li><strong>Agent And House Continuity State</strong> Preserving strategic memory and producer context while keeping beliefs, reasoning, and House reads private and non-canonical.</li>
+        <li><strong>Token, Transcript, And Cursor State</strong> Turning entry counts and terminal accounting into durable boundaries that survive process loss and reconcile with model effects.</li>
+        <li><strong>API Checkpoint Storage And Validation</strong> Making checkpoint readiness visible and validator-derived in the admin/read-model layer before a resume action exists.</li>
+      </ul>
+    </section>
+
+    <section id="ranked-ideas">
+      <p class="section-label">Ranked Survivors</p>
+      <h2>Ranked Ideas</h2>
+      <nav class="jump-list" aria-label="Ranked ideas">
+        <a href="#idea-1">1. Hydration Passport With Promotion Certificate</a>
+        <a href="#idea-2">2. Quiet-Barrier Phase Boundary Certificate</a>
+        <a href="#idea-3">3. Runtime Snapshot Manifest</a>
+        <a href="#idea-4">4. Private Continuity Capsule</a>
+        <a href="#idea-5">5. Durable Transcript / Outbox Cursor</a>
+        <a href="#idea-6">6. Token Ledger First Hydrateable Component</a>
+        <a href="#idea-7">7. Replay-Verified Snapshot Witness</a>
+      </nav>
+
+      <article class="idea-card" id="idea-1">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">Idea 1</span>
+            <div>
+              <h3>Hydration Passport With Promotion Certificate</h3>
+              <div class="chips">
+                <span class="chip axis">API Checkpoint Storage And Validation</span>
+                <span class="chip conf">Confidence 88%</span>
+                <span class="chip cx">Complexity Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p><strong>Description:</strong> Replace boolean hydrateability with a typed readiness passport. Each checkpoint reports per-subsystem status for event/projection, actor state, phase accumulators, agent/House continuity, transcript cursor, token cursor, owner epoch, and privacy boundary. Status values should distinguish absent, captured, validated, stale, malformed, private-reference-only, forbidden, and forensic-only. A promotion validator, not the writer, derives whether a checkpoint is still forensic, a candidate, rejected, or eventually hydrateable.</p>
+        <div class="field-grid">
+          <dl class="field wide"><dt>Basis</dt><dd><strong>direct:</strong> checkpoint capsules already enumerate missing hydration inputs; <code>game_checkpoints</code> stores <code>hydrateable</code>, <code>hydrationStatus</code>, snapshot, transcript cursor, token cursor, and degraded reason; the durable-run read model already fails closed when stored hydrateability is malformed.</dd></dl>
+          <dl class="field"><dt>Rationale</dt><dd>This creates progress without a resume promise. Future slices can remove one named blocker at a time, and the admin surface can answer which subsystem blocks hydration today.</dd></dl>
+          <dl class="field"><dt>Downsides</dt><dd>The status vocabulary can sprawl. Keep v1 tied to the current missing input list and require every new status to have a validator, not just display copy.</dd></dl>
+        </div>
+        <div class="diagram" aria-label="Hydration passport promotion flow">
+          <svg viewBox="0 0 820 190" role="img">
+            <defs>
+              <marker id="arrow-passport" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#67807a"></path>
+              </marker>
+            </defs>
+            <rect x="24" y="48" width="150" height="72" rx="8" fill="#e5f1f8" stroke="#bcd5e5"></rect>
+            <text x="99" y="76" text-anchor="middle" font-size="14" font-weight="700" fill="#17689b">checkpoint row</text>
+            <text x="99" y="98" text-anchor="middle" font-size="12" fill="#4c6675">forensic capsule</text>
+            <path d="M 184 84 H 270" stroke="#67807a" stroke-width="2" marker-end="url(#arrow-passport)"></path>
+            <rect x="282" y="32" width="174" height="104" rx="8" fill="#e4f1eb" stroke="#b8d8cc"></rect>
+            <text x="369" y="60" text-anchor="middle" font-size="14" font-weight="700" fill="#25745d">passport validators</text>
+            <text x="369" y="82" text-anchor="middle" font-size="12" fill="#4f685f">events, cursors, privacy</text>
+            <text x="369" y="103" text-anchor="middle" font-size="12" fill="#4f685f">actor, producer, tokens</text>
+            <path d="M 466 84 H 552" stroke="#67807a" stroke-width="2" marker-end="url(#arrow-passport)"></path>
+            <rect x="564" y="48" width="232" height="72" rx="8" fill="#efe6f4" stroke="#d6c4e1"></rect>
+            <text x="680" y="76" text-anchor="middle" font-size="14" font-weight="700" fill="#6d4a81">derived verdict</text>
+            <text x="680" y="98" text-anchor="middle" font-size="12" fill="#6b5d71">forensic, candidate, rejected</text>
+            <text x="410" y="165" text-anchor="middle" font-size="12" fill="#596763">The writer records evidence. The validator earns the readiness claim.</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-2">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">Idea 2</span>
+            <div>
+              <h3>Quiet-Barrier Phase Boundary Certificate</h3>
+              <div class="chips">
+                <span class="chip axis">Phase-Boundary Safety</span>
+                <span class="chip conf">Confidence 84%</span>
+                <span class="chip cx">Complexity Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p><strong>Description:</strong> Only treat a phase-boundary checkpoint as a hydration candidate when the runner proves a quiet barrier: durable events are flushed, no pending LLM call or retry can still commit, no phase-local collection remains uncommitted, and actor entry/exit effects have receipts. The certificate should explicitly cover boundary effects that must not run twice, such as round increments, lobby/reckoning entry actions, durable flush completion, checkpoint write completion, and stream-buffer release status.</p>
+        <div class="field-grid">
+          <dl class="field wide"><dt>Basis</dt><dd><strong>direct:</strong> current durable checkpoints are written around phase boundaries, while the runtime still lists <code>pendingLlmCalls</code> and phase accumulators as missing. Several phases collect LLM/model outputs in parallel before committing accepted results. <strong>external:</strong> XState persisted snapshots restore actor internals, but actions are not re-executed and invocations restart.</dd></dl>
+          <dl class="field"><dt>Rationale</dt><dd>The important safety property is not "a checkpoint was written after a handler"; it is "nothing from the old process can later commit, and boundary side effects will not be duplicated or skipped."</dd></dl>
+          <dl class="field"><dt>Downsides</dt><dd>Some phases may fail the certificate at first. That is useful signal, but the UI must call those checkpoints forensic rather than broken.</dd></dl>
+        </div>
+        <div class="diagram" aria-label="Quiet barrier checkpoint">
+          <svg viewBox="0 0 820 170" role="img">
+            <defs>
+              <marker id="arrow-barrier" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#67807a"></path>
+              </marker>
+            </defs>
+            <rect x="24" y="50" width="144" height="64" rx="8" fill="#e5f1f8" stroke="#bcd5e5"></rect>
+            <text x="96" y="77" text-anchor="middle" font-size="14" font-weight="700" fill="#17689b">phase work</text>
+            <text x="96" y="98" text-anchor="middle" font-size="12" fill="#4c6675">LLM + collections</text>
+            <path d="M 176 82 H 258" stroke="#67807a" stroke-width="2" marker-end="url(#arrow-barrier)"></path>
+            <rect x="270" y="34" width="204" height="96" rx="8" fill="#f8ebd1" stroke="#ead3a8"></rect>
+            <text x="372" y="62" text-anchor="middle" font-size="14" font-weight="700" fill="#9a6412">quiet barrier</text>
+            <text x="372" y="84" text-anchor="middle" font-size="12" fill="#6f4a12">no pending effects</text>
+            <text x="372" y="105" text-anchor="middle" font-size="12" fill="#6f4a12">entry/exit receipts present</text>
+            <path d="M 484 82 H 566" stroke="#67807a" stroke-width="2" marker-end="url(#arrow-barrier)"></path>
+            <rect x="578" y="50" width="218" height="64" rx="8" fill="#e4f1eb" stroke="#b8d8cc"></rect>
+            <text x="687" y="77" text-anchor="middle" font-size="14" font-weight="700" fill="#25745d">candidate checkpoint</text>
+            <text x="687" y="98" text-anchor="middle" font-size="12" fill="#4f685f">safe to validate later</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-3">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">Idea 3</span>
+            <div>
+              <h3>Runtime Snapshot Manifest</h3>
+              <div class="chips">
+                <span class="chip axis">Runtime Snapshot Contract</span>
+                <span class="chip conf">Confidence 82%</span>
+                <span class="chip cx">Complexity Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p><strong>Description:</strong> Define the hydrateable runtime snapshot as a manifest of subcontracts before serializing a larger blob. The manifest should name which systems are replayed, serialized, omitted, or blocked: canonical projection replay, XState actor value/context, runner phase accumulators, private agent memory, House producer continuity, transcript/outbox cursor, token/cost cursor, and owner epoch.</p>
+        <div class="field-grid">
+          <dl class="field wide"><dt>Basis</dt><dd><strong>direct:</strong> <code>getStateSnapshot()</code> is viewer-shaped, not resume-shaped. <code>GameCheckpointCapsule</code> names missing runtime inputs but does not define their serialized contracts. Runner private fields, XState context, agent state, House state, logger state, and token tracker state live in separate trust domains.</dd></dl>
+          <dl class="field"><dt>Rationale</dt><dd>This prevents "hydrateable checkpoint" from becoming an unreviewable bag of JSON and lets reviewers reason about projection truth, actor progress, and private continuity independently.</dd></dl>
+          <dl class="field"><dt>Downsides</dt><dd>A manifest can become architecture paperwork if it is not enforced. Pair each row with a validator and tests before calling it part of readiness.</dd></dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-4">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">Idea 4</span>
+            <div>
+              <h3>Private Continuity Capsule</h3>
+              <div class="chips">
+                <span class="chip axis">Agent And House Continuity State</span>
+                <span class="chip conf">Confidence 80%</span>
+                <span class="chip cx">Complexity Medium-High</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p><strong>Description:</strong> Persist private continuity capsules for agents and House. The capsule would include strategy packet revision, prior revision links, last reflection summary, scrubbed ally/threat/notes state, House Strategy Bible revision, producer brief references, privacy labels, redacted summaries, source pointers, and hashes. It hydrates "what this agent or House believed," while canonical replay remains the only source of "what happened."</p>
+        <div class="field-grid">
+          <dl class="field wide"><dt>Basis</dt><dd><strong>direct:</strong> Strategy Thread packets, reflections, agent notes, and House state are currently live/private runtime state. Private agent-turn records and producer evidence are intentionally not public broadcast or canonical board facts.</dd></dl>
+          <dl class="field"><dt>Rationale</dt><dd>Watchable strategy depends on continuity after restart, but promoting hidden beliefs or raw reasoning into canonical events would corrupt the privacy and truth model.</dd></dl>
+          <dl class="field"><dt>Downsides</dt><dd>This is the easiest area to over-capture. The capsule should store revision metadata and scrubbed continuity fields, not raw prompt logs or hidden reasoning as resume truth.</dd></dl>
+        </div>
+        <div class="diagram" aria-label="Private continuity and canonical truth split">
+          <svg viewBox="0 0 820 210" role="img">
+            <defs>
+              <marker id="arrow-continuity" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#67807a"></path>
+              </marker>
+            </defs>
+            <rect x="36" y="38" width="190" height="64" rx="8" fill="#e5f1f8" stroke="#bcd5e5"></rect>
+            <text x="131" y="66" text-anchor="middle" font-size="14" font-weight="700" fill="#17689b">canonical events</text>
+            <text x="131" y="87" text-anchor="middle" font-size="12" fill="#4c6675">what happened</text>
+            <rect x="36" y="122" width="190" height="64" rx="8" fill="#efe6f4" stroke="#d6c4e1"></rect>
+            <text x="131" y="150" text-anchor="middle" font-size="14" font-weight="700" fill="#6d4a81">private capsule</text>
+            <text x="131" y="171" text-anchor="middle" font-size="12" fill="#6b5d71">what was believed</text>
+            <path d="M 238 70 H 370" stroke="#67807a" stroke-width="2" marker-end="url(#arrow-continuity)"></path>
+            <path d="M 238 154 H 370" stroke="#67807a" stroke-width="2" marker-end="url(#arrow-continuity)"></path>
+            <rect x="382" y="50" width="180" height="116" rx="8" fill="#e4f1eb" stroke="#b8d8cc"></rect>
+            <text x="472" y="84" text-anchor="middle" font-size="14" font-weight="700" fill="#25745d">hydration validator</text>
+            <text x="472" y="107" text-anchor="middle" font-size="12" fill="#4f685f">checks links, privacy,</text>
+            <text x="472" y="128" text-anchor="middle" font-size="12" fill="#4f685f">revision continuity</text>
+            <path d="M 574 108 H 666" stroke="#67807a" stroke-width="2" marker-end="url(#arrow-continuity)"></path>
+            <rect x="678" y="76" width="112" height="64" rx="8" fill="#f8ebd1" stroke="#ead3a8"></rect>
+            <text x="734" y="103" text-anchor="middle" font-size="14" font-weight="700" fill="#9a6412">resume input</text>
+            <text x="734" y="124" text-anchor="middle" font-size="12" fill="#6f4a12">future only</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-5">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">Idea 5</span>
+            <div>
+              <h3>Durable Transcript / Outbox Cursor</h3>
+              <div class="chips">
+                <span class="chip axis">Token, Transcript, And Cursor State</span>
+                <span class="chip conf">Confidence 78%</span>
+                <span class="chip cx">Complexity Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p><strong>Description:</strong> Replace the current transcript entry-count cursor with a durable boundary over transcript rows, private turn rows, outbox delivery state, source pointers, and canonical event sequence. A checkpoint should validate that the transcript cursor, persisted rows, stream buffer, and replay/export ordering agree before transcript state contributes to readiness.</p>
+        <div class="field-grid">
+          <dl class="field wide"><dt>Basis</dt><dd><strong>direct:</strong> checkpoint capsules currently record <code>transcriptCursor.entries</code>. Checkpoint writes can happen before stream-buffer flushes, and terminal transcript exports can depend on persisted ordering that is not the same as in-memory logger length.</dd></dl>
+          <dl class="field"><dt>Rationale</dt><dd>Viewer continuity is part of game continuity. A checkpoint whose transcript cursor points at memory that never reached durable storage is more misleading than a checkpoint that honestly says transcript continuity is absent.</dd></dl>
+          <dl class="field"><dt>Downsides</dt><dd>This may require choosing or adding durable transcript/outbox rows earlier than the pure runner snapshot work would otherwise demand.</dd></dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-6">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">Idea 6</span>
+            <div>
+              <h3>Token Ledger First Hydrateable Component</h3>
+              <div class="chips">
+                <span class="chip axis">Token, Transcript, And Cursor State</span>
+                <span class="chip conf">Confidence 76%</span>
+                <span class="chip cx">Complexity Low-Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p><strong>Description:</strong> Make token/cost state the first small runtime subsystem with a versioned snapshot/fromJSON contract. The checkpoint should capture monotonic per-source totals, House tracker wiring, token deltas linked to accepted model-effect receipts, and a validator that can prove the cursor did not move backward or duplicate model costs.</p>
+        <div class="field-grid">
+          <dl class="field wide"><dt>Basis</dt><dd><strong>direct:</strong> <code>TokenTracker</code> already exposes aggregate usage and merge behavior. Terminal API persistence stores totals and per-action usage, but checkpoint <code>tokenCostCursor</code> is currently null or undefined.</dd></dl>
+          <dl class="field"><dt>Rationale</dt><dd>Token state is low blast-radius compared with actor or agent hydration, and it gives the passport a first genuine green check while making expensive model effects easier to reconcile.</dd></dl>
+          <dl class="field"><dt>Downsides</dt><dd>It is not enough for resume by itself. The implementation must keep the UI language clear: token ledger readiness is one stamp, not hydrateable game readiness.</dd></dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-7">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">Idea 7</span>
+            <div>
+              <h3>Replay-Verified Snapshot Witness</h3>
+              <div class="chips">
+                <span class="chip axis">Runtime Snapshot Contract</span>
+                <span class="chip conf">Confidence 74%</span>
+                <span class="chip cx">Complexity Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p><strong>Description:</strong> Build a read-only witness that loads a candidate capsule, replays canonical events to the checkpoint boundary, compares projection hash and summary expectations, and identifies which mutable runtime fields are replay-derived versus runtime-only. It never creates a live runner and never exposes a resume action.</p>
+        <div class="field-grid">
+          <dl class="field wide"><dt>Basis</dt><dd><strong>direct:</strong> canonical replay and projection hashes already exist, while mutable <code>GameState</code> and runner internals do not have a hydrate partner. <strong>external:</strong> event-sourcing snapshots are acceleration overlays; the event stream remains the source of truth.</dd></dl>
+          <dl class="field"><dt>Rationale</dt><dd>This gives richer snapshots a safety rule: the snapshot can accelerate or annotate, but it cannot override replayed canonical truth.</dd></dl>
+          <dl class="field"><dt>Downsides</dt><dd>The witness can look like a dry-run resume if named carelessly. Keep it read-only and phrase failures as contract gaps, not runtime recovery failures.</dd></dl>
+        </div>
+      </article>
+    </section>
+
+    <section id="rejection-summary">
+      <p class="section-label">Cuts</p>
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>Standalone Hydrateability Promotion Certificate</td><td>Folded into Hydration Passport. Validator-derived promotion is the mechanism, not a separate direction.</td></tr>
+          <tr><td>2</td><td>Boundary Action Receipt Ledger</td><td>Folded into Quiet-Barrier Phase Boundary Certificate as the receipt component for non-repeatable boundary effects.</td></tr>
+          <tr><td>3</td><td>Phase Accumulator Eligibility Matrix</td><td>Sound but more plan-level than ideation-level; best handled after the quiet-barrier contract defines candidate boundaries.</td></tr>
+          <tr><td>4</td><td>Effect Receipts Instead Of Prompt Replay</td><td>Sound but overlaps with Private Continuity Capsule and Token Ledger; keep it as an implementation concern inside those ideas.</td></tr>
+          <tr><td>5</td><td>Strategy Revision Chain</td><td>Folded into Private Continuity Capsule.</td></tr>
+          <tr><td>6</td><td>House Packet Quarantine</td><td>Folded into Private Continuity Capsule.</td></tr>
+          <tr><td>7</td><td>Hydration Candidate Quarantine</td><td>Folded into Hydration Passport status language.</td></tr>
+          <tr><td>8</td><td>Transcript Cursor Truth Serum / Public Gallery Private Archive</td><td>Folded into Durable Transcript / Outbox Cursor.</td></tr>
+          <tr><td>9</td><td>Projection-To-State Witness</td><td>Folded into Replay-Verified Snapshot Witness.</td></tr>
+          <tr><td>10</td><td>Admin Dry-Hydration / Kill-After-Checkpoint Harness</td><td>Partly sound but downgraded. Dry verdict is useful later, while the kill-after-checkpoint half is only indirectly grounded and should follow the passport/witness contracts.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sources">
+      <p class="section-label">Reference Index</p>
+      <h2>Sources</h2>
+      <ul class="sources">
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/statefulness-plan.md">docs/statefulness-plan.md</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/reasoning-transcript-observability.md">docs/reasoning-transcript-observability.md</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/solutions/architecture-patterns/agent-strategy-observability-spine.md">docs/solutions/architecture-patterns/agent-strategy-observability-spine.md</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-runner.types.ts">packages/engine/src/game-runner.types.ts</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-runner.ts">packages/engine/src/game-runner.ts</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-state.ts">packages/engine/src/game-state.ts</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/phase-machine.ts">packages/engine/src/phase-machine.ts</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/agent.ts">packages/engine/src/agent.ts</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/token-tracker.ts">packages/engine/src/token-tracker.ts</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/db/schema.ts">packages/api/src/db/schema.ts</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-checkpoints.ts">packages/api/src/services/game-checkpoints.ts</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-durable-run.ts">packages/api/src/services/game-durable-run.ts</a></li>
+        <li><a href="https://stately.ai/docs/persistence">Stately XState persistence docs</a></li>
+        <li><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing">Microsoft Azure Architecture Center: Event Sourcing pattern</a></li>
+      </ul>
+    </section>
+
+    <footer class="composition-signal">Composed 2026-06-14T17:40:52Z by ce-ideate from the checkpoint hydration prompt and repo-grounded durable statefulness context.</footer>
+  </main>
+</body>
+</html>

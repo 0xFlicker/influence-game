@@ -23,8 +23,8 @@ import type { UUID, GameConfig } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 
 // Re-export types from the extracted module for backward compatibility
-export type { AgentCallOptions, AgentResponse, AgentTurnEvent, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TranscriptEntry } from "./game-runner.types";
-import type { GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, TranscriptEntry } from "./game-runner.types";
+export type { AgentCallOptions, AgentResponse, AgentTurnEvent, BoundaryCertificate, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseContext, PlayerContinuityCapsule, PowerLobbyExposure, SnapshotManifest, SnapshotComponentStatus, SnapshotManifestComponent, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TokenCostCursor, TranscriptEntry } from "./game-runner.types";
+import type { BoundaryCertificate, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, PlayerContinuityCapsule, SnapshotManifest, TranscriptEntry } from "./game-runner.types";
 
 // Internal modules
 import { TranscriptLogger } from "./transcript-logger";
@@ -303,6 +303,47 @@ export class GameRunner {
     const alivePlayerCount = allPlayers.filter((player) => player.status === PlayerStatus.ALIVE).length;
     const eliminatedPlayerCount = allPlayers.length - alivePlayerCount;
 
+    // U2: emit versioned snapshot manifest naming all subsystems required for future hydration.
+    // Current slice: projection is captured (replay truth); everything else is intentionally missing.
+    const snapshotManifest: SnapshotManifest = {
+      version: 1,
+      components: {
+        projectionTruth: { status: "captured", version: 1 },
+        xstateActor: { status: "missing" },
+        phaseAccumulators: { status: "missing" },
+        playerContinuity: { status: "missing" },
+        houseContinuity: { status: "missing" },
+        transcriptCursor: { status: "missing" },
+        tokenCursor: { status: "missing" },
+        ownerEpoch: { status: "missing" },
+      },
+    };
+
+    // U3: conservative boundary certificate. Engine asserts write is after its own durable flush; no-pending is local to this runner at boundary.
+    const boundaryCertificate: BoundaryCertificate = {
+      gameId: this.gameState.gameId,
+      boundarySequence: this.flushedCanonicalSequence,
+      checkpointReason: kind,
+      eventCommitReceipt: null, // populated at API owner boundary in durable write checks
+      noPendingEffectsAsserted: true,
+    };
+
+    // U5: collect structured continuity capsules from agents (strategy + memory) and House bible.
+    const playerContinuityCapsules: PlayerContinuityCapsule[] = [];
+    for (const [id, ag] of this.agents) {
+      const partial = ag.getContinuityCapsule?.() ?? null;
+      if (partial) {
+        playerContinuityCapsules.push({
+          playerId: id,
+          playerName: ag.name,
+          ...partial,
+        });
+      }
+    }
+    const houseContinuityCapsule: HouseContinuityCapsule | null = this.houseStrategyBible
+      ? { ...this.houseStrategyBible }
+      : null;
+
     await this.durableCheckpointSink({
       gameId: this.gameState.gameId,
       lastEventSequence: this.flushedCanonicalSequence,
@@ -327,6 +368,10 @@ export class GameRunner {
         roomAllocationRounds: Object.keys(projection.roomAllocations).length,
         roundResultCount: projection.roundResults.length,
       },
+      snapshotManifest,
+      boundaryCertificate,
+      playerContinuityCapsules,
+      houseContinuityCapsule,
       hydrateable: false,
       hydrationStatus: {
         replayableProjection: true,

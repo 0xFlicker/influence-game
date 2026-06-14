@@ -114,6 +114,33 @@ export async function writeGameCheckpoint(
         throw new Error("checkpoint event boundary not found");
       }
 
+      // Persist snapshot as versioned manifest when present (U2+), fall back to legacy packing for older capsules.
+      const legacySnapshot = {
+        eventCount: params.checkpoint.eventCount,
+        state: params.checkpoint.state,
+        projectionSummary: params.checkpoint.projectionSummary,
+      };
+      const boundaryCertificate = params.checkpoint.boundaryCertificate
+        ? {
+            ...params.checkpoint.boundaryCertificate,
+            ownerEpoch: params.ownerEpoch,
+            eventCommitReceipt: {
+              sequence: params.checkpoint.lastEventSequence,
+              hash: eventHead.eventHash,
+            },
+          }
+        : null;
+      const snapshotPayload = params.checkpoint.snapshotManifest
+        ? {
+            ...legacySnapshot,
+            manifestVersion: params.checkpoint.snapshotManifest.version,
+            manifest: params.checkpoint.snapshotManifest,
+            boundaryCertificate,
+            playerContinuityCapsules: params.checkpoint.playerContinuityCapsules ?? [],
+            houseContinuityCapsule: params.checkpoint.houseContinuityCapsule ?? null,
+          }
+        : legacySnapshot;
+
       await tx.insert(schema.gameCheckpoints)
         .values({
           id: randomUUID(),
@@ -127,13 +154,9 @@ export async function writeGameCheckpoint(
           projectionHash,
           hydrateable: false,
           hydrationStatus: params.checkpoint.hydrationStatus,
-          snapshot: {
-            eventCount: params.checkpoint.eventCount,
-            state: params.checkpoint.state,
-            projectionSummary: params.checkpoint.projectionSummary,
-          },
+          snapshot: snapshotPayload,
           transcriptCursor: params.checkpoint.transcriptCursor,
-          tokenCostCursor: undefined,
+          tokenCostCursor: params.checkpoint.tokenCostCursor as Record<string, unknown> | null | undefined,
           degradedReason: "forensic_only_missing_runtime_hydration_inputs",
         });
     });
