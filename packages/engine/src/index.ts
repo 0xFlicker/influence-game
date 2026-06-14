@@ -78,7 +78,19 @@ export type {
 
 // Game runner
 export { GameRunner } from "./game-runner";
-export type { AgentResponse, AgentTurnEvent, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TranscriptEntry, GameStreamEvent, GameStateSnapshot } from "./game-runner";
+export type { ActorWitnessV1, AgentResponse, AgentTurnEvent, CheckpointBoundaryIdentityV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PowerLobbyExposure, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TranscriptEntry, TranscriptWatermarkV1, GameStreamEvent, GameStateSnapshot } from "./game-runner";
+export {
+  accumulatorProof,
+  buildActorWitness,
+  buildPhaseAccumulatorRegistry,
+  buildRuntimeSnapshotV1,
+  buildTranscriptWatermark,
+  createEngineBoundaryPlaceholder,
+  requiredPhaseBoundaryAccumulatorIds,
+  sealBoundaryIdentity,
+} from "./runtime-snapshot";
+export { PHASE_BOUNDARY_ACCUMULATOR_IDS } from "./game-runner.types";
+export type { AccumulatorEntryV1, AccumulatorEntryStatusV1, AccumulatorProofV1, PhaseBoundaryAccumulatorId } from "./game-runner.types";
 
 // Agent
 export { InfluenceAgent, createAgentCast } from "./agent";

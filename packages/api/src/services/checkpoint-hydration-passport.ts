@@ -3,14 +3,23 @@
  *
  * Validator-derived readiness record for durable checkpoints.
  * Derives fail-closed verdicts and stamp diagnostics from persisted checkpoint
- * capsules, durable event/projection state, cursors, and (in later units) boundary
- * + continuity evidence.
+ * capsules, durable event/projection state, cursors, boundary identity, and
+ * Runtime Snapshot v1 evidence.
  *
  * This module does NOT implement resume. `hydration_candidate` means the
  * checkpoint carries the v1 evidence required for a future hydration attempt.
  * It must never be interpreted as "safe to call GameRunner.fromCheckpoint()".
  */
 
+import {
+  PHASE_BOUNDARY_ACCUMULATOR_IDS,
+  type AccumulatorEntryV1,
+  type ActorWitnessV1,
+  type CheckpointBoundaryIdentityV1,
+  type PhaseAccumulatorRegistryV1,
+  type RuntimeSnapshotV1,
+  type TranscriptWatermarkV1,
+} from "@influence/engine";
 import type { DurableRunDiagnostic } from "./game-durable-run.js";
 
 export type HydrationPassportVerdict = "forensic_only" | "blocked" | "hydration_candidate";
@@ -20,6 +29,8 @@ export type PassportStampId =
   | "projectionReplay"
   | "boundaryCertificate"
   | "snapshotManifest"
+  | "actorWitness"
+  | "accumulatorRegistry"
   | "transcriptCursor"
   | "tokenCursor"
   | "playerContinuity"
@@ -47,7 +58,6 @@ export interface HydrationPassport {
 }
 
 export interface DerivePassportInput {
-  /** Raw checkpoint row fields (from game_checkpoints) */
   lastEventSequence: number;
   checkpointKind: string;
   hydrateable: boolean;
@@ -56,14 +66,14 @@ export interface DerivePassportInput {
   transcriptCursor: unknown;
   tokenCostCursor: unknown;
   eventHeadHash: string;
+  projectionHash: string;
+  checkpointPhase: string | null;
+  checkpointRound: number | null;
   checkpointOwnerEpoch: string;
   degradedReason?: string | null;
   createdAt: string;
-
-  /** Context from durable run inspection for cross-validation */
   eventLogStatus: "empty" | "complete" | "invalid";
   projectionStatus: string;
-  /** Whether top-level event/projection replay for the run succeeded for this boundary */
   hasValidEventPrefixUpTo: (seq: number) => boolean;
   hasValidProjectionUpTo: (seq: number) => boolean;
 }
@@ -73,15 +83,13 @@ export interface DerivePassportResult {
   diagnostics: DurableRunDiagnostic[];
 }
 
-/**
- * Required stamps for v1 hydration candidate.
- * Order is conventional for diagnostics.
- */
 const REQUIRED_V1_STAMPS: PassportStampId[] = [
   "eventLogReplay",
   "projectionReplay",
   "boundaryCertificate",
   "snapshotManifest",
+  "actorWitness",
+  "accumulatorRegistry",
   "transcriptCursor",
   "tokenCursor",
   "playerContinuity",
@@ -100,7 +108,7 @@ const TOKEN_USAGE_KEYS = [
   "emptyResponses",
 ] as const;
 
-const FORBIDDEN_CONTINUITY_KEYS = new Set([
+const FORBIDDEN_PRIVACY_KEYS = new Set([
   "thinking",
   "reasoningContext",
   "prompt",
@@ -112,6 +120,9 @@ const FORBIDDEN_CONTINUITY_KEYS = new Set([
   "storageKey",
   "storage",
   "sourcePointers",
+  "text",
+  "message",
+  "transcript",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -123,10 +134,11 @@ function isTokenUsage(value: unknown): boolean {
 }
 
 function isTokenCursor(value: unknown): boolean {
-  if (!isRecord(value) || value.version !== 1 || !isTokenUsage(value.totals) || !isRecord(value.perSource)) {
-    return false;
-  }
-  return Object.values(value.perSource).every(isTokenUsage);
+  return isRecord(value) &&
+    value.version === 1 &&
+    isTokenUsage(value.totals) &&
+    isRecord(value.perSource) &&
+    Object.values(value.perSource).every(isTokenUsage);
 }
 
 function isBoundaryReceipt(value: unknown, expectedSequence: number, expectedHash: string): boolean {
@@ -136,36 +148,147 @@ function isBoundaryReceipt(value: unknown, expectedSequence: number, expectedHas
     value.hash === expectedHash;
 }
 
-function containsForbiddenContinuityKey(value: unknown): boolean {
-  if (Array.isArray(value)) return value.some(containsForbiddenContinuityKey);
+function containsForbiddenPrivacyKey(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsForbiddenPrivacyKey);
   if (!isRecord(value)) return false;
   return Object.entries(value).some(([key, nested]) =>
-    FORBIDDEN_CONTINUITY_KEYS.has(key) || containsForbiddenContinuityKey(nested)
+    FORBIDDEN_PRIVACY_KEYS.has(key) || containsForbiddenPrivacyKey(nested)
   );
 }
 
-function expectedActivePlayerCount(snapshot: Record<string, unknown> | null): number | null {
-  if (!snapshot || !isRecord(snapshot.state)) return null;
-  return typeof snapshot.state.alivePlayerCount === "number" ? snapshot.state.alivePlayerCount : null;
+function parseBoundaryIdentity(value: unknown): CheckpointBoundaryIdentityV1 | null {
+  if (!isRecord(value) || value.version !== 1) return null;
+  if (typeof value.ownerEpoch !== "string" ||
+      typeof value.boundarySequence !== "number" ||
+      typeof value.eventHeadHash !== "string" ||
+      typeof value.projectionHash !== "string" ||
+      typeof value.checkpointKind !== "string" ||
+      typeof value.phase !== "string" ||
+      typeof value.round !== "number") {
+    return null;
+  }
+  return value as unknown as CheckpointBoundaryIdentityV1;
 }
 
-function componentStatus(value: unknown): string | null {
-  return isRecord(value) && typeof value.status === "string" ? value.status : null;
+function boundaryMatchesRow(
+  boundary: CheckpointBoundaryIdentityV1,
+  input: DerivePassportInput,
+): boolean {
+  return boundary.boundarySequence === input.lastEventSequence &&
+    boundary.ownerEpoch === input.checkpointOwnerEpoch &&
+    boundary.eventHeadHash === input.eventHeadHash &&
+    boundary.projectionHash === input.projectionHash &&
+    boundary.checkpointKind === input.checkpointKind &&
+    (input.checkpointPhase == null || boundary.phase === input.checkpointPhase) &&
+    (input.checkpointRound == null || boundary.round === input.checkpointRound);
 }
 
-function isCapturedManifestComponent(id: string, value: unknown): boolean {
-  const status = componentStatus(value);
-  if (status === "captured") return true;
-  return (id === "playerContinuity" || id === "houseContinuity") && status === "private_reference_only";
+function parseRuntimeSnapshot(snapshot: Record<string, unknown> | null): RuntimeSnapshotV1 | null {
+  const rs = snapshot?.runtimeSnapshot;
+  if (!isRecord(rs) || rs.version !== 1) return null;
+  return rs as unknown as RuntimeSnapshotV1;
 }
 
-function isMalformedManifestComponent(value: unknown): boolean {
-  return !isRecord(value) || typeof value.status !== "string";
+function validateActorWitness(
+  witness: ActorWitnessV1 | undefined,
+  input: DerivePassportInput,
+  projectionRound: number | null,
+  projectionPhase: string | null,
+): { status: PassportStampStatus; reason?: string } {
+  if (!witness || witness.version !== 1) {
+    return { status: "missing", reason: "actor witness absent" };
+  }
+  if (!boundaryMatchesRow(witness.boundary, input)) {
+    return { status: "failed", reason: "actor witness boundary identity does not match checkpoint row" };
+  }
+  if (projectionRound != null && witness.contextSummary.round !== projectionRound) {
+    return { status: "failed", reason: "actor witness round does not match projection facts" };
+  }
+  if (projectionPhase != null && witness.contextSummary.phase !== projectionPhase) {
+    return { status: "failed", reason: "actor witness phase does not match projection facts" };
+  }
+  if (typeof witness.actorCoordinate !== "string" || witness.actorCoordinate.length === 0) {
+    return { status: "malformed", reason: "actor witness missing phase-machine coordinate" };
+  }
+  return { status: "passed" };
 }
 
-function isTranscriptCursor(value: unknown): boolean {
-  return isRecord(value) &&
-    (value.durableBoundary === true || typeof value.lastEntryId === "string" || typeof value.lastOutboxId === "string");
+function accumulatorStatusNeedsProof(status: string): boolean {
+  return status === "empty" || status === "drained" || status === "not_v1_hydratable";
+}
+
+function validateAccumulatorRegistry(
+  registry: PhaseAccumulatorRegistryV1 | undefined,
+  input: DerivePassportInput,
+): { status: PassportStampStatus; reason?: string } {
+  if (!registry || registry.version !== 1) {
+    return { status: "missing", reason: "accumulator registry absent" };
+  }
+  if (registry.boundaryClass !== "phase_boundary") {
+    return { status: "malformed", reason: "unsupported accumulator registry boundary class" };
+  }
+  if (!boundaryMatchesRow(registry.boundary, input)) {
+    return { status: "failed", reason: "accumulator registry boundary identity does not match checkpoint row" };
+  }
+
+  const entries = Array.isArray(registry.entries) ? registry.entries as AccumulatorEntryV1[] : [];
+  const entryIds = new Set(entries.map((entry) => entry.id));
+  const missingRequired = PHASE_BOUNDARY_ACCUMULATOR_IDS.filter((id) => !entryIds.has(id));
+  if (missingRequired.length > 0) {
+    return { status: "failed", reason: `accumulator registry missing required ids: ${missingRequired.join(", ")}` };
+  }
+
+  for (const entry of entries) {
+    if (!entry.id || typeof entry.status !== "string") {
+      return { status: "malformed", reason: `accumulator entry ${entry.id ?? "(unknown)"} is malformed` };
+    }
+    if (accumulatorStatusNeedsProof(entry.status) && !isRecord(entry.proof)) {
+      return { status: "failed", reason: `accumulator ${entry.id} status ${entry.status} lacks required proof` };
+    }
+    if (entry.status === "not_v1_hydratable" && entry.proof?.kind !== "not_applicable_at_boundary") {
+      return { status: "failed", reason: `accumulator ${entry.id} not_v1_hydratable without not_applicable proof` };
+    }
+    if (entry.status === "blocked" || entry.status === "malformed") {
+      return { status: "failed", reason: `accumulator ${entry.id} is ${entry.status}` };
+    }
+  }
+
+  return { status: "passed" };
+}
+
+function validateTranscriptWatermark(
+  watermark: TranscriptWatermarkV1 | undefined,
+  input: DerivePassportInput,
+  transcriptCursor: unknown,
+): { status: PassportStampStatus; reason?: string } {
+  if (!watermark || watermark.version !== 1) {
+    if (isRecord(transcriptCursor) &&
+        typeof transcriptCursor.entries === "number" &&
+        transcriptCursor.durableBoundary !== true) {
+      return { status: "failed", reason: "transcript cursor is in-memory entry count only (not a durable boundary)" };
+    }
+    return { status: "missing", reason: "transcript watermark absent" };
+  }
+  if (!boundaryMatchesRow(watermark.boundary, input)) {
+    return { status: "failed", reason: "transcript watermark boundary identity does not match checkpoint row" };
+  }
+  if (watermark.durableBoundary !== true || typeof watermark.boundaryDigest !== "string") {
+    return { status: "malformed", reason: "transcript watermark missing durable boundary digest" };
+  }
+  if (containsForbiddenPrivacyKey(watermark)) {
+    return { status: "failed", reason: "transcript watermark contains forbidden private content fields" };
+  }
+  return { status: "passed" };
+}
+
+function isTranscriptCursorFromWatermark(
+  transcriptCursor: unknown,
+  watermark: TranscriptWatermarkV1 | undefined,
+): boolean {
+  if (!isRecord(transcriptCursor) || !watermark) return false;
+  return transcriptCursor.durableBoundary === true &&
+    transcriptCursor.boundaryDigest === watermark.boundaryDigest &&
+    transcriptCursor.lastCanonicalSequence === watermark.lastCanonicalSequence;
 }
 
 function isPlayerContinuityCapsule(value: unknown): boolean {
@@ -205,45 +328,73 @@ function isHouseContinuityCapsule(value: unknown): boolean {
     typeof value.changedSincePrevious === "string";
 }
 
-/**
- * Derive a hydration passport for a single checkpoint.
- * Fail-closed on malformed data, unknown versions, or missing required evidence.
- * Current (pre-manifest) forensic capsules always produce non-candidate verdicts
- * with explicit missing-stamp diagnostics.
- */
+function expectedActivePlayerIds(snapshot: Record<string, unknown> | null): string[] {
+  const explicit = snapshot?.expectedActivePlayerIds;
+  if (Array.isArray(explicit)) {
+    return explicit.filter((id): id is string => typeof id === "string");
+  }
+  if (!snapshot || !isRecord(snapshot.state)) return [];
+  const count = typeof snapshot.state.alivePlayerCount === "number" ? snapshot.state.alivePlayerCount : 0;
+  const capsules = Array.isArray(snapshot.playerContinuityCapsules)
+    ? snapshot.playerContinuityCapsules as unknown[]
+    : [];
+  if (count > 0 && capsules.length >= count) {
+    return capsules
+      .map((capsule) => isRecord(capsule) ? capsule.playerId : null)
+      .filter((id): id is string => typeof id === "string");
+  }
+  return [];
+}
+
+function deriveManifestStamp(
+  runtimeSnapshot: RuntimeSnapshotV1 | null,
+  actorStatus: PassportStampStatus,
+  accumulatorStatus: PassportStampStatus,
+  transcriptStatus: PassportStampStatus,
+  tokenStatus: PassportStampStatus,
+  playerStatus: PassportStampStatus,
+  houseStatus: PassportStampStatus,
+  ownerStatus: PassportStampStatus,
+): { status: PassportStampStatus; reason?: string } {
+  if (!runtimeSnapshot) {
+    return { status: "missing", reason: "no versioned runtime snapshot present (forensic capsule shape)" };
+  }
+
+  const componentChecks: Array<[string, PassportStampStatus]> = [
+    ["projectionTruth", "passed"],
+    ["xstateActor", actorStatus],
+    ["phaseAccumulators", accumulatorStatus],
+    ["playerContinuity", playerStatus === "passed" ? "passed" : playerStatus],
+    ["houseContinuity", houseStatus],
+    ["transcriptCursor", transcriptStatus],
+    ["tokenCursor", tokenStatus],
+    ["ownerEpoch", ownerStatus],
+  ];
+
+  const failed = componentChecks.filter(([, status]) => status !== "passed").map(([name]) => name);
+  if (failed.length > 0) {
+    return { status: "failed", reason: `manifest components not satisfied by runtime evidence: ${failed.join(", ")}` };
+  }
+  return { status: "passed" };
+}
+
 export function deriveHydrationPassport(input: DerivePassportInput): DerivePassportResult {
   const diagnostics: DurableRunDiagnostic[] = [];
   const stamps: PassportStamp[] = [];
 
-  // Helper to push a stamp + optional diagnostic
   const addStamp = (
     id: PassportStampId,
     status: PassportStampStatus,
     reason?: string,
-    alsoDiagnostic?: boolean,
   ) => {
     const blocking = status !== "passed";
     stamps.push({ id, status, reason, blocking });
-    if (alsoDiagnostic && reason) {
-      diagnostics.push({
-        code: "malformed_checkpoint_hydration_status", // reuse existing diagnostic family for now; future may specialize
-        severity: "error",
-        message: `Passport stamp ${id}: ${reason}`,
-        sequence: input.lastEventSequence,
-      });
-    }
   };
 
-  // 1. Parse/validate existing hydrationStatus shape (compat + malformed detection)
   let parsedHydration: Record<string, unknown> | null = null;
-  let malformedHydration = false;
   if (isRecord(input.hydrationStatus)) {
-    parsedHydration = input.hydrationStatus as Record<string, unknown>;
+    parsedHydration = input.hydrationStatus;
   } else if (input.hydrationStatus != null) {
-    malformedHydration = true;
-  }
-
-  if (malformedHydration || (input.hydrateable && (parsedHydration == null || Object.keys(parsedHydration).length === 0))) {
     diagnostics.push({
       code: "malformed_checkpoint_hydration_status",
       severity: "error",
@@ -252,7 +403,17 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
     });
   }
 
-  // 2. Event log replay stamp (cross-check boundary against persisted log)
+  if (parsedHydration == null && input.hydrationStatus != null) {
+    // malformed handled above
+  } else if (input.hydrateable && (parsedHydration == null || Object.keys(parsedHydration).length === 0)) {
+    diagnostics.push({
+      code: "malformed_checkpoint_hydration_status",
+      severity: "error",
+      message: "Checkpoint hydration status cannot support hydrateable=true or is malformed",
+      sequence: input.lastEventSequence,
+    });
+  }
+
   if (input.eventLogStatus === "complete" && input.hasValidEventPrefixUpTo(input.lastEventSequence)) {
     addStamp("eventLogReplay", "passed");
   } else if (input.eventLogStatus === "invalid" || !input.hasValidEventPrefixUpTo(input.lastEventSequence)) {
@@ -261,7 +422,6 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
     addStamp("eventLogReplay", "missing", "no durable event log available for boundary validation");
   }
 
-  // 3. Projection replay stamp
   const projSt = input.projectionStatus;
   if ((projSt === "replayed" || projSt === "complete") && input.hasValidProjectionUpTo(input.lastEventSequence)) {
     addStamp("projectionReplay", "passed");
@@ -271,15 +431,20 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
     addStamp("projectionReplay", "missing", "no valid projection replay available for checkpoint");
   }
 
-  // 4. Boundary certificate (U3+): look for embedded evidence in snapshot payload or future dedicated.
-  const snapForBoundary = isRecord(input.snapshot) ? input.snapshot : null;
-  const bc = (snapForBoundary?.boundaryCertificate as Record<string, unknown> | undefined) ?? undefined;
+  const snap = isRecord(input.snapshot) ? input.snapshot : null;
+  const runtimeSnapshot = parseRuntimeSnapshot(snap);
+  const bc = (snap?.boundaryCertificate as Record<string, unknown> | undefined) ?? undefined;
+  const projectionSummary = isRecord(snap?.projectionSummary) ? snap!.projectionSummary as Record<string, unknown> : null;
+  const projectionRound = typeof projectionSummary?.round === "number" ? projectionSummary.round : input.checkpointRound;
+  const projectionPhase = typeof projectionSummary?.phase === "string" ? projectionSummary.phase : input.checkpointPhase;
+
   const hasBoundaryEvidence =
     !!bc &&
     typeof bc.boundarySequence === "number" &&
     bc.boundarySequence === input.lastEventSequence &&
     bc.ownerEpoch === input.checkpointOwnerEpoch &&
     bc.noPendingEffectsAsserted === true &&
+    (bc.projectionHash == null || bc.projectionHash === input.projectionHash) &&
     isBoundaryReceipt(bc.eventCommitReceipt, input.lastEventSequence, input.eventHeadHash);
   if (hasBoundaryEvidence) {
     addStamp("boundaryCertificate", "passed");
@@ -288,118 +453,73 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
       ? "boundary certificate present but no-pending-effects assertion missing or false"
       : (bc.ownerEpoch !== input.checkpointOwnerEpoch
           ? "boundary certificate owner epoch does not match checkpoint row"
-      : (!isBoundaryReceipt(bc.eventCommitReceipt, input.lastEventSequence, input.eventHeadHash)
-          ? "boundary certificate missing matching durable event commit receipt"
-          : "boundary certificate incomplete"));
+          : (bc.projectionHash != null && bc.projectionHash !== input.projectionHash
+              ? "boundary certificate projection hash does not match checkpoint row"
+              : (!isBoundaryReceipt(bc.eventCommitReceipt, input.lastEventSequence, input.eventHeadHash)
+                  ? "boundary certificate missing matching durable event commit receipt"
+                  : "boundary certificate incomplete")));
     addStamp("boundaryCertificate", "failed", reason);
   } else {
-    addStamp("boundaryCertificate", "missing", "boundary certificate evidence absent (no owner epoch proof, sequence alignment, or no-pending-effect assertion)");
+    addStamp("boundaryCertificate", "missing", "boundary certificate evidence absent");
   }
 
-  // 5. Snapshot manifest (v1: pre-manifest capsules use loose snapshot blob -> unknown or missing)
-  const snapshot = input.snapshot;
-  let manifestVersion: number | null = null;
-  let hasManifestShape = false;
-  let components: Record<string, unknown> | null = null;
-  if (isRecord(snapshot)) {
-    const s = snapshot;
-    const directVersion = typeof s.manifestVersion === "number" ? s.manifestVersion : null;
-    const nested = s.manifest && typeof s.manifest === "object" ? (s.manifest as Record<string, unknown>) : null;
-    if (directVersion != null) {
-      manifestVersion = directVersion;
-      hasManifestShape = true;
-      if (nested && isRecord(nested.components)) {
-        components = nested.components as Record<string, unknown>;
-      }
-    } else if (nested && typeof nested.version === "number") {
-      manifestVersion = nested.version as number;
-      hasManifestShape = true;
-      if (isRecord(nested.components)) {
-        components = nested.components as Record<string, unknown>;
-      }
-    } else if (isRecord(s.components)) {
-      // direct components (edge)
-      hasManifestShape = true;
-      components = s.components as Record<string, unknown>;
-    }
-  }
+  const actorResult = validateActorWitness(runtimeSnapshot?.actorWitness, input, projectionRound, projectionPhase);
+  addStamp("actorWitness", actorResult.status, actorResult.reason);
 
-  if (manifestVersion != null && manifestVersion === 1 && hasManifestShape) {
-    // In full U2+ all required components present with proper ids; for now require the key set exists
-    const expectedIds = ["projectionTruth", "xstateActor", "phaseAccumulators", "playerContinuity", "houseContinuity", "transcriptCursor", "tokenCursor", "ownerEpoch"];
-    const hasAllKeys = components != null && expectedIds.every((k) => Object.prototype.hasOwnProperty.call(components, k));
-    const malformedComponents = components != null
-      ? expectedIds.filter((id) => isMalformedManifestComponent(components?.[id]))
-      : [];
-    const missingComponents = components != null
-      ? expectedIds.filter((id) => !isCapturedManifestComponent(id, components?.[id]))
-      : expectedIds;
-    if (hasAllKeys && malformedComponents.length === 0 && missingComponents.length === 0) {
-      addStamp("snapshotManifest", "passed");
-    } else if (malformedComponents.length > 0) {
-      addStamp("snapshotManifest", "malformed", `manifest v1 has malformed component entries: ${malformedComponents.join(", ")}`);
-    } else {
-      addStamp("snapshotManifest", "failed", `manifest v1 has missing or blocked components: ${missingComponents.join(", ")}`);
-    }
-  } else if (manifestVersion != null && manifestVersion !== 1) {
-    addStamp("snapshotManifest", "unknown_version", `unsupported manifest version ${manifestVersion}`);
-  } else if (hasManifestShape) {
-    addStamp("snapshotManifest", "malformed", "snapshot claims manifest shape but lacks version or required components");
+  const accumulatorResult = validateAccumulatorRegistry(runtimeSnapshot?.accumulatorRegistry, input);
+  addStamp("accumulatorRegistry", accumulatorResult.status, accumulatorResult.reason);
+
+  const transcriptResult = validateTranscriptWatermark(
+    runtimeSnapshot?.transcriptWatermark,
+    input,
+    input.transcriptCursor,
+  );
+  if (transcriptResult.status === "passed" && !isTranscriptCursorFromWatermark(input.transcriptCursor, runtimeSnapshot?.transcriptWatermark)) {
+    addStamp("transcriptCursor", "failed", "transcript cursor row does not match runtime snapshot watermark");
   } else {
-    // Current forensic shape: snapshot is {eventCount, state, projectionSummary} or wrapped legacy
-    addStamp("snapshotManifest", "missing", "no versioned snapshot manifest present (forensic capsule shape)");
+    addStamp("transcriptCursor", transcriptResult.status, transcriptResult.reason);
   }
 
-  // 6. Transcript cursor (U4): require durable boundary marker (not just in-memory entries count) to pass.
-  // Live engine writes emit entry counts only -> treated as failed for this stamp (keeps live blocked until durable transcript cursoring lands).
-  const tc = input.transcriptCursor;
-  if (isRecord(tc)) {
-    const t = tc;
-    if (isTranscriptCursor(t)) {
-      addStamp("transcriptCursor", "passed");
-    } else if (typeof t.entries === "number") {
-      addStamp("transcriptCursor", "failed", "transcript cursor is in-memory entry count only (not a durable boundary)");
+  if (isTokenCursor(input.tokenCostCursor)) {
+    const tokenBoundary = parseBoundaryIdentity(
+      isRecord(input.tokenCostCursor) ? (input.tokenCostCursor as Record<string, unknown>).boundary : null,
+    );
+    if (tokenBoundary && !boundaryMatchesRow(tokenBoundary, input)) {
+      addStamp("tokenCursor", "failed", "token cursor boundary identity does not match checkpoint row");
     } else {
-      addStamp("transcriptCursor", "malformed", "transcriptCursor present but missing durable boundary marker");
+      addStamp("tokenCursor", "passed");
     }
-  } else if (tc != null) {
-    addStamp("transcriptCursor", "malformed", "transcriptCursor is not an object");
-  } else {
-    addStamp("transcriptCursor", "missing", "transcript cursor absent");
-  }
-
-  // 7. Token cursor
-  const tk = input.tokenCostCursor;
-  if (isTokenCursor(tk)) {
-    addStamp("tokenCursor", "passed");
-  } else if (isRecord(tk)) {
+  } else if (isRecord(input.tokenCostCursor)) {
     addStamp("tokenCursor", "malformed", "tokenCostCursor present but not a valid versioned cursor");
-  } else if (tk != null) {
+  } else if (input.tokenCostCursor != null) {
     addStamp("tokenCursor", "malformed", "tokenCostCursor present but not a valid cursor object");
   } else {
     addStamp("tokenCursor", "missing", "token cost cursor absent");
   }
 
-  // 8/9. Continuity capsules (player + house) U5+
-  const snap = isRecord(input.snapshot) ? input.snapshot : null;
   const pcs = Array.isArray(snap?.playerContinuityCapsules) ? (snap!.playerContinuityCapsules as unknown[]) : [];
-  const hcc = snap?.houseContinuityCapsule && typeof snap.houseContinuityCapsule === "object" ? snap.houseContinuityCapsule : null;
-  const expectedPlayers = expectedActivePlayerCount(snap);
+  const hcc = snap?.houseContinuityCapsule ?? null;
+  const expectedPlayers = expectedActivePlayerIds(snap);
+  const capsulePlayerIds = new Set(
+    pcs.map((capsule) => isRecord(capsule) ? capsule.playerId : null).filter((id): id is string => typeof id === "string"),
+  );
 
   if (
     pcs.length > 0 &&
     pcs.every(isPlayerContinuityCapsule) &&
-    (expectedPlayers == null || new Set(pcs.map((capsule) => (capsule as Record<string, unknown>).playerId)).size >= expectedPlayers)
+    (expectedPlayers.length === 0 || expectedPlayers.every((id) => capsulePlayerIds.has(id)))
   ) {
     addStamp("playerContinuity", "passed");
   } else if (pcs.length > 0) {
-    const reason = expectedPlayers != null && pcs.length < expectedPlayers
-      ? "player continuity capsules do not cover every expected active player"
+    const missingPlayers = expectedPlayers.filter((id) => !capsulePlayerIds.has(id));
+    const reason = missingPlayers.length > 0
+      ? `player continuity capsules missing expected active players: ${missingPlayers.join(", ")}`
       : "one or more player continuity capsules are malformed";
-    addStamp("playerContinuity", "malformed", reason);
+    addStamp("playerContinuity", missingPlayers.length > 0 ? "failed" : "malformed", reason);
   } else {
     addStamp("playerContinuity", "missing", "no structured player continuity capsules present");
   }
+
   if (isHouseContinuityCapsule(hcc)) {
     addStamp("houseContinuity", "passed");
   } else if (hcc) {
@@ -408,45 +528,52 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
     addStamp("houseContinuity", "missing", "no structured House continuity capsule present");
   }
 
-  const ownerEpochStatus = isRecord(bc) && bc.ownerEpoch === input.checkpointOwnerEpoch ? "passed" : "missing";
+  const ownerEpochStatus = hasBoundaryEvidence ? "passed" : "missing";
   addStamp(
     "ownerEpoch",
     ownerEpochStatus,
     ownerEpochStatus === "passed" ? undefined : "checkpoint boundary certificate does not prove owner epoch",
   );
 
-  const privacyViolation = containsForbiddenContinuityKey(pcs) || containsForbiddenContinuityKey(hcc);
+  const privacyViolation =
+    containsForbiddenPrivacyKey(pcs) ||
+    containsForbiddenPrivacyKey(hcc) ||
+    containsForbiddenPrivacyKey(runtimeSnapshot) ||
+    containsForbiddenPrivacyKey(input.transcriptCursor);
   addStamp(
     "privacy",
     privacyViolation ? "failed" : "passed",
-    privacyViolation ? "continuity capsules contain raw reasoning, prompt/response, storage, or source-pointer fields" : undefined,
+    privacyViolation ? "checkpoint evidence contains raw reasoning, prompt/response, storage, or transcript content fields" : undefined,
   );
 
-  // Derive verdict
+  const manifestResult = deriveManifestStamp(
+    runtimeSnapshot,
+    actorResult.status,
+    accumulatorResult.status,
+    stamps.find((stamp) => stamp.id === "transcriptCursor")!.status,
+    stamps.find((stamp) => stamp.id === "tokenCursor")!.status,
+    stamps.find((stamp) => stamp.id === "playerContinuity")!.status,
+    stamps.find((stamp) => stamp.id === "houseContinuity")!.status,
+    ownerEpochStatus,
+  );
+  addStamp("snapshotManifest", manifestResult.status, manifestResult.reason);
+
   const allRequiredPassed = REQUIRED_V1_STAMPS.every((id) => {
-    const s = stamps.find((x) => x.id === id);
-    return s?.status === "passed";
+    const stamp = stamps.find((entry) => entry.id === id);
+    return stamp?.status === "passed";
   });
 
   let verdict: HydrationPassportVerdict;
   if (allRequiredPassed) {
     verdict = "hydration_candidate";
   } else {
-    // Has checkpoint evidence (row existed) -> blocked, else forensic_only
     const hasCheckpointEvidence = input.snapshot != null || input.hydrationStatus != null || input.lastEventSequence >= 0;
     verdict = hasCheckpointEvidence ? "blocked" : "forensic_only";
   }
 
-  // Unknown manifest version already produced unknown_version stamps (blocking).
-
-  // If the old hydrateable field lies (true while missingInputs), the earlier diagnostics caught it.
-
   return { passport: { verdict, stamps }, diagnostics };
 }
 
-/**
- * Convenience: produce a minimal "no evidence" forensic passport for rows that have no capsule payload at all.
- */
 export function forensicOnlyPassport(_sequence: number): HydrationPassport {
   const stamps: PassportStamp[] = REQUIRED_V1_STAMPS.map((id) => ({
     id,

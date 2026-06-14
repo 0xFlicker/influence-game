@@ -40,6 +40,11 @@ export class TranscriptLogger {
     this.streamBuffer = null;
   }
 
+  /** Whether the durable stream buffer is empty (post-flush boundary evidence). */
+  isStreamBufferEmpty(): boolean {
+    return this.streamBuffer === null || this.streamBuffer.length === 0;
+  }
+
   emitStream(event: GameStreamEvent): void {
     if (this.streamBuffer) {
       this.streamBuffer.push(event);

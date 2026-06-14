@@ -14,9 +14,11 @@ import { createEvidenceManifest } from "../services/game-evidence.js";
 import {
   createCheckpointCapsule,
   createCanonicalEventFixture,
+  enrichCapsuleForV1Candidate,
   insertGame,
   insertOwner,
 } from "./durable-run-test-utils.js";
+import { hashCanonicalEvent } from "../services/game-events.js";
 import { setupTestDB } from "./test-utils.js";
 
 const ADMIN_ADDRESS = "0xadmin000000000000000000000000000000000001";
@@ -178,72 +180,31 @@ describe("admin route RBAC", () => {
     const privateStrategyPacket = "PRIVATE_STRATEGY_PACKET_SENTINEL";
     const privateHouseSummary = "PRIVATE_HOUSE_CONTINUITY_SENTINEL";
     await appendGameEvents(db, { gameId, ownerEpoch, events });
-    const capsule = createCheckpointCapsule(events);
-    capsule.snapshotManifest = {
-      version: 1,
-      components: {
-        projectionTruth: { status: "captured", version: 1 },
-        xstateActor: { status: "captured", version: 1 },
-        phaseAccumulators: { status: "captured", version: 1 },
-        playerContinuity: { status: "private_reference_only", version: 1 },
-        houseContinuity: { status: "private_reference_only", version: 1 },
-        transcriptCursor: { status: "captured", version: 1 },
-        tokenCursor: { status: "captured", version: 1 },
-        ownerEpoch: { status: "captured", version: 1 },
+    const baseCapsule = createCheckpointCapsule(events);
+    const eventHeadHash = hashCanonicalEvent(events.at(-1)!);
+    const capsule = enrichCapsuleForV1Candidate(baseCapsule, { ownerEpoch, eventHeadHash });
+    capsule.playerContinuityCapsules = (capsule.playerContinuityCapsules ?? []).map((playerCapsule, index) => ({
+      ...playerCapsule,
+      strategyPacket: {
+        revisionId: `strategy-packet-${index}`,
+        previousRevisionId: null,
+        updatedAtRound: capsule.round,
+        updatedAtPhase: capsule.phase,
+        objective: `${privateStrategyPacket} ${playerCapsule.playerName}`,
+        targetPosture: "keep target pressure private",
+        coalitionPosture: "hold an alliance read",
+        nextSocialProbe: "ask a bounded question",
+        strategicLens: "vote_math",
+        strategicLensRationale: "vote pressure is the current useful frame",
+        uncertainty: "whether the alliance will hold",
+        reviseTrigger: "new contradiction appears",
+        changedSincePrevious: "initial packet",
       },
-    };
-    capsule.boundaryCertificate = {
-      gameId,
-      boundarySequence: capsule.lastEventSequence,
-      checkpointReason: capsule.checkpointKind,
-      eventCommitReceipt: null,
-      noPendingEffectsAsserted: true,
-    };
-    capsule.transcriptCursor = {
-      entries: 12,
-      durableBoundary: true,
-      lastEntryId: "transcript-entry-12",
-    };
-    capsule.playerContinuityCapsules = Object.values(capsule.projection.players)
-      .filter((player) => player.status !== "eliminated")
-      .map((player, index) => ({
-        playerId: player.id,
-        playerName: player.name,
-        strategyPacket: {
-          revisionId: `strategy-packet-${index}`,
-          previousRevisionId: null,
-          updatedAtRound: capsule.round,
-          updatedAtPhase: capsule.phase,
-          objective: `${privateStrategyPacket} ${player.name}`,
-          targetPosture: "keep target pressure private",
-          coalitionPosture: "hold an alliance read",
-          nextSocialProbe: "ask a bounded question",
-          strategicLens: "vote_math",
-          strategicLensRationale: "vote pressure is the current useful frame",
-          uncertainty: "whether the alliance will hold",
-          reviseTrigger: "new contradiction appears",
-          changedSincePrevious: "initial packet",
-        },
-        reflectionSummary: {
-          certainties: ["the board has a vote boundary"],
-          suspicions: ["one player is hedging"],
-          allies: [],
-          threats: [],
-          plan: "preserve private continuity without leaking it",
-          strategicLens: "broad_read",
-          strategicLensRationale: "test fixture only",
-        },
-        notes: [{ subject: "continuity", note: `${privatePlayerNote} ${player.name}` }],
-        commitments: ["keep the promise private"],
-        relationships: { allies: [], threats: [] },
-        powerActionMemory: null,
-        roundHistory: [{ round: capsule.round, note: "private round read" }],
-      }));
+      notes: [{ subject: "continuity", note: `${privatePlayerNote} ${playerCapsule.playerName}` }],
+      roundHistory: [{ round: capsule.round, note: "private round read" }],
+    }));
     capsule.houseContinuityCapsule = {
-      revisionId: "house-continuity-1",
-      previousRevisionId: null,
-      updatedAtRound: capsule.round,
-      updatedAtPhase: capsule.phase,
+      ...capsule.houseContinuityCapsule!,
       summary: privateHouseSummary,
       alliances: [{
         name: "test alliance",
@@ -252,24 +213,6 @@ describe("admin route RBAC", () => {
         confidence: "medium",
         evidence: ["private alliance read"],
       }],
-      tensions: ["private tension read"],
-      promises: ["private promise ledger"],
-      voteBlocs: ["private vote bloc"],
-      mingleDiscoveries: ["private room read"],
-      playerTrajectories: [{
-        playerName: "Atlas",
-        currentRead: "private trajectory",
-        pressurePoints: ["private pressure"],
-      }],
-      storyArcs: [{
-        title: "private arc",
-        summary: "private arc summary",
-        involvedPlayers: ["Atlas"],
-        status: "emerging",
-      }],
-      droppedThreads: [],
-      openQuestions: ["private open question"],
-      changedSincePrevious: "initial House continuity",
     };
     const checkpoint = await writeGameCheckpoint(db, {
       gameId,

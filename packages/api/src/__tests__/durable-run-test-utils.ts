@@ -3,13 +3,23 @@ import {
   GameState,
   Phase,
   replayCanonicalEvents,
+  buildActorWitness,
+  buildPhaseAccumulatorRegistry,
+  buildRuntimeSnapshotV1,
+  buildTranscriptWatermark,
+  accumulatorProof,
+  sealBoundaryIdentity,
+  createEngineBoundaryPlaceholder,
+  requiredPhaseBoundaryAccumulatorIds,
   type CanonicalGameEvent,
   type GameCheckpointCapsule,
+  type RuntimeSnapshotV1,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import type { GameRunOwnerStatus, GameStatus, KernelHealthStatus } from "../db/schema.js";
 import { hashCanonicalEvent } from "../services/game-events.js";
+import { sha256StableJson } from "../services/stable-hash.js";
 
 const FIXED_NOW = "2026-06-14T00:00:00.000Z";
 
@@ -121,6 +131,173 @@ export async function insertCanonicalEventRows(
   await db.insert(schema.gameEvents).values(rows);
 }
 
+function buildDefaultAccumulatorEntries(): Array<{ id: string; status: "empty" | "drained"; proof: ReturnType<typeof accumulatorProof> }> {
+  return requiredPhaseBoundaryAccumulatorIds().map((id) => {
+    if (id === "transcriptStreamBuffer") {
+      return { id, status: "drained" as const, proof: accumulatorProof("drained_at_boundary", "fixture stream buffer drained") };
+    }
+    return { id, status: "empty" as const, proof: accumulatorProof("empty_at_boundary", `fixture ${id} empty at boundary`) };
+  });
+}
+
+export function buildSealedRuntimeSnapshot(params: {
+  ownerEpoch: string;
+  eventHeadHash: string;
+  projectionHash: string;
+  capsule: GameCheckpointCapsule;
+  actorCoordinate?: string;
+}): RuntimeSnapshotV1 {
+  const boundary = sealBoundaryIdentity(
+    createEngineBoundaryPlaceholder({
+      boundarySequence: params.capsule.lastEventSequence,
+      checkpointKind: params.capsule.checkpointKind,
+      phase: params.capsule.phase,
+      round: params.capsule.round,
+    }),
+    {
+      ownerEpoch: params.ownerEpoch,
+      eventHeadHash: params.eventHeadHash,
+      projectionHash: params.projectionHash,
+    },
+  );
+
+  const alivePlayerIds = Object.values(params.capsule.projection.players)
+    .filter((player) => player.status !== "eliminated")
+    .map((player) => player.id);
+
+  const actorWitness = buildActorWitness({
+    boundary,
+    actorCoordinate: params.actorCoordinate ?? "vote",
+    actorStatus: "active",
+    round: params.capsule.round,
+    phase: params.capsule.phase,
+    alivePlayerIds,
+  });
+
+  const accumulatorRegistry = buildPhaseAccumulatorRegistry({
+    boundary,
+    entries: buildDefaultAccumulatorEntries(),
+  });
+
+  const transcriptWatermark = buildTranscriptWatermark({
+    boundary,
+    lastCanonicalSequence: params.capsule.lastEventSequence,
+    entryCount: 0,
+    boundaryDigest: `transcript-boundary:${params.capsule.lastEventSequence}:0`,
+  });
+
+  return buildRuntimeSnapshotV1({
+    boundary,
+    actorWitness,
+    accumulatorRegistry,
+    transcriptWatermark,
+  });
+}
+
+export function buildPositivePlayerContinuityCapsules(_capsule: GameCheckpointCapsule) {
+  return ["atlas", "echo", "mira", "nyx"].map((playerId) => ({
+    playerId,
+    playerName: playerId,
+    strategyPacket: null,
+    reflectionSummary: null,
+    notes: [],
+    commitments: [],
+    relationships: { allies: [], threats: [] },
+    powerActionMemory: null,
+    roundHistory: [],
+  }));
+}
+
+export function buildPositiveHouseContinuityCapsule(capsule: GameCheckpointCapsule) {
+  return {
+    revisionId: "h1",
+    previousRevisionId: null,
+    updatedAtRound: capsule.round,
+    updatedAtPhase: capsule.phase,
+    summary: "",
+    alliances: [],
+    tensions: [],
+    promises: [],
+    voteBlocs: [],
+    mingleDiscoveries: [],
+    playerTrajectories: [],
+    storyArcs: [],
+    droppedThreads: [],
+    openQuestions: [],
+    changedSincePrevious: "",
+  };
+}
+
+export function enrichCapsuleForV1Candidate(
+  capsule: GameCheckpointCapsule,
+  params: {
+    ownerEpoch: string;
+    eventHeadHash: string;
+    projectionHash?: string;
+    actorCoordinate?: string;
+  },
+): GameCheckpointCapsule {
+  const projectionHash = params.projectionHash ?? sha256StableJson(capsule.projection);
+  const runtimeSnapshot = buildSealedRuntimeSnapshot({
+    ownerEpoch: params.ownerEpoch,
+    eventHeadHash: params.eventHeadHash,
+    projectionHash,
+    capsule,
+    actorCoordinate: params.actorCoordinate,
+  });
+
+  const playerContinuityCapsules = buildPositivePlayerContinuityCapsules(capsule);
+  const houseContinuityCapsule = buildPositiveHouseContinuityCapsule(capsule);
+
+  return {
+    ...capsule,
+    snapshotManifest: {
+      version: 1,
+      components: {
+        projectionTruth: { status: "captured", version: 1 },
+        xstateActor: { status: "captured", version: 1 },
+        phaseAccumulators: { status: "captured", version: 1 },
+        playerContinuity: { status: "private_reference_only", version: 1 },
+        houseContinuity: { status: "private_reference_only", version: 1 },
+        transcriptCursor: { status: "captured", version: 1 },
+        tokenCursor: { status: "captured", version: 1 },
+        ownerEpoch: { status: "captured", version: 1 },
+      },
+    },
+    boundaryCertificate: {
+      gameId: capsule.gameId,
+      ownerEpoch: params.ownerEpoch,
+      boundarySequence: capsule.lastEventSequence,
+      checkpointReason: capsule.checkpointKind,
+      phase: capsule.phase,
+      round: capsule.round,
+      projectionHash,
+      eventCommitReceipt: { sequence: capsule.lastEventSequence, hash: params.eventHeadHash },
+      noPendingEffectsAsserted: true,
+    },
+    runtimeSnapshot,
+    playerContinuityCapsules,
+    houseContinuityCapsule,
+    transcriptCursor: {
+      entries: runtimeSnapshot.transcriptWatermark.entryCount,
+      version: 1,
+      durableBoundary: true,
+      boundaryDigest: runtimeSnapshot.transcriptWatermark.boundaryDigest,
+      lastCanonicalSequence: capsule.lastEventSequence,
+    },
+    tokenCostCursor: capsule.tokenCostCursor,
+    hydrationStatus: {
+      replayableProjection: true,
+      xstateSnapshot: true,
+      phaseAccumulators: true,
+      agentMemoryState: true,
+      pendingLlmCalls: false,
+      tokenCostCursor: true,
+      missingInputs: [],
+    },
+  };
+}
+
 export function createCheckpointCapsule(
   events: readonly CanonicalGameEvent[],
   checkpointKind: GameCheckpointCapsule["checkpointKind"] = "phase_boundary",
@@ -130,7 +307,6 @@ export function createCheckpointCapsule(
   const alivePlayerCount = players.filter((player) => player.status !== "eliminated").length;
   const eliminatedPlayerCount = players.length - alivePlayerCount;
 
-  // U2: include versioned manifest (all but projectionTruth missing for forensic fixtures)
   const snapshotManifest = {
     version: 1 as const,
     components: {
@@ -179,6 +355,7 @@ export function createCheckpointCapsule(
     },
     playerContinuityCapsules: [],
     houseContinuityCapsule: null,
+    runtimeSnapshot: null,
     hydrateable: false,
     hydrationStatus: {
       replayableProjection: true,

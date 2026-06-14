@@ -615,6 +615,7 @@ export async function startGame(
   // Create runner
   const runner = new GameRunner(agents, engineConfig, undefined, {
     gameId,
+    tokenTracker,
     ...(ownerEpoch && {
       durableEventSink: (events) => appendGameEvents(db, { gameId, ownerEpoch, events }),
       durableCheckpointSink: async (checkpoint) => {

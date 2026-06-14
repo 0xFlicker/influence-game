@@ -18,7 +18,7 @@ import type {
 } from "./types";
 import type { CanonicalGameEvent } from "./canonical-events";
 import type { CanonicalGameProjection } from "./game-projection";
-import type { TokenCostCursor } from "./token-tracker.js";
+import type { TokenCostCursor, TokenTracker } from "./token-tracker.js";
 export type { TokenCostCursor };
 
 export type { MingleIntentSummary, MinglePreferredRoomSize, StrategicLens } from "./types";
@@ -51,6 +51,8 @@ export interface GameRunnerOptions {
   durableCheckpointSink?: (checkpoint: GameCheckpointCapsule) => Promise<void> | void;
   /** Optional owner/lease check before accepting post-LLM commits. */
   beforeAcceptedCommit?: () => Promise<void> | void;
+  /** Optional token tracker for checkpoint cursor evidence (API-backed games). */
+  tokenTracker?: TokenTracker;
 }
 
 export type GameCheckpointKind = "initial" | "phase_boundary" | "terminal";
@@ -111,8 +113,96 @@ export interface BoundaryCertificate {
   ownerEpoch?: string;
   boundarySequence: number;
   checkpointReason: GameCheckpointKind;
+  phase?: Phase;
+  round?: number;
+  projectionHash?: string;
   eventCommitReceipt: { sequence: number; hash: string } | null;
   noPendingEffectsAsserted: boolean;
+}
+
+/** Shared boundary tuple binding every Runtime Snapshot v1 artifact. */
+export interface CheckpointBoundaryIdentityV1 {
+  version: 1;
+  ownerEpoch: string;
+  boundarySequence: number;
+  eventHeadHash: string;
+  projectionHash: string;
+  checkpointKind: GameCheckpointKind;
+  phase: Phase;
+  round: number;
+}
+
+export type AccumulatorEntryStatusV1 =
+  | "captured"
+  | "empty"
+  | "drained"
+  | "blocked"
+  | "malformed"
+  | "not_v1_hydratable";
+
+export type AccumulatorProofKindV1 =
+  | "empty_at_boundary"
+  | "drained_at_boundary"
+  | "not_applicable_at_boundary";
+
+export interface AccumulatorProofV1 {
+  kind: AccumulatorProofKindV1;
+  detail?: string;
+}
+
+export interface AccumulatorEntryV1 {
+  id: string;
+  status: AccumulatorEntryStatusV1;
+  proof?: AccumulatorProofV1;
+}
+
+/** Closed v1 registry for phase-boundary runner accumulators. */
+export const PHASE_BOUNDARY_ACCUMULATOR_IDS = [
+  "mingleInbox",
+  "transcriptStreamBuffer",
+  "pendingLlmCalls",
+  "currentAccusations",
+] as const;
+
+export type PhaseBoundaryAccumulatorId = (typeof PHASE_BOUNDARY_ACCUMULATOR_IDS)[number];
+
+export interface PhaseAccumulatorRegistryV1 {
+  version: 1;
+  boundaryClass: "phase_boundary";
+  boundary: CheckpointBoundaryIdentityV1;
+  entries: AccumulatorEntryV1[];
+}
+
+export interface ActorWitnessV1 {
+  version: 1;
+  boundary: CheckpointBoundaryIdentityV1;
+  machineSchemaVersion: "phase-machine-v1";
+  actorCoordinate: string;
+  actorStatus: "active" | "done";
+  contextSummary: {
+    round: number;
+    phase: Phase;
+    alivePlayerIds: UUID[];
+  };
+  futureHydrationInputVersion: 1;
+}
+
+export interface TranscriptWatermarkV1 {
+  version: 1;
+  boundary: CheckpointBoundaryIdentityV1;
+  lastCanonicalSequence: number;
+  entryCount: number;
+  durableBoundary: true;
+  boundaryDigest: string;
+}
+
+/** Versioned runtime snapshot payload persisted inside checkpoint JSONB. */
+export interface RuntimeSnapshotV1 {
+  version: 1;
+  boundary: CheckpointBoundaryIdentityV1;
+  actorWitness: ActorWitnessV1;
+  accumulatorRegistry: PhaseAccumulatorRegistryV1;
+  transcriptWatermark: TranscriptWatermarkV1;
 }
 
 /**
@@ -166,14 +256,16 @@ export interface GameCheckpointCapsule {
   boundaryCertificate?: BoundaryCertificate | null;
   playerContinuityCapsules?: PlayerContinuityCapsule[];
   houseContinuityCapsule?: HouseContinuityCapsule | null;
+  /** Phase-boundary runtime evidence for hydration passport validation (v1). */
+  runtimeSnapshot?: RuntimeSnapshotV1 | null;
   hydrateable: false;
   hydrationStatus: {
-    replayableProjection: true;
-    xstateSnapshot: false;
-    phaseAccumulators: false;
-    agentMemoryState: false;
-    pendingLlmCalls: false;
-    tokenCostCursor: false;
+    replayableProjection: boolean;
+    xstateSnapshot: boolean;
+    phaseAccumulators: boolean;
+    agentMemoryState: boolean;
+    pendingLlmCalls: boolean;
+    tokenCostCursor: boolean;
     missingInputs: string[];
   };
   transcriptCursor: {

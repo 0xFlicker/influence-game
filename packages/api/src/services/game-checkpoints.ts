@@ -1,9 +1,41 @@
 import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import type { GameCheckpointCapsule } from "@influence/engine";
+import type { GameCheckpointCapsule, RuntimeSnapshotV1 } from "@influence/engine";
+import { sealBoundaryIdentity } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { sha256StableJson } from "./stable-hash.js";
+
+function sealRuntimeSnapshot(
+  runtimeSnapshot: RuntimeSnapshotV1 | null | undefined,
+  sealed: {
+    ownerEpoch: string;
+    eventHeadHash: string;
+    projectionHash: string;
+    phase: string;
+    round: number;
+    checkpointKind: string;
+  },
+): RuntimeSnapshotV1 | null {
+  if (!runtimeSnapshot || runtimeSnapshot.version !== 1) return runtimeSnapshot ?? null;
+
+  const boundary = sealBoundaryIdentity(runtimeSnapshot.boundary, {
+    ownerEpoch: sealed.ownerEpoch,
+    eventHeadHash: sealed.eventHeadHash,
+    projectionHash: sealed.projectionHash,
+  });
+
+  return {
+    ...runtimeSnapshot,
+    boundary,
+    actorWitness: { ...runtimeSnapshot.actorWitness, boundary },
+    accumulatorRegistry: {
+      ...runtimeSnapshot.accumulatorRegistry,
+      boundary,
+    },
+    transcriptWatermark: { ...runtimeSnapshot.transcriptWatermark, boundary },
+  };
+}
 
 export type WriteGameCheckpointResult =
   | { ok: true }
@@ -120,24 +152,42 @@ export async function writeGameCheckpoint(
         state: params.checkpoint.state,
         projectionSummary: params.checkpoint.projectionSummary,
       };
+      const sealedBoundary = {
+        ownerEpoch: params.ownerEpoch,
+        eventHeadHash: eventHead.eventHash,
+        projectionHash,
+        phase: params.checkpoint.phase,
+        round: params.checkpoint.round,
+        checkpointKind: params.checkpoint.checkpointKind,
+      };
       const boundaryCertificate = params.checkpoint.boundaryCertificate
         ? {
             ...params.checkpoint.boundaryCertificate,
             ownerEpoch: params.ownerEpoch,
+            phase: params.checkpoint.phase,
+            round: params.checkpoint.round,
+            projectionHash,
             eventCommitReceipt: {
               sequence: params.checkpoint.lastEventSequence,
               hash: eventHead.eventHash,
             },
           }
         : null;
+      const runtimeSnapshot = sealRuntimeSnapshot(params.checkpoint.runtimeSnapshot, sealedBoundary);
       const snapshotPayload = params.checkpoint.snapshotManifest
         ? {
             ...legacySnapshot,
             manifestVersion: params.checkpoint.snapshotManifest.version,
             manifest: params.checkpoint.snapshotManifest,
             boundaryCertificate,
+            runtimeSnapshot,
             playerContinuityCapsules: params.checkpoint.playerContinuityCapsules ?? [],
             houseContinuityCapsule: params.checkpoint.houseContinuityCapsule ?? null,
+            expectedActivePlayerIds: params.checkpoint.state.alivePlayerCount > 0
+              ? Object.values(params.checkpoint.projection.players)
+                  .filter((player) => player.status !== "eliminated")
+                  .map((player) => player.id)
+              : [],
           }
         : legacySnapshot;
 

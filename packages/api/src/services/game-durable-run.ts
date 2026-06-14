@@ -89,6 +89,7 @@ export interface DurableCheckpointSummary {
   round: number | null;
   eventHeadHash: string;
   projectionHash: string;
+  /** Compatibility field; passport verdict is the readiness truth source. */
   hydrateable: boolean;
   hydrationStatus: {
     replayableProjection?: boolean;
@@ -100,6 +101,8 @@ export interface DurableCheckpointSummary {
   createdAt: string;
   /** Validator-derived hydration passport (richer readiness model; candidate != resume). */
   passport: HydrationPassport;
+  /** Explicit: production resume is not implemented for candidate checkpoints. */
+  resumeAvailable: false;
 }
 
 export interface DurableEvidenceSummary {
@@ -542,6 +545,9 @@ export async function getDurableRunInspection(
         transcriptCursor: checkpoint.transcriptCursor,
         tokenCostCursor: checkpoint.tokenCostCursor,
         eventHeadHash: checkpoint.eventHeadHash,
+        projectionHash: checkpoint.projectionHash,
+        checkpointPhase: checkpoint.phase,
+        checkpointRound: checkpoint.round,
         checkpointOwnerEpoch: checkpoint.ownerEpoch,
         degradedReason: checkpoint.degradedReason ?? null,
         createdAt: checkpoint.createdAt,
@@ -570,6 +576,7 @@ export async function getDurableRunInspection(
         ...(checkpoint.degradedReason && { degradedReason: checkpoint.degradedReason }),
         createdAt: checkpoint.createdAt,
         passport: passportResult.passport,
+        resumeAvailable: false,
       };
     });
 

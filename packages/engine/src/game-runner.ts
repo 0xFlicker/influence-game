@@ -23,8 +23,18 @@ import type { UUID, GameConfig } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 
 // Re-export types from the extracted module for backward compatibility
-export type { AgentCallOptions, AgentResponse, AgentTurnEvent, BoundaryCertificate, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseContext, PlayerContinuityCapsule, PowerLobbyExposure, SnapshotManifest, SnapshotComponentStatus, SnapshotManifestComponent, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TokenCostCursor, TranscriptEntry } from "./game-runner.types";
-import type { BoundaryCertificate, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, PlayerContinuityCapsule, SnapshotManifest, TranscriptEntry } from "./game-runner.types";
+export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, BoundaryCertificate, CheckpointBoundaryIdentityV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PowerLobbyExposure, RuntimeSnapshotV1, SnapshotManifest, SnapshotComponentStatus, SnapshotManifestComponent, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TokenCostCursor, TranscriptEntry, TranscriptWatermarkV1 } from "./game-runner.types";
+import type { AccumulatorEntryV1, BoundaryCertificate, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, SnapshotManifest, TranscriptEntry } from "./game-runner.types";
+import type { TokenTracker } from "./token-tracker";
+import {
+  accumulatorProof,
+  buildActorWitness,
+  buildPhaseAccumulatorRegistry,
+  buildRuntimeSnapshotV1,
+  buildTranscriptWatermark,
+  createEngineBoundaryPlaceholder,
+  requiredPhaseBoundaryAccumulatorIds,
+} from "./runtime-snapshot";
 
 // Internal modules
 import { TranscriptLogger } from "./transcript-logger";
@@ -61,6 +71,7 @@ export class GameRunner {
   private readonly durableEventSink?: GameRunnerOptions["durableEventSink"];
   private readonly durableCheckpointSink?: GameRunnerOptions["durableCheckpointSink"];
   private readonly beforeAcceptedCommit?: GameRunnerOptions["beforeAcceptedCommit"];
+  private readonly tokenTracker?: TokenTracker;
   private flushedCanonicalSequence = 0;
   private readonly writtenCheckpointKeys = new Set<string>();
   private houseStrategyBible: HouseStrategyBiblePacket | null = null;
@@ -93,6 +104,7 @@ export class GameRunner {
     this.durableEventSink = options.durableEventSink;
     this.durableCheckpointSink = options.durableCheckpointSink;
     this.beforeAcceptedCommit = options.beforeAcceptedCommit;
+    this.tokenTracker = options.tokenTracker;
 
     // Initialize extracted modules
     this.logger = new TranscriptLogger(this.gameState);
@@ -264,6 +276,7 @@ export class GameRunner {
     continueBuffering: boolean;
     checkpointKind?: GameCheckpointKind;
     phase?: Phase;
+    phaseActor?: PhaseActor;
   }): Promise<void> {
     if (!this.durableEventSink) return;
 
@@ -277,7 +290,7 @@ export class GameRunner {
         this.flushedCanonicalSequence = pendingEvents[pendingEvents.length - 1]!.sequence;
       }
       if (options.checkpointKind) {
-        await this.writeCheckpoint(options.checkpointKind, options.phase);
+        await this.writeCheckpoint(options.checkpointKind, options.phase, options.phaseActor);
       }
       this.logger.flushStreamBuffer();
       if (options.continueBuffering) {
@@ -289,7 +302,38 @@ export class GameRunner {
     }
   }
 
-  private async writeCheckpoint(kind: GameCheckpointKind, phase?: Phase): Promise<void> {
+  private buildPhaseBoundaryAccumulators(): AccumulatorEntryV1[] {
+    const mingleInboxSize = [...this.mingleInbox.values()].reduce((sum, inbox) => sum + inbox.length, 0);
+    const streamBufferDrained = this.logger.isStreamBufferEmpty();
+    const accusationsSize = this._currentAccusations.size;
+
+    return requiredPhaseBoundaryAccumulatorIds().map((id) => {
+      switch (id) {
+        case "mingleInbox":
+          return mingleInboxSize === 0
+            ? { id, status: "empty" as const, proof: accumulatorProof("empty_at_boundary", "no mingle inbox messages at boundary") }
+            : { id, status: "captured" as const };
+        case "transcriptStreamBuffer":
+          return streamBufferDrained
+            ? { id, status: "drained" as const, proof: accumulatorProof("drained_at_boundary", "stream buffer flushed before checkpoint") }
+            : { id, status: "blocked" as const };
+        case "pendingLlmCalls":
+          return { id, status: "empty" as const, proof: accumulatorProof("empty_at_boundary", "no pending LLM calls tracked at phase boundary") };
+        case "currentAccusations":
+          return accusationsSize === 0
+            ? { id, status: "empty" as const, proof: accumulatorProof("empty_at_boundary", "no active accusations at boundary") }
+            : { id, status: "captured" as const };
+        default:
+          return { id, status: "malformed" as const };
+      }
+    });
+  }
+
+  private async writeCheckpoint(
+    kind: GameCheckpointKind,
+    phase?: Phase,
+    phaseActor?: PhaseActor,
+  ): Promise<void> {
     if (!this.durableCheckpointSink) return;
 
     const canonicalEvents = this.gameState.getCanonicalEvents();
@@ -303,32 +347,6 @@ export class GameRunner {
     const alivePlayerCount = allPlayers.filter((player) => player.status === PlayerStatus.ALIVE).length;
     const eliminatedPlayerCount = allPlayers.length - alivePlayerCount;
 
-    // U2: emit versioned snapshot manifest naming all subsystems required for future hydration.
-    // Current slice: projection is captured (replay truth); everything else is intentionally missing.
-    const snapshotManifest: SnapshotManifest = {
-      version: 1,
-      components: {
-        projectionTruth: { status: "captured", version: 1 },
-        xstateActor: { status: "missing" },
-        phaseAccumulators: { status: "missing" },
-        playerContinuity: { status: "missing" },
-        houseContinuity: { status: "missing" },
-        transcriptCursor: { status: "missing" },
-        tokenCursor: { status: "missing" },
-        ownerEpoch: { status: "missing" },
-      },
-    };
-
-    // U3: conservative boundary certificate. Engine asserts write is after its own durable flush; no-pending is local to this runner at boundary.
-    const boundaryCertificate: BoundaryCertificate = {
-      gameId: this.gameState.gameId,
-      boundarySequence: this.flushedCanonicalSequence,
-      checkpointReason: kind,
-      eventCommitReceipt: null, // populated at API owner boundary in durable write checks
-      noPendingEffectsAsserted: true,
-    };
-
-    // U5: collect structured continuity capsules from agents (strategy + memory) and House bible.
     const playerContinuityCapsules: PlayerContinuityCapsule[] = [];
     for (const [id, ag] of this.agents) {
       const partial = ag.getContinuityCapsule?.() ?? null;
@@ -343,6 +361,83 @@ export class GameRunner {
     const houseContinuityCapsule: HouseContinuityCapsule | null = this.houseStrategyBible
       ? { ...this.houseStrategyBible }
       : null;
+
+    const tokenCursor = this.tokenTracker?.toCursor() ?? null;
+    const transcriptEntryCount = this.logger.transcript.length;
+    const hasRuntimeSnapshot = phaseActor != null && kind === "phase_boundary";
+
+    const boundaryCertificate: BoundaryCertificate = {
+      gameId: this.gameState.gameId,
+      boundarySequence: this.flushedCanonicalSequence,
+      checkpointReason: kind,
+      phase: checkpointPhase,
+      round: this.gameState.round,
+      eventCommitReceipt: null,
+      noPendingEffectsAsserted: true,
+    };
+
+    let runtimeSnapshot: RuntimeSnapshotV1 | null = null;
+    if (hasRuntimeSnapshot) {
+      const actorSnapshot = phaseActor.getSnapshot();
+      const boundary = createEngineBoundaryPlaceholder({
+        boundarySequence: this.flushedCanonicalSequence,
+        checkpointKind: kind,
+        phase: checkpointPhase,
+        round: this.gameState.round,
+      });
+      const actorWitness = buildActorWitness({
+        boundary,
+        actorCoordinate: String(actorSnapshot.value),
+        actorStatus: actorSnapshot.status === "done" ? "done" : "active",
+        round: this.gameState.round,
+        phase: checkpointPhase,
+        alivePlayerIds: this.gameState.getAlivePlayers().map((player) => player.id),
+      });
+      const accumulatorRegistry = buildPhaseAccumulatorRegistry({
+        boundary,
+        entries: this.buildPhaseBoundaryAccumulators(),
+      });
+      const transcriptWatermark = buildTranscriptWatermark({
+        boundary,
+        lastCanonicalSequence: this.flushedCanonicalSequence,
+        entryCount: transcriptEntryCount,
+        boundaryDigest: `transcript-boundary:${this.flushedCanonicalSequence}:${transcriptEntryCount}`,
+      });
+      runtimeSnapshot = buildRuntimeSnapshotV1({
+        boundary,
+        actorWitness,
+        accumulatorRegistry,
+        transcriptWatermark,
+      });
+    }
+
+    const snapshotManifest: SnapshotManifest = {
+      version: 1,
+      components: {
+        projectionTruth: { status: "captured", version: 1 },
+        xstateActor: runtimeSnapshot ? { status: "captured", version: 1 } : { status: "missing" },
+        phaseAccumulators: runtimeSnapshot ? { status: "captured", version: 1 } : { status: "missing" },
+        playerContinuity: playerContinuityCapsules.length > 0
+          ? { status: "private_reference_only", version: 1 }
+          : { status: "missing" },
+        houseContinuity: houseContinuityCapsule
+          ? { status: "private_reference_only", version: 1 }
+          : { status: "missing" },
+        transcriptCursor: runtimeSnapshot ? { status: "captured", version: 1 } : { status: "missing" },
+        tokenCursor: tokenCursor ? { status: "captured", version: 1 } : { status: "missing" },
+        ownerEpoch: { status: "missing" },
+      },
+    };
+
+    const transcriptCursor = runtimeSnapshot
+      ? {
+          entries: transcriptEntryCount,
+          version: 1,
+          durableBoundary: true,
+          boundaryDigest: runtimeSnapshot.transcriptWatermark.boundaryDigest,
+          lastCanonicalSequence: this.flushedCanonicalSequence,
+        }
+      : { entries: transcriptEntryCount };
 
     await this.durableCheckpointSink({
       gameId: this.gameState.gameId,
@@ -372,26 +467,24 @@ export class GameRunner {
       boundaryCertificate,
       playerContinuityCapsules,
       houseContinuityCapsule,
+      runtimeSnapshot,
       hydrateable: false,
       hydrationStatus: {
         replayableProjection: true,
-        xstateSnapshot: false,
-        phaseAccumulators: false,
-        agentMemoryState: false,
+        xstateSnapshot: runtimeSnapshot != null,
+        phaseAccumulators: runtimeSnapshot != null,
+        agentMemoryState: playerContinuityCapsules.length > 0,
         pendingLlmCalls: false,
-        tokenCostCursor: false,
+        tokenCostCursor: tokenCursor != null,
         missingInputs: [
-          "xstateSnapshot",
-          "phaseAccumulators",
-          "agentMemoryState",
+          ...(runtimeSnapshot ? [] : ["xstateSnapshot", "phaseAccumulators"]),
+          ...(playerContinuityCapsules.length > 0 ? [] : ["agentMemoryState"]),
           "pendingLlmCalls",
-          "tokenCostCursor",
+          ...(tokenCursor ? [] : ["tokenCostCursor"]),
         ],
       },
-      transcriptCursor: {
-        entries: this.logger.transcript.length,
-      },
-      tokenCostCursor: null,
+      transcriptCursor,
+      tokenCostCursor: tokenCursor,
     });
     this.writtenCheckpointKeys.add(checkpointKey);
   }
@@ -504,6 +597,7 @@ export class GameRunner {
         continueBuffering: true,
         checkpointKind: "phase_boundary",
         phase: this.gameState.getCanonicalEvents().at(-1)?.phase ?? Phase.INIT,
+        phaseActor: actor,
       });
     }
 
