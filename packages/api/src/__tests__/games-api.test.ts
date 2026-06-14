@@ -21,24 +21,20 @@ import { abortAllGames } from "../services/game-lifecycle.js";
 // ---------------------------------------------------------------------------
 
 const TEST_ADMIN_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678";
-const savedApiKey = process.env.OPENAI_API_KEY;
+const savedMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
 
 beforeAll(() => {
   process.env.JWT_SECRET = "test-jwt-secret-for-unit-tests";
   process.env.ADMIN_ADDRESS = TEST_ADMIN_ADDRESS;
-  if (!process.env.OPENAI_API_KEY) {
-    process.env.OPENAI_API_KEY = "test-dummy-key";
-  }
+  process.env.INFLUENCE_API_TEST_MOCK_RUNNER = "true";
 });
 
 afterAll(async () => {
-  // Abort background games started during tests. PgMemoryStore.save() handles
-  // FK errors gracefully, so we don't need to fully await completion.
-  abortAllGames().catch(() => {});
-  if (savedApiKey === undefined) {
-    delete process.env.OPENAI_API_KEY;
+  await abortAllGames();
+  if (savedMockRunner === undefined) {
+    delete process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
   } else {
-    process.env.OPENAI_API_KEY = savedApiKey;
+    process.env.INFLUENCE_API_TEST_MOCK_RUNNER = savedMockRunner;
   }
 });
 

@@ -121,13 +121,13 @@ ALTER TABLE "game_checkpoints" ADD CONSTRAINT "game_checkpoints_event_boundary_f
 --> statement-breakpoint
 ALTER TABLE "game_evidence_manifests" ADD CONSTRAINT "game_evidence_manifests_game_id_games_id_fk" FOREIGN KEY ("game_id") REFERENCES "public"."games"("id") ON DELETE no action ON UPDATE no action;
 --> statement-breakpoint
-ALTER TABLE "game_evidence_manifests" ADD CONSTRAINT "game_evidence_manifests_owner_epoch_game_run_owners_owner_epoch_fk" FOREIGN KEY ("owner_epoch") REFERENCES "public"."game_run_owners"("owner_epoch") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "game_evidence_manifests" ADD CONSTRAINT "game_evidence_owner_epoch_fk" FOREIGN KEY ("owner_epoch") REFERENCES "public"."game_run_owners"("owner_epoch") ON DELETE no action ON UPDATE no action;
 --> statement-breakpoint
 ALTER TABLE "game_evidence_manifests" ADD CONSTRAINT "game_evidence_manifests_game_owner_fk" FOREIGN KEY ("game_id","owner_epoch") REFERENCES "public"."game_run_owners"("game_id","owner_epoch") ON DELETE no action ON UPDATE no action;
 --> statement-breakpoint
 ALTER TABLE "game_evidence_manifests" ADD CONSTRAINT "game_evidence_manifests_event_boundary_fk" FOREIGN KEY ("game_id","event_sequence") REFERENCES "public"."game_events"("game_id","sequence") ON DELETE no action ON UPDATE no action;
 --> statement-breakpoint
-ALTER TABLE "game_evidence_manifest_reads" ADD CONSTRAINT "game_evidence_manifest_reads_manifest_id_game_evidence_manifests_id_fk" FOREIGN KEY ("manifest_id") REFERENCES "public"."game_evidence_manifests"("id") ON DELETE no action ON UPDATE no action;
+ALTER TABLE "game_evidence_manifest_reads" ADD CONSTRAINT "evidence_reads_manifest_fk" FOREIGN KEY ("manifest_id") REFERENCES "public"."game_evidence_manifests"("id") ON DELETE no action ON UPDATE no action;
 --> statement-breakpoint
 ALTER TABLE "game_evidence_manifest_reads" ADD CONSTRAINT "game_evidence_manifest_reads_game_id_games_id_fk" FOREIGN KEY ("game_id") REFERENCES "public"."games"("id") ON DELETE no action ON UPDATE no action;
 --> statement-breakpoint

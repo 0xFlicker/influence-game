@@ -286,8 +286,7 @@ export const gameEvidenceManifests = pgTable("game_evidence_manifests", {
     .notNull()
     .references(() => games.id),
   ownerEpoch: text("owner_epoch")
-    .notNull()
-    .references(() => gameRunOwners.ownerEpoch),
+    .notNull(),
   eventSequence: integer("event_sequence"),
   evidenceType: text("evidence_type").notNull(),
   retentionClass: text("retention_class").notNull().default("debug"),
@@ -307,6 +306,11 @@ export const gameEvidenceManifests = pgTable("game_evidence_manifests", {
   index("game_evidence_manifests_game_id_idx").on(table.gameId),
   index("game_evidence_manifests_event_sequence_idx").on(table.gameId, table.eventSequence),
   foreignKey({
+    name: "game_evidence_owner_epoch_fk",
+    columns: [table.ownerEpoch],
+    foreignColumns: [gameRunOwners.ownerEpoch],
+  }),
+  foreignKey({
     name: "game_evidence_manifests_game_owner_fk",
     columns: [table.gameId, table.ownerEpoch],
     foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
@@ -325,8 +329,7 @@ export const gameEvidenceManifests = pgTable("game_evidence_manifests", {
 export const gameEvidenceManifestReads = pgTable("game_evidence_manifest_reads", {
   id: serial("id").primaryKey(),
   manifestId: text("manifest_id")
-    .notNull()
-    .references(() => gameEvidenceManifests.id),
+    .notNull(),
   gameId: text("game_id")
     .notNull()
     .references(() => games.id),
@@ -340,6 +343,11 @@ export const gameEvidenceManifestReads = pgTable("game_evidence_manifest_reads",
 }, (table) => [
   index("game_evidence_manifest_reads_manifest_id_idx").on(table.manifestId),
   index("game_evidence_manifest_reads_game_id_idx").on(table.gameId),
+  foreignKey({
+    name: "evidence_reads_manifest_fk",
+    columns: [table.manifestId],
+    foreignColumns: [gameEvidenceManifests.id],
+  }),
   check("game_evidence_manifest_reads_outcome_check", sql`${table.outcome} IN ('allowed', 'denied', 'expired', 'redacted')`),
 ]);
 

@@ -17,11 +17,18 @@ import {
   resolveModelForTier,
 } from "@influence/engine";
 import type {
+  AgentResponse,
   IAgent,
+  MingleIntentAction,
   Personality,
   GameConfig,
   GameStateSnapshot,
+  PhaseContext,
+  PowerAction,
+  StrategicReflectionAction,
+  TargetDecision,
   TranscriptEntry,
+  UUID,
   ViewerMode,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
@@ -147,6 +154,113 @@ function resolvePersonality(key: string | null | undefined): Personality {
     return key as Personality;
   }
   return "strategic";
+}
+
+function mockResponse(message: string): AgentResponse {
+  return { thinking: "", message };
+}
+
+class ApiTestMockAgent implements IAgent {
+  readonly id: UUID;
+  readonly name: string;
+
+  constructor(id: UUID, name: string) {
+    this.id = id;
+    this.name = name;
+  }
+
+  onGameStart() {}
+  async onPhaseStart() {}
+  async getIntroduction() { return mockResponse(`Hi, I'm ${this.name}`); }
+  async getLobbyMessage(ctx: PhaseContext) { return mockResponse(`${this.name} round ${ctx.round}`); }
+  async getWhispers(ctx: PhaseContext) {
+    const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
+    if (others.length === 0) return [];
+    return [{ to: [others[0]!.id], text: "secret" }];
+  }
+  async getMingleIntent(ctx: PhaseContext): Promise<MingleIntentAction> {
+    const other = ctx.alivePlayers.find((p) => p.id !== this.id)?.name ?? null;
+    return {
+      seekPlayers: other ? [other] : [],
+      avoidPlayers: [],
+      preferredRoomSize: "any",
+      purpose: "api route test Mingle intent",
+      provisionalTarget: null,
+      noTargetReason: "api route test mock does not pick a target",
+      openingAsk: "compare notes",
+      strategicLens: "room_traffic",
+      strategicLensRationale: "api route test mock watches room traffic",
+      thinking: "api route test Mingle intent",
+    };
+  }
+  async sendRoomMessage(
+    _ctx: PhaseContext,
+    roomMates: string[],
+    conversationHistory?: Array<{ from: string; text: string }>,
+  ) {
+    const alreadySpoke = conversationHistory?.some((m) => m.from === this.name) ?? false;
+    if (alreadySpoke) return null;
+    const others = roomMates.filter((name) => name !== this.name);
+    return others.length > 0 ? mockResponse(`whisper to ${others.join(", ")}`) : null;
+  }
+  async getRumorMessage() { return mockResponse("rumor"); }
+  async getVotes(ctx: PhaseContext) {
+    const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
+    return {
+      empowerTarget: others[0]?.id ?? this.id,
+      exposeTarget: others[others.length - 1]?.id ?? this.id,
+    };
+  }
+  async getEmpowerRevote(ctx: PhaseContext, tiedCandidates: UUID[]) {
+    return {
+      empowerTarget: tiedCandidates[0] ?? ctx.alivePlayers.find((p) => p.id !== this.id)?.id ?? this.id,
+      thinking: "api route test empower revote",
+    };
+  }
+  async getPowerAction(_ctx: PhaseContext, candidates: [UUID, UUID]): Promise<PowerAction> {
+    return { action: "protect", target: candidates[0] };
+  }
+  async getCouncilVote(_ctx: PhaseContext, candidates: [UUID, UUID]): Promise<{ target: UUID }> {
+    return { target: candidates[0] };
+  }
+  async getLastMessage() { return mockResponse("goodbye"); }
+  async getDiaryEntry() { return mockResponse("diary entry"); }
+  async getPlea() { return mockResponse("please keep me"); }
+  async getEndgameEliminationVote(ctx: PhaseContext): Promise<TargetDecision> {
+    const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
+    return { target: others[0]?.id ?? this.id, thinking: "api route test endgame vote" };
+  }
+  async getAccusation(ctx: PhaseContext) {
+    const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
+    return { targetId: others[0]?.id ?? this.id, text: "accusation" };
+  }
+  async getDefense() { return mockResponse("defense"); }
+  async getOpeningStatement() { return mockResponse("opening"); }
+  async getJuryQuestion(_ctx: PhaseContext, finalistIds: [UUID, UUID]) {
+    return { targetFinalistId: finalistIds[0], question: "why?" };
+  }
+  async getJuryAnswer() { return mockResponse("because"); }
+  async getClosingArgument() { return mockResponse("closing"); }
+  async getJuryVote(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<TargetDecision> {
+    return { target: finalistIds[0], thinking: "api route test jury vote" };
+  }
+  async getStrategicReflection(_ctx: PhaseContext): Promise<StrategicReflectionAction> {
+    return {
+      certainties: [],
+      suspicions: [],
+      allies: [],
+      threats: [],
+      plan: "api route test plan",
+      strategicLens: "broad_read",
+      strategicLensRationale: "api route test broad reflection",
+      thinking: "api route test strategic reflection",
+    };
+  }
+
+  updateAlly(_playerName: string): void {}
+  updateThreat(_playerName: string): void {}
+  addNote(_playerName: string, _note: string): void {}
+  removeFromMemory(_playerName: string): void {}
 }
 
 export function serializeTranscriptEntry(
@@ -420,12 +534,13 @@ export async function startGame(
   // Parse game config
   const gameConfig = JSON.parse(game.config) as Record<string, unknown>;
 
-  // Create OpenAI client
-  const llmConfig = createLlmClientFromEnv();
+  const useTestMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER === "true";
+  const llmConfig = useTestMockRunner ? null : createLlmClientFromEnv();
   if (!llmConfig) {
-    return { error: "LLM provider not configured" };
+    if (!useTestMockRunner) {
+      return { error: "LLM provider not configured" };
+    }
   }
-  const openai = llmConfig.client;
 
   // Create token tracker
   const tokenTracker = new TokenTracker();
@@ -438,6 +553,14 @@ export async function startGame(
       strategyHints?: string;
       personaKey?: string;
     };
+    if (useTestMockRunner) {
+      return new ApiTestMockAgent(player.id, persona.name);
+    }
+
+    if (!llmConfig) {
+      throw new Error("LLM provider not configured");
+    }
+
     const agentCfg = JSON.parse(player.agentConfig) as {
       model?: string;
       temperature?: number;
@@ -453,7 +576,7 @@ export async function startGame(
       player.id,
       persona.name,
       personality,
-      openai,
+      llmConfig.client,
       model,
       undefined,
       memoryStore,

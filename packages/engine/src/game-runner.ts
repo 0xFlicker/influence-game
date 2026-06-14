@@ -531,9 +531,8 @@ export class GameRunner {
 
     try {
       const summary = await this.houseInterviewer.generateHouseSummary(summaryContext);
-      const summaryWithFacts = this.attachRoundFactsToSummary(summary, evidence.roundFacts);
-      this.emitHouseSummaryTurn("house-mc-summary", resolvedPhase, summaryWithFacts, "system", evidence.roundFacts);
-      this.logger.logSystem(`[House MC] ${summaryWithFacts.summary}`, resolvedPhase);
+      this.emitHouseSummaryTurn("house-mc-summary", resolvedPhase, summary, "system", evidence.roundFacts);
+      this.logger.logSystem(summary.summary, resolvedPhase);
     } catch {
       // non-fatal for summary generation
     }
@@ -586,48 +585,6 @@ export class GameRunner {
       ...(this.houseStrategyBible?.updatedAtPhase && { fromPhase: this.houseStrategyBible.updatedAtPhase }),
       toPhase,
     };
-  }
-
-  private attachRoundFactsToSummary(summary: HouseGameplaySummaryResult, facts: HouseRoundFacts): HouseGameplaySummaryResult {
-    const factsLine = this.formatHouseRoundFacts(facts);
-    return {
-      ...summary,
-      summary: summary.summary.startsWith(factsLine)
-        ? summary.summary
-        : `${factsLine}\n${summary.summary}`,
-    };
-  }
-
-  private formatHouseRoundFacts(facts: HouseRoundFacts): string {
-    const method = facts.empowerMethod ? ` via ${facts.empowerMethod}` : "";
-    const empowered = facts.empoweredName ? `${facts.empoweredName}${method}` : "unknown";
-    const power = facts.powerAction
-      ? `${facts.powerAction.action}${facts.powerAction.targetName ? ` -> ${facts.powerAction.targetName}` : ""}`
-      : "unknown";
-    const candidates = facts.councilCandidates ? facts.councilCandidates.join(" vs ") : "none";
-    const councilMethod = facts.councilMethod ? ` (${facts.councilMethod})` : "";
-    const councilVote = facts.councilVoteCounts.length > 0
-      ? this.formatVoteCounts(facts.councilVoteCounts)
-      : facts.autoEliminatedName
-        ? "skipped"
-        : "none";
-    return [
-      `Round facts: empowered=${empowered}`,
-      `empower vote=${this.formatVoteCounts(facts.empowerVoteCounts)}`,
-      `expose vote=${this.formatVoteCounts(facts.exposeVoteCounts)}`,
-      `power=${power}`,
-      `shield=${facts.shieldGrantedName ?? "none"}`,
-      `council=${candidates}`,
-      `council vote=${councilVote}${councilMethod}`,
-      `eliminated=${facts.eliminatedName ?? facts.autoEliminatedName ?? "none"}`,
-    ].join("; ") + ".";
-  }
-
-  private formatVoteCounts(counts: HouseVoteCount[]): string {
-    if (counts.length === 0) return "none";
-    return counts
-      .map((count) => `${count.playerName} ${count.votes}`)
-      .join(", ");
   }
 
   private buildHouseRoundFacts(round: number): HouseRoundFacts {

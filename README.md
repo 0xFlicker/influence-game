@@ -54,10 +54,9 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 # long-form summaries, and diary producer briefs:
 #   --variant mingle --chatty --rich-producer --game-timeout-sec 7200 --llm-timeout-sec 300
 #
-# Add --house-summaries to print only House MC summaries live, without
-# --chatty reasoning/transcript output. Each line starts with deterministic
-# round facts: empowered player, vote counts, power action, shield, council,
-# and elimination:
+# Add --house-summaries to print only concise House MC summaries live, without
+# --chatty reasoning/transcript output. Deterministic round facts stay in the
+# structured house-mc-summary payload for tooling.
 #   --variant mingle --house-summaries --game-timeout-sec 7200 --llm-timeout-sec 300
 
 # Validation variants
@@ -76,7 +75,7 @@ cd packages/engine
 bun run mcp:game -- docs/simulations
 ```
 
-The game MCP is read-only. It discovers past and currently-writing simulation batches, addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and can list sessions/games, filter events, search logs, read player timelines, and return cited linked records when source pointers are present. Passing a single batch directory still works for focused inspection, but returned records include a `sessionId`. For strategy-observability validation, search turns logs for `mingle-intent`, `mingle-room-assignment`, `rumor`, `strategic-reflection`, `strategy-packet`, `strategicLens`, `strategyPacketUse`, `strategySignal`, `movementPurpose`, or `empower-revote`. For House producer validation, search for `house-mc-summary`, `[House MC]`, `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or named House alliances.
+The game MCP is read-only. It discovers past and currently-writing simulation batches, addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and can list sessions/games, filter events, search logs, read player timelines, and return cited linked records when source pointers are present. Passing a single batch directory still works for focused inspection, but returned records include a `sessionId`. For strategy-observability validation, search turns logs for `mingle-intent`, `mingle-room-assignment`, `rumor`, `strategic-reflection`, `strategy-packet`, `strategicLens`, `strategyPacketUse`, `strategySignal`, `movementPurpose`, or `empower-revote`. For House producer validation, search for `house-mc-summary`, legacy `[House MC]`, `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or named House alliances.
 
 ### 3. Run the full stack (API + Web UI)
 
@@ -188,6 +187,12 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `LINODE_OBJ_SECRET_KEY` | Required for S3 | -- | Linode Object Storage secret key |
 | `LINODE_OBJ_BUCKET` | Required for S3 | -- | Linode Object Storage bucket |
 
+For local API development and DB-backed tests, start the shared Postgres container and ensure both local databases exist:
+
+```bash
+bun run db:bootstrap
+```
+
 When the Linode variables are absent in local dev, the API falls back to filesystem-backed upload URLs and stores files under `packages/api/.local-uploads/` by default. Staging/production should use the S3 backend.
 
 ### Web (`packages/web`) -- set in `packages/web/.env.local`
@@ -246,8 +251,8 @@ Options:
                    or power-lobby-mingle (default: baseline)
   --chatty         Print live formatted transcript output
   --house-summaries
-                   Print concise House MC summaries with deterministic round facts live
-                   without chatty reasoning output
+                   Print concise House MC summaries live without chatty
+                   reasoning output
   --strategic-reflections
                    Include hidden strategic-reflection and Strategy Thread records in artifacts
   --rich-producer  Enable House Strategy Bible packets, long-form House summaries,

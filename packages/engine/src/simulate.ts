@@ -51,7 +51,8 @@
  * Use `--diary` when you only want bounded Council diary sessions without the
  * private rich-producer packet stack.
  * Use `--house-summaries` when you want concise House MC summaries printed live
- * without the full `--chatty` transcript or hidden reasoning output.
+ * without the full `--chatty` transcript or hidden reasoning output. Structured
+ * round facts remain in the house-mc-summary payload for tooling.
  */
 
 import type OpenAI from "openai";

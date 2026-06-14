@@ -252,9 +252,9 @@ describe("GameRunner stream listener", () => {
       expect(summary.response).toHaveProperty("packetRevisionId");
       expect(summary.response).toHaveProperty("summary");
       expect(summary.response).toHaveProperty("roundFacts");
-      expect(summary.response.summary).toContain("Round facts:");
-      expect(summary.response.summary).toContain("power=pass;");
-      expect(summary.response.summary).not.toContain("power=pass ->");
+      expect(summary.response.summary).not.toContain("[House MC]");
+      expect(summary.response.summary).not.toContain("Round facts:");
+      expect(summary.response.summary).not.toContain("power=pass;");
       expect(summary.response.roundFacts).toMatchObject({
         round: expect.any(Number),
         empoweredName: expect.any(String),
@@ -263,6 +263,8 @@ describe("GameRunner stream listener", () => {
         powerAction: { action: "pass", targetName: null },
       });
     }
+    expect(runner.transcriptLog.some((entry) => entry.text.includes("[House MC]"))).toBe(false);
+    expect(runner.transcriptLog.some((entry) => entry.text.includes("Round facts:"))).toBe(false);
 
     const longForm = events.find((event) => event.type === "agent_turn" && event.action === "house-long-form-summary");
     expect(longForm).toBeDefined();

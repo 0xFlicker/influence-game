@@ -126,6 +126,7 @@ describe("simulation instrumentation", () => {
     const game = instrumentGame(
       [
         systemEntry(1, Phase.COUNCIL, "[House MC] The Threaded Vote Bloc is forming around Atlas."),
+        systemEntry(1, Phase.COUNCIL, "Round 2: 4 players remain. The House sees a field of hidden motives."),
         systemEntry(1, Phase.COUNCIL, "A normal system line."),
       ],
       {
@@ -142,7 +143,7 @@ describe("simulation instrumentation", () => {
       mcSummaryCalls: 1,
       longFormSummaryCalls: 1,
       producerBriefCalls: 3,
-      mcSummaryTranscriptEntries: 1,
+      mcSummaryTranscriptEntries: 2,
       totalHouseProducerCalls: 6,
     });
     expect(game.actionUsage.byAction["strategy-bible"]?.callCount).toBe(1);
@@ -153,7 +154,7 @@ describe("simulation instrumentation", () => {
     expect(aggregate.houseProducer.mcSummaryCalls).toBe(2);
     expect(aggregate.houseProducer.longFormSummaryCalls).toBe(2);
     expect(aggregate.houseProducer.producerBriefCalls).toBe(6);
-    expect(aggregate.houseProducer.mcSummaryTranscriptEntries).toBe(2);
+    expect(aggregate.houseProducer.mcSummaryTranscriptEntries).toBe(4);
     expect(aggregate.houseProducer.totalHouseProducerCalls).toBe(12);
   });
 

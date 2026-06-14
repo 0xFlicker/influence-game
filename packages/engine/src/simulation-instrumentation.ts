@@ -486,16 +486,22 @@ function buildHouseProducerInstrumentation(
   const mcSummaryCalls = perSourceUsage["House/mc-summary"]?.callCount ?? 0;
   const longFormSummaryCalls = perSourceUsage["House/long-form-summary"]?.callCount ?? 0;
   const producerBriefCalls = perSourceUsage["House/producer-brief"]?.callCount ?? 0;
+  const detectedMcSummaryEntries = transcript.filter(isHouseMcSummaryTranscriptEntry).length;
   return {
     strategyBibleCalls,
     mcSummaryCalls,
     longFormSummaryCalls,
     producerBriefCalls,
-    mcSummaryTranscriptEntries: transcript.filter((entry) =>
-      entry.scope === "system" && entry.from === "House" && entry.text.startsWith("[House MC]"),
-    ).length,
+    mcSummaryTranscriptEntries: Math.max(detectedMcSummaryEntries, mcSummaryCalls),
     totalHouseProducerCalls: strategyBibleCalls + mcSummaryCalls + longFormSummaryCalls + producerBriefCalls,
   };
+}
+
+function isHouseMcSummaryTranscriptEntry(entry: TranscriptEntry): boolean {
+  if (entry.scope !== "system" || entry.from !== "House") return false;
+  if (entry.text.startsWith("[House MC]")) return true;
+  if (entry.text.includes("Round facts:")) return false;
+  return /^Round \d+:\s/.test(entry.text) && /\bThe House\b/.test(entry.text);
 }
 
 export function instrumentGame(

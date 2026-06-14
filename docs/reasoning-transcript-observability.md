@@ -43,7 +43,7 @@ Phase runners receive the rich result, record only the narrow game-state value w
 - `phases/rumor.ts`: emits anonymous rumor turns with public rumor text plus private `strategicLens` / `strategicLensRationale` metadata for producer/debug review.
 - `diary-room.ts`: emits hidden `strategic-reflection` and `strategy-packet` agent turns when `enableStrategicReflections` is enabled and the reflection produces a packet. Reflection and packet records include the selected strategic lens.
 - `diary-room.ts`: emits private `house-producer-brief` agent turns before diary questions when `enableHouseProducerBriefs` is enabled. The brief can sharpen the House's question but must separate safe-to-reveal material from private producer reads.
-- `game-runner.ts`: emits one House interstitial after each completed normal round. `house-mc-summary` plus a `[House MC]` system transcript entry are on by default unless `enableHouseRoundSummaries` is `false`; `house-strategy-bible` and `house-long-form-summary` are private producer/debug records gated by rich producer config.
+- `game-runner.ts`: emits one House interstitial after each completed normal round. `house-mc-summary` records plus clean House system transcript prose are on by default unless `enableHouseRoundSummaries` is `false`; `house-strategy-bible` and `house-long-form-summary` are private producer/debug records gated by rich producer config.
 - Every phase runner that resolves an agent call also emits an `agent_turn` stream event via `logger.emitAgentTurn(...)` with the normalized response the game used.
 - Decision agent turns include `response.strategyPacketUse` only when a live Strategy Thread packet existed and the model self-reported how the decision used it (`followed`, `revised`, `ignored`, or `deferred`).
 - Mingle intent, rumor, and strategic-reflection records include `response.strategicLens` and `response.strategicLensRationale` so validation can distinguish vote math, room traffic, coalition geometry, promise debt, social cover, broad reads, and sparse presentation reads without parsing prose.
@@ -116,19 +116,18 @@ function formatEntry(e: TranscriptEntry): string {
 }
 ```
 
-For live House narration without transcript/reasoning spam, `--house-summaries` prints only concise `house-mc-summary` turns to the launching terminal. The terminal summary is prefixed with deterministic round facts for empowered player, empower/expose counts, power action, shield, Council candidates/votes, and elimination before the House's prose read. `pass` power actions are rendered without a target because passing declines intervention; it does not transfer power to another player:
+For live House narration without transcript/reasoning spam, `--house-summaries` prints only concise `house-mc-summary` turns to the launching terminal. Deterministic round facts for empowered player, empower/expose counts, power action, shield, Council candidates/votes, and elimination stay in `response.roundFacts` for tooling instead of being prepended to the viewer-facing House prose. `pass` power actions are represented without a target because passing declines intervention; it does not transfer power to another player:
 
 ```bash
 bun run simulate -- --variant mingle --house-summaries
 ```
 
-House MC summaries (`house-interviewer.ts` + direct calls in `game-runner.ts`) are emitted as structured `house-mc-summary` agent-turn records and logged via the same `logSystem` path for richer traces. The same deterministic facts are also stored under `response.roundFacts`, so MCP/replay tooling does not have to parse the summary prose:
+House MC summaries (`house-interviewer.ts` + direct calls in `game-runner.ts`) are emitted as structured `house-mc-summary` agent-turn records and logged via the same `logSystem` path for richer traces. The system transcript receives clean House prose only; deterministic facts are stored under `response.roundFacts`, so MCP/replay tooling does not have to parse the summary prose:
 
 ```ts
 const summary = await this.houseInterviewer.generateHouseSummary(summaryContext);
-const summaryWithFacts = this.attachRoundFactsToSummary(summary, evidence.roundFacts);
-this.emitHouseSummaryTurn("house-mc-summary", resolvedPhase, summaryWithFacts, "system", evidence.roundFacts);
-this.logger.logSystem(`[House MC] ${summaryWithFacts.summary}`, resolvedPhase);
+this.emitHouseSummaryTurn("house-mc-summary", resolvedPhase, summary, "system", evidence.roundFacts);
+this.logger.logSystem(summary.summary, resolvedPhase);
 ```
 
 `PowerAction` interface itself (types.ts) stays narrow:
@@ -211,8 +210,8 @@ See `formatEntry` above. Yellow House lines + indented gray thinking + cyan reas
 ```ts
 try {
   const summary = await this.houseInterviewer.generateHouseSummary(summaryContext);
-  this.emitHouseSummaryTurn("house-mc-summary", resolvedPhase, summary, "system");
-  this.logger.logSystem(`[House MC] ${summary.summary}`, resolvedPhase);
+  this.emitHouseSummaryTurn("house-mc-summary", resolvedPhase, summary, "system", evidence.roundFacts);
+  this.logger.logSystem(summary.summary, resolvedPhase);
 } catch {
   // non-fatal for House narration
 }
@@ -251,7 +250,7 @@ Useful validation queries:
 - `search_logs` over `sources: ["turns"]` for `strategy-packet`
 - `search_logs` over `sources: ["turns"]` for `strategyPacketUse` or a packet `revisionId`
 - `search_logs` over `sources: ["turns"]` for `strategySignal` or `movementPurpose`
-- `search_logs` over `sources: ["turns", "transcript"]` for `house-mc-summary` or `[House MC]`
+- `search_logs` over `sources: ["turns", "transcript"]` for `house-mc-summary` or legacy `[House MC]`
 - `search_logs` over `sources: ["turns"]` for `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or a House alliance name
 
 Update simulation batch notes (the dated `.md` next to `results.json` etc.) with observations about the quality of the surfaced reasoning, not just win rates or token counts. When writing scripts, read `game-N-turns.jsonl` for per-turn decisions, `game-N-events.jsonl` for accepted domain facts, and `game-N.json` for full transcript context.
