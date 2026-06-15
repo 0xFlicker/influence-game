@@ -20,26 +20,35 @@ export interface PrivateTraceStorageAdapter {
   headObject(input: { bucket: string; key: string }): Promise<{ contentLength?: number; contentType?: string }>;
 }
 
+export interface PrivateTraceStorageConfig {
+  endpoint: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+}
+
 let privateTraceS3Client: S3Client | null = null;
+let privateTraceS3ClientKey: string | null = null;
 
 function getPrivateTraceS3Client(): S3Client {
-  if (!privateTraceS3Client) {
-    const endpoint = process.env.LINODE_OBJ_ENDPOINT;
-    const accessKeyId = process.env.LINODE_OBJ_ACCESS_KEY;
-    const secretAccessKey = process.env.LINODE_OBJ_SECRET_KEY;
+  const config = getPrivateTraceStorageConfig();
+  const clientKey = JSON.stringify([
+    config.endpoint,
+    config.accessKeyId,
+    config.secretAccessKey,
+  ]);
 
-    if (!endpoint || !accessKeyId || !secretAccessKey) {
-      throw new Error(
-        "LINODE_OBJ_ENDPOINT, LINODE_OBJ_ACCESS_KEY, and LINODE_OBJ_SECRET_KEY must be set",
-      );
-    }
-
+  if (!privateTraceS3Client || privateTraceS3ClientKey !== clientKey) {
     privateTraceS3Client = new S3Client({
       region: "us-iad",
-      endpoint,
-      credentials: { accessKeyId, secretAccessKey },
+      endpoint: config.endpoint,
+      credentials: {
+        accessKeyId: config.accessKeyId,
+        secretAccessKey: config.secretAccessKey,
+      },
       forcePathStyle: true,
     });
+    privateTraceS3ClientKey = clientKey;
   }
   return privateTraceS3Client;
 }
@@ -50,6 +59,26 @@ export function getPrivateTraceBucket(): string {
     throw new Error("LINODE_PRIVATE_EVIDENCE_BUCKET must be configured for private evidence storage");
   }
   return bucket;
+}
+
+export function getPrivateTraceStorageConfig(): PrivateTraceStorageConfig {
+  const endpoint = process.env.LINODE_PRIVATE_EVIDENCE_ENDPOINT ?? process.env.LINODE_OBJ_ENDPOINT;
+  const accessKeyId = process.env.LINODE_PRIVATE_EVIDENCE_ACCESS_KEY ?? process.env.LINODE_OBJ_ACCESS_KEY;
+  const secretAccessKey = process.env.LINODE_PRIVATE_EVIDENCE_SECRET_KEY ?? process.env.LINODE_OBJ_SECRET_KEY;
+  const missing: string[] = [];
+  if (!endpoint) missing.push("LINODE_PRIVATE_EVIDENCE_ENDPOINT or LINODE_OBJ_ENDPOINT");
+  if (!accessKeyId) missing.push("LINODE_PRIVATE_EVIDENCE_ACCESS_KEY or LINODE_OBJ_ACCESS_KEY");
+  if (!secretAccessKey) missing.push("LINODE_PRIVATE_EVIDENCE_SECRET_KEY or LINODE_OBJ_SECRET_KEY");
+  if (missing.length > 0 || !endpoint || !accessKeyId || !secretAccessKey) {
+    throw new Error(`${missing.join(", ")} must be set for private evidence storage`);
+  }
+
+  return {
+    endpoint,
+    accessKeyId,
+    secretAccessKey,
+    bucket: getPrivateTraceBucket(),
+  };
 }
 
 export class S3PrivateTraceStorageAdapter implements PrivateTraceStorageAdapter {

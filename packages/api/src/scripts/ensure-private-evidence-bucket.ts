@@ -1,15 +1,7 @@
 import { CreateBucketCommand, HeadBucketCommand, S3Client } from "@aws-sdk/client-s3";
+import { getPrivateTraceStorageConfig } from "../services/private-trace-storage.js";
 
-const endpoint = process.env.LINODE_OBJ_ENDPOINT;
-const accessKeyId = process.env.LINODE_OBJ_ACCESS_KEY;
-const secretAccessKey = process.env.LINODE_OBJ_SECRET_KEY;
-const bucket = process.env.LINODE_PRIVATE_EVIDENCE_BUCKET;
-
-if (!endpoint || !accessKeyId || !secretAccessKey || !bucket) {
-  throw new Error(
-    "LINODE_OBJ_ENDPOINT, LINODE_OBJ_ACCESS_KEY, LINODE_OBJ_SECRET_KEY, and LINODE_PRIVATE_EVIDENCE_BUCKET are required",
-  );
-}
+const { endpoint, accessKeyId, secretAccessKey, bucket } = getPrivateTraceStorageConfig();
 
 function httpStatus(error: unknown): number | undefined {
   if (!error || typeof error !== "object" || !("$metadata" in error)) {

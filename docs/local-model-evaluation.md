@@ -92,16 +92,10 @@ The server is read-only and scans the simulation corpus on demand. It addresses 
 For local API durable-run inspection, run the Trace MCP from the API package:
 
 ```bash
-bun run s3:bootstrap
-set -a
-source .env.private-trace.local
-set +a
-
-cd packages/api
-bun run mcp:trace
+./scripts/run-trace-mcp-local.sh
 ```
 
-Use this when the interesting run happened through the API lifecycle rather than the simulator. `list_manifests` shows private trace metadata and counts for one durable run; `read_content` opens one raw JSON/JSONL trace through the evidence manifest access path; `search_reasoning_traces` does run-scoped content search with bounded previews. This is a local producer/debug tool only and depends on local DB/private-storage env. Private trace validation requires local S3-compatible private evidence storage; `bun run trace:local:smoke` bootstraps Postgres plus the local private bucket and proves the writer/read/search path against a real object store. It does not add product/admin MCP auth, browser login, or a web UI.
+Use this when the interesting run happened through the API lifecycle rather than the simulator. `list_manifests` shows private trace metadata and counts for one durable run; `read_content` opens one raw JSON/JSONL trace through the evidence manifest access path; `search_reasoning_traces` does run-scoped content search with bounded previews. This is a local producer/debug tool only and depends on local DB/private-storage env. The wrapper bootstraps Postgres plus the local private bucket, sources private evidence endpoint/access-key env vars, and keeps setup output off stdout so stdio MCP clients can launch it as a one-line command. `bun run trace:local:smoke` proves the writer/read/search path against a real object store. It does not add product/admin MCP auth, browser login, or a web UI.
 
 ## Full Stack Local Provider
 

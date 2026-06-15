@@ -11,6 +11,9 @@ import { setupTestDB } from "./test-utils.js";
 
 const ENV_KEYS = [
   "LINODE_OBJ_BUCKET",
+  "LINODE_PRIVATE_EVIDENCE_ENDPOINT",
+  "LINODE_PRIVATE_EVIDENCE_ACCESS_KEY",
+  "LINODE_PRIVATE_EVIDENCE_SECRET_KEY",
   "LINODE_PRIVATE_EVIDENCE_BUCKET",
   "INFLUENCE_PRIVATE_TRACE_MAX_BYTES",
 ] as const;
@@ -134,6 +137,9 @@ describe("private trace writer", () => {
   beforeEach(async () => {
     savedEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
     process.env.LINODE_OBJ_BUCKET = "public-profile-bucket";
+    delete process.env.LINODE_PRIVATE_EVIDENCE_ENDPOINT;
+    delete process.env.LINODE_PRIVATE_EVIDENCE_ACCESS_KEY;
+    delete process.env.LINODE_PRIVATE_EVIDENCE_SECRET_KEY;
     process.env.LINODE_PRIVATE_EVIDENCE_BUCKET = "private-evidence-bucket";
     delete process.env.INFLUENCE_PRIVATE_TRACE_MAX_BYTES;
     db = await setupTestDB();
