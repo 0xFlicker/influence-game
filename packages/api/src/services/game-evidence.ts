@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 
-export interface EvidenceStoragePointer {
+export interface PrivateContentStoragePointer {
   provider: string;
   bucket: string;
   key: string;
@@ -17,7 +17,7 @@ export interface CreateEvidenceManifestInput {
   retentionClass?: string;
   accessScope?: "producer_admin";
   expiresAt?: string;
-  storage?: EvidenceStoragePointer;
+  storage?: PrivateContentStoragePointer;
   sourcePointers?: ReadonlyArray<Record<string, unknown>>;
   metadata?: Record<string, unknown>;
 }
@@ -26,26 +26,26 @@ export type CreateEvidenceManifestResult =
   | { ok: true; manifestId: string }
   | { ok: false; error: string };
 
-function validateEvidenceStoragePointer(storage?: EvidenceStoragePointer, gameId?: string): void {
+function validatePrivateContentStoragePointer(storage?: PrivateContentStoragePointer, gameId?: string): void {
   if (!storage) return;
 
   if (storage.provider !== "linode_object_storage") {
-    throw new Error("private evidence storage must use linode_object_storage");
+    throw new Error("private content storage must use linode_object_storage");
   }
   if (!storage.bucket || !storage.key) {
-    throw new Error("private evidence storage requires bucket and key");
+    throw new Error("private content storage requires bucket and key");
   }
   if (process.env.LINODE_OBJ_BUCKET && storage.bucket === process.env.LINODE_OBJ_BUCKET) {
-    throw new Error("private evidence storage must not use the public profile-picture bucket");
+    throw new Error("private content storage must not use the public profile-picture bucket");
   }
-  const privateBucket = process.env.LINODE_PRIVATE_EVIDENCE_BUCKET;
-  if (!privateBucket) {
-    throw new Error("LINODE_PRIVATE_EVIDENCE_BUCKET must be configured for private evidence storage");
+  const privateContentBucket = process.env.LINODE_PRIVATE_CONTENT_BUCKET;
+  if (!privateContentBucket) {
+    throw new Error("LINODE_PRIVATE_CONTENT_BUCKET must be configured for private content storage");
   }
-  if (storage.bucket !== privateBucket) {
-    throw new Error("private evidence storage must use the configured private evidence bucket");
+  if (storage.bucket !== privateContentBucket) {
+    throw new Error("private content storage must use the configured private content bucket");
   }
-  const requiredPrefix = gameId ? `evidence/${gameId}/` : "evidence/";
+  const requiredPrefix = gameId ? `content/${gameId}/` : "content/";
   if (
     storage.key.startsWith("/") ||
     storage.key.includes("..") ||
@@ -54,7 +54,7 @@ function validateEvidenceStoragePointer(storage?: EvidenceStoragePointer, gameId
     storage.key.startsWith("http://") ||
     storage.key.startsWith("https://")
   ) {
-    throw new Error("private evidence storage key must be a private object key");
+    throw new Error("private content storage key must be a private object key");
   }
 }
 
@@ -81,7 +81,7 @@ export async function createEvidenceManifest(
   input: CreateEvidenceManifestInput,
 ): Promise<CreateEvidenceManifestResult> {
   try {
-    validateEvidenceStoragePointer(input.storage, input.gameId);
+    validatePrivateContentStoragePointer(input.storage, input.gameId);
     const manifestId = randomUUID();
 
     await db.transaction(async (tx) => {
@@ -152,6 +152,6 @@ export async function createEvidenceManifest(
   }
 }
 
-export function assertPrivateEvidenceStoragePointer(storage?: EvidenceStoragePointer): void {
-  validateEvidenceStoragePointer(storage);
+export function assertPrivateContentStoragePointer(storage?: PrivateContentStoragePointer): void {
+  validatePrivateContentStoragePointer(storage);
 }

@@ -410,7 +410,7 @@ Simulation batches are written under `packages/engine/docs/simulations/`. Use `g
 
 For local MCP queries across past and current simulations, run `cd packages/engine && bun run mcp:game -- docs/simulations`. The MCP is read-only, scans the corpus on demand, and requires `sessionId + gameNumber` for game-specific projection/timeline queries. Use `search_logs` over `sources: ["turns"]` for `mingle-intent`, `mingle-room-assignment`, `rumor`, `strategic-reflection`, `strategy-packet`, `strategicLens`, `strategyPacketUse`, `strategySignal`, `movementPurpose`, or `empower-revote` when validating whether agents are using open strategic choices. Use `search_logs` over `sources: ["turns", "transcript"]` for `house-mc-summary`, legacy `[House MC]`, `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or named House alliances when validating House producer carry-forward.
 
-For API-backed durable runs, use `./scripts/run-trace-mcp-local.sh` from a trusted local environment. This local Trace MCP reads Postgres durable-run state and private evidence manifests, then opens raw trace content only through the explicit `read_content` tool. The wrapper bootstraps local Postgres and local private S3, sources `.env.private-trace.local`, runs API migrations, sends setup logs to stderr, and then starts the stdio MCP server. It relies on the same local DB/private-storage env as the API (`DATABASE_URL`, `LINODE_PRIVATE_EVIDENCE_ENDPOINT`, `LINODE_PRIVATE_EVIDENCE_ACCESS_KEY`, `LINODE_PRIVATE_EVIDENCE_SECRET_KEY`, `LINODE_PRIVATE_EVIDENCE_BUCKET`; with fallback to the shared `LINODE_OBJ_*` endpoint/credentials) and is deliberately not a production/admin MCP surface. Use `bun run trace:local:smoke` for a one-command local Postgres + private S3 writer/read/search validation. Keep browser login, releasable packaging, cross-run trace search, and web UI affordances out until those are designed as their own slice.
+For API-backed durable runs, use `./scripts/run-trace-mcp-local.sh` from a trusted local environment. This local Trace MCP reads Postgres durable-run state and private trace manifests, then opens raw trace content only through the explicit `read_content` tool. The wrapper bootstraps local Postgres and local private content S3, sources `.env.private-trace.local`, runs API migrations, sends setup logs to stderr, and then starts the stdio MCP server. It relies on the same local DB/private-storage env as the API (`DATABASE_URL`, `LINODE_PRIVATE_CONTENT_ENDPOINT`, `LINODE_PRIVATE_CONTENT_ACCESS_KEY`, `LINODE_PRIVATE_CONTENT_SECRET_KEY`, `LINODE_PRIVATE_CONTENT_BUCKET`) and is deliberately not a production/admin MCP surface. Use `bun run trace:local:smoke` for a one-command local Postgres + private content S3 writer/read/search validation. Keep browser login, releasable packaging, cross-run trace search, and web UI affordances out until those are designed as their own slice.
 
 `InfluenceAgent` uses OpenAI-compatible chat completions. Hosted OpenAI runs use `OPENAI_API_KEY`; local runs can use `INFLUENCE_LLM_BASE_URL` with LM Studio. Current repo defaults are budget `gpt-5-nano`, standard `gpt-5-mini`, and premium `gpt-5.4-mini`; override server-side tiers with `INFLUENCE_MODEL_BUDGET`, `INFLUENCE_MODEL_STANDARD`, and `INFLUENCE_MODEL_PREMIUM` when testing local models.
 
@@ -461,9 +461,9 @@ INFLUENCE_STORAGE_BACKEND=disabled   # disable uploads
 INFLUENCE_LOCAL_UPLOAD_DIR=/tmp/influence-uploads
 ```
 
-### Local Private Evidence S3
+### Local Private Content S3
 
-Raw private decision traces do not use the filesystem upload fallback. Local validation needs an S3-compatible private evidence bucket so the same writer/read model path can exercise `PutObject`, `HeadObject`, and `GetObject`.
+Raw private decision traces do not use the filesystem upload fallback. Local validation needs an S3-compatible private content bucket so the same writer/read model path can exercise `PutObject`, `HeadObject`, and `GetObject`.
 
 ```bash
 bun run s3:bootstrap
@@ -475,13 +475,13 @@ set +a
 Defaults:
 
 ```bash
-LINODE_PRIVATE_EVIDENCE_ENDPOINT=http://127.0.0.1:19000
-LINODE_PRIVATE_EVIDENCE_ACCESS_KEY=influence
-LINODE_PRIVATE_EVIDENCE_SECRET_KEY=influence-private
-LINODE_PRIVATE_EVIDENCE_BUCKET=influence-private-evidence-local
+LINODE_PRIVATE_CONTENT_ENDPOINT=http://127.0.0.1:19000
+LINODE_PRIVATE_CONTENT_ACCESS_KEY=influence
+LINODE_PRIVATE_CONTENT_SECRET_KEY=influence-private
+LINODE_PRIVATE_CONTENT_BUCKET=influence-private-content-local
 ```
 
-The script starts a Docker MinIO container named `influence-private-evidence-s3`, creates the private bucket, and writes `.env.private-trace.local`. Keep `LINODE_PRIVATE_EVIDENCE_BUCKET` separate from `LINODE_OBJ_BUCKET`; the writer rejects the public/profile bucket for raw trace content. Staging/production should also use `LINODE_PRIVATE_EVIDENCE_ACCESS_KEY` and `LINODE_PRIVATE_EVIDENCE_SECRET_KEY` scoped to the private evidence bucket rather than reusing the profile-picture upload key. If private evidence credentials are missing, the app falls back to `LINODE_OBJ_ACCESS_KEY` / `LINODE_OBJ_SECRET_KEY` for local compatibility. Run `bun run trace:local:smoke` to bootstrap Postgres and local private S3, then write/read/search one private trace through the real storage adapter.
+The script starts a Docker MinIO container named `influence-private-content-s3`, creates the private bucket, and writes `.env.private-trace.local`. Keep `LINODE_PRIVATE_CONTENT_BUCKET` separate from `LINODE_OBJ_BUCKET`; the writer rejects the public/profile bucket for raw trace content. Staging/production must set `LINODE_PRIVATE_CONTENT_ENDPOINT`, `LINODE_PRIVATE_CONTENT_ACCESS_KEY`, `LINODE_PRIVATE_CONTENT_SECRET_KEY`, and `LINODE_PRIVATE_CONTENT_BUCKET`; the private content key should be scoped to that bucket rather than reusing the profile-picture upload key. Run `bun run trace:local:smoke` to bootstrap Postgres and local private content S3, then write/read/search one private trace through the real storage adapter.
 
 For Codex or another MCP client, configure the command as the wrapper script directly so setup output stays on stderr and the MCP JSON-RPC stream stays clean:
 

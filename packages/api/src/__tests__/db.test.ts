@@ -625,8 +625,8 @@ describe("Database Schema", () => {
           retentionClass: "debug",
           accessScope: "producer_admin",
           storageProvider: "linode_object_storage",
-          storageBucket: "private-evidence",
-          storageKey: "games/test/raw.jsonl",
+          storageBucket: "private-content",
+          storageKey: "content/test/raw.jsonl",
           sourcePointers: [{ kind: "game_event", sequence: 1 }],
           metadata: { redacted: true, byteLength: 1234 },
         });

@@ -35,7 +35,7 @@ export type DurableRunDiagnostic =
   | {
       code:
         | "evidence_summary_unavailable"
-        | "malformed_evidence_storage_provider"
+        | "malformed_private_content_storage_provider"
         | "owner_epoch_expired";
       severity: "error";
       message: string;
@@ -276,7 +276,7 @@ async function getEvidenceSummary(
 
     if (malformedStorageProviderCount > 0) {
       diagnostics.push({
-        code: "malformed_evidence_storage_provider",
+        code: "malformed_private_content_storage_provider",
         severity: "error",
         message: `${malformedStorageProviderCount} evidence manifest storage provider values were unsupported`,
       });

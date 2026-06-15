@@ -39,7 +39,7 @@ describe("durable run inspection read model", () => {
 
   beforeAll(() => {
     process.env.LINODE_OBJ_BUCKET = "public-profile-pictures";
-    process.env.LINODE_PRIVATE_EVIDENCE_BUCKET = "private-evidence";
+    process.env.LINODE_PRIVATE_CONTENT_BUCKET = "private-content";
     process.env.INFLUENCE_API_TEST_MOCK_RUNNER = "true";
   });
 
@@ -111,7 +111,7 @@ describe("durable run inspection read model", () => {
     expect(inspection.diagnostics).toEqual([]);
   });
 
-  test("summarizes API kernel events, checkpoints, and private evidence without exposing raw manifests", async () => {
+  test("summarizes API kernel events, checkpoints, and private trace manifests without exposing raw content", async () => {
     const gameId = await insertGame(db, { slug: "durable-slug" });
     const ownerEpoch = await insertOwner(db, gameId);
     const events = createCanonicalEventFixture(gameId);
@@ -130,8 +130,8 @@ describe("durable run inspection read model", () => {
       retentionClass: "debug",
       storage: {
         provider: "linode_object_storage",
-        bucket: "private-evidence",
-        key: `evidence/${gameId}/round-1/response.json`,
+        bucket: "private-content",
+        key: `content/${gameId}/round-1/response.json`,
       },
       sourcePointers: [{
         kind: "agent_turn",
@@ -201,8 +201,8 @@ describe("durable run inspection read model", () => {
     expect(result.response.diagnostics).toEqual([]);
 
     const serialized = JSON.stringify(result.response);
-    expect(serialized).not.toContain("private-evidence");
-    expect(serialized).not.toContain(`evidence/${gameId}/round-1/response.json`);
+    expect(serialized).not.toContain("private-content");
+    expect(serialized).not.toContain(`content/${gameId}/round-1/response.json`);
     expect(serialized).not.toContain("raw original prompt");
     expect(serialized).not.toContain("raw LLM response");
     expect(serialized).not.toContain("sourcePointers");
@@ -280,7 +280,7 @@ describe("durable run inspection read model", () => {
     ))).toBeTrue();
   });
 
-  test("redacts malformed evidence storage providers into an unknown bucket", async () => {
+  test("redacts malformed private content storage providers into an unknown bucket", async () => {
     const gameId = await insertGame(db);
     const ownerEpoch = await insertOwner(db, gameId);
     const events = createCanonicalEventFixture(gameId);
@@ -294,9 +294,9 @@ describe("durable run inspection read model", () => {
       evidenceType: "llm_response",
       retentionClass: "debug",
       accessScope: "producer_admin",
-      storageProvider: "linode_object_storage:private-evidence/evidence/secret.json",
-      storageBucket: "private-evidence",
-      storageKey: "evidence/secret.json",
+      storageProvider: "linode_object_storage:private-content/content/secret.json",
+      storageBucket: "private-content",
+      storageKey: "content/secret.json",
       metadata: {
         prompt: "raw prompt",
         response: "raw response",
@@ -309,12 +309,12 @@ describe("durable run inspection read model", () => {
     if (!result.ok) throw new Error(result.error);
     expect(result.response.evidence.storage.providerCounts).toEqual({ unknown: 1 });
     expect(result.response.diagnostics.some((diagnostic) => (
-      diagnostic.code === "malformed_evidence_storage_provider"
+      diagnostic.code === "malformed_private_content_storage_provider"
     ))).toBeTrue();
 
     const serialized = JSON.stringify(result.response);
-    expect(serialized).not.toContain("linode_object_storage:private-evidence");
-    expect(serialized).not.toContain("evidence/secret.json");
+    expect(serialized).not.toContain("linode_object_storage:private-content");
+    expect(serialized).not.toContain("content/secret.json");
     expect(serialized).not.toContain("raw prompt");
     expect(serialized).not.toContain("raw response");
   });

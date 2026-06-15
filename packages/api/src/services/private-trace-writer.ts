@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "crypto";
 import type { PrivateDecisionTrace, PrivateDecisionTraceBoundary, StrategyPacketUseMarker } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
-import { assertPrivateEvidenceStoragePointer, createEvidenceManifest, markEvidenceDegraded } from "./game-evidence.js";
+import { assertPrivateContentStoragePointer, createEvidenceManifest, markEvidenceDegraded } from "./game-evidence.js";
 import {
   createPrivateTraceStorageAdapter,
   getPrivateTraceBucket,
@@ -92,7 +92,7 @@ function traceStorageKey(gameId: string, trace: PrivateDecisionTrace, now: Date)
   const timestamp = now.toISOString().replace(/[:.]/g, "-");
   const actor = sanitizeKeyPart(trace.actor.name);
   const action = sanitizeKeyPart(trace.action);
-  return `evidence/${gameId}/private-traces/${roundPart}/${timestamp}-${actor}-${action}-${randomUUID()}.json`;
+  return `content/${gameId}/private-traces/${roundPart}/${timestamp}-${actor}-${action}-${randomUUID()}.json`;
 }
 
 function buildTraceMetadata(trace: PrivateDecisionTrace, body: string, createdAt: string): PrivateTraceManifestMetadata {
@@ -188,7 +188,7 @@ export async function writePrivateDecisionTrace(
   const metadata = buildTraceMetadata(input.trace, body, createdAt);
 
   try {
-    assertPrivateEvidenceStoragePointer(storage);
+    assertPrivateContentStoragePointer(storage);
     const adapter = options.storage ?? createPrivateTraceStorageAdapter();
     await adapter.putObject({
       bucket,

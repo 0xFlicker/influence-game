@@ -83,12 +83,12 @@ function makeTrace(gameId: string, ownerEpoch: string): PrivateDecisionTrace {
 
 describe("private trace local S3 smoke", () => {
   smokeTest("writes trace content to local S3 and reads it through the read model", async () => {
-    const endpoint = process.env.LINODE_PRIVATE_EVIDENCE_ENDPOINT ?? process.env.LINODE_OBJ_ENDPOINT;
-    const accessKey = process.env.LINODE_PRIVATE_EVIDENCE_ACCESS_KEY ?? process.env.LINODE_OBJ_ACCESS_KEY;
-    const secretKey = process.env.LINODE_PRIVATE_EVIDENCE_SECRET_KEY ?? process.env.LINODE_OBJ_SECRET_KEY;
-    const privateBucket = process.env.LINODE_PRIVATE_EVIDENCE_BUCKET;
+    const endpoint = process.env.LINODE_PRIVATE_CONTENT_ENDPOINT;
+    const accessKey = process.env.LINODE_PRIVATE_CONTENT_ACCESS_KEY;
+    const secretKey = process.env.LINODE_PRIVATE_CONTENT_SECRET_KEY;
+    const privateBucket = process.env.LINODE_PRIVATE_CONTENT_BUCKET;
     if (!endpoint || !accessKey || !secretKey || !privateBucket) {
-      throw new Error("local private trace S3 smoke requires private trace S3 env");
+      throw new Error("local private trace S3 smoke requires private content S3 env");
     }
     expect(process.env.LINODE_OBJ_BUCKET).not.toBe(privateBucket);
 

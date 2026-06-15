@@ -29,7 +29,7 @@ beforeAll(() => {
   process.env.JWT_SECRET = "test-jwt-secret-admin-routes";
   process.env.ADMIN_ADDRESS = SYSOP_ADDRESS;
   process.env.LINODE_OBJ_BUCKET = "public-profile-pictures";
-  process.env.LINODE_PRIVATE_EVIDENCE_BUCKET = "private-evidence";
+  process.env.LINODE_PRIVATE_CONTENT_BUCKET = "private-content";
 });
 
 async function setupDB() {
@@ -227,8 +227,8 @@ describe("admin route RBAC", () => {
       retentionClass: "debug",
       storage: {
         provider: "linode_object_storage",
-        bucket: "private-evidence",
-        key: `evidence/${gameId}/round-1/response.json`,
+        bucket: "private-content",
+        key: `content/${gameId}/round-1/response.json`,
       },
       sourcePointers: [{
         kind: "agent_turn",
@@ -304,8 +304,8 @@ describe("admin route RBAC", () => {
     expect(serialized).not.toContain(privatePlayerNote);
     expect(serialized).not.toContain(privateStrategyPacket);
     expect(serialized).not.toContain(privateHouseSummary);
-    expect(serialized).not.toContain("private-evidence");
-    expect(serialized).not.toContain(`evidence/${gameId}/round-1/response.json`);
+    expect(serialized).not.toContain("private-content");
+    expect(serialized).not.toContain(`content/${gameId}/round-1/response.json`);
     expect(serialized).not.toContain("raw prompt");
     expect(serialized).not.toContain("raw response");
     expect(serialized).not.toContain("thinking");

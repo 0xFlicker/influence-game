@@ -147,12 +147,12 @@ Simulation runs persist per-turn reasoning in local JSONL artifacts. API-backed 
 
 - `PrivateDecisionTrace` is emitted at the model-call boundary where prompt messages, raw provider response, tool arguments or parsed JSON output, emitted `thinking`, and native `reasoningContext` still exist.
 - `InfluenceAgent` and `LLMHouseInterviewer` receive an optional `privateTraceSink`; without a sink, engine behavior and simulation artifacts are unchanged.
-- `game-lifecycle.ts` supplies the sink only for owner-backed API runs. The sink calls the API private trace writer, which stores raw JSON content in private S3-compatible evidence storage and creates a `game_evidence_manifests` row with sanitized counts/facets only.
-- Local validation must use a real S3-compatible private evidence endpoint, not the profile-picture filesystem fallback. Run `bun run s3:bootstrap`, source `.env.private-trace.local`, and use `bun run trace:local:smoke` to verify the local writer/read/search path.
-- Trace write failures degrade evidence diagnostics but must not throw into canonical gameplay, accepted events, transcript logging, or checkpoint persistence.
+- `game-lifecycle.ts` supplies the sink only for owner-backed API runs. The sink calls the API private trace writer, which stores raw JSON content in private S3-compatible content storage and creates a `game_evidence_manifests` row with sanitized counts/facets only.
+- Local validation must use a real S3-compatible private content endpoint, not the profile-picture filesystem fallback. Run `bun run s3:bootstrap`, source `.env.private-trace.local`, and use `bun run trace:local:smoke` to verify the local writer/read/search path.
+- Trace write failures degrade trace diagnostics but must not throw into canonical gameplay, accepted events, transcript logging, or checkpoint persistence.
 - The local Trace MCP (`cd packages/api && bun run mcp:trace`) is the local producer inspection path for API durable runs. Use `list_manifests` for metadata, `read_content` for explicit raw content reads, and `search_reasoning_traces` for bounded run-scoped search.
 
-Private trace content is not public transcript, not canonical board truth, and not checkpoint resume authority. It is the API durable-run sibling of `game-N-turns.jsonl`: useful for debugging one weird run, not a product/admin evidence portal.
+Private trace content is not public transcript, not canonical board truth, and not checkpoint resume authority. It is the API durable-run sibling of `game-N-turns.jsonl`: useful for debugging one weird run, not a product/admin content portal.
 
 ## Core Style & Safety Rules
 

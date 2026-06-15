@@ -54,23 +54,23 @@ function getPrivateTraceS3Client(): S3Client {
 }
 
 export function getPrivateTraceBucket(): string {
-  const bucket = process.env.LINODE_PRIVATE_EVIDENCE_BUCKET;
+  const bucket = process.env.LINODE_PRIVATE_CONTENT_BUCKET;
   if (!bucket) {
-    throw new Error("LINODE_PRIVATE_EVIDENCE_BUCKET must be configured for private evidence storage");
+    throw new Error("LINODE_PRIVATE_CONTENT_BUCKET must be configured for private content storage");
   }
   return bucket;
 }
 
 export function getPrivateTraceStorageConfig(): PrivateTraceStorageConfig {
-  const endpoint = process.env.LINODE_PRIVATE_EVIDENCE_ENDPOINT ?? process.env.LINODE_OBJ_ENDPOINT;
-  const accessKeyId = process.env.LINODE_PRIVATE_EVIDENCE_ACCESS_KEY ?? process.env.LINODE_OBJ_ACCESS_KEY;
-  const secretAccessKey = process.env.LINODE_PRIVATE_EVIDENCE_SECRET_KEY ?? process.env.LINODE_OBJ_SECRET_KEY;
+  const endpoint = process.env.LINODE_PRIVATE_CONTENT_ENDPOINT;
+  const accessKeyId = process.env.LINODE_PRIVATE_CONTENT_ACCESS_KEY;
+  const secretAccessKey = process.env.LINODE_PRIVATE_CONTENT_SECRET_KEY;
   const missing: string[] = [];
-  if (!endpoint) missing.push("LINODE_PRIVATE_EVIDENCE_ENDPOINT or LINODE_OBJ_ENDPOINT");
-  if (!accessKeyId) missing.push("LINODE_PRIVATE_EVIDENCE_ACCESS_KEY or LINODE_OBJ_ACCESS_KEY");
-  if (!secretAccessKey) missing.push("LINODE_PRIVATE_EVIDENCE_SECRET_KEY or LINODE_OBJ_SECRET_KEY");
+  if (!endpoint) missing.push("LINODE_PRIVATE_CONTENT_ENDPOINT");
+  if (!accessKeyId) missing.push("LINODE_PRIVATE_CONTENT_ACCESS_KEY");
+  if (!secretAccessKey) missing.push("LINODE_PRIVATE_CONTENT_SECRET_KEY");
   if (missing.length > 0 || !endpoint || !accessKeyId || !secretAccessKey) {
-    throw new Error(`${missing.join(", ")} must be set for private evidence storage`);
+    throw new Error(`${missing.join(", ")} must be set for private content storage`);
   }
 
   return {

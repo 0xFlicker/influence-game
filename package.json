@@ -9,7 +9,7 @@
   "scripts": {
     "test": "bun run --filter '*' test:mock",
     "db:bootstrap": "./scripts/bootstrap-test-db.sh",
-    "s3:bootstrap": "./scripts/bootstrap-private-evidence-s3.sh",
+    "s3:bootstrap": "./scripts/bootstrap-private-content-s3.sh",
     "mcp:trace:local": "./scripts/run-trace-mcp-local.sh",
     "trace:local:smoke": "./scripts/test-private-trace-local.sh",
     "test:db": "cd packages/api && DRIZZLE_MIGRATIONS_DIR=./drizzle bun test src/__tests__/",

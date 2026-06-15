@@ -11,10 +11,10 @@ import { setupTestDB } from "./test-utils.js";
 
 const ENV_KEYS = [
   "LINODE_OBJ_BUCKET",
-  "LINODE_PRIVATE_EVIDENCE_ENDPOINT",
-  "LINODE_PRIVATE_EVIDENCE_ACCESS_KEY",
-  "LINODE_PRIVATE_EVIDENCE_SECRET_KEY",
-  "LINODE_PRIVATE_EVIDENCE_BUCKET",
+  "LINODE_PRIVATE_CONTENT_ENDPOINT",
+  "LINODE_PRIVATE_CONTENT_ACCESS_KEY",
+  "LINODE_PRIVATE_CONTENT_SECRET_KEY",
+  "LINODE_PRIVATE_CONTENT_BUCKET",
   "INFLUENCE_PRIVATE_TRACE_MAX_BYTES",
 ] as const;
 
@@ -137,10 +137,10 @@ describe("private trace writer", () => {
   beforeEach(async () => {
     savedEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
     process.env.LINODE_OBJ_BUCKET = "public-profile-bucket";
-    delete process.env.LINODE_PRIVATE_EVIDENCE_ENDPOINT;
-    delete process.env.LINODE_PRIVATE_EVIDENCE_ACCESS_KEY;
-    delete process.env.LINODE_PRIVATE_EVIDENCE_SECRET_KEY;
-    process.env.LINODE_PRIVATE_EVIDENCE_BUCKET = "private-evidence-bucket";
+    delete process.env.LINODE_PRIVATE_CONTENT_ENDPOINT;
+    delete process.env.LINODE_PRIVATE_CONTENT_ACCESS_KEY;
+    delete process.env.LINODE_PRIVATE_CONTENT_SECRET_KEY;
+    process.env.LINODE_PRIVATE_CONTENT_BUCKET = "private-content-bucket";
     delete process.env.INFLUENCE_PRIVATE_TRACE_MAX_BYTES;
     db = await setupTestDB();
   });
@@ -156,7 +156,7 @@ describe("private trace writer", () => {
     }
   });
 
-  test("writes raw trace content and creates a sanitized private evidence manifest", async () => {
+  test("writes raw trace content and creates a sanitized private trace manifest", async () => {
     const gameId = await insertGame(db);
     const ownerEpoch = await insertOwner(db, gameId);
     const storage = new FakePrivateTraceStorage();
@@ -178,10 +178,10 @@ describe("private trace writer", () => {
     if (!result.ok) throw new Error(result.error);
     expect(storage.puts).toHaveLength(1);
     expect(storage.puts[0]).toMatchObject({
-      bucket: "private-evidence-bucket",
+      bucket: "private-content-bucket",
       contentType: PRIVATE_TRACE_CONTENT_TYPE,
     });
-    expect(storage.puts[0]!.key).toStartWith(`evidence/${gameId}/private-traces/round-1/`);
+    expect(storage.puts[0]!.key).toStartWith(`content/${gameId}/private-traces/round-1/`);
     expect(storage.puts[0]!.body).toContain("full prompt secret");
     expect(storage.puts[0]!.body).toContain("native reasoning secret");
 
@@ -197,7 +197,7 @@ describe("private trace writer", () => {
       retentionClass: "debug",
       accessScope: "producer_admin",
       storageProvider: PRIVATE_TRACE_STORAGE_PROVIDER,
-      storageBucket: "private-evidence-bucket",
+      storageBucket: "private-content-bucket",
       storageKey: storage.puts[0]!.key,
     });
 
@@ -226,7 +226,7 @@ describe("private trace writer", () => {
     expect(JSON.stringify(metadata)).not.toContain("private thought secret");
   });
 
-  test("does not create a manifest when private storage fails and marks evidence degraded", async () => {
+  test("does not create a manifest when private storage fails and marks trace diagnostics degraded", async () => {
     const gameId = await insertGame(db);
     const ownerEpoch = await insertOwner(db, gameId);
     const storage = new FakePrivateTraceStorage(new Error("object store unavailable"));
@@ -253,7 +253,7 @@ describe("private trace writer", () => {
     const gameId = await insertGame(db);
     const ownerEpoch = await insertOwner(db, gameId);
     const storage = new FakePrivateTraceStorage();
-    process.env.LINODE_PRIVATE_EVIDENCE_BUCKET = "public-profile-bucket";
+    process.env.LINODE_PRIVATE_CONTENT_BUCKET = "public-profile-bucket";
 
     const result = await writePrivateDecisionTrace(db, {
       gameId,

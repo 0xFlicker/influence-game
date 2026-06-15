@@ -6,7 +6,7 @@ import { Hono } from "hono";
 import type { DrizzleDB } from "../db/index.js";
 import { generatePresignedUpload, getStorageBackend } from "../lib/storage.js";
 import { createUploadRoutes } from "../routes/upload.js";
-import { assertPrivateEvidenceStoragePointer } from "../services/game-evidence.js";
+import { assertPrivateContentStoragePointer } from "../services/game-evidence.js";
 import { getPrivateTraceStorageConfig } from "../services/private-trace-storage.js";
 
 const ENV_KEYS = [
@@ -19,10 +19,10 @@ const ENV_KEYS = [
   "LINODE_OBJ_ACCESS_KEY",
   "LINODE_OBJ_SECRET_KEY",
   "LINODE_OBJ_BUCKET",
-  "LINODE_PRIVATE_EVIDENCE_ENDPOINT",
-  "LINODE_PRIVATE_EVIDENCE_ACCESS_KEY",
-  "LINODE_PRIVATE_EVIDENCE_SECRET_KEY",
-  "LINODE_PRIVATE_EVIDENCE_BUCKET",
+  "LINODE_PRIVATE_CONTENT_ENDPOINT",
+  "LINODE_PRIVATE_CONTENT_ACCESS_KEY",
+  "LINODE_PRIVATE_CONTENT_SECRET_KEY",
+  "LINODE_PRIVATE_CONTENT_BUCKET",
 ] as const;
 
 describe("local filesystem upload storage", () => {
@@ -43,10 +43,10 @@ describe("local filesystem upload storage", () => {
     delete process.env.LINODE_OBJ_ACCESS_KEY;
     delete process.env.LINODE_OBJ_SECRET_KEY;
     delete process.env.LINODE_OBJ_BUCKET;
-    delete process.env.LINODE_PRIVATE_EVIDENCE_ENDPOINT;
-    delete process.env.LINODE_PRIVATE_EVIDENCE_ACCESS_KEY;
-    delete process.env.LINODE_PRIVATE_EVIDENCE_SECRET_KEY;
-    delete process.env.LINODE_PRIVATE_EVIDENCE_BUCKET;
+    delete process.env.LINODE_PRIVATE_CONTENT_ENDPOINT;
+    delete process.env.LINODE_PRIVATE_CONTENT_ACCESS_KEY;
+    delete process.env.LINODE_PRIVATE_CONTENT_SECRET_KEY;
+    delete process.env.LINODE_PRIVATE_CONTENT_BUCKET;
 
     app = new Hono();
     app.route("/", createUploadRoutes({} as DrizzleDB));
@@ -126,38 +126,38 @@ describe("local filesystem upload storage", () => {
     expect(getStorageBackend()).toBe("disabled");
   });
 
-  test("keeps private evidence storage separate from public profile-picture storage", () => {
+  test("keeps private content storage separate from public profile-picture storage", () => {
     process.env.LINODE_OBJ_BUCKET = "public-profile-bucket";
-    process.env.LINODE_PRIVATE_EVIDENCE_BUCKET = "private-evidence-bucket";
+    process.env.LINODE_PRIVATE_CONTENT_BUCKET = "private-content-bucket";
 
-    expect(() => assertPrivateEvidenceStoragePointer({
+    expect(() => assertPrivateContentStoragePointer({
       provider: "linode_object_storage",
       bucket: "public-profile-bucket",
-      key: "evidence/game-1/raw.jsonl",
+      key: "content/game-1/raw.jsonl",
     })).toThrow("public profile-picture bucket");
 
-    expect(() => assertPrivateEvidenceStoragePointer({
+    expect(() => assertPrivateContentStoragePointer({
       provider: "linode_object_storage",
-      bucket: "private-evidence-bucket",
+      bucket: "private-content-bucket",
       key: "pfp/user/avatar.png",
     })).toThrow("private object key");
 
-    expect(() => assertPrivateEvidenceStoragePointer({
+    expect(() => assertPrivateContentStoragePointer({
       provider: "linode_object_storage",
       bucket: "other-private-bucket",
-      key: "evidence/game-1/raw.jsonl",
-    })).toThrow("configured private evidence bucket");
+      key: "content/game-1/raw.jsonl",
+    })).toThrow("configured private content bucket");
 
-    expect(() => assertPrivateEvidenceStoragePointer({
+    expect(() => assertPrivateContentStoragePointer({
       provider: "linode_object_storage",
-      bucket: "private-evidence-bucket",
+      bucket: "private-content-bucket",
       key: "games/game-1/raw.jsonl",
     })).toThrow("private object key");
 
-    expect(() => assertPrivateEvidenceStoragePointer({
+    expect(() => assertPrivateContentStoragePointer({
       provider: "linode_object_storage",
-      bucket: "private-evidence-bucket",
-      key: "evidence/game-1/raw.jsonl",
+      bucket: "private-content-bucket",
+      key: "content/game-1/raw.jsonl",
     })).not.toThrow();
   });
 
@@ -166,31 +166,28 @@ describe("local filesystem upload storage", () => {
     process.env.LINODE_OBJ_ACCESS_KEY = "public-pfp-access-key";
     process.env.LINODE_OBJ_SECRET_KEY = "public-pfp-secret-key";
     process.env.LINODE_OBJ_BUCKET = "public-profile-bucket";
-    process.env.LINODE_PRIVATE_EVIDENCE_ENDPOINT = "https://private-object-storage.example";
-    process.env.LINODE_PRIVATE_EVIDENCE_ACCESS_KEY = "private-evidence-access-key";
-    process.env.LINODE_PRIVATE_EVIDENCE_SECRET_KEY = "private-evidence-secret-key";
-    process.env.LINODE_PRIVATE_EVIDENCE_BUCKET = "private-evidence-bucket";
+    process.env.LINODE_PRIVATE_CONTENT_ENDPOINT = "https://private-object-storage.example";
+    process.env.LINODE_PRIVATE_CONTENT_ACCESS_KEY = "private-content-access-key";
+    process.env.LINODE_PRIVATE_CONTENT_SECRET_KEY = "private-content-secret-key";
+    process.env.LINODE_PRIVATE_CONTENT_BUCKET = "private-content-bucket";
 
     expect(getPrivateTraceStorageConfig()).toEqual({
       endpoint: "https://private-object-storage.example",
-      accessKeyId: "private-evidence-access-key",
-      secretAccessKey: "private-evidence-secret-key",
-      bucket: "private-evidence-bucket",
+      accessKeyId: "private-content-access-key",
+      secretAccessKey: "private-content-secret-key",
+      bucket: "private-content-bucket",
     });
     expect(getStorageBackend()).toBe("local");
   });
 
-  test("private trace storage falls back to shared object-storage credentials", () => {
+  test("private trace storage requires private content credentials even when shared object storage is configured", () => {
     process.env.LINODE_OBJ_ENDPOINT = "https://shared-object-storage.example";
     process.env.LINODE_OBJ_ACCESS_KEY = "shared-access-key";
     process.env.LINODE_OBJ_SECRET_KEY = "shared-secret-key";
-    process.env.LINODE_PRIVATE_EVIDENCE_BUCKET = "private-evidence-bucket";
+    process.env.LINODE_PRIVATE_CONTENT_BUCKET = "private-content-bucket";
 
-    expect(getPrivateTraceStorageConfig()).toEqual({
-      endpoint: "https://shared-object-storage.example",
-      accessKeyId: "shared-access-key",
-      secretAccessKey: "shared-secret-key",
-      bucket: "private-evidence-bucket",
-    });
+    expect(() => getPrivateTraceStorageConfig()).toThrow(
+      "LINODE_PRIVATE_CONTENT_ENDPOINT, LINODE_PRIVATE_CONTENT_ACCESS_KEY, LINODE_PRIVATE_CONTENT_SECRET_KEY must be set",
+    );
   });
 });

@@ -79,13 +79,13 @@ bun run mcp:game -- docs/simulations
 
 The game MCP is read-only. It discovers past and currently-writing simulation batches, addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and can list sessions/games, filter events, search logs, read player timelines, and return cited linked records when source pointers are present. Passing a single batch directory still works for focused inspection, but returned records include a `sessionId`. For strategy-observability validation, search turns logs for `mingle-intent`, `mingle-room-assignment`, `rumor`, `strategic-reflection`, `strategy-packet`, `strategicLens`, `strategyPacketUse`, `strategySignal`, `movementPurpose`, or `empower-revote`. For House producer validation, search for `house-mc-summary`, legacy `[House MC]`, `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or named House alliances.
 
-For API-backed durable runs, owner-backed games can write private decision trace content to the configured private evidence bucket and keep only manifests/counts in Postgres. To inspect those traces from a trusted local MCP client:
+For API-backed durable runs, owner-backed games can write private decision trace content to the configured private content bucket and keep only manifests/counts in Postgres. To inspect those traces from a trusted local MCP client:
 
 ```bash
 ./scripts/run-trace-mcp-local.sh
 ```
 
-The Trace MCP is local-dev-only. The wrapper starts local Postgres and local private S3, sources `.env.private-trace.local`, runs API migrations, sends setup logs to stderr, and then starts the stdio MCP server. It uses local API database and private-storage environment variables, calls the existing evidence manifest read path for `read_content`, and exposes `list_durable_runs`, `inspect_durable_run`, `list_manifests`, `read_content`, and `search_reasoning_traces`. It is not a product/admin MCP endpoint, does not include browser login, and is not packaged for external release yet. Use `bun run trace:local:smoke` to validate the local DB + private S3 writer/read path end to end.
+The Trace MCP is local-dev-only. The wrapper starts local Postgres and local private content S3, sources `.env.private-trace.local`, runs API migrations, sends setup logs to stderr, and then starts the stdio MCP server. It uses local API database and private-storage environment variables, calls the existing manifest read path for `read_content`, and exposes `list_durable_runs`, `inspect_durable_run`, `list_manifests`, `read_content`, and `search_reasoning_traces`. It is not a product/admin MCP endpoint, does not include browser login, and is not packaged for external release yet. Use `bun run trace:local:smoke` to validate the local DB + private content S3 writer/read path end to end.
 
 ### 3. Run the full stack (API + Web UI)
 
@@ -196,10 +196,10 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `LINODE_OBJ_ACCESS_KEY` | Required for S3 | -- | Linode Object Storage access key |
 | `LINODE_OBJ_SECRET_KEY` | Required for S3 | -- | Linode Object Storage secret key |
 | `LINODE_OBJ_BUCKET` | Required for S3 | -- | Linode Object Storage bucket |
-| `LINODE_PRIVATE_EVIDENCE_ENDPOINT` | No | `LINODE_OBJ_ENDPOINT` | S3-compatible endpoint for private trace/evidence storage |
-| `LINODE_PRIVATE_EVIDENCE_ACCESS_KEY` | No | `LINODE_OBJ_ACCESS_KEY` | Access key scoped to the private evidence bucket |
-| `LINODE_PRIVATE_EVIDENCE_SECRET_KEY` | No | `LINODE_OBJ_SECRET_KEY` | Secret key scoped to the private evidence bucket |
-| `LINODE_PRIVATE_EVIDENCE_BUCKET` | Required for private traces | -- | Private evidence bucket for raw prompt/response/reasoning trace content |
+| `LINODE_PRIVATE_CONTENT_ENDPOINT` | Required for private traces | -- | S3-compatible endpoint for private trace content storage |
+| `LINODE_PRIVATE_CONTENT_ACCESS_KEY` | Required for private traces | -- | Access key scoped to the private content bucket |
+| `LINODE_PRIVATE_CONTENT_SECRET_KEY` | Required for private traces | -- | Secret key scoped to the private content bucket |
+| `LINODE_PRIVATE_CONTENT_BUCKET` | Required for private traces | -- | Private content bucket for raw prompt/response/reasoning trace content |
 
 For local API development and DB-backed tests, start the shared Postgres container and ensure both local databases exist:
 
@@ -207,7 +207,7 @@ For local API development and DB-backed tests, start the shared Postgres contain
 bun run db:bootstrap
 ```
 
-Private decision traces require an S3-compatible private evidence bucket even in local development. Bootstrap a local MinIO-compatible endpoint and private bucket with:
+Private decision traces require an S3-compatible private content bucket even in local development. Bootstrap a local MinIO-compatible endpoint and private bucket with:
 
 ```bash
 bun run s3:bootstrap
@@ -216,9 +216,9 @@ source .env.private-trace.local
 set +a
 ```
 
-The bootstrap uses `http://127.0.0.1:19000` by default, creates `influence-private-evidence-local`, and writes the required private trace env vars to `.env.private-trace.local`. Run `bun run trace:local:smoke` to start local Postgres + local private S3 and verify a trace write/read/search round trip.
+The bootstrap uses `http://127.0.0.1:19000` by default, creates `influence-private-content-local`, and writes the required private trace env vars to `.env.private-trace.local`. Run `bun run trace:local:smoke` to start local Postgres + local private content S3 and verify a trace write/read/search round trip.
 
-Staging/production should set `LINODE_PRIVATE_EVIDENCE_ACCESS_KEY` and `LINODE_PRIVATE_EVIDENCE_SECRET_KEY` to a key scoped to the private evidence bucket. If those are absent, private trace storage falls back to the shared `LINODE_OBJ_ACCESS_KEY` / `LINODE_OBJ_SECRET_KEY` for local compatibility.
+Staging/production must set `LINODE_PRIVATE_CONTENT_ENDPOINT`, `LINODE_PRIVATE_CONTENT_ACCESS_KEY`, `LINODE_PRIVATE_CONTENT_SECRET_KEY`, and `LINODE_PRIVATE_CONTENT_BUCKET` for private traces. The private access key should be scoped to the private content bucket and is intentionally separate from the profile-picture `LINODE_OBJ_*` credentials.
 
 When the Linode variables are absent in local dev, the API falls back to filesystem-backed upload URLs and stores files under `packages/api/.local-uploads/` by default. Staging/production should use the S3 backend.
 

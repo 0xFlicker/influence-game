@@ -28,4 +28,4 @@ try {
 }
 
 await client.send(new HeadBucketCommand({ Bucket: bucket }));
-console.log(`Private evidence bucket is ready: ${bucket}`);
+console.log(`Private content bucket is ready: ${bucket}`);
