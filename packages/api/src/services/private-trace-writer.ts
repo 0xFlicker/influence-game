@@ -1,0 +1,227 @@
+import { createHash, randomUUID } from "crypto";
+import type { PrivateDecisionTrace, PrivateDecisionTraceBoundary, StrategyPacketUseMarker } from "@influence/engine";
+import type { DrizzleDB } from "../db/index.js";
+import { assertPrivateEvidenceStoragePointer, createEvidenceManifest, markEvidenceDegraded } from "./game-evidence.js";
+import {
+  createPrivateTraceStorageAdapter,
+  getPrivateTraceBucket,
+  PRIVATE_TRACE_CONTENT_TYPE,
+  PRIVATE_TRACE_STORAGE_PROVIDER,
+  type PrivateTraceStorageAdapter,
+} from "./private-trace-storage.js";
+
+export const PRIVATE_TRACE_EVIDENCE_TYPE = "private_decision_trace";
+export const DEFAULT_PRIVATE_TRACE_MAX_BYTES = 512 * 1024;
+
+export interface WritePrivateTraceInput {
+  gameId: string;
+  ownerEpoch: string;
+  trace: PrivateDecisionTrace;
+  eventSequence?: number;
+  expiresAt?: string;
+}
+
+export interface PrivateTraceWriteOptions {
+  storage?: PrivateTraceStorageAdapter;
+  now?: () => Date;
+  maxBytes?: number;
+}
+
+export type WritePrivateTraceResult =
+  | {
+    ok: true;
+    manifestId: string;
+    storage: {
+      provider: typeof PRIVATE_TRACE_STORAGE_PROVIDER;
+      bucket: string;
+      key: string;
+    };
+    metadata: PrivateTraceManifestMetadata;
+  }
+  | { ok: false; error: string };
+
+export interface PrivateTraceManifestMetadata {
+  formatVersion: 1;
+  contentType: typeof PRIVATE_TRACE_CONTENT_TYPE;
+  byteLength: number;
+  recordCount: 1;
+  sha256: string;
+  actor: {
+    id?: string;
+    name: string;
+    role: string;
+  };
+  action: string;
+  phase?: string;
+  round?: number;
+  modelName: string;
+  promptMessageCount: number;
+  promptByteLength: number;
+  responseByteLength: number;
+  toolArgumentByteLength: number;
+  emittedThinkingByteLength: number;
+  reasoningContextByteLength: number;
+  toolName?: string;
+  strategyPacket?: {
+    revision?: string;
+    use?: StrategyPacketUseMarker["strategyPacketUse"];
+  };
+  boundary?: PrivateDecisionTraceBoundary;
+  createdAt: string;
+}
+
+function sha256Text(body: string): string {
+  return `sha256:${createHash("sha256").update(body).digest("hex")}`;
+}
+
+function byteLength(value: unknown): number {
+  if (value === undefined || value === null || value === "") return 0;
+  return Buffer.byteLength(typeof value === "string" ? value : JSON.stringify(value), "utf8");
+}
+
+function sanitizeKeyPart(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64) || "trace";
+}
+
+function traceStorageKey(gameId: string, trace: PrivateDecisionTrace, now: Date): string {
+  const roundPart = trace.round === undefined ? "round-unknown" : `round-${trace.round}`;
+  const timestamp = now.toISOString().replace(/[:.]/g, "-");
+  const actor = sanitizeKeyPart(trace.actor.name);
+  const action = sanitizeKeyPart(trace.action);
+  return `evidence/${gameId}/private-traces/${roundPart}/${timestamp}-${actor}-${action}-${randomUUID()}.json`;
+}
+
+function buildTraceMetadata(trace: PrivateDecisionTrace, body: string, createdAt: string): PrivateTraceManifestMetadata {
+  const strategyPacketUse = trace.strategyPacketUse?.strategyPacketUse;
+  return {
+    formatVersion: 1,
+    contentType: PRIVATE_TRACE_CONTENT_TYPE,
+    byteLength: Buffer.byteLength(body, "utf8"),
+    recordCount: 1,
+    sha256: sha256Text(body),
+    actor: {
+      ...(trace.actor.id && { id: trace.actor.id }),
+      name: trace.actor.name,
+      role: trace.actor.role,
+    },
+    action: trace.action,
+    ...(trace.phase && { phase: trace.phase }),
+    ...(trace.round !== undefined && { round: trace.round }),
+    modelName: trace.model.name,
+    promptMessageCount: trace.prompt.messages.length,
+    promptByteLength: byteLength(trace.prompt),
+    responseByteLength: byteLength(trace.response),
+    toolArgumentByteLength: byteLength(trace.toolArguments),
+    emittedThinkingByteLength: byteLength(trace.emittedThinking),
+    reasoningContextByteLength: byteLength(trace.reasoningContext),
+    ...(trace.toolName && { toolName: trace.toolName }),
+    ...((trace.strategyPacketRevision || strategyPacketUse) && {
+      strategyPacket: {
+        ...(trace.strategyPacketRevision && { revision: trace.strategyPacketRevision }),
+        ...(strategyPacketUse && { use: strategyPacketUse }),
+      },
+    }),
+    ...(trace.boundary && { boundary: trace.boundary }),
+    createdAt,
+  };
+}
+
+function sourcePointersForTrace(trace: PrivateDecisionTrace): ReadonlyArray<Record<string, unknown>> {
+  const pointers: Record<string, unknown>[] = [];
+  if (trace.boundary?.sourcePointer) {
+    pointers.push(trace.boundary.sourcePointer as unknown as Record<string, unknown>);
+  }
+  pointers.push({
+    kind: "private_decision_trace",
+    actorId: trace.actor.id,
+    actorName: trace.actor.name,
+    action: trace.action,
+    phase: trace.phase,
+    round: trace.round,
+  });
+  return pointers;
+}
+
+function configuredMaxBytes(override?: number): number {
+  if (override !== undefined) return override;
+  const configured = Number(process.env.INFLUENCE_PRIVATE_TRACE_MAX_BYTES);
+  return Number.isFinite(configured) && configured > 0
+    ? configured
+    : DEFAULT_PRIVATE_TRACE_MAX_BYTES;
+}
+
+export async function writePrivateDecisionTrace(
+  db: DrizzleDB,
+  input: WritePrivateTraceInput,
+  options: PrivateTraceWriteOptions = {},
+): Promise<WritePrivateTraceResult> {
+  const now = options.now?.() ?? new Date();
+  const createdAt = now.toISOString();
+  const body = JSON.stringify({
+    ...input.trace,
+    gameId: input.gameId,
+    ownerEpoch: input.ownerEpoch,
+    createdAt: input.trace.createdAt || createdAt,
+  }, null, 2);
+  const maxBytes = configuredMaxBytes(options.maxBytes);
+  const bodyBytes = Buffer.byteLength(body, "utf8");
+  if (bodyBytes > maxBytes) {
+    await markEvidenceDegraded(db, input.gameId, input.ownerEpoch, `private_trace_too_large: ${bodyBytes} > ${maxBytes}`).catch(() => {});
+    return { ok: false, error: `private trace exceeds ${maxBytes} byte limit` };
+  }
+
+  const bucket = getPrivateTraceBucket();
+  const key = traceStorageKey(input.gameId, input.trace, now);
+  const storage: {
+    provider: typeof PRIVATE_TRACE_STORAGE_PROVIDER;
+    bucket: string;
+    key: string;
+  } = {
+    provider: PRIVATE_TRACE_STORAGE_PROVIDER,
+    bucket,
+    key,
+  };
+  const metadata = buildTraceMetadata(input.trace, body, createdAt);
+
+  try {
+    assertPrivateEvidenceStoragePointer(storage);
+    const adapter = options.storage ?? createPrivateTraceStorageAdapter();
+    await adapter.putObject({
+      bucket,
+      key,
+      body,
+      contentType: PRIVATE_TRACE_CONTENT_TYPE,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await markEvidenceDegraded(db, input.gameId, input.ownerEpoch, `private_trace_storage_failed: ${message}`).catch(() => {});
+    return { ok: false, error: message };
+  }
+
+  const manifest = await createEvidenceManifest(db, {
+    gameId: input.gameId,
+    ownerEpoch: input.ownerEpoch,
+    eventSequence: input.eventSequence,
+    evidenceType: PRIVATE_TRACE_EVIDENCE_TYPE,
+    retentionClass: "debug",
+    accessScope: "producer_admin",
+    expiresAt: input.expiresAt,
+    storage,
+    sourcePointers: sourcePointersForTrace(input.trace),
+    metadata: metadata as unknown as Record<string, unknown>,
+  });
+  if (!manifest.ok) {
+    return { ok: false, error: manifest.error };
+  }
+
+  return {
+    ok: true,
+    manifestId: manifest.manifestId,
+    storage,
+    metadata,
+  };
+}

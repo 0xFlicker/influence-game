@@ -9,6 +9,8 @@
   "scripts": {
     "test": "bun run --filter '*' test:mock",
     "db:bootstrap": "./scripts/bootstrap-test-db.sh",
+    "s3:bootstrap": "./scripts/bootstrap-private-evidence-s3.sh",
+    "trace:local:smoke": "./scripts/test-private-trace-local.sh",
     "test:db": "cd packages/api && DRIZZLE_MIGRATIONS_DIR=./drizzle bun test src/__tests__/",
     "test:engine": "cd packages/engine && bun test src/__tests__/game-engine.test.ts",
     "test:engine:full": "cd packages/engine && doppler run --project social-strategy-agent --config dev -- bun test",

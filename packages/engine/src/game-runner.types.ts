@@ -16,7 +16,7 @@ import type {
   MingleIntentSummary as MingleIntentSummaryBase,
   StrategicLens,
 } from "./types";
-import type { CanonicalGameEvent } from "./canonical-events";
+import type { CanonicalGameEvent, CanonicalSourcePointer } from "./canonical-events";
 import type { CanonicalGameProjection } from "./game-projection";
 import type { TokenCostCursor, TokenTracker } from "./token-tracker.js";
 export type { TokenCostCursor };
@@ -45,6 +45,8 @@ export interface GameStateSnapshot {
 export interface GameRunnerOptions {
   /** Optional external run identity, used by API-backed games before the first canonical event. */
   gameId?: UUID;
+  /** Optional producer/debug sink for private model-call traces. */
+  privateTraceSink?: PrivateTraceSink;
   /** Awaited durability boundary for API-backed canonical event persistence. */
   durableEventSink?: (events: readonly CanonicalGameEvent[]) => Promise<void> | void;
   /** Optional forensic checkpoint writer called after durable event flushes. */
@@ -252,6 +254,78 @@ export interface AgentResponse {
   /** Compact private rationale for the selected strategic lens. */
   strategicLensRationale?: string;
 }
+
+export type PrivateDecisionTraceActorRole = "player" | "juror" | "house" | "producer";
+
+export interface PrivateDecisionTraceActor {
+  id?: UUID;
+  name: string;
+  role: PrivateDecisionTraceActorRole;
+}
+
+export interface PrivateDecisionTraceMessage {
+  role: string;
+  content: unknown;
+  name?: string;
+}
+
+export interface PrivateDecisionTraceToolCall {
+  id?: string;
+  type?: string;
+  name?: string;
+  arguments?: string;
+}
+
+export interface PrivateDecisionTraceBoundary {
+  currentEventSequence?: number;
+  currentEventHash?: string;
+  sourcePointer?: CanonicalSourcePointer | null;
+  finalEventSequence?: number;
+}
+
+export interface PrivateDecisionTraceContext {
+  gameId?: UUID;
+  ownerEpoch?: string;
+  action: string;
+  actor: PrivateDecisionTraceActor;
+  phase?: Phase;
+  round?: number;
+  boundary?: PrivateDecisionTraceBoundary;
+}
+
+export interface PrivateDecisionTrace {
+  version: 1;
+  gameId?: UUID;
+  ownerEpoch?: string;
+  action: string;
+  actor: PrivateDecisionTraceActor;
+  phase?: Phase;
+  round?: number;
+  createdAt: string;
+  model: {
+    provider?: string;
+    name: string;
+  };
+  prompt: {
+    messages: PrivateDecisionTraceMessage[];
+  };
+  response: {
+    raw: unknown;
+    finishReason?: string | null;
+    content?: string | null;
+    toolCalls?: PrivateDecisionTraceToolCall[];
+  };
+  output?: unknown;
+  emittedThinking?: string;
+  reasoningContext?: string;
+  toolName?: string;
+  toolArguments?: unknown;
+  strategyPacketUse?: StrategyPacketUseMarker;
+  strategyPacketRevision?: string;
+  boundary?: PrivateDecisionTraceBoundary;
+}
+
+export type PrivateTraceSink = (trace: PrivateDecisionTrace) => Promise<void> | void;
 
 export type StrategyPacketUse = "followed" | "revised" | "ignored" | "deferred";
 

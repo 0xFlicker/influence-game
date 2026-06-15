@@ -89,6 +89,20 @@ bun run mcp:game -- docs/simulations
 
 The server is read-only and scans the simulation corpus on demand. It addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and exposes tools for listing sessions/games, reading projections, filtering canonical events, searching logs, reading player timelines, and following source pointers to linked turn records when present. Older batches without event logs remain searchable through turns/progress/transcript artifacts, but projection tools require canonical events. To validate open strategy choices after a run, use `search_logs` with `sources: ["turns"]` for `mingle-intent`, `mingle-room-assignment`, `rumor`, `strategic-reflection`, `strategy-packet`, `strategicLens`, `strategyPacketUse`, `strategySignal`, `movementPurpose`, or `empower-revote`. To validate House producer carry-forward, search turns/transcript logs for `house-mc-summary`, legacy `[House MC]`, `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or a named House alliance hypothesis.
 
+For local API durable-run inspection, run the Trace MCP from the API package:
+
+```bash
+bun run s3:bootstrap
+set -a
+source .env.private-trace.local
+set +a
+
+cd packages/api
+bun run mcp:trace
+```
+
+Use this when the interesting run happened through the API lifecycle rather than the simulator. `list_manifests` shows private trace metadata and counts for one durable run; `read_content` opens one raw JSON/JSONL trace through the evidence manifest access path; `search_reasoning_traces` does run-scoped content search with bounded previews. This is a local producer/debug tool only and depends on local DB/private-storage env. Private trace validation requires local S3-compatible private evidence storage; `bun run trace:local:smoke` bootstraps Postgres plus the local private bucket and proves the writer/read/search path against a real object store. It does not add product/admin MCP auth, browser login, or a web UI.
+
 ## Full Stack Local Provider
 
 To run the API against LM Studio:

@@ -11,6 +11,7 @@ import { randomUUID } from "crypto";
 import {
   GameRunner,
   InfluenceAgent,
+  LLMHouseInterviewer,
   TokenTracker,
   createLlmClientFromEnv,
   estimateCost,
@@ -24,6 +25,8 @@ import type {
   GameConfig,
   GameStateSnapshot,
   PhaseContext,
+  PrivateDecisionTrace,
+  PrivateTraceSink,
   PowerAction,
   StrategicReflectionAction,
   TargetDecision,
@@ -45,6 +48,7 @@ import {
   markGameSuspended,
   renewGameRunOwner,
 } from "./game-ownership.js";
+import { writePrivateDecisionTrace } from "./private-trace-writer.js";
 
 // ---------------------------------------------------------------------------
 // Active game tracking
@@ -100,6 +104,33 @@ function startOwnerHeartbeat(
       stopped = true;
       clearInterval(interval);
     },
+  };
+}
+
+function createPrivateTraceSink(
+  db: DrizzleDB,
+  gameId: string,
+  ownerEpoch: string,
+): PrivateTraceSink {
+  return async (trace) => {
+    const enrichedTrace: PrivateDecisionTrace = {
+      ...trace,
+      gameId,
+      ownerEpoch,
+    };
+    try {
+      const result = await writePrivateDecisionTrace(db, {
+        gameId,
+        ownerEpoch,
+        trace: enrichedTrace,
+        eventSequence: trace.boundary?.finalEventSequence,
+      });
+      if (!result.ok) {
+        console.warn(`[game-lifecycle] Private trace degraded for game ${gameId}: ${result.error}`);
+      }
+    } catch (error) {
+      console.warn(`[game-lifecycle] Private trace sink failed for game ${gameId}:`, error);
+    }
   };
 }
 
@@ -544,6 +575,9 @@ export async function startGame(
 
   // Create token tracker
   const tokenTracker = new TokenTracker();
+  const privateTraceSink = ownerEpoch
+    ? createPrivateTraceSink(db, gameId, ownerEpoch)
+    : undefined;
 
   // Construct agents from player records
   const agents: IAgent[] = players.map((player) => {
@@ -580,7 +614,10 @@ export async function startGame(
       model,
       undefined,
       memoryStore,
-      { toolChoiceMode: llmConfig.toolChoiceMode },
+      {
+        toolChoiceMode: llmConfig.toolChoiceMode,
+        ...(privateTraceSink && { privateTraceSink }),
+      },
     );
     agent.setTokenTracker(tokenTracker);
     return agent;
@@ -612,9 +649,23 @@ export async function startGame(
     },
   };
 
+  const houseInterviewer = !useTestMockRunner && llmConfig
+    ? new LLMHouseInterviewer(
+        llmConfig.client,
+        resolveModelForTier(gameConfig.modelTier as string | undefined),
+        {
+          gameId,
+          ...(ownerEpoch && { ownerEpoch }),
+          ...(privateTraceSink && { privateTraceSink }),
+        },
+      )
+    : undefined;
+  houseInterviewer?.setTokenTracker(tokenTracker);
+
   // Create runner
-  const runner = new GameRunner(agents, engineConfig, undefined, {
+  const runner = new GameRunner(agents, engineConfig, houseInterviewer, {
     gameId,
+    ...(privateTraceSink && { privateTraceSink }),
     tokenTracker,
     ...(ownerEpoch && {
       durableEventSink: (events) => appendGameEvents(db, { gameId, ownerEpoch, events }),

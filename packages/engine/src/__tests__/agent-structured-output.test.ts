@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type OpenAI from "openai";
 import { InfluenceAgent } from "../agent";
-import type { PhaseContext } from "../game-runner";
+import type { PhaseContext, PrivateDecisionTrace } from "../game-runner";
 import { Phase } from "../types";
 
 function makeContext(phase: Phase = Phase.VOTE): PhaseContext {
@@ -227,6 +227,92 @@ describe("InfluenceAgent structured output mode", () => {
       function: { name: "cast_votes" },
     });
     expect(requests[0]?.parallel_tool_calls).toBe(false);
+  });
+
+  it("emits private decision traces for tool-call decisions", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "cast_votes",
+        {
+          thinking: "I empower Mira and expose Vera.",
+          empower: "Mira",
+          expose: "Vera",
+        },
+        "Native hidden reasoning for vote.",
+      ),
+      "gpt-5-nano",
+      undefined,
+      undefined,
+      {
+        privateTraceSink: (trace) => {
+          traces.push(trace);
+        },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getVotes(makeContext(Phase.VOTE));
+
+    expect(traces).toHaveLength(1);
+    const trace = traces[0]!;
+    expect(trace).toMatchObject({
+      version: 1,
+      gameId: "game-1",
+      action: "vote",
+      actor: { id: "atlas-id", name: "Atlas", role: "player" },
+      phase: Phase.VOTE,
+      round: 1,
+      model: { name: "gpt-5-nano" },
+      toolName: "cast_votes",
+      emittedThinking: "I empower Mira and expose Vera.",
+      reasoningContext: "Native hidden reasoning for vote.",
+    });
+    expect(trace.prompt.messages).toHaveLength(2);
+    expect(trace.prompt.messages[0]).toMatchObject({ role: "system" });
+    expect(trace.prompt.messages[1]).toMatchObject({ role: "user" });
+    expect(trace.response.finishReason).toBe("tool_calls");
+    expect(trace.response.toolCalls?.[0]).toMatchObject({
+      id: "call-1",
+      type: "function",
+      name: "cast_votes",
+    });
+    expect(trace.toolArguments).toMatchObject({
+      thinking: "I empower Mira and expose Vera.",
+      empower: "Mira",
+      expose: "Vera",
+      reasoningContext: "Native hidden reasoning for vote.",
+    });
+  });
+
+  it("does not emit private traces for pre-lobby helper planning", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeTextOpenAIStub(requests, "Open curious and ask Mira about the room."),
+      "gpt-5-nano",
+      undefined,
+      undefined,
+      {
+        privateTraceSink: (trace) => {
+          traces.push(trace);
+        },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getLobbyIntent(makeContext(Phase.LOBBY));
+
+    expect(traces).toHaveLength(0);
+    expect(requests).toHaveLength(1);
   });
 
   it("can use required string tool choice for local OpenAI-compatible providers", async () => {

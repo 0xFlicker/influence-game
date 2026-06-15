@@ -14,7 +14,8 @@
     "lint": "eslint src/",
     "db:generate": "bunx drizzle-kit generate",
     "db:migrate": "DRIZZLE_MIGRATIONS_DIR=./drizzle bun run src/db/migrate.ts",
-    "db:seed": "DRIZZLE_MIGRATIONS_DIR=./drizzle bun run src/db/seed.ts"
+    "db:seed": "DRIZZLE_MIGRATIONS_DIR=./drizzle bun run src/db/seed.ts",
+    "mcp:trace": "bun run src/trace-mcp/server.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1018.0",

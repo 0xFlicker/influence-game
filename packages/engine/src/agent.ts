@@ -21,6 +21,11 @@ import type {
   MingleTurnAction,
   PhaseContext,
   PowerLobbyExposure,
+  PrivateDecisionTrace,
+  PrivateDecisionTraceContext,
+  PrivateDecisionTraceMessage,
+  PrivateDecisionTraceToolCall,
+  PrivateTraceSink,
   StrategicReflectionAction,
   StrategicReflectionSummary,
   StrategicLens,
@@ -831,6 +836,8 @@ export interface InfluenceAgentOptions {
    * servers only support string tool_choice values or JSON schema responses.
    */
   toolChoiceMode?: LlmToolChoiceMode;
+  /** Optional producer/debug trace sink for raw model-call evidence. */
+  privateTraceSink?: PrivateTraceSink;
 }
 
 type LlmCallOptions = {
@@ -838,6 +845,7 @@ type LlmCallOptions = {
   reasoningOverhead?: number;
   reasoningEffort?: ReasoningEffort;
   signal?: AbortSignal;
+  privateTrace?: PrivateDecisionTraceContext;
 };
 
 // ---------------------------------------------------------------------------
@@ -852,6 +860,7 @@ export class InfluenceAgent implements IAgent {
   private readonly openai: OpenAI;
   private readonly model: string;
   private readonly toolChoiceMode: LlmToolChoiceMode;
+  private readonly privateTraceSink?: PrivateTraceSink;
   private tokenTracker: TokenTracker | null = null;
   private gameId: UUID = "";
   private allPlayers: Array<{ id: UUID; name: string }> = [];
@@ -884,6 +893,7 @@ export class InfluenceAgent implements IAgent {
     this.openai = openaiClient;
     this.model = model;
     this.toolChoiceMode = options.toolChoiceMode ?? "named";
+    this.privateTraceSink = options.privateTraceSink;
     this.backstory = backstory ?? AGENT_BACKSTORIES[name] ?? "";
     this.memoryStore = memoryStore ?? null;
   }
@@ -1008,6 +1018,146 @@ export class InfluenceAgent implements IAgent {
     };
   }
 
+  private privateTraceContext(ctx: PhaseContext, action: string): PrivateDecisionTraceContext {
+    return {
+      gameId: ctx.gameId || this.gameId || undefined,
+      action,
+      actor: {
+        id: this.id,
+        name: this.name,
+        role: ctx.isEliminated ? "juror" : "player",
+      },
+      phase: ctx.phase,
+      round: ctx.round,
+    };
+  }
+
+  private traceOptions(ctx: PhaseContext, options: LlmCallOptions): LlmCallOptions {
+    const action = options.action ?? "unknown";
+    return {
+      ...options,
+      privateTrace: options.privateTrace ?? this.privateTraceContext(ctx, action),
+    };
+  }
+
+  private static privateTraceMessages(
+    messages: readonly { role: string; content: unknown; name?: string }[],
+  ): PrivateDecisionTraceMessage[] {
+    return messages.map((message) => ({
+      role: message.role,
+      content: message.content,
+      ...(message.name && { name: message.name }),
+    }));
+  }
+
+  private static privateTraceToolCalls(message: unknown): PrivateDecisionTraceToolCall[] | undefined {
+    if (!message || typeof message !== "object" || Array.isArray(message)) return undefined;
+    const record = message as Record<string, unknown>;
+    if (!Array.isArray(record.tool_calls)) return undefined;
+
+    const toolCalls = record.tool_calls
+      .map((toolCall): PrivateDecisionTraceToolCall | null => {
+        if (!toolCall || typeof toolCall !== "object" || Array.isArray(toolCall)) return null;
+        const toolRecord = toolCall as Record<string, unknown>;
+        const functionRecord =
+          toolRecord.function && typeof toolRecord.function === "object" && !Array.isArray(toolRecord.function)
+            ? toolRecord.function as Record<string, unknown>
+            : {};
+        return {
+          ...(typeof toolRecord.id === "string" && { id: toolRecord.id }),
+          ...(typeof toolRecord.type === "string" && { type: toolRecord.type }),
+          ...(typeof functionRecord.name === "string" && { name: functionRecord.name }),
+          ...(typeof functionRecord.arguments === "string" && { arguments: functionRecord.arguments }),
+        };
+      })
+      .filter((toolCall): toolCall is PrivateDecisionTraceToolCall => toolCall !== null);
+
+    return toolCalls.length > 0 ? toolCalls : undefined;
+  }
+
+  private privateTraceStrategyPacketUse(output: unknown): StrategyPacketUseMarker | undefined {
+    if (!output || typeof output !== "object" || Array.isArray(output)) return undefined;
+    const record = output as Record<string, unknown>;
+    const existing = record.strategyPacketUse;
+    if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+      const existingRecord = existing as Record<string, unknown>;
+      const strategyPacketUse = normalizeStrategyPacketUseValue(existingRecord.strategyPacketUse);
+      const revision = normalizeNullableString(existingRecord.strategyPacketRevision);
+      const rationale = normalizeNullableString(existingRecord.strategyPacketUseRationale);
+      if (strategyPacketUse && revision) {
+        return {
+          strategyPacketRevision: revision,
+          strategyPacketUse,
+          strategyPacketUseRationale: rationale ?? "No rationale provided.",
+        };
+      }
+    }
+    return this.strategyPacketUseMarker(record.strategyPacketUse, record.strategyPacketUseRationale);
+  }
+
+  private async emitPrivateDecisionTrace(params: {
+    options?: LlmCallOptions;
+    messages: readonly { role: string; content: unknown; name?: string }[];
+    response: ChatCompletion;
+    output?: unknown;
+    toolName?: string;
+    toolArguments?: unknown;
+  }): Promise<void> {
+    if (!this.privateTraceSink || !params.options?.privateTrace) return;
+
+    const choice = params.response.choices[0];
+    const message = choice?.message;
+    const outputRecord =
+      params.output && typeof params.output === "object" && !Array.isArray(params.output)
+        ? params.output as Record<string, unknown>
+        : {};
+    const emittedThinking = InfluenceAgent.readStringField(outputRecord.thinking);
+    const reasoningContext =
+      InfluenceAgent.readStringField(outputRecord.reasoningContext) ||
+      InfluenceAgent.extractReasoningContext(message);
+    const strategyPacketUse = this.privateTraceStrategyPacketUse(params.output);
+    const content = typeof message?.content === "string" ? message.content : null;
+    const traceContext = params.options.privateTrace;
+    const trace: PrivateDecisionTrace = {
+      version: 1,
+      ...(traceContext.gameId && { gameId: traceContext.gameId }),
+      ...(traceContext.ownerEpoch && { ownerEpoch: traceContext.ownerEpoch }),
+      action: traceContext.action,
+      actor: traceContext.actor,
+      ...(traceContext.phase && { phase: traceContext.phase }),
+      ...(traceContext.round !== undefined && { round: traceContext.round }),
+      createdAt: new Date().toISOString(),
+      model: {
+        name: this.model,
+      },
+      prompt: {
+        messages: InfluenceAgent.privateTraceMessages(params.messages),
+      },
+      response: {
+        raw: params.response,
+        finishReason: choice?.finish_reason ?? null,
+        content,
+        ...(InfluenceAgent.privateTraceToolCalls(message) && {
+          toolCalls: InfluenceAgent.privateTraceToolCalls(message),
+        }),
+      },
+      ...(params.output !== undefined && { output: params.output }),
+      ...(emittedThinking && { emittedThinking }),
+      ...(reasoningContext && { reasoningContext }),
+      ...(params.toolName && { toolName: params.toolName }),
+      ...(params.toolArguments !== undefined && { toolArguments: params.toolArguments }),
+      ...(strategyPacketUse && { strategyPacketUse }),
+      ...(this.memory.strategyPacket?.revisionId && { strategyPacketRevision: this.memory.strategyPacket.revisionId }),
+      ...(traceContext.boundary && { boundary: traceContext.boundary }),
+    };
+
+    try {
+      await this.privateTraceSink(trace);
+    } catch (error) {
+      console.warn(`[trace-sink] agent="${this.name}" action=${trace.action} failed:`, error);
+    }
+  }
+
   private scrubEliminatedPlayerNames(text: string, eliminatedNames: string[]): string {
     let scrubbed = text;
     for (const name of eliminatedNames) {
@@ -1056,7 +1206,7 @@ meeting people at a dinner party. Let your personality shine through naturally.
 
 Keep it to 2-3 sentences. Be warm, specific, and human.`;
 
-    return this.callLLMWithThinking(prompt, 150, sys, { action: "introduction", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
+    return this.callLLMWithThinking(prompt, 150, sys, this.traceOptions(ctx, { action: "introduction", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }));
   }
 
   async getLobbyIntent(ctx: PhaseContext): Promise<string> {
@@ -1159,7 +1309,7 @@ ${lobbyGuidance}
 ${eliminationGuidance ? `\n${eliminationGuidance}\n` : ""}
 `;
 
-    return this.callLLMWithThinking(prompt, 150, sys, { action: "lobby", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
+    return this.callLLMWithThinking(prompt, 150, sys, this.traceOptions(ctx, { action: "lobby", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }));
   }
 
   async getWhispers(
@@ -1181,7 +1331,7 @@ Use the send_whispers tool to submit your whisper messages. Use player NAMES (no
     try {
       const result = await this.callTool<{ whispers: Array<{ to: string[]; text: string }> }>(
         prompt, TOOL_SEND_WHISPERS, 400, sys,
-        { action: "whispers", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" },
+        this.traceOptions(ctx, { action: "whispers", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" }),
       );
 
       return (result.whispers ?? [])
@@ -1255,7 +1405,7 @@ Use the form_mingle_intent tool.`;
         reasoningContext?: string;
       }>(
         prompt, TOOL_MINGLE_INTENT, 300, sys,
-        { action: "mingle-intent", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
+        this.traceOptions(ctx, { action: "mingle-intent", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
       return {
         seekPlayers: normalizeStringArray(result.seekPlayers),
@@ -1313,7 +1463,7 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
     try {
       const result = await this.callTool<{ thinking?: string; message?: string; pass?: boolean; reasoningContext?: string }>(
         prompt, TOOL_SEND_ROOM_MESSAGE, 300, sys,
-        { action: "room-message", reasoningEffort: "medium" },
+        this.traceOptions(ctx, { action: "room-message", reasoningEffort: "medium" }),
       );
       if (result.pass) return null;
       const msg = result.message?.trim();
@@ -1404,7 +1554,7 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
         reasoningContext?: string;
       }>(
         prompt, TOOL_MINGLE_TURN, 300, sys,
-        { action: "mingle-turn", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
+        this.traceOptions(ctx, { action: "mingle-turn", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
       const msg = result.noReply ? null : (result.message?.trim() || null);
       const gotoRoomId = Number.isInteger(result.gotoRoomId) ? result.gotoRoomId : null;
@@ -1483,7 +1633,7 @@ Use the spread_rumor tool.`;
         reasoningContext?: string;
       }>(
         prompt, TOOL_RUMOR, 180, sys,
-        { action: "rumor", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
+        this.traceOptions(ctx, { action: "rumor", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
       // Strip "The shadows whisper: " prefix if the LLM included it.
       return {
@@ -1533,7 +1683,7 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
     try {
       const result = await this.callTool<{ thinking?: string; empower: string; expose: string; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown; reasoningContext?: string }>(
         prompt, TOOL_CAST_VOTES, 100, sys,
-        { action: "vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
+        this.traceOptions(ctx, { action: "vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
 
       const empowerPlayer = findByName(others, result.empower);
@@ -1623,7 +1773,7 @@ Use the cast_empower_revote tool. Return only an empower target from the eligibl
     try {
       const result = await this.callTool<{ thinking?: string; empower: string; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown; reasoningContext?: string }>(
         prompt, TOOL_EMPOWER_REVOTE, 100, sys,
-        { action: "empower-revote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" },
+        this.traceOptions(ctx, { action: "empower-revote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
 
       const empowerPlayer = findByName(tiedPlayers, result.empower);
@@ -1691,11 +1841,11 @@ Do not only plead for safety. Redirect pressure to a named person.` : ""}
 Avoid generic pleas like "trust me" or "think carefully." Make one accountable ask the room can cite later.
 Keep it to 1-2 sentences.`;
 
-    return this.callLLMWithThinking(prompt, 180, sys, {
+    return this.callLLMWithThinking(prompt, 180, sys, this.traceOptions(ctx, {
       action: "power-lobby",
       reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW,
       reasoningEffort: "low",
-    });
+    }));
   }
 
   async getPowerAction(
@@ -1747,7 +1897,7 @@ Use the use_power tool to declare your final hidden action.`;
     try {
       const result = await this.callTool<{ thinking?: string; action: string; target: string; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown; reasoningContext?: string }>(
         prompt, TOOL_POWER_ACTION, 100, sys,
-        { action: "power", reasoningEffort: "medium" },
+        this.traceOptions(ctx, { action: "power", reasoningEffort: "medium" }),
       );
 
       const targetPlayer =
@@ -1802,7 +1952,7 @@ Who should be eliminated? Consider your alliances, threats, and long-term strate
 Use the council_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; eliminate: string; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown; reasoningContext?: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
+      const result = await this.callTool<{ thinking?: string; eliminate: string; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown; reasoningContext?: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, this.traceOptions(ctx, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }));
       const strategyPacketUse = this.strategyPacketUseMarker(result.strategyPacketUse, result.strategyPacketUseRationale);
       const target = normalizeName(result.eliminate) === normalizeName(c1Name) ? c1
         : normalizeName(result.eliminate) === normalizeName(c2Name) ? c2
@@ -1851,7 +2001,7 @@ ${eliminationDetails ? `\n## How You Were Taken Out\n${eliminationDetails}\n` : 
 
 Keep it to 1-2 sentences.`;
 
-    return this.callLLMWithThinking(prompt, 120, sys, { action: "last-message", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
+    return this.callLLMWithThinking(prompt, 120, sys, this.traceOptions(ctx, { action: "last-message", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }));
   }
 
   async getDiaryEntry(ctx: PhaseContext, question: string, sessionHistory?: Array<{ question: string; answer: string }>): Promise<AgentResponse> {
@@ -1888,7 +2038,7 @@ Keep it to 2-4 sentences. Be entertaining for the audience.`
     : `Answer the question honestly and in character. Share your genuine strategic thinking — who you trust, who you suspect, what your next moves are.
 Keep it to 2-4 sentences. Be entertaining for the audience.`}`;
 
-    return this.callLLMWithThinking(prompt, 250, sys, { action: "diary", reasoningEffort: "medium" });
+    return this.callLLMWithThinking(prompt, 250, sys, this.traceOptions(ctx, { action: "diary", reasoningEffort: "medium" }));
   }
 
   // ---------------------------------------------------------------------------
@@ -1906,7 +2056,7 @@ Address the other players directly. Reference your alliances, your gameplay, you
 
 Keep it to 2-3 sentences. Make it compelling.`;
 
-    return this.callLLMWithThinking(prompt, 200, sys, { action: "defense", reasoningEffort: "medium", signal: options?.signal });
+    return this.callLLMWithThinking(prompt, 200, sys, this.traceOptions(ctx, { action: "defense", reasoningEffort: "medium", signal: options?.signal }));
   }
 
   async getEndgameEliminationVote(ctx: PhaseContext, options?: AgentCallOptions): Promise<TargetDecision> {
@@ -1928,7 +2078,7 @@ Who should be eliminated? Consider everything that has happened in the game.
 Use the elimination_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; eliminate: string; reasoningContext?: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, { action: "elimination-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal });
+      const result = await this.callTool<{ thinking?: string; eliminate: string; reasoningContext?: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, this.traceOptions(ctx, { action: "elimination-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal }));
       const target = findByName(others, result.eliminate);
       if (target) return { target: target.id, thinking: result.thinking, reasoningContext: result.reasoningContext };
       const fallback = others[Math.floor(Math.random() * others.length)];
@@ -1964,7 +2114,7 @@ Use the make_accusation tool to submit your accusation.`;
     try {
       const result = await this.callTool<{ thinking?: string; target: string; accusation: string; reasoningContext?: string }>(
         prompt, TOOL_MAKE_ACCUSATION, 200, sys,
-        { action: "accusation", reasoningEffort: "medium", signal: options?.signal },
+        this.traceOptions(ctx, { action: "accusation", reasoningEffort: "medium", signal: options?.signal }),
       );
       const target = findByName(others, result.target);
       const fallbackOther = others[0];
@@ -2001,7 +2151,7 @@ Defend yourself publicly. Rebut the accusation, redirect blame, or appeal to the
 
 Keep it to 2-3 sentences.`;
 
-    return this.callLLMWithThinking(prompt, 200, sys, { action: "tribunal-defense", reasoningEffort: "medium", signal: options?.signal });
+    return this.callLLMWithThinking(prompt, 200, sys, this.traceOptions(ctx, { action: "tribunal-defense", reasoningEffort: "medium", signal: options?.signal }));
   }
 
   async getOpeningStatement(ctx: PhaseContext, options?: AgentCallOptions): Promise<AgentResponse> {
@@ -2017,7 +2167,7 @@ Reference your gameplay, your alliances, your strategic moves throughout the gam
 
 Keep it to 3-4 sentences. Make it powerful.`;
 
-    return this.callLLMWithThinking(prompt, 250, sys, { action: "opening-statement", reasoningEffort: "medium", signal: options?.signal });
+    return this.callLLMWithThinking(prompt, 250, sys, this.traceOptions(ctx, { action: "opening-statement", reasoningEffort: "medium", signal: options?.signal }));
   }
 
   async getJuryQuestion(ctx: PhaseContext, finalistIds: [UUID, UUID], options?: AgentCallOptions): Promise<{ targetFinalistId: UUID; question: string; thinking?: string; reasoningContext?: string }> {
@@ -2042,7 +2192,7 @@ Use the ask_jury_question tool to submit your question.`;
     try {
       const result = await this.callTool<{ thinking?: string; target: string; question: string; reasoningContext?: string }>(
         prompt, TOOL_ASK_JURY_QUESTION, 4096, sys,
-        { action: "jury-question", reasoningEffort: "medium", signal: options?.signal },
+        this.traceOptions(ctx, { action: "jury-question", reasoningEffort: "medium", signal: options?.signal }),
       );
       const target = findByName(finalists, result.target);
       return {
@@ -2075,7 +2225,7 @@ Answer honestly and persuasively. This juror will vote for the winner — make y
 
 Keep it to 2-3 sentences.`;
 
-    return this.callLLMWithThinking(prompt, 200, sys, { action: "jury-answer", reasoningEffort: "medium", signal: options?.signal });
+    return this.callLLMWithThinking(prompt, 200, sys, this.traceOptions(ctx, { action: "jury-answer", reasoningEffort: "medium", signal: options?.signal }));
   }
 
   async getClosingArgument(ctx: PhaseContext, options?: AgentCallOptions): Promise<AgentResponse> {
@@ -2097,7 +2247,7 @@ Eliminated players (potential reference points): ${eliminationSummary || "none"}
 
 Keep it to 2-3 sentences.`;
 
-    return this.callLLMWithThinking(prompt, 250, sys, { action: "closing-argument", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "medium", signal: options?.signal });
+    return this.callLLMWithThinking(prompt, 250, sys, this.traceOptions(ctx, { action: "closing-argument", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "medium", signal: options?.signal }));
   }
 
   async getJuryVote(ctx: PhaseContext, finalistIds: [UUID, UUID], options?: AgentCallOptions): Promise<TargetDecision> {
@@ -2124,7 +2274,7 @@ Consider their gameplay, their answers to the jury, and the full arc of the game
 Use the jury_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; winner: string; reasoningContext?: string }>(prompt, TOOL_JURY_VOTE, 80, sys, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal });
+      const result = await this.callTool<{ thinking?: string; winner: string; reasoningContext?: string }>(prompt, TOOL_JURY_VOTE, 80, sys, this.traceOptions(ctx, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal }));
       const target = findByName(finalists, result.winner);
       const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
       if (!randomFinalist) throw new Error("No finalist available for jury vote");
@@ -2624,14 +2774,18 @@ ${roomSection}
           }
           console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned empty local message`);
           if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
-          return this.attachStrategyPacketRevision({
+          const output = this.attachStrategyPacketRevision({
             thinking,
             message: "[No response]",
             ...(reasoningContext && { reasoningContext }),
           });
+          await this.emitPrivateDecisionTrace({ options, messages, response, output });
+          return output;
         }
 
-        return this.attachStrategyPacketRevision({ thinking, message, ...(reasoningContext && { reasoningContext }) });
+        const output = this.attachStrategyPacketRevision({ thinking, message, ...(reasoningContext && { reasoningContext }) });
+        await this.emitPrivateDecisionTrace({ options, messages, response, output });
+        return output;
       } catch (error) {
         if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
           throw error;
@@ -2726,6 +2880,14 @@ ${JSON.stringify(tool.function.parameters)}`,
     if (reasoningContext) {
       withReasoning.reasoningContext = reasoningContext;
     }
+    await this.emitPrivateDecisionTrace({
+      options,
+      messages,
+      response,
+      output: withReasoning,
+      toolName: tool.function.name,
+      toolArguments: withReasoning,
+    });
     return withReasoning;
   }
 
@@ -2858,17 +3020,23 @@ ${JSON.stringify(tool.function.parameters)}`,
         if (!content) {
           console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned empty content`);
           if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
-          return this.attachStrategyPacketRevision({ thinking: "", message: "[No response]" });
+          const output = this.attachStrategyPacketRevision({ thinking: "", message: "[No response]" });
+          await this.emitPrivateDecisionTrace({ options, messages, response, output });
+          return output;
         }
 
         const parsed = InfluenceAgent.parseAgentResponseContent(content);
         if (parsed) {
-          return this.attachStrategyPacketRevision(parsed);
+          const output = this.attachStrategyPacketRevision(parsed);
+          await this.emitPrivateDecisionTrace({ options, messages, response, output });
+          return output;
         }
 
         // Fallback: treat entire content as message (model didn't return valid JSON)
         console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned non-JSON, treating as plain message`);
-        return this.attachStrategyPacketRevision({ thinking: "", message: content });
+        const output = this.attachStrategyPacketRevision({ thinking: "", message: content });
+        await this.emitPrivateDecisionTrace({ options, messages, response, output });
+        return output;
       } catch (error) {
         if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
           throw error;
@@ -2975,6 +3143,14 @@ ${JSON.stringify(tool.function.parameters)}`,
             if (reasoningContext) {
               withReasoning.reasoningContext = reasoningContext;
             }
+            await this.emitPrivateDecisionTrace({
+              options,
+              messages,
+              response,
+              output: withReasoning,
+              toolName: requestTool.function.name,
+              toolArguments: withReasoning,
+            });
             return withReasoning;
           }
 
@@ -3018,6 +3194,14 @@ ${JSON.stringify(tool.function.parameters)}`,
         if (reasoningContext) {
           args.reasoningContext = reasoningContext;
         }
+        await this.emitPrivateDecisionTrace({
+          options,
+          messages,
+          response,
+          output: args,
+          toolName: requestTool.function.name,
+          toolArguments: args,
+        });
         return args;
       } catch (error) {
         if (error instanceof ToolCallFatalError) {
@@ -3077,7 +3261,7 @@ For strategyPacket.targetPosture, choose a standing target posture:
         reasoningContext?: string;
       }>(
         prompt, TOOL_STRATEGIC_REFLECTION, 300, sys,
-        { action: "reflection", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "medium" },
+        this.traceOptions(ctx, { action: "reflection", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "medium" }),
       );
       const normalized: StrategicReflectionAction = {
         certainties: normalizeStringArray(reflection.certainties),

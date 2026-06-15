@@ -58,7 +58,7 @@ function validateEvidenceStoragePointer(storage?: EvidenceStoragePointer, gameId
   }
 }
 
-async function markEvidenceDegraded(
+export async function markEvidenceDegraded(
   db: DrizzleDB,
   gameId: string,
   ownerEpoch: string,

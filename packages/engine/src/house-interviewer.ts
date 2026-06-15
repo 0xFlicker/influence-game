@@ -25,6 +25,11 @@ import type {
   HouseStrategyBibleUpdateContext,
   HouseStrategyBibleUpdateResult,
   HouseVoteCount,
+  PrivateDecisionTrace,
+  PrivateDecisionTraceContext,
+  PrivateDecisionTraceMessage,
+  PrivateDecisionTraceToolCall,
+  PrivateTraceSink,
   TranscriptEntry,
 } from "./game-runner.types";
 
@@ -116,6 +121,12 @@ export interface IHouseInterviewer {
    * Used for in-progress simulation traces to make them more engaging.
    */
   generateGameplaySummary(recentTranscript: TranscriptEntry[], round: number, phase: Phase, alivePlayers: string[]): Promise<string>;
+}
+
+export interface LLMHouseInterviewerOptions {
+  privateTraceSink?: PrivateTraceSink;
+  gameId?: UUID;
+  ownerEpoch?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -385,11 +396,17 @@ function parseHouseProducerBrief(
 export class LLMHouseInterviewer implements IHouseInterviewer {
   private readonly openai: OpenAI;
   private readonly model: string;
+  private readonly privateTraceSink?: PrivateTraceSink;
+  private readonly privateTraceGameId?: UUID;
+  private readonly privateTraceOwnerEpoch?: string;
   private tokenTracker: TokenTracker | null = null;
 
-  constructor(openaiClient: OpenAI, model = "gpt-5-nano") {
+  constructor(openaiClient: OpenAI, model = "gpt-5-nano", options: LLMHouseInterviewerOptions = {}) {
     this.openai = openaiClient;
     this.model = model;
+    this.privateTraceSink = options.privateTraceSink;
+    this.privateTraceGameId = options.gameId;
+    this.privateTraceOwnerEpoch = options.ownerEpoch;
   }
 
   /** Attach a token tracker to record LLM usage. */
@@ -409,6 +426,112 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       response.usage.prompt_tokens_details?.cached_tokens ?? 0,
       reasoningTk,
     );
+  }
+
+  private privateTraceContext(action: string, round: number, phase: Phase): PrivateDecisionTraceContext {
+    return {
+      ...(this.privateTraceGameId && { gameId: this.privateTraceGameId }),
+      ...(this.privateTraceOwnerEpoch && { ownerEpoch: this.privateTraceOwnerEpoch }),
+      action,
+      actor: {
+        name: "The House",
+        role: "house",
+      },
+      phase,
+      round,
+    };
+  }
+
+  private static privateTraceMessages(
+    messages: readonly { role: string; content: unknown; name?: string }[],
+  ): PrivateDecisionTraceMessage[] {
+    return messages.map((message) => ({
+      role: message.role,
+      content: message.content,
+      ...(message.name && { name: message.name }),
+    }));
+  }
+
+  private static privateTraceToolCalls(message: unknown): PrivateDecisionTraceToolCall[] | undefined {
+    if (!message || typeof message !== "object" || Array.isArray(message)) return undefined;
+    const record = message as Record<string, unknown>;
+    if (!Array.isArray(record.tool_calls)) return undefined;
+    const toolCalls = record.tool_calls
+      .map((toolCall): PrivateDecisionTraceToolCall | null => {
+        if (!toolCall || typeof toolCall !== "object" || Array.isArray(toolCall)) return null;
+        const toolRecord = toolCall as Record<string, unknown>;
+        const functionRecord =
+          toolRecord.function && typeof toolRecord.function === "object" && !Array.isArray(toolRecord.function)
+            ? toolRecord.function as Record<string, unknown>
+            : {};
+        return {
+          ...(typeof toolRecord.id === "string" && { id: toolRecord.id }),
+          ...(typeof toolRecord.type === "string" && { type: toolRecord.type }),
+          ...(typeof functionRecord.name === "string" && { name: functionRecord.name }),
+          ...(typeof functionRecord.arguments === "string" && { arguments: functionRecord.arguments }),
+        };
+      })
+      .filter((toolCall): toolCall is PrivateDecisionTraceToolCall => toolCall !== null);
+    return toolCalls.length > 0 ? toolCalls : undefined;
+  }
+
+  private static extractReasoningContext(message: unknown): string {
+    if (!message || typeof message !== "object" || Array.isArray(message)) return "";
+    const record = message as Record<string, unknown>;
+    return readString(record.reasoning_content) || readString(record.reasoning);
+  }
+
+  private async emitPrivateDecisionTrace(params: {
+    context: PrivateDecisionTraceContext;
+    messages: readonly { role: string; content: unknown; name?: string }[];
+    response: ChatCompletion;
+    output?: unknown;
+  }): Promise<void> {
+    if (!this.privateTraceSink) return;
+    const choice = params.response.choices[0];
+    const message = choice?.message;
+    const outputRecord =
+      params.output && typeof params.output === "object" && !Array.isArray(params.output)
+        ? params.output as Record<string, unknown>
+        : {};
+    const emittedThinking = readString(outputRecord.thinking);
+    const reasoningContext =
+      readString(outputRecord.reasoningContext) ||
+      LLMHouseInterviewer.extractReasoningContext(message);
+    const toolCalls = LLMHouseInterviewer.privateTraceToolCalls(message);
+    const content = typeof message?.content === "string" ? message.content : null;
+    const trace: PrivateDecisionTrace = {
+      version: 1,
+      ...(params.context.gameId && { gameId: params.context.gameId }),
+      ...(params.context.ownerEpoch && { ownerEpoch: params.context.ownerEpoch }),
+      action: params.context.action,
+      actor: params.context.actor,
+      ...(params.context.phase && { phase: params.context.phase }),
+      ...(params.context.round !== undefined && { round: params.context.round }),
+      createdAt: new Date().toISOString(),
+      model: {
+        name: this.model,
+      },
+      prompt: {
+        messages: LLMHouseInterviewer.privateTraceMessages(params.messages),
+      },
+      response: {
+        raw: params.response,
+        finishReason: choice?.finish_reason ?? null,
+        content,
+        ...(toolCalls && { toolCalls }),
+      },
+      ...(params.output !== undefined && { output: params.output }),
+      ...(emittedThinking && { emittedThinking }),
+      ...(reasoningContext && { reasoningContext }),
+      ...(params.context.boundary && { boundary: params.context.boundary }),
+    };
+
+    try {
+      await this.privateTraceSink(trace);
+    } catch (error) {
+      console.warn(`[trace-sink] house action=${trace.action} failed:`, error);
+    }
   }
 
   /** gpt-5 family requires max_completion_tokens and only accepts default temperature. */
@@ -465,15 +588,16 @@ Respond with JSON only:
     { "roomId": 1, "playerIds": ["player-id"] }
   ],
   "rationale": "short producer/debug rationale for the allocation"
-}`;
+    }`;
 
     try {
+      const messages = [
+        { role: "system" as const, content: "You are the House producer assigning private Mingle rooms. Return JSON only." },
+        { role: "user" as const, content: prompt },
+      ];
       const response = await this.openai.chat.completions.create({
         model: this.model,
-        messages: [
-          { role: "system", content: "You are the House producer assigning private Mingle rooms. Return JSON only." },
-          { role: "user", content: prompt },
-        ],
+        messages,
         response_format: { type: "json_object" },
         ...this.modelParams(1200, 0.4),
       });
@@ -481,7 +605,14 @@ Respond with JSON only:
       this.recordUsage("House/mingle-assignment", response);
 
       const raw = response.choices[0]?.message?.content?.trim() ?? "";
-      return parseHouseMingleAssignment(raw);
+      const output = parseHouseMingleAssignment(raw);
+      await this.emitPrivateDecisionTrace({
+        context: this.privateTraceContext("house-mingle-assignment", context.round, Phase.MINGLE),
+        messages,
+        response,
+        output,
+      });
+      return output;
     } catch (err) {
       return {
         rooms: [],
@@ -549,21 +680,29 @@ Respond with JSON only:
   },
   "rationale": "short producer/debug rationale",
   "thinking": "brief hidden producer thinking"
-}`;
+    }`;
 
     try {
+      const messages = [
+        { role: "system" as const, content: "You are The House producer maintaining a private Strategy Bible. Return JSON only." },
+        { role: "user" as const, content: prompt },
+      ];
       const response = await this.openai.chat.completions.create({
         model: this.model,
-        messages: [
-          { role: "system", content: "You are The House producer maintaining a private Strategy Bible. Return JSON only." },
-          { role: "user", content: prompt },
-        ],
+        messages,
         response_format: { type: "json_object" },
         ...this.modelParams(5000, 0.35),
       });
       this.recordUsage("House/strategy-bible", response);
 
-      return parseHouseStrategyBible(response.choices[0]?.message?.content?.trim() ?? "", context);
+      const output = parseHouseStrategyBible(response.choices[0]?.message?.content?.trim() ?? "", context);
+      await this.emitPrivateDecisionTrace({
+        context: this.privateTraceContext("house-strategy-bible", context.round, context.phase),
+        messages,
+        response,
+        output,
+      });
+      return output;
     } catch (err) {
       return {
         packet: null,
@@ -575,17 +714,25 @@ Respond with JSON only:
   async generateHouseSummary(context: HouseGameplaySummaryContext): Promise<HouseGameplaySummaryResult> {
     const prompt = this.buildSummaryPrompt(context, "Generate a concise, watchable 3-5 sentence House MC summary for the audience.");
     try {
+      const messages = [
+        { role: "system" as const, content: "You are the House MC — omniscient, dramatic reality TV narrator. Return JSON only." },
+        { role: "user" as const, content: prompt },
+      ];
       const response = await this.openai.chat.completions.create({
         model: this.model,
-        messages: [
-          { role: "system", content: "You are the House MC — omniscient, dramatic reality TV narrator. Return JSON only." },
-          { role: "user", content: prompt },
-        ],
+        messages,
         response_format: { type: "json_object" },
         ...this.modelParams(1600, 0.8),
       });
       this.recordUsage("House/mc-summary", response);
-      return parseHouseSummary(response.choices[0]?.message?.content?.trim() ?? "", context);
+      const output = parseHouseSummary(response.choices[0]?.message?.content?.trim() ?? "", context);
+      await this.emitPrivateDecisionTrace({
+        context: this.privateTraceContext("house-summary", context.round, context.phase),
+        messages,
+        response,
+        output,
+      });
+      return output;
     } catch {
       return this.templateSummary(context, "The House is watching closely as the game narrows and the pressure shifts.");
     }
@@ -597,17 +744,25 @@ Respond with JSON only:
       "Generate a long-form producer catch-up summary. Explain teams forming or weakening, leverage shifts, unresolved promises, and House open questions.",
     );
     try {
+      const messages = [
+        { role: "system" as const, content: "You are The House showrunner writing a private/audience catch-up for producer review. Return JSON only." },
+        { role: "user" as const, content: prompt },
+      ];
       const response = await this.openai.chat.completions.create({
         model: this.model,
-        messages: [
-          { role: "system", content: "You are The House showrunner writing a private/audience catch-up for producer review. Return JSON only." },
-          { role: "user", content: prompt },
-        ],
+        messages,
         response_format: { type: "json_object" },
         ...this.modelParams(4000, 0.75),
       });
       this.recordUsage("House/long-form-summary", response);
-      return parseHouseSummary(response.choices[0]?.message?.content?.trim() ?? "", context);
+      const output = parseHouseSummary(response.choices[0]?.message?.content?.trim() ?? "", context);
+      await this.emitPrivateDecisionTrace({
+        context: this.privateTraceContext("house-long-form-summary", context.round, context.phase),
+        messages,
+        response,
+        output,
+      });
+      return output;
     } catch {
       return this.templateSummary(context, "The long-form House read is unavailable, but the game continues to turn on shifting promises and pressure.");
     }
@@ -642,20 +797,28 @@ Respond with JSON only:
   "safeToReveal": ["safe player-known facts or carefully framed pressure"],
   "privateDoNotReveal": ["hidden producer reads not to disclose directly"],
   "thinking": "brief hidden producer thinking"
-}`;
+    }`;
 
     try {
+      const messages = [
+        { role: "system" as const, content: "You are The House producer preparing a private diary-room brief. Return JSON only." },
+        { role: "user" as const, content: prompt },
+      ];
       const response = await this.openai.chat.completions.create({
         model: this.model,
-        messages: [
-          { role: "system", content: "You are The House producer preparing a private diary-room brief. Return JSON only." },
-          { role: "user", content: prompt },
-        ],
+        messages,
         response_format: { type: "json_object" },
         ...this.modelParams(1800, 0.55),
       });
       this.recordUsage("House/producer-brief", response);
-      return parseHouseProducerBrief(response.choices[0]?.message?.content?.trim() ?? "", context, packet);
+      const output = parseHouseProducerBrief(response.choices[0]?.message?.content?.trim() ?? "", context, packet);
+      await this.emitPrivateDecisionTrace({
+        context: this.privateTraceContext("house-producer-brief", context.round, Phase.DIARY_ROOM),
+        messages,
+        response,
+        output,
+      });
+      return output;
     } catch {
       return parseHouseProducerBrief("", context, packet);
     }
@@ -663,13 +826,14 @@ Respond with JSON only:
 
   async generateQuestion(context: DiaryRoomContext): Promise<string> {
     const gameStatePrompt = this.buildGameStatePrompt(context);
+    const messages = [
+      { role: "system" as const, content: HOUSE_PERSONALITY },
+      { role: "user" as const, content: gameStatePrompt },
+    ];
 
     const response = await this.openai.chat.completions.create({
       model: this.model,
-      messages: [
-        { role: "system", content: HOUSE_PERSONALITY },
-        { role: "user", content: gameStatePrompt },
-      ],
+      messages,
       ...this.modelParams(150, 0.9),
     });
 
@@ -688,9 +852,16 @@ Respond with JSON only:
     }
 
     const question = response.choices[0]?.message?.content?.trim();
-    if (question && question.length > 0) return question;
-
-    return `${context.agentName}, what's on your mind right now?`;
+    const output = question && question.length > 0
+      ? question
+      : `${context.agentName}, what's on your mind right now?`;
+    await this.emitPrivateDecisionTrace({
+      context: this.privateTraceContext("house-question", context.round, Phase.DIARY_ROOM),
+      messages,
+      response,
+      output: { question: output },
+    });
+    return output;
   }
 
   async generateFollowUpOrClose(
@@ -729,13 +900,14 @@ Your follow-up MUST reference something specific from their answer — a name th
 Respond with EXACTLY one of these formats:
 FOLLOW_UP: <your next question>
 CLOSE: <your brief closing remark to the player, 1 sentence>`;
+    const messages = [
+      { role: "system" as const, content: HOUSE_PERSONALITY },
+      { role: "user" as const, content: followUpPrompt },
+    ];
 
     const response = await this.openai.chat.completions.create({
       model: this.model,
-      messages: [
-        { role: "system", content: HOUSE_PERSONALITY },
-        { role: "user", content: followUpPrompt },
-      ],
+      messages,
       ...this.modelParams(200, 0.8),
     });
 
@@ -754,15 +926,23 @@ CLOSE: <your brief closing remark to the player, 1 sentence>`;
 
     const raw = response.choices[0]?.message?.content?.trim() ?? "";
 
+    let output: FollowUpResult;
     if (raw.startsWith("FOLLOW_UP:")) {
-      return { type: "question", question: raw.slice("FOLLOW_UP:".length).trim() };
-    }
-    if (raw.startsWith("CLOSE:")) {
-      return { type: "close", message: raw.slice("CLOSE:".length).trim() };
+      output = { type: "question", question: raw.slice("FOLLOW_UP:".length).trim() };
+    } else if (raw.startsWith("CLOSE:")) {
+      output = { type: "close", message: raw.slice("CLOSE:".length).trim() };
+    } else {
+      // If the LLM didn't follow the format, treat as a close
+      output = { type: "close", message: raw || `Thank you, ${context.agentName}. The House sees all.` };
     }
 
-    // If the LLM didn't follow the format, treat as a close
-    return { type: "close", message: raw || `Thank you, ${context.agentName}. The House sees all.` };
+    await this.emitPrivateDecisionTrace({
+      context: this.privateTraceContext("house-followup", context.round, Phase.DIARY_ROOM),
+      messages,
+      response,
+      output,
+    });
+    return output;
   }
 
   private buildGameStatePrompt(context: DiaryRoomContext): string {
@@ -994,20 +1174,28 @@ Focus on:
 - Keep it witty, perceptive, and in the style of a reality TV narrator
 
 Respond with ONLY the summary paragraph, no intro or labels.`;
+    const messages = [
+      { role: "system" as const, content: "You are the House MC — omniscient, dramatic reality TV narrator." },
+      { role: "user" as const, content: summaryPrompt },
+    ];
 
     const response = await this.openai.chat.completions.create({
       model: this.model,
-      messages: [
-        { role: "system", content: "You are the House MC — omniscient, dramatic reality TV narrator." },
-        { role: "user", content: summaryPrompt },
-      ],
+      messages,
       ...this.modelParams(32768, 0.9),
     });
 
     const summary = response.choices[0]?.message?.content?.trim();
-    if (summary && summary.length > 0) return summary;
-
-    return `Round ${round} has been full of shifting alliances and private-room schemes. The House is watching closely as the field narrows.`;
+    const output = summary && summary.length > 0
+      ? summary
+      : `Round ${round} has been full of shifting alliances and private-room schemes. The House is watching closely as the field narrows.`;
+    await this.emitPrivateDecisionTrace({
+      context: this.privateTraceContext("house-gameplay-summary", round, phase),
+      messages,
+      response,
+      output: { summary: output },
+    });
+    return output;
   }
 }
 

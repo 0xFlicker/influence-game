@@ -78,7 +78,7 @@ export type {
 
 // Game runner
 export { GameRunner } from "./game-runner";
-export type { ActorWitnessV1, AgentResponse, AgentTurnEvent, CheckpointBoundaryIdentityV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PowerLobbyExposure, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TranscriptEntry, TranscriptWatermarkV1, GameStreamEvent, GameStateSnapshot } from "./game-runner";
+export type { ActorWitnessV1, AgentResponse, AgentTurnEvent, CheckpointBoundaryIdentityV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TranscriptEntry, TranscriptWatermarkV1, GameStreamEvent, GameStateSnapshot } from "./game-runner";
 export {
   accumulatorProof,
   buildActorWitness,
@@ -98,7 +98,7 @@ export type { InfluenceAgentOptions, Personality } from "./agent";
 
 // House interviewer
 export { LLMHouseInterviewer, TemplateHouseInterviewer } from "./house-interviewer";
-export type { IHouseInterviewer, DiaryRoomContext, FollowUpResult } from "./house-interviewer";
+export type { IHouseInterviewer, DiaryRoomContext, FollowUpResult, LLMHouseInterviewerOptions } from "./house-interviewer";
 
 // Persona generator
 export { generatePersona, pickAgentNames, pickArchetypes } from "./persona-generator";

@@ -410,6 +410,8 @@ Simulation batches are written under `packages/engine/docs/simulations/`. Use `g
 
 For local MCP queries across past and current simulations, run `cd packages/engine && bun run mcp:game -- docs/simulations`. The MCP is read-only, scans the corpus on demand, and requires `sessionId + gameNumber` for game-specific projection/timeline queries. Use `search_logs` over `sources: ["turns"]` for `mingle-intent`, `mingle-room-assignment`, `rumor`, `strategic-reflection`, `strategy-packet`, `strategicLens`, `strategyPacketUse`, `strategySignal`, `movementPurpose`, or `empower-revote` when validating whether agents are using open strategic choices. Use `search_logs` over `sources: ["turns", "transcript"]` for `house-mc-summary`, legacy `[House MC]`, `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or named House alliances when validating House producer carry-forward.
 
+For API-backed durable runs, use `cd packages/api && bun run mcp:trace` from a trusted local environment. This local Trace MCP reads Postgres durable-run state and private evidence manifests, then opens raw trace content only through the explicit `read_content` tool. It relies on the same local DB/private-storage env as the API (`DATABASE_URL`, `LINODE_OBJ_ENDPOINT`, `LINODE_OBJ_ACCESS_KEY`, `LINODE_OBJ_SECRET_KEY`, `LINODE_PRIVATE_EVIDENCE_BUCKET`) and is deliberately not a production/admin MCP surface. Private traces require S3-compatible private evidence storage locally; run `bun run s3:bootstrap`, source `.env.private-trace.local`, then run the API or MCP command. Use `bun run trace:local:smoke` for a one-command local Postgres + private S3 writer/read/search validation. Keep browser login, releasable packaging, cross-run trace search, and web UI affordances out until those are designed as their own slice.
+
 `InfluenceAgent` uses OpenAI-compatible chat completions. Hosted OpenAI runs use `OPENAI_API_KEY`; local runs can use `INFLUENCE_LLM_BASE_URL` with LM Studio. Current repo defaults are budget `gpt-5-nano`, standard `gpt-5-mini`, and premium `gpt-5.4-mini`; override server-side tiers with `INFLUENCE_MODEL_BUDGET`, `INFLUENCE_MODEL_STANDARD`, and `INFLUENCE_MODEL_PREMIUM` when testing local models.
 
 Structured decision calls default to named OpenAI tool forcing for hosted OpenAI. Local base URLs default to `INFLUENCE_LLM_TOOL_CHOICE_MODE=required`, which sends the LM Studio-compatible string `tool_choice`, keeps emitted `thinking` in decision schemas, and applies `INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS` (default `4096`) so local reasoning models have enough room to produce tool arguments. Local public messages apply `INFLUENCE_LLM_LOCAL_MESSAGE_MIN_TOKENS` (default `8192`) for the same reason and retry once with a doubled budget when visible content is empty. They request visible speech in `message.content` and preserve native local reasoning metadata such as `reasoning_content` separately as `reasoningContext`. If a local server supports JSON schema better than tools, set `INFLUENCE_LLM_TOOL_CHOICE_MODE=json_schema`.
@@ -458,6 +460,28 @@ INFLUENCE_STORAGE_BACKEND=s3         # require Linode/S3 vars
 INFLUENCE_STORAGE_BACKEND=disabled   # disable uploads
 INFLUENCE_LOCAL_UPLOAD_DIR=/tmp/influence-uploads
 ```
+
+### Local Private Evidence S3
+
+Raw private decision traces do not use the filesystem upload fallback. Local validation needs an S3-compatible private evidence bucket so the same writer/read model path can exercise `PutObject`, `HeadObject`, and `GetObject`.
+
+```bash
+bun run s3:bootstrap
+set -a
+source .env.private-trace.local
+set +a
+```
+
+Defaults:
+
+```bash
+LINODE_OBJ_ENDPOINT=http://127.0.0.1:19000
+LINODE_OBJ_ACCESS_KEY=influence
+LINODE_OBJ_SECRET_KEY=influence-private
+LINODE_PRIVATE_EVIDENCE_BUCKET=influence-private-evidence-local
+```
+
+The script starts a Docker MinIO container named `influence-private-evidence-s3`, creates the private bucket, and writes `.env.private-trace.local`. Keep `LINODE_PRIVATE_EVIDENCE_BUCKET` separate from `LINODE_OBJ_BUCKET`; the writer rejects the public/profile bucket for raw trace content. Run `bun run trace:local:smoke` to bootstrap Postgres and local private S3, then write/read/search one private trace through the real storage adapter.
 
 ### Staging Deployment
 

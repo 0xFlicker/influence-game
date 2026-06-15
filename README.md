@@ -79,6 +79,20 @@ bun run mcp:game -- docs/simulations
 
 The game MCP is read-only. It discovers past and currently-writing simulation batches, addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and can list sessions/games, filter events, search logs, read player timelines, and return cited linked records when source pointers are present. Passing a single batch directory still works for focused inspection, but returned records include a `sessionId`. For strategy-observability validation, search turns logs for `mingle-intent`, `mingle-room-assignment`, `rumor`, `strategic-reflection`, `strategy-packet`, `strategicLens`, `strategyPacketUse`, `strategySignal`, `movementPurpose`, or `empower-revote`. For House producer validation, search for `house-mc-summary`, legacy `[House MC]`, `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or named House alliances.
 
+For API-backed durable runs, owner-backed games can write private decision trace content to the configured private evidence bucket and keep only manifests/counts in Postgres. To inspect those traces from a trusted local MCP client:
+
+```bash
+curl -fsS http://127.0.0.1:19000/minio/health/ready >/dev/null || bun run s3:bootstrap
+set -a
+source .env.private-trace.local
+set +a
+
+cd packages/api
+bun run mcp:trace
+```
+
+The Trace MCP is local-dev-only. It uses local API database and private-storage environment variables, calls the existing evidence manifest read path for `read_content`, and exposes `list_durable_runs`, `inspect_durable_run`, `list_manifests`, `read_content`, and `search_reasoning_traces`. It is not a product/admin MCP endpoint, does not include browser login, and is not packaged for external release yet. Use `bun run trace:local:smoke` to validate the local DB + private S3 writer/read path end to end.
+
 ### 3. Run the full stack (API + Web UI)
 
 To watch games live in a browser:
@@ -188,12 +202,24 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `LINODE_OBJ_ACCESS_KEY` | Required for S3 | -- | Linode Object Storage access key |
 | `LINODE_OBJ_SECRET_KEY` | Required for S3 | -- | Linode Object Storage secret key |
 | `LINODE_OBJ_BUCKET` | Required for S3 | -- | Linode Object Storage bucket |
+| `LINODE_PRIVATE_EVIDENCE_BUCKET` | Required for private traces | -- | Private evidence bucket for raw prompt/response/reasoning trace content |
 
 For local API development and DB-backed tests, start the shared Postgres container and ensure both local databases exist:
 
 ```bash
 bun run db:bootstrap
 ```
+
+Private decision traces require an S3-compatible private evidence bucket even in local development. Bootstrap a local MinIO-compatible endpoint and private bucket with:
+
+```bash
+bun run s3:bootstrap
+set -a
+source .env.private-trace.local
+set +a
+```
+
+The bootstrap uses `http://127.0.0.1:19000` by default, creates `influence-private-evidence-local`, and writes the required private trace env vars to `.env.private-trace.local`. Run `bun run trace:local:smoke` to start local Postgres + local private S3 and verify a trace write/read/search round trip.
 
 When the Linode variables are absent in local dev, the API falls back to filesystem-backed upload URLs and stores files under `packages/api/.local-uploads/` by default. Staging/production should use the S3 backend.
 

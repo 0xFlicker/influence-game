@@ -1,0 +1,774 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Private Evidence, Evidence MCP, and Durable Catch-Up</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f5f1;
+      --surface: #ffffff;
+      --surface-2: #eef6f2;
+      --ink: #1c2624;
+      --muted: #5d6b67;
+      --line: #d7ded9;
+      --accent: #1b6b59;
+      --accent-soft: #dcefe8;
+      --accent-text: #124638;
+      --blue: #285f95;
+      --blue-soft: #e1edf8;
+      --warn: #8a5b16;
+      --warn-soft: #f4ead6;
+      --rose: #8a3f4e;
+      --rose-soft: #f5e2e6;
+      --shadow: 0 18px 46px rgba(25, 38, 35, 0.09);
+      --radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.58;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration-thickness: 0.08em;
+      text-underline-offset: 0.18em;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+      background: #eef1ee;
+      border: 1px solid #dce2de;
+      border-radius: 6px;
+      padding: 0.08rem 0.28rem;
+    }
+
+    strong {
+      color: inherit;
+    }
+
+    .page {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 36px 20px 56px;
+    }
+
+    header.hero {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 34px;
+      margin-bottom: 26px;
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--accent-text);
+      font-size: 0.77rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 750;
+    }
+
+    h1,
+    h2,
+    h3 {
+      line-height: 1.18;
+      margin: 0;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 4vw, 3.35rem);
+      max-width: 13ch;
+    }
+
+    h2 {
+      font-size: 1.45rem;
+      margin-bottom: 12px;
+    }
+
+    h3 {
+      font-size: 1.08rem;
+    }
+
+    p {
+      max-width: 74ch;
+      margin: 0 0 1rem;
+    }
+
+    .lede {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 1.05rem;
+      max-width: 78ch;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 26px;
+    }
+
+    .meta-card {
+      background: var(--surface-2);
+      border: 1px solid #c8ddd3;
+      border-radius: var(--radius);
+      padding: 12px;
+    }
+
+    .meta-card dt {
+      color: var(--accent-text);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 760;
+      margin: 0 0 4px;
+    }
+
+    .meta-card dd {
+      margin: 0;
+      color: var(--ink);
+      font-weight: 650;
+      word-break: break-word;
+    }
+
+    section {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: 0 10px 28px rgba(25, 38, 35, 0.055);
+      padding: 28px;
+      margin: 22px 0;
+    }
+
+    .section-kicker {
+      color: var(--muted);
+      font-size: 0.79rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 760;
+      margin-bottom: 8px;
+    }
+
+    .axis-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      list-style: none;
+      padding: 0;
+      margin: 16px 0 0;
+    }
+
+    .axis-list li {
+      background: var(--blue-soft);
+      border: 1px solid #c7d9ea;
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      color: #1f466d;
+      font-weight: 690;
+    }
+
+    .callout {
+      background: var(--accent-soft);
+      border: 1px solid #bfdbd1;
+      border-radius: var(--radius);
+      padding: 16px;
+      margin: 18px 0 0;
+      color: var(--accent-text);
+    }
+
+    .callout .label,
+    .note .label {
+      display: block;
+      font-size: 0.74rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+
+    .idea-nav {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      list-style: none;
+      padding: 0;
+      margin: 16px 0 22px;
+    }
+
+    .idea-nav a {
+      display: block;
+      background: #f4f6f4;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      color: var(--ink);
+      text-decoration: none;
+      font-weight: 680;
+    }
+
+    .idea-nav a:hover {
+      border-color: var(--accent);
+      color: var(--accent-text);
+    }
+
+    .idea-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 22px;
+      margin: 18px 0;
+      background: #fffdfb;
+    }
+
+    .idea-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 12px;
+    }
+
+    .idea-title {
+      display: flex;
+      align-items: baseline;
+      gap: 9px;
+    }
+
+    .idea-id,
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      border: 1px solid #bdd8ce;
+      background: var(--accent-soft);
+      color: var(--accent-text);
+      font-weight: 800;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .idea-id {
+      padding: 0.34rem 0.48rem;
+      font-size: 0.83rem;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .pill {
+      padding: 0.42rem 0.58rem;
+      font-size: 0.77rem;
+    }
+
+    .pill.blue {
+      background: var(--blue-soft);
+      border-color: #c7d9ea;
+      color: #1f466d;
+    }
+
+    .pill.warn {
+      background: var(--warn-soft);
+      border-color: #e5d2aa;
+      color: var(--warn);
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: minmax(120px, 0.22fr) 1fr;
+      gap: 10px 16px;
+      margin: 16px 0 0;
+    }
+
+    .field-grid dt {
+      font-size: 0.75rem;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      font-weight: 800;
+      color: var(--muted);
+    }
+
+    .field-grid dd {
+      margin: 0;
+    }
+
+    .diagram {
+      width: 100%;
+      margin: 18px 0 4px;
+      overflow-x: auto;
+      background: #f8faf8;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 12px;
+    }
+
+    .diagram svg {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      min-width: 680px;
+    }
+
+    .diagram text {
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      fill: #23302d;
+    }
+
+    .diagram .small {
+      fill: #5b6a66;
+      font-size: 12px;
+    }
+
+    .diagram .label {
+      fill: #1f2c29;
+      font-size: 14px;
+      font-weight: 760;
+    }
+
+    .diagram .box {
+      fill: #ffffff;
+      stroke: #cbd8d3;
+      stroke-width: 1.4;
+      rx: 8;
+    }
+
+    .diagram .box-accent {
+      fill: #dcefe8;
+      stroke: #a9cfc1;
+    }
+
+    .diagram .box-blue {
+      fill: #e1edf8;
+      stroke: #b8cfe6;
+    }
+
+    .diagram .arrow {
+      stroke: #6d7d78;
+      stroke-width: 2;
+      marker-end: url(#arrowhead);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+      font-size: 0.94rem;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: #eef3ef;
+      color: #24332f;
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .sources {
+      columns: 2 320px;
+      column-gap: 28px;
+      padding-left: 1.2rem;
+    }
+
+    .sources li {
+      break-inside: avoid;
+      margin: 0 0 0.62rem;
+    }
+
+    .composition-signal {
+      color: var(--muted);
+      font-size: 0.86rem;
+      margin-top: 24px;
+      text-align: center;
+    }
+
+    @media (max-width: 760px) {
+      .page {
+        padding: 22px 12px 42px;
+      }
+
+      header.hero,
+      section {
+        padding: 20px;
+      }
+
+      .meta-grid,
+      .axis-list,
+      .idea-nav,
+      .field-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .idea-head {
+        display: block;
+      }
+
+      .pill-row {
+        margin-top: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">Ideation Artifact</p>
+      <h1>Private Evidence, Evidence MCP, and Durable Catch-Up</h1>
+      <p class="lede">
+        A fresh, repo-grounded idea set for making raw agent evidence durable and inspectable without turning private reasoning into player-visible state or canonical game truth.
+      </p>
+      <dl class="meta-grid">
+        <div class="meta-card">
+          <dt>Date</dt>
+          <dd><time datetime="2026-06-15">2026-06-15</time></dd>
+        </div>
+        <div class="meta-card">
+          <dt>Topic</dt>
+          <dd>private-evidence-mcp-catchup</dd>
+        </div>
+        <div class="meta-card">
+          <dt>Focus</dt>
+          <dd>Fresh ideation on evidence storage, evidence MCP, and viewer catch-up</dd>
+        </div>
+        <div class="meta-card">
+          <dt>Mode</dt>
+          <dd>repo-grounded</dd>
+        </div>
+      </dl>
+    </header>
+
+    <section id="grounding-context">
+      <p class="section-kicker">Codebase Context</p>
+      <h2>Grounding Context</h2>
+      <p>
+        The repo already has the skeleton for private evidence: `Private evidence manifest` is a named domain concept, `game_evidence_manifests` stores private storage pointers and redaction/access metadata, and `game_evidence_manifest_reads` records read attempts. The existing `game-evidence` service validates that manifests point at the private Linode evidence bucket under `evidence/&lt;gameId&gt;/` and rejects the public profile-picture bucket/prefix, but it does not yet write raw trace content.
+      </p>
+      <p>
+        Access control is also partly present. `readEvidenceManifest` enforces producer/admin-style permissions and audits denied, expired, redacted, and allowed outcomes. The admin durable-run route deliberately exposes only evidence counts and provider summaries, not manifest IDs, bucket keys, raw prompts, raw responses, thinking, or `reasoningContext`.
+      </p>
+      <p>
+        The current MCP server is read-only and useful, but it reads local simulation artifacts from disk rather than the API/Postgres durable run state. The active viewer path is similarly split: durable canonical events have per-game sequence numbers and a replayable read model, while live transcript/viewer updates are still mostly in-memory websocket deltas with no durable cursor. Websocket payload sanitization strips private reasoning today, which is the right privacy direction, but catch-up still needs a database-backed observable stream.
+      </p>
+      <div class="callout">
+        <span class="label">Core invariant</span>
+        Raw prompts, model responses, thinking, native reasoning contexts, and tool arguments should become more durable for producers, not more public. Canonical game events, public viewer transcript, and private evidence need linked boundaries, not a shared stream.
+      </div>
+    </section>
+
+    <section id="topic-axes">
+      <p class="section-kicker">Surface Map</p>
+      <h2>Topic Axes</h2>
+      <ul class="axis-list">
+        <li>Private evidence capture and private storage</li>
+        <li>Admin/producer evidence access and MCP</li>
+        <li>Public durable viewer catch-up</li>
+        <li>Visibility boundaries and operational safety</li>
+      </ul>
+    </section>
+
+    <section id="ranked-ideas">
+      <p class="section-kicker">Critiqued Direction Set</p>
+      <h2>Ranked Ideas</h2>
+      <p>
+        The strongest path is to build the private evidence writer first, because it creates the trace files, pointer metadata, and boundary vocabulary that the MCP and catch-up work can safely reference.
+      </p>
+      <ul class="idea-nav" aria-label="Ranked idea jump list">
+        <li><a href="#i1">I1. Private Evidence Segment Writer + Envelope v1</a></li>
+        <li><a href="#i2">I2. API-Gated Trace MCP</a></li>
+        <li><a href="#i3">I3. Manifest-Guided Reasoning Trace Search</a></li>
+        <li><a href="#i4">I4. Durable Observable Catch-Up Cursor</a></li>
+        <li><a href="#i5">I5. Triple-Ledger Visibility Contract</a></li>
+      </ul>
+
+      <article class="idea-card" id="i1">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I1.</span>
+            <h3>Private Evidence Segment Writer + Envelope v1</h3>
+          </div>
+          <div class="pill-row">
+            <span class="pill blue">Axis: Private evidence capture</span>
+            <span class="pill">Confidence: 88%</span>
+            <span class="pill warn">Complexity: Medium</span>
+          </div>
+        </div>
+        <p>
+          Add an API-owned writer that receives bounded evidence records, writes JSONL/JSON blobs to the configured private bucket, computes hash/size/count metadata, then creates `game_evidence_manifests` rows containing only storage pointers, sanitized counts, source pointers, and boundary facets. The envelope should capture full prompt, raw model response, emitted thinking, native `reasoningContext`, tool args, action name, actor, phase, round, owner epoch, and canonical event boundary.
+        </p>
+        <div class="diagram" aria-label="Private evidence writer flow">
+          <svg viewBox="0 0 900 210" role="img">
+            <defs>
+              <marker id="arrowhead" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+                <path d="M0,0 L10,4 L0,8 Z" fill="#6d7d78"></path>
+              </marker>
+            </defs>
+            <rect class="box" x="24" y="60" width="158" height="86"></rect>
+            <text class="label" x="103" y="94" text-anchor="middle">Agent boundary</text>
+            <text class="small" x="103" y="118" text-anchor="middle">prompt, response,</text>
+            <text class="small" x="103" y="135" text-anchor="middle">thinking, tools</text>
+
+            <line class="arrow" x1="190" y1="103" x2="254" y2="103"></line>
+
+            <rect class="box-accent" x="266" y="48" width="176" height="110"></rect>
+            <text class="label" x="354" y="84" text-anchor="middle">API writer</text>
+            <text class="small" x="354" y="111" text-anchor="middle">builds envelope,</text>
+            <text class="small" x="354" y="128" text-anchor="middle">hashes content</text>
+
+            <line class="arrow" x1="450" y1="103" x2="514" y2="103"></line>
+
+            <rect class="box-blue" x="526" y="40" width="160" height="126"></rect>
+            <text class="label" x="606" y="80" text-anchor="middle">Private bucket</text>
+            <text class="small" x="606" y="108" text-anchor="middle">JSONL / JSON blob</text>
+            <text class="small" x="606" y="126" text-anchor="middle">evidence/&lt;gameId&gt;/...</text>
+
+            <line class="arrow" x1="694" y1="103" x2="758" y2="103"></line>
+
+            <rect class="box" x="770" y="55" width="108" height="96"></rect>
+            <text class="label" x="824" y="89" text-anchor="middle">Postgres</text>
+            <text class="small" x="824" y="116" text-anchor="middle">pointer + counts</text>
+            <text class="small" x="824" y="133" text-anchor="middle">no raw content</text>
+          </svg>
+        </div>
+        <dl class="field-grid">
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> `game_evidence_manifests` already has storage pointer, source pointer, retention, access, and redaction fields; `game-evidence` already validates private bucket/key discipline; durable-run tests already assert raw prompts, responses, thinking, and `reasoningContext` stay out of read models.</dd>
+          <dt>Rationale</dt>
+          <dd>This turns the existing manifest model into a real evidence system while preserving the intended privacy boundary. It also gives later MCP/search work a stable artifact shape to read.</dd>
+          <dt>Downsides</dt>
+          <dd>Content write plus Postgres manifest insert is not a true atomic transaction, so the writer needs explicit degraded/write-failed handling, retries, and hash validation. Envelope versioning matters immediately because raw trace files will outlive code shape changes.</dd>
+        </dl>
+      </article>
+
+      <article class="idea-card" id="i2">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I2.</span>
+            <h3>API-Gated Trace MCP</h3>
+          </div>
+          <div class="pill-row">
+            <span class="pill blue">Axis: Admin/producer MCP</span>
+            <span class="pill">Confidence: 84%</span>
+            <span class="pill warn">Complexity: Medium</span>
+          </div>
+        </div>
+        <p>
+          Build the producer MCP as a read-only API client with producer/admin credentials, not as a direct database or storage client. In that context, the clear tool split is `list_durable_runs`, `inspect_durable_run`, `list_manifests`, `read_content`, and `search_reasoning_traces`: manifests are the DB index, and content is the raw JSON/JSONL trace payload for a selected manifest. The tools should call API routes that reuse `requireAdminRead`, `readEvidenceManifest`, content-read authorization, purpose logging, output bounds, and rate limits.
+        </p>
+        <dl class="field-grid">
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> The current MCP is explicitly local and file-backed; `readEvidenceManifest` already enforces the permission/read-audit path the user wants reused. <strong>external:</strong> The MCP tools spec requires access controls, input validation, output sanitization, rate limiting, and audit logging.</dd>
+          <dt>Rationale</dt>
+          <dd>This preserves one policy path. It also means the MCP can be safer than a privileged local debug script: every sensitive read gets an API-level authorization decision and an audit row.</dd>
+          <dt>Downsides</dt>
+          <dd>The API must grow the missing endpoints first. Tool ergonomics will depend on crisp pagination, bounded content output, and purpose strings; otherwise the MCP becomes either too weak or too noisy.</dd>
+        </dl>
+      </article>
+
+      <article class="idea-card" id="i3">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I3.</span>
+            <h3>Manifest-Guided Reasoning Trace Search</h3>
+          </div>
+          <div class="pill-row">
+            <span class="pill blue">Axis: Admin/producer MCP</span>
+            <span class="pill">Confidence: 78%</span>
+            <span class="pill warn">Complexity: Medium</span>
+          </div>
+        </div>
+        <p>
+          Make `search_reasoning_traces` use manifest metadata to find the right trace files, then read matching content through the same authorized API path as `read_content`. The manifest side handles actor, action name, phase, round, canonical boundary, evidence type, envelope version, record counts, token counts, and optional line offsets; the content side returns the actual matching JSON/JSONL records with manifest IDs and positions.
+        </p>
+        <dl class="field-grid">
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> The manifest table already has `evidenceType`, `sourcePointers`, and `metadata`; the admin durable-run response is count-only today. <strong>reasoned:</strong> A trace search tool without a manifest index would either scan too much content or be too slow/noisy to trust.</dd>
+          <dt>Rationale</dt>
+          <dd>This gives producers a useful investigative surface while keeping Postgres limited to pointer and sanitized summary data. It also creates high-quality MCP answers: "here are the matching trace records and where they came from" rather than a vague storage listing.</dd>
+          <dt>Downsides</dt>
+          <dd>Search quality depends on the writer capturing the right boundary/action fields. Early versions should keep outputs bounded by count/bytes, but the happy path should still be actual trace content, not a fake summary layer.</dd>
+        </dl>
+      </article>
+
+      <article class="idea-card" id="i4">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I4.</span>
+            <h3>Durable Observable Catch-Up Cursor</h3>
+          </div>
+          <div class="pill-row">
+            <span class="pill blue">Axis: Public durable catch-up</span>
+            <span class="pill">Confidence: 82%</span>
+            <span class="pill warn">Complexity: High</span>
+          </div>
+        </div>
+        <p>
+          Persist a public-ish observable stream with an opaque sequence cursor for viewer catch-up: public transcript messages, phase updates, eliminations, game-over signals, and projection hints. Websocket delivery becomes a wake-up mechanism; reconnecting clients call a DB-backed catch-up endpoint with <code>after=&lt;cursor&gt;</code> and receive sanitized entries after that cursor.
+        </p>
+        <div class="diagram" aria-label="Durable observable catch-up cursor">
+          <svg viewBox="0 0 900 220" role="img">
+            <defs>
+              <marker id="arrowhead2" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+                <path d="M0,0 L10,4 L0,8 Z" fill="#6d7d78"></path>
+              </marker>
+            </defs>
+            <rect class="box" x="30" y="42" width="170" height="58"></rect>
+            <text class="label" x="115" y="77" text-anchor="middle">Runner emits events</text>
+            <rect class="box-accent" x="30" y="128" width="170" height="58"></rect>
+            <text class="label" x="115" y="163" text-anchor="middle">Observable outbox</text>
+
+            <line x1="115" y1="100" x2="115" y2="124" stroke="#6d7d78" stroke-width="2" marker-end="url(#arrowhead2)"></line>
+
+            <line class="arrow" marker-end="url(#arrowhead2)" x1="210" y1="157" x2="286" y2="157"></line>
+            <rect class="box-blue" x="300" y="114" width="184" height="86"></rect>
+            <text class="label" x="392" y="148" text-anchor="middle">Catch-up API</text>
+            <text class="small" x="392" y="173" text-anchor="middle">after opaque cursor</text>
+
+            <line class="arrow" marker-end="url(#arrowhead2)" x1="494" y1="157" x2="570" y2="157"></line>
+            <rect class="box" x="584" y="114" width="142" height="86"></rect>
+            <text class="label" x="655" y="148" text-anchor="middle">Web client</text>
+            <text class="small" x="655" y="173" text-anchor="middle">append sanitized UI</text>
+
+            <rect class="box" x="584" y="34" width="142" height="54"></rect>
+            <text class="label" x="655" y="67" text-anchor="middle">Websocket</text>
+            <line x1="655" y1="88" x2="655" y2="109" stroke="#6d7d78" stroke-width="2" marker-end="url(#arrowhead2)"></line>
+            <text class="small" x="746" y="64">wake-up, not truth</text>
+          </svg>
+        </div>
+        <dl class="field-grid">
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> Durable canonical events already have per-game sequence validation, while current live websocket payloads have no cursor and active catch-up comes from an in-memory runner snapshot. <strong>external:</strong> SSE's `Last-Event-ID` pattern shows the value of opaque reconnect cursors for incremental catch-up.</dd>
+          <dt>Rationale</dt>
+          <dd>This is the preparation needed for web clients: a client can reconnect, ask for missed public observable state from the DB, and remain insulated from private evidence.</dd>
+          <dt>Downsides</dt>
+          <dd>This is the broadest survivor. It needs careful mapping between canonical event sequence, public observable cursor, and existing transcript rows so the UI does not double-append or reorder messages.</dd>
+        </dl>
+      </article>
+
+      <article class="idea-card" id="i5">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I5.</span>
+            <h3>Triple-Ledger Visibility Contract</h3>
+          </div>
+          <div class="pill-row">
+            <span class="pill blue">Axis: Visibility boundaries</span>
+            <span class="pill">Confidence: 86%</span>
+            <span class="pill warn">Complexity: Medium</span>
+          </div>
+        </div>
+        <p>
+          Make the architecture explicit as three linked ledgers: canonical events for accepted game truth, public observable transcript/state for viewers, and private evidence for producer inspection. Each ledger has its own cursor and visibility rules, but records can cite each other through source pointers and canonical event boundaries.
+        </p>
+        <dl class="field-grid">
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> Current concepts already distinguish canonical events, projection/read models, checkpoints, and private evidence manifests; websocket sanitization already strips reasoning fields. <strong>reasoned:</strong> Collapsing these into one stream would either leak private reasoning or make public catch-up depend on non-public artifacts.</dd>
+          <dt>Rationale</dt>
+          <dd>This is the mental model that keeps the other work coherent. It names which data is replay truth, which data is viewer UX, and which data is producer-only evidence.</dd>
+          <dt>Downsides</dt>
+          <dd>It is partly documentation and type discipline, so it can feel abstract unless paired with tests that prove raw evidence cannot appear in public catch-up or durable-run summaries.</dd>
+        </dl>
+      </article>
+
+    </section>
+
+    <section id="rejection-summary">
+      <p class="section-kicker">Considered and Cut</p>
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Idea</th>
+            <th>Reason Rejected</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>Trace content write outbox</td><td>Important implementation detail, folded into I1 rather than kept as a separate direction.</td></tr>
+          <tr><td>2</td><td>Capture at the agent decision boundary</td><td>Load-bearing, but it is the capture point inside I1's envelope rather than an independent product idea.</td></tr>
+          <tr><td>3</td><td>Durable-run evidence health panel</td><td>Useful admin affordance, but too small alone; folded into I1 and I3 as sanitized coverage counts.</td></tr>
+          <tr><td>4</td><td>Run evidence budget meter</td><td>Folded into I1's sanitized counts and manifest metadata.</td></tr>
+          <tr><td>5</td><td>WebSocket as wake-up only</td><td>Correct inversion, but stronger as part of I4's full catch-up contract.</td></tr>
+          <tr><td>6</td><td>No direct storage URLs</td><td>Folded into I2's API-gated content-read path.</td></tr>
+          <tr><td>7</td><td>Automatic key discipline</td><td>Implementation requirement for I1, not enough by itself.</td></tr>
+          <tr><td>8</td><td>Evidence citation model</td><td>Folded into I2 and I3 so MCP/search results can cite manifests and content line offsets.</td></tr>
+          <tr><td>9</td><td>Evidence schema versioning</td><td>Necessary detail for I1's envelope v1.</td></tr>
+          <tr><td>10</td><td>Admin API client package</td><td>Implementation tactic for I2; useful after the API endpoints exist.</td></tr>
+          <tr><td>11</td><td>Evidence is not resume truth</td><td>Crucial principle, captured by I5's triple-ledger contract.</td></tr>
+          <tr><td>12</td><td>Boundary-first storage</td><td>Folded into I1 and I5.</td></tr>
+          <tr><td>13</td><td>Public catch-up is not a transcript endpoint</td><td>Folded into I4's observable state model.</td></tr>
+          <tr><td>14</td><td>Read audit as a product feature</td><td>Too heavy as a product idea; keep lightweight read logging as part of I2's API-gated content path.</td></tr>
+          <tr><td>15</td><td>Private evidence should be boring to lose</td><td>Good operational posture, folded into I1 and I5 via degraded evidence handling.</td></tr>
+          <tr><td>16</td><td>One producer trace packet</td><td>Promising later layer, but premature until content reads and search exist.</td></tr>
+          <tr><td>17</td><td>Flight data recorder analogy</td><td>Strong analogy, but expressed directly through I5's ledger split.</td></tr>
+          <tr><td>18</td><td>Pager incident timeline</td><td>Better as a future MCP workflow after I2 and I3 land.</td></tr>
+          <tr><td>19</td><td>Object Lock immediately</td><td>Deferred because WORM retention should wait until redaction and envelope semantics are stable.</td></tr>
+          <tr><td>20</td><td>Cursor as opaque token</td><td>Folded into I4.</td></tr>
+          <tr><td>21</td><td>Fail-closed evidence reads</td><td>Too security-program-shaped as a standalone idea; keep the narrow redaction/expiry/degraded-state checks inside I2.</td></tr>
+          <tr><td>22</td><td>Local/Staging/Production Storage Parity Harness</td><td>Demoted from the ranked set: useful only as a tiny smoke test under I1, not a standalone product direction.</td></tr>
+          <tr><td>23</td><td>Chain-of-Custody Read Enforcement</td><td>Demoted from the ranked set: too security-program-shaped for the current entertainment goal; keep the small authorization/audit guardrail inside I2.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sources-references">
+      <p class="section-kicker">Grounding Links</p>
+      <h2>Sources &amp; References</h2>
+      <ul class="sources">
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/CONCEPTS.md#L123-L125">CONCEPTS.md: Private evidence manifest</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/db/schema.ts#L279-L348">packages/api/src/db/schema.ts: manifests and read audit tables</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-evidence.ts#L29-L153">packages/api/src/services/game-evidence.ts: private pointer validation and manifest creation</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/evidence-access.ts#L53-L177">packages/api/src/services/evidence-access.ts: RBAC and audited manifest reads</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/lib/storage.ts#L1-L146">packages/api/src/lib/storage.ts: public profile storage helper</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-event-read-model.ts#L118-L240">packages/api/src/services/game-event-read-model.ts: durable event sequence validation</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/ws-manager.ts#L59-L128">packages/api/src/services/ws-manager.ts: websocket sanitization and no cursor</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-lifecycle.ts#L135-L140">packages/api/src/services/game-lifecycle.ts: active in-memory snapshot catch-up</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/routes/games.ts#L861-L930">packages/api/src/routes/games.ts: terminal transcript export</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-mcp/server.ts#L119-L327">packages/engine/src/game-mcp/server.ts: current read-only local MCP</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-mcp/read-model.ts#L338-L532">packages/engine/src/game-mcp/read-model.ts: file-backed MCP read model</a></li>
+        <li><a href="https://techdocs.akamai.com/cloud-computing/docs/object-storage">Akamai/Linode Object Storage overview</a></li>
+        <li><a href="https://techdocs.akamai.com/cloud-computing/docs/define-access-and-permissions-using-bucket-policies">Akamai bucket policies</a></li>
+        <li><a href="https://techdocs.akamai.com/cloud-computing/docs/protect-data-with-object-lock">Akamai Object Lock</a></li>
+        <li><a href="https://techdocs.akamai.com/cloud-computing/docs/logs-for-object-storage">Akamai Object Storage logs</a></li>
+        <li><a href="https://jsonlines.org/">JSON Lines format</a></li>
+        <li><a href="https://modelcontextprotocol.io/specification/2025-06-18/server/tools">MCP tools specification</a></li>
+        <li><a href="https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization">MCP authorization specification</a></li>
+        <li><a href="https://html.spec.whatwg.org/multipage/server-sent-events.html#the-last-event-id-header">HTML Server-Sent Events `Last-Event-ID` reconnect cursor</a></li>
+      </ul>
+    </section>
+
+    <footer class="composition-signal">
+      Composed 2026-06-15T01:40Z by ce-ideate from the user prompt on private evidence storage, evidence MCP, and durable viewer catch-up.
+    </footer>
+  </main>
+</body>
+</html>

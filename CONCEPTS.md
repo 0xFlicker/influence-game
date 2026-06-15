@@ -124,6 +124,14 @@ The durable single-writer ownership marker for a live game run. An owner epoch l
 
 A producer/debug metadata record that points to raw LLM evidence such as prompts, model responses, `thinking`, `reasoningContext`, and normalized agent-turn objects. The manifest may be stored in Postgres while raw content lives in private object storage; neither the manifest nor the raw evidence is player-visible dialogue or canonical board state.
 
+## Private trace content
+
+The raw JSON/JSONL producer evidence addressed by a private evidence manifest, such as decision-call prompts, model responses, `thinking`, `reasoningContext`, tool arguments, action names, actor context, phase, round, and canonical event boundary. Private trace content is for local producer/debug inspection and must not become public transcript, canonical board truth, or checkpoint resume authority.
+
+## Local Trace MCP
+
+A local-development producer MCP that inspects API-backed durable runs through private trace manifests and private trace content. It is not a product/admin MCP surface until MCP auth login, web/admin affordances, and releasable packaging are intentionally designed.
+
 ## callTool reasoning augmentation
 
 The single choke-point in `InfluenceAgent.callTool<T>` that guarantees every structured decision return and every JSON-fallback path carries the native `reasoningContext` (via `as T & { reasoningContext?: string }` intersections only — never `as any`). Tool schemas for observable decisions (cast_votes, use_power, council_vote, etc.) include a `thinking` field; the engine threads both values out to the phase loggers and `TranscriptEntry`.
