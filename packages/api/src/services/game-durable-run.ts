@@ -35,7 +35,6 @@ export type DurableRunDiagnostic =
   | {
       code:
         | "evidence_summary_unavailable"
-        | "malformed_checkpoint_hydration_status"
         | "malformed_evidence_storage_provider"
         | "owner_epoch_expired";
       severity: "error";
@@ -89,15 +88,8 @@ export interface DurableCheckpointSummary {
   round: number | null;
   eventHeadHash: string;
   projectionHash: string;
-  /** Compatibility field; passport verdict is the readiness truth source. */
-  hydrateable: boolean;
-  hydrationStatus: {
-    replayableProjection?: boolean;
-    missingInputs: string[];
-  };
   transcriptCursorPresent: boolean;
   tokenCostCursorPresent: boolean;
-  degradedReason?: string;
   createdAt: string;
   /** Validator-derived hydration passport (richer readiness model; candidate != resume). */
   passport: HydrationPassport;
@@ -122,7 +114,7 @@ export interface DurableEvidenceSummary {
 }
 
 export interface DurableRunInspectionResponse {
-  schemaVersion: 1;
+  schemaVersion: 2;
   game: DurableRunGameIdentity;
   kernel: {
     health: RedactedKernelHealth;
@@ -168,64 +160,6 @@ function nullableCount(value: unknown): number | undefined {
   if (value === null || value === undefined) return undefined;
   const count = toCount(value);
   return Number.isFinite(count) ? count : undefined;
-}
-
-function stringArrayFromUnknown(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === "string");
-}
-
-function summarizeHydrationStatus(
-  value: unknown,
-  checkpointHydrateable: boolean,
-  sequence: number,
-): {
-  hydrateable: boolean;
-  hydrationStatus: DurableCheckpointSummary["hydrationStatus"];
-  diagnostics: DurableRunDiagnostic[];
-} {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return {
-      hydrateable: false,
-      hydrationStatus: { missingInputs: ["malformed_hydration_status"] },
-      diagnostics: [{
-        code: "malformed_checkpoint_hydration_status",
-        severity: "error",
-        message: "Checkpoint hydration status is not a JSON object",
-        sequence,
-      }],
-    };
-  }
-
-  const record = value as Record<string, unknown>;
-  const missingInputsRaw = record.missingInputs;
-  const missingInputs = stringArrayFromUnknown(missingInputsRaw);
-  const malformedMissingInputs = !Array.isArray(missingInputsRaw) ||
-    missingInputs.length !== missingInputsRaw.length;
-  const hasMissingInputs = missingInputs.length > 0;
-  const diagnostics: DurableRunDiagnostic[] = [];
-
-  if (malformedMissingInputs || (checkpointHydrateable && hasMissingInputs)) {
-    diagnostics.push({
-      code: "malformed_checkpoint_hydration_status",
-      severity: "error",
-      message: "Checkpoint hydration status cannot support hydrateable=true",
-      sequence,
-    });
-  }
-
-  return {
-    hydrateable: checkpointHydrateable && !malformedMissingInputs && !hasMissingInputs,
-    hydrationStatus: {
-      ...(typeof record.replayableProjection === "boolean" && {
-        replayableProjection: record.replayableProjection,
-      }),
-      missingInputs: malformedMissingInputs
-        ? ["malformed_hydration_status", ...missingInputs]
-        : missingInputs,
-    },
-    diagnostics,
-  };
 }
 
 function safeStorageProvider(provider: string | null): "linode_object_storage" | "unknown" | null {
@@ -499,12 +433,9 @@ export async function getDurableRunInspection(
         round: schema.gameCheckpoints.round,
         eventHeadHash: schema.gameCheckpoints.eventHeadHash,
         projectionHash: schema.gameCheckpoints.projectionHash,
-        hydrateable: schema.gameCheckpoints.hydrateable,
-        hydrationStatus: schema.gameCheckpoints.hydrationStatus,
         snapshot: schema.gameCheckpoints.snapshot,
         transcriptCursor: schema.gameCheckpoints.transcriptCursor,
         tokenCostCursor: schema.gameCheckpoints.tokenCostCursor,
-        degradedReason: schema.gameCheckpoints.degradedReason,
         createdAt: schema.gameCheckpoints.createdAt,
       })
       .from(schema.gameCheckpoints)
@@ -528,19 +459,10 @@ export async function getDurableRunInspection(
     const checkpointDiagnostics: DurableRunDiagnostic[] = [];
 
     const checkpoints: DurableCheckpointSummary[] = checkpointRows.map((checkpoint) => {
-      const hydration = summarizeHydrationStatus(
-        checkpoint.hydrationStatus,
-        checkpoint.hydrateable,
-        checkpoint.lastEventSequence,
-      );
-      checkpointDiagnostics.push(...hydration.diagnostics);
-
-      // Derive passport (U1 skeleton uses current forensic shape; later units populate manifest/boundary/continuity)
+      // Derive passport from persisted evidence; this is the checkpoint readiness source of truth.
       const passportResult = deriveHydrationPassport({
         lastEventSequence: checkpoint.lastEventSequence,
         checkpointKind: checkpoint.checkpointKind,
-        hydrateable: checkpoint.hydrateable,
-        hydrationStatus: checkpoint.hydrationStatus,
         snapshot: checkpoint.snapshot,
         transcriptCursor: checkpoint.transcriptCursor,
         tokenCostCursor: checkpoint.tokenCostCursor,
@@ -549,7 +471,6 @@ export async function getDurableRunInspection(
         checkpointPhase: checkpoint.phase,
         checkpointRound: checkpoint.round,
         checkpointOwnerEpoch: checkpoint.ownerEpoch,
-        degradedReason: checkpoint.degradedReason ?? null,
         createdAt: checkpoint.createdAt,
         eventLogStatus: persistedEvents.status,
         projectionStatus: projection.status,
@@ -569,11 +490,8 @@ export async function getDurableRunInspection(
         round: checkpoint.round,
         eventHeadHash: checkpoint.eventHeadHash,
         projectionHash: checkpoint.projectionHash,
-        hydrateable: hydration.hydrateable,
-        hydrationStatus: hydration.hydrationStatus,
         transcriptCursorPresent: checkpoint.transcriptCursor !== null,
         tokenCostCursorPresent: checkpoint.tokenCostCursor !== null,
-        ...(checkpoint.degradedReason && { degradedReason: checkpoint.degradedReason }),
         createdAt: checkpoint.createdAt,
         passport: passportResult.passport,
         resumeAvailable: false,
@@ -590,7 +508,7 @@ export async function getDurableRunInspection(
     return {
       ok: true,
       response: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         game: {
           id: game.id,
           ...(game.slug && { slug: game.slug }),

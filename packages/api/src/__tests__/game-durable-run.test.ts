@@ -106,7 +106,7 @@ describe("durable run inspection read model", () => {
     expect(inspection.projection.status).toBe("complete");
     expect(inspection.projection.replayedEventCount).toBe(inspection.eventLog.rowCount);
     expect(inspection.checkpoints.count).toBeGreaterThan(0);
-    expect(inspection.checkpoints.entries.every((checkpoint) => !checkpoint.hydrateable)).toBeTrue();
+    expect(inspection.checkpoints.entries.every((checkpoint) => checkpoint.resumeAvailable === false)).toBeTrue();
     expect(inspection.evidence.totalCount).toBe(0);
     expect(inspection.diagnostics).toEqual([]);
   });
@@ -151,7 +151,7 @@ describe("durable run inspection read model", () => {
 
     expect(result.ok).toBeTrue();
     if (!result.ok) throw new Error(result.error);
-    expect(result.response.schemaVersion).toBe(1);
+    expect(result.response.schemaVersion).toBe(2);
     expect(result.response.game.id).toBe(gameId);
     expect(result.response.kernel.health).toMatchObject({
       status: "healthy",
@@ -172,7 +172,6 @@ describe("durable run inspection read model", () => {
     expect(result.response.checkpoints.entries[0]).toMatchObject({
       lastEventSequence: events.length,
       checkpointKind: "phase_boundary",
-      hydrateable: false,
       transcriptCursorPresent: true,
       tokenCostCursorPresent: true,
     });
@@ -181,6 +180,9 @@ describe("durable run inspection read model", () => {
     expect(cp0.passport).toBeDefined();
     expect(cp0.passport.verdict).not.toBe("hydration_candidate");
     expect(Array.isArray(cp0.passport.stamps)).toBeTrue();
+    expect("hydrateable" in cp0).toBeFalse();
+    expect("hydrationStatus" in cp0).toBeFalse();
+    expect("degradedReason" in cp0).toBeFalse();
     // do not leak raw capsules
     expect(JSON.stringify(result.response)).not.toContain("strategyPacket");
     expect(result.response.evidence).toMatchObject({
@@ -275,42 +277,6 @@ describe("durable run inspection read model", () => {
     expect(result.response.kernel.health.status).toBe("suspended");
     expect(result.response.diagnostics.some((diagnostic) => (
       diagnostic.code === "owner_epoch_expired"
-    ))).toBeTrue();
-  });
-
-  test("fails closed for malformed hydrateable checkpoint capsules", async () => {
-    const gameId = await insertGame(db);
-    const ownerEpoch = await insertOwner(db, gameId);
-    const events = createCanonicalEventFixture(gameId);
-    await appendGameEvents(db, { gameId, ownerEpoch, events });
-
-    await db.insert(schema.gameCheckpoints).values({
-      id: randomUUID(),
-      gameId,
-      ownerEpoch,
-      lastEventSequence: events.length,
-      checkpointKind: "phase_boundary",
-      phase: "voting",
-      round: 1,
-      eventHeadHash: hashCanonicalEvent(events.at(-1)!),
-      projectionHash: "sha256:malformed-projection",
-      hydrateable: true,
-      hydrationStatus: {},
-      snapshot: {},
-    });
-
-    const result = await getDurableRunInspection(db, gameId);
-
-    expect(result.ok).toBeTrue();
-    if (!result.ok) throw new Error(result.error);
-    expect(result.response.checkpoints.entries[0]).toMatchObject({
-      hydrateable: false,
-      hydrationStatus: {
-        missingInputs: ["malformed_hydration_status"],
-      },
-    });
-    expect(result.response.diagnostics.some((diagnostic) => (
-      diagnostic.code === "malformed_checkpoint_hydration_status"
     ))).toBeTrue();
   });
 

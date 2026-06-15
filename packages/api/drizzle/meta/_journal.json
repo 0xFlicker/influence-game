@@ -64,6 +64,20 @@
       "when": 1781394050000,
       "tag": "0008_durable_game_run_kernel",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1781480400000,
+      "tag": "0009_remove_checkpoint_readiness_duplicates",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1781484000000,
+      "tag": "0010_remove_checkpoint_hydration_status",
+      "breakpoints": true
     }
   ]
 }

@@ -23,8 +23,8 @@ import type { UUID, GameConfig } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 
 // Re-export types from the extracted module for backward compatibility
-export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, BoundaryCertificate, CheckpointBoundaryIdentityV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PowerLobbyExposure, RuntimeSnapshotV1, SnapshotManifest, SnapshotComponentStatus, SnapshotManifestComponent, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TokenCostCursor, TranscriptEntry, TranscriptWatermarkV1 } from "./game-runner.types";
-import type { AccumulatorEntryV1, BoundaryCertificate, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, SnapshotManifest, TranscriptEntry } from "./game-runner.types";
+export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, BoundaryCertificate, CheckpointBoundaryIdentityV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PowerLobbyExposure, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TokenCostCursor, TranscriptEntry, TranscriptWatermarkV1 } from "./game-runner.types";
+import type { AccumulatorEntryV1, BoundaryCertificate, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, TranscriptEntry } from "./game-runner.types";
 import type { TokenTracker } from "./token-tracker";
 import {
   accumulatorProof,
@@ -289,10 +289,10 @@ export class GameRunner {
         await this.durableEventSink(pendingEvents);
         this.flushedCanonicalSequence = pendingEvents[pendingEvents.length - 1]!.sequence;
       }
+      this.logger.flushStreamBuffer();
       if (options.checkpointKind) {
         await this.writeCheckpoint(options.checkpointKind, options.phase, options.phaseActor);
       }
-      this.logger.flushStreamBuffer();
       if (options.continueBuffering) {
         this.logger.beginStreamBuffering();
       }
@@ -312,17 +312,15 @@ export class GameRunner {
         case "mingleInbox":
           return mingleInboxSize === 0
             ? { id, status: "empty" as const, proof: accumulatorProof("empty_at_boundary", "no mingle inbox messages at boundary") }
-            : { id, status: "captured" as const };
+            : { id, status: "blocked" as const };
         case "transcriptStreamBuffer":
           return streamBufferDrained
             ? { id, status: "drained" as const, proof: accumulatorProof("drained_at_boundary", "stream buffer flushed before checkpoint") }
             : { id, status: "blocked" as const };
-        case "pendingLlmCalls":
-          return { id, status: "empty" as const, proof: accumulatorProof("empty_at_boundary", "no pending LLM calls tracked at phase boundary") };
         case "currentAccusations":
           return accusationsSize === 0
             ? { id, status: "empty" as const, proof: accumulatorProof("empty_at_boundary", "no active accusations at boundary") }
-            : { id, status: "captured" as const };
+            : { id, status: "blocked" as const };
         default:
           return { id, status: "malformed" as const };
       }
@@ -362,7 +360,7 @@ export class GameRunner {
       ? { ...this.houseStrategyBible }
       : null;
 
-    const tokenCursor = this.tokenTracker?.toCursor() ?? null;
+    let tokenCursor = this.tokenTracker?.toCursor() ?? null;
     const transcriptEntryCount = this.logger.transcript.length;
     const hasRuntimeSnapshot = phaseActor != null && kind === "phase_boundary";
 
@@ -385,6 +383,7 @@ export class GameRunner {
         phase: checkpointPhase,
         round: this.gameState.round,
       });
+      tokenCursor = tokenCursor ? { ...tokenCursor, boundary } : null;
       const actorWitness = buildActorWitness({
         boundary,
         actorCoordinate: String(actorSnapshot.value),
@@ -410,24 +409,6 @@ export class GameRunner {
         transcriptWatermark,
       });
     }
-
-    const snapshotManifest: SnapshotManifest = {
-      version: 1,
-      components: {
-        projectionTruth: { status: "captured", version: 1 },
-        xstateActor: runtimeSnapshot ? { status: "captured", version: 1 } : { status: "missing" },
-        phaseAccumulators: runtimeSnapshot ? { status: "captured", version: 1 } : { status: "missing" },
-        playerContinuity: playerContinuityCapsules.length > 0
-          ? { status: "private_reference_only", version: 1 }
-          : { status: "missing" },
-        houseContinuity: houseContinuityCapsule
-          ? { status: "private_reference_only", version: 1 }
-          : { status: "missing" },
-        transcriptCursor: runtimeSnapshot ? { status: "captured", version: 1 } : { status: "missing" },
-        tokenCursor: tokenCursor ? { status: "captured", version: 1 } : { status: "missing" },
-        ownerEpoch: { status: "missing" },
-      },
-    };
 
     const transcriptCursor = runtimeSnapshot
       ? {
@@ -463,26 +444,10 @@ export class GameRunner {
         roomAllocationRounds: Object.keys(projection.roomAllocations).length,
         roundResultCount: projection.roundResults.length,
       },
-      snapshotManifest,
       boundaryCertificate,
       playerContinuityCapsules,
       houseContinuityCapsule,
       runtimeSnapshot,
-      hydrateable: false,
-      hydrationStatus: {
-        replayableProjection: true,
-        xstateSnapshot: runtimeSnapshot != null,
-        phaseAccumulators: runtimeSnapshot != null,
-        agentMemoryState: playerContinuityCapsules.length > 0,
-        pendingLlmCalls: false,
-        tokenCostCursor: tokenCursor != null,
-        missingInputs: [
-          ...(runtimeSnapshot ? [] : ["xstateSnapshot", "phaseAccumulators"]),
-          ...(playerContinuityCapsules.length > 0 ? [] : ["agentMemoryState"]),
-          "pendingLlmCalls",
-          ...(tokenCursor ? [] : ["tokenCostCursor"]),
-        ],
-      },
       transcriptCursor,
       tokenCostCursor: tokenCursor,
     });

@@ -8,7 +8,6 @@
 
 import {
   bigint,
-  boolean,
   check,
   foreignKey,
   index,
@@ -250,12 +249,9 @@ export const gameCheckpoints = pgTable("game_checkpoints", {
   round: integer("round"),
   eventHeadHash: text("event_head_hash").notNull(),
   projectionHash: text("projection_hash").notNull(),
-  hydrateable: boolean("hydrateable").notNull().default(false),
-  hydrationStatus: jsonb("hydration_status").notNull().$type<Record<string, unknown>>(),
   snapshot: jsonb("snapshot").notNull().$type<Record<string, unknown>>(),
   transcriptCursor: jsonb("transcript_cursor").$type<Record<string, unknown>>(),
   tokenCostCursor: jsonb("token_cost_cursor").$type<Record<string, unknown>>(),
-  degradedReason: text("degraded_reason"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`now()::text`),

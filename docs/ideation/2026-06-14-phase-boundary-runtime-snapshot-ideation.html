@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Phase-Boundary Runtime Snapshot</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f6f2ea;
+      --ink: #182321;
+      --muted: #596763;
+      --soft: #77827d;
+      --line: #d9ded7;
+      --panel: #fffefb;
+      --panel-soft: #eef5f2;
+      --blue: #17689b;
+      --blue-soft: #e5f1f8;
+      --green: #25745d;
+      --green-soft: #e4f1eb;
+      --amber: #9a6412;
+      --amber-soft: #f8ebd1;
+      --plum: #6d4a81;
+      --plum-soft: #efe6f4;
+      --red: #a24a40;
+      --red-soft: #f8e5e1;
+      --shadow: 0 14px 34px rgba(34, 43, 39, 0.09);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-size: 15px;
+      line-height: 1.62;
+    }
+    a {
+      color: var(--blue);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+    code {
+      color: #263d38;
+      background: #edf2ee;
+      border: 1px solid #d8e1db;
+      border-radius: 5px;
+      padding: 0.08rem 0.28rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+    }
+    strong { color: inherit; font-weight: 760; }
+    .page {
+      width: min(1120px, calc(100vw - 36px));
+      margin: 0 auto;
+      padding: 34px 0 54px;
+    }
+    header, section {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    header { padding: 30px; }
+    section {
+      margin-top: 24px;
+      padding: 24px;
+      box-shadow: 0 8px 24px rgba(34, 43, 39, 0.055);
+    }
+    .eyebrow, .section-label {
+      margin: 0 0 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.72rem;
+      font-weight: 820;
+    }
+    .eyebrow { color: var(--green); }
+    .section-label { color: var(--amber); }
+    h1, h2, h3 {
+      margin: 0;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+    h1 {
+      max-width: 900px;
+      font-size: clamp(2rem, 4vw, 3.25rem);
+    }
+    h2 { font-size: 1.55rem; margin-bottom: 14px; }
+    h3 { font-size: 1.16rem; }
+    p {
+      max-width: 78ch;
+      margin: 0 0 1rem;
+      color: var(--muted);
+    }
+    .lede {
+      max-width: 88ch;
+      margin-top: 16px;
+      color: #33413d;
+      font-size: 1.03rem;
+    }
+    .meta-grid, .stats {
+      display: grid;
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .meta-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .stats { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .meta, .stat {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-soft);
+      padding: 12px 14px;
+    }
+    .meta dt, .stat dt {
+      margin: 0;
+      color: var(--soft);
+      font-size: 0.72rem;
+      font-weight: 820;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .meta dd, .stat dd {
+      margin: 2px 0 0;
+      color: var(--ink);
+      font-weight: 760;
+    }
+    .axis-list, .evidence-list {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .axis-list li, .evidence-list li {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfa;
+      padding: 12px 14px;
+      color: var(--muted);
+    }
+    .axis-list strong {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 2px;
+    }
+    .jump-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin: 0 0 18px;
+    }
+    .jump-list a {
+      display: block;
+      border: 1px solid #d4e1dc;
+      border-radius: 8px;
+      background: var(--green-soft);
+      padding: 10px 12px;
+      color: #1f5948;
+      text-decoration: none;
+      font-weight: 760;
+    }
+    .idea-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfa;
+      padding: 18px;
+      margin-top: 14px;
+    }
+    .idea-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 12px;
+    }
+    .idea-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .rank {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 54px;
+      height: 34px;
+      border-radius: 999px;
+      background: var(--blue-soft);
+      color: var(--blue);
+      font-weight: 820;
+      flex: 0 0 auto;
+      padding: 0 11px;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      border: 1px solid #d8e2dc;
+      background: #f2f5f1;
+      color: #52635f;
+      padding: 4px 9px;
+      font-size: 0.76rem;
+      font-weight: 760;
+    }
+    .chip.conf { background: var(--blue-soft); border-color: #c9ddea; color: var(--blue); }
+    .chip.cx { background: var(--amber-soft); border-color: #ead3a8; color: var(--amber); }
+    .chip.axis { background: var(--plum-soft); border-color: #dccbe5; color: var(--plum); }
+    .field-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .field {
+      border: 1px solid #e0e5de;
+      border-radius: 8px;
+      padding: 12px;
+      background: #fffefc;
+    }
+    .field.full { grid-column: 1 / -1; }
+    .field h4 {
+      margin: 0 0 5px;
+      color: var(--ink);
+      font-size: 0.75rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .field p { margin: 0; }
+    .mini-diagram {
+      margin: 14px 0 2px;
+      border: 1px solid #d9e2dc;
+      border-radius: 8px;
+      background: #f8fbf8;
+      padding: 12px;
+      overflow-x: auto;
+    }
+    .mini-diagram svg {
+      width: 100%;
+      min-width: 620px;
+      height: auto;
+      display: block;
+    }
+    .svg-label {
+      fill: #213733;
+      font: 700 13px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .svg-small {
+      fill: #5b6b66;
+      font: 500 11px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 11px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: var(--panel-soft);
+      color: var(--ink);
+      font-size: 0.76rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    td { color: var(--muted); }
+    tr:last-child td { border-bottom: 0; }
+    .reject td:first-child {
+      color: var(--ink);
+      font-weight: 760;
+      width: 30%;
+    }
+    .references {
+      columns: 2;
+      column-gap: 24px;
+      padding-left: 18px;
+      color: var(--muted);
+    }
+    .references li {
+      break-inside: avoid;
+      margin-bottom: 8px;
+    }
+    .composition-signal {
+      margin-top: 22px;
+      color: var(--soft);
+      font-size: 0.82rem;
+      text-align: center;
+    }
+    @media (max-width: 800px) {
+      .page { width: min(100% - 22px, 1120px); padding-top: 18px; }
+      header, section { padding: 18px; }
+      .meta-grid, .stats, .field-grid, .jump-list { grid-template-columns: 1fr; }
+      .idea-head { display: block; }
+      .rank { margin-bottom: 10px; }
+      .references { columns: 1; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">Ideation</p>
+      <h1>Phase-Boundary Runtime Snapshot</h1>
+      <p class="lede">Fresh repo-grounded ideation for the next statefulness slice: move from forensic checkpoints toward a truthful phase-boundary runtime snapshot, without claiming resume execution or pulling S3 into the critical path.</p>
+      <dl class="meta-grid">
+        <div class="meta">
+          <dt>Date</dt>
+          <dd><time datetime="2026-06-14">2026-06-14</time></dd>
+        </div>
+        <div class="meta">
+          <dt>Topic</dt>
+          <dd>phase-boundary-runtime-snapshot</dd>
+        </div>
+        <div class="meta">
+          <dt>Focus</dt>
+          <dd>next statefulness slice</dd>
+        </div>
+        <div class="meta">
+          <dt>Mode</dt>
+          <dd>repo-grounded</dd>
+        </div>
+      </dl>
+      <dl class="stats">
+        <div class="stat">
+          <dt>Raw</dt>
+          <dd>38</dd>
+        </div>
+        <div class="stat">
+          <dt>Merged</dt>
+          <dd>15</dd>
+        </div>
+        <div class="stat">
+          <dt>Survivors</dt>
+          <dd>7</dd>
+        </div>
+        <div class="stat">
+          <dt>Cut</dt>
+          <dd>8</dd>
+        </div>
+        <div class="stat">
+          <dt>Axes</dt>
+          <dd>5 of 5</dd>
+        </div>
+      </dl>
+    </header>
+
+    <section>
+      <p class="section-label">Codebase Context</p>
+      <h2>Grounding Context</h2>
+      <p>The current durable checkpoint path is real but still forensic-only. `GameRunner` flushes canonical events, writes a checkpoint, and flushes the stream buffer at phase boundaries. The API writer then seals the row with owner epoch and event-head receipt evidence. That gives this slice a good durable boundary, but not yet a hydrateable runtime snapshot.</p>
+      <p>The strongest gaps are specific: the snapshot manifest marks XState actor state, phase accumulators, transcript cursor, token cursor, owner epoch, and continuity as missing; meanwhile, player and House continuity capsules are already collected and persisted beside that manifest. `TokenTracker.toCursor()` already exists, but live checkpoints pass `tokenCostCursor: null`. Transcript checkpoints pass an in-memory entry count, which the passport intentionally rejects as non-durable.</p>
+      <p>The product boundary is also clear. Phase-boundary v1 should not implement `GameRunner.fromCheckpoint()`, mid-phase recovery, raw prompt/reasoning replay, or an S3-first storage split. It should make the next checkpoint honest, typed, and inspectable enough that future resume work has a real object to trust.</p>
+    </section>
+
+    <section>
+      <p class="section-label">Decomposition</p>
+      <h2>Topic Axes</h2>
+      <ul class="axis-list">
+        <li><strong>XState actor snapshot</strong> What actor coordinate is captured at the boundary, and how do we avoid overclaiming resume semantics?</li>
+        <li><strong>Runner accumulator boundary</strong> Which runner-owned Maps, arrays, and phase artifacts are captured, closed, drained, or explicitly not v1-hydratable?</li>
+        <li><strong>Transcript/token cursors</strong> Which progress cursors are durable enough to support a passport stamp, and which are diagnostics only?</li>
+        <li><strong>Passport/read-model honesty</strong> How does the manifest derive readiness from persisted evidence instead of scattered self-report fields?</li>
+        <li><strong>Storage/effect boundary</strong> Which store is authoritative for v1 snapshot truth, and where do owner fencing and non-repeatable effects sit?</li>
+      </ul>
+    </section>
+
+    <section>
+      <p class="section-label">Survivors</p>
+      <h2>Ranked Ideas</h2>
+      <nav class="jump-list" aria-label="Ranked idea jump list">
+        <a href="#idea-1">1. Boundary Receipt Runtime Snapshot Contract</a>
+        <a href="#idea-2">2. Evidence-Derived Manifest Stamp Ledger</a>
+        <a href="#idea-3">3. Boundary-Tap Actor Snapshot Witness</a>
+        <a href="#idea-4">4. Phase Accumulator Registry With Closed/Empty Proofs</a>
+        <a href="#idea-5">5. Durable Cursor Pair</a>
+        <a href="#idea-6">6. Passport Snapshot Fixture Factory</a>
+        <a href="#idea-7">7. Postgres Capsule, Evidence References Only</a>
+      </nav>
+
+      <article class="idea-card" id="idea-1">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">1</span>
+            <div>
+              <h3>Boundary Receipt Runtime Snapshot Contract</h3>
+              <div class="chips">
+                <span class="chip axis">Storage/effect boundary</span>
+                <span class="chip conf">Conf 88%</span>
+                <span class="chip cx">Cx Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p>Make the phase-boundary checkpoint a single Postgres truth envelope: event head, projection hash, owner epoch, event receipt, no-pending assertion, manifest stamp table, actor snapshot, accumulator capsule, token cursor, transcript cursor, and continuity evidence.</p>
+        <div class="mini-diagram" aria-label="Boundary receipt sketch">
+          <svg viewBox="0 0 820 210" role="img">
+            <rect x="18" y="30" width="170" height="58" rx="8" fill="#e5f1f8" stroke="#b9d5e6"/>
+            <text x="103" y="57" text-anchor="middle" class="svg-label">Engine boundary</text>
+            <text x="103" y="75" text-anchor="middle" class="svg-small">flush events, local no-pending</text>
+            <path d="M196 59 H286" stroke="#66847c" stroke-width="2"/>
+            <path d="M286 59 l-8 -5 v10 z" fill="#66847c"/>
+            <rect x="296" y="30" width="190" height="58" rx="8" fill="#e4f1eb" stroke="#bad7ca"/>
+            <text x="391" y="57" text-anchor="middle" class="svg-label">API seal</text>
+            <text x="391" y="75" text-anchor="middle" class="svg-small">owner epoch, event receipt</text>
+            <path d="M494 59 H584" stroke="#66847c" stroke-width="2"/>
+            <path d="M584 59 l-8 -5 v10 z" fill="#66847c"/>
+            <rect x="594" y="30" width="208" height="58" rx="8" fill="#f8ebd1" stroke="#e1c27d"/>
+            <text x="698" y="57" text-anchor="middle" class="svg-label">Postgres checkpoint</text>
+            <text x="698" y="75" text-anchor="middle" class="svg-small">one boundary receipt</text>
+            <rect x="105" y="130" width="610" height="48" rx="8" fill="#fffefb" stroke="#d9ded7"/>
+            <text x="410" y="157" text-anchor="middle" class="svg-label">Snapshot truth hangs from the sealed boundary, not from a freestanding JSON blob.</text>
+          </svg>
+        </div>
+        <div class="field-grid">
+          <div class="field full">
+            <h4>Basis</h4>
+            <p><strong>direct:</strong> `GameRunner` writes checkpoints after durable event flush; the API writer injects owner epoch and event commit receipt; the checkpoint table already has JSON snapshot, transcript cursor, token cursor, event head hash, and projection hash fields. <strong>external:</strong> transactional outbox guidance supports keeping state and message/cursor evidence in a single durable transaction boundary.</p>
+          </div>
+          <div class="field">
+            <h4>Rationale</h4>
+            <p>This becomes the shared object future passport, resume, admin, and test work all talk about. It also answers the S3 question: v1 runtime truth belongs in Postgres.</p>
+          </div>
+          <div class="field">
+            <h4>Downsides</h4>
+            <p>It is a contract slice, so it can feel abstract unless paired with at least one concrete new stamp. Keep it phase-boundary-only to avoid smuggling resume execution into the contract.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-2">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">2</span>
+            <div>
+              <h3>Evidence-Derived Manifest Stamp Ledger</h3>
+              <div class="chips">
+                <span class="chip axis">Passport/read-model honesty</span>
+                <span class="chip conf">Conf 91%</span>
+                <span class="chip cx">Cx Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p>Derive component statuses from persisted evidence instead of hand-maintained engine booleans. The ledger should allow statuses like `captured`, `private_reference_only`, `durable_cursor`, `diagnostic_only`, `blocked`, `malformed`, and `missing`, each with a reason.</p>
+        <div class="mini-diagram" aria-label="Manifest stamp ledger sketch">
+          <svg viewBox="0 0 820 190" role="img">
+            <rect x="32" y="32" width="165" height="48" rx="8" fill="#efe6f4" stroke="#dccbe5"/>
+            <text x="114" y="61" text-anchor="middle" class="svg-label">Persisted evidence</text>
+            <path d="M205 56 H305" stroke="#66847c" stroke-width="2"/>
+            <path d="M305 56 l-8 -5 v10 z" fill="#66847c"/>
+            <rect x="315" y="24" width="180" height="64" rx="8" fill="#e4f1eb" stroke="#bad7ca"/>
+            <text x="405" y="51" text-anchor="middle" class="svg-label">Stamp compiler</text>
+            <text x="405" y="70" text-anchor="middle" class="svg-small">derive, do not self-report</text>
+            <path d="M503 56 H603" stroke="#66847c" stroke-width="2"/>
+            <path d="M603 56 l-8 -5 v10 z" fill="#66847c"/>
+            <rect x="613" y="32" width="174" height="48" rx="8" fill="#e5f1f8" stroke="#b9d5e6"/>
+            <text x="700" y="61" text-anchor="middle" class="svg-label">Passport stamps</text>
+            <text x="410" y="132" text-anchor="middle" class="svg-small">Example: continuity payload present -> private_reference_only, not missing.</text>
+          </svg>
+        </div>
+        <div class="field-grid">
+          <div class="field full">
+            <h4>Basis</h4>
+            <p><strong>direct:</strong> `writeCheckpoint()` marks player and House continuity as missing while collecting those capsules immediately afterward; the API persists them in the checkpoint snapshot; the passport already treats `private_reference_only` continuity as a captured manifest component.</p>
+          </div>
+          <div class="field">
+            <h4>Rationale</h4>
+            <p>This turns the hydration passport into a trustworthy readiness ledger. Operators should not have to reconcile a manifest that says missing with a payload that proves present.</p>
+          </div>
+          <div class="field">
+            <h4>Downsides</h4>
+            <p>The stamp vocabulary needs restraint. Too many statuses can become a second unclear taxonomy unless every stamp maps to an actual validator path.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-3">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">3</span>
+            <div>
+              <h3>Boundary-Tap Actor Snapshot Witness</h3>
+              <div class="chips">
+                <span class="chip axis">XState actor snapshot</span>
+                <span class="chip conf">Conf 86%</span>
+                <span class="chip cx">Cx Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p>Pass the actual post-handler actor snapshot into checkpoint creation at the boundary and store it as an actor coordinate or witness. It should say where the phase machine stood, not that the game can resume today. Include machine/version metadata and validate the actor coordinate against projection facts.</p>
+        <div class="field-grid">
+          <div class="field full">
+            <h4>Basis</h4>
+            <p><strong>direct:</strong> the runner creates the XState actor, later reads `actor.getSnapshot()` in the loop, and currently marks `xstateActor` missing. `docs/statefulness-plan.md` names an XState snapshot as checkpoint material. <strong>external:</strong> XState documents persisted snapshots and restore caveats: actions are not re-executed, invocations restart, and actor state must be serializable.</p>
+          </div>
+          <div class="field">
+            <h4>Rationale</h4>
+            <p>This is the cleanest way to close the actor gap without inventing a reconstruction factory. It also gives tests something concrete to compare against projection round, phase, and boundary sequence.</p>
+          </div>
+          <div class="field">
+            <h4>Downsides</h4>
+            <p>The current code uses `getSnapshot()`, while XState distinguishes emitted snapshots from persisted snapshots. The slice should choose the intended XState shape deliberately and document the semantics.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-4">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">4</span>
+            <div>
+              <h3>Phase Accumulator Registry With Closed/Empty Proofs</h3>
+              <div class="chips">
+                <span class="chip axis">Runner accumulator boundary</span>
+                <span class="chip conf">Conf 84%</span>
+                <span class="chip cx">Cx Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p>Replace vague `phaseAccumulators: missing` with a registry where each runner-owned accumulator reports one of three states: captured payload, drained or empty proof, or intentionally not v1-hydratable. For v1, this should stay strictly phase-boundary and avoid partial in-flight recovery.</p>
+        <div class="field-grid">
+          <div class="field full">
+            <h4>Basis</h4>
+            <p><strong>direct:</strong> runner-owned state includes `completedHouseSummaryRounds`, `mingleInbox`, `eliminationOrder`, and tribunal accusations. Mingle clears and repopulates room state inside the phase, then records room allocations after `assertCanAcceptCommit()`. The statefulness plan explicitly names `GameRunner` accumulated data as checkpoint material.</p>
+          </div>
+          <div class="field">
+            <h4>Rationale</h4>
+            <p>The registry turns an open-ended audit into a finite checklist. It also gives future phase features a place to declare whether they leave boundary-owned state behind.</p>
+          </div>
+          <div class="field">
+            <h4>Downsides</h4>
+            <p>It forces careful classification. Some accumulators may be safe to prove empty at phase boundaries, while others, especially House summary state, may need captured payloads or explicit blocked status.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-5">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">5</span>
+            <div>
+              <h3>Durable Cursor Pair</h3>
+              <div class="chips">
+                <span class="chip axis">Transcript/token cursors</span>
+                <span class="chip conf">Conf 90%</span>
+                <span class="chip cx">Cx Small/Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p>Persist the token cursor that already exists and split transcript cursoring into two clearly named states: local transcript length for diagnostics, and durable transcript boundary for hydration stamps. A checkpoint can improve token readiness immediately while keeping transcript readiness failed or blocked until there is a real durable watermark.</p>
+        <div class="field-grid">
+          <div class="field full">
+            <h4>Basis</h4>
+            <p><strong>direct:</strong> the API creates a `TokenTracker`; `TokenTracker.toCursor()` returns versioned totals and per-source usage; live checkpoints still write `tokenCostCursor: null`. The checkpoint currently writes `{ entries }`, and the passport rejects that exact shape as an in-memory count rather than a durable boundary cursor.</p>
+          </div>
+          <div class="field">
+            <h4>Rationale</h4>
+            <p>This is the cheapest positive runtime stamp. It improves cost inspection and validates the cursor/plumbing path without requiring full transcript persistence or resume.</p>
+          </div>
+          <div class="field">
+            <h4>Downsides</h4>
+            <p>A durable transcript watermark still needs a real storage story. The slice should not fake it with entry counts or force every transcript row into mid-game persistence unless that becomes separately justified.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-6">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">6</span>
+            <div>
+              <h3>Passport Snapshot Fixture Factory</h3>
+              <div class="chips">
+                <span class="chip axis">Passport/read-model honesty</span>
+                <span class="chip conf">Conf 82%</span>
+                <span class="chip cx">Cx Small/Medium</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p>Turn passport stamps into a reusable fixture matrix: valid boundary, stale projection, mismatched owner epoch, bad event receipt, malformed continuity, local-only transcript cursor, missing token cursor, and unsupported manifest version.</p>
+        <div class="field-grid">
+          <div class="field full">
+            <h4>Basis</h4>
+            <p><strong>direct:</strong> existing passport tests already prove some all-stamps and failure paths, and the checkpoint writer already validates event boundary and projection consistency before insert. The verifier marked this sound as a focused acceptance harness.</p>
+          </div>
+          <div class="field">
+            <h4>Rationale</h4>
+            <p>This compounds every later stamp. It lets the team add runtime snapshot fields with confidence that a fake positive `hydration_candidate` will be caught.</p>
+          </div>
+          <div class="field">
+            <h4>Downsides</h4>
+            <p>It is test infrastructure, so it should trail the chosen contract rather than become the whole slice. Best paired with ideas 1, 2, or 5.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-7">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="rank">7</span>
+            <div>
+              <h3>Postgres Capsule, Evidence References Only</h3>
+              <div class="chips">
+                <span class="chip axis">Storage/effect boundary</span>
+                <span class="chip conf">Conf 88%</span>
+                <span class="chip cx">Cx Small</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p>Keep v1 runtime snapshot truth entirely in Postgres. Object storage, including S3, can remain optional evidence storage keyed to event sequences or evidence manifests later, but should not be required for hydration candidacy in this slice.</p>
+        <div class="field-grid">
+          <div class="field full">
+            <h4>Basis</h4>
+            <p><strong>direct:</strong> `game_checkpoints` already has JSONB snapshot and cursor columns, event/projection hashes, owner epoch, and hydrateable metadata. `game_evidence_manifests` separately has storage-provider and storage-key style fields for bulky evidence references.</p>
+          </div>
+          <div class="field">
+            <h4>Rationale</h4>
+            <p>This protects the next slice from infrastructure expansion. S3 becomes useful when raw evidence volume or retention policy demands it, not when the runtime snapshot still lacks local truth.</p>
+          </div>
+          <div class="field">
+            <h4>Downsides</h4>
+            <p>Postgres JSONB is not where large transcripts or raw artifacts should live forever. The boundary is that runtime resume metadata stays in Postgres; optional raw evidence can move out later.</p>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section>
+      <p class="section-label">Cuts</p>
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Idea</th>
+            <th>Reason Rejected</th>
+          </tr>
+        </thead>
+        <tbody class="reject">
+          <tr>
+            <td>Effect Receipt Fence</td>
+            <td>Directionally useful but too easy to overrun into generalized effect replay or resume design. Fold only the boundary-result principle into the receipt contract.</td>
+          </tr>
+          <tr>
+            <td>Owner-Epoch Capability Object</td>
+            <td>Owner checks are real, but a new capability-object refactor is broader than this runtime snapshot slice needs.</td>
+          </tr>
+          <tr>
+            <td>Full Transcript Persistence Now</td>
+            <td>Durable cursor semantics do not require every transcript row to be persisted mid-game.</td>
+          </tr>
+          <tr>
+            <td>Resume Factory Now</td>
+            <td>`GameRunner.fromCheckpoint()` and actual resume execution are explicitly later work.</td>
+          </tr>
+          <tr>
+            <td>Raw LLM Evidence As Resume Truth</td>
+            <td>Conflicts with the privacy validator and the private-continuity boundary.</td>
+          </tr>
+          <tr>
+            <td>Workflow Engine Replacement</td>
+            <td>External analogy only and replaces the subject instead of advancing this slice.</td>
+          </tr>
+          <tr>
+            <td>Mid-Phase Recovery</td>
+            <td>Contradicts the selected safe phase-boundary scope and would need pending-effect semantics outside v1.</td>
+          </tr>
+          <tr>
+            <td>Per-Event Snapshots</td>
+            <td>Conflicts with the current phase-boundary checkpoint cadence and recent planning direction.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>Axis coverage check: all five axes have at least one survivor.</p>
+    </section>
+
+    <section>
+      <p class="section-label">References</p>
+      <h2>Sources &amp; References</h2>
+      <ul class="references">
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/statefulness-plan.md">docs/statefulness-plan.md</a> - phase-boundary snapshot scope and required runtime materials.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-runner.ts">packages/engine/src/game-runner.ts</a> - event flush, checkpoint write, manifest, continuity capsule, cursor, and actor loop evidence.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-checkpoints.ts">packages/api/src/services/game-checkpoints.ts</a> - owner checks, event boundary checks, API-sealed boundary receipt, and checkpoint persistence.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/checkpoint-hydration-passport.ts">packages/api/src/services/checkpoint-hydration-passport.ts</a> - required passport stamps, cursor validation, continuity privacy checks, and verdict derivation.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/db/schema.ts">packages/api/src/db/schema.ts</a> - checkpoint and evidence manifest storage surfaces.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/token-tracker.ts">packages/engine/src/token-tracker.ts</a> - existing versioned token cursor.</li>
+        <li><a href="https://stately.ai/docs/persistence">XState Persistence</a> - actor persisted snapshot and restore caveats.</li>
+        <li><a href="https://microservices.io/patterns/data/transactional-outbox.html">Transactional Outbox Pattern</a> - database transaction boundary for state plus outbound messages.</li>
+        <li><a href="https://docs.temporal.io/workflows">Temporal Workflow Replay</a> - event history and recorded activity results as durable workflow truth.</li>
+      </ul>
+    </section>
+
+    <footer class="composition-signal">Composed 2026-06-14T20:29:14Z by ce-ideate from the next statefulness slice prompt.</footer>
+  </main>
+</body>
+</html>

@@ -34,7 +34,9 @@
  *   API-backed durable checkpoints may expose a status-only hydration passport
  *   through admin inspection, but private player/House continuity capsules and
  *   model reasoning remain outside public transcript, websocket, and canonical
- *   event output.
+ *   event output. A candidate passport requires sealed checkpoint-boundary
+ *   evidence across the manifest, actor witness, accumulators, transcript
+ *   watermark, token cursor, and continuity capsules; it is not runtime resume.
  *
  * Use JSONL artifacts for post-run analysis instead of parsing ANSI-colored
  * `game-{N}.txt` output.

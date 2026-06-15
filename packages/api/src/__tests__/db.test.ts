@@ -611,7 +611,6 @@ describe("Database Schema", () => {
           lastEventSequence: 1,
           eventHeadHash: "sha256:head-1",
           projectionHash: "sha256:projection-1",
-          hydrationStatus: { hydrateable: false, missing: ["xstate_snapshot"] },
           snapshot: { phase: "INTRODUCTION", players: [] },
         });
 
@@ -655,11 +654,7 @@ describe("Database Schema", () => {
         .where(eq(schema.gameEvidenceManifestReads.manifestId, manifestId));
 
       expect(checkpoints[0]!.lastEventSequence).toBe(1);
-      expect(checkpoints[0]!.hydrateable).toBe(false);
-      expect(checkpoints[0]!.hydrationStatus).toEqual({
-        hydrateable: false,
-        missing: ["xstate_snapshot"],
-      });
+      expect(checkpoints[0]!.snapshot).toEqual({ phase: "INTRODUCTION", players: [] });
       expect(manifests[0]!.redactionStatus).toBe("active");
       expect(manifests[0]!.metadata).toEqual({ redacted: true, byteLength: 1234 });
       expect(reads).toHaveLength(1);

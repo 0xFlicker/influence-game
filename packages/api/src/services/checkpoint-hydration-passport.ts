@@ -13,12 +13,7 @@
 
 import {
   PHASE_BOUNDARY_ACCUMULATOR_IDS,
-  type AccumulatorEntryV1,
-  type ActorWitnessV1,
   type CheckpointBoundaryIdentityV1,
-  type PhaseAccumulatorRegistryV1,
-  type RuntimeSnapshotV1,
-  type TranscriptWatermarkV1,
 } from "@influence/engine";
 import type { DurableRunDiagnostic } from "./game-durable-run.js";
 
@@ -28,7 +23,7 @@ export type PassportStampId =
   | "eventLogReplay"
   | "projectionReplay"
   | "boundaryCertificate"
-  | "snapshotManifest"
+  | "runtimeSnapshot"
   | "actorWitness"
   | "accumulatorRegistry"
   | "transcriptCursor"
@@ -60,8 +55,6 @@ export interface HydrationPassport {
 export interface DerivePassportInput {
   lastEventSequence: number;
   checkpointKind: string;
-  hydrateable: boolean;
-  hydrationStatus: unknown;
   snapshot: unknown;
   transcriptCursor: unknown;
   tokenCostCursor: unknown;
@@ -70,7 +63,6 @@ export interface DerivePassportInput {
   checkpointPhase: string | null;
   checkpointRound: number | null;
   checkpointOwnerEpoch: string;
-  degradedReason?: string | null;
   createdAt: string;
   eventLogStatus: "empty" | "complete" | "invalid";
   projectionStatus: string;
@@ -87,7 +79,7 @@ const REQUIRED_V1_STAMPS: PassportStampId[] = [
   "eventLogReplay",
   "projectionReplay",
   "boundaryCertificate",
-  "snapshotManifest",
+  "runtimeSnapshot",
   "actorWitness",
   "accumulatorRegistry",
   "transcriptCursor",
@@ -107,6 +99,20 @@ const TOKEN_USAGE_KEYS = [
   "callCount",
   "emptyResponses",
 ] as const;
+
+const ACCUMULATOR_STATUSES = new Set([
+  "empty",
+  "drained",
+  "blocked",
+  "malformed",
+  "not_v1_hydratable",
+]);
+
+const ACCUMULATOR_PROOF_KINDS = new Set([
+  "empty_at_boundary",
+  "drained_at_boundary",
+  "not_applicable_at_boundary",
+]);
 
 const FORBIDDEN_PRIVACY_KEYS = new Set([
   "thinking",
@@ -148,6 +154,12 @@ function isBoundaryReceipt(value: unknown, expectedSequence: number, expectedHas
     value.hash === expectedHash;
 }
 
+function sameStringSet(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every((value) => rightSet.has(value));
+}
+
 function containsForbiddenPrivacyKey(value: unknown): boolean {
   if (Array.isArray(value)) return value.some(containsForbiddenPrivacyKey);
   if (!isRecord(value)) return false;
@@ -183,32 +195,50 @@ function boundaryMatchesRow(
     (input.checkpointRound == null || boundary.round === input.checkpointRound);
 }
 
-function parseRuntimeSnapshot(snapshot: Record<string, unknown> | null): RuntimeSnapshotV1 | null {
-  const rs = snapshot?.runtimeSnapshot;
-  if (!isRecord(rs) || rs.version !== 1) return null;
-  return rs as unknown as RuntimeSnapshotV1;
-}
-
 function validateActorWitness(
-  witness: ActorWitnessV1 | undefined,
+  witness: unknown,
   input: DerivePassportInput,
   projectionRound: number | null,
   projectionPhase: string | null,
+  expectedPlayerIds: readonly string[] | null,
 ): { status: PassportStampStatus; reason?: string } {
-  if (!witness || witness.version !== 1) {
+  if (witness == null) {
     return { status: "missing", reason: "actor witness absent" };
   }
-  if (!boundaryMatchesRow(witness.boundary, input)) {
+  if (!isRecord(witness) || witness.version !== 1) {
+    return { status: "malformed", reason: "actor witness is not a valid v1 object" };
+  }
+  const boundary = parseBoundaryIdentity(witness.boundary);
+  if (!boundary) {
+    return { status: "malformed", reason: "actor witness boundary identity is malformed" };
+  }
+  if (!boundaryMatchesRow(boundary, input)) {
     return { status: "failed", reason: "actor witness boundary identity does not match checkpoint row" };
   }
-  if (projectionRound != null && witness.contextSummary.round !== projectionRound) {
+  const contextSummary = isRecord(witness.contextSummary) ? witness.contextSummary : null;
+  if (!contextSummary ||
+      typeof contextSummary.round !== "number" ||
+      typeof contextSummary.phase !== "string" ||
+      !Array.isArray(contextSummary.alivePlayerIds) ||
+      !contextSummary.alivePlayerIds.every((id) => typeof id === "string")) {
+    return { status: "malformed", reason: "actor witness context summary is malformed" };
+  }
+  if (projectionRound != null && contextSummary.round !== projectionRound) {
     return { status: "failed", reason: "actor witness round does not match projection facts" };
   }
-  if (projectionPhase != null && witness.contextSummary.phase !== projectionPhase) {
+  if (projectionPhase != null && contextSummary.phase !== projectionPhase) {
     return { status: "failed", reason: "actor witness phase does not match projection facts" };
+  }
+  if (expectedPlayerIds && !sameStringSet(contextSummary.alivePlayerIds, expectedPlayerIds)) {
+    return { status: "failed", reason: "actor witness alive players do not match expected active player evidence" };
   }
   if (typeof witness.actorCoordinate !== "string" || witness.actorCoordinate.length === 0) {
     return { status: "malformed", reason: "actor witness missing phase-machine coordinate" };
+  }
+  if (witness.machineSchemaVersion !== "phase-machine-v1" ||
+      (witness.actorStatus !== "active" && witness.actorStatus !== "done") ||
+      witness.futureHydrationInputVersion !== 1) {
+    return { status: "malformed", reason: "actor witness metadata is malformed" };
   }
   return { status: "passed" };
 }
@@ -217,36 +247,74 @@ function accumulatorStatusNeedsProof(status: string): boolean {
   return status === "empty" || status === "drained" || status === "not_v1_hydratable";
 }
 
+function expectedAccumulatorProofKind(status: string): string | null {
+  switch (status) {
+    case "empty":
+      return "empty_at_boundary";
+    case "drained":
+      return "drained_at_boundary";
+    case "not_v1_hydratable":
+      return "not_applicable_at_boundary";
+    default:
+      return null;
+  }
+}
+
 function validateAccumulatorRegistry(
-  registry: PhaseAccumulatorRegistryV1 | undefined,
+  registry: unknown,
   input: DerivePassportInput,
 ): { status: PassportStampStatus; reason?: string } {
-  if (!registry || registry.version !== 1) {
+  if (registry == null) {
     return { status: "missing", reason: "accumulator registry absent" };
+  }
+  if (!isRecord(registry) || registry.version !== 1) {
+    return { status: "malformed", reason: "accumulator registry is not a valid v1 object" };
   }
   if (registry.boundaryClass !== "phase_boundary") {
     return { status: "malformed", reason: "unsupported accumulator registry boundary class" };
   }
-  if (!boundaryMatchesRow(registry.boundary, input)) {
+  const boundary = parseBoundaryIdentity(registry.boundary);
+  if (!boundary) {
+    return { status: "malformed", reason: "accumulator registry boundary identity is malformed" };
+  }
+  if (!boundaryMatchesRow(boundary, input)) {
     return { status: "failed", reason: "accumulator registry boundary identity does not match checkpoint row" };
   }
 
-  const entries = Array.isArray(registry.entries) ? registry.entries as AccumulatorEntryV1[] : [];
-  const entryIds = new Set(entries.map((entry) => entry.id));
+  if (!Array.isArray(registry.entries)) {
+    return { status: "malformed", reason: "accumulator registry entries are malformed" };
+  }
+  const entries = registry.entries;
+  const entryIds = new Set(
+    entries
+      .map((entry) => isRecord(entry) && typeof entry.id === "string" ? entry.id : null)
+      .filter((id): id is string => id !== null),
+  );
   const missingRequired = PHASE_BOUNDARY_ACCUMULATOR_IDS.filter((id) => !entryIds.has(id));
   if (missingRequired.length > 0) {
     return { status: "failed", reason: `accumulator registry missing required ids: ${missingRequired.join(", ")}` };
   }
 
   for (const entry of entries) {
-    if (!entry.id || typeof entry.status !== "string") {
-      return { status: "malformed", reason: `accumulator entry ${entry.id ?? "(unknown)"} is malformed` };
+    const entryLabel = isRecord(entry) && typeof entry.id === "string" ? entry.id : "(unknown)";
+    if (!isRecord(entry) || typeof entry.id !== "string" || typeof entry.status !== "string") {
+      return { status: "malformed", reason: `accumulator entry ${entryLabel} is malformed` };
+    }
+    if (!PHASE_BOUNDARY_ACCUMULATOR_IDS.includes(entry.id as (typeof PHASE_BOUNDARY_ACCUMULATOR_IDS)[number])) {
+      return { status: "failed", reason: `accumulator registry contains unknown id: ${entry.id}` };
+    }
+    if (!ACCUMULATOR_STATUSES.has(entry.status)) {
+      return { status: "malformed", reason: `accumulator ${entry.id} has unknown status ${entry.status}` };
     }
     if (accumulatorStatusNeedsProof(entry.status) && !isRecord(entry.proof)) {
       return { status: "failed", reason: `accumulator ${entry.id} status ${entry.status} lacks required proof` };
     }
-    if (entry.status === "not_v1_hydratable" && entry.proof?.kind !== "not_applicable_at_boundary") {
-      return { status: "failed", reason: `accumulator ${entry.id} not_v1_hydratable without not_applicable proof` };
+    if (isRecord(entry.proof) && (typeof entry.proof.kind !== "string" || !ACCUMULATOR_PROOF_KINDS.has(entry.proof.kind))) {
+      return { status: "malformed", reason: `accumulator ${entry.id} proof is malformed` };
+    }
+    const expectedProofKind = expectedAccumulatorProofKind(entry.status);
+    if (expectedProofKind && isRecord(entry.proof) && entry.proof.kind !== expectedProofKind) {
+      return { status: "failed", reason: `accumulator ${entry.id} status ${entry.status} has mismatched proof kind` };
     }
     if (entry.status === "blocked" || entry.status === "malformed") {
       return { status: "failed", reason: `accumulator ${entry.id} is ${entry.status}` };
@@ -257,11 +325,11 @@ function validateAccumulatorRegistry(
 }
 
 function validateTranscriptWatermark(
-  watermark: TranscriptWatermarkV1 | undefined,
+  watermark: unknown,
   input: DerivePassportInput,
   transcriptCursor: unknown,
 ): { status: PassportStampStatus; reason?: string } {
-  if (!watermark || watermark.version !== 1) {
+  if (watermark == null) {
     if (isRecord(transcriptCursor) &&
         typeof transcriptCursor.entries === "number" &&
         transcriptCursor.durableBoundary !== true) {
@@ -269,11 +337,24 @@ function validateTranscriptWatermark(
     }
     return { status: "missing", reason: "transcript watermark absent" };
   }
-  if (!boundaryMatchesRow(watermark.boundary, input)) {
+  if (!isRecord(watermark) || watermark.version !== 1) {
+    return { status: "malformed", reason: "transcript watermark is not a valid v1 object" };
+  }
+  const boundary = parseBoundaryIdentity(watermark.boundary);
+  if (!boundary) {
+    return { status: "malformed", reason: "transcript watermark boundary identity is malformed" };
+  }
+  if (!boundaryMatchesRow(boundary, input)) {
     return { status: "failed", reason: "transcript watermark boundary identity does not match checkpoint row" };
   }
-  if (watermark.durableBoundary !== true || typeof watermark.boundaryDigest !== "string") {
+  if (watermark.durableBoundary !== true ||
+      typeof watermark.boundaryDigest !== "string" ||
+      typeof watermark.lastCanonicalSequence !== "number" ||
+      typeof watermark.entryCount !== "number") {
     return { status: "malformed", reason: "transcript watermark missing durable boundary digest" };
+  }
+  if (watermark.lastCanonicalSequence !== input.lastEventSequence) {
+    return { status: "failed", reason: "transcript watermark does not cover checkpoint boundary" };
   }
   if (containsForbiddenPrivacyKey(watermark)) {
     return { status: "failed", reason: "transcript watermark contains forbidden private content fields" };
@@ -283,10 +364,12 @@ function validateTranscriptWatermark(
 
 function isTranscriptCursorFromWatermark(
   transcriptCursor: unknown,
-  watermark: TranscriptWatermarkV1 | undefined,
+  watermark: unknown,
 ): boolean {
-  if (!isRecord(transcriptCursor) || !watermark) return false;
-  return transcriptCursor.durableBoundary === true &&
+  if (!isRecord(transcriptCursor) || !isRecord(watermark)) return false;
+  return transcriptCursor.version === 1 &&
+    transcriptCursor.durableBoundary === true &&
+    transcriptCursor.entries === watermark.entryCount &&
     transcriptCursor.boundaryDigest === watermark.boundaryDigest &&
     transcriptCursor.lastCanonicalSequence === watermark.lastCanonicalSequence;
 }
@@ -328,54 +411,52 @@ function isHouseContinuityCapsule(value: unknown): boolean {
     typeof value.changedSincePrevious === "string";
 }
 
-function expectedActivePlayerIds(snapshot: Record<string, unknown> | null): string[] {
+function expectedActivePlayerIds(snapshot: Record<string, unknown> | null): {
+  status: PassportStampStatus;
+  ids: string[];
+  reason?: string;
+} {
   const explicit = snapshot?.expectedActivePlayerIds;
   if (Array.isArray(explicit)) {
-    return explicit.filter((id): id is string => typeof id === "string");
+    if (!explicit.every((id) => typeof id === "string")) {
+      return { status: "malformed", ids: [], reason: "expected active player ids must be strings" };
+    }
+    const ids = [...new Set(explicit)];
+    const state = snapshot?.state;
+    const alivePlayerCount = isRecord(state) && typeof state.alivePlayerCount === "number"
+      ? state.alivePlayerCount
+      : null;
+    if (alivePlayerCount != null && alivePlayerCount > 0 && ids.length !== alivePlayerCount) {
+      return { status: "failed", ids, reason: "expected active player ids do not match live player count" };
+    }
+    return { status: "passed", ids };
   }
-  if (!snapshot || !isRecord(snapshot.state)) return [];
+  if (!snapshot || !isRecord(snapshot.state)) {
+    return { status: "missing", ids: [], reason: "checkpoint state missing expected active player evidence" };
+  }
   const count = typeof snapshot.state.alivePlayerCount === "number" ? snapshot.state.alivePlayerCount : 0;
-  const capsules = Array.isArray(snapshot.playerContinuityCapsules)
-    ? snapshot.playerContinuityCapsules as unknown[]
-    : [];
-  if (count > 0 && capsules.length >= count) {
-    return capsules
-      .map((capsule) => isRecord(capsule) ? capsule.playerId : null)
-      .filter((id): id is string => typeof id === "string");
+  if (count > 0) {
+    return { status: "failed", ids: [], reason: "expected active player ids absent for live players" };
   }
-  return [];
+  return { status: "passed", ids: [] };
 }
 
-function deriveManifestStamp(
-  runtimeSnapshot: RuntimeSnapshotV1 | null,
-  actorStatus: PassportStampStatus,
-  accumulatorStatus: PassportStampStatus,
-  transcriptStatus: PassportStampStatus,
-  tokenStatus: PassportStampStatus,
-  playerStatus: PassportStampStatus,
-  houseStatus: PassportStampStatus,
-  ownerStatus: PassportStampStatus,
-): { status: PassportStampStatus; reason?: string } {
-  if (!runtimeSnapshot) {
-    return { status: "missing", reason: "no versioned runtime snapshot present (forensic capsule shape)" };
+function parseRuntimeSnapshot(snapshot: Record<string, unknown> | null): {
+  status: PassportStampStatus;
+  value: Record<string, unknown> | null;
+  reason?: string;
+} {
+  const rs = snapshot?.runtimeSnapshot;
+  if (rs == null) {
+    return { status: "missing", value: null, reason: "no versioned runtime snapshot present (forensic capsule shape)" };
   }
-
-  const componentChecks: Array<[string, PassportStampStatus]> = [
-    ["projectionTruth", "passed"],
-    ["xstateActor", actorStatus],
-    ["phaseAccumulators", accumulatorStatus],
-    ["playerContinuity", playerStatus === "passed" ? "passed" : playerStatus],
-    ["houseContinuity", houseStatus],
-    ["transcriptCursor", transcriptStatus],
-    ["tokenCursor", tokenStatus],
-    ["ownerEpoch", ownerStatus],
-  ];
-
-  const failed = componentChecks.filter(([, status]) => status !== "passed").map(([name]) => name);
-  if (failed.length > 0) {
-    return { status: "failed", reason: `manifest components not satisfied by runtime evidence: ${failed.join(", ")}` };
+  if (!isRecord(rs)) {
+    return { status: "malformed", value: null, reason: "runtime snapshot is not an object" };
   }
-  return { status: "passed" };
+  if (rs.version !== 1) {
+    return { status: "unknown_version", value: null, reason: "runtime snapshot version is unsupported" };
+  }
+  return { status: "passed", value: rs };
 }
 
 export function deriveHydrationPassport(input: DerivePassportInput): DerivePassportResult {
@@ -390,29 +471,6 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
     const blocking = status !== "passed";
     stamps.push({ id, status, reason, blocking });
   };
-
-  let parsedHydration: Record<string, unknown> | null = null;
-  if (isRecord(input.hydrationStatus)) {
-    parsedHydration = input.hydrationStatus;
-  } else if (input.hydrationStatus != null) {
-    diagnostics.push({
-      code: "malformed_checkpoint_hydration_status",
-      severity: "error",
-      message: "Checkpoint hydration status cannot support hydrateable=true or is malformed",
-      sequence: input.lastEventSequence,
-    });
-  }
-
-  if (parsedHydration == null && input.hydrationStatus != null) {
-    // malformed handled above
-  } else if (input.hydrateable && (parsedHydration == null || Object.keys(parsedHydration).length === 0)) {
-    diagnostics.push({
-      code: "malformed_checkpoint_hydration_status",
-      severity: "error",
-      message: "Checkpoint hydration status cannot support hydrateable=true or is malformed",
-      sequence: input.lastEventSequence,
-    });
-  }
 
   if (input.eventLogStatus === "complete" && input.hasValidEventPrefixUpTo(input.lastEventSequence)) {
     addStamp("eventLogReplay", "passed");
@@ -432,11 +490,14 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
   }
 
   const snap = isRecord(input.snapshot) ? input.snapshot : null;
-  const runtimeSnapshot = parseRuntimeSnapshot(snap);
+  const runtimeSnapshotResult = parseRuntimeSnapshot(snap);
+  addStamp("runtimeSnapshot", runtimeSnapshotResult.status, runtimeSnapshotResult.reason);
+  const runtimeSnapshot = runtimeSnapshotResult.value;
   const bc = (snap?.boundaryCertificate as Record<string, unknown> | undefined) ?? undefined;
   const projectionSummary = isRecord(snap?.projectionSummary) ? snap!.projectionSummary as Record<string, unknown> : null;
   const projectionRound = typeof projectionSummary?.round === "number" ? projectionSummary.round : input.checkpointRound;
   const projectionPhase = typeof projectionSummary?.phase === "string" ? projectionSummary.phase : input.checkpointPhase;
+  const expectedPlayers = expectedActivePlayerIds(snap);
 
   const hasBoundaryEvidence =
     !!bc &&
@@ -463,7 +524,13 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
     addStamp("boundaryCertificate", "missing", "boundary certificate evidence absent");
   }
 
-  const actorResult = validateActorWitness(runtimeSnapshot?.actorWitness, input, projectionRound, projectionPhase);
+  const actorResult = validateActorWitness(
+    runtimeSnapshot?.actorWitness,
+    input,
+    projectionRound,
+    projectionPhase,
+    expectedPlayers.status === "passed" ? expectedPlayers.ids : null,
+  );
   addStamp("actorWitness", actorResult.status, actorResult.reason);
 
   const accumulatorResult = validateAccumulatorRegistry(runtimeSnapshot?.accumulatorRegistry, input);
@@ -484,7 +551,9 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
     const tokenBoundary = parseBoundaryIdentity(
       isRecord(input.tokenCostCursor) ? (input.tokenCostCursor as Record<string, unknown>).boundary : null,
     );
-    if (tokenBoundary && !boundaryMatchesRow(tokenBoundary, input)) {
+    if (!tokenBoundary) {
+      addStamp("tokenCursor", "failed", "token cursor boundary identity absent or malformed");
+    } else if (!boundaryMatchesRow(tokenBoundary, input)) {
       addStamp("tokenCursor", "failed", "token cursor boundary identity does not match checkpoint row");
     } else {
       addStamp("tokenCursor", "passed");
@@ -499,7 +568,6 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
 
   const pcs = Array.isArray(snap?.playerContinuityCapsules) ? (snap!.playerContinuityCapsules as unknown[]) : [];
   const hcc = snap?.houseContinuityCapsule ?? null;
-  const expectedPlayers = expectedActivePlayerIds(snap);
   const capsulePlayerIds = new Set(
     pcs.map((capsule) => isRecord(capsule) ? capsule.playerId : null).filter((id): id is string => typeof id === "string"),
   );
@@ -507,15 +575,20 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
   if (
     pcs.length > 0 &&
     pcs.every(isPlayerContinuityCapsule) &&
-    (expectedPlayers.length === 0 || expectedPlayers.every((id) => capsulePlayerIds.has(id)))
+    expectedPlayers.status === "passed" &&
+    expectedPlayers.ids.every((id) => capsulePlayerIds.has(id))
   ) {
     addStamp("playerContinuity", "passed");
   } else if (pcs.length > 0) {
-    const missingPlayers = expectedPlayers.filter((id) => !capsulePlayerIds.has(id));
-    const reason = missingPlayers.length > 0
-      ? `player continuity capsules missing expected active players: ${missingPlayers.join(", ")}`
-      : "one or more player continuity capsules are malformed";
-    addStamp("playerContinuity", missingPlayers.length > 0 ? "failed" : "malformed", reason);
+    if (expectedPlayers.status !== "passed") {
+      addStamp("playerContinuity", expectedPlayers.status, expectedPlayers.reason);
+    } else {
+      const missingPlayers = expectedPlayers.ids.filter((id) => !capsulePlayerIds.has(id));
+      const reason = missingPlayers.length > 0
+        ? `player continuity capsules missing expected active players: ${missingPlayers.join(", ")}`
+        : "one or more player continuity capsules are malformed";
+      addStamp("playerContinuity", missingPlayers.length > 0 ? "failed" : "malformed", reason);
+    }
   } else {
     addStamp("playerContinuity", "missing", "no structured player continuity capsules present");
   }
@@ -539,24 +612,13 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
     containsForbiddenPrivacyKey(pcs) ||
     containsForbiddenPrivacyKey(hcc) ||
     containsForbiddenPrivacyKey(runtimeSnapshot) ||
-    containsForbiddenPrivacyKey(input.transcriptCursor);
+    containsForbiddenPrivacyKey(input.transcriptCursor) ||
+    containsForbiddenPrivacyKey(input.tokenCostCursor);
   addStamp(
     "privacy",
     privacyViolation ? "failed" : "passed",
     privacyViolation ? "checkpoint evidence contains raw reasoning, prompt/response, storage, or transcript content fields" : undefined,
   );
-
-  const manifestResult = deriveManifestStamp(
-    runtimeSnapshot,
-    actorResult.status,
-    accumulatorResult.status,
-    stamps.find((stamp) => stamp.id === "transcriptCursor")!.status,
-    stamps.find((stamp) => stamp.id === "tokenCursor")!.status,
-    stamps.find((stamp) => stamp.id === "playerContinuity")!.status,
-    stamps.find((stamp) => stamp.id === "houseContinuity")!.status,
-    ownerEpochStatus,
-  );
-  addStamp("snapshotManifest", manifestResult.status, manifestResult.reason);
 
   const allRequiredPassed = REQUIRED_V1_STAMPS.every((id) => {
     const stamp = stamps.find((entry) => entry.id === id);
@@ -567,7 +629,7 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
   if (allRequiredPassed) {
     verdict = "hydration_candidate";
   } else {
-    const hasCheckpointEvidence = input.snapshot != null || input.hydrationStatus != null || input.lastEventSequence >= 0;
+    const hasCheckpointEvidence = input.snapshot != null || input.lastEventSequence >= 0;
     verdict = hasCheckpointEvidence ? "blocked" : "forensic_only";
   }
 

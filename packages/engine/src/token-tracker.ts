@@ -183,10 +183,22 @@ export class TokenTracker {
 }
 
 /** Serializable token/cost cursor for checkpoint hydration passports (U4). */
+export interface TokenCostCursorBoundary {
+  version: 1;
+  ownerEpoch: string;
+  boundarySequence: number;
+  eventHeadHash: string;
+  projectionHash: string;
+  checkpointKind: string;
+  phase: string;
+  round: number;
+}
+
 export interface TokenCostCursor {
   version: 1;
   totals: TokenUsage;
   perSource: Record<string, TokenUsage>;
+  boundary?: TokenCostCursorBoundary;
 }
 
 export interface TokenTracker {

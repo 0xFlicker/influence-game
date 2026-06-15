@@ -191,14 +191,12 @@ describe("GameRunner canonical events", () => {
     }
   });
 
-  it("writes non-hydrateable checkpoint capsules after durable event flushes", async () => {
+  it("writes checkpoint capsules after durable event flushes", async () => {
     const flushedSequences: number[] = [];
     const checkpointViews: Array<{
       kind: string;
       sequence: number;
       flushedAtWrite: number[];
-      hydrateable: boolean;
-      missingInputs: string[];
       transcriptEntries: number;
     }> = [];
 
@@ -227,8 +225,6 @@ describe("GameRunner canonical events", () => {
           kind: checkpoint.checkpointKind,
           sequence: checkpoint.lastEventSequence,
           flushedAtWrite: [...flushedSequences],
-          hydrateable: checkpoint.hydrateable,
-          missingInputs: [...checkpoint.hydrationStatus.missingInputs],
           transcriptEntries: checkpoint.transcriptCursor.entries,
         });
       },
@@ -242,14 +238,6 @@ describe("GameRunner canonical events", () => {
       kind: "initial",
       sequence: 1,
       flushedAtWrite: [1],
-      hydrateable: false,
-      missingInputs: [
-        "xstateSnapshot",
-        "phaseAccumulators",
-        "agentMemoryState",
-        "pendingLlmCalls",
-        "tokenCostCursor",
-      ],
       transcriptEntries: 0,
     });
     for (const agent of agents) {

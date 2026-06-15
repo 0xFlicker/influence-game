@@ -75,38 +75,6 @@ export interface GameCheckpointProjectionSummary {
   roundResultCount: number;
 }
 
-/**
- * Versioned snapshot manifest (U2+).
- * Names the runtime subsystems captured for future hydration.
- * Projection truth is always replayable from events; other components are the non-rebuildable state.
- */
-export type SnapshotComponentStatus =
-  | "captured"
-  | "missing"
-  | "malformed"
-  | "private_reference_only"
-  | "blocked";
-
-export interface SnapshotManifestComponent {
-  status: SnapshotComponentStatus;
-  /** Optional semantic version of the captured component payload */
-  version?: number;
-}
-
-export interface SnapshotManifest {
-  version: 1;
-  components: {
-    projectionTruth: SnapshotManifestComponent;
-    xstateActor: SnapshotManifestComponent;
-    phaseAccumulators: SnapshotManifestComponent;
-    playerContinuity: SnapshotManifestComponent;
-    houseContinuity: SnapshotManifestComponent;
-    transcriptCursor: SnapshotManifestComponent;
-    tokenCursor: SnapshotManifestComponent;
-    ownerEpoch: SnapshotManifestComponent;
-  };
-}
-
 /** Boundary certificate evidence (U3+). Conservative for v1: asserts write happened after durable flush with no pending pre-boundary effects locally. */
 export interface BoundaryCertificate {
   gameId: UUID;
@@ -133,7 +101,6 @@ export interface CheckpointBoundaryIdentityV1 {
 }
 
 export type AccumulatorEntryStatusV1 =
-  | "captured"
   | "empty"
   | "drained"
   | "blocked"
@@ -160,7 +127,6 @@ export interface AccumulatorEntryV1 {
 export const PHASE_BOUNDARY_ACCUMULATOR_IDS = [
   "mingleInbox",
   "transcriptStreamBuffer",
-  "pendingLlmCalls",
   "currentAccusations",
 ] as const;
 
@@ -250,24 +216,12 @@ export interface GameCheckpointCapsule {
   projection: CanonicalGameProjection;
   state: GameCheckpointStateSummary;
   projectionSummary: GameCheckpointProjectionSummary;
-  /** Structured readiness manifest (replaces loose snapshot blob for hydration analysis). */
-  snapshotManifest?: SnapshotManifest;
   /** Boundary safety evidence captured at write time (U3+). */
   boundaryCertificate?: BoundaryCertificate | null;
   playerContinuityCapsules?: PlayerContinuityCapsule[];
   houseContinuityCapsule?: HouseContinuityCapsule | null;
   /** Phase-boundary runtime evidence for hydration passport validation (v1). */
   runtimeSnapshot?: RuntimeSnapshotV1 | null;
-  hydrateable: false;
-  hydrationStatus: {
-    replayableProjection: boolean;
-    xstateSnapshot: boolean;
-    phaseAccumulators: boolean;
-    agentMemoryState: boolean;
-    pendingLlmCalls: boolean;
-    tokenCostCursor: boolean;
-    missingInputs: string[];
-  };
   transcriptCursor: {
     entries: number;
     version?: number;

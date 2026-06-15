@@ -94,11 +94,15 @@ An API-side inspection model that reads persisted durable kernel rows, validates
 
 ## Checkpoint capsule
 
-A persisted phase-boundary diagnostic artifact keyed to the latest canonical event sequence it covers. The first durable-kernel capsules store replay/projection data, transcript cursors, and explicit missing hydration inputs with `hydrateable=false`; future resume work must add XState snapshot data, phase accumulators, runner/agent continuity state, and token/cost cursors before a checkpoint can become a safe resume boundary.
+A persisted phase-boundary diagnostic artifact keyed to the latest canonical event sequence it covers. Durable-kernel capsules store replay/projection data, transcript cursors, Runtime Snapshot evidence, and private continuity references; the hydration passport derives whether a checkpoint is a future hydration candidate. Future resume work must add runner reconstruction before any checkpoint can become a safe resume boundary.
+
+## Phase-Boundary Runtime Snapshot
+
+A v1 checkpoint payload that proves hydration readiness at a completed phase boundary without resuming execution. It attaches minimal runtime evidence to the checkpoint capsule: an API-sealed boundary receipt, XState actor witness, accumulator registry, transcript boundary watermark, token cursor, and structured player/House continuity capsules. It is Postgres-resident resume input; bulky raw prompts, hidden reasoning, and debug evidence may live elsewhere but do not define hydration candidacy.
 
 ## Hydration passport
 
-A validator-derived readiness record for a checkpoint capsule. It reports stamp-level status for event/projection truth, boundary safety, snapshot manifest completeness, transcript and token cursors, agent continuity, House continuity, privacy boundaries, and the overall verdict such as forensic-only, blocked, or `hydration_candidate`. A hydration passport is not a resume action.
+A validator-derived readiness record for a checkpoint capsule. It reports stamp-level status for event/projection truth, boundary safety, Runtime Snapshot evidence, transcript and token cursors, agent continuity, House continuity, privacy boundaries, and the overall verdict such as forensic-only, blocked, or `hydration_candidate`. A hydration passport is not a resume action.
 
 ## Boundary certificate
 

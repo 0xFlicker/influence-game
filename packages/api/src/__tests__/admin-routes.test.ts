@@ -259,7 +259,6 @@ describe("admin route RBAC", () => {
       checkpoints: {
         count: number;
         entries: Array<{
-          hydrateable: boolean;
           passport: {
             verdict: string;
             stamps: Array<{ id: string; status: string; blocking: boolean }>;
@@ -269,7 +268,7 @@ describe("admin route RBAC", () => {
       evidence: { totalCount: number; storage: { providerCounts: Record<string, number> } };
       diagnostics: unknown[];
     };
-    expect(body.schemaVersion).toBe(1);
+    expect(body.schemaVersion).toBe(2);
     expect(body.game.id).toBe(gameId);
     expect(body.eventLog).toMatchObject({
       status: "complete",
@@ -278,9 +277,14 @@ describe("admin route RBAC", () => {
     expect(body.projection.status).toBe("complete");
     expect(body.checkpoints.count).toBe(1);
     expect(body.checkpoints.entries[0]).toMatchObject({
-      hydrateable: false,
       passport: { verdict: "hydration_candidate" },
     });
+    const checkpointEntry = body.checkpoints.entries[0];
+    expect(checkpointEntry).toBeDefined();
+    if (!checkpointEntry) throw new Error("missing checkpoint entry");
+    expect("hydrateable" in checkpointEntry).toBeFalse();
+    expect("hydrationStatus" in checkpointEntry).toBeFalse();
+    expect("degradedReason" in checkpointEntry).toBeFalse();
     expect(body.checkpoints.entries[0]?.passport.stamps.every((stamp) => (
       stamp.status === "passed" && stamp.blocking === false
     ))).toBeTrue();

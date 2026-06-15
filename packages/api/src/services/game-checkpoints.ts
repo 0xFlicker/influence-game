@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import type { GameCheckpointCapsule, RuntimeSnapshotV1 } from "@influence/engine";
+import type { CheckpointBoundaryIdentityV1, GameCheckpointCapsule, RuntimeSnapshotV1 } from "@influence/engine";
 import { sealBoundaryIdentity } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -34,6 +34,30 @@ function sealRuntimeSnapshot(
       boundary,
     },
     transcriptWatermark: { ...runtimeSnapshot.transcriptWatermark, boundary },
+  };
+}
+
+function sealTokenCostCursor(
+  tokenCostCursor: GameCheckpointCapsule["tokenCostCursor"],
+  sealed: {
+    ownerEpoch: string;
+    eventHeadHash: string;
+    projectionHash: string;
+    phase: string;
+    round: number;
+    checkpointKind: string;
+  },
+): GameCheckpointCapsule["tokenCostCursor"] {
+  if (!tokenCostCursor || tokenCostCursor.version !== 1 || !tokenCostCursor.boundary) {
+    return tokenCostCursor ?? null;
+  }
+  return {
+    ...tokenCostCursor,
+    boundary: sealBoundaryIdentity(tokenCostCursor.boundary as unknown as CheckpointBoundaryIdentityV1, {
+      ownerEpoch: sealed.ownerEpoch,
+      eventHeadHash: sealed.eventHeadHash,
+      projectionHash: sealed.projectionHash,
+    }),
   };
 }
 
@@ -146,7 +170,7 @@ export async function writeGameCheckpoint(
         throw new Error("checkpoint event boundary not found");
       }
 
-      // Persist snapshot as versioned manifest when present (U2+), fall back to legacy packing for older capsules.
+      // Persist evidence only; the hydration passport derives readiness from these facts on read.
       const legacySnapshot = {
         eventCount: params.checkpoint.eventCount,
         state: params.checkpoint.state,
@@ -174,11 +198,13 @@ export async function writeGameCheckpoint(
           }
         : null;
       const runtimeSnapshot = sealRuntimeSnapshot(params.checkpoint.runtimeSnapshot, sealedBoundary);
-      const snapshotPayload = params.checkpoint.snapshotManifest
+      const tokenCostCursor = sealTokenCostCursor(params.checkpoint.tokenCostCursor, sealedBoundary);
+      const snapshotPayload = runtimeSnapshot ||
+        boundaryCertificate ||
+        params.checkpoint.playerContinuityCapsules ||
+        params.checkpoint.houseContinuityCapsule
         ? {
             ...legacySnapshot,
-            manifestVersion: params.checkpoint.snapshotManifest.version,
-            manifest: params.checkpoint.snapshotManifest,
             boundaryCertificate,
             runtimeSnapshot,
             playerContinuityCapsules: params.checkpoint.playerContinuityCapsules ?? [],
@@ -202,12 +228,9 @@ export async function writeGameCheckpoint(
           round: params.checkpoint.round,
           eventHeadHash: eventHead.eventHash,
           projectionHash,
-          hydrateable: false,
-          hydrationStatus: params.checkpoint.hydrationStatus,
           snapshot: snapshotPayload,
           transcriptCursor: params.checkpoint.transcriptCursor,
-          tokenCostCursor: params.checkpoint.tokenCostCursor as Record<string, unknown> | null | undefined,
-          degradedReason: "forensic_only_missing_runtime_hydration_inputs",
+          tokenCostCursor: tokenCostCursor as Record<string, unknown> | null | undefined,
         });
     });
 

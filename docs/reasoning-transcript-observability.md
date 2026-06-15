@@ -155,7 +155,7 @@ The extras live only on the agent return value, `TranscriptEntry`, and `AgentTur
 
 6. When a prompt includes a live Strategy Thread, player-visible transcript entries and websocket messages must not carry that call's hidden `thinking` or `reasoningContext`. The private `agent_turn` record remains the debug artifact.
 
-7. Checkpoint continuity capsules are the private snapshot lane for future hydration of live agent and House behavior. They may carry structured Strategy Thread summaries, reflection summaries, notes, commitments, and House Strategy Bible-derived state, but they are not canonical projection truth, not player-visible transcript, and not websocket-visible UI state. The admin durable-run hydration passport may expose only readiness stamps such as `playerContinuity`, `houseContinuity`, `snapshotManifest`, `boundaryCertificate`, `transcriptCursor`, `tokenCursor`, `ownerEpoch`, and `privacy`; it must not expose raw capsule bodies, `thinking`, `reasoningContext`, prompts, responses, storage keys, or source pointers.
+7. Checkpoint continuity capsules are the private snapshot lane for future hydration of live agent and House behavior. They may carry structured Strategy Thread summaries, reflection summaries, notes, commitments, and House Strategy Bible-derived state, but they are not canonical projection truth, not player-visible transcript, and not websocket-visible UI state. The admin durable-run hydration passport may expose only readiness stamps such as `playerContinuity`, `houseContinuity`, `runtimeSnapshot`, `boundaryCertificate`, `transcriptCursor`, `tokenCursor`, `ownerEpoch`, and `privacy`; it must not expose raw capsule bodies, `thinking`, `reasoningContext`, prompts, responses, storage keys, or source pointers. A passing Runtime Snapshot v1 passport requires sealed token cursor boundary, expected active-player continuity coverage, and drained or proven-empty accumulators; accumulator capture labels are not a v1 evidence contract.
 
 8. Terminal UX for `--chatty` (and persisted `game-*.txt` / `.json`) is a first-class human output. `game-*-turns.jsonl` is the per-agent-turn machine-analysis output and `game-*-events.jsonl` is the accepted-domain-event replay output; both must stay clean JSON without ANSI formatting.
 
@@ -267,7 +267,7 @@ Update simulation batch notes (the dated `.md` next to `results.json` etc.) with
 - Are packet content and packet-use markers absent from websocket-visible events and canonical board state?
 - Do API durable events, simulator JSONL records, and replay/projection tests still use the same `CanonicalGameEvent` envelope?
 - Do mocks and tests compile and pass with the new shapes?
-- If checkpoint continuity or hydration-passport fields changed, does an admin durable-run route test prove the HTTP response exposes stamp/status facts without raw private continuity?
+- If checkpoint continuity or hydration-passport fields changed, does an admin durable-run route or service test prove the response exposes stamp/status facts without raw private continuity, and does at least one real `GameRunner` checkpoint prove drained transcript-buffer and sealed token-boundary evidence?
 - Are the ANSI color rules, terminal output expectations, clean `game-*-turns.jsonl`, and clean `game-*-events.jsonl` artifacts documented?
 - Did we update the cross-referenced usage docs and AGENTS.md where the contract changed?
 - Can a future reader understand why this observability layer exists (Mingle debugging + "master wants to see reasoning for voting as well")?

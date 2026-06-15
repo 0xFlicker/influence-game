@@ -251,19 +251,6 @@ export function enrichCapsuleForV1Candidate(
 
   return {
     ...capsule,
-    snapshotManifest: {
-      version: 1,
-      components: {
-        projectionTruth: { status: "captured", version: 1 },
-        xstateActor: { status: "captured", version: 1 },
-        phaseAccumulators: { status: "captured", version: 1 },
-        playerContinuity: { status: "private_reference_only", version: 1 },
-        houseContinuity: { status: "private_reference_only", version: 1 },
-        transcriptCursor: { status: "captured", version: 1 },
-        tokenCursor: { status: "captured", version: 1 },
-        ownerEpoch: { status: "captured", version: 1 },
-      },
-    },
     boundaryCertificate: {
       gameId: capsule.gameId,
       ownerEpoch: params.ownerEpoch,
@@ -285,16 +272,9 @@ export function enrichCapsuleForV1Candidate(
       boundaryDigest: runtimeSnapshot.transcriptWatermark.boundaryDigest,
       lastCanonicalSequence: capsule.lastEventSequence,
     },
-    tokenCostCursor: capsule.tokenCostCursor,
-    hydrationStatus: {
-      replayableProjection: true,
-      xstateSnapshot: true,
-      phaseAccumulators: true,
-      agentMemoryState: true,
-      pendingLlmCalls: false,
-      tokenCostCursor: true,
-      missingInputs: [],
-    },
+    tokenCostCursor: capsule.tokenCostCursor
+      ? { ...capsule.tokenCostCursor, boundary: runtimeSnapshot.boundary }
+      : null,
   };
 }
 
@@ -306,20 +286,6 @@ export function createCheckpointCapsule(
   const players = Object.values(projection.players);
   const alivePlayerCount = players.filter((player) => player.status !== "eliminated").length;
   const eliminatedPlayerCount = players.length - alivePlayerCount;
-
-  const snapshotManifest = {
-    version: 1 as const,
-    components: {
-      projectionTruth: { status: "captured" as const, version: 1 },
-      xstateActor: { status: "missing" as const },
-      phaseAccumulators: { status: "missing" as const },
-      playerContinuity: { status: "missing" as const },
-      houseContinuity: { status: "missing" as const },
-      transcriptCursor: { status: "missing" as const },
-      tokenCursor: { status: "missing" as const },
-      ownerEpoch: { status: "missing" as const },
-    },
-  };
 
   return {
     gameId: projection.gameId,
@@ -345,7 +311,6 @@ export function createCheckpointCapsule(
       roomAllocationRounds: Object.keys(projection.roomAllocations).length,
       roundResultCount: projection.roundResults.length,
     },
-    snapshotManifest,
     boundaryCertificate: {
       gameId: projection.gameId,
       boundarySequence: projection.lastSequence,
@@ -356,22 +321,6 @@ export function createCheckpointCapsule(
     playerContinuityCapsules: [],
     houseContinuityCapsule: null,
     runtimeSnapshot: null,
-    hydrateable: false,
-    hydrationStatus: {
-      replayableProjection: true,
-      xstateSnapshot: false,
-      phaseAccumulators: false,
-      agentMemoryState: false,
-      pendingLlmCalls: false,
-      tokenCostCursor: false,
-      missingInputs: [
-        "xstateSnapshot",
-        "phaseAccumulators",
-        "agentMemoryState",
-        "pendingLlmCalls",
-        "tokenCostCursor",
-      ],
-    },
     transcriptCursor: {
       entries: 0,
     },
