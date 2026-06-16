@@ -13,6 +13,7 @@ import type { MingleIntentSummary, UUID } from "./types";
 import type { TokenTracker } from "./token-tracker";
 import type {
   HouseAllianceHypothesis,
+  HouseCouncilRoleFact,
   HouseConfidence,
   HouseCoveredWindow,
   HouseGameplaySummaryContext,
@@ -66,6 +67,8 @@ export interface DiaryRoomContext {
   producerBrief?: HouseProducerBrief | null;
   /** Authoritative facts for the current round from canonical events/projections. */
   roundFacts?: HouseRoundFacts;
+  /** This interviewee's role in the latest Council, if a Council happened. */
+  councilRole?: HouseCouncilRoleFact | null;
 }
 
 export interface HouseMingleAssignmentPlayer {
@@ -961,6 +964,23 @@ CLOSE: <your brief closing remark to the player, 1 sentence>`;
     return names.length > 0 ? names.join(", ") : "none";
   }
 
+  private formatCouncilRoleForPrompt(role: HouseCouncilRoleFact | null | undefined): string {
+    if (!role || role.role === "not_applicable") return "none";
+    const candidates = role.candidateNames ? role.candidateNames.join(" vs ") : "unknown candidates";
+    switch (role.role) {
+      case "candidate":
+        return `Council candidate/on the block (${candidates}); did not cast a Council vote.`;
+      case "voted_for_eliminated":
+        return `Council voter for eliminated player ${role.eliminatedName ?? role.votedForName ?? "unknown"}.`;
+      case "voted_for_survivor":
+        return `Council voter for surviving candidate ${role.votedForName ?? role.survivingCandidateName ?? "unknown"}.`;
+      case "empowered_tiebreaker":
+        return `Empowered tiebreaker-only Council choice: ${role.votedForName ?? "unknown"}.`;
+      case "non_voter":
+        return `No Council ballot recorded; candidates were ${candidates}.`;
+    }
+  }
+
   private buildCanonicalFactContract(context: DiaryRoomContext): string {
     const roundFacts = context.roundFacts;
     const latestEliminated = roundFacts?.eliminatedName
@@ -991,6 +1011,7 @@ CLOSE: <your brief closing remark to the player, 1 sentence>`;
       previousDiaryEntries,
       playerMessages,
       roundFacts,
+      councilRole,
     } = context;
 
     const recentMsgText = recentMessages
@@ -1030,8 +1051,17 @@ CLOSE: <your brief closing remark to the player, 1 sentence>`;
         }
         break;
       case Phase.COUNCIL:
-        if (latestEliminatedName) {
-          situationContext = `${latestEliminatedName} is the latest player gone after the resolved Council. Ask ${agentName} something pointed: did they vote for ${latestEliminatedName}? Do they feel responsible? Were they secretly relieved? Did they lose an ally or eliminate a threat? Do not describe any surviving candidate as still being in a live Council vote.`;
+        if (councilRole?.role === "candidate") {
+          const result = councilRole.eliminatedName === agentName ? "left the game" : "survived the block";
+          situationContext = `${agentName} was a Council candidate and ${result}. Ask about being on the block against ${councilRole.candidateNames?.find((name) => name !== agentName) ?? "the other candidate"}, who fought for them, who abandoned them, or what debt/suspicion this creates. Do not ask whether ${agentName} cast a Council vote.`;
+        } else if (councilRole?.role === "voted_for_eliminated") {
+          situationContext = `${latestEliminatedName ?? councilRole.eliminatedName ?? "A player"} is gone after the resolved Council, and ${agentName} voted to eliminate them. Ask about that Council vote directly: was it loyalty, threat management, pressure, or a betrayal they are willing to own?`;
+        } else if (councilRole?.role === "voted_for_survivor") {
+          situationContext = `${latestEliminatedName ?? "A player"} is gone after the resolved Council, but ${agentName} voted for ${councilRole.votedForName ?? "the survivor"}. Ask why they were on the other side, whether they were protecting ${councilRole.survivingCandidateName ?? councilRole.votedForName ?? "the survivor"}, or what this reveals about their alliances.`;
+        } else if (councilRole?.role === "empowered_tiebreaker") {
+          situationContext = `${agentName} held empowered tiebreak leverage and named ${councilRole.votedForName ?? "a candidate"} as their tiebreaker-only Council choice. Ask what price, promise, or threat informed that leverage. Do not describe it as a normal Council ballot unless the tie required it.`;
+        } else if (latestEliminatedName) {
+          situationContext = `${latestEliminatedName} is the latest player gone after the resolved Council. Ask ${agentName} what this result changes for their relationships, pressure map, or next vote. Do not imply they personally cast a Council vote unless Authoritative Round Facts says they did. Do not describe any surviving candidate as still being in a live Council vote.`;
         } else {
           situationContext = `The council just voted. Ask about a specific decision ${agentName} made.`;
         }
@@ -1050,6 +1080,7 @@ ${eliminatedPlayers.length > 0 ? `- Eliminated so far: ${eliminatedPlayers.join(
 - Active shields right now: ${this.formatActiveShields(activeShieldNames)}
 ${empoweredName ? `- Current/last resolved empowered player: ${empoweredName}` : ""}
 ${councilCandidates ? `- ${precedingPhase === Phase.COUNCIL ? "Most recent council candidates (resolved, not live)" : "Council candidates"}: ${councilCandidates[0]} vs ${councilCandidates[1]}` : ""}
+- ${agentName}'s Council role: ${this.formatCouncilRoleForPrompt(councilRole)}
 
 ## Canonical Fact Contract
 ${this.buildCanonicalFactContract(context)}
@@ -1115,6 +1146,7 @@ ${rooms || "(none)"}`;
       `Shield granted: ${facts.shieldGrantedName ?? "none"}`,
       `Council candidates: ${facts.councilCandidates?.join(" vs ") ?? "none"}`,
       `Council vote counts: ${this.formatVoteCountsForPrompt(facts.councilVoteCounts)}${facts.councilMethod ? ` (${facts.councilMethod})` : ""}`,
+      `Council roles: ${facts.councilRoles.map((role) => `${role.playerName}=${this.formatCouncilRoleForPrompt(role)}`).join("; ") || "none"}`,
       `Auto-eliminated: ${facts.autoEliminatedName ?? "none"}`,
       `Eliminated: ${facts.eliminatedName ?? facts.autoEliminatedName ?? "none"}`,
     ].join("\n");
@@ -1154,6 +1186,9 @@ Rules:
 - The latest elimination is the eliminated/auto-eliminated name in Authoritative round facts. Do not frame older exits as the fresh wound after a later Council resolved.
 - Still name the most important concrete facts when they drive the story: who got power, who was exposed, who was shielded, who faced Council, how the Council vote resolved, and who left.
 - If the power action is "pass", describe it as the empowered player passing on using power or declining to intervene. Never say they passed, gave, gifted, handed, or transferred power to another player.
+- Write like a showrunner recapping fresh consequence: name what just changed, who gained leverage or debt, who is under heat, and what decision or relationship tension is next.
+- Avoid robotic bookkeeping such as "historical artifact" language or a bare player-count recap. Prior shields and empowerment should matter only as why someone survived, who owes whom, or why a current conflict exists.
+- Alliance names like "Nyx bloc" are allowed only as social history or current social influence, never as proof of current mechanical empowerment.
 - Use packet-backed dynamics when available, especially named alliances, fractures, leverage, betrayals, promises, and open questions.
 - Do not overstate weak evidence. If a read is speculative, phrase it as a House read or question.
 - Do not expose hidden reasoning as player knowledge.
@@ -1213,8 +1248,10 @@ ${transcriptText}
 
 Focus on:
 - Key social dynamics, alliances, betrayals, or standout Mingle room conversations/movements
-- Who is rising or falling in power/influence
+- What just changed, who gained leverage or debt, who is under heat, and what decision or relationship tension is next
+- Who is rising or falling in social influence without mistaking social centrality for current mechanical empowerment
 - Dramatic tension or ironic moments
+- Describe prior shields or empowerment only through current consequence: why someone survived, who owes whom, or why a conflict exists now
 - Keep it witty, perceptive, and in the style of a reality TV narrator
 
 Respond with ONLY the summary paragraph, no intro or labels.`;
@@ -1232,7 +1269,7 @@ Respond with ONLY the summary paragraph, no intro or labels.`;
     const summary = response.choices[0]?.message?.content?.trim();
     const output = summary && summary.length > 0
       ? summary
-      : `Round ${round} has been full of shifting alliances and private-room schemes. The House is watching closely as the field narrows.`;
+      : `The latest room talk has turned private reads into public pressure, and the House is watching who converts that leverage into safety before the next cut.`;
     await this.emitPrivateDecisionTrace({
       context: this.privateTraceContext("house-gameplay-summary", round, phase),
       messages,
@@ -1313,7 +1350,9 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
 
   async generateHouseSummary(context: HouseGameplaySummaryContext): Promise<HouseGameplaySummaryResult> {
     return {
-      summary: `Round ${context.round}: ${context.alivePlayers.length} players remain. The House sees ${context.packet?.summary ?? "a field of hidden motives"}.`,
+      summary: context.packet?.summary
+        ? `The House sees ${context.packet.summary}; now the question is who can turn that read into protection, pressure, or a clean vote.`
+        : `The latest move has shifted the pressure map, and the House is watching who turns fresh leverage into safety or danger.`,
       kind: context.kind,
       packetRevisionId: context.packet?.revisionId ?? null,
       coveredWindow: context.coveredWindow,
@@ -1359,7 +1398,7 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
   }
 
   async generateQuestion(context: DiaryRoomContext): Promise<string> {
-    const { precedingPhase, round, agentName, alivePlayers, lastEliminated, councilCandidates } = context;
+    const { precedingPhase, round, agentName, alivePlayers, lastEliminated, councilCandidates, councilRole } = context;
 
     switch (precedingPhase) {
       case Phase.INTRODUCTION:
@@ -1378,6 +1417,19 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
         return `${agentName}, the reveal phase is over. What are your thoughts on how this round is playing out?`;
 
       case Phase.COUNCIL:
+        if (councilRole?.role === "candidate") {
+          const opponent = councilRole.candidateNames?.find((name) => name !== agentName) ?? "the other candidate";
+          return `${agentName}, you were on the Council block against ${opponent} and did not cast a Council vote. Who do you think decided your fate, and what does that do to your game now?`;
+        }
+        if (councilRole?.role === "voted_for_eliminated") {
+          return `${agentName}, your Council vote helped send ${councilRole.eliminatedName ?? lastEliminated ?? "someone"} out. Was that loyalty, self-preservation, or a betrayal you are prepared to defend?`;
+        }
+        if (councilRole?.role === "voted_for_survivor") {
+          return `${agentName}, you voted for ${councilRole.votedForName ?? "the surviving candidate"}, but ${lastEliminated ?? councilRole.eliminatedName ?? "someone else"} left. Were you protecting the survivor, or were you on the wrong side of the room?`;
+        }
+        if (councilRole?.role === "empowered_tiebreaker") {
+          return `${agentName}, as the empowered player your Council choice was tiebreaker-only. What did ${councilRole.votedForName ?? "that candidate"} need to do to earn or avoid your tiebreaker?`;
+        }
         if (lastEliminated) {
           return `${agentName}, ${lastEliminated} has just been eliminated. How do you feel about this result? What's your plan going forward?`;
         }

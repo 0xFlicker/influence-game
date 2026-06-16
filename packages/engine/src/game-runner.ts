@@ -23,8 +23,8 @@ import type { UUID, GameConfig } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 
 // Re-export types from the extracted module for backward compatibility
-export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, BoundaryCertificate, CheckpointBoundaryIdentityV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TokenCostCursor, TranscriptEntry, TranscriptWatermarkV1 } from "./game-runner.types";
-import type { AccumulatorEntryV1, BoundaryCertificate, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, TranscriptEntry } from "./game-runner.types";
+export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, BoundaryCertificate, CheckpointBoundaryIdentityV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseCouncilRole, HouseCouncilRoleFact, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategyPacketUse, StrategyPacketUseMarker, TargetDecision, TokenCostCursor, TranscriptEntry, TranscriptWatermarkV1 } from "./game-runner.types";
+import type { AccumulatorEntryV1, BoundaryCertificate, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCouncilRoleFact, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, TranscriptEntry } from "./game-runner.types";
 import type { TokenTracker } from "./token-tracker";
 import {
   accumulatorProof,
@@ -690,6 +690,84 @@ export class GameRunner {
     };
   }
 
+  private buildHouseCouncilRoles(
+    councilCandidates: [UUID, UUID] | null,
+    councilResolved: Extract<CanonicalGameEvent, { type: "council.elimination_resolved" }> | null,
+  ): HouseCouncilRoleFact[] {
+    const candidateNames = councilCandidates
+      ? [this.gameState.getPlayerName(councilCandidates[0]), this.gameState.getPlayerName(councilCandidates[1])] as [string, string]
+      : null;
+    const eliminatedId = councilResolved?.payload.eliminated ?? null;
+    const eliminatedName = eliminatedId ? this.gameState.getPlayerName(eliminatedId) : null;
+    const survivingCandidateId = councilCandidates?.find((id) => id !== eliminatedId) ?? null;
+    const survivingCandidateName = survivingCandidateId ? this.gameState.getPlayerName(survivingCandidateId) : null;
+    const votes = councilResolved?.payload.tally.votes ?? this.gameState.currentCouncilTally.votes;
+    const empoweredId = councilResolved?.payload.empoweredId ?? this.gameState.empoweredId ?? null;
+
+    return this.gameState.getAllPlayers().map((player) => {
+      const votedForId = votes[player.id];
+      const votedForName = votedForId ? this.gameState.getPlayerName(votedForId) : null;
+      if (!councilCandidates) {
+        return {
+          playerName: player.name,
+          role: "not_applicable",
+          candidateNames,
+          eliminatedName,
+          survivingCandidateName,
+          votedForName,
+        };
+      }
+      if (councilCandidates.includes(player.id)) {
+        return {
+          playerName: player.name,
+          role: "candidate",
+          candidateNames,
+          eliminatedName,
+          survivingCandidateName,
+          votedForName: null,
+        };
+      }
+      if (votedForId && player.id === empoweredId) {
+        return {
+          playerName: player.name,
+          role: "empowered_tiebreaker",
+          candidateNames,
+          eliminatedName,
+          survivingCandidateName,
+          votedForName,
+        };
+      }
+      if (votedForId && votedForId === eliminatedId) {
+        return {
+          playerName: player.name,
+          role: "voted_for_eliminated",
+          candidateNames,
+          eliminatedName,
+          survivingCandidateName,
+          votedForName,
+        };
+      }
+      if (votedForId) {
+        return {
+          playerName: player.name,
+          role: "voted_for_survivor",
+          candidateNames,
+          eliminatedName,
+          survivingCandidateName,
+          votedForName,
+        };
+      }
+      return {
+        playerName: player.name,
+        role: "non_voter",
+        candidateNames,
+        eliminatedName,
+        survivingCandidateName,
+        votedForName,
+      };
+    });
+  }
+
   private buildHouseRoundFacts(round: number): HouseRoundFacts {
     const events = this.gameState.getCanonicalEvents().filter((event) => event.round === round);
     const empowerTally = this.latestRoundEvent(events, "vote.empower_tally_resolved");
@@ -739,6 +817,7 @@ export class GameRunner {
       councilMethod: councilResolved?.payload.method ?? null,
       eliminatedName: playerEliminated?.payload.playerName
         ?? (councilResolved?.payload.eliminated ? this.gameState.getPlayerName(councilResolved.payload.eliminated) : null),
+      councilRoles: this.buildHouseCouncilRoles(councilCandidates, councilResolved),
     };
   }
 

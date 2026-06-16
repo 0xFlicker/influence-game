@@ -225,6 +225,72 @@ describe("Mingle Rooms (current open-room phase)", () => {
     }
   });
 
+  it("prunes non-living Mingle intent names before House assignment", async () => {
+    class StaleIntentAgent extends MockAgent {
+      override async getMingleIntent(): Promise<MingleIntentAction> {
+        return {
+          seekPlayers: ["Beta", "Rex"],
+          avoidPlayers: ["Rex"],
+          preferredRoomSize: "small_group",
+          purpose: `${this.name} wants to test whether Beta will repeat Rex's old target line.`,
+          provisionalTarget: "Rex",
+          noTargetReason: null,
+          openingAsk: "Ask Beta whether the old Rex pressure still matters.",
+          strategicLens: "coalition_geometry",
+          strategicLensRationale: `${this.name} is testing stale pressure against the living board.`,
+          thinking: `${this.name} hidden stale Mingle intent`,
+        };
+      }
+    }
+
+    class RecordingMingleHouseInterviewer extends FixedMingleHouseInterviewer {
+      seenContext: HouseMingleAssignmentContext | null = null;
+
+      override async assignMingleRooms(context: HouseMingleAssignmentContext): Promise<HouseMingleAssignmentResult> {
+        this.seenContext = context;
+        return super.assignMingleRooms(context);
+      }
+    }
+
+    const agents = [
+      new StaleIntentAgent(createUUID(), "Alpha"),
+      new StaleIntentAgent(createUUID(), "Beta"),
+      new StaleIntentAgent(createUUID(), "Gamma"),
+      new StaleIntentAgent(createUUID(), "Delta"),
+      new StaleIntentAgent(createUUID(), "Echo"),
+    ];
+    const house = new RecordingMingleHouseInterviewer(Object.fromEntries(agents.map((agent) => [agent.name, 1])));
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, mingleSessionsPerRound: 1 }, house);
+    const events: GameStreamEvent[] = [];
+    runner.setStreamListener((event) => events.push(event));
+
+    await runner.run();
+
+    const alphaIntent = events.find(
+      (event): event is Extract<GameStreamEvent, { type: "agent_turn" }> =>
+        event.type === "agent_turn" && event.action === "mingle-intent" && event.actor.name === "Alpha",
+    );
+    expect(alphaIntent?.response).toMatchObject({
+      seekPlayers: ["Beta"],
+      avoidPlayers: [],
+      provisionalTarget: null,
+    });
+    expect(alphaIntent?.response.repairNotes).toEqual([
+      "Cleared stale or invalid provisionalTarget \"Rex\".",
+      "Removed stale or unknown seekPlayers name \"Rex\".",
+      "Removed stale or unknown avoidPlayers name \"Rex\".",
+    ]);
+    const alphaHouseInput = house.seenContext?.players.find((player) => player.name === "Alpha");
+    expect(alphaHouseInput?.intent?.seekPlayers).toEqual(["Beta"]);
+    expect(alphaHouseInput?.intent?.avoidPlayers).toEqual([]);
+    expect(alphaHouseInput?.intent?.provisionalTarget).toBeNull();
+    expect(JSON.stringify({
+      seekPlayers: alphaHouseInput?.intent?.seekPlayers,
+      avoidPlayers: alphaHouseInput?.intent?.avoidPlayers,
+      provisionalTarget: alphaHouseInput?.intent?.provisionalTarget,
+    })).not.toContain("Rex");
+  });
+
   it("open rooms generate group room messages for rooms with multiple occupants", async () => {
     const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map(
       (name) => new MockAgent(createUUID(), name),

@@ -345,6 +345,62 @@ function summarizeMingleIntent(intent: MingleIntentAction | null | undefined): M
   };
 }
 
+function normalizeMingleIntentForAlive(
+  intent: MingleIntentAction | null,
+  player: { id: UUID; name: string },
+  alivePlayers: Array<{ id: UUID; name: string }>,
+): { intent: MingleIntentAction | null; repairNotes: string[] } {
+  if (!intent) return { intent: null, repairNotes: [] };
+
+  const aliveByName = new Map(alivePlayers.map((alive) => [alive.name.toLowerCase(), alive]));
+  const repairNotes: string[] = [];
+  const normalizePlayerList = (names: readonly string[], fieldName: "seekPlayers" | "avoidPlayers"): string[] => {
+    const normalized: string[] = [];
+    const seen = new Set<string>();
+    for (const name of names) {
+      const candidate = aliveByName.get(name.toLowerCase());
+      if (!candidate) {
+        repairNotes.push(`Removed stale or unknown ${fieldName} name "${name}".`);
+        continue;
+      }
+      if (candidate.id === player.id) {
+        repairNotes.push(`Removed self from ${fieldName}.`);
+        continue;
+      }
+      if (seen.has(candidate.id)) continue;
+      seen.add(candidate.id);
+      normalized.push(candidate.name);
+    }
+    return normalized;
+  };
+
+  let provisionalTarget = intent.provisionalTarget;
+  let noTargetReason = intent.noTargetReason;
+  if (provisionalTarget) {
+    const target = aliveByName.get(provisionalTarget.toLowerCase());
+    if (!target || target.id === player.id) {
+      repairNotes.push(`Cleared stale or invalid provisionalTarget "${provisionalTarget}".`);
+      noTargetReason = noTargetReason
+        ? `${noTargetReason} Stale provisional target "${provisionalTarget}" was cleared because active targets must be living other players.`
+        : `Stale provisional target "${provisionalTarget}" was cleared because active targets must be living other players.`;
+      provisionalTarget = null;
+    } else {
+      provisionalTarget = target.name;
+    }
+  }
+
+  return {
+    intent: {
+      ...intent,
+      seekPlayers: normalizePlayerList(intent.seekPlayers, "seekPlayers"),
+      avoidPlayers: normalizePlayerList(intent.avoidPlayers, "avoidPlayers"),
+      provisionalTarget,
+      noTargetReason,
+    },
+    repairNotes,
+  };
+}
+
 function buildRoomsFromAssignments(
   roomByPlayerId: Map<UUID, number>,
   alivePlayers: Array<{ id: UUID; name: string }>,
@@ -678,9 +734,10 @@ export async function runMinglePhase(
         roomCounts: initialRoomCounts,
       });
       const intent = agent.getMingleIntent ? await agent.getMingleIntent(phaseCtx) : null;
-      mingleIntents.set(player.id, intent);
-      if (intent) {
-        const intentSummary = summarizeMingleIntent(intent);
+      const normalizedIntent = normalizeMingleIntentForAlive(intent, player, alivePlayers);
+      mingleIntents.set(player.id, normalizedIntent.intent);
+      if (normalizedIntent.intent) {
+        const intentSummary = summarizeMingleIntent(normalizedIntent.intent);
         await assertCanAcceptCommit(ctx);
         logger.emitAgentTurn({
           phase: Phase.MINGLE,
@@ -689,10 +746,11 @@ export async function runMinglePhase(
           visibility: "private",
           response: {
             ...intentSummary,
-            ...strategyPacketUseResponse(intent.strategyPacketUse),
+            ...(normalizedIntent.repairNotes.length > 0 ? { repairNotes: normalizedIntent.repairNotes } : {}),
+            ...strategyPacketUseResponse(normalizedIntent.intent.strategyPacketUse),
           },
-          thinking: intent.thinking,
-          reasoningContext: intent.reasoningContext,
+          thinking: normalizedIntent.intent.thinking,
+          reasoningContext: normalizedIntent.intent.reasoningContext,
         });
       }
     }),

@@ -8,7 +8,7 @@ import type { GameState } from "./game-state";
 import type { TranscriptLogger } from "./transcript-logger";
 import type { UUID, RoomAllocation, JuryMember, MingleRoomCount } from "./types";
 import { Phase } from "./types";
-import type { JudgmentQuestionHistoryEntry, MingleIntentSummary, PhaseContext, PublicTranscriptContextEntry, RevealedVoteLedgerEntry } from "./game-runner.types";
+import type { JudgmentQuestionHistoryEntry, MingleIntentSummary, PhaseContext, PublicTranscriptContextEntry, RecentDecisionContextEntry, RevealedVoteLedgerEntry } from "./game-runner.types";
 import { computeJurySize } from "./types";
 import type { PostVotePressureProjection } from "./post-vote-pressure";
 import type { CanonicalGameEvent } from "./canonical-events";
@@ -75,6 +75,44 @@ export class ContextBuilder {
   private formatPlayerList(ids: readonly UUID[] | null | undefined): string {
     if (!ids || ids.length === 0) return "none";
     return ids.map((id) => this.name(id)).join(", ");
+  }
+
+  private decisionPhaseOrder(phase: Phase): number {
+    switch (phase) {
+      case Phase.VOTE:
+        return 10;
+      case Phase.POWER:
+        return 20;
+      case Phase.COUNCIL:
+        return 30;
+      case Phase.JURY_QUESTIONS:
+        return 40;
+      case Phase.JURY_VOTE:
+        return 50;
+      default:
+        return 90;
+    }
+  }
+
+  private latestResolvedEliminationName(): string | undefined {
+    const events = this.gameState.getCanonicalEvents();
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index];
+      if (!event) continue;
+      switch (event.type) {
+        case "player.eliminated":
+          return event.payload.playerName;
+        case "endgame.elimination_resolved":
+        case "council.elimination_resolved":
+          return this.name(event.payload.eliminated);
+        case "power.candidates_resolved":
+          if (event.payload.autoEliminated) return this.name(event.payload.autoEliminated);
+          break;
+        default:
+          break;
+      }
+    }
+    return undefined;
   }
 
   private formatCanonicalEvent(event: CanonicalGameEvent): string {
@@ -168,6 +206,141 @@ export class ContextBuilder {
     return history;
   }
 
+  private buildRecentDecisionHistory(agentId: UUID): RecentDecisionContextEntry[] {
+    const decisions: RecentDecisionContextEntry[] = [];
+    const playerName = this.gameState.getPlayerName(agentId);
+    const councilResolvedByRound = new Map<number, Extract<CanonicalGameEvent, { type: "council.elimination_resolved" }>>();
+
+    for (const event of this.gameState.getCanonicalEvents()) {
+      if (event.type === "council.elimination_resolved") {
+        councilResolvedByRound.set(event.round, event);
+      }
+    }
+
+    for (const event of this.gameState.getCanonicalEvents()) {
+      switch (event.type) {
+        case "vote.cast":
+          if (event.payload.voterId === agentId) {
+            decisions.push({
+              round: event.round,
+              phase: Phase.VOTE,
+              label: "Standard Vote",
+              detail: `Your standard Vote in Round ${event.round}: empowered ${this.name(event.payload.empowerTarget)}, exposed ${this.name(event.payload.exposeTarget)}.`,
+            });
+          }
+          break;
+        case "vote.empower_revote_cast":
+          if (event.payload.voterId === agentId) {
+            decisions.push({
+              round: event.round,
+              phase: Phase.VOTE,
+              label: "Empower Revote",
+              detail: `Your empower revote in Round ${event.round}: ${this.name(event.payload.target)}. Your expose ballot did not change.`,
+            });
+          }
+          break;
+        case "power.action_set":
+          if (event.sourcePointers.some((pointer) => pointer.actorId === agentId)) {
+            decisions.push({
+              round: event.round,
+              phase: Phase.POWER,
+              label: "Power Action",
+              detail: `Your Power action in Round ${event.round}: ${event.payload.action.action}${event.payload.action.action === "pass" ? "" : ` -> ${this.name(event.payload.action.target)}`}.`,
+            });
+          }
+          break;
+        case "council.vote_cast":
+          if (event.payload.voterId === agentId) {
+            const resolved = councilResolvedByRound.get(event.round);
+            const isEmpoweredTiebreaker = resolved?.payload.empoweredId === agentId
+              || (event.round === this.gameState.round && this.gameState.empoweredId === agentId);
+            const timing = event.round === this.gameState.round ? "this round" : `in Round ${event.round}`;
+            decisions.push({
+              round: event.round,
+              phase: Phase.COUNCIL,
+              label: isEmpoweredTiebreaker ? "Council Tiebreaker" : "Council Vote",
+              detail: isEmpoweredTiebreaker
+                ? `Your Council tiebreaker ${timing}: ${this.name(event.payload.target)}. You were empowered; this counts only if the Council vote ties.`
+                : `Your Council vote ${timing}: ${this.name(event.payload.target)}.`,
+            });
+          }
+          break;
+        case "endgame.elimination_vote_cast":
+          if (event.payload.voterId === agentId) {
+            decisions.push({
+              round: event.round,
+              phase: event.phase ?? Phase.VOTE,
+              label: "Endgame Elimination Vote",
+              detail: `Your endgame direct elimination vote in Round ${event.round}: ${this.name(event.payload.target)}. This was not empower/expose.`,
+            });
+          }
+          break;
+        case "jury.vote_cast":
+          if (event.payload.jurorId === agentId) {
+            decisions.push({
+              round: event.round,
+              phase: Phase.JURY_VOTE,
+              label: "Jury Vote",
+              detail: `Your jury vote: ${this.name(event.payload.finalistId)} to win.`,
+            });
+          }
+          break;
+        default:
+          break;
+      }
+    }
+
+    for (const resolved of councilResolvedByRound.values()) {
+      if (!resolved.payload.candidates.includes(agentId)) continue;
+      decisions.push({
+        round: resolved.round,
+        phase: Phase.COUNCIL,
+        label: "Council Candidate",
+        detail: `You were a Council candidate this round and did not cast a Council vote. Candidates: ${this.formatPlayerList(resolved.payload.candidates)}; eliminated: ${this.name(resolved.payload.eliminated)}.`,
+      });
+    }
+
+    const currentCandidates = this.gameState.councilCandidates;
+    if (
+      currentCandidates?.includes(agentId) &&
+      !decisions.some((decision) => decision.round === this.gameState.round && decision.label === "Council Candidate")
+    ) {
+      decisions.push({
+        round: this.gameState.round,
+        phase: Phase.COUNCIL,
+        label: "Council Candidate",
+        detail: `You are a Council candidate this round and do not cast a Council vote. Candidates: ${this.formatPlayerList(currentCandidates)}.`,
+      });
+    }
+
+    for (const entry of this.logger.transcript) {
+      if (entry.phase !== Phase.JURY_QUESTIONS || entry.scope !== "public") continue;
+      const question = entry.text.match(/^\[QUESTION to (.+?)\] (.+)$/);
+      if (entry.from === playerName && question) {
+        decisions.push({
+          round: entry.round,
+          phase: Phase.JURY_QUESTIONS,
+          label: "Judgment Question",
+          detail: `Your Judgment question to ${question[1] ?? "unknown"}: "${question[2] ?? ""}"`,
+        });
+        continue;
+      }
+      const answer = entry.text.match(/^\[ANSWER to (.+?)\] (.+)$/);
+      if (entry.from === playerName && answer) {
+        decisions.push({
+          round: entry.round,
+          phase: Phase.JURY_QUESTIONS,
+          label: "Judgment Answer",
+          detail: `Your Judgment answer to ${answer[1] ?? "unknown"}: "${answer[2] ?? ""}"`,
+        });
+      }
+    }
+
+    return decisions
+      .sort((a, b) => a.round - b.round || this.decisionPhaseOrder(a.phase) - this.decisionPhaseOrder(b.phase))
+      .slice(-12);
+  }
+
   buildPhaseContext(
     agentId: UUID,
     phase: Phase,
@@ -218,6 +391,8 @@ export class ContextBuilder {
       gameEventRecord: this.buildGameEventRecord(),
       publicTranscriptContext: this.buildPublicTranscriptContext(),
       judgmentQuestionHistory: this.buildJudgmentQuestionHistory(),
+      recentDecisions: this.buildRecentDecisionHistory(agentId),
+      latestEliminatedPlayerName: this.latestResolvedEliminationName(),
       roomCount: roomInfo?.roomCount,
       roomCounts: roomInfo?.roomCounts ?? (this.currentRoomCounts.length > 0 ? [...this.currentRoomCounts] : undefined),
       currentRoomId: roomInfo?.currentRoomId,

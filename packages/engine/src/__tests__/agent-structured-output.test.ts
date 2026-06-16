@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type OpenAI from "openai";
 import { InfluenceAgent } from "../agent";
+import { TemplateHouseInterviewer } from "../house-interviewer";
 import type { PhaseContext, PrivateDecisionTrace } from "../game-runner";
 import { Phase } from "../types";
 
@@ -231,6 +232,10 @@ describe("InfluenceAgent structured output mode", () => {
     expect(messages[0]?.content).toContain("In player-visible speech");
     expect(messages[0]?.content).toContain("In hidden thinking, private reasoning, and producer/debug traces");
     expect(messages[0]?.content).toContain("you can and should use precise technical game terms");
+    expect(messages[0]?.content).toContain("## Strategic Play Menu");
+    expect(messages[0]?.content).toContain("Vote block");
+    expect(messages[0]?.content).toContain("Strategic restraint");
+    expect(messages[0]?.content).toContain("Do not force strategy every turn");
     expect(messages[0]?.content).not.toContain("NEVER use these phrases or concepts");
   });
 
@@ -667,8 +672,10 @@ describe("InfluenceAgent structured output mode", () => {
 
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.at(-1)!.content;
-    expect(prompt).toContain("## Game Rules");
-    expect(prompt).toContain("- Votes are public after Vote resolves. Everyone can use the revealed vote record as social evidence.");
+    expect(prompt).toContain("## Current Board Contract");
+    expect(prompt).toContain("- Current empowered player: Mira");
+    expect(prompt).toContain("## Post-Vote Mingle Rules");
+    expect(prompt).toContain("The standard Vote is locked and revealed.");
     expect(prompt).toContain("## Current Stakes");
     expect(prompt).toContain("- Phase objective: Private room dealmaking after the vote.");
     expect(prompt).toContain("- Next major decision: Power. Mira can pass, protect/shield a player to change who faces Council, or use an available elimination action.");
@@ -684,9 +691,89 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("You may plead, bargain, redirect pressure, flatter, threaten, or stay quiet");
     expect(prompt).toContain("## Room-Specific Social Opportunity");
     expect(prompt).toContain("You are currently at risk and Mira is in this room");
-    expect(prompt).toContain("ask for protection, offer a concrete deal, name a replacement target, or persuade someone to carry your case");
+    expect(prompt).toContain("ask for protection, offer a concrete deal, name a replacement target, recruit an advocate, expose a betrayal, threaten jury consequences, or persuade someone to carry your case");
     expect(prompt).toContain("Staying guarded is also valid");
     expect(prompt).toContain("Other occupants you can talk to now: Mira");
+  });
+
+  it("renders explicit negative current-board facts before standard votes", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeOpenAIStub(requests),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", [
+      { id: "atlas-id", name: "Atlas" },
+      { id: "mira-id", name: "Mira" },
+      { id: "vera-id", name: "Vera" },
+      { id: "rex-id", name: "Rex" },
+    ]);
+
+    await agent.getVotes({
+      ...makeContext(Phase.VOTE),
+      round: 2,
+      alivePlayers: [
+        { id: "atlas-id", name: "Atlas" },
+        { id: "mira-id", name: "Mira" },
+        { id: "vera-id", name: "Vera" },
+      ],
+      latestEliminatedPlayerName: "Rex",
+    });
+
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.at(-1)!.content;
+    expect(prompt).toContain("## Current Board Contract");
+    expect(prompt).toContain("- Current empowered player: none yet this round");
+    expect(prompt).toContain("- Active shields right now: none");
+    expect(prompt).toContain("- Current Council status: no live Council");
+    expect(prompt).toContain("- Latest resolved elimination: Rex");
+    expect(prompt).toContain("Eliminated-player rule:");
+    expect(prompt).toContain("They are not live targets, active allies, active shields, current room targets, or normal-round voters.");
+    expect(prompt).toContain("## Standard Vote Rules");
+    expect(prompt).toContain("No one has won this vote's empowerment yet");
+  });
+
+  it("separates Council rules from standard Vote and renders typed recent decisions", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(requests, "council_vote", {
+        thinking: "Mira is the better elimination.",
+        eliminate: "Mira",
+      }),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getCouncilVote({
+      ...makeContext(Phase.COUNCIL),
+      round: 3,
+      empoweredId: "atlas-id",
+      councilCandidates: ["mira-id", "vera-id"],
+      recentDecisions: [
+        {
+          round: 3,
+          phase: Phase.COUNCIL,
+          label: "Council Vote",
+          detail: "Your Council vote this round: Jace.",
+        },
+      ],
+    }, ["mira-id", "vera-id"]);
+
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.at(-1)!.content;
+    expect(prompt).toContain("## Council Vote Rules");
+    expect(prompt).toContain("This is not a normal Vote");
+    expect(prompt).toContain("There is no empower/expose split");
+    expect(prompt).toContain("The only elimination choices are the two current Council candidates");
+    expect(prompt).toContain("## Your Recent Decisions");
+    expect(prompt).toContain("Your Council vote this round: Jace.");
+    expect(prompt).not.toContain("Standard Vote has two named ballots");
   });
 
   it("clarifies that vote immunity comes from the current empower tally only", async () => {
@@ -848,7 +935,7 @@ describe("InfluenceAgent structured output mode", () => {
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.at(-1)!.content;
     expect(prompt).toContain("- Phase: DIARY_ROOM");
-    expect(prompt).toContain("- Most recent council candidates (resolved, not a live Council vote): Vera (eliminated) vs Mira");
+    expect(prompt).toContain("- Current Council status: no live Council; most recent/resolved candidates: Vera (eliminated) vs Mira");
     expect(prompt).toContain("- Active shields right now: none");
     expect(prompt).not.toContain("vera-id");
     expect(prompt).not.toContain("Next major decision: Power");
@@ -1228,7 +1315,8 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("shield granted=Echo");
     expect(prompt).toContain("old public message that must survive the old ten-message cap");
     expect(prompt).toContain("R5/JURY_VOTE: Juror Sage voted for finalist Mira.");
-    expect(prompt).not.toContain("Active shields right now");
+    expect(prompt).toContain("## Current Board Contract");
+    expect(prompt).toContain("- Active shields right now: none");
     expect(prompt).not.toContain("Cast one empower vote and one expose vote");
     expect(prompt).not.toContain("## Current Stakes");
     expect(prompt).not.toContain("## Post-Vote Pressure");
@@ -1280,7 +1368,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(answerPrompt).toContain("## Judgment Questions So Far");
     expect(answerPrompt).toContain("Rex to Mira: \"Why should I trust the deal you made with Vera?\"");
     expect(answerPrompt).toContain("A: Mira: \"Because I used that deal to keep the vote stable.\"");
-    expect(answerPrompt).not.toContain("Active shields right now");
+    expect(answerPrompt).toContain("- Active jurors: Rex");
 
     const questionRequests: Array<Record<string, unknown>> = [];
     const juror = new InfluenceAgent(
@@ -1311,9 +1399,40 @@ describe("InfluenceAgent structured output mode", () => {
     }, ["mira-id", "vera-id"]);
     const questionMessages = questionRequests[0]?.messages as Array<{ content: string }>;
     const questionPrompt = questionMessages.at(-1)!.content;
-    expect(questionPrompt).toContain("## Judgment Questions So Far");
-    expect(questionPrompt).toContain("Use this to avoid repeating prior answers or questions.");
+    expect(questionPrompt).toContain("## Judgment Questions Asked So Far");
+    expect(questionPrompt).toContain("Questions only. Prior answers are intentionally withheld");
     expect(questionPrompt).toContain("Rex to Mira: \"Why should I trust the deal you made with Vera?\"");
+    expect(questionPrompt).not.toContain("Because I used that deal to keep the vote stable.");
+    expect(questionPrompt).toContain("ask from a distinct angle");
+  });
+
+  it("asks Council candidates role-aware diary questions without inventing their vote", async () => {
+    const house = new TemplateHouseInterviewer();
+
+    const question = await house.generateQuestion({
+      precedingPhase: Phase.COUNCIL,
+      round: 6,
+      agentName: "Wren",
+      alivePlayers: ["Wren", "Vex", "Nyx"],
+      activeShieldNames: [],
+      eliminatedPlayers: ["Lyra"],
+      lastEliminated: "Lyra",
+      empoweredName: "Nyx",
+      councilCandidates: ["Wren", "Lyra"],
+      recentMessages: [],
+      councilRole: {
+        playerName: "Wren",
+        role: "candidate",
+        candidateNames: ["Wren", "Lyra"],
+        eliminatedName: "Lyra",
+        survivingCandidateName: "Wren",
+        votedForName: null,
+      },
+    });
+
+    expect(question).toContain("you were on the Council block");
+    expect(question).toContain("did not cast a Council vote");
+    expect(question).not.toContain("did you vote");
   });
 
   it("preserves thinking and native reasoning for jury votes", async () => {

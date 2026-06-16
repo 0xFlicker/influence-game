@@ -285,6 +285,8 @@ export class DiaryRoom {
       .slice(-5)
       .map((m) => ({ text: m.text, phase: m.phase }));
 
+    const roundFacts = this.getHouseRoundFacts?.();
+
     return {
       precedingPhase,
       round: this.gameState.round,
@@ -300,7 +302,8 @@ export class DiaryRoom {
       recentMessages: this.logger.publicMessages.slice(-8),
       previousDiaryEntries,
       playerMessages,
-      roundFacts: this.getHouseRoundFacts?.(),
+      roundFacts,
+      councilRole: roundFacts?.councilRoles.find((role) => role.playerName === agentName) ?? null,
     };
   }
 

@@ -43,12 +43,20 @@
  *
  * Hidden `mingle-intent` and House `mingle-room-assignment` records are always
  * written to `game-{N}-turns.jsonl`, including strategic-lens and assignment
- * source/repair metadata.
+ * source/repair metadata. Player-target fields in hidden Mingle intent are
+ * normalized to living, non-self players before House assignment; stale names
+ * may remain only as historical context in prose fields or repair notes.
  * Specialized `empower-revote` records are written when an empower tie occurs.
  * Hidden `strategic-reflection` and `strategy-packet` records are written there
  * when `--strategic-reflections` is enabled for validation runs. Later private
  * decisions may include `strategicLens` and `strategyPacketUse`
  * markers for searchable producer/debug validation.
+ *
+ * Prompt-continuity validation should check the current-board contract in
+ * player prompts, phase-specific vote/Council/endgame rules, typed recent
+ * decisions, questions-only Judgment prompts for jurors, and Council role-aware
+ * diary prompts. These keep eliminated players useful as history, jury context,
+ * or social evidence without turning them back into live targets.
  *
  * `--rich-producer` enables private House Strategy Bible Packet updates,
  * packet-backed long-form House summaries, bounded Council diary sessions, and

@@ -420,6 +420,24 @@ export interface HouseRoundFacts {
   councilVoteCounts: HouseVoteCount[];
   councilMethod: string | null;
   eliminatedName: string | null;
+  councilRoles: HouseCouncilRoleFact[];
+}
+
+export type HouseCouncilRole =
+  | "candidate"
+  | "voted_for_eliminated"
+  | "voted_for_survivor"
+  | "empowered_tiebreaker"
+  | "non_voter"
+  | "not_applicable";
+
+export interface HouseCouncilRoleFact {
+  playerName: string;
+  role: HouseCouncilRole;
+  candidateNames: [string, string] | null;
+  eliminatedName: string | null;
+  survivingCandidateName: string | null;
+  votedForName: string | null;
 }
 
 export interface HouseStrategyBiblePacket {
@@ -736,6 +754,12 @@ export interface PhaseContext {
   publicTranscriptContext?: PublicTranscriptContextEntry[];
   /** Prior Judgment jury questions and answers visible during the finale. */
   judgmentQuestionHistory?: JudgmentQuestionHistoryEntry[];
+  /** Controls whether Judgment history renders answers; juror question generation gets questions only. */
+  judgmentQuestionHistoryMode?: "full" | "questions_only";
+  /** Recent personal decisions reconstructed from canonical events and public Judgment transcript. */
+  recentDecisions?: RecentDecisionContextEntry[];
+  /** Most recent eliminated player name, derived from jury/elimination order when available. */
+  latestEliminatedPlayerName?: string;
   // Mingle room allocation context
   /** Number of available rooms this round */
   roomCount?: number;
@@ -793,6 +817,13 @@ export interface JudgmentQuestionHistoryEntry {
   finalistName: string;
   question: string;
   answer?: string;
+}
+
+export interface RecentDecisionContextEntry {
+  round: number;
+  phase: Phase;
+  label: string;
+  detail: string;
 }
 
 // ---------------------------------------------------------------------------
