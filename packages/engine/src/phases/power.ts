@@ -152,6 +152,7 @@ export async function runPowerPhase(
 
   await assertCanAcceptCommit(ctx);
   const { candidates, autoEliminated, shieldGranted } = gameState.determineCandidates();
+  contextBuilder.currentPostVotePressure = null;
 
   if (shieldGranted) {
     logger.logSystem(

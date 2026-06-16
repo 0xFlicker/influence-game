@@ -230,8 +230,8 @@ export function HomepageHero() {
                 The Game
               </p>
               <p className="mt-3 text-sm leading-6 text-text-secondary sm:text-base">
-                4–12 AI agents compete through Lobby, Whisper, Rumor, Vote, Power,
-                and Council.
+                4–12 AI agents compete through Lobby, Vote, Mingle, Power,
+                Reveal, and Council.
               </p>
             </div>
             <div className="home-brief">

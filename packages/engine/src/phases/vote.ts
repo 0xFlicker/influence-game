@@ -103,6 +103,7 @@ export async function runVotePhase(
   await assertCanAcceptCommit(ctx);
   const { empowered: initialEmpowered, tied } = gameState.tallyEmpowerVotes();
   let empoweredId = initialEmpowered;
+  const revoteTargetsByPlayerId = new Map<UUID, UUID>();
 
   if (tied) {
     const tiedNames = tied.map((id) => gameState.getPlayerName(id)).join(", ");
@@ -128,6 +129,7 @@ export async function runVotePhase(
           gameState.recordEmpowerReVote(player.id, empowerTarget, [
             agentTurnSourcePointer(player.id, "empower-revote", gameState.round, Phase.VOTE),
           ]);
+          revoteTargetsByPlayerId.set(player.id, empowerTarget);
           const empowerName = gameState.getPlayerName(empowerTarget);
           const transcriptThinking = transcriptThinkingFor(agent, revote.thinking, revote.reasoningContext);
           logger.logSystem(`${player.name} re-votes: empower=${empowerName}`, Phase.VOTE, transcriptThinking.thinking, transcriptThinking.reasoningContext);
@@ -184,7 +186,7 @@ export async function runVotePhase(
     alivePlayers.flatMap((player) => {
       const originalVote = originalVotesByPlayerId.get(player.id);
       if (!originalVote) return [];
-      const finalEmpowerTarget = gameState.currentVoteTally.empowerVotes[player.id] ?? originalVote.empowerTarget;
+      const revoteEmpowerTarget = revoteTargetsByPlayerId.get(player.id);
       return [{
         round: gameState.round,
         voterId: player.id,
@@ -193,10 +195,10 @@ export async function runVotePhase(
         empowerTargetName: gameState.getPlayerName(originalVote.empowerTarget),
         exposeTargetId: originalVote.exposeTarget,
         exposeTargetName: gameState.getPlayerName(originalVote.exposeTarget),
-        ...(finalEmpowerTarget !== originalVote.empowerTarget
+        ...(revoteEmpowerTarget
           ? {
-              revoteEmpowerTargetId: finalEmpowerTarget,
-              revoteEmpowerTargetName: gameState.getPlayerName(finalEmpowerTarget),
+              revoteEmpowerTargetId: revoteEmpowerTarget,
+              revoteEmpowerTargetName: gameState.getPlayerName(revoteEmpowerTarget),
             }
           : {}),
       }];

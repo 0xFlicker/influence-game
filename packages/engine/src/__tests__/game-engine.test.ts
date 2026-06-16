@@ -366,6 +366,80 @@ describe("Mingle Rooms (current open-room phase)", () => {
     )).toBe(true);
   });
 
+  it("includes unchanged empower re-vote ballots in the revealed vote ledger", async () => {
+    class ScriptedVoteAgent extends MockAgent {
+      readonly seenLedgers: NonNullable<PhaseContext["revealedVoteLedger"]>[] = [];
+
+      constructor(
+        id: string,
+        name: string,
+        private readonly vote: { empowerTarget: string; exposeTarget: string },
+        private readonly revoteTarget: string | null,
+      ) {
+        super(id, name);
+      }
+
+      override async getVotes(): Promise<{ empowerTarget: string; exposeTarget: string; thinking?: string }> {
+        return { ...this.vote, thinking: `${this.name} scripted vote` };
+      }
+
+      override async getEmpowerRevote(): Promise<{ empowerTarget: string; thinking?: string }> {
+        return {
+          empowerTarget: this.revoteTarget ?? this.vote.empowerTarget,
+          thinking: `${this.name} scripted re-vote`,
+        };
+      }
+
+      override async takeMingleTurn(ctx: PhaseContext): Promise<MingleTurnAction> {
+        this.seenLedgers.push(ctx.revealedVoteLedger ?? []);
+        return { thinking: "", message: null, noReply: true, gotoRoomId: null, gotoPlayerName: null };
+      }
+    }
+
+    const alphaId = createUUID();
+    const betaId = createUUID();
+    const gammaId = createUUID();
+    const deltaId = createUUID();
+    const echoId = createUUID();
+    const agents = [
+      new ScriptedVoteAgent(alphaId, "Alpha", { empowerTarget: betaId, exposeTarget: echoId }, null),
+      new ScriptedVoteAgent(betaId, "Beta", { empowerTarget: alphaId, exposeTarget: echoId }, null),
+      new ScriptedVoteAgent(gammaId, "Gamma", { empowerTarget: alphaId, exposeTarget: echoId }, alphaId),
+      new ScriptedVoteAgent(deltaId, "Delta", { empowerTarget: betaId, exposeTarget: echoId }, alphaId),
+      new ScriptedVoteAgent(echoId, "Echo", { empowerTarget: echoId, exposeTarget: deltaId }, betaId),
+    ];
+    const runner = new GameRunner(
+      agents,
+      { ...TEST_CONFIG, mingleSessionsPerRound: 1 },
+      new FixedMingleHouseInterviewer({
+        Alpha: 1,
+        Beta: 1,
+        Gamma: 2,
+        Delta: 2,
+        Echo: 2,
+      }),
+    );
+
+    await runner.run();
+
+    const ledger = agents[0]!.seenLedgers[0]!;
+    const gammaLedger = ledger.find((entry) => entry.voterName === "Gamma");
+    const deltaLedger = ledger.find((entry) => entry.voterName === "Delta");
+    const echoLedger = ledger.find((entry) => entry.voterName === "Echo");
+    expect(gammaLedger).toMatchObject({
+      empowerTargetName: "Alpha",
+      revoteEmpowerTargetName: "Alpha",
+    });
+    expect(deltaLedger).toMatchObject({
+      empowerTargetName: "Beta",
+      revoteEmpowerTargetName: "Alpha",
+    });
+    expect(echoLedger).toMatchObject({
+      empowerTargetName: "Echo",
+      revoteEmpowerTargetName: "Beta",
+    });
+  });
+
   it("does not run RUMOR in normal live rounds", async () => {
     const agents = ["Alpha", "Beta", "Gamma", "Delta"].map(
       (name) => new MockAgent(createUUID(), name),
@@ -472,6 +546,35 @@ describe("Mingle Rooms (current open-room phase)", () => {
     );
     expect(movedRoomMsg?.roomId).toBe(secondRooms[1]!.roomId);
     expect(movedRoomMsg?.to).toEqual(["Gamma", "Delta", "Echo"]);
+  });
+
+  it("runs three Mingle turns by default", async () => {
+    const agents = [
+      new MockAgent(createUUID(), "Alpha"),
+      new MockAgent(createUUID(), "Beta"),
+      new MockAgent(createUUID(), "Gamma"),
+      new MockAgent(createUUID(), "Delta"),
+      new MockAgent(createUUID(), "Echo"),
+    ];
+    const runner = new GameRunner(
+      agents,
+      TEST_CONFIG,
+      new FixedMingleHouseInterviewer({
+        Alpha: 1,
+        Beta: 1,
+        Gamma: 2,
+        Delta: 2,
+        Echo: 2,
+      }),
+    );
+
+    const result = await runner.run();
+
+    const allocations = result.transcript.filter(
+      (entry) => entry.round === 1 && entry.scope === "system" && entry.roomMetadata,
+    );
+    expect(allocations.map((entry) => entry.roomMetadata?.rooms[0]?.beat)).toEqual([1, 2, 3]);
+    expect(allocations.map((entry) => entry.text.split(":")[0])).toEqual(["Turn 1", "Turn 2", "Turn 3"]);
   });
 
   it("resolves gotoPlayerName after every Mingle action and follows the target's next room", async () => {
@@ -1375,9 +1478,8 @@ describe("Phase machine - endgame transitions", () => {
 
     expect(actor.getSnapshot().value).toBe("reckoning_lobby");
 
-    // Run through reckoning: lobby -> mingle -> plea -> vote
-    await advance(); // reckoning_lobby -> reckoning_mingle
-    await advance(); // reckoning_whisper -> reckoning_plea
+    // Run through reckoning: lobby -> plea -> vote
+    await advance(); // reckoning_lobby -> reckoning_plea
     await advance(); // reckoning_plea -> reckoning_vote
 
     // Eliminate one (4 -> 3) in reckoning vote

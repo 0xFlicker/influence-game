@@ -499,7 +499,7 @@
       <p class="section-kicker">Grounding</p>
       <h2>What the repo already says</h2>
       <ul class="axis-list">
-        <li>The phase machine currently completes <code>LOBBY -> MINGLE -> RUMOR -> VOTE -> POWER</code>.</li>
+        <li>Before this change, the phase machine completed <code>LOBBY -> MINGLE -> RUMOR -> VOTE -> POWER</code>.</li>
         <li><code>RUMOR</code> is isolated as a phase, but tests, viewer transitions, labels, and docs mirror it.</li>
         <li>Expose scores, empowered-player exclusion, shield removal, and candidate backfill already exist in game state.</li>
         <li>Mingle prompts already allow a strategy spectrum and explicitly do not require naming a target.</li>
@@ -913,7 +913,7 @@
       <p class="section-kicker">Sources and references</p>
       <h2>Repo evidence used</h2>
       <ul class="source-list">
-        <li><a href="../../packages/engine/src/phase-machine.ts">packages/engine/src/phase-machine.ts</a> - current phase transitions, including <code>MINGLE -> RUMOR -> VOTE -> POWER</code>.</li>
+        <li><a href="../../packages/engine/src/phase-machine.ts">packages/engine/src/phase-machine.ts</a> - phase transitions, which this work moves from the old <code>MINGLE -> RUMOR -> VOTE -> POWER</code> order to post-vote Mingle.</li>
         <li><a href="../../packages/engine/src/game-runner.ts">packages/engine/src/game-runner.ts</a> - runner dispatch for lobby, mingle, rumor, vote, and post-vote reflection.</li>
         <li><a href="../../packages/engine/src/phases/rumor.ts">packages/engine/src/phases/rumor.ts</a> - isolated RUMOR phase behavior and anonymous public entries.</li>
         <li><a href="../../packages/engine/src/game-state.ts">packages/engine/src/game-state.ts</a> - expose scores, empowered-player exclusion, shield filtering, and candidate backfill.</li>

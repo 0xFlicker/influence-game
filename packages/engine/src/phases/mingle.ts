@@ -661,7 +661,7 @@ export async function runMinglePhase(
     return;
   }
 
-  const beats = config.mingleSessionsPerRound ?? 2;
+  const beats = config.mingleSessionsPerRound ?? 3;
   const allRooms: RoomAllocation[] = [];
   const initialRoomCounts: MingleRoomCount[] = Array.from({ length: roomCount }, (_, index) => ({
     roomId: index + 1,
@@ -788,11 +788,4 @@ export async function runMinglePhase(
 
   actor.send({ type: "PHASE_COMPLETE" });
   await new Promise((r) => setTimeout(r, 0));
-}
-
-export async function runReckoningMingle(
-  ctx: PhaseRunnerContext,
-  actor: PhaseActor,
-): Promise<void> {
-  await runMinglePhase(ctx, actor);
 }

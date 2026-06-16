@@ -1672,7 +1672,7 @@ Cast your votes for this round.
 **EMPOWER vote**: Who should have the power to protect or eliminate? Vote for your ally or use this to reward loyalty.
 **EXPOSE vote**: Who should be put up for elimination? Vote for your biggest threat.
 
-**RULE**: The player who receives the most empower votes becomes empowered and *cannot be exposed or placed on the council block this round* (they are protected from exposure). Choose your expose target accordingly — do not waste it on someone you are empowering if you expect them to win the empower vote. The eventual empowered winner is immune even if other players piled expose votes on them.
+**RULE**: No one has won this vote's empowerment yet. Last round's empowered player is not automatically immune to this vote. Only the winner of this vote's empower tally is protected from this vote's expose result. Choose your expose target accordingly — exposing someone you predict will win the current empower tally can be wasted, but that is a prediction about this vote, not a current fact.
 
 Available players: ${others.map((p) => p.name).join(", ")}
 
@@ -2390,15 +2390,24 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
   }
 
   private buildCurrentStakesSection(ctx: PhaseContext): string {
+    const playerNameById = new Map(this.allPlayers.map((player) => [player.id, player.name]));
+    const isAlive = (id: string) => ctx.alivePlayers.some((player) => player.id === id);
     const empoweredName = ctx.empoweredId
-      ? ctx.alivePlayers.find((player) => player.id === ctx.empoweredId)?.name ?? "unknown"
+      ? playerNameById.get(ctx.empoweredId) ?? "unknown"
       : null;
+    const activeShieldNames = ctx.alivePlayers
+      .filter((player) => player.shielded)
+      .map((player) => player.name);
     const candidates = ctx.councilCandidates
       ? ctx.councilCandidates
-        .map((id) => ctx.alivePlayers.find((player) => player.id === id)?.name ?? id)
+        .map((id) => {
+          const name = playerNameById.get(id) ?? "unknown";
+          return isAlive(id) ? name : `${name} (eliminated)`;
+        })
         .join(" vs ")
       : null;
-    const pressure = ctx.postVotePressure;
+    const pressureIsLive = ctx.phase === Phase.MINGLE || ctx.phase === Phase.POWER;
+    const pressure = pressureIsLive ? ctx.postVotePressure : undefined;
     const selfPressure = pressure?.players.find((player) => player.id === ctx.selfId);
     const statusLine = selfPressure
       ? `- Your immediate risk status: ${selfPressure.status === "current_at_risk"
@@ -2427,8 +2436,9 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
 
     return `## Current Stakes
 - Phase objective: ${phaseObjective[ctx.phase] ?? "Advance your position while staying faithful to your personality and current evidence."}
-${empoweredName ? `- Empowered player: ${empoweredName}` : ""}
-${candidates ? `- Current council candidates: ${candidates}` : ""}
+${empoweredName ? `- ${ctx.phase === Phase.DIARY_ROOM ? "Last resolved empowered player" : "Empowered player"}: ${empoweredName}` : ""}
+- Active shields right now: ${activeShieldNames.length > 0 ? activeShieldNames.join(", ") : "none"}
+${candidates ? `- ${ctx.phase === Phase.DIARY_ROOM ? "Most recent council candidates (resolved, not a live Council vote)" : "Current council candidates"}: ${candidates}` : ""}
 ${statusLine}
 ${nextPowerLine}
 - Good play is not forced aggression. Choose the move your personality would actually make, but stay aware of who has power, who is exposed, who can be protected, and who may need a deal.`;
@@ -2541,9 +2551,9 @@ ${rounds}`;
 
     const lines: string[] = [];
     if (selfPressure?.status === "current_at_risk" && empoweredInRoom) {
-      lines.push(`- You are currently at risk and ${pressure.empowered.name} is in this room. They can potentially protect/shield someone at Power, pass, or use an available elimination action. This is a live chance to pitch, bargain, flatter, redirect pressure, or stay guarded if that is truer to your personality.`);
+      lines.push(`- You are currently at risk and ${pressure.empowered.name} is in this room. They can potentially protect/shield someone at Power, pass, or use an available elimination action. If you are at risk, this is your chance to change the Power decision: ask for protection, offer a concrete deal, name a replacement target, or persuade someone to carry your case. Staying guarded is also valid if that is truer to your personality.`);
     } else if (selfPressure?.status === "current_at_risk") {
-      lines.push(`- You are currently at risk, but ${pressure.empowered.name} is not in this room. You can seek support from these occupants, redirect the target, or consider moving next turn to hunt for power. You only know other rooms by count, not by occupant identity.`);
+      lines.push(`- You are currently at risk, but ${pressure.empowered.name} is not in this room. If you are at risk, this is your chance to change the Power decision: ask for protection, offer a concrete deal, name a replacement target, or persuade someone to carry your case. You can seek support from these occupants, redirect the target, or consider moving next turn to hunt for power. You only know other rooms by count, not by occupant identity.`);
     } else if (selfPressure?.status === "replacement_risk" && empoweredInRoom) {
       lines.push(`- You may become at risk if a shield is granted, and ${pressure.empowered.name} is in this room. This is a chance to discourage a shield that hurts you, propose a better target, or make yourself useful.`);
     } else if (empoweredInRoom) {
@@ -2561,15 +2571,125 @@ ${rounds}`;
     return `\n## Room-Specific Social Opportunity\n${lines.join("\n")}`;
   }
 
+  private isEndgamePrompt(ctx: PhaseContext): boolean {
+    return ctx.endgameStage != null
+      || ctx.phase === Phase.PLEA
+      || ctx.phase === Phase.ACCUSATION
+      || ctx.phase === Phase.DEFENSE
+      || ctx.phase === Phase.OPENING_STATEMENTS
+      || ctx.phase === Phase.JURY_QUESTIONS
+      || ctx.phase === Phase.CLOSING_ARGUMENTS
+      || ctx.phase === Phase.JURY_VOTE;
+  }
+
+  private buildVisibleTranscriptSection(ctx: PhaseContext): string {
+    if (this.isEndgamePrompt(ctx)) {
+      const entries = ctx.publicTranscriptContext ?? ctx.publicMessages;
+      const text = entries
+        .map((m) => `  R${m.round}/${m.phase} ${m.from}: "${m.text}"`)
+        .join("\n");
+      return `## Full Public Transcript
+${text || "  (none yet)"}`;
+    }
+
+    const firstRound = Math.max(1, ctx.round - 2);
+    const recentMessages = ctx.publicMessages
+      .filter((m) => m.round == null || m.round >= firstRound)
+      .map((m) => `  [R${m.round ?? "?"}/${m.phase}] ${m.from}: "${m.text}"`)
+      .join("\n");
+    return `## Recent Public Messages
+${recentMessages || "  (none yet)"}`;
+  }
+
+  private buildEndgameRulesSection(ctx: PhaseContext): string {
+    const stage = ctx.endgameStage ?? "reckoning";
+    if (stage === "reckoning") {
+      return `## Endgame Rules
+- The Reckoning begins with 4 players left.
+- Players make public pleas, then cast direct elimination votes.
+- There is no empower/expose split, no Power ceremony, and no shield decision in this stage.`;
+    }
+    if (stage === "tribunal") {
+      return `## Endgame Rules
+- The Tribunal begins with 3 players left.
+- Players make public accusations, accused players defend themselves, then players cast direct elimination votes.
+- If the Tribunal vote needs a tiebreaker, eligible jurors may decide it.
+- There is no empower/expose split, no Power ceremony, and no shield decision in this stage.`;
+    }
+    return `## Endgame Rules
+- The Judgment begins with 2 finalists.
+- Finalists make opening statements, jurors ask questions, finalists answer, finalists make closing arguments, then jurors vote for the winner.
+- Jury votes decide the winner; cumulative empower votes may matter only as a tiebreaker.
+- There is no empower/expose split, no Power ceremony, and no shield decision in this stage.`;
+  }
+
+  private buildGameEventRecordSection(ctx: PhaseContext): string {
+    const events = ctx.gameEventRecord ?? [];
+    return `## Game Event Record
+Use this as the complete canonical record. Shield grants listed here are historical facts only, not current protection in the endgame.
+${events.length > 0 ? events.map((event) => `- ${event}`).join("\n") : "- (no canonical events recorded yet)"}`;
+  }
+
+  private buildJudgmentQuestionHistorySection(ctx: PhaseContext): string {
+    const history = ctx.judgmentQuestionHistory ?? [];
+    if (history.length === 0) return "";
+    const lines = history.map((item, index) => {
+      const answer = item.answer ? `\n  A: ${item.finalistName}: "${item.answer}"` : "";
+      return `${index + 1}. ${item.jurorName} to ${item.finalistName}: "${item.question}"${answer}`;
+    }).join("\n");
+    return `## Judgment Questions So Far
+Use this to avoid repeating prior answers or questions.
+${lines}`;
+  }
+
+  private buildStrategyPacketSection(ctx: PhaseContext, strategyPacket: StrategyPacketSummary | null): string {
+    if (!strategyPacket) return "";
+    const canonicalOverride = this.isEndgamePrompt(ctx)
+      ? "Canonical fact override: Game State, Endgame Rules, Game Event Record, Full Public Transcript, and Judgment Questions So Far are current truth. If this Strategy Thread claims different alive status, eliminated status, finalists, jurors, latest elimination, or endgame status, treat the packet claim as stale history."
+      : "Canonical fact override: Game State, Current Stakes, Revealed Vote Ledger, Post-Vote Pressure, and active shield lines are current truth. If this Strategy Thread claims different active shields, empowered player, council candidates, latest elimination, or alive status, treat the packet claim as stale history.";
+    return `## Strategy Thread
+This is your private carry-forward strategy context, not an order. You may follow it, test it, revise it, ignore it, or defer it when current evidence warrants.
+- Revision: ${strategyPacket.revisionId}${strategyPacket.previousRevisionId ? ` (previous ${strategyPacket.previousRevisionId})` : ""}
+This Strategy Thread was last updated in Round ${strategyPacket.updatedAtRound} during ${strategyPacket.updatedAtPhase}; if Mingle or other phases happened after that, treat those newer events as evidence to weigh alongside or revise the strategy.
+${canonicalOverride}
+- Objective: ${strategyPacket.objective || "stay flexible"}
+- Target posture: ${strategyPacket.targetPosture || "no named target yet"}
+- Coalition posture: ${strategyPacket.coalitionPosture || "keep relationships flexible"}
+- Next social probe: ${strategyPacket.nextSocialProbe || "look for new evidence"}
+- Strategic lens: ${strategyPacket.strategicLens || "broad_read"}
+- Lens rationale: ${strategyPacket.strategicLensRationale || "none recorded"}
+- Uncertainty: ${strategyPacket.uncertainty || "none recorded"}
+- Revise if: ${strategyPacket.reviseTrigger || "new evidence contradicts the plan"}
+- Changed since previous: ${strategyPacket.changedSincePrevious || "none recorded"}
+Standing target discipline:
+- A standing target is your current living default pressure/read target. It can be a quiet watch target, a Mingle probe, an expose candidate, or no target yet.
+- Never treat an eliminated player as an active standing target. If the packet names someone marked eliminated, use that as stale history and pivot to a living replacement or explicitly no standing target.
+- Do not force target naming. Soft reads, alliance repair, and information-gathering are valid when the evidence is not there.
+When a tool asks for strategyPacketUse, report how this decision used revision ${strategyPacket.revisionId} as self-reported linkage evidence, with a compact rationale tied to current evidence.`;
+  }
+
+  private buildStrategicAssessmentSection(ctx: PhaseContext): string {
+    if (!this.memory.lastReflection) return "";
+    const override = this.isEndgamePrompt(ctx)
+      ? "This is older private memory. Game State, Endgame Rules, Game Event Record, Full Public Transcript, and Judgment Questions So Far override it if they disagree."
+      : "This is older private memory. Game State, Current Stakes, Revealed Vote Ledger, Post-Vote Pressure, and active shield lines override it if they disagree.";
+    return `## Strategic Assessment
+${override}
+- Certainties: ${(this.memory.lastReflection.certainties ?? []).join("; ") || "none"}
+- Suspicions: ${(this.memory.lastReflection.suspicions ?? []).join("; ") || "none"}
+- Allies: ${(this.memory.lastReflection.allies ?? []).join("; ") || "none"}
+- Threats: ${(this.memory.lastReflection.threats ?? []).join("; ") || "none"}
+- Plan: ${this.memory.lastReflection.plan ?? "none"}
+- Strategic lens: ${this.memory.lastReflection.strategicLens ?? "broad_read"}
+- Lens rationale: ${this.memory.lastReflection.strategicLensRationale ?? "none recorded"}`;
+  }
+
   private buildUserPrompt(ctx: PhaseContext): string {
     const eliminated = this.allPlayers
       .filter((p) => !ctx.alivePlayers.some((ap) => ap.id === p.id))
       .map((p) => p.name);
-
-    const recentMessages = ctx.publicMessages
-      .slice(-10)
-      .map((m) => `  [${m.phase}] ${m.from}: "${m.text}"`)
-      .join("\n");
+    const isEndgame = this.isEndgamePrompt(ctx);
+    const visibleTranscriptSection = this.buildVisibleTranscriptSection(ctx);
 
     const mingleMessages = ctx.mingleMessages
       .map((m) => `  From ${m.from}: "${m.text}"`)
@@ -2595,10 +2715,18 @@ ${rounds}`;
     const threats = Array.from(this.memory.threats).join(", ") || "none";
     const strategyPacket = this.strategyPacketForPrompt(ctx);
     const voteHistorySection = this.buildVoteHistorySection(ctx.round);
+    const strategyPacketSection = this.buildStrategyPacketSection(ctx, strategyPacket);
+    const strategicAssessmentSection = this.buildStrategicAssessmentSection(ctx);
     const gameRulesSection = this.buildGameRulesSection();
     const currentStakesSection = this.buildCurrentStakesSection(ctx);
     const postVotePressureSection = this.buildPostVotePressureSection(ctx);
     const revealedVoteLedgerSection = this.buildRevealedVoteLedgerSection(ctx);
+    const activeShieldNames = ctx.alivePlayers
+      .filter((player) => player.shielded)
+      .map((player) => player.name);
+    const empoweredPlayerName = ctx.empoweredId
+      ? ctx.alivePlayers.find((p) => p.id === ctx.empoweredId)?.name ?? "unknown"
+      : null;
 
     let endgameInfo = "";
     if (ctx.endgameStage) {
@@ -2619,12 +2747,43 @@ ${rounds}`;
       }
     }
 
+    if (isEndgame) {
+      const endgameRulesSection = this.buildEndgameRulesSection(ctx);
+      const gameEventRecordSection = this.buildGameEventRecordSection(ctx);
+      const judgmentQuestionHistorySection = this.buildJudgmentQuestionHistorySection(ctx);
+      return `## Game State
+- Round: ${ctx.round}
+- Phase: ${ctx.phase}
+- Alive players (ONLY these players are still in the game): ${ctx.alivePlayers.map((p) => p.name + (p.id === this.id ? " (YOU)" : "")).join(", ")}
+${eliminated.length > 0 ? `- ELIMINATED (out of the game — they are no longer in the game): ${eliminated.join(", ")}` : ""}
+${endgameInfo}
+
+${endgameRulesSection}
+
+${gameEventRecordSection}
+
+${judgmentQuestionHistorySection ? `${judgmentQuestionHistorySection}\n` : ""}
+## Your Memory
+- Known allies: ${allies}
+- Known threats: ${threats}
+${memoryNotes ? `- Notes:\n${memoryNotes}` : ""}
+${voteHistorySection ? `${voteHistorySection}\n` : ""}
+${strategyPacketSection ? `${strategyPacketSection}\n` : ""}
+${strategicAssessmentSection ? `${strategicAssessmentSection}\n` : ""}
+${revealedVoteLedgerSection ? `${revealedVoteLedgerSection}\n` : ""}
+${visibleTranscriptSection}
+
+${mingleMessages ? `## Private Room Messages You Personally Heard (Mingle)\n${mingleMessages}\nThese are private to rooms you occupied. You do not know private room conversations you were not present for.` : ""}
+`;
+    }
+
     return `## Game State
 - Round: ${ctx.round}
 - Phase: ${ctx.phase}
 - Alive players (ONLY these players are still in the game): ${ctx.alivePlayers.map((p) => p.name + (p.id === this.id ? " (YOU)" : "")).join(", ")}
 ${eliminated.length > 0 ? `- ELIMINATED (out of the game — they are no longer in the game): ${eliminated.join(", ")}` : ""}
-${ctx.empoweredId ? `- Empowered player: ${ctx.alivePlayers.find((p) => p.id === ctx.empoweredId)?.name ?? "unknown"}` : ""}
+${empoweredPlayerName ? `- ${ctx.phase === Phase.DIARY_ROOM ? "Last resolved empowered player" : "Empowered player"}: ${empoweredPlayerName}` : ""}
+- Active shields right now: ${activeShieldNames.length > 0 ? activeShieldNames.join(", ") : "none"}
 ${endgameInfo}
 
 ${gameRulesSection}
@@ -2636,11 +2795,10 @@ ${currentStakesSection}
 - Known threats: ${threats}
 ${memoryNotes ? `- Notes:\n${memoryNotes}` : ""}
 ${voteHistorySection ? `${voteHistorySection}\n` : ""}
-${strategyPacket ? `## Strategy Thread\nThis is your private carry-forward strategy context, not an order. You may follow it, test it, revise it, ignore it, or defer it when current evidence warrants.\n- Revision: ${strategyPacket.revisionId}${strategyPacket.previousRevisionId ? ` (previous ${strategyPacket.previousRevisionId})` : ""}\n- Objective: ${strategyPacket.objective || "stay flexible"}\n- Target posture: ${strategyPacket.targetPosture || "no named target yet"}\n- Coalition posture: ${strategyPacket.coalitionPosture || "keep relationships flexible"}\n- Next social probe: ${strategyPacket.nextSocialProbe || "look for new evidence"}\n- Strategic lens: ${strategyPacket.strategicLens || "broad_read"}\n- Lens rationale: ${strategyPacket.strategicLensRationale || "none recorded"}\n- Uncertainty: ${strategyPacket.uncertainty || "none recorded"}\n- Revise if: ${strategyPacket.reviseTrigger || "new evidence contradicts the plan"}\n- Changed since previous: ${strategyPacket.changedSincePrevious || "none recorded"}\nStanding target discipline:\n- A standing target is your current living default pressure/read target. It can be a quiet watch target, a Mingle probe, an expose candidate, or no target yet.\n- Never treat an eliminated player as an active standing target. If the packet names someone marked eliminated, use that as stale history and pivot to a living replacement or explicitly no standing target.\n- Do not force target naming. Soft reads, alliance repair, and information-gathering are valid when the evidence is not there.\nWhen a tool asks for strategyPacketUse, report how this decision used revision ${strategyPacket.revisionId} as self-reported linkage evidence, with a compact rationale tied to current evidence.` : ""}
-${this.memory.lastReflection ? `## Strategic Assessment\n- Certainties: ${(this.memory.lastReflection.certainties ?? []).join("; ") || "none"}\n- Suspicions: ${(this.memory.lastReflection.suspicions ?? []).join("; ") || "none"}\n- Allies: ${(this.memory.lastReflection.allies ?? []).join("; ") || "none"}\n- Threats: ${(this.memory.lastReflection.threats ?? []).join("; ") || "none"}\n- Plan: ${this.memory.lastReflection.plan ?? "none"}\n- Strategic lens: ${this.memory.lastReflection.strategicLens ?? "broad_read"}\n- Lens rationale: ${this.memory.lastReflection.strategicLensRationale ?? "none recorded"}` : ""}
+${strategyPacketSection ? `${strategyPacketSection}\n` : ""}
+${strategicAssessmentSection ? `${strategicAssessmentSection}\n` : ""}
 ${revealedVoteLedgerSection ? `${revealedVoteLedgerSection}\n` : ""}
-## Recent Public Messages
-${recentMessages || "  (none yet)"}
+${visibleTranscriptSection}
 ${postVotePressureSection}
 
 ${mingleMessages ? `## Private Room Messages (Mingle)\n${mingleMessages}\nThese are private to your current room occupants only.` : ""}
@@ -3451,10 +3609,24 @@ ${JSON.stringify(tool.function.parameters)}`,
   // Strategic reflection (called after diary room sessions)
   // ---------------------------------------------------------------------------
 
-  async getStrategicReflection(ctx: PhaseContext): Promise<StrategicReflectionAction | null> {
+  async getStrategicReflection(ctx: PhaseContext, options?: { timing?: "post_phase" | "pre_vote" }): Promise<StrategicReflectionAction | null> {
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round, { includePhaseGuidelines: false });
-    const prompt = this.buildUserPrompt(ctx) + `
-## Private Reflection Mode
+    const reflectionMode = options?.timing === "pre_vote"
+      ? `## Private Pre-Vote Strategy Realignment
+You are NOT taking a live phase action right now. The phase shown above is the upcoming vote you are preparing for.
+Do not write a player-visible message, do not speak to the room, do not cast a vote, and do not choose a Power/Council action.
+This is a private producer/debug checkpoint for memory and strategy only. Other players will not see this reflection or Strategy Thread packet.
+
+## Strategic Reflection
+Reflected phase: ${ctx.phase}.
+This is before a later-round vote, after prior eliminations and phase outcomes have changed the board.
+Use the strategic_reflection tool to record your analysis before voting.
+
+Prune eliminated players from active targets, allies, threats, and plans. Reset stale assumptions about who will be empowered or immune: no one has won the upcoming empower tally yet, and last round's empowered player is not automatically protected. Form a current empower/expose intent from the living field before you vote.
+
+Be specific — name living players, cite events, reference conversations.
+Treat vote ledgers, Power outcomes, room traffic, eliminations, and public/private messages as evidence. Current Game State, Current Stakes, Revealed Vote Ledger, Post-Vote Pressure, and active shield lines override stale Strategy Thread or Strategic Assessment claims. Do not turn this into a message you intend to send.`
+      : `## Private Reflection Mode
 You are NOT taking a live phase action right now. The phase shown above is the phase you are reflecting on after it resolved.
 Do not write a player-visible message, do not speak to the room, do not cast a vote, and do not choose a Power/Council action.
 This is a private producer/debug checkpoint for memory and strategy only. Other players will not see this reflection or Strategy Thread packet.
@@ -3465,7 +3637,9 @@ Based on everything you know so far, produce a strategic assessment of what happ
 Use the strategic_reflection tool to record your analysis.
 
 Be specific — name players, cite events, reference conversations.
-Treat vote ledgers, Power outcomes, room traffic, and public/private messages as evidence. Do not turn this into a message you intend to send.
+Treat vote ledgers, Power outcomes, room traffic, and public/private messages as evidence. Current Game State, Current Stakes, Revealed Vote Ledger, Post-Vote Pressure, and active shield lines override stale Strategy Thread or Strategic Assessment claims. Do not turn this into a message you intend to send.`;
+    const prompt = this.buildUserPrompt(ctx) + `
+${reflectionMode}
 
 ${STRATEGIC_LENS_GUIDANCE}
 

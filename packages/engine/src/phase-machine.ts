@@ -271,14 +271,6 @@ export function createPhaseMachine() {
         },
       },
 
-      rumor: {
-        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.RUMOR } }],
-        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.RUMOR } }],
-        on: {
-          PHASE_COMPLETE: "vote",
-        },
-      },
-
       vote: {
         entry: [{ type: "emitPhaseStarted", params: { phase: Phase.VOTE } }],
         exit: [{ type: "emitPhaseEnded", params: { phase: Phase.VOTE } }],
@@ -380,16 +372,8 @@ export function createPhaseMachine() {
         ],
         exit: [{ type: "emitPhaseEnded", params: { phase: Phase.LOBBY } }],
         on: {
-          PHASE_COMPLETE: "reckoning_mingle",
-          UPDATE_ALIVE_PLAYERS: { actions: ["updateAlivePlayers"] },
-        },
-      },
-
-      reckoning_mingle: {
-        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.MINGLE } }],
-        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.MINGLE } }],
-        on: {
           PHASE_COMPLETE: "reckoning_plea",
+          UPDATE_ALIVE_PLAYERS: { actions: ["updateAlivePlayers"] },
         },
       },
 

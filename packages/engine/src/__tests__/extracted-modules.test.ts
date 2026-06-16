@@ -251,6 +251,28 @@ describe("ContextBuilder", () => {
     expect(ctx.publicMessages).toHaveLength(1);
     expect(ctx.publicMessages[0]!.text).toBe("Hello!");
   });
+
+  it("buildPhaseContext exposes name-rendered public/canonical records for endgame prompts", () => {
+    const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
+    const bob = gs.getAlivePlayers().find((p) => p.name === "Bob")!;
+    const charlie = gs.getAlivePlayers().find((p) => p.name === "Charlie")!;
+
+    gs.recordVote(alice.id, bob.id, charlie.id);
+    logger.logPublic(alice.id, "This should be visible.", Phase.LOBBY);
+    logger.logSystem("A public House result.", Phase.VOTE);
+    logger.logMingleMessage(alice.id, [bob.id], "Private room talk.", 1);
+    logger.logDiary("Alice", "Private diary thought.");
+    logger.logThinking(alice.id, "Hidden thought.", Phase.VOTE);
+
+    const ctx = builder.buildPhaseContext(alice.id, Phase.PLEA);
+
+    expect(ctx.gameEventRecord?.some((line) => line.includes("Alice voted empower=Bob, expose=Charlie"))).toBe(true);
+    expect(ctx.gameEventRecord?.some((line) => line.includes(alice.id))).toBe(false);
+    expect(ctx.publicTranscriptContext?.map((entry) => entry.text)).toEqual([
+      "This should be visible.",
+      "A public House result.",
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------

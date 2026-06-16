@@ -212,7 +212,7 @@ Each phase has a **title treatment** and 3–5 **flavor text variants** chosen r
 
 | Intensity | When Used | Visual Treatment |
 |:----------|:----------|:-----------------|
-| **Standard** | LOBBY, WHISPER, RUMOR, DIARY | Simple fade-bloom-fade |
+| **Standard** | LOBBY, MINGLE, DIARY | Simple fade-bloom-fade |
 | **Dramatic** | VOTE, POWER, COUNCIL | Slower hold (1.5s), bass rumble SFX, slight screen shake |
 | **Climactic** | REVEAL, JURY_VOTE, END | Full blackout, extended bloom (2s hold), particle effects |
 | **Endgame** | All endgame phases | Gold-tinted transition, slower pacing, gravity |

@@ -2,13 +2,13 @@
 
 **Author:** Lead Game Designer
 **Date:** 2026-03-19
-**Status:** Superseded for whisper-room mechanics by the neutral open-room direction from [INF-200](/INF/issues/INF-200). Anonymous Rumors guidance remains relevant.
+**Status:** Historical. Superseded for current gameplay by neutral Mingle open rooms and the post-vote Mingle loop. WHISPER and RUMOR details below apply only to old replay records or explicit future experiments, not the normal live loop.
 **Related Issues:** [INF-99](/issues/INF-99) (this spec), [INF-96](/issues/INF-96) (parent: viewer improvements)
 **References:** [Viewer Experience Spec](./viewer-experience-spec.md), [Replay Experience Spec](./replay-experience-spec.md), project game specification
 
 ---
 
-> **Current implementation note (2026-04-29):** New games no longer use pair appointments, mutual partner requests, or commons exclusion for WHISPER. The active rule is neutral open rooms: rooms start at `5+` alive, scale as `Math.ceil(aliveCount / 3)`, players choose room numbers directly, empty and singleton rooms are valid, and group whisper messages run only in rooms with `2+` players. Pair-room behavior may appear only in historical replay records.
+> **Current implementation note (2026-06-16):** New games no longer use pair appointments, mutual partner requests, commons exclusion, or a required anonymous RUMOR phase in the normal live loop. The active rule is neutral Mingle open rooms after Vote resolves: rooms start at `5+` alive, scale as `Math.ceil(aliveCount / 3)`, players choose room numbers or request a player to follow, empty and singleton rooms are valid, and group Mingle messages run only in rooms with `2+` players. WHISPER/RUMOR behavior may appear only in historical replay records or explicit experiments.
 
 ## Overview
 

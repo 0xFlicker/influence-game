@@ -446,6 +446,7 @@ export interface HouseEvidenceBundle {
   phase: Phase;
   alivePlayers: string[];
   eliminatedPlayers: string[];
+  activeShieldNames: string[];
   empoweredName: string | null;
   councilCandidates: [string, string] | null;
   recentTranscript: TranscriptEntry[];
@@ -603,6 +604,10 @@ export interface AgentCallOptions {
   signal?: AbortSignal;
 }
 
+export interface StrategicReflectionOptions {
+  timing?: "post_phase" | "pre_vote";
+}
+
 // ---------------------------------------------------------------------------
 // Agent interface (implemented by InfluenceAgent in agent.ts)
 // ---------------------------------------------------------------------------
@@ -682,8 +687,8 @@ export interface IAgent {
   getJuryVote(context: PhaseContext, finalistIds: [UUID, UUID], options?: AgentCallOptions): Promise<TargetDecision>;
 
   // --- Strategic reflection (called after diary room) ---
-  /** Produce a strategic reflection after diary room interview */
-  getStrategicReflection(context: PhaseContext): Promise<StrategicReflectionAction | null | void>;
+  /** Produce a private strategic reflection for memory and strategy continuity. */
+  getStrategicReflection(context: PhaseContext, options?: StrategicReflectionOptions): Promise<StrategicReflectionAction | null | void>;
   /** Return the live private strategy packet for this game run, if one exists. */
   getStrategyPacket?(): StrategyPacketSummary | null;
 
@@ -715,7 +720,7 @@ export interface PhaseContext {
   phase: Phase;
   selfId: UUID;
   selfName: string;
-  alivePlayers: Array<{ id: UUID; name: string }>;
+  alivePlayers: Array<{ id: UUID; name: string; shielded?: boolean }>;
   publicMessages: Array<{ from: string; text: string; phase: Phase; round?: number; anonymous?: boolean; displayOrder?: number }>;
   /** Messages this agent received in the current Mingle/private room */
   mingleMessages: Array<{ from: string; text: string }>;
@@ -725,6 +730,12 @@ export interface PhaseContext {
   postVotePressure?: PostVotePressureProjection;
   /** Public named vote record revealed to players after each standard Vote resolves. */
   revealedVoteLedger?: RevealedVoteLedgerEntry[];
+  /** Player-visible canonical event record rendered with names for endgame context. */
+  gameEventRecord?: string[];
+  /** Public/system transcript context visible to players, excluding private Mingle, diary, and thinking traces. */
+  publicTranscriptContext?: PublicTranscriptContextEntry[];
+  /** Prior Judgment jury questions and answers visible during the finale. */
+  judgmentQuestionHistory?: JudgmentQuestionHistoryEntry[];
   // Mingle room allocation context
   /** Number of available rooms this round */
   roomCount?: number;
@@ -768,6 +779,20 @@ export interface RevealedVoteLedgerEntry {
   exposeTargetName: string;
   revoteEmpowerTargetId?: UUID;
   revoteEmpowerTargetName?: string;
+}
+
+export interface PublicTranscriptContextEntry {
+  round: number;
+  phase: Phase;
+  from: string;
+  text: string;
+}
+
+export interface JudgmentQuestionHistoryEntry {
+  jurorName: string;
+  finalistName: string;
+  question: string;
+  answer?: string;
 }
 
 // ---------------------------------------------------------------------------

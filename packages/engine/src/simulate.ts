@@ -326,7 +326,7 @@ export function buildSimulationConfig(
     enableStrategicReflections: richProducer ? true : options.enableStrategicReflections ?? false,
     lobbyMessagesPerPlayer: 1,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),
-    mingleSessionsPerRound: mingle ? 2 : DEFAULT_CONFIG.mingleSessionsPerRound,
+    mingleSessionsPerRound: mingle ? 3 : DEFAULT_CONFIG.mingleSessionsPerRound,
     agentActionTimeoutMs: options.agentActionTimeoutMs ?? 90_000,
     enableHouseRoundSummaries: true,
     enableHouseStrategyBible: richProducer,

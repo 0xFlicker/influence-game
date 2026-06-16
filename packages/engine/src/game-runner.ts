@@ -44,8 +44,7 @@ import type { PhaseRunnerContext, PhaseActor } from "./phases";
 import {
   runIntroductionPhase,
   runLobbyPhase, runReckoningLobby, runTribunalLobby,
-  runMinglePhase, runReckoningMingle,
-  runRumorPhase,
+  runMinglePhase,
   runVotePhase, runReckoningVote, runTribunalVote,
   runPowerPhase,
   runRevealPhase, runCouncilPhase,
@@ -122,6 +121,7 @@ export class GameRunner {
       this.config,
       this.houseInterviewer,
       () => this.houseStrategyBible,
+      () => this.buildHouseRoundFacts(this.gameState.round),
     );
     if (this.durableEventSink) {
       this.logger.beginStreamBuffering();
@@ -497,9 +497,10 @@ export class GameRunner {
         await runLobbyPhase(prc, actor);
       } else if (state === "mingle") {
         await runMinglePhase(prc, actor);
-      } else if (state === "rumor") {
-        await runRumorPhase(prc, actor);
       } else if (state === "vote") {
+        if (this.gameState.round > 1) {
+          await this.diaryRoom.runStrategicReflections(Phase.VOTE, { timing: "pre_vote" });
+        }
         await runVotePhase(prc, actor);
         await this.diaryRoom.runStrategicReflections(Phase.VOTE);
       } else if (state === "power") {
@@ -517,8 +518,6 @@ export class GameRunner {
         // --- THE RECKONING (4 -> 3) ---
       } else if (state === "reckoning_lobby") {
         await runReckoningLobby(prc, actor);
-      } else if (state === "reckoning_mingle") {
-        await runReckoningMingle(prc, actor);
       } else if (state === "reckoning_plea") {
         await runReckoningPlea(prc, actor);
       } else if (state === "reckoning_vote") {
@@ -808,6 +807,7 @@ export class GameRunner {
       eliminatedPlayers: allPlayers
         .filter((player) => player.status === PlayerStatus.ELIMINATED)
         .map((player) => player.name),
+      activeShieldNames: alivePlayers.filter((player) => player.shielded).map((player) => player.name),
       empoweredName: this.gameState.empoweredId ? this.gameState.getPlayerName(this.gameState.empoweredId) : null,
       councilCandidates: candidates
         ? [this.gameState.getPlayerName(candidates[0]), this.gameState.getPlayerName(candidates[1])]

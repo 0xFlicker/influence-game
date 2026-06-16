@@ -10,7 +10,7 @@ import type { ContextBuilder } from "./context-builder";
 import type { IHouseInterviewer, DiaryRoomContext } from "./house-interviewer";
 import type { UUID, GameConfig } from "./types";
 import { Phase } from "./types";
-import type { HouseProducerBrief, HouseStrategyBiblePacket, IAgent, StrategicReflectionAction, StrategyPacketSummary } from "./game-runner.types";
+import type { HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, IAgent, StrategicReflectionAction, StrategicReflectionOptions, StrategyPacketSummary } from "./game-runner.types";
 import { transcriptThinkingFor } from "./phases/phase-runner-context";
 
 export class DiaryRoom {
@@ -29,6 +29,7 @@ export class DiaryRoom {
     private readonly config: GameConfig,
     private readonly houseInterviewer: IHouseInterviewer,
     private readonly getHouseStrategyBible?: () => HouseStrategyBiblePacket | null,
+    private readonly getHouseRoundFacts?: () => HouseRoundFacts,
   ) {}
 
   /**
@@ -36,7 +37,7 @@ export class DiaryRoom {
    * Thinking is now captured per-message via structured output, but strategic
    * reflections are still a separate step that updates agent memory.
    */
-  async runStrategicReflections(phase: Phase): Promise<void> {
+  async runStrategicReflections(phase: Phase, options?: StrategicReflectionOptions): Promise<void> {
     if (this.config.enableStrategicReflections === false) {
       return;
     }
@@ -49,11 +50,11 @@ export class DiaryRoom {
 
         try {
             const ctx = this.contextBuilder.buildPhaseContext(player.id, phase);
-            const reflection = await agent.getStrategicReflection(ctx);
+            const reflection = await agent.getStrategicReflection(ctx, options);
             if (reflection) {
-              this.emitStrategicReflectionTurn(player.id, player.name, phase, reflection);
+              this.emitStrategicReflectionTurn(player.id, player.name, phase, reflection, options);
               if (reflection.strategyPacket) {
-                this.emitStrategyPacketTurn(player.id, player.name, phase, reflection.strategyPacket, reflection);
+                this.emitStrategyPacketTurn(player.id, player.name, phase, reflection.strategyPacket, reflection, options);
               }
             }
         } catch (error) {
@@ -68,6 +69,7 @@ export class DiaryRoom {
     playerName: string,
     reflectedPhase: Phase,
     reflection: StrategicReflectionAction,
+    options?: StrategicReflectionOptions,
   ): void {
     this.logger.emitAgentTurn({
       phase: reflectedPhase,
@@ -76,6 +78,7 @@ export class DiaryRoom {
       visibility: "private",
       response: {
         reflectedPhase,
+        reflectionTiming: options?.timing ?? "post_phase",
         certainties: reflection.certainties,
         suspicions: reflection.suspicions,
         allies: reflection.allies,
@@ -96,6 +99,7 @@ export class DiaryRoom {
     reflectedPhase: Phase,
     strategyPacket: StrategyPacketSummary,
     reflection: StrategicReflectionAction,
+    options?: StrategicReflectionOptions,
   ): void {
     this.logger.emitAgentTurn({
       phase: reflectedPhase,
@@ -104,6 +108,7 @@ export class DiaryRoom {
       visibility: "private",
       response: {
         reflectedPhase,
+        reflectionTiming: options?.timing ?? "post_phase",
         strategyPacket,
       },
       thinking: reflection.thinking,
@@ -285,6 +290,7 @@ export class DiaryRoom {
       round: this.gameState.round,
       agentName,
       alivePlayers: alivePlayers.map((p) => p.name),
+      activeShieldNames: alivePlayers.filter((p) => p.shielded).map((p) => p.name),
       eliminatedPlayers,
       lastEliminated: this.lastEliminatedName,
       empoweredName: empoweredId ? this.gameState.getPlayerName(empoweredId) : null,
@@ -294,6 +300,7 @@ export class DiaryRoom {
       recentMessages: this.logger.publicMessages.slice(-8),
       previousDiaryEntries,
       playerMessages,
+      roundFacts: this.getHouseRoundFacts?.(),
     };
   }
 

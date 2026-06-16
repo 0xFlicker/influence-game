@@ -684,7 +684,36 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("You may plead, bargain, redirect pressure, flatter, threaten, or stay quiet");
     expect(prompt).toContain("## Room-Specific Social Opportunity");
     expect(prompt).toContain("You are currently at risk and Mira is in this room");
+    expect(prompt).toContain("ask for protection, offer a concrete deal, name a replacement target, or persuade someone to carry your case");
+    expect(prompt).toContain("Staying guarded is also valid");
     expect(prompt).toContain("Other occupants you can talk to now: Mira");
+  });
+
+  it("clarifies that vote immunity comes from the current empower tally only", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeOpenAIStub(requests),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getVotes({
+      ...makeContext(Phase.VOTE),
+      round: 2,
+      empoweredId: "mira-id",
+    });
+
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.at(-1)!.content;
+    expect(prompt).toContain("No one has won this vote's empowerment yet.");
+    expect(prompt).toContain("Last round's empowered player is not automatically immune to this vote.");
+    expect(prompt).toContain("Only the winner of this vote's empower tally is protected from this vote's expose result.");
+    expect(prompt).toContain("exposing someone you predict will win the current empower tally can be wasted");
+    expect(prompt).toContain("that is a prediction about this vote, not a current fact");
+    expect(prompt).not.toContain("The eventual empowered winner is immune even if other players piled expose votes on them.");
   });
 
   it("clarifies empower re-vote resolution in revealed vote ledger prompts", async () => {
@@ -762,6 +791,69 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("Vera: 2 (Atlas, Mira)");
     expect(prompt).toContain("Final empowered result: Vera.");
     expect(prompt).toContain("Atlas: empowered Mira, exposed Vera; in the tie re-vote, chose Vera");
+  });
+
+  it("does not carry pre-Power pressure stakes into diary reflections", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "strategic_reflection",
+        {
+          thinking: "Power and Council are already resolved, so I should reassess the next round.",
+          certainties: ["Vera left at Council"],
+          suspicions: ["Mira may have overplayed the vote"],
+          allies: ["Mira"],
+          threats: [],
+          plan: "Reset reads for the next lobby.",
+          strategicLens: "broad_read",
+          strategicLensRationale: "The resolved round changed the board.",
+        },
+      ),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", [
+      { id: "atlas-id", name: "Atlas" },
+      { id: "mira-id", name: "Mira" },
+      { id: "vera-id", name: "Vera" },
+    ]);
+
+    await agent.getStrategicReflection({
+      ...makeContext(Phase.DIARY_ROOM),
+      alivePlayers: [
+        { id: "atlas-id", name: "Atlas" },
+        { id: "mira-id", name: "Mira" },
+      ],
+      empoweredId: "mira-id",
+      councilCandidates: ["vera-id", "mira-id"],
+      postVotePressure: {
+        empowered: { id: "mira-id", name: "Mira" },
+        exposePressure: [{ id: "vera-id", name: "Vera", exposeScore: 5 }],
+        currentAtRisk: [{ id: "vera-id", name: "Vera", exposeScore: 5 }],
+        replacementRisk: [],
+        shieldScenarios: [],
+        players: [
+          { id: "mira-id", name: "Mira", exposeScore: 0, status: "empowered", shielded: false },
+          { id: "vera-id", name: "Vera", exposeScore: 5, status: "current_at_risk", shielded: false },
+        ],
+      },
+    });
+
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.at(-1)!.content;
+    expect(prompt).toContain("- Phase: DIARY_ROOM");
+    expect(prompt).toContain("- Most recent council candidates (resolved, not a live Council vote): Vera (eliminated) vs Mira");
+    expect(prompt).toContain("- Active shields right now: none");
+    expect(prompt).not.toContain("vera-id");
+    expect(prompt).not.toContain("Next major decision: Power");
+    expect(prompt).not.toContain("## Post-Vote Pressure");
+    expect(prompt).not.toContain("you are empowered and will decide the Power ceremony");
   });
 
   it("preserves hidden strategic reflections and native reasoning", async () => {
@@ -914,12 +1006,61 @@ describe("InfluenceAgent structured output mode", () => {
     const votePrompt = voteMessages.at(-1)!.content;
     expect(votePrompt).toContain("## Strategy Thread");
     expect(votePrompt).toContain("- Revision: r1-vote-1");
+    expect(votePrompt).toContain("This Strategy Thread was last updated in Round 1 during VOTE; if Mingle or other phases happened after that, treat those newer events as evidence to weigh alongside or revise the strategy.");
     expect(votePrompt).toContain("Keep Mira close while testing Vera's social cover.");
     expect(votePrompt).toContain("- Strategic lens: social_cover");
     expect(votePrompt).toContain("Standing target discipline:");
     expect(votePrompt).toContain("Never treat an eliminated player as an active standing target.");
     expect(votePrompt).toContain("self-reported linkage evidence");
     expect(votePrompt).not.toContain("You must follow");
+  });
+
+  it("renders pre-vote strategic reflection as a realignment checkpoint", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "strategic_reflection",
+        {
+          thinking: "Mira was empowered last round, but this vote starts fresh.",
+          certainties: ["Vera was eliminated last round"],
+          suspicions: ["Mira may still attract empower votes"],
+          allies: ["Mira"],
+          threats: [],
+          plan: "Choose a live empower and expose pair for this round.",
+          strategicLens: "vote_math",
+          strategicLensRationale: "The next vote resets protection assumptions.",
+        },
+      ),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getStrategicReflection({
+      ...makeContext(Phase.VOTE),
+      round: 2,
+      alivePlayers: [
+        { id: "atlas-id", name: "Atlas" },
+        { id: "mira-id", name: "Mira" },
+      ],
+    }, { timing: "pre_vote" });
+
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.at(-1)!.content;
+    expect(prompt).toContain("## Private Pre-Vote Strategy Realignment");
+    expect(prompt).toContain("The phase shown above is the upcoming vote you are preparing for.");
+    expect(prompt).toContain("This is before a later-round vote, after prior eliminations and phase outcomes have changed the board.");
+    expect(prompt).toContain("Prune eliminated players from active targets, allies, threats, and plans.");
+    expect(prompt).toContain("Reset stale assumptions about who will be empowered or immune");
+    expect(prompt).toContain("last round's empowered player is not automatically protected");
+    expect(prompt).toContain("Form a current empower/expose intent from the living field before you vote.");
+    expect(prompt).not.toContain("the phase you are reflecting on after it resolved");
   });
 
   it("marks eliminated players as stale when rendering Strategy Thread prompts", async () => {
@@ -1018,6 +1159,161 @@ describe("InfluenceAgent structured output mode", () => {
       thinking: "Vera has too much social cover to let through.",
       reasoningContext: "Hidden local reasoning for direct elimination.",
     });
+  });
+
+  it("uses an endgame prompt frame with full public and canonical context", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(requests, "elimination_vote", {
+        thinking: "The endgame record points at Vera.",
+        eliminate: "Vera",
+      }),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    const players = [
+      { id: "atlas-id", name: "Atlas", shielded: true },
+      { id: "mira-id", name: "Mira" },
+      { id: "vera-id", name: "Vera" },
+      { id: "nyx-id", name: "Nyx" },
+    ];
+    agent.onGameStart("game-1", players);
+
+    await agent.getEndgameEliminationVote({
+      ...makeContext(Phase.VOTE),
+      round: 5,
+      endgameStage: "reckoning",
+      alivePlayers: players,
+      empoweredId: "atlas-id",
+      postVotePressure: {
+        empowered: { id: "atlas-id", name: "Atlas" },
+        exposePressure: [{ id: "vera-id", name: "Vera", exposeScore: 4 }],
+        currentAtRisk: [{ id: "vera-id", name: "Vera", exposeScore: 4 }],
+        replacementRisk: [],
+        shieldScenarios: [],
+        players: [
+          { id: "atlas-id", name: "Atlas", exposeScore: 0, status: "empowered", shielded: true },
+          { id: "vera-id", name: "Vera", exposeScore: 4, status: "current_at_risk", shielded: false },
+        ],
+      },
+      publicMessages: Array.from({ length: 12 }, (_, index) => ({
+        from: index === 0 ? "Mira" : "House",
+        text: index === 0 ? "old public message that must survive the old ten-message cap" : `public message ${index}`,
+        phase: Phase.LOBBY,
+        round: Math.max(1, index - 6),
+      })),
+      publicTranscriptContext: [
+        { round: 1, phase: Phase.LOBBY, from: "Mira", text: "old public message that must survive the old ten-message cap" },
+        { round: 4, phase: Phase.COUNCIL, from: "House", text: "Sage was eliminated by Council." },
+      ],
+      gameEventRecord: [
+        "R1/VOTE: Echo voted empower=Lyra, expose=Rex.",
+        "R2/POWER: Power action: protect -> Echo.",
+        "R2/POWER: Power resolved candidates=Rex, Finn; shield granted=Echo; auto-eliminated=none.",
+        "R3/COUNCIL: Council resolved: candidates Rex, Finn; votes Kael -> Rex; eliminated Rex by plurality.",
+        "R4/VOTE: reckoning elimination resolved: votes Kael -> Sage; eliminated Sage by plurality.",
+        "R5/JURY_VOTE: Juror Sage voted for finalist Mira.",
+      ],
+    });
+
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.at(-1)!.content;
+    expect(prompt).toContain("## Endgame Rules");
+    expect(prompt).toContain("## Game Event Record");
+    expect(prompt).toContain("shield granted=Echo");
+    expect(prompt).toContain("old public message that must survive the old ten-message cap");
+    expect(prompt).toContain("R5/JURY_VOTE: Juror Sage voted for finalist Mira.");
+    expect(prompt).not.toContain("Active shields right now");
+    expect(prompt).not.toContain("Cast one empower vote and one expose vote");
+    expect(prompt).not.toContain("## Current Stakes");
+    expect(prompt).not.toContain("## Post-Vote Pressure");
+    expect(prompt).not.toContain("you are empowered and will decide the Power ceremony");
+  });
+
+  it("carries prior Judgment questions and answers into finalist and juror prompts", async () => {
+    const answerRequests: Array<Record<string, unknown>> = [];
+    const finalist = new InfluenceAgent(
+      "mira-id",
+      "Mira",
+      "social",
+      makeTextOpenAIStub(answerRequests, "I already answered for Rex, so I will address Sage directly."),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    finalist.onGameStart("game-1", makeContext().alivePlayers);
+    const judgmentCtx: PhaseContext = {
+      ...makeContext(Phase.JURY_QUESTIONS),
+      selfId: "mira-id",
+      selfName: "Mira",
+      round: 6,
+      endgameStage: "judgment",
+      alivePlayers: [
+        { id: "mira-id", name: "Mira" },
+        { id: "vera-id", name: "Vera" },
+      ],
+      finalists: ["mira-id", "vera-id"],
+      jury: [{ playerId: "rex-id", playerName: "Rex", eliminatedRound: 3 }],
+      judgmentQuestionHistory: [
+        {
+          jurorName: "Rex",
+          finalistName: "Mira",
+          question: "Why should I trust the deal you made with Vera?",
+          answer: "Because I used that deal to keep the vote stable.",
+        },
+      ],
+      gameEventRecord: ["R3/COUNCIL: Council resolved: candidates Rex, Finn; eliminated Rex by plurality."],
+      publicTranscriptContext: [
+        { round: 6, phase: Phase.OPENING_STATEMENTS, from: "Mira", text: "I built the social bridge that got me here." },
+      ],
+    };
+
+    await finalist.getJuryAnswer(judgmentCtx, "What did you learn from betraying Rex?", "Sage");
+    const answerMessages = answerRequests[0]?.messages as Array<{ content: string }>;
+    const answerPrompt = answerMessages.at(-1)!.content;
+    expect(answerPrompt).toContain("## Judgment Questions So Far");
+    expect(answerPrompt).toContain("Rex to Mira: \"Why should I trust the deal you made with Vera?\"");
+    expect(answerPrompt).toContain("A: Mira: \"Because I used that deal to keep the vote stable.\"");
+    expect(answerPrompt).not.toContain("Active shields right now");
+
+    const questionRequests: Array<Record<string, unknown>> = [];
+    const juror = new InfluenceAgent(
+      "rex-id",
+      "Rex",
+      "observer",
+      makeToolOpenAIStub(questionRequests, "ask_jury_question", {
+        thinking: "Ask Vera something different from Rex's prior question.",
+        target: "Vera",
+        question: "Vera, which vote do you take responsibility for?",
+      }),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    juror.onGameStart("game-1", [
+      { id: "mira-id", name: "Mira" },
+      { id: "vera-id", name: "Vera" },
+      { id: "rex-id", name: "Rex" },
+    ]);
+
+    await juror.getJuryQuestion({
+      ...judgmentCtx,
+      selfId: "rex-id",
+      selfName: "Rex",
+      isEliminated: true,
+    }, ["mira-id", "vera-id"]);
+    const questionMessages = questionRequests[0]?.messages as Array<{ content: string }>;
+    const questionPrompt = questionMessages.at(-1)!.content;
+    expect(questionPrompt).toContain("## Judgment Questions So Far");
+    expect(questionPrompt).toContain("Use this to avoid repeating prior answers or questions.");
+    expect(questionPrompt).toContain("Rex to Mira: \"Why should I trust the deal you made with Vera?\"");
   });
 
   it("preserves thinking and native reasoning for jury votes", async () => {

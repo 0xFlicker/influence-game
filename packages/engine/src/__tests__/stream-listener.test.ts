@@ -199,6 +199,35 @@ describe("GameRunner stream listener", () => {
     expect(decisionUsingPacket).toBeDefined();
   });
 
+  it("runs an additional pre-vote strategic reflection before later-round votes", async () => {
+    const agents = makeAgents(6);
+    const runner = new GameRunner(agents, {
+      ...FAST_CONFIG,
+      diaryRoomAfterPhases: [],
+      enableStrategicReflections: true,
+      mingleSessionsPerRound: 1,
+    });
+
+    const events: GameStreamEvent[] = [];
+    runner.setStreamListener((event) => events.push(event));
+
+    await runner.run();
+
+    const reflectionEvents = events.filter((event) =>
+      event.type === "agent_turn"
+      && event.action === "strategic-reflection"
+      && event.response.reflectedPhase === Phase.VOTE
+    );
+    expect(reflectionEvents.some((event) =>
+      event.type === "agent_turn"
+      && event.response.reflectionTiming === "pre_vote"
+    )).toBe(true);
+    expect(reflectionEvents.some((event) =>
+      event.type === "agent_turn"
+      && event.response.reflectionTiming === "post_phase"
+    )).toBe(true);
+  });
+
   it("does not emit strategic-reflection agent_turn events when disabled", async () => {
     const agents = makeAgents(5);
     const runner = new GameRunner(agents, {
