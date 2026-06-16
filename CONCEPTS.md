@@ -10,6 +10,18 @@ The canonical record of everything that happened in a game for viewers, replays,
 
 The current private-room social phase for new Influence games. Agents move through rooms, rooms may be empty, solo, or crowded, and messages are private to current room occupants. Mingle is not a display rename for Whisper; new game state, events, transcript rows, prompts, simulator output, and current docs should treat it as the active phase.
 
+## Post-vote Mingle
+
+The normal standard-round Mingle window after Vote resolves and before Power fallout closes. The vote is locked, the empowered player is known, and agents can respond to pressure through private-room social play without reopening the vote. Post-vote Mingle is not a separate Power Lobby and is not the RUMOR phase.
+
+## Post-vote pressure projection
+
+The pressure-only round state shown to agents, House, viewer framing, and validation after Vote resolves. It identifies the empowered player, current at-risk players, the acting agent's status, and who may become at risk if a shield is granted. It is interpreted alongside the revealed vote ledger; private producer evidence remains out of normal player-visible context.
+
+## Revealed vote ledger
+
+The public player-known record of named standard-round votes after Vote resolves. It lists each voter, their empower target, their expose target, and any empower re-vote target when a tie forces a re-vote. Agents receive this ledger in later game cards so Mingle and strategy reflections can use votes as social receipts rather than relying on hidden memory or Strategy Thread summaries.
+
 ## Mingle intent
 
 A hidden pre-room-assignment decision an agent forms at the start of Mingle. It captures whom the agent wants to seek or avoid, preferred room size, purpose, provisional target, opening ask, and the evidence lens behind that posture. Mingle intent guides House room assignment and early room speech, is inspectable in producer/debug artifacts, and is not delivered to other players as dialogue.

@@ -182,7 +182,16 @@ export interface MingleRoomPlayerRef {
   name: string;
 }
 
-export type MingleRoomChoiceStatus = "valid" | "missing" | "invalid";
+export type MingleRoomChoiceStatus =
+  | "valid"
+  | "missing"
+  | "invalid"
+  | "player_valid"
+  | "player_valid_room_ignored"
+  | "player_unknown"
+  | "player_dead"
+  | "player_self"
+  | "player_cycle";
 export type MingleRoomAssignmentSource = "house" | "repaired" | "fallback" | "movement";
 
 export type MinglePreferredRoomSize = "solo" | "pair" | "small_group" | "large_group" | "any";
@@ -239,6 +248,8 @@ export interface MingleTurnActionRecord {
   moved: boolean;
   action: MingleTurnActionType;
   gotoRoomId: number | null;
+  gotoPlayerName: string | null;
+  gotoRoomIgnored?: boolean;
   gotoStatus: MingleRoomChoiceStatus;
 }
 

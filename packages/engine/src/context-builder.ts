@@ -8,8 +8,9 @@ import type { GameState } from "./game-state";
 import type { TranscriptLogger } from "./transcript-logger";
 import type { UUID, RoomAllocation, JuryMember, MingleRoomCount } from "./types";
 import { Phase } from "./types";
-import type { MingleIntentSummary, PhaseContext } from "./game-runner.types";
+import type { MingleIntentSummary, PhaseContext, RevealedVoteLedgerEntry } from "./game-runner.types";
 import { computeJurySize } from "./types";
+import type { PostVotePressureProjection } from "./post-vote-pressure";
 
 export class ContextBuilder {
   /** Room allocations for the current round */
@@ -18,6 +19,10 @@ export class ContextBuilder {
   currentExcludedPlayerIds: UUID[] = [];
   /** Privacy-safe room counts for the current or most recent Mingle turn */
   currentRoomCounts: MingleRoomCount[] = [];
+  /** Vote-derived pressure available after the empowered player is resolved */
+  currentPostVotePressure: PostVotePressureProjection | null = null;
+  /** Public named vote record available to players after votes are resolved. */
+  revealedVoteLedger: RevealedVoteLedgerEntry[] = [];
 
   constructor(
     private readonly gameState: GameState,
@@ -37,12 +42,23 @@ export class ContextBuilder {
     return allJurors.slice(allJurors.length - maxJurors);
   }
 
+  revealVoteLedgerEntries(entries: RevealedVoteLedgerEntry[]): void {
+    const retained = this.revealedVoteLedger.filter(
+      (entry) => !entries.some((next) => next.round === entry.round && next.voterId === entry.voterId),
+    );
+    this.revealedVoteLedger = [
+      ...retained,
+      ...entries.map((entry) => ({ ...entry })),
+    ].sort((a, b) => a.round - b.round || a.voterName.localeCompare(b.voterName));
+  }
+
   buildPhaseContext(
     agentId: UUID,
     phase: Phase,
     extra?: {
       empoweredId?: UUID;
       councilCandidates?: [UUID, UUID];
+      postVotePressure?: PostVotePressureProjection | null;
       eliminationContext?: PhaseContext["eliminationContext"];
     },
     isEliminated?: boolean,
@@ -77,6 +93,8 @@ export class ContextBuilder {
       mingleMessages: this.mingleInbox.get(agentId) ?? [],
       empoweredId: extra?.empoweredId ?? this.gameState.empoweredId ?? undefined,
       councilCandidates: extra?.councilCandidates ?? this.gameState.councilCandidates ?? undefined,
+      postVotePressure: extra?.postVotePressure ?? this.currentPostVotePressure ?? undefined,
+      revealedVoteLedger: this.revealedVoteLedger.map((entry) => ({ ...entry })),
       roomCount: roomInfo?.roomCount,
       roomCounts: roomInfo?.roomCounts ?? (this.currentRoomCounts.length > 0 ? [...this.currentRoomCounts] : undefined),
       currentRoomId: roomInfo?.currentRoomId,

@@ -23,7 +23,7 @@ This observability layer exists because "master wants to see reasoning for votin
 Decision methods on `IAgent` / `InfluenceAgent` return the extra fields (typed on the interface and impl):
 
 - `getMingleIntent(...)` → `{ seekPlayers: string[]; avoidPlayers: string[]; preferredRoomSize: ...; purpose: string; provisionalTarget: string | null; noTargetReason: string | null; openingAsk: string; strategicLens: StrategicLens; strategicLensRationale: string; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
-- `takeMingleTurn(...)` → `{ thinking?: string; message?: string | null; noReply?: boolean; gotoRoomId?: number | null; strategySignal?: string | null; movementPurpose?: string | null; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
+- `takeMingleTurn(...)` → `{ thinking?: string; message?: string | null; noReply?: boolean; gotoRoomId?: number | null; gotoPlayerName?: string | null; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
 - `getRumorMessage(...)` → `{ thinking: string; message: string; strategicLens?: StrategicLens; strategicLensRationale?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
 - `getVotes(...)` → `{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
 - `getEmpowerRevote(...)` → `{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
@@ -39,14 +39,13 @@ Phase runners receive the rich result, record only the narrow game-state value w
 - `phases/vote.ts`: `logger.logSystem(..., votes.thinking, votes.reasoningContext)`
 - `phases/power.ts`: `logger.logSystem(..., powerActionResult.thinking, powerActionResult.reasoningContext)`
 - `phases/council.ts`: `logger.logSystem(..., voteResult.thinking, voteResult.reasoningContext)`
-- `phases/mingle.ts`: emits hidden `mingle-intent` agent turns before House room assignment, records private `mingle-room-assignment` turns with `assignmentSource` (`house`, `repaired`, `fallback`, or later-beat `movement`), repair notes, and summary-only intent metadata including `strategicLens`, then records `strategySignal` / `movementPurpose` on private Mingle turn records rather than viewer-facing room text.
-- `phases/rumor.ts`: emits anonymous rumor turns with public rumor text plus private `strategicLens` / `strategicLensRationale` metadata for producer/debug review.
+- `phases/mingle.ts`: emits hidden `mingle-intent` agent turns before House room assignment, records private `mingle-room-assignment` turns with `assignmentSource` (`house`, `repaired`, `fallback`, or later-beat `movement`), repair notes, and summary-only intent metadata including `strategicLens`, then records private Mingle turn responses with `gotoRoomId`, `gotoPlayerName`, `gotoStatus`, and `strategyPacketUse` rather than viewer-facing room text. Mingle room numbers remain stable within a Mingle phase; `beat`/turn carries the temporal distinction.
 - `diary-room.ts`: emits hidden `strategic-reflection` and `strategy-packet` agent turns when `enableStrategicReflections` is enabled and the reflection produces a packet. Reflection and packet records include the selected strategic lens.
 - `diary-room.ts`: emits private `house-producer-brief` agent turns before diary questions when `enableHouseProducerBriefs` is enabled. The brief can sharpen the House's question but must separate safe-to-reveal material from private producer reads.
 - `game-runner.ts`: emits one House interstitial after each completed normal round. `house-mc-summary` records plus clean House system transcript prose are on by default unless `enableHouseRoundSummaries` is `false`; `house-strategy-bible` and `house-long-form-summary` are private producer/debug records gated by rich producer config.
 - Every phase runner that resolves an agent call also emits an `agent_turn` stream event via `logger.emitAgentTurn(...)` with the normalized response the game used.
 - Decision agent turns include `response.strategyPacketUse` only when a live Strategy Thread packet existed and the model self-reported how the decision used it (`followed`, `revised`, `ignored`, or `deferred`).
-- Mingle intent, rumor, and strategic-reflection records include `response.strategicLens` and `response.strategicLensRationale` so validation can distinguish vote math, room traffic, coalition geometry, promise debt, social cover, broad reads, and sparse presentation reads without parsing prose.
+- Mingle intent and strategic-reflection records include `response.strategicLens` and `response.strategicLensRationale` so validation can distinguish vote math, room traffic, coalition geometry, promise debt, social cover, broad reads, and sparse presentation reads without parsing prose.
 
 `AgentTurnEvent` (game-runner.types.ts) is the structured simulation-analysis shape:
 
@@ -104,10 +103,10 @@ For `--chatty` live viewing (`simulate.ts`):
 function formatEntry(e: TranscriptEntry): string {
   ...
   if (e.thinking) {
-    line += `\n    ${dim}${gray}thinking: ${e.thinking}${reset}`;
+    line += `\n    ${thinkingColor}thinking: ${e.thinking}${reset}`;
   }
   if (e.reasoningContext) {
-    line += `\n    ${cyan}reasoning: ${e.reasoningContext}${reset}`;
+    line += `\n    ${reasoningColor}reasoning: ${e.reasoningContext}${reset}`;
   }
   if (e.from === "House" || e.scope === "system") {
     line = `${yellow}${line}${reset}`;
@@ -162,17 +161,17 @@ Private trace content is not public transcript, not canonical board truth, and n
 
 3. Every structured decision that should be observable by viewers (votes, power, council, mingle turns, etc.) must solicit `"thinking"` in its tool schema (see `TOOL_CAST_VOTES`, `TOOL_POWER_ACTION`, `TOOL_COUNCIL_VOTE`) and return it + the attached `reasoningContext`.
 
-4. Public player-visible output (`message` in `AgentResponse`, whisper/rumor text) must never contain the hidden thinking; it is stripped or kept in a separate field.
+4. Public player-visible output (`message` in `AgentResponse` and Mingle room text) must never contain the hidden thinking; it is stripped or kept in a separate field.
 
 5. Strategy Thread packets are private producer/debug state. They live on the live agent during the current uninterrupted run, are refreshed through strategic reflection, and are not written to `MemoryStore`, canonical events, player-visible transcript text, or websocket-visible UI state. A packet's target posture is a prompt-level standing-target hint, not a hard gate: agents should keep it pointed at a living player when evidence supports one, pivot away from eliminated targets, or explicitly carry no standing target when they are still gathering reads.
 
-6. When a prompt includes a live Strategy Thread, player-visible transcript entries and websocket messages must not carry that call's hidden `thinking` or `reasoningContext`. The private `agent_turn` record remains the debug artifact.
+6. Strategy Thread packets are decision context, not a replacement for per-turn traces. Transcript entries and private `agent_turn` records may both carry `thinking` / `reasoningContext` in local simulation artifacts; live `--chatty` output should avoid printing the same trace twice.
 
 7. Checkpoint continuity capsules are the private snapshot lane for future hydration of live agent and House behavior. They may carry structured Strategy Thread summaries, reflection summaries, notes, commitments, and House Strategy Bible-derived state, but they are not canonical projection truth, not player-visible transcript, and not websocket-visible UI state. The admin durable-run hydration passport may expose only readiness stamps such as `playerContinuity`, `houseContinuity`, `runtimeSnapshot`, `boundaryCertificate`, `transcriptCursor`, `tokenCursor`, `ownerEpoch`, and `privacy`; it must not expose raw capsule bodies, `thinking`, `reasoningContext`, prompts, responses, storage keys, or source pointers. A passing Runtime Snapshot v1 passport requires sealed token cursor boundary, expected active-player continuity coverage, and drained or proven-empty accumulators; accumulator capture labels are not a v1 evidence contract.
 
 8. Terminal UX for `--chatty` (and persisted `game-*.txt` / `.json`) is a first-class human output. `game-*-turns.jsonl` is the per-agent-turn machine-analysis output and `game-*-events.jsonl` is the accepted-domain-event replay output; both must stay clean JSON without ANSI formatting.
 
-9. When backing out experiments (e.g. the old `mingle-loop` variant that caused phase pollution / extra INTRODUCTION/LOBBY/RUMOR entries), prefer clean removal over more guards. The state machine must remain understandable.
+9. When backing out experiments (e.g. the old `mingle-loop` variant that caused phase pollution / extra INTRODUCTION/LOBBY entries), prefer clean removal over more guards. The state machine must remain understandable.
 
 10. Fallbacks in agent methods must still return the shape with `thinking` / `reasoningContext` (even if the thinking is a short "fallback..." note).
 
@@ -185,7 +184,7 @@ See `docs/local-model-evaluation.md` for the full provider table. Key points tha
 - `INFLUENCE_LLM_TOOL_CHOICE_MODE=required` (default for local base URLs) + `json_schema` fallback. Local servers often reject object `tool_choice`.
 - `extractReasoningContext` (with a deprecated `extractNativeThinking` wrapper) pulls only the raw `reasoning_content` / hidden channel and attaches it exclusively as `reasoningContext`. It never falls back to the agent's emitted "thinking".
 - `REASONING_TOKEN_OVERHEAD`, `REASONING_OVERHEAD_HIGH/LOW`, and the `local*MinTokens` floors (`INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS`, `INFLUENCE_LLM_LOCAL_MESSAGE_MIN_TOKENS`) give reasoning models room before the visible/structured payload.
-- Local paths no longer omit the `thinking` field from decision tool schemas. Agents are still expected to emit their internal reasoning (the "thinking" the prompts and schemas solicit). The raw hidden server channel (if present) is captured *separately* into `reasoningContext` only and never overwrites the emitted `thinking`. This gives clean gray `thinking:` + cyan `reasoning:` in --chatty for local models.
+- Local paths no longer omit the `thinking` field from decision tool schemas. Agents are still expected to emit their internal reasoning (the "thinking" the prompts and schemas solicit). The raw hidden server channel (if present) is captured *separately* into `reasoningContext` only and never overwrites the emitted `thinking`. This gives high-contrast bright-white `thinking:` + bright-cyan `reasoning:` in --chatty for local models.
 - `--chatty` + long timeouts (`--game-timeout-sec`, `--llm-timeout-sec`) are the recommended way to watch Mingle hardening and decision quality in real time.
 
 ## Testing & Mock Discipline
@@ -220,7 +219,7 @@ logger.logSystem(
 
 **Chatty formatting (already in simulate.ts):**
 
-See `formatEntry` above. Yellow House lines + indented gray thinking + cyan reasoning.
+See `formatEntry` above. Yellow House lines + indented bright-white thinking + bright-cyan reasoning.
 
 **Direct House round interstitial (non-fatal, after a normal round resolves):**
 
@@ -266,7 +265,7 @@ Useful validation queries:
 - `search_logs` over `sources: ["turns"]` for `strategic-reflection`
 - `search_logs` over `sources: ["turns"]` for `strategy-packet`
 - `search_logs` over `sources: ["turns"]` for `strategyPacketUse` or a packet `revisionId`
-- `search_logs` over `sources: ["turns"]` for `strategySignal` or `movementPurpose`
+- `search_logs` over `sources: ["turns"]` for `gotoPlayerName`, `gotoStatus`, or `strategyPacketUse`
 - `search_logs` over `sources: ["turns", "transcript"]` for `house-mc-summary` or legacy `[House MC]`
 - `search_logs` over `sources: ["turns"]` for `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or a House alliance name
 

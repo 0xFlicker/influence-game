@@ -129,7 +129,7 @@ export class GameMcpJsonRpcServer {
         },
         instructions: [
           "Read-only local/producer analysis server for simulation artifacts.",
-          "Raw turn logs and game JSON may include hidden thinking/reasoningContext.",
+          "Raw turn logs and game JSON may include producer-visible thinking/reasoningContext; MCP clients in this trusted local analysis context are free to inspect it.",
           "Do not expose this stdio server to untrusted clients or treat search/resource output as player-visible.",
         ].join(" "),
       };
@@ -295,7 +295,7 @@ export class GameMcpJsonRpcServer {
           },
           {
             name: "search_logs",
-            description: "Search local producer/debug artifacts across the corpus, including turn logs and full game JSON that may contain hidden thinking/reasoningContext.",
+            description: "Search local producer/debug artifacts across the corpus, including turn logs and full game JSON with producer-visible thinking/reasoningContext that MCP clients may inspect in this trusted local analysis context.",
             inputSchema: {
               type: "object",
               properties: {

@@ -221,9 +221,11 @@ export const DRAMATIC_PHASES: ReadonlySet<PhaseKey> = new Set([
   "VOTE", "POWER", "REVEAL", "COUNCIL", "JURY_VOTE",
 ]);
 
-// Phases that render as a scrolling group chat feed (all messages on left)
+// Phases that render as a scrolling group chat feed (all messages on left).
+// RUMOR is intentionally not a current live-loop chat phase; legacy replay
+// records can still render through the generic phase label/room mapping.
 export const CHAT_FEED_PHASES: ReadonlySet<PhaseKey> = new Set([
-  "INTRODUCTION", "LOBBY", "RUMOR", "ACCUSATION", "DEFENSE",
+  "INTRODUCTION", "LOBBY", "ACCUSATION", "DEFENSE",
   "OPENING_STATEMENTS", "CLOSING_ARGUMENTS", "PLEA",
 ]);
 

@@ -357,7 +357,7 @@
       <h2>Grounding Context</h2>
       <div class="section-grid">
         <div>
-          <p>The current engine already has a good single-phase strategic surface. At Mingle start, each agent forms a hidden intent; Mingle room choice and turn prompts receive a summary of that intent; private turn records carry <code>mingle-intent</code>, <code>strategySignal</code>, and <code>movementPurpose</code>. Strategic reflection can also emit hidden records and updates <code>lastReflection</code>.</p>
+          <p>The current engine already has a good single-phase strategic surface. At Mingle start, each agent forms a hidden intent; Mingle room choice and turn prompts receive a summary of that intent; private turn records carry <code>mingle-intent</code>, <code>gotoPlayerName</code>, and <code>gotoStatus</code>. Strategic reflection can also emit hidden records and updates <code>lastReflection</code>.</p>
           <p>The gap is continuity. <code>AgentMemory</code> currently has allies, threats, notes, round history, power actions, and a most recent reflection, but no first-class strategy thread, commitment ledger, or evolving plan state. The memory store persists operational records during a game, yet the prompt-visible state is still mostly the live agent object. That means Mingle intent can guide the current room but does not automatically become durable social memory unless it turns into speech, notes, vote history, or a later reflection.</p>
           <p>Existing project docs point in exactly this direction: end-of-Mingle debrief extraction, aggregate strategy scoring, and specialized strategy indexing were deferred follow-up work, while a hard requirement that every Mingle turn names a target was explicitly out of scope.</p>
         </div>
@@ -479,7 +479,7 @@
         <p><strong>Description:</strong> Add a simulator/MCP validation query that answers whether private strategy propagated: intent shaped room choice, room behavior generated a signal, reflection incorporated or rejected it, and a later vote/power/Mingle action followed or consciously pivoted. Report examples, not just counts.</p>
         <dl>
           <dt>Axis</dt><dd>Validation and Observability</dd>
-          <dt>Basis</dt><dd><strong>direct:</strong> Local evaluation docs already point users to <code>game-N-turns.jsonl</code> and MCP <code>search_logs</code> for <code>mingle-intent</code>, <code>strategic-reflection</code>, <code>strategySignal</code>, and <code>movementPurpose</code>.</dd>
+          <dt>Basis</dt><dd><strong>direct:</strong> Local evaluation docs already point users to <code>game-N-turns.jsonl</code> and MCP <code>search_logs</code> for <code>mingle-intent</code>, <code>strategic-reflection</code>, <code>gotoPlayerName</code>, and <code>gotoStatus</code>.</dd>
           <dt>Rationale</dt><dd>This is how we avoid vibe-checking agent quality. The validation target becomes "show me a chain of strategic carryover or a clear pivot" instead of "did the prompt mention strategy?"</dd>
           <dt>Downsides</dt><dd>Automated scoring will be fuzzy at first. The first version should present linked examples for human review before pretending to be a hard metric.</dd>
         </dl>

@@ -1,6 +1,7 @@
 import type { UUID } from "../types";
 import { Phase } from "../types";
 import type { TargetDecision } from "../game-runner.types";
+import { buildPostVotePressureProjection, formatPostVotePressureSummary } from "../post-vote-pressure";
 import { assertCanAcceptCommit, agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import {
   getEndgameEliminationVoterNames,
@@ -90,6 +91,15 @@ export async function runVotePhase(
     }),
   );
 
+  const originalVotesByPlayerId = new Map<UUID, { empowerTarget: UUID; exposeTarget: UUID }>();
+  for (const player of alivePlayers) {
+    const empowerTarget = gameState.currentVoteTally.empowerVotes[player.id];
+    const exposeTarget = gameState.currentVoteTally.exposeVotes[player.id];
+    if (empowerTarget && exposeTarget) {
+      originalVotesByPlayerId.set(player.id, { empowerTarget, exposeTarget });
+    }
+  }
+
   await assertCanAcceptCommit(ctx);
   const { empowered: initialEmpowered, tied } = gameState.tallyEmpowerVotes();
   let empoweredId = initialEmpowered;
@@ -99,14 +109,6 @@ export async function runVotePhase(
     logger.logSystem(`Empower TIED between: ${tiedNames}. Re-vote!`, Phase.VOTE);
 
     const reVoters = alivePlayers.filter((p) => !tied.includes(p.id));
-    const originalVotesByPlayerId = new Map<UUID, { empowerTarget: UUID; exposeTarget: UUID }>();
-    for (const player of reVoters) {
-      const empowerTarget = gameState.currentVoteTally.empowerVotes[player.id];
-      const exposeTarget = gameState.currentVoteTally.exposeVotes[player.id];
-      if (empowerTarget && exposeTarget) {
-        originalVotesByPlayerId.set(player.id, { empowerTarget, exposeTarget });
-      }
-    }
     for (const rv of reVoters) {
       await assertCanAcceptCommit(ctx);
       gameState.clearEmpowerVote(rv.id);
@@ -178,10 +180,44 @@ export async function runVotePhase(
     }
   }
 
+  contextBuilder.revealVoteLedgerEntries(
+    alivePlayers.flatMap((player) => {
+      const originalVote = originalVotesByPlayerId.get(player.id);
+      if (!originalVote) return [];
+      const finalEmpowerTarget = gameState.currentVoteTally.empowerVotes[player.id] ?? originalVote.empowerTarget;
+      return [{
+        round: gameState.round,
+        voterId: player.id,
+        voterName: player.name,
+        empowerTargetId: originalVote.empowerTarget,
+        empowerTargetName: gameState.getPlayerName(originalVote.empowerTarget),
+        exposeTargetId: originalVote.exposeTarget,
+        exposeTargetName: gameState.getPlayerName(originalVote.exposeTarget),
+        ...(finalEmpowerTarget !== originalVote.empowerTarget
+          ? {
+              revoteEmpowerTargetId: finalEmpowerTarget,
+              revoteEmpowerTargetName: gameState.getPlayerName(finalEmpowerTarget),
+            }
+          : {}),
+      }];
+    }),
+  );
+
   logger.logSystem(
     `Empowered: ${gameState.getPlayerName(empoweredId)}`,
     Phase.VOTE,
   );
+  contextBuilder.currentPostVotePressure = buildPostVotePressureProjection({
+    alivePlayers: gameState.getAlivePlayers(),
+    exposeScores: gameState.getExposeScores(),
+    empoweredId,
+  });
+  if (contextBuilder.currentPostVotePressure) {
+    logger.logSystem(
+      formatPostVotePressureSummary(contextBuilder.currentPostVotePressure),
+      Phase.VOTE,
+    );
+  }
 
   // Update agent memory
   const voteTally = gameState.currentVoteTally;

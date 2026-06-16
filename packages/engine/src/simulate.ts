@@ -22,7 +22,7 @@
  *
  * The --chatty output (and written transcripts) now interleave House action lines
  * ("X votes: ...", "Y re-votes: ...", "Z power action: ...") with the agent's
- * hidden `thinking` (dim gray) and raw native `reasoningContext` (cyan) when present.
+ * hidden `thinking` (bright white) and raw native `reasoningContext` (bright cyan) when present.
  *
  * Each game also writes:
  * - `game-{N}-turns.jsonl`: clean structured records for normalized agent turns,
@@ -47,7 +47,7 @@
  * Specialized `empower-revote` records are written when an empower tie occurs.
  * Hidden `strategic-reflection` and `strategy-packet` records are written there
  * when `--strategic-reflections` is enabled for validation runs. Later private
- * decisions, including rumors, may include `strategicLens` and `strategyPacketUse`
+ * decisions may include `strategicLens` and `strategyPacketUse`
  * markers for searchable producer/debug validation.
  *
  * `--rich-producer` enables private House Strategy Bible Packet updates,
@@ -582,9 +582,8 @@ export function computeAggregateStats(
 
 function formatEntry(e: TranscriptEntry): string {
   const reset = "\x1b[0m";
-  const dim = "\x1b[2m";
-  const gray = "\x1b[90m";
-  const cyan = "\x1b[36m";
+  const thinkingColor = "\x1b[97m";
+  const reasoningColor = "\x1b[96m";
   const yellow = "\x1b[33m";
   const prefix = `R${e.round}/${e.phase}`;
   const scopeTag = e.scope === "mingle" ? ` [mingle→${e.to?.join(",") || ""}]` : e.scope === "whisper" ? ` [whisper→${e.to?.join(",") || ""}]` : e.scope === "thinking" ? " [thinking]" : "";
@@ -596,13 +595,13 @@ function formatEntry(e: TranscriptEntry): string {
     // show the raw native reasoningContext once (cyan). Streaming reasoning contexts
     // are first-class for --chatty Mingle/local model observability; duplicate reprint
     // after the message (e.g. under "summary prompt" history in takeMingleTurn) is not needed.
-    line += `\n    ${cyan}reasoning: ${e.reasoningContext}${reset}`;
+    line += `\n    ${reasoningColor}reasoning: ${e.reasoningContext}${reset}`;
   } else {
     if (e.thinking) {
-      line += `\n    ${dim}${gray}thinking: ${e.thinking}${reset}`;
+      line += `\n    ${thinkingColor}thinking: ${e.thinking}${reset}`;
     }
     if (e.reasoningContext) {
-      line += `\n    ${cyan}reasoning: ${e.reasoningContext}${reset}`;
+      line += `\n    ${reasoningColor}reasoning: ${e.reasoningContext}${reset}`;
     }
   }
   // Color system/House lines for better readability
@@ -614,6 +613,70 @@ function formatEntry(e: TranscriptEntry): string {
 
 function formatTranscript(transcript: readonly TranscriptEntry[]): string {
   return transcript.map(formatEntry).join("\n");
+}
+
+const TRANSCRIPT_BACKED_AGENT_TURN_ACTIONS = new Set([
+  "introduction",
+  "lobby-message",
+  "rumor",
+  "vote",
+  "empower-revote",
+  "endgame-elimination-vote",
+  "tribunal-jury-tiebreaker-vote",
+  "last-message",
+  "council-vote",
+  "plea",
+  "accusation",
+  "tribunal-defense",
+  "opening-statement",
+  "jury-question",
+  "jury-answer",
+  "closing-argument",
+  "jury-vote",
+  "power-lobby-message",
+  "power-action",
+  "diary-answer",
+]);
+
+function isTranscriptBackedAgentTurn(event: AgentTurnEvent): boolean {
+  if (event.action === "mingle-turn") {
+    return Boolean(event.text && event.response.messageDelivered !== false);
+  }
+  return TRANSCRIPT_BACKED_AGENT_TURN_ACTIONS.has(event.action);
+}
+
+function shouldPrintChattyAgentTurn(event: AgentTurnEvent): boolean {
+  if (!event.thinking && !event.reasoningContext) return false;
+  return !isTranscriptBackedAgentTurn(event);
+}
+
+export function formatAgentTurnTrace(event: AgentTurnEvent): string | null {
+  if (!shouldPrintChattyAgentTurn(event)) return null;
+
+  const reset = "\x1b[0m";
+  const thinkingColor = "\x1b[97m";
+  const reasoningColor = "\x1b[96m";
+  const prefix = `R${event.round}/${event.phase}`;
+  const to = event.to && event.to.length > 0 ? `→${event.to.join(",")}` : "";
+  const room = event.roomId != null ? ` room=${event.roomId}` : "";
+  let line = `${prefix} ${event.actor.name} [trace:${event.action}${to}${room}]`;
+  if (event.text) {
+    line += `: ${event.text}`;
+  }
+
+  const t = (event.thinking || "").trim();
+  const r = (event.reasoningContext || "").trim();
+  if (t && r && t === r) {
+    line += `\n    ${reasoningColor}reasoning: ${event.reasoningContext}${reset}`;
+  } else {
+    if (event.thinking) {
+      line += `\n    ${thinkingColor}thinking: ${event.thinking}${reset}`;
+    }
+    if (event.reasoningContext) {
+      line += `\n    ${reasoningColor}reasoning: ${event.reasoningContext}${reset}`;
+    }
+  }
+  return line;
 }
 
 // ---------------------------------------------------------------------------
@@ -1095,6 +1158,10 @@ function attachProgressLogger(
   runner.setStreamListener((event) => {
     if (event.type === "agent_turn") {
       writeAgentTurn(turnsPath, gameNumber, startedAt, event);
+      if (chatty) {
+        const trace = formatAgentTurnTrace(event);
+        if (trace) console.log(trace);
+      }
       if (houseSummaries) {
         const summary = getHouseSummaryText(event);
         if (summary) console.log(`\n[House MC] ${summary}`);

@@ -469,19 +469,16 @@ export function GameViewer({
             audioCue.zone("tension");
           else if (ev.phase === "REVEAL" || ev.phase === "COUNCIL")
             audioCue.zone("drama");
-          else if (ev.phase === "LOBBY" || ev.phase === "RUMOR")
+          else if (ev.phase === "LOBBY")
             audioCue.zone("resolution");
           // Show transition overlay in live mode (not on END phase — no point)
           if (ev.phase !== "END" && ev.phase !== "INIT") {
-            const flavorText =
-              prevPhase === "MINGLE" && ev.phase === "RUMOR"
-                ? "The rooms are sealed. Time to face the group."
-                : (() => {
-                    const flavors = PHASE_FLAVORS[ev.phase] ?? [];
-                    return flavors.length > 0
-                      ? flavors[Math.floor(Math.random() * flavors.length)]
-                      : "";
-                  })();
+            const flavorText = (() => {
+              const flavors = PHASE_FLAVORS[ev.phase] ?? [];
+              return flavors.length > 0
+                ? flavors[Math.floor(Math.random() * flavors.length)]
+                : "";
+            })();
             // Extend overlay hold when leaving a paced phase (gives viewers digestion time)
             setTransitionHoldMs(
               PACED_PHASES.has(prevPhase) ? 2000 + PHASE_END_PAUSE_MS : 2000,

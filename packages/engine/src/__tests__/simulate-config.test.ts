@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   buildSimulationConfig,
   computeAggregateStats,
+  formatAgentTurnTrace,
   isMingleVariant,
   isPowerLobbyVariant,
   parseArgs,
@@ -10,10 +11,12 @@ import {
   type GameResult,
 } from "../simulate";
 import type { AgentTurnEvent } from "../game-runner";
+import type { IAgent, StrategyPacketSummary } from "../game-runner.types";
 import type { CanonicalGameEvent } from "../canonical-events";
 import { GameState } from "../game-state";
 import { replayCanonicalEvents } from "../game-projection";
 import { instrumentGame } from "../simulation-instrumentation";
+import { transcriptThinkingFor } from "../phases/phase-runner-context";
 import { DEFAULT_CONFIG, Phase } from "../types";
 import type { TokenUsage } from "../token-tracker";
 
@@ -239,6 +242,94 @@ describe("simulation variant config", () => {
       text: "Atlas votes: empower=Mira, expose=Vera",
     });
     expect(json).not.toContain("\x1b");
+  });
+
+  it("formats private-only Mingle agent-turn traces for chatty live output", () => {
+    const event: AgentTurnEvent = {
+      type: "agent_turn",
+      round: 1,
+      phase: Phase.MINGLE,
+      timestamp: 1_700_000_000_000,
+      action: "mingle-turn",
+      actor: { id: "atlas-id", name: "Atlas", role: "player" },
+      visibility: "private",
+      response: { action: "no_reply", messageDelivered: false },
+      thinking: "Atlas should pressure Rune without sounding desperate.",
+      reasoningContext: "Native trace about post-vote pressure.",
+      scope: "mingle",
+      to: ["Rune"],
+      roomId: 2,
+    };
+
+    const formatted = formatAgentTurnTrace(event);
+
+    expect(formatted).toContain("R1/MINGLE Atlas [trace:mingle-turn→Rune room=2]");
+    expect(formatted).toContain("thinking: Atlas should pressure Rune without sounding desperate.");
+    expect(formatted).toContain("reasoning: Native trace about post-vote pressure.");
+    expect(formatted).toContain("\x1b[97mthinking:");
+    expect(formatted).toContain("\x1b[96mreasoning:");
+    expect(formatted).not.toContain("\x1b[2m\x1b[90mthinking:");
+  });
+
+  it("formats private-only non-Mingle agent-turn traces for chatty live output", () => {
+    const event: AgentTurnEvent = {
+      type: "agent_turn",
+      round: 1,
+      phase: Phase.VOTE,
+      timestamp: 1_700_000_000_000,
+      action: "strategic-reflection",
+      actor: { id: "atlas-id", name: "Atlas", role: "player" },
+      visibility: "private",
+      response: { plan: "Keep Mira close and test Vera." },
+      thinking: "Private reflection should be visible in chatty output.",
+    };
+
+    const formatted = formatAgentTurnTrace(event);
+
+    expect(formatted).toContain("R1/VOTE Atlas [trace:strategic-reflection]");
+    expect(formatted).toContain("thinking: Private reflection should be visible in chatty output.");
+  });
+
+  it("does not duplicate transcript-backed agent-turn traces in chatty live output", () => {
+    const event: AgentTurnEvent = {
+      type: "agent_turn",
+      round: 1,
+      phase: Phase.VOTE,
+      timestamp: 1_700_000_000_000,
+      action: "vote",
+      actor: { id: "atlas-id", name: "Atlas", role: "player" },
+      visibility: "private",
+      response: { empower: "Mira", expose: "Vera" },
+      thinking: "Vote math is already shown on the transcript entry.",
+    };
+
+    expect(formatAgentTurnTrace(event)).toBeNull();
+  });
+
+  it("keeps transcript thinking when an agent has a strategy packet", () => {
+    const strategyPacket: StrategyPacketSummary = {
+      revisionId: "r1-vote-1",
+      previousRevisionId: null,
+      updatedAtRound: 1,
+      updatedAtPhase: Phase.VOTE,
+      objective: "Keep Mira close.",
+      targetPosture: "Pressure Vera.",
+      coalitionPosture: "Stay warm with Atlas.",
+      nextSocialProbe: "Ask Rune about the vote.",
+      strategicLens: "information_control",
+      strategicLensRationale: "The vote exposed unstable alliances.",
+      uncertainty: "Whether Vera is actually isolated.",
+      reviseTrigger: "Mira breaks trust.",
+      changedSincePrevious: "initial packet",
+    };
+    const agent = {
+      getStrategyPacket: () => strategyPacket,
+    } as unknown as IAgent;
+
+    expect(transcriptThinkingFor(agent, "Use the packet, but revise if needed.", "Native trace.")).toEqual({
+      thinking: "Use the packet, but revise if needed.",
+      reasoningContext: "Native trace.",
+    });
   });
 
   it("serializes canonical game events as clean structured JSON records", () => {

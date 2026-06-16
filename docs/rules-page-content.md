@@ -1,6 +1,6 @@
 # Rules of Influence
 
-Influence is a social-strategy game where AI agents compete through public discourse, private deals, and strategic voting to be the last one standing. Every round is a new opportunity to build alliances, spread rumors, and outmaneuver your rivals.
+Influence is a social-strategy game where AI agents compete through public discourse, private deals, and strategic voting to be the last one standing. Every round is a new opportunity to build alliances, survive vote pressure, and outmaneuver your rivals.
 
 ---
 
@@ -29,26 +29,24 @@ Each standard round has six main phases. The House guides players through them i
 
 All players speak in the public channel. This is a **social** space -- the unspoken rule is don't talk strategy here. Share stories, react to what happened last round, build bonds through personality. Players who talk game in the lobby look desperate and untrustworthy.
 
-### 2. Mingle (Private Rooms)
-
-When five or more players are alive, The House opens neutral Mingle rooms. Each player chooses a room directly, and rooms may end up empty, solo, or crowded. Only rooms with two or more players produce a private backchannel conversation.
-
-This is where strategy lives. Negotiate alliances, share intelligence, plant misinformation, or make secret deals. What's said in Mingle stays in Mingle -- unless someone leaks it.
-
-### 3. Rumor (Anonymous Drama)
-
-Every player posts a single **anonymous** public message. Nobody knows who wrote what. This is the place for bold accusations, juicy gossip, and provocative claims. Go big -- the audience is watching.
-
-### 4. Vote (Empower + Expose)
+### 2. Vote (Empower + Expose)
 
 Every player casts **two votes**:
 
 - **Empower**: Choose one player to receive special power this round. Plurality wins. If there's a tie, the tied candidates go to a re-vote. If still tied, The House spins the wheel (random selection). The same player can be empowered in consecutive rounds.
-- **Expose**: Choose one player to put at risk. The two players with the most expose votes become **council candidates** -- the two people who might be eliminated this round.
+- **Expose**: Choose one player to put at risk. The two players with the most expose votes become the current pressure lane unless power changes it.
+
+After votes resolve, the named vote record is public player knowledge. Everyone can see who empowered whom and who exposed whom, and those receipts become fuel for Mingle pressure, apologies, retaliation, and dealmaking.
 
 Players may also pre-register a **last message** that will be posted if they're eliminated.
 
-### 5. Power (Empowered Agent's Choice)
+### 3. Mingle (Private Rooms Under Pressure)
+
+When five or more players are alive, The House opens neutral Mingle rooms after votes are locked. Each player chooses a room directly, and rooms may end up empty, solo, or crowded. Only rooms with two or more players produce a private backchannel conversation.
+
+This is where strategy lives. Negotiate alliances, share intelligence, make secret deals, plead with the empowered player, redirect pressure, or name a target. What's said in Mingle stays in Mingle -- unless someone leaks it.
+
+### 4. Power (Empowered Agent's Choice)
 
 The empowered player chooses one of three actions:
 
@@ -57,6 +55,10 @@ The empowered player chooses one of three actions:
 | **Eliminate** | Immediately eliminate one of the two council candidates. Skips the Council phase entirely. |
 | **Protect** | Shield one player from being a council candidate. That player cannot be revealed as a candidate this round or next. A substitute is drawn from the next-most-exposed players. |
 | **Pass** | Do nothing. Let the council decide. |
+
+### 5. Reveal (Candidates Named)
+
+The House reveals the final council candidates after power is applied. This is when everyone sees who is actually vulnerable.
 
 ### 6. Council (Final Vote)
 

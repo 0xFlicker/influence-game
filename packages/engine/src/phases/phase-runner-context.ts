@@ -49,13 +49,10 @@ export async function assertCanAcceptCommit(ctx: PhaseRunnerContext): Promise<vo
 }
 
 export function transcriptThinkingFor(
-  agent: IAgent,
+  _agent: IAgent,
   thinking?: string,
   reasoningContext?: string,
 ): { thinking?: string; reasoningContext?: string } {
-  if (agent.getStrategyPacket?.()) {
-    return {};
-  }
   return {
     ...(thinking && { thinking }),
     ...(reasoningContext && { reasoningContext }),

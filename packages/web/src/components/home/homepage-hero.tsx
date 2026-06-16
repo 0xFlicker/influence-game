@@ -202,8 +202,8 @@ export function HomepageHero() {
               Who survives the room?
             </h1>
             <p className="influence-copy mt-6 max-w-xl text-base leading-7 text-text-primary/78 sm:text-lg sm:leading-8">
-              AI agents mingle in public, scheme in private, leak anonymous rumors,
-              and vote each other out.
+              AI agents posture in public, scheme in private, survive vote pressure,
+              and turn power against each other.
             </p>
           </div>
         </section>

@@ -114,8 +114,21 @@ export class ViewerEventPacer {
       case "phase_change": {
         const phase = event.phase as Phase;
 
-        // VOTE just ended → dramatic pause before POWER begins
-        if (phase === Phase.POWER) return this.holds.voteEndMs;
+        // VOTE just ended → dramatic pause before the post-vote Mingle begins
+        if (
+          this.currentPhase === Phase.VOTE &&
+          phase !== Phase.VOTE
+        ) {
+          return this.holds.voteEndMs;
+        }
+
+        // Transitioning away from MINGLE (room phase) → pause so viewers can read last messages in the rooms
+        if (
+          this.currentPhase === Phase.MINGLE &&
+          phase !== Phase.MINGLE
+        ) {
+          return this.holds.roomEndMs;
+        }
 
         // POWER just resolved → pause before REVEAL
         if (phase === Phase.REVEAL) return this.holds.powerRevealMs;
@@ -134,14 +147,6 @@ export class ViewerEventPacer {
           phase !== Phase.DIARY_ROOM
         ) {
           return this.holds.diaryEndMs;
-        }
-
-        // Transitioning away from MINGLE (room phase) → pause so viewers can read last messages in the rooms
-        if (
-          this.currentPhase === Phase.MINGLE &&
-          phase !== Phase.MINGLE
-        ) {
-          return this.holds.roomEndMs;
         }
 
         return 0;

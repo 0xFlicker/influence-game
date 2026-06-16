@@ -1,0 +1,935 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Post-Vote Mingle Drama</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f3ee;
+      --paper: #fffdf8;
+      --ink: #202321;
+      --muted: #5e6661;
+      --line: #d9ddd5;
+      --accent: #1f6b5a;
+      --accent-soft: #dcefe8;
+      --blue: #315f89;
+      --blue-soft: #e2edf7;
+      --gold: #805f17;
+      --gold-soft: #f5ebd2;
+      --rose: #8a4352;
+      --rose-soft: #f6e2e6;
+      --green: #2b6b42;
+      --green-soft: #e2f0e7;
+      --code: #efede6;
+      --shadow: 0 16px 42px rgba(32, 35, 33, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15.5px/1.58 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration-thickness: 0.08em;
+      text-underline-offset: 0.18em;
+    }
+
+    code {
+      background: var(--code);
+      border: 1px solid #dedbd2;
+      border-radius: 6px;
+      padding: 0.08rem 0.28rem;
+      font: 0.92em ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+
+    main {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 40px 22px 58px;
+    }
+
+    header,
+    section,
+    article {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    header {
+      padding: 30px;
+      box-shadow: var(--shadow);
+    }
+
+    section {
+      margin-top: 24px;
+      padding: 26px;
+      box-shadow: 0 10px 26px rgba(32, 35, 33, 0.052);
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 14ch;
+      font-size: clamp(2rem, 4.5vw, 3.35rem);
+    }
+
+    h2 {
+      margin-bottom: 12px;
+      font-size: 1.48rem;
+    }
+
+    h3 {
+      font-size: 1.08rem;
+    }
+
+    p {
+      max-width: 78ch;
+      margin: 0 0 1rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fffefa;
+    }
+
+    th,
+    td {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #ece8de;
+      color: #424840;
+      font-size: 0.74rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .eyebrow,
+    .section-kicker,
+    .label {
+      color: var(--accent);
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+    }
+
+    .lede {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 1.06rem;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 24px;
+    }
+
+    .meta-card,
+    .callout,
+    .note {
+      border-radius: 8px;
+      padding: 13px 14px;
+    }
+
+    .meta-card {
+      background: var(--accent-soft);
+      border: 1px solid #c0d9d0;
+    }
+
+    .meta-card dt {
+      margin: 0 0 4px;
+      color: #174d3f;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .meta-card dd {
+      margin: 0;
+      font-weight: 700;
+    }
+
+    .axis-list,
+    .jump-list,
+    .source-list {
+      list-style: none;
+      padding: 0;
+    }
+
+    .axis-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      margin: 16px 0 0;
+    }
+
+    .axis-list li {
+      border: 1px solid #c7d7e8;
+      border-radius: 8px;
+      background: var(--blue-soft);
+      color: #214866;
+      padding: 12px;
+      font-weight: 690;
+    }
+
+    .jump-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 8px;
+      margin: 16px 0 20px;
+    }
+
+    .jump-list a {
+      display: block;
+      min-height: 100%;
+      border: 1px solid #c1d8cf;
+      border-radius: 8px;
+      background: var(--accent-soft);
+      padding: 10px 12px;
+      color: #154b3e;
+      font-weight: 760;
+      text-decoration: none;
+    }
+
+    .callout {
+      margin: 18px 0 0;
+      background: var(--gold-soft);
+      border: 1px solid #dfcd9f;
+      color: #60470f;
+    }
+
+    .note {
+      margin: 14px 0;
+      background: var(--green-soft);
+      border: 1px solid #c4dcc9;
+      color: #235333;
+    }
+
+    .warning {
+      background: var(--rose-soft);
+      border-color: #e2bdc5;
+      color: #743544;
+    }
+
+    .diagram {
+      width: 100%;
+      max-width: 920px;
+      margin: 18px 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8faf7;
+      overflow: hidden;
+    }
+
+    .diagram svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .idea {
+      margin-top: 16px;
+      padding: 18px;
+    }
+
+    .idea-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .idea-rank {
+      color: var(--accent);
+      font-weight: 850;
+    }
+
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 11px 0;
+    }
+
+    .badge {
+      border-radius: 999px;
+      padding: 4px 9px;
+      border: 1px solid var(--line);
+      background: #f3f1ea;
+      color: #434940;
+      font-size: 0.78rem;
+      font-weight: 720;
+    }
+
+    .badge.high {
+      background: var(--green-soft);
+      border-color: #c0dcc7;
+      color: #1f5531;
+    }
+
+    .badge.medium {
+      background: var(--gold-soft);
+      border-color: #dfcd9f;
+      color: #674d13;
+    }
+
+    dl {
+      display: grid;
+      grid-template-columns: minmax(110px, 150px) 1fr;
+      gap: 7px 14px;
+      margin: 14px 0 0;
+    }
+
+    dt {
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    dd {
+      margin: 0;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fffefa;
+      padding: 14px;
+    }
+
+    .panel h3 {
+      margin-bottom: 8px;
+    }
+
+    .source-list {
+      margin: 12px 0 0;
+    }
+
+    .source-list li {
+      padding: 9px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .source-list li:last-child {
+      border-bottom: 0;
+    }
+
+    .footer {
+      margin-top: 28px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 760px) {
+      main {
+        padding: 24px 14px 42px;
+      }
+
+      header,
+      section {
+        padding: 20px;
+      }
+
+      .meta,
+      .split {
+        grid-template-columns: 1fr;
+      }
+
+      dl {
+        grid-template-columns: 1fr;
+      }
+
+      th,
+      td {
+        padding: 9px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">Ideation artifact</p>
+      <h1>Post-Vote Mingle Drama</h1>
+      <p class="lede">
+        A focused ideation pass on removing <code>RUMOR</code> from the normal live loop, moving
+        <code>MINGLE</code> after <code>VOTE</code>, and giving players vote-result pressure without
+        commanding them to perform drama.
+      </p>
+      <dl class="meta">
+        <div class="meta-card">
+          <dt>Date</dt>
+          <dd>2026-06-15</dd>
+        </div>
+        <div class="meta-card">
+          <dt>Mode</dt>
+          <dd>Repo-grounded ce-ideate</dd>
+        </div>
+        <div class="meta-card">
+          <dt>Primary Goal</dt>
+          <dd>Emergent social pressure</dd>
+        </div>
+        <div class="meta-card">
+          <dt>Recommended Slice</dt>
+          <dd>Vote-locked Mingle</dd>
+        </div>
+      </dl>
+    </header>
+
+    <section id="thesis">
+      <p class="section-kicker">Product thesis</p>
+      <h2>The vote should close before the social consequences close.</h2>
+      <p>
+        The strongest version of the tweak is not simply "move Mingle later." It is a new suspense
+        beat: players vote first, then everyone sees enough fallout to know who has leverage, who is
+        in trouble, and who can still be saved or redirected before Power resolves.
+      </p>
+      <p>
+        That creates a cleaner reason for the desired behavior. At-risk players can plead because the
+        danger is real. Players can suck up because the empowered player is known. Players can name
+        targets because replacement risk is visible. The prompt does not need to say "plead" or
+        "flatter"; the game state makes those moves useful.
+      </p>
+      <div class="callout">
+        <span class="label">Recommended rule shape</span>
+        Normal live loop: <code>LOBBY -> VOTE -> MINGLE -> POWER -> COUNCIL</code>. Keep setup,
+        introduction, and replay compatibility as separate concerns.
+      </div>
+    </section>
+
+    <section id="phase-diagram">
+      <p class="section-kicker">Phase move</p>
+      <h2>From pre-vote speculation to post-vote bargaining</h2>
+      <div class="diagram" aria-label="Phase order diagram">
+        <svg viewBox="0 0 920 300" role="img">
+          <rect width="920" height="300" fill="#f8faf7"></rect>
+          <text x="28" y="38" font-size="17" font-weight="700" fill="#202321">Current normal loop</text>
+          <g font-size="14" font-weight="700" text-anchor="middle">
+            <rect x="28" y="62" width="120" height="52" rx="8" fill="#ffffff" stroke="#cfd8d1"></rect>
+            <text x="88" y="94" fill="#202321">LOBBY</text>
+            <text x="175" y="94" fill="#5e6661">-&gt;</text>
+            <rect x="205" y="62" width="120" height="52" rx="8" fill="#ffffff" stroke="#cfd8d1"></rect>
+            <text x="265" y="94" fill="#202321">MINGLE</text>
+            <text x="352" y="94" fill="#5e6661">-&gt;</text>
+            <rect x="382" y="62" width="120" height="52" rx="8" fill="#f6e2e6" stroke="#e2bdc5"></rect>
+            <text x="442" y="94" fill="#743544">RUMOR</text>
+            <text x="529" y="94" fill="#5e6661">-&gt;</text>
+            <rect x="559" y="62" width="120" height="52" rx="8" fill="#ffffff" stroke="#cfd8d1"></rect>
+            <text x="619" y="94" fill="#202321">VOTE</text>
+            <text x="706" y="94" fill="#5e6661">-&gt;</text>
+            <rect x="736" y="62" width="120" height="52" rx="8" fill="#ffffff" stroke="#cfd8d1"></rect>
+            <text x="796" y="94" fill="#202321">POWER</text>
+          </g>
+          <text x="28" y="174" font-size="17" font-weight="700" fill="#202321">Recommended normal loop</text>
+          <g font-size="14" font-weight="700" text-anchor="middle">
+            <rect x="28" y="198" width="120" height="52" rx="8" fill="#ffffff" stroke="#cfd8d1"></rect>
+            <text x="88" y="230" fill="#202321">LOBBY</text>
+            <text x="175" y="230" fill="#5e6661">-&gt;</text>
+            <rect x="205" y="198" width="120" height="52" rx="8" fill="#fff8e8" stroke="#dfcd9f"></rect>
+            <text x="265" y="230" fill="#674d13">VOTE</text>
+            <text x="352" y="230" fill="#5e6661">-&gt;</text>
+            <rect x="382" y="198" width="120" height="52" rx="8" fill="#dcefe8" stroke="#c0d9d0"></rect>
+            <text x="442" y="230" fill="#174d3f">MINGLE</text>
+            <text x="529" y="230" fill="#5e6661">-&gt;</text>
+            <rect x="559" y="198" width="120" height="52" rx="8" fill="#ffffff" stroke="#cfd8d1"></rect>
+            <text x="619" y="230" fill="#202321">POWER</text>
+            <text x="706" y="230" fill="#5e6661">-&gt;</text>
+            <rect x="736" y="198" width="120" height="52" rx="8" fill="#ffffff" stroke="#cfd8d1"></rect>
+            <text x="796" y="230" fill="#202321">COUNCIL</text>
+          </g>
+          <text x="205" y="270" font-size="13" fill="#5e6661">Vote is locked</text>
+          <text x="382" y="270" font-size="13" fill="#5e6661">Consequences are negotiated</text>
+          <text x="559" y="270" font-size="13" fill="#5e6661">Shield/protect resolves</text>
+        </svg>
+      </div>
+    </section>
+
+    <section id="grounding">
+      <p class="section-kicker">Grounding</p>
+      <h2>What the repo already says</h2>
+      <ul class="axis-list">
+        <li>The phase machine currently completes <code>LOBBY -> MINGLE -> RUMOR -> VOTE -> POWER</code>.</li>
+        <li><code>RUMOR</code> is isolated as a phase, but tests, viewer transitions, labels, and docs mirror it.</li>
+        <li>Expose scores, empowered-player exclusion, shield removal, and candidate backfill already exist in game state.</li>
+        <li>Mingle prompts already allow a strategy spectrum and explicitly do not require naming a target.</li>
+        <li>Existing Power Lobby already has the closest version of "locked vote, provisional danger."</li>
+        <li>Turn artifacts and MCP/read-model surfaces can validate whether behavior actually changed.</li>
+      </ul>
+      <div class="note">
+        <span class="label">Important boundary</span>
+        This ideation pass treats private reasoning and strategy packets as producer/debug artifacts, not as player-visible
+        content. The live change should expose public-ish pressure state, not hidden chain-of-thought or private plans.
+      </div>
+    </section>
+
+    <section id="axes">
+      <p class="section-kicker">Topic axes</p>
+      <h2>Questions that shaped the ideas</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Axis</th>
+            <th>Useful framing</th>
+            <th>Risk to avoid</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Phase order</td>
+            <td>Make the vote final before Mingle; make consequences unresolved until Power.</td>
+            <td>Mingle makes the vote feel like a soft poll.</td>
+          </tr>
+          <tr>
+            <td>Pressure state</td>
+            <td>Show enough vote-result facts for self-interested social play.</td>
+            <td>Expose raw private information beyond what the game should reveal.</td>
+          </tr>
+          <tr>
+            <td>Prompting</td>
+            <td>State leverage and danger neutrally.</td>
+            <td>Command agents to plead, flatter, or name targets.</td>
+          </tr>
+          <tr>
+            <td>Rooming</td>
+            <td>Use House room topology as a nonverbal drama lever.</td>
+            <td>Deterministic room recipes that make rounds feel solved.</td>
+          </tr>
+          <tr>
+            <td>Viewer</td>
+            <td>Replace RUMOR spectacle with visible stakes and delayed consequence.</td>
+            <td>Turn private debug evidence into public entertainment.</td>
+          </tr>
+          <tr>
+            <td>Validation</td>
+            <td>Measure a healthy mix of behavior through structured turn artifacts.</td>
+            <td>Optimize for a quota like "everyone must name a target."</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="ideas">
+      <p class="section-kicker">Ranked ideas</p>
+      <h2>Survivors</h2>
+      <ul class="jump-list">
+        <li><a href="#idea-1">1. Locked-Vote Negotiation Window</a></li>
+        <li><a href="#idea-2">2. Post-Vote Pressure Projection</a></li>
+        <li><a href="#idea-3">3. State, Not Script Mingle Prompting</a></li>
+        <li><a href="#idea-4">4. Pressure-Aware House Rooms</a></li>
+        <li><a href="#idea-5">5. Delayed-Consequence Viewer Rail</a></li>
+        <li><a href="#idea-6">6. RUMOR as Legacy Replay, Not Live Phase</a></li>
+        <li><a href="#idea-7">7. Emergence Scorecard</a></li>
+      </ul>
+
+      <article class="idea" id="idea-1">
+        <div class="idea-head">
+          <span class="idea-rank">1</span>
+          <h3>Locked-Vote Negotiation Window</h3>
+        </div>
+        <p>
+          Move normal play to <code>LOBBY -> VOTE -> MINGLE -> POWER -> COUNCIL</code>. The vote
+          result becomes a real fact before Mingle starts, but the shield/protect outcome remains open.
+          That makes Mingle feel less like pre-vote chatter and more like bargaining under pressure.
+        </p>
+        <div class="badges">
+          <span class="badge high">Confidence: high</span>
+          <span class="badge medium">Complexity: medium</span>
+          <span class="badge">Core product move</span>
+        </div>
+        <dl>
+          <dt>Why now</dt>
+          <dd>The requested drama has a natural cause only after players know who is empowered and who is at risk.</dd>
+          <dt>Design rule</dt>
+          <dd>The vote is locked. Mingle can affect Power and social consequences, not rewrite the vote.</dd>
+          <dt>Implementation pull</dt>
+          <dd>Update phase-machine order, tests, runner assumptions, viewer pacing, docs, and any Power Lobby overlap.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-2">
+        <div class="idea-head">
+          <span class="idea-rank">2</span>
+          <h3>Post-Vote Pressure Projection</h3>
+        </div>
+        <p>
+          Materialize a typed post-vote object once and reuse it everywhere the new beat needs the same truth:
+          Mingle context, House rooming, viewer framing, and validation.
+        </p>
+        <div class="diagram" aria-label="Pressure projection diagram">
+          <svg viewBox="0 0 920 310" role="img">
+            <rect width="920" height="310" fill="#f8faf7"></rect>
+            <rect x="40" y="44" width="170" height="58" rx="8" fill="#fff8e8" stroke="#dfcd9f"></rect>
+            <text x="125" y="78" text-anchor="middle" font-size="15" font-weight="700" fill="#674d13">VOTE result</text>
+            <text x="250" y="78" text-anchor="middle" font-size="17" fill="#5e6661">-&gt;</text>
+            <rect x="290" y="30" width="260" height="86" rx="8" fill="#dcefe8" stroke="#c0d9d0"></rect>
+            <text x="420" y="62" text-anchor="middle" font-size="15" font-weight="700" fill="#174d3f">Pressure Projection</text>
+            <text x="420" y="86" text-anchor="middle" font-size="12" fill="#174d3f">empowered, self status, raw score</text>
+            <text x="420" y="104" text-anchor="middle" font-size="12" fill="#174d3f">at-risk now, shield displacement</text>
+            <text x="590" y="78" text-anchor="middle" font-size="17" fill="#5e6661">-&gt;</text>
+            <rect x="630" y="44" width="210" height="58" rx="8" fill="#ffffff" stroke="#cfd8d1"></rect>
+            <text x="735" y="78" text-anchor="middle" font-size="15" font-weight="700" fill="#202321">MINGLE context</text>
+            <rect x="146" y="190" width="170" height="58" rx="8" fill="#ffffff" stroke="#cfd8d1"></rect>
+            <text x="231" y="224" text-anchor="middle" font-size="15" font-weight="700" fill="#202321">House rooms</text>
+            <rect x="378" y="190" width="170" height="58" rx="8" fill="#ffffff" stroke="#cfd8d1"></rect>
+            <text x="463" y="224" text-anchor="middle" font-size="15" font-weight="700" fill="#202321">Viewer rail</text>
+            <rect x="610" y="190" width="170" height="58" rx="8" fill="#ffffff" stroke="#cfd8d1"></rect>
+            <text x="695" y="224" text-anchor="middle" font-size="15" font-weight="700" fill="#202321">Scorecard</text>
+            <line x1="420" y1="116" x2="231" y2="190" stroke="#8a968f" stroke-width="2"></line>
+            <line x1="420" y1="116" x2="463" y2="190" stroke="#8a968f" stroke-width="2"></line>
+            <line x1="420" y1="116" x2="695" y2="190" stroke="#8a968f" stroke-width="2"></line>
+          </svg>
+        </div>
+        <div class="badges">
+          <span class="badge high">Confidence: high</span>
+          <span class="badge medium">Complexity: medium</span>
+          <span class="badge">Best shared abstraction</span>
+        </div>
+        <dl>
+          <dt>Include</dt>
+          <dd>Empowered player, self status, raw expose pressure, effective at-risk list, shield target possibilities, replacement-risk list, and optional vote visibility facts.</dd>
+          <dt>Key distinction</dt>
+          <dd>Raw pressure is not the same as effective danger. The empowered player can receive expose votes but should not enter the council candidate pool.</dd>
+          <dt>Open dial</dt>
+          <dd>How much vote detail to show: scores only, ranks, "voted for you" hints, or full voter-target edges.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-3">
+        <div class="idea-head">
+          <span class="idea-rank">3</span>
+          <h3>State, Not Script Mingle Prompting</h3>
+        </div>
+        <p>
+          Rewrite Mingle prompt context around leverage facts rather than desired theater. The prompt can say:
+          who is empowered, your status, who is currently at risk, and who could become at risk if a shield
+          is granted. It should not say: plead, make a deal, suck up, or name a target.
+        </p>
+        <div class="badges">
+          <span class="badge high">Confidence: high</span>
+          <span class="badge">Low product risk</span>
+          <span class="badge">Agent quality guardrail</span>
+        </div>
+        <dl>
+          <dt>Why it works</dt>
+          <dd>Personality, memory, relationships, and self-interest can choose the social move once the board state is legible.</dd>
+          <dt>Prompt cleanup</dt>
+          <dd>Remove stale "later vote" framing because the vote has already happened when Mingle starts.</dd>
+          <dt>Preserve</dt>
+          <dd>Keep the existing latitude that players do not have to name a target every turn.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-4">
+        <div class="idea-head">
+          <span class="idea-rank">4</span>
+          <h3>Pressure-Aware House Rooms</h3>
+        </div>
+        <p>
+          Give House the same pressure projection when assigning rooms. This lets topology do some of the
+          drama work: at-risk players can end up near the empowered player, replacement-risk players can
+          collide with shield targets, and players with useful leverage can be placed together.
+        </p>
+        <div class="badges">
+          <span class="badge high">Confidence: high</span>
+          <span class="badge medium">Complexity: medium</span>
+          <span class="badge">High leverage</span>
+        </div>
+        <dl>
+          <dt>Why it works</dt>
+          <dd>Rooming changes who can act on the pressure without making anyone speak a scripted line.</dd>
+          <dt>Guardrail</dt>
+          <dd>Avoid deterministic recipes. Use pressure as an input, not a hard rule that makes every round look identical.</dd>
+          <dt>Nice outcome</dt>
+          <dd>The same agents can behave differently because the room gives them different opportunities.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-5">
+        <div class="idea-head">
+          <span class="idea-rank">5</span>
+          <h3>Delayed-Consequence Viewer Rail</h3>
+        </div>
+        <p>
+          Removing <code>RUMOR</code> removes a visible public beat. Replace it with a viewer rail that names
+          the new suspense: vote locked, empowered known, at-risk players visible, shield consequence still
+          pending.
+        </p>
+        <div class="badges">
+          <span class="badge high">Confidence: high</span>
+          <span class="badge medium">Complexity: medium</span>
+          <span class="badge">Viewer comprehension</span>
+        </div>
+        <dl>
+          <dt>Default text</dt>
+          <dd>"The vote is locked. Mingle opens before Power resolves."</dd>
+          <dt>Show</dt>
+          <dd>Empowered player, current at-risk players, and possible shield displacement in compact public-ish form.</dd>
+          <dt>Do not show</dt>
+          <dd>Private reasoning, private strategy packets, or hidden raw traces.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-6">
+        <div class="idea-head">
+          <span class="idea-rank">6</span>
+          <h3>RUMOR as Legacy Replay, Not Live Phase</h3>
+        </div>
+        <p>
+          Treat <code>RUMOR</code> as removed from normal current games but tolerated for old replays or explicit
+          experiments. This keeps the product decision clear while avoiding unnecessary breakage in historical
+          viewer paths.
+        </p>
+        <div class="badges">
+          <span class="badge high">Confidence: high</span>
+          <span class="badge">Scope control</span>
+          <span class="badge">Compatibility only</span>
+        </div>
+        <dl>
+          <dt>Keep</dt>
+          <dd>Rendering support for existing transcript/event records that contain <code>RUMOR</code>.</dd>
+          <dt>Remove</dt>
+          <dd>The normal phase transition into <code>RUMOR</code> and docs that describe it as core live play.</dd>
+          <dt>Language</dt>
+          <dd>Rumors can still emerge as things players say during Mingle; they are no longer a system phase.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-7">
+        <div class="idea-head">
+          <span class="idea-rank">7</span>
+          <h3>Emergence Scorecard</h3>
+        </div>
+        <p>
+          Validate by reading structured turn artifacts after sample games. The pass condition is not "every
+          player names a target." It is a healthier mix of pressure-driven behavior than the old loop produced.
+        </p>
+        <div class="badges">
+          <span class="badge high">Confidence: high</span>
+          <span class="badge">Verification</span>
+          <span class="badge">No behavior quota</span>
+        </div>
+        <dl>
+          <dt>Look for</dt>
+          <dd>Protection asks, deal attempts, suspicion shifts, deflection, candid refusal, tactical silence, and targeted appeals to empowered players.</dd>
+          <dt>Compare</dt>
+          <dd>Old loop sample vs new loop sample using <code>game-N-turns.jsonl</code>, action names, strategy signals, and MCP/read-model queries.</dd>
+          <dt>Fail if</dt>
+          <dd>Every player sounds like they read the same instruction, or post-vote Mingle does not reference the vote-result pressure at all.</dd>
+        </dl>
+      </article>
+    </section>
+
+    <section id="strategy-packets">
+      <p class="section-kicker">Strategy packets</p>
+      <h2>Where strategy packets fit</h2>
+      <div class="split">
+        <div class="panel">
+          <h3>Pressure Projection</h3>
+          <p>
+            Shared round state. It says what the table can plausibly know after the vote:
+            empowered player, current risk, raw pressure, and shield displacement.
+          </p>
+        </div>
+        <div class="panel">
+          <h3>Strategy Packet</h3>
+          <p>
+            Private player intent. It says how this player is thinking about the pressure:
+            alliance plans, grudges, commitments, reads, and likely moves.
+          </p>
+        </div>
+      </div>
+      <p>
+        The clean design is to feed pressure projection into the same context surface that already carries
+        memory and strategy artifacts, then let the player decide how to use it. Do not convert the pressure
+        projection itself into a prescriptive "act dramatic" packet.
+      </p>
+    </section>
+
+    <section id="merged-rejected">
+      <p class="section-kicker">Merged and rejected</p>
+      <h2>Ideas not kept as standalone items</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Idea</th>
+            <th>Disposition</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Shield Shadow Board</td>
+            <td>Merged</td>
+            <td>Useful, but it belongs inside Post-Vote Pressure Projection as "at risk now / replacement risk if shielded."</td>
+          </tr>
+          <tr>
+            <td>Raw Pressure vs Effective Danger</td>
+            <td>Merged</td>
+            <td>Mandatory distinction inside the pressure model rather than a separate feature.</td>
+          </tr>
+          <tr>
+            <td>Collapse Power Lobby Into Post-Vote Mingle</td>
+            <td>Merged</td>
+            <td>This is an implementation consequence of the Locked-Vote Negotiation Window.</td>
+          </tr>
+          <tr>
+            <td>Rumor as a Verb, Not a Phase</td>
+            <td>Merged</td>
+            <td>Good language, but it is covered by prompt policy and the RUMOR legacy decision.</td>
+          </tr>
+          <tr>
+            <td>Single Round Script Contract</td>
+            <td>Merged</td>
+            <td>Important implementation hygiene, not a distinct product idea.</td>
+          </tr>
+          <tr>
+            <td>Partial Vote Visibility Dial</td>
+            <td>Parked</td>
+            <td>Real design decision. Keep it as a dial inside the pressure projection rather than deciding prematurely.</td>
+          </tr>
+          <tr>
+            <td>Whip Count Context</td>
+            <td>Rejected for v1</td>
+            <td>Relationship inference is not established enough and it duplicates pressure projection.</td>
+          </tr>
+          <tr>
+            <td>Pressure Lens in Strategy Thread</td>
+            <td>Parked</td>
+            <td>Likely useful later, but it expands beyond the immediate Mingle context change.</td>
+          </tr>
+          <tr>
+            <td>Reality-Show Confessional</td>
+            <td>Rejected</td>
+            <td>Private agent-turn evidence should not be repurposed as the replacement for player-visible live-loop spectacle.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="first-slice">
+      <p class="section-kicker">First implementation slice</p>
+      <h2>Smallest coherent version</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Step</th>
+            <th>Change</th>
+            <th>Why it belongs in v1</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>Change normal phase order to <code>LOBBY -> VOTE -> MINGLE -> POWER -> COUNCIL</code>.</td>
+            <td>Without this, Mingle is not responding to real vote pressure.</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>Create the post-vote pressure projection after vote results are known.</td>
+            <td>One typed source prevents prompt, viewer, rooming, and validation from drifting.</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>Feed pressure projection into Mingle prompt context without imperative drama instructions.</td>
+            <td>This is the direct product goal.</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>Give House room assignment access to the same pressure projection.</td>
+            <td>Room topology creates emergent opportunities without scripting lines.</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>Update viewer pacing and docs for the new suspense beat.</td>
+            <td>Players and viewers need the same mental model.</td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td>Run comparative simulations and inspect structured Mingle behavior.</td>
+            <td>Checks whether drama emerged naturally instead of merely being requested.</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="warning note">
+        <span class="label">Primary product risk</span>
+        If the pressure projection is too complete, dissent may become too punishable and agents may turtle.
+        If it is too vague, Mingle will not have enough traction. Start with current at-risk state plus shield
+        displacement; treat full voter-target visibility as a dial, not a default.
+      </div>
+    </section>
+
+    <section id="sources">
+      <p class="section-kicker">Sources and references</p>
+      <h2>Repo evidence used</h2>
+      <ul class="source-list">
+        <li><a href="../../packages/engine/src/phase-machine.ts">packages/engine/src/phase-machine.ts</a> - current phase transitions, including <code>MINGLE -> RUMOR -> VOTE -> POWER</code>.</li>
+        <li><a href="../../packages/engine/src/game-runner.ts">packages/engine/src/game-runner.ts</a> - runner dispatch for lobby, mingle, rumor, vote, and post-vote reflection.</li>
+        <li><a href="../../packages/engine/src/phases/rumor.ts">packages/engine/src/phases/rumor.ts</a> - isolated RUMOR phase behavior and anonymous public entries.</li>
+        <li><a href="../../packages/engine/src/game-state.ts">packages/engine/src/game-state.ts</a> - expose scores, empowered-player exclusion, shield filtering, and candidate backfill.</li>
+        <li><a href="../../packages/engine/src/phases/power.ts">packages/engine/src/phases/power.ts</a> - existing Power Lobby pressure framing after locked vote.</li>
+        <li><a href="../../packages/engine/src/context-builder.ts">packages/engine/src/context-builder.ts</a> and <a href="../../packages/engine/src/game-runner.types.ts">packages/engine/src/game-runner.types.ts</a> - current phase context shape and missing post-vote pressure fields.</li>
+        <li><a href="../../packages/engine/src/agent.ts">packages/engine/src/agent.ts</a> - Mingle intent and turn prompts, including optional targets and strategy-spectrum behavior.</li>
+        <li><a href="../../packages/web/src/app/games/%5Bslug%5D/game-viewer.tsx">packages/web/src/app/games/[slug]/game-viewer.tsx</a> and <a href="../../packages/api/src/__tests__/viewer-event-pacer.test.ts">packages/api/src/__tests__/viewer-event-pacer.test.ts</a> - viewer/pacer assumptions around the old phase order.</li>
+        <li><a href="../../README.md">README.md</a> and <a href="../rules-page-content.md">docs/rules-page-content.md</a> - player-facing phase descriptions that would need to move with the rule change.</li>
+        <li><a href="../solutions/architecture-patterns/agent-strategy-observability-spine.md">docs/solutions/architecture-patterns/agent-strategy-observability-spine.md</a> - existing observability spine for validating prompt-to-tool-to-turn behavior.</li>
+      </ul>
+      <p class="footer">
+        Composition signal: generated from repo research, prior project learnings, divergent ideation passes,
+        and a verifier pass that marked the main direction sound while merging weaker duplicates into the core
+        pressure-projection design.
+      </p>
+    </section>
+  </main>
+</body>
+</html>

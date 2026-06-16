@@ -17,6 +17,7 @@ import type {
   StrategicLens,
 } from "./types";
 import type { CanonicalGameEvent, CanonicalSourcePointer } from "./canonical-events";
+import type { PostVotePressureProjection } from "./post-vote-pressure";
 import type { CanonicalGameProjection } from "./game-projection";
 import type { TokenCostCursor, TokenTracker } from "./token-tracker.js";
 export type { TokenCostCursor };
@@ -516,10 +517,8 @@ export interface MingleTurnAction {
   noReply?: boolean;
   /** Optional local room number to enter for the next turn. */
   gotoRoomId?: number | null;
-  /** Optional producer/debug label describing the strategic signal in this turn. */
-  strategySignal?: string | null;
-  /** Optional producer/debug explanation for movement, or null when staying put. */
-  movementPurpose?: string | null;
+  /** Optional player name to follow to their resolved room for the next turn. */
+  gotoPlayerName?: string | null;
   /** Raw model reasoning context from local LLM */
   reasoningContext?: string;
   /** Private producer/debug linkage to the current strategy packet, if one was present. */
@@ -722,6 +721,10 @@ export interface PhaseContext {
   mingleMessages: Array<{ from: string; text: string }>;
   empoweredId?: UUID;
   councilCandidates?: [UUID, UUID];
+  /** Vote-derived pressure visible after empowerment is resolved. */
+  postVotePressure?: PostVotePressureProjection;
+  /** Public named vote record revealed to players after each standard Vote resolves. */
+  revealedVoteLedger?: RevealedVoteLedgerEntry[];
   // Mingle room allocation context
   /** Number of available rooms this round */
   roomCount?: number;
@@ -753,6 +756,18 @@ export interface PhaseContext {
   lobbySubRound?: number;
   /** Total lobby sub-rounds this phase */
   lobbyTotalSubRounds?: number;
+}
+
+export interface RevealedVoteLedgerEntry {
+  round: number;
+  voterId: UUID;
+  voterName: string;
+  empowerTargetId: UUID;
+  empowerTargetName: string;
+  exposeTargetId: UUID;
+  exposeTargetName: string;
+  revoteEmpowerTargetId?: UUID;
+  revoteEmpowerTargetName?: string;
 }
 
 // ---------------------------------------------------------------------------

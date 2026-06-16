@@ -101,11 +101,11 @@ describe("CHAT_FEED_PHASES", () => {
   it("contains expected chat feed phases", () => {
     expect(CHAT_FEED_PHASES.has("INTRODUCTION")).toBe(true);
     expect(CHAT_FEED_PHASES.has("LOBBY")).toBe(true);
-    expect(CHAT_FEED_PHASES.has("RUMOR")).toBe(true);
   });
 
   it("does not contain non-chat-feed phases", () => {
     expect(CHAT_FEED_PHASES.has("WHISPER")).toBe(false);
+    expect(CHAT_FEED_PHASES.has("RUMOR")).toBe(false);
     expect(CHAT_FEED_PHASES.has("VOTE")).toBe(false);
   });
 });

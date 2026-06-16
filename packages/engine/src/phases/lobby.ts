@@ -83,8 +83,9 @@ export async function runLobbyPhase(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
 ): Promise<void> {
-  const { gameState, logger } = ctx;
+  const { gameState, logger, contextBuilder } = ctx;
   await assertCanAcceptCommit(ctx);
+  contextBuilder.currentPostVotePressure = null;
   gameState.startRound();
   gameState.expireShields();
   const round = gameState.round;

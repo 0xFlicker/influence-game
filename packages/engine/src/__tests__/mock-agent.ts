@@ -115,8 +115,8 @@ export class MockAgent implements IAgent {
   async takeMingleTurn(ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<MingleTurnAction> {
     const response = await this.sendRoomMessage(ctx, roomMates, conversationHistory);
     return response
-      ? { ...response, noReply: false, gotoRoomId: null, strategyPacketUse: this.strategyPacketUse("followed") }
-      : { thinking: "", message: null, noReply: true, gotoRoomId: null, strategyPacketUse: this.strategyPacketUse("deferred") };
+      ? { ...response, noReply: false, gotoRoomId: null, gotoPlayerName: null, strategyPacketUse: this.strategyPacketUse("followed") }
+      : { thinking: "", message: null, noReply: true, gotoRoomId: null, gotoPlayerName: null, strategyPacketUse: this.strategyPacketUse("deferred") };
   }
 
   async getRumorMessage(ctx: PhaseContext): Promise<AgentResponse> {

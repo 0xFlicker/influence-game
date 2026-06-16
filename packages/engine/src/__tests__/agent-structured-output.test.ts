@@ -227,6 +227,11 @@ describe("InfluenceAgent structured output mode", () => {
       function: { name: "cast_votes" },
     });
     expect(requests[0]?.parallel_tool_calls).toBe(false);
+    const messages = requests[0]?.messages as Array<{ role: string; content: string }>;
+    expect(messages[0]?.content).toContain("In player-visible speech");
+    expect(messages[0]?.content).toContain("In hidden thinking, private reasoning, and producer/debug traces");
+    expect(messages[0]?.content).toContain("you can and should use precise technical game terms");
+    expect(messages[0]?.content).not.toContain("NEVER use these phrases or concepts");
   });
 
   it("emits private decision traces for tool-call decisions", async () => {
@@ -344,7 +349,7 @@ describe("InfluenceAgent structured output mode", () => {
       };
     }>;
     // We intentionally no longer strip "thinking" for local structured/required tool choice.
-    // Agents must still be able to emit their internal reasoning (populates the gray `thinking:`
+    // Agents must still be able to emit their internal reasoning (populates `thinking:`
     // in --chatty and the `thinking` on TranscriptEntry) even on local models. The raw
     // server reasoning_content (if any) goes only to the separate `reasoningContext`.
     expect(tools[0]!.function.parameters.properties.thinking).toBeDefined();
@@ -521,8 +526,7 @@ describe("InfluenceAgent structured output mode", () => {
           message: null,
           noReply: true,
           gotoRoomId: null,
-          strategySignal: null,
-          movementPurpose: null,
+          gotoPlayerName: null,
         },
         "Hidden local reasoning for the Mingle turn.",
       ),
@@ -557,12 +561,24 @@ describe("InfluenceAgent structured output mode", () => {
       message: null,
       noReply: true,
       gotoRoomId: null,
-      strategySignal: null,
-      movementPurpose: null,
+      gotoPlayerName: null,
       reasoningContext: "Hidden local reasoning for the Mingle turn.",
     });
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.at(-1)!.content;
+    const tools = requests[0]?.tools as Array<{
+      function: {
+        parameters: {
+          properties: Record<string, unknown>;
+          required: string[];
+        };
+      };
+    }>;
+    const removedMingleDebugKeys = ["strategy" + "Signal", "movement" + "Purpose"];
+    expect(tools[0]!.function.parameters.properties.gotoPlayerName).toBeDefined();
+    expect(tools[0]!.function.parameters.required).toContain("gotoPlayerName");
+    expect(removedMingleDebugKeys.every((key) => !(key in tools[0]!.function.parameters.properties))).toBe(true);
+    expect(removedMingleDebugKeys.every((key) => !tools[0]!.function.parameters.required.includes(key))).toBe(true);
     expect(prompt).toContain("## Your Mingle Intent");
     expect(prompt).toContain("Find one person willing to compare Vera reads without committing too early.");
     expect(prompt).toContain("No-target reason: Atlas has only vibes, not evidence.");
@@ -571,10 +587,12 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("Lens rationale: Atlas wants to watch who seeks or avoids Vera.");
     expect(prompt).toContain("You may name a target or ally");
     expect(prompt).toContain("You do not have to name a target");
+    expect(prompt).toContain("gotoPlayerName wins");
+    expect(removedMingleDebugKeys.every((key) => !prompt.includes(key))).toBe(true);
     expect(prompt).toContain("TALK has no audience");
   });
 
-  it("early rumor prompt avoids hard example phrases while preserving early-game constraints", async () => {
+  it("includes post-vote pressure facts in Mingle prompts", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -582,35 +600,168 @@ describe("InfluenceAgent structured output mode", () => {
       "strategic",
       makeToolOpenAIStub(
         requests,
-        "spread_rumor",
+        "mingle_turn",
         {
-          thinking: "Keep it soft because it is early.",
-          message: "Someone is trying very hard to seem harmless.",
-          strategicLens: "broad_read",
-          strategicLensRationale: "Early evidence is thin.",
-          strategyPacketUse: null,
-          strategyPacketUseRationale: null,
+          thinking: "Atlas needs to ask Mira for cover and redirect pressure to Vera.",
+          message: "Mira, if you shield me, I can help keep Vera in the hot seat.",
+          noReply: false,
+          gotoRoomId: null,
+          gotoPlayerName: null,
         },
       ),
-      "gpt-5-nano",
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    const rumor = await agent.getRumorMessage(makeContext(Phase.RUMOR));
+    await agent.takeMingleTurn({
+      ...makeContext(Phase.MINGLE),
+      empoweredId: "mira-id",
+      revealedVoteLedger: [
+        {
+          round: 1,
+          voterId: "atlas-id",
+          voterName: "Atlas",
+          empowerTargetId: "mira-id",
+          empowerTargetName: "Mira",
+          exposeTargetId: "vera-id",
+          exposeTargetName: "Vera",
+        },
+        {
+          round: 1,
+          voterId: "vera-id",
+          voterName: "Vera",
+          empowerTargetId: "mira-id",
+          empowerTargetName: "Mira",
+          exposeTargetId: "atlas-id",
+          exposeTargetName: "Atlas",
+        },
+      ],
+      postVotePressure: {
+        empowered: { id: "mira-id", name: "Mira" },
+        exposePressure: [
+          { id: "atlas-id", name: "Atlas", exposeScore: 3 },
+          { id: "vera-id", name: "Vera", exposeScore: 2 },
+          { id: "mira-id", name: "Mira", exposeScore: 1 },
+        ],
+        currentAtRisk: [
+          { id: "atlas-id", name: "Atlas", exposeScore: 3 },
+          { id: "vera-id", name: "Vera", exposeScore: 2 },
+        ],
+        replacementRisk: [],
+        shieldScenarios: [
+          {
+            shieldedPlayer: { id: "atlas-id", name: "Atlas" },
+            resultingAtRisk: [{ id: "vera-id", name: "Vera", exposeScore: 2 }],
+          },
+        ],
+        players: [
+          { id: "atlas-id", name: "Atlas", exposeScore: 3, status: "current_at_risk", shielded: false },
+          { id: "mira-id", name: "Mira", exposeScore: 1, status: "empowered", shielded: false },
+          { id: "vera-id", name: "Vera", exposeScore: 2, status: "current_at_risk", shielded: false },
+        ],
+      },
+    }, ["Atlas", "Mira"], []);
 
     const messages = requests[0]?.messages as Array<{ content: string }>;
-    const capturedPrompt = messages.at(-1)!.content;
-    expect(rumor).toMatchObject({
-      message: "Someone is trying very hard to seem harmless.",
-      strategicLens: "broad_read",
-      strategicLensRationale: "Early evidence is thin.",
-    });
-    expect(capturedPrompt).toContain("Do NOT accuse anyone of forming alliances");
-    expect(capturedPrompt).toContain("Use the spread_rumor tool.");
-    expect(capturedPrompt).toContain("Prefer a non-presentation lens");
-    for (const banned of ["rehearsed", "script", "performance", "polished", "curated"]) {
-      expect(capturedPrompt.toLowerCase()).not.toContain(banned);
-    }
+    const prompt = messages.at(-1)!.content;
+    expect(prompt).toContain("## Game Rules");
+    expect(prompt).toContain("- Votes are public after Vote resolves. Everyone can use the revealed vote record as social evidence.");
+    expect(prompt).toContain("## Current Stakes");
+    expect(prompt).toContain("- Phase objective: Private room dealmaking after the vote.");
+    expect(prompt).toContain("- Next major decision: Power. Mira can pass, protect/shield a player to change who faces Council, or use an available elimination action.");
+    expect(prompt).toContain("## Revealed Vote Ledger");
+    expect(prompt).toContain("These named votes are public player knowledge after Vote resolves.");
+    expect(prompt).toContain("Atlas: empowered Mira, exposed Vera");
+    expect(prompt).toContain("Vera: empowered Mira, exposed Atlas");
+    expect(prompt).toContain("## Post-Vote Pressure");
+    expect(prompt).toContain("- Empowered player: Mira");
+    expect(prompt).toContain("- Your status: you are currently at risk for council");
+    expect(prompt).toContain("- Current at-risk players: Atlas (3), Vera (2)");
+    expect(prompt).toContain("If Atlas receives a shield: Vera (2)");
+    expect(prompt).toContain("You may plead, bargain, redirect pressure, flatter, threaten, or stay quiet");
+    expect(prompt).toContain("## Room-Specific Social Opportunity");
+    expect(prompt).toContain("You are currently at risk and Mira is in this room");
+    expect(prompt).toContain("Other occupants you can talk to now: Mira");
+  });
+
+  it("clarifies empower re-vote resolution in revealed vote ledger prompts", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "mingle_turn",
+        {
+          thinking: "Atlas should understand the re-vote result before talking.",
+          message: "Vera, that re-vote put the room around you.",
+          noReply: false,
+          gotoRoomId: null,
+          gotoPlayerName: null,
+        },
+      ),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    const alivePlayers = [
+      { id: "atlas-id", name: "Atlas" },
+      { id: "mira-id", name: "Mira" },
+      { id: "vera-id", name: "Vera" },
+    ];
+    agent.onGameStart("game-1", alivePlayers);
+
+    await agent.takeMingleTurn({
+      ...makeContext(Phase.MINGLE),
+      alivePlayers,
+      empoweredId: "vera-id",
+      revealedVoteLedger: [
+        {
+          round: 1,
+          voterId: "atlas-id",
+          voterName: "Atlas",
+          empowerTargetId: "mira-id",
+          empowerTargetName: "Mira",
+          exposeTargetId: "vera-id",
+          exposeTargetName: "Vera",
+          revoteEmpowerTargetId: "vera-id",
+          revoteEmpowerTargetName: "Vera",
+        },
+        {
+          round: 1,
+          voterId: "mira-id",
+          voterName: "Mira",
+          empowerTargetId: "vera-id",
+          empowerTargetName: "Vera",
+          exposeTargetId: "atlas-id",
+          exposeTargetName: "Atlas",
+          revoteEmpowerTargetId: "vera-id",
+          revoteEmpowerTargetName: "Vera",
+        },
+        {
+          round: 1,
+          voterId: "vera-id",
+          voterName: "Vera",
+          empowerTargetId: "atlas-id",
+          empowerTargetName: "Atlas",
+          exposeTargetId: "atlas-id",
+          exposeTargetName: "Atlas",
+        },
+      ],
+    }, ["Atlas", "Vera"], []);
+
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.at(-1)!.content;
+    expect(prompt).toContain("Initial empower tie: Mira, Vera, Atlas at 1 votes each.");
+    expect(prompt).toContain("Re-vote tally (this supersedes the initial tied empower votes; do not add initial and re-vote votes together):");
+    expect(prompt).toContain("Vera: 2 (Atlas, Mira)");
+    expect(prompt).toContain("Final empowered result: Vera.");
+    expect(prompt).toContain("Atlas: empowered Mira, exposed Vera; in the tie re-vote, chose Vera");
   });
 
   it("preserves hidden strategic reflections and native reasoning", async () => {
@@ -735,6 +886,12 @@ describe("InfluenceAgent structured output mode", () => {
 
     const reflectionMessages = requests[0]?.messages as Array<{ content: string }>;
     const reflectionPrompt = reflectionMessages.at(-1)!.content;
+    expect(reflectionMessages[0]?.content).not.toContain("PHASE BEHAVIOR — VOTE");
+    expect(reflectionPrompt).toContain("## Private Reflection Mode");
+    expect(reflectionPrompt).toContain("You are NOT taking a live phase action right now.");
+    expect(reflectionPrompt).toContain("do not speak to the room");
+    expect(reflectionPrompt).toContain("Reflected phase: VOTE.");
+    expect(reflectionPrompt).toContain("Do not turn this into a message you intend to send.");
     expect(reflectionPrompt).toContain("For strategyPacket.targetPosture, choose a standing target posture:");
     expect(reflectionPrompt).toContain("## Strategic Lens");
     expect(reflectionPrompt).toContain("name one living player");
@@ -943,9 +1100,9 @@ describe("InfluenceAgent structured output mode", () => {
 
     const response = await agent.getIntroduction(makeContext(Phase.INTRODUCTION));
 
-    // The raw hidden channel goes only to reasoningContext (cyan in --chatty).
+    // The raw hidden channel goes only to reasoningContext.
     // The agent's "emitted" thinking (what it puts under "thinking" in content JSON or tool args)
-    // populates `thinking` (gray). In this stub there was no explicit thinking in content,
+    // populates `thinking`. In this stub there was no explicit thinking in content,
     // so thinking stays empty while the native trace is still captured for observability.
     expect(response).toMatchObject({
       thinking: "",

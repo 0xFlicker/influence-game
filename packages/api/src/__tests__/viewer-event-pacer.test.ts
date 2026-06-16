@@ -81,23 +81,22 @@ describe("ViewerEventPacer", () => {
       roomEndMs: 50,
     };
 
-    it("holds before POWER phase_change (vote end hold)", async () => {
+    it("holds before post-vote MINGLE phase_change (vote end hold)", async () => {
       const { received, fn } = createCollector();
       const pacer = new ViewerEventPacer("live", fn, SHORT_HOLDS);
 
       pacer.emit(phaseChange(Phase.VOTE));
-      pacer.emit(phaseChange(Phase.POWER));
+      pacer.emit(phaseChange(Phase.MINGLE));
 
-      // VOTE phase_change has no hold → arrives immediately
-      // POWER phase_change has a hold → not yet
+      // VOTE phase_change has no hold; MINGLE phase_change has a hold
       await waitForDrain(10);
       expect(received.length).toBe(1);
       expect((received[0]!.event as { phase: Phase }).phase).toBe(Phase.VOTE);
 
-      // After hold completes, POWER arrives
+      // After hold completes, MINGLE arrives
       await waitForDrain(100);
       expect(received.length).toBe(2);
-      expect((received[1]!.event as { phase: Phase }).phase).toBe(Phase.POWER);
+      expect((received[1]!.event as { phase: Phase }).phase).toBe(Phase.MINGLE);
     });
 
     it("holds before REVEAL phase_change (power reveal hold)", async () => {
@@ -112,24 +111,29 @@ describe("ViewerEventPacer", () => {
         roomEndMs: 80,
       });
 
-      // Emit VOTE first to set phase context, then POWER (held), then transcript, then REVEAL (held)
+      // Emit VOTE -> MINGLE -> POWER to set phase context, then transcript, then REVEAL (held)
       pacer.emit(phaseChange(Phase.VOTE));
-      pacer.emit(phaseChange(Phase.POWER));        // voteEnd hold (80ms)
+      pacer.emit(phaseChange(Phase.MINGLE));       // voteEnd hold (80ms)
+      pacer.emit(phaseChange(Phase.POWER));        // roomEnd hold (80ms)
       pacer.emit(transcript(Phase.POWER, "power action: eliminate"));
       pacer.emit(phaseChange(Phase.REVEAL));        // powerReveal hold (80ms)
 
       await waitForDrain(10);
-      // Only VOTE arrives immediately, POWER is held
+      // Only VOTE arrives immediately, MINGLE is held
       expect(received.length).toBe(1);
 
-      // After first hold drains (~80ms), POWER + transcript arrive, REVEAL still held
+      // After first hold drains (~80ms), MINGLE arrives and POWER is still held
       await waitForDrain(100);
-      expect(received.length).toBe(3);
+      expect(received.length).toBe(2);
 
-      // After second hold drains (~160ms total), REVEAL arrives
+      // After second hold drains (~160ms total), POWER + transcript arrive, REVEAL still held
       await waitForDrain(100);
       expect(received.length).toBe(4);
-      expect((received[3]!.event as { phase: Phase }).phase).toBe(Phase.REVEAL);
+
+      // After third hold drains (~240ms total), REVEAL arrives
+      await waitForDrain(100);
+      expect(received.length).toBe(5);
+      expect((received[4]!.event as { phase: Phase }).phase).toBe(Phase.REVEAL);
     });
 
     it("holds before player_eliminated events", async () => {
@@ -199,23 +203,23 @@ describe("ViewerEventPacer", () => {
       expect((received[1]!.event as { phase: Phase }).phase).toBe(Phase.VOTE);
     });
 
-    it("holds after MINGLE room phase ends (room end hold)", async () => {
+    it("holds after MINGLE room phase ends before POWER (room end hold)", async () => {
       const { received, fn } = createCollector();
       const pacer = new ViewerEventPacer("live", fn, SHORT_HOLDS);
 
-      // Simulate: MINGLE → RUMOR transition
+      // Simulate: MINGLE -> POWER transition
       pacer.emit(phaseChange(Phase.MINGLE));
-      pacer.emit(phaseChange(Phase.RUMOR));
+      pacer.emit(phaseChange(Phase.POWER));
 
       await waitForDrain(10);
-      // MINGLE arrives immediately, RUMOR is held
+      // MINGLE arrives immediately, POWER is held
       expect(received.length).toBe(1);
       expect((received[0]!.event as { phase: Phase }).phase).toBe(Phase.MINGLE);
 
       await waitForDrain(100);
-      // RUMOR arrives after room end hold
+      // POWER arrives after room end hold
       expect(received.length).toBe(2);
-      expect((received[1]!.event as { phase: Phase }).phase).toBe(Phase.RUMOR);
+      expect((received[1]!.event as { phase: Phase }).phase).toBe(Phase.POWER);
     });
 
     it("game_over events pass through without holds", async () => {
@@ -244,20 +248,19 @@ describe("ViewerEventPacer", () => {
 
       // Full round sequence
       pacer.emit(phaseChange(Phase.LOBBY));
-      pacer.emit(phaseChange(Phase.MINGLE));
-      pacer.emit(phaseChange(Phase.RUMOR));        // hold: roomEnd
       pacer.emit(phaseChange(Phase.VOTE));
-      pacer.emit(phaseChange(Phase.POWER));        // hold: voteEnd
+      pacer.emit(phaseChange(Phase.MINGLE));       // hold: voteEnd
+      pacer.emit(phaseChange(Phase.POWER));        // hold: roomEnd
       pacer.emit(elimination("Bob"));              // hold: elimination
       pacer.emit(phaseChange(Phase.REVEAL));       // hold: powerReveal
       pacer.emit(phaseChange(Phase.COUNCIL));
       pacer.emit(elimination("Carol"));            // hold: elimination
       pacer.emit(phaseChange(Phase.DIARY_ROOM));   // hold: councilEnd
 
-      // Wait for all holds to complete (6 holds × 30ms = 180ms, give buffer)
+      // Wait for all holds to complete (6 holds x 30ms = 180ms, give buffer)
       await waitForDrain(350);
 
-      expect(received.length).toBe(10);
+      expect(received.length).toBe(9);
 
       // Verify order is preserved
       const types = received.map((r) => {
@@ -266,9 +269,8 @@ describe("ViewerEventPacer", () => {
       });
       expect(types).toEqual([
         "phase:LOBBY",
-        "phase:MINGLE",
-        "phase:RUMOR",
         "phase:VOTE",
+        "phase:MINGLE",
         "phase:POWER",
         "player_eliminated",
         "phase:REVEAL",

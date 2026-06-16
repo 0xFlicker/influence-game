@@ -234,8 +234,8 @@ Then inspect turn logs through MCP or JSONL for:
 - `strategy-packet`
 - `strategicLens`
 - `strategyPacketUse`
-- `strategySignal`
-- `movementPurpose`
+- `gotoPlayerName`
+- `gotoStatus`
 - `empower-revote`
 
 Use `game-N-events.jsonl` and projections for board state, and `game-N-turns.jsonl` for private decision quality. When a canonical event has source pointers, use `linked_records` to bridge from accepted outcome back to private decision evidence.

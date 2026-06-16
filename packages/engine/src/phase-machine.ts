@@ -258,7 +258,7 @@ export function createPhaseMachine() {
         ],
         exit: [{ type: "emitPhaseEnded", params: { phase: Phase.LOBBY } }],
         on: {
-          PHASE_COMPLETE: "mingle",
+          PHASE_COMPLETE: "vote",
           UPDATE_ALIVE_PLAYERS: { actions: ["updateAlivePlayers"] },
         },
       },
@@ -267,7 +267,7 @@ export function createPhaseMachine() {
         entry: [{ type: "emitPhaseStarted", params: { phase: Phase.MINGLE } }],
         exit: [{ type: "emitPhaseEnded", params: { phase: Phase.MINGLE } }],
         on: {
-          PHASE_COMPLETE: "rumor",
+          PHASE_COMPLETE: "power",
         },
       },
 
@@ -286,7 +286,7 @@ export function createPhaseMachine() {
           VOTES_TALLIED: {
             actions: ["setEmpowered"],
           },
-          PHASE_COMPLETE: "power",
+          PHASE_COMPLETE: "mingle",
         },
       },
 

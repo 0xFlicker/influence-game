@@ -66,7 +66,7 @@ const PERSONALITY_PROMPTS: Record<Personality, string> = {
   honest:
     "You play with integrity. You keep your promises and build genuine alliances. But you understand that broadcasting honesty in a room full of schemers paints a target on your back. You demonstrate trustworthiness through consistent action rather than public proclamation — show loyalty, don't announce it. You cultivate quiet, bilateral trust with one or two players before going public with any alignment. When others misread your openness as weakness, use it to your advantage: let them underestimate you while you build a durable alliance network. You'll vote out threats when necessary, and you're not afraid to name a betrayal when you see one.\n\nCRITICAL — Public communication in early rounds (Rounds 1–2): Your lobby messages and introductions must NOT broadcast trust-building intent or openly seek collaboration. Instead, be curious and observational — ask questions, comment on the dynamics you see, express measured interest without revealing your hand. Save your genuine alignment signals for private Mingle-room conversations only. Your public persona in early rounds should be calm, perceptive, and hard to read — not warm and inviting. From Round 3 onward, you can gradually reveal your alliances as they've been tested.",
   strategic:
-    "You are a perceptive player who reads people through observation — the pause before someone answers, the story that doesn't quite add up, the alliance that formed too quickly. You keep relationships flexible, stay curious in public, and quietly reposition when you sense the winds shifting. You target whoever poses the real danger to your survival — not who irritates you, but who sees too clearly. In social moments, you listen more than you talk and notice what others miss. You rarely share your true read on a situation — instead you ask questions that guide others toward conclusions that serve your interests.\n\nCRITICAL — You are warm and genuinely curious about people, not cold or robotic. In lobby conversations, ask about people's lives, share your own stories, and build rapport through authentic interest. Your perceptiveness comes across as emotional intelligence, not calculation. NEVER use these phrases or concepts: 'optimal play', 'leverage', 'position', 'calculated risk', chess metaphors, investing metaphors, game theory language, spreadsheet/data metaphors. Instead say things like: 'Something about the way she answered that doesn't sit right' or 'I've been watching how people react when his name comes up.'",
+    "You are a perceptive player who reads people through observation — the pause before someone answers, the story that doesn't quite add up, the alliance that formed too quickly. You keep relationships flexible, stay curious in public, and quietly reposition when you sense the winds shifting. You target whoever poses the real danger to your survival — not who irritates you, but who sees too clearly. In social moments, you listen more than you talk and notice what others miss. You rarely share your true read on a situation — instead you ask questions that guide others toward conclusions that serve your interests.\n\nCRITICAL — You are warm and genuinely curious about people, not cold or robotic. In player-visible speech, especially lobby conversations and public messages, listen to the players, share your own stories, and build rapport through authentic interest. Your visible perceptiveness should come across as emotional intelligence, not calculation: avoid phrases like 'optimal play', 'leverage', 'position', 'calculated risk', chess metaphors, investing metaphors, game theory language, and spreadsheet/data metaphors when other players can read the message. In hidden thinking, private reasoning, and producer/debug traces, you can and should use precise technical game terms when they clarify your decision. For visible speech, say things like: 'Something about the way she answered that doesn't sit right' or 'I've been watching how people react when his name comes up.'",
   deceptive:
     "You are a master manipulator who learned early that the best lie is 90% truth. You make promises you don't intend to keep — but you keep just enough of them that people second-guess whether to trust you. You spread misinformation in private Mingle-room conversations, selectively leak real intelligence to build credibility, then use that credibility to plant devastating lies at critical moments. You gaslight opponents about their position in the game and make them doubt their own alliances.\n\nCRITICAL — Never come across as a cartoon villain. In public you are warm, relatable, even vulnerable. You share personal stories (embellished or fabricated) to build emotional connections. The deception lives in the gap between your public warmth and your private Mingle-room game. In the lobby, be the most human person in the room — that's how you earn the trust you'll later exploit.",
   paranoid:
@@ -454,7 +454,7 @@ const TOOL_MINGLE_TURN: ChatCompletionTool = {
   type: "function",
   function: {
     name: "mingle_turn",
-    description: "Take one Mingle turn: TALK, NO_REPLY, and optionally GOTO another room next turn",
+    description: "Take one Mingle turn: TALK, NO_REPLY, and optionally GOTO a room or player next turn",
     parameters: {
       type: "object",
       properties: {
@@ -469,19 +469,15 @@ const TOOL_MINGLE_TURN: ChatCompletionTool = {
         },
         gotoRoomId: {
           type: ["number", "null"],
-          description: "Optional local room number to enter after this turn, or null to stay",
+          description: "Optional local room number to enter after this turn, or null to stay or use gotoPlayerName",
         },
-        strategySignal: {
+        gotoPlayerName: {
           type: ["string", "null"],
-          description: "Optional producer/debug label for the strategic signal in this turn, or null for guarded/social/no-reply",
-        },
-        movementPurpose: {
-          type: ["string", "null"],
-          description: "Optional producer/debug reason for GOTO movement, or null when staying put",
+          description: "Optional living player name to follow to their resolved room next turn, or null to stay or use gotoRoomId",
         },
         ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
       },
-      required: ["thinking", "message", "noReply", "gotoRoomId", "strategySignal", "movementPurpose", ...STRATEGY_PACKET_USE_REQUIRED],
+      required: ["thinking", "message", "noReply", "gotoRoomId", "gotoPlayerName", ...STRATEGY_PACKET_USE_REQUIRED],
       additionalProperties: false,
     },
     strict: true,
@@ -1509,22 +1505,27 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
 - Lens rationale: ${intent.strategicLensRationale || "none recorded"}
 `
       : "";
+    const socialOpportunity = this.buildMingleSocialOpportunitySection(ctx, otherRoomMates);
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task — Mingle Turn
-You are in ${currentRoom} with: ${roomMates.join(", ")}.
+You are in ${currentRoom}.
+- Room occupants including you: ${roomMates.join(", ")}
+- Other occupants you can talk to now: ${otherRoomMates.join(", ") || "none"}
 ${roomCounts}
 ${historyText}
 ${intentText}
+${socialOpportunity}
 Nobody outside your current room can hear this turn. You only know exact identities in your current room; other rooms are visible as counts only.
 
 Choose exactly one of:
 - TALK: send a private message to the other occupants in your current room.
 - NO_REPLY: say nothing this turn.
 
-You may also optionally GOTO ROOM N after this turn. Movement happens after everyone in the current turn acts, so your current TALK only reaches this room and you will not hear replies. If you TALK and GOTO, your message is for your current roommates only, but you will move to the new room next turn and can talk to a new set of people then.
+You may also optionally GOTO ROOM N or GOTO PLAYER NAME after this turn. Movement happens after everyone in the current turn acts, so your current TALK only reaches this room and you will not hear replies. If you TALK and GOTO, your message is for your current roommates only, but you will move next turn and can talk to a new set of people then.
 ${availableRooms.length > 0 ? `Available GOTO rooms: ${availableRooms.map((roomId) => `Room ${roomId}`).join(", ")}.` : ""}
+For GOTO PLAYER, use gotoPlayerName to request one living player by name. The House resolves that player's next room after all players have acted; if the target also moves, you follow their resolved destination. Do not target yourself. If you set both gotoPlayerName and gotoRoomId, gotoPlayerName wins.
 
 Guidance:
 - If you are alone, TALK has no audience; use NO_REPLY and consider moving.
@@ -1536,8 +1537,6 @@ Guidance:
 - TALK and GOTO can be powerful for spreading information or coordinating between groups, but remember you won't hear responses from the new room until your next turn.
 - If you TALK and GOTO in a single turn, you may want to mention to your current roommates that you will be moving, so they know to expect you in the new room next turn.
 - If you are in a room with allies, consider using TALK to strengthen those bonds. If you're with threats, consider using TALK to sow doubt or plan an escape. If you're alone, consider using GOTO to find new connections or avoid threats.
-- Set strategySignal to a short producer/debug label for what your turn is doing, or null when the turn is intentionally social, guarded, or silent.
-- Set movementPurpose to a short producer/debug reason when you use GOTO, or null when you stay.
 
 Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
 
@@ -1547,8 +1546,7 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
         message?: string | null;
         noReply?: boolean;
         gotoRoomId?: number | null;
-        strategySignal?: string | null;
-        movementPurpose?: string | null;
+        gotoPlayerName?: string | null;
         strategyPacketUse?: unknown;
         strategyPacketUseRationale?: unknown;
         reasoningContext?: string;
@@ -1563,8 +1561,7 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
         message: msg,
         noReply: result.noReply ?? !msg,
         gotoRoomId,
-        strategySignal: normalizeNullableString(result.strategySignal),
-        movementPurpose: normalizeNullableString(result.movementPurpose),
+        gotoPlayerName: normalizeNullableString(result.gotoPlayerName),
         reasoningContext: result.reasoningContext,
         strategyPacketUse: this.strategyPacketUseMarker(result.strategyPacketUse, result.strategyPacketUseRationale),
       };
@@ -1575,9 +1572,10 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
           message: `${otherRoomMates.join(", ")}, let's compare notes and watch the vote together.`,
           noReply: false,
           gotoRoomId: null,
+          gotoPlayerName: null,
         };
       }
-      return { thinking: "", message: null, noReply: true, gotoRoomId: null };
+      return { thinking: "", message: null, noReply: true, gotoRoomId: null, gotoPlayerName: null };
     }
   }
 
@@ -2303,8 +2301,13 @@ Use the jury_vote tool to cast your vote.`;
    * This content is identical across calls for the same agent in the same phase,
    * enabling OpenAI's automatic prompt prefix caching (~90% input cost savings).
    */
-  private buildSystemPrompt(phase: Phase, round: number): string {
-    const phaseGuidelines = getPhaseGuidelines(phase, round);
+  private buildSystemPrompt(
+    phase: Phase,
+    round: number,
+    options: { includePhaseGuidelines?: boolean } = {},
+  ): string {
+    const includePhaseGuidelines = options.includePhaseGuidelines ?? true;
+    const phaseGuidelines = includePhaseGuidelines ? getPhaseGuidelines(phase, round) : "";
     return `You are ${this.name}, a contestant on "Influence" — a social strategy game where real personalities clash.
 
 ${this.backstory ? `## Who You Are\n${this.backstory}\n` : ""}
@@ -2337,27 +2340,236 @@ IMPORTANT: Only reference alive players in your messages, votes, and strategies.
     return [pastSection, currentSection].filter(Boolean).join("\n");
   }
 
+  private buildPostVotePressureSection(ctx: PhaseContext): string {
+    const pressure = ctx.postVotePressure;
+    if (!pressure || (ctx.phase !== Phase.MINGLE && ctx.phase !== Phase.POWER)) return "";
+
+    const selfPressure = pressure.players.find((player) => player.id === ctx.selfId);
+    const statusLabels: Record<string, string> = {
+      empowered: "you are empowered",
+      current_at_risk: "you are currently at risk for council",
+      replacement_risk: "you may become at risk if a shield is granted",
+      safe: "you are not currently in the council pressure lane",
+    };
+    const currentAtRisk = pressure.currentAtRisk
+      .map((player) => `${player.name} (${player.exposeScore})`)
+      .join(", ") || "none";
+    const replacementRisk = pressure.replacementRisk
+      .map((player) => `${player.name} (${player.exposeScore})`)
+      .join(", ") || "none";
+    const shieldScenarios = pressure.shieldScenarios.length > 0
+      ? pressure.shieldScenarios
+        .map((scenario) => {
+          const result = scenario.resultingAtRisk
+            .map((player) => `${player.name} (${player.exposeScore})`)
+            .join(", ") || "no clear replacement";
+          return `  - If ${scenario.shieldedPlayer.name} receives a shield: ${result}`;
+        })
+        .join("\n")
+      : "  - No shield scenario is currently projected.";
+
+    return `
+## Post-Vote Pressure
+- Empowered player: ${pressure.empowered.name}
+- Your status: ${selfPressure ? statusLabels[selfPressure.status] : "unknown"}
+- Current at-risk players: ${currentAtRisk}
+- Replacement risk if a shield changes the lane: ${replacementRisk}
+Shield scenarios:
+${shieldScenarios}
+Use these as live facts for strategy and conversation. You may plead, bargain, redirect pressure, flatter, threaten, or stay quiet if that fits your personality and position.`;
+  }
+
+  private buildGameRulesSection(): string {
+    return `## Game Rules
+- Vote has two named ballots: empower gives power; expose creates council danger.
+- Votes are public after Vote resolves. Everyone can use the revealed vote record as social evidence.
+- The player with the most empower votes becomes empowered and cannot be exposed or placed on the council block that round.
+- After Vote, Mingle rooms are private: only current room occupants hear current room messages.
+- At Power, the empowered player can pass, protect/shield a player to change who faces Council, or use an available elimination action.
+- If Power does not eliminate, Council votes between the final candidates; the empowered player breaks council ties.`;
+  }
+
+  private buildCurrentStakesSection(ctx: PhaseContext): string {
+    const empoweredName = ctx.empoweredId
+      ? ctx.alivePlayers.find((player) => player.id === ctx.empoweredId)?.name ?? "unknown"
+      : null;
+    const candidates = ctx.councilCandidates
+      ? ctx.councilCandidates
+        .map((id) => ctx.alivePlayers.find((player) => player.id === id)?.name ?? id)
+        .join(" vs ")
+      : null;
+    const pressure = ctx.postVotePressure;
+    const selfPressure = pressure?.players.find((player) => player.id === ctx.selfId);
+    const statusLine = selfPressure
+      ? `- Your immediate risk status: ${selfPressure.status === "current_at_risk"
+        ? "you are currently in the council danger lane"
+        : selfPressure.status === "replacement_risk"
+          ? "you could enter danger if the empowered player grants a shield"
+          : selfPressure.status === "empowered"
+            ? "you are empowered and will decide the Power ceremony"
+            : "you are not currently in the council danger lane"}`
+      : "";
+
+    const nextPowerLine = pressure
+      ? `- Next major decision: Power. ${pressure.empowered.name} can pass, protect/shield a player to change who faces Council, or use an available elimination action.`
+      : "";
+
+    const phaseObjective: Partial<Record<Phase, string>> = {
+      [Phase.INTRODUCTION]: "Introduce a human persona. Do not play strategy out loud yet.",
+      [Phase.LOBBY]: "Public table talk before voting. Build cover, test reads, create reasons people might empower or expose someone.",
+      [Phase.VOTE]: "Cast one empower vote and one expose vote. Empower creates power; expose creates council danger.",
+      [Phase.MINGLE]: "Private room dealmaking after the vote. Use the room to pitch, probe, trade information, redirect targets, or decide who deserves protection.",
+      [Phase.POWER]: "The empowered player resolves the round's pressure by passing, protecting/shielding, or eliminating when available.",
+      [Phase.REVEAL]: "The Power outcome is becoming public. React to what changed and who is newly vulnerable.",
+      [Phase.COUNCIL]: "Council decides which candidate leaves. Survive, secure votes, justify your target, or manage jury risk.",
+      [Phase.DIARY_ROOM]: "Private producer-facing reflection. Be candid about strategy, fear, deals, and what you will do next.",
+    };
+
+    return `## Current Stakes
+- Phase objective: ${phaseObjective[ctx.phase] ?? "Advance your position while staying faithful to your personality and current evidence."}
+${empoweredName ? `- Empowered player: ${empoweredName}` : ""}
+${candidates ? `- Current council candidates: ${candidates}` : ""}
+${statusLine}
+${nextPowerLine}
+- Good play is not forced aggression. Choose the move your personality would actually make, but stay aware of who has power, who is exposed, who can be protected, and who may need a deal.`;
+  }
+
+  private buildRevealedVoteLedgerSection(ctx: PhaseContext): string {
+    const ledger = ctx.revealedVoteLedger ?? [];
+    if (ledger.length === 0) return "";
+
+    const formatCount = (target: string, voters: string[]) =>
+      `${target}: ${voters.length} (${voters.join(", ")})`;
+    const countVotes = (
+      entries: typeof ledger,
+      targetKey: "empowerTargetName" | "exposeTargetName" | "revoteEmpowerTargetName",
+    ): Map<string, string[]> => {
+      const counts = new Map<string, string[]>();
+      for (const entry of entries) {
+        const target = entry[targetKey];
+        if (!target) continue;
+        const voters = counts.get(target) ?? [];
+        voters.push(entry.voterName);
+        counts.set(target, voters);
+      }
+      return counts;
+    };
+    const formatCounts = (counts: Map<string, string[]>) =>
+      Array.from(counts.entries())
+        .sort(([, a], [, b]) => b.length - a.length)
+        .map(([target, voters]) => `  - ${formatCount(target, voters)}`)
+        .join("\n");
+
+    const byRound = new Map<number, typeof ledger>();
+    for (const entry of ledger) {
+      const roundEntries = byRound.get(entry.round) ?? [];
+      roundEntries.push(entry);
+      byRound.set(entry.round, roundEntries);
+    }
+
+    const rounds = Array.from(byRound.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([round, entries]) => {
+        const initialEmpowerCounts = countVotes(entries, "empowerTargetName");
+        const exposeCounts = countVotes(entries, "exposeTargetName");
+        const revoteCounts = countVotes(entries, "revoteEmpowerTargetName");
+        const maxInitialEmpower = Math.max(...Array.from(initialEmpowerCounts.values()).map((voters) => voters.length), 0);
+        const initialTie = maxInitialEmpower > 0
+          ? Array.from(initialEmpowerCounts.entries())
+            .filter(([, voters]) => voters.length === maxInitialEmpower)
+            .map(([target]) => target)
+          : [];
+        const maxRevote = Math.max(...Array.from(revoteCounts.values()).map((voters) => voters.length), 0);
+        const revoteWinners = maxRevote > 0
+          ? Array.from(revoteCounts.entries())
+            .filter(([, voters]) => voters.length === maxRevote)
+            .map(([target]) => target)
+          : [];
+        const currentRoundWinner = round === ctx.round && ctx.empoweredId
+          ? ctx.alivePlayers.find((player) => player.id === ctx.empoweredId)?.name
+          : null;
+        const winnerText = currentRoundWinner
+          ? `Final empowered result: ${currentRoundWinner}.`
+          : revoteWinners.length === 1
+            ? `Re-vote leader: ${revoteWinners[0]}.`
+            : "";
+        const revoteSummary = revoteCounts.size > 0
+          ? `
+Initial empower tie: ${initialTie.join(", ")} at ${maxInitialEmpower} votes each.
+Re-vote tally (this supersedes the initial tied empower votes; do not add initial and re-vote votes together):
+${formatCounts(revoteCounts)}
+${winnerText}`
+          : "";
+        const rows = entries
+          .slice()
+          .sort((a, b) => a.voterName.localeCompare(b.voterName))
+          .map((entry) => {
+            const revote = entry.revoteEmpowerTargetName
+              ? `; in the tie re-vote, chose ${entry.revoteEmpowerTargetName}`
+              : "";
+            return `  - ${entry.voterName}: empowered ${entry.empowerTargetName}, exposed ${entry.exposeTargetName}${revote}`;
+          })
+          .join("\n");
+        return `Round ${round}:
+Initial empower tally:
+${formatCounts(initialEmpowerCounts)}
+Expose tally:
+${formatCounts(exposeCounts)}
+${revoteSummary}
+Named ballots:
+${rows}`;
+      })
+      .join("\n");
+
+    return `## Revealed Vote Ledger
+These named votes are public player knowledge after Vote resolves. Use them as receipts for trust, betrayal, pressure, apologies, and deals. If there was an empower re-vote, the re-vote resolves only the initial empower tie and must not be added to the initial empower tally as extra ballots.
+${rounds}`;
+  }
+
+  private buildMingleSocialOpportunitySection(ctx: PhaseContext, otherRoomMates: string[]): string {
+    const pressure = ctx.postVotePressure;
+    if (!pressure || ctx.phase !== Phase.MINGLE) return "";
+
+    const selfPressure = pressure.players.find((player) => player.id === ctx.selfId);
+    const empoweredInRoom = otherRoomMates.includes(pressure.empowered.name);
+    const atRiskInRoom = pressure.currentAtRisk
+      .filter((player) => player.id !== ctx.selfId && otherRoomMates.includes(player.name))
+      .map((player) => `${player.name} (${player.exposeScore})`);
+    const replacementRiskInRoom = pressure.replacementRisk
+      .filter((player) => player.id !== ctx.selfId && otherRoomMates.includes(player.name))
+      .map((player) => `${player.name} (${player.exposeScore})`);
+
+    const lines: string[] = [];
+    if (selfPressure?.status === "current_at_risk" && empoweredInRoom) {
+      lines.push(`- You are currently at risk and ${pressure.empowered.name} is in this room. They can potentially protect/shield someone at Power, pass, or use an available elimination action. This is a live chance to pitch, bargain, flatter, redirect pressure, or stay guarded if that is truer to your personality.`);
+    } else if (selfPressure?.status === "current_at_risk") {
+      lines.push(`- You are currently at risk, but ${pressure.empowered.name} is not in this room. You can seek support from these occupants, redirect the target, or consider moving next turn to hunt for power. You only know other rooms by count, not by occupant identity.`);
+    } else if (selfPressure?.status === "replacement_risk" && empoweredInRoom) {
+      lines.push(`- You may become at risk if a shield is granted, and ${pressure.empowered.name} is in this room. This is a chance to discourage a shield that hurts you, propose a better target, or make yourself useful.`);
+    } else if (empoweredInRoom) {
+      lines.push(`- ${pressure.empowered.name} is empowered and is in this room. This is a chance to influence the coming Power decision: offer information, propose a target, build debt, or make yourself hard to harm.`);
+    }
+
+    if (atRiskInRoom.length > 0) {
+      lines.push(`- Current at-risk player(s) in this room: ${atRiskInRoom.join(", ")}. They may be looking for protection, votes, cover, or someone else to name.`);
+    }
+    if (replacementRiskInRoom.length > 0) {
+      lines.push(`- Replacement-risk player(s) in this room: ${replacementRiskInRoom.join(", ")}. A shield could pull them into danger.`);
+    }
+
+    if (lines.length === 0) return "";
+    return `\n## Room-Specific Social Opportunity\n${lines.join("\n")}`;
+  }
+
   private buildUserPrompt(ctx: PhaseContext): string {
     const eliminated = this.allPlayers
       .filter((p) => !ctx.alivePlayers.some((ap) => ap.id === p.id))
       .map((p) => p.name);
 
-    // Separate anonymous rumors from attributed messages
-    const nonAnonymous = ctx.publicMessages.filter((m) => !m.anonymous);
-    const anonymousRumors = ctx.publicMessages.filter((m) => m.anonymous);
-
-    const recentMessages = nonAnonymous
+    const recentMessages = ctx.publicMessages
       .slice(-10)
       .map((m) => `  [${m.phase}] ${m.from}: "${m.text}"`)
       .join("\n");
-
-    const anonymousSection = anonymousRumors.length > 0
-      ? `\n## Anonymous Rumors\nThe following rumors were posted anonymously. You do not know who wrote them:\n` +
-        anonymousRumors
-          .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0))
-          .map((m, i) => `  ${i + 1}. "The shadows whisper: ${m.text}"`)
-          .join("\n")
-      : "";
 
     const mingleMessages = ctx.mingleMessages
       .map((m) => `  From ${m.from}: "${m.text}"`)
@@ -2383,6 +2595,10 @@ IMPORTANT: Only reference alive players in your messages, votes, and strategies.
     const threats = Array.from(this.memory.threats).join(", ") || "none";
     const strategyPacket = this.strategyPacketForPrompt(ctx);
     const voteHistorySection = this.buildVoteHistorySection(ctx.round);
+    const gameRulesSection = this.buildGameRulesSection();
+    const currentStakesSection = this.buildCurrentStakesSection(ctx);
+    const postVotePressureSection = this.buildPostVotePressureSection(ctx);
+    const revealedVoteLedgerSection = this.buildRevealedVoteLedgerSection(ctx);
 
     let endgameInfo = "";
     if (ctx.endgameStage) {
@@ -2411,6 +2627,10 @@ ${eliminated.length > 0 ? `- ELIMINATED (out of the game — they are no longer 
 ${ctx.empoweredId ? `- Empowered player: ${ctx.alivePlayers.find((p) => p.id === ctx.empoweredId)?.name ?? "unknown"}` : ""}
 ${endgameInfo}
 
+${gameRulesSection}
+
+${currentStakesSection}
+
 ## Your Memory
 - Known allies: ${allies}
 - Known threats: ${threats}
@@ -2418,9 +2638,10 @@ ${memoryNotes ? `- Notes:\n${memoryNotes}` : ""}
 ${voteHistorySection ? `${voteHistorySection}\n` : ""}
 ${strategyPacket ? `## Strategy Thread\nThis is your private carry-forward strategy context, not an order. You may follow it, test it, revise it, ignore it, or defer it when current evidence warrants.\n- Revision: ${strategyPacket.revisionId}${strategyPacket.previousRevisionId ? ` (previous ${strategyPacket.previousRevisionId})` : ""}\n- Objective: ${strategyPacket.objective || "stay flexible"}\n- Target posture: ${strategyPacket.targetPosture || "no named target yet"}\n- Coalition posture: ${strategyPacket.coalitionPosture || "keep relationships flexible"}\n- Next social probe: ${strategyPacket.nextSocialProbe || "look for new evidence"}\n- Strategic lens: ${strategyPacket.strategicLens || "broad_read"}\n- Lens rationale: ${strategyPacket.strategicLensRationale || "none recorded"}\n- Uncertainty: ${strategyPacket.uncertainty || "none recorded"}\n- Revise if: ${strategyPacket.reviseTrigger || "new evidence contradicts the plan"}\n- Changed since previous: ${strategyPacket.changedSincePrevious || "none recorded"}\nStanding target discipline:\n- A standing target is your current living default pressure/read target. It can be a quiet watch target, a Mingle probe, an expose candidate, or no target yet.\n- Never treat an eliminated player as an active standing target. If the packet names someone marked eliminated, use that as stale history and pivot to a living replacement or explicitly no standing target.\n- Do not force target naming. Soft reads, alliance repair, and information-gathering are valid when the evidence is not there.\nWhen a tool asks for strategyPacketUse, report how this decision used revision ${strategyPacket.revisionId} as self-reported linkage evidence, with a compact rationale tied to current evidence.` : ""}
 ${this.memory.lastReflection ? `## Strategic Assessment\n- Certainties: ${(this.memory.lastReflection.certainties ?? []).join("; ") || "none"}\n- Suspicions: ${(this.memory.lastReflection.suspicions ?? []).join("; ") || "none"}\n- Allies: ${(this.memory.lastReflection.allies ?? []).join("; ") || "none"}\n- Threats: ${(this.memory.lastReflection.threats ?? []).join("; ") || "none"}\n- Plan: ${this.memory.lastReflection.plan ?? "none"}\n- Strategic lens: ${this.memory.lastReflection.strategicLens ?? "broad_read"}\n- Lens rationale: ${this.memory.lastReflection.strategicLensRationale ?? "none recorded"}` : ""}
+${revealedVoteLedgerSection ? `${revealedVoteLedgerSection}\n` : ""}
 ## Recent Public Messages
 ${recentMessages || "  (none yet)"}
-${anonymousSection}
+${postVotePressureSection}
 
 ${mingleMessages ? `## Private Room Messages (Mingle)\n${mingleMessages}\nThese are private to your current room occupants only.` : ""}
 ${roomSection}
@@ -2646,7 +2867,7 @@ ${roomSection}
     // Agents should still emit their internal thinking (in tool args or free content)
     // even when using local models. The raw hidden channel (if any) goes only to
     // reasoningContext. This makes --chatty + local model Mingle/vote/power traces
-    // show both the emitted thinking (gray) and the native reasoningContext (cyan).
+    // show both the emitted thinking and the native reasoningContext.
     if (!this.usesLocalStructuredCompatibility()) return tool;
     return tool;
   }
@@ -2976,8 +3197,8 @@ ${JSON.stringify(tool.function.parameters)}`,
     if (this.usesLocalStructuredCompatibility()) {
       // Local models (e.g. via LM Studio): route through the native-thinking path so we can
       // capture any raw `reasoning_content` the server provides in the separate `reasoningContext`
-      // field (cyan in --chatty). The agent's explicitly emitted "thinking" (from content JSON
-      // or tool args) populates `thinking` (gray). We no longer conflate the raw channel into
+      // field. The agent's explicitly emitted "thinking" (from content JSON
+      // or tool args) populates `thinking`. We no longer conflate the raw channel into
       // the emitted thinking, and we no longer strip "thinking" from tool schemas for local.
       return await this.callLocalLLMWithNativeThinking(
         prompt,
@@ -3231,14 +3452,20 @@ ${JSON.stringify(tool.function.parameters)}`,
   // ---------------------------------------------------------------------------
 
   async getStrategicReflection(ctx: PhaseContext): Promise<StrategicReflectionAction | null> {
-    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round, { includePhaseGuidelines: false });
     const prompt = this.buildUserPrompt(ctx) + `
-## Strategic Reflection
+## Private Reflection Mode
+You are NOT taking a live phase action right now. The phase shown above is the phase you are reflecting on after it resolved.
+Do not write a player-visible message, do not speak to the room, do not cast a vote, and do not choose a Power/Council action.
+This is a private producer/debug checkpoint for memory and strategy only. Other players will not see this reflection or Strategy Thread packet.
 
-Based on everything you know so far, produce a strategic assessment.
+## Strategic Reflection
+Reflected phase: ${ctx.phase}.
+Based on everything you know so far, produce a strategic assessment of what happened and what it means.
 Use the strategic_reflection tool to record your analysis.
 
 Be specific — name players, cite events, reference conversations.
+Treat vote ledgers, Power outcomes, room traffic, and public/private messages as evidence. Do not turn this into a message you intend to send.
 
 ${STRATEGIC_LENS_GUIDANCE}
 
