@@ -975,6 +975,30 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).not.toContain("Standard Vote has two named ballots");
   });
 
+  it("falls back cleanly when Council tool args omit eliminate", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(requests, "council_vote", {
+        thinking: "I want to vote, but the choice field is malformed.",
+      }),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const result = await agent.getCouncilVote({
+      ...makeContext(Phase.COUNCIL),
+      round: 3,
+      empoweredId: "atlas-id",
+      councilCandidates: ["mira-id", "vera-id"],
+    }, ["mira-id", "vera-id"]);
+
+    expect(["mira-id", "vera-id"]).toContain(result.target);
+    expect(result.thinking).toBe("I want to vote, but the choice field is malformed.");
+  });
+
   it("clarifies that vote immunity comes from the current empower tally only", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(

@@ -2137,15 +2137,16 @@ Use the council_vote tool to cast your vote.`;
     try {
       const result = await this.callTool<{ thinking?: string; eliminate: string; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown; reasoningContext?: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, this.traceOptions(ctx, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }));
       const strategyPacketUse = this.strategyPacketUseMarker(result.strategyPacketUse, result.strategyPacketUseRationale);
-      const target = normalizeName(result.eliminate) === normalizeName(c1Name) ? c1
-        : normalizeName(result.eliminate) === normalizeName(c2Name) ? c2
+      const eliminationName = typeof result.eliminate === "string" ? result.eliminate : "";
+      const target = normalizeName(eliminationName) === normalizeName(c1Name) ? c1
+        : normalizeName(eliminationName) === normalizeName(c2Name) ? c2
         : undefined;
       if (target) {
         return { target, thinking: result.thinking, reasoningContext: result.reasoningContext, strategyPacketUse };
       }
       const fallback = candidates[Math.floor(Math.random() * 2)]!;
       const fallbackName = ctx.alivePlayers.find((p) => p.id === fallback)?.name ?? fallback;
-      console.warn(`[vote-fallback] agent="${this.name}" method=getCouncilVote returned="${result.eliminate}" available=[${c1Name}, ${c2Name}] fallback="${fallbackName}"`);
+      console.warn(`[vote-fallback] agent="${this.name}" method=getCouncilVote returned="${eliminationName || String(result.eliminate)}" available=[${c1Name}, ${c2Name}] fallback="${fallbackName}"`);
       return { target: fallback, thinking: result.thinking, reasoningContext: result.reasoningContext, strategyPacketUse };
     } catch (err) {
       const fallback = candidates[Math.floor(Math.random() * 2)]!;
