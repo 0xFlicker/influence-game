@@ -279,12 +279,15 @@ const TOOL_SEND_WHISPERS: ChatCompletionTool = {
               text: { type: "string", description: "The whisper message" },
             },
             required: ["to", "text"],
+            additionalProperties: false,
           },
           description: "List of whisper messages to send",
         },
       },
       required: ["whispers"],
+      additionalProperties: false,
     },
+    strict: true,
   },
 };
 
@@ -626,7 +629,9 @@ const TOOL_COUNCIL_VOTE: ChatCompletionTool = {
         ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
       },
       required: ["thinking", "eliminate", ...STRATEGY_PACKET_USE_REQUIRED],
+      additionalProperties: false,
     },
+    strict: true,
   },
 };
 
@@ -642,7 +647,9 @@ const TOOL_ELIMINATION_VOTE: ChatCompletionTool = {
         eliminate: { type: "string", description: "Player name to eliminate" },
       },
       required: ["thinking", "eliminate"],
+      additionalProperties: false,
     },
+    strict: true,
   },
 };
 
@@ -659,7 +666,9 @@ const TOOL_MAKE_ACCUSATION: ChatCompletionTool = {
         accusation: { type: "string", description: "Your accusation text" },
       },
       required: ["thinking", "target", "accusation"],
+      additionalProperties: false,
     },
+    strict: true,
   },
 };
 
@@ -676,7 +685,9 @@ const TOOL_ASK_JURY_QUESTION: ChatCompletionTool = {
         question: { type: "string", description: "Your question" },
       },
       required: ["thinking", "target", "question"],
+      additionalProperties: false,
     },
+    strict: true,
   },
 };
 
@@ -692,7 +703,9 @@ const TOOL_JURY_VOTE: ChatCompletionTool = {
         winner: { type: "string", description: "Finalist name who should win" },
       },
       required: ["thinking", "winner"],
+      additionalProperties: false,
     },
+    strict: true,
   },
 };
 

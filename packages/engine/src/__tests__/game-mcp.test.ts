@@ -120,7 +120,15 @@ describe("game MCP corpus read model", () => {
       "batch-2026-06-11T20-05-24",
     ]);
     expect(readModel.listGames({ sessionId: "batch-2026-06-11T20-05-24" })).toMatchObject([
-      { sessionId: "batch-2026-06-11T20-05-24", gameNumber: 1, hasEvents: true, hasProjection: true, hasTurns: true },
+      {
+        sessionId: "batch-2026-06-11T20-05-24",
+        gameNumber: 1,
+        hasEvents: true,
+        hasProjection: true,
+        hasTurns: true,
+        eventsUri: "influence-game://sessions/batch-2026-06-11T20-05-24/games/1/events",
+        turnsUri: "influence-game://sessions/batch-2026-06-11T20-05-24/games/1/turns",
+      },
     ]);
     expect(readModel.listGames({ sessionId: "batch-legacy" })).toMatchObject([
       { sessionId: "batch-legacy", gameNumber: 2, hasEvents: false, hasProjection: false, hasTurns: true },
@@ -161,7 +169,15 @@ describe("game MCP corpus read model", () => {
     expect(projection.currentVoteTally.empowerVotes.atlas).toBe("vera");
 
     expect(readModel.filterEvents({ sessionId: "batch-query", gameNumber: 1, type: "vote.cast" })).toMatchObject([
-      { citation: { sessionId: "batch-query", gameNumber: 1, sourceKind: "events", eventSequence: 3 } },
+      {
+        citation: {
+          sessionId: "batch-query",
+          gameNumber: 1,
+          sourceKind: "events",
+          resourceUri: "influence-game://sessions/batch-query/games/1/events",
+          eventSequence: 3,
+        },
+      },
     ]);
     expect(readModel.readPlayerTimeline("batch-query", 1, "Atlas", "producer").map((entry) => entry.event.type)).toContain("vote.cast");
     expect(readModel.readPlayerTimeline("batch-query", 1, "Vera", "producer").map((entry) => entry.event.type)).toContain("vote.cast");
@@ -169,6 +185,11 @@ describe("game MCP corpus read model", () => {
 
     const searchResults = readModel.searchLogs({ query: "quiet coalition", sessionId: "batch-query", sources: ["turns", "transcript", "game_json"] });
     expect(searchResults.map((result) => result.citation.sourceKind).sort()).toEqual(["game_json", "transcript", "turns"]);
+    expect(searchResults.map((result) => result.citation.resourceUri).sort()).toEqual([
+      "influence-game://sessions/batch-query/games/1/game-json",
+      "influence-game://sessions/batch-query/games/1/transcript",
+      "influence-game://sessions/batch-query/games/1/turns",
+    ]);
 
     const linked = readModel.readLinkedRecords("batch-query", 1, 3);
     expect(linked.event.event.type).toBe("vote.cast");
@@ -612,6 +633,33 @@ describe("game MCP JSON-RPC server", () => {
 
     const resources = await server.handle({ jsonrpc: "2.0", id: 2, method: "resources/list" });
     expect(JSON.stringify(resources?.result)).toContain("influence-game://sessions/batch-rpc/games/1/events");
+    expect(JSON.stringify(resources?.result)).toContain("influence-game://sessions/batch-rpc/games/1/progress");
+    expect(JSON.stringify(resources?.result)).toContain("influence-game://sessions/batch-rpc/games/1/transcript");
+    expect(JSON.stringify(resources?.result)).toContain("influence-game://sessions/batch-rpc/games/1/game-json");
+
+    const eventResource = await server.handle({
+      jsonrpc: "2.0",
+      id: "read-events",
+      method: "resources/read",
+      params: { uri: "influence-game://sessions/batch-rpc/games/1/events" },
+    });
+    expect(JSON.stringify(eventResource?.result)).toContain("vote.cast");
+
+    const transcriptResource = await server.handle({
+      jsonrpc: "2.0",
+      id: "read-transcript",
+      method: "resources/read",
+      params: { uri: "influence-game://sessions/batch-rpc/games/1/transcript" },
+    });
+    expect(JSON.stringify(transcriptResource?.result)).toContain("quiet coalition");
+
+    const jsonResource = await server.handle({
+      jsonrpc: "2.0",
+      id: "read-game-json",
+      method: "resources/read",
+      params: { uri: "influence-game://sessions/batch-rpc/games/1/game-json" },
+    });
+    expect(JSON.stringify(jsonResource?.result)).toContain("quiet coalition full JSON");
 
     const missingSession = await server.handle({
       jsonrpc: "2.0",
@@ -641,6 +689,7 @@ describe("game MCP JSON-RPC server", () => {
       params: { name: "search_logs", arguments: { query: "quiet coalition", sessionId: "batch-rpc", limit: 2 } },
     });
     expect(JSON.stringify(search?.result)).toContain("quiet coalition");
+    expect(JSON.stringify(search?.result)).toContain("influence-game://sessions/batch-rpc/games/1/turns");
 
     const rejected = await server.handle({
       jsonrpc: "2.0",

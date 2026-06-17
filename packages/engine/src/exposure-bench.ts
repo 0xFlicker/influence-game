@@ -324,7 +324,10 @@ export function resolveShieldReplacement(input: ResolveShieldReplacementInput): 
       .filter((entry) => entry.exposeScore === topScore)
       .sort(byScoreThenName(initialResolution.exposeScores))
       .map((entry) => entry.id);
-    const choice = resolveChoice(eligibleCandidateIds, 1, input.selectedCandidateIds);
+    const deterministicSelection = eligibleCandidateIds.length === 1
+      ? eligibleCandidateIds
+      : input.selectedCandidateIds;
+    const choice = resolveChoice(eligibleCandidateIds, 1, deterministicSelection);
     const selected = choice.selectedCandidateIds[0];
     return {
       ...initialResolution,

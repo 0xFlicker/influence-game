@@ -638,6 +638,114 @@ describe("Mingle Rooms (current open-room phase)", () => {
     });
   });
 
+  it("records a locked shield pull-up without fallback when only one replacement is legal", async () => {
+    class LockedShieldReplacementAgent extends MockAgent {
+      constructor(
+        id: string,
+        name: string,
+        private readonly vote: { empowerTarget: string; exposeTarget: string },
+        private readonly powerTarget: string | null = null,
+        private readonly initialPick: string | null = null,
+      ) {
+        super(id, name);
+      }
+
+      override async getVotes(): Promise<{ empowerTarget: string; exposeTarget: string; thinking?: string }> {
+        return { ...this.vote, thinking: `${this.name} scripted locked-replacement vote` };
+      }
+
+      override async getCandidateSelection(
+        _ctx: PhaseContext,
+        request: CandidateChoiceRequest,
+      ): Promise<CandidateSelectionDecision> {
+        const selected = this.initialPick && request.eligibleCandidateIds.includes(this.initialPick)
+          ? [this.initialPick]
+          : request.eligibleCandidateIds.slice(0, request.requiredCount);
+        return {
+          selectedCandidateIds: selected,
+          thinking: `${this.name} chooses the initial candidate`,
+        };
+      }
+
+      override async getPowerAction(
+        _ctx: PhaseContext,
+        candidates: [string, string],
+        options: PowerActionOptions = {},
+      ): Promise<PowerActionDecision> {
+        const target = this.powerTarget ?? candidates[0];
+        const replacementRequest = options.shieldReplacementRequests?.find(
+          (request) => request.protectedCandidateId === target,
+        );
+        return {
+          action: "protect",
+          target,
+          shieldPullUpCandidateIds: replacementRequest?.eligibleCandidateIds.slice(0, replacementRequest.requiredCount) ?? [],
+          thinking: `${this.name} protects a locked candidate`,
+        };
+      }
+
+      override async takeMingleTurn(): Promise<MingleTurnAction> {
+        return { thinking: "", message: null, noReply: true, gotoRoomId: null, gotoPlayerName: null };
+      }
+    }
+
+    const mira = createUUID();
+    const alpha = createUUID();
+    const vera = createUUID();
+    const nyx = createUUID();
+    const echo = createUUID();
+    const sol = createUUID();
+    const agents = [
+      new LockedShieldReplacementAgent(mira, "Mira", { empowerTarget: mira, exposeTarget: vera }, vera, nyx),
+      new LockedShieldReplacementAgent(alpha, "Alpha", { empowerTarget: mira, exposeTarget: vera }),
+      new LockedShieldReplacementAgent(vera, "Vera", { empowerTarget: mira, exposeTarget: echo }),
+      new LockedShieldReplacementAgent(nyx, "Nyx", { empowerTarget: mira, exposeTarget: vera }),
+      new LockedShieldReplacementAgent(echo, "Echo", { empowerTarget: mira, exposeTarget: vera }),
+      new LockedShieldReplacementAgent(sol, "Sol", { empowerTarget: alpha, exposeTarget: nyx }),
+    ];
+    const runner = new GameRunner(
+      agents,
+      { ...TEST_CONFIG, mingleSessionsPerRound: 1 },
+      new FixedMingleHouseInterviewer({
+        Mira: 1,
+        Alpha: 1,
+        Vera: 2,
+        Nyx: 2,
+        Echo: 3,
+        Sol: 3,
+      }),
+    );
+    const events: GameStreamEvent[] = [];
+    runner.setStreamListener((event) => events.push(event));
+
+    await runner.run();
+
+    const powerAction = events.find(
+      (event): event is Extract<GameStreamEvent, { type: "agent_turn" }> =>
+        event.type === "agent_turn" && event.action === "power-action",
+    );
+    expect(powerAction?.response.shieldPullUp).toMatchObject({
+      mode: "bench_replacement_locked",
+      eligibleChoices: [{ id: echo, name: "Echo" }],
+      selectedCandidates: [{ id: echo, name: "Echo" }],
+      fallbackApplied: false,
+      fallbackReason: null,
+    });
+
+    const candidateEvent = runner.getCanonicalEvents().find(
+      (event): event is Extract<CanonicalGameEvent, { type: "power.candidates_resolved" }> =>
+        event.type === "power.candidates_resolved" && event.round === 1,
+    );
+    expect(candidateEvent?.payload.candidates).toEqual([nyx, echo]);
+    expect(candidateEvent?.payload.shieldReplacement).toMatchObject({
+      mode: "bench_replacement_locked",
+      protectedCandidateId: vera,
+      selectedCandidateIds: [echo],
+      fallbackApplied: false,
+      fallbackReason: null,
+    });
+  });
+
   it("does not run RUMOR in normal live rounds", async () => {
     const agents = ["Alpha", "Beta", "Gamma", "Delta"].map(
       (name) => new MockAgent(createUUID(), name),

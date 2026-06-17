@@ -20,7 +20,7 @@ function buildExposePressure(
 }
 
 function shouldRequestShieldReplacementChoice(resolution: ShieldReplacementResolution): boolean {
-  return resolution.choice.requiredCount > 0 && resolution.choice.eligibleCandidateIds.length > resolution.choice.requiredCount;
+  return resolution.choice.requiredCount > 0;
 }
 
 function shieldReplacementChoiceRequest(resolution: ShieldReplacementResolution): CandidateChoiceRequest {

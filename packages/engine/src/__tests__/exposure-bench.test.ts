@@ -159,6 +159,28 @@ describe("exposure bench resolver", () => {
     expect(replacement.fallbackReason).toBeNull();
   });
 
+  it("treats a single legal bench replacement as deterministic instead of missing", () => {
+    const [alpha, beta, gamma, delta] = players("Alpha", "Beta", "Gamma", "Delta");
+    const initial = resolveInitialExposureBench({
+      alivePlayers: [alpha!, beta!, gamma!, delta!],
+      empoweredId: alpha!.id,
+      exposeScores: scores([[beta!, 4], [gamma!, 2], [delta!, 2]]),
+      selectedCandidateIds: [gamma!.id],
+    });
+
+    const replacement = resolveShieldReplacement({
+      initialResolution: initial,
+      protectedCandidateId: gamma!.id,
+    });
+
+    expect(replacement.mode).toBe("bench_replacement_locked");
+    expect(replacement.choice.eligibleCandidateIds).toEqual([delta!.id]);
+    expect(replacement.selectedCandidateIds).toEqual([delta!.id]);
+    expect(replacement.candidates).toEqual([beta!.id, delta!.id]);
+    expect(replacement.fallbackApplied).toBe(false);
+    expect(replacement.fallbackReason).toBeNull();
+  });
+
   it("uses all-player fallback when shield replacement exhausts the bench", () => {
     const [alpha, beta, gamma, delta] = players("Alpha", "Beta", "Gamma", "Delta");
     const initial = resolveInitialExposureBench({

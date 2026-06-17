@@ -18,6 +18,7 @@ export interface GameMcpSourceCitation {
   sessionId: string;
   gameNumber: number;
   sourceKind: GameMcpSourceKind;
+  resourceUri: string;
   sourcePath: string;
   line?: number;
   eventSequence?: number;
@@ -48,6 +49,11 @@ export interface GameMcpGameSummary {
   progressPath: string | null;
   transcriptPath: string | null;
   jsonPath: string | null;
+  eventsUri: string | null;
+  turnsUri: string | null;
+  progressUri: string | null;
+  transcriptUri: string | null;
+  jsonUri: string | null;
   hasEvents: boolean;
   hasTurns: boolean;
   hasProgress: boolean;
@@ -147,6 +153,21 @@ interface GamePaths {
 
 const DEFAULT_STALE_RUNNING_MS = 15 * 60 * 1000;
 const DEFAULT_SEARCH_SOURCES: GameMcpSourceKind[] = ["events", "turns", "progress", "transcript", "game_json"];
+
+export type GameMcpArtifactKind = GameMcpSourceKind | "projection";
+
+export function gameMcpSessionUri(sessionId: string): string {
+  return `influence-game://sessions/${encodeURIComponent(sessionId)}`;
+}
+
+export function gameMcpSessionGamesUri(sessionId: string): string {
+  return `${gameMcpSessionUri(sessionId)}/games`;
+}
+
+export function gameMcpGameArtifactUri(sessionId: string, gameNumber: number, artifact: GameMcpArtifactKind): string {
+  const artifactPath = artifact === "game_json" ? "game-json" : artifact;
+  return `${gameMcpSessionGamesUri(sessionId)}/${gameNumber}/${artifactPath}`;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -378,6 +399,7 @@ export class GameMcpReadModel {
           sessionId,
           gameNumber,
           sourceKind: "events",
+          resourceUri: gameMcpGameArtifactUri(sessionId, gameNumber, "events"),
           sourcePath: eventsPath,
           line,
           eventSequence: event.sequence,
@@ -394,6 +416,27 @@ export class GameMcpReadModel {
     return this.readJsonlLogRecords(sessionId, gameNumber, "turns", turnsPath);
   }
 
+  readProgressRecords(sessionId: string, gameNumber: number): GameMcpLogRecord[] {
+    const session = this.requireSession(sessionId);
+    const progressPath = this.gamePaths(session.sessionPath, gameNumber).progressPath;
+    if (!progressPath) throw new Error(`No progress log for session ${sessionId} game ${gameNumber}`);
+    return this.readJsonlLogRecords(sessionId, gameNumber, "progress", progressPath);
+  }
+
+  readTranscript(sessionId: string, gameNumber: number): string {
+    const session = this.requireSession(sessionId);
+    const transcriptPath = this.gamePaths(session.sessionPath, gameNumber).transcriptPath;
+    if (!transcriptPath) throw new Error(`No text transcript for session ${sessionId} game ${gameNumber}`);
+    return this.readText(transcriptPath);
+  }
+
+  readGameJson(sessionId: string, gameNumber: number): string {
+    const session = this.requireSession(sessionId);
+    const jsonPath = this.gamePaths(session.sessionPath, gameNumber).jsonPath;
+    if (!jsonPath) throw new Error(`No full game JSON for session ${sessionId} game ${gameNumber}`);
+    return this.readText(jsonPath);
+  }
+
   readProjection(sessionId: string, gameNumber: number): CanonicalGameProjection {
     return this.readProjectionRecord(sessionId, gameNumber).projection;
   }
@@ -408,6 +451,7 @@ export class GameMcpReadModel {
         sessionId,
         gameNumber,
         sourceKind: "events",
+        resourceUri: gameMcpGameArtifactUri(sessionId, gameNumber, "events"),
         sourcePath: first.citation.sourcePath,
         eventSequence: projection.lastSequence,
       },
@@ -618,6 +662,11 @@ export class GameMcpReadModel {
       gameNumber,
       sessionPath: session.sessionPath,
       ...paths,
+      eventsUri: paths.eventsPath ? gameMcpGameArtifactUri(session.sessionId, gameNumber, "events") : null,
+      turnsUri: paths.turnsPath ? gameMcpGameArtifactUri(session.sessionId, gameNumber, "turns") : null,
+      progressUri: paths.progressPath ? gameMcpGameArtifactUri(session.sessionId, gameNumber, "progress") : null,
+      transcriptUri: paths.transcriptPath ? gameMcpGameArtifactUri(session.sessionId, gameNumber, "transcript") : null,
+      jsonUri: paths.jsonPath ? gameMcpGameArtifactUri(session.sessionId, gameNumber, "game_json") : null,
       hasEvents: paths.eventsPath !== null,
       hasTurns: paths.turnsPath !== null,
       hasProgress: paths.progressPath !== null,
@@ -696,7 +745,14 @@ export class GameMcpReadModel {
     sourcePath: string,
   ): GameMcpLogRecord[] {
     return this.readJsonlRecords(sourcePath).map(({ line, record }) => ({
-      citation: { sessionId, gameNumber, sourceKind, sourcePath, line },
+      citation: {
+        sessionId,
+        gameNumber,
+        sourceKind,
+        resourceUri: gameMcpGameArtifactUri(sessionId, gameNumber, sourceKind),
+        sourcePath,
+        line,
+      },
       text: JSON.stringify(record),
       record,
     }));
@@ -732,6 +788,7 @@ export class GameMcpReadModel {
           sessionId: game.sessionId,
           gameNumber: game.gameNumber,
           sourceKind,
+          resourceUri: gameMcpGameArtifactUri(game.sessionId, game.gameNumber, sourceKind),
           sourcePath,
           line: index + 1,
         },

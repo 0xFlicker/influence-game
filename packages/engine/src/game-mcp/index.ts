@@ -1,5 +1,6 @@
-export { GameMcpReadModel } from "./read-model";
+export { gameMcpGameArtifactUri, gameMcpSessionGamesUri, gameMcpSessionUri, GameMcpReadModel } from "./read-model";
 export type {
+  GameMcpArtifactKind,
   GameMcpEventFilter,
   GameMcpEventResult,
   GameMcpGameFilter,

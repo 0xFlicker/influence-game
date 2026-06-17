@@ -260,7 +260,7 @@ For validation runs that need to prove strategic-reflection capture or Strategy 
 
 The "Progress: R1 VOTE | alive=..." lines + the following House action lines are the primary place humans see per-agent rationale in real time. After the run, use `game-N-turns.jsonl` for structured agent-decision analysis and `game-N-events.jsonl` for replay/projection queries instead of parsing colored terminal output.
 
-For MCP-backed analysis, run `bun run mcp:game -- docs/simulations` from `packages/engine`. The MCP scans the whole local simulation corpus, including old batches and currently-writing batches, and every game query is addressed by `sessionId + gameNumber`.
+For MCP-backed analysis, run `bun run mcp:game -- docs/simulations` from `packages/engine`. The MCP scans the whole local simulation corpus, including old batches and currently-writing batches, and every game query is addressed by `sessionId + gameNumber`. Tool responses include `resourceUri` values such as `influence-game://sessions/<sessionId>/games/<gameNumber>/turns`; use `resources/read` with those URIs to retrieve full event logs, turn logs, progress logs, transcripts, or full game JSON through MCP. `sourcePath` is only a local diagnostic path and may be relative to the MCP corpus process, not the repo root.
 
 Useful validation queries:
 

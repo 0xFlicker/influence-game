@@ -965,6 +965,13 @@ describe("InfluenceAgent structured output mode", () => {
     }, ["mira-id", "vera-id"]);
 
     const messages = requests[0]?.messages as Array<{ content: string }>;
+    const tools = requests[0]?.tools as Array<{
+      function: { name: string; strict?: boolean; parameters?: { additionalProperties?: unknown } };
+    }>;
+    const councilTool = tools.find((tool) => tool.function.name === "council_vote");
+    expect(councilTool?.function.strict).toBe(true);
+    expect(councilTool?.function.parameters?.additionalProperties).toBe(false);
+
     const prompt = messages.at(-1)!.content;
     expect(prompt).toContain("## Council Vote Rules");
     expect(prompt).toContain("This is not a normal Vote");

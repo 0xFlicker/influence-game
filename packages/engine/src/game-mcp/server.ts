@@ -1,6 +1,10 @@
 #!/usr/bin/env bun
 import {
+  gameMcpGameArtifactUri,
+  gameMcpSessionGamesUri,
+  gameMcpSessionUri,
   GameMcpReadModel,
+  type GameMcpArtifactKind,
   type GameMcpSourceKind,
   type GameMcpSessionStatus,
 } from "./read-model";
@@ -77,18 +81,6 @@ function optionalSearchSources(args: Record<string, unknown>): GameMcpSourceKind
   );
 }
 
-function sessionUri(sessionId: string): string {
-  return `influence-game://sessions/${encodeURIComponent(sessionId)}`;
-}
-
-function sessionGamesUri(sessionId: string): string {
-  return `${sessionUri(sessionId)}/games`;
-}
-
-function gameUri(sessionId: string, gameNumber: number, artifact: "events" | "projection" | "turns"): string {
-  return `${sessionGamesUri(sessionId)}/${gameNumber}/${artifact}`;
-}
-
 export class GameMcpJsonRpcServer {
   constructor(private readonly readModel: GameMcpReadModel) {}
 
@@ -148,35 +140,56 @@ export class GameMcpJsonRpcServer {
             const games = this.readModel.listGames({ sessionId: session.sessionId });
             return [
               {
-                uri: sessionUri(session.sessionId),
+                uri: gameMcpSessionUri(session.sessionId),
                 name: `Simulation session ${session.sessionId}`,
                 mimeType: "application/json",
               },
               {
-                uri: sessionGamesUri(session.sessionId),
+                uri: gameMcpSessionGamesUri(session.sessionId),
                 name: `Games in ${session.sessionId}`,
                 mimeType: "application/json",
               },
               ...games.flatMap((game) => [
                 ...(game.hasEvents
                   ? [{
-                      uri: gameUri(game.sessionId, game.gameNumber, "events"),
+                      uri: gameMcpGameArtifactUri(game.sessionId, game.gameNumber, "events"),
                       name: `${game.sessionId} game ${game.gameNumber} canonical events`,
                       mimeType: "application/jsonl",
                     }]
                   : []),
                 ...(game.hasProjection
                   ? [{
-                      uri: gameUri(game.sessionId, game.gameNumber, "projection"),
+                      uri: gameMcpGameArtifactUri(game.sessionId, game.gameNumber, "projection"),
                       name: `${game.sessionId} game ${game.gameNumber} projection`,
                       mimeType: "application/json",
                     }]
                   : []),
                 ...(game.hasTurns
                   ? [{
-                      uri: gameUri(game.sessionId, game.gameNumber, "turns"),
+                      uri: gameMcpGameArtifactUri(game.sessionId, game.gameNumber, "turns"),
                       name: `${game.sessionId} game ${game.gameNumber} turn records`,
                       mimeType: "application/jsonl",
+                    }]
+                  : []),
+                ...(game.hasProgress
+                  ? [{
+                      uri: gameMcpGameArtifactUri(game.sessionId, game.gameNumber, "progress"),
+                      name: `${game.sessionId} game ${game.gameNumber} progress log`,
+                      mimeType: "application/jsonl",
+                    }]
+                  : []),
+                ...(game.hasTranscript
+                  ? [{
+                      uri: gameMcpGameArtifactUri(game.sessionId, game.gameNumber, "transcript"),
+                      name: `${game.sessionId} game ${game.gameNumber} text transcript`,
+                      mimeType: "text/plain",
+                    }]
+                  : []),
+                ...(game.hasJson
+                  ? [{
+                      uri: gameMcpGameArtifactUri(game.sessionId, game.gameNumber, "game_json"),
+                      name: `${game.sessionId} game ${game.gameNumber} full game JSON`,
+                      mimeType: "application/json",
                     }]
                   : []),
               ]),
@@ -210,20 +223,33 @@ export class GameMcpJsonRpcServer {
         };
       }
 
-      const artifactMatch = /^influence-game:\/\/sessions\/([^/]+)\/games\/(\d+)\/(events|projection|turns)$/.exec(uri);
+      const artifactMatch = /^influence-game:\/\/sessions\/([^/]+)\/games\/(\d+)\/(events|projection|turns|progress|transcript|game-json)$/.exec(uri);
       if (!artifactMatch?.[1] || !artifactMatch[2] || !artifactMatch[3]) {
         throw new Error(`Unknown resource URI: ${uri}`);
       }
       const sessionId = decodeURIComponent(artifactMatch[1]);
       const gameNumber = Number.parseInt(artifactMatch[2], 10);
-      const artifact = artifactMatch[3];
+      const artifact = (artifactMatch[3] === "game-json" ? "game_json" : artifactMatch[3]) as GameMcpArtifactKind;
+      const game = this.readModel.listGames({ sessionId }).find((candidate) => candidate.gameNumber === gameNumber);
+      if (!game) throw new Error(`Unknown game ${gameNumber} in session ${sessionId}`);
       const text = artifact === "events"
         ? this.readModel.readEvents(sessionId, gameNumber).map((event) => JSON.stringify(event)).join("\n")
         : artifact === "turns"
           ? this.readModel.readTurnRecords(sessionId, gameNumber).map((record) => JSON.stringify(record.record)).join("\n")
-          : JSON.stringify(this.readModel.readProjection(sessionId, gameNumber), null, 2);
+          : artifact === "progress"
+            ? this.readModel.readProgressRecords(sessionId, gameNumber).map((record) => JSON.stringify(record.record)).join("\n")
+            : artifact === "transcript"
+              ? this.readModel.readTranscript(sessionId, gameNumber)
+              : artifact === "game_json"
+                ? this.readModel.readGameJson(sessionId, gameNumber)
+                : JSON.stringify(this.readModel.readProjection(sessionId, gameNumber), null, 2);
+      const mimeType = artifact === "projection" || artifact === "game_json"
+        ? "application/json"
+        : artifact === "transcript"
+          ? "text/plain"
+          : "application/jsonl";
       return {
-        contents: [{ uri, mimeType: artifact === "projection" ? "application/json" : "application/jsonl", text }],
+        contents: [{ uri, mimeType, text }],
       };
     }
 
