@@ -1,4 +1,9 @@
 import type { Player, UUID } from "./types";
+import {
+  resolveInitialExposureBench,
+  resolveShieldReplacement,
+  type InitialExposureBenchResolution,
+} from "./exposure-bench";
 
 export type PostVotePressureStatus =
   | "empowered"
@@ -32,6 +37,7 @@ interface ProjectionInput {
   alivePlayers: Pick<Player, "id" | "name" | "shielded">[];
   exposeScores: Record<UUID, number>;
   empoweredId?: UUID | null;
+  initialResolution?: InitialExposureBenchResolution | null;
 }
 
 function pressureEntry(
@@ -49,26 +55,12 @@ function sortByExposePressure<T extends { id: UUID; name: string }>(
   players: T[],
   exposeScores: Record<UUID, number>,
 ): T[] {
-  return [...players].sort((a, b) => (exposeScores[b.id] ?? 0) - (exposeScores[a.id] ?? 0));
-}
-
-function likelyAtRiskAfterShield(
-  alivePlayers: Pick<Player, "id" | "name" | "shielded">[],
-  exposeScores: Record<UUID, number>,
-  empoweredId: UUID,
-  shieldedPlayerId?: UUID,
-): Array<{ id: UUID; name: string; exposeScore: number }> {
-  const eligible = sortByExposePressure(
-    alivePlayers.filter(
-      (player) =>
-        player.id !== empoweredId &&
-        player.id !== shieldedPlayerId &&
-        !player.shielded,
-    ),
-    exposeScores,
+  return [...players].sort(
+    (a, b) =>
+      (exposeScores[b.id] ?? 0) - (exposeScores[a.id] ?? 0) ||
+      a.name.localeCompare(b.name) ||
+      a.id.localeCompare(b.id),
   );
-
-  return eligible.slice(0, 2).map((player) => pressureEntry(player, exposeScores));
 }
 
 export function buildPostVotePressureProjection(
@@ -79,20 +71,30 @@ export function buildPostVotePressureProjection(
 
   const exposePressure = sortByExposePressure(input.alivePlayers, input.exposeScores)
     .map((player) => pressureEntry(player, input.exposeScores));
-  const currentAtRisk = likelyAtRiskAfterShield(
-    input.alivePlayers,
-    input.exposeScores,
-    empowered.id,
-  );
+  const initialResolution = input.initialResolution ?? resolveInitialExposureBench({
+    alivePlayers: input.alivePlayers.map((player) => ({
+      id: player.id,
+      name: player.name,
+      shielded: player.shielded,
+    })),
+    exposeScores: input.exposeScores,
+    empoweredId: empowered.id,
+  });
+  const currentAtRisk = (initialResolution.candidates ?? [])
+    .map((id) => input.alivePlayers.find((player) => player.id === id))
+    .filter((player): player is Pick<Player, "id" | "name" | "shielded"> => Boolean(player))
+    .map((player) => pressureEntry(player, input.exposeScores));
   const currentAtRiskIds = new Set(currentAtRisk.map((player) => player.id));
 
   const shieldScenarios: PostVoteShieldScenario[] = currentAtRisk.map((player) => {
-    const resultingAtRisk = likelyAtRiskAfterShield(
-      input.alivePlayers,
-      input.exposeScores,
-      empowered.id,
-      player.id,
-    );
+    const replacement = resolveShieldReplacement({
+      initialResolution,
+      protectedCandidateId: player.id,
+    });
+    const resultingAtRisk = (replacement.candidates ?? [])
+      .map((id) => input.alivePlayers.find((alive) => alive.id === id))
+      .filter((alive): alive is Pick<Player, "id" | "name" | "shielded"> => Boolean(alive))
+      .map((alive) => pressureEntry(alive, input.exposeScores));
     return {
       shieldedPlayer: { id: player.id, name: player.name },
       resultingAtRisk,
