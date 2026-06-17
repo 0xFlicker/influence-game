@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import { GameState, createUUID } from "../game-state";
 import { GameEventBus } from "../event-bus";
 import { GameRunner } from "../game-runner";
-import type { AgentCallOptions, AgentResponse, CandidateChoiceRequest, CandidateSelectionDecision, GameStreamEvent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "../game-runner";
+import type { AgentCallOptions, AgentResponse, CandidateChoiceRequest, CandidateSelectionDecision, GameStreamEvent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerActionDecision, PowerActionOptions, PowerLobbyExposure } from "../game-runner";
 import { TemplateHouseInterviewer } from "../house-interviewer";
 import type { HouseMingleAssignmentContext, HouseMingleAssignmentResult } from "../house-interviewer";
 import { createPhaseMachine } from "../phase-machine";
@@ -507,7 +507,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     });
   });
 
-  it("emits private candidate-selection and shield pull-up records for unresolved exposure bench choices", async () => {
+  it("bundles shield pull-up selection into the private power-action record", async () => {
     class ScriptedExposureBenchAgent extends MockAgent {
       constructor(
         id: string,
@@ -541,24 +541,18 @@ describe("Mingle Rooms (current open-room phase)", () => {
       override async getPowerAction(
         _ctx: PhaseContext,
         candidates: [string, string],
-      ): Promise<{ action: "protect"; target: string; thinking?: string }> {
+        options: PowerActionOptions = {},
+      ): Promise<PowerActionDecision> {
+        const replacementRequest = options.shieldReplacementRequests?.find(
+          (request) => request.protectedCandidateId === (this.powerTarget ?? candidates[0]),
+        );
         return {
           action: "protect",
           target: this.powerTarget ?? candidates[0],
-          thinking: `${this.name} protects a candidate to force a pull-up`,
-        };
-      }
-
-      override async getShieldPullUpSelection(
-        _ctx: PhaseContext,
-        request: CandidateChoiceRequest,
-      ): Promise<CandidateSelectionDecision> {
-        const selected = this.pullUpPick && request.eligibleCandidateIds.includes(this.pullUpPick)
-          ? [this.pullUpPick]
-          : request.eligibleCandidateIds.slice(0, request.requiredCount);
-        return {
-          selectedCandidateIds: selected,
-          thinking: `${this.name} chooses the shield pull-up`,
+          shieldPullUpCandidateIds: this.pullUpPick && replacementRequest?.eligibleCandidateIds.includes(this.pullUpPick)
+            ? [this.pullUpPick]
+            : replacementRequest?.eligibleCandidateIds.slice(0, replacementRequest.requiredCount) ?? [],
+          thinking: `${this.name} protects a candidate and chooses the shield pull-up`,
           reasoningContext: "scripted shield-pull-up reasoning",
         };
       }
@@ -612,10 +606,18 @@ describe("Mingle Rooms (current open-room phase)", () => {
       (event): event is Extract<GameStreamEvent, { type: "agent_turn" }> =>
         event.type === "agent_turn" && event.action === "shield-pull-up-selection",
     );
-    expect(pullUpSelection?.visibility).toBe("private");
-    expect(pullUpSelection?.thinking).toBe("Mira chooses the shield pull-up");
-    expect(pullUpSelection?.reasoningContext).toBe("scripted shield-pull-up reasoning");
-    expect(pullUpSelection?.response.selectedCandidates).toEqual([{ id: echo, name: "Echo" }]);
+    expect(pullUpSelection).toBeUndefined();
+    const powerAction = events.find(
+      (event): event is Extract<GameStreamEvent, { type: "agent_turn" }> =>
+        event.type === "agent_turn" && event.action === "power-action",
+    );
+    expect(powerAction?.visibility).toBe("private");
+    expect(powerAction?.thinking).toBe("Mira protects a candidate and chooses the shield pull-up");
+    expect(powerAction?.reasoningContext).toBe("scripted shield-pull-up reasoning");
+    expect(powerAction?.response.shieldPullUp).toMatchObject({
+      selectedCandidates: [{ id: echo, name: "Echo" }],
+      fallbackApplied: false,
+    });
 
     const candidateEvent = runner.getCanonicalEvents().find(
       (event): event is Extract<CanonicalGameEvent, { type: "power.candidates_resolved" }> =>

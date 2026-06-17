@@ -3,8 +3,8 @@
  * Uses simple scripted strategies to validate game mechanics.
  */
 
-import type { AgentResponse, CandidateChoiceRequest, CandidateSelectionDecision, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicReflectionAction, StrategyPacketSummary, StrategyPacketUseMarker, TargetDecision } from "../game-runner";
-import type { UUID, PowerAction } from "../types";
+import type { AgentResponse, CandidateChoiceRequest, CandidateSelectionDecision, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, StrategicReflectionAction, StrategyPacketSummary, StrategyPacketUseMarker, TargetDecision } from "../game-runner";
+import type { UUID } from "../types";
 
 /** Assert a value is defined — throws in tests if assumption is violated */
 function defined<T>(value: T | undefined, msg = "Expected value to be defined"): T {
@@ -188,22 +188,19 @@ export class MockAgent implements IAgent {
   }
 
   async getPowerAction(
-    ctx: PhaseContext,
-    candidates: [UUID, UUID],
-  ): Promise<PowerAction & { thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }> {
-    // Always pass to council (simplest action)
-    return { action: "pass", target: candidates[0], thinking: "mock: pass to let council expose the field", reasoningContext: undefined, strategyPacketUse: this.strategyPacketUse("deferred") };
-  }
-
-  async getShieldPullUpSelection(
     _ctx: PhaseContext,
-    request: CandidateChoiceRequest,
-  ): Promise<CandidateSelectionDecision> {
+    candidates: [UUID, UUID],
+    options: PowerActionOptions = {},
+  ): Promise<PowerActionDecision> {
+    // Always pass to council (simplest action)
+    const replacementRequest = options.shieldReplacementRequests?.find((request) => request.protectedCandidateId === candidates[0]);
     return {
-      selectedCandidateIds: request.eligibleCandidateIds.slice(0, request.requiredCount),
-      thinking: "mock: select first eligible shield pull-up",
+      action: "pass",
+      target: candidates[0],
+      ...(replacementRequest ? { shieldPullUpCandidateIds: replacementRequest.eligibleCandidateIds.slice(0, replacementRequest.requiredCount) } : {}),
+      thinking: "mock: pass to let council expose the field",
       reasoningContext: undefined,
-      strategyPacketUse: this.strategyPacketUse("followed"),
+      strategyPacketUse: this.strategyPacketUse("deferred"),
     };
   }
 

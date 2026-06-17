@@ -34,6 +34,33 @@ function shieldReplacementChoiceRequest(resolution: ShieldReplacementResolution)
   };
 }
 
+function resolveBundledShieldPullUp(
+  request: CandidateChoiceRequest,
+  selectedCandidateIds: UUID[] = [],
+): { selectedCandidateIds: UUID[]; fallbackApplied: boolean } {
+  const eligibleSet = new Set(request.eligibleCandidateIds);
+  const selected: UUID[] = [];
+  let fallbackApplied = selectedCandidateIds.length < request.requiredCount;
+
+  for (const id of selectedCandidateIds) {
+    if (!eligibleSet.has(id) || selected.includes(id)) {
+      fallbackApplied = true;
+      continue;
+    }
+    selected.push(id);
+    if (selected.length === request.requiredCount) break;
+  }
+
+  const pool = request.eligibleCandidateIds.filter((id) => !selected.includes(id));
+  while (selected.length < request.requiredCount && pool.length > 0) {
+    const index = Math.floor(Math.random() * pool.length);
+    const [id] = pool.splice(index, 1);
+    if (id) selected.push(id);
+  }
+
+  return { selectedCandidateIds: selected, fallbackApplied };
+}
+
 async function runPowerLobbyMessages(
   ctx: PhaseRunnerContext,
   empoweredId: UUID,
@@ -124,12 +151,39 @@ export async function runPowerPhase(
 
   const empoweredAgent = agents.get(empoweredId)!;
   const phaseCtx = contextBuilder.buildPhaseContext(empoweredId, Phase.POWER, { empoweredId, councilCandidates: prelim });
-  const powerActionResult = await empoweredAgent.getPowerAction(phaseCtx, prelim);
+  const shieldReplacementRequests = prelim
+    .map((candidateId) => gameState.previewShieldReplacement(candidateId))
+    .filter((resolution): resolution is ShieldReplacementResolution => Boolean(resolution))
+    .filter(shouldRequestShieldReplacementChoice)
+    .map(shieldReplacementChoiceRequest);
+  const powerActionResult = await empoweredAgent.getPowerAction(phaseCtx, prelim, { shieldReplacementRequests });
   const powerAction: PowerAction = { action: powerActionResult.action, target: powerActionResult.target };
   await assertCanAcceptCommit(ctx);
   gameState.setPowerAction(powerAction, [
     agentTurnSourcePointer(empoweredId, "power-action", gameState.round, Phase.POWER),
   ]);
+  let replacementCandidateIds: UUID[] = [];
+  let shieldPullUpResponse: Record<string, unknown> | null = null;
+  if (powerAction.action === "protect" && prelim.includes(powerAction.target)) {
+    const request = shieldReplacementRequests.find(
+      (candidateRequest) => candidateRequest.protectedCandidateId === powerAction.target,
+    );
+    if (request) {
+      const selection = resolveBundledShieldPullUp(request, powerActionResult.shieldPullUpCandidateIds);
+      replacementCandidateIds = selection.selectedCandidateIds;
+      const resolvedPreview = gameState.previewShieldReplacement(powerAction.target, replacementCandidateIds);
+      shieldPullUpResponse = {
+        mode: resolvedPreview?.mode ?? request.mode,
+        protectedCandidate: { id: powerAction.target, name: gameState.getPlayerName(powerAction.target) },
+        lockedCandidates: request.lockedCandidateIds.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+        eligibleChoices: request.eligibleCandidateIds.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+        selectedCandidates: (resolvedPreview?.selectedCandidateIds ?? replacementCandidateIds).map((id) => ({ id, name: gameState.getPlayerName(id) })),
+        resolvedCandidates: resolvedPreview?.candidates?.map((id) => ({ id, name: gameState.getPlayerName(id) })) ?? null,
+        fallbackApplied: selection.fallbackApplied || (resolvedPreview?.fallbackApplied ?? false),
+        fallbackReason: selection.fallbackApplied ? "random_selection" : resolvedPreview?.fallbackReason ?? null,
+      };
+    }
+  }
   const transcriptThinking = transcriptThinkingFor(empoweredAgent, powerActionResult.thinking, powerActionResult.reasoningContext);
   logger.logSystem(
     `${gameState.getPlayerName(empoweredId)} power action: ${powerAction.action} -> ${gameState.getPlayerName(powerAction.target)}`,
@@ -146,6 +200,7 @@ export async function runPowerPhase(
       action: powerAction.action,
       target: { id: powerAction.target, name: gameState.getPlayerName(powerAction.target) },
       candidates: prelim.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+      ...(shieldPullUpResponse ? { shieldPullUp: shieldPullUpResponse } : {}),
       ...strategyPacketUseResponse(powerActionResult.strategyPacketUse),
     },
     thinking: powerActionResult.thinking,
@@ -158,44 +213,6 @@ export async function runPowerPhase(
     empoweredAgent.updateAlly(gameState.getPlayerName(powerAction.target));
   } else if (powerAction.action === "eliminate") {
     empoweredAgent.updateThreat(gameState.getPlayerName(powerAction.target));
-  }
-
-  let replacementCandidateIds: UUID[] = [];
-  if (powerAction.action === "protect" && prelim.includes(powerAction.target)) {
-    const replacementPreview = gameState.previewShieldReplacement(powerAction.target);
-    if (replacementPreview && shouldRequestShieldReplacementChoice(replacementPreview)) {
-      const request = shieldReplacementChoiceRequest(replacementPreview);
-      const replacementDecision = empoweredAgent.getShieldPullUpSelection
-        ? await empoweredAgent.getShieldPullUpSelection(phaseCtx, request)
-        : {
-            selectedCandidateIds: request.eligibleCandidateIds.slice(0, request.requiredCount),
-            thinking: "House fallback: shield pull-up selection method unavailable.",
-      };
-      await assertCanAcceptCommit(ctx);
-      replacementCandidateIds = replacementDecision.selectedCandidateIds;
-      const resolvedPreview = gameState.previewShieldReplacement(powerAction.target, replacementCandidateIds);
-      logger.emitAgentTurn({
-        phase: Phase.POWER,
-        action: "shield-pull-up-selection",
-        actor: { id: empoweredId, name: gameState.getPlayerName(empoweredId), role: "player" },
-        visibility: "private",
-        response: {
-          mode: resolvedPreview?.mode ?? request.mode,
-          protectedCandidate: { id: powerAction.target, name: gameState.getPlayerName(powerAction.target) },
-          lockedCandidates: request.lockedCandidateIds.map((id) => ({ id, name: gameState.getPlayerName(id) })),
-          eligibleChoices: request.eligibleCandidateIds.map((id) => ({ id, name: gameState.getPlayerName(id) })),
-          selectedCandidates: (resolvedPreview?.selectedCandidateIds ?? replacementCandidateIds).map((id) => ({ id, name: gameState.getPlayerName(id) })),
-          resolvedCandidates: resolvedPreview?.candidates?.map((id) => ({ id, name: gameState.getPlayerName(id) })) ?? null,
-          fallbackApplied: resolvedPreview?.fallbackApplied ?? false,
-          fallbackReason: resolvedPreview?.fallbackReason ?? null,
-          ...strategyPacketUseResponse(replacementDecision.strategyPacketUse),
-        },
-        thinking: replacementDecision.thinking,
-        reasoningContext: replacementDecision.reasoningContext,
-        scope: "system",
-        text: `${gameState.getPlayerName(empoweredId)} privately resolved shield pull-up ambiguity.`,
-      });
-    }
   }
 
   await assertCanAcceptCommit(ctx);

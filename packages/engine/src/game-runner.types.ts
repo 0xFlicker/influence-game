@@ -601,6 +601,17 @@ export interface CandidateSelectionDecision {
   strategyPacketUse?: StrategyPacketUseMarker;
 }
 
+export interface PowerActionOptions {
+  shieldReplacementRequests?: CandidateChoiceRequest[];
+}
+
+export interface PowerActionDecision extends PowerAction {
+  thinking?: string;
+  reasoningContext?: string;
+  strategyPacketUse?: StrategyPacketUseMarker;
+  shieldPullUpCandidateIds?: UUID[];
+}
+
 export type AgentTurnVisibility = "public" | "private" | "anonymous" | "diary" | "system";
 
 export interface AgentTurnActor {
@@ -692,12 +703,8 @@ export interface IAgent {
   getPowerAction(
     context: PhaseContext,
     candidates: [UUID, UUID],
-  ): Promise<PowerAction & { thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }>;
-  /** Called privately during Power only when Protect creates an unresolved candidate replacement. */
-  getShieldPullUpSelection?(
-    context: PhaseContext,
-    request: CandidateChoiceRequest,
-  ): Promise<CandidateSelectionDecision>;
+    options?: PowerActionOptions,
+  ): Promise<PowerActionDecision>;
   /** Called for council vote (empowered agent also votes as tiebreaker) */
   getCouncilVote(
     context: PhaseContext,

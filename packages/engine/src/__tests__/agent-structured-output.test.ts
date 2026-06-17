@@ -556,7 +556,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(decision.thinking).toBe("I want Atlas safe, but that is not legal.");
   });
 
-  it("preserves private shield pull-up reasoning and fallback-risk framing", async () => {
+  it("bundles shield pull-up reasoning into the power action decision", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -564,12 +564,14 @@ describe("InfluenceAgent structured output mode", () => {
       "strategic",
       makeToolOpenAIStub(
         requests,
-        "select_shield_pull_up",
+        "use_power",
         {
-          thinking: "Pulling Mira up makes the protection debt visible.",
-          candidates: ["Mira"],
+          thinking: "Protecting Vera only works if Mira takes the heat instead.",
+          action: "protect",
+          target: "Vera",
+          shieldPullUpCandidates: ["Mira"],
         },
-        "Hidden local reasoning for shield pull-up.",
+        "Hidden local reasoning for bundled power action.",
       ),
       "google/gemma-4-26b-a4b-qat",
       undefined,
@@ -578,25 +580,27 @@ describe("InfluenceAgent structured output mode", () => {
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    const decision = await agent.getShieldPullUpSelection(makeContext(Phase.POWER), {
-      lockedCandidateIds: ["vera-id"],
-      eligibleCandidateIds: ["mira-id"],
-      requiredCount: 1,
-      mode: "all_player_fallback_replacement",
-      fallbackReason: "bench_exhausted",
-      protectedCandidateId: "atlas-id",
+    const decision = await agent.getPowerAction(makeContext(Phase.POWER), ["vera-id", "atlas-id"], {
+      shieldReplacementRequests: [{
+        lockedCandidateIds: ["atlas-id"],
+        eligibleCandidateIds: ["mira-id"],
+        requiredCount: 1,
+        mode: "all_player_fallback_replacement",
+        fallbackReason: "bench_exhausted",
+        protectedCandidateId: "vera-id",
+      }],
     });
 
-    expect(decision).toEqual({
-      selectedCandidateIds: ["mira-id"],
-      thinking: "Pulling Mira up makes the protection debt visible.",
-      reasoningContext: "Hidden local reasoning for shield pull-up.",
-      strategyPacketUse: undefined,
-    });
+    expect(decision.action).toBe("protect");
+    expect(decision.target).toBe("vera-id");
+    expect(decision.shieldPullUpCandidateIds).toEqual(["mira-id"]);
+    expect(decision.thinking).toBe("Protecting Vera only works if Mira takes the heat instead.");
+    expect(decision.reasoningContext).toBe("Hidden local reasoning for bundled power action.");
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.at(-1)!.content;
-    expect(prompt).toContain("## Private Shield Pull-Up Selection");
-    expect(prompt).toContain("Fallback context: bench_exhausted");
+    expect(prompt).toContain("## Protect Replacement Preview");
+    expect(prompt).toContain("If you protect Vera, choose 1 shieldPullUpCandidates from: Mira");
+    expect(prompt).toContain("fallback context: bench_exhausted");
     expect(prompt).toContain("fallback risk rather than vote-derived exposed risk");
   });
 

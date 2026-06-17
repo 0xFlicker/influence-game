@@ -415,6 +415,11 @@ describe("InfluenceAgent tool-call fallbacks", () => {
               description: "The power action to take",
             },
             target: { type: "string", description: "Player name to target" },
+            shieldPullUpCandidates: {
+              type: "array",
+              items: { type: "string" },
+              description: "Replacement candidate names to pull up if protecting a current Council candidate creates an unresolved replacement slot; otherwise use an empty array",
+            },
             strategyPacketUse: {
               type: ["string", "null"],
               enum: ["followed", "revised", "ignored", "deferred", null],
@@ -425,7 +430,7 @@ describe("InfluenceAgent tool-call fallbacks", () => {
               description: "Compact producer/debug rationale tied to current evidence, or null when no Strategy Thread is present.",
             },
           },
-          required: ["thinking", "action", "target", "strategyPacketUse", "strategyPacketUseRationale"],
+          required: ["thinking", "action", "target", "shieldPullUpCandidates", "strategyPacketUse", "strategyPacketUseRationale"],
           additionalProperties: false,
         },
       },

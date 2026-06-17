@@ -22,6 +22,8 @@ import type {
   MinglePreferredRoomSize,
   MingleTurnAction,
   PhaseContext,
+  PowerActionDecision,
+  PowerActionOptions,
   PowerLobbyExposure,
   PrivateDecisionTrace,
   PrivateDecisionTraceContext,
@@ -582,29 +584,6 @@ const TOOL_CANDIDATE_SELECTION: ChatCompletionTool = {
   },
 };
 
-const TOOL_SHIELD_PULL_UP_SELECTION: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "select_shield_pull_up",
-    description: "Privately resolve the replacement candidate when Protect removes a Council candidate",
-    parameters: {
-      type: "object",
-      properties: {
-        thinking: { type: "string", description: "Your internal reasoning for the shield replacement selection (hidden from other players)" },
-        candidates: {
-          type: "array",
-          items: { type: "string" },
-          description: "Player names selected from the eligible replacement list, in order",
-        },
-        ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
-      },
-      required: ["thinking", "candidates", ...STRATEGY_PACKET_USE_REQUIRED],
-      additionalProperties: false,
-    },
-    strict: true,
-  },
-};
-
 const TOOL_POWER_ACTION: ChatCompletionTool = {
   type: "function",
   function: {
@@ -620,9 +599,14 @@ const TOOL_POWER_ACTION: ChatCompletionTool = {
           description: "The power action to take",
         },
         target: { type: "string", description: "Player name to target" },
+        shieldPullUpCandidates: {
+          type: "array",
+          items: { type: "string" },
+          description: "Replacement candidate names to pull up if protecting a current Council candidate creates an unresolved replacement slot; otherwise use an empty array",
+        },
         ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
       },
-      required: ["thinking", "action", "target", ...STRATEGY_PACKET_USE_REQUIRED],
+      required: ["thinking", "action", "target", "shieldPullUpCandidates", ...STRATEGY_PACKET_USE_REQUIRED],
       additionalProperties: false,
     },
     strict: true,
@@ -730,6 +714,23 @@ function findByName<T extends { name: string }>(
 function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((entry): entry is string => typeof entry === "string").map((entry) => entry.trim()).filter(Boolean);
+}
+
+function randomFillIds(
+  selectedIds: UUID[],
+  eligibleIds: UUID[],
+  requiredCount: number,
+): UUID[] {
+  const selected = [...selectedIds];
+  const pool = eligibleIds.filter((id) => !selected.includes(id));
+
+  while (selected.length < requiredCount && pool.length > 0) {
+    const index = Math.floor(Math.random() * pool.length);
+    const [id] = pool.splice(index, 1);
+    if (id) selected.push(id);
+  }
+
+  return selected;
 }
 
 function normalizeNullableString(value: unknown): string | null {
@@ -1974,7 +1975,8 @@ Keep it to 1-2 sentences.`;
   async getPowerAction(
     ctx: PhaseContext,
     candidates: [UUID, UUID],
-  ): Promise<PowerAction & { thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }> {
+    options: PowerActionOptions = {},
+  ): Promise<PowerActionDecision> {
     const candidateNames = candidates.map(
       (id) => ctx.alivePlayers.find((p) => p.id === id)?.name ?? id,
     );
@@ -1989,6 +1991,29 @@ Keep it to 1-2 sentences.`;
       .map((m) => `- ${m.from}: ${m.text}`)
       .join("\n");
     const lastPowerAction = this.memory.powerActions.at(-1);
+    const shieldReplacementRequests = options.shieldReplacementRequests ?? [];
+    const shieldReplacementByProtectedId = new Map<UUID, CandidateChoiceRequest>();
+    for (const request of shieldReplacementRequests) {
+      if (request.protectedCandidateId) {
+        shieldReplacementByProtectedId.set(request.protectedCandidateId, request);
+      }
+    }
+    const shieldReplacementPreview = shieldReplacementRequests.length > 0
+      ? shieldReplacementRequests
+          .map((request) => {
+            const protectedName = request.protectedCandidateId
+              ? ctx.alivePlayers.find((player) => player.id === request.protectedCandidateId)?.name ?? request.protectedCandidateId
+              : "unknown";
+            const lockedNames = request.lockedCandidateIds
+              .map((id) => ctx.alivePlayers.find((player) => player.id === id)?.name ?? id)
+              .join(", ") || "none";
+            const eligibleNames = request.eligibleCandidateIds
+              .map((id) => ctx.alivePlayers.find((player) => player.id === id)?.name ?? id)
+              .join(", ");
+            return `- If you protect ${protectedName}, choose ${request.requiredCount} shieldPullUpCandidates from: ${eligibleNames}. Candidate still locked: ${lockedNames}. Mode: ${request.mode}${request.fallbackReason ? `; fallback context: ${request.fallbackReason}` : ""}.`;
+          })
+          .join("\n")
+      : "- No Protect target currently requires an unresolved replacement choice. Return shieldPullUpCandidates as [].";
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
@@ -2008,6 +2033,11 @@ Council candidates: ${candidateNames.join(" and ")}
 Other alive players: ${otherAlive.map((p) => p.name).join(", ")}
 ${lastPowerAction ? `Your last empowered action: R${lastPowerAction.round} ${lastPowerAction.action} -> ${lastPowerAction.target}.` : "You have not used empowered power before."}
 
+## Protect Replacement Preview
+${shieldReplacementPreview}
+
+When you choose Protect, reason about both parts together: who receives the shield and, if the protected player is a current Council candidate with an unresolved replacement slot, who gets pulled up in their place. If the replacement comes from all-player fallback, treat that player as fallback risk rather than vote-derived exposed risk. If your chosen Protect target is not listed above, return shieldPullUpCandidates as [].
+
 Anti-repeat power guidance:
 - Do not protect an ally you already protected unless this round's Power Lobby creates a new public receipt.
 - eliminate is gated by fresh current-round Power Lobby evidence against that exact candidate.
@@ -2018,7 +2048,7 @@ Before using the tool, decide what future debt or backlash your action creates. 
 Use the use_power tool to declare your final hidden action.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; action: string; target: string; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown; reasoningContext?: string }>(
+      const result = await this.callTool<{ thinking?: string; action: string; target: string; shieldPullUpCandidates?: unknown; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown; reasoningContext?: string }>(
         prompt, TOOL_POWER_ACTION, 100, sys,
         this.traceOptions(ctx, { action: "power", reasoningEffort: "medium" }),
       );
@@ -2035,6 +2065,34 @@ Use the use_power tool to declare your final hidden action.`;
       if (!targetPlayer) {
         console.warn(`[vote-fallback] agent="${this.name}" method=getPowerAction returned="${result.target}" available=[${ctx.alivePlayers.map((p) => p.name).join(", ")}] fallback=candidates[0]`);
       }
+      const targetId = targetPlayer?.id ?? candidates[0];
+      const replacementRequest = validAction === "protect" ? shieldReplacementByProtectedId.get(targetId) : undefined;
+      let shieldPullUpCandidateIds: UUID[] = [];
+      if (replacementRequest && replacementRequest.requiredCount > 0) {
+        const eligiblePlayers = replacementRequest.eligibleCandidateIds
+          .map((id) => ctx.alivePlayers.find((player) => player.id === id))
+          .filter((player): player is { id: UUID; name: string } => player !== undefined);
+        const selectedCandidateIds: UUID[] = [];
+        let invalidSelection = false;
+        for (const name of normalizeStringArray(result.shieldPullUpCandidates)) {
+          const player = findByName(eligiblePlayers, name);
+          if (!player || selectedCandidateIds.includes(player.id)) {
+            invalidSelection = true;
+            continue;
+          }
+          selectedCandidateIds.push(player.id);
+          if (selectedCandidateIds.length === replacementRequest.requiredCount) break;
+        }
+        const missingSelection = selectedCandidateIds.length < replacementRequest.requiredCount;
+        shieldPullUpCandidateIds = randomFillIds(
+          selectedCandidateIds,
+          replacementRequest.eligibleCandidateIds,
+          replacementRequest.requiredCount,
+        );
+        if (invalidSelection || missingSelection) {
+          console.warn(`[vote-fallback] agent="${this.name}" method=getPowerAction shieldPullUpCandidates invalidOrMissing required=${replacementRequest.requiredCount} selected=${selectedCandidateIds.length} fallback=[${shieldPullUpCandidateIds.join(",")}]`);
+        }
+      }
       this.memory.powerActions.push({
         round: ctx.round,
         action: validAction,
@@ -2046,78 +2104,10 @@ Use the use_power tool to declare your final hidden action.`;
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         strategyPacketUse: this.strategyPacketUseMarker(result.strategyPacketUse, result.strategyPacketUseRationale),
+        ...(shieldPullUpCandidateIds.length > 0 ? { shieldPullUpCandidateIds } : {}),
       };
     } catch {
       return { action: "pass", target: candidates[0], thinking: "fallback to pass under pressure" };
-    }
-  }
-
-  async getShieldPullUpSelection(
-    ctx: PhaseContext,
-    request: CandidateChoiceRequest,
-  ): Promise<CandidateSelectionDecision> {
-    if (request.requiredCount <= 0) {
-      return { selectedCandidateIds: [], thinking: "No unresolved shield replacement slot.", reasoningContext: undefined };
-    }
-
-    const eligiblePlayers = request.eligibleCandidateIds
-      .map((id) => ctx.alivePlayers.find((player) => player.id === id))
-      .filter((player): player is { id: UUID; name: string } => player !== undefined);
-    const lockedNames = request.lockedCandidateIds
-      .map((id) => ctx.alivePlayers.find((player) => player.id === id)?.name ?? id);
-    const protectedName = request.protectedCandidateId
-      ? ctx.alivePlayers.find((player) => player.id === request.protectedCandidateId)?.name ?? request.protectedCandidateId
-      : "unknown";
-    const fallbackIds = eligiblePlayers.slice(0, request.requiredCount).map((player) => player.id);
-
-    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
-    const prompt = this.buildUserPrompt(ctx) + `
-## Private Shield Pull-Up Selection
-You used Protect and removed ${protectedName} from Council danger. A replacement slot is unresolved.
-
-Candidate still locked in the pair: ${lockedNames.length > 0 ? lockedNames.join(", ") : "none"}
-Eligible replacement choices: ${eligiblePlayers.map((player) => player.name).join(", ")}
-Required selections: ${request.requiredCount}
-Resolution mode: ${request.mode}
-${request.fallbackReason ? `Fallback context: ${request.fallbackReason}` : ""}
-
-Choose exactly ${request.requiredCount} replacement player${request.requiredCount === 1 ? "" : "s"} from the eligible list. If these choices come from all-player fallback, treat them as fallback risk rather than vote-derived exposed risk.
-
-Use the select_shield_pull_up tool.`;
-
-    try {
-      const result = await this.callTool<{ thinking?: string; candidates: unknown; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown; reasoningContext?: string }>(
-        prompt, TOOL_SHIELD_PULL_UP_SELECTION, 120, sys,
-        this.traceOptions(ctx, { action: "shield-pull-up-selection", reasoningEffort: "medium" }),
-      );
-      const selectedCandidateIds: UUID[] = [];
-      for (const name of normalizeStringArray(result.candidates)) {
-        const player = findByName(eligiblePlayers, name);
-        if (player && !selectedCandidateIds.includes(player.id)) {
-          selectedCandidateIds.push(player.id);
-        }
-        if (selectedCandidateIds.length === request.requiredCount) break;
-      }
-      for (const id of fallbackIds) {
-        if (selectedCandidateIds.length === request.requiredCount) break;
-        if (!selectedCandidateIds.includes(id)) selectedCandidateIds.push(id);
-      }
-      if (selectedCandidateIds.length < request.requiredCount) {
-        console.warn(`[vote-fallback] agent="${this.name}" method=getShieldPullUpSelection insufficient eligible choices required=${request.requiredCount} selected=${selectedCandidateIds.length}`);
-      }
-      return {
-        selectedCandidateIds,
-        thinking: result.thinking,
-        reasoningContext: result.reasoningContext,
-        strategyPacketUse: this.strategyPacketUseMarker(result.strategyPacketUse, result.strategyPacketUseRationale),
-      };
-    } catch (err) {
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getShieldPullUpSelection error="${err instanceof Error ? err.message : err}" fallback=[${fallbackIds.join(",")}]`);
-      return {
-        selectedCandidateIds: fallbackIds,
-        thinking: "fallback shield pull-up selection due to error",
-        reasoningContext: undefined,
-      };
     }
   }
 

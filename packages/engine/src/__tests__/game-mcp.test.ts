@@ -519,11 +519,15 @@ describe("game MCP corpus read model", () => {
         {
           sequence: 2,
           type: "agent_turn",
-          action: "shield-pull-up-selection",
+          action: "power-action",
           round: 1,
           phase: Phase.POWER,
           actor: { id: "mira", name: "Mira" },
-          response: { selectedCandidates: [{ id: "echo", name: "Echo" }], fallbackReason: null },
+          response: {
+            action: "protect",
+            target: { id: "nyx", name: "Nyx" },
+            shieldPullUp: { selectedCandidates: [{ id: "echo", name: "Echo" }], fallbackReason: null },
+          },
           thinking: "Echo is the better pull-up.",
           reasoningContext: "Native shield-pull-up reasoning.",
         },
@@ -552,7 +556,7 @@ describe("game MCP corpus read model", () => {
     expect(pullUpResults).toHaveLength(1);
     expect(pullUpResults[0]).toMatchObject({
       citation: { sourceKind: "turns", line: 2 },
-      record: { action: "shield-pull-up-selection" },
+      record: { action: "power-action" },
     });
   });
 
