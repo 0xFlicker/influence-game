@@ -418,8 +418,6 @@ export interface GameConfig {
   enableStrategicReflections?: boolean;
   /** Messages per player in the lobby phase. If unset, uses player-count scaling: fewer players get more messages. */
   lobbyMessagesPerPlayer?: number;
-  /** Enable hidden pre-lobby intent calls before public lobby messages (default true). */
-  enableLobbyIntent?: boolean;
   /** Number of open-room movement beats per round (default 2). */
   mingleSessionsPerRound?: number;
   /** Max milliseconds to wait for a single endgame agent action before using a House fallback. */

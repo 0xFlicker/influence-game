@@ -69,7 +69,6 @@ describe("simulation variant config", () => {
     expect(config.lobbyMessagesPerPlayer).toBe(1);
     expect(config.maxDiaryFollowUps).toBe(0);
     expect(config.diaryRoomAfterPhases).toEqual([]);
-    expect(config.enableLobbyIntent).toBe(false);
     expect(config.enableStrategicReflections).toBe(false);
     expect(config.agentActionTimeoutMs).toBe(90_000);
   });

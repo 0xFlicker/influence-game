@@ -301,31 +301,6 @@ describe("InfluenceAgent structured output mode", () => {
     });
   });
 
-  it("does not emit private traces for pre-lobby helper planning", async () => {
-    const requests: Array<Record<string, unknown>> = [];
-    const traces: PrivateDecisionTrace[] = [];
-    const agent = new InfluenceAgent(
-      "atlas-id",
-      "Atlas",
-      "strategic",
-      makeTextOpenAIStub(requests, "Open curious and ask Mira about the room."),
-      "gpt-5-nano",
-      undefined,
-      undefined,
-      {
-        privateTraceSink: (trace) => {
-          traces.push(trace);
-        },
-      },
-    );
-    agent.onGameStart("game-1", makeContext().alivePlayers);
-
-    await agent.getLobbyIntent(makeContext(Phase.LOBBY));
-
-    expect(traces).toHaveLength(0);
-    expect(requests).toHaveLength(1);
-  });
-
   it("allows public game talk in lobby prompts with sentence and timing guardrails", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(

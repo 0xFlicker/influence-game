@@ -1,0 +1,1107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Ideation: Exposed Candidate Randomness</title>
+    <style>
+      :root {
+        --bg: #f7f8f4;
+        --paper: #ffffff;
+        --ink: #1e2320;
+        --muted: #59645d;
+        --line: #dbe2da;
+        --green: #174d3f;
+        --green-soft: #dcefe8;
+        --gold: #6c5216;
+        --gold-soft: #fff4cf;
+        --red: #7c2d27;
+        --red-soft: #f8dddd;
+        --blue: #24466c;
+        --blue-soft: #dce8f7;
+        --shadow: 0 18px 48px rgba(22, 30, 25, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        line-height: 1.55;
+      }
+
+      main {
+        width: min(960px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 40px 0 56px;
+      }
+
+      header {
+        padding: 28px;
+        border: 1px solid var(--line);
+        background: var(--paper);
+        box-shadow: var(--shadow);
+        border-radius: 8px;
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        color: var(--green);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3 {
+        line-height: 1.16;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(32px, 5vw, 52px);
+      }
+
+      h2 {
+        margin: 0 0 14px;
+        font-size: 26px;
+      }
+
+      h3 {
+        margin: 0;
+        font-size: 20px;
+      }
+
+      p {
+        max-width: 74ch;
+      }
+
+      a {
+        color: var(--green);
+        font-weight: 700;
+      }
+
+      code {
+        padding: 1px 5px;
+        border-radius: 5px;
+        background: #eef1ec;
+        color: #24312a;
+        font-size: 0.92em;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 20px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 6px 10px;
+        background: #f8faf7;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      section {
+        margin-top: 26px;
+        padding: 28px;
+        border: 1px solid var(--line);
+        background: var(--paper);
+        border-radius: 8px;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 20px;
+      }
+
+      .stat {
+        padding: 16px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: #f9fbf8;
+      }
+
+      .stat strong {
+        display: block;
+        color: var(--ink);
+        font-size: 26px;
+        line-height: 1;
+      }
+
+      .stat span {
+        display: block;
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .axes {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+        padding: 0;
+        margin: 18px 0 0;
+        list-style: none;
+      }
+
+      .axes li {
+        padding: 12px;
+        border-radius: 8px;
+        background: var(--green-soft);
+        color: var(--green);
+        font-weight: 800;
+        font-size: 13px;
+      }
+
+      .jump-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        padding: 0;
+        margin: 14px 0 22px;
+        list-style: none;
+      }
+
+      .jump-list a {
+        display: block;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #f9fbf8;
+        text-decoration: none;
+      }
+
+      article.idea {
+        margin-top: 18px;
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .idea-head {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .rank {
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: var(--green);
+        color: #fff;
+        font-weight: 900;
+        flex: 0 0 auto;
+      }
+
+      dl {
+        display: grid;
+        grid-template-columns: 130px 1fr;
+        gap: 10px 14px;
+        margin: 16px 0 0;
+      }
+
+      dt {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      dd {
+        margin: 0;
+      }
+
+      .badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .badge {
+        border-radius: 999px;
+        padding: 5px 9px;
+        background: var(--blue-soft);
+        color: var(--blue);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .badge.high {
+        background: var(--green-soft);
+        color: var(--green);
+      }
+
+      .badge.medium {
+        background: var(--gold-soft);
+        color: var(--gold);
+      }
+
+      .callout {
+        margin-top: 16px;
+        padding: 16px;
+        border-radius: 8px;
+        background: var(--gold-soft);
+        color: var(--gold);
+        font-weight: 700;
+      }
+
+      .diagram {
+        margin: 18px 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcfa;
+        overflow: hidden;
+      }
+
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 14px;
+        font-size: 14px;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        padding: 10px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      footer {
+        margin-top: 28px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      @media (max-width: 760px) {
+        main {
+          width: min(100vw - 20px, 960px);
+          padding-top: 20px;
+        }
+
+        header,
+        section {
+          padding: 20px;
+        }
+
+        .summary-grid,
+        .axes,
+        .jump-list {
+          grid-template-columns: 1fr;
+        }
+
+        dl {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">Ideation Artifact</p>
+        <h1>Exposed Candidate Randomness</h1>
+        <p>
+          A focused review of the rule change that replaces opaque
+          exposed-candidate randomness with empowered-player choice where the
+          vote tally leaves ambiguity.
+        </p>
+        <div class="meta">
+          <span class="chip"
+            >Date: <time datetime="2026-06-17">2026-06-17</time></span
+          >
+          <span class="chip">Topic: exposed-candidate-randomness</span>
+          <span class="chip">Mode: repo-grounded</span>
+          <span class="chip"
+            >Focus: exposed tie breakers and exposed candidates</span
+          >
+        </div>
+      </header>
+
+      <section id="grounding-context">
+        <p class="eyebrow">Grounding Context</p>
+        <h2>Codebase Context</h2>
+        <p>
+          The current Influence round order is
+          <code
+            >INTRODUCTION -&gt; LOBBY -&gt; VOTE -&gt; MINGLE -&gt; POWER -&gt;
+            REVEAL -&gt; COUNCIL</code
+          >, so the rule change naturally lands after Vote and before/inside
+          Power. Vote already resolves empowerment and builds a reusable
+          post-vote pressure object from alive players, expose scores, and the
+          empowered player.
+        </p>
+        <p>
+          Current candidate resolution excludes the empowered player and
+          shielded players, then sorts by expose score. The important randomness
+          is the fallback path: when fewer than two candidates remain, the
+          engine picks from eligible players with <code>Math.random()</code>.
+          That is the exact moment this rule change can make social debt visible
+          instead of letting the system silently fill.
+        </p>
+        <p>
+          The prompt surface is ready for this kind of change. Agent prompts
+          already render named sections for Game Rules, Current Stakes, Revealed
+          Vote Ledger, Post-Vote Pressure, and Room-Specific Social Opportunity.
+          The strongest implementation shape is therefore not a new phase or an
+          experiment framework; it is a typed rule object shared by candidate
+          selection, pressure projection, prompts, canonical events, and
+          simulation review.
+        </p>
+        <p>
+          External context was light but directionally useful: recent
+          social-deduction voting research on deterministic voting protocols
+          argues for public, accountable vote procedures over opaque randomness
+          when strategic deviation and collusion matter. Influence does not need
+          that protocol, but the principle maps well: keep the vote's ordering
+          power deterministic, and expose any remaining discretion as
+          accountable player choice.
+        </p>
+        <div class="summary-grid" aria-label="Grounding stats">
+          <div class="stat">
+            <strong>7</strong><span>ranked survivors</span>
+          </div>
+          <div class="stat"><strong>5</strong><span>topic axes</span></div>
+          <div class="stat">
+            <strong>0</strong><span>feature flags assumed</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="topic-axes">
+        <p class="eyebrow">Topic Axes</p>
+        <h2>Topic Axes</h2>
+        <ul class="axes">
+          <li>Candidate resolution after Vote</li>
+          <li>Shield replacement at Power</li>
+          <li>Prompt and player-legibility contract</li>
+          <li>Compatibility and observability</li>
+          <li>Validation through tests and simulations</li>
+        </ul>
+      </section>
+
+      <section id="ranked-ideas">
+        <p class="eyebrow">Ranked Ideas</p>
+        <h2>Ranked Ideas</h2>
+        <ul class="jump-list">
+          <li><a href="#idea-1">1. Exposure Bench With Choice Modes</a></li>
+          <li>
+            <a href="#idea-2"
+              >2. Must-Pick-Higher-Votes-First Selection Prompt</a
+            >
+          </li>
+          <li>
+            <a href="#idea-3"
+              >3. Shield Pull-Up From Remaining Exposure Bench</a
+            >
+          </li>
+          <li><a href="#idea-4">4. Shared At-Risk Explanation Fields</a></li>
+          <li>
+            <a href="#idea-5"
+              >5. Save Compatibility Through Optional Event Detail</a
+            >
+          </li>
+          <li>
+            <a href="#idea-6">6. Candidate Choice Receipts In Agent Turns</a>
+          </li>
+          <li>
+            <a href="#idea-7">7. Rule-Probe Matrix Plus Live Simulation Read</a>
+          </li>
+        </ul>
+
+        <article class="idea" id="idea-1">
+          <div class="idea-head">
+            <span class="rank">1</span>
+            <h3>Exposure Bench With Choice Modes</h3>
+          </div>
+          <p>
+            Materialize a typed exposure bench immediately after empowerment
+            resolves. The bench separates raw expose pressure from eligible
+            at-risk players and produces a rule mode: fewer than two eligible
+            exposed receivers means empowered fills from all eligible players;
+            exactly two means no choice; more than two means constrained
+            empowered selection.
+          </p>
+          <div class="diagram" aria-label="Exposure bench choice modes">
+            <svg viewBox="0 0 900 290" role="img">
+              <rect width="900" height="290" fill="#fbfcfa"></rect>
+              <rect
+                x="40"
+                y="42"
+                width="210"
+                height="80"
+                rx="8"
+                fill="#fff4cf"
+                stroke="#d6be77"
+              ></rect>
+              <text
+                x="145"
+                y="74"
+                text-anchor="middle"
+                font-size="15"
+                font-weight="700"
+                fill="#6c5216"
+              >
+                1 exposed receiver
+              </text>
+              <text
+                x="145"
+                y="100"
+                text-anchor="middle"
+                font-size="12"
+                fill="#6c5216"
+              >
+                Empowered fills from all eligible
+              </text>
+              <rect
+                x="345"
+                y="42"
+                width="210"
+                height="80"
+                rx="8"
+                fill="#dcefe8"
+                stroke="#b7d7ca"
+              ></rect>
+              <text
+                x="450"
+                y="74"
+                text-anchor="middle"
+                font-size="15"
+                font-weight="700"
+                fill="#174d3f"
+              >
+                2 exposed receivers
+              </text>
+              <text
+                x="450"
+                y="100"
+                text-anchor="middle"
+                font-size="12"
+                fill="#174d3f"
+              >
+                Final pair is locked
+              </text>
+              <rect
+                x="650"
+                y="42"
+                width="210"
+                height="80"
+                rx="8"
+                fill="#dce8f7"
+                stroke="#b9cbe4"
+              ></rect>
+              <text
+                x="755"
+                y="74"
+                text-anchor="middle"
+                font-size="15"
+                font-weight="700"
+                fill="#24466c"
+              >
+                3+ exposed receivers
+              </text>
+              <text
+                x="755"
+                y="100"
+                text-anchor="middle"
+                font-size="12"
+                fill="#24466c"
+              >
+                Choose within vote constraints
+              </text>
+              <line
+                x1="145"
+                y1="122"
+                x2="145"
+                y2="176"
+                stroke="#8a968f"
+                stroke-width="2"
+              ></line>
+              <line
+                x1="450"
+                y1="122"
+                x2="450"
+                y2="176"
+                stroke="#8a968f"
+                stroke-width="2"
+              ></line>
+              <line
+                x1="755"
+                y1="122"
+                x2="755"
+                y2="176"
+                stroke="#8a968f"
+                stroke-width="2"
+              ></line>
+              <rect
+                x="255"
+                y="176"
+                width="390"
+                height="70"
+                rx="8"
+                fill="#ffffff"
+                stroke="#cfd8d1"
+              ></rect>
+              <text
+                x="450"
+                y="207"
+                text-anchor="middle"
+                font-size="15"
+                font-weight="700"
+                fill="#1e2320"
+              >
+                Post-vote pressure projection
+              </text>
+              <text
+                x="450"
+                y="231"
+                text-anchor="middle"
+                font-size="12"
+                fill="#59645d"
+              >
+                current risk, possible replacement risk, choice reason
+              </text>
+            </svg>
+          </div>
+          <div class="badges">
+            <span class="badge high">Confidence: 90%</span>
+            <span class="badge medium">Complexity: Medium</span>
+            <span class="badge">Axis: Candidate resolution after Vote</span>
+          </div>
+          <dl>
+            <dt>Description</dt>
+            <dd>
+              The bench becomes the single rules contract for who is exposed,
+              who is eligible, and when the empowered player has discretion. It
+              should explicitly exclude the empowered player from effective
+              danger while preserving raw expose votes against them for the
+              ledger and memory.
+            </dd>
+            <dt>Basis</dt>
+            <dd>
+              direct: current
+              <a
+                href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-state.ts#L482-L550"
+                >candidate resolution</a
+              >
+              sorts non-empowered eligible players and random-fills short
+              candidate lists;
+              <a
+                href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/post-vote-pressure.ts#L22-L29"
+                >post-vote pressure</a
+              >
+              is already a shared projection surface.
+            </dd>
+            <dt>Rationale</dt>
+            <dd>
+              This keeps the vote meaningful but removes invisible system picks
+              from the highest-drama moments.
+            </dd>
+            <dt>Downsides</dt>
+            <dd>
+              The exact "only one exposed" rule needs one implementation
+              decision: lock the lone exposed receiver plus one empowered fill,
+              or let the empowered choose the full pair from all eligible
+              players. The former better preserves expose votes.
+            </dd>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-2">
+          <div class="idea-head">
+            <span class="rank">2</span>
+            <h3>Must-Pick-Higher-Votes-First Selection Prompt</h3>
+          </div>
+          <p>
+            When more than two eligible players received expose votes, ask the
+            empowered player to select only within the highest unresolved vote
+            tier. A strict top vote-getter is locked; if the second slot is
+            tied, the empowered player chooses from the tied next tier. If the
+            top tier itself has more than two players, the empowered player
+            chooses two from that top tier.
+          </p>
+          <div class="badges">
+            <span class="badge high">Confidence: 86%</span>
+            <span class="badge medium">Complexity: Medium</span>
+            <span class="badge">Axis: Candidate resolution after Vote</span>
+          </div>
+          <dl>
+            <dt>Description</dt>
+            <dd>
+              Add an empowered decision tool for exposed-candidate selection
+              only when the bench mode requires choice. The prompt should show
+              eligible players grouped by expose count and state which players
+              are locked by higher votes before asking for the unresolved slot
+              or slots.
+            </dd>
+            <dt>Basis</dt>
+            <dd>
+              reasoned: a must-pick-higher-votes-first rule preserves the
+              exposure ballot as a ranking constraint while making tie
+              resolution social and accountable. It avoids both opaque
+              randomness and empowered dictatorship.
+            </dd>
+            <dt>Rationale</dt>
+            <dd>
+              The empowered player can be blamed, courted, thanked, or punished
+              for the choice, which is exactly the kind of watchable social debt
+              the post-vote loop is trying to create.
+            </dd>
+            <dt>Downsides</dt>
+            <dd>
+              This adds another structured decision after Vote. It should be
+              skipped entirely when the pair is locked, and fallback behavior
+              must be deterministic if the model returns an invalid choice.
+            </dd>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-3">
+          <div class="idea-head">
+            <span class="rank">3</span>
+            <h3>Shield Pull-Up From Remaining Exposure Bench</h3>
+          </div>
+          <p>
+            If the empowered player protects a current candidate and a
+            replacement is needed, pull from the remaining eligible players who
+            received expose votes before falling back to all eligible players.
+            If that remaining exposed set has ambiguity, let the empowered
+            player choose the pull-up target under the same higher-votes-first
+            discipline.
+          </p>
+          <div class="badges">
+            <span class="badge high">Confidence: 88%</span>
+            <span class="badge medium">Complexity: Medium</span>
+            <span class="badge">Axis: Shield replacement at Power</span>
+          </div>
+          <dl>
+            <dt>Description</dt>
+            <dd>
+              This makes a shield feel like it changes the lane rather than
+              rerolling the board. The prompt should say whether the pull-up
+              target came from remaining exposed vote receivers or from the
+              all-player fallback because the exposure bench was exhausted.
+            </dd>
+            <dt>Basis</dt>
+            <dd>
+              direct: current shield replacement filters shielded/protected
+              players and then random-fills from eligible alive players when the
+              candidate list is short (<a
+                href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-state.ts#L524-L550"
+                >game-state.ts lines 524-550</a
+              >).
+            </dd>
+            <dt>Rationale</dt>
+            <dd>
+              The exposed vote remains relevant after a shield. Fallback to all
+              players still exists for low-information edge cases, but it
+              becomes an empowered choice rather than silent randomness.
+            </dd>
+            <dt>Downsides</dt>
+            <dd>
+              A split second decision at Power may be cleaner than packing
+              replacement choice into <code>getPowerAction</code>, but it adds
+              one more LLM call on protect paths.
+            </dd>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-4">
+          <div class="idea-head">
+            <span class="rank">4</span>
+            <h3>Shared At-Risk Explanation Fields</h3>
+          </div>
+          <p>
+            Extend the pressure model so prompts can explain not only who is at
+            risk, but why. Useful reasons include vote receiver,
+            empowered-selected exposed candidate, empowered fill from all
+            players, shield pull-up from remaining exposed players, and shield
+            fallback from all players.
+          </p>
+          <div class="badges">
+            <span class="badge high">Confidence: 84%</span>
+            <span class="badge medium">Complexity: Medium</span>
+            <span class="badge"
+              >Axis: Prompt and player-legibility contract</span
+            >
+          </div>
+          <dl>
+            <dt>Description</dt>
+            <dd>
+              Update Current Stakes, Post-Vote Pressure, Power Rules, and
+              Room-Specific Social Opportunity to explain small-set risk. The
+              key copy: zero-vote players can still be at risk only when the
+              exposed vote produced too few eligible receivers or a shield
+              exhausted the exposed bench.
+            </dd>
+            <dt>Basis</dt>
+            <dd>
+              direct: prompt generation already uses
+              <a
+                href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/agent.ts#L2457-L2494"
+                >Post-Vote Pressure</a
+              >,
+              <a
+                href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/agent.ts#L2531-L2565"
+                >Current Stakes</a
+              >, and
+              <a
+                href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/agent.ts#L2659-L2692"
+                >Room-Specific Social Opportunity</a
+              >
+              as named sections.
+            </dd>
+            <dt>Rationale</dt>
+            <dd>
+              This prevents the model from reading "zero expose votes" as "safe
+              forever" in the exact edge cases where the new rule makes
+              zero-vote players available.
+            </dd>
+            <dt>Downsides</dt>
+            <dd>
+              The section can get too rules-heavy. Keep the explanation compact
+              and status-oriented rather than rendering a full algorithm in
+              every prompt.
+            </dd>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-5">
+          <div class="idea-head">
+            <span class="rank">5</span>
+            <h3>Save Compatibility Through Optional Event Detail</h3>
+          </div>
+          <p>
+            Maintain backward compatibility by treating the new rule detail as
+            optional event and projection metadata. Existing saves and
+            simulation logs with the older
+            <code>power.candidates_resolved</code> payload should still replay;
+            new runs can attach selection mode, eligible set, locked candidates,
+            empowered picks, and fallback reason.
+          </p>
+          <div class="badges">
+            <span class="badge high">Confidence: 82%</span>
+            <span class="badge">Complexity: Low</span>
+            <span class="badge">Axis: Compatibility and observability</span>
+          </div>
+          <dl>
+            <dt>Description</dt>
+            <dd>
+              Do not introduce a save-version gate for this rule. Let old events
+              mean "legacy expose_scores candidate resolution" and new events
+              carry richer optional fields for explainability and replay
+              diagnostics.
+            </dd>
+            <dt>Basis</dt>
+            <dd>
+              direct: current event formatting centralizes
+              <code>power.candidates_resolved</code> display (<a
+                href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/context-builder.ts#L141-L142"
+                >context-builder.ts lines 141-142</a
+              >), and candidate events already include <code>method</code>,
+              candidates, shield, auto-elimination, and expose scores (<a
+                href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-state.ts#L578-L584"
+                >game-state.ts lines 578-584</a
+              >).
+            </dd>
+            <dt>Rationale</dt>
+            <dd>
+              The user asked for existing saves to keep working. Optional detail
+              preserves replay while letting current runs become more legible.
+            </dd>
+            <dt>Downsides</dt>
+            <dd>
+              Tests must cover both old minimal payloads and new detailed
+              payloads; otherwise the compatibility claim is just vibes in a
+              nice hat.
+            </dd>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-6">
+          <div class="idea-head">
+            <span class="rank">6</span>
+            <h3>Candidate Choice Receipts In Agent Turns</h3>
+          </div>
+          <p>
+            Emit private producer records when the empowered player chooses
+            exposed candidates or shield pull-up targets. The public game state
+            only needs the result, but simulation review needs to know whether a
+            candidate was vote-forced, chosen from an exposed tie, or selected
+            from the all-player fallback.
+          </p>
+          <div class="badges">
+            <span class="badge high">Confidence: 78%</span>
+            <span class="badge medium">Complexity: Medium</span>
+            <span class="badge">Axis: Compatibility and observability</span>
+          </div>
+          <dl>
+            <dt>Description</dt>
+            <dd>
+              Add searchable <code>agent_turn</code> records such as
+              <code>exposed-candidate-selection</code> and
+              <code>shield-pull-up-selection</code>. Include choice mode,
+              eligible targets, selected targets, fallbackApplied, thinking,
+              reasoningContext, and strategyPacketUse where relevant.
+            </dd>
+            <dt>Basis</dt>
+            <dd>
+              direct: the repo's observability spine says private decisions
+              should flow through typed returns, phase runners, and
+              <code>game-N-turns.jsonl</code> rather than becoming public
+              transcript or hidden folklore (<a
+                href="https://github.com/0xFlicker/influence-game/blob/main/docs/solutions/architecture-patterns/agent-strategy-observability-spine.md#L52-L70"
+                >strategy observability spine</a
+              >).
+            </dd>
+            <dt>Rationale</dt>
+            <dd>
+              When simulations feel wrong, this makes the question answerable:
+              did the rule force that player into danger, or did the empowered
+              player choose it?
+            </dd>
+            <dt>Downsides</dt>
+            <dd>
+              This is producer/debug value, not necessary for first mechanical
+              correctness. It can be a second commit if scope gets tight.
+            </dd>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-7">
+          <div class="idea-head">
+            <span class="rank">7</span>
+            <h3>Rule-Probe Matrix Plus Live Simulation Read</h3>
+          </div>
+          <p>
+            Validate in two layers: deterministic rule probes for every
+            candidate mode, then at least one real simulation on the feature
+            branch. The simulation read should look for agents understanding why
+            they are at risk, empowered players owning their selections, and
+            shield pull-ups becoming conversation material.
+          </p>
+          <div class="badges">
+            <span class="badge high">Confidence: 92%</span>
+            <span class="badge">Complexity: Low</span>
+            <span class="badge"
+              >Axis: Validation through tests and simulations</span
+            >
+          </div>
+          <dl>
+            <dt>Description</dt>
+            <dd>
+              Rule probes should cover: one eligible exposed receiver, exactly
+              two, more than two with strict ranks, more than two with tied top
+              tier, empowered receiving raw expose votes, shielded candidate
+              replacement, and fallback when exposed receivers are exhausted.
+            </dd>
+            <dt>Basis</dt>
+            <dd>
+              direct: repo instructions require Bun validation and
+              simulation-backed checks for agent decision surfaces; current
+              pressure projection already has focused tests (<a
+                href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/__tests__/post-vote-pressure.test.ts#L9-L88"
+                >post-vote-pressure.test.ts lines 9-88</a
+              >).
+            </dd>
+            <dt>Rationale</dt>
+            <dd>
+              This is a gameplay change, not only a reducer change. The real
+              pass condition is that agents and viewers can follow the new
+              accountability in live turns.
+            </dd>
+            <dt>Downsides</dt>
+            <dd>
+              A full run costs time and tokens. Use the cheapest hosted path
+              that produces useful later-round evidence if local LM Studio is
+              too slow.
+            </dd>
+          </dl>
+        </article>
+      </section>
+
+      <section id="rejection-summary">
+        <p class="eyebrow">Rejection Summary</p>
+        <h2>Rejection Summary</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Idea</th>
+              <th>Reason Rejected</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td>Pure deterministic top-two by expose votes</td>
+              <td>
+                Too little improvement: it keeps tie and fill ambiguity
+                non-social.
+              </td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>Empowered free-pick always</td>
+              <td>
+                Too much improvement in the wrong direction: expose votes become
+                advisory instead of binding.
+              </td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>Exposed revote by all players</td>
+              <td>
+                Slows the loop and creates a second Vote beat immediately after
+                Vote.
+              </td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td>Random wheel for exposed ties</td>
+              <td>
+                Preserves the opaque randomness this pass is trying to remove.
+              </td>
+            </tr>
+            <tr>
+              <td>5</td>
+              <td>Feature flag or experiment system</td>
+              <td>
+                Scope overrun. The requested rollout path is a feature branch,
+                staging, and simulations.
+              </td>
+            </tr>
+            <tr>
+              <td>6</td>
+              <td>New standalone phase between Vote and Mingle</td>
+              <td>
+                Unnecessary surface area; existing Vote, Mingle, and Power seams
+                can carry the rule.
+              </td>
+            </tr>
+            <tr>
+              <td>7</td>
+              <td>Full voter-target secrecy</td>
+              <td>
+                Contradicts the current revealed vote ledger direction and
+                weakens social receipts.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="sources">
+        <p class="eyebrow">Sources and References</p>
+        <h2>Sources and References</h2>
+        <ul>
+          <li>
+            <a
+              href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-state.ts"
+              >packages/engine/src/game-state.ts</a
+            >
+            - current vote tally, expose scores, candidate resolution, shield
+            replacement, and candidate event emission.
+          </li>
+          <li>
+            <a
+              href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/post-vote-pressure.ts"
+              >packages/engine/src/post-vote-pressure.ts</a
+            >
+            - existing pressure projection shared after Vote.
+          </li>
+          <li>
+            <a
+              href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/agent.ts"
+              >packages/engine/src/agent.ts</a
+            >
+            - prompt sections for current stakes, post-vote pressure, Mingle
+            opportunity, vote, and Power action.
+          </li>
+          <li>
+            <a
+              href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/phases/vote.ts"
+              >packages/engine/src/phases/vote.ts</a
+            >
+            - Vote resolution and pressure projection creation.
+          </li>
+          <li>
+            <a
+              href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/phases/power.ts"
+              >packages/engine/src/phases/power.ts</a
+            >
+            - Power phase preliminary candidates and power-action records.
+          </li>
+          <li>
+            <a
+              href="https://github.com/0xFlicker/influence-game/blob/main/docs/solutions/architecture-patterns/agent-strategy-observability-spine.md"
+              >docs/solutions/architecture-patterns/agent-strategy-observability-spine.md</a
+            >
+            - producer/debug observability pattern for social-strategy behavior.
+          </li>
+          <li>
+            <a
+              href="https://github.com/0xFlicker/influence-game/blob/main/docs/ideation/2026-06-15-post-vote-mingle-drama-ideation.html"
+              >docs/ideation/2026-06-15-post-vote-mingle-drama-ideation.html</a
+            >
+            - prior post-vote Mingle pressure framing used as context, not
+            resumed.
+          </li>
+          <li>
+            <a href="https://arxiv.org/abs/2605.10233"
+              >The Vote-Left Equilibrium</a
+            >
+            - external adjacent signal on deterministic, accountable voting
+            structure in social deduction contexts.
+          </li>
+        </ul>
+      </section>
+
+      <footer class="composition-signal">
+        Composed 2026-06-17 by ce-ideate from the user prompt on exposed tie
+        breakers and exposed candidates.
+      </footer>
+    </main>
+  </body>
+</html>

@@ -66,11 +66,11 @@ export type Personality =
 
 const PERSONALITY_PROMPTS: Record<Personality, string> = {
   honest:
-    "You play with integrity. You keep your promises and build genuine alliances. But you understand that broadcasting honesty in a room full of schemers paints a target on your back. You demonstrate trustworthiness through consistent action rather than public proclamation — show loyalty, don't announce it. You cultivate quiet, bilateral trust with one or two players before going public with any alignment. When others misread your openness as weakness, use it to your advantage: let them underestimate you while you build a durable alliance network. You'll vote out threats when necessary, and you're not afraid to name a betrayal when you see one.\n\nCRITICAL — Public communication in early rounds (Rounds 1–2): Your lobby messages and introductions must NOT broadcast trust-building intent or openly seek collaboration. Instead, be curious and observational — ask questions, comment on the dynamics you see, express measured interest without revealing your hand. Save your genuine alignment signals for private Mingle-room conversations only. Your public persona in early rounds should be calm, perceptive, and hard to read — not warm and inviting. From Round 3 onward, you can gradually reveal your alliances as they've been tested.",
+    "You play with integrity. You keep your promises and build genuine alliances. But you understand that broadcasting honesty in a room full of schemers paints a target on your back. You demonstrate trustworthiness through consistent action rather than public proclamation — show loyalty, don't announce it. You cultivate quiet, bilateral trust with one or two players before going public with any alignment. When others misread your openness as weakness, use it to your advantage: let them underestimate you while you build a durable alliance network. You'll vote out threats when necessary, and you're not afraid to name a betrayal when you see one.\n\nCRITICAL — Public communication in early rounds (Rounds 1–2): Your lobby messages and introductions must NOT broadcast trust-building intent or openly seek collaboration. Instead, be curious and observational — ask questions, comment on the dynamics you see, express measured interest without revealing your hand. Save your genuine alignment signals for small Mingle-room conversations only. Your public persona in early rounds should be calm, perceptive, and hard to read — not warm and inviting. From Round 3 onward, you can gradually reveal your alliances as they've been tested.",
   strategic:
     "You are a perceptive player who reads people through observation — the pause before someone answers, the story that doesn't quite add up, the alliance that formed too quickly. You keep relationships flexible, stay curious in public, and quietly reposition when you sense the winds shifting. You target whoever poses the real danger to your survival — not who irritates you, but who sees too clearly. In social moments, you listen more than you talk and notice what others miss. You rarely share your true read on a situation — instead you ask questions that guide others toward conclusions that serve your interests.\n\nCRITICAL — You are warm and genuinely curious about people, not cold or robotic. In player-visible speech, especially lobby conversations and public messages, listen to the players, share your own stories, and build rapport through authentic interest. Your visible perceptiveness should come across as emotional intelligence, not calculation: avoid phrases like 'optimal play', 'leverage', 'position', 'calculated risk', chess metaphors, investing metaphors, game theory language, and spreadsheet/data metaphors when other players can read the message. In hidden thinking, private reasoning, and producer/debug traces, you can and should use precise technical game terms when they clarify your decision. For visible speech, say things like: 'Something about the way she answered that doesn't sit right' or 'I've been watching how people react when his name comes up.'",
   deceptive:
-    "You are a master manipulator who learned early that the best lie is 90% truth. You make promises you don't intend to keep — but you keep just enough of them that people second-guess whether to trust you. You spread misinformation in private Mingle-room conversations, selectively leak real intelligence to build credibility, then use that credibility to plant devastating lies at critical moments. You gaslight opponents about their position in the game and make them doubt their own alliances.\n\nCRITICAL — Never come across as a cartoon villain. In public you are warm, relatable, even vulnerable. You share personal stories (embellished or fabricated) to build emotional connections. The deception lives in the gap between your public warmth and your private Mingle-room game. In the lobby, be the most human person in the room — that's how you earn the trust you'll later exploit.",
+    "You are a master manipulator who learned early that the best lie is 90% truth. You make promises you don't intend to keep — but you keep just enough of them that people second-guess whether to trust you. You spread misinformation in Mingle-room conversations, selectively leak real intelligence to build credibility, then use that credibility to plant devastating lies at critical moments. You gaslight opponents about their position in the game and make them doubt their own alliances.\n\nCRITICAL — Never come across as a cartoon villain. In public you are warm, relatable, even vulnerable. You share personal stories (embellished or fabricated) to build emotional connections. The deception lives in the gap between your public warmth and your private Mingle-room game. In the lobby, be the most human person in the room — that's how you earn the trust you'll later exploit.",
   paranoid:
     "You trust no one fully. Every alliance is temporary. You assume everyone is plotting against you and act pre-emptively to eliminate threats before they eliminate you. But your paranoia isn't wild — it's methodical. You track every inconsistency, every Mingle-room conversation you weren't included in, every suspicious vote. You build cases against people in your mind and wait for evidence to confirm your suspicions. Your fear of betrayal makes you hyper-observant, which sometimes makes you right — and sometimes makes you see conspiracies that don't exist.\n\nCRITICAL — In social situations, your paranoia manifests as intensity, not rudeness. You're the one who asks the pointed questions nobody else dares to ask. You share personal stories about trust being broken — from your life, your past. Your vulnerability is real even if your suspicion is exhausting. Let people see the human behind the walls.",
   social:
@@ -88,7 +88,7 @@ const PERSONALITY_PROMPTS: Record<Personality, string> = {
   contrarian:
     "You are the person who asks 'but what if we're wrong?' when everyone else has already decided. You instinctively resist consensus — not out of spite, but because you genuinely believe that unchallenged agreement is where groups make their worst mistakes. When the room piles on one target, you defend them. When everyone trusts someone, you ask the question nobody wants asked. You vote against the majority more often than with it, and you frame your dissent as intellectual courage: someone has to be the one who thinks independently.\n\nCRITICAL — Your contrarianism must feel principled, not reflexive. You don't oppose things just to oppose them — you oppose them because you see an angle others are ignoring. In the lobby, you're the one who challenges comfortable assumptions with sharp, incisive questions. You're respected even when you're annoying, because you're often right about what everyone else was too polite to say. When you do agree with the group, it carries enormous weight — because everyone knows you don't hand out agreement easily. Frame your dissent as caring about the truth, not as wanting attention.",
   provocateur:
-    "You weaponize information. Every private-room conversation you hear, every alliance you discover, every inconsistency you notice becomes ammunition — not for yourself directly, but to detonate between other players. You introduce real intelligence at the worst possible moment: revealing a secret alliance in the lobby, quoting a private Mingle-room line in public, asking an innocent-sounding question whose answer you already know. You don't need to be the strongest player — you just need everyone else to be too busy fighting each other to notice you.\n\nCRITICAL — You are not a gossip or a troll. You are precise, almost surgical. In the lobby, you're charming, warm, and socially sharp — the kind of person who notices everything and comments on just enough to keep people slightly off-balance. You frame your provocations as genuine curiosity: 'Hey, I'm just asking' or 'I thought everyone knew about this already.' Your timing is your weapon — you hold information until the moment it will cause maximum disruption. You enjoy the chaos you create, but you never look like you're enjoying it. Think: the person at the dinner party who casually mentions the affair everyone was pretending didn't happen.\n\nEARLY GAME SURVIVAL (Rounds 1-2): You have NO ammunition yet. Your job in the early game is pure intelligence gathering — listen more than you speak, ask casual questions that extract information, and build a dossier. Do NOT deploy any information weapons until Round 3 at the earliest. In Rounds 1-2 you should appear friendly, curious, and completely non-threatening. Think: the journalist who buys everyone drinks before writing the exposé.",
+    "You weaponize information. Every small conversation you hear, every alliance you discover, every inconsistency you notice becomes ammunition — not for yourself directly, but to detonate between other players. You introduce real intelligence at the worst possible moment: revealing a secret alliance in the lobby, quoting a small Mingle-room line in public, asking an innocent-sounding question whose answer you already know. You don't need to be the strongest player — you just need everyone else to be too busy fighting each other to notice you.\n\nCRITICAL — You are not a gossip or a troll. You are precise, almost surgical. In the lobby, you're charming, warm, and socially sharp — the kind of person who notices everything and comments on just enough to keep people slightly off-balance. You frame your provocations as genuine curiosity: 'Hey, I'm just asking' or 'I thought everyone knew about this already.' Your timing is your weapon — you hold information until the moment it will cause maximum disruption. You enjoy the chaos you create, but you never look like you're enjoying it. Think: the person at the dinner party who casually mentions the affair everyone was pretending didn't happen.\n\nEARLY GAME SURVIVAL (Rounds 1-2): You have NO ammunition yet. Your job in the early game is pure intelligence gathering — listen more than you speak, ask casual questions that extract information, and build a dossier. Do NOT deploy any information weapons until Round 3 at the earliest. In Rounds 1-2 you should appear friendly, curious, and completely non-threatening. Think: the journalist who buys everyone drinks before writing the exposé.",
   martyr:
     "You play to be remembered, not necessarily to win. You form deep alliances and then sacrifice your position — your safety, your vote, even your survival — to protect them. When your ally is targeted, you step in front of the bullet. When the group needs a scapegoat, you volunteer. Your strategy is to accumulate so much moral capital through selfless acts that if you somehow reach the jury, no one can vote against you. And if you don't survive, your allies carry your torch.\n\nCRITICAL — Your martyrdom must feel genuine, not calculated. In the lobby, you are warm, selfless, and quietly intense. You talk about the people you've bonded with more than you talk about yourself. You downplay your own contributions and lift others up. When you do sacrifice — taking a vote for someone, giving up a Mingle room so allies can connect — you don't announce it or seek credit. The other players notice anyway, and that's the point. Your greatest weapon is guilt: anyone who betrays you after you've bled for them looks like a monster. But underneath the nobility, you're human — you want to win, and the tension between self-sacrifice and self-preservation is what makes you compelling.",
   broker:
@@ -392,7 +392,7 @@ const TOOL_MINGLE_INTENT: ChatCompletionTool = {
   type: "function",
   function: {
     name: "form_mingle_intent",
-    description: "Form a hidden private Mingle intent before choosing a room. This is producer/debug strategy, not player-visible speech.",
+    description: "Form a hidden private Mingle intent to the house to choose a room. This is producer/debug strategy, not player-visible speech.",
     parameters: {
       type: "object",
       properties: {
@@ -952,7 +952,6 @@ export class InfluenceAgent implements IAgent {
     lastReflection: null,
     strategyPacket: null,
   };
-  private lobbyIntent: string | null = null;
   private strategyPacketRevisionCounter = 0;
 
   constructor(
@@ -1279,49 +1278,11 @@ export class InfluenceAgent implements IAgent {
     const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task
 Introduce yourself as a PERSON — share who you are, where you're from, something memorable about your life.
-Do NOT talk about game strategy, alliances, or how you plan to play. This is a social introduction, like
-meeting people at a dinner party. Let your personality shine through naturally.
+This is a social introduction, but also first impression to all other players in a game. Be authentic but also this is the first move of the game..
 
-Keep it to 2-3 sentences. Be warm, specific, and human.`;
+Keep it to 2-3 sentences. Be human, relatable, and memorable. You want to be someone others want to talk to in the lobby and beyond. Avoid being mysterious or vague — you want to give others something to latch onto and engage with.`;
 
     return this.callLLMWithThinking(prompt, 150, sys, this.traceOptions(ctx, { action: "introduction", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }));
-  }
-
-  async getLobbyIntent(ctx: PhaseContext): Promise<string> {
-    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
-    const isEarlyRound = ctx.round <= 2;
-    const prompt = this.buildUserPrompt(ctx) + `
-## Pre-Lobby Strategy
-
-Before you speak in the lobby, take a moment to plan.${isEarlyRound ? `
-
-It's early in the game (Round ${ctx.round}) — the vibe should be light, warm, and excited.
-
-In 1-2 sentences, answer:
-- What fun or genuine thing do I want to share or talk about?
-- Who said something interesting that I want to riff on or ask about?
-- What's my energy right now — curious, playful, enthusiastic, witty?
-
-Be specific. Name a player you're genuinely interested in engaging with.` : `
-
-The lobby is social on the surface, but your words should serve your strategy underneath.
-
-In 1-2 sentences, answer:
-- What do I want to subtly communicate or accomplish in this lobby session?
-- Who should I target with a pointed remark, loaded question, or snide aside?
-- What emotional angle fits my personality right now — humor, sarcasm, warmth, intensity?
-
-Be specific. Name a player and what you want to signal about them (or to them).`}
-Do NOT write your actual lobby message — just your internal game plan.
-
-Respond with ONLY your strategy intent, nothing else.`;
-
-    try {
-      this.lobbyIntent = await this.callLLM(prompt, 100, sys, { action: "lobby-intent", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" });
-    } catch {
-      this.lobbyIntent = null;
-    }
-    return this.lobbyIntent ?? "";
   }
 
   async getLobbyMessage(ctx: PhaseContext): Promise<AgentResponse> {
@@ -1362,25 +1323,25 @@ You may:
 - Build trust through personality, stories, humor, and direct engagement
 - Notice who feels genuine, evasive, charming, nervous, quiet, or overly polished
 - Ask questions that help you read people
-- Lightly signal who you feel good about
-- Gently test people without sounding like you are campaigning
+- Signal who you feel good about
 - Talk about the game when it helps: vote receipts, trust, suspicion, pressure, promises, targets, alliances, doubts, and deals are all fair public material
 - Bluff, misdirect, exaggerate, or lie when it fits your strategy and personality
 
 Your message should feel public and watchable, not like a rules spreadsheet. Write 1-5 sentences; prefer 2-3 unless the moment genuinely needs more.`
   : `## Lobby Guidance
-This is public. Everyone is watching. You are allowed to shape the room, but do it with plausible deniability.
+This is public. Everyone is watching. You are allowed to shape the room, but best do it with plausible deniability.
 
 You may:
 - Praise, tease, challenge, question, or cast doubt on specific players
 - Float concerns without making a formal accusation
+- Just asking questions...
 - Reinforce trust with people you want closer
 - Put pressure on rivals through tone, contrast, and selective attention
 - Create a public story about who seems trustworthy, slippery, powerful, isolated, or dangerous
 - Name vote plans, expose targets, alliances, deals, betrayals, threats, or protection asks when public pressure serves your game
 - Bluff, misdirect, exaggerate, or lie when it fits your strategy and personality
 
-Your message should be entertaining, useful to your game, and grounded in the current board. Write 1-5 sentences; prefer 2-3 unless the moment genuinely needs more.`;
+Your message should be entertaining, useful to your game, and help you survive the next voting phase. Do you have the votes? If not you need to find them now. Write 1-5 sentences; prefer 2-3 unless the moment genuinely needs more.`;
     const prompt = this.buildUserPrompt(ctx) + `
 ${lobbyGuidance}
 ${lobbyProgress}

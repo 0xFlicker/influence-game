@@ -18,6 +18,10 @@ The normal standard-round Mingle window after Vote resolves and before Power fal
 
 The pressure-only round state shown to agents, House, viewer framing, and validation after Vote resolves. It identifies the empowered player, current at-risk players, the acting agent's status, and who may become at risk if a shield is granted. It is interpreted alongside the revealed vote ledger; private producer evidence remains out of normal player-visible context.
 
+## Exposure bench
+
+The eligible set of non-empowered live players who received expose votes after Vote resolves. The bench is used to resolve the Council candidate pair before Power: expose votes lock candidates when they can, and the empowered player resolves only leftover ambiguity such as too few eligible exposed receivers, tied exposed tiers, or shield replacement fallout.
+
 ## Revealed vote ledger
 
 The public player-known record of named standard-round votes after Vote resolves. It lists each voter, their empower target, their expose target, and any empower re-vote target when a tie forces a re-vote. Agents receive this ledger in later game cards so Mingle and strategy reflections can use votes as social receipts rather than relying on hidden memory or Strategy Thread summaries.

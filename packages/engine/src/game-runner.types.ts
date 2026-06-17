@@ -655,8 +655,6 @@ export interface IAgent {
   onPhaseStart(context: PhaseContext): Promise<void>;
   /** Called to collect this agent's introduction message */
   getIntroduction(context: PhaseContext): Promise<AgentResponse>;
-  /** Called once before lobby sub-rounds to form a lobby strategy intent */
-  getLobbyIntent?(context: PhaseContext): Promise<string>;
   /** Called to collect a lobby message */
   getLobbyMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called to collect whisper actions (list of {to, text}) — DEPRECATED, use room methods */

@@ -21,28 +21,6 @@ async function runLobbyMessages(
   const alivePlayers = gameState.getAlivePlayers();
   const messagesPerPlayer = computeLobbyMessagesPerPlayer(alivePlayers.length, config.lobbyMessagesPerPlayer);
 
-  // Pre-lobby intent
-  if (config.enableLobbyIntent !== false) {
-    await Promise.all(
-      alivePlayers.map(async (player) => {
-        const agent = agents.get(player.id)!;
-        if (agent.getLobbyIntent) {
-          const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.LOBBY);
-          const intent = await agent.getLobbyIntent(phaseCtx);
-          await assertCanAcceptCommit(ctx);
-          logger.emitAgentTurn({
-            phase: Phase.LOBBY,
-            action: "lobby-intent",
-            actor: { id: player.id, name: player.name, role: "player" },
-            visibility: "private",
-            response: { intent },
-            text: intent,
-          });
-        }
-      }),
-    );
-  }
-
   // Sub-rounds
   for (let sub = 0; sub < messagesPerPlayer; sub++) {
     await Promise.all(

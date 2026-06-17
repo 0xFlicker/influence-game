@@ -332,7 +332,6 @@ export function buildSimulationConfig(
     // Keep release-validation sims bounded; these hidden calls are flavor/memory, not core rules.
     maxDiaryFollowUps: 0,
     diaryRoomAfterPhases: enableDiary ? [Phase.COUNCIL] : [],
-    enableLobbyIntent: false,
     enableStrategicReflections: richProducer ? true : options.enableStrategicReflections ?? false,
     lobbyMessagesPerPlayer: 1,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),
