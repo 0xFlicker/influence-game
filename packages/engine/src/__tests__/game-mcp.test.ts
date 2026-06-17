@@ -499,6 +499,63 @@ describe("game MCP corpus read model", () => {
     expect(linked.turns[0]?.record?.actor).toEqual({ id: "vera", name: "Vera" });
   });
 
+  it("finds private exposure-bench choice records in turns logs", () => {
+    const corpusDir = makeTempCorpus();
+    const sessionDir = makeSession(corpusDir, "batch-exposure-bench");
+    writeFileSync(
+      join(sessionDir, "game-1-turns.jsonl"),
+      [
+        {
+          sequence: 1,
+          type: "agent_turn",
+          action: "candidate-selection",
+          round: 1,
+          phase: Phase.VOTE,
+          actor: { id: "mira", name: "Mira" },
+          response: { selectedCandidates: [{ id: "nyx", name: "Nyx" }] },
+          thinking: "Choosing Nyx creates social debt.",
+          reasoningContext: "Native candidate-selection reasoning.",
+        },
+        {
+          sequence: 2,
+          type: "agent_turn",
+          action: "shield-pull-up-selection",
+          round: 1,
+          phase: Phase.POWER,
+          actor: { id: "mira", name: "Mira" },
+          response: { selectedCandidates: [{ id: "echo", name: "Echo" }], fallbackReason: null },
+          thinking: "Echo is the better pull-up.",
+          reasoningContext: "Native shield-pull-up reasoning.",
+        },
+      ].map((record) => JSON.stringify(record)).join("\n") + "\n",
+    );
+    const readModel = new GameMcpReadModel(corpusDir);
+
+    const candidateResults = readModel.searchLogs({
+      query: "candidate-selection",
+      sessionId: "batch-exposure-bench",
+      gameNumber: 1,
+      sources: ["turns"],
+    });
+    const pullUpResults = readModel.searchLogs({
+      query: "shield-pull-up reasoning",
+      sessionId: "batch-exposure-bench",
+      gameNumber: 1,
+      sources: ["turns"],
+    });
+
+    expect(candidateResults).toHaveLength(1);
+    expect(candidateResults[0]).toMatchObject({
+      citation: { sourceKind: "turns", line: 1 },
+      record: { action: "candidate-selection" },
+    });
+    expect(pullUpResults).toHaveLength(1);
+    expect(pullUpResults[0]).toMatchObject({
+      citation: { sourceKind: "turns", line: 2 },
+      record: { action: "shield-pull-up-selection" },
+    });
+  });
+
   it("keeps corpus queries working when another session has a bad event log", () => {
     const corpusDir = makeTempCorpus();
     writeCanonicalGame(makeSession(corpusDir, "batch-good"));

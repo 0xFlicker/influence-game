@@ -76,6 +76,20 @@ describe("exposure bench resolver", () => {
     expect(result.candidates).toEqual([beta!.id, delta!.id]);
   });
 
+  it("locks a larger bench when the top two tiers are fully ordered", () => {
+    const [alpha, beta, gamma, delta] = players("Alpha", "Beta", "Gamma", "Delta");
+    const result = resolveInitialExposureBench({
+      alivePlayers: [alpha!, beta!, gamma!, delta!],
+      empoweredId: alpha!.id,
+      exposeScores: scores([[beta!, 4], [gamma!, 3], [delta!, 1]]),
+    });
+
+    expect(result.mode).toBe("exposure_locked");
+    expect(result.lockedCandidates).toEqual([beta!.id, gamma!.id]);
+    expect(result.choice.requiredCount).toBe(0);
+    expect(result.candidates).toEqual([beta!.id, gamma!.id]);
+  });
+
   it("asks for two choices from a tied top tier with more than two players", () => {
     const [alpha, beta, gamma, delta, echo] = players("Alpha", "Beta", "Gamma", "Delta", "Echo");
     const result = resolveInitialExposureBench({

@@ -7,8 +7,12 @@ import {
 
 export type PostVotePressureStatus =
   | "empowered"
+  | "locked_at_risk"
+  | "empowered_selected"
+  | "selectable_exposed"
   | "current_at_risk"
   | "replacement_risk"
+  | "fallback_risk"
   | "safe";
 
 export interface PostVotePressurePlayer {
@@ -85,6 +89,18 @@ export function buildPostVotePressureProjection(
     .filter((player): player is Pick<Player, "id" | "name" | "shielded"> => Boolean(player))
     .map((player) => pressureEntry(player, input.exposeScores));
   const currentAtRiskIds = new Set(currentAtRisk.map((player) => player.id));
+  const lockedAtRiskIds = new Set(initialResolution.lockedCandidates.filter((id) => currentAtRiskIds.has(id)));
+  const empoweredSelectedIds = new Set(initialResolution.selectedCandidateIds.filter((id) => currentAtRiskIds.has(id)));
+  const selectableExposedIds = new Set(
+    initialResolution.choice.eligibleCandidateIds.filter(
+      (id) => !empoweredSelectedIds.has(id) && (input.exposeScores[id] ?? 0) > 0,
+    ),
+  );
+  const fallbackRiskIds = new Set<UUID>(
+    initialResolution.choice.eligibleCandidateIds.filter(
+      (id) => !empoweredSelectedIds.has(id) && (input.exposeScores[id] ?? 0) === 0,
+    ),
+  );
 
   const shieldScenarios: PostVoteShieldScenario[] = currentAtRisk.map((player) => {
     const replacement = resolveShieldReplacement({
@@ -105,7 +121,11 @@ export function buildPostVotePressureProjection(
   for (const scenario of shieldScenarios) {
     for (const player of scenario.resultingAtRisk) {
       if (!currentAtRiskIds.has(player.id)) {
-        replacementRiskIds.add(player.id);
+        if (player.exposeScore > 0) {
+          replacementRiskIds.add(player.id);
+        } else {
+          fallbackRiskIds.add(player.id);
+        }
       }
     }
   }
@@ -124,10 +144,16 @@ export function buildPostVotePressureProjection(
       let status: PostVotePressureStatus = "safe";
       if (player.id === empowered.id) {
         status = "empowered";
-      } else if (currentAtRiskIds.has(player.id)) {
-        status = "current_at_risk";
       } else if (replacementRiskIds.has(player.id)) {
         status = "replacement_risk";
+      } else if (lockedAtRiskIds.has(player.id)) {
+        status = "locked_at_risk";
+      } else if (empoweredSelectedIds.has(player.id)) {
+        status = "empowered_selected";
+      } else if (selectableExposedIds.has(player.id)) {
+        status = "selectable_exposed";
+      } else if (fallbackRiskIds.has(player.id)) {
+        status = "fallback_risk";
       }
 
       return {

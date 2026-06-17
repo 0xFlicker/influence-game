@@ -510,6 +510,121 @@ describe("InfluenceAgent structured output mode", () => {
     });
   });
 
+  it("preserves private candidate-selection reasoning and eligible-set constraints", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "select_council_candidates",
+        {
+          thinking: "Mira is socially expensive to choose, but the vote tie gives me cover.",
+          candidates: ["Mira"],
+        },
+        "Hidden local reasoning for candidate selection.",
+      ),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const decision = await agent.getCandidateSelection(makeContext(Phase.VOTE), {
+      lockedCandidateIds: ["vera-id"],
+      eligibleCandidateIds: ["mira-id"],
+      requiredCount: 1,
+      mode: "one_locked_one_choice",
+      fallbackReason: null,
+    });
+
+    expect(decision).toEqual({
+      selectedCandidateIds: ["mira-id"],
+      thinking: "Mira is socially expensive to choose, but the vote tie gives me cover.",
+      reasoningContext: "Hidden local reasoning for candidate selection.",
+      strategyPacketUse: undefined,
+    });
+    expect(requests[0]?.tool_choice).toEqual("required");
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.at(-1)!.content;
+    expect(prompt).toContain("## Private Council Candidate Selection");
+    expect(prompt).toContain("Locked candidates already set by expose votes: Vera");
+    expect(prompt).toContain("Eligible choices for the unresolved slot: Mira");
+    expect(prompt).toContain("Required selections: 1");
+  });
+
+  it("falls back deterministically when candidate selection returns unavailable names", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(requests, "select_council_candidates", {
+        thinking: "I want Atlas safe, but that is not legal.",
+        candidates: ["Atlas", "Nobody"],
+      }),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const decision = await agent.getCandidateSelection(makeContext(Phase.VOTE), {
+      lockedCandidateIds: [],
+      eligibleCandidateIds: ["mira-id", "vera-id"],
+      requiredCount: 2,
+      mode: "all_player_fallback",
+      fallbackReason: "bench_too_small",
+    });
+
+    expect(decision.selectedCandidateIds).toEqual(["mira-id", "vera-id"]);
+    expect(decision.thinking).toBe("I want Atlas safe, but that is not legal.");
+  });
+
+  it("preserves private shield pull-up reasoning and fallback-risk framing", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "select_shield_pull_up",
+        {
+          thinking: "Pulling Mira up makes the protection debt visible.",
+          candidates: ["Mira"],
+        },
+        "Hidden local reasoning for shield pull-up.",
+      ),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const decision = await agent.getShieldPullUpSelection(makeContext(Phase.POWER), {
+      lockedCandidateIds: ["vera-id"],
+      eligibleCandidateIds: ["mira-id"],
+      requiredCount: 1,
+      mode: "all_player_fallback_replacement",
+      fallbackReason: "bench_exhausted",
+      protectedCandidateId: "atlas-id",
+    });
+
+    expect(decision).toEqual({
+      selectedCandidateIds: ["mira-id"],
+      thinking: "Pulling Mira up makes the protection debt visible.",
+      reasoningContext: "Hidden local reasoning for shield pull-up.",
+      strategyPacketUse: undefined,
+    });
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.at(-1)!.content;
+    expect(prompt).toContain("## Private Shield Pull-Up Selection");
+    expect(prompt).toContain("Fallback context: bench_exhausted");
+    expect(prompt).toContain("fallback risk rather than vote-derived exposed risk");
+  });
+
   it("preserves hidden Mingle intent and native reasoning", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(

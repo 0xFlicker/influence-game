@@ -10,13 +10,14 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import { GameState, createUUID } from "../game-state";
 import { GameEventBus } from "../event-bus";
 import { GameRunner } from "../game-runner";
-import type { AgentCallOptions, AgentResponse, GameStreamEvent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "../game-runner";
+import type { AgentCallOptions, AgentResponse, CandidateChoiceRequest, CandidateSelectionDecision, GameStreamEvent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerLobbyExposure } from "../game-runner";
 import { TemplateHouseInterviewer } from "../house-interviewer";
 import type { HouseMingleAssignmentContext, HouseMingleAssignmentResult } from "../house-interviewer";
 import { createPhaseMachine } from "../phase-machine";
 import { createActor } from "xstate";
 import { Phase, PlayerStatus } from "../types";
 import type { GameConfig, RoomAllocation } from "../types";
+import type { CanonicalGameEvent } from "../canonical-events";
 import { MockAgent } from "./mock-agent";
 import { allocateRooms } from "../phases/mingle";
 
@@ -503,6 +504,135 @@ describe("Mingle Rooms (current open-room phase)", () => {
     expect(echoLedger).toMatchObject({
       empowerTargetName: "Echo",
       revoteEmpowerTargetName: "Beta",
+    });
+  });
+
+  it("emits private candidate-selection and shield pull-up records for unresolved exposure bench choices", async () => {
+    class ScriptedExposureBenchAgent extends MockAgent {
+      constructor(
+        id: string,
+        name: string,
+        private readonly vote: { empowerTarget: string; exposeTarget: string },
+        private readonly powerTarget: string | null = null,
+        private readonly initialPick: string | null = null,
+        private readonly pullUpPick: string | null = null,
+      ) {
+        super(id, name);
+      }
+
+      override async getVotes(): Promise<{ empowerTarget: string; exposeTarget: string; thinking?: string }> {
+        return { ...this.vote, thinking: `${this.name} scripted exposure-bench vote` };
+      }
+
+      override async getCandidateSelection(
+        _ctx: PhaseContext,
+        request: CandidateChoiceRequest,
+      ): Promise<CandidateSelectionDecision> {
+        const selected = this.initialPick && request.eligibleCandidateIds.includes(this.initialPick)
+          ? [this.initialPick]
+          : request.eligibleCandidateIds.slice(0, request.requiredCount);
+        return {
+          selectedCandidateIds: selected,
+          thinking: `${this.name} chooses the initial accountable candidate`,
+          reasoningContext: "scripted candidate-selection reasoning",
+        };
+      }
+
+      override async getPowerAction(
+        _ctx: PhaseContext,
+        candidates: [string, string],
+      ): Promise<{ action: "protect"; target: string; thinking?: string }> {
+        return {
+          action: "protect",
+          target: this.powerTarget ?? candidates[0],
+          thinking: `${this.name} protects a candidate to force a pull-up`,
+        };
+      }
+
+      override async getShieldPullUpSelection(
+        _ctx: PhaseContext,
+        request: CandidateChoiceRequest,
+      ): Promise<CandidateSelectionDecision> {
+        const selected = this.pullUpPick && request.eligibleCandidateIds.includes(this.pullUpPick)
+          ? [this.pullUpPick]
+          : request.eligibleCandidateIds.slice(0, request.requiredCount);
+        return {
+          selectedCandidateIds: selected,
+          thinking: `${this.name} chooses the shield pull-up`,
+          reasoningContext: "scripted shield-pull-up reasoning",
+        };
+      }
+
+      override async takeMingleTurn(): Promise<MingleTurnAction> {
+        return { thinking: "", message: null, noReply: true, gotoRoomId: null, gotoPlayerName: null };
+      }
+    }
+
+    const mira = createUUID();
+    const alpha = createUUID();
+    const vera = createUUID();
+    const nyx = createUUID();
+    const echo = createUUID();
+    const sol = createUUID();
+    const agents = [
+      new ScriptedExposureBenchAgent(mira, "Mira", { empowerTarget: mira, exposeTarget: vera }, nyx, nyx, echo),
+      new ScriptedExposureBenchAgent(alpha, "Alpha", { empowerTarget: mira, exposeTarget: vera }),
+      new ScriptedExposureBenchAgent(vera, "Vera", { empowerTarget: mira, exposeTarget: alpha }),
+      new ScriptedExposureBenchAgent(nyx, "Nyx", { empowerTarget: mira, exposeTarget: nyx }),
+      new ScriptedExposureBenchAgent(echo, "Echo", { empowerTarget: mira, exposeTarget: echo }),
+      new ScriptedExposureBenchAgent(sol, "Sol", { empowerTarget: alpha, exposeTarget: mira }),
+    ];
+    const runner = new GameRunner(
+      agents,
+      { ...TEST_CONFIG, mingleSessionsPerRound: 1 },
+      new FixedMingleHouseInterviewer({
+        Mira: 1,
+        Alpha: 1,
+        Vera: 2,
+        Nyx: 2,
+        Echo: 3,
+        Sol: 3,
+      }),
+    );
+    const events: GameStreamEvent[] = [];
+    runner.setStreamListener((event) => events.push(event));
+
+    await runner.run();
+
+    const candidateSelection = events.find(
+      (event): event is Extract<GameStreamEvent, { type: "agent_turn" }> =>
+        event.type === "agent_turn" && event.action === "candidate-selection",
+    );
+    expect(candidateSelection?.visibility).toBe("private");
+    expect(candidateSelection?.thinking).toBe("Mira chooses the initial accountable candidate");
+    expect(candidateSelection?.reasoningContext).toBe("scripted candidate-selection reasoning");
+    expect(candidateSelection?.response.selectedCandidates).toEqual([{ id: nyx, name: "Nyx" }]);
+
+    const pullUpSelection = events.find(
+      (event): event is Extract<GameStreamEvent, { type: "agent_turn" }> =>
+        event.type === "agent_turn" && event.action === "shield-pull-up-selection",
+    );
+    expect(pullUpSelection?.visibility).toBe("private");
+    expect(pullUpSelection?.thinking).toBe("Mira chooses the shield pull-up");
+    expect(pullUpSelection?.reasoningContext).toBe("scripted shield-pull-up reasoning");
+    expect(pullUpSelection?.response.selectedCandidates).toEqual([{ id: echo, name: "Echo" }]);
+
+    const candidateEvent = runner.getCanonicalEvents().find(
+      (event): event is Extract<CanonicalGameEvent, { type: "power.candidates_resolved" }> =>
+        event.type === "power.candidates_resolved" && event.round === 1,
+    );
+    expect(candidateEvent?.payload.candidates).toEqual([vera, echo]);
+    expect(candidateEvent?.payload.method).toBe("exposure_bench_protect");
+    expect(candidateEvent?.payload.initialResolution).toMatchObject({
+      mode: "higher_votes_choice",
+      lockedCandidates: [vera],
+      selectedCandidateIds: [nyx],
+    });
+    expect(candidateEvent?.payload.shieldReplacement).toMatchObject({
+      mode: "bench_replacement_choice",
+      protectedCandidateId: nyx,
+      selectedCandidateIds: [echo],
+      fallbackReason: null,
     });
   });
 

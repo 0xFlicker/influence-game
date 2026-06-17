@@ -29,8 +29,8 @@ describe("post-vote pressure projection", () => {
     expect(projection!.replacementRisk.map((p) => p.name)).toEqual(["Delta"]);
     expect(projection!.players.map((p) => [p.name, p.status])).toEqual([
       ["Alpha", "empowered"],
-      ["Beta", "current_at_risk"],
-      ["Gamma", "current_at_risk"],
+      ["Beta", "locked_at_risk"],
+      ["Gamma", "locked_at_risk"],
       ["Delta", "replacement_risk"],
     ]);
   });
@@ -84,5 +84,93 @@ describe("post-vote pressure projection", () => {
     expect(formatPostVotePressureSummary(projection!)).toBe(
       "Post-vote pressure: Alpha is empowered. Current at-risk: Beta (3), Gamma (1). Replacement risk if a shield is granted: none.",
     );
+  });
+
+  it("distinguishes locked, empowered-selected, selectable exposed, and fallback risk", () => {
+    const alpha = player("Alpha");
+    const beta = player("Beta");
+    const gamma = player("Gamma");
+    const delta = player("Delta");
+    const echo = player("Echo");
+    const projection = buildPostVotePressureProjection({
+      alivePlayers: [alpha, beta, gamma, delta, echo],
+      empoweredId: alpha.id,
+      exposeScores: {
+        [alpha.id]: 3,
+        [beta.id]: 4,
+        [gamma.id]: 2,
+        [delta.id]: 2,
+        [echo.id]: 0,
+      },
+      initialResolution: {
+        alivePlayers: [alpha, beta, gamma, delta, echo],
+        empoweredId: alpha.id,
+        exposeScores: {
+          [alpha.id]: 3,
+          [beta.id]: 4,
+          [gamma.id]: 2,
+          [delta.id]: 2,
+          [echo.id]: 0,
+        },
+        exposureBench: [
+          { id: beta.id, name: beta.name, exposeScore: 4 },
+          { id: delta.id, name: delta.name, exposeScore: 2 },
+          { id: gamma.id, name: gamma.name, exposeScore: 2 },
+        ],
+        rawExposePressure: [],
+        lockedCandidates: [beta.id],
+        choice: { requiredCount: 1, eligibleCandidateIds: [delta.id, gamma.id], reason: "tied_exposure_tier" },
+        selectedCandidateIds: [gamma.id],
+        candidates: [beta.id, gamma.id],
+        fallbackApplied: false,
+        fallbackReason: null,
+        mode: "higher_votes_choice",
+      },
+    });
+
+    expect(projection!.players.map((p) => [p.name, p.status])).toEqual([
+      ["Alpha", "empowered"],
+      ["Beta", "locked_at_risk"],
+      ["Gamma", "empowered_selected"],
+      ["Delta", "replacement_risk"],
+      ["Echo", "safe"],
+    ]);
+  });
+
+  it("marks zero-vote players as fallback risk only when all-player fallback can reach them", () => {
+    const alpha = player("Alpha");
+    const beta = player("Beta");
+    const gamma = player("Gamma");
+    const delta = player("Delta");
+    const projection = buildPostVotePressureProjection({
+      alivePlayers: [alpha, beta, gamma, delta],
+      empoweredId: alpha.id,
+      exposeScores: {
+        [beta.id]: 3,
+      },
+      initialResolution: {
+        alivePlayers: [alpha, beta, gamma, delta],
+        empoweredId: alpha.id,
+        exposeScores: {
+          [beta.id]: 3,
+        },
+        exposureBench: [{ id: beta.id, name: beta.name, exposeScore: 3 }],
+        rawExposePressure: [],
+        lockedCandidates: [beta.id],
+        choice: { requiredCount: 1, eligibleCandidateIds: [delta.id, gamma.id], reason: "one_bench" },
+        selectedCandidateIds: [gamma.id],
+        candidates: [beta.id, gamma.id],
+        fallbackApplied: false,
+        fallbackReason: null,
+        mode: "one_locked_one_choice",
+      },
+    });
+
+    expect(projection!.players.map((p) => [p.name, p.status])).toEqual([
+      ["Alpha", "empowered"],
+      ["Beta", "locked_at_risk"],
+      ["Gamma", "empowered_selected"],
+      ["Delta", "fallback_risk"],
+    ]);
   });
 });

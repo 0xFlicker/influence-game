@@ -142,7 +142,9 @@ export type CanonicalGameEvent =
         candidates: [UUID, UUID] | null;
         autoEliminated: UUID | null;
         shieldGranted: UUID | null;
-        method: "two_player" | "auto_eliminate" | "expose_scores" | "insufficient_candidates";
+        method: "two_player" | "auto_eliminate" | "expose_scores" | "exposure_bench" | "exposure_bench_protect" | "insufficient_candidates";
+        initialResolution?: Record<string, unknown>;
+        shieldReplacement?: Record<string, unknown>;
       }
     >
   | CanonicalEventEnvelope<"council.vote_cast", { voterId: UUID; target: UUID }>

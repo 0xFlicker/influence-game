@@ -3,7 +3,7 @@
  * Uses simple scripted strategies to validate game mechanics.
  */
 
-import type { AgentResponse, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicReflectionAction, StrategyPacketSummary, StrategyPacketUseMarker, TargetDecision } from "../game-runner";
+import type { AgentResponse, CandidateChoiceRequest, CandidateSelectionDecision, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerLobbyExposure, StrategicReflectionAction, StrategyPacketSummary, StrategyPacketUseMarker, TargetDecision } from "../game-runner";
 import type { UUID, PowerAction } from "../types";
 
 /** Assert a value is defined — throws in tests if assumption is violated */
@@ -158,6 +158,18 @@ export class MockAgent implements IAgent {
     };
   }
 
+  async getCandidateSelection(
+    _ctx: PhaseContext,
+    request: CandidateChoiceRequest,
+  ): Promise<CandidateSelectionDecision> {
+    return {
+      selectedCandidateIds: request.eligibleCandidateIds.slice(0, request.requiredCount),
+      thinking: "mock: select first eligible candidate choice",
+      reasoningContext: undefined,
+      strategyPacketUse: this.strategyPacketUse("followed"),
+    };
+  }
+
   async getPowerLobbyMessage(
     ctx: PhaseContext,
     candidates: [UUID, UUID],
@@ -181,6 +193,18 @@ export class MockAgent implements IAgent {
   ): Promise<PowerAction & { thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }> {
     // Always pass to council (simplest action)
     return { action: "pass", target: candidates[0], thinking: "mock: pass to let council expose the field", reasoningContext: undefined, strategyPacketUse: this.strategyPacketUse("deferred") };
+  }
+
+  async getShieldPullUpSelection(
+    _ctx: PhaseContext,
+    request: CandidateChoiceRequest,
+  ): Promise<CandidateSelectionDecision> {
+    return {
+      selectedCandidateIds: request.eligibleCandidateIds.slice(0, request.requiredCount),
+      thinking: "mock: select first eligible shield pull-up",
+      reasoningContext: undefined,
+      strategyPacketUse: this.strategyPacketUse("followed"),
+    };
   }
 
   async getCouncilVote(ctx: PhaseContext, candidates: [UUID, UUID]): Promise<{ target: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }> {

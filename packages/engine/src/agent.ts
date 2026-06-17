@@ -15,6 +15,8 @@ import type { ReasoningEffort } from "openai/resources/shared";
 import type {
   AgentCallOptions,
   AgentResponse,
+  CandidateChoiceRequest,
+  CandidateSelectionDecision,
   IAgent,
   MingleIntentAction,
   MinglePreferredRoomSize,
@@ -551,6 +553,52 @@ const TOOL_EMPOWER_REVOTE: ChatCompletionTool = {
         ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
       },
       required: ["thinking", "empower", ...STRATEGY_PACKET_USE_REQUIRED],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+};
+
+const TOOL_CANDIDATE_SELECTION: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "select_council_candidates",
+    description: "Privately resolve unresolved initial Council candidate slots after Vote",
+    parameters: {
+      type: "object",
+      properties: {
+        thinking: { type: "string", description: "Your internal reasoning for the candidate selection (hidden from other players)" },
+        candidates: {
+          type: "array",
+          items: { type: "string" },
+          description: "Player names selected from the eligible candidate list, in order",
+        },
+        ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
+      },
+      required: ["thinking", "candidates", ...STRATEGY_PACKET_USE_REQUIRED],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+};
+
+const TOOL_SHIELD_PULL_UP_SELECTION: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "select_shield_pull_up",
+    description: "Privately resolve the replacement candidate when Protect removes a Council candidate",
+    parameters: {
+      type: "object",
+      properties: {
+        thinking: { type: "string", description: "Your internal reasoning for the shield replacement selection (hidden from other players)" },
+        candidates: {
+          type: "array",
+          items: { type: "string" },
+          description: "Player names selected from the eligible replacement list, in order",
+        },
+        ...STRATEGY_PACKET_USE_TOOL_PROPERTIES,
+      },
+      required: ["thinking", "candidates", ...STRATEGY_PACKET_USE_REQUIRED],
       additionalProperties: false,
     },
     strict: true,
@@ -1845,6 +1893,72 @@ Use the cast_empower_revote tool. Return only an empower target from the eligibl
     }
   }
 
+  async getCandidateSelection(
+    ctx: PhaseContext,
+    request: CandidateChoiceRequest,
+  ): Promise<CandidateSelectionDecision> {
+    if (request.requiredCount <= 0) {
+      return { selectedCandidateIds: [], thinking: "No unresolved candidate slots.", reasoningContext: undefined };
+    }
+
+    const eligiblePlayers = request.eligibleCandidateIds
+      .map((id) => ctx.alivePlayers.find((player) => player.id === id))
+      .filter((player): player is { id: UUID; name: string } => player !== undefined);
+    const lockedNames = request.lockedCandidateIds
+      .map((id) => ctx.alivePlayers.find((player) => player.id === id)?.name ?? id);
+    const fallbackIds = eligiblePlayers.slice(0, request.requiredCount).map((player) => player.id);
+
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
+## Private Council Candidate Selection
+The Vote is locked and you are empowered. Expose votes did not fully lock both Council candidate slots.
+
+Locked candidates already set by expose votes: ${lockedNames.length > 0 ? lockedNames.join(", ") : "none"}
+Eligible choices for the unresolved slot${request.requiredCount === 1 ? "" : "s"}: ${eligiblePlayers.map((player) => player.name).join(", ")}
+Required selections: ${request.requiredCount}
+Resolution mode: ${request.mode}
+${request.fallbackReason ? `Fallback context: ${request.fallbackReason}` : ""}
+
+Choose exactly ${request.requiredCount} player${request.requiredCount === 1 ? "" : "s"} from the eligible list. This is a private producer/debug decision, not public speech. Own the strategic debt: who will blame you, who may owe you, and what vote receipt supports the choice.
+
+Use the select_council_candidates tool.`;
+
+    try {
+      const result = await this.callTool<{ thinking?: string; candidates: unknown; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown; reasoningContext?: string }>(
+        prompt, TOOL_CANDIDATE_SELECTION, 120, sys,
+        this.traceOptions(ctx, { action: "candidate-selection", reasoningEffort: "medium" }),
+      );
+      const selectedCandidateIds: UUID[] = [];
+      for (const name of normalizeStringArray(result.candidates)) {
+        const player = findByName(eligiblePlayers, name);
+        if (player && !selectedCandidateIds.includes(player.id)) {
+          selectedCandidateIds.push(player.id);
+        }
+        if (selectedCandidateIds.length === request.requiredCount) break;
+      }
+      for (const id of fallbackIds) {
+        if (selectedCandidateIds.length === request.requiredCount) break;
+        if (!selectedCandidateIds.includes(id)) selectedCandidateIds.push(id);
+      }
+      if (selectedCandidateIds.length < request.requiredCount) {
+        console.warn(`[vote-fallback] agent="${this.name}" method=getCandidateSelection insufficient eligible choices required=${request.requiredCount} selected=${selectedCandidateIds.length}`);
+      }
+      return {
+        selectedCandidateIds,
+        thinking: result.thinking,
+        reasoningContext: result.reasoningContext,
+        strategyPacketUse: this.strategyPacketUseMarker(result.strategyPacketUse, result.strategyPacketUseRationale),
+      };
+    } catch (err) {
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getCandidateSelection error="${err instanceof Error ? err.message : err}" fallback=[${fallbackIds.join(",")}]`);
+      return {
+        selectedCandidateIds: fallbackIds,
+        thinking: "fallback candidate selection due to error",
+        reasoningContext: undefined,
+      };
+    }
+  }
+
   async getPowerLobbyMessage(
     ctx: PhaseContext,
     candidates: [UUID, UUID],
@@ -1974,6 +2088,75 @@ Use the use_power tool to declare your final hidden action.`;
       };
     } catch {
       return { action: "pass", target: candidates[0], thinking: "fallback to pass under pressure" };
+    }
+  }
+
+  async getShieldPullUpSelection(
+    ctx: PhaseContext,
+    request: CandidateChoiceRequest,
+  ): Promise<CandidateSelectionDecision> {
+    if (request.requiredCount <= 0) {
+      return { selectedCandidateIds: [], thinking: "No unresolved shield replacement slot.", reasoningContext: undefined };
+    }
+
+    const eligiblePlayers = request.eligibleCandidateIds
+      .map((id) => ctx.alivePlayers.find((player) => player.id === id))
+      .filter((player): player is { id: UUID; name: string } => player !== undefined);
+    const lockedNames = request.lockedCandidateIds
+      .map((id) => ctx.alivePlayers.find((player) => player.id === id)?.name ?? id);
+    const protectedName = request.protectedCandidateId
+      ? ctx.alivePlayers.find((player) => player.id === request.protectedCandidateId)?.name ?? request.protectedCandidateId
+      : "unknown";
+    const fallbackIds = eligiblePlayers.slice(0, request.requiredCount).map((player) => player.id);
+
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
+## Private Shield Pull-Up Selection
+You used Protect and removed ${protectedName} from Council danger. A replacement slot is unresolved.
+
+Candidate still locked in the pair: ${lockedNames.length > 0 ? lockedNames.join(", ") : "none"}
+Eligible replacement choices: ${eligiblePlayers.map((player) => player.name).join(", ")}
+Required selections: ${request.requiredCount}
+Resolution mode: ${request.mode}
+${request.fallbackReason ? `Fallback context: ${request.fallbackReason}` : ""}
+
+Choose exactly ${request.requiredCount} replacement player${request.requiredCount === 1 ? "" : "s"} from the eligible list. If these choices come from all-player fallback, treat them as fallback risk rather than vote-derived exposed risk.
+
+Use the select_shield_pull_up tool.`;
+
+    try {
+      const result = await this.callTool<{ thinking?: string; candidates: unknown; strategyPacketUse?: unknown; strategyPacketUseRationale?: unknown; reasoningContext?: string }>(
+        prompt, TOOL_SHIELD_PULL_UP_SELECTION, 120, sys,
+        this.traceOptions(ctx, { action: "shield-pull-up-selection", reasoningEffort: "medium" }),
+      );
+      const selectedCandidateIds: UUID[] = [];
+      for (const name of normalizeStringArray(result.candidates)) {
+        const player = findByName(eligiblePlayers, name);
+        if (player && !selectedCandidateIds.includes(player.id)) {
+          selectedCandidateIds.push(player.id);
+        }
+        if (selectedCandidateIds.length === request.requiredCount) break;
+      }
+      for (const id of fallbackIds) {
+        if (selectedCandidateIds.length === request.requiredCount) break;
+        if (!selectedCandidateIds.includes(id)) selectedCandidateIds.push(id);
+      }
+      if (selectedCandidateIds.length < request.requiredCount) {
+        console.warn(`[vote-fallback] agent="${this.name}" method=getShieldPullUpSelection insufficient eligible choices required=${request.requiredCount} selected=${selectedCandidateIds.length}`);
+      }
+      return {
+        selectedCandidateIds,
+        thinking: result.thinking,
+        reasoningContext: result.reasoningContext,
+        strategyPacketUse: this.strategyPacketUseMarker(result.strategyPacketUse, result.strategyPacketUseRationale),
+      };
+    } catch (err) {
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getShieldPullUpSelection error="${err instanceof Error ? err.message : err}" fallback=[${fallbackIds.join(",")}]`);
+      return {
+        selectedCandidateIds: fallbackIds,
+        thinking: "fallback shield pull-up selection due to error",
+        reasoningContext: undefined,
+      };
     }
   }
 
@@ -2463,14 +2646,26 @@ ${lines}`;
     const selfPressure = pressure.players.find((player) => player.id === ctx.selfId);
     const statusLabels: Record<string, string> = {
       empowered: "you are empowered",
+      locked_at_risk: "you are locked into Council danger by expose votes",
+      empowered_selected: "you are in Council danger by the empowered player's selection",
+      selectable_exposed: "you received expose votes and may be selected if unresolved pressure opens",
       current_at_risk: "you are currently at risk for council",
-      replacement_risk: "you may become at risk if a shield is granted",
+      replacement_risk: "you may become at risk from the remaining exposure bench if a shield is granted",
+      fallback_risk: "you may become at risk only through all-player fallback, not from expose-vote ranking",
       safe: "you are not currently in the council pressure lane",
     };
     const currentAtRisk = pressure.currentAtRisk
       .map((player) => `${player.name} (${player.exposeScore})`)
       .join(", ") || "none";
     const replacementRisk = pressure.replacementRisk
+      .map((player) => `${player.name} (${player.exposeScore})`)
+      .join(", ") || "none";
+    const selectableExposed = pressure.players
+      .filter((player) => player.status === "selectable_exposed")
+      .map((player) => `${player.name} (${player.exposeScore})`)
+      .join(", ") || "none";
+    const fallbackRisk = pressure.players
+      .filter((player) => player.status === "fallback_risk")
       .map((player) => `${player.name} (${player.exposeScore})`)
       .join(", ") || "none";
     const shieldScenarios = pressure.shieldScenarios.length > 0
@@ -2489,7 +2684,9 @@ ${lines}`;
 - Empowered player: ${pressure.empowered.name}
 - Your status: ${selfPressure ? statusLabels[selfPressure.status] : "unknown"}
 - Current at-risk players: ${currentAtRisk}
-- Replacement risk if a shield changes the lane: ${replacementRisk}
+- Selectable exposed players not currently in the pair: ${selectableExposed}
+- Replacement risk from the remaining exposure bench if a shield changes the lane: ${replacementRisk}
+- Fallback risk if the exposure bench is too small or exhausted: ${fallbackRisk}
 Shield scenarios:
 ${shieldScenarios}
 Use these as live facts for strategy and conversation. You may plead, bargain, redirect pressure, flatter, threaten, or stay quiet if that fits your personality and position.`;
@@ -2506,12 +2703,14 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
     if (ctx.phase === Phase.POWER) {
       return `## Power Rules
 - The standard Vote has resolved; the empowered player now chooses pass, protect/shield, or an available elimination action.
-- Protecting/shielding a player can change who faces Council.
+- The exposure bench has already resolved the initial Council pair when expose votes can do so.
+- Protecting/shielding a current candidate removes them from Council danger. Replacement comes from the remaining exposure bench first; all-player fallback applies only when the bench cannot fill the slot.
 - This is not a normal empower/expose vote.`;
     }
     if (ctx.phase === Phase.MINGLE && ctx.postVotePressure) {
       return `## Post-Vote Mingle Rules
 - The standard Vote is locked and revealed. Do not cast another empower/expose ballot in Mingle.
+- Expose votes create an exposure bench. Two eligible exposed receivers lock the pair; one or zero exposed receivers, or unresolved tied tiers, let the empowered player privately resolve only the ambiguity.
 - Mingle rooms are private: only current room occupants hear current room messages.
 - Use the revealed vote and pressure state to bargain, explain, count votes, seek protection, redirect danger, or stay guarded with a reason.`;
     }
@@ -2535,13 +2734,21 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
     const pressure = pressureIsLive ? ctx.postVotePressure : undefined;
     const selfPressure = pressure?.players.find((player) => player.id === ctx.selfId);
     const statusLine = selfPressure
-      ? `- Your immediate risk status: ${selfPressure.status === "current_at_risk"
-        ? "you are currently in the council danger lane"
-        : selfPressure.status === "replacement_risk"
-          ? "you could enter danger if the empowered player grants a shield"
-          : selfPressure.status === "empowered"
-            ? "you are empowered and will decide the Power ceremony"
-            : "you are not currently in the council danger lane"}`
+      ? `- Your immediate risk status: ${selfPressure.status === "locked_at_risk"
+        ? "you are locked into the council danger lane by expose votes"
+        : selfPressure.status === "empowered_selected"
+          ? "you are in the council danger lane because the empowered player selected you"
+          : selfPressure.status === "current_at_risk"
+            ? "you are currently in the council danger lane"
+            : selfPressure.status === "replacement_risk"
+              ? "you could enter danger from the remaining exposure bench if the empowered player grants a shield"
+              : selfPressure.status === "fallback_risk"
+                ? "you could enter danger only if all-player fallback opens"
+                : selfPressure.status === "selectable_exposed"
+                  ? "you received expose votes and are selectable if unresolved pressure opens"
+                  : selfPressure.status === "empowered"
+                    ? "you are empowered and will decide the Power ceremony"
+                    : "you are not currently in the council danger lane"}`
       : "";
 
     const nextPowerLine = pressure
@@ -2672,12 +2879,15 @@ ${rounds}`;
       .map((player) => `${player.name} (${player.exposeScore})`);
 
     const lines: string[] = [];
-    if (selfPressure?.status === "current_at_risk" && empoweredInRoom) {
+    const selfAtRisk = selfPressure?.status === "current_at_risk" || selfPressure?.status === "locked_at_risk" || selfPressure?.status === "empowered_selected";
+    if (selfAtRisk && empoweredInRoom) {
       lines.push(`- You are currently at risk and ${pressure.empowered.name} is in this room. They can potentially protect/shield someone at Power, pass, or use an available elimination action. If you are at risk, this is your chance to change the Power decision: ask for protection, offer a concrete deal, name a replacement target, recruit an advocate, expose a betrayal, threaten jury consequences, or persuade someone to carry your case. Staying guarded is also valid when you give yourself a reason.`);
-    } else if (selfPressure?.status === "current_at_risk") {
+    } else if (selfAtRisk) {
       lines.push(`- You are currently at risk, but ${pressure.empowered.name} is not in this room. If you are at risk, this is your chance to change the Power decision: ask for protection, offer a concrete deal, name a replacement target, recruit an advocate, expose a betrayal, threaten jury consequences, or persuade someone to carry your case. You can seek support from these occupants, redirect the target, stay guarded with a clear reason, or consider moving next turn to hunt for power. You only know other rooms by count, not by occupant identity.`);
     } else if (selfPressure?.status === "replacement_risk" && empoweredInRoom) {
-      lines.push(`- You may become at risk if a shield is granted, and ${pressure.empowered.name} is in this room. This is a chance to discourage a shield that hurts you, propose a better target, or make yourself useful.`);
+      lines.push(`- You may become at risk from the remaining exposure bench if a shield is granted, and ${pressure.empowered.name} is in this room. This is a chance to discourage a shield that hurts you, propose a better target, or make yourself useful.`);
+    } else if (selfPressure?.status === "fallback_risk" && empoweredInRoom) {
+      lines.push(`- You are only fallback risk if the exposure bench is too small or exhausted, and ${pressure.empowered.name} is in this room. You can argue that zero-vote fallback should not be treated like exposed pressure.`);
     } else if (empoweredInRoom) {
       lines.push(`- ${pressure.empowered.name} is empowered and is in this room. This is a chance to influence the coming Power decision: offer information, propose a target, build debt, or make yourself hard to harm.`);
     }
@@ -2686,7 +2896,7 @@ ${rounds}`;
       lines.push(`- Current at-risk player(s) in this room: ${atRiskInRoom.join(", ")}. They may be looking for protection, votes, cover, or someone else to name.`);
     }
     if (replacementRiskInRoom.length > 0) {
-      lines.push(`- Replacement-risk player(s) in this room: ${replacementRiskInRoom.join(", ")}. A shield could pull them into danger.`);
+      lines.push(`- Replacement-risk player(s) in this room: ${replacementRiskInRoom.join(", ")}. A shield could pull them into danger from the remaining exposure bench.`);
     }
 
     if (lines.length === 0) return "";

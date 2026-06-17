@@ -290,6 +290,42 @@ describe("simulation variant config", () => {
     expect(formatted).toContain("thinking: Private reflection should be visible in chatty output.");
   });
 
+  it("formats private exposure-bench choice traces without treating them as public transcript", () => {
+    const event: AgentTurnEvent = {
+      type: "agent_turn",
+      round: 1,
+      phase: Phase.VOTE,
+      timestamp: 1_700_000_000_000,
+      action: "candidate-selection",
+      actor: { id: "mira-id", name: "Mira", role: "player" },
+      visibility: "private",
+      response: {
+        eligibleChoices: [{ id: "nyx-id", name: "Nyx" }],
+        selectedCandidates: [{ id: "nyx-id", name: "Nyx" }],
+        fallbackApplied: false,
+      },
+      thinking: "Choosing Nyx creates debt I can cite later.",
+      reasoningContext: "Native trace for accountable candidate choice.",
+      scope: "system",
+      text: "Mira privately resolved Council candidate ambiguity.",
+    };
+
+    const serialized = serializeAgentTurnEvent(1, 1_700_000_000_000, event, 1_700_000_000_500);
+    const formatted = formatAgentTurnTrace(event);
+
+    expect(serialized).toMatchObject({
+      type: "agent_turn",
+      action: "candidate-selection",
+      visibility: "private",
+      thinking: "Choosing Nyx creates debt I can cite later.",
+      reasoningContext: "Native trace for accountable candidate choice.",
+    });
+    expect(formatted).toContain("R1/VOTE Mira [trace:candidate-selection]");
+    expect(formatted).toContain("Mira privately resolved Council candidate ambiguity.");
+    expect(formatted).toContain("thinking: Choosing Nyx creates debt I can cite later.");
+    expect(formatted).toContain("reasoning: Native trace for accountable candidate choice.");
+  });
+
   it("does not duplicate transcript-backed agent-turn traces in chatty live output", () => {
     const event: AgentTurnEvent = {
       type: "agent_turn",

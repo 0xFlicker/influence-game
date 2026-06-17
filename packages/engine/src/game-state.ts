@@ -9,6 +9,12 @@
 import { randomUUID } from "crypto";
 import { CanonicalEventLog, type CanonicalEventListener, type CanonicalEventSubscriptionOptions } from "./canonical-event-log";
 import type { CanonicalEventSource, CanonicalEventVisibility, CanonicalGameEvent, CanonicalGameEventType, CanonicalSourcePointer } from "./canonical-events";
+import {
+  resolveInitialExposureBench,
+  resolveShieldReplacement,
+  type InitialExposureBenchResolution,
+  type ShieldReplacementResolution,
+} from "./exposure-bench";
 import { replayCanonicalEvents, type CanonicalGameProjection } from "./game-projection";
 import type {
   UUID,
@@ -42,6 +48,34 @@ interface AppendCanonicalEventOptions {
   sourcePointers?: CanonicalSourcePointer[];
 }
 
+function serializeInitialCandidateResolution(resolution: InitialExposureBenchResolution): Record<string, unknown> {
+  return {
+    mode: resolution.mode,
+    exposureBench: resolution.exposureBench.map((entry) => ({ ...entry })),
+    lockedCandidates: [...resolution.lockedCandidates],
+    eligibleCandidateIds: [...resolution.choice.eligibleCandidateIds],
+    requiredCount: resolution.choice.requiredCount,
+    choiceReason: resolution.choice.reason,
+    selectedCandidateIds: [...resolution.selectedCandidateIds],
+    fallbackApplied: resolution.fallbackApplied,
+    fallbackReason: resolution.fallbackReason,
+  };
+}
+
+function serializeShieldReplacementResolution(resolution: ShieldReplacementResolution): Record<string, unknown> {
+  return {
+    mode: resolution.mode,
+    protectedCandidateId: resolution.protectedCandidateId,
+    remainingCandidateIds: [...resolution.remainingCandidateIds],
+    eligibleCandidateIds: [...resolution.choice.eligibleCandidateIds],
+    requiredCount: resolution.choice.requiredCount,
+    choiceReason: resolution.choice.reason,
+    selectedCandidateIds: [...resolution.selectedCandidateIds],
+    fallbackApplied: resolution.fallbackApplied,
+    fallbackReason: resolution.fallbackReason,
+  };
+}
+
 export class GameState {
   readonly gameId: UUID;
   private readonly canonicalEvents = new CanonicalEventLog();
@@ -57,6 +91,7 @@ export class GameState {
   };
   private _currentCouncilTally: CouncilVoteTally = { votes: {} };
   private _empoweredId: UUID | null = null;
+  private _initialCandidateResolution: InitialExposureBenchResolution | null = null;
   private _councilCandidates: [UUID, UUID] | null = null;
   private _powerAction: PowerAction | null = null;
 
@@ -226,6 +261,7 @@ export class GameState {
     this._currentVoteTally = { empowerVotes: {}, exposeVotes: {} };
     this._currentCouncilTally = { votes: {} };
     this._empoweredId = null;
+    this._initialCandidateResolution = null;
     this._councilCandidates = null;
     this._powerAction = null;
     this._endgameEliminationTally = { votes: {} };
@@ -430,6 +466,45 @@ export class GameState {
     return counts;
   }
 
+  get initialCandidateResolution(): InitialExposureBenchResolution | null {
+    return this._initialCandidateResolution;
+  }
+
+  previewInitialCandidateResolution(selectedCandidateIds: UUID[] = []): InitialExposureBenchResolution | null {
+    if (!this._empoweredId) return null;
+    return resolveInitialExposureBench({
+      alivePlayers: this.getAlivePlayers().map((player) => ({
+        id: player.id,
+        name: player.name,
+        shielded: player.shielded,
+      })),
+      empoweredId: this._empoweredId,
+      exposeScores: this.getExposeScores(),
+      selectedCandidateIds,
+    });
+  }
+
+  resolveInitialCandidates(selectedCandidateIds: UUID[] = []): InitialExposureBenchResolution | null {
+    const resolution = this.previewInitialCandidateResolution(selectedCandidateIds);
+    if (!resolution) return null;
+    this._initialCandidateResolution = resolution;
+    this._councilCandidates = resolution.candidates;
+    return resolution;
+  }
+
+  previewShieldReplacement(
+    protectedCandidateId: UUID,
+    selectedCandidateIds: UUID[] = [],
+  ): ShieldReplacementResolution | null {
+    const initialResolution = this._initialCandidateResolution ?? this.previewInitialCandidateResolution();
+    if (!initialResolution) return null;
+    return resolveShieldReplacement({
+      initialResolution,
+      protectedCandidateId,
+      selectedCandidateIds,
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // POWER phase
   // ---------------------------------------------------------------------------
@@ -446,7 +521,7 @@ export class GameState {
   /**
    * Determine the two council candidates after power action is applied.
    */
-  determineCandidates(): {
+  determineCandidates(replacementCandidateIds: UUID[] = []): {
     candidates: [UUID, UUID] | null;
     autoEliminated: UUID | null;
     shieldGranted: UUID | null;
@@ -480,15 +555,6 @@ export class GameState {
     }
 
     const scores = this.getExposeScores();
-
-    // Empowered player cannot be exposed or considered for council (per rule).
-    // Exclude them from eligibility *before* sorting so the top exposed are always
-    // chosen from non-empowered players. (Raw expose votes on them are still
-    // recorded for memory/transcripts, but do not create council pressure.)
-    const empowered = this._empoweredId;
-    const eligibleForCouncil = alive.filter((id) => id !== empowered);
-    const sorted = eligibleForCouncil.sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0));
-
     const action = this._powerAction?.action ?? "pass";
     const target = this._powerAction?.target;
 
@@ -507,50 +573,24 @@ export class GameState {
       return { candidates: null, autoEliminated: target, shieldGranted: null };
     }
 
-    // Start with top 2 (guaranteed non-empowered by the eligible sort above)
-    let candidateList = [...sorted];
-
-    // Remove shielded players from eligibility
-    candidateList = candidateList.filter(
-      (id) => !this._players.get(id)?.shielded,
-    );
-
-    // Explicit defense-in-depth: never allow the empowered into the final list
-    // (in case of any future path that re-introduces them).
-    if (empowered) {
-      candidateList = candidateList.filter((id) => id !== empowered);
-    }
-
+    const initialResolution = this._initialCandidateResolution ?? this.resolveInitialCandidates();
     let shieldGranted: UUID | null = null;
+    let shieldReplacement: ShieldReplacementResolution | null = null;
+    let candidates = initialResolution?.candidates ?? null;
+
     if (action === "protect" && target && this._empoweredId) {
-      // Protected player is not a candidate; they gain a shield
       shieldGranted = target;
-      candidateList = candidateList.filter((id) => id !== target);
-    }
-
-    // Pick top 2; if fewer than 2, empowered fills from remaining alive non-shielded
-    const top2: UUID[] = candidateList.slice(0, 2);
-
-    while (top2.length < 2) {
-      const eligible = alive.filter(
-        (id) =>
-          !top2.includes(id) &&
-          !this._players.get(id)?.shielded &&
-          id !== this._empoweredId,
-      );
-      if (eligible.length === 0) {
-        // Last resort: pick anyone alive not already in top2
-        const anyone = alive.find((id) => !top2.includes(id));
-        if (anyone) top2.push(anyone);
-        else break;
-      } else {
-        const pick = eligible[Math.floor(Math.random() * eligible.length)];
-        if (!pick) throw new Error("Expected eligible player but got undefined");
-        top2.push(pick);
+      if (initialResolution?.candidates?.includes(target)) {
+        shieldReplacement = resolveShieldReplacement({
+          initialResolution,
+          protectedCandidateId: target,
+          selectedCandidateIds: replacementCandidateIds,
+        });
+        candidates = shieldReplacement.candidates;
       }
     }
 
-    if (top2.length < 2) {
+    if (!candidates) {
       // Not enough candidates; game should end
       this.appendCanonicalEvent("power.candidates_resolved", {
         exposeScores: scores,
@@ -558,6 +598,8 @@ export class GameState {
         autoEliminated: null,
         shieldGranted,
         method: "insufficient_candidates",
+        ...(initialResolution ? { initialResolution: serializeInitialCandidateResolution(initialResolution) } : {}),
+        ...(shieldReplacement ? { shieldReplacement: serializeShieldReplacementResolution(shieldReplacement) } : {}),
       }, {
         phase: Phase.POWER,
         visibility: "producer",
@@ -571,16 +613,14 @@ export class GameState {
       return { candidates: null, autoEliminated: null, shieldGranted };
     }
 
-    const candidate0 = top2[0];
-    const candidate1 = top2[1];
-    if (!candidate0 || !candidate1) throw new Error("Expected 2 council candidates but got fewer");
-    const candidates: [UUID, UUID] = [candidate0, candidate1];
     this.appendCanonicalEvent("power.candidates_resolved", {
       exposeScores: scores,
       candidates,
       autoEliminated: null,
       shieldGranted,
-      method: "expose_scores",
+      method: shieldReplacement ? "exposure_bench_protect" : "exposure_bench",
+      ...(initialResolution ? { initialResolution: serializeInitialCandidateResolution(initialResolution) } : {}),
+      ...(shieldReplacement ? { shieldReplacement: serializeShieldReplacementResolution(shieldReplacement) } : {}),
     }, {
       phase: Phase.POWER,
       visibility: "producer",

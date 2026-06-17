@@ -210,11 +210,24 @@ export default function RulesPage() {
                 consecutive rounds.
               </li>
               <li>
-                <Em>Expose</Em>: Choose one player to put at risk. The two
-                players with the most expose votes become the current pressure
-                lane unless power changes it.
+                <Em>Expose</Em>: Choose one player to put at risk. Expose
+                votes create an <Em>exposure bench</Em> of eligible,
+                non-empowered players who received at least one expose vote.
+                The empowered player cannot be a Council candidate from the
+                same round&apos;s expose result.
               </li>
             </ul>
+            <P>
+              The exposure bench resolves the initial council pair before
+              Mingle. If exactly two eligible players received expose votes,
+              those two are locked in. If exactly one eligible player received
+              expose votes, that player is locked and the empowered player
+              fills the second seat. If no eligible player received expose
+              votes, the empowered player fills both seats from the live field.
+              If more than two eligible players received expose votes, higher
+              vote totals lock first; the empowered player resolves only the
+              tied or leftover ambiguity.
+            </P>
             <P>
               After votes resolve, the named vote record is public player
               knowledge. Everyone can see who empowered whom and who exposed
@@ -253,7 +266,7 @@ export default function RulesPage() {
                 ],
                 [
                   "Protect",
-                  "Shield one player from being a council candidate. That player cannot be revealed as a candidate this round or next. A substitute is drawn from the next-most-exposed players.",
+                  "Shield one player from being a council candidate. That player cannot be revealed as a candidate this round or next. If a current candidate is protected, the replacement comes from the remaining exposure bench first. If the bench cannot fill the slot, the empowered player fills it from the remaining live field.",
                 ],
                 ["Pass", "Do nothing. Let the council decide."],
               ]}

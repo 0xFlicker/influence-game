@@ -295,7 +295,7 @@ export function resolveInitialExposureBench(input: ResolveInitialInput): Initial
     candidates: pairFrom([...unresolved.lockedCandidates, ...choice.selectedCandidateIds]),
     fallbackApplied: choice.fallbackApplied,
     fallbackReason: choice.fallbackReason,
-    mode: "higher_votes_choice",
+    mode: unresolved.requiredCount > 0 ? "higher_votes_choice" : "exposure_locked",
   };
 }
 

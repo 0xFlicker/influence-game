@@ -585,6 +585,22 @@ export interface EmpowerRevoteAction {
   strategyPacketUse?: StrategyPacketUseMarker;
 }
 
+export interface CandidateChoiceRequest {
+  lockedCandidateIds: UUID[];
+  eligibleCandidateIds: UUID[];
+  requiredCount: number;
+  mode: string;
+  fallbackReason?: string | null;
+  protectedCandidateId?: UUID;
+}
+
+export interface CandidateSelectionDecision {
+  selectedCandidateIds: UUID[];
+  thinking?: string;
+  reasoningContext?: string;
+  strategyPacketUse?: StrategyPacketUseMarker;
+}
+
 export type AgentTurnVisibility = "public" | "private" | "anonymous" | "diary" | "system";
 
 export interface AgentTurnActor {
@@ -663,6 +679,11 @@ export interface IAgent {
     tiedCandidates: UUID[],
     originalVote: { empowerTarget: UUID; exposeTarget: UUID },
   ): Promise<EmpowerRevoteAction>;
+  /** Called privately after Vote when expose votes do not fully lock the initial Council pair. */
+  getCandidateSelection?(
+    context: PhaseContext,
+    request: CandidateChoiceRequest,
+  ): Promise<CandidateSelectionDecision>;
   /** Called during the optional post-vote Power Lobby experiment before the empowered action */
   getPowerLobbyMessage?(
     context: PhaseContext,
@@ -674,6 +695,11 @@ export interface IAgent {
     context: PhaseContext,
     candidates: [UUID, UUID],
   ): Promise<PowerAction & { thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }>;
+  /** Called privately during Power only when Protect creates an unresolved candidate replacement. */
+  getShieldPullUpSelection?(
+    context: PhaseContext,
+    request: CandidateChoiceRequest,
+  ): Promise<CandidateSelectionDecision>;
   /** Called for council vote (empowered agent also votes as tiebreaker) */
   getCouncilVote(
     context: PhaseContext,

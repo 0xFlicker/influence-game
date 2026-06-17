@@ -1,6 +1,7 @@
 import type { UUID } from "../types";
 import { Phase } from "../types";
-import type { TargetDecision } from "../game-runner.types";
+import type { CandidateChoiceRequest, TargetDecision } from "../game-runner.types";
+import type { InitialExposureBenchResolution } from "../exposure-bench";
 import { buildPostVotePressureProjection, formatPostVotePressureSummary } from "../post-vote-pressure";
 import { assertCanAcceptCommit, agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import {
@@ -40,6 +41,20 @@ function fallbackEliminationDecision(ctx: PhaseRunnerContext, voterId: UUID): Ta
   return {
     target: fallbackEliminationTarget(ctx, voterId),
     thinking: "House fallback after unresolved endgame vote.",
+  };
+}
+
+function shouldRequestCandidateChoice(resolution: InitialExposureBenchResolution): boolean {
+  return resolution.choice.requiredCount > 0 && resolution.choice.eligibleCandidateIds.length > resolution.choice.requiredCount;
+}
+
+function candidateChoiceRequest(resolution: InitialExposureBenchResolution): CandidateChoiceRequest {
+  return {
+    lockedCandidateIds: resolution.lockedCandidates,
+    eligibleCandidateIds: resolution.choice.eligibleCandidateIds,
+    requiredCount: resolution.choice.requiredCount,
+    mode: resolution.mode,
+    fallbackReason: resolution.fallbackReason,
   };
 }
 
@@ -209,10 +224,55 @@ export async function runVotePhase(
     `Empowered: ${gameState.getPlayerName(empoweredId)}`,
     Phase.VOTE,
   );
+  const initialPreview = gameState.previewInitialCandidateResolution();
+  let initialResolution: InitialExposureBenchResolution | null = initialPreview;
+  if (initialPreview && shouldRequestCandidateChoice(initialPreview)) {
+    const empoweredAgent = agents.get(empoweredId);
+    const request = candidateChoiceRequest(initialPreview);
+    const phaseCtx = contextBuilder.buildPhaseContext(empoweredId, Phase.VOTE, { empoweredId });
+    const decision = empoweredAgent?.getCandidateSelection
+      ? await empoweredAgent.getCandidateSelection(phaseCtx, request)
+      : {
+          selectedCandidateIds: request.eligibleCandidateIds.slice(0, request.requiredCount),
+          thinking: "House fallback: empowered candidate selection method unavailable.",
+        };
+    await assertCanAcceptCommit(ctx);
+    initialResolution = gameState.resolveInitialCandidates(decision.selectedCandidateIds);
+    const resolvedCandidates = initialResolution?.candidates ?? null;
+    logger.emitAgentTurn({
+      phase: Phase.VOTE,
+      action: "candidate-selection",
+      actor: { id: empoweredId, name: gameState.getPlayerName(empoweredId), role: "player" },
+      visibility: "private",
+      response: {
+        mode: initialResolution?.mode ?? request.mode,
+        lockedCandidates: request.lockedCandidateIds.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+        eligibleChoices: request.eligibleCandidateIds.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+        selectedCandidates: (initialResolution?.selectedCandidateIds ?? decision.selectedCandidateIds).map((id) => ({ id, name: gameState.getPlayerName(id) })),
+        resolvedCandidates: resolvedCandidates?.map((id) => ({ id, name: gameState.getPlayerName(id) })) ?? null,
+        fallbackApplied: initialResolution?.fallbackApplied ?? false,
+        fallbackReason: initialResolution?.fallbackReason ?? null,
+        ...strategyPacketUseResponse(decision.strategyPacketUse),
+      },
+      thinking: decision.thinking,
+      reasoningContext: decision.reasoningContext,
+      scope: "system",
+      text: `${gameState.getPlayerName(empoweredId)} privately resolved Council candidate ambiguity.`,
+    });
+  } else {
+    initialResolution = gameState.resolveInitialCandidates();
+  }
+  if (initialResolution?.candidates) {
+    logger.logSystem(
+      `Initial Council pair resolved before Mingle: ${initialResolution.candidates.map((id) => gameState.getPlayerName(id)).join(" and ")} (${initialResolution.mode})`,
+      Phase.VOTE,
+    );
+  }
   contextBuilder.currentPostVotePressure = buildPostVotePressureProjection({
     alivePlayers: gameState.getAlivePlayers(),
     exposeScores: gameState.getExposeScores(),
     empoweredId,
+    initialResolution,
   });
   if (contextBuilder.currentPostVotePressure) {
     logger.logSystem(

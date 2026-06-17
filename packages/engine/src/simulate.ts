@@ -46,7 +46,9 @@
  * source/repair metadata. Player-target fields in hidden Mingle intent are
  * normalized to living, non-self players before House assignment; stale names
  * may remain only as historical context in prose fields or repair notes.
- * Specialized `empower-revote` records are written when an empower tie occurs.
+ * Specialized `empower-revote`, `candidate-selection`, and
+ * `shield-pull-up-selection` records are written when vote or shield
+ * mechanics create private empowered-player choices.
  * Hidden `strategic-reflection` and `strategy-packet` records are written there
  * when `--strategic-reflections` is enabled for validation runs. Later private
  * decisions may include `strategicLens` and `strategyPacketUse`

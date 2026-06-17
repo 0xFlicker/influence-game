@@ -1,6 +1,7 @@
 import type { UUID, PowerAction } from "../types";
 import { Phase } from "../types";
-import type { PowerLobbyExposure } from "../game-runner.types";
+import type { CandidateChoiceRequest, PowerLobbyExposure } from "../game-runner.types";
+import type { ShieldReplacementResolution } from "../exposure-bench";
 import { assertCanAcceptCommit, agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import { getExposeVoterNames, handleElimination } from "./elimination";
 
@@ -16,6 +17,21 @@ function buildExposePressure(
       score: scores[id] ?? 0,
     }))
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+}
+
+function shouldRequestShieldReplacementChoice(resolution: ShieldReplacementResolution): boolean {
+  return resolution.choice.requiredCount > 0 && resolution.choice.eligibleCandidateIds.length > resolution.choice.requiredCount;
+}
+
+function shieldReplacementChoiceRequest(resolution: ShieldReplacementResolution): CandidateChoiceRequest {
+  return {
+    lockedCandidateIds: resolution.remainingCandidateIds,
+    eligibleCandidateIds: resolution.choice.eligibleCandidateIds,
+    requiredCount: resolution.choice.requiredCount,
+    mode: resolution.mode,
+    fallbackReason: resolution.fallbackReason,
+    protectedCandidateId: resolution.protectedCandidateId,
+  };
 }
 
 async function runPowerLobbyMessages(
@@ -93,19 +109,13 @@ export async function runPowerPhase(
   );
 
   const scores = gameState.getExposeScores();
-  const aliveIds = gameState.getAlivePlayerIds();
-
-  // Provisional council candidates must never include the empowered player
-  // (empowered cannot be exposed or considered for council). Compute the
-  // "top exposed" for the block from the non-empowered pool only. Raw
-  // exposePressure (for the diagnostic "Top expose pressure" line) still
-  // reflects all cast votes.
-  const candidatePool = empoweredId ? aliveIds.filter((id) => id !== empoweredId) : aliveIds;
-  const sorted = [...candidatePool].sort((a, b) => (scores[b] ?? 0) - (scores[a] ?? 0));
-  const sorted0 = sorted[0];
-  const sorted1 = sorted[1];
-  if (!sorted0) throw new Error("No players to sort for power phase preliminary candidates");
-  const prelim: [UUID, UUID] = [sorted0, sorted1 ?? sorted0];
+  const initialResolution = gameState.initialCandidateResolution ?? gameState.resolveInitialCandidates();
+  const prelim = initialResolution?.candidates;
+  if (!prelim) {
+    actor.send({ type: "CANDIDATES_DETERMINED", candidates: null, autoEliminated: null });
+    actor.send({ type: "PHASE_COMPLETE" });
+    return;
+  }
   const exposePressure = buildExposePressure(ctx, scores);
 
   if (ctx.config.powerLobbyAfterVote) {
@@ -150,8 +160,46 @@ export async function runPowerPhase(
     empoweredAgent.updateThreat(gameState.getPlayerName(powerAction.target));
   }
 
+  let replacementCandidateIds: UUID[] = [];
+  if (powerAction.action === "protect" && prelim.includes(powerAction.target)) {
+    const replacementPreview = gameState.previewShieldReplacement(powerAction.target);
+    if (replacementPreview && shouldRequestShieldReplacementChoice(replacementPreview)) {
+      const request = shieldReplacementChoiceRequest(replacementPreview);
+      const replacementDecision = empoweredAgent.getShieldPullUpSelection
+        ? await empoweredAgent.getShieldPullUpSelection(phaseCtx, request)
+        : {
+            selectedCandidateIds: request.eligibleCandidateIds.slice(0, request.requiredCount),
+            thinking: "House fallback: shield pull-up selection method unavailable.",
+      };
+      await assertCanAcceptCommit(ctx);
+      replacementCandidateIds = replacementDecision.selectedCandidateIds;
+      const resolvedPreview = gameState.previewShieldReplacement(powerAction.target, replacementCandidateIds);
+      logger.emitAgentTurn({
+        phase: Phase.POWER,
+        action: "shield-pull-up-selection",
+        actor: { id: empoweredId, name: gameState.getPlayerName(empoweredId), role: "player" },
+        visibility: "private",
+        response: {
+          mode: resolvedPreview?.mode ?? request.mode,
+          protectedCandidate: { id: powerAction.target, name: gameState.getPlayerName(powerAction.target) },
+          lockedCandidates: request.lockedCandidateIds.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+          eligibleChoices: request.eligibleCandidateIds.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+          selectedCandidates: (resolvedPreview?.selectedCandidateIds ?? replacementCandidateIds).map((id) => ({ id, name: gameState.getPlayerName(id) })),
+          resolvedCandidates: resolvedPreview?.candidates?.map((id) => ({ id, name: gameState.getPlayerName(id) })) ?? null,
+          fallbackApplied: resolvedPreview?.fallbackApplied ?? false,
+          fallbackReason: resolvedPreview?.fallbackReason ?? null,
+          ...strategyPacketUseResponse(replacementDecision.strategyPacketUse),
+        },
+        thinking: replacementDecision.thinking,
+        reasoningContext: replacementDecision.reasoningContext,
+        scope: "system",
+        text: `${gameState.getPlayerName(empoweredId)} privately resolved shield pull-up ambiguity.`,
+      });
+    }
+  }
+
   await assertCanAcceptCommit(ctx);
-  const { candidates, autoEliminated, shieldGranted } = gameState.determineCandidates();
+  const { candidates, autoEliminated, shieldGranted } = gameState.determineCandidates(replacementCandidateIds);
   contextBuilder.currentPostVotePressure = null;
 
   if (shieldGranted) {
