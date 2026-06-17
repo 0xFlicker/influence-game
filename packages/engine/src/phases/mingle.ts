@@ -561,6 +561,7 @@ async function runMingleTurn(
   roomByPlayerId: Map<UUID, number>,
   roomCount: number,
   mingleIntents: ReadonlyMap<UUID, MingleIntentAction | null>,
+  totalBeats: number,
 ): Promise<MingleTurnActionRecord[]> {
   const { agents, logger, contextBuilder, gameState } = ctx;
   const collectedTurns: CollectedMingleTurn[] = [];
@@ -583,6 +584,8 @@ async function runMingleTurn(
         roomMates,
         mingleIntent: summarizeMingleIntent(mingleIntents.get(playerId) ?? null),
       });
+      phaseCtx.mingleBeat = room.beat;
+      phaseCtx.mingleTotalBeats = totalBeats;
 
       let resolvedAction: MingleTurnAction;
       if (agent.takeMingleTurn) {
@@ -830,7 +833,7 @@ export async function runMinglePhase(
     const allocationText = `Turn ${beat}: ${beatRooms.map((room) => describeRoom(ctx, room)).join(" | ")}`;
     await assertCanAcceptCommit(ctx);
     const allocationEntry = logger.logRoomAllocation(allocationText, beatRooms, [], beatDiagnostics);
-    const actions = await runMingleTurn(ctx, localRooms, roomCounts, roomByPlayerId, roomCount, mingleIntents);
+    const actions = await runMingleTurn(ctx, localRooms, roomCounts, roomByPlayerId, roomCount, mingleIntents, beats);
     if (allocationEntry.roomMetadata?.diagnostics) {
       allocationEntry.roomMetadata.diagnostics.actions = actions;
     }

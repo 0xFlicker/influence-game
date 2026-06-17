@@ -325,6 +325,59 @@ describe("InfluenceAgent structured output mode", () => {
     expect(requests).toHaveLength(1);
   });
 
+  it("allows public game talk in lobby prompts with sentence and timing guardrails", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeTextSequenceOpenAIStub(requests, [
+        JSON.stringify({
+          thinking: "Atlas can press the vote story now.",
+          message: "That vote told me plenty; Mira, I am watching who benefits from keeping Vera comfortable.",
+          strategyPacketUse: "not_used",
+          strategyPacketUseRationale: "No packet.",
+        }),
+        JSON.stringify({
+          thinking: "Atlas needs to make the final lobby pitch now.",
+          message: "This is the last lobby beat, so here is my read: Vera is too comfortable and Mira should not let that slide.",
+          strategyPacketUse: "not_used",
+          strategyPacketUseRationale: "No packet.",
+        }),
+      ]),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getLobbyMessage({
+      ...makeContext(Phase.LOBBY),
+      lobbySubRound: 0,
+      lobbyTotalSubRounds: 2,
+    });
+    await agent.getLobbyMessage({
+      ...makeContext(Phase.LOBBY),
+      lobbySubRound: 1,
+      lobbyTotalSubRounds: 2,
+    });
+
+    const firstPrompt = (requests[0]?.messages as Array<{ content: string }>).at(-1)!.content;
+    const finalPrompt = (requests[1]?.messages as Array<{ content: string }>).at(-1)!.content;
+
+    expect(firstPrompt).toContain("Talk about the game when it helps");
+    expect(firstPrompt).toContain("Bluff, misdirect, exaggerate, or lie");
+    expect(firstPrompt).toContain("Write 1-5 sentences; prefer 2-3");
+    expect(firstPrompt).toContain("This is lobby message 1 of 2; 1 lobby message remains after this.");
+    expect(firstPrompt).not.toContain("Openly naming vote plans, expose targets, or alliance structures");
+    expect(firstPrompt).not.toContain("Revealing private deals or whisper-room information as fact");
+    expect(firstPrompt).not.toContain("This is your final lobby message this phase.");
+
+    expect(finalPrompt).toContain("This is lobby message 2 of 2; no lobby messages remain after this.");
+    expect(finalPrompt).toContain("This is your final lobby message this phase.");
+    expect(finalPrompt).toContain("Do not rely on anyone answering this phase.");
+    expect(finalPrompt).toContain("Make declarations, offers, threats, commitments, and conditional deals");
+    expect(finalPrompt).toContain("phrase asks as demands or proposals they can act on later.");
+  });
+
   it("can use required string tool choice for local OpenAI-compatible providers", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
@@ -548,6 +601,8 @@ describe("InfluenceAgent structured output mode", () => {
       roomCounts: [{ roomId: 1, count: 1 }, { roomId: 2, count: 2 }],
       currentRoomId: 1,
       roomMates: ["Atlas"],
+      mingleBeat: 1,
+      mingleTotalBeats: 3,
       mingleIntent: {
         seekPlayers: ["Mira"],
         avoidPlayers: [],
@@ -590,11 +645,60 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("Ask whether Vera's warmth feels rehearsed or genuine.");
     expect(prompt).toContain("Strategic lens: room_traffic");
     expect(prompt).toContain("Lens rationale: Atlas wants to watch who seeks or avoids Vera.");
+    expect(prompt).toContain("This is Mingle turn 1 of 3; 2 Mingle turns remain after this.");
+    expect(prompt).not.toContain("This is your final Mingle turn this phase.");
     expect(prompt).toContain("You may name a target or ally");
     expect(prompt).toContain("You do not have to name a target");
     expect(prompt).toContain("gotoPlayerName wins");
     expect(removedMingleDebugKeys.every((key) => !prompt.includes(key))).toBe(true);
     expect(prompt).toContain("TALK has no audience");
+  });
+
+  it("warns final Mingle turns not to expect another reply", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "mingle_turn",
+        {
+          thinking: "Atlas needs to make the ask now because the room will close.",
+          message: "Mira, if you want Vera exposed, say it with me now; after this I am taking that story public.",
+          noReply: false,
+          gotoRoomId: 2,
+          gotoPlayerName: null,
+        },
+      ),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.takeMingleTurn({
+      ...makeContext(Phase.MINGLE),
+      roomCount: 2,
+      roomCounts: [{ roomId: 1, count: 2 }, { roomId: 2, count: 1 }],
+      currentRoomId: 1,
+      roomMates: ["Atlas", "Mira"],
+      mingleBeat: 3,
+      mingleTotalBeats: 3,
+    }, ["Atlas", "Mira"], []);
+
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.at(-1)!.content;
+    expect(prompt).toContain("This is Mingle turn 3 of 3; no Mingle turns remain after this.");
+    expect(prompt).toContain("This is your final Mingle turn this phase.");
+    expect(prompt).toContain("You will not hear another reply before the phase advances");
+    expect(prompt).toContain("Do not rely on anyone answering this phase.");
+    expect(prompt).toContain("Make declarations, offers, threats, commitments, and conditional deals");
+    expect(prompt).toContain("phrase asks as demands or proposals they can act on later.");
+    expect(prompt).toContain("do not rely on GOTO to continue the conversation now");
+    expect(prompt).toContain("make the actual pitch in this TALK");
+    expect(prompt).not.toContain("you will move next turn and can talk to a new set of people then");
   });
 
   it("includes post-vote pressure facts in Mingle prompts", async () => {

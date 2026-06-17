@@ -791,6 +791,10 @@ export interface PhaseContext {
   lobbySubRound?: number;
   /** Total lobby sub-rounds this phase */
   lobbyTotalSubRounds?: number;
+  /** Current Mingle beat index (1-based) */
+  mingleBeat?: number;
+  /** Total Mingle beats this phase */
+  mingleTotalBeats?: number;
 }
 
 export interface RevealedVoteLedgerEntry {

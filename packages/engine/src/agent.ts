@@ -1282,6 +1282,12 @@ Respond with ONLY your strategy intent, nothing else.`;
 
     const subRound = ctx.lobbySubRound ?? 0;
     const isFirstMessage = subRound === 0;
+    const lobbyMessageNumber = subRound + 1;
+    const lobbyTotal = ctx.lobbyTotalSubRounds;
+    const lobbyRemaining = lobbyTotal == null ? null : Math.max(0, lobbyTotal - lobbyMessageNumber);
+    const lobbyProgress = lobbyTotal == null
+      ? ""
+      : `\n## Lobby Timing\nThis is lobby message ${lobbyMessageNumber} of ${lobbyTotal}; ${lobbyRemaining === 0 ? "no lobby messages remain after this." : `${lobbyRemaining} lobby message${lobbyRemaining === 1 ? "" : "s"} ${lobbyRemaining === 1 ? "remains" : "remain"} after this.`}\n${lobbyRemaining === 0 ? "This is your final lobby message this phase. You will not get another lobby reply before the phase advances. Do not rely on anyone answering this phase. Make declarations, offers, threats, commitments, and conditional deals; phrase asks as demands or proposals they can act on later.\n" : ""}`;
 
     // Elimination guidance: only for first message, and brief after round 1
     let eliminationGuidance = "";
@@ -1308,13 +1314,10 @@ You may:
 - Ask questions that help you read people
 - Lightly signal who you feel good about
 - Gently test people without sounding like you are campaigning
+- Talk about the game when it helps: vote receipts, trust, suspicion, pressure, promises, targets, alliances, doubts, and deals are all fair public material
+- Bluff, misdirect, exaggerate, or lie when it fits your strategy and personality
 
-Avoid:
-- Openly naming vote plans, expose targets, or alliance structures
-- Sounding like you are conducting a strategy meeting
-- Revealing private deals or whisper-room information as fact
-
-Your message should feel social first, strategic underneath.`
+Your message should feel public and watchable, not like a rules spreadsheet. Write 1-5 sentences; prefer 2-3 unless the moment genuinely needs more.`
   : `## Lobby Guidance
 This is public. Everyone is watching. You are allowed to shape the room, but do it with plausible deniability.
 
@@ -1324,16 +1327,13 @@ You may:
 - Reinforce trust with people you want closer
 - Put pressure on rivals through tone, contrast, and selective attention
 - Create a public story about who seems trustworthy, slippery, powerful, isolated, or dangerous
+- Name vote plans, expose targets, alliances, deals, betrayals, threats, or protection asks when public pressure serves your game
+- Bluff, misdirect, exaggerate, or lie when it fits your strategy and personality
 
-Avoid:
-- Explicit vote instructions
-- Direct alliance proposals
-- Mechanical strategy talk
-- Revealing private agreements as confirmed fact
-
-Your message should be entertaining on the surface and useful to your game underneath.`;
+Your message should be entertaining, useful to your game, and grounded in the current board. Write 1-5 sentences; prefer 2-3 unless the moment genuinely needs more.`;
     const prompt = this.buildUserPrompt(ctx) + `
 ${lobbyGuidance}
+${lobbyProgress}
 ${eliminationGuidance ? `\n${eliminationGuidance}\n` : ""}
 `;
 
@@ -1538,6 +1538,22 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
 `
       : "";
     const socialOpportunity = this.buildMingleSocialOpportunitySection(ctx, otherRoomMates);
+    const mingleBeat = ctx.mingleBeat;
+    const mingleTotal = ctx.mingleTotalBeats;
+    const mingleRemaining = mingleBeat == null || mingleTotal == null ? null : Math.max(0, mingleTotal - mingleBeat);
+    const isFinalMingleTurn = mingleRemaining === 0;
+    const mingleProgress = mingleBeat == null || mingleTotal == null
+      ? ""
+      : `\n## Mingle Timing\nThis is Mingle turn ${mingleBeat} of ${mingleTotal}; ${mingleRemaining === 0 ? "no Mingle turns remain after this." : `${mingleRemaining} Mingle turn${mingleRemaining === 1 ? "" : "s"} ${mingleRemaining === 1 ? "remains" : "remain"} after this.`}\n${isFinalMingleTurn ? "This is your final Mingle turn this phase. You will not hear another reply before the phase advances. Do not rely on anyone answering this phase. Make declarations, offers, threats, commitments, and conditional deals; phrase asks as demands or proposals they can act on later.\n" : ""}`;
+    const movementText = isFinalMingleTurn
+      ? "You may also optionally GOTO ROOM N or GOTO PLAYER NAME after this turn. Movement still records where you end up after this turn, but there is no later Mingle turn in this phase, so do not rely on GOTO to continue the conversation now."
+      : "You may also optionally GOTO ROOM N or GOTO PLAYER NAME after this turn. Movement happens after everyone in the current turn acts, so your current TALK only reaches this room and you will not hear replies. If you TALK and GOTO, your message is for your current roommates only, but you will move next turn and can talk to a new set of people then.";
+    const spreadInformationGuidance = isFinalMingleTurn
+      ? "- TALK and GOTO can still signal where you are heading, but this phase ends after this turn; make the actual pitch in this TALK."
+      : "- TALK and GOTO can be powerful for spreading information or coordinating between groups, but remember you won't hear responses from the new room until your next turn.";
+    const movingNoticeGuidance = isFinalMingleTurn
+      ? ""
+      : "\n- If you TALK and GOTO in a single turn, you may want to mention to your current roommates that you will be moving, so they know to expect you in the new room next turn.";
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
@@ -1549,13 +1565,14 @@ ${roomCounts}
 ${historyText}
 ${intentText}
 ${socialOpportunity}
+${mingleProgress}
 Nobody outside your current room can hear this turn. You only know exact identities in your current room; other rooms are visible as counts only.
 
 Choose exactly one of:
 - TALK: send a private message to the other occupants in your current room.
 - NO_REPLY: say nothing this turn.
 
-You may also optionally GOTO ROOM N or GOTO PLAYER NAME after this turn. Movement happens after everyone in the current turn acts, so your current TALK only reaches this room and you will not hear replies. If you TALK and GOTO, your message is for your current roommates only, but you will move next turn and can talk to a new set of people then.
+${movementText}
 ${availableRooms.length > 0 ? `Available GOTO rooms: ${availableRooms.map((roomId) => `Room ${roomId}`).join(", ")}.` : ""}
 For GOTO PLAYER, use gotoPlayerName to request one living player by name. The House resolves that player's next room after all players have acted; if the target also moves, you follow their resolved destination. Do not target yourself. If you set both gotoPlayerName and gotoRoomId, gotoPlayerName wins.
 
@@ -1566,8 +1583,7 @@ Guidance:
 - You do not have to name a target. Guarded, social, playful, or no-reply turns are valid when they fit your intent and current room.
 - Move when a crowded room is noisy, a private room looks useful, or you want to avoid being predictable.
 - Staying put is valid when the current room conversation is valuable.
-- TALK and GOTO can be powerful for spreading information or coordinating between groups, but remember you won't hear responses from the new room until your next turn.
-- If you TALK and GOTO in a single turn, you may want to mention to your current roommates that you will be moving, so they know to expect you in the new room next turn.
+${spreadInformationGuidance}${movingNoticeGuidance}
 - If you are in a room with allies, consider using TALK to strengthen those bonds. If you're with threats, consider using TALK to sow doubt or plan an escape. If you're alone, consider using GOTO to find new connections or avoid threats.
 
 Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
