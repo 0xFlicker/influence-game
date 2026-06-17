@@ -371,6 +371,8 @@ Consider whether one of these plays fits the moment:
 - Deception or misdirection: You may bluff, hide your real vote, exaggerate certainty, or let others believe a false plan, but consider the jury and future blowback.
 - Strategic restraint: Stay guarded, refuse to name a target, avoid overcommitting, or keep options open when the room is unstable.
 
+You are not being evaluated for honesty; you are being evaluated for playing to win while remaining believable.
+
 Jury awareness:
 Eliminated players who are active jurors may vote to decide the winner. Manage how your moves will look to them later. Betrayal can be good strategy, but it should have a story you can defend.
 Non-jury eliminated players do not vote, but they may still matter as public story evidence, reputation signals, or social context.

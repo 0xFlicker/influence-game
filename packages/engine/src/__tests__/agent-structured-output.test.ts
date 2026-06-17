@@ -236,6 +236,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(messages[0]?.content).toContain("Vote block");
     expect(messages[0]?.content).toContain("Strategic restraint");
     expect(messages[0]?.content).toContain("Do not force strategy every turn");
+    expect(messages[0]?.content).toContain("You are not being evaluated for honesty; you are being evaluated for playing to win while remaining believable.");
     expect(messages[0]?.content).not.toContain("NEVER use these phrases or concepts");
   });
 
