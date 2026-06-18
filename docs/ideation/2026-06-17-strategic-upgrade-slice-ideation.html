@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Ideation: Strategic Upgrade Slice</title>
+  <style>
+    :root {
+      --bg: #f7f5ef;
+      --ink: #22201c;
+      --muted: #655f54;
+      --panel: #fffdf7;
+      --line: #d8d0c0;
+      --accent: #1d6f68;
+      --accent-soft: #dff0ec;
+      --warn: #8a4f13;
+      --warn-soft: #f4e4cc;
+      --blue: #315f91;
+      --blue-soft: #e0ebf6;
+      --rose: #8a3d51;
+      --rose-soft: #f0dde3;
+      --green: #3f6e35;
+      --green-soft: #e1eedc;
+      --code: #2c2a25;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .page {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 44px 24px 56px;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 24px;
+      margin-bottom: 28px;
+    }
+    .eyebrow {
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    h1 {
+      font-size: clamp(30px, 5vw, 48px);
+      line-height: 1.05;
+      margin: 8px 0 14px;
+      letter-spacing: 0;
+    }
+    h2 {
+      font-size: 24px;
+      margin: 34px 0 12px;
+      letter-spacing: 0;
+    }
+    h3 {
+      font-size: 18px;
+      margin: 0 0 8px;
+      letter-spacing: 0;
+    }
+    p { max-width: 74ch; margin: 0 0 12px; }
+    a { color: var(--blue); }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .92em;
+      color: var(--code);
+      background: rgba(34, 32, 28, .07);
+      padding: .08rem .25rem;
+      border-radius: 4px;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 5px 10px;
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin: 22px 0 8px;
+    }
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .stat strong {
+      display: block;
+      font-size: 22px;
+      color: inherit;
+    }
+    .stat span { color: var(--muted); font-size: 13px; }
+    section {
+      margin-top: 26px;
+    }
+    .callout {
+      background: var(--accent-soft);
+      color: #214a46;
+      border: 1px solid #b7d9d2;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin: 18px 0;
+    }
+    .axes {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .axis {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .idea-nav {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 12px 0 18px;
+      padding: 0;
+      list-style: none;
+    }
+    .idea-nav a {
+      display: block;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      text-decoration: none;
+      color: var(--ink);
+    }
+    article.idea {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      margin: 14px 0;
+    }
+    .rank {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 34px;
+      height: 28px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 800;
+      margin-right: 8px;
+    }
+    dl.fields {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 8px 12px;
+      margin: 12px 0 0;
+    }
+    dt {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    dd { margin: 0; }
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0;
+    }
+    .badge {
+      border-radius: 999px;
+      padding: 4px 9px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .b-high { background: var(--green-soft); color: var(--green); }
+    .b-med { background: var(--blue-soft); color: var(--blue); }
+    .b-warn { background: var(--warn-soft); color: var(--warn); }
+    .b-rose { background: var(--rose-soft); color: var(--rose); }
+    svg {
+      width: 100%;
+      max-width: 860px;
+      height: auto;
+      display: block;
+      margin: 16px 0;
+      background: #fbfaf5;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      background: #efeadf;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--muted);
+    }
+    tr:last-child td { border-bottom: 0; }
+    footer {
+      margin-top: 42px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media (max-width: 720px) {
+      .summary, .axes, .idea-nav { grid-template-columns: 1fr; }
+      dl.fields { grid-template-columns: 1fr; }
+      .page { padding: 28px 16px 40px; }
+    }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header>
+    <div class="eyebrow">Ideation</div>
+    <h1>Strategic Upgrade Slice</h1>
+    <p>A focused idea set for turning private strategic intent from a receipt trail into a useful in-game notebook without making every turn feel like paperwork.</p>
+    <div class="meta">
+      <span class="chip">Date: <time datetime="2026-06-17">2026-06-17</time></span>
+      <span class="chip">Topic: strategic-upgrade-slice</span>
+      <span class="chip">Focus: dynamic strategy updates and carry-forward</span>
+      <span class="chip">Mode: repo-grounded</span>
+    </div>
+    <div class="summary">
+      <div class="stat"><strong>7</strong><span>ranked survivors</span></div>
+      <div class="stat"><strong>12</strong><span>raw candidates considered</span></div>
+      <div class="stat"><strong>5</strong><span>topic axes covered</span></div>
+    </div>
+  </header>
+
+  <section id="grounding-context">
+    <h2>Grounding Context</h2>
+    <p>The current strategy system already has live private agent memory, scheduled strategic reflection, prompt rendering, and producer/debug artifacts. It does not yet have a first-class moment-of-action notebook. The gap is most visible when an agent deliberately breaks from a prior strategy and needs to carry forward "I did this because X; next I should Y."</p>
+    <p>Current live memory includes allies, threats, notes, round history, power actions, `lastReflection`, and `strategyPacket`, but no agenda/task list. `getContinuityCapsule()` already exposes `commitments: []`, which is a useful empty hook for future private strategic loops.</p>
+    <p>Prompt construction keeps `## Your Recent Decisions`, `## Past Vote History`, `## Strategy Thread`, and `## Strategic Assessment` as distinct sections under `## Your Memory`. That separation preserves the public/private boundary, but current decision entries lack an obvious "when this decision was made and why it changed my plan" shape.</p>
+    <p>The action tool surface currently requires `strategyPacketUse` and `strategyPacketUseRationale` across many strict schemas. Those fields classify whether a packet was followed, revised, ignored, or deferred, but they do not update strategy state by themselves. The model call helper is also one-tool oriented: it sends a single tool, sets `parallel_tool_calls: false` in named mode, and consumes only the first `tool_calls[0]` result.</p>
+    <p>External tool-calling prior art supports multiple function calls in one model turn and recommends code handle arrays of tool calls, but also notes that `parallel_tool_calls: false` forces zero or one tool and that strict mode has schema requirements. That makes multi-tool strategy updates feasible, but not the smallest compatibility-safe first slice.</p>
+  </section>
+
+  <section id="topic-axes">
+    <h2>Topic Axes</h2>
+    <div class="axes">
+      <div class="axis"><strong>Moment-of-action capture</strong><br>How an agent records "I changed course because..." during the decision itself.</div>
+      <div class="axis"><strong>Carry-forward prompt shape</strong><br>How notes reappear later without blending public transcript and private motive.</div>
+      <div class="axis"><strong>Mutable strategic agenda</strong><br>Whether agents need task-like open loops, not just summaries and reflections.</div>
+      <div class="axis"><strong>Reflection cadence</strong><br>When to run heavier strategy reconciliation and how agents can request it.</div>
+      <div class="axis"><strong>Tool-call architecture</strong><br>How much to change schemas and the call loop while preserving local model compatibility.</div>
+    </div>
+  </section>
+
+  <section id="ranked-ideas">
+    <h2>Ranked Ideas</h2>
+    <ul class="idea-nav">
+      <li><a href="#idea-1">1. Anchored Strategy Receipts</a></li>
+      <li><a href="#idea-2">2. Private Strategic Loops</a></li>
+      <li><a href="#idea-3">3. Reflection Request Gate</a></li>
+      <li><a href="#idea-4">4. Receipt-to-Reflection Weave</a></li>
+      <li><a href="#idea-5">5. Strategy Prompt Ledger</a></li>
+      <li><a href="#idea-6">6. Multi-Tool Notebook Pilot</a></li>
+      <li><a href="#idea-7">7. Continuity-Ready Agenda Schema</a></li>
+    </ul>
+
+    <article class="idea" id="idea-1">
+      <h3><span class="rank">1</span>Anchored Strategy Receipts</h3>
+      <p>Add one nullable structured object to existing action outputs: an anchored private receipt that records the action's strategic meaning. It should be short and typed: `anchor`, `decision`, `reason`, `nextIntention`, `changedPlan`, and `reflectionRequest`. This turns `strategyPacketUseRationale` from a loose label into a note that can drive later play.</p>
+      <div class="badge-row">
+        <span class="badge b-high">Confidence 88%</span>
+        <span class="badge b-med">Complexity Medium</span>
+        <span class="badge b-high">Top pick</span>
+      </div>
+      <dl class="fields">
+        <dt>Axis</dt><dd>Moment-of-action capture</dd>
+        <dt>Basis</dt><dd><strong>direct:</strong> Existing strict schemas already require `strategyPacketUse` fields on Mingle intent, Mingle turn, votes, candidate selection, power, and council actions; `StrategyPacketUseMarker` only stores revision, use classification, and rationale.</dd>
+        <dt>Rationale</dt><dd>The receipt is the smallest move that gives a future reflection concrete material: not just "revised", but "after Vera dodged, I exposed her because Jace became useful cover; next repair with Jace."</dd>
+        <dt>Downsides</dt><dd>Every touched action schema grows. The field must be bounded and nullable to avoid turning every utterance into strategy paperwork.</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-2">
+      <h3><span class="rank">2</span>Private Strategic Loops</h3>
+      <p>Introduce a bounded private agenda list for unresolved strategic loops. These are not chores; they are soft intentions such as "test whether Jace is protecting Nyx", "repair with Mira after exposing her ally", or "if empowered, protect Vera to collect debt." Status values should support `open`, `in_progress`, `done`, `abandoned`, and `superseded`.</p>
+      <div class="badge-row">
+        <span class="badge b-high">Confidence 82%</span>
+        <span class="badge b-med">Complexity Medium</span>
+      </div>
+      <dl class="fields">
+        <dt>Axis</dt><dd>Mutable strategic agenda</dd>
+        <dt>Basis</dt><dd><strong>direct:</strong> Agent memory currently has notes and strategy packets but no agenda object, while `PlayerContinuityCapsule` already contains `commitments: string[]` as private continuity state.</dd>
+        <dt>Rationale</dt><dd>Open loops give social strategy a durable shape: agents remember what they meant to probe, repair, exploit, or avoid. This is more gameplay-driving than a single current target posture.</dd>
+        <dt>Downsides</dt><dd>Too many tasks will make agents mechanical. Limit visible prompt entries and reconcile/prune through reflection.</dd>
+      </dl>
+      <svg viewBox="0 0 860 220" role="img" aria-label="Private strategic loops flow">
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L8,3 L0,6 Z" fill="#315f91"></path>
+          </marker>
+        </defs>
+        <rect x="30" y="50" width="180" height="80" rx="8" fill="#e0ebf6" stroke="#9db9d5"></rect>
+        <text x="120" y="83" text-anchor="middle" font-size="15" fill="#1f466b">Action receipt</text>
+        <text x="120" y="107" text-anchor="middle" font-size="12" fill="#315f91">"I pivoted because X"</text>
+        <line x1="215" y1="90" x2="315" y2="90" stroke="#315f91" stroke-width="2" marker-end="url(#arrow)"></line>
+        <rect x="320" y="35" width="210" height="110" rx="8" fill="#e1eedc" stroke="#accd9f"></rect>
+        <text x="425" y="72" text-anchor="middle" font-size="15" fill="#325b2c">Private strategic loops</text>
+        <text x="425" y="98" text-anchor="middle" font-size="12" fill="#3f6e35">open / done / abandoned</text>
+        <text x="425" y="119" text-anchor="middle" font-size="12" fill="#3f6e35">next probe or repair</text>
+        <line x1="535" y1="90" x2="635" y2="90" stroke="#315f91" stroke-width="2" marker-end="url(#arrow)"></line>
+        <rect x="640" y="50" width="190" height="80" rx="8" fill="#dff0ec" stroke="#9bcfc5"></rect>
+        <text x="735" y="83" text-anchor="middle" font-size="15" fill="#1d6f68">Later prompt</text>
+        <text x="735" y="107" text-anchor="middle" font-size="12" fill="#214a46">"not orders, but open loops"</text>
+      </svg>
+    </article>
+
+    <article class="idea" id="idea-3">
+      <h3><span class="rank">3</span>Reflection Request Gate</h3>
+      <p>Let each action optionally request a heavier strategy reconciliation: `reflectionRequest: "none" | "soon" | "now"`. `now` runs a targeted reflection immediately after the action if the phase can tolerate it; `soon` batches at the next phase boundary. Automatic triggers can promote a request when `changedPlan` is true or when the action contradicts the current Strategy Thread.</p>
+      <div class="badge-row">
+        <span class="badge b-high">Confidence 80%</span>
+        <span class="badge b-med">Complexity Medium</span>
+      </div>
+      <dl class="fields">
+        <dt>Axis</dt><dd>Reflection cadence</dd>
+        <dt>Basis</dt><dd><strong>direct:</strong> Strategic reflections are already separate memory updates, run through `DiaryRoom.runStrategicReflections`, and currently fire at fixed vote boundaries.</dd>
+        <dt>Rationale</dt><dd>This preserves the old cost concern while giving agents a path to say "this was a strategic rupture; update me before I forget why."</dd>
+        <dt>Downsides</dt><dd>Immediate reflections can increase latency in hot phases. The runner needs clear guardrails for when `now` is downgraded to `soon`.</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-4">
+      <h3><span class="rank">4</span>Receipt-to-Reflection Weave</h3>
+      <p>Build strategic reflection prompts from recent public/private context plus structured receipts, not raw hidden thinking. The reflection sees what the agent said or did, what private anchor it attached, and which loops were opened or closed. It updates the Strategy Thread and agenda from that safer, smaller input.</p>
+      <div class="badge-row">
+        <span class="badge b-med">Confidence 76%</span>
+        <span class="badge b-med">Complexity Medium</span>
+      </div>
+      <dl class="fields">
+        <dt>Axis</dt><dd>Reflection cadence</dd>
+        <dt>Basis</dt><dd><strong>direct:</strong> Docs require hidden thinking to remain producer/debug material and keep Strategy Thread summaries as the compact safe state reinserted into prompts.</dd>
+        <dt>Rationale</dt><dd>The "dumber" thinking-weave idea has the right spirit, but a typed receipt is safer than feeding freeform hidden reasoning back into strategy prompts.</dd>
+        <dt>Downsides</dt><dd>Requires a new context builder slice so reflection can see the right receipts without bloating every prompt.</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-5">
+      <h3><span class="rank">5</span>Strategy Prompt Ledger</h3>
+      <p>Keep `## Your Recent Decisions` separate from transcript summaries, but upgrade it into an anchored ledger. Each entry should carry a time/event anchor, private decision, reason, and next intention. A separate `## Your Open Strategic Loops` section can then show only active agenda items.</p>
+      <div class="badge-row">
+        <span class="badge b-med">Confidence 74%</span>
+        <span class="badge b-high">Complexity Low</span>
+      </div>
+      <dl class="fields">
+        <dt>Axis</dt><dd>Carry-forward prompt shape</dd>
+        <dt>Basis</dt><dd><strong>direct:</strong> `buildRecentDecisionsSection` already renders a separate section and warns that recorded decisions are not instructions to repeat them.</dd>
+        <dt>Rationale</dt><dd>This answers the timing concern without leaking private motive into conversation summaries. The anchor makes causality obvious: when the decision happened, what triggered it, and what the agent intended next.</dd>
+        <dt>Downsides</dt><dd>If rendered too long, it competes with Strategy Thread and Strategic Assessment. Cap entries by relevance and recency.</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-6">
+      <h3><span class="rank">6</span>Multi-Tool Notebook Pilot</h3>
+      <p>After the inline receipt path proves value, pilot an explicit side tool such as `update_strategy_notebook`. The model would receive the phase action tool and the notebook tool together, and the runner would process both. Keep this as a second-stage architecture option, not the first slice.</p>
+      <div class="badge-row">
+        <span class="badge b-med">Confidence 68%</span>
+        <span class="badge b-warn">Complexity High</span>
+      </div>
+      <dl class="fields">
+        <dt>Axis</dt><dd>Tool-call architecture</dd>
+        <dt>Basis</dt><dd><strong>external:</strong> OpenAI function-calling docs say responses can include zero, one, or multiple calls and describe iterating over `tool_calls`; the same docs say `parallel_tool_calls: false` prevents multiple calls. <strong>direct:</strong> this repo currently sends one tool and reads only `tool_calls[0]`.</dd>
+        <dt>Rationale</dt><dd>Separate action and notebook tools are conceptually clean and would let the strategy update feel like a real agent affordance. The cost is call-loop complexity and provider compatibility.</dd>
+        <dt>Downsides</dt><dd>Local OpenAI-compatible providers may be less reliable with multi-tool strict schemas. Partial success semantics also get harder: action succeeds, notebook fails, or vice versa.</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-7">
+      <h3><span class="rank">7</span>Continuity-Ready Agenda Schema</h3>
+      <p>Design receipts and strategic loops so they can later flow into continuity capsules and `MemoryStore`, but do not persist them as the first implementation goal. The first slice should be honest live-run memory plus simulation artifacts; the schema should simply avoid painting durability work into a corner.</p>
+      <div class="badge-row">
+        <span class="badge b-med">Confidence 66%</span>
+        <span class="badge b-med">Complexity Medium</span>
+      </div>
+      <dl class="fields">
+        <dt>Axis</dt><dd>Mutable strategic agenda</dd>
+        <dt>Basis</dt><dd><strong>direct:</strong> `MemoryStore` currently persists only ally, threat, note, vote history, and reflection records. Docs state Strategy Thread packets are live-run private state and not written to `MemoryStore`, while continuity capsules are the future private snapshot lane.</dd>
+        <dt>Rationale</dt><dd>Task-like strategy loops become much more valuable when games can survive restart, but implementing persistence first would repeat the old overclaiming risk.</dd>
+        <dt>Downsides</dt><dd>Some schema choices may change when runtime snapshot hydration matures. Keep v1 type names explicit and migration-friendly.</dd>
+      </dl>
+    </article>
+  </section>
+
+  <section id="rejection-summary">
+    <h2>Rejection Summary</h2>
+    <table>
+      <thead>
+        <tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>Receipt-only minimalism</td><td>Too close to the current `strategyPacketUseRationale` weakness; it classifies a pivot but does not create durable enough structure for play.</td></tr>
+        <tr><td>2</td><td>Always-on reflection after every action</td><td>Directly fights the old cost/noise finding and risks making every turn over-optimized. Better as a trigger-gated path.</td></tr>
+        <tr><td>3</td><td>House-mediated strategy coaching</td><td>Breaks player agency and private knowledge boundaries. House can analyze player behavior, but should not rewrite a player's private strategy.</td></tr>
+        <tr><td>4</td><td>MemoryStore-first strategy persistence</td><td>Valuable later, but too entangled with broader checkpoint/hydration work for the next slice.</td></tr>
+        <tr><td>5</td><td>Inline private notes in conversation summary</td><td>Solves timing at the cost of blurring transcript facts, public social surface, and private motive. The anchored ledger gives the same benefit more safely.</td></tr>
+        <tr><td>6</td><td>Replace Strategy Thread entirely</td><td>Premature. The packet already works as compact posture; the missing piece is moment-of-action receipts and open loops feeding it.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sources-references">
+    <h2>Sources &amp; References</h2>
+    <ul>
+      <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/agent.ts">packages/engine/src/agent.ts</a> - agent memory, prompt construction, action schemas, tool-call helper, and strategic reflection.</li>
+      <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-runner.types.ts">packages/engine/src/game-runner.types.ts</a> - StrategyPacket, StrategyPacketUse, and continuity capsule type surfaces.</li>
+      <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/diary-room.ts">packages/engine/src/diary-room.ts</a> - strategic reflection scheduling and private turn emission.</li>
+      <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/context-builder.ts">packages/engine/src/context-builder.ts</a> - recent decision context construction.</li>
+      <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/memory-store.ts">packages/engine/src/memory-store.ts</a> - current operational memory persistence contract.</li>
+      <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/reasoning-transcript-observability.md">docs/reasoning-transcript-observability.md</a> - producer/debug privacy boundaries and validation surfaces.</li>
+      <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/plans/2026-06-12-002-feat-strategy-thread-packet-plan.md">docs/plans/2026-06-12-002-feat-strategy-thread-packet-plan.md</a> - v1 Strategy Thread packet decisions and rejected alternatives.</li>
+      <li><a href="https://developers.openai.com/api/docs/guides/function-calling">OpenAI function calling guide</a> - multiple tool-call handling, `parallel_tool_calls`, and strict mode constraints.</li>
+    </ul>
+  </section>
+
+  <footer class="composition-signal">Composed 2026-06-17T00:00Z by ce-ideate from the strategic upgrade discussion in this Codex thread.</footer>
+</main>
+</body>
+</html>

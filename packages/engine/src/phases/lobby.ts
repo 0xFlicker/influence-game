@@ -1,5 +1,5 @@
 import { Phase } from "../types";
-import { assertCanAcceptCommit, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import { assertCanAcceptCommit, strategicDecisionResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 
 /**
  * Compute messages per player for lobby phase.
@@ -29,7 +29,7 @@ async function runLobbyMessages(
         const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.LOBBY);
         phaseCtx.lobbySubRound = sub;
         phaseCtx.lobbyTotalSubRounds = messagesPerPlayer;
-        const { message, thinking, reasoningContext, strategyPacketUse } = await agent.getLobbyMessage(phaseCtx);
+        const { message, thinking, reasoningContext, decisionLog } = await agent.getLobbyMessage(phaseCtx);
         await assertCanAcceptCommit(ctx);
         const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
         logger.logPublic(player.id, message, Phase.LOBBY, transcriptThinking);
@@ -42,7 +42,7 @@ async function runLobbyMessages(
             message,
             subRound: sub,
             totalSubRounds: messagesPerPlayer,
-            ...strategyPacketUseResponse(strategyPacketUse),
+            ...strategicDecisionResponse({ decisionLog }),
           },
           thinking,
           reasoningContext,

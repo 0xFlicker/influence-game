@@ -56,7 +56,7 @@ flowchart TB
 Use this split consistently:
 
 - **Player-visible transcript** is what other players or viewers can see as game speech.
-- **Private `agent_turn` records** are producer/debug evidence: hidden intent, reasoning metadata, strategy packets, strategic lenses, room assignment diagnostics, packet-use markers, and movement purpose.
+- **Private `agent_turn` records** are producer/debug evidence: hidden intent, reasoning metadata, strategy packets, strategic lenses, room assignment diagnostics, decision logs, and movement purpose.
 - **Canonical game events** are accepted board facts: votes, eliminations, powers, rounds, endgame transitions. They rebuild state and can point back to private source records, but they do not store hidden strategy as game truth.
 
 When a model-quality complaint appears, convert it into typed observable state instead of an untestable prompt vibe.
@@ -64,7 +64,7 @@ When a model-quality complaint appears, convert it into typed observable state i
 Examples:
 
 - "Agents are not using Mingle strategically" became hidden Mingle intent, strategy signals, movement purpose, and strategic reflection records.
-- "Agents forget what they were doing next round" became Strategy Thread packets plus `strategyPacketUse` markers.
+- "Agents forget what they were doing next round" became Strategy Thread packets plus private `decisionLog` receipts.
 - "Agents keep using authenticity/performance language" became `strategicLens` on Mingle intent, rumor, strategic reflection, and Strategy Thread packets, with presentation reads allowed but explicitly not privileged.
 - "All agents pick Room 1" became House-assigned rooms from all hidden intents, plus deterministic repair diagnostics.
 
@@ -89,7 +89,7 @@ Private strategy should appear in typed contracts that phase runners can log and
 export interface MingleIntentAction extends MingleIntentSummaryBase {
   thinking?: string;
   reasoningContext?: string;
-  strategyPacketUse?: StrategyPacketUseMarker;
+  decisionLog?: string | null;
 }
 
 export interface StrategicReflectionAction {
@@ -204,7 +204,7 @@ logger.emitAgentTurn({
     displayOrder: i + 1,
     strategicLens: rumor.strategicLens ?? null,
     strategicLensRationale: rumor.strategicLensRationale ?? null,
-    ...strategyPacketUseResponse(rumor.strategyPacketUse),
+    ...strategicDecisionResponse(rumor),
   },
   thinking: rumor.thinking,
   reasoningContext: rumor.reasoningContext,
@@ -233,7 +233,7 @@ Then inspect turn logs through MCP or JSONL for:
 - `strategic-reflection`
 - `strategy-packet`
 - `strategicLens`
-- `strategyPacketUse`
+- `decisionLog`
 - `gotoPlayerName`
 - `gotoStatus`
 - `empower-revote`
@@ -307,17 +307,15 @@ Durable fix:
 
 ### Turning continuity into evidence
 
-The Strategy Thread is not just prompt memory. It needs a later self-reported marker:
+The Strategy Thread is not just prompt memory. Later strategic actions need a compact private receipt:
 
 ```ts
-export interface StrategyPacketUseMarker {
-  strategyPacketRevision: string;
-  strategyPacketUse: "followed" | "revised" | "ignored" | "deferred";
-  strategyPacketUseRationale: string;
+export interface StrategicDecisionMetadata {
+  decisionLog?: string | null;
 }
 ```
 
-That marker lets a reviewer distinguish "the agent forgot" from "the agent pivoted because the room/vote evidence changed."
+That receipt lets a reviewer distinguish "the agent forgot" from "the agent pivoted because the room/vote evidence changed." Strategic reflection still owns Strategy Thread revision on the normal reflection cadence.
 
 ### Keeping public and private surfaces separate
 

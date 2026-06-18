@@ -1,7 +1,7 @@
 import type { UUID } from "../types";
 import { Phase } from "../types";
 import type { AgentResponse, TargetDecision } from "../game-runner.types";
-import { assertCanAcceptCommit, agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import { assertCanAcceptCommit, agentTurnSourcePointer, strategicDecisionResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 
 async function withEndgameActionTimeout<T>(
   ctx: PhaseRunnerContext,
@@ -46,7 +46,7 @@ export async function runReckoningPlea(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.PLEA);
-      const { message, thinking, reasoningContext, strategyPacketUse } = await withEndgameActionTimeout(
+      const { message, thinking, reasoningContext, decisionLog } = await withEndgameActionTimeout(
         ctx,
         Phase.PLEA,
         `${player.name} plea`,
@@ -61,7 +61,7 @@ export async function runReckoningPlea(
         action: "plea",
         actor: { id: player.id, name: player.name, role: "player" },
         visibility: "public",
-        response: { message, ...strategyPacketUseResponse(strategyPacketUse) },
+        response: { message, ...strategicDecisionResponse({ decisionLog }) },
         thinking,
         reasoningContext,
         scope: "public",
@@ -150,7 +150,7 @@ export async function runTribunalDefense(
 
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.DEFENSE);
-      const { message: defense, thinking, reasoningContext, strategyPacketUse } = await withEndgameActionTimeout(
+      const { message: defense, thinking, reasoningContext, decisionLog } = await withEndgameActionTimeout(
         ctx,
         Phase.DEFENSE,
         `${player.name} defense`,
@@ -169,7 +169,7 @@ export async function runTribunalDefense(
           message: defense,
           accuser: { id: accusation.accuserId, name: accusation.accuserName },
           accusation: accusation.text,
-          ...strategyPacketUseResponse(strategyPacketUse),
+          ...strategicDecisionResponse({ decisionLog }),
         },
         thinking,
         reasoningContext,
@@ -212,7 +212,7 @@ export async function runJudgmentOpening(
     finalists.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.OPENING_STATEMENTS);
-      const { message, thinking, reasoningContext, strategyPacketUse } = await withEndgameActionTimeout(
+      const { message, thinking, reasoningContext, decisionLog } = await withEndgameActionTimeout(
         ctx,
         Phase.OPENING_STATEMENTS,
         `${player.name} opening statement`,
@@ -227,7 +227,7 @@ export async function runJudgmentOpening(
         action: "opening-statement",
         actor: { id: player.id, name: player.name, role: "player" },
         visibility: "public",
-        response: { message, ...strategyPacketUseResponse(strategyPacketUse) },
+        response: { message, ...strategicDecisionResponse({ decisionLog }) },
         thinking,
         reasoningContext,
         scope: "public",
@@ -292,7 +292,7 @@ export async function runJudgmentJuryQuestions(
     const finalistAgent = agents.get(targetFinalistId);
     if (finalistAgent) {
       const finalistCtx = contextBuilder.buildPhaseContext(targetFinalistId, Phase.JURY_QUESTIONS);
-      const { message: answer, thinking: answerThinking, reasoningContext: answerReasoning, strategyPacketUse: answerStrategyPacketUse } = await withEndgameActionTimeout(
+      const { message: answer, thinking: answerThinking, reasoningContext: answerReasoning, decisionLog: answerDecisionLog } = await withEndgameActionTimeout(
         ctx,
         Phase.JURY_QUESTIONS,
         `${finalistName} jury answer`,
@@ -311,7 +311,7 @@ export async function runJudgmentJuryQuestions(
           message: answer,
           juror: { id: juror.playerId, name: juror.playerName },
           question,
-          ...strategyPacketUseResponse(answerStrategyPacketUse),
+          ...strategicDecisionResponse({ decisionLog: answerDecisionLog }),
         },
         thinking: answerThinking,
         reasoningContext: answerReasoning,
@@ -339,7 +339,7 @@ export async function runJudgmentClosing(
     finalists.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.CLOSING_ARGUMENTS);
-      const { message, thinking, reasoningContext, strategyPacketUse } = await withEndgameActionTimeout(
+      const { message, thinking, reasoningContext, decisionLog } = await withEndgameActionTimeout(
         ctx,
         Phase.CLOSING_ARGUMENTS,
         `${player.name} closing argument`,
@@ -354,7 +354,7 @@ export async function runJudgmentClosing(
         action: "closing-argument",
         actor: { id: player.id, name: player.name, role: "player" },
         visibility: "public",
-        response: { message, ...strategyPacketUseResponse(strategyPacketUse) },
+        response: { message, ...strategicDecisionResponse({ decisionLog }) },
         thinking,
         reasoningContext,
         scope: "public",
@@ -418,6 +418,7 @@ export async function runJudgmentJuryVote(
       response: {
         target: { id: vote.target, name: targetName },
         finalists: finalistIds.map((id) => ({ id, name: gameState.getPlayerName(id) })),
+        ...strategicDecisionResponse(vote),
       },
       thinking: vote.thinking,
       reasoningContext: vote.reasoningContext,

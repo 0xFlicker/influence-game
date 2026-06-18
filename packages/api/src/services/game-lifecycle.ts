@@ -655,6 +655,7 @@ export async function startGame(
         resolveModelForTier(gameConfig.modelTier as string | undefined),
         {
           gameId,
+          toolChoiceMode: llmConfig.toolChoiceMode,
           ...(ownerEpoch && { ownerEpoch }),
           ...(privateTraceSink && { privateTraceSink }),
         },

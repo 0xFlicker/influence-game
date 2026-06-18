@@ -3,7 +3,7 @@ import { Phase } from "../types";
 import type { CandidateChoiceRequest, TargetDecision } from "../game-runner.types";
 import type { InitialExposureBenchResolution } from "../exposure-bench";
 import { buildPostVotePressureProjection, formatPostVotePressureSummary } from "../post-vote-pressure";
-import { assertCanAcceptCommit, agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import { assertCanAcceptCommit, agentTurnSourcePointer, strategicDecisionResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import {
   getEndgameEliminationVoterNames,
   handleElimination,
@@ -96,7 +96,7 @@ export async function runVotePhase(
         response: {
           empowerTarget: { id: votes.empowerTarget, name: empowerName },
           exposeTarget: { id: votes.exposeTarget, name: exposeName },
-          ...strategyPacketUseResponse(votes.strategyPacketUse),
+          ...strategicDecisionResponse(votes),
         },
         thinking: votes.thinking,
         reasoningContext: votes.reasoningContext,
@@ -161,7 +161,7 @@ export async function runVotePhase(
                 exposeTarget: { id: originalVote.exposeTarget, name: gameState.getPlayerName(originalVote.exposeTarget) },
               },
               fallbackApplied: empowerTarget !== revote.empowerTarget,
-              ...strategyPacketUseResponse(revote.strategyPacketUse),
+              ...strategicDecisionResponse(revote),
             },
             thinking: revote.thinking,
             reasoningContext: revote.reasoningContext,
@@ -252,7 +252,7 @@ export async function runVotePhase(
         resolvedCandidates: resolvedCandidates?.map((id) => ({ id, name: gameState.getPlayerName(id) })) ?? null,
         fallbackApplied: initialResolution?.fallbackApplied ?? false,
         fallbackReason: initialResolution?.fallbackReason ?? null,
-        ...strategyPacketUseResponse(decision.strategyPacketUse),
+        ...strategicDecisionResponse(decision),
       },
       thinking: decision.thinking,
       reasoningContext: decision.reasoningContext,
@@ -343,7 +343,7 @@ export async function runReckoningVote(
         response: {
           target: { id: vote.target, name: targetName },
           stage: "reckoning",
-          ...strategyPacketUseResponse(vote.strategyPacketUse),
+          ...strategicDecisionResponse(vote),
         },
         thinking: vote.thinking,
         reasoningContext: vote.reasoningContext,
@@ -406,7 +406,7 @@ export async function runTribunalVote(
         response: {
           target: { id: vote.target, name: targetName },
           stage: "tribunal",
-          ...strategyPacketUseResponse(vote.strategyPacketUse),
+          ...strategicDecisionResponse(vote),
         },
         thinking: vote.thinking,
         reasoningContext: vote.reasoningContext,
@@ -442,7 +442,7 @@ export async function runTribunalVote(
           response: {
             target: { id: vote.target, name: targetName },
             stage: "tribunal",
-            ...strategyPacketUseResponse(vote.strategyPacketUse),
+            ...strategicDecisionResponse(vote),
           },
           thinking: vote.thinking,
           reasoningContext: vote.reasoningContext,

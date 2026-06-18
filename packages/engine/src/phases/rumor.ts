@@ -1,5 +1,5 @@
 import { Phase } from "../types";
-import { assertCanAcceptCommit, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import { assertCanAcceptCommit, strategicDecisionResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 
 export async function runRumorPhase(
   ctx: PhaseRunnerContext,
@@ -15,8 +15,8 @@ export async function runRumorPhase(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.RUMOR);
-      const { message, thinking, reasoningContext, strategyPacketUse, strategicLens, strategicLensRationale } = await agent.getRumorMessage(phaseCtx);
-      return { playerId: player.id, message, thinking, reasoningContext, strategyPacketUse, strategicLens, strategicLensRationale };
+      const { message, thinking, reasoningContext, decisionLog, strategicLens, strategicLensRationale } = await agent.getRumorMessage(phaseCtx);
+      return { playerId: player.id, message, thinking, reasoningContext, decisionLog, strategicLens, strategicLensRationale };
     }),
   );
 
@@ -48,7 +48,7 @@ export async function runRumorPhase(
         displayOrder: i + 1,
         strategicLens: rumor.strategicLens ?? null,
         strategicLensRationale: rumor.strategicLensRationale ?? null,
-        ...strategyPacketUseResponse(rumor.strategyPacketUse),
+        ...strategicDecisionResponse(rumor),
       },
       thinking: rumor.thinking,
       reasoningContext: rumor.reasoningContext,

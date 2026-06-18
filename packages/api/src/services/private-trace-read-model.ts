@@ -33,6 +33,7 @@ export interface PrivateTraceManifestIndexEntry {
   recordCount?: unknown;
   sha256?: unknown;
   contentType?: unknown;
+  strategicDecision?: unknown;
   strategyPacket?: unknown;
   boundary?: unknown;
 }
@@ -135,6 +136,7 @@ function manifestIndexEntry(row: typeof schema.gameEvidenceManifests.$inferSelec
     recordCount: metadata.recordCount,
     sha256: metadata.sha256,
     contentType: metadata.contentType,
+    strategicDecision: metadata.strategicDecision,
     strategyPacket: metadata.strategyPacket,
     boundary: metadata.boundary,
   };

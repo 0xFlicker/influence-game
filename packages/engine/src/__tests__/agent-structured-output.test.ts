@@ -254,6 +254,7 @@ describe("InfluenceAgent structured output mode", () => {
           thinking: "I empower Mira and expose Vera.",
           empower: "Mira",
           expose: "Vera",
+          decisionLog: "Rewarded Mira and pressured Vera as a strategic vote receipt.",
         },
         "Native hidden reasoning for vote.",
       ),
@@ -273,7 +274,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(traces).toHaveLength(1);
     const trace = traces[0]!;
     expect(trace).toMatchObject({
-      version: 1,
+      version: 2,
       gameId: "game-1",
       action: "vote",
       actor: { id: "atlas-id", name: "Atlas", role: "player" },
@@ -283,6 +284,7 @@ describe("InfluenceAgent structured output mode", () => {
       toolName: "cast_votes",
       emittedThinking: "I empower Mira and expose Vera.",
       reasoningContext: "Native hidden reasoning for vote.",
+      decisionLog: "Rewarded Mira and pressured Vera as a strategic vote receipt.",
     });
     expect(trace.prompt.messages).toHaveLength(2);
     expect(trace.prompt.messages[0]).toMatchObject({ role: "system" });
@@ -297,6 +299,7 @@ describe("InfluenceAgent structured output mode", () => {
       thinking: "I empower Mira and expose Vera.",
       empower: "Mira",
       expose: "Vera",
+      decisionLog: "Rewarded Mira and pressured Vera as a strategic vote receipt.",
       reasoningContext: "Native hidden reasoning for vote.",
     });
   });
@@ -311,14 +314,12 @@ describe("InfluenceAgent structured output mode", () => {
         JSON.stringify({
           thinking: "Atlas can press the vote story now.",
           message: "That vote told me plenty; Mira, I am watching who benefits from keeping Vera comfortable.",
-          strategyPacketUse: "not_used",
-          strategyPacketUseRationale: "No packet.",
+          decisionLog: null,
         }),
         JSON.stringify({
           thinking: "Atlas needs to make the final lobby pitch now.",
           message: "This is the last lobby beat, so here is my read: Vera is too comfortable and Mira should not let that slide.",
-          strategyPacketUse: "not_used",
-          strategyPacketUseRationale: "No packet.",
+          decisionLog: "Pressed Vera as too comfortable during the last lobby beat.",
         }),
       ]),
       "gpt-5-nano",
@@ -416,6 +417,48 @@ describe("InfluenceAgent structured output mode", () => {
     expect(requests[0]?.tools).toBeUndefined();
     expect(requests[0]?.max_tokens).toBe(8192);
     expect(requests[1]?.max_tokens).toBe(12288);
+  });
+
+  it("carries one private decision receipt into the next prompt", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolSequenceOpenAIStub(requests, [
+        {
+          toolName: "cast_votes",
+          args: {
+            thinking: "Reward Mira and pressure Vera.",
+            empower: "Mira",
+            expose: "Vera",
+            decisionLog: "Rewarded Mira and pressured Vera as the current coalition test.",
+          },
+        },
+        {
+          toolName: "use_power",
+          args: {
+            thinking: "Let the council expose more public votes.",
+            action: "pass",
+            target: "Mira",
+            shieldPullUpCandidates: [],
+            decisionLog: null,
+          },
+        },
+      ]),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getVotes(makeContext(Phase.VOTE));
+    await agent.getPowerAction(makeContext(Phase.POWER), ["mira-id", "vera-id"]);
+
+    const powerMessages = requests[1]?.messages as Array<{ content: string }>;
+    const powerPrompt = powerMessages.at(-1)!.content;
+    const receipt = "Rewarded Mira and pressured Vera as the current coalition test.";
+    expect(powerPrompt).toContain("## Your Recent Decisions");
+    expect(powerPrompt).toContain(`R1/VOTE Standard Vote (vote): ${receipt}`);
+    expect(powerPrompt.match(new RegExp(receipt, "g"))).toHaveLength(1);
   });
 
   it("preserves thinking and native reasoning for empower revotes", async () => {
@@ -519,7 +562,6 @@ describe("InfluenceAgent structured output mode", () => {
       selectedCandidateIds: ["mira-id"],
       thinking: "Mira is socially expensive to choose, but the vote tie gives me cover.",
       reasoningContext: "Hidden local reasoning for candidate selection.",
-      strategyPacketUse: undefined,
     });
     expect(requests[0]?.tool_choice).toEqual("required");
     const messages = requests[0]?.messages as Array<{ content: string }>;
@@ -1231,7 +1273,7 @@ describe("InfluenceAgent structured output mode", () => {
     });
   });
 
-  it("stores Strategy Thread packets from reflection and marks later decision use", async () => {
+  it("stores Strategy Thread packets from reflection and records later decision receipts", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -1269,8 +1311,7 @@ describe("InfluenceAgent structured output mode", () => {
             thinking: "The packet still fits: reward Mira and pressure Vera.",
             empower: "Mira",
             expose: "Vera",
-            strategyPacketUse: "followed",
-            strategyPacketUseRationale: "The vote keeps Mira close and applies pressure to Vera.",
+            decisionLog: "Rewarded Mira and pressured Vera because the Strategy Thread still fits.",
           },
           reasoningContent: "Hidden vote reasoning.",
         },
@@ -1311,11 +1352,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(vote).toMatchObject({
       empowerTarget: "mira-id",
       exposeTarget: "vera-id",
-      strategyPacketUse: {
-        strategyPacketRevision: "r1-vote-1",
-        strategyPacketUse: "followed",
-        strategyPacketUseRationale: "The vote keeps Mira close and applies pressure to Vera.",
-      },
+      decisionLog: "Rewarded Mira and pressured Vera because the Strategy Thread still fits.",
       reasoningContext: "Hidden vote reasoning.",
     });
 
@@ -1328,7 +1365,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(votePrompt).toContain("- Strategic lens: social_cover");
     expect(votePrompt).toContain("Standing target discipline:");
     expect(votePrompt).toContain("Never treat an eliminated player as an active standing target.");
-    expect(votePrompt).toContain("self-reported linkage evidence");
+    expect(votePrompt).toContain("When a tool asks for decisionLog");
     expect(votePrompt).not.toContain("You must follow");
   });
 
@@ -1417,8 +1454,7 @@ describe("InfluenceAgent structured output mode", () => {
             thinking: "Mira is gone, so choose from the live field.",
             empower: "Vera",
             expose: "Vera",
-            strategyPacketUse: "revised",
-            strategyPacketUseRationale: "Mira left the game, so the packet can only guide a pivot.",
+            decisionLog: "Mira left the game, so I pivoted the packet toward Vera as the live field.",
           },
         },
       ]),
@@ -1459,6 +1495,7 @@ describe("InfluenceAgent structured output mode", () => {
         {
           thinking: "Vera has too much social cover to let through.",
           eliminate: "Vera",
+          decisionLog: "Cut Vera because her endgame cover is too strong.",
         },
         "Hidden local reasoning for direct elimination.",
       ),
@@ -1475,7 +1512,18 @@ describe("InfluenceAgent structured output mode", () => {
       target: "vera-id",
       thinking: "Vera has too much social cover to let through.",
       reasoningContext: "Hidden local reasoning for direct elimination.",
+      decisionLog: "Cut Vera because her endgame cover is too strong.",
     });
+    const tools = requests[0]?.tools as Array<{
+      function: {
+        parameters: {
+          properties: Record<string, unknown>;
+          required: string[];
+        };
+      };
+    }>;
+    expect(tools[0]!.function.parameters.properties.decisionLog).toBeDefined();
+    expect(tools[0]!.function.parameters.required).toContain("decisionLog");
   });
 
   it("uses an endgame prompt frame with full public and canonical context", async () => {
@@ -1677,6 +1725,7 @@ describe("InfluenceAgent structured output mode", () => {
         {
           thinking: "Vera owned her betrayal and made the sharper case.",
           winner: "Vera",
+          decisionLog: "Rewarded Vera because she owned the sharper endgame case.",
         },
         "Hidden local reasoning for the winner vote.",
       ),
@@ -1693,7 +1742,18 @@ describe("InfluenceAgent structured output mode", () => {
       target: "vera-id",
       thinking: "Vera owned her betrayal and made the sharper case.",
       reasoningContext: "Hidden local reasoning for the winner vote.",
+      decisionLog: "Rewarded Vera because she owned the sharper endgame case.",
     });
+    const tools = requests[0]?.tools as Array<{
+      function: {
+        parameters: {
+          properties: Record<string, unknown>;
+          required: string[];
+        };
+      };
+    }>;
+    expect(tools[0]!.function.parameters.properties.decisionLog).toBeDefined();
+    expect(tools[0]!.function.parameters.required).toContain("decisionLog");
   });
 
   it("uses plain visible messages (no structured thinking+message JSON) in local mode", async () => {

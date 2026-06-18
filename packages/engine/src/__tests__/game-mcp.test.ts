@@ -275,13 +275,9 @@ describe("game MCP corpus read model", () => {
           response: {
             empowerTarget: { id: "mira", name: "Mira" },
             exposeTarget: { id: "vera", name: "Vera" },
-            strategyPacketUse: {
-              strategyPacketRevision: "r1-vote-1",
-              strategyPacketUse: "followed",
-              strategyPacketUseRationale: "Atlas kept Mira close and pressured Vera.",
-            },
+            decisionLog: "Atlas kept Mira close and pressured Vera because the Strategy Thread still fit the room evidence.",
           },
-          thinking: "Atlas follows the packet unless Finn contradicts it.",
+          thinking: "Atlas records why the vote keeps pressure on Vera.",
         },
       ].map((record) => JSON.stringify(record)).join("\n") + "\n",
     );
@@ -305,8 +301,8 @@ describe("game MCP corpus read model", () => {
       gameNumber: 1,
       sources: ["turns"],
     });
-    const markerResults = readModel.searchLogs({
-      query: "r1-vote-1",
+    const receiptResults = readModel.searchLogs({
+      query: "decisionLog",
       sessionId: "batch-strategy-validation",
       gameNumber: 1,
       sources: ["turns"],
@@ -348,16 +344,13 @@ describe("game MCP corpus read model", () => {
         },
       },
     });
-    expect(markerResults.map((result) => result.citation.line).sort()).toEqual([3, 4]);
-    expect(markerResults[1]).toMatchObject({
+    expect(receiptResults.map((result) => result.citation.line)).toEqual([4]);
+    expect(receiptResults[0]).toMatchObject({
       citation: { sourceKind: "turns", line: 4 },
       record: {
         action: "vote",
         response: {
-          strategyPacketUse: {
-            strategyPacketRevision: "r1-vote-1",
-            strategyPacketUse: "followed",
-          },
+          decisionLog: "Atlas kept Mira close and pressured Vera because the Strategy Thread still fit the room evidence.",
         },
       },
     });

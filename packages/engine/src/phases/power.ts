@@ -2,7 +2,7 @@ import type { UUID, PowerAction } from "../types";
 import { Phase } from "../types";
 import type { CandidateChoiceRequest, PowerLobbyExposure } from "../game-runner.types";
 import type { ShieldReplacementResolution } from "../exposure-bench";
-import { assertCanAcceptCommit, agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import { assertCanAcceptCommit, agentTurnSourcePointer, strategicDecisionResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import { getExposeVoterNames, handleElimination } from "./elimination";
 
 function buildExposePressure(
@@ -88,7 +88,7 @@ async function runPowerLobbyMessages(
         empoweredId,
         councilCandidates: provisionalCandidates,
       });
-      const { message, thinking, reasoningContext, strategyPacketUse } = await agent.getPowerLobbyMessage(
+      const { message, thinking, reasoningContext, decisionLog } = await agent.getPowerLobbyMessage(
         phaseCtx,
         provisionalCandidates,
         exposePressure,
@@ -105,7 +105,7 @@ async function runPowerLobbyMessages(
           message,
           empowered: { id: empoweredId, name: gameState.getPlayerName(empoweredId) },
           provisionalCandidates: provisionalCandidates.map((id) => ({ id, name: gameState.getPlayerName(id) })),
-          ...strategyPacketUseResponse(strategyPacketUse),
+          ...strategicDecisionResponse({ decisionLog }),
         },
         thinking,
         reasoningContext,
@@ -201,7 +201,7 @@ export async function runPowerPhase(
       target: { id: powerAction.target, name: gameState.getPlayerName(powerAction.target) },
       candidates: prelim.map((id) => ({ id, name: gameState.getPlayerName(id) })),
       ...(shieldPullUpResponse ? { shieldPullUp: shieldPullUpResponse } : {}),
-      ...strategyPacketUseResponse(powerActionResult.strategyPacketUse),
+      ...strategicDecisionResponse(powerActionResult),
     },
     thinking: powerActionResult.thinking,
     reasoningContext: powerActionResult.reasoningContext,

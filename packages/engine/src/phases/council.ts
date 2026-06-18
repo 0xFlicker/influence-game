@@ -1,5 +1,5 @@
 import { Phase } from "../types";
-import { assertCanAcceptCommit, agentTurnSourcePointer, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import { assertCanAcceptCommit, agentTurnSourcePointer, strategicDecisionResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import { getCouncilVoterNames, getExposeVoterNames, handleElimination } from "./elimination";
 
 export async function runRevealPhase(
@@ -75,7 +75,7 @@ export async function runCouncilPhase(
         response: {
           target: { id: vote, name: votedAgainstName },
           candidates: candidates.map((id) => ({ id, name: gameState.getPlayerName(id) })),
-          ...strategyPacketUseResponse(voteResult.strategyPacketUse),
+          ...strategicDecisionResponse(voteResult),
         },
         thinking: voteResult.thinking,
         reasoningContext: voteResult.reasoningContext,

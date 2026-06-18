@@ -1,5 +1,5 @@
 import { Phase } from "../types";
-import { assertCanAcceptCommit, strategyPacketUseResponse, transcriptThinkingFor, type PhaseRunnerContext, type PhaseActor } from "./phase-runner-context";
+import { assertCanAcceptCommit, strategicDecisionResponse, transcriptThinkingFor, type PhaseRunnerContext, type PhaseActor } from "./phase-runner-context";
 
 export async function runIntroductionPhase(
   ctx: PhaseRunnerContext,
@@ -15,7 +15,7 @@ export async function runIntroductionPhase(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.INTRODUCTION);
-      const { message, thinking, reasoningContext, strategyPacketUse } = await agent.getIntroduction(phaseCtx);
+      const { message, thinking, reasoningContext, decisionLog } = await agent.getIntroduction(phaseCtx);
       await assertCanAcceptCommit(ctx);
       const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
       logger.logPublic(player.id, message, Phase.INTRODUCTION, transcriptThinking);
@@ -24,7 +24,7 @@ export async function runIntroductionPhase(
         action: "introduction",
         actor: { id: player.id, name: player.name, role: "player" },
         visibility: "public",
-        response: { message, ...strategyPacketUseResponse(strategyPacketUse) },
+        response: { message, ...strategicDecisionResponse({ decisionLog }) },
         thinking,
         reasoningContext,
         scope: "public",
