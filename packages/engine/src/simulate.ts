@@ -51,9 +51,11 @@
  * choices are bundled into the private `power-action` record when Protect
  * creates an unresolved replacement.
  * Hidden `strategic-reflection` and `strategy-packet` records are written there
- * when `--strategic-reflections` is enabled for validation runs. Later private
- * decisions may include `strategicLens` and `decisionLog` fields for searchable
- * producer/debug validation.
+ * when `--strategic-reflections` is enabled for validation runs. The hidden
+ * cadence starts after Introductions, then continues at later-round vote and
+ * Council-diary reflection boundaries. Later private decisions may include
+ * `strategicLens` and `decisionLog` fields for searchable producer/debug
+ * validation.
  *
  * Prompt-continuity validation should check the current-board contract in
  * player prompts, phase-specific vote/Council/endgame rules, typed recent

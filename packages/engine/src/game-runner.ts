@@ -492,6 +492,7 @@ export class GameRunner {
       // --- Normal round phases ---
       if (state === "introduction") {
         await runIntroductionPhase(prc, actor);
+        await this.diaryRoom.runStrategicReflections(Phase.INTRODUCTION);
         await this.diaryRoom.runDiaryRoom(Phase.INTRODUCTION);
       } else if (state === "lobby") {
         await runLobbyPhase(prc, actor);
@@ -502,7 +503,9 @@ export class GameRunner {
           await this.diaryRoom.runStrategicReflections(Phase.VOTE, { timing: "pre_vote" });
         }
         await runVotePhase(prc, actor);
-        await this.diaryRoom.runStrategicReflections(Phase.VOTE);
+        if (this.gameState.round > 1) {
+          await this.diaryRoom.runStrategicReflections(Phase.VOTE);
+        }
       } else if (state === "power") {
         await runPowerPhase(prc, actor);
         if (!this.gameState.councilCandidates) {

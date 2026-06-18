@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
+import { eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
@@ -82,7 +83,7 @@ describe("durable run inspection read model", () => {
     });
 
     await db.insert(schema.gamePlayers).values(
-      ["Atlas", "Echo", "Mira", "Nyx"].map((name) => ({
+      ["Atlas", "Echo", "Mira", "Nyx", "Vera"].map((name) => ({
         id: randomUUID(),
         gameId,
         persona: JSON.stringify({ name, personality: "strategic", personaKey: "strategic" }),
@@ -109,6 +110,13 @@ describe("durable run inspection read model", () => {
     expect(inspection.checkpoints.entries.every((checkpoint) => checkpoint.resumeAvailable === false)).toBeTrue();
     expect(inspection.evidence.totalCount).toBe(0);
     expect(inspection.diagnostics).toEqual([]);
+
+    const transcriptRows = await db
+      .select()
+      .from(schema.transcripts)
+      .where(eq(schema.transcripts.gameId, gameId));
+    expect(transcriptRows.some((row) => row.phase === "DIARY_ROOM" && row.text === "--- Diary Room (after COUNCIL) ---")).toBeTrue();
+    expect(transcriptRows.some((row) => row.phase === "DIARY_ROOM" && row.scope === "diary" && row.text === "diary entry")).toBeTrue();
   });
 
   test("summarizes API kernel events, checkpoints, and private trace manifests without exposing raw content", async () => {

@@ -12,6 +12,7 @@ import {
   GameRunner,
   InfluenceAgent,
   LLMHouseInterviewer,
+  Phase,
   TokenTracker,
   createLlmClientFromEnv,
   estimateCost,
@@ -528,6 +529,38 @@ async function persistCompletedGame(
 // Start a game
 // ---------------------------------------------------------------------------
 
+export function buildEngineConfigFromGameRecord(
+  gameConfig: Record<string, unknown>,
+  minPlayers: number,
+  maxPlayers: number,
+): GameConfig {
+  const defaultTimers = {
+    introduction: 30000,
+    lobby: 30000,
+    mingle: 45000,
+    rumor: 30000,
+    vote: 20000,
+    power: 15000,
+    council: 20000,
+  };
+  const storedTimers = (gameConfig.timers ?? {}) as Record<string, number>;
+
+  const roomPhaseTimer = storedTimers.mingle ?? defaultTimers.mingle;
+  const { whisper: _unsupportedWhisperTimer, ...currentTimers } = storedTimers;
+
+  return {
+    maxRounds: (gameConfig.maxRounds as number) ?? 10,
+    minPlayers,
+    maxPlayers,
+    timers: {
+      ...defaultTimers,
+      ...currentTimers,
+      mingle: roomPhaseTimer,
+    },
+    diaryRoomAfterPhases: [Phase.COUNCIL],
+  };
+}
+
 export async function startGame(
   db: DrizzleDB,
   gameId: string,
@@ -623,31 +656,7 @@ export async function startGame(
     return agent;
   });
 
-  // Build engine GameConfig
-  const defaultTimers = {
-    introduction: 30000,
-    lobby: 30000,
-    mingle: 45000,
-    rumor: 30000,
-    vote: 20000,
-    power: 15000,
-    council: 20000,
-  };
-  const storedTimers = (gameConfig.timers ?? {}) as Record<string, number>;
-
-  const roomPhaseTimer = storedTimers.mingle ?? defaultTimers.mingle;
-  const { whisper: _unsupportedWhisperTimer, ...currentTimers } = storedTimers;
-
-  const engineConfig: GameConfig = {
-    maxRounds: (gameConfig.maxRounds as number) ?? 10,
-    minPlayers: game.minPlayers,
-    maxPlayers: game.maxPlayers,
-    timers: {
-      ...defaultTimers,
-      ...currentTimers,
-      mingle: roomPhaseTimer,
-    },
-  };
+  const engineConfig = buildEngineConfigFromGameRecord(gameConfig, game.minPlayers, game.maxPlayers);
 
   const houseInterviewer = !useTestMockRunner && llmConfig
     ? new LLMHouseInterviewer(

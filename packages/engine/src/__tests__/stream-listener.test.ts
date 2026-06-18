@@ -147,7 +147,7 @@ describe("GameRunner stream listener", () => {
     }
   });
 
-  it("emits strategic-reflection agent_turn events when enabled", async () => {
+  it("emits the initial strategic-reflection agent_turn after introductions when enabled", async () => {
     const agents = makeAgents(5);
     const runner = new GameRunner(agents, {
       ...FAST_CONFIG,
@@ -164,10 +164,12 @@ describe("GameRunner stream listener", () => {
     const reflection = events.find((event) => event.type === "agent_turn" && event.action === "strategic-reflection");
     expect(reflection).toBeDefined();
     if (reflection?.type === "agent_turn") {
+      expect(reflection.round).toBe(0);
+      expect(reflection.phase).toBe(Phase.INTRODUCTION);
       expect(reflection.visibility).toBe("private");
       expect(reflection.scope).toBe("thinking");
       expect(reflection.response).toMatchObject({
-        reflectedPhase: "VOTE",
+        reflectedPhase: "INTRODUCTION",
         plan: "mock: keep gathering information",
       });
       expect(reflection.response).toHaveProperty("certainties");
@@ -180,7 +182,7 @@ describe("GameRunner stream listener", () => {
       expect(packet.visibility).toBe("private");
       expect(packet.scope).toBe("thinking");
       expect(packet.response).toMatchObject({
-        reflectedPhase: "VOTE",
+        reflectedPhase: "INTRODUCTION",
         strategyPacket: {
           revisionId: "mock-r1",
           objective: "mock: survive while gathering information",
@@ -188,6 +190,13 @@ describe("GameRunner stream listener", () => {
         },
       });
     }
+
+    expect(events.some((event) =>
+      event.type === "agent_turn"
+      && event.action === "strategic-reflection"
+      && event.round <= 1
+      && event.phase === Phase.VOTE
+    )).toBe(false);
 
     const decisionWithReceipt = events.find((event) =>
       event.type === "agent_turn"
