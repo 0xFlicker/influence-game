@@ -1,7 +1,7 @@
 import type { PhaseContext } from "../game-runner.types";
 import type { UUID } from "../types";
 import { Phase } from "../types";
-import { assertCanAcceptCommit, strategyPacketUseResponse, transcriptThinkingFor, type PhaseRunnerContext } from "./phase-runner-context";
+import { assertCanAcceptCommit, strategicDecisionResponse, transcriptThinkingFor, type PhaseRunnerContext } from "./phase-runner-context";
 
 function getVoterNames(
   votes: Record<UUID, UUID>,
@@ -90,7 +90,7 @@ export async function handleElimination(
       exposedBy: eliminationContext?.exposedBy,
       councilVoters: eliminationContext?.councilVoters,
       eliminationVoters: eliminationContext?.eliminationVoters,
-      ...strategyPacketUseResponse(lastMsgResponse.strategyPacketUse),
+      ...strategicDecisionResponse(lastMsgResponse),
     },
     thinking: lastMsgResponse.thinking,
     reasoningContext: lastMsgResponse.reasoningContext,

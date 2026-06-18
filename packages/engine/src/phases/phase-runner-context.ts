@@ -12,7 +12,7 @@ import type { DiaryRoom } from "../diary-room";
 import type { IHouseInterviewer } from "../house-interviewer";
 import type { createPhaseMachine } from "../phase-machine";
 import type { UUID, GameConfig, Phase } from "../types";
-import type { IAgent, StrategyPacketUseMarker } from "../game-runner.types";
+import type { IAgent, StrategicDecisionMetadata } from "../game-runner.types";
 
 export type PhaseActor = ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>;
 
@@ -59,8 +59,11 @@ export function transcriptThinkingFor(
   };
 }
 
-export function strategyPacketUseResponse(
-  marker?: StrategyPacketUseMarker,
-): { strategyPacketUse?: StrategyPacketUseMarker } {
-  return marker ? { strategyPacketUse: marker } : {};
+export function strategicDecisionResponse(
+  metadata?: StrategicDecisionMetadata,
+): StrategicDecisionMetadata {
+  if (!metadata) return {};
+  return {
+    ...(metadata.decisionLog ? { decisionLog: metadata.decisionLog } : {}),
+  };
 }

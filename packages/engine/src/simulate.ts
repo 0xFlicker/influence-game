@@ -52,8 +52,8 @@
  * creates an unresolved replacement.
  * Hidden `strategic-reflection` and `strategy-packet` records are written there
  * when `--strategic-reflections` is enabled for validation runs. Later private
- * decisions may include `strategicLens` and `strategyPacketUse`
- * markers for searchable producer/debug validation.
+ * decisions may include `strategicLens` and `decisionLog` fields for searchable
+ * producer/debug validation.
  *
  * Prompt-continuity validation should check the current-board contract in
  * player prompts, phase-specific vote/Council/endgame rules, typed recent
@@ -1278,7 +1278,7 @@ async function main() {
 
     console.log(`  Players: ${agents.map((a) => a.name).join(", ")}`);
 
-    const houseInterviewer = new LLMHouseInterviewer(openai, args.model);
+    const houseInterviewer = new LLMHouseInterviewer(openai, args.model, { toolChoiceMode: llmConfig.toolChoiceMode });
     houseInterviewer.setTokenTracker(gameTracker);
     const runner = new GameRunner(agents, simConfig, houseInterviewer);
     const transcriptPath = join(batchDir, `game-${g}.txt`);

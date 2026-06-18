@@ -9,7 +9,7 @@ const smokeTest = process.env.INFLUENCE_PRIVATE_TRACE_S3_SMOKE === "1" ? test : 
 
 function makeTrace(gameId: string, ownerEpoch: string): PrivateDecisionTrace {
   return {
-    version: 1,
+    version: 2,
     gameId,
     ownerEpoch,
     action: "vote",

@@ -248,8 +248,8 @@ export interface AgentResponse {
    * Captured alongside `thinking` for richer simulation traces.
    */
   reasoningContext?: string;
-  /** Private producer/debug linkage describing how the current strategy packet informed this response. */
-  strategyPacketUse?: StrategyPacketUseMarker;
+  /** Private producer/debug receipt describing what this action meant strategically. */
+  decisionLog?: string | null;
   /** Private producer/debug frame describing the main evidence lens for this response. */
   strategicLens?: StrategicLens;
   /** Compact private rationale for the selected strategic lens. */
@@ -295,7 +295,7 @@ export interface PrivateDecisionTraceContext {
 }
 
 export interface PrivateDecisionTrace {
-  version: 1;
+  version: 2;
   gameId?: UUID;
   ownerEpoch?: string;
   action: string;
@@ -321,22 +321,24 @@ export interface PrivateDecisionTrace {
   reasoningContext?: string;
   toolName?: string;
   toolArguments?: unknown;
-  strategyPacketUse?: StrategyPacketUseMarker;
+  decisionLog?: string;
   strategyPacketRevision?: string;
   boundary?: PrivateDecisionTraceBoundary;
 }
 
 export type PrivateTraceSink = (trace: PrivateDecisionTrace) => Promise<void> | void;
 
-export type StrategyPacketUse = "followed" | "revised" | "ignored" | "deferred";
+export interface StrategicDecisionMetadata {
+  /** Compact private receipt tied to the current action, not raw hidden reasoning. */
+  decisionLog?: string | null;
+}
 
-export interface StrategyPacketUseMarker {
-  /** Revision ID of the live strategy packet that was visible in the prompt. */
-  strategyPacketRevision: string;
-  /** Self-reported linkage evidence from the same decision call. */
-  strategyPacketUse: StrategyPacketUse;
-  /** Compact rationale tied to the current evidence and decision. */
-  strategyPacketUseRationale: string;
+export interface StrategicDecisionReceipt {
+  round: number;
+  phase: Phase;
+  action: string;
+  label: string;
+  decisionLog: string;
 }
 
 export interface StrategyPacketSummary {
@@ -540,8 +542,8 @@ export interface MingleTurnAction {
   gotoPlayerName?: string | null;
   /** Raw model reasoning context from local LLM */
   reasoningContext?: string;
-  /** Private producer/debug linkage to the current strategy packet, if one was present. */
-  strategyPacketUse?: StrategyPacketUseMarker;
+  /** Private producer/debug strategic decision metadata for this action. */
+  decisionLog?: string | null;
 }
 
 export interface MingleIntentAction extends MingleIntentSummaryBase {
@@ -549,8 +551,8 @@ export interface MingleIntentAction extends MingleIntentSummaryBase {
   thinking?: string;
   /** Raw model reasoning context from local LLM */
   reasoningContext?: string;
-  /** Private producer/debug linkage to the current strategy packet, if one was present. */
-  strategyPacketUse?: StrategyPacketUseMarker;
+  /** Private producer/debug strategic decision metadata for this action. */
+  decisionLog?: string | null;
 }
 
 export interface StrategicReflectionAction {
@@ -575,14 +577,14 @@ export interface TargetDecision {
   target: UUID;
   thinking?: string;
   reasoningContext?: string;
-  strategyPacketUse?: StrategyPacketUseMarker;
+  decisionLog?: string | null;
 }
 
 export interface EmpowerRevoteAction {
   empowerTarget: UUID;
   thinking?: string;
   reasoningContext?: string;
-  strategyPacketUse?: StrategyPacketUseMarker;
+  decisionLog?: string | null;
 }
 
 export interface CandidateChoiceRequest {
@@ -598,7 +600,7 @@ export interface CandidateSelectionDecision {
   selectedCandidateIds: UUID[];
   thinking?: string;
   reasoningContext?: string;
-  strategyPacketUse?: StrategyPacketUseMarker;
+  decisionLog?: string | null;
 }
 
 export interface PowerActionOptions {
@@ -608,7 +610,7 @@ export interface PowerActionOptions {
 export interface PowerActionDecision extends PowerAction {
   thinking?: string;
   reasoningContext?: string;
-  strategyPacketUse?: StrategyPacketUseMarker;
+  decisionLog?: string | null;
   shieldPullUpCandidateIds?: UUID[];
 }
 
@@ -681,7 +683,7 @@ export interface IAgent {
   /** Called to collect votes */
   getVotes(
     context: PhaseContext,
-  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }>;
+  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
   /** Called only for an empower tie revote. Expose vote is already recorded and does not change. */
   getEmpowerRevote(
     context: PhaseContext,
@@ -709,7 +711,7 @@ export interface IAgent {
   getCouncilVote(
     context: PhaseContext,
     candidates: [UUID, UUID],
-  ): Promise<{ target: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }>;
+  ): Promise<{ target: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
   /** Called when the agent is about to be eliminated */
   getLastMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called for diary room interviews — the House asks a question, agent responds */

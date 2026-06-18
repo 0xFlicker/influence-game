@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "crypto";
-import type { PrivateDecisionTrace, PrivateDecisionTraceBoundary, StrategyPacketUseMarker } from "@influence/engine";
+import type { PrivateDecisionTrace, PrivateDecisionTraceBoundary } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { assertPrivateContentStoragePointer, createEvidenceManifest, markEvidenceDegraded } from "./game-evidence.js";
 import {
@@ -41,7 +41,7 @@ export type WritePrivateTraceResult =
   | { ok: false; error: string };
 
 export interface PrivateTraceManifestMetadata {
-  formatVersion: 1;
+  formatVersion: 2;
   contentType: typeof PRIVATE_TRACE_CONTENT_TYPE;
   byteLength: number;
   recordCount: 1;
@@ -62,9 +62,11 @@ export interface PrivateTraceManifestMetadata {
   emittedThinkingByteLength: number;
   reasoningContextByteLength: number;
   toolName?: string;
+  strategicDecision?: {
+    decisionLogBytes?: number;
+  };
   strategyPacket?: {
     revision?: string;
-    use?: StrategyPacketUseMarker["strategyPacketUse"];
   };
   boundary?: PrivateDecisionTraceBoundary;
   createdAt: string;
@@ -96,9 +98,8 @@ function traceStorageKey(gameId: string, trace: PrivateDecisionTrace, now: Date)
 }
 
 function buildTraceMetadata(trace: PrivateDecisionTrace, body: string, createdAt: string): PrivateTraceManifestMetadata {
-  const strategyPacketUse = trace.strategyPacketUse?.strategyPacketUse;
   return {
-    formatVersion: 1,
+    formatVersion: 2,
     contentType: PRIVATE_TRACE_CONTENT_TYPE,
     byteLength: Buffer.byteLength(body, "utf8"),
     recordCount: 1,
@@ -119,10 +120,14 @@ function buildTraceMetadata(trace: PrivateDecisionTrace, body: string, createdAt
     emittedThinkingByteLength: byteLength(trace.emittedThinking),
     reasoningContextByteLength: byteLength(trace.reasoningContext),
     ...(trace.toolName && { toolName: trace.toolName }),
-    ...((trace.strategyPacketRevision || strategyPacketUse) && {
+    ...(trace.decisionLog && {
+      strategicDecision: {
+        decisionLogBytes: byteLength(trace.decisionLog),
+      },
+    }),
+    ...(trace.strategyPacketRevision && {
       strategyPacket: {
-        ...(trace.strategyPacketRevision && { revision: trace.strategyPacketRevision }),
-        ...(strategyPacketUse && { use: strategyPacketUse }),
+        revision: trace.strategyPacketRevision,
       },
     }),
     ...(trace.boundary && { boundary: trace.boundary }),

@@ -420,17 +420,12 @@ describe("InfluenceAgent tool-call fallbacks", () => {
               items: { type: "string" },
               description: "Replacement candidate names to pull up if protecting a current Council candidate creates an unresolved replacement slot; otherwise use an empty array",
             },
-            strategyPacketUse: {
+            decisionLog: {
               type: ["string", "null"],
-              enum: ["followed", "revised", "ignored", "deferred", null],
-              description: "If a Strategy Thread is present, classify how this decision used it: followed, revised, ignored, or deferred. Use null when no Strategy Thread is present.",
-            },
-            strategyPacketUseRationale: {
-              type: ["string", "null"],
-              description: "Compact producer/debug rationale tied to current evidence, or null when no Strategy Thread is present.",
+              description: "Compact private producer/debug receipt for what this action means strategically. Use null when there is no meaningful strategic note.",
             },
           },
-          required: ["thinking", "action", "target", "shieldPullUpCandidates", "strategyPacketUse", "strategyPacketUseRationale"],
+          required: ["thinking", "action", "target", "shieldPullUpCandidates", "decisionLog"],
           additionalProperties: false,
         },
       },

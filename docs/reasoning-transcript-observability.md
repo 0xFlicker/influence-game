@@ -22,16 +22,16 @@ This observability layer exists because "master wants to see reasoning for votin
 
 Decision methods on `IAgent` / `InfluenceAgent` return the extra fields (typed on the interface and impl):
 
-- `getMingleIntent(...)` → `{ seekPlayers: string[]; avoidPlayers: string[]; preferredRoomSize: ...; purpose: string; provisionalTarget: string | null; noTargetReason: string | null; openingAsk: string; strategicLens: StrategicLens; strategicLensRationale: string; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
-- `takeMingleTurn(...)` → `{ thinking?: string; message?: string | null; noReply?: boolean; gotoRoomId?: number | null; gotoPlayerName?: string | null; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
-- `getRumorMessage(...)` → `{ thinking: string; message: string; strategicLens?: StrategicLens; strategicLensRationale?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
-- `getVotes(...)` → `{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
-- `getEmpowerRevote(...)` → `{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
-- `getCandidateSelection(...)` → `{ selectedCandidateIds: UUID[]; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
-- `getPowerAction(...)` → `PowerAction & { thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker; shieldPullUpCandidateIds?: UUID[] }`
-- `getCouncilVote(...)` → `{ target: UUID; thinking?: string; reasoningContext?: string; strategyPacketUse?: StrategyPacketUseMarker }`
+- `getMingleIntent(...)` → `{ seekPlayers: string[]; avoidPlayers: string[]; preferredRoomSize: ...; purpose: string; provisionalTarget: string | null; noTargetReason: string | null; openingAsk: string; strategicLens: StrategicLens; strategicLensRationale: string; thinking?: string; reasoningContext?: string; decisionLog?: string | null }`
+- `takeMingleTurn(...)` → `{ thinking?: string; message?: string | null; noReply?: boolean; gotoRoomId?: number | null; gotoPlayerName?: string | null; reasoningContext?: string; decisionLog?: string | null }`
+- `getRumorMessage(...)` → `{ thinking: string; message: string; strategicLens?: StrategicLens; strategicLensRationale?: string; reasoningContext?: string; decisionLog?: string | null }`
+- `getVotes(...)` → `{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }`
+- `getEmpowerRevote(...)` → `{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }`
+- `getCandidateSelection(...)` → `{ selectedCandidateIds: UUID[]; thinking?: string; reasoningContext?: string; decisionLog?: string | null }`
+- `getPowerAction(...)` → `PowerAction & { thinking?: string; reasoningContext?: string; decisionLog?: string | null; shieldPullUpCandidateIds?: UUID[] }`
+- `getCouncilVote(...)` → `{ target: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }`
 - `getStrategicReflection(...)` → `{ certainties: string[]; suspicions: string[]; allies: string[]; threats: string[]; plan: string; strategicLens: StrategicLens; strategicLensRationale: string; strategyPacket?: StrategyPacketSummary; thinking?: string; reasoningContext?: string } | null`
-- `getEndgameEliminationVote(...)` / `getJuryVote(...)` → `{ target: UUID; thinking?: string; reasoningContext?: string }`
+- `getEndgameEliminationVote(...)` / `getJuryVote(...)` → `{ target: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }`
 
 (Similar treatment for public messages, `getPowerLobbyMessage`, diary entries, accusations, jury questions, etc.)
 
@@ -42,12 +42,12 @@ Phase runners receive the rich result, record only the narrow game-state value w
 - `phases/power.ts`: `logger.logSystem(..., powerActionResult.thinking, powerActionResult.reasoningContext)`
 - `phases/power.ts`: emits private `power-action` agent turns; when Protect removes a candidate and the replacement slot is unresolved, the same turn carries `response.shieldPullUp` with eligible choices, selected replacement, fallback status, and resolved candidates.
 - `phases/council.ts`: `logger.logSystem(..., voteResult.thinking, voteResult.reasoningContext)`
-- `phases/mingle.ts`: emits hidden `mingle-intent` agent turns before House room assignment, records private `mingle-room-assignment` turns with `assignmentSource` (`house`, `repaired`, `fallback`, or later-beat `movement`), repair notes, and summary-only intent metadata including `strategicLens`, then records private Mingle turn responses with `gotoRoomId`, `gotoPlayerName`, `gotoStatus`, and `strategyPacketUse` rather than viewer-facing room text. Mingle room numbers remain stable within a Mingle phase; `beat`/turn carries the temporal distinction.
+- `phases/mingle.ts`: emits hidden `mingle-intent` agent turns before House room assignment, records private `mingle-room-assignment` turns with `assignmentSource` (`house`, `repaired`, `fallback`, or later-beat `movement`), repair notes, and summary-only intent metadata including `strategicLens`, then records private Mingle turn responses with `gotoRoomId`, `gotoPlayerName`, `gotoStatus`, and `decisionLog` rather than viewer-facing room text. Mingle room numbers remain stable within a Mingle phase; `beat`/turn carries the temporal distinction.
 - `diary-room.ts`: emits hidden `strategic-reflection` and `strategy-packet` agent turns when `enableStrategicReflections` is enabled and the reflection produces a packet. Reflection and packet records include the selected strategic lens.
 - `diary-room.ts`: emits private `house-producer-brief` agent turns before diary questions when `enableHouseProducerBriefs` is enabled. The brief can sharpen the House's question but must separate safe-to-reveal material from private producer reads.
 - `game-runner.ts`: emits one House interstitial after each completed normal round. `house-mc-summary` records plus clean House system transcript prose are on by default unless `enableHouseRoundSummaries` is `false`; `house-strategy-bible` and `house-long-form-summary` are private producer/debug records gated by rich producer config.
 - Every phase runner that resolves an agent call also emits an `agent_turn` stream event via `logger.emitAgentTurn(...)` with the normalized response the game used.
-- Decision agent turns include `response.strategyPacketUse` only when a live Strategy Thread packet existed and the model self-reported how the decision used it (`followed`, `revised`, `ignored`, or `deferred`).
+- Decision agent turns can include `response.decisionLog` as a compact private receipt of what the action meant strategically. Strategy Thread revision evidence remains separate from the decision note and is produced by the regular strategic-reflection cadence.
 - Mingle intent and strategic-reflection records include `response.strategicLens` and `response.strategicLensRationale` so validation can distinguish vote math, room traffic, coalition geometry, promise debt, social cover, broad reads, and sparse presentation reads without parsing prose.
 
 `AgentTurnEvent` (game-runner.types.ts) is the structured simulation-analysis shape:
@@ -187,6 +187,7 @@ See `docs/local-model-evaluation.md` for the full provider table. Key points tha
 - `INFLUENCE_LLM_TOOL_CHOICE_MODE=required` (default for local base URLs) + `json_schema` fallback. Local servers often reject object `tool_choice`.
 - `extractReasoningContext` (with a deprecated `extractNativeThinking` wrapper) pulls only the raw `reasoning_content` / hidden channel and attaches it exclusively as `reasoningContext`. It never falls back to the agent's emitted "thinking".
 - `REASONING_TOKEN_OVERHEAD`, `REASONING_OVERHEAD_HIGH/LOW`, and the `local*MinTokens` floors (`INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS`, `INFLUENCE_LLM_LOCAL_MESSAGE_MIN_TOKENS`) give reasoning models room before the visible/structured payload.
+- House Mingle room assignment is a direct House call, not an agent tool call, but it uses strict JSON Schema output and the local structured token floor before deterministic assignment fallback.
 - Local paths no longer omit the `thinking` field from decision tool schemas. Agents are still expected to emit their internal reasoning (the "thinking" the prompts and schemas solicit). The raw hidden server channel (if present) is captured *separately* into `reasoningContext` only and never overwrites the emitted `thinking`. This gives high-contrast bright-white `thinking:` + bright-cyan `reasoning:` in --chatty for local models.
 - `--chatty` + long timeouts (`--game-timeout-sec`, `--llm-timeout-sec`) are the recommended way to watch Mingle hardening and decision quality in real time.
 
@@ -246,7 +247,7 @@ In simulation batches under `packages/engine/docs/simulations/`, each game write
 - `game-N-turns.jsonl`: one clean structured JSON record per agent turn, including the normalized response the game used plus `thinking` and `reasoningContext` when available.
 - `game-N-events.jsonl`: one clean canonical domain event record per accepted game-state fact. Replay this through `replayCanonicalEvents(...)` to rebuild the game projection; do not parse transcript prose as board state. API-backed games persist the same canonical envelope in Postgres for live runs, while CLI simulations remain local JSONL artifacts unless a future import path explicitly loads them.
 
-`game-N-turns.jsonl` always includes hidden `mingle-intent` records and House `mingle-room-assignment` records. Mingle intent player-target fields are normalized to living, non-self players before House assignment; stale names may remain only as historical prose context or `repairNotes`, not as active `seekPlayers`, `avoidPlayers`, or `provisionalTarget`. It includes private `candidate-selection` records when exposure-bench ambiguity requires an empowered-player choice, and private `power-action` records carry `response.shieldPullUp` when Protect bundles an unresolved replacement choice. It includes `house-mc-summary` records by default because `enableHouseRoundSummaries` is enabled in simulation config. It includes hidden `strategic-reflection` and `strategy-packet` records when the simulator is run with `--strategic-reflections` (or `INFLUENCE_SIM_STRATEGIC_REFLECTIONS=true`) and the reflection produces a packet. It includes private `house-strategy-bible`, `house-long-form-summary`, and `house-producer-brief` records when the simulator is run with `--rich-producer` (or `INFLUENCE_SIM_RICH_PRODUCER=true`). Later private decision records may include `response.strategyPacketUse` markers that link a decision back to the packet revision as self-reported linkage evidence. These records are producer/debug artifacts only; they are not player-visible speech.
+`game-N-turns.jsonl` always includes hidden `mingle-intent` records and House `mingle-room-assignment` records. Mingle intent player-target fields are normalized to living, non-self players before House assignment; stale names may remain only as historical prose context or `repairNotes`, not as active `seekPlayers`, `avoidPlayers`, or `provisionalTarget`. It includes private `candidate-selection` records when exposure-bench ambiguity requires an empowered-player choice, and private `power-action` records carry `response.shieldPullUp` when Protect bundles an unresolved replacement choice. It includes `house-mc-summary` records by default because `enableHouseRoundSummaries` is enabled in simulation config. It includes hidden `strategic-reflection` and `strategy-packet` records when the simulator is run with `--strategic-reflections` (or `INFLUENCE_SIM_STRATEGIC_REFLECTIONS=true`) and the reflection produces a packet. It includes private `house-strategy-bible`, `house-long-form-summary`, and `house-producer-brief` records when the simulator is run with `--rich-producer` (or `INFLUENCE_SIM_RICH_PRODUCER=true`). Later private decision records may include `response.decisionLog` receipts that explain pivots for normal Strategy Thread reflection. These records are producer/debug artifacts only; they are not player-visible speech.
 
 Recommended invocation for Mingle + visibility work:
 
@@ -268,8 +269,8 @@ Useful validation queries:
 - `search_logs` over `sources: ["turns"]` for `repairNotes`, `seekPlayers`, `avoidPlayers`, or `provisionalTarget`
 - `search_logs` over `sources: ["turns"]` for `strategic-reflection`
 - `search_logs` over `sources: ["turns"]` for `strategy-packet`
-- `search_logs` over `sources: ["turns"]` for `strategyPacketUse` or a packet `revisionId`
-- `search_logs` over `sources: ["turns"]` for `gotoPlayerName`, `gotoStatus`, or `strategyPacketUse`
+- `search_logs` over `sources: ["turns"]` for `decisionLog` or a packet `revisionId`
+- `search_logs` over `sources: ["turns"]` for `gotoPlayerName`, `gotoStatus`, or `decisionLog`
 - `search_logs` over `sources: ["turns"]` for `candidate-selection`, `power-action`, `shieldPullUp`, `selectedCandidates`, or `fallbackReason`
 - `search_logs` over `sources: ["turns", "transcript"]` for `house-mc-summary` or legacy `[House MC]`
 - `search_logs` over `sources: ["turns"]` for `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or a House alliance name
@@ -288,9 +289,9 @@ Update simulation batch notes (the dated `.md` next to `results.json` etc.) with
 - Do Judgment juror question prompts receive questions-only history while finalist answer, closing, and jury-vote prompts can still use full Q&A history?
 - Do House MC summaries lead with consequence, leverage, debt, heat, and next tension while keeping deterministic round facts in `response.roundFacts`?
 - Does the Strategic Play Menu stay hidden in system prompt context and avoid leaking into public player-visible messages?
-- If Strategy Thread packets changed, can MCP `search_logs` find a `strategy-packet` record plus a later `strategyPacketUse` marker?
+- If Strategy Thread packets changed, can MCP `search_logs` find a `strategy-packet` record plus later `decisionLog` evidence that explains whether the agent carried, revised, or deferred the strategy?
 - If House producer carry-forward changed, can MCP `search_logs` find `house-strategy-bible`, `house-mc-summary`, `house-long-form-summary`, and `house-producer-brief` records in a rich producer run?
-- Are packet content and packet-use markers absent from websocket-visible events and canonical board state?
+- Are packet content and decision logs absent from websocket-visible events and canonical board state?
 - Do API durable events, simulator JSONL records, and replay/projection tests still use the same `CanonicalGameEvent` envelope?
 - Do mocks and tests compile and pass with the new shapes?
 - If checkpoint continuity or hydration-passport fields changed, does an admin durable-run route or service test prove the response exposes stamp/status facts without raw private continuity, and does at least one real `GameRunner` checkpoint prove drained transcript-buffer and sealed token-boundary evidence?

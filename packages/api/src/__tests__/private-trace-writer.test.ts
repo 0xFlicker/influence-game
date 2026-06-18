@@ -6,6 +6,7 @@ import { schema } from "../db/index.js";
 import type { PrivateTracePutObjectInput, PrivateTraceStorageAdapter } from "../services/private-trace-storage.js";
 import { PRIVATE_TRACE_CONTENT_TYPE, PRIVATE_TRACE_STORAGE_PROVIDER } from "../services/private-trace-storage.js";
 import { PRIVATE_TRACE_EVIDENCE_TYPE, writePrivateDecisionTrace } from "../services/private-trace-writer.js";
+import { PrivateTraceReadModel } from "../services/private-trace-read-model.js";
 import { insertGame, insertOwner } from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
 
@@ -51,7 +52,7 @@ class FakePrivateTraceStorage implements PrivateTraceStorageAdapter {
 
 function makeTrace(overrides: Partial<PrivateDecisionTrace> = {}): PrivateDecisionTrace {
   return {
-    version: 1,
+    version: 2,
     gameId: "game-1",
     ownerEpoch: "owner-1",
     action: "vote",
@@ -110,11 +111,7 @@ function makeTrace(overrides: Partial<PrivateDecisionTrace> = {}): PrivateDecisi
       reasoningContext: "native reasoning secret",
     },
     strategyPacketRevision: "r1-vote-1",
-    strategyPacketUse: {
-      strategyPacketRevision: "r1-vote-1",
-      strategyPacketUse: "followed",
-      strategyPacketUseRationale: "The vote followed the packet.",
-    },
+    decisionLog: "The vote followed the packet by rewarding Mira and pressuring Vera.",
     boundary: {
       currentEventSequence: 7,
       currentEventHash: "sha256:event-head",
@@ -203,7 +200,7 @@ describe("private trace writer", () => {
 
     const metadata = manifest!.metadata as Record<string, unknown>;
     expect(metadata).toMatchObject({
-      formatVersion: 1,
+      formatVersion: 2,
       contentType: PRIVATE_TRACE_CONTENT_TYPE,
       recordCount: 1,
       action: "vote",
@@ -212,9 +209,11 @@ describe("private trace writer", () => {
       modelName: "gpt-5-nano",
       promptMessageCount: 2,
       toolName: "cast_votes",
+      strategicDecision: {
+        decisionLogBytes: expect.any(Number),
+      },
       strategyPacket: {
         revision: "r1-vote-1",
-        use: "followed",
       },
     });
     expect(metadata.byteLength).toBeGreaterThan(0);
@@ -224,6 +223,19 @@ describe("private trace writer", () => {
     expect(JSON.stringify(metadata)).not.toContain("full prompt secret");
     expect(JSON.stringify(metadata)).not.toContain("native reasoning secret");
     expect(JSON.stringify(metadata)).not.toContain("private thought secret");
+
+    const readModel = new PrivateTraceReadModel(db, storage);
+    const index = await readModel.listManifests(gameId);
+    expect(index.manifests[0]).toMatchObject({
+      id: result.manifestId,
+      strategicDecision: {
+        decisionLogBytes: expect.any(Number),
+      },
+      strategyPacket: {
+        revision: "r1-vote-1",
+      },
+    });
+    expect(JSON.stringify(index.manifests[0])).not.toContain("The vote followed the packet");
   });
 
   test("does not create a manifest when private storage fails and marks trace diagnostics degraded", async () => {

@@ -8,6 +8,7 @@
 
 import type OpenAI from "openai";
 import type { ChatCompletion } from "openai/resources/chat/completions";
+import type { LlmToolChoiceMode } from "./llm-client";
 import { Phase } from "./types";
 import type { MingleIntentSummary, UUID } from "./types";
 import type { TokenTracker } from "./token-tracker";
@@ -134,6 +135,8 @@ export interface LLMHouseInterviewerOptions {
   privateTraceSink?: PrivateTraceSink;
   gameId?: UUID;
   ownerEpoch?: string;
+  toolChoiceMode?: LlmToolChoiceMode;
+  structuredOutputTimeoutMs?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,12 +182,7 @@ function extractJsonObject(raw: string): Record<string, unknown> | null {
   }
 }
 
-function parseHouseMingleAssignment(raw: string): HouseMingleAssignmentResult {
-  const parsed = extractJsonObject(raw);
-  if (!parsed) {
-    return { rooms: [], rationale: "House assignment response was not parseable JSON." };
-  }
-
+function parseHouseMingleAssignmentRecord(parsed: Record<string, unknown>): HouseMingleAssignmentResult {
   const rawRooms = Array.isArray(parsed.rooms) ? parsed.rooms : [];
   const rooms = rawRooms
     .map((room): HouseMingleRoomAssignment | null => {
@@ -406,6 +404,8 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   private readonly privateTraceSink?: PrivateTraceSink;
   private readonly privateTraceGameId?: UUID;
   private readonly privateTraceOwnerEpoch?: string;
+  private readonly toolChoiceMode: LlmToolChoiceMode;
+  private readonly structuredOutputTimeoutMs: number;
   private tokenTracker: TokenTracker | null = null;
 
   constructor(openaiClient: OpenAI, model = "gpt-5-nano", options: LLMHouseInterviewerOptions = {}) {
@@ -414,6 +414,8 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     this.privateTraceSink = options.privateTraceSink;
     this.privateTraceGameId = options.gameId;
     this.privateTraceOwnerEpoch = options.ownerEpoch;
+    this.toolChoiceMode = options.toolChoiceMode ?? "named";
+    this.structuredOutputTimeoutMs = options.structuredOutputTimeoutMs ?? 45_000;
   }
 
   /** Attach a token tracker to record LLM usage. */
@@ -508,7 +510,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     const toolCalls = LLMHouseInterviewer.privateTraceToolCalls(message);
     const content = typeof message?.content === "string" ? message.content : null;
     const trace: PrivateDecisionTrace = {
-      version: 1,
+      version: 2,
       ...(params.context.gameId && { gameId: params.context.gameId }),
       ...(params.context.ownerEpoch && { ownerEpoch: params.context.ownerEpoch }),
       action: params.context.action,
@@ -552,6 +554,123 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
         : { max_tokens: budget }),
       ...(!isGpt5 && !isReasoning && { temperature }),
     };
+  }
+
+  private usesLocalStructuredCompatibility(): boolean {
+    return this.toolChoiceMode !== "named";
+  }
+
+  private localStructuredMinTokens(): number {
+    const configured =
+      process.env.INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS ??
+      process.env.INFLUENCE_LLM_STRUCTURED_MIN_TOKENS;
+    const parsed = configured ? parseInt(configured, 10) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 4096;
+  }
+
+  private applyStructuredTokenFloor(maxTokens: number): number {
+    if (!this.usesLocalStructuredCompatibility()) return maxTokens;
+    return Math.max(maxTokens, this.localStructuredMinTokens());
+  }
+
+  private structuredOutputSignal(): AbortSignal | undefined {
+    if (this.structuredOutputTimeoutMs < 1) return undefined;
+    return AbortSignal.timeout(this.structuredOutputTimeoutMs);
+  }
+
+  private parseStructuredJsonContent(content: string | null | undefined): Record<string, unknown> | null {
+    const text = content?.trim();
+    if (!text) return null;
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+      return parsed as Record<string, unknown>;
+    } catch {
+      return extractJsonObject(text);
+    }
+  }
+
+  private async callHouseJsonSchema(params: {
+    action: string;
+    source: string;
+    round: number;
+    phase: Phase;
+    messages: Array<{ role: "system" | "user"; content: string }>;
+    schemaName: string;
+    schema: Record<string, unknown>;
+    maxTokens: number;
+    temperature: number;
+  }): Promise<{ parsed: Record<string, unknown>; response: ChatCompletion }> {
+    let effectiveMaxTokens = this.applyStructuredTokenFloor(params.maxTokens);
+    const maxAttempts = 2;
+    let lastError: Error | null = null;
+    let lastResponse: ChatCompletion | null = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const response = await this.openai.chat.completions.create(
+          {
+            model: this.model,
+            messages: params.messages,
+            response_format: {
+              type: "json_schema",
+              json_schema: {
+                name: params.schemaName,
+                strict: true,
+                schema: params.schema,
+              },
+            },
+            ...this.modelParams(effectiveMaxTokens, params.temperature),
+          },
+          { signal: this.structuredOutputSignal() },
+        );
+        lastResponse = response;
+        this.recordUsage(params.source, response);
+
+        const choice = response.choices[0];
+        if (choice?.message?.refusal) {
+          throw new Error("model_refusal");
+        }
+        if (choice?.finish_reason === "content_filter") {
+          throw new Error("content_filter");
+        }
+        if (choice?.finish_reason === "length") {
+          throw new Error("length");
+        }
+
+        const parsed = this.parseStructuredJsonContent(choice?.message?.content);
+        if (!parsed) {
+          throw new Error("invalid_json");
+        }
+        return { parsed, response };
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        const isNonRetryable =
+          lastError.message === "model_refusal" ||
+          lastError.message === "content_filter" ||
+          lastError.message === "request_aborted" ||
+          lastError.name === "APIUserAbortError" ||
+          lastError.name === "AbortError";
+        const shouldRetry = attempt < maxAttempts && !isNonRetryable;
+        if (!shouldRetry) break;
+        if (lastError.message === "length" || lastError.message === "invalid_json") {
+          effectiveMaxTokens = Math.ceil(effectiveMaxTokens * 1.5);
+        }
+        console.warn(`[house-structured-output] action=${params.action} attempt ${attempt} failed, retrying: ${lastError.message}`);
+      }
+    }
+
+    const failure = lastError ?? new Error("unknown_failure");
+    if (lastResponse) {
+      await this.emitPrivateDecisionTrace({
+        context: this.privateTraceContext(params.action, params.round, params.phase),
+        messages: params.messages,
+        response: lastResponse,
+        output: { error: failure.message },
+      });
+    }
+    console.warn(`[house-structured-output] action=${params.action} failed: ${failure.message}`);
+    throw failure;
   }
 
   async assignMingleRooms(context: HouseMingleAssignmentContext): Promise<HouseMingleAssignmentResult> {
@@ -602,17 +721,45 @@ Respond with JSON only:
         { role: "system" as const, content: "You are the House producer assigning private Mingle rooms. Return JSON only." },
         { role: "user" as const, content: prompt },
       ];
-      const response = await this.openai.chat.completions.create({
-        model: this.model,
+      const { parsed, response } = await this.callHouseJsonSchema({
+        action: "house-mingle-assignment",
+        source: "House/mingle-assignment",
+        round: context.round,
+        phase: Phase.MINGLE,
         messages,
-        response_format: { type: "json_object" },
-        ...this.modelParams(1200, 0.4),
+        schemaName: "house_mingle_assignment",
+        schema: {
+          type: "object",
+          properties: {
+            rooms: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  roomId: { type: "integer" },
+                  playerIds: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
+                },
+                required: ["roomId", "playerIds"],
+                additionalProperties: false,
+              },
+            },
+            rationale: { type: "string" },
+            thinking: { type: ["string", "null"] },
+          },
+          required: ["rooms", "rationale", "thinking"],
+          additionalProperties: false,
+        },
+        maxTokens: 1200,
+        temperature: 0.4,
       });
 
-      this.recordUsage("House/mingle-assignment", response);
-
-      const raw = response.choices[0]?.message?.content?.trim() ?? "";
-      const output = parseHouseMingleAssignment(raw);
+      const output = parseHouseMingleAssignmentRecord({
+        ...parsed,
+        reasoningContext: readString(parsed.reasoningContext) || LLMHouseInterviewer.extractReasoningContext(response.choices[0]?.message),
+      });
       await this.emitPrivateDecisionTrace({
         context: this.privateTraceContext("house-mingle-assignment", context.round, Phase.MINGLE),
         messages,
@@ -621,9 +768,10 @@ Respond with JSON only:
       });
       return output;
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       return {
         rooms: [],
-        rationale: `House assignment failed; deterministic fallback will assign rooms (${err instanceof Error ? err.message : String(err)}).`,
+        rationale: `House assignment failed; deterministic fallback will assign rooms (${message}).`,
       };
     }
   }

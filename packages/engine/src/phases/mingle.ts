@@ -13,7 +13,7 @@ import type {
 import { Phase } from "../types";
 import type { MingleIntentAction, MingleTurnAction } from "../game-runner.types";
 import type { HouseMingleAssignmentResult } from "../house-interviewer";
-import { assertCanAcceptCommit, strategyPacketUseResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import { assertCanAcceptCommit, strategicDecisionResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import { PlayerStatus } from "../types";
 
 /**
@@ -660,7 +660,7 @@ async function runMingleTurn(
         gotoPlayerName: movement.gotoPlayerName,
         gotoRoomIgnored: movement.gotoRoomIgnored,
         gotoStatus: movement.gotoStatus,
-        ...strategyPacketUseResponse(turn.action.strategyPacketUse),
+        ...strategicDecisionResponse(turn.action),
       },
       thinking: turn.action.thinking,
       reasoningContext: turn.action.reasoningContext,
@@ -750,7 +750,7 @@ export async function runMinglePhase(
           response: {
             ...intentSummary,
             ...(normalizedIntent.repairNotes.length > 0 ? { repairNotes: normalizedIntent.repairNotes } : {}),
-            ...strategyPacketUseResponse(normalizedIntent.intent.strategyPacketUse),
+            ...strategicDecisionResponse(normalizedIntent.intent),
           },
           thinking: normalizedIntent.intent.thinking,
           reasoningContext: normalizedIntent.intent.reasoningContext,

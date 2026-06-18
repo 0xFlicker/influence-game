@@ -189,14 +189,15 @@ describe("GameRunner stream listener", () => {
       });
     }
 
-    const decisionUsingPacket = events.find((event) =>
+    const decisionWithReceipt = events.find((event) =>
       event.type === "agent_turn"
       && event.action !== "strategy-packet"
-      && event.response.strategyPacketUse
-      && typeof event.response.strategyPacketUse === "object"
-      && "strategyPacketRevision" in event.response.strategyPacketUse
+      && typeof event.response.decisionLog === "string"
     );
-    expect(decisionUsingPacket).toBeDefined();
+    expect(decisionWithReceipt).toBeDefined();
+    if (decisionWithReceipt?.type === "agent_turn") {
+      expect(decisionWithReceipt.response.decisionLog).toContain("mock:");
+    }
   });
 
   it("runs an additional pre-vote strategic reflection before later-round votes", async () => {

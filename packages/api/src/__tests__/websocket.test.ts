@@ -207,6 +207,7 @@ describe("WebSocket Manager", () => {
       response: {
         empowerTarget: { id: "p2", name: "Bob" },
         exposeTarget: { id: "p3", name: "Charlie" },
+        decisionLog: "Private strategic receipt that must not be broadcast.",
       },
       thinking: "Keep Bob close and pressure Charlie.",
     };

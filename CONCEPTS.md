@@ -54,9 +54,9 @@ A structured producer/debug artifact for an agent's hidden strategic assessment 
 
 A compact private strategy state an agent carries across rounds inside a live game run. It summarizes the agent's current objective, target posture, coalition posture, next intended social probe, important uncertainty, abandon-or-revise trigger, and revision metadata so later prompts can show continuity without forcing target naming or overt game talk. It is live-agent producer/debug state, not player-visible dialogue, canonical board state, or crash-safe `MemoryStore` data.
 
-## Strategy packet-use marker
+## Decision log
 
-A private producer/debug marker on later agent decision records that says how the current decision used the live Strategy Thread revision: `followed`, `revised`, `ignored`, or `deferred`. It is self-reported linkage evidence for simulation and MCP validation, not a scoring system and not a requirement that agents obey the packet.
+A compact private receipt attached to a strategic agent action. It records what the action meant strategically so later prompts and strategic reflection can understand when and why the agent changed course. Decision logs are producer/debug context for the same agent and maintainers; they are not player-visible dialogue, canonical board state, raw thinking, or native reasoning context.
 
 ## Whisper
 
