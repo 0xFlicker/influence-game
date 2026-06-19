@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   createLlmClientFromEnv,
   describeLlmProvider,
+  resolveOpenAIReasoningSummaryMode,
   resolveModelForTier,
   resolveToolChoiceMode,
 } from "../llm-client";
@@ -18,6 +19,7 @@ describe("LLM client env config", () => {
     expect(config?.apiKeySource).toBe("OPENAI_API_KEY");
     expect(config?.baseURL).toBeUndefined();
     expect(config?.providerLabel).toBe("OpenAI");
+    expect(config?.openAIReasoningSummary).toBe("auto");
   });
 
   it("uses a local dummy API key for LM Studio-compatible endpoints", () => {
@@ -29,6 +31,7 @@ describe("LLM client env config", () => {
     expect(config?.apiKeySource).toBe("local-default");
     expect(config?.baseURL).toBe("http://127.0.0.1:1234/v1");
     expect(config?.toolChoiceMode).toBe("required");
+    expect(config?.openAIReasoningSummary).toBeUndefined();
     expect(describeLlmProvider(config!)).toBe(
       "OpenAI-compatible local (http://127.0.0.1:1234/v1)",
     );
@@ -45,6 +48,25 @@ describe("LLM client env config", () => {
     expect(config?.apiKeySource).toBe("INFLUENCE_LLM_API_KEY");
     expect(config?.baseURLSource).toBe("INFLUENCE_LLM_BASE_URL");
     expect(config?.baseURL).toBe("http://127.0.0.1:1234/v1");
+  });
+});
+
+describe("OpenAI reasoning summary config", () => {
+  it("defaults hosted OpenAI to auto summaries", () => {
+    expect(resolveOpenAIReasoningSummaryMode({}, undefined)).toBe("auto");
+  });
+
+  it("supports explicit summary modes for hosted OpenAI", () => {
+    expect(resolveOpenAIReasoningSummaryMode({ INFLUENCE_OPENAI_REASONING_SUMMARY: "concise" }, undefined)).toBe("concise");
+    expect(resolveOpenAIReasoningSummaryMode({ INFLUENCE_OPENAI_REASONING_SUMMARY: "detailed" }, undefined)).toBe("detailed");
+  });
+
+  it("can disable hosted OpenAI reasoning summaries", () => {
+    expect(resolveOpenAIReasoningSummaryMode({ INFLUENCE_OPENAI_REASONING_SUMMARY: "off" }, undefined)).toBeUndefined();
+  });
+
+  it("does not enable summaries for OpenAI-compatible base URLs", () => {
+    expect(resolveOpenAIReasoningSummaryMode({ INFLUENCE_OPENAI_REASONING_SUMMARY: "auto" }, "http://127.0.0.1:1234/v1")).toBeUndefined();
   });
 });
 

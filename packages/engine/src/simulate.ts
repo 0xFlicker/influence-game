@@ -14,6 +14,7 @@
  *   bun run simulate -- --variant mingle --diary
  *   bun run simulate -- --variant mingle --house-summaries
  *   bun run simulate -- --variant mingle --rich-producer
+ *   bun run simulate -- --variant mingle --chatty --reasoning-summary auto
  *
  * Chatty / live formatted transcript (great for watching local model Mingle behavior and per-decision reasoning):
  *   INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
@@ -22,11 +23,12 @@
  *
  * The --chatty output (and written transcripts) now interleave House action lines
  * ("X votes: ...", "Y re-votes: ...", "Z power action: ...") with the agent's
- * hidden `thinking` (bright white) and raw native `reasoningContext` (bright cyan) when present.
+ * hidden `thinking` (bright white) and model-side reasoning evidence (bright cyan)
+ * when present, including raw local `reasoningContext` or labeled OpenAI summaries.
  *
  * Each game also writes:
  * - `game-{N}-turns.jsonl`: clean structured records for normalized agent turns,
- *   including `thinking` and `reasoningContext` when available.
+ *   including `thinking` and `reasoningContext` / labeled provider summaries when available.
  * - `game-{N}-events.jsonl`: clean canonical domain events accepted by the engine,
  *   suitable for replaying into a game projection or serving through the local game MCP.
  *   This is the same canonical envelope persisted by API-backed games; CLI
@@ -99,7 +101,7 @@ import {
   type SimulationRunMetadata,
 } from "./simulation-instrumentation";
 import { createLlmClientFromEnv, describeLlmProvider } from "./llm-client";
-import type { LlmToolChoiceMode } from "./llm-client";
+import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode } from "./llm-client";
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing
@@ -128,12 +130,27 @@ export interface SimArgs {
   richProducer?: boolean;
   /** Enable bounded diary-room sessions in simulation config. */
   enableDiary?: boolean;
+  /** Hosted OpenAI Responses API reasoning summary mode. Null disables it. */
+  openAIReasoningSummary?: OpenAIReasoningSummaryMode | null;
 }
 
 function readPositiveInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseReasoningSummaryArg(value: string | undefined): OpenAIReasoningSummaryMode | null | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (normalized === "auto" || normalized === "concise" || normalized === "detailed") {
+    return normalized;
+  }
+  if (normalized === "off" || normalized === "none" || normalized === "false" || normalized === "disabled") {
+    return null;
+  }
+  console.warn(`Ignoring invalid reasoning summary mode "${value}". Use auto, concise, detailed, or off.`);
+  return undefined;
 }
 
 export function parseArgs(argv = process.argv.slice(2)): SimArgs {
@@ -152,6 +169,7 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
     enableStrategicReflections: process.env.INFLUENCE_SIM_STRATEGIC_REFLECTIONS === "true",
     richProducer: process.env.INFLUENCE_SIM_RICH_PRODUCER === "true",
     enableDiary: process.env.INFLUENCE_SIM_DIARY === "true",
+    openAIReasoningSummary: undefined,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -206,6 +224,11 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       args.enableDiary = true;
     } else if (arg === "--no-diary") {
       args.enableDiary = false;
+    } else if (arg === "--reasoning-summary" && next) {
+      args.openAIReasoningSummary = parseReasoningSummaryArg(next);
+      i++;
+    } else if (arg === "--no-reasoning-summary") {
+      args.openAIReasoningSummary = null;
     }
   }
 
@@ -250,7 +273,11 @@ function readGitMetadata(): GitMetadata {
   };
 }
 
-function buildRunMetadata(args: SimArgs, timestamp: string): SimulationRunMetadata {
+function buildRunMetadata(
+  args: SimArgs,
+  timestamp: string,
+  openAIReasoningSummary?: OpenAIReasoningSummaryMode,
+): SimulationRunMetadata {
   return {
     variant: args.variant,
     timestamp,
@@ -269,6 +296,7 @@ function buildRunMetadata(args: SimArgs, timestamp: string): SimulationRunMetada
       enableStrategicReflections: args.enableStrategicReflections ?? false,
       richProducer: args.richProducer ?? false,
       enableDiary: args.enableDiary ?? false,
+      openAIReasoningSummary,
     },
   };
 }
@@ -374,6 +402,7 @@ function selectCast(
   openai: OpenAI,
   model: string,
   toolChoiceMode: LlmToolChoiceMode = "named",
+  openAIReasoningSummary?: OpenAIReasoningSummaryMode,
 ): InfluenceAgent[] {
   let selected: Array<{ name: string; personality: Personality }>;
 
@@ -399,6 +428,7 @@ function selectCast(
     const id: UUID = randomUUID();
     return new InfluenceAgent(id, name, personality, openai, model, undefined, undefined, {
       toolChoiceMode,
+      ...(openAIReasoningSummary && { openAIReasoningSummary }),
     });
   });
 }
@@ -604,8 +634,8 @@ function formatEntry(e: TranscriptEntry): string {
   const r = (e.reasoningContext || "").trim();
   if (t && r && t === r) {
     // Identical content (common for local reasoning models + tool "thinking" schema):
-    // show the raw native reasoningContext once (cyan). Streaming reasoning contexts
-    // are first-class for --chatty Mingle/local model observability; duplicate reprint
+    // show the reasoning evidence once (cyan). Streaming reasoning contexts and
+    // provider summaries are first-class for --chatty observability; duplicate reprint
     // after the message (e.g. under "summary prompt" history in takeMingleTurn) is not needed.
     line += `\n    ${reasoningColor}reasoning: ${e.reasoningContext}${reset}`;
   } else {
@@ -1208,7 +1238,6 @@ function attachProgressLogger(
 async function main() {
   const args = parseArgs();
   const runTimestamp = new Date().toISOString();
-  const metadata = buildRunMetadata(args, runTimestamp);
 
   const llmConfig = createLlmClientFromEnv(process.env, {
     timeout: args.llmTimeoutMs,
@@ -1222,10 +1251,15 @@ async function main() {
   }
 
   const openai = llmConfig.client;
+  const openAIReasoningSummary = args.openAIReasoningSummary !== undefined
+    ? args.openAIReasoningSummary ?? undefined
+    : llmConfig.openAIReasoningSummary;
+  const metadata = buildRunMetadata(args, runTimestamp, openAIReasoningSummary);
 
   console.log(`\n=== Influence Batch Simulation ===`);
   console.log(`Games: ${args.games} | Players per game: ${args.players} | Model: ${args.model} | Variant: ${args.variant}`);
   console.log(`Provider: ${describeLlmProvider(llmConfig)} | API key: ${llmConfig.apiKeySource} | Tool choice: ${llmConfig.toolChoiceMode}`);
+  console.log(`OpenAI reasoning summaries: ${openAIReasoningSummary ?? "off"}`);
   console.log(`Timeouts: game ${(args.gameTimeoutMs / 1000).toFixed(0)}s | LLM request ${(args.llmTimeoutMs / 1000).toFixed(0)}s`);
   if (args.chatty) console.log("Chatty mode enabled: live formatted transcript will be printed to console.");
   if (args.houseSummaries) console.log("House summaries enabled: concise House MC summaries will be printed live without chatty reasoning output.");
@@ -1268,7 +1302,7 @@ async function main() {
     const startTime = Date.now();
 
     // Create fresh agents for each game
-    const agents = selectCast(args.players, args.personas, openai, args.model, llmConfig.toolChoiceMode);
+    const agents = selectCast(args.players, args.personas, openai, args.model, llmConfig.toolChoiceMode, openAIReasoningSummary);
     const playerPersonas: Record<string, string> = {};
     const playerNameById: Record<string, string> = {};
     const gameTracker = new TokenTracker();
@@ -1301,6 +1335,7 @@ async function main() {
       houseSummaries: args.houseSummaries,
       richProducer: args.richProducer ?? false,
       enableDiary: args.enableDiary ?? false,
+      openAIReasoningSummary: openAIReasoningSummary ?? "off",
       houseProducer: {
         enableHouseRoundSummaries: simConfig.enableHouseRoundSummaries ?? true,
         enableHouseStrategyBible: simConfig.enableHouseStrategyBible ?? false,

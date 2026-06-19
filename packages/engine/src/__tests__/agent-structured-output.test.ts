@@ -157,6 +157,64 @@ function makeTextSequenceOpenAIStub(
   } as unknown as OpenAI;
 }
 
+function makeResponsesOpenAIStub(
+  requests: Array<Record<string, unknown>>,
+  outputText: string,
+  reasoningSummary: string,
+): OpenAI {
+  return {
+    responses: {
+      create: async (params: Record<string, unknown>) => {
+        requests.push(params);
+        return {
+          id: "resp-test",
+          object: "response",
+          status: "completed",
+          output_text: outputText,
+          output: [
+            {
+              id: "rs-test",
+              type: "reasoning",
+              summary: [
+                {
+                  type: "summary_text",
+                  text: reasoningSummary,
+                },
+              ],
+            },
+            {
+              id: "msg-test",
+              type: "message",
+              role: "assistant",
+              status: "completed",
+              content: [
+                {
+                  type: "output_text",
+                  text: outputText,
+                },
+              ],
+            },
+          ],
+          usage: {
+            input_tokens: 10,
+            input_tokens_details: { cached_tokens: 2 },
+            output_tokens: 20,
+            output_tokens_details: { reasoning_tokens: 7 },
+            total_tokens: 30,
+          },
+        };
+      },
+    },
+    chat: {
+      completions: {
+        create: async () => {
+          throw new Error("Chat completions should not be used when Responses summaries are enabled");
+        },
+      },
+    },
+  } as unknown as OpenAI;
+}
+
 function makeJsonFallbackRetryStub(requests: Array<Record<string, unknown>>): OpenAI {
   return {
     chat: {
@@ -302,6 +360,122 @@ describe("InfluenceAgent structured output mode", () => {
       decisionLog: "Rewarded Mira and pressured Vera as a strategic vote receipt.",
       reasoningContext: "Native hidden reasoning for vote.",
     });
+  });
+
+  it("uses OpenAI Responses reasoning summaries for structured decisions when enabled", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const outputText = JSON.stringify({
+      thinking: "Mira is safer to empower and Vera is the pressure target.",
+      empower: "Mira",
+      expose: "Vera",
+      decisionLog: "Use vote pressure to test Vera while rewarding Mira.",
+    });
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeResponsesOpenAIStub(requests, outputText, "OpenAI summary: Atlas weighed vote pressure against coalition risk."),
+      "gpt-5-nano",
+      undefined,
+      undefined,
+      {
+        openAIReasoningSummary: "auto",
+        privateTraceSink: (trace) => {
+          traces.push(trace);
+        },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const votes = await agent.getVotes(makeContext(Phase.VOTE));
+
+    expect(votes).toEqual({
+      empowerTarget: "mira-id",
+      exposeTarget: "vera-id",
+      thinking: "Mira is safer to empower and Vera is the pressure target.",
+      decisionLog: "Use vote pressure to test Vera while rewarding Mira.",
+      reasoningContext: "OpenAI reasoning summary (auto): OpenAI summary: Atlas weighed vote pressure against coalition risk.",
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      input: expect.any(String),
+      instructions: expect.stringContaining("You are Atlas"),
+      max_output_tokens: expect.any(Number),
+      reasoning: {
+        effort: "low",
+        summary: "auto",
+      },
+      store: false,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "cast_votes_arguments",
+          strict: true,
+        },
+      },
+    });
+    expect(traces).toHaveLength(1);
+    expect(traces[0]!.providerReasoningSummary).toEqual({
+      provider: "openai_responses",
+      mode: "auto",
+      text: "OpenAI summary: Atlas weighed vote pressure against coalition risk.",
+      parts: ["OpenAI summary: Atlas weighed vote pressure against coalition risk."],
+      outputItemIds: ["rs-test"],
+    });
+    expect(traces[0]!.reasoningContext).toBeUndefined();
+    expect(traces[0]!.response.finishReason).toBe("completed");
+  });
+
+  it("uses OpenAI Responses reasoning summaries for message prompts when enabled", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const outputText = JSON.stringify({
+      thinking: "Start curious and warm without revealing strategy.",
+      message: "I am Atlas. I ask too many questions, but usually for a good reason.",
+      decisionLog: "Open with rapport while keeping strategic intent hidden.",
+    });
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeResponsesOpenAIStub(requests, outputText, "OpenAI summary: Atlas chose a friendly but observant introduction."),
+      "gpt-5-nano",
+      undefined,
+      undefined,
+      {
+        openAIReasoningSummary: "concise",
+        privateTraceSink: (trace) => {
+          traces.push(trace);
+        },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const introduction = await agent.getIntroduction(makeContext(Phase.INTRODUCTION));
+
+    expect(introduction).toMatchObject({
+      thinking: "Start curious and warm without revealing strategy.",
+      message: "I am Atlas. I ask too many questions, but usually for a good reason.",
+      decisionLog: "Open with rapport while keeping strategic intent hidden.",
+      reasoningContext: "OpenAI reasoning summary (concise): OpenAI summary: Atlas chose a friendly but observant introduction.",
+    });
+    expect(requests[0]).toMatchObject({
+      reasoning: {
+        effort: "low",
+        summary: "concise",
+      },
+      text: {
+        format: {
+          type: "json_schema",
+          name: "agent_response",
+          strict: true,
+        },
+      },
+    });
+    expect(traces[0]!.providerReasoningSummary?.mode).toBe("concise");
+    expect(traces[0]!.providerReasoningSummary?.text).toBe("OpenAI summary: Atlas chose a friendly but observant introduction.");
+    expect(traces[0]!.reasoningContext).toBeUndefined();
   });
 
   it("allows public game talk in lobby prompts with sentence and timing guardrails", async () => {
@@ -1367,6 +1541,121 @@ describe("InfluenceAgent structured output mode", () => {
     expect(votePrompt).toContain("Never treat an eliminated player as an active standing target.");
     expect(votePrompt).toContain("When a tool asks for decisionLog");
     expect(votePrompt).not.toContain("You must follow");
+  });
+
+  it("carries introduction messages into initial strategic reflection prompts", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "strategic_reflection",
+        {
+          thinking: "Atlas has only first impressions from introductions, so the packet should stay provisional.",
+          certainties: ["Mira introduced herself as a careful listener"],
+          suspicions: [],
+          allies: [],
+          threats: [],
+          plan: "Use the first lobby to ask Mira and Vera what they noticed.",
+          strategicLens: "presentation_read",
+          strategicLensRationale: "Only public introduction tone is available so far.",
+          strategyPacket: {
+            objective: "Gather public first-read evidence before naming a target.",
+            targetPosture: "No standing target yet; wait for lobby responses.",
+            coalitionPosture: "Keep Mira and Vera flexible until they speak about the game.",
+            nextSocialProbe: "Ask Mira what she noticed in Vera's introduction.",
+            strategicLens: "presentation_read",
+            strategicLensRationale: "Only introductions are available evidence.",
+            uncertainty: "Introductions may not predict game posture.",
+            reviseTrigger: "Revise after the first lobby exchange creates game evidence.",
+            changedSincePrevious: "initial packet",
+          },
+        },
+      ),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getStrategicReflection({
+      ...makeContext(Phase.INTRODUCTION),
+      round: 0,
+      publicMessages: [
+        {
+          round: 0,
+          phase: Phase.INTRODUCTION,
+          from: "Mira",
+          text: "I'm Mira. I restore old radios and like patient conversations.",
+        },
+        {
+          round: 0,
+          phase: Phase.INTRODUCTION,
+          from: "Vera",
+          text: "I'm Vera. I grew up around night markets and read rooms quickly.",
+        },
+      ],
+    });
+
+    const reflectionMessages = requests[0]?.messages as Array<{ content: string }>;
+    const reflectionPrompt = reflectionMessages.at(-1)!.content;
+    expect(reflectionPrompt).toContain("## Recent Public Messages");
+    expect(reflectionPrompt).toContain("[R0/INTRODUCTION] Mira");
+    expect(reflectionPrompt).toContain("I restore old radios");
+    expect(reflectionPrompt).toContain("[R0/INTRODUCTION] Vera");
+    expect(reflectionPrompt).toContain("night markets");
+    expect(reflectionPrompt).toContain("introductions are public communication and valid first-impression evidence");
+    expect(reflectionPrompt).toContain("The Strategy Thread packet can be provisional");
+  });
+
+  it("carries introduction and lobby messages into round-one lobby prompts", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeTextOpenAIStub(
+        requests,
+        JSON.stringify({
+          thinking: "Use the intro and first lobby record to ask a concrete follow-up.",
+          message: "Mira, your patience read is useful; Vera, what did you notice from the first lobby beat?",
+          decisionLog: "Used introduction and lobby public context to seed a concrete follow-up.",
+        }),
+      ),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getLobbyMessage({
+      ...makeContext(Phase.LOBBY),
+      round: 1,
+      lobbySubRound: 1,
+      lobbyTotalSubRounds: 2,
+      publicMessages: [
+        {
+          round: 0,
+          phase: Phase.INTRODUCTION,
+          from: "Mira",
+          text: "I'm Mira. I restore old radios and like patient conversations.",
+        },
+        {
+          round: 1,
+          phase: Phase.LOBBY,
+          from: "Vera",
+          text: "I want to compare who seemed too polished in introductions.",
+        },
+      ],
+    });
+
+    const lobbyMessages = requests[0]?.messages as Array<{ content: string }>;
+    const lobbyPrompt = lobbyMessages.at(-1)!.content;
+    expect(lobbyPrompt).toContain("[R0/INTRODUCTION] Mira");
+    expect(lobbyPrompt).toContain("I restore old radios");
+    expect(lobbyPrompt).toContain("[R1/LOBBY] Vera");
+    expect(lobbyPrompt).toContain("too polished");
   });
 
   it("renders pre-vote strategic reflection as a realignment checkpoint", async () => {

@@ -78,7 +78,7 @@ export type {
 
 // Game runner
 export { GameRunner } from "./game-runner";
-export type { ActorWitnessV1, AgentResponse, AgentTurnEvent, CheckpointBoundaryIdentityV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TranscriptEntry, TranscriptWatermarkV1, GameStreamEvent, GameStateSnapshot } from "./game-runner";
+export type { ActorWitnessV1, AgentResponse, AgentTurnEvent, CheckpointBoundaryIdentityV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, ProviderReasoningSummary, ProviderReasoningSummaryMode, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TranscriptEntry, TranscriptWatermarkV1, GameStreamEvent, GameStateSnapshot } from "./game-runner";
 export {
   accumulatorProof,
   buildActorWitness,
@@ -108,10 +108,11 @@ export type { GeneratedPersona } from "./persona-generator";
 export {
   createLlmClientFromEnv,
   describeLlmProvider,
+  resolveOpenAIReasoningSummaryMode,
   resolveModelForTier,
   resolveToolChoiceMode,
 } from "./llm-client";
-export type { LlmClientConfig, LlmToolChoiceMode, ModelTier } from "./llm-client";
+export type { LlmClientConfig, LlmToolChoiceMode, ModelTier, OpenAIReasoningSummaryMode } from "./llm-client";
 
 // Memory store
 export { InMemoryMemoryStore } from "./memory-store";

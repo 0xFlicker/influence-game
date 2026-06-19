@@ -11,6 +11,10 @@ import type {
   ChatCompletionTool,
   ChatCompletionMessageToolCall,
 } from "openai/resources/chat/completions";
+import type {
+  Response as OpenAIResponse,
+  ResponseCreateParamsNonStreaming,
+} from "openai/resources/responses/responses";
 import type { ReasoningEffort } from "openai/resources/shared";
 import type {
   AgentCallOptions,
@@ -39,10 +43,11 @@ import type {
   StrategyPacketUpdateAction,
   TargetDecision,
   PlayerContinuityCapsule,
+  ProviderReasoningSummary,
 } from "./game-runner";
 import { Phase } from "./types";
 import type { UUID, PowerAction } from "./types";
-import type { LlmToolChoiceMode } from "./llm-client";
+import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode } from "./llm-client";
 import type { MemoryStore } from "./memory-store";
 import type { TokenTracker } from "./token-tracker";
 
@@ -932,15 +937,20 @@ export interface InfluenceAgentOptions {
   toolChoiceMode?: LlmToolChoiceMode;
   /** Optional producer/debug trace sink for raw model-call evidence. */
   privateTraceSink?: PrivateTraceSink;
+  /** Hosted OpenAI Responses API reasoning summary mode. OpenAI-compatible local providers stay on chat completions. */
+  openAIReasoningSummary?: OpenAIReasoningSummaryMode;
 }
 
 type LlmCallOptions = {
   action?: string;
   reasoningOverhead?: number;
   reasoningEffort?: ReasoningEffort;
+  reasoningSummary?: OpenAIReasoningSummaryMode | false;
   signal?: AbortSignal;
   privateTrace?: PrivateDecisionTraceContext;
 };
+
+type ModelCallResponse = ChatCompletion | OpenAIResponse;
 
 // ---------------------------------------------------------------------------
 // InfluenceAgent
@@ -955,6 +965,7 @@ export class InfluenceAgent implements IAgent {
   private readonly model: string;
   private readonly toolChoiceMode: LlmToolChoiceMode;
   private readonly privateTraceSink?: PrivateTraceSink;
+  private readonly openAIReasoningSummary?: OpenAIReasoningSummaryMode;
   private tokenTracker: TokenTracker | null = null;
   private gameId: UUID = "";
   private allPlayers: Array<{ id: UUID; name: string }> = [];
@@ -988,6 +999,7 @@ export class InfluenceAgent implements IAgent {
     this.model = model;
     this.toolChoiceMode = options.toolChoiceMode ?? "named";
     this.privateTraceSink = options.privateTraceSink;
+    this.openAIReasoningSummary = options.openAIReasoningSummary;
     this.backstory = backstory ?? AGENT_BACKSTORIES[name] ?? "";
     this.memoryStore = memoryStore ?? null;
   }
@@ -1186,6 +1198,111 @@ export class InfluenceAgent implements IAgent {
     return toolCalls.length > 0 ? toolCalls : undefined;
   }
 
+  private static isOpenAIResponse(response: ModelCallResponse): response is OpenAIResponse {
+    return (response as { object?: unknown }).object === "response";
+  }
+
+  private static outputItemRecord(item: unknown): Record<string, unknown> | null {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+    return item as Record<string, unknown>;
+  }
+
+  private static responseOutputText(response: OpenAIResponse): string {
+    if (typeof response.output_text === "string" && response.output_text.trim()) {
+      return response.output_text.trim();
+    }
+
+    for (const item of response.output) {
+      const record = InfluenceAgent.outputItemRecord(item);
+      if (!record) continue;
+      if (record.type !== "message" || !Array.isArray(record.content)) continue;
+      const text = record.content
+        .map((contentPart) => {
+          if (!contentPart || typeof contentPart !== "object" || Array.isArray(contentPart)) return "";
+          const partRecord = contentPart as unknown as Record<string, unknown>;
+          return typeof partRecord.text === "string" ? partRecord.text : "";
+        })
+        .filter(Boolean)
+        .join("\n");
+      if (text.trim()) return text.trim();
+    }
+
+    return "";
+  }
+
+  private static responseToolCalls(response: OpenAIResponse): PrivateDecisionTraceToolCall[] | undefined {
+    const toolCalls = response.output
+      .map((item): PrivateDecisionTraceToolCall | null => {
+        const record = InfluenceAgent.outputItemRecord(item);
+        if (!record) return null;
+        if (record.type !== "function_call") return null;
+        return {
+          ...(typeof record.id === "string" && { id: record.id }),
+          type: "function_call",
+          ...(typeof record.name === "string" && { name: record.name }),
+          ...(typeof record.arguments === "string" && { arguments: record.arguments }),
+        };
+      })
+      .filter((toolCall): toolCall is PrivateDecisionTraceToolCall => toolCall !== null);
+
+    return toolCalls.length > 0 ? toolCalls : undefined;
+  }
+
+  private static extractProviderReasoningSummary(
+    response: OpenAIResponse,
+    mode: OpenAIReasoningSummaryMode,
+  ): ProviderReasoningSummary | undefined {
+    const parts: string[] = [];
+    const outputItemIds: string[] = [];
+
+    for (const item of response.output) {
+      const record = InfluenceAgent.outputItemRecord(item);
+      if (!record) continue;
+      if (record.type !== "reasoning") continue;
+      if (typeof record.id === "string") outputItemIds.push(record.id);
+      if (!Array.isArray(record.summary)) continue;
+      for (const summaryPart of record.summary) {
+        if (!summaryPart || typeof summaryPart !== "object" || Array.isArray(summaryPart)) continue;
+        const partRecord = summaryPart as unknown as Record<string, unknown>;
+        const text = InfluenceAgent.readStringField(partRecord.text);
+        if (text) parts.push(text);
+      }
+    }
+
+    if (parts.length === 0) return undefined;
+    return {
+      provider: "openai_responses",
+      mode,
+      text: parts.join("\n\n"),
+      parts,
+      ...(outputItemIds.length > 0 && { outputItemIds }),
+    };
+  }
+
+  private static providerReasoningSummaryDisplay(summary: ProviderReasoningSummary): string {
+    return `OpenAI reasoning summary (${summary.mode}): ${summary.text}`;
+  }
+
+  private static isProviderReasoningSummaryDisplay(
+    value: string,
+    summary: ProviderReasoningSummary | undefined,
+  ): boolean {
+    if (!summary) return false;
+    return value === InfluenceAgent.providerReasoningSummaryDisplay(summary);
+  }
+
+  private static withProviderReasoningSummaryDisplay<T extends object>(
+    output: T,
+    summary: ProviderReasoningSummary | undefined,
+  ): T & { reasoningContext?: string } {
+    const record = output as T & { reasoningContext?: string };
+    if (!summary || InfluenceAgent.readStringField(record.reasoningContext)) return record;
+    return {
+      ...record,
+      reasoningContext: InfluenceAgent.providerReasoningSummaryDisplay(summary),
+    };
+  }
+
   private privateTraceStrategicDecisionMetadata(output: unknown): StrategicDecisionMetadata {
     if (!output || typeof output !== "object" || Array.isArray(output)) return {};
     const record = output as Record<string, unknown>;
@@ -1211,28 +1328,45 @@ export class InfluenceAgent implements IAgent {
   private async emitPrivateDecisionTrace(params: {
     options?: LlmCallOptions;
     messages: readonly { role: string; content: unknown; name?: string }[];
-    response: ChatCompletion;
+    response: ModelCallResponse;
     output?: unknown;
     toolName?: string;
     toolArguments?: unknown;
+    providerReasoningSummary?: ProviderReasoningSummary;
   }): Promise<void> {
     if (!this.privateTraceSink || !params.options?.privateTrace) return;
 
-    const choice = params.response.choices[0];
-    const message = choice?.message;
+    const response = params.response;
+    let message: unknown;
+    let responseFinishReason: string | null;
+    let responseContent: string | null;
+    let responseToolCalls: PrivateDecisionTraceToolCall[] | undefined;
+    if (InfluenceAgent.isOpenAIResponse(response)) {
+      responseFinishReason = response.status ?? null;
+      responseContent = InfluenceAgent.responseOutputText(response);
+      responseToolCalls = InfluenceAgent.responseToolCalls(response);
+    } else {
+      const choice = response.choices[0];
+      message = choice?.message;
+      responseFinishReason = choice?.finish_reason ?? null;
+      responseContent = typeof choice?.message?.content === "string" ? choice.message.content : null;
+      responseToolCalls = InfluenceAgent.privateTraceToolCalls(message);
+    }
     const outputRecord =
       params.output && typeof params.output === "object" && !Array.isArray(params.output)
         ? params.output as Record<string, unknown>
         : {};
     const emittedThinking = InfluenceAgent.readStringField(outputRecord.thinking);
+    const outputReasoningContext = InfluenceAgent.readStringField(outputRecord.reasoningContext);
     const reasoningContext =
-      InfluenceAgent.readStringField(outputRecord.reasoningContext) ||
+      (InfluenceAgent.isProviderReasoningSummaryDisplay(outputReasoningContext, params.providerReasoningSummary)
+        ? ""
+        : outputReasoningContext) ||
       InfluenceAgent.extractReasoningContext(message);
     const strategicDecision = this.privateTraceStrategicDecisionMetadata(params.output);
     const strategicLens = readOptionalStrategicLens(outputRecord.strategicLens);
     const strategicLensRationale = normalizeNullableString(outputRecord.strategicLensRationale);
     const strategyPacketUpdate = normalizeStrategyPacketUpdate(outputRecord.strategyPacket);
-    const content = typeof message?.content === "string" ? message.content : null;
     const traceContext = params.options.privateTrace;
     const strategicReflectionSummary = this.privateTraceStrategicReflectionSummary(traceContext.action, outputRecord);
     const trace: PrivateDecisionTrace = {
@@ -1251,16 +1385,15 @@ export class InfluenceAgent implements IAgent {
         messages: InfluenceAgent.privateTraceMessages(params.messages),
       },
       response: {
-        raw: params.response,
-        finishReason: choice?.finish_reason ?? null,
-        content,
-        ...(InfluenceAgent.privateTraceToolCalls(message) && {
-          toolCalls: InfluenceAgent.privateTraceToolCalls(message),
-        }),
+        raw: response,
+        finishReason: responseFinishReason,
+        content: responseContent,
+        ...(responseToolCalls && { toolCalls: responseToolCalls }),
       },
       ...(params.output !== undefined && { output: params.output }),
       ...(emittedThinking && { emittedThinking }),
       ...(reasoningContext && { reasoningContext }),
+      ...(params.providerReasoningSummary && { providerReasoningSummary: params.providerReasoningSummary }),
       ...(params.toolName && { toolName: params.toolName }),
       ...(params.toolArguments !== undefined && { toolArguments: params.toolArguments }),
       ...(strategicDecision.decisionLog && { decisionLog: strategicDecision.decisionLog }),
@@ -2942,7 +3075,7 @@ ${rounds}`;
 ${text || "  (none yet)"}`;
     }
 
-    const firstRound = Math.max(1, ctx.round - 2);
+    const firstRound = Math.max(0, ctx.round - 2);
     const recentMessages = ctx.publicMessages
       .filter((m) => m.round == null || m.round >= firstRound)
       .map((m) => `  [R${m.round ?? "?"}/${m.phase}] ${m.from}: "${m.text}"`)
@@ -3257,6 +3390,56 @@ ${roomSection}
     );
   }
 
+  private recordResponseTokenUsage(response: OpenAIResponse, sourceKey: string): void {
+    if (!this.tokenTracker || !response.usage) return;
+    this.tokenTracker.record(
+      sourceKey,
+      response.usage.input_tokens,
+      response.usage.output_tokens,
+      response.usage.input_tokens_details.cached_tokens ?? 0,
+      response.usage.output_tokens_details.reasoning_tokens ?? 0,
+    );
+  }
+
+  private resolvedReasoningSummaryMode(options?: LlmCallOptions): OpenAIReasoningSummaryMode | undefined {
+    if (options?.reasoningSummary === false) return undefined;
+    return options?.reasoningSummary ?? this.openAIReasoningSummary;
+  }
+
+  private shouldUseOpenAIResponsesForSummary(options?: LlmCallOptions): boolean {
+    return Boolean(
+      this.resolvedReasoningSummaryMode(options) &&
+        this.isReasoningModel() &&
+        !this.usesLocalStructuredCompatibility(),
+    );
+  }
+
+  private responseReasoningOptions(options?: LlmCallOptions): ResponseCreateParamsNonStreaming["reasoning"] | undefined {
+    const summary = this.resolvedReasoningSummaryMode(options);
+    if (!summary) return undefined;
+    return {
+      ...(options?.reasoningEffort && { effort: options.reasoningEffort }),
+      summary,
+    };
+  }
+
+  private responseBaseParams(
+    prompt: string,
+    effectiveMaxTokens: number,
+    systemPrompt?: string,
+    options?: LlmCallOptions,
+  ): ResponseCreateParamsNonStreaming {
+    const reasoning = this.responseReasoningOptions(options);
+    return {
+      model: this.model,
+      input: prompt,
+      ...(systemPrompt && { instructions: systemPrompt }),
+      max_output_tokens: effectiveMaxTokens,
+      store: false,
+      ...(reasoning && { reasoning }),
+    };
+  }
+
   private static extractFirstJsonObject(text: string): string | null {
     const start = text.indexOf("{");
     if (start === -1) return null;
@@ -3447,6 +3630,141 @@ ${roomSection}
       return "[No response]";
     }
     return trimmed.replace(/^message\s*:\s*/i, "").trim();
+  }
+
+  private static responseJsonSchemaFormat(name: string, schema: unknown): NonNullable<ResponseCreateParamsNonStreaming["text"]>["format"] {
+    return {
+      type: "json_schema",
+      name,
+      strict: true,
+      schema: schema && typeof schema === "object" && !Array.isArray(schema)
+        ? schema as Record<string, unknown>
+        : {
+          type: "object",
+          properties: {},
+          required: [],
+          additionalProperties: false,
+        },
+    };
+  }
+
+  private async callOpenAIResponsesWithThinking(
+    prompt: string,
+    maxTokens = 200,
+    systemPrompt?: string,
+    options?: LlmCallOptions,
+  ): Promise<AgentResponse> {
+    const overhead = options?.reasoningOverhead ?? InfluenceAgent.REASONING_TOKEN_OVERHEAD;
+    const effectiveMaxTokens = maxTokens + overhead;
+    const sourceKey = options?.action ? `${this.name}/${options.action}` : this.name;
+    const summaryMode = this.resolvedReasoningSummaryMode(options);
+    const messages: Array<{ role: "system" | "user"; content: string }> = [];
+    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
+    messages.push({ role: "user", content: prompt });
+
+    const response = await this.openai.responses.create(
+      {
+        ...this.responseBaseParams(prompt, effectiveMaxTokens, systemPrompt, options),
+        text: {
+          format: InfluenceAgent.responseJsonSchemaFormat(
+            InfluenceAgent.AGENT_RESPONSE_FORMAT.json_schema.name,
+            InfluenceAgent.AGENT_RESPONSE_FORMAT.json_schema.schema,
+          ),
+        },
+      },
+      { signal: options?.signal },
+    );
+    this.recordResponseTokenUsage(response, sourceKey);
+
+    const content = InfluenceAgent.responseOutputText(response);
+    const providerReasoningSummary = summaryMode
+      ? InfluenceAgent.extractProviderReasoningSummary(response, summaryMode)
+      : undefined;
+
+    if (!content) {
+      console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned empty Responses output`);
+      if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
+      const traceOutput = { thinking: "", message: "[No response]" };
+      const output = InfluenceAgent.withProviderReasoningSummaryDisplay(traceOutput, providerReasoningSummary);
+      await this.emitPrivateDecisionTrace({ options, messages, response, output: traceOutput, providerReasoningSummary });
+      return output;
+    }
+
+    const parsed = InfluenceAgent.parseAgentResponseContent(content);
+    if (parsed) {
+      this.recordStrategicDecisionFromTraceContext(options?.privateTrace, parsed);
+      const output = InfluenceAgent.withProviderReasoningSummaryDisplay(parsed, providerReasoningSummary);
+      await this.emitPrivateDecisionTrace({ options, messages, response, output: parsed, providerReasoningSummary });
+      return output;
+    }
+
+    console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned non-JSON Responses output, treating as plain message`);
+    const traceOutput = { thinking: "", message: content };
+    const output = InfluenceAgent.withProviderReasoningSummaryDisplay(traceOutput, providerReasoningSummary);
+    await this.emitPrivateDecisionTrace({ options, messages, response, output: traceOutput, providerReasoningSummary });
+    return output;
+  }
+
+  private async callOpenAIResponsesToolJsonSchema<T>(
+    prompt: string,
+    tool: ChatCompletionTool,
+    effectiveMaxTokens: number,
+    systemPrompt: string | undefined,
+    options: LlmCallOptions | undefined,
+    sourceKey: string,
+  ): Promise<T> {
+    const messages: Array<{ role: "system" | "user"; content: string }> = [];
+    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
+    messages.push({ role: "user", content: prompt });
+
+    const response = await this.openai.responses.create(
+      {
+        ...this.responseBaseParams(prompt, effectiveMaxTokens, systemPrompt, options),
+        text: {
+          format: InfluenceAgent.responseJsonSchemaFormat(
+            `${tool.function.name}_arguments`,
+            tool.function.parameters,
+          ),
+        },
+      },
+      { signal: options?.signal },
+    );
+    this.recordResponseTokenUsage(response, sourceKey);
+
+    if (response.status === "incomplete") {
+      throw new ToolCallRetryError(`Responses output incomplete for ${tool.function.name}`, true);
+    }
+    if (response.status === "failed" || response.error) {
+      const message = response.error?.message ?? `Responses output failed for ${tool.function.name}`;
+      throw new ToolCallFatalError(message);
+    }
+
+    const parsed = this.parseToolArgsFromContent<T>(
+      InfluenceAgent.responseOutputText(response),
+      tool.function.name,
+    );
+    if (!parsed) {
+      throw new Error(`Responses output returned invalid arguments for ${tool.function.name}`);
+    }
+
+    const summaryMode = this.resolvedReasoningSummaryMode(options);
+    const providerReasoningSummary = summaryMode
+      ? InfluenceAgent.extractProviderReasoningSummary(response, summaryMode)
+      : undefined;
+    const parsedRecord = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as T & object
+      : {} as T & object;
+    const withReasoning = InfluenceAgent.withProviderReasoningSummaryDisplay(parsedRecord, providerReasoningSummary) as T;
+    await this.emitPrivateDecisionTrace({
+      options,
+      messages,
+      response,
+      output: parsed,
+      toolName: tool.function.name,
+      toolArguments: parsed,
+      providerReasoningSummary,
+    });
+    return withReasoning;
   }
 
   private async callLocalLLMWithNativeThinking(
@@ -3721,6 +4039,15 @@ ${JSON.stringify(tool.function.parameters)}`,
       );
     }
 
+    if (this.shouldUseOpenAIResponsesForSummary(options)) {
+      return await this.callOpenAIResponsesWithThinking(
+        prompt,
+        maxTokens,
+        systemPrompt,
+        options,
+      );
+    }
+
     const reasoning = this.isReasoningModel();
     const useCompletionTokens = this.usesCompletionTokensParam();
     const overhead = options?.reasoningOverhead ?? InfluenceAgent.REASONING_TOKEN_OVERHEAD;
@@ -3825,6 +4152,17 @@ ${JSON.stringify(tool.function.parameters)}`,
             effectiveMaxTokens,
             useCompletionTokens,
             reasoning,
+            systemPrompt,
+            options,
+            sourceKey,
+          );
+        }
+
+        if (this.shouldUseOpenAIResponsesForSummary(options)) {
+          return await this.callOpenAIResponsesToolJsonSchema<T>(
+            prompt,
+            requestTool,
+            effectiveMaxTokens,
             systemPrompt,
             options,
             sourceKey,
@@ -3967,6 +4305,10 @@ ${JSON.stringify(tool.function.parameters)}`,
 
   async getStrategicReflection(ctx: PhaseContext, options?: { timing?: "post_phase" | "pre_vote" }): Promise<StrategicReflectionAction | null> {
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round, { includePhaseGuidelines: false });
+    const introReflectionGuidance = ctx.phase === Phase.INTRODUCTION && options?.timing !== "pre_vote"
+      ? `
+Introduction-specific guidance: introductions are public communication and valid first-impression evidence, but they are thin evidence. Do not invent alliances, threats, promises, vote plans, or game commitments that have not happened yet. The Strategy Thread packet can be provisional: use broad_read or presentation_read, keep targetPosture as no standing target yet when appropriate, and make nextSocialProbe about what to ask in the first Lobby.`
+      : "";
     const reflectionMode = options?.timing === "pre_vote"
       ? `## Private Pre-Vote Strategy Realignment
 You are NOT taking a live phase action right now. The phase shown above is the upcoming vote you are preparing for.
@@ -3993,7 +4335,7 @@ Based on everything you know so far, produce a strategic assessment of what happ
 Use the strategic_reflection tool to record your analysis.
 
 Be specific — name players, cite events, reference conversations.
-Treat vote ledgers, Power outcomes, room traffic, and public/private messages as evidence. Current Board Contract, Current Stakes, Revealed Vote Ledger, and Post-Vote Pressure override stale Strategy Thread or Strategic Assessment claims. Do not turn this into a message you intend to send.`;
+Treat vote ledgers, Power outcomes, room traffic, and public/private messages as evidence. Current Board Contract, Current Stakes, Revealed Vote Ledger, and Post-Vote Pressure override stale Strategy Thread or Strategic Assessment claims. Do not turn this into a message you intend to send.${introReflectionGuidance}`;
     const prompt = this.buildUserPrompt(ctx) + `
 ${reflectionMode}
 

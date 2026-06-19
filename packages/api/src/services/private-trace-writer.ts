@@ -59,6 +59,7 @@ export interface PrivateTraceManifestMetadata {
   toolArgumentByteLength: number;
   emittedThinkingByteLength: number;
   reasoningContextByteLength: number;
+  providerReasoningSummaryByteLength: number;
   toolName?: string;
   strategicDecision?: {
     decisionLogBytes?: number;
@@ -117,6 +118,7 @@ function buildTraceMetadata(trace: PrivateDecisionTrace, body: string, createdAt
     toolArgumentByteLength: byteLength(trace.toolArguments),
     emittedThinkingByteLength: byteLength(trace.emittedThinking),
     reasoningContextByteLength: byteLength(trace.reasoningContext),
+    providerReasoningSummaryByteLength: byteLength(trace.providerReasoningSummary),
     ...(trace.toolName && { toolName: trace.toolName }),
     ...(trace.decisionLog && {
       strategicDecision: {

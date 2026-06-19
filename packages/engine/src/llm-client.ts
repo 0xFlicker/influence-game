@@ -2,6 +2,7 @@ import OpenAI from "openai";
 
 export type ModelTier = "budget" | "standard" | "premium";
 export type LlmToolChoiceMode = "named" | "required" | "auto" | "json_schema";
+export type OpenAIReasoningSummaryMode = "auto" | "concise" | "detailed";
 
 export interface LlmClientConfig {
   client: OpenAI;
@@ -10,6 +11,7 @@ export interface LlmClientConfig {
   baseURLSource?: string;
   providerLabel: string;
   toolChoiceMode: LlmToolChoiceMode;
+  openAIReasoningSummary?: OpenAIReasoningSummaryMode;
 }
 
 export interface CreateLlmClientOptions {
@@ -64,6 +66,18 @@ function normalizeToolChoiceMode(value: string | undefined): LlmToolChoiceMode |
   return null;
 }
 
+function normalizeOpenAIReasoningSummaryMode(value: string | undefined): OpenAIReasoningSummaryMode | "off" | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "auto" || normalized === "concise" || normalized === "detailed") {
+    return normalized;
+  }
+  if (normalized === "off" || normalized === "none" || normalized === "false" || normalized === "disabled") {
+    return "off";
+  }
+  return null;
+}
+
 export function resolveToolChoiceMode(
   env: NodeJS.ProcessEnv = process.env,
   baseURL?: string,
@@ -71,6 +85,19 @@ export function resolveToolChoiceMode(
   return normalizeToolChoiceMode(env.INFLUENCE_LLM_TOOL_CHOICE_MODE)
     ?? normalizeToolChoiceMode(env.INFLUENCE_LLM_TOOL_CHOICE)
     ?? (isLocalBaseURL(baseURL) ? "required" : "named");
+}
+
+export function resolveOpenAIReasoningSummaryMode(
+  env: NodeJS.ProcessEnv = process.env,
+  baseURL?: string,
+): OpenAIReasoningSummaryMode | undefined {
+  const configured = normalizeOpenAIReasoningSummaryMode(
+    env.INFLUENCE_OPENAI_REASONING_SUMMARY ??
+      env.INFLUENCE_LLM_REASONING_SUMMARY,
+  );
+  if (configured === "off") return undefined;
+  if (configured) return baseURL ? undefined : configured;
+  return baseURL ? undefined : "auto";
 }
 
 export function resolveModelForTier(
@@ -102,6 +129,7 @@ export function createLlmClientFromEnv(
   const baseURL = baseURLConfig?.value;
   const apiKey = apiKeyConfig?.value ?? (baseURL ? "lm-studio" : undefined);
   if (!apiKey) return null;
+  const openAIReasoningSummary = resolveOpenAIReasoningSummaryMode(env, baseURL);
 
   return {
     client: new OpenAI({
@@ -115,6 +143,7 @@ export function createLlmClientFromEnv(
     baseURLSource: baseURLConfig?.key,
     providerLabel: providerLabel(baseURL),
     toolChoiceMode: resolveToolChoiceMode(env, baseURL),
+    ...(openAIReasoningSummary && { openAIReasoningSummary }),
   };
 }
 

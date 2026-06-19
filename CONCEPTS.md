@@ -4,7 +4,7 @@ Shared domain vocabulary for this project — entities, named processes, and sta
 
 ## TranscriptEntry
 
-The canonical record of everything that happened in a game for viewers, replays, and analysis. Every entry carries `round`, `phase`, `from`, `scope`, `text`, plus optional `thinking` (the agent's or House's internal note, hidden from players) and `reasoningContext` (raw native model output such as `reasoning_content` from local servers). Current Mingle entries should use current Mingle phase/scope vocabulary; older records may still contain legacy Whisper values. Public player text never contains hidden reasoning.
+The canonical record of everything that happened in a game for viewers, replays, and analysis. Every entry carries `round`, `phase`, `from`, `scope`, `text`, plus optional `thinking` (the agent's or House's internal note, hidden from players) and `reasoningContext` (raw native model output such as `reasoning_content` from local servers, or a clearly labeled provider-generated reasoning summary such as `OpenAI reasoning summary (auto): ...`). Current Mingle entries should use current Mingle phase/scope vocabulary; older records may still contain legacy Whisper values. Public player text never contains hidden reasoning.
 
 ## Mingle
 
@@ -44,7 +44,7 @@ The private evidence frame an agent selects for a decision, such as vote math, r
 
 ## Agent turn record
 
-A producer/debug record of one agent decision, message, or hidden assessment. Agent turn records preserve structured response fields, hidden thinking, native reasoning context when available, visibility, actor, phase, and action so simulations and MCP queries can analyze behavior without treating every private decision as public dialogue or canonical game state.
+A producer/debug record of one agent decision, message, or hidden assessment. Agent turn records preserve structured response fields, hidden thinking, native reasoning context or labeled provider summaries when available, visibility, actor, phase, and action so simulations and MCP queries can analyze behavior without treating every private decision as public dialogue or canonical game state.
 
 ## Strategic reflection record
 
@@ -64,11 +64,15 @@ Legacy vocabulary for the old private-message/private-room phase and for histori
 
 ## reasoningContext
 
-The raw, model-provided reasoning trace (e.g. `reasoning_content` from LM Studio) captured alongside an agent's structured decision or message. Distinct from the synthesized `thinking` field. Attached by `callTool` via typed intersection and written through `logSystem` / `logPublic` etc. onto `TranscriptEntry`. Visible only in `--chatty` output, full transcripts, and debug surfaces — never to other players.
+The debug-display lane for model-side reasoning evidence captured alongside an agent's structured decision or message. For local OpenAI-compatible servers this is raw native model output such as LM Studio `reasoning_content`. For hosted OpenAI Responses calls with summaries enabled, this can be a clearly labeled provider-generated summary such as `OpenAI reasoning summary (auto): ...`. It is distinct from the synthesized `thinking` field, written through `logSystem` / `logPublic` etc. onto `TranscriptEntry`, and visible only in `--chatty` output, full transcripts, and debug surfaces — never to other players.
+
+## OpenAI reasoning summary
+
+A provider-generated summary from hosted OpenAI's Responses API reasoning summary feature. Influence may request `auto`, `concise`, or `detailed` summaries for hosted OpenAI agent calls; the default is `auto`. These summaries are not raw hidden reasoning. In simulations they are shown in the reasoning display lane with an `OpenAI reasoning summary (...)` prefix. API private traces keep the structured `providerReasoningSummary` provider object for producer correlation; user-facing cognitive artifacts store only the summary text.
 
 ## Cognitive artifact
 
-A first-class product read-model record for an agent's reasoning, thinking, or strategy in new games. Cognitive artifacts are captured at decision time from structured trace inputs but are not sanitized views over producer private traces, canonical game truth, or checkpoint resume state. User-facing access is artifact-specific: reasoning is owner-only, thinking and strategy are available to the owner plus same-game participants, and producer/admin surfaces may read all split artifacts directly.
+A first-class product read-model record for an agent's reasoning, thinking, or strategy in new games. Cognitive artifacts are captured at decision time from structured trace inputs but are not sanitized views over producer private traces, canonical game truth, or checkpoint resume state. Reasoning artifacts may contain raw native `reasoningContext` or provider-generated summary text as `reasoningSummary`; provider debug wrappers such as `parts` and `outputItemIds` stay out of user-facing payloads. User-facing access is artifact-specific: reasoning is owner-only, thinking and strategy are available to the owner plus same-game participants, and producer/admin surfaces may read all split artifacts directly.
 
 ## chatty mode
 
@@ -166,11 +170,11 @@ The durable single-writer ownership marker for a live game run. An owner epoch l
 
 ## Private evidence manifest
 
-A producer/debug metadata record that points to raw LLM evidence such as prompts, model responses, `thinking`, `reasoningContext`, and normalized agent-turn objects. The manifest may be stored in Postgres while raw content lives in private object storage; neither the manifest nor the raw evidence is player-visible dialogue or canonical board state.
+A producer/debug metadata record that points to raw LLM evidence such as prompts, model responses, `thinking`, `reasoningContext`, provider reasoning summaries, and normalized agent-turn objects. The manifest may be stored in Postgres while raw content lives in private object storage; neither the manifest nor the raw evidence is player-visible dialogue or canonical board state.
 
 ## Private trace content
 
-The raw JSON/JSONL producer evidence addressed by a private evidence manifest, such as decision-call prompts, model responses, `thinking`, `reasoningContext`, tool arguments, action names, actor context, phase, round, and canonical event boundary. Private trace content is for local producer/debug inspection and must not become public transcript, canonical board truth, or checkpoint resume authority.
+The raw JSON/JSONL producer evidence addressed by a private evidence manifest, such as decision-call prompts, model responses, `thinking`, `reasoningContext`, provider reasoning summaries, tool arguments, action names, actor context, phase, round, and canonical event boundary. Private trace content is for local producer/debug inspection and must not become public transcript, canonical board truth, or checkpoint resume authority.
 
 ## Local Trace MCP
 
@@ -178,4 +182,4 @@ A local-development producer MCP that inspects API-backed durable runs through p
 
 ## callTool reasoning augmentation
 
-The single choke-point in `InfluenceAgent.callTool<T>` that guarantees every structured decision return and every JSON-fallback path carries the native `reasoningContext` (via `as T & { reasoningContext?: string }` intersections only — never `as any`). Tool schemas for observable decisions (cast_votes, use_power, council_vote, etc.) include a `thinking` field; the engine threads both values out to the phase loggers and `TranscriptEntry`.
+The single choke-point in `InfluenceAgent.callTool<T>` that guarantees every structured decision return and every JSON-fallback path carries model-side reasoning evidence when available (via `as T & { reasoningContext?: string }` intersections only — never `as any`). For local models this is native `reasoningContext`; for hosted OpenAI Responses calls it can be a labeled provider summary display. Tool schemas for observable decisions (cast_votes, use_power, council_vote, etc.) include a `thinking` field; the engine threads both values out to the phase loggers and `TranscriptEntry`.

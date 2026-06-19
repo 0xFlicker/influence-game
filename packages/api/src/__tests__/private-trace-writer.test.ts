@@ -109,6 +109,12 @@ function makeTrace(overrides: Partial<PrivateDecisionTrace> = {}): PrivateDecisi
     },
     emittedThinking: "private thought secret",
     reasoningContext: "native reasoning secret",
+    providerReasoningSummary: {
+      provider: "openai_responses",
+      mode: "auto",
+      text: "provider summary secret",
+      parts: ["provider summary secret"],
+    },
     toolName: "cast_votes",
     toolArguments: {
       thinking: "private thought secret",
@@ -214,6 +220,7 @@ describe("private trace writer", () => {
       modelName: "gpt-5-nano",
       promptMessageCount: 2,
       toolName: "cast_votes",
+      providerReasoningSummaryByteLength: expect.any(Number),
       strategicDecision: {
         decisionLogBytes: expect.any(Number),
       },
@@ -228,6 +235,7 @@ describe("private trace writer", () => {
     expect(JSON.stringify(metadata)).not.toContain("full prompt secret");
     expect(JSON.stringify(metadata)).not.toContain("native reasoning secret");
     expect(JSON.stringify(metadata)).not.toContain("private thought secret");
+    expect(JSON.stringify(metadata)).not.toContain("provider summary secret");
 
     const readModel = new PrivateTraceReadModel(db, () => storage);
     const index = await readModel.listManifests(gameId);

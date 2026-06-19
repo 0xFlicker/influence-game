@@ -93,13 +93,15 @@ export function extractCognitiveArtifactDrafts(
   const capture = captureMetadata(trace);
   const drafts: CognitiveArtifactDraft[] = [];
   const reasoningContext = nonEmptyText(trace.reasoningContext);
+  const providerReasoningSummary = nonEmptyText(trace.providerReasoningSummary?.text);
   const thinking = nonEmptyText(trace.emittedThinking);
 
-  if (reasoningContext) {
+  if (reasoningContext || providerReasoningSummary) {
     drafts.push({
       artifactType: "reasoning",
       payload: {
-        reasoningContext,
+        ...(reasoningContext && { reasoningContext }),
+        ...(providerReasoningSummary && { reasoningSummary: providerReasoningSummary }),
         capture,
       },
     });

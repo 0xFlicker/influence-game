@@ -4,7 +4,7 @@ These rules and patterns apply to the game engine (`packages/engine`) for surfac
 
 ## Purpose
 
-Private `thinking` + raw `reasoningContext` (local `reasoning_content` etc.) are captured so that long unattended `--chatty` runs (especially Mingle + vote/power/council loops for 8->4 player testing) are actually debuggable and enjoyable for the human. Agents' real rationale for hidden Mingle intent, Mingle turns, empower/expose votes, empower revotes, private exposure-bench candidate selections, power actions (pass/protect/eliminate, including bundled shield pull-up choices), council votes, strategic reflections, Strategy Thread packet updates, direct endgame votes, and jury votes must be visible in local debug artifacts when useful and persisted in structured simulation artifacts. Initial Mingle room assignment is House-authored from all hidden intents and recorded as producer/debug assignment metadata. The House also emits between-round MC summary artifacts by default; rich producer simulations can add private House Strategy Bible packets, long-form summaries, and diary producer briefs for carry-forward validation.
+Private `thinking` + model-side reasoning evidence are captured so that long unattended `--chatty` runs (especially Mingle + vote/power/council loops for 8->4 player testing) are actually debuggable and enjoyable for the human. Local OpenAI-compatible servers may provide raw native `reasoningContext` such as `reasoning_content`; hosted OpenAI Responses calls may provide provider-generated reasoning summaries that are labeled as OpenAI summaries. Agents' real rationale for hidden Mingle intent, Mingle turns, empower/expose votes, empower revotes, private exposure-bench candidate selections, power actions (pass/protect/eliminate, including bundled shield pull-up choices), council votes, strategic reflections, Strategy Thread packet updates, direct endgame votes, and jury votes must be visible in local debug artifacts when useful and persisted in structured simulation artifacts. Initial Mingle room assignment is House-authored from all hidden intents and recorded as producer/debug assignment metadata. The House also emits between-round MC summary artifacts by default; rich producer simulations can add private House Strategy Bible packets, long-form summaries, and diary producer briefs for carry-forward validation.
 
 This observability layer exists because "master wants to see reasoning for voting as well" and equivalent signals for power and council decisions. Public player messages stay clean; the hidden reasoning is only for viewers, replays, and simulation analysis.
 
@@ -19,6 +19,7 @@ This observability layer exists because "master wants to see reasoning for votin
   // (same pattern for parsedContent, jsonFallback, and mismatch paths)
   ```
 - Never use `as any`.
+- Hosted OpenAI calls with `openAIReasoningSummary` enabled use the Responses API with JSON Schema output. The returned simulation/debug object gets a labeled `OpenAI reasoning summary (...)` display string when the provider supplies one; private traces keep the structured `providerReasoningSummary` payload separate from raw `reasoningContext`.
 
 Decision methods on `IAgent` / `InfluenceAgent` return the extra fields (typed on the interface and impl):
 
@@ -92,7 +93,8 @@ export interface TranscriptEntry {
   /** Agent's internal thinking when producing this message (hidden from players, visible to viewers) */
   thinking?: string;
   /**
-   * Raw model reasoning context (e.g. `reasoning_content` from local models like Gemma via LM Studio).
+   * Model-side reasoning evidence. Local models may provide raw `reasoning_content`;
+   * hosted OpenAI Responses calls may provide a labeled provider summary.
    * Captured separately from the agent's "thinking" field for richer simulation traces.
    */
   reasoningContext?: string;
@@ -147,7 +149,7 @@ The extras live only on the agent return value, `TranscriptEntry`, and `AgentTur
 
 Simulation runs persist per-turn reasoning in local JSONL artifacts. API-backed owner runs can also persist a deeper private trace for model-call inspection:
 
-- `PrivateDecisionTrace` is emitted at the model-call boundary where prompt messages, raw provider response, tool arguments or parsed JSON output, emitted `thinking`, and native `reasoningContext` still exist.
+- `PrivateDecisionTrace` is emitted at the model-call boundary where prompt messages, raw provider response, tool arguments or parsed JSON output, emitted `thinking`, native `reasoningContext`, and hosted OpenAI `providerReasoningSummary` payloads still exist.
 - `InfluenceAgent` and `LLMHouseInterviewer` receive an optional `privateTraceSink`; without a sink, engine behavior and simulation artifacts are unchanged.
 - `game-lifecycle.ts` supplies the sink only for owner-backed API runs. The sink calls the API private trace writer, which stores raw JSON content in private S3-compatible content storage and creates a `game_evidence_manifests` row with sanitized counts/facets only.
 - Local validation must use a real S3-compatible private content endpoint, not the profile-picture filesystem fallback. Run `bun run s3:bootstrap`, source `.env.private-trace.local`, and use `bun run trace:local:smoke` to verify the local writer/read/search path.
@@ -161,7 +163,7 @@ Private trace content is not public transcript, not canonical board truth, and n
 
 New API-created games set `games.cognitive_artifact_capture_version = 1` and fan out first-class cognitive artifact rows beside private trace writing. Old/imported/pre-capture games remain version `0` and return `not_captured_for_game` after authorization. The product path never reads producer private trace storage to reconstruct missing split artifacts.
 
-- `reasoning` artifacts come only from `PrivateDecisionTrace.reasoningContext` and are owner-only for user-facing access.
+- `reasoning` artifacts come only from `PrivateDecisionTrace.reasoningContext` and/or `PrivateDecisionTrace.providerReasoningSummary.text` and are owner-only for user-facing access. User-facing payloads store provider summaries as text only; provider wrappers such as `parts` and `outputItemIds` remain private-trace evidence.
 - `thinking` artifacts come only from `PrivateDecisionTrace.emittedThinking` and are readable by the owner plus same-game participants.
 - `strategy` artifacts come only from normalized trace fields such as `decisionLog`, `strategicLens`, `strategicLensRationale`, `strategyPacketRevision`, `strategyPacketUpdate`, `strategyPacketSummary`, and `strategicReflectionSummary`; they are readable by the owner plus same-game participants.
 - Producer/admin access may read all split artifacts directly, including degraded diagnostics. Raw prompts, raw responses, tool arguments, storage keys, source-pointer internals, and arbitrary `output` blobs are excluded from cognitive payload construction.
@@ -173,7 +175,7 @@ New API-created games set `games.cognitive_artifact_capture_version = 1` and fan
 
 2. House calls must be direct (`await this.houseInterviewer.generateHouseSummary(...)`, `await this.houseInterviewer.updateStrategyBible(...)`, etc.) — no `if (typeof ... === 'function')` guards or `as any`.
 
-3. Every structured decision that should be observable by viewers (votes, power, council, mingle turns, etc.) must solicit `"thinking"` in its tool schema (see `TOOL_CAST_VOTES`, `TOOL_POWER_ACTION`, `TOOL_COUNCIL_VOTE`) and return it + the attached `reasoningContext`.
+3. Every structured decision that should be observable by viewers (votes, power, council, mingle turns, etc.) must solicit `"thinking"` in its tool schema (see `TOOL_CAST_VOTES`, `TOOL_POWER_ACTION`, `TOOL_COUNCIL_VOTE`) and return it + the attached `reasoningContext` or labeled provider summary display when present.
 
 4. Public player-visible output (`message` in `AgentResponse` and Mingle room text) must never contain the hidden thinking; it is stripped or kept in a separate field.
 
@@ -203,6 +205,16 @@ See `docs/local-model-evaluation.md` for the full provider table. Key points tha
 - House Mingle room assignment is a direct House call, not an agent tool call, but it uses strict JSON Schema output and the local structured token floor before deterministic assignment fallback.
 - Local paths no longer omit the `thinking` field from decision tool schemas. Agents are still expected to emit their internal reasoning (the "thinking" the prompts and schemas solicit). The raw hidden server channel (if present) is captured *separately* into `reasoningContext` only and never overwrites the emitted `thinking`. This gives high-contrast bright-white `thinking:` + bright-cyan `reasoning:` in --chatty for local models.
 - `--chatty` + long timeouts (`--game-timeout-sec`, `--llm-timeout-sec`) are the recommended way to watch Mingle hardening and decision quality in real time.
+
+## Hosted OpenAI Reasoning Summaries
+
+Hosted OpenAI reasoning summaries are an official Responses API summary path, not raw chain-of-thought. Influence requests them only for hosted OpenAI agent calls when a summary mode is configured:
+
+- `INFLUENCE_OPENAI_REASONING_SUMMARY=auto|concise|detailed|off` controls API/server-created games. `INFLUENCE_LLM_REASONING_SUMMARY` is accepted as a compatibility alias.
+- Hosted OpenAI defaults to `auto`. OpenAI-compatible base URLs default to off and ignore summary modes because local servers do not implement the hosted Responses summary contract.
+- Simulations can override with `--reasoning-summary auto|concise|detailed|off` or disable with `--no-reasoning-summary`.
+- When enabled, common agent message and structured decision prompts use Responses API JSON Schema output instead of Chat Completions tool forcing. The model-call trace stores `providerReasoningSummary: { provider: "openai_responses", mode, text, parts, outputItemIds? }`; the simulation-facing return object gets a labeled `OpenAI reasoning summary (${mode}): ...` value in the reasoning display lane.
+- Private trace manifests store summary byte counts only. User-facing cognitive artifact payloads may include the summary text as owner-only `reasoning` artifacts, but they do not include provider wrappers, parts, output item IDs, manifests, or public game content.
 
 ## Testing & Mock Discipline
 
@@ -257,7 +269,7 @@ In simulation batches under `packages/engine/docs/simulations/`, each game write
 - `game-N.txt`: human-readable formatted transcript; includes ANSI colors for `--chatty`.
 - `game-N.json`: full transcript JSON plus result metadata.
 - `game-N-progress.jsonl`: lightweight progress events for monitoring a running game.
-- `game-N-turns.jsonl`: one clean structured JSON record per agent turn, including the normalized response the game used plus `thinking` and `reasoningContext` when available.
+- `game-N-turns.jsonl`: one clean structured JSON record per agent turn, including the normalized response the game used plus `thinking` and `reasoningContext` / labeled provider summaries when available.
 - `game-N-events.jsonl`: one clean canonical domain event record per accepted game-state fact. Replay this through `replayCanonicalEvents(...)` to rebuild the game projection; do not parse transcript prose as board state. API-backed games persist the same canonical envelope in Postgres for live runs, while CLI simulations remain local JSONL artifacts unless a future import path explicitly loads them.
 
 `game-N-turns.jsonl` always includes hidden `mingle-intent` records and House `mingle-room-assignment` records. Mingle intent player-target fields are normalized to living, non-self players before House assignment; stale names may remain only as historical prose context or `repairNotes`, not as active `seekPlayers`, `avoidPlayers`, or `provisionalTarget`. It includes private `candidate-selection` records when exposure-bench ambiguity requires an empowered-player choice, and private `power-action` records carry `response.shieldPullUp` when Protect bundles an unresolved replacement choice. It includes `house-mc-summary` records by default because `enableHouseRoundSummaries` is enabled in simulation config. It includes hidden `strategic-reflection` and `strategy-packet` records when the simulator is run with `--strategic-reflections` (or `INFLUENCE_SIM_STRATEGIC_REFLECTIONS=true`) and the reflection produces a packet. It includes private `house-strategy-bible`, `house-long-form-summary`, and `house-producer-brief` records when the simulator is run with `--rich-producer` (or `INFLUENCE_SIM_RICH_PRODUCER=true`). Later private decision records may include `response.decisionLog` receipts that explain pivots for normal Strategy Thread reflection. These records are producer/debug artifacts only; they are not player-visible speech.
@@ -294,7 +306,7 @@ Update simulation batch notes (the dated `.md` next to `results.json` etc.) with
 
 ## Review Checklist
 
-- Did we thread both thinking and reasoningContext all the way from the LLM response through the agent method, the phase log call, TranscriptEntry, AgentTurnEvent, and formatEntry?
+- Did we thread both thinking and reasoning evidence all the way from the LLM response through the agent method, the phase log call, TranscriptEntry, AgentTurnEvent, and formatEntry?
 - Is there any `as any` left in the changed paths?
 - Are House calls still direct?
 - Do player prompts render the Current Board Contract before decisions, including negative facts such as no current empowerment before a normal vote and no active shields/empowerment in endgame?

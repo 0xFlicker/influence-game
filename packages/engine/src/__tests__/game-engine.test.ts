@@ -60,6 +60,31 @@ class PowerLobbyProbeAgent extends MockAgent {
   }
 }
 
+class LobbyContextProbeAgent extends MockAgent {
+  readonly lobbyCalls: Array<{
+    round: number;
+    subRound: number;
+    seenSameRoundLobbyMessages: string[];
+  }> = [];
+
+  override async getLobbyMessage(context: PhaseContext): Promise<AgentResponse> {
+    const seenSameRoundLobbyMessages = context.publicMessages
+      .filter((message) => message.phase === Phase.LOBBY && message.round === context.round)
+      .map((message) => `${message.from}: ${message.text}`);
+
+    this.lobbyCalls.push({
+      round: context.round,
+      subRound: context.lobbySubRound ?? -1,
+      seenSameRoundLobbyMessages,
+    });
+
+    return {
+      thinking: `${this.name} responds after hearing ${seenSameRoundLobbyMessages.length} lobby messages.`,
+      message: `${this.name} heard ${seenSameRoundLobbyMessages.length} lobby message${seenSameRoundLobbyMessages.length === 1 ? "" : "s"} before speaking.`,
+    };
+  }
+}
+
 class FixedMingleHouseInterviewer extends TemplateHouseInterviewer {
   constructor(private readonly assignments: Record<string, number>) {
     super();
@@ -1410,6 +1435,47 @@ describe("GameState - POWER phase", () => {
 
     gs.expireShields();
     expect(gs.getPlayer(charlie)?.shielded).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GameRunner: Lobby turn order
+// ---------------------------------------------------------------------------
+
+describe("GameRunner - Lobby turn order", () => {
+  const TEST_CONFIG: GameConfig = {
+    timers: {
+      introduction: 0,
+      lobby: 0,
+      mingle: 0,
+      rumor: 0,
+      vote: 0,
+      power: 0,
+      council: 0,
+    },
+    maxRounds: 1,
+    minPlayers: 4,
+    maxPlayers: 12,
+    lobbyMessagesPerPlayer: 1,
+    mingleSessionsPerRound: 1,
+  };
+
+  it("runs lobby speakers sequentially so later speakers can answer earlier same-round messages", async () => {
+    const agents = ["Alpha", "Beta", "Gamma", "Delta"].map(
+      (name) => new LobbyContextProbeAgent(createUUID(), name),
+    );
+    const runner = new GameRunner(agents, TEST_CONFIG);
+
+    await runner.run();
+
+    const firstRoundCalls = agents.map((agent) =>
+      agent.lobbyCalls.find((call) => call.round === 1 && call.subRound === 0),
+    );
+
+    expect(firstRoundCalls.map((call) => call?.seenSameRoundLobbyMessages.length)).toEqual([0, 1, 2, 3]);
+    expect(firstRoundCalls[1]!.seenSameRoundLobbyMessages[0]).toContain("Alpha heard 0 lobby messages");
+    expect(firstRoundCalls[2]!.seenSameRoundLobbyMessages[1]).toContain("Beta heard 1 lobby message");
+    expect(firstRoundCalls[3]!.seenSameRoundLobbyMessages[2]).toContain("Gamma heard 2 lobby messages");
   });
 });
 

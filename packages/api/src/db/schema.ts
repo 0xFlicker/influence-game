@@ -406,7 +406,7 @@ export const gameCognitiveArtifacts = pgTable("game_cognitive_artifacts", {
   check("game_cognitive_artifacts_retention_class_check", sql`${table.retentionClass} IN ('debug', 'audit', 'legal_hold')`),
   check("game_cognitive_artifacts_redaction_status_check", sql`${table.redactionStatus} IN ('active', 'expired', 'redacted')`),
   check("game_cognitive_artifacts_event_sequence_check", sql`${table.eventSequence} IS NULL OR ${table.eventSequence} > 0`),
-  check("game_cognitive_artifacts_round_check", sql`${table.round} IS NULL OR ${table.round} > 0`),
+  check("game_cognitive_artifacts_round_check", sql`${table.round} IS NULL OR ${table.round} >= 0`),
   check("game_cognitive_artifacts_payload_byte_length_check", sql`${table.payloadByteLength} >= 0`),
 ]);
 

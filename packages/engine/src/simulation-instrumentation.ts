@@ -34,6 +34,7 @@ export interface SimulatorArgsSnapshot {
   enableStrategicReflections?: boolean;
   richProducer?: boolean;
   enableDiary?: boolean;
+  openAIReasoningSummary?: "auto" | "concise" | "detailed";
 }
 
 export interface GitMetadata {

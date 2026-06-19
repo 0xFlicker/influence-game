@@ -244,8 +244,8 @@ export interface AgentResponse {
   /** The actual message content */
   message: string;
   /**
-   * Raw model-provided reasoning context (e.g. `reasoning_content` from local LLMs).
-   * Captured alongside `thinking` for richer simulation traces.
+   * Model-side reasoning evidence for debug surfaces. Local models may provide raw
+   * `reasoning_content`; hosted OpenAI calls may provide a labeled provider summary.
    */
   reasoningContext?: string;
   /** Private producer/debug receipt describing what this action meant strategically. */
@@ -275,6 +275,16 @@ export interface PrivateDecisionTraceToolCall {
   type?: string;
   name?: string;
   arguments?: string;
+}
+
+export type ProviderReasoningSummaryMode = "auto" | "concise" | "detailed";
+
+export interface ProviderReasoningSummary {
+  provider: "openai_responses";
+  mode: ProviderReasoningSummaryMode;
+  text: string;
+  parts: string[];
+  outputItemIds?: string[];
 }
 
 export interface PrivateDecisionTraceBoundary {
@@ -319,6 +329,7 @@ export interface PrivateDecisionTrace {
   output?: unknown;
   emittedThinking?: string;
   reasoningContext?: string;
+  providerReasoningSummary?: ProviderReasoningSummary;
   toolName?: string;
   toolArguments?: unknown;
   decisionLog?: string;
@@ -545,7 +556,7 @@ export interface MingleTurnAction {
   gotoRoomId?: number | null;
   /** Optional player name to follow to their resolved room for the next turn. */
   gotoPlayerName?: string | null;
-  /** Raw model reasoning context from local LLM */
+  /** Model-side reasoning evidence for debug surfaces. */
   reasoningContext?: string;
   /** Private producer/debug strategic decision metadata for this action. */
   decisionLog?: string | null;
@@ -554,7 +565,7 @@ export interface MingleTurnAction {
 export interface MingleIntentAction extends MingleIntentSummaryBase {
   /** Agent's internal thinking (hidden from players, visible to viewers) */
   thinking?: string;
-  /** Raw model reasoning context from local LLM */
+  /** Model-side reasoning evidence for debug surfaces. */
   reasoningContext?: string;
   /** Private producer/debug strategic decision metadata for this action. */
   decisionLog?: string | null;
@@ -570,7 +581,7 @@ export interface StrategicReflectionAction {
   strategicLensRationale: string;
   /** Agent's internal thinking (hidden from players, visible to viewers) */
   thinking?: string;
-  /** Raw model reasoning context from local LLM */
+  /** Model-side reasoning evidence for debug surfaces. */
   reasoningContext?: string;
   /** New strategy packet revision carried forward from this reflection, if one was produced. */
   strategyPacket?: StrategyPacketSummary | null;
@@ -883,7 +894,8 @@ export interface TranscriptEntry {
   /** Agent's internal thinking when producing this message (hidden from players, visible to viewers) */
   thinking?: string;
   /**
-   * Raw model reasoning context (e.g. `reasoning_content` from local models like Gemma via LM Studio).
+   * Model-side reasoning evidence. Local models may provide raw `reasoning_content`;
+   * hosted OpenAI calls may provide a labeled provider summary.
    * Captured separately from the agent's "thinking" field for richer simulation traces.
    */
   reasoningContext?: string;

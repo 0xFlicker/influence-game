@@ -87,6 +87,13 @@ describe("cognitive artifact writer", () => {
       },
       emittedThinking: "I should vote against the unstable coalition.",
       reasoningContext: "Native reasoning says the vote math points at Vera.",
+      providerReasoningSummary: {
+        provider: "openai_responses",
+        mode: "auto",
+        text: "OpenAI summary says Atlas compared Vera pressure against Mira trust.",
+        parts: ["OpenAI summary says Atlas compared Vera pressure against Mira trust."],
+        outputItemIds: ["rs-test"],
+      },
       toolName: "cast_vote",
       toolArguments: {
         apiKeyLikeValue: "TOOL ARG SECRET SHOULD NOT BE STORED",
@@ -140,6 +147,11 @@ describe("cognitive artifact writer", () => {
 
     const serializedPayloads = JSON.stringify(rows.map((row) => row.payload));
     expect(serializedPayloads).toContain("Native reasoning says the vote math points at Vera.");
+    expect(serializedPayloads).toContain("OpenAI summary says Atlas compared Vera pressure against Mira trust.");
+    expect(serializedPayloads).toContain("reasoningSummary");
+    expect(serializedPayloads).not.toContain("openai_responses");
+    expect(serializedPayloads).not.toContain("outputItemIds");
+    expect(serializedPayloads).not.toContain("rs-test");
     expect(serializedPayloads).toContain("I should vote against the unstable coalition.");
     expect(serializedPayloads).toContain("Vera is gaining too much cover");
     expect(serializedPayloads).toContain("strategyPacketSummary");
@@ -169,12 +181,92 @@ describe("cognitive artifact writer", () => {
     expect(rows).toHaveLength(0);
   });
 
+  test("writes reasoning artifacts from OpenAI provider summaries without native reasoning", async () => {
+    const { gameId, playerId } = await createGamePlayer();
+    const trace: PrivateDecisionTrace = {
+      ...traceForPlayer(playerId),
+      reasoningContext: undefined,
+      emittedThinking: undefined,
+      decisionLog: undefined,
+      strategicLens: undefined,
+      strategicLensRationale: undefined,
+      strategyPacketRevision: undefined,
+      strategyPacketSummary: undefined,
+      providerReasoningSummary: {
+        provider: "openai_responses",
+        mode: "auto",
+        text: "OpenAI summary: Atlas treated Vera as the central vote risk.",
+        parts: ["OpenAI summary: Atlas treated Vera as the central vote risk."],
+      },
+    };
+
+    const result = await writeCognitiveArtifactsForTrace(db, {
+      gameId,
+      trace,
+      captureVersion: COGNITIVE_ARTIFACT_CAPTURE_VERSION,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.artifactIds).toHaveLength(1);
+
+    const rows = await db
+      .select()
+      .from(schema.gameCognitiveArtifacts)
+      .where(eq(schema.gameCognitiveArtifacts.gameId, gameId));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.artifactType).toBe("reasoning");
+    expect(rows[0]!.payload).toMatchObject({
+      reasoningSummary: "OpenAI summary: Atlas treated Vera as the central vote risk.",
+    });
+    expect(JSON.stringify(rows[0]!.payload)).not.toContain("openai_responses");
+    expect(JSON.stringify(rows[0]!.payload)).not.toContain("parts");
+  });
+
+  test("writes introduction artifacts for round zero", async () => {
+    const { gameId, playerId } = await createGamePlayer();
+    const trace: PrivateDecisionTrace = {
+      ...traceForPlayer(playerId),
+      action: "introduction",
+      phase: Phase.INTRODUCTION,
+      round: 0,
+      reasoningContext: undefined,
+      providerReasoningSummary: undefined,
+      emittedThinking: "Keep the introduction personable and concrete.",
+      decisionLog: undefined,
+      strategicLens: undefined,
+      strategicLensRationale: undefined,
+      strategyPacketRevision: undefined,
+      strategyPacketSummary: undefined,
+    };
+
+    const result = await writeCognitiveArtifactsForTrace(db, {
+      gameId,
+      trace,
+      captureVersion: COGNITIVE_ARTIFACT_CAPTURE_VERSION,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+
+    const rows = await db
+      .select()
+      .from(schema.gameCognitiveArtifacts)
+      .where(eq(schema.gameCognitiveArtifacts.gameId, gameId));
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.action).toBe("introduction");
+    expect(rows[0]!.phase).toBe(Phase.INTRODUCTION);
+    expect(rows[0]!.round).toBe(0);
+  });
+
   test("stores oversized payloads as degraded diagnostics without partial payload", async () => {
     const { gameId, playerId } = await createGamePlayer();
     const trace: PrivateDecisionTrace = {
       ...traceForPlayer(playerId),
       emittedThinking: "x".repeat(MAX_COGNITIVE_ARTIFACT_PAYLOAD_BYTES + 1),
       reasoningContext: undefined,
+      providerReasoningSummary: undefined,
       decisionLog: undefined,
       strategicLens: undefined,
       strategicLensRationale: undefined,

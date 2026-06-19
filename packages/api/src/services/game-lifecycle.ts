@@ -662,6 +662,7 @@ export async function startGame(
       memoryStore,
       {
         toolChoiceMode: llmConfig.toolChoiceMode,
+        ...(llmConfig.openAIReasoningSummary && { openAIReasoningSummary: llmConfig.openAIReasoningSummary }),
         ...(privateTraceSink && { privateTraceSink }),
       },
     );
