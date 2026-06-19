@@ -788,6 +788,10 @@ function normalizeStrategicLens(value: unknown): StrategicLens {
   return STRATEGIC_LENSES.includes(value as StrategicLens) ? value as StrategicLens : "broad_read";
 }
 
+function readOptionalStrategicLens(value: unknown): StrategicLens | undefined {
+  return STRATEGIC_LENSES.includes(value as StrategicLens) ? value as StrategicLens : undefined;
+}
+
 function normalizeStrategicDecisionMetadata(record: Record<string, unknown>): StrategicDecisionMetadata {
   const decisionLog = normalizeNullableString(record.decisionLog);
   return {
@@ -1188,6 +1192,22 @@ export class InfluenceAgent implements IAgent {
     return this.strategicDecisionMetadata(record);
   }
 
+  private privateTraceStrategicReflectionSummary(
+    action: string,
+    record: Record<string, unknown>,
+  ): StrategicReflectionSummary | undefined {
+    if (action !== "reflection") return undefined;
+    return {
+      certainties: normalizeStringArray(record.certainties),
+      suspicions: normalizeStringArray(record.suspicions),
+      allies: normalizeStringArray(record.allies),
+      threats: normalizeStringArray(record.threats),
+      plan: normalizeRequiredString(record.plan),
+      strategicLens: normalizeStrategicLens(record.strategicLens),
+      strategicLensRationale: normalizeRequiredString(record.strategicLensRationale),
+    };
+  }
+
   private async emitPrivateDecisionTrace(params: {
     options?: LlmCallOptions;
     messages: readonly { role: string; content: unknown; name?: string }[];
@@ -1209,8 +1229,12 @@ export class InfluenceAgent implements IAgent {
       InfluenceAgent.readStringField(outputRecord.reasoningContext) ||
       InfluenceAgent.extractReasoningContext(message);
     const strategicDecision = this.privateTraceStrategicDecisionMetadata(params.output);
+    const strategicLens = readOptionalStrategicLens(outputRecord.strategicLens);
+    const strategicLensRationale = normalizeNullableString(outputRecord.strategicLensRationale);
+    const strategyPacketUpdate = normalizeStrategyPacketUpdate(outputRecord.strategyPacket);
     const content = typeof message?.content === "string" ? message.content : null;
     const traceContext = params.options.privateTrace;
+    const strategicReflectionSummary = this.privateTraceStrategicReflectionSummary(traceContext.action, outputRecord);
     const trace: PrivateDecisionTrace = {
       version: 2,
       ...(traceContext.gameId && { gameId: traceContext.gameId }),
@@ -1240,6 +1264,13 @@ export class InfluenceAgent implements IAgent {
       ...(params.toolName && { toolName: params.toolName }),
       ...(params.toolArguments !== undefined && { toolArguments: params.toolArguments }),
       ...(strategicDecision.decisionLog && { decisionLog: strategicDecision.decisionLog }),
+      ...(strategicLens && { strategicLens }),
+      ...(strategicLensRationale && { strategicLensRationale }),
+      ...(strategyPacketUpdate && { strategyPacketUpdate }),
+      ...(this.memory.strategyPacket && traceContext.action !== "reflection" && {
+        strategyPacketSummary: this.memory.strategyPacket,
+      }),
+      ...(strategicReflectionSummary && { strategicReflectionSummary }),
       ...(this.memory.strategyPacket?.revisionId && { strategyPacketRevision: this.memory.strategyPacket.revisionId }),
       ...(traceContext.boundary && { boundary: traceContext.boundary }),
     };

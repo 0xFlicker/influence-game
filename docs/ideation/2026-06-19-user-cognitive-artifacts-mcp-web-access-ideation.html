@@ -1,0 +1,682 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Influence Cognitive Artifacts Ideation</title>
+  <style>
+    :root {
+      --bg: #f7f4ee;
+      --paper: #ffffff;
+      --ink: #17201c;
+      --muted: #5f6c65;
+      --line: #d8d1c5;
+      --accent: #1f7a6b;
+      --accent-soft: #e3f2ee;
+      --blue: #245f9d;
+      --blue-soft: #e5eef8;
+      --warn: #8b5d12;
+      --warn-soft: #f7edda;
+      --bad: #8a2f38;
+      --bad-soft: #f7e4e7;
+      --code: #f0ede7;
+      --shadow: 0 12px 35px rgba(31, 42, 36, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.58 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      width: min(960px, calc(100% - 32px));
+      margin: 32px auto 56px;
+    }
+    header {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 28px;
+      box-shadow: var(--shadow);
+    }
+    .eyebrow {
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+    h1, h2, h3 {
+      line-height: 1.2;
+      letter-spacing: 0;
+      margin: 0;
+    }
+    h1 {
+      font-size: 30px;
+      margin-top: 8px;
+    }
+    h2 {
+      font-size: 22px;
+      margin-bottom: 14px;
+    }
+    h3 {
+      font-size: 17px;
+      margin-bottom: 10px;
+    }
+    p {
+      max-width: 76ch;
+      margin: 10px 0 0;
+    }
+    a { color: var(--blue); }
+    code {
+      background: var(--code);
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: 1px 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+    section {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      margin-top: 18px;
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #f8f6f1;
+      padding: 5px 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .stat {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfaf7;
+    }
+    .stat strong {
+      display: block;
+      font-size: 20px;
+      color: var(--ink);
+    }
+    .stat span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    ul {
+      margin: 10px 0 0;
+      padding-left: 20px;
+    }
+    li { margin: 5px 0; }
+    .subnav {
+      display: grid;
+      gap: 7px;
+      margin: 12px 0 18px;
+      padding: 0;
+      list-style: none;
+    }
+    .subnav a {
+      display: block;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 9px 11px;
+      text-decoration: none;
+      background: #fbfaf7;
+      color: var(--ink);
+    }
+    article.idea {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      margin-top: 14px;
+      background: #fffefb;
+    }
+    .idea-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+    .rank {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 34px;
+      height: 28px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 800;
+      margin-right: 8px;
+    }
+    dl {
+      display: grid;
+      grid-template-columns: 128px 1fr;
+      gap: 8px 14px;
+      margin: 14px 0 0;
+    }
+    dt {
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 12px;
+    }
+    dd {
+      margin: 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      background: #f3efe7;
+      color: #344039;
+    }
+    .callout {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      margin-top: 12px;
+      background: var(--blue-soft);
+      color: #173650;
+    }
+    .warn {
+      background: var(--warn-soft);
+      color: #4d360c;
+    }
+    .bad {
+      background: var(--bad-soft);
+      color: #5b1f27;
+    }
+    footer {
+      width: min(960px, calc(100% - 32px));
+      margin: 0 auto 32px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    @media (max-width: 720px) {
+      main { width: min(100% - 20px, 960px); margin-top: 16px; }
+      header, section { padding: 18px; }
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      dl { grid-template-columns: 1fr; }
+      .idea-head { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">Repo-grounded ideation</div>
+      <h1>Ideation: User Cognitive Artifacts for MCP and Web Access</h1>
+      <p>
+        Rank the strongest next-slice approaches for splitting Influence reasoning, thinking, and strategy artifacts away from producer-only traces.
+      </p>
+      <div class="meta">
+        <span class="pill">Date: <time datetime="2026-06-19">2026-06-19</time></span>
+        <span class="pill">Topic: user-cognitive-artifacts-mcp-web-access</span>
+        <span class="pill">Mode: repo-grounded</span>
+        <span class="pill">Focus: next MCP + web access slice</span>
+      </div>
+      <div class="stats">
+        <div class="stat"><strong>6</strong><span>surviving approaches</span></div>
+        <div class="stat"><strong>5</strong><span>topic axes</span></div>
+        <div class="stat"><strong>10</strong><span>cut ideas</span></div>
+        <div class="stat"><strong>1</strong><span>recommended contract</span></div>
+      </div>
+    </header>
+
+    <section id="grounding-context">
+      <h2>Grounding Context</h2>
+      <p>
+        The current producer trace stack is intentionally broad and privileged. <code>PrivateDecisionTrace</code> content carries prompts, raw provider responses, tool arguments, emitted <code>thinking</code>, native <code>reasoningContext</code>, <code>decisionLog</code>, strategy packet revision data, actor/action metadata, and source pointers. The API writer stores that raw JSON under <code>private_decision_trace</code> and creates a manifest with <code>accessScope: "producer_admin"</code> only.
+      </p>
+      <p>
+        The deployed Game MCP is already split into two profiles. <code>/mcp</code> with <code>scope=games</code> is subject-scoped to created or joined games and owned player/agent records; <code>/mcp/producer</code> with <code>scope=mcp</code> stays producer-only and exposes private trace tools. Existing docs explicitly say not to expose private trace content or metadata through <code>scope=games</code>.
+      </p>
+      <p>
+        Engine capture points already exist. Agent calls surface <code>thinking</code>, <code>reasoningContext</code>, <code>decisionLog</code>, <code>strategicLens</code>, <code>strategicLensRationale</code>, and strategy packet updates in typed returns and in <code>emitPrivateDecisionTrace</code>. API lifecycle wiring already has a single adapter seam, <code>createPrivateTraceSink</code>, where owner-backed runs enrich traces with <code>gameId</code> and <code>ownerEpoch</code> before storage.
+      </p>
+      <p>
+        External MCP grounding: the MCP resources spec treats resources as URI-addressed application data and calls for per-resource access controls; the MCP authorization spec requires HTTP servers to validate resource-bound bearer tokens before serving protected content.
+      </p>
+    </section>
+
+    <section id="topic-axes">
+      <h2>Topic Axes</h2>
+      <ul>
+        <li>Artifact and storage boundary</li>
+        <li>Write-time capture points</li>
+        <li>Access policy and claims</li>
+        <li>MCP and web read-model design</li>
+        <li>New-games-only rollout and migration</li>
+      </ul>
+    </section>
+
+    <section id="recommended-contract">
+      <h2>Recommended Next-Slice Contract</h2>
+      <div class="callout">
+        Create a new <code>game_cognitive_artifacts</code> read model for new games only, populated at write time from the existing private trace sink, and expose it through <code>scope=games</code> using subject claims. Do not read, sanitize, or fallback to producer trace content when the split artifacts are absent.
+      </div>
+      <p>
+        Keep <code>producer_trace</code> exactly where it is: full raw evidence behind producer/admin access. Add first-class user artifacts as separate records with their own schema, ownership, and visibility. The writer may derive those records from the same in-memory <code>PrivateDecisionTrace</code> object at capture time, but once written they are independent product data, not a filtered view over private traces.
+      </p>
+      <p>
+        Producer/admin access should also use the split artifact records directly. Raw producer traces remain available for forensic inspection, but they are too large and too noisy to be the normal producer read path for reasoning, thinking, or strategy.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Artifact</th>
+            <th>Payload contract</th>
+            <th>User-facing access</th>
+            <th>Fallback behavior</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>producer_trace</code></td>
+            <td>Full raw prompt, response, tool args, internal metadata, reasoning, thinking, strategy, source pointers.</td>
+            <td>None through <code>scope=games</code>; producer/admin through existing producer MCP.</td>
+            <td>Existing behavior only.</td>
+          </tr>
+          <tr>
+            <td><code>reasoning</code></td>
+            <td>Raw/native <code>reasoningContext</code> if captured, plus minimal action/actor/game boundary metadata.</td>
+            <td>Owning user/agent only.</td>
+            <td>If absent, return <code>not_captured</code>; never read producer trace.</td>
+          </tr>
+          <tr>
+            <td><code>thinking</code></td>
+            <td>Explicit model-emitted <code>thinking</code>, plus minimal action/actor/game boundary metadata.</td>
+            <td>Owning user plus other participants in the same game.</td>
+            <td>If absent, return <code>not_captured</code>; never read producer trace.</td>
+          </tr>
+          <tr>
+            <td><code>strategy</code></td>
+            <td><code>decisionLog</code>, <code>strategicLens</code>, <code>strategicLensRationale</code>, strategy packet/reflection summaries when present.</td>
+            <td>Owning user plus other participants in the same game.</td>
+            <td>If absent, return <code>not_captured</code>; never read producer trace.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="schema-options">
+      <h2>Resource/Artifact Schema Options</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Option</th>
+            <th>Shape</th>
+            <th>Fit</th>
+            <th>Recommendation</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>A. Single <code>game_cognitive_artifacts</code> table</td>
+            <td><code>id</code>, <code>gameId</code>, <code>ownerEpoch</code>, <code>eventSequence</code>, <code>artifactType</code>, <code>actorPlayerId</code>, <code>actorAgentProfileId</code>, <code>ownerUserId</code>, <code>accessClass</code>, <code>action</code>, <code>phase</code>, <code>round</code>, <code>payloadVersion</code>, <code>payload</code>, <code>createdAt</code>.</td>
+            <td>Best first slice. Small enough for JSONB, queryable, testable, and independent from producer trace storage.</td>
+            <td>Use this first.</td>
+          </tr>
+          <tr>
+            <td>B. Artifact manifest plus object storage</td>
+            <td>Manifest row with <code>artifactType</code>, ownership, visibility, object pointer, byte/hash metadata.</td>
+            <td>Useful if raw authorized artifacts become large or downloadable. More moving parts than needed for small reasoning/thinking/strategy payloads.</td>
+            <td>Defer until size proves it.</td>
+          </tr>
+          <tr>
+            <td>C. Split tables per artifact type</td>
+            <td><code>game_reasoning_artifacts</code>, <code>game_thinking_artifacts</code>, <code>game_strategy_artifacts</code>.</td>
+            <td>Clear but causes duplicate authorization, pagination, event boundary, and MCP plumbing.</td>
+            <td>Do not start here.</td>
+          </tr>
+          <tr>
+            <td>D. Extend <code>game_evidence_manifests.accessScope</code></td>
+            <td>Add <code>owner_only</code> / <code>participants</code> scopes to the existing manifest table.</td>
+            <td>Tempting but couples product artifacts to raw evidence pointers and risks accidental private-trace reads.</td>
+            <td>Reject for this slice.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="access-control-matrix">
+      <h2>Access-Control Matrix</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Caller</th>
+            <th>Producer trace</th>
+            <th>Reasoning</th>
+            <th>Thinking</th>
+            <th>Strategy</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Producer/admin via <code>/mcp/producer</code></td>
+            <td>Allowed by existing producer tools.</td>
+            <td>Allowed via first-class cognitive artifact reads; do not force producers to inspect raw traces.</td>
+            <td>Allowed via first-class cognitive artifact reads; do not force producers to inspect raw traces.</td>
+            <td>Allowed via first-class cognitive artifact reads; do not force producers to inspect raw traces.</td>
+          </tr>
+          <tr>
+            <td>Owning user or owned agent profile</td>
+            <td>Denied through <code>scope=games</code>.</td>
+            <td>Allowed.</td>
+            <td>Allowed.</td>
+            <td>Allowed.</td>
+          </tr>
+          <tr>
+            <td>Other participant in the same game</td>
+            <td>Denied through <code>scope=games</code>.</td>
+            <td>Denied.</td>
+            <td>Allowed.</td>
+            <td>Allowed.</td>
+          </tr>
+          <tr>
+            <td>Game creator who did not participate</td>
+            <td>Denied through <code>scope=games</code>.</td>
+            <td>Denied unless they own the actor player/profile.</td>
+            <td>Denied unless product decides creators are participants.</td>
+            <td>Denied unless product decides creators are participants.</td>
+          </tr>
+          <tr>
+            <td>Nonparticipant</td>
+            <td>Denied.</td>
+            <td>Denied.</td>
+            <td>Denied.</td>
+            <td>Denied.</td>
+          </tr>
+          <tr>
+            <td>Old game without artifact capture</td>
+            <td>Existing producer-only behavior.</td>
+            <td><code>not_captured</code>.</td>
+            <td><code>not_captured</code>.</td>
+            <td><code>not_captured</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="ranked-ideas">
+      <h2>Ranked Ideas</h2>
+      <ul class="subnav">
+        <li><a href="#idea-1">1. <code>game_cognitive_artifacts</code> as the new product boundary</a></li>
+        <li><a href="#idea-2">2. Write-through artifact extraction at <code>createPrivateTraceSink</code></a></li>
+        <li><a href="#idea-3">3. Claims plus producer/admin artifact read model</a></li>
+        <li><a href="#idea-4">4. MCP raw artifact handles under <code>scope=games</code></a></li>
+        <li><a href="#idea-5">5. Web/API derived artifact endpoint without UX polish</a></li>
+        <li><a href="#idea-6">6. New-games-only capability flag and no-capture response</a></li>
+      </ul>
+
+      <article class="idea" id="idea-1">
+        <div class="idea-head">
+          <h3><span class="rank">1</span><code>game_cognitive_artifacts</code> as the new product boundary</h3>
+          <span class="pill">Conf 92% · Cx M</span>
+        </div>
+        <p>
+          Add a new table/read model for user-authorized cognitive artifacts. It stores only the fields users may eventually see: <code>reasoning</code>, <code>thinking</code>, and <code>strategy</code> records with owner/participant access metadata. It does not store raw prompts, provider responses, tool argument blobs, storage keys, or producer source pointers in returned payloads.
+        </p>
+        <dl>
+          <dt>Axis</dt>
+          <dd>Artifact and storage boundary</dd>
+          <dt>Basis</dt>
+          <dd>direct: <code>game_evidence_manifests</code> currently constrains <code>accessScope</code> to <code>producer_admin</code>, and the private trace writer records thinking/reasoning byte counts plus <code>decisionLog</code> and strategy packet revision metadata before writing a producer-only manifest.</dd>
+          <dt>Rationale</dt>
+          <dd>This cleanly honors the user's central constraint: user access must not depend on reading producer traces.</dd>
+          <dt>Downsides</dt>
+          <dd>Requires a migration, service, and tests. Some duplication with trace metadata is intentional.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-2">
+        <div class="idea-head">
+          <h3><span class="rank">2</span>Write-through artifact extraction at <code>createPrivateTraceSink</code></h3>
+          <span class="pill">Conf 88% · Cx M</span>
+        </div>
+        <p>
+          Derive the split artifacts from the in-memory <code>PrivateDecisionTrace</code> in the API lifecycle adapter, beside the existing producer trace write. The order should be explicit: capture allowed product artifacts from the trace object, write producer trace as before, and treat artifact-write failures as nonfatal diagnostics that do not affect gameplay.
+        </p>
+        <dl>
+          <dt>Axis</dt>
+          <dd>Write-time capture points</dd>
+          <dt>Basis</dt>
+          <dd>direct: <code>game-lifecycle.ts</code> has a single <code>createPrivateTraceSink</code> adapter that enriches traces with <code>gameId</code> and <code>ownerEpoch</code>; <code>InfluenceAgent.emitPrivateDecisionTrace</code> has the raw fields while they are still separated.</dd>
+          <dt>Rationale</dt>
+          <dd>This is lower risk than teaching every phase runner a second persistence path, and it avoids post-hoc trace parsing.</dd>
+          <dt>Downsides</dt>
+          <dd>The extractor must be careful not to copy <code>prompt</code>, <code>response.raw</code>, <code>toolArguments</code>, or raw source pointers into user payloads.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-3">
+        <div class="idea-head">
+          <h3><span class="rank">3</span>Claims plus producer/admin artifact read model</h3>
+          <span class="pill">Conf 86% · Cx M</span>
+        </div>
+        <p>
+          Give the cognitive-artifact read model two explicit modes: producer/admin can read all split artifacts directly, while <code>scope=games</code> callers use <code>resolveGamesMcpClaims</code> and player/profile participation. For user-facing reads, <code>reasoning</code> requires actor ownership; <code>thinking</code> and <code>strategy</code> require same-game participation. Created-only games can remain visible in the game list while user-facing artifact reads require an actual player/profile claim.
+        </p>
+        <dl>
+          <dt>Axis</dt>
+          <dd>Access policy and claims</dd>
+          <dt>Basis</dt>
+          <dd>direct: the existing claims resolver already returns <code>gameIds</code>, <code>createdGameIds</code>, <code>joinedGameIds</code>, <code>playerIds</code>, and <code>agentProfileIds</code>; the MCP read model already blocks inaccessible games for <code>scope=games</code>.</dd>
+          <dt>Rationale</dt>
+          <dd>This avoids inventing another user auth model, makes the owner-only reasoning rule precise, and gives producers a compact direct surface instead of treating raw traces as the only inspection path.</dd>
+          <dt>Downsides</dt>
+          <dd>The product must decide whether a game creator who did not play should count as a participant. The conservative default is no.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-4">
+        <div class="idea-head">
+          <h3><span class="rank">4</span>MCP raw artifact handles under <code>scope=games</code></h3>
+          <span class="pill">Conf 80% · Cx M</span>
+        </div>
+        <p>
+          Add user-facing MCP tools such as <code>list_cognitive_artifacts</code> and <code>read_cognitive_artifact</code> on <code>/mcp</code>, and expose the same split-artifact reads on <code>/mcp/producer</code> with producer-wide access. The list tool should return stable custom URIs like <code>influence-game://deployed/games/{gameId}/cognitive-artifacts/{artifactId}</code>; <code>resources/read</code> can then return the authorized artifact for that URI. Producer trace tools stay separate and absent from <code>scope=games</code>.
+        </p>
+        <dl>
+          <dt>Axis</dt>
+          <dd>MCP and web read-model design</dd>
+          <dt>Basis</dt>
+          <dd>direct: the current MCP server already uses <code>resources/read</code> for <code>influence-game://deployed/games</code> and tools for parameterized reads; MCP resources are URI-addressed application data with per-resource access controls.</dd>
+          <dt>Rationale</dt>
+          <dd>This gives clients raw authorized artifacts, gives producers a smaller inspection surface than raw traces, and avoids building a polished web UX first.</dd>
+          <dt>Downsides</dt>
+          <dd>Resource templates can wait; clients can discover URIs through the list tool first.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-5">
+        <div class="idea-head">
+          <h3><span class="rank">5</span>Web/API derived artifact endpoint without UX polish</h3>
+          <span class="pill">Conf 78% · Cx M</span>
+        </div>
+        <p>
+          Add REST read-model endpoints for web consumption, but return index/snippet/derived fields rather than raw producer-style content. A minimal shape is <code>GET /api/games/:id/cognitive-artifacts?type=thinking|strategy|reasoning&actor=...</code> plus <code>GET /api/games/:id/cognitive-artifacts/:artifactId</code>, with the same authorization service as MCP.
+        </p>
+        <dl>
+          <dt>Axis</dt>
+          <dd>MCP and web read-model design</dd>
+          <dt>Basis</dt>
+          <dd>direct: <code>/api/games/:id/transcript</code> currently exposes replay entries without thinking; the docs say web/admin affordances and derived thinking resources were out of scope until a separate data-shaping design exists.</dd>
+          <dt>Rationale</dt>
+          <dd>The web path can unblock backend integration and future summaries without committing to final UI.</dd>
+          <dt>Downsides</dt>
+          <dd>Raw reasoning over web should stay out until product copy and user expectations are clearer.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-6">
+        <div class="idea-head">
+          <h3><span class="rank">6</span>New-games-only capability flag and no-capture response</h3>
+          <span class="pill">Conf 90% · Cx S</span>
+        </div>
+        <p>
+          Mark newly created games with <code>cognitiveArtifactsVersion: 1</code> in <code>games.config</code> and gate the writer on that version. For games without the flag, the read model returns a clear <code>not_captured_for_game</code> response. It must not attempt a best-effort producer trace read.
+        </p>
+        <dl>
+          <dt>Axis</dt>
+          <dd>New-games-only rollout and migration</dd>
+          <dt>Basis</dt>
+          <dd>direct: <code>routes/games.ts</code> already builds the per-game config at creation, and lifecycle code has access to that config before constructing the runner and trace sink.</dd>
+          <dt>Rationale</dt>
+          <dd>This makes the rollout testable and prevents old-game ambiguity from infecting the new access contract.</dd>
+          <dt>Downsides</dt>
+          <dd>Waiting-room games created before deployment will not capture unless explicitly recreated or manually marked.</dd>
+        </dl>
+      </article>
+    </section>
+
+    <section id="change-boundaries">
+      <h2>Code Boundaries to Change First</h2>
+      <ol>
+        <li>Add the schema/migration and types for <code>game_cognitive_artifacts</code>; keep <code>game_evidence_manifests</code> producer-only.</li>
+        <li>Add <code>writeCognitiveArtifactsFromTrace(...)</code> beside <code>private-trace-writer.ts</code>, with leak tests using prompts, raw responses, tool args, and storage keys as sentinel strings.</li>
+        <li>Thread a <code>cognitiveArtifactsEnabled</code> flag from <code>routes/games.ts</code> config into <code>createPrivateTraceSink</code> in <code>game-lifecycle.ts</code>.</li>
+        <li>Add an <code>artifact-access.ts</code> or <code>cognitive-artifacts-read-model.ts</code> service with explicit producer/admin and games-subject modes; games-subject mode uses <code>resolveGamesMcpClaims</code> and enforces owner vs participant access.</li>
+        <li>Add MCP list/read methods on <code>ProductionGameMcpReadModel</code> and wire them through <code>server.ts</code> for both <code>scope=games</code> and producer <code>scope=mcp</code>, with different authorization modes.</li>
+        <li>Add minimal REST endpoints in <code>routes/games.ts</code> or a sibling route module for web read-model access.</li>
+        <li>Update <code>docs/game-mcp-production-oauth.md</code>, <code>docs/reasoning-transcript-observability.md</code>, and <code>CONCEPTS.md</code> with the new artifact terms.</li>
+      </ol>
+    </section>
+
+    <section id="deferred">
+      <h2>Intentionally Deferred</h2>
+      <ul>
+        <li>Final web UI polish, cards, summaries, and timeline presentation.</li>
+        <li>LLM summarization of authorized artifacts. Start with deterministic snippets and structured payloads.</li>
+        <li>Object storage for user artifacts unless JSONB size becomes a real problem.</li>
+        <li>Resource template discovery in MCP. Return concrete resource URIs from list tools first.</li>
+        <li>Changing <code>scope=mcp</code> semantics. Producer MCP remains producer/global.</li>
+        <li>Trying to grant users access to producer trace manifests or trace metadata.</li>
+        <li>Old-game reconstruction from producer traces.</li>
+      </ul>
+    </section>
+
+    <section id="migration">
+      <h2>Migration Recommendation for Old Games</h2>
+      <p>
+        Do not migrate old games in the next slice. The available old surfaces are incomplete and ambiguous: transcript rows may contain <code>thinking</code> but not <code>reasoning</code>; strategy artifacts may exist only inside producer traces, turn JSONL, or live-agent memory; and ownership may not map cleanly for generated agents. Backfilling from producer traces would violate the strongest boundary in the prompt.
+      </p>
+      <p>
+        The only worthwhile old-game lift is a small availability marker: old games return <code>artifactCapture: "not_enabled"</code> or <code>not_captured_for_game</code> so clients can explain absence without guessing.
+      </p>
+    </section>
+
+    <section id="test-strategy">
+      <h2>Test Strategy</h2>
+      <ul>
+        <li>Writer unit tests: fixture trace with sentinel secrets proves product artifacts contain allowed fields only.</li>
+        <li>Access tests: owner can read own reasoning; same-game participant can read thinking/strategy but not reasoning; nonparticipant and created-only caller are denied.</li>
+        <li>Producer/admin tests: producer can list/read reasoning, thinking, and strategy artifacts directly, including when raw trace storage is unavailable or intentionally not consulted.</li>
+        <li>MCP tests: <code>scope=games</code> lists/reads authorized artifacts and still cannot discover or call trace tools; producer <code>scope=mcp</code> can list/read split artifacts without using <code>read_trace_content</code>.</li>
+        <li>Producer regression tests: existing <code>list_trace_manifests</code>, <code>read_trace_content</code>, and <code>search_reasoning_traces</code> behavior remains unchanged.</li>
+        <li>New-games-only tests: flagged game captures artifacts; unflagged old game returns <code>not_captured</code> and never calls private trace storage.</li>
+        <li>Route tests: web/API endpoints share the same read model and return the same denials.</li>
+        <li>Documentation checks: docs name the no-fallback rule and the owner/participant access matrix.</li>
+      </ul>
+    </section>
+
+    <section id="rejection-summary">
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Idea</th>
+            <th>Reason Rejected</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>Sanitize producer traces on demand for users</td>
+            <td>Directly violates the no-fallback constraint and keeps raw prompt/tool/storage data in the read path.</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>Add <code>owner_only</code> and <code>participants</code> to <code>game_evidence_manifests.accessScope</code></td>
+            <td>Too easy to couple user reads to raw evidence storage and private trace metadata.</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>Expose transcript <code>thinking</code> as the first web feature</td>
+            <td>Incomplete and misleading: no reasoning, weak strategy coverage, and old-game semantics would look better than they are.</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>Put cognitive artifacts into canonical events</td>
+            <td>Pollutes replayable board truth with private cognitive state.</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>Put cognitive artifacts into public transcript rows</td>
+            <td>Conflates player-visible replay with hidden/participant-authorized data.</td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td>Make <code>scope=mcp</code> user-scoped for this feature</td>
+            <td>Contradicts current OAuth docs and recent boundary decisions; use <code>scope=games</code> for user-facing access.</td>
+          </tr>
+          <tr>
+            <td>7</td>
+            <td>Build final web UX before storage/auth</td>
+            <td>Scope overrun. The next slice is the clean boundary and read model, not UI polish.</td>
+          </tr>
+          <tr>
+            <td>8</td>
+            <td>Backfill old games from local simulation JSONL</td>
+            <td>Not available for deployed games, not normalized to user ownership, and outside the required new-games-only contract.</td>
+          </tr>
+          <tr>
+            <td>9</td>
+            <td>Give all game creators participant access to every agent artifact</td>
+            <td>Product-risky default. Created game access and participated-in-game access should remain distinguishable.</td>
+          </tr>
+          <tr>
+            <td>10</td>
+            <td>Store user artifacts only in object storage</td>
+            <td>Premature complexity for small structured records; keep object storage as a later size-driven variant.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+  <footer class="composition-signal">
+    Composed 2026-06-19T00:00:00-06:00 by ce-ideate from the user prompt and repo inspection in <code>/Users/user/Development/influence-game</code>.
+  </footer>
+</body>
+</html>

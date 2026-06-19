@@ -256,7 +256,7 @@ export interface AgentResponse {
   strategicLensRationale?: string;
 }
 
-export type PrivateDecisionTraceActorRole = "player" | "juror" | "house" | "producer";
+export type PrivateDecisionTraceActorRole = "player" | "juror" | "house" | "system" | "producer";
 
 export interface PrivateDecisionTraceActor {
   id?: UUID;
@@ -322,6 +322,11 @@ export interface PrivateDecisionTrace {
   toolName?: string;
   toolArguments?: unknown;
   decisionLog?: string;
+  strategicLens?: StrategicLens;
+  strategicLensRationale?: string;
+  strategyPacketUpdate?: StrategyPacketUpdateAction;
+  strategyPacketSummary?: StrategyPacketSummary;
+  strategicReflectionSummary?: StrategicReflectionSummary;
   strategyPacketRevision?: string;
   boundary?: PrivateDecisionTraceBoundary;
 }

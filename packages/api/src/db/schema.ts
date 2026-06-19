@@ -53,6 +53,7 @@ export const games = pgTable("games", {
   config: text("config").notNull(), // JSON-serialized GameConfig
   status: text("status").notNull().$type<GameStatus>().default("waiting"),
   trackType: text("track_type").notNull().$type<TrackType>().default("custom"),
+  cognitiveArtifactCaptureVersion: integer("cognitive_artifact_capture_version").notNull().default(0),
   minPlayers: integer("min_players").notNull().default(4),
   maxPlayers: integer("max_players").notNull().default(12),
   createdById: text("created_by_id").references(() => users.id),
@@ -159,6 +160,17 @@ export type DurableRunSource = "api" | "simulation_import";
 export type GameRunOwnerStatus = "active" | "closed" | "revoked" | "expired";
 export type KernelHealthStatus = "healthy" | "degraded" | "suspended";
 export type EvidenceRedactionStatus = "active" | "expired" | "redacted";
+export type CognitiveArtifactType = "reasoning" | "thinking" | "strategy";
+export type CognitiveArtifactActorRole = "player" | "juror" | "house" | "system" | "producer";
+export type CognitiveArtifactVisibilityStatus = "active" | "capture_degraded";
+export type CognitiveArtifactReadOutcome =
+  | "allowed"
+  | "denied"
+  | "not_captured"
+  | "not_captured_for_game"
+  | "capture_degraded"
+  | "expired"
+  | "redacted";
 
 export const gameRunOwners = pgTable("game_run_owners", {
   id: text("id").primaryKey(), // UUID
@@ -345,6 +357,86 @@ export const gameEvidenceManifestReads = pgTable("game_evidence_manifest_reads",
     foreignColumns: [gameEvidenceManifests.id],
   }),
   check("game_evidence_manifest_reads_outcome_check", sql`${table.outcome} IN ('allowed', 'denied', 'expired', 'redacted')`),
+]);
+
+// ---------------------------------------------------------------------------
+// Cognitive Artifacts (user-facing split decision artifacts, new games only)
+// ---------------------------------------------------------------------------
+
+export const gameCognitiveArtifacts = pgTable("game_cognitive_artifacts", {
+  id: text("id").primaryKey(), // UUID
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id),
+  captureVersion: integer("capture_version").notNull().default(1),
+  eventSequence: integer("event_sequence"),
+  artifactType: text("artifact_type").notNull().$type<CognitiveArtifactType>(),
+  actorRole: text("actor_role").notNull().$type<CognitiveArtifactActorRole>(),
+  actorPlayerId: text("actor_player_id").references(() => gamePlayers.id),
+  actorUserId: text("actor_user_id").references(() => users.id),
+  actorAgentProfileId: text("actor_agent_profile_id").references(() => agentProfiles.id),
+  action: text("action").notNull(),
+  phase: text("phase"),
+  round: integer("round"),
+  visibilityStatus: text("visibility_status").notNull().$type<CognitiveArtifactVisibilityStatus>().default("active"),
+  payloadByteLength: integer("payload_byte_length").notNull(),
+  payload: jsonb("payload").notNull().$type<Record<string, unknown>>(),
+  diagnostics: jsonb("diagnostics").$type<Record<string, unknown>>(),
+  retentionClass: text("retention_class").notNull().default("debug"),
+  redactionStatus: text("redaction_status").notNull().$type<EvidenceRedactionStatus>().default("active"),
+  expiresAt: text("expires_at"),
+  redactedAt: text("redacted_at"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  index("game_cognitive_artifacts_game_type_actor_idx").on(table.gameId, table.artifactType, table.actorPlayerId),
+  index("game_cognitive_artifacts_game_phase_round_idx").on(table.gameId, table.phase, table.round),
+  index("game_cognitive_artifacts_game_action_idx").on(table.gameId, table.action),
+  index("game_cognitive_artifacts_event_sequence_idx").on(table.gameId, table.eventSequence),
+  foreignKey({
+    name: "game_cognitive_artifacts_event_boundary_fk",
+    columns: [table.gameId, table.eventSequence],
+    foreignColumns: [gameEvents.gameId, gameEvents.sequence],
+  }),
+  check("game_cognitive_artifacts_capture_version_check", sql`${table.captureVersion} > 0`),
+  check("game_cognitive_artifacts_artifact_type_check", sql`${table.artifactType} IN ('reasoning', 'thinking', 'strategy')`),
+  check("game_cognitive_artifacts_actor_role_check", sql`${table.actorRole} IN ('player', 'juror', 'house', 'system', 'producer')`),
+  check("game_cognitive_artifacts_visibility_status_check", sql`${table.visibilityStatus} IN ('active', 'capture_degraded')`),
+  check("game_cognitive_artifacts_retention_class_check", sql`${table.retentionClass} IN ('debug', 'audit', 'legal_hold')`),
+  check("game_cognitive_artifacts_redaction_status_check", sql`${table.redactionStatus} IN ('active', 'expired', 'redacted')`),
+  check("game_cognitive_artifacts_event_sequence_check", sql`${table.eventSequence} IS NULL OR ${table.eventSequence} > 0`),
+  check("game_cognitive_artifacts_round_check", sql`${table.round} IS NULL OR ${table.round} > 0`),
+  check("game_cognitive_artifacts_payload_byte_length_check", sql`${table.payloadByteLength} >= 0`),
+]);
+
+export const gameCognitiveArtifactReads = pgTable("game_cognitive_artifact_reads", {
+  id: serial("id").primaryKey(),
+  artifactId: text("artifact_id"),
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id),
+  actorPlayerId: text("actor_player_id").references(() => gamePlayers.id),
+  artifactType: text("artifact_type").$type<CognitiveArtifactType>(),
+  accessorUserId: text("accessor_user_id").references(() => users.id),
+  authProfile: text("auth_profile"),
+  purpose: text("purpose").notNull(),
+  outcome: text("outcome").notNull().$type<CognitiveArtifactReadOutcome>(),
+  denialReason: text("denial_reason"),
+  readAt: text("read_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  index("game_cognitive_artifact_reads_artifact_id_idx").on(table.artifactId),
+  index("game_cognitive_artifact_reads_game_id_idx").on(table.gameId),
+  index("game_cognitive_artifact_reads_accessor_user_id_idx").on(table.accessorUserId),
+  foreignKey({
+    name: "cognitive_artifact_reads_artifact_fk",
+    columns: [table.artifactId],
+    foreignColumns: [gameCognitiveArtifacts.id],
+  }),
+  check("game_cognitive_artifact_reads_artifact_type_check", sql`${table.artifactType} IS NULL OR ${table.artifactType} IN ('reasoning', 'thinking', 'strategy')`),
+  check("game_cognitive_artifact_reads_outcome_check", sql`${table.outcome} IN ('allowed', 'denied', 'not_captured', 'not_captured_for_game', 'capture_degraded', 'expired', 'redacted')`),
 ]);
 
 // ---------------------------------------------------------------------------

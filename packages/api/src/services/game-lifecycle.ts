@@ -50,6 +50,7 @@ import {
   renewGameRunOwner,
 } from "./game-ownership.js";
 import { writePrivateDecisionTrace } from "./private-trace-writer.js";
+import { writeCognitiveArtifactsForTrace } from "./cognitive-artifact-writer.js";
 
 // ---------------------------------------------------------------------------
 // Active game tracking
@@ -112,6 +113,7 @@ function createPrivateTraceSink(
   db: DrizzleDB,
   gameId: string,
   ownerEpoch: string,
+  cognitiveArtifactCaptureVersion: number,
 ): PrivateTraceSink {
   return async (trace) => {
     const enrichedTrace: PrivateDecisionTrace = {
@@ -120,6 +122,17 @@ function createPrivateTraceSink(
       ownerEpoch,
     };
     try {
+      const cognitiveResult = await writeCognitiveArtifactsForTrace(db, {
+        gameId,
+        trace: enrichedTrace,
+        captureVersion: cognitiveArtifactCaptureVersion,
+        eventSequence: trace.boundary?.finalEventSequence,
+      });
+      if (!cognitiveResult.ok) {
+        console.warn(`[game-lifecycle] Cognitive artifact capture failed for game ${gameId}: ${cognitiveResult.error}`);
+      } else if (cognitiveResult.degradedArtifactIds.length > 0) {
+        console.warn(`[game-lifecycle] Cognitive artifact capture degraded for game ${gameId}: ${cognitiveResult.degradedArtifactIds.length} oversized artifact(s)`);
+      }
       const result = await writePrivateDecisionTrace(db, {
         gameId,
         ownerEpoch,
@@ -609,7 +622,7 @@ export async function startGame(
   // Create token tracker
   const tokenTracker = new TokenTracker();
   const privateTraceSink = ownerEpoch
-    ? createPrivateTraceSink(db, gameId, ownerEpoch)
+    ? createPrivateTraceSink(db, gameId, ownerEpoch, game.cognitiveArtifactCaptureVersion)
     : undefined;
 
   // Construct agents from player records

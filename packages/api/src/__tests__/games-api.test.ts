@@ -248,6 +248,12 @@ describe("Game REST API", () => {
       const body = (await res.json()) as { id: string; gameNumber: number };
       expect(body.id).toBeTruthy();
       expect(body.gameNumber).toBe(1);
+
+      const game = (await db
+        .select()
+        .from(schema.games)
+        .where(eq(schema.games.id, body.id)))[0]!;
+      expect(game.cognitiveArtifactCaptureVersion).toBe(1);
     });
 
     test("creates game with auto maxRounds", async () => {

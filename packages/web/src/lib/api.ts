@@ -105,6 +105,8 @@ export type GameStatus = "waiting" | "in_progress" | "completed" | "cancelled" |
 export type ViewerMode = "live" | "speedrun" | "replay";
 export type TrackType = "custom" | "free";
 export type KernelHealthStatus = "healthy" | "degraded" | "suspended" | "unknown";
+export type CognitiveArtifactType = "reasoning" | "thinking" | "strategy";
+export type CognitiveArtifactActorRole = "player" | "juror" | "house" | "system" | "producer";
 
 export interface KernelHealthSummary {
   status: KernelHealthStatus;
@@ -236,6 +238,99 @@ export async function fillGame(id: string): Promise<FillGameResponse> {
 
 export function isFillAccepted(r: FillGameResponse): r is FillGameAccepted {
   return "filling" in r && r.filling === true;
+}
+
+export interface CognitiveArtifactIndexEntry {
+  id: string;
+  uri: string;
+  gameId: string;
+  artifactType: CognitiveArtifactType;
+  actorRole: CognitiveArtifactActorRole;
+  actorPlayerId?: string;
+  actorUserId?: string;
+  actorAgentProfileId?: string;
+  action: string;
+  phase?: string;
+  round?: number;
+  eventSequence?: number;
+  visibilityStatus: "active" | "capture_degraded";
+  redactionStatus: "active" | "expired" | "redacted";
+  payloadByteLength: number;
+  createdAt: string;
+}
+
+export type CognitiveArtifactListResult =
+  | {
+    ok: true;
+    game: {
+      id: string;
+      slug?: string;
+      status: GameStatus;
+      cognitiveArtifactCaptureVersion: number;
+    };
+    artifacts: CognitiveArtifactIndexEntry[];
+  }
+  | {
+    ok: false;
+    status: "denied" | "not_found" | "not_captured_for_game";
+    error: string;
+  };
+
+export type CognitiveArtifactReadResult =
+  | {
+    ok: true;
+    game: {
+      id: string;
+      slug?: string;
+      status: GameStatus;
+      cognitiveArtifactCaptureVersion: number;
+    };
+    artifact: CognitiveArtifactIndexEntry & { payload: Record<string, unknown> };
+  }
+  | {
+    ok: false;
+    status: "denied" | "not_found" | "not_captured" | "not_captured_for_game" | "capture_degraded" | "expired" | "redacted";
+    error: string;
+    game?: {
+      id: string;
+      slug?: string;
+      status: GameStatus;
+      cognitiveArtifactCaptureVersion: number;
+    };
+    artifact?: CognitiveArtifactIndexEntry;
+  };
+
+export async function listCognitiveArtifacts(
+  gameIdOrSlug: string,
+  params: {
+    artifactType?: CognitiveArtifactType;
+    actorPlayerId?: string;
+    limit?: number;
+  } = {},
+): Promise<CognitiveArtifactListResult> {
+  const search = new URLSearchParams();
+  if (params.artifactType) search.set("artifactType", params.artifactType);
+  if (params.actorPlayerId) search.set("actorPlayerId", params.actorPlayerId);
+  if (params.limit !== undefined) search.set("limit", String(params.limit));
+  const query = search.toString();
+  return apiFetch(`/api/games/${gameIdOrSlug}/cognitive-artifacts${query ? `?${query}` : ""}`);
+}
+
+export async function readCognitiveArtifact(
+  gameIdOrSlug: string,
+  artifactId: string,
+  params: {
+    artifactType?: CognitiveArtifactType;
+    actorRole?: CognitiveArtifactActorRole;
+    actorPlayerId?: string;
+  } = {},
+): Promise<CognitiveArtifactReadResult> {
+  const search = new URLSearchParams();
+  if (params.artifactType) search.set("artifactType", params.artifactType);
+  if (params.actorRole) search.set("actorRole", params.actorRole);
+  if (params.actorPlayerId) search.set("actorPlayerId", params.actorPlayerId);
+  const query = search.toString();
+  return apiFetch(`/api/games/${gameIdOrSlug}/cognitive-artifacts/${artifactId}${query ? `?${query}` : ""}`);
 }
 
 // ---------------------------------------------------------------------------

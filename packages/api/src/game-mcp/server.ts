@@ -7,6 +7,10 @@ import {
   type ProductionGameMcpPlayerTimelineOptions,
 } from "./read-model.js";
 import type { CanonicalEventQueryMode } from "@influence/engine";
+import type {
+  CognitiveArtifactActorRole,
+  CognitiveArtifactType,
+} from "../db/schema.js";
 
 export interface JsonRpcRequest {
   jsonrpc?: "2.0";
@@ -136,6 +140,12 @@ export class ProductionGameMcpJsonRpcServer {
       if (name === "player_timeline") {
         return content(await this.readModel.playerTimeline(playerTimelineArgs(args), auth));
       }
+      if (name === "list_cognitive_artifacts") {
+        return content(await this.readModel.listCognitiveArtifacts(cognitiveArtifactListArgs(args), auth));
+      }
+      if (name === "read_cognitive_artifact") {
+        return content(await this.readModel.readCognitiveArtifact(cognitiveArtifactReadArgs(args), auth));
+      }
       if (!isProducer) {
         throw new Error(`Unknown or producer-only tool is not supported for scope=games: ${name}`);
       }
@@ -239,6 +249,36 @@ function productionGameMcpTools(scope: McpOAuthScope, includeProducerTools: bool
         limit: { type: "number" },
       },
       required: ["gameIdOrSlug", "player"],
+      scope,
+    }),
+    tool({
+      name: "list_cognitive_artifacts",
+      description: includeProducerTools
+        ? "List split reasoning, thinking, and strategy artifact metadata for one deployed game without returning payload bodies."
+        : "List authorized reasoning, thinking, and strategy artifact metadata for one game you participated in.",
+      properties: {
+        gameIdOrSlug: { type: "string" },
+        artifactType: { type: "string", enum: ["reasoning", "thinking", "strategy"] },
+        actorPlayerId: { type: "string" },
+        limit: { type: "number" },
+      },
+      required: ["gameIdOrSlug"],
+      scope,
+    }),
+    tool({
+      name: "read_cognitive_artifact",
+      description: includeProducerTools
+        ? "Read one authorized split cognitive artifact payload, or producer diagnostics for unavailable split artifacts."
+        : "Read one authorized split cognitive artifact payload by game and artifact id. Reasoning is owner-only; thinking and strategy are participant-visible.",
+      properties: {
+        gameIdOrSlug: { type: "string" },
+        artifactId: { type: "string" },
+        artifactType: { type: "string", enum: ["reasoning", "thinking", "strategy"] },
+        actorRole: { type: "string", enum: ["player", "juror", "house", "system", "producer"] },
+        actorPlayerId: { type: "string" },
+        purpose: { type: "string" },
+      },
+      required: ["gameIdOrSlug", "artifactId"],
       scope,
     }),
   ];
@@ -376,5 +416,43 @@ function playerTimelineArgs(args: Record<string, unknown>): ProductionGameMcpPla
     player: requiredString(args, "player"),
     visibilityMode: optionalVisibilityMode(args),
     limit: optionalNumber(args, "limit"),
+  };
+}
+
+function optionalCognitiveArtifactType(args: Record<string, unknown>): CognitiveArtifactType | undefined {
+  const value = optionalString(args, "artifactType");
+  return value === "reasoning" || value === "thinking" || value === "strategy"
+    ? value
+    : undefined;
+}
+
+function optionalCognitiveActorRole(args: Record<string, unknown>): CognitiveArtifactActorRole | undefined {
+  const value = optionalString(args, "actorRole");
+  return value === "player" ||
+    value === "juror" ||
+    value === "house" ||
+    value === "system" ||
+    value === "producer"
+    ? value
+    : undefined;
+}
+
+function cognitiveArtifactListArgs(args: Record<string, unknown>) {
+  return {
+    gameIdOrSlug: requiredString(args, "gameIdOrSlug"),
+    artifactType: optionalCognitiveArtifactType(args),
+    actorPlayerId: optionalString(args, "actorPlayerId"),
+    limit: optionalNumber(args, "limit"),
+  };
+}
+
+function cognitiveArtifactReadArgs(args: Record<string, unknown>) {
+  return {
+    gameIdOrSlug: requiredString(args, "gameIdOrSlug"),
+    artifactId: requiredString(args, "artifactId"),
+    artifactType: optionalCognitiveArtifactType(args),
+    actorRole: optionalCognitiveActorRole(args),
+    actorPlayerId: optionalString(args, "actorPlayerId"),
+    purpose: optionalString(args, "purpose"),
   };
 }

@@ -159,6 +159,7 @@ export function createGameRoutes(db: DrizzleDB) {
         slug,
         config: JSON.stringify(config),
         status: "waiting",
+        cognitiveArtifactCaptureVersion: 1,
         minPlayers,
         maxPlayers,
         createdById: user?.id ?? null,

@@ -21,6 +21,7 @@ import { createAdminRoutes } from "./routes/admin.js";
 import { createFreeQueueRoutes } from "./routes/free-queue.js";
 import { createUploadRoutes } from "./routes/upload.js";
 import { createProfileRoutes } from "./routes/profile.js";
+import { createCognitiveArtifactRoutes } from "./routes/cognitive-artifacts.js";
 import { verifySessionToken } from "./middleware/auth.js";
 import { getStorageStatus } from "./lib/storage.js";
 import { getGameSnapshot } from "./services/game-lifecycle.js";
@@ -204,6 +205,10 @@ app.route("/", mcpRoutes);
 // Game routes
 const gameRoutes = createGameRoutes(db);
 app.route("/", gameRoutes);
+
+// Cognitive artifact routes
+const cognitiveArtifactRoutes = createCognitiveArtifactRoutes(db);
+app.route("/", cognitiveArtifactRoutes);
 
 // Agent profile routes
 const agentProfileRoutes = createAgentProfileRoutes(db);

@@ -5,7 +5,7 @@
  */
 
 import { describe, test, expect, beforeEach } from "bun:test";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import type { DrizzleDB } from "../db/index.js";
 import { randomUUID } from "crypto";
@@ -114,6 +114,19 @@ describe("Database Schema", () => {
         .where(eq(schema.games.id, gameId));
 
       expect(rows[0]!.status).toBe("waiting");
+    });
+
+    test("cognitive artifact capture defaults off for existing game inserts", async () => {
+      const gameId = randomUUID();
+      await db.insert(schema.games)
+        .values({ id: gameId, config: "{}" });
+
+      const rows = await db
+        .select()
+        .from(schema.games)
+        .where(eq(schema.games.id, gameId));
+
+      expect(rows[0]!.cognitiveArtifactCaptureVersion).toBe(0);
     });
 
     test("game status transitions", async () => {
@@ -659,6 +672,119 @@ describe("Database Schema", () => {
       expect(manifests[0]!.metadata).toEqual({ redacted: true, byteLength: 1234 });
       expect(reads).toHaveLength(1);
       expect(reads[0]!.outcome).toBe("allowed");
+    });
+
+    test("cognitive artifact rows store split payloads and read outcomes", async () => {
+      const { gameId, ownerEpoch } = await createGameOwner();
+      const userId = randomUUID();
+      const playerId = randomUUID();
+      const artifactId = randomUUID();
+      const envelope = {
+        sequence: 1,
+        gameId,
+        type: "phase.action_recorded",
+        timestamp: new Date().toISOString(),
+        visibility: "producer",
+        payloadVersion: 1,
+        source: "engine",
+        payload: { action: "vote" },
+      };
+
+      await db.insert(schema.users)
+        .values({ id: userId, displayName: "Player Owner" });
+      await db.insert(schema.gamePlayers)
+        .values({
+          id: playerId,
+          gameId,
+          userId,
+          persona: "{}",
+          agentConfig: "{}",
+        });
+      await db.insert(schema.gameEvents)
+        .values({
+          gameId,
+          sequence: 1,
+          eventType: "phase.action_recorded",
+          eventHash: "sha256:artifact-event-1",
+          ownerEpoch,
+          visibility: "producer",
+          envelope,
+        });
+
+      await db.insert(schema.gameCognitiveArtifacts)
+        .values({
+          id: artifactId,
+          gameId,
+          eventSequence: 1,
+          artifactType: "strategy",
+          actorRole: "player",
+          actorPlayerId: playerId,
+          actorUserId: userId,
+          action: "vote",
+          phase: "COUNCIL",
+          round: 1,
+          payloadByteLength: 74,
+          payload: {
+            decisionLog: [{ target: "player-2", reason: "coalition risk" }],
+          },
+        });
+
+      await db.insert(schema.gameCognitiveArtifactReads)
+        .values({
+          artifactId,
+          gameId,
+          actorPlayerId: playerId,
+          artifactType: "strategy",
+          accessorUserId: userId,
+          authProfile: "participant",
+          purpose: "mcp_read_artifact",
+          outcome: "allowed",
+        });
+
+      const artifacts = await db
+        .select()
+        .from(schema.gameCognitiveArtifacts)
+        .where(eq(schema.gameCognitiveArtifacts.id, artifactId));
+      const reads = await db
+        .select()
+        .from(schema.gameCognitiveArtifactReads)
+        .where(eq(schema.gameCognitiveArtifactReads.artifactId, artifactId));
+
+      expect(artifacts).toHaveLength(1);
+      expect(artifacts[0]!.captureVersion).toBe(1);
+      expect(artifacts[0]!.visibilityStatus).toBe("active");
+      expect(artifacts[0]!.redactionStatus).toBe("active");
+      expect(artifacts[0]!.payload).toEqual({
+        decisionLog: [{ target: "player-2", reason: "coalition risk" }],
+      });
+      expect(reads).toHaveLength(1);
+      expect(reads[0]!.outcome).toBe("allowed");
+
+      let threw = false;
+      try {
+        await db.execute(sql`
+          INSERT INTO game_cognitive_artifacts (
+            id,
+            game_id,
+            artifact_type,
+            actor_role,
+            action,
+            payload_byte_length,
+            payload
+          ) VALUES (
+            ${randomUUID()},
+            ${gameId},
+            'private_trace',
+            'player',
+            'vote',
+            0,
+            '{}'::jsonb
+          )
+        `);
+      } catch {
+        threw = true;
+      }
+      expect(threw).toBe(true);
     });
   });
 

@@ -157,6 +157,16 @@ Simulation runs persist per-turn reasoning in local JSONL artifacts. API-backed 
 
 Private trace content is not public transcript, not canonical board truth, and not checkpoint resume authority. It is the API durable-run sibling of `game-N-turns.jsonl`: useful for debugging one weird run, not a product/admin content portal.
 
+## API-Backed Cognitive Artifacts
+
+New API-created games set `games.cognitive_artifact_capture_version = 1` and fan out first-class cognitive artifact rows beside private trace writing. Old/imported/pre-capture games remain version `0` and return `not_captured_for_game` after authorization. The product path never reads producer private trace storage to reconstruct missing split artifacts.
+
+- `reasoning` artifacts come only from `PrivateDecisionTrace.reasoningContext` and are owner-only for user-facing access.
+- `thinking` artifacts come only from `PrivateDecisionTrace.emittedThinking` and are readable by the owner plus same-game participants.
+- `strategy` artifacts come only from normalized trace fields such as `decisionLog`, `strategicLens`, `strategicLensRationale`, `strategyPacketRevision`, `strategyPacketUpdate`, `strategyPacketSummary`, and `strategicReflectionSummary`; they are readable by the owner plus same-game participants.
+- Producer/admin access may read all split artifacts directly, including degraded diagnostics. Raw prompts, raw responses, tool arguments, storage keys, source-pointer internals, and arbitrary `output` blobs are excluded from cognitive payload construction.
+- Oversized cognitive payloads are stored as `capture_degraded` diagnostics with an empty user payload. Revisit object-storage manifests only if p95 artifact payload size exceeds 64 KiB, more than 1 percent of artifacts hit the 256 KiB cap, or typical captured games exceed 5-10 MiB of cognitive artifact payload.
+
 ## Core Style & Safety Rules
 
 1. No `as any` anywhere in agent return paths, House calls, or reasoning threading. Use intersections or proper widening of return types. "`as any` scares master."
@@ -179,7 +189,9 @@ Private trace content is not public transcript, not canonical board truth, and n
 
 10. Fallbacks in agent methods must still return the shape with `thinking` / `reasoningContext` (even if the thinking is a short "fallback..." note).
 
-11. API private traces must keep the engine/API boundary clean. Engine code emits typed trace envelopes only; API code owns storage, manifests, read authorization, and local Trace MCP access. Do not import API storage or database code into `packages/engine`.
+11. API private traces and cognitive artifacts must keep the engine/API boundary clean. Engine code emits typed trace envelopes only; API code owns storage, first-class cognitive artifact rows, read authorization, and MCP/API access. Do not import API storage or database code into `packages/engine`.
+
+12. Missing cognitive artifacts are not reconstructed from private traces. User-facing access must return authorized no-capture/degraded states rather than falling back to producer evidence.
 
 ## Local Model Specifics
 

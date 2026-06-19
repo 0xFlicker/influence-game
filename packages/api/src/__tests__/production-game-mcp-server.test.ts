@@ -44,6 +44,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "read_projection",
       "filter_events",
       "player_timeline",
+      "list_cognitive_artifacts",
+      "read_cognitive_artifact",
       "inspect_durable_run",
       "list_trace_manifests",
       "read_trace_content",
@@ -71,10 +73,12 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "read_projection",
       "filter_events",
       "player_timeline",
+      "list_cognitive_artifacts",
+      "read_cognitive_artifact",
     ]);
     expect(JSON.stringify(tools)).toContain("\"scopes\":[\"games\"]");
     expect(JSON.stringify(tools)).not.toContain("read_trace_content");
-    expect(JSON.stringify(tools)).not.toContain("producer\"]");
+    expect(JSON.stringify(tools)).not.toContain("\"scopes\":[\"mcp\"]");
   });
 
   test("routes tool calls to the production read model", async () => {
@@ -119,6 +123,14 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         calls.push({ method: "playerTimeline", access });
         return { events: [] };
       },
+      listCognitiveArtifacts: async (_args: unknown, access: unknown) => {
+        calls.push({ method: "listCognitiveArtifacts", access });
+        return { artifacts: [] };
+      },
+      readCognitiveArtifact: async (_args: unknown, access: unknown) => {
+        calls.push({ method: "readCognitiveArtifact", access });
+        return { artifact: null };
+      },
     }));
 
     await server.handle({
@@ -151,6 +163,26 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       method: "tools/call",
       params: { name: "player_timeline", arguments: { gameIdOrSlug: "game-1", player: "Ada" } },
     }, GAMES_AUTH);
+    await server.handle({
+      jsonrpc: "2.0",
+      id: "cognitive-list",
+      method: "tools/call",
+      params: { name: "list_cognitive_artifacts", arguments: { gameIdOrSlug: "game-1", artifactType: "thinking" } },
+    }, GAMES_AUTH);
+    await server.handle({
+      jsonrpc: "2.0",
+      id: "cognitive-read",
+      method: "tools/call",
+      params: {
+        name: "read_cognitive_artifact",
+        arguments: {
+          gameIdOrSlug: "game-1",
+          artifactId: "artifact-1",
+          artifactType: "thinking",
+          actorPlayerId: "player-1",
+        },
+      },
+    }, GAMES_AUTH);
 
     expect(calls).toEqual([
       { method: "listGames", access: GAMES_AUTH },
@@ -158,6 +190,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       { method: "readProjection", access: GAMES_AUTH },
       { method: "filterEvents", access: GAMES_AUTH },
       { method: "playerTimeline", access: GAMES_AUTH },
+      { method: "listCognitiveArtifacts", access: GAMES_AUTH },
+      { method: "readCognitiveArtifact", access: GAMES_AUTH },
     ]);
   });
 
@@ -334,6 +368,8 @@ function fakeReadModel(
     listTraceManifests: async () => ({ manifests: [] }),
     readTraceContent: async () => ({ content: "" }),
     searchReasoningTraces: async () => ({ matches: [] }),
+    listCognitiveArtifacts: async () => ({ artifacts: [] }),
+    readCognitiveArtifact: async () => ({ artifact: null }),
     ...overrides,
   } as unknown as ProductionGameMcpReadModel;
 }

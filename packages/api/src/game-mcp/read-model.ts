@@ -15,6 +15,11 @@ import {
 import { getPersistedGameProjection } from "../services/game-projection-read-model.js";
 import type { PersistedGameProjectionRead } from "../services/game-projection-read-model.js";
 import { PrivateTraceReadModel } from "../services/private-trace-read-model.js";
+import {
+  CognitiveArtifactReadModel,
+  type ListCognitiveArtifactsParams,
+  type ReadCognitiveArtifactParams,
+} from "../services/cognitive-artifact-read-model.js";
 import type { GameMcpAuthContext } from "./auth.js";
 import { resolveGamesMcpClaims } from "./claims.js";
 
@@ -73,6 +78,7 @@ export class ProductionGameMcpReadModel {
   constructor(
     private readonly db: DrizzleDB,
     private readonly privateTrace = new PrivateTraceReadModel(db),
+    private readonly cognitiveArtifacts = new CognitiveArtifactReadModel(db),
   ) {}
 
   async resolveGame(idOrSlug: string): Promise<ProductionGameMcpGameIdentity | null> {
@@ -357,6 +363,32 @@ export class ProductionGameMcpReadModel {
         limit: clamp(params.limit ?? 20, 1, 100),
         maxBytes: clamp(params.maxBytes ?? DEFAULT_TRACE_CONTENT_BYTES, 1, MAX_TRACE_CONTENT_BYTES),
       }),
+    };
+  }
+
+  async listCognitiveArtifacts(
+    params: ListCognitiveArtifactsParams,
+    access: ProductionGameMcpAccess,
+  ): Promise<{
+    schemaVersion: 1;
+    cognitiveArtifacts: unknown;
+  }> {
+    return {
+      schemaVersion: 1,
+      cognitiveArtifacts: await this.cognitiveArtifacts.listArtifacts(params, access),
+    };
+  }
+
+  async readCognitiveArtifact(
+    params: ReadCognitiveArtifactParams,
+    access: ProductionGameMcpAccess,
+  ): Promise<{
+    schemaVersion: 1;
+    cognitiveArtifacts: unknown;
+  }> {
+    return {
+      schemaVersion: 1,
+      cognitiveArtifacts: await this.cognitiveArtifacts.readArtifact(params, access),
     };
   }
 

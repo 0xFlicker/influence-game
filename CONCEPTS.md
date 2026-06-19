@@ -66,6 +66,10 @@ Legacy vocabulary for the old private-message/private-room phase and for histori
 
 The raw, model-provided reasoning trace (e.g. `reasoning_content` from LM Studio) captured alongside an agent's structured decision or message. Distinct from the synthesized `thinking` field. Attached by `callTool` via typed intersection and written through `logSystem` / `logPublic` etc. onto `TranscriptEntry`. Visible only in `--chatty` output, full transcripts, and debug surfaces — never to other players.
 
+## Cognitive artifact
+
+A first-class product read-model record for an agent's reasoning, thinking, or strategy in new games. Cognitive artifacts are captured at decision time from structured trace inputs but are not sanitized views over producer private traces, canonical game truth, or checkpoint resume state. User-facing access is artifact-specific: reasoning is owner-only, thinking and strategy are available to the owner plus same-game participants, and producer/admin surfaces may read all split artifacts directly.
+
 ## chatty mode
 
 The `--chatty` (or `--verbose` / `-v`) flag to the simulation runner that prints a live, color-formatted transcript to the terminal as the game runs. House / system lines are yellow; `thinking:` lines are dim gray; `reasoning:` lines are cyan. Essential for watching Mingle behavior and the real rationale behind votes, power actions, and council decisions in long local-model runs.
@@ -106,7 +110,7 @@ The privileged authorization boundary for trusted MCP validation. A user with th
 
 ## Games MCP scope
 
-The user-facing OAuth scope for MCP clients that should be described as "access your games via MCP." A `games` token is resource-scoped to the authenticated subject's created or joined games and owned player/agent records. It does not grant producer/global corpus access, developer evidence access, private trace content, or private trace metadata.
+The user-facing OAuth scope for MCP clients that should be described as "access your games via MCP." A `games` token is resource-scoped to the authenticated subject's created or joined games and owned player/agent records. It can list/read authorized first-class cognitive artifacts for games the subject participated in, but it does not grant producer/global corpus access, developer evidence access, private trace content, or private trace metadata.
 
 ## Producer MCP
 

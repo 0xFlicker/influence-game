@@ -294,6 +294,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
         config: JSON.stringify(config),
         status: "waiting",
         trackType: "free",
+        cognitiveArtifactCaptureVersion: 1,
         minPlayers,
         maxPlayers,
         createdById: user?.id ?? null,
