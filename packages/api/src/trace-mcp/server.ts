@@ -156,6 +156,7 @@ export class TraceMcpJsonRpcServer {
                 action: { type: "string" },
                 phase: { type: "string" },
                 limit: { type: "number" },
+                maxBytes: { type: "number" },
               },
               required: ["gameIdOrSlug", "query"],
             },
@@ -196,6 +197,7 @@ export class TraceMcpJsonRpcServer {
           action: optionalString(args, "action"),
           phase: optionalString(args, "phase"),
           limit: optionalNumber(args, "limit"),
+          maxBytes: optionalNumber(args, "maxBytes"),
         }));
       }
       throw new Error(`Unknown or mutation-shaped tool is not supported: ${name}`);

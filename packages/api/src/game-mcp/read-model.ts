@@ -344,6 +344,7 @@ export class ProductionGameMcpReadModel {
     action?: string;
     phase?: string;
     limit?: number;
+    maxBytes?: number;
   }, access: ProductionGameMcpAccess): Promise<{
     schemaVersion: 1;
     privateReasoning: unknown;
@@ -354,6 +355,7 @@ export class ProductionGameMcpReadModel {
       privateReasoning: await this.privateTrace.searchReasoningTraces({
         ...params,
         limit: clamp(params.limit ?? 20, 1, 100),
+        maxBytes: clamp(params.maxBytes ?? DEFAULT_TRACE_CONTENT_BYTES, 1, MAX_TRACE_CONTENT_BYTES),
       }),
     };
   }

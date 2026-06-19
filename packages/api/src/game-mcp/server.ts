@@ -165,6 +165,7 @@ export class ProductionGameMcpJsonRpcServer {
           action: optionalString(args, "action"),
           phase: optionalString(args, "phase"),
           limit: optionalNumber(args, "limit"),
+          maxBytes: optionalNumber(args, "maxBytes"),
         }, auth));
       }
 
@@ -285,6 +286,7 @@ function productionGameMcpTools(scope: McpOAuthScope, includeProducerTools: bool
         action: { type: "string" },
         phase: { type: "string" },
         limit: { type: "number" },
+        maxBytes: { type: "number" },
       },
       required: ["gameIdOrSlug", "query"],
       scope,

@@ -83,7 +83,7 @@ Producer MCP exposes the same read-only game tools with producer visibility plus
 
 `scope=games` cannot discover or invoke producer tools and cannot request producer event visibility. `scope=mcp` on `/mcp/producer` preserves the existing global developer access contract.
 
-`read_trace_content` defaults to an 8 MiB raw trace read limit and clamps tool-supplied `maxBytes` at 64 MiB. `search_reasoning_traces` exposes `limit` for result count and returns short previews; object scan limits are server-side safety bounds, not caller-tuned result-size controls. These are response-content bounds, separate from the MCP request body limit.
+`read_trace_content` defaults to an 8 MiB raw trace read limit and clamps tool-supplied `maxBytes` at 64 MiB. `search_reasoning_traces` exposes `limit` for result count and `maxBytes` for the per-object scan prefix. Both use ranged private-storage reads, so byte caps limit object-store bandwidth and returned content rather than rejecting larger trace objects. These are response-content bounds, separate from the MCP request body limit.
 
 ## Client Paths
 

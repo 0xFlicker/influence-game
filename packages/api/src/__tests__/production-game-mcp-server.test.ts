@@ -53,6 +53,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(JSON.stringify(tools)).not.toContain("start_game");
     const searchTool = tools.find((tool) => (tool as { name: string }).name === "search_reasoning_traces");
     expect(JSON.stringify(searchTool)).not.toContain("maxBytesPerObject");
+    expect(JSON.stringify(searchTool)).toContain("maxBytes");
   });
 
   test("advertises only user-facing tools for games-scope auth", async () => {
@@ -188,7 +189,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     );
   });
 
-  test("does not expose or forward trace search scan byte caps", async () => {
+  test("forwards supported trace search maxBytes and ignores legacy scan caps", async () => {
     const calls: unknown[] = [];
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
       searchReasoningTraces: async (args: unknown) => {
@@ -207,6 +208,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
           gameIdOrSlug: "game-1",
           query: "Arden",
           limit: 3,
+          maxBytes: 4096,
           maxBytesPerObject: 1,
         },
       },
@@ -220,6 +222,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       action: undefined,
       phase: undefined,
       limit: 3,
+      maxBytes: 4096,
     }]);
   });
 

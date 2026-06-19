@@ -45,6 +45,9 @@ export interface PrivateTraceContentRead {
   content: string;
   contentType?: string;
   byteLength: number;
+  returnedByteLength: number;
+  totalByteLength?: number;
+  truncated: boolean;
   sha256: string;
 }
 
@@ -94,7 +97,7 @@ export interface PrivateTraceSearchOptions {
   action?: string;
   phase?: string;
   limit?: number;
-  maxScanBytesPerObject?: number;
+  maxBytes?: number;
 }
 
 function sha256Text(body: string): string {
@@ -135,6 +138,20 @@ function parseJsonOrJsonl(content: string): unknown[] {
       }
     }
     return records;
+  }
+}
+
+function normalizeMaxBytes(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  return Math.max(1, Math.floor(value));
+}
+
+function searchRecordsForContent(content: PrivateTraceContentRead): unknown[] {
+  try {
+    return parseJsonOrJsonl(content.content);
+  } catch (error) {
+    if (content.truncated) return [content.content];
+    throw error;
   }
 }
 
@@ -289,21 +306,26 @@ export class PrivateTraceReadModel {
       if (expectedBytes !== undefined && head.contentLength !== undefined && head.contentLength !== expectedBytes) {
         return { ok: false, status: "integrity_mismatch", error: "Private trace object size does not match manifest metadata" };
       }
-      if (params.maxBytes !== undefined && head.contentLength !== undefined && head.contentLength > params.maxBytes) {
-        return { ok: false, status: "storage_error", error: `Private trace object exceeds ${params.maxBytes} byte read limit` };
-      }
 
+      const maxBytes = normalizeMaxBytes(params.maxBytes);
       const object = await storage.getObject({
         bucket: manifest.storageBucket,
         key: manifest.storageKey,
+        maxBytes,
       });
-      const byteLength = Buffer.byteLength(object.body, "utf8");
+      const returnedByteLength = object.contentLength ?? Buffer.byteLength(object.body, "utf8");
+      const totalByteLength = expectedBytes ?? head.contentLength;
+      const truncated = maxBytes !== undefined && (
+        totalByteLength !== undefined
+          ? returnedByteLength < totalByteLength
+          : returnedByteLength >= maxBytes
+      );
       const sha256 = sha256Text(object.body);
-      if (expectedBytes !== undefined && byteLength !== expectedBytes) {
+      if (!truncated && expectedBytes !== undefined && returnedByteLength !== expectedBytes) {
         return { ok: false, status: "integrity_mismatch", error: "Private trace content size does not match manifest metadata" };
       }
       const expectedHash = typeof manifest.metadata.sha256 === "string" ? manifest.metadata.sha256 : undefined;
-      if (expectedHash && sha256 !== expectedHash) {
+      if (!truncated && expectedHash && sha256 !== expectedHash) {
         return { ok: false, status: "integrity_mismatch", error: "Private trace content hash does not match manifest metadata" };
       }
 
@@ -316,7 +338,10 @@ export class PrivateTraceReadModel {
           } as typeof schema.gameEvidenceManifests.$inferSelect),
           content: object.body,
           contentType: object.contentType ?? head.contentType,
-          byteLength,
+          byteLength: totalByteLength ?? returnedByteLength,
+          returnedByteLength,
+          ...(totalByteLength !== undefined && { totalByteLength }),
+          truncated,
           sha256,
         },
       };
@@ -344,7 +369,7 @@ export class PrivateTraceReadModel {
       const content = await this.readContent(manifest.id, {
         gameId: listed.gameId,
         purpose: "local_trace_mcp_search_reasoning_traces",
-        maxBytes: options.maxScanBytesPerObject ?? DEFAULT_TRACE_SEARCH_SCAN_BYTES,
+        maxBytes: options.maxBytes ?? DEFAULT_TRACE_SEARCH_SCAN_BYTES,
       });
       if (!content.ok) {
         skippedManifests.push({
@@ -360,7 +385,7 @@ export class PrivateTraceReadModel {
         continue;
       }
 
-      const records = parseJsonOrJsonl(content.response.content);
+      const records = searchRecordsForContent(content.response);
       for (let index = 0; index < records.length; index++) {
         const record = records[index];
         const haystack = JSON.stringify(record).toLowerCase();

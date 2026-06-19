@@ -59,6 +59,7 @@ describe("Trace MCP JSON-RPC server", () => {
       "search_reasoning_traces",
     ]);
     expect(JSON.stringify(response?.result)).not.toContain("maxBytesPerObject");
+    expect(JSON.stringify(response?.result)).toContain("maxBytes");
   });
 
   test("routes trace tools to the read model", async () => {
@@ -83,7 +84,7 @@ describe("Trace MCP JSON-RPC server", () => {
       method: "tools/call",
       params: {
         name: "search_reasoning_traces",
-        arguments: { gameIdOrSlug: "game-1", query: "reasoning", maxBytesPerObject: 1 },
+        arguments: { gameIdOrSlug: "game-1", query: "reasoning", maxBytes: 512, maxBytesPerObject: 1 },
       },
     });
 
@@ -102,6 +103,7 @@ describe("Trace MCP JSON-RPC server", () => {
       action: undefined,
       phase: undefined,
       limit: undefined,
+      maxBytes: 512,
     });
   });
 

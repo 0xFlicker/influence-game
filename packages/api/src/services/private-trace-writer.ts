@@ -11,7 +11,6 @@ import {
 } from "./private-trace-storage.js";
 
 export const PRIVATE_TRACE_EVIDENCE_TYPE = "private_decision_trace";
-export const DEFAULT_PRIVATE_TRACE_MAX_BYTES = 512 * 1024;
 
 export interface WritePrivateTraceInput {
   gameId: string;
@@ -24,7 +23,6 @@ export interface WritePrivateTraceInput {
 export interface PrivateTraceWriteOptions {
   storage?: PrivateTraceStorageAdapter;
   now?: () => Date;
-  maxBytes?: number;
 }
 
 export type WritePrivateTraceResult =
@@ -151,14 +149,6 @@ function sourcePointersForTrace(trace: PrivateDecisionTrace): ReadonlyArray<Reco
   return pointers;
 }
 
-function configuredMaxBytes(override?: number): number {
-  if (override !== undefined) return override;
-  const configured = Number(process.env.INFLUENCE_PRIVATE_TRACE_MAX_BYTES);
-  return Number.isFinite(configured) && configured > 0
-    ? configured
-    : DEFAULT_PRIVATE_TRACE_MAX_BYTES;
-}
-
 export async function writePrivateDecisionTrace(
   db: DrizzleDB,
   input: WritePrivateTraceInput,
@@ -172,12 +162,6 @@ export async function writePrivateDecisionTrace(
     ownerEpoch: input.ownerEpoch,
     createdAt: input.trace.createdAt || createdAt,
   }, null, 2);
-  const maxBytes = configuredMaxBytes(options.maxBytes);
-  const bodyBytes = Buffer.byteLength(body, "utf8");
-  if (bodyBytes > maxBytes) {
-    await markEvidenceDegraded(db, input.gameId, input.ownerEpoch, `private_trace_too_large: ${bodyBytes} > ${maxBytes}`).catch(() => {});
-    return { ok: false, error: `private trace exceeds ${maxBytes} byte limit` };
-  }
 
   const bucket = getPrivateTraceBucket();
   const key = traceStorageKey(input.gameId, input.trace, now);

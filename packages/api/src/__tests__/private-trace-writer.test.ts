@@ -16,7 +16,6 @@ const ENV_KEYS = [
   "LINODE_PRIVATE_CONTENT_ACCESS_KEY",
   "LINODE_PRIVATE_CONTENT_SECRET_KEY",
   "LINODE_PRIVATE_CONTENT_BUCKET",
-  "INFLUENCE_PRIVATE_TRACE_MAX_BYTES",
 ] as const;
 
 class FakePrivateTraceStorage implements PrivateTraceStorageAdapter {
@@ -30,12 +29,19 @@ class FakePrivateTraceStorage implements PrivateTraceStorageAdapter {
     return { etag: "fake-etag" };
   }
 
-  async getObject(input: { bucket: string; key: string }): Promise<{ body: string; contentLength?: number; contentType?: string }> {
+  async getObject(input: {
+    bucket: string;
+    key: string;
+    maxBytes?: number;
+  }): Promise<{ body: string; contentLength?: number; contentType?: string }> {
     const found = this.puts.find((put) => put.bucket === input.bucket && put.key === input.key);
     if (!found) throw new Error("object not found");
+    const body = input.maxBytes === undefined
+      ? found.body
+      : Buffer.from(found.body, "utf8").subarray(0, Math.max(1, Math.floor(input.maxBytes))).toString("utf8");
     return {
-      body: found.body,
-      contentLength: Buffer.byteLength(found.body, "utf8"),
+      body,
+      contentLength: Buffer.byteLength(body, "utf8"),
       contentType: found.contentType,
     };
   }
@@ -138,7 +144,6 @@ describe("private trace writer", () => {
     delete process.env.LINODE_PRIVATE_CONTENT_ACCESS_KEY;
     delete process.env.LINODE_PRIVATE_CONTENT_SECRET_KEY;
     process.env.LINODE_PRIVATE_CONTENT_BUCKET = "private-content-bucket";
-    delete process.env.INFLUENCE_PRIVATE_TRACE_MAX_BYTES;
     db = await setupTestDB();
   });
 
@@ -238,7 +243,42 @@ describe("private trace writer", () => {
     expect(JSON.stringify(index.manifests[0])).not.toContain("The vote followed the packet");
   });
 
-  test("reports traces skipped by internal search scan byte limits", async () => {
+  test("uses ranged reads for capped private trace content", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const storage = new FakePrivateTraceStorage();
+
+    const result = await writePrivateDecisionTrace(
+      db,
+      {
+        gameId,
+        ownerEpoch,
+        trace: makeTrace({ gameId, ownerEpoch }),
+      },
+      {
+        storage,
+        now: () => new Date("2026-06-15T12:00:00.000Z"),
+      },
+    );
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error);
+
+    const readModel = new PrivateTraceReadModel(db, () => storage);
+    const cappedRead = await readModel.readContent(result.manifestId, {
+      gameId,
+      maxBytes: 64,
+    });
+
+    expect(cappedRead.ok).toBeTrue();
+    if (!cappedRead.ok) throw new Error(cappedRead.error);
+    expect(cappedRead.response.truncated).toBeTrue();
+    expect(cappedRead.response.returnedByteLength).toBe(64);
+    expect(cappedRead.response.totalByteLength).toBe(result.metadata.byteLength);
+    expect(cappedRead.response.byteLength).toBe(result.metadata.byteLength);
+    expect(cappedRead.response.content.length).toBeGreaterThan(0);
+  });
+
+  test("searches within capped trace prefixes without treating larger objects as errors", async () => {
     const gameId = await insertGame(db);
     const ownerEpoch = await insertOwner(db, gameId);
     const storage = new FakePrivateTraceStorage();
@@ -269,19 +309,11 @@ describe("private trace writer", () => {
     const capped = await readModel.searchReasoningTraces({
       gameIdOrSlug: gameId,
       query: "native reasoning secret",
-      maxScanBytesPerObject: 1,
+      maxBytes: 1,
     });
 
     expect(capped.matches).toHaveLength(0);
-    expect(capped.diagnostics).toMatchObject({
-      skippedManifestCount: 1,
-      skippedManifests: [{
-        manifestId: result.manifestId,
-        gameId,
-        status: "storage_error",
-        error: "Private trace object exceeds 1 byte read limit",
-      }],
-    });
+    expect(capped.diagnostics).toBeUndefined();
   });
 
   test("does not create a manifest when private storage fails and marks trace diagnostics degraded", async () => {
@@ -325,7 +357,7 @@ describe("private trace writer", () => {
     expect(storage.puts).toHaveLength(0);
   });
 
-  test("rejects over-budget traces without writing content", async () => {
+  test("writes large traces without a write-time byte limit", async () => {
     const gameId = await insertGame(db);
     const ownerEpoch = await insertOwner(db, gameId);
     const storage = new FakePrivateTraceStorage();
@@ -333,12 +365,22 @@ describe("private trace writer", () => {
     const result = await writePrivateDecisionTrace(db, {
       gameId,
       ownerEpoch,
-      trace: makeTrace({ gameId, ownerEpoch }),
-    }, { storage, maxBytes: 64 });
+      trace: makeTrace({
+        gameId,
+        ownerEpoch,
+        prompt: {
+          messages: [
+            { role: "system", content: "x".repeat(100_000) },
+            { role: "user", content: "large prompt survives" },
+          ],
+        },
+      }),
+    }, { storage });
 
-    expect(result.ok).toBeFalse();
-    expect(storage.puts).toHaveLength(0);
-    const manifests = await db.select().from(schema.gameEvidenceManifests);
-    expect(manifests).toHaveLength(0);
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error);
+    expect(storage.puts).toHaveLength(1);
+    expect(storage.puts[0]!.body).toContain("large prompt survives");
+    expect(result.metadata.byteLength).toBeGreaterThan(100_000);
   });
 });

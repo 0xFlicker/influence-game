@@ -38,16 +38,19 @@ class FakePrivateTraceStorage implements PrivateTraceStorageAdapter {
     return { etag: "fake-etag" };
   }
 
-  async getObject(input: { bucket: string; key: string }): Promise<{
+  async getObject(input: { bucket: string; key: string; maxBytes?: number }): Promise<{
     body: string;
     contentLength?: number;
     contentType?: string;
   }> {
     const found = this.objects.get(`${input.bucket}/${input.key}`);
     if (!found) throw new Error("object not found");
+    const body = input.maxBytes === undefined
+      ? found.body
+      : Buffer.from(found.body, "utf8").subarray(0, Math.max(1, Math.floor(input.maxBytes))).toString("utf8");
     return {
-      body: found.body,
-      contentLength: Buffer.byteLength(found.body, "utf8"),
+      body,
+      contentLength: Buffer.byteLength(body, "utf8"),
       contentType: found.contentType,
     };
   }
@@ -321,6 +324,20 @@ describe("ProductionGameMcpReadModel", () => {
         manifest: { id: manifestId, gameId },
         content: expect.stringContaining("the secret plan"),
         contentType: PRIVATE_TRACE_CONTENT_TYPE,
+      },
+    });
+
+    const cappedContent = await readModel.readTraceContent({
+      manifestId,
+      gameId,
+      maxBytes: 24,
+    }, PRODUCER_ACCESS);
+    expect(asRecord(cappedContent.privateReasoning)).toMatchObject({
+      ok: true,
+      response: {
+        manifest: { id: manifestId, gameId },
+        returnedByteLength: 24,
+        truncated: true,
       },
     });
 

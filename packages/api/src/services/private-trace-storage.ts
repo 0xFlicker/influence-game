@@ -1,4 +1,10 @@
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+  type GetObjectCommandInput,
+} from "@aws-sdk/client-s3";
 
 export const PRIVATE_TRACE_STORAGE_PROVIDER = "linode_object_storage";
 export const PRIVATE_TRACE_CONTENT_TYPE = "application/json";
@@ -16,7 +22,11 @@ export interface PrivateTracePutObjectResult {
 
 export interface PrivateTraceStorageAdapter {
   putObject(input: PrivateTracePutObjectInput): Promise<PrivateTracePutObjectResult>;
-  getObject(input: { bucket: string; key: string }): Promise<{ body: string; contentLength?: number; contentType?: string }>;
+  getObject(input: {
+    bucket: string;
+    key: string;
+    maxBytes?: number;
+  }): Promise<{ body: string; contentLength?: number; contentRange?: string; contentType?: string }>;
   headObject(input: { bucket: string; key: string }): Promise<{ contentLength?: number; contentType?: string }>;
 }
 
@@ -97,11 +107,18 @@ export class S3PrivateTraceStorageAdapter implements PrivateTraceStorageAdapter 
     };
   }
 
-  async getObject(input: { bucket: string; key: string }): Promise<{ body: string; contentLength?: number; contentType?: string }> {
-    const response = await this.client.send(new GetObjectCommand({
+  async getObject(input: {
+    bucket: string;
+    key: string;
+    maxBytes?: number;
+  }): Promise<{ body: string; contentLength?: number; contentRange?: string; contentType?: string }> {
+    const maxBytes = normalizeMaxBytes(input.maxBytes);
+    const command: GetObjectCommandInput = {
       Bucket: input.bucket,
       Key: input.key,
-    }));
+      ...(maxBytes !== undefined && { Range: `bytes=0-${maxBytes - 1}` }),
+    };
+    const response = await this.client.send(new GetObjectCommand(command));
     const body = await response.Body?.transformToString();
     if (body === undefined) {
       throw new Error("private trace object body missing");
@@ -109,6 +126,7 @@ export class S3PrivateTraceStorageAdapter implements PrivateTraceStorageAdapter 
     return {
       body,
       ...(response.ContentLength !== undefined && { contentLength: response.ContentLength }),
+      ...(response.ContentRange && { contentRange: response.ContentRange }),
       ...(response.ContentType && { contentType: response.ContentType }),
     };
   }
@@ -127,4 +145,9 @@ export class S3PrivateTraceStorageAdapter implements PrivateTraceStorageAdapter 
 
 export function createPrivateTraceStorageAdapter(): PrivateTraceStorageAdapter {
   return new S3PrivateTraceStorageAdapter();
+}
+
+function normalizeMaxBytes(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  return Math.max(1, Math.floor(value));
 }
