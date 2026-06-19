@@ -6,6 +6,7 @@ import {
   MCP_OAUTH_CLIENT_ID,
   MCP_OAUTH_ISSUER,
   buildAuthorizeUrl,
+  exchangeAuthorizationCode,
   parseOAuthCallbackUrl,
   pkceS256,
   requireSafeHttpBaseUrl,
@@ -35,12 +36,14 @@ afterEach(() => {
 
 describe("Game MCP OAuth helper utilities", () => {
   const futureExp = () => Math.floor(Date.now() / 1000) + 60;
+  const resourceUri = "http://127.0.0.1:3000/mcp";
 
-  it("builds an authorization URL with PKCE S256 inputs", () => {
+  it("builds an authorization URL with PKCE S256 and resource inputs", () => {
     const authorizeUrl = buildAuthorizeUrl({
       webBaseUrl: new URL("http://localhost:3001"),
       clientId: MCP_OAUTH_CLIENT_ID,
       redirectUri: "http://127.0.0.1:34567/oauth/callback",
+      resourceUri,
       state: "state-123",
       codeChallenge: "challenge-123",
     });
@@ -51,6 +54,7 @@ describe("Game MCP OAuth helper utilities", () => {
     expect(authorizeUrl.searchParams.get("redirect_uri")).toBe(
       "http://127.0.0.1:34567/oauth/callback",
     );
+    expect(authorizeUrl.searchParams.get("resource")).toBe(resourceUri);
     expect(authorizeUrl.searchParams.get("scope")).toBe("mcp");
     expect(authorizeUrl.searchParams.get("state")).toBe("state-123");
     expect(authorizeUrl.searchParams.get("code_challenge")).toBe("challenge-123");
@@ -102,6 +106,48 @@ describe("Game MCP OAuth helper utilities", () => {
     );
   });
 
+  it("exchanges an authorization code with the resource parameter", async () => {
+    const originalFetch = globalThis.fetch;
+    let capturedBody: string | null = null;
+    globalThis.fetch = (async (
+      _input: Parameters<typeof fetch>[0],
+      init?: Parameters<typeof fetch>[1],
+    ) => {
+      capturedBody = String(init?.body);
+      return new Response(JSON.stringify({
+        access_token: "resource-token",
+        token_type: "Bearer",
+        expires_in: 3600,
+        scope: "mcp",
+        audience: "game-mcp",
+        purpose: "mcp_access",
+        resource: resourceUri,
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      const token = await exchangeAuthorizationCode({
+        apiBaseUrl: new URL("http://127.0.0.1:3000"),
+        clientId: MCP_OAUTH_CLIENT_ID,
+        code: "code-123",
+        redirectUri: "http://127.0.0.1:34567/oauth/callback",
+        resourceUri,
+        codeVerifier: "verifier-123",
+      });
+
+      expect(token.access_token).toBe("resource-token");
+      const form = new URLSearchParams(capturedBody ?? "");
+      expect(form.get("resource")).toBe(resourceUri);
+      expect(form.get("code")).toBe("code-123");
+      expect(form.get("code_verifier")).toBe("verifier-123");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("saves and reloads a short-lived MCP token from a hidden local file", () => {
     const tokenFile = join(makeTempCorpus(), ".influence-game", "mcp-token.json");
     const now = new Date("2026-06-18T12:00:00.000Z");
@@ -112,6 +158,7 @@ describe("Game MCP OAuth helper utilities", () => {
       scope: "mcp",
       audience: "game-mcp",
       purpose: "mcp_access",
+      resource: resourceUri,
     }, tokenFile, now);
 
     expect(stored.expiresAt).toBe("2026-06-18T13:00:00.000Z");

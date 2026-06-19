@@ -201,12 +201,18 @@ export function McpOAuthAuthorizeClient() {
                 <Detail label="Wallet" value={user?.walletAddress ?? "No wallet"} />
                 <Detail label="Client" value={flow.preview.clientId} />
                 <Detail label="Scope" value={flow.preview.scope} />
+                <Detail label="Resource" value={flow.preview.resource} wide />
                 <Detail label="Redirect" value={flow.preview.redirectUri} wide />
-                <Detail label="Grant" value="Global read-only Game MCP access" wide />
+                <Detail
+                  label="Grant"
+                  value="Global read-only Game MCP access, including developer evidence and private reasoning tools"
+                  wide
+                />
               </dl>
 
               <p className="influence-copy text-sm">
-                Approving grants the local MCP bridge bearer access to the Game MCP corpus for this environment.
+                Approving grants bearer access to the deployed Game MCP surface for this environment.
+                This is trusted maintainer access to wired inspection tools, not a per-game or per-player grant.
               </p>
 
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">

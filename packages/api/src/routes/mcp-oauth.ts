@@ -1,7 +1,7 @@
 /**
  * MCP OAuth routes.
  *
- * These routes produce opaque bearer tokens for local Game MCP access.
+ * These routes produce opaque bearer tokens for Game MCP access.
  * The only app-level gate is the current user's RBAC role marker: `mcp`.
  */
 
@@ -16,12 +16,21 @@ import { parseJsonBody } from "../lib/parse-json-body.js";
 import {
   authorizeMcpOAuth,
   exchangeMcpOAuthCode,
+  getMcpOAuthAuthorizationEndpoint,
+  getMcpOAuthAuthorizationServerIssuer,
+  getMcpOAuthRegistrationEndpoint,
+  getMcpOAuthResourceUri,
+  getMcpOAuthTokenEndpoint,
   introspectMcpAccessToken,
+  MCP_OAUTH_CLIENT_ID,
+  MCP_OAUTH_SCOPE,
+  registerMcpOAuthClient,
   type McpOAuthAuditMetadata,
   secretsEqual,
 } from "../services/mcp-oauth.js";
 
 export type McpOAuthAuditEventName =
+  | "mcp.oauth.register"
   | "mcp.oauth.authorize"
   | "mcp.oauth.token"
   | "mcp.oauth.introspect";
@@ -43,6 +52,33 @@ export function createMcpOAuthRoutes(
   auditLogger: McpOAuthAuditLogger = defaultAuditLogger,
 ) {
   const app = new Hono<AuthEnv>();
+
+  app.post("/api/oauth/mcp/register", async (c) => {
+    const correlationId = getCorrelationId(c);
+    const body = await parseOAuthBody(c, "POST /api/oauth/mcp/register");
+    if (!body) {
+      emitAudit(auditLogger, {
+        event: "mcp.oauth.register",
+        correlationId,
+        result: "failure",
+        status: 400,
+        denialReason: "invalid_request",
+      });
+      return c.json({ error: "invalid_request", error_description: "Invalid request body" }, 400);
+    }
+
+    const result = await registerMcpOAuthClient(db, body);
+    emitAudit(auditLogger, {
+      event: "mcp.oauth.register",
+      correlationId,
+      clientId: result.audit?.clientId,
+      scope: result.audit?.scope ?? safeAuditString(result.body.scope),
+      result: result.status === 201 ? "success" : "failure",
+      status: result.status,
+      denialReason: result.status === 201 ? undefined : bodyErrorCode(result.body),
+    });
+    return c.json(result.body, result.status);
+  });
 
   app.post("/api/oauth/mcp/authorize", requireAuth(db), async (c) => {
     const correlationId = getCorrelationId(c);
@@ -68,6 +104,7 @@ export function createMcpOAuthRoutes(
       userId: c.get("user").id,
       walletAddress: c.get("user").walletAddress ?? undefined,
       clientId: safeAuditString(body.client_id),
+      resource: safeAuditString(body.resource),
       scope: safeAuditString(body.scope),
       decision,
       result: authorizeAuditResult(result.status, decision),
@@ -98,6 +135,7 @@ export function createMcpOAuthRoutes(
       userId: result.audit?.userId,
       walletAddress: result.audit?.walletAddress,
       clientId: result.audit?.clientId ?? safeAuditString(body.client_id),
+      resource: result.audit?.resource ?? safeAuditString(body.resource),
       scope: result.audit?.scope ?? safeAuditString(result.body.scope),
       result: result.status === 200 ? "success" : "failure",
       status: result.status,
@@ -172,6 +210,7 @@ export function createMcpOAuthRoutes(
       correlationId,
       userId: introspection.sub,
       clientId: introspection.client_id,
+      resource: introspection.resource,
       scope: introspection.scope,
       result: introspection.active ? "success" : "failure",
       status: 200,
@@ -179,6 +218,30 @@ export function createMcpOAuthRoutes(
       active: introspection.active,
     });
     return c.json(introspection);
+  });
+
+  app.get("/.well-known/oauth-protected-resource", (c) => {
+    return c.json(buildProtectedResourceMetadata(c));
+  });
+
+  app.get("/.well-known/oauth-protected-resource/mcp", (c) => {
+    return c.json(buildProtectedResourceMetadata(c));
+  });
+
+  app.get("/.well-known/oauth-authorization-server", (c) => {
+    const origin = requestOrigin(c);
+    return c.json({
+      issuer: getMcpOAuthAuthorizationServerIssuer(origin),
+      authorization_endpoint: getMcpOAuthAuthorizationEndpoint(origin),
+      token_endpoint: getMcpOAuthTokenEndpoint(origin),
+      registration_endpoint: getMcpOAuthRegistrationEndpoint(origin),
+      response_types_supported: ["code"],
+      grant_types_supported: ["authorization_code"],
+      code_challenge_methods_supported: ["S256"],
+      token_endpoint_auth_methods_supported: ["none"],
+      scopes_supported: [MCP_OAUTH_SCOPE],
+      client_id: MCP_OAUTH_CLIENT_ID,
+    });
   });
 
   return app;
@@ -206,6 +269,22 @@ function getCorrelationId(c: Context): string {
   return c.req.header("x-correlation-id") ||
     c.req.header("x-request-id") ||
     randomUUID();
+}
+
+function requestOrigin(c: Context): string {
+  const url = new URL(c.req.url);
+  return url.origin;
+}
+
+function buildProtectedResourceMetadata(c: Context): Record<string, unknown> {
+  const origin = requestOrigin(c);
+  return {
+    resource: getMcpOAuthResourceUri(),
+    authorization_servers: [getMcpOAuthAuthorizationServerIssuer(origin)],
+    scopes_supported: [MCP_OAUTH_SCOPE],
+    bearer_methods_supported: ["header"],
+    resource_name: "Influence Game MCP",
+  };
 }
 
 function safeAuditString(value: unknown): string | undefined {

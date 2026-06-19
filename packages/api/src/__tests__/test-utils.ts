@@ -34,6 +34,7 @@ export async function setupTestDB(): Promise<DrizzleDB> {
 const INFLUENCE_TABLES = [
   "mcp_oauth_access_tokens",
   "mcp_oauth_authorization_codes",
+  "mcp_oauth_clients",
   "game_evidence_manifest_reads",
   "game_evidence_manifests",
   "game_checkpoints",

@@ -224,7 +224,7 @@ describe("private trace writer", () => {
     expect(JSON.stringify(metadata)).not.toContain("native reasoning secret");
     expect(JSON.stringify(metadata)).not.toContain("private thought secret");
 
-    const readModel = new PrivateTraceReadModel(db, storage);
+    const readModel = new PrivateTraceReadModel(db, () => storage);
     const index = await readModel.listManifests(gameId);
     expect(index.manifests[0]).toMatchObject({
       id: result.manifestId,
@@ -236,6 +236,52 @@ describe("private trace writer", () => {
       },
     });
     expect(JSON.stringify(index.manifests[0])).not.toContain("The vote followed the packet");
+  });
+
+  test("reports traces skipped by internal search scan byte limits", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const storage = new FakePrivateTraceStorage();
+
+    const result = await writePrivateDecisionTrace(
+      db,
+      {
+        gameId,
+        ownerEpoch,
+        trace: makeTrace({ gameId, ownerEpoch }),
+      },
+      {
+        storage,
+        now: () => new Date("2026-06-15T12:00:00.000Z"),
+      },
+    );
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error);
+
+    const readModel = new PrivateTraceReadModel(db, () => storage);
+    const unbounded = await readModel.searchReasoningTraces({
+      gameIdOrSlug: gameId,
+      query: "native reasoning secret",
+    });
+    expect(unbounded.matches).toHaveLength(1);
+    expect(unbounded.diagnostics).toBeUndefined();
+
+    const capped = await readModel.searchReasoningTraces({
+      gameIdOrSlug: gameId,
+      query: "native reasoning secret",
+      maxScanBytesPerObject: 1,
+    });
+
+    expect(capped.matches).toHaveLength(0);
+    expect(capped.diagnostics).toMatchObject({
+      skippedManifestCount: 1,
+      skippedManifests: [{
+        manifestId: result.manifestId,
+        gameId,
+        status: "storage_error",
+        error: "Private trace object exceeds 1 byte read limit",
+      }],
+    });
   });
 
   test("does not create a manifest when private storage fails and marks trace diagnostics degraded", async () => {

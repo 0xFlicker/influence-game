@@ -112,6 +112,10 @@ The app/API-side V0 OAuth surface that turns an existing logged-in app session p
 
 A local developer bridge that validates a token with `scope=mcp` before delegating to the existing stdio Game MCP behavior. The bridge proves the OAuth authorization-code plus PKCE loop for trusted MCP validation without packaging a production HTTP MCP endpoint.
 
+## Production Game MCP
+
+A deployed Streamable HTTP MCP resource server for trusted validation against API-backed Influence game data. It uses the same developer-scoped `mcp` role / `scope=mcp` global authorization boundary as the local bridge. The V0 work is about remote client connection, OAuth discovery, and deployed inspection tools; it does not add resource scoping or strip private reasoning from developer inspection surfaces.
+
 ## Durable game-run kernel
 
 The first durable API runtime layer for live game execution. It binds API game identity into canonical events, persists ordered accepted-domain facts, enforces single-writer ownership, and defines checkpoint/evidence boundaries. It is not itself a claim that stopped games can resume; resume depends on later checkpoint hydration.

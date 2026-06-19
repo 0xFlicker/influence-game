@@ -12,6 +12,7 @@ export interface AuthorizeUrlOptions {
   webBaseUrl: URL;
   clientId: string;
   redirectUri: string;
+  resourceUri: string;
   state: string;
   codeChallenge: string;
 }
@@ -27,6 +28,7 @@ export interface TokenExchangeOptions {
   clientId: string;
   code: string;
   redirectUri: string;
+  resourceUri: string;
   codeVerifier: string;
 }
 
@@ -37,6 +39,7 @@ export interface McpOAuthTokenResponse {
   scope: string;
   audience: string;
   purpose: string;
+  resource: string;
 }
 
 export function generateOAuthSecret(bytes = 32): string {
@@ -69,6 +72,7 @@ export function buildAuthorizeUrl(options: AuthorizeUrlOptions): URL {
   authorizeUrl.searchParams.set("response_type", "code");
   authorizeUrl.searchParams.set("client_id", options.clientId);
   authorizeUrl.searchParams.set("redirect_uri", options.redirectUri);
+  authorizeUrl.searchParams.set("resource", options.resourceUri);
   authorizeUrl.searchParams.set("scope", MCP_OAUTH_SCOPE);
   authorizeUrl.searchParams.set("state", options.state);
   authorizeUrl.searchParams.set("code_challenge", options.codeChallenge);
@@ -117,6 +121,7 @@ export async function exchangeAuthorizationCode(
       grant_type: "authorization_code",
       client_id: options.clientId,
       redirect_uri: options.redirectUri,
+      resource: options.resourceUri,
       code: options.code,
       code_verifier: options.codeVerifier,
     }),
@@ -133,7 +138,8 @@ export async function exchangeAuthorizationCode(
     parsed.token_type !== "Bearer" ||
     typeof parsed.expires_in !== "number" ||
     parsed.scope !== MCP_OAUTH_SCOPE ||
-    parsed.audience !== MCP_OAUTH_AUDIENCE
+    parsed.audience !== MCP_OAUTH_AUDIENCE ||
+    parsed.resource !== options.resourceUri
   ) {
     throw new Error("Token exchange returned an invalid MCP OAuth response");
   }

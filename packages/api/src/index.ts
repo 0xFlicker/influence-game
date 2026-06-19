@@ -15,6 +15,7 @@ import { seedRBAC } from "./db/rbac-seed.js";
 import { createGameRoutes } from "./routes/games.js";
 import { createAuthRoutes } from "./routes/auth.js";
 import { createMcpOAuthRoutes } from "./routes/mcp-oauth.js";
+import { createMcpRoutes } from "./routes/mcp.js";
 import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
 import { createAdminRoutes } from "./routes/admin.js";
 import { createFreeQueueRoutes } from "./routes/free-queue.js";
@@ -195,6 +196,10 @@ app.route("/", authRoutes);
 // MCP OAuth routes
 const mcpOAuthRoutes = createMcpOAuthRoutes(db);
 app.route("/", mcpOAuthRoutes);
+
+// Production Game MCP route
+const mcpRoutes = createMcpRoutes(db);
+app.route("/", mcpRoutes);
 
 // Game routes
 const gameRoutes = createGameRoutes(db);

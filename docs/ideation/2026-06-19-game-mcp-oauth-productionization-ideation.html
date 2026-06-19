@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Game MCP OAuth Productionization</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f4;
+      --panel: #ffffff;
+      --ink: #1c2328;
+      --muted: #5c6670;
+      --line: #d7ded8;
+      --soft: #edf6f2;
+      --soft-blue: #edf2fb;
+      --soft-amber: #fbf1df;
+      --soft-red: #faecea;
+      --green: #1d7259;
+      --blue: #315f9d;
+      --amber: #8d5d16;
+      --red: #9a3f36;
+      --code: #f0f3ef;
+      --shadow: 0 16px 44px rgba(35, 48, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.55;
+    }
+
+    a {
+      color: var(--blue);
+      text-underline-offset: 0.18em;
+    }
+
+    code {
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--code);
+      padding: 0.08rem 0.28rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    .page {
+      width: min(980px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 42px 0 64px;
+    }
+
+    .hero,
+    section,
+    footer {
+      margin-block: 24px;
+    }
+
+    .hero,
+    section {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 32px;
+    }
+
+    section {
+      padding: 28px;
+      box-shadow: 0 8px 24px rgba(35, 48, 42, 0.04);
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      line-height: 1.16;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 14ch;
+      font-size: clamp(2.2rem, 5vw, 4rem);
+    }
+
+    h2 {
+      margin-bottom: 14px;
+      font-size: 1.6rem;
+    }
+
+    h3 {
+      font-size: 1.13rem;
+    }
+
+    p {
+      max-width: 76ch;
+    }
+
+    ul,
+    ol {
+      padding-left: 1.35rem;
+    }
+
+    li + li {
+      margin-top: 0.45rem;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--green);
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .lede {
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 1.08rem;
+    }
+
+    .metadata,
+    .stats,
+    .card-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 22px 0 0;
+    }
+
+    .metadata div,
+    .stats div,
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--soft);
+      color: var(--green);
+      padding: 7px 11px;
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+
+    .metadata dt,
+    .card-meta dt {
+      display: inline;
+      margin-right: 4px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .metadata dd,
+    .card-meta dd {
+      display: inline;
+      margin: 0;
+    }
+
+    .callout {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--soft);
+      padding: 16px;
+    }
+
+    .callout strong {
+      color: var(--green);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .mini-card,
+    .idea-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfa;
+      padding: 16px;
+    }
+
+    .mini-card h3 {
+      margin-bottom: 8px;
+      color: var(--green);
+    }
+
+    .mini-card p,
+    .idea-card p {
+      margin-bottom: 0;
+      color: var(--muted);
+    }
+
+    .axis-list,
+    .jump-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 12px;
+      padding: 0;
+      margin: 0;
+      list-style: none;
+    }
+
+    .axis-list li,
+    .jump-list li {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--soft-blue);
+      padding: 13px;
+      font-weight: 700;
+    }
+
+    .idea-card {
+      margin-top: 18px;
+      background: var(--panel);
+    }
+
+    .idea-card h3 {
+      color: var(--ink);
+    }
+
+    .idea-card .rank {
+      color: var(--green);
+      font-weight: 800;
+    }
+
+    .card-meta {
+      margin: 12px 0 0;
+    }
+
+    .card-meta div {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--soft-blue);
+      padding: 6px 10px;
+      font-size: 0.88rem;
+    }
+
+    .basis {
+      border-left: 4px solid var(--green);
+      background: var(--soft);
+      padding: 12px 14px;
+      margin-top: 14px;
+    }
+
+    .basis p {
+      margin: 0;
+      color: #2e5547;
+    }
+
+    .warn {
+      border-left: 4px solid var(--amber);
+      background: var(--soft-amber);
+      color: #5f4215;
+    }
+
+    .diagram {
+      overflow-x: auto;
+      margin-top: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfa;
+      padding: 12px;
+    }
+
+    svg {
+      max-width: 100%;
+      height: auto;
+      font-family: inherit;
+    }
+
+    .answer-list h3 {
+      margin-top: 20px;
+      color: var(--blue);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+      font-size: 0.95rem;
+    }
+
+    th,
+    td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--soft-blue);
+      color: #253d62;
+    }
+
+    footer {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">Repo-Grounded Ideation</p>
+      <h1>Game MCP OAuth Productionization</h1>
+      <p class="lede">
+        A focused next slice for turning the existing local Game MCP OAuth bridge into a deployed,
+        client-installable MCP endpoint for production/staging game validation.
+      </p>
+      <dl class="metadata">
+        <div><dt>Date</dt><dd><time datetime="2026-06-19">2026-06-19</time></dd></div>
+        <div><dt>Topic</dt><dd>game-mcp-oauth-productionization</dd></div>
+        <div><dt>Mode</dt><dd>repo-grounded</dd></div>
+        <div><dt>Boundary</dt><dd><code>scope=mcp</code> + valid token = global MCP access</dd></div>
+      </dl>
+    </header>
+
+    <section id="grounding">
+      <h2>Grounding Context</h2>
+      <div class="callout">
+        <p><strong>Core boundary:</strong> keep authorization intentionally simple. A user must have the <code>mcp</code> role, request <code>scope=mcp</code>, and receive a valid OAuth token. That token grants global access to the wired MCP surface. No per-user, per-agent, private-agent, or per-game authorization boundaries are introduced in this slice.</p>
+      </div>
+      <div class="grid">
+        <article class="mini-card">
+          <h3>Current Auth</h3>
+          <p>The API has <code>/api/oauth/mcp/authorize</code>, <code>/token</code>, and <code>/introspect</code>. Tokens are opaque, one-hour, role-checked, and carry <code>aud=game-mcp</code>, <code>purpose=mcp_access</code>, and <code>scope=mcp</code>.</p>
+        </article>
+        <article class="mini-card">
+          <h3>Current Client Flow</h3>
+          <p>The web app hosts <code>/oauth/mcp/authorize</code> for browser approval. The engine login helper opens that page, receives a loopback callback, exchanges the code, and stores a local token file.</p>
+        </article>
+        <article class="mini-card">
+          <h3>Current MCP</h3>
+          <p>The Game MCP is stdio and filesystem-backed. It reads <code>packages/engine/docs/simulations</code>, exposes read-only JSON-RPC tools, and advertises protocol <code>2025-06-18</code>.</p>
+        </article>
+        <article class="mini-card">
+          <h3>Deployed Data</h3>
+          <p>The API already has durable read models for persisted game events, replayed projections, sanitized durable-run summaries, evidence counts, and private trace manifests. Those are the natural backing seams for deployed game data.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="axes">
+      <h2>Topic Axes</h2>
+      <ul class="axis-list">
+        <li>Protocol surface</li>
+        <li>OAuth and client identity</li>
+        <li>Deployed read model</li>
+        <li>Security and operations</li>
+        <li>Client proof and docs</li>
+      </ul>
+    </section>
+
+    <section id="answers">
+      <h2>Direct Answers</h2>
+      <div class="answer-list">
+        <h3>1. Smallest Production-Grade V0</h3>
+        <p>
+          The smallest real V0 is an API-hosted <code>https://&lt;api&gt;/mcp</code> Streamable HTTP resource server, protected by the existing MCP OAuth tokens, serving read-only tools against deployed API game data. It should return normal JSON responses for POSTed JSON-RPC requests, return <code>405</code> for unsupported GET/SSE in V0, validate bearer auth on every request, and advertise exactly <code>scope=mcp</code>.
+        </p>
+        <p>
+          V0 tools should be the deployed analog of the existing Game MCP plus the developer evidence/private reasoning surfaces intentionally selected for this MCP role: list deployed games, read/replay projection, filter canonical events, read a player timeline, inspect durable-run state, and expose explicit private trace manifest/content/search tools behind the same global <code>scope=mcp</code> gate.
+        </p>
+
+        <h3>2. Missing Protocol/Auth Requirements</h3>
+        <ul>
+          <li>A deployed Streamable HTTP MCP endpoint with JSON-RPC POST handling and proper <code>Accept</code> / <code>Content-Type</code> behavior.</li>
+          <li><code>WWW-Authenticate</code> challenges that point at protected resource metadata and include <code>scope="mcp"</code>.</li>
+          <li><code>/.well-known/oauth-protected-resource</code> on the MCP resource origin with <code>resource</code>, <code>authorization_servers</code>, and <code>scopes_supported: ["mcp"]</code>.</li>
+          <li>Authorization server metadata, either OAuth or OIDC-shaped, including authorization/token endpoints, PKCE S256 support, scopes, grant types, and token auth methods.</li>
+          <li>Acceptance and validation of the OAuth <code>resource</code> parameter on authorization and token requests, binding issued tokens to the canonical MCP resource URI.</li>
+          <li>A client identity path compatible with fresh clients: Client ID Metadata Document, Dynamic Client Registration, or predefined public clients. This needs an empirical compatibility spike because Codex docs confirm OAuth login behavior but do not expose all registration internals.</li>
+          <li>For ChatGPT Apps runway, per-tool OAuth <code>securitySchemes</code> and auth error metadata that can trigger linking.</li>
+        </ul>
+
+        <h3>3. What Moves From Local to Deployed</h3>
+        <ul>
+          <li>Transport moves from stdio newline JSON-RPC to HTTPS Streamable HTTP.</li>
+          <li>Auth moves from local token file plus bridge-side introspection secret to API-side bearer validation on the MCP request itself.</li>
+          <li>Read model moves from filesystem simulation sessions to deployed Postgres game rows, canonical events, projection replay, durable-run inspection, and selected private trace read-model paths.</li>
+          <li>Resource identity moves from <code>influence-game://sessions/&lt;session&gt;/games/&lt;n&gt;</code> to API game identities such as <code>influence-game://games/&lt;slug-or-id&gt;/events</code>.</li>
+          <li>Docs move from local validation commands to install/auth recipes for Codex, Claude Code, MCP Inspector, API Playground, and ChatGPT developer mode.</li>
+        </ul>
+
+        <h3>4. Client Install/Auth Paths To Target First</h3>
+        <ul>
+          <li><strong>Codex first:</strong> configure a Streamable HTTP server URL in <code>~/.codex/config.toml</code>, run Codex MCP OAuth login, confirm it uses advertised <code>scopes_supported</code>, stores the token, and can list/call tools.</li>
+          <li><strong>Claude Code second:</strong> run <code>claude mcp add --transport http influence &lt;url&gt;</code>, authenticate via <code>/mcp</code>, and verify both automatic discovery and a pinned <code>oauth.scopes = "mcp"</code> config.</li>
+          <li><strong>ChatGPT developer mode third:</strong> connect the HTTPS endpoint in developer mode or API Playground, prove OAuth linking, tool discovery, auth challenge behavior, and basic golden prompts. Do not build iframe UI yet.</li>
+        </ul>
+
+        <h3>5. Explicitly Out Of Scope</h3>
+        <ul>
+          <li>Per-user, per-game, per-agent, private-agent, or private-trace authorization boundaries.</li>
+          <li>Adding per-resource authorization or private-reasoning redaction/removal after the global MCP gate.</li>
+          <li>Mutating game state through MCP.</li>
+          <li>Public ChatGPT app submission, app listing copy, or embedded UI components.</li>
+          <li>Crash-safe game resume or checkpoint hydration behavior.</li>
+          <li>OAuth refresh tokens unless a client compatibility smoke proves they are required for V0.</li>
+        </ul>
+
+        <h3>6. Workstreams And Rough Order</h3>
+        <ol>
+          <li>Run a thin compatibility spike for Codex/Claude/ChatGPT metadata and client registration behavior.</li>
+          <li>Add OAuth discovery metadata, <code>resource</code> validation, and challenge responses while preserving <code>scope=mcp</code>.</li>
+          <li>Add the API-hosted Streamable HTTP JSON-RPC adapter.</li>
+          <li>Add the API-backed Game MCP read model and deployed resource URI scheme.</li>
+          <li>Add security envelope: origin validation, size/output limits, audit events, token revocation checks, and no token leakage in logs. Defer rate limiting to a future gateway-backed durable deploy hardening slice.</li>
+          <li>Add client install docs and staging smoke runbooks.</li>
+          <li>Run client proof: MCP Inspector, Codex, Claude Code, ChatGPT developer mode/API Playground.</li>
+        </ol>
+
+        <h3>7. Security Risks Even For Test/Validation</h3>
+        <ul>
+          <li><strong>Global access is powerful:</strong> a stolen token can read every wired MCP game surface until expiry or revocation.</li>
+          <li><strong>OAuth discovery is attack surface:</strong> client registration and metadata fetches can create open redirect, confused deputy, or SSRF risks if implemented casually.</li>
+          <li><strong>Prompt injection travels through data:</strong> game transcripts and logs are model-consumed content, so tool descriptions and docs must frame results as untrusted game artifacts.</li>
+          <li><strong>Producer data can leak:</strong> V0 intentionally exposes selected developer evidence/private reasoning tools behind <code>scope=mcp</code>, so logs, docs, and tool descriptions must make that trusted-developer boundary visible.</li>
+          <li><strong>Operational drift matters:</strong> staging/prod base URLs, HTTPS, metadata cache headers, callback URLs, and role assignment can fail independently of code correctness.</li>
+        </ul>
+
+        <h3>8. Readiness Proof</h3>
+        <ul>
+          <li>Unit tests for protected resource metadata, authorization server metadata, <code>resource</code> validation, invalid scope, invalid audience, missing token, expired token, revoked role, and exact redirect matching.</li>
+          <li>Transport tests for JSON-RPC initialize, tools/list, tools/call, resources/list, resources/read, notifications returning <code>202</code>, unsupported GET returning <code>405</code>, and auth challenge behavior.</li>
+          <li>Read-model tests proving deployed game listing, event replay, projection summary, player timeline, durable-run summary, and explicit private trace tools expose the intended data classes without accidental leakage through the wrong tool.</li>
+          <li>Staging smoke with MCP Inspector and raw curl before clients.</li>
+          <li>Fresh Codex session install/auth/tool-call proof.</li>
+          <li>Fresh Claude Code install/auth/tool-call proof.</li>
+          <li>ChatGPT developer mode or API Playground linking and golden prompt proof.</li>
+          <li>Ops check: audit log entries, no bearer tokens in logs, token revocation path, request/output bound behavior, and role removal invalidates existing tokens.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="ranked-ideas">
+      <h2>Ranked Ideas</h2>
+      <ul class="jump-list">
+        <li><a href="#idea-1">1. Hosted /mcp Resource Server Wedge</a></li>
+        <li><a href="#idea-2">2. API-Backed Game Read Model</a></li>
+        <li><a href="#idea-3">3. OAuth Discovery and Resource Binding</a></li>
+        <li><a href="#idea-4">4. Client Registration Compatibility Shim</a></li>
+        <li><a href="#idea-5">5. Client Compatibility Lab</a></li>
+        <li><a href="#idea-6">6. Security Envelope for Global Tokens</a></li>
+        <li><a href="#idea-7">7. ChatGPT App Runway Metadata</a></li>
+      </ul>
+
+      <article class="idea-card" id="idea-1">
+        <h3><span class="rank">1.</span> Hosted <code>/mcp</code> Resource Server Wedge</h3>
+        <dl class="card-meta">
+          <div><dt>Axis</dt><dd>Protocol surface</dd></div>
+          <div><dt>Confidence</dt><dd>88%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <p><strong>Description:</strong> Add a deployed API route, likely <code>POST /mcp</code>, that adapts the current JSON-RPC server shape to MCP Streamable HTTP. V0 can be intentionally simple: JSON responses for requests, <code>202</code> for notifications/responses, no SSE stream, no server-managed sessions, and <code>405</code> for GET. Every request is authenticated with <code>Authorization: Bearer</code>.</p>
+        <div class="basis"><p><strong>Basis:</strong> direct: MCP Streamable HTTP requires a single endpoint supporting POST/GET, and the repo already has a transport-neutral-ish <code>GameMcpJsonRpcServer.handle()</code> that can be wrapped.</p></div>
+        <p><strong>Rationale:</strong> This is the smallest slice that makes the client experience real. Fresh Codex/Claude/ChatGPT clients can only install a deployed MCP if there is an HTTP MCP endpoint to install.</p>
+        <p><strong>Downsides:</strong> Requires careful HTTP conformance and auth errors. It also forces a decision about whether to advertise latest protocol <code>2025-11-25</code> or remain on <code>2025-06-18</code> pending smoke results.</p>
+        <div class="diagram" aria-label="MCP V0 transport sketch">
+          <svg viewBox="0 0 820 210" role="img">
+            <rect x="20" y="52" width="180" height="96" rx="8" fill="#edf2fb" stroke="#b7c7e3"/>
+            <text x="110" y="88" text-anchor="middle" font-weight="700" fill="#253d62">Codex / Claude / ChatGPT</text>
+            <text x="110" y="116" text-anchor="middle" fill="#46546a">Streamable HTTP</text>
+            <path d="M210 100 H330" stroke="#315f9d" stroke-width="3" marker-end="url(#arrow)"/>
+            <rect x="340" y="52" width="150" height="96" rx="8" fill="#edf6f2" stroke="#a9d3c3"/>
+            <text x="415" y="88" text-anchor="middle" font-weight="700" fill="#1d7259">API /mcp</text>
+            <text x="415" y="116" text-anchor="middle" fill="#3d5e52">Bearer token</text>
+            <path d="M500 100 H620" stroke="#315f9d" stroke-width="3" marker-end="url(#arrow)"/>
+            <rect x="630" y="52" width="170" height="96" rx="8" fill="#fbf1df" stroke="#e2c48b"/>
+            <text x="715" y="88" text-anchor="middle" font-weight="700" fill="#6c470f">API game data</text>
+            <text x="715" y="116" text-anchor="middle" fill="#604d2d">events + projection</text>
+            <defs>
+              <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L9,3 z" fill="#315f9d"/>
+              </marker>
+            </defs>
+          </svg>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-2">
+        <h3><span class="rank">2.</span> API-Backed Game Read Model</h3>
+        <dl class="card-meta">
+          <div><dt>Axis</dt><dd>Deployed read model</dd></div>
+          <div><dt>Confidence</dt><dd>84%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <p><strong>Description:</strong> Build a deployed read model with the same read-only discipline as local Game MCP, but backed by API data. It should list games, read persisted canonical events, replay projections, filter timelines, expose durable-run summaries, and wire selected private trace manifest/content/search paths as explicit developer tools. Keep the local simulation filesystem read model intact; do not pretend API games have simulation <code>sessionId + gameNumber</code> identities.</p>
+        <div class="basis"><p><strong>Basis:</strong> direct: <code>game-event-read-model.ts</code>, <code>game-projection-read-model.ts</code>, <code>game-durable-run.ts</code>, and <code>private-trace-read-model.ts</code> already validate event integrity, replay projections, summarize durable inspection output, and read private trace evidence.</p></div>
+        <p><strong>Rationale:</strong> This turns deployed games into the MCP corpus without coupling the engine package to API storage, while keeping private reasoning available through intentional developer tools behind the same MCP gate.</p>
+        <p><strong>Downsides:</strong> Tool schemas may diverge from local Game MCP because API games do not naturally have simulation sessions. The docs need to name that difference plainly.</p>
+      </article>
+
+      <article class="idea-card" id="idea-3">
+        <h3><span class="rank">3.</span> OAuth Discovery and Resource Binding Compliance</h3>
+        <dl class="card-meta">
+          <div><dt>Axis</dt><dd>OAuth and client identity</dd></div>
+          <div><dt>Confidence</dt><dd>90%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <p><strong>Description:</strong> Publish the metadata and challenge surface that real MCP clients expect: protected resource metadata, authorization server metadata, <code>WWW-Authenticate</code> challenges, <code>scopes_supported: ["mcp"]</code>, PKCE S256 support, token endpoint auth method, and canonical <code>resource</code> validation on authorization and token exchange.</p>
+        <div class="basis"><p><strong>Basis:</strong> external: MCP authorization and OpenAI Apps SDK docs require protected resource metadata, AS metadata, bearer token usage, and audience/resource validation for OAuth-protected MCP servers.</p></div>
+        <p><strong>Rationale:</strong> The current repo has a working local OAuth-like flow, but clients cannot discover it as a standards-shaped protected MCP resource. This idea converts the same boundary into the protocol surface clients understand.</p>
+        <p><strong>Downsides:</strong> Requires production URL canonicalization. If staging and production use different web/API origins, metadata must stay exact and cache-safe.</p>
+      </article>
+
+      <article class="idea-card" id="idea-4">
+        <h3><span class="rank">4.</span> Client Registration Compatibility Shim</h3>
+        <dl class="card-meta">
+          <div><dt>Axis</dt><dd>OAuth and client identity</dd></div>
+          <div><dt>Confidence</dt><dd>72%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium/High</dd></div>
+        </dl>
+        <p><strong>Description:</strong> Add the least risky client identity path that works across target clients. The likely route is a short empirical spike followed by Client ID Metadata Document support plus a minimal Dynamic Client Registration fallback, or DCR first if Codex requires it. Public clients should use exact redirect URI matching and no client secret unless a specific client requires one.</p>
+        <div class="basis"><p><strong>Basis:</strong> external: latest MCP authorization lists preregistration, Client ID Metadata Documents, and DCR; Claude Code documents DCR/CIMD/preconfigured support; OpenAI Apps SDK says ChatGPT can use CIMD, DCR, or predefined clients.</p></div>
+        <p><strong>Rationale:</strong> A fresh client cannot complete OAuth if the authorization server only accepts one hardcoded local client ID. This is the most important unknown to settle early.</p>
+        <p><strong>Downsides:</strong> DCR/CIMD can introduce SSRF and redirect risks. Do not ship a broad generic client registry without tight validation and logging.</p>
+      </article>
+
+      <article class="idea-card" id="idea-5">
+        <h3><span class="rank">5.</span> Client Compatibility Lab</h3>
+        <dl class="card-meta">
+          <div><dt>Axis</dt><dd>Client proof and docs</dd></div>
+          <div><dt>Confidence</dt><dd>86%</dd></div>
+          <div><dt>Complexity</dt><dd>Low/Medium</dd></div>
+        </dl>
+        <p><strong>Description:</strong> Treat client compatibility as an artifact, not a hope. Create a staging checklist and fixtures for raw curl, MCP Inspector, Codex, Claude Code, and ChatGPT developer mode/API Playground. Capture exact install commands, callback URLs, scopes requested, metadata fetched, token storage behavior, and first successful tool calls.</p>
+        <div class="basis"><p><strong>Basis:</strong> reasoned: the docs expose overlapping but not identical behavior, especially around OAuth client identity. A cheap compatibility lab prevents building a beautiful standards surface that one target client cannot actually use.</p></div>
+        <p><strong>Rationale:</strong> This is the guardrail that keeps V0 honest. It also produces the eventual install docs almost for free.</p>
+        <p><strong>Downsides:</strong> Requires access to all three clients during validation. If ChatGPT developer mode is gated by org settings, API Playground can be the interim proof.</p>
+      </article>
+
+      <article class="idea-card" id="idea-6">
+        <h3><span class="rank">6.</span> Security Envelope for Global <code>mcp</code> Tokens</h3>
+        <dl class="card-meta">
+          <div><dt>Axis</dt><dd>Security and operations</dd></div>
+          <div><dt>Confidence</dt><dd>82%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <p><strong>Description:</strong> Add explicit production safeguards around the simple global access boundary: Origin validation on HTTP transport, request body/output size caps, audit events for connect/list/call/read, role-removal invalidation, token revocation visibility, and log redaction that never prints bearer tokens. Keep rate limiting out of this slice until it can live behind a real gateway.</p>
+        <div class="basis"><p><strong>Basis:</strong> external: MCP transport docs call out Origin validation and authentication; MCP auth docs emphasize token theft, audience validation, and exact redirects. Direct: current OAuth audit events exist for authorize/token/introspect, but deployed MCP calls do not exist yet.</p></div>
+        <p><strong>Rationale:</strong> Simple auth is fine only when the operational envelope is explicit. The consent page should say global Game MCP access because that is the product decision.</p>
+        <p><strong>Downsides:</strong> Adds non-feature work to V0. Still worth doing because a deployed MCP endpoint is a new public attack surface.</p>
+      </article>
+
+      <article class="idea-card" id="idea-7">
+        <h3><span class="rank">7.</span> ChatGPT App Runway Metadata</h3>
+        <dl class="card-meta">
+          <div><dt>Axis</dt><dd>Client proof and docs</dd></div>
+          <div><dt>Confidence</dt><dd>70%</dd></div>
+          <div><dt>Complexity</dt><dd>Low/Medium</dd></div>
+        </dl>
+        <p><strong>Description:</strong> Without building a full ChatGPT app, shape tool metadata for that future: titles, descriptions, output schemas where useful, per-tool OAuth <code>securitySchemes</code>, and auth error metadata that can trigger ChatGPT linking. Keep UI resources, iframe components, and submission material out of V0.</p>
+        <div class="basis"><p><strong>Basis:</strong> external: Apps SDK docs describe MCP as the backbone for ChatGPT apps, recommend Streamable HTTP, and require per-tool auth policy metadata for OAuth linking.</p></div>
+        <p><strong>Rationale:</strong> This keeps the V0 endpoint compatible with ChatGPT developer mode now and reduces rework if it becomes an installable app later.</p>
+        <p><strong>Downsides:</strong> Easy to overdo. Stop at metadata and developer-mode testing.</p>
+      </article>
+    </section>
+
+    <section id="rejections">
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Idea</th>
+            <th>Reason Rejected</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>Local bridge-only productionization</td>
+            <td>Already close to the current state and does not prove fresh clients can install/connect to a deployed MCP server.</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>Full private Trace MCP over production OAuth</td>
+            <td>Scope overrun and high privacy risk. Private trace content remains local producer/debug tooling in this V0.</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>Per-user, per-agent, or per-game authorization</td>
+            <td>Explicitly violates the requested boundary: <code>scope=mcp</code> grants global MCP access.</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>Public ChatGPT app submission</td>
+            <td>Useful later, but public submission and UI packaging are not required to productionize deployed MCP install/auth.</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>Mutation-capable Game MCP</td>
+            <td>Subject replacement. The existing use case is read-only test/validation against game data.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sources">
+      <h2>Sources And Repo References</h2>
+      <ul>
+        <li><a href="https://modelcontextprotocol.io/specification/2025-11-25/basic/transports">MCP 2025-11-25 Streamable HTTP transport</a></li>
+        <li><a href="https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization">MCP 2025-11-25 authorization</a></li>
+        <li><a href="https://modelcontextprotocol.io/specification/2025-11-25/server/tools">MCP 2025-11-25 tools</a></li>
+        <li><a href="https://developers.openai.com/codex/mcp">OpenAI Codex MCP configuration docs</a></li>
+        <li><a href="https://developers.openai.com/apps-sdk/build/auth">OpenAI Apps SDK authentication docs</a></li>
+        <li><a href="https://developers.openai.com/apps-sdk/concepts/mcp-server">OpenAI Apps SDK MCP server docs</a></li>
+        <li><a href="https://developers.openai.com/apps-sdk/deploy/connect-chatgpt">OpenAI Apps SDK ChatGPT connection docs</a></li>
+        <li><a href="https://developers.openai.com/apps-sdk/deploy/testing">OpenAI Apps SDK testing docs</a></li>
+        <li><a href="https://code.claude.com/docs/en/mcp">Claude Code MCP docs</a></li>
+        <li><code>packages/api/src/routes/mcp-oauth.ts</code></li>
+        <li><code>packages/api/src/services/mcp-oauth.ts</code></li>
+        <li><code>packages/engine/src/game-mcp/server.ts</code></li>
+        <li><code>packages/engine/src/game-mcp/read-model.ts</code></li>
+        <li><code>packages/engine/src/game-mcp/oauth-bridge.ts</code></li>
+        <li><code>packages/api/src/services/game-event-read-model.ts</code></li>
+        <li><code>packages/api/src/services/game-projection-read-model.ts</code></li>
+        <li><code>packages/api/src/services/game-durable-run.ts</code></li>
+        <li><code>packages/api/src/trace-mcp/server.ts</code></li>
+        <li><code>docs/local-model-evaluation.md</code></li>
+        <li><code>README.md</code></li>
+      </ul>
+    </section>
+
+    <footer class="composition-signal">
+      Composed 2026-06-19T00:00Z by ce-ideate from the user prompt and current repository/docs research.
+    </footer>
+  </main>
+</body>
+</html>

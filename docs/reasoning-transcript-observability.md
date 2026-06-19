@@ -153,6 +153,7 @@ Simulation runs persist per-turn reasoning in local JSONL artifacts. API-backed 
 - Local validation must use a real S3-compatible private content endpoint, not the profile-picture filesystem fallback. Run `bun run s3:bootstrap`, source `.env.private-trace.local`, and use `bun run trace:local:smoke` to verify the local writer/read/search path.
 - Trace write failures degrade trace diagnostics but must not throw into canonical gameplay, accepted events, transcript logging, or checkpoint persistence.
 - The local Trace MCP (`cd packages/api && bun run mcp:trace`) is the local producer inspection path for API durable runs. Use `list_manifests` for metadata, `read_content` for explicit raw content reads, and `search_reasoning_traces` for bounded run-scoped search.
+- The deployed Production Game MCP surface also exposes explicit private trace tools (`list_trace_manifests`, `read_trace_content`, and `search_reasoning_traces`) behind the global `scope=mcp` OAuth gate. That surface is for developer inspection and does not add per-game or per-trace authorization in the current slice.
 
 Private trace content is not public transcript, not canonical board truth, and not checkpoint resume authority. It is the API durable-run sibling of `game-N-turns.jsonl`: useful for debugging one weird run, not a product/admin content portal.
 

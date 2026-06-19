@@ -15,6 +15,8 @@ const LOCAL_PRODUCER_ACCESSOR: EvidenceAccessor = {
   roles: ["producer"],
 };
 
+const DEFAULT_TRACE_SEARCH_SCAN_BYTES = 8 * 1024 * 1024;
+
 export interface PrivateTraceManifestIndexEntry {
   id: string;
   gameId: string;
@@ -65,6 +67,26 @@ export interface PrivateTraceSearchMatch {
   preview: string;
 }
 
+export interface PrivateTraceSearchSkippedManifest {
+  manifestId: string;
+  gameId: string;
+  actor?: unknown;
+  action?: unknown;
+  phase?: unknown;
+  round?: unknown;
+  status: Extract<PrivateTraceContentReadResult, { ok: false }>["status"];
+  error: string;
+}
+
+export interface PrivateTraceSearchResult {
+  gameId: string;
+  matches: PrivateTraceSearchMatch[];
+  diagnostics?: {
+    skippedManifestCount: number;
+    skippedManifests: PrivateTraceSearchSkippedManifest[];
+  };
+}
+
 export interface PrivateTraceSearchOptions {
   gameIdOrSlug: string;
   query: string;
@@ -72,7 +94,7 @@ export interface PrivateTraceSearchOptions {
   action?: string;
   phase?: string;
   limit?: number;
-  maxBytesPerObject?: number;
+  maxScanBytesPerObject?: number;
 }
 
 function sha256Text(body: string): string {
@@ -143,9 +165,11 @@ function manifestIndexEntry(row: typeof schema.gameEvidenceManifests.$inferSelec
 }
 
 export class PrivateTraceReadModel {
+  private storage?: PrivateTraceStorageAdapter;
+
   constructor(
     private readonly db: DrizzleDB,
-    private readonly storage: PrivateTraceStorageAdapter = createPrivateTraceStorageAdapter(),
+    private readonly storageFactory: () => PrivateTraceStorageAdapter = createPrivateTraceStorageAdapter,
   ) {}
 
   async resolveGameId(idOrSlug: string): Promise<string | null> {
@@ -256,7 +280,8 @@ export class PrivateTraceReadModel {
     }
 
     try {
-      const head = await this.storage.headObject({
+      const storage = this.getStorage();
+      const head = await storage.headObject({
         bucket: manifest.storageBucket,
         key: manifest.storageKey,
       });
@@ -268,7 +293,7 @@ export class PrivateTraceReadModel {
         return { ok: false, status: "storage_error", error: `Private trace object exceeds ${params.maxBytes} byte read limit` };
       }
 
-      const object = await this.storage.getObject({
+      const object = await storage.getObject({
         bucket: manifest.storageBucket,
         key: manifest.storageKey,
       });
@@ -300,13 +325,14 @@ export class PrivateTraceReadModel {
     }
   }
 
-  async searchReasoningTraces(options: PrivateTraceSearchOptions): Promise<{ gameId: string; matches: PrivateTraceSearchMatch[] }> {
+  async searchReasoningTraces(options: PrivateTraceSearchOptions): Promise<PrivateTraceSearchResult> {
     const listed = await this.listManifests(options.gameIdOrSlug, 200);
     const query = options.query.trim().toLowerCase();
     if (!query) return { gameId: listed.gameId, matches: [] };
 
     const limit = Math.max(1, Math.min(options.limit ?? 20, 100));
     const matches: PrivateTraceSearchMatch[] = [];
+    const skippedManifests: PrivateTraceSearchSkippedManifest[] = [];
     for (const manifest of listed.manifests) {
       if (options.action && String(manifest.action ?? "") !== options.action) continue;
       if (options.phase && String(manifest.phase ?? "") !== options.phase) continue;
@@ -318,9 +344,21 @@ export class PrivateTraceReadModel {
       const content = await this.readContent(manifest.id, {
         gameId: listed.gameId,
         purpose: "local_trace_mcp_search_reasoning_traces",
-        maxBytes: options.maxBytesPerObject,
+        maxBytes: options.maxScanBytesPerObject ?? DEFAULT_TRACE_SEARCH_SCAN_BYTES,
       });
-      if (!content.ok) continue;
+      if (!content.ok) {
+        skippedManifests.push({
+          manifestId: manifest.id,
+          gameId: manifest.gameId,
+          actor: manifest.actor,
+          action: manifest.action,
+          phase: manifest.phase,
+          round: manifest.round,
+          status: content.status,
+          error: content.error,
+        });
+        continue;
+      }
 
       const records = parseJsonOrJsonl(content.response.content);
       for (let index = 0; index < records.length; index++) {
@@ -337,10 +375,33 @@ export class PrivateTraceReadModel {
           round: manifest.round,
           preview: textPreview(record, options.query),
         });
-        if (matches.length >= limit) return { gameId: listed.gameId, matches };
+        if (matches.length >= limit) return searchResult(listed.gameId, matches, skippedManifests);
       }
     }
 
-    return { gameId: listed.gameId, matches };
+    return searchResult(listed.gameId, matches, skippedManifests);
   }
+
+  private getStorage(): PrivateTraceStorageAdapter {
+    this.storage ??= this.storageFactory();
+    return this.storage;
+  }
+}
+
+function searchResult(
+  gameId: string,
+  matches: PrivateTraceSearchMatch[],
+  skippedManifests: PrivateTraceSearchSkippedManifest[],
+): PrivateTraceSearchResult {
+  if (skippedManifests.length === 0) {
+    return { gameId, matches };
+  }
+  return {
+    gameId,
+    matches,
+    diagnostics: {
+      skippedManifestCount: skippedManifests.length,
+      skippedManifests: skippedManifests.slice(0, 20),
+    },
+  };
 }

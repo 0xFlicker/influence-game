@@ -5,6 +5,7 @@ export interface McpOAuthAuthorizeRequest {
   response_type: "code";
   client_id: string;
   redirect_uri: string;
+  resource: string;
   scope: string;
   state: string;
   code_challenge: string;
@@ -21,6 +22,7 @@ const REQUIRED_QUERY_PARAMS = [
   "response_type",
   "client_id",
   "redirect_uri",
+  "resource",
   "scope",
   "state",
   "code_challenge",
@@ -65,6 +67,7 @@ export function parseMcpOAuthSearchParams(
       response_type: "code",
       client_id: values.client_id,
       redirect_uri: values.redirect_uri,
+      resource: values.resource,
       scope: values.scope,
       state: values.state,
       code_challenge: values.code_challenge,

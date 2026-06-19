@@ -85,6 +85,20 @@
       "when": 1781740800000,
       "tag": "0011_game_mcp_oauth",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1781827200000,
+      "tag": "0012_mcp_oauth_resource",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1781913600000,
+      "tag": "0013_mcp_oauth_clients",
+      "breakpoints": true
     }
   ]
 }

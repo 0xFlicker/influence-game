@@ -278,6 +278,7 @@ export interface McpOAuthAuthorizeRequest {
   response_type: "code";
   client_id: string;
   redirect_uri: string;
+  resource: string;
   scope: string;
   state: string;
   code_challenge: string;
@@ -289,6 +290,7 @@ export type McpOAuthDecision = "inspect" | "approve" | "deny" | "cancel";
 export interface McpOAuthAuthorizePreview {
   clientId: string;
   redirectUri: string;
+  resource: string;
   scope: string;
   hasMcpRole: boolean;
   expiresIn: number;

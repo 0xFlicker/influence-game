@@ -28,6 +28,14 @@ async function main(): Promise<void> {
     process.env.INFLUENCE_MCP_API_BASE_URL ?? DEFAULT_API_BASE_URL,
     "INFLUENCE_MCP_API_BASE_URL",
   );
+  const configuredResourceUri =
+    process.env.INFLUENCE_MCP_RESOURCE_URI ?? process.env.MCP_OAUTH_RESOURCE_URI;
+  const resourceUri = configuredResourceUri
+    ? requireSafeHttpBaseUrl(
+      configuredResourceUri,
+      "INFLUENCE_MCP_RESOURCE_URI",
+    ).toString()
+    : new URL("/mcp", apiBaseUrl).toString();
   const callbackHost = process.env.INFLUENCE_MCP_CALLBACK_HOST ?? DEFAULT_CALLBACK_HOST;
   if (callbackHost !== "127.0.0.1" && callbackHost !== "localhost") {
     throw new Error("INFLUENCE_MCP_CALLBACK_HOST must be 127.0.0.1 or localhost");
@@ -72,6 +80,7 @@ async function main(): Promise<void> {
     webBaseUrl,
     clientId: MCP_OAUTH_CLIENT_ID,
     redirectUri,
+    resourceUri,
     state,
     codeChallenge,
   });
@@ -98,6 +107,7 @@ async function main(): Promise<void> {
       clientId: MCP_OAUTH_CLIENT_ID,
       code: result.code,
       redirectUri,
+      resourceUri,
       codeVerifier,
     });
     const stored = saveMcpOAuthToken(token);

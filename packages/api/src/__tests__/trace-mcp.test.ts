@@ -58,6 +58,7 @@ describe("Trace MCP JSON-RPC server", () => {
       "read_content",
       "search_reasoning_traces",
     ]);
+    expect(JSON.stringify(response?.result)).not.toContain("maxBytesPerObject");
   });
 
   test("routes trace tools to the read model", async () => {
@@ -80,7 +81,10 @@ describe("Trace MCP JSON-RPC server", () => {
       jsonrpc: "2.0",
       id: "search",
       method: "tools/call",
-      params: { name: "search_reasoning_traces", arguments: { gameIdOrSlug: "game-1", query: "reasoning" } },
+      params: {
+        name: "search_reasoning_traces",
+        arguments: { gameIdOrSlug: "game-1", query: "reasoning", maxBytesPerObject: 1 },
+      },
     });
 
     expect(parseToolContent(list?.result)).toMatchObject({ gameId: "game-1", totalCount: 1 });
@@ -91,6 +95,14 @@ describe("Trace MCP JSON-RPC server", () => {
       "readContent",
       "searchReasoningTraces",
     ]);
+    expect(readModel.calls[2]!.args).toEqual({
+      gameIdOrSlug: "game-1",
+      query: "reasoning",
+      actor: undefined,
+      action: undefined,
+      phase: undefined,
+      limit: undefined,
+    });
   });
 
   test("rejects unknown or mutation-shaped tools", async () => {

@@ -426,6 +426,31 @@ export const addressRoles = pgTable("address_roles", {
 ]);
 
 // ---------------------------------------------------------------------------
+// MCP OAuth — Dynamic Public Clients
+// ---------------------------------------------------------------------------
+
+export const mcpOauthClients = pgTable("mcp_oauth_clients", {
+  clientId: text("client_id").primaryKey(),
+  clientName: text("client_name"),
+  redirectUris: jsonb("redirect_uris").notNull().$type<string[]>(),
+  grantTypes: jsonb("grant_types").notNull().$type<string[]>(),
+  responseTypes: jsonb("response_types").notNull().$type<string[]>(),
+  scope: text("scope").notNull(),
+  tokenEndpointAuthMethod: text("token_endpoint_auth_method").notNull().default("none"),
+  clientUri: text("client_uri"),
+  logoUri: text("logo_uri"),
+  tosUri: text("tos_uri"),
+  policyUri: text("policy_uri"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  index("mcp_oauth_clients_created_at_idx").on(table.createdAt),
+  check("mcp_oauth_clients_scope_check", sql`${table.scope} = 'mcp'`),
+  check("mcp_oauth_clients_token_auth_check", sql`${table.tokenEndpointAuthMethod} = 'none'`),
+]);
+
+// ---------------------------------------------------------------------------
 // MCP OAuth — Authorization Codes
 // ---------------------------------------------------------------------------
 
@@ -438,6 +463,7 @@ export const mcpOauthAuthorizationCodes = pgTable("mcp_oauth_authorization_codes
   walletAddress: text("wallet_address").notNull(),
   clientId: text("client_id").notNull(),
   redirectUri: text("redirect_uri").notNull(),
+  resourceUri: text("resource_uri").notNull(),
   scope: text("scope").notNull(),
   codeChallenge: text("code_challenge").notNull(),
   codeChallengeMethod: text("code_challenge_method").notNull(),
@@ -449,6 +475,7 @@ export const mcpOauthAuthorizationCodes = pgTable("mcp_oauth_authorization_codes
 }, (table) => [
   uniqueIndex("mcp_oauth_authorization_codes_code_hash_unique").on(table.codeHash),
   index("mcp_oauth_authorization_codes_user_id_idx").on(table.userId),
+  index("mcp_oauth_authorization_codes_resource_uri_idx").on(table.resourceUri),
   index("mcp_oauth_authorization_codes_expires_at_idx").on(table.expiresAt),
   check("mcp_oauth_authorization_codes_scope_check", sql`${table.scope} = 'mcp'`),
   check("mcp_oauth_authorization_codes_pkce_method_check", sql`${table.codeChallengeMethod} = 'S256'`),
@@ -466,6 +493,7 @@ export const mcpOauthAccessTokens = pgTable("mcp_oauth_access_tokens", {
     .references(() => users.id, { onDelete: "cascade" }),
   walletAddress: text("wallet_address").notNull(),
   clientId: text("client_id").notNull(),
+  resourceUri: text("resource_uri").notNull(),
   scope: text("scope").notNull(),
   audience: text("audience").notNull(),
   purpose: text("purpose").notNull(),
@@ -478,6 +506,7 @@ export const mcpOauthAccessTokens = pgTable("mcp_oauth_access_tokens", {
 }, (table) => [
   uniqueIndex("mcp_oauth_access_tokens_token_hash_unique").on(table.tokenHash),
   index("mcp_oauth_access_tokens_user_id_idx").on(table.userId),
+  index("mcp_oauth_access_tokens_resource_uri_idx").on(table.resourceUri),
   index("mcp_oauth_access_tokens_expires_at_idx").on(table.expiresAt),
   check("mcp_oauth_access_tokens_scope_check", sql`${table.scope} = 'mcp'`),
   check("mcp_oauth_access_tokens_audience_check", sql`${table.audience} = 'game-mcp'`),

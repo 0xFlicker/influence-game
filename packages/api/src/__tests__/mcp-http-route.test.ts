@@ -1,0 +1,478 @@
+import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
+import { createMcpRoutes } from "../routes/mcp.js";
+import { schema, type DrizzleDB } from "../db/index.js";
+import { seedRBAC } from "../db/rbac-seed.js";
+import { createSessionToken } from "../middleware/auth.js";
+import type {
+  JsonRpcRequest,
+  ProductionGameMcpJsonRpcServer,
+} from "../game-mcp/server.js";
+import type { GameMcpAuthResult } from "../game-mcp/auth.js";
+import {
+  MCP_OAUTH_AUDIENCE,
+  MCP_OAUTH_CLIENT_ID,
+  MCP_OAUTH_PURPOSE,
+  MCP_OAUTH_SCOPE,
+  hashOpaqueSecret,
+} from "../services/mcp-oauth.js";
+import { setupTestDB } from "./test-utils.js";
+
+const RESOURCE_URI = "http://127.0.0.1:3000/mcp";
+
+beforeAll(() => {
+  process.env.JWT_SECRET = "test-jwt-secret-mcp-http";
+  process.env.MCP_OAUTH_RESOURCE_URI = RESOURCE_URI;
+  process.env.MCP_ALLOWED_ORIGINS = "";
+});
+
+describe("/mcp Streamable HTTP route", () => {
+  test("returns an OAuth bearer challenge when auth is missing", async () => {
+    const app = createTestApp();
+    const response = await app.request("/mcp", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toContain(
+      "/.well-known/oauth-protected-resource",
+    );
+    expect(response.headers.get("www-authenticate")).toContain("scope=\"mcp\"");
+  });
+
+  test("rejects bearer tokens in query strings before dispatch", async () => {
+    const calls: string[] = [];
+    const app = createTestApp({
+      handle: async () => {
+        calls.push("dispatched");
+        return null;
+      },
+    });
+    const response = await app.request("/mcp?access_token=secret", {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: "Bearer good-token" }),
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(calls).toEqual([]);
+  });
+
+  test("rejects unapproved browser origins before dispatch", async () => {
+    const calls: string[] = [];
+    const app = createTestApp({
+      handle: async () => {
+        calls.push("dispatched");
+        return null;
+      },
+    });
+    const response = await app.request("/mcp", {
+      method: "POST",
+      headers: jsonHeaders({
+        Authorization: "Bearer good-token",
+        Origin: "https://example.com",
+      }),
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(calls).toEqual([]);
+  });
+
+  test("dispatches one authenticated JSON-RPC request", async () => {
+    const calls: string[] = [];
+    const app = createTestApp({
+      handle: async (request) => {
+        calls.push(request.method);
+        return { jsonrpc: "2.0", id: request.id ?? null, result: { ok: true } };
+      },
+    });
+    const response = await app.request("/mcp", {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: "Bearer good-token" }),
+      body: JSON.stringify({ jsonrpc: "2.0", id: "init", method: "initialize" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      jsonrpc: "2.0",
+      id: "init",
+      result: { ok: true },
+    });
+    expect(calls).toEqual(["initialize"]);
+  });
+
+  test("audits JSON-RPC failures without raw error messages", async () => {
+    const auditEvents: Array<{ status: number; denialReason?: string }> = [];
+    const app = createTestApp({
+      handle: async (request) => ({
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        error: { code: -32000, message: "storage bucket private-key-detail leaked" },
+      }),
+    }, {
+      auditLogger: (event) => auditEvents.push(event),
+    });
+    const response = await app.request("/mcp", {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: "Bearer good-token" }),
+      body: JSON.stringify({ jsonrpc: "2.0", id: "trace", method: "tools/call" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      status: 200,
+      denialReason: "json_rpc_error",
+    }));
+    expect(JSON.stringify(auditEvents)).not.toContain("private-key-detail");
+  });
+
+  test("rejects unsupported protocol versions before dispatch", async () => {
+    const calls: string[] = [];
+    const app = createTestApp({
+      handle: async () => {
+        calls.push("dispatched");
+        return null;
+      },
+    });
+    const response = await app.request("/mcp", {
+      method: "POST",
+      headers: jsonHeaders({
+        Authorization: "Bearer good-token",
+        "MCP-Protocol-Version": "1999-01-01",
+      }),
+      body: JSON.stringify({ jsonrpc: "2.0", id: "init", method: "initialize" }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(calls).toEqual([]);
+  });
+
+  test("fails closed when token validation throws", async () => {
+    const auditEvents: Array<{ status: number; denialReason?: string }> = [];
+    const app = createTestApp({}, {
+      auditLogger: (event) => auditEvents.push(event),
+      tokenValidator: async () => {
+        throw new Error("database unavailable");
+      },
+    });
+    const response = await app.request("/mcp", {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: "Bearer good-token" }),
+      body: JSON.stringify({ jsonrpc: "2.0", id: "init", method: "initialize" }),
+    });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "server_error",
+      error_description: "MCP bearer token validation failed",
+    });
+    expect(response.headers.get("www-authenticate")).toContain(
+      "/.well-known/oauth-protected-resource",
+    );
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      status: 503,
+      denialReason: "token_validation_error",
+    }));
+  });
+
+  test("rejects oversized request bodies by actual byte length before dispatch", async () => {
+    const calls: string[] = [];
+    const app = createTestApp({
+      handle: async () => {
+        calls.push("dispatched");
+        return null;
+      },
+    }, { maxPostBytes: 16 });
+    const response = await app.request("/mcp", {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: "Bearer good-token" }),
+      body: JSON.stringify({ jsonrpc: "2.0", id: "init", method: "initialize" }),
+    });
+
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({ error: "request_too_large" });
+    expect(calls).toEqual([]);
+  });
+
+  test("accepts JSON-RPC notifications with 202", async () => {
+    const app = createTestApp({
+      handle: async () => null,
+    });
+    const response = await app.request("/mcp", {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: "Bearer good-token" }),
+      body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
+    });
+
+    expect(response.status).toBe(202);
+  });
+
+  test("accepts JSON-RPC response objects with 202", async () => {
+    const calls: string[] = [];
+    const app = createTestApp({
+      handle: async (request) => {
+        calls.push(request.method);
+        return null;
+      },
+    });
+
+    const resultResponse = await app.request("/mcp", {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: "Bearer good-token" }),
+      body: JSON.stringify({ jsonrpc: "2.0", id: "client-result", result: { ok: true } }),
+    });
+    const errorResponse = await app.request("/mcp", {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: "Bearer good-token" }),
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "client-error",
+        error: { code: -32000, message: "client failed" },
+      }),
+    });
+
+    expect(resultResponse.status).toBe(202);
+    expect(errorResponse.status).toBe(202);
+    expect(calls).toEqual([]);
+  });
+
+  test("GET authenticates and then returns method not allowed", async () => {
+    const app = createTestApp();
+    const response = await app.request("/mcp", {
+      method: "GET",
+      headers: { Authorization: "Bearer good-token" },
+    });
+
+    expect(response.status).toBe(405);
+    expect(response.headers.get("allow")).toBe("POST");
+  });
+
+  describe("with DB-backed bearer validation", () => {
+    let db: DrizzleDB;
+
+    beforeEach(async () => {
+      db = await setupTestDB();
+      await seedRBAC(db);
+    });
+
+    test("dispatches requests with an active MCP access token", async () => {
+      const issued = await issueMcpAccessToken(db, { walletAddress: "0xmcphttp00000000000000000000000000000001" });
+      const calls: string[] = [];
+      const auditEvents: Array<{ status: number; userId?: string; clientId?: string; resource?: string }> = [];
+      const app = createDbBackedTestApp(
+        db,
+        {
+          handle: async (request) => {
+            calls.push(request.method);
+            return { jsonrpc: "2.0", id: request.id ?? null, result: { ok: true } };
+          },
+        },
+        (event) => auditEvents.push(event),
+      );
+
+      const response = await app.request("/mcp", {
+        method: "POST",
+        headers: jsonHeaders({ Authorization: `Bearer ${issued.accessToken}` }),
+        body: JSON.stringify({ jsonrpc: "2.0", id: "init", method: "initialize" }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(calls).toEqual(["initialize"]);
+      expect(auditEvents).toContainEqual(expect.objectContaining({
+        status: 200,
+        userId: issued.userId,
+        clientId: MCP_OAUTH_CLIENT_ID,
+        resource: RESOURCE_URI,
+      }));
+
+      const tokenRow = (await db
+        .select({ lastUsedAt: schema.mcpOauthAccessTokens.lastUsedAt })
+        .from(schema.mcpOauthAccessTokens)
+        .where(eq(schema.mcpOauthAccessTokens.tokenHash, hashOpaqueSecret(issued.accessToken))))[0];
+      expect(tokenRow?.lastUsedAt).toBeTruthy();
+    });
+
+    test("rejects inactive DB token states before dispatch", async () => {
+      const revoked = await issueMcpAccessToken(db, {
+        walletAddress: "0xmcphttp00000000000000000000000000000002",
+        revokedAt: "2026-06-19T00:00:00.000Z",
+      });
+      const expired = await issueMcpAccessToken(db, {
+        walletAddress: "0xmcphttp00000000000000000000000000000003",
+        expiresAt: "2020-01-01T00:00:00.000Z",
+      });
+      const wrongResource = await issueMcpAccessToken(db, {
+        walletAddress: "0xmcphttp00000000000000000000000000000004",
+        resourceUri: "https://example.com/mcp",
+      });
+      const roleRemoved = await issueMcpAccessToken(db, {
+        walletAddress: "0xmcphttp00000000000000000000000000000005",
+      });
+      await revokeMcpRole(db, roleRemoved.walletAddress);
+
+      const appSessionUserId = await insertUser(db, "0xmcphttp00000000000000000000000000000006");
+      const appSessionToken = await createSessionToken(appSessionUserId, {
+        roles: ["mcp"],
+      });
+
+      const scenarios = [
+        { name: "unknown token", token: "not-a-stored-mcp-token" },
+        { name: "revoked token", token: revoked.accessToken },
+        { name: "expired token", token: expired.accessToken },
+        { name: "wrong resource token", token: wrongResource.accessToken },
+        { name: "role-removed token", token: roleRemoved.accessToken },
+        { name: "app session token", token: appSessionToken },
+      ];
+      const calls: string[] = [];
+      const app = createDbBackedTestApp(db, {
+        handle: async (request) => {
+          calls.push(request.method);
+          return { jsonrpc: "2.0", id: request.id ?? null, result: { ok: true } };
+        },
+      });
+
+      for (const scenario of scenarios) {
+        const response = await app.request("/mcp", {
+          method: "POST",
+          headers: jsonHeaders({ Authorization: `Bearer ${scenario.token}` }),
+          body: JSON.stringify({ jsonrpc: "2.0", id: scenario.name, method: "initialize" }),
+        });
+
+        expect({ name: scenario.name, status: response.status }).toEqual({
+          name: scenario.name,
+          status: 401,
+        });
+        expect(await response.json()).toMatchObject({
+          error: "invalid_token",
+          error_description: "inactive_token",
+        });
+      }
+      expect(calls).toEqual([]);
+    });
+  });
+});
+
+function createTestApp(
+  serverOverrides: Partial<ProductionGameMcpJsonRpcServer> = {},
+  options: {
+    auditLogger?: (event: { status: number; denialReason?: string }) => void;
+    maxPostBytes?: number;
+    tokenValidator?: () => Promise<GameMcpAuthResult>;
+  } = {},
+) {
+  return createMcpRoutes({} as DrizzleDB, {
+    server: {
+      handle: async (request: JsonRpcRequest) => ({
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        result: { method: request.method },
+      }),
+      ...serverOverrides,
+    } as unknown as ProductionGameMcpJsonRpcServer,
+    tokenValidator: options.tokenValidator ?? (async (): Promise<GameMcpAuthResult> => ({
+      ok: true,
+      context: {
+        userId: "user-1",
+        clientId: "influence-game-mcp-local",
+        resource: RESOURCE_URI,
+        scope: "mcp",
+        expiresAt: 1_800_000_000,
+      },
+    })),
+    auditLogger: options.auditLogger ?? (() => undefined),
+    maxPostBytes: options.maxPostBytes,
+  });
+}
+
+function jsonHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    "content-type": "application/json",
+    accept: "application/json, text/event-stream",
+    ...extra,
+  };
+}
+
+function createDbBackedTestApp(
+  db: DrizzleDB,
+  serverOverrides: Partial<ProductionGameMcpJsonRpcServer> = {},
+  auditLogger: (event: { status: number; userId?: string; clientId?: string; resource?: string }) => void = () => undefined,
+) {
+  return createMcpRoutes(db, {
+    server: {
+      handle: async (request: JsonRpcRequest) => ({
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        result: { method: request.method },
+      }),
+      ...serverOverrides,
+    } as unknown as ProductionGameMcpJsonRpcServer,
+    auditLogger,
+  });
+}
+
+async function issueMcpAccessToken(
+  db: DrizzleDB,
+  params: {
+    walletAddress: string;
+    expiresAt?: string;
+    resourceUri?: string;
+    revokedAt?: string;
+  },
+): Promise<{ accessToken: string; userId: string; walletAddress: string }> {
+  const walletAddress = params.walletAddress.toLowerCase();
+  const userId = await insertUser(db, walletAddress);
+  await assignMcpRole(db, walletAddress);
+  const accessToken = `raw-mcp-token-${randomUUID()}`;
+  await db.insert(schema.mcpOauthAccessTokens).values({
+    id: randomUUID(),
+    tokenHash: hashOpaqueSecret(accessToken),
+    userId,
+    walletAddress,
+    clientId: MCP_OAUTH_CLIENT_ID,
+    resourceUri: params.resourceUri ?? RESOURCE_URI,
+    scope: MCP_OAUTH_SCOPE,
+    audience: MCP_OAUTH_AUDIENCE,
+    purpose: MCP_OAUTH_PURPOSE,
+    expiresAt: params.expiresAt ?? "2099-01-01T00:00:00.000Z",
+    revokedAt: params.revokedAt,
+  });
+  return { accessToken, userId, walletAddress };
+}
+
+async function insertUser(db: DrizzleDB, walletAddress: string): Promise<string> {
+  const userId = randomUUID();
+  await db.insert(schema.users).values({
+    id: userId,
+    walletAddress: walletAddress.toLowerCase(),
+    displayName: "MCP HTTP tester",
+  });
+  return userId;
+}
+
+async function assignMcpRole(db: DrizzleDB, walletAddress: string): Promise<void> {
+  const role = (await db
+    .select({ id: schema.roles.id })
+    .from(schema.roles)
+    .where(eq(schema.roles.name, "mcp")))[0];
+  if (!role) throw new Error("Missing mcp role");
+  await db.insert(schema.addressRoles).values({
+    walletAddress: walletAddress.toLowerCase(),
+    roleId: role.id,
+    grantedBy: "test",
+  });
+}
+
+async function revokeMcpRole(db: DrizzleDB, walletAddress: string): Promise<void> {
+  const role = (await db
+    .select({ id: schema.roles.id })
+    .from(schema.roles)
+    .where(eq(schema.roles.name, "mcp")))[0];
+  if (!role) throw new Error("Missing mcp role");
+  await db
+    .delete(schema.addressRoles)
+    .where(eq(schema.addressRoles.walletAddress, walletAddress.toLowerCase()));
+}
