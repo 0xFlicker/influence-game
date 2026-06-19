@@ -39,6 +39,27 @@ export type {
   ProjectedPlayer,
   ProjectedRoomAllocation,
 } from "./game-projection";
+export { buildRevealedRoundFacts } from "./revealed-round-facts";
+export type {
+  BuildRevealedRoundFactsOptions,
+  RevealedCanonicalFactsStatus,
+  RevealedCouncilFacts,
+  RevealedCouncilVoteLedgerEntry,
+  RevealedExposureBenchEntry,
+  RevealedExposureResolutionSummary,
+  RevealedFactsDiagnosticSeverity,
+  RevealedFactsStatus,
+  RevealedPlayerRef,
+  RevealedPowerActionSummary,
+  RevealedPowerFacts,
+  RevealedRoundFacts,
+  RevealedRoundFactsAvailability,
+  RevealedRoundFactsDiagnostic,
+  RevealedRoundFactsRead,
+  RevealedStandardVoteFacts,
+  RevealedVoteCount,
+  RevealedVoteLedgerEntry,
+} from "./revealed-round-facts";
 export {
   createGameMcpServer,
   GameMcpJsonRpcServer,

@@ -71,10 +71,11 @@ User-facing Game MCP exposes read-only user tools:
 
 - `list_games`: games the subject created or joined, with event-log/projection status.
 - `read_projection`: replay persisted canonical events into the projection summary for one accessible game.
+- `read_round_facts`: read sanitized revealed vote, power, Council, and player-status facts for one accessible game round. Facts come from persisted canonical events/projections only; decision logs, cognitive artifacts, private traces, and raw producer event envelopes are not used as fallback sources.
 - `filter_events`: filter player-visible canonical events in an accessible game by type, phase, actor, sequence, and limit.
 - `player_timeline`: player-visible canonical event timeline for a player ID or name in an accessible game.
 - `list_cognitive_artifacts`: list authorized split cognitive artifact metadata for one game the subject participated in.
-- `read_cognitive_artifact`: read one authorized split cognitive artifact payload. Reasoning is owner-only; thinking and strategy are participant-visible.
+- `read_cognitive_artifact`: read one authorized split cognitive artifact payload. Under `scope=games`, callers provide the game, artifact ID, artifact type, and actor player ID so authorization can run before row-existence checks. Reasoning is owner-only; thinking and strategy are participant-visible.
 
 Producer MCP exposes the same read-only game and cognitive artifact tools with producer visibility plus producer-only tools:
 
@@ -82,6 +83,8 @@ Producer MCP exposes the same read-only game and cognitive artifact tools with p
 - `list_trace_manifests`: private trace metadata for one game.
 - `read_trace_content`: explicit raw private trace read by manifest ID.
 - `search_reasoning_traces`: bounded private reasoning search previews inside one game.
+
+`read_round_facts` reports per-section availability so clients can tell resolved facts from `not_yet_resolved`, `not_yet_flushed`, or `unavailable` canonical facts. Artifacts may arrive before canonical events flush at a durable boundary; the facts tool reports that state instead of reconstructing gameplay from artifacts.
 
 `scope=games` cannot discover or invoke producer trace tools and cannot request producer event visibility. Cognitive artifact reads under `scope=games` authorize before returning no-capture or row-existence information. Old games and pre-capture games return `not_captured_for_game` only after the caller is authorized for that game/actor context. `scope=mcp` on `/mcp/producer` preserves the existing global developer access contract and may read split cognitive artifacts directly without using raw trace content as a substitute.
 
@@ -144,7 +147,7 @@ Before calling the slice ready on staging:
 3. `GET https://<api-host>/.well-known/oauth-authorization-server` returns authorization/token/registration endpoints, `scopes_supported: ["games", "mcp"]`, and `code_challenge_methods_supported: ["S256"]`.
 4. Unauthenticated `POST /mcp` returns a `401` challenge for `scope=games`; unauthenticated `POST /mcp/producer` returns a `401` challenge for `scope=mcp`.
 5. Wrong resource, wrong scope, expired, revoked, or app-session tokens fail before any read model runs.
-6. A valid `games` token can initialize, list only accessible games, read an accessible projection, filter player-visible events, list/read authorized cognitive artifacts, and cannot discover or call trace tools.
+6. A valid `games` token can initialize, list only accessible games, read an accessible projection, read revealed round facts, filter player-visible events, list/read authorized cognitive artifacts, and cannot discover or call trace tools.
 7. A valid producer `mcp` token can initialize `/mcp/producer`, list producer tools, list/read split cognitive artifacts, and read/search private trace content when storage is configured.
 8. Resource-selected OAuth events and MCP request events include correlation ID, method/tool, user/client/resource, issued scope, auth profile, result, status, and denial reason. Dynamic client registration audit records the requested scope set but has no selected auth profile until authorization chooses a resource. Audits never include raw tokens, auth headers, authorization codes, PKCE verifiers, raw prompts, raw responses, reasoning bodies, or storage credentials.
 

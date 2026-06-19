@@ -184,6 +184,27 @@ export class CognitiveArtifactReadModel {
 
     if (
       access.authProfile === "games_subject" &&
+      (!params.artifactType || !params.actorPlayerId)
+    ) {
+      await this.audit({
+        gameId: game.id,
+        actorPlayerId: params.actorPlayerId,
+        artifactType: params.artifactType,
+        accessor: access,
+        purpose,
+        outcome: "denied",
+        denialReason: "artifact_context_required",
+      });
+      return {
+        ok: false,
+        status: "denied",
+        error: "Cognitive artifact context is required",
+        game,
+      };
+    }
+
+    if (
+      access.authProfile === "games_subject" &&
       params.artifactType &&
       params.actorPlayerId
     ) {
@@ -229,13 +250,19 @@ export class CognitiveArtifactReadModel {
       };
     }
 
+    const rowConditions = [
+      eq(schema.gameCognitiveArtifacts.id, params.artifactId),
+      eq(schema.gameCognitiveArtifacts.gameId, game.id),
+    ];
+    if (access.authProfile === "games_subject") {
+      rowConditions.push(eq(schema.gameCognitiveArtifacts.artifactType, params.artifactType!));
+      rowConditions.push(eq(schema.gameCognitiveArtifacts.actorPlayerId, params.actorPlayerId!));
+    }
+
     const row = (await this.db
       .select()
       .from(schema.gameCognitiveArtifacts)
-      .where(and(
-        eq(schema.gameCognitiveArtifacts.id, params.artifactId),
-        eq(schema.gameCognitiveArtifacts.gameId, game.id),
-      ))
+      .where(and(...rowConditions))
       .limit(1))[0];
 
     if (!row) {

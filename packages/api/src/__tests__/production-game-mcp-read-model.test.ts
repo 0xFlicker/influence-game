@@ -16,6 +16,7 @@ import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js
 import { setupTestDB } from "./test-utils.js";
 import {
   createCanonicalEventFixture,
+  createResolvedRoundCanonicalEventFixture,
   insertCanonicalEventRows,
   insertGame,
   insertOwner,
@@ -176,6 +177,12 @@ describe("ProductionGameMcpReadModel", () => {
       code: "hash_mismatch",
       sequence: 2,
     });
+
+    const roundFacts = await readModel.readRoundFacts({ gameIdOrSlug: gameId }, PRODUCER_ACCESS);
+    expect(roundFacts.canonicalGameFacts.availability).toMatchObject({
+      canonicalFactsStatus: "unavailable",
+      eventLogStatus: "invalid",
+    });
   });
 
   test("filters games-scope reads to games created or joined by the subject", async () => {
@@ -259,6 +266,85 @@ describe("ProductionGameMcpReadModel", () => {
       /^Game is not accessible for scope=games$/,
     );
     await expect(readModel.readProjection("missing-game", gamesAccess)).rejects.toThrow(
+      /^Game is not accessible for scope=games$/,
+    );
+  });
+
+  test("reads sanitized round facts for created, joined, and producer-accessible games", async () => {
+    const userId = randomUUID();
+    const otherUserId = randomUUID();
+    await db.insert(schema.users).values([
+      { id: userId, walletAddress: "0xroundfacts0000000000000000000000000001" },
+      { id: otherUserId, walletAddress: "0xroundfacts0000000000000000000000000002" },
+    ]);
+
+    const createdGameId = await insertGame(db, { slug: "round-facts-created", status: "in_progress" });
+    await db
+      .update(schema.games)
+      .set({ createdById: userId })
+      .where(eq(schema.games.id, createdGameId));
+    const createdOwnerEpoch = await insertOwner(db, createdGameId);
+    const createdEvents = createResolvedRoundCanonicalEventFixture(createdGameId);
+    await appendGameEvents(db, { gameId: createdGameId, ownerEpoch: createdOwnerEpoch, events: createdEvents });
+
+    const joinedGameId = await insertGame(db, { slug: "round-facts-joined", status: "in_progress" });
+    await insertGamePlayer(db, { gameId: joinedGameId, userId });
+    const joinedOwnerEpoch = await insertOwner(db, joinedGameId);
+    await appendGameEvents(db, {
+      gameId: joinedGameId,
+      ownerEpoch: joinedOwnerEpoch,
+      events: createResolvedRoundCanonicalEventFixture(joinedGameId),
+    });
+
+    const unrelatedGameId = await insertGame(db, { slug: "round-facts-unrelated", status: "in_progress" });
+    await insertGamePlayer(db, { gameId: unrelatedGameId, userId: otherUserId });
+    const unrelatedOwnerEpoch = await insertOwner(db, unrelatedGameId);
+    await appendGameEvents(db, {
+      gameId: unrelatedGameId,
+      ownerEpoch: unrelatedOwnerEpoch,
+      events: createResolvedRoundCanonicalEventFixture(unrelatedGameId),
+    });
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const gamesAccess = {
+      userId,
+      authProfile: "games_subject" as const,
+    };
+
+    const createdFacts = await readModel.readRoundFacts({
+      gameIdOrSlug: "round-facts-created",
+      round: 1,
+    }, gamesAccess);
+    expect(createdFacts.canonicalGameFacts.availability).toMatchObject({
+      canonicalFactsStatus: "available",
+      eventLogStatus: "complete",
+      projectionStatus: "complete",
+      artifactDerivedFacts: { status: "not_used" },
+    });
+    expect(createdFacts.canonicalGameFacts.roundFacts.standardVote.status).toBe("available");
+    expect(createdFacts.canonicalGameFacts.roundFacts.power.status).toBe("available");
+    expect(createdFacts.canonicalGameFacts.roundFacts.council.status).toBe("available");
+    expect(createdFacts.canonicalGameFacts.roundFacts.standardVote.ledger[0]).toMatchObject({
+      voter: { id: "atlas", name: "Atlas" },
+      empowerTarget: { id: "mira", name: "Mira" },
+      exposeTarget: { id: "echo", name: "Echo" },
+    });
+    const createdJson = JSON.stringify(createdFacts);
+    expect(createdJson).not.toContain("sourcePointers");
+    expect(createdJson).not.toContain("payloadVersion");
+    expect(createdJson).not.toContain("eventHash");
+    expect(createdJson).not.toContain("privateReasoning");
+
+    const joinedFacts = await readModel.readRoundFacts({ gameIdOrSlug: joinedGameId }, gamesAccess);
+    expect(joinedFacts.canonicalGameFacts.roundFacts.council.status).toBe("available");
+
+    const producerFacts = await readModel.readRoundFacts({ gameIdOrSlug: unrelatedGameId }, PRODUCER_ACCESS);
+    expect(producerFacts.canonicalGameFacts.roundFacts.standardVote.status).toBe("available");
+
+    await expect(readModel.readRoundFacts({ gameIdOrSlug: unrelatedGameId }, gamesAccess)).rejects.toThrow(
+      /^Game is not accessible for scope=games$/,
+    );
+    await expect(readModel.readRoundFacts({ gameIdOrSlug: "missing-game" }, gamesAccess)).rejects.toThrow(
       /^Game is not accessible for scope=games$/,
     );
   });

@@ -1,9 +1,11 @@
 import { desc, eq, inArray, or } from "drizzle-orm";
 import {
+  buildRevealedRoundFacts,
   canonicalEventIsVisibleTo,
   type CanonicalEventQueryMode,
   type CanonicalGameEvent,
   type CanonicalGameEventType,
+  type RevealedRoundFactsRead,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -72,6 +74,11 @@ export interface ProductionGameMcpPlayerTimelineOptions {
   player: string;
   visibilityMode?: CanonicalEventQueryMode;
   limit?: number;
+}
+
+export interface ProductionGameMcpRoundFactsOptions {
+  gameIdOrSlug: string;
+  round?: number;
 }
 
 export class ProductionGameMcpReadModel {
@@ -206,6 +213,29 @@ export class ProductionGameMcpReadModel {
           ? redactGamesScopeProjection(projection)
           : projection,
       },
+    };
+  }
+
+  async readRoundFacts(
+    options: ProductionGameMcpRoundFactsOptions,
+    access: ProductionGameMcpAccess,
+  ): Promise<{
+    schemaVersion: 1;
+    game: ProductionGameMcpGameIdentity;
+    canonicalGameFacts: RevealedRoundFactsRead;
+  }> {
+    const game = await this.requireGame(options.gameIdOrSlug, access);
+    const events = await getPersistedGameEvents(this.db, game.id);
+    const projection = getPersistedGameProjection(events);
+    return {
+      schemaVersion: 1,
+      game,
+      canonicalGameFacts: buildRevealedRoundFacts({
+        events: events.events.map((event) => event.envelope),
+        round: options.round,
+        eventLogStatus: events.status,
+        projectionStatus: projection.status,
+      }),
     };
   }
 

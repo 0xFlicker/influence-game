@@ -5,6 +5,7 @@ import {
   ProductionGameMcpReadModel,
   type ProductionGameMcpEventFilter,
   type ProductionGameMcpPlayerTimelineOptions,
+  type ProductionGameMcpRoundFactsOptions,
 } from "./read-model.js";
 import type { CanonicalEventQueryMode } from "@influence/engine";
 import type {
@@ -134,6 +135,9 @@ export class ProductionGameMcpJsonRpcServer {
       if (name === "read_projection") {
         return content(await this.readModel.readProjection(requiredString(args, "gameIdOrSlug"), auth));
       }
+      if (name === "read_round_facts") {
+        return content(await this.readModel.readRoundFacts(roundFactsArgs(args), auth));
+      }
       if (name === "filter_events") {
         return content(await this.readModel.filterEvents(eventFilterArgs(args), auth));
       }
@@ -214,6 +218,18 @@ function productionGameMcpTools(scope: McpOAuthScope, includeProducerTools: bool
       scope,
     }),
     tool({
+      name: "read_round_facts",
+      description: includeProducerTools
+        ? "Read sanitized revealed vote, power, Council, and player-status facts for one deployed game round without private trace content or raw canonical envelopes."
+        : "Read sanitized revealed vote, power, Council, and player-status facts for one accessible game round.",
+      properties: {
+        gameIdOrSlug: { type: "string" },
+        round: { type: "number" },
+      },
+      required: ["gameIdOrSlug"],
+      scope,
+    }),
+    tool({
       name: "filter_events",
       description: includeProducerTools
         ? "Filter persisted canonical events by game, type, phase, actor, sequence range, visibility mode, or limit."
@@ -269,7 +285,7 @@ function productionGameMcpTools(scope: McpOAuthScope, includeProducerTools: bool
       name: "read_cognitive_artifact",
       description: includeProducerTools
         ? "Read one authorized split cognitive artifact payload, or producer diagnostics for unavailable split artifacts."
-        : "Read one authorized split cognitive artifact payload by game and artifact id. Reasoning is owner-only; thinking and strategy are participant-visible.",
+        : "Read one authorized split cognitive artifact payload by game, artifact id, artifact type, and actor player id. Reasoning is owner-only; thinking and strategy are participant-visible.",
       properties: {
         gameIdOrSlug: { type: "string" },
         artifactId: { type: "string" },
@@ -278,7 +294,9 @@ function productionGameMcpTools(scope: McpOAuthScope, includeProducerTools: bool
         actorPlayerId: { type: "string" },
         purpose: { type: "string" },
       },
-      required: ["gameIdOrSlug", "artifactId"],
+      required: includeProducerTools
+        ? ["gameIdOrSlug", "artifactId"]
+        : ["gameIdOrSlug", "artifactId", "artifactType", "actorPlayerId"],
       scope,
     }),
   ];
@@ -416,6 +434,13 @@ function playerTimelineArgs(args: Record<string, unknown>): ProductionGameMcpPla
     player: requiredString(args, "player"),
     visibilityMode: optionalVisibilityMode(args),
     limit: optionalNumber(args, "limit"),
+  };
+}
+
+function roundFactsArgs(args: Record<string, unknown>): ProductionGameMcpRoundFactsOptions {
+  return {
+    gameIdOrSlug: requiredString(args, "gameIdOrSlug"),
+    round: optionalNumber(args, "round"),
   };
 }
 

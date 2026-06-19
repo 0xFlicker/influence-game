@@ -42,6 +42,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(tools.map((tool) => (tool as { name: string }).name)).toEqual([
       "list_games",
       "read_projection",
+      "read_round_facts",
       "filter_events",
       "player_timeline",
       "list_cognitive_artifacts",
@@ -71,6 +72,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(tools.map((tool) => (tool as { name: string }).name)).toEqual([
       "list_games",
       "read_projection",
+      "read_round_facts",
       "filter_events",
       "player_timeline",
       "list_cognitive_artifacts",
@@ -104,6 +106,28 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(text).toContain("\"ok\": true");
   });
 
+  test("forwards read_round_facts arguments to the production read model", async () => {
+    const calls: unknown[] = [];
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
+      readRoundFacts: async (args: unknown) => {
+        calls.push(args);
+        return { schemaVersion: 1, canonicalGameFacts: { roundFacts: { round: 2 } } };
+      },
+    }));
+
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: "round-facts",
+      method: "tools/call",
+      params: { name: "read_round_facts", arguments: { gameIdOrSlug: "game-1", round: 2 } },
+    }, PRODUCER_AUTH);
+
+    expect(response?.error).toBeUndefined();
+    expect(calls).toEqual([{ gameIdOrSlug: "game-1", round: 2 }]);
+    const text = ((response?.result as { content: Array<{ text: string }> }).content[0]?.text);
+    expect(text).toContain("\"round\": 2");
+  });
+
   test("forwards games auth context to user-facing resources and tools", async () => {
     const calls: Array<{ method: string; access: unknown }> = [];
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
@@ -114,6 +138,10 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       readProjection: async (_gameIdOrSlug: string, access: unknown) => {
         calls.push({ method: "readProjection", access });
         return { projection: null };
+      },
+      readRoundFacts: async (_args: unknown, access: unknown) => {
+        calls.push({ method: "readRoundFacts", access });
+        return { roundFacts: null };
       },
       filterEvents: async (_args: unknown, access: unknown) => {
         calls.push({ method: "filterEvents", access });
@@ -153,6 +181,12 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     }, GAMES_AUTH);
     await server.handle({
       jsonrpc: "2.0",
+      id: "round-facts",
+      method: "tools/call",
+      params: { name: "read_round_facts", arguments: { gameIdOrSlug: "game-1", round: 2 } },
+    }, GAMES_AUTH);
+    await server.handle({
+      jsonrpc: "2.0",
       id: "events",
       method: "tools/call",
       params: { name: "filter_events", arguments: { gameIdOrSlug: "game-1" } },
@@ -188,6 +222,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       { method: "listGames", access: GAMES_AUTH },
       { method: "listGames", access: GAMES_AUTH },
       { method: "readProjection", access: GAMES_AUTH },
+      { method: "readRoundFacts", access: GAMES_AUTH },
       { method: "filterEvents", access: GAMES_AUTH },
       { method: "playerTimeline", access: GAMES_AUTH },
       { method: "listCognitiveArtifacts", access: GAMES_AUTH },
@@ -362,6 +397,7 @@ function fakeReadModel(
   return {
     listGames: async () => ({ games: [] }),
     readProjection: async () => ({ projection: null }),
+    readRoundFacts: async () => ({ roundFacts: null }),
     filterEvents: async () => ({ events: [] }),
     playerTimeline: async () => ({ events: [] }),
     inspectDurableRun: async () => ({ durableRun: null }),

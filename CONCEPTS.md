@@ -26,6 +26,10 @@ The eligible set of non-empowered live players who received expose votes after V
 
 The public player-known record of named standard-round votes after Vote resolves. It lists each voter, their empower target, their expose target, and any empower re-vote target when a tie forces a re-vote. Agents receive this ledger in later game cards so Mingle and strategy reflections can use votes as social receipts rather than relying on hidden memory or Strategy Thread summaries.
 
+## Revealed game facts
+
+A sanitized player-visible read model of authoritative gameplay facts derived from canonical game events and projections, such as resolved vote ledgers, empowered players, power outcomes, Council candidates, Council votes, and eliminations. Production Games MCP exposes these through `read_round_facts`. Revealed game facts are not raw canonical event envelopes, source pointers, decision logs, cognitive artifacts, private traces, or producer reasoning.
+
 ## Mingle intent
 
 A hidden pre-room-assignment decision an agent forms at the start of Mingle. It captures whom the agent wants to seek or avoid, preferred room size, purpose, provisional target, opening ask, and the evidence lens behind that posture. Mingle intent guides House room assignment and early room speech, is inspectable in producer/debug artifacts, and is not delivered to other players as dialogue.

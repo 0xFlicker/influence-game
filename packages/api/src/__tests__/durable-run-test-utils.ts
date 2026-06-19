@@ -48,6 +48,37 @@ export function createCanonicalEventFixture(gameId: string): readonly CanonicalG
   return state.getCanonicalEvents();
 }
 
+export function createResolvedRoundCanonicalEventFixture(gameId: string): readonly CanonicalGameEvent[] {
+  const state = new GameState(
+    [
+      { id: "atlas", name: "Atlas" },
+      { id: "echo", name: "Echo" },
+      { id: "mira", name: "Mira" },
+      { id: "nyx", name: "Nyx" },
+    ],
+    { gameId, now: fixedClock() },
+  );
+
+  state.startRound();
+  state.recordVote("atlas", "mira", "echo");
+  state.recordVote("echo", "mira", "atlas");
+  state.recordVote("mira", "echo", "atlas");
+  state.recordVote("nyx", "mira", "echo");
+  const { empowered } = state.tallyEmpowerVotes();
+  state.setPowerAction({ action: "protect", target: "echo" });
+  const resolved = state.determineCandidates();
+  const candidates = resolved.candidates;
+  if (!candidates) throw new Error("Expected council candidates");
+  state.recordCouncilVote("atlas", candidates[0]);
+  state.recordCouncilVote("echo", candidates[0]);
+  state.recordCouncilVote("mira", candidates[1]);
+  state.recordCouncilVote("nyx", candidates[1]);
+  const eliminated = state.tallyCouncilVotes(empowered);
+  state.eliminatePlayer(eliminated);
+
+  return state.getCanonicalEvents();
+}
+
 export async function insertGame(
   db: DrizzleDB,
   params: {

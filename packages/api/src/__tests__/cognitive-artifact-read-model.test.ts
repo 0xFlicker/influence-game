@@ -77,6 +77,18 @@ describe("CognitiveArtifactReadModel", () => {
     }, participantAccess);
     expect(deniedReasoning).toMatchObject({ ok: false, status: "denied" });
 
+    const deniedReasoningWithoutContext = await readModel.readArtifact({
+      gameIdOrSlug: gameId,
+      artifactId: reasoningId,
+    }, participantAccess);
+    expect(deniedReasoningWithoutContext).toMatchObject({ ok: false, status: "denied" });
+
+    const deniedMissingWithoutContext = await readModel.readArtifact({
+      gameIdOrSlug: gameId,
+      artifactId: randomUUID(),
+    }, participantAccess);
+    expect(deniedMissingWithoutContext).toMatchObject({ ok: false, status: "denied" });
+
     const thinking = await readModel.readArtifact({
       gameIdOrSlug: gameId,
       artifactId: thinkingId,
