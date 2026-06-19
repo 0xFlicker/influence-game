@@ -1,4 +1,4 @@
-import { desc, eq, or } from "drizzle-orm";
+import { desc, eq, inArray, or } from "drizzle-orm";
 import {
   canonicalEventIsVisibleTo,
   type CanonicalEventQueryMode,
@@ -13,7 +13,10 @@ import {
   type TrustedPersistedGameEvent,
 } from "../services/game-event-read-model.js";
 import { getPersistedGameProjection } from "../services/game-projection-read-model.js";
+import type { PersistedGameProjectionRead } from "../services/game-projection-read-model.js";
 import { PrivateTraceReadModel } from "../services/private-trace-read-model.js";
+import type { GameMcpAuthContext } from "./auth.js";
+import { resolveGamesMcpClaims } from "./claims.js";
 
 const DEFAULT_EVENT_LIMIT = 50;
 const MAX_EVENT_LIMIT = 200;
@@ -21,6 +24,10 @@ const DEFAULT_GAME_LIMIT = 20;
 const MAX_GAME_LIMIT = 100;
 const DEFAULT_TRACE_CONTENT_BYTES = 8 * 1024 * 1024;
 const MAX_TRACE_CONTENT_BYTES = 64 * 1024 * 1024;
+const DEVELOPER_EVIDENCE_NOTE =
+  "Private reasoning tools are available as explicit tool calls behind the same global scope=mcp gate.";
+
+export type ProductionGameMcpAccess = Pick<GameMcpAuthContext, "authProfile" | "userId">;
 
 export interface ProductionGameMcpGameIdentity {
   id: string;
@@ -86,7 +93,7 @@ export class ProductionGameMcpReadModel {
     return row ? gameIdentity(row) : null;
   }
 
-  async listGames(limit = DEFAULT_GAME_LIMIT): Promise<{
+  async listGames(access: ProductionGameMcpAccess, limit = DEFAULT_GAME_LIMIT): Promise<{
     schemaVersion: 1;
     canonicalGameFacts: { games: Array<ProductionGameMcpGameIdentity & {
       eventLog: {
@@ -103,21 +110,37 @@ export class ProductionGameMcpReadModel {
         winner?: string;
       };
     }> };
-    developerEvidence: { note: string };
+    developerEvidence?: { note: string };
   }> {
-    const rows = await this.db
-      .select({
-        id: schema.games.id,
-        slug: schema.games.slug,
-        status: schema.games.status,
-        trackType: schema.games.trackType,
-        createdAt: schema.games.createdAt,
-        startedAt: schema.games.startedAt,
-        endedAt: schema.games.endedAt,
-      })
-      .from(schema.games)
-      .orderBy(desc(schema.games.createdAt))
-      .limit(clamp(limit, 1, MAX_GAME_LIMIT));
+    const accessibleGameIds = await this.accessibleGameIds(access);
+    if (accessibleGameIds && accessibleGameIds.length === 0) {
+      return {
+        schemaVersion: 1,
+        canonicalGameFacts: { games: [] },
+      };
+    }
+
+    const selection = {
+      id: schema.games.id,
+      slug: schema.games.slug,
+      status: schema.games.status,
+      trackType: schema.games.trackType,
+      createdAt: schema.games.createdAt,
+      startedAt: schema.games.startedAt,
+      endedAt: schema.games.endedAt,
+    };
+    const rows = accessibleGameIds
+      ? await this.db
+          .select(selection)
+          .from(schema.games)
+          .where(inArray(schema.games.id, accessibleGameIds))
+          .orderBy(desc(schema.games.createdAt))
+          .limit(clamp(limit, 1, MAX_GAME_LIMIT))
+      : await this.db
+          .select(selection)
+          .from(schema.games)
+          .orderBy(desc(schema.games.createdAt))
+          .limit(clamp(limit, 1, MAX_GAME_LIMIT));
 
     const games = [];
     for (const row of rows) {
@@ -143,34 +166,44 @@ export class ProductionGameMcpReadModel {
       });
     }
 
-    return {
+    const result: {
+      schemaVersion: 1;
+      canonicalGameFacts: { games: typeof games };
+    } = {
       schemaVersion: 1,
       canonicalGameFacts: { games },
-      developerEvidence: {
-        note: "Private reasoning tools are available as explicit tool calls behind the same global scope=mcp gate.",
-      },
     };
+    if (!isGamesSubjectAccess(access)) {
+      return {
+        ...result,
+        developerEvidence: { note: DEVELOPER_EVIDENCE_NOTE },
+      };
+    }
+    return result;
   }
 
-  async readProjection(gameIdOrSlug: string): Promise<{
+  async readProjection(gameIdOrSlug: string, access: ProductionGameMcpAccess): Promise<{
     schemaVersion: 1;
     game: ProductionGameMcpGameIdentity;
     canonicalGameFacts: {
       projection: ReturnType<typeof getPersistedGameProjection>;
     };
   }> {
-    const game = await this.requireGame(gameIdOrSlug);
+    const game = await this.requireGame(gameIdOrSlug, access);
     const events = await getPersistedGameEvents(this.db, game.id);
+    const projection = getPersistedGameProjection(events);
     return {
       schemaVersion: 1,
       game,
       canonicalGameFacts: {
-        projection: getPersistedGameProjection(events),
+        projection: isGamesSubjectAccess(access)
+          ? redactGamesScopeProjection(projection)
+          : projection,
       },
     };
   }
 
-  async filterEvents(options: ProductionGameMcpEventFilter): Promise<{
+  async filterEvents(options: ProductionGameMcpEventFilter, access: ProductionGameMcpAccess): Promise<{
     schemaVersion: 1;
     game: ProductionGameMcpGameIdentity;
     canonicalGameFacts: {
@@ -180,9 +213,14 @@ export class ProductionGameMcpReadModel {
     };
     diagnostics: unknown[];
   }> {
-    const game = await this.requireGame(options.gameIdOrSlug);
+    const game = await this.requireGame(options.gameIdOrSlug, access);
     const eventRead = await getPersistedGameEvents(this.db, game.id);
-    const visibilityMode = options.visibilityMode ?? "producer";
+    if (isGamesSubjectAccess(access) && options.visibilityMode === "producer") {
+      throw new Error("producer visibility is not available for scope=games");
+    }
+    const visibilityMode = options.visibilityMode ?? (
+      isGamesSubjectAccess(access) ? "player" : "producer"
+    );
     const eventType = normalizeEventType(options.eventType);
     const limit = clamp(options.limit ?? DEFAULT_EVENT_LIMIT, 1, MAX_EVENT_LIMIT);
     const actor = options.actor?.trim();
@@ -214,7 +252,7 @@ export class ProductionGameMcpReadModel {
     };
   }
 
-  async playerTimeline(options: ProductionGameMcpPlayerTimelineOptions): Promise<{
+  async playerTimeline(options: ProductionGameMcpPlayerTimelineOptions, access: ProductionGameMcpAccess): Promise<{
     schemaVersion: 1;
     game: ProductionGameMcpGameIdentity;
     canonicalGameFacts: {
@@ -228,9 +266,9 @@ export class ProductionGameMcpReadModel {
     const filtered = await this.filterEvents({
       gameIdOrSlug: options.gameIdOrSlug,
       actor: options.player,
-      visibilityMode: options.visibilityMode ?? "producer",
+      visibilityMode: options.visibilityMode,
       limit: options.limit ?? DEFAULT_EVENT_LIMIT,
-    });
+    }, access);
     return {
       schemaVersion: 1,
       game: filtered.game,
@@ -244,12 +282,13 @@ export class ProductionGameMcpReadModel {
     };
   }
 
-  async inspectDurableRun(gameIdOrSlug: string): Promise<{
+  async inspectDurableRun(gameIdOrSlug: string, access: ProductionGameMcpAccess): Promise<{
     schemaVersion: 1;
     developerEvidence: {
       durableRun: unknown;
     };
   }> {
+    requireProducerAccess(access);
     const result = await getDurableRunInspection(this.db, gameIdOrSlug);
     if (!result.ok) throw new Error(result.error);
     return {
@@ -260,10 +299,15 @@ export class ProductionGameMcpReadModel {
     };
   }
 
-  async listTraceManifests(gameIdOrSlug: string, limit?: number): Promise<{
+  async listTraceManifests(
+    gameIdOrSlug: string,
+    access: ProductionGameMcpAccess,
+    limit?: number,
+  ): Promise<{
     schemaVersion: 1;
     developerEvidence: unknown;
   }> {
+    requireProducerAccess(access);
     return {
       schemaVersion: 1,
       developerEvidence: await this.privateTrace.listManifests(
@@ -278,10 +322,11 @@ export class ProductionGameMcpReadModel {
     gameId?: string;
     purpose?: string;
     maxBytes?: number;
-  }): Promise<{
+  }, access: ProductionGameMcpAccess): Promise<{
     schemaVersion: 1;
     privateReasoning: unknown;
   }> {
+    requireProducerAccess(access);
     return {
       schemaVersion: 1,
       privateReasoning: await this.privateTrace.readContent(params.manifestId, {
@@ -299,10 +344,11 @@ export class ProductionGameMcpReadModel {
     action?: string;
     phase?: string;
     limit?: number;
-  }): Promise<{
+  }, access: ProductionGameMcpAccess): Promise<{
     schemaVersion: 1;
     privateReasoning: unknown;
   }> {
+    requireProducerAccess(access);
     return {
       schemaVersion: 1,
       privateReasoning: await this.privateTrace.searchReasoningTraces({
@@ -312,10 +358,27 @@ export class ProductionGameMcpReadModel {
     };
   }
 
-  private async requireGame(gameIdOrSlug: string): Promise<ProductionGameMcpGameIdentity> {
+  private async requireGame(
+    gameIdOrSlug: string,
+    access: ProductionGameMcpAccess,
+  ): Promise<ProductionGameMcpGameIdentity> {
     const game = await this.resolveGame(gameIdOrSlug);
-    if (!game) throw new Error(`Unknown game: ${gameIdOrSlug}`);
+    if (isGamesSubjectAccess(access)) {
+      if (!game) throw new Error("Game is not accessible for scope=games");
+      const claims = await resolveGamesMcpClaims(this.db, access.userId);
+      if (!claims.gameIds.has(game.id)) {
+        throw new Error("Game is not accessible for scope=games");
+      }
+    } else if (!game) {
+      throw new Error(`Unknown game: ${gameIdOrSlug}`);
+    }
     return game;
+  }
+
+  private async accessibleGameIds(access: ProductionGameMcpAccess): Promise<string[] | null> {
+    if (!isGamesSubjectAccess(access)) return null;
+    const claims = await resolveGamesMcpClaims(this.db, access.userId);
+    return Array.from(claims.gameIds);
   }
 }
 
@@ -380,4 +443,40 @@ function normalizeEventType(value: string | undefined): CanonicalGameEventType |
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(Math.floor(value), max));
+}
+
+function isGamesSubjectAccess(
+  access: ProductionGameMcpAccess,
+): access is ProductionGameMcpAccess {
+  return access.authProfile === "games_subject";
+}
+
+function requireProducerAccess(access: ProductionGameMcpAccess): void {
+  if (access.authProfile !== "producer_mcp") {
+    throw new Error("Producer-only MCP evidence is not available for scope=games");
+  }
+}
+
+function redactGamesScopeProjection(
+  projection: PersistedGameProjectionRead,
+): PersistedGameProjectionRead {
+  if (!projection.summary) return projection;
+  return {
+    ...projection,
+    summary: {
+      ...projection.summary,
+      voteState: {
+        empowerVotes: {},
+        exposeVotes: {},
+        councilVotes: {},
+        endgameEliminationVotes: {},
+        juryVotes: {},
+        empoweredId: null,
+        empoweredName: null,
+        councilCandidates: null,
+        councilCandidateNames: null,
+        powerAction: null,
+      },
+    },
+  };
 }

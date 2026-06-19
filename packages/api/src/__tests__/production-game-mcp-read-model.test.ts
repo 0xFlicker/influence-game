@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { ProductionGameMcpReadModel } from "../game-mcp/read-model.js";
@@ -19,6 +20,11 @@ import {
   insertGame,
   insertOwner,
 } from "./durable-run-test-utils.js";
+
+const PRODUCER_ACCESS = {
+  userId: "producer-reviewer",
+  authProfile: "producer_mcp" as const,
+};
 
 class FakePrivateTraceStorage implements PrivateTraceStorageAdapter {
   private readonly objects = new Map<string, { body: string; contentType: string }>();
@@ -76,7 +82,7 @@ describe("ProductionGameMcpReadModel", () => {
     await appendGameEvents(db, { gameId, ownerEpoch, events });
 
     const readModel = new ProductionGameMcpReadModel(db);
-    const games = await readModel.listGames();
+    const games = await readModel.listGames(PRODUCER_ACCESS);
     expect(games.canonicalGameFacts.games).toHaveLength(1);
     expect(games.canonicalGameFacts.games[0]).toMatchObject({
       id: gameId,
@@ -94,7 +100,7 @@ describe("ProductionGameMcpReadModel", () => {
       },
     });
 
-    const projection = await readModel.readProjection("mcp-read-model-game");
+    const projection = await readModel.readProjection("mcp-read-model-game", PRODUCER_ACCESS);
     expect(projection.canonicalGameFacts.projection).toMatchObject({
       status: "complete",
       replayedEventCount: events.length,
@@ -108,7 +114,7 @@ describe("ProductionGameMcpReadModel", () => {
       gameIdOrSlug: gameId,
       eventType: events[0]!.type,
       limit: 1,
-    });
+    }, PRODUCER_ACCESS);
     expect(filtered.canonicalGameFacts).toMatchObject({
       eventLogStatus: "complete",
       validPrefixLength: events.length,
@@ -124,7 +130,7 @@ describe("ProductionGameMcpReadModel", () => {
       gameIdOrSlug: "mcp-read-model-game",
       player: "atlas",
       limit: 5,
-    });
+    }, PRODUCER_ACCESS);
     expect(timeline.canonicalGameFacts.eventLogStatus).toBe("complete");
     expect(timeline.canonicalGameFacts.validPrefixLength).toBe(events.length);
     expect(timeline.canonicalGameFacts.events.length).toBeGreaterThan(0);
@@ -143,7 +149,7 @@ describe("ProductionGameMcpReadModel", () => {
     });
 
     const readModel = new ProductionGameMcpReadModel(db);
-    const filtered = await readModel.filterEvents({ gameIdOrSlug: gameId });
+    const filtered = await readModel.filterEvents({ gameIdOrSlug: gameId }, PRODUCER_ACCESS);
     expect(filtered.canonicalGameFacts).toMatchObject({
       eventLogStatus: "invalid",
       validPrefixLength: 1,
@@ -157,7 +163,7 @@ describe("ProductionGameMcpReadModel", () => {
     const timeline = await readModel.playerTimeline({
       gameIdOrSlug: "mcp-invalid-log",
       player: "atlas",
-    });
+    }, PRODUCER_ACCESS);
     expect(timeline.canonicalGameFacts).toMatchObject({
       player: "atlas",
       eventLogStatus: "invalid",
@@ -167,6 +173,110 @@ describe("ProductionGameMcpReadModel", () => {
       code: "hash_mismatch",
       sequence: 2,
     });
+  });
+
+  test("filters games-scope reads to games created or joined by the subject", async () => {
+    const userId = randomUUID();
+    const otherUserId = randomUUID();
+    await db.insert(schema.users).values([
+      { id: userId, walletAddress: "0xgamescope000000000000000000000000000001" },
+      { id: otherUserId, walletAddress: "0xgamescope000000000000000000000000000002" },
+    ]);
+
+    const createdGameId = await insertGame(db, { slug: "created-by-subject" });
+    await db
+      .update(schema.games)
+      .set({ createdById: userId })
+      .where(eq(schema.games.id, createdGameId));
+    const ownerEpoch = await insertOwner(db, createdGameId);
+    const createdGameEvents = createCanonicalEventFixture(createdGameId);
+    await appendGameEvents(db, {
+      gameId: createdGameId,
+      ownerEpoch,
+      events: createdGameEvents,
+    });
+
+    const joinedGameId = await insertGame(db, { slug: "joined-by-subject" });
+    const agentProfileGameId = await insertGame(db, { slug: "agent-profile-by-subject" });
+    const unrelatedGameId = await insertGame(db, { slug: "unrelated-game" });
+    await insertGamePlayer(db, {
+      gameId: joinedGameId,
+      userId,
+    });
+    const agentProfileId = randomUUID();
+    await db.insert(schema.agentProfiles).values({
+      id: agentProfileId,
+      userId,
+      name: "Owned Agent",
+      personality: "careful and observant",
+    });
+    await insertGamePlayer(db, {
+      gameId: agentProfileGameId,
+      agentProfileId,
+    });
+    await insertGamePlayer(db, {
+      gameId: unrelatedGameId,
+      userId: otherUserId,
+    });
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const gamesAccess = {
+      userId,
+      authProfile: "games_subject" as const,
+    };
+    const games = await readModel.listGames(gamesAccess, 20);
+    const gameIds = games.canonicalGameFacts.games.map((game) => game.id);
+
+    expect(gameIds).toContain(createdGameId);
+    expect(gameIds).toContain(joinedGameId);
+    expect(gameIds).toContain(agentProfileGameId);
+    expect(gameIds).not.toContain(unrelatedGameId);
+    expect(games.developerEvidence).toBeUndefined();
+
+    const producerProjection = await readModel.readProjection(createdGameId, PRODUCER_ACCESS);
+    expect(Object.keys(
+      producerProjection.canonicalGameFacts.projection.summary?.voteState.empowerVotes ?? {},
+    ).length).toBeGreaterThan(0);
+
+    const gamesProjection = await readModel.readProjection(createdGameId, gamesAccess);
+    expect(gamesProjection.canonicalGameFacts.projection.summary?.voteState).toEqual({
+      empowerVotes: {},
+      exposeVotes: {},
+      councilVotes: {},
+      endgameEliminationVotes: {},
+      juryVotes: {},
+      empoweredId: null,
+      empoweredName: null,
+      councilCandidates: null,
+      councilCandidateNames: null,
+      powerAction: null,
+    });
+
+    await expect(readModel.readProjection(unrelatedGameId, gamesAccess)).rejects.toThrow(
+      /^Game is not accessible for scope=games$/,
+    );
+    await expect(readModel.readProjection("missing-game", gamesAccess)).rejects.toThrow(
+      /^Game is not accessible for scope=games$/,
+    );
+  });
+
+  test("blocks producer event visibility for games-scope reads", async () => {
+    const userId = randomUUID();
+    await db.insert(schema.users).values({
+      id: userId,
+      walletAddress: "0xgamescope000000000000000000000000000003",
+    });
+    const gameId = await insertGame(db, { slug: "visibility-scope" });
+    await insertGamePlayer(db, { gameId, userId });
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    await expect(readModel.filterEvents({
+      gameIdOrSlug: gameId,
+      visibilityMode: "producer",
+    }, {
+      userId,
+      authProfile: "games_subject" as const,
+    })).rejects.toThrow("producer visibility is not available for scope=games");
   });
 
   test("reads and searches private trace evidence through DB manifests and storage", async () => {
@@ -187,7 +297,7 @@ describe("ProductionGameMcpReadModel", () => {
       new PrivateTraceReadModel(db, () => storage),
     );
 
-    const manifests = await readModel.listTraceManifests(gameId);
+    const manifests = await readModel.listTraceManifests(gameId, PRODUCER_ACCESS);
     expect(asRecord(manifests.developerEvidence)).toMatchObject({
       gameId,
       totalCount: 1,
@@ -204,7 +314,7 @@ describe("ProductionGameMcpReadModel", () => {
       manifestId,
       gameId,
       maxBytes: 1024,
-    });
+    }, PRODUCER_ACCESS);
     expect(asRecord(content.privateReasoning)).toMatchObject({
       ok: true,
       response: {
@@ -217,7 +327,7 @@ describe("ProductionGameMcpReadModel", () => {
     const search = await readModel.searchReasoningTraces({
       gameIdOrSlug: "mcp-private-trace",
       query: "secret plan",
-    });
+    }, PRODUCER_ACCESS);
     expect(asRecord(search.privateReasoning)).toMatchObject({
       gameId,
       matches: [{
@@ -232,7 +342,7 @@ describe("ProductionGameMcpReadModel", () => {
     const wrongGameRead = await readModel.readTraceContent({
       manifestId,
       gameId: "not-this-game",
-    });
+    }, PRODUCER_ACCESS);
     expect(asRecord(wrongGameRead.privateReasoning)).toMatchObject({
       ok: false,
       status: "not_found",
@@ -292,4 +402,24 @@ function asRecord(value: unknown): Record<string, unknown> {
     throw new Error("Expected object");
   }
   return value as Record<string, unknown>;
+}
+
+async function insertGamePlayer(
+  db: DrizzleDB,
+  params: {
+    gameId: string;
+    userId?: string;
+    agentProfileId?: string;
+  },
+): Promise<string> {
+  const playerId = randomUUID();
+  await db.insert(schema.gamePlayers).values({
+    id: playerId,
+    gameId: params.gameId,
+    userId: params.userId,
+    agentProfileId: params.agentProfileId,
+    persona: JSON.stringify({ name: "Test Player", personality: "careful" }),
+    agentConfig: JSON.stringify({ model: "test-model", temperature: 0 }),
+  });
+  return playerId;
 }

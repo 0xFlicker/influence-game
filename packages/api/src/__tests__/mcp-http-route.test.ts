@@ -13,6 +13,7 @@ import type { GameMcpAuthResult } from "../game-mcp/auth.js";
 import {
   MCP_OAUTH_AUDIENCE,
   MCP_OAUTH_CLIENT_ID,
+  MCP_OAUTH_GAMES_SCOPE,
   MCP_OAUTH_PURPOSE,
   MCP_OAUTH_SCOPE,
   hashOpaqueSecret,
@@ -20,9 +21,12 @@ import {
 import { setupTestDB } from "./test-utils.js";
 
 const RESOURCE_URI = "http://127.0.0.1:3000/mcp";
+const PRODUCER_RESOURCE_URI = "http://127.0.0.1:3000/mcp/producer";
 
 beforeAll(() => {
   process.env.JWT_SECRET = "test-jwt-secret-mcp-http";
+  process.env.MCP_OAUTH_GAMES_RESOURCE_URI = RESOURCE_URI;
+  process.env.MCP_OAUTH_PRODUCER_RESOURCE_URI = PRODUCER_RESOURCE_URI;
   process.env.MCP_OAUTH_RESOURCE_URI = RESOURCE_URI;
   process.env.MCP_ALLOWED_ORIGINS = "";
 });
@@ -39,6 +43,21 @@ describe("/mcp Streamable HTTP route", () => {
     expect(response.status).toBe(401);
     expect(response.headers.get("www-authenticate")).toContain(
       "/.well-known/oauth-protected-resource",
+    );
+    expect(response.headers.get("www-authenticate")).toContain("scope=\"games\"");
+  });
+
+  test("returns a producer OAuth bearer challenge on /mcp/producer", async () => {
+    const app = createTestApp();
+    const response = await app.request("/mcp/producer", {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toContain(
+      "/.well-known/oauth-protected-resource/mcp/producer",
     );
     expect(response.headers.get("www-authenticate")).toContain("scope=\"mcp\"");
   });
@@ -262,7 +281,14 @@ describe("/mcp Streamable HTTP route", () => {
     test("dispatches requests with an active MCP access token", async () => {
       const issued = await issueMcpAccessToken(db, { walletAddress: "0xmcphttp00000000000000000000000000000001" });
       const calls: string[] = [];
-      const auditEvents: Array<{ status: number; userId?: string; clientId?: string; resource?: string }> = [];
+      const auditEvents: Array<{
+        status: number;
+        userId?: string;
+        clientId?: string;
+        resource?: string;
+        scope?: string;
+        authProfile?: string;
+      }> = [];
       const app = createDbBackedTestApp(
         db,
         {
@@ -287,6 +313,8 @@ describe("/mcp Streamable HTTP route", () => {
         userId: issued.userId,
         clientId: MCP_OAUTH_CLIENT_ID,
         resource: RESOURCE_URI,
+        scope: MCP_OAUTH_GAMES_SCOPE,
+        authProfile: "games_subject",
       }));
 
       const tokenRow = (await db
@@ -309,10 +337,6 @@ describe("/mcp Streamable HTTP route", () => {
         walletAddress: "0xmcphttp00000000000000000000000000000004",
         resourceUri: "https://example.com/mcp",
       });
-      const roleRemoved = await issueMcpAccessToken(db, {
-        walletAddress: "0xmcphttp00000000000000000000000000000005",
-      });
-      await revokeMcpRole(db, roleRemoved.walletAddress);
 
       const appSessionUserId = await insertUser(db, "0xmcphttp00000000000000000000000000000006");
       const appSessionToken = await createSessionToken(appSessionUserId, {
@@ -324,7 +348,6 @@ describe("/mcp Streamable HTTP route", () => {
         { name: "revoked token", token: revoked.accessToken },
         { name: "expired token", token: expired.accessToken },
         { name: "wrong resource token", token: wrongResource.accessToken },
-        { name: "role-removed token", token: roleRemoved.accessToken },
         { name: "app session token", token: appSessionToken },
       ];
       const calls: string[] = [];
@@ -353,6 +376,53 @@ describe("/mcp Streamable HTTP route", () => {
       }
       expect(calls).toEqual([]);
     });
+
+    test("keeps games and producer tokens bound to their MCP resource paths", async () => {
+      const producer = await issueMcpAccessToken(db, {
+        walletAddress: "0xmcphttp00000000000000000000000000000005",
+        resourceUri: PRODUCER_RESOURCE_URI,
+        scope: MCP_OAUTH_SCOPE,
+        requiresMcpRole: true,
+      });
+      const games = await issueMcpAccessToken(db, {
+        walletAddress: "0xmcphttp00000000000000000000000000000007",
+      });
+      const app = createDbBackedTestApp(db);
+
+      const producerOk = await app.request("/mcp/producer", {
+        method: "POST",
+        headers: jsonHeaders({ Authorization: `Bearer ${producer.accessToken}` }),
+        body: JSON.stringify({ jsonrpc: "2.0", id: "producer-ok", method: "initialize" }),
+      });
+      expect(producerOk.status).toBe(200);
+
+      const wrongResource = await app.request("/mcp", {
+        method: "POST",
+        headers: jsonHeaders({ Authorization: `Bearer ${producer.accessToken}` }),
+        body: JSON.stringify({ jsonrpc: "2.0", id: "wrong-boundary", method: "initialize" }),
+      });
+      expect(wrongResource.status).toBe(401);
+
+      const gamesWrongResource = await app.request("/mcp/producer", {
+        method: "POST",
+        headers: jsonHeaders({ Authorization: `Bearer ${games.accessToken}` }),
+        body: JSON.stringify({ jsonrpc: "2.0", id: "games-wrong-boundary", method: "initialize" }),
+      });
+      expect(gamesWrongResource.status).toBe(401);
+
+      await revokeMcpRole(db, producer.walletAddress);
+      const roleRemoved = await app.request("/mcp/producer", {
+        method: "POST",
+        headers: jsonHeaders({ Authorization: `Bearer ${producer.accessToken}` }),
+        body: JSON.stringify({ jsonrpc: "2.0", id: "role-removed", method: "initialize" }),
+      });
+
+      expect(roleRemoved.status).toBe(401);
+      expect(await roleRemoved.json()).toMatchObject({
+        error: "invalid_token",
+        error_description: "inactive_token",
+      });
+    });
   });
 });
 
@@ -379,7 +449,8 @@ function createTestApp(
         userId: "user-1",
         clientId: "influence-game-mcp-local",
         resource: RESOURCE_URI,
-        scope: "mcp",
+        scope: MCP_OAUTH_GAMES_SCOPE,
+        authProfile: "games_subject",
         expiresAt: 1_800_000_000,
       },
     })),
@@ -421,11 +492,15 @@ async function issueMcpAccessToken(
     expiresAt?: string;
     resourceUri?: string;
     revokedAt?: string;
+    scope?: typeof MCP_OAUTH_GAMES_SCOPE | typeof MCP_OAUTH_SCOPE;
+    requiresMcpRole?: boolean;
   },
 ): Promise<{ accessToken: string; userId: string; walletAddress: string }> {
   const walletAddress = params.walletAddress.toLowerCase();
   const userId = await insertUser(db, walletAddress);
-  await assignMcpRole(db, walletAddress);
+  if (params.requiresMcpRole) {
+    await assignMcpRole(db, walletAddress);
+  }
   const accessToken = `raw-mcp-token-${randomUUID()}`;
   await db.insert(schema.mcpOauthAccessTokens).values({
     id: randomUUID(),
@@ -434,7 +509,7 @@ async function issueMcpAccessToken(
     walletAddress,
     clientId: MCP_OAUTH_CLIENT_ID,
     resourceUri: params.resourceUri ?? RESOURCE_URI,
-    scope: MCP_OAUTH_SCOPE,
+    scope: params.scope ?? MCP_OAUTH_GAMES_SCOPE,
     audience: MCP_OAUTH_AUDIENCE,
     purpose: MCP_OAUTH_PURPOSE,
     expiresAt: params.expiresAt ?? "2099-01-01T00:00:00.000Z",

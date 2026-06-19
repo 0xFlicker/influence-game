@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Ideation: games Scope MCP OAuth Hardening</title>
+  <style>
+    :root {
+      --bg: #f7f5ef;
+      --panel: #ffffff;
+      --ink: #1f2430;
+      --muted: #5b6472;
+      --line: #d9d3c6;
+      --accent: #245e63;
+      --accent-soft: #dff0ee;
+      --warn-soft: #fff0d6;
+      --danger-soft: #f8dddd;
+      --code: #f1eee7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 44px 24px 56px;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 22px;
+      margin-bottom: 28px;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 32px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+    h2 {
+      margin: 34px 0 12px;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+    h3 {
+      margin: 0 0 10px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+    p, li { max-width: 76ch; }
+    code {
+      background: var(--code);
+      border: 1px solid #e4ded2;
+      border-radius: 5px;
+      padding: 1px 5px;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 0.92em;
+    }
+    a { color: var(--accent); }
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .meta span {
+      display: block;
+      background: rgba(255, 255, 255, 0.6);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 8px 10px;
+    }
+    .summary {
+      background: var(--accent-soft);
+      border: 1px solid #b9d4d1;
+      border-radius: 8px;
+      padding: 16px 18px;
+      margin: 18px 0 24px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      margin: 14px 0;
+      box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03);
+    }
+    .idea {
+      border-left: 5px solid var(--accent);
+    }
+    .jump-list {
+      display: grid;
+      gap: 8px;
+      padding-left: 18px;
+    }
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 10px 0 12px;
+    }
+    .tag {
+      border: 1px solid var(--line);
+      background: #faf9f5;
+      border-radius: 999px;
+      padding: 3px 9px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      margin: 12px 0 20px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+    th { background: #eee8dc; }
+    tr:last-child td { border-bottom: 0; }
+    .diagram {
+      background: #fffaf0;
+      border: 1px solid #e6d4ad;
+      border-radius: 8px;
+      padding: 14px;
+      margin: 14px 0;
+      overflow-x: auto;
+    }
+    .diagram svg {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
+    .note {
+      background: var(--warn-soft);
+      border: 1px solid #e5c783;
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .reject {
+      background: var(--danger-soft);
+      border-color: #e4b5b5;
+    }
+    footer {
+      margin-top: 38px;
+      border-top: 1px solid var(--line);
+      padding-top: 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Ideation: <code>games</code> Scope MCP OAuth Hardening</h1>
+    <p class="summary">
+      Top recommendation: make <code>/mcp</code> the user-facing MCP resource, starting with <code>scope=games</code> for canonical game/player/agent access only. Move the existing privileged developer/global surface, including private trace tools, to <code>/mcp/producer</code> with today's <code>scope=mcp</code> meaning.
+    </p>
+    <div class="meta">
+      <span><strong>Date:</strong> <time datetime="2026-06-19">2026-06-19</time></span>
+      <span><strong>Topic:</strong> games-scope-mcp-oauth-hardening</span>
+      <span><strong>Mode:</strong> repo-grounded</span>
+      <span><strong>Focus:</strong> resource-based user MCP authorization for Influence games</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>Grounding Context</h2>
+    <div class="card">
+      <p>The current production OAuth path is deliberately singleton-scoped. <code>packages/api/src/services/mcp-oauth.ts</code> defines <code>MCP_OAUTH_SCOPE = "mcp"</code>, validates authorization scope with "scope must be exactly mcp", persists that scope into authorization codes and access tokens, and client registration also accepts only <code>mcp</code>. The schema reinforces this with check constraints on clients, authorization codes, and access tokens.</p>
+      <p>The deployed MCP route validates the bearer token before dispatch, but <code>packages/api/src/routes/mcp.ts</code> then calls <code>server.handle(validation.request)</code> without passing the validated auth context. <code>packages/api/src/game-mcp/server.ts</code> therefore describes and serves a global developer inspection server, and <code>packages/api/src/game-mcp/read-model.ts</code> defaults event reads to <code>producer</code> visibility.</p>
+      <p>User/resource seams exist but are not currently attached to MCP auth: <code>games.createdById</code>, <code>game_players.userId</code>, <code>agent_profiles.userId</code>, and <code>/api/player/games</code> already define joined games as the authenticated player's history. Private trace manifests have actor/source-pointer metadata, but <code>game_evidence_manifests.access_scope</code> currently permits only <code>producer_admin</code>, and <code>PrivateTraceReadModel.readContent</code> falls back to a fixed producer accessor.</p>
+      <p>External protocol grounding: MCP authorization expects protected-resource metadata, scope guidance, resource indicators in authorization and token requests, bearer tokens on every request, and resource/audience validation before data is returned. Codex also prefers server-advertised scopes during OAuth login, so scope discovery shape matters for this design.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Topic Axes</h2>
+    <div class="grid">
+      <div class="card"><strong>Scope contract</strong><br>What <code>games</code> means to users and clients.</div>
+      <div class="card"><strong>Resource claims</strong><br>How subject-owned games, players, and agents are derived.</div>
+      <div class="card"><strong>Auth propagation</strong><br>Where the bearer-token context reaches MCP tools/read models.</div>
+      <div class="card"><strong>Tool partitioning</strong><br>How user-facing MCP differs from developer/global MCP.</div>
+      <div class="card"><strong>Trace boundary</strong><br>Private trace data stays producer-only in this phase.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Recommended Scope Contract</h2>
+    <div class="card">
+      <p><strong><code>/mcp</code> is the user-facing MCP resource.</strong> Its first scope is <code>games</code>, described as "access your games via MCP." A valid <code>games</code> token authorizes a connected MCP client to read Influence game resources attributable to the authenticated subject, not the global Production Game MCP corpus.</p>
+      <ul>
+        <li>Game-level access: games the subject created through <code>games.createdById</code> or joined through <code>game_players.userId</code>.</li>
+        <li>Player/agent access: player rows owned by the subject, plus player rows using an <code>agentProfileId</code> whose profile belongs to the subject through <code>agent_profiles.userId</code>.</li>
+        <li>No trace data: user-facing <code>games</code> access does not expose private trace content, trace manifests, reasoning search, or trace metadata.</li>
+        <li>Not granted: producer/global corpus access, private traces, developer evidence tools, mutation tools, admin/user-management tools, or normal app API authentication.</li>
+      </ul>
+      <p><code>/mcp/producer</code> is the privileged maintainer/developer resource. It keeps today's <code>mcp</code> role + <code>scope=mcp</code> global access contract and carries producer evidence/private trace tooling.</p>
+      <p>Consent copy should be concrete: "Allow this MCP client to read games you created or joined and your player/agent records in those games. This does not grant maintainer access, developer evidence access, or private trace access."</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Shape</h2>
+    <div class="diagram" aria-label="Recommended separation diagram">
+      <svg width="860" height="260" viewBox="0 0 860 260" role="img">
+        <rect x="20" y="32" width="180" height="74" rx="8" fill="#fff0d6" stroke="#a66b00"/>
+        <text x="110" y="62" text-anchor="middle" font-size="15" font-weight="700" fill="#1f2430">/mcp</text>
+        <text x="110" y="86" text-anchor="middle" font-size="13" fill="#1f2430">scope=games</text>
+        <rect x="20" y="150" width="180" height="74" rx="8" fill="#dff0ee" stroke="#245e63"/>
+        <text x="110" y="180" text-anchor="middle" font-size="15" font-weight="700" fill="#1f2430">/mcp/producer</text>
+        <text x="110" y="204" text-anchor="middle" font-size="13" fill="#1f2430">scope=mcp</text>
+        <rect x="330" y="32" width="210" height="74" rx="8" fill="#ffffff" stroke="#d9d3c6"/>
+        <text x="435" y="60" text-anchor="middle" font-size="14" font-weight="700" fill="#1f2430">User-facing profile</text>
+        <text x="435" y="84" text-anchor="middle" font-size="12" fill="#5b6472">games now, agents later</text>
+        <rect x="330" y="150" width="210" height="74" rx="8" fill="#ffffff" stroke="#d9d3c6"/>
+        <text x="435" y="178" text-anchor="middle" font-size="14" font-weight="700" fill="#1f2430">Producer profile</text>
+        <text x="435" y="202" text-anchor="middle" font-size="12" fill="#5b6472">global evidence tooling</text>
+        <rect x="660" y="150" width="180" height="74" rx="8" fill="#ffffff" stroke="#d9d3c6"/>
+        <text x="750" y="176" text-anchor="middle" font-size="14" font-weight="700" fill="#1f2430">Live claims</text>
+        <text x="750" y="200" text-anchor="middle" font-size="12" fill="#5b6472">games, players, agents</text>
+        <path d="M200 69 L330 69" stroke="#a66b00" stroke-width="2"/>
+        <path d="M200 187 L330 187" stroke="#245e63" stroke-width="2"/>
+        <path d="M540 69 L660 187" stroke="#5b6472" stroke-width="2"/>
+      </svg>
+    </div>
+  </section>
+
+  <section>
+    <h2>Ranked Ideas</h2>
+    <ol class="jump-list">
+      <li><a href="#idea-1">Trust-boundary route split</a></li>
+      <li><a href="#idea-2">Live subject resource-claim resolver</a></li>
+      <li><a href="#idea-3">Auth context as a first-class MCP input</a></li>
+      <li><a href="#idea-4">Profile-specific tools and resources</a></li>
+      <li><a href="#idea-5">Trace access stays producer-only</a></li>
+      <li><a href="#idea-6">Defer evidence accessor upgrade</a></li>
+      <li><a href="#idea-7">Atomic cutover with matrix tests</a></li>
+    </ol>
+
+    <article class="card idea" id="idea-1">
+      <h3>1. Trust-Boundary Route Split</h3>
+      <div class="tag-row"><span class="tag">Axis: scope contract</span><span class="tag">Confidence: 88%</span><span class="tag">Complexity: Medium</span></div>
+      <p><strong>Description:</strong> Make <code>/mcp</code> the canonical user-facing MCP protected resource, initially challenging for <code>scope=games</code>. Move the current developer/global MCP to <code>/mcp/producer</code>, where protected-resource metadata and <code>WWW-Authenticate</code> challenge for <code>scope=mcp</code>. Do this as the new truth, without a compatibility alias or deprecation window for producer access at <code>/mcp</code>.</p>
+      <p><strong>Basis:</strong> direct: existing metadata advertises only <code>["mcp"]</code>; direct: current docs state <code>scope=mcp</code> grants global access; external: MCP clients use challenge/metadata scope guidance and resource indicators for audience binding.</p>
+      <p><strong>Rationale:</strong> This segments by trust boundary, not by every product resource. <code>/mcp</code> can grow from games to agents later without multiplying endpoints, while <code>/mcp/producer</code> keeps privileged tools and global corpus access isolated under a different resource audience.</p>
+      <p><strong>Downsides:</strong> Requires moving the existing producer route/docs/tests to <code>/mcp/producer</code>. The OAuth service needs a scope/resource pairing model instead of a singleton constant.</p>
+    </article>
+
+    <article class="card idea" id="idea-2">
+      <h3>2. Live Subject Resource-Claim Resolver</h3>
+      <div class="tag-row"><span class="tag">Axis: resource claims</span><span class="tag">Confidence: 86%</span><span class="tag">Complexity: Medium</span></div>
+      <p><strong>Description:</strong> Add a service such as <code>resolveMcpGamesClaims(db, userId)</code> that computes accessible game IDs, owned player IDs, and owned agent profile IDs from live DB state. The token stores subject, scope, resource, client, purpose, and expiry; claims are resolved per request or per JSON-RPC call.</p>
+      <p><strong>Basis:</strong> direct: the schema already has <code>games.createdById</code>, <code>game_players.userId</code>, and <code>agent_profiles.userId</code>; direct: <code>/api/player/games</code> already treats joined player rows as user game history.</p>
+      <p><strong>Rationale:</strong> Live claims reflect newly joined/created games without refresh tokens or token reissue. They also keep user-facing game access separate from producer-only private trace policy.</p>
+      <p><strong>Downsides:</strong> Requires careful query/test coverage and likely per-request caching to avoid repeated joins inside multi-tool sessions.</p>
+    </article>
+
+    <article class="card idea" id="idea-3">
+      <h3>3. Auth Context as a First-Class MCP Input</h3>
+      <div class="tag-row"><span class="tag">Axis: auth propagation</span><span class="tag">Confidence: 84%</span><span class="tag">Complexity: Medium</span></div>
+      <p><strong>Description:</strong> Change the MCP route/server boundary from <code>server.handle(request)</code> to <code>server.handle(request, authContext)</code>. Make the context discriminated: <code>{ kind: "developer_mcp", ... }</code> versus <code>{ kind: "games_subject", userId, claims, ... }</code>. The user-facing read model should require that context for every list/read/filter call.</p>
+      <p><strong>Basis:</strong> direct: <code>/mcp</code> already validates tokens before dispatch and audits subject/client/resource, but the JSON-RPC server/read model does not receive that context; direct: current read methods default to producer visibility.</p>
+      <p><strong>Rationale:</strong> Authorization cannot be reliable if it lives outside the method that chooses games and visibility. Passing context first makes every future tool addition answer "what authority is this running under?" at compile time.</p>
+      <p><strong>Downsides:</strong> Touches tests and call signatures across the MCP server/read-model seam.</p>
+    </article>
+
+    <article class="card idea" id="idea-4">
+      <h3>4. Profile-Specific Tools and Resources</h3>
+      <div class="tag-row"><span class="tag">Axis: tool partitioning</span><span class="tag">Confidence: 78%</span><span class="tag">Complexity: Medium</span></div>
+      <p><strong>Description:</strong> Treat developer MCP and user games MCP as two authorization profiles. The developer profile keeps existing tools and descriptions, including explicit private trace tools. The games profile exposes user-scoped descriptors, for example <code>list_games</code> returning only accessible games and event filters that do not allow producer visibility. It does not list trace tools.</p>
+      <p><strong>Basis:</strong> direct: current server instructions say <code>scope=mcp</code> grants global access and tool descriptors carry OAuth scope <code>mcp</code>; external: Codex reads server instructions and prefers server-advertised scopes.</p>
+      <p><strong>Rationale:</strong> Tool discovery is part of authorization UX. A user-facing token should not even see developer evidence or private trace wording in this phase.</p>
+      <p><strong>Downsides:</strong> Requires either separate server factories or scope-aware descriptor generation. Reusing the same tool names is possible, but descriptions must be unambiguous.</p>
+    </article>
+
+    <article class="card idea" id="idea-5">
+      <h3>5. Trace Access Stays Producer-Only</h3>
+      <div class="tag-row"><span class="tag">Axis: trace boundary</span><span class="tag">Confidence: 88%</span><span class="tag">Complexity: Low</span></div>
+      <p><strong>Description:</strong> Keep private trace tools, trace manifests, reasoning search, and raw trace content exclusively on <code>/mcp/producer</code> behind <code>scope=mcp</code>. The user-facing <code>/mcp</code> + <code>scope=games</code> surface should not expose trace data or trace metadata in this phase.</p>
+      <p><strong>Basis:</strong> direct: current private trace manifests are written with <code>accessScope: "producer_admin"</code>; direct: existing docs intentionally put raw private trace content behind the global producer MCP gate.</p>
+      <p><strong>Rationale:</strong> This avoids a storage/model-policy migration while still making the user-facing MCP useful for canonical game access. Future user-visible thinking or strategy resources should be a separate derived artifact, not a direct read of the raw producer trace blob.</p>
+      <p><strong>Downsides:</strong> User-facing MCP will not answer questions that require private reasoning evidence until a later derived-resource design exists.</p>
+    </article>
+
+    <article class="card idea" id="idea-6">
+      <h3>6. Defer Evidence Accessor Upgrade</h3>
+      <div class="tag-row"><span class="tag">Axis: trace boundary</span><span class="tag">Confidence: 84%</span><span class="tag">Complexity: Low</span></div>
+      <p><strong>Description:</strong> Do not upgrade <code>EvidenceAccessor</code> for user subjects in this phase. Keep the current producer-oriented evidence path intact for <code>/mcp/producer</code>, and keep user-facing <code>games</code> tools on canonical game/player/agent read models.</p>
+      <p><strong>Basis:</strong> direct: <code>EvidenceAccessor</code> currently grants private evidence through producer/admin roles; direct: private trace reads already fall back to a fixed producer accessor.</p>
+      <p><strong>Rationale:</strong> If <code>games</code> does not expose private traces, the accessor migration is not on the critical path. Deferring it keeps this iteration focused on route/resource/scope split and user game authorization.</p>
+      <p><strong>Downsides:</strong> Future user-facing thinking/strategy access will still need either a derived resource model or a real policy-subject accessor.</p>
+    </article>
+
+    <article class="card idea" id="idea-7">
+      <h3>7. Atomic Cutover With Matrix Tests</h3>
+      <div class="tag-row"><span class="tag">Axis: tests and cutover</span><span class="tag">Confidence: 82%</span><span class="tag">Complexity: Low-Medium</span></div>
+      <p><strong>Description:</strong> Ship the route/scope/resource split as one atomic cutover: <code>/mcp</code> becomes the user-facing <code>games</code> resource and <code>/mcp/producer</code> becomes the privileged <code>mcp</code> resource. Inside that one change, implement the pieces in dependency order: scope/resource metadata and DB constraints, auth context propagation, user-scoped canonical game reads, and producer trace retention on <code>/mcp/producer</code>. The test matrix should prove wrong-scope/wrong-resource tokens fail before read models, <code>mcp</code> behavior stays producer-only, <code>games</code> only sees owned/created/joined resources, and <code>games</code> cannot list or read trace data.</p>
+      <p><strong>Basis:</strong> direct: existing docs and tests already emphasize wrong-resource/wrong-scope failures before dispatch and Codex-first OAuth smoke checks.</p>
+      <p><strong>Rationale:</strong> There is no product need for a multi-release migration. The important discipline is final-state matrix coverage, because authorization bugs have high blast radius and the old producer defaults must not leak into the new user endpoint.</p>
+      <p><strong>Downsides:</strong> The migration and app code need to deploy together cleanly, and existing producer clients pointed at old <code>/mcp</code> will stop working by design.</p>
+    </article>
+  </section>
+
+  <section>
+    <h2>Resource Claim Model Options</h2>
+    <table>
+      <thead><tr><th>Option</th><th>Assessment</th><th>Use</th></tr></thead>
+      <tbody>
+        <tr><td>Live resolver from ownership tables</td><td>Best first chunk. Uses current schema, avoids stale token grants, and reflects joins/created games without refresh tokens.</td><td>Recommended baseline.</td></tr>
+        <tr><td>Live resolver plus explicit grant table</td><td>More precise for later sharing, revocation, or team-owned games. Trace policy should use a separate future model.</td><td>Defer until product needs stable per-resource consent records.</td></tr>
+        <tr><td>Token snapshot claims</td><td>Fast but stale; forces refresh/re-auth when a user joins or creates a game.</td><td>Reject for first phase.</td></tr>
+        <tr><td>Manifest <code>access_scope</code> only</td><td>Current values only model producer admin. That is acceptable for producer traces and not needed for the first <code>games</code> phase.</td><td>Keep producer-only for now.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>How <code>games</code> and <code>mcp</code> Coexist</h2>
+    <div class="card">
+      <ul>
+        <li><code>/mcp</code> is the user-facing MCP resource. <code>scope=games</code> is the first user-facing scope and grants only the subject's allowed game/player/agent resources.</li>
+        <li><code>/mcp/producer</code> is the privileged developer/global resource. <code>scope=mcp</code> keeps today's meaning: <code>mcp</code> role + valid token grants global access to wired producer MCP tools.</li>
+        <li>Do not make <code>mcp</code> imply <code>games</code> on the user endpoint in the first phase. Maintainers who want the user-scoped view can authorize <code>games</code> as themselves; maintainers who want global inspection use <code>/mcp/producer</code>.</li>
+        <li>Prefer exactly one scope per issued MCP access token in this phase. Dynamic client registration and authorization may accept supported scope sets such as <code>games mcp</code> for client compatibility, but the resource indicator must select one exact grant scope and unsupported or wrong scope/resource combinations must fail.</li>
+        <li>Both scopes can share the OAuth code/token storage pattern, but scope/resource validation must happen before JSON-RPC dispatch and must pass the resulting auth profile into the server.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>First Code Boundaries</h2>
+    <div class="grid">
+      <div class="card"><strong>OAuth service/schema</strong><br>Replace singleton scope typing with an explicit scope union, update DB constraints to allow <code>mcp</code> and <code>games</code>, and validate exact scope/resource pairings: <code>/mcp</code> + <code>games</code>, <code>/mcp/producer</code> + <code>mcp</code>.</div>
+      <div class="card"><strong>Metadata/routes</strong><br>Move producer metadata and route handling to <code>/mcp/producer</code>. Put user-facing protected-resource metadata, challenges, and JSON-RPC handling at <code>/mcp</code>.</div>
+      <div class="card"><strong>Bearer validation</strong><br>Return a discriminated auth context with scope, subject, client, resource, and profile. Validate exact resource/scope pairing.</div>
+      <div class="card"><strong>MCP dispatch</strong><br>Pass auth context into JSON-RPC handling and audit scope/profile/tool outcomes.</div>
+      <div class="card"><strong>Read model</strong><br>Add auth-aware game resolution, list filtering, event visibility enforcement, and player/agent ownership checks.</div>
+      <div class="card"><strong>Evidence/trace</strong><br>Keep trace tools producer-only and exclude trace metadata from the user-facing <code>/mcp</code> profile.</div>
+      <div class="card"><strong>Web consent</strong><br>Change the authorization page to render scope-specific grant copy and denial messages; <code>games</code> should not say "MCP Role Required."</div>
+      <div class="card"><strong>Tests</strong><br>Add final-state scope/resource matrix tests for the atomic cutover.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Intentionally Deferred</h2>
+    <div class="note">
+      <ul>
+        <li>User-facing trace/thinking representation: raw full trace, reasoning-only, strategy packets, summaries, redacted derived views, and prompt removal policy.</li>
+        <li>Refresh tokens, long-lived sessions, DPoP, machine-to-machine grants, or a general third-party OAuth app platform.</li>
+        <li>Mutation tools or game lifecycle control through MCP.</li>
+        <li>Public ChatGPT app listing, iframe UI, or broad external tester policy.</li>
+        <li>Reinterpreting existing <code>scope=mcp</code> tokens as user-scoped or retrofitting per-user filters into the producer endpoint.</li>
+        <li>Compatibility aliases or deprecation ceremony for privileged producer access at old <code>/mcp</code>.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2>Rejected Ideas</h2>
+    <table>
+      <thead><tr><th>Idea</th><th>Why rejected</th></tr></thead>
+      <tbody>
+        <tr><td>Redefine <code>mcp</code> as user-scoped</td><td>Contradicts the explicit deployed contract and risks breaking developer evidence/private trace tooling.</td></tr>
+        <tr><td>Keep producer on <code>/mcp</code> and put user access at <code>/mcp/games</code></td><td>Segments by first resource noun instead of durable trust boundary; future <code>agents</code> access would multiply user-facing endpoints.</td></tr>
+        <tr><td>Advertise <code>mcp</code> and <code>games</code> together on one endpoint</td><td>Protected-resource metadata and challenges should stay path-specific. Authorization-server metadata can list both supported scopes, and the server may tolerate supported scope sets, but each resource still grants exactly one scope.</td></tr>
+        <tr><td>Make <code>games</code> public/read-only only</td><td>Does not match the resource-based product direction: users should see their own games, player records, and agent records even when those are not globally public.</td></tr>
+        <tr><td>Store all game/player/agent IDs in token rows</td><td>Stale as resource ownership changes and creates refresh-token pressure before refresh tokens are otherwise needed.</td></tr>
+        <tr><td>Scatter tool-level <code>if scope</code> checks</td><td>Too brittle with current producer visibility defaults and private trace tools.</td></tr>
+        <tr><td>Expose trace data under <code>games</code> in this phase</td><td>Collapses authorization modeling into the separate trace data-shaping/product-policy decision and forces an accessor/storage-policy migration too early.</td></tr>
+        <tr><td>Trust client-supplied <code>visibilityMode=producer</code></td><td>A user-facing token must not be able to opt itself into producer visibility by argument.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Sources and References</h2>
+    <ul>
+      <li><code>packages/api/src/services/mcp-oauth.ts</code></li>
+      <li><code>packages/api/src/routes/mcp-oauth.ts</code></li>
+      <li><code>packages/api/src/routes/mcp.ts</code></li>
+      <li><code>packages/api/src/game-mcp/auth.ts</code></li>
+      <li><code>packages/api/src/game-mcp/server.ts</code></li>
+      <li><code>packages/api/src/game-mcp/read-model.ts</code></li>
+      <li><code>packages/api/src/services/private-trace-read-model.ts</code></li>
+      <li><code>packages/api/src/services/evidence-access.ts</code></li>
+      <li><code>packages/api/src/db/schema.ts</code></li>
+      <li><code>packages/api/src/routes/games.ts</code></li>
+      <li><code>packages/web/src/app/oauth/mcp/authorize/authorize-client.tsx</code></li>
+      <li><code>docs/game-mcp-production-oauth.md</code></li>
+      <li><a href="https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization">MCP Authorization specification</a></li>
+      <li><a href="https://datatracker.ietf.org/doc/html/rfc8707">RFC 8707 Resource Indicators for OAuth 2.0</a></li>
+      <li><a href="https://developers.openai.com/codex/mcp">OpenAI Codex MCP documentation</a></li>
+      <li><a href="https://developers.openai.com/apps-sdk/build/auth">OpenAI Apps SDK authentication documentation</a></li>
+    </ul>
+  </section>
+
+  <footer class="composition-signal">
+    Composed 2026-06-19 by ce-ideate from the user prompt and repo-grounded OAuth/MCP inspection.
+  </footer>
+</main>
+</body>
+</html>

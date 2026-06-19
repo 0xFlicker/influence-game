@@ -1,5 +1,6 @@
 import { createDB, type DrizzleDB } from "../db/index.js";
-import { MCP_OAUTH_SCOPE } from "../services/mcp-oauth.js";
+import type { McpOAuthScope } from "../services/mcp-oauth.js";
+import type { GameMcpAuthContext } from "./auth.js";
 import {
   ProductionGameMcpReadModel,
   type ProductionGameMcpEventFilter,
@@ -21,15 +22,20 @@ export interface JsonRpcResponse {
   error?: { code: number; message: string };
 }
 
-const OAUTH_SECURITY_SCHEME = {
-  type: "oauth2",
-  scopes: [MCP_OAUTH_SCOPE],
-};
+function oauthSecurityScheme(scope: McpOAuthScope) {
+  return {
+    type: "oauth2",
+    scopes: [scope],
+  };
+}
 
 export class ProductionGameMcpJsonRpcServer {
   constructor(private readonly readModel: ProductionGameMcpReadModel) {}
 
-  async handle(request: JsonRpcRequest): Promise<JsonRpcResponse | null> {
+  async handle(
+    request: JsonRpcRequest,
+    auth: GameMcpAuthContext,
+  ): Promise<JsonRpcResponse | null> {
     if (request.id === undefined) {
       return null;
     }
@@ -38,7 +44,7 @@ export class ProductionGameMcpJsonRpcServer {
       return {
         jsonrpc: "2.0",
         id: request.id ?? null,
-        result: await this.route(request.method, request.params),
+        result: await this.route(request.method, request.params, auth),
       };
     } catch (error) {
       return {
@@ -52,7 +58,12 @@ export class ProductionGameMcpJsonRpcServer {
     }
   }
 
-  private async route(method: string, params: unknown): Promise<unknown> {
+  private async route(
+    method: string,
+    params: unknown,
+    auth: GameMcpAuthContext,
+  ): Promise<unknown> {
+    const isProducer = auth.authProfile === "producer_mcp";
     if (method === "initialize") {
       return {
         protocolVersion: "2025-06-18",
@@ -64,11 +75,17 @@ export class ProductionGameMcpJsonRpcServer {
           name: "influence-game-production",
           version: "0.1.0",
         },
-        instructions: [
-          "Read-only deployed developer inspection server for Influence games.",
-          "A valid OAuth bearer token with scope=mcp grants global access to the wired MCP tools.",
-          "Developer evidence and producer-visible private reasoning are available through explicit private trace tools.",
-        ].join(" "),
+        instructions: isProducer
+          ? [
+              "Read-only deployed producer inspection server for Influence games.",
+              "A valid OAuth bearer token with scope=mcp grants global access to the wired producer MCP tools.",
+              "Developer evidence and producer-visible private reasoning are available through explicit private trace tools.",
+            ].join(" ")
+          : [
+              "Read-only user-facing MCP server for Influence games.",
+              "A valid OAuth bearer token with scope=games grants access to games you created or joined and your player/agent records.",
+              "Developer evidence and private trace tools are not available on this resource.",
+            ].join(" "),
       };
     }
 
@@ -77,7 +94,7 @@ export class ProductionGameMcpJsonRpcServer {
         resources: [
           {
             uri: "influence-game://deployed/games",
-            name: "Deployed Influence games",
+            name: isProducer ? "Deployed Influence games" : "Your Influence games",
             mimeType: "application/json",
           },
         ],
@@ -93,13 +110,13 @@ export class ProductionGameMcpJsonRpcServer {
         contents: [{
           uri,
           mimeType: "application/json",
-          text: JSON.stringify(await this.readModel.listGames(), null, 2),
+          text: JSON.stringify(await this.readModel.listGames(auth), null, 2),
         }],
       };
     }
 
     if (method === "tools/list") {
-      return { tools: productionGameMcpTools() };
+      return { tools: productionGameMcpTools(auth.scope, isProducer) };
     }
 
     if (method === "tools/call") {
@@ -108,23 +125,27 @@ export class ProductionGameMcpJsonRpcServer {
       const args = asRecord(request.arguments);
 
       if (name === "list_games") {
-        return content(await this.readModel.listGames(optionalNumber(args, "limit")));
+        return content(await this.readModel.listGames(auth, optionalNumber(args, "limit")));
       }
       if (name === "read_projection") {
-        return content(await this.readModel.readProjection(requiredString(args, "gameIdOrSlug")));
+        return content(await this.readModel.readProjection(requiredString(args, "gameIdOrSlug"), auth));
       }
       if (name === "filter_events") {
-        return content(await this.readModel.filterEvents(eventFilterArgs(args)));
+        return content(await this.readModel.filterEvents(eventFilterArgs(args), auth));
       }
       if (name === "player_timeline") {
-        return content(await this.readModel.playerTimeline(playerTimelineArgs(args)));
+        return content(await this.readModel.playerTimeline(playerTimelineArgs(args), auth));
+      }
+      if (!isProducer) {
+        throw new Error(`Unknown or producer-only tool is not supported for scope=games: ${name}`);
       }
       if (name === "inspect_durable_run") {
-        return content(await this.readModel.inspectDurableRun(requiredString(args, "gameIdOrSlug")));
+        return content(await this.readModel.inspectDurableRun(requiredString(args, "gameIdOrSlug"), auth));
       }
       if (name === "list_trace_manifests") {
         return content(await this.readModel.listTraceManifests(
           requiredString(args, "gameIdOrSlug"),
+          auth,
           optionalNumber(args, "limit"),
         ));
       }
@@ -134,7 +155,7 @@ export class ProductionGameMcpJsonRpcServer {
           gameId: optionalString(args, "gameId"),
           purpose: optionalString(args, "purpose"),
           maxBytes: optionalNumber(args, "maxBytes"),
-        }));
+        }, auth));
       }
       if (name === "search_reasoning_traces") {
         return content(await this.readModel.searchReasoningTraces({
@@ -144,7 +165,7 @@ export class ProductionGameMcpJsonRpcServer {
           action: optionalString(args, "action"),
           phase: optionalString(args, "phase"),
           limit: optionalNumber(args, "limit"),
-        }));
+        }, auth));
       }
 
       throw new Error(`Unknown or mutation-shaped tool is not supported: ${name}`);
@@ -160,49 +181,69 @@ export function createProductionGameMcpServer(
   return new ProductionGameMcpJsonRpcServer(new ProductionGameMcpReadModel(db));
 }
 
-function productionGameMcpTools(): unknown[] {
-  return [
+function productionGameMcpTools(scope: McpOAuthScope, includeProducerTools: boolean): unknown[] {
+  const tools = [
     tool({
       name: "list_games",
-      description: "List recent deployed games with event-log and projection status.",
+      description: includeProducerTools
+        ? "List recent deployed games with event-log and projection status."
+        : "List your Influence games with event-log and projection status.",
       properties: {
         limit: { type: "number" },
       },
+      scope,
     }),
     tool({
       name: "read_projection",
-      description: "Replay persisted canonical events into the durable projection summary for one game ID or slug.",
+      description: "Replay persisted canonical events into the projection summary for one accessible game ID or slug.",
       properties: {
         gameIdOrSlug: { type: "string" },
       },
       required: ["gameIdOrSlug"],
+      scope,
     }),
     tool({
       name: "filter_events",
-      description: "Filter persisted canonical events by game, type, phase, actor, sequence range, visibility mode, or limit.",
+      description: includeProducerTools
+        ? "Filter persisted canonical events by game, type, phase, actor, sequence range, visibility mode, or limit."
+        : "Filter player-visible canonical events by game, type, phase, actor, sequence range, or limit.",
       properties: {
         gameIdOrSlug: { type: "string" },
         eventType: { type: "string" },
         phase: { type: "string" },
         actor: { type: "string" },
-        visibilityMode: { type: "string", enum: ["public", "player", "producer"] },
+        visibilityMode: {
+          type: "string",
+          enum: includeProducerTools ? ["public", "player", "producer"] : ["public", "player"],
+        },
         fromSequence: { type: "number" },
         toSequence: { type: "number" },
         limit: { type: "number" },
       },
       required: ["gameIdOrSlug"],
+      scope,
     }),
     tool({
       name: "player_timeline",
-      description: "Return canonical events that mention a player ID or name.",
+      description: includeProducerTools
+        ? "Return canonical events that mention a player ID or name."
+        : "Return player-visible canonical events that mention a player ID or name in an accessible game.",
       properties: {
         gameIdOrSlug: { type: "string" },
         player: { type: "string" },
-        visibilityMode: { type: "string", enum: ["public", "player", "producer"] },
+        visibilityMode: {
+          type: "string",
+          enum: includeProducerTools ? ["public", "player", "producer"] : ["public", "player"],
+        },
         limit: { type: "number" },
       },
       required: ["gameIdOrSlug", "player"],
+      scope,
     }),
+  ];
+  if (!includeProducerTools) return tools;
+  return [
+    ...tools,
     tool({
       name: "inspect_durable_run",
       description: "Return the durable-run inspection summary for one game ID or slug.",
@@ -210,6 +251,7 @@ function productionGameMcpTools(): unknown[] {
         gameIdOrSlug: { type: "string" },
       },
       required: ["gameIdOrSlug"],
+      scope,
     }),
     tool({
       name: "list_trace_manifests",
@@ -219,6 +261,7 @@ function productionGameMcpTools(): unknown[] {
         limit: { type: "number" },
       },
       required: ["gameIdOrSlug"],
+      scope,
     }),
     tool({
       name: "read_trace_content",
@@ -230,6 +273,7 @@ function productionGameMcpTools(): unknown[] {
         maxBytes: { type: "number" },
       },
       required: ["manifestId"],
+      scope,
     }),
     tool({
       name: "search_reasoning_traces",
@@ -243,6 +287,7 @@ function productionGameMcpTools(): unknown[] {
         limit: { type: "number" },
       },
       required: ["gameIdOrSlug", "query"],
+      scope,
     }),
   ];
 }
@@ -252,7 +297,9 @@ function tool(input: {
   description: string;
   properties: Record<string, unknown>;
   required?: string[];
+  scope: McpOAuthScope;
 }): unknown {
+  const securityScheme = oauthSecurityScheme(input.scope);
   return {
     name: input.name,
     description: input.description,
@@ -261,9 +308,9 @@ function tool(input: {
       properties: input.properties,
       ...(input.required && { required: input.required }),
     },
-    securitySchemes: [OAUTH_SECURITY_SCHEME],
+    securitySchemes: [securityScheme],
     _meta: {
-      securitySchemes: [OAUTH_SECURITY_SCHEME],
+      securitySchemes: [securityScheme],
     },
   };
 }

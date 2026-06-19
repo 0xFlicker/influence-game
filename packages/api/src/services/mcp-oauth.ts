@@ -6,10 +6,12 @@ import { getPermissionsForAddress } from "../db/rbac.js";
 import type { AuthUser } from "../middleware/auth.js";
 
 export const MCP_OAUTH_SCOPE = "mcp";
+export const MCP_OAUTH_GAMES_SCOPE = "games";
 export const MCP_OAUTH_AUDIENCE = "game-mcp";
 export const MCP_OAUTH_PURPOSE = "mcp_access";
 export const MCP_OAUTH_ISSUER = "influence-game-mcp";
 export const DEFAULT_MCP_OAUTH_RESOURCE_URI = "http://127.0.0.1:3000/mcp";
+export const DEFAULT_MCP_OAUTH_PRODUCER_RESOURCE_URI = "http://127.0.0.1:3000/mcp/producer";
 export const MCP_OAUTH_CLIENT_ID =
   process.env.MCP_OAUTH_CLIENT_ID ?? "influence-game-mcp-local";
 export const MCP_OAUTH_DYNAMIC_CLIENT_ID_PREFIX = "influence-game-mcp-client-";
@@ -17,6 +19,47 @@ export const MCP_OAUTH_CODE_TTL_SECONDS = 5 * 60;
 export const MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
 
 const DEFAULT_LOOPBACK_REDIRECT_PATH = "/oauth/callback";
+
+export type McpOAuthScope = typeof MCP_OAUTH_GAMES_SCOPE | typeof MCP_OAUTH_SCOPE;
+export type McpOAuthProfileName = "games" | "producer";
+export type McpAuthProfile = "games_subject" | "producer_mcp";
+
+export interface McpOAuthResourceProfile {
+  name: McpOAuthProfileName;
+  authProfile: McpAuthProfile;
+  scope: McpOAuthScope;
+  resourcePath: string;
+  protectedResourceMetadataPath: string;
+  resourceName: string;
+  requiresMcpRole: boolean;
+  defaultResourceUri: string;
+  envVar: string;
+}
+
+const MCP_OAUTH_RESOURCE_PROFILES: Record<McpOAuthProfileName, McpOAuthResourceProfile> = {
+  games: {
+    name: "games",
+    authProfile: "games_subject",
+    scope: MCP_OAUTH_GAMES_SCOPE,
+    resourcePath: "/mcp",
+    protectedResourceMetadataPath: "/.well-known/oauth-protected-resource/mcp",
+    resourceName: "Influence Games MCP",
+    requiresMcpRole: false,
+    defaultResourceUri: DEFAULT_MCP_OAUTH_RESOURCE_URI,
+    envVar: "MCP_OAUTH_GAMES_RESOURCE_URI",
+  },
+  producer: {
+    name: "producer",
+    authProfile: "producer_mcp",
+    scope: MCP_OAUTH_SCOPE,
+    resourcePath: "/mcp/producer",
+    protectedResourceMetadataPath: "/.well-known/oauth-protected-resource/mcp/producer",
+    resourceName: "Influence Producer MCP",
+    requiresMcpRole: true,
+    defaultResourceUri: DEFAULT_MCP_OAUTH_PRODUCER_RESOURCE_URI,
+    envVar: "MCP_OAUTH_PRODUCER_RESOURCE_URI",
+  },
+};
 
 export interface McpOAuthAuthorizeInput {
   response_type?: unknown;
@@ -72,7 +115,8 @@ interface ValidAuthorizeRequest {
   clientId: string;
   redirectUri: string;
   resourceUri: string;
-  scope: typeof MCP_OAUTH_SCOPE;
+  scope: McpOAuthScope;
+  profile: McpOAuthResourceProfile;
   state: string;
   codeChallenge: string;
   codeChallengeMethod: "S256";
@@ -83,6 +127,7 @@ interface ValidTokenRequest {
   code: string;
   redirectUri: string;
   resourceUri: string;
+  profile: McpOAuthResourceProfile;
   clientId: string;
   codeVerifier: string;
 }
@@ -98,6 +143,7 @@ export interface McpOAuthAuditMetadata {
   clientId?: string;
   resource?: string;
   scope?: string;
+  authProfile?: McpAuthProfile;
 }
 
 export type ServiceResponse<TBody> = {
@@ -125,14 +171,56 @@ export function secretsEqual(actual: string, expected: string): boolean {
   return timingSafeEqual(actualBytes, expectedBytes);
 }
 
-export function getMcpOAuthResourceUri(): string {
-  return normalizeResourceUri(
-    process.env.MCP_OAUTH_RESOURCE_URI ?? DEFAULT_MCP_OAUTH_RESOURCE_URI,
-  ) ?? DEFAULT_MCP_OAUTH_RESOURCE_URI;
+export function getMcpOAuthProfiles(): McpOAuthResourceProfile[] {
+  return [MCP_OAUTH_RESOURCE_PROFILES.games, MCP_OAUTH_RESOURCE_PROFILES.producer];
 }
 
-export function isCanonicalMcpResourceUri(resourceUri: string): boolean {
-  return normalizeResourceUri(resourceUri) === getMcpOAuthResourceUri();
+export function getMcpOAuthProfile(name: McpOAuthProfileName): McpOAuthResourceProfile {
+  return MCP_OAUTH_RESOURCE_PROFILES[name];
+}
+
+export function getMcpOAuthResourceUri(profileName: McpOAuthProfileName = "games"): string {
+  const profile = getMcpOAuthProfile(profileName);
+  const configured = requiredString(process.env[profile.envVar]);
+  const legacyConfigured = profileName === "games"
+    ? requiredString(process.env.MCP_OAUTH_RESOURCE_URI)
+    : null;
+  return normalizeResourceUri(configured ?? legacyConfigured ?? profile.defaultResourceUri) ??
+    profile.defaultResourceUri;
+}
+
+export function getMcpOAuthProducerResourceUri(): string {
+  return getMcpOAuthResourceUri("producer");
+}
+
+export function getMcpOAuthProfileResourceUri(profile: McpOAuthResourceProfile): string {
+  return getMcpOAuthResourceUri(profile.name);
+}
+
+export function isCanonicalMcpResourceUri(
+  resourceUri: string,
+  profileName?: McpOAuthProfileName,
+): boolean {
+  const normalized = normalizeResourceUri(resourceUri);
+  if (!normalized) return false;
+  if (profileName) return normalized === getMcpOAuthResourceUri(profileName);
+  return getMcpOAuthProfiles().some((profile) =>
+    normalized === getMcpOAuthProfileResourceUri(profile)
+  );
+}
+
+export function profileForMcpResourceUri(
+  resourceUri: string,
+): McpOAuthResourceProfile | null {
+  const normalized = normalizeResourceUri(resourceUri);
+  if (!normalized) return null;
+  return getMcpOAuthProfiles().find((profile) =>
+    normalized === getMcpOAuthProfileResourceUri(profile)
+  ) ?? null;
+}
+
+export function profileForMcpScope(scope: string): McpOAuthResourceProfile | null {
+  return getMcpOAuthProfiles().find((profile) => profile.scope === scope) ?? null;
 }
 
 export function getMcpOAuthAuthorizationEndpoint(_apiOrigin?: string): string {
@@ -191,6 +279,7 @@ export async function authorizeMcpOAuth(
     db,
     parsed.request.clientId,
     parsed.request.redirectUri,
+    parsed.request.scope,
   );
   if (!clientValidation.ok) {
     return oauthFailure({
@@ -227,7 +316,7 @@ export async function authorizeMcpOAuth(
   }
 
   const hasRole = await hasCurrentMcpRole(db, user);
-  if (!hasRole) {
+  if (parsed.request.profile.requiresMcpRole && !hasRole) {
     return {
       status: 403,
       body: {
@@ -249,8 +338,9 @@ export async function authorizeMcpOAuth(
         clientId: parsed.request.clientId,
         redirectUri: parsed.request.redirectUri,
         resource: parsed.request.resourceUri,
-        scope: MCP_OAUTH_SCOPE,
-        hasMcpRole: true,
+        scope: parsed.request.scope,
+        authProfile: parsed.request.profile.authProfile,
+        hasMcpRole: hasRole,
         expiresIn: MCP_OAUTH_CODE_TTL_SECONDS,
         walletAddress: user.walletAddress,
       },
@@ -266,11 +356,11 @@ export async function authorizeMcpOAuth(
     id: randomUUID(),
     codeHash: hashOpaqueSecret(rawCode),
     userId: user.id,
-    walletAddress: user.walletAddress!,
+    walletAddress: user.walletAddress,
     clientId: parsed.request.clientId,
     redirectUri: parsed.request.redirectUri,
     resourceUri: parsed.request.resourceUri,
-    scope: MCP_OAUTH_SCOPE,
+    scope: parsed.request.scope,
     codeChallenge: parsed.request.codeChallenge,
     codeChallengeMethod: parsed.request.codeChallengeMethod,
     expiresAt,
@@ -312,7 +402,7 @@ export async function registerMcpOAuthClient(
     redirectUris: parsed.registration.redirectUris,
     grantTypes: parsed.registration.grantTypes,
     responseTypes: parsed.registration.responseTypes,
-    scope: MCP_OAUTH_SCOPE,
+    scope: parsed.registration.scope,
     tokenEndpointAuthMethod: "none",
     clientUri: parsed.registration.clientUri,
     logoUri: parsed.registration.logoUri,
@@ -330,7 +420,7 @@ export async function registerMcpOAuthClient(
       redirect_uris: parsed.registration.redirectUris,
       grant_types: parsed.registration.grantTypes,
       response_types: parsed.registration.responseTypes,
-      scope: MCP_OAUTH_SCOPE,
+      scope: parsed.registration.scope,
       token_endpoint_auth_method: "none",
       ...(parsed.registration.clientUri ? { client_uri: parsed.registration.clientUri } : {}),
       ...(parsed.registration.logoUri ? { logo_uri: parsed.registration.logoUri } : {}),
@@ -339,7 +429,7 @@ export async function registerMcpOAuthClient(
     },
     audit: {
       clientId,
-      scope: MCP_OAUTH_SCOPE,
+      scope: parsed.registration.scope,
     },
   };
 }
@@ -376,24 +466,26 @@ export async function exchangeMcpOAuthCode(
     codeRow.clientId !== parsed.request.clientId ||
     codeRow.redirectUri !== parsed.request.redirectUri ||
     codeRow.resourceUri !== parsed.request.resourceUri ||
-    codeRow.scope !== MCP_OAUTH_SCOPE ||
+    codeRow.scope !== parsed.request.profile.scope ||
     codeRow.codeChallengeMethod !== "S256"
   ) {
     return invalidGrant("Authorization code does not match this token request", {
       userId: codeRow.userId,
-      walletAddress: codeRow.walletAddress,
+      walletAddress: codeRow.walletAddress ?? undefined,
       clientId: codeRow.clientId,
       resource: codeRow.resourceUri,
       scope: codeRow.scope,
+      authProfile: parsed.request.profile.authProfile,
     });
   }
   if (pkceS256(parsed.request.codeVerifier) !== codeRow.codeChallenge) {
     return invalidGrant("PKCE verification failed", {
       userId: codeRow.userId,
-      walletAddress: codeRow.walletAddress,
+      walletAddress: codeRow.walletAddress ?? undefined,
       clientId: codeRow.clientId,
       resource: codeRow.resourceUri,
       scope: codeRow.scope,
+      authProfile: parsed.request.profile.authProfile,
     });
   }
 
@@ -401,13 +493,24 @@ export async function exchangeMcpOAuthCode(
     .select()
     .from(schema.users)
     .where(eq(schema.users.id, codeRow.userId)))[0];
-  if (!user || !(await hasCurrentMcpRole(db, user))) {
-    return invalidGrant("MCP role is no longer active for this user", {
+  if (!user) {
+    return invalidGrant("Authorization subject is no longer active", {
       userId: codeRow.userId,
-      walletAddress: codeRow.walletAddress,
+      walletAddress: codeRow.walletAddress ?? undefined,
       clientId: codeRow.clientId,
       resource: codeRow.resourceUri,
       scope: codeRow.scope,
+      authProfile: parsed.request.profile.authProfile,
+    });
+  }
+  if (parsed.request.profile.requiresMcpRole && !(await hasCurrentMcpRole(db, user))) {
+    return invalidGrant("MCP role is no longer active for this user", {
+      userId: codeRow.userId,
+      walletAddress: codeRow.walletAddress ?? undefined,
+      clientId: codeRow.clientId,
+      resource: codeRow.resourceUri,
+      scope: codeRow.scope,
+      authProfile: parsed.request.profile.authProfile,
     });
   }
 
@@ -435,10 +538,10 @@ export async function exchangeMcpOAuthCode(
       id: randomUUID(),
       tokenHash: hashOpaqueSecret(rawToken),
       userId: user.id,
-      walletAddress: user.walletAddress!,
+      walletAddress: user.walletAddress,
       clientId: codeRow.clientId,
       resourceUri: codeRow.resourceUri,
-      scope: MCP_OAUTH_SCOPE,
+      scope: parsed.request.profile.scope,
       audience: MCP_OAUTH_AUDIENCE,
       purpose: MCP_OAUTH_PURPOSE,
       expiresAt,
@@ -457,7 +560,7 @@ export async function exchangeMcpOAuthCode(
       access_token: rawToken,
       token_type: "Bearer",
       expires_in: MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS,
-      scope: MCP_OAUTH_SCOPE,
+      scope: parsed.request.profile.scope,
       audience: MCP_OAUTH_AUDIENCE,
       purpose: MCP_OAUTH_PURPOSE,
       resource: codeRow.resourceUri,
@@ -467,7 +570,8 @@ export async function exchangeMcpOAuthCode(
       walletAddress: user.walletAddress ?? undefined,
       clientId: codeRow.clientId,
       resource: codeRow.resourceUri,
-      scope: MCP_OAUTH_SCOPE,
+      scope: parsed.request.profile.scope,
+      authProfile: parsed.request.profile.authProfile,
     },
   };
 }
@@ -486,7 +590,8 @@ export async function introspectMcpAccessToken(
   if (!tokenRow || tokenRow.revokedAt) {
     return { active: false };
   }
-  if (!isCanonicalMcpResourceUri(tokenRow.resourceUri)) {
+  const profile = profileForMcpResourceUri(tokenRow.resourceUri);
+  if (!profile || tokenRow.scope !== profile.scope) {
     return { active: false };
   }
   if (new Date(tokenRow.expiresAt).getTime() <= now.getTime()) {
@@ -497,7 +602,10 @@ export async function introspectMcpAccessToken(
     .select()
     .from(schema.users)
     .where(eq(schema.users.id, tokenRow.userId)))[0];
-  if (!user || !(await hasCurrentMcpRole(db, user))) {
+  if (!user) {
+    return { active: false };
+  }
+  if (profile.requiresMcpRole && !(await hasCurrentMcpRole(db, user))) {
     return { active: false };
   }
 
@@ -566,19 +674,21 @@ function validateAuthorizeInput(input: McpOAuthAuthorizeInput):
       state ?? undefined,
     );
   }
-  if (!scopeIncludesOnlyMcp(input.scope)) {
+  const requestedScopes = parseMcpOAuthScopeSet(input.scope);
+  if (!requestedScopes) {
     return validationError(
       "invalid_scope",
-      "scope must be exactly mcp",
+      "scope must include only games and/or mcp",
       safeRedirectUri,
       state ?? undefined,
     );
   }
   const resourceUri = requiredString(input.resource);
-  if (!resourceUri || !isCanonicalMcpResourceUri(resourceUri)) {
+  const resourceProfile = resourceUri ? profileForMcpResourceUri(resourceUri) : null;
+  if (!resourceUri || !resourceProfile || !requestedScopes.has(resourceProfile.scope)) {
     return validationError(
       "invalid_target",
-      "resource must match the canonical MCP resource",
+      "resource must match the requested MCP scope",
       safeRedirectUri,
       state ?? undefined,
     );
@@ -615,8 +725,9 @@ function validateAuthorizeInput(input: McpOAuthAuthorizeInput):
       responseType: "code",
       clientId,
       redirectUri,
-      resourceUri: getMcpOAuthResourceUri(),
-      scope: MCP_OAUTH_SCOPE,
+      resourceUri: getMcpOAuthProfileResourceUri(resourceProfile),
+      scope: resourceProfile.scope,
+      profile: resourceProfile,
       state,
       codeChallenge,
       codeChallengeMethod: "S256",
@@ -660,12 +771,13 @@ function validateTokenInput(input: McpOAuthTokenInput):
   }
 
   const resourceUri = requiredString(input.resource);
-  if (!resourceUri || !isCanonicalMcpResourceUri(resourceUri)) {
+  const profile = resourceUri ? profileForMcpResourceUri(resourceUri) : null;
+  if (!resourceUri || !profile) {
     return {
       ok: false,
       error: {
         error: "invalid_target",
-        error_description: "resource must match the canonical MCP resource",
+        error_description: "resource must match a canonical MCP resource",
       },
     };
   }
@@ -688,7 +800,8 @@ function validateTokenInput(input: McpOAuthTokenInput):
       grantType: "authorization_code",
       code,
       redirectUri,
-      resourceUri: getMcpOAuthResourceUri(),
+      resourceUri: getMcpOAuthProfileResourceUri(profile),
+      profile,
       clientId,
       codeVerifier,
     },
@@ -755,19 +868,44 @@ function requiredString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function scopeIncludesOnlyMcp(value: unknown): boolean {
-  if (typeof value !== "string") return false;
+function parseMcpOAuthScopeSet(value: unknown): Set<McpOAuthScope> | null {
+  if (typeof value !== "string") return null;
   const scopes = value.split(/\s+/).filter(Boolean);
-  return scopes.length === 1 && scopes[0] === MCP_OAUTH_SCOPE;
+  if (scopes.length === 0) return null;
+  const parsed = new Set<McpOAuthScope>();
+  for (const scope of scopes) {
+    if (scope !== MCP_OAUTH_GAMES_SCOPE && scope !== MCP_OAUTH_SCOPE) return null;
+    parsed.add(scope);
+  }
+  return parsed;
+}
+
+function parseMcpOAuthRegistrationScope(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const requested = new Set(value.split(/\s+/).filter(Boolean));
+  if (requested.size === 0) return null;
+  const supported = getMcpOAuthProfiles().map((profile) => profile.scope);
+  for (const scope of requested) {
+    if (!supported.includes(scope as McpOAuthScope)) return null;
+  }
+  return supported.filter((scope) => requested.has(scope)).join(" ");
+}
+
+function registeredClientScopeAllows(
+  registeredScope: string,
+  requestedScope: McpOAuthScope,
+): boolean {
+  return registeredScope.split(/\s+/).includes(requestedScope);
 }
 
 async function validateMcpOAuthClientRedirect(
   db: DrizzleDB,
   clientId: string,
   redirectUri: string,
+  scope: McpOAuthScope,
 ): Promise<
   | { ok: true }
-  | { ok: false; error: "invalid_client" | "invalid_request"; errorDescription: string }
+  | { ok: false; error: "invalid_client" | "invalid_request" | "invalid_scope"; errorDescription: string }
 > {
   if (clientId === MCP_OAUTH_CLIENT_ID) {
     return isAllowedRedirectUri(redirectUri)
@@ -783,6 +921,7 @@ async function validateMcpOAuthClientRedirect(
     .select({
       clientId: schema.mcpOauthClients.clientId,
       redirectUris: schema.mcpOauthClients.redirectUris,
+      scope: schema.mcpOauthClients.scope,
     })
     .from(schema.mcpOauthClients)
     .where(eq(schema.mcpOauthClients.clientId, clientId)))[0];
@@ -802,6 +941,13 @@ async function validateMcpOAuthClientRedirect(
       errorDescription: "redirect_uri is not registered for this client",
     };
   }
+  if (!registeredClientScopeAllows(client.scope, scope)) {
+    return {
+      ok: false,
+      error: "invalid_scope",
+      errorDescription: "scope is not registered for this client",
+    };
+  }
 
   return { ok: true };
 }
@@ -815,6 +961,7 @@ interface ValidClientRegistration {
   policyUri?: string;
   grantTypes: string[];
   responseTypes: string[];
+  scope: string;
 }
 
 function validateClientRegistrationInput(input: McpOAuthClientRegistrationInput):
@@ -874,11 +1021,13 @@ function validateClientRegistrationInput(input: McpOAuthClientRegistrationInput)
     );
   }
 
-  const requestedScope = input.scope === undefined ? MCP_OAUTH_SCOPE : input.scope;
-  if (!scopeIncludesOnlyMcp(requestedScope)) {
+  const requestedScope = input.scope === undefined
+    ? MCP_OAUTH_GAMES_SCOPE
+    : parseMcpOAuthRegistrationScope(input.scope);
+  if (!requestedScope) {
     return clientRegistrationError(
       "invalid_scope",
-      "scope must be exactly mcp",
+      "scope must include only games and/or mcp",
     );
   }
 
@@ -902,6 +1051,7 @@ function validateClientRegistrationInput(input: McpOAuthClientRegistrationInput)
       policyUri: optionalHttpsUri(input.policy_uri),
       grantTypes: uniqueStrings(resolvedGrantTypes),
       responseTypes: uniqueStrings(resolvedResponseTypes),
+      scope: requestedScope,
     },
   };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   MCP_OAUTH_CLIENT_ID,
+  MCP_OAUTH_SCOPE,
   buildMcpOAuthAuthorizeBody,
   parseMcpOAuthSearchParams,
 } from "../lib/mcp-oauth";
@@ -12,7 +13,7 @@ describe("parseMcpOAuthSearchParams", () => {
       client_id: MCP_OAUTH_CLIENT_ID,
       redirect_uri: "http://127.0.0.1:34567/oauth/callback",
       resource: "http://127.0.0.1:3000/mcp",
-      scope: "mcp",
+      scope: MCP_OAUTH_SCOPE,
       state: "state-123",
       code_challenge: "challenge-123",
       code_challenge_method: "S256",
@@ -25,7 +26,7 @@ describe("parseMcpOAuthSearchParams", () => {
       client_id: MCP_OAUTH_CLIENT_ID,
       redirect_uri: "http://127.0.0.1:34567/oauth/callback",
       resource: "http://127.0.0.1:3000/mcp",
-      scope: "mcp",
+      scope: MCP_OAUTH_SCOPE,
       state: "state-123",
       code_challenge: "challenge-123",
       code_challenge_method: "S256",
@@ -56,7 +57,7 @@ describe("parseMcpOAuthSearchParams", () => {
       client_id: MCP_OAUTH_CLIENT_ID,
       redirect_uri: "http://127.0.0.1:34567/oauth/callback",
       resource: "http://127.0.0.1:3000/mcp",
-      scope: "mcp",
+      scope: MCP_OAUTH_SCOPE,
       state: "state-123",
       code_challenge: "challenge-123",
       code_challenge_method: "plain",
@@ -75,7 +76,7 @@ describe("buildMcpOAuthAuthorizeBody", () => {
       client_id: MCP_OAUTH_CLIENT_ID,
       redirect_uri: "http://127.0.0.1:34567/oauth/callback",
       resource: "http://127.0.0.1:3000/mcp",
-      scope: "mcp",
+      scope: MCP_OAUTH_SCOPE,
       state: "state-123",
       code_challenge: "challenge-123",
       code_challenge_method: "S256",

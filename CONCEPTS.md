@@ -102,11 +102,19 @@ The local game MCP is a corpus-level projection host over simulation artifacts. 
 
 ## MCP role / MCP scope
 
-The V0 authorization boundary for trusted MCP validation. A user with the `mcp` role may authorize the OAuth `mcp` scope, and a token with that scope grants global access to the MCP surfaces wired behind that scope. The first wired surface is read-only Game MCP, including its existing producer-visible simulation artifacts. V0 does not add per-user, per-private-trace, per-agent, or per-game filtering after OAuth.
+The privileged authorization boundary for trusted MCP validation. A user with the `mcp` role may authorize the OAuth `mcp` scope, and a token with that scope grants global access to the producer MCP surfaces wired behind that scope. It is not user-scoped and should not be reused for ordinary player game-history access.
+
+## Games MCP scope
+
+The user-facing OAuth scope for MCP clients that should be described as "access your games via MCP." A `games` token is resource-scoped to the authenticated subject's created or joined games and owned player/agent records. It does not grant producer/global corpus access, developer evidence access, private trace content, or private trace metadata.
+
+## Producer MCP
+
+The privileged deployed MCP resource at `/mcp/producer` for maintainer/developer inspection. Producer MCP keeps the existing `mcp` role / `scope=mcp` global access contract and carries producer evidence/private trace tooling.
 
 ## Game MCP OAuth token producer
 
-The app/API-side V0 OAuth surface that turns an existing logged-in app session plus the `mcp` role into a short-lived MCP bearer token. It owns the first-party authorization entrypoint, token exchange, static local MCP client policy, and token contract for the `game-mcp` audience. It is not a normal app session token, dynamic external client platform, or public hosted MCP surface.
+The app/API-side OAuth surface that turns an existing logged-in app session into a short-lived MCP bearer token for the `game-mcp` audience. It issues user-facing `games` tokens for `/mcp` without the `mcp` role, and producer `mcp` tokens for `/mcp/producer` only when the subject currently has the `mcp` role. It is not a normal app session token or a general third-party OAuth app platform.
 
 ## Game MCP OAuth bridge
 
@@ -114,7 +122,7 @@ A local developer bridge that validates a token with `scope=mcp` before delegati
 
 ## Production Game MCP
 
-A deployed Streamable HTTP MCP resource server for trusted validation against API-backed Influence game data. It uses the same developer-scoped `mcp` role / `scope=mcp` global authorization boundary as the local bridge. The V0 work is about remote client connection, OAuth discovery, and deployed inspection tools; it does not add resource scoping or strip private reasoning from developer inspection surfaces.
+A deployed Streamable HTTP MCP resource server for trusted validation against API-backed Influence game data. `/mcp` is the user-facing `scope=games` resource constrained by subject claims, while `/mcp/producer` is the privileged `scope=mcp` resource for global producer inspection and private trace tooling.
 
 ## Durable game-run kernel
 

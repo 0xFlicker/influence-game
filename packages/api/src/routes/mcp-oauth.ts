@@ -2,7 +2,7 @@
  * MCP OAuth routes.
  *
  * These routes produce opaque bearer tokens for Game MCP access.
- * The only app-level gate is the current user's RBAC role marker: `mcp`.
+ * `scope=games` is user-facing; `scope=mcp` is the producer/global boundary.
  */
 
 import { randomUUID } from "node:crypto";
@@ -18,13 +18,18 @@ import {
   exchangeMcpOAuthCode,
   getMcpOAuthAuthorizationEndpoint,
   getMcpOAuthAuthorizationServerIssuer,
+  getMcpOAuthProfile,
+  getMcpOAuthProfileResourceUri,
+  getMcpOAuthProfiles,
   getMcpOAuthRegistrationEndpoint,
-  getMcpOAuthResourceUri,
   getMcpOAuthTokenEndpoint,
   introspectMcpAccessToken,
   MCP_OAUTH_CLIENT_ID,
-  MCP_OAUTH_SCOPE,
+  profileForMcpResourceUri,
+  profileForMcpScope,
   registerMcpOAuthClient,
+  type McpAuthProfile,
+  type McpOAuthProfileName,
   type McpOAuthAuditMetadata,
   secretsEqual,
 } from "../services/mcp-oauth.js";
@@ -106,6 +111,7 @@ export function createMcpOAuthRoutes(
       clientId: safeAuditString(body.client_id),
       resource: safeAuditString(body.resource),
       scope: safeAuditString(body.scope),
+      authProfile: auditAuthProfileForRequest(body.scope, body.resource),
       decision,
       result: authorizeAuditResult(result.status, decision),
       status: result.status,
@@ -137,6 +143,7 @@ export function createMcpOAuthRoutes(
       clientId: result.audit?.clientId ?? safeAuditString(body.client_id),
       resource: result.audit?.resource ?? safeAuditString(body.resource),
       scope: result.audit?.scope ?? safeAuditString(result.body.scope),
+      authProfile: result.audit?.authProfile ?? auditAuthProfileForScope(result.body.scope),
       result: result.status === 200 ? "success" : "failure",
       status: result.status,
       denialReason: result.status === 200 ? undefined : bodyErrorCode(result.body),
@@ -212,6 +219,7 @@ export function createMcpOAuthRoutes(
       clientId: introspection.client_id,
       resource: introspection.resource,
       scope: introspection.scope,
+      authProfile: auditAuthProfileForScope(introspection.scope),
       result: introspection.active ? "success" : "failure",
       status: 200,
       denialReason: introspection.active ? undefined : "inactive_token",
@@ -221,12 +229,14 @@ export function createMcpOAuthRoutes(
   });
 
   app.get("/.well-known/oauth-protected-resource", (c) => {
-    return c.json(buildProtectedResourceMetadata(c));
+    return c.json(buildProtectedResourceMetadata(c, "games"));
   });
 
-  app.get("/.well-known/oauth-protected-resource/mcp", (c) => {
-    return c.json(buildProtectedResourceMetadata(c));
-  });
+  for (const profile of getMcpOAuthProfiles()) {
+    app.get(profile.protectedResourceMetadataPath, (c) => {
+      return c.json(buildProtectedResourceMetadata(c, profile.name));
+    });
+  }
 
   app.get("/.well-known/oauth-authorization-server", (c) => {
     const origin = requestOrigin(c);
@@ -239,7 +249,7 @@ export function createMcpOAuthRoutes(
       grant_types_supported: ["authorization_code"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
-      scopes_supported: [MCP_OAUTH_SCOPE],
+      scopes_supported: getMcpOAuthProfiles().map((profile) => profile.scope),
       client_id: MCP_OAUTH_CLIENT_ID,
     });
   });
@@ -276,14 +286,18 @@ function requestOrigin(c: Context): string {
   return url.origin;
 }
 
-function buildProtectedResourceMetadata(c: Context): Record<string, unknown> {
+function buildProtectedResourceMetadata(
+  c: Context,
+  profileName: McpOAuthProfileName,
+): Record<string, unknown> {
   const origin = requestOrigin(c);
+  const profile = getMcpOAuthProfile(profileName);
   return {
-    resource: getMcpOAuthResourceUri(),
+    resource: getMcpOAuthProfileResourceUri(profile),
     authorization_servers: [getMcpOAuthAuthorizationServerIssuer(origin)],
-    scopes_supported: [MCP_OAUTH_SCOPE],
+    scopes_supported: [profile.scope],
     bearer_methods_supported: ["header"],
-    resource_name: "Influence Game MCP",
+    resource_name: profile.resourceName,
   };
 }
 
@@ -291,6 +305,25 @@ function safeAuditString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed.slice(0, 160) : undefined;
+}
+
+function auditAuthProfileForScope(value: unknown): McpAuthProfile | undefined {
+  const scope = safeAuditString(value);
+  return scope ? profileForMcpScope(scope)?.authProfile : undefined;
+}
+
+function auditAuthProfileForRequest(
+  scopeValue: unknown,
+  resourceValue: unknown,
+): McpAuthProfile | undefined {
+  const scope = safeAuditString(scopeValue);
+  const resource = safeAuditString(resourceValue);
+  if (!scope || !resource) return auditAuthProfileForScope(scopeValue);
+  const profile = profileForMcpResourceUri(resource);
+  if (!profile) return auditAuthProfileForScope(scopeValue);
+  return scope.split(/\s+/).includes(profile.scope)
+    ? profile.authProfile
+    : auditAuthProfileForScope(scopeValue);
 }
 
 function bodyErrorCode(body: Record<string, unknown>): string | undefined {

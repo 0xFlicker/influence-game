@@ -10,6 +10,10 @@ import {
   type GameMcpAuthResult,
 } from "../game-mcp/auth.js";
 import {
+  getMcpOAuthProfile,
+  type McpOAuthProfileName,
+} from "../services/mcp-oauth.js";
+import {
   createProductionGameMcpServer,
   type JsonRpcRequest,
   type JsonRpcResponse,
@@ -27,13 +31,18 @@ export interface GameMcpAuditEvent {
   userId?: string;
   clientId?: string;
   resource?: string;
+  scope?: string;
+  authProfile?: string;
   method?: string;
   tool?: string;
   denialReason?: string;
 }
 
 export type GameMcpAuditLogger = (event: GameMcpAuditEvent) => void;
-export type GameMcpTokenValidator = (token: string) => Promise<GameMcpAuthResult>;
+export type GameMcpTokenValidator = (
+  token: string,
+  expectedProfile: McpOAuthProfileName,
+) => Promise<GameMcpAuthResult>;
 
 export interface CreateMcpRoutesOptions {
   server?: ProductionGameMcpJsonRpcServer;
@@ -49,16 +58,47 @@ export function createMcpRoutes(
   const app = new Hono();
   const server = options.server ?? createProductionGameMcpServer(db);
   const auditLogger = options.auditLogger ?? defaultAuditLogger;
-  const tokenValidator = options.tokenValidator ?? ((token) =>
-    validateGameMcpBearerToken(db, token)
+  const tokenValidator = options.tokenValidator ?? ((token, expectedProfile) =>
+    validateGameMcpBearerToken(db, token, expectedProfile)
   );
   const maxPostBytes = options.maxPostBytes ?? DEFAULT_MAX_POST_BYTES;
 
-  app.get("/mcp", async (c) => {
-    const auth = await preflight(c, auditLogger, tokenValidator);
+  registerMcpResource(app, {
+    path: getMcpOAuthProfile("games").resourcePath,
+    expectedProfile: "games",
+    server,
+    auditLogger,
+    tokenValidator,
+    maxPostBytes,
+  });
+  registerMcpResource(app, {
+    path: getMcpOAuthProfile("producer").resourcePath,
+    expectedProfile: "producer",
+    server,
+    auditLogger,
+    tokenValidator,
+    maxPostBytes,
+  });
+
+  return app;
+}
+
+function registerMcpResource(
+  app: Hono,
+  params: {
+    path: string;
+    expectedProfile: McpOAuthProfileName;
+    server: ProductionGameMcpJsonRpcServer;
+    auditLogger: GameMcpAuditLogger;
+    tokenValidator: GameMcpTokenValidator;
+    maxPostBytes: number;
+  },
+): void {
+  app.get(params.path, async (c) => {
+    const auth = await preflight(c, params.expectedProfile, params.auditLogger, params.tokenValidator);
     if (!auth.ok) return auth.response;
 
-    emitAudit(auditLogger, {
+    emitAudit(params.auditLogger, {
       event: "mcp.http.request",
       correlationId: getCorrelationId(c),
       result: "failure",
@@ -66,32 +106,34 @@ export function createMcpRoutes(
       userId: auth.context.userId,
       clientId: auth.context.clientId,
       resource: auth.context.resource,
+      scope: auth.context.scope,
+      authProfile: auth.context.authProfile,
       denialReason: "method_not_allowed",
     });
     c.header("Allow", "POST");
     return c.json({ error: "method_not_allowed", error_description: "Use POST for MCP JSON-RPC requests" }, 405);
   });
 
-  app.post("/mcp", async (c) => {
+  app.post(params.path, async (c) => {
     const correlationId = getCorrelationId(c);
-    const auth = await preflight(c, auditLogger, tokenValidator);
+    const auth = await preflight(c, params.expectedProfile, params.auditLogger, params.tokenValidator);
     if (!auth.ok) return auth.response;
 
     const contentLength = Number(c.req.header("content-length") ?? "0");
-    if (Number.isFinite(contentLength) && contentLength > maxPostBytes) {
-      return fail(c, auditLogger, correlationId, auth.context, 413, "request_too_large");
+    if (Number.isFinite(contentLength) && contentLength > params.maxPostBytes) {
+      return fail(c, params.auditLogger, correlationId, auth.context, 413, "request_too_large");
     }
 
     if (!contentTypeIsJson(c.req.header("content-type"))) {
-      return fail(c, auditLogger, correlationId, auth.context, 415, "unsupported_media_type");
+      return fail(c, params.auditLogger, correlationId, auth.context, 415, "unsupported_media_type");
     }
 
     if (!acceptsMcpResponse(c.req.header("accept"))) {
-      return fail(c, auditLogger, correlationId, auth.context, 406, "not_acceptable");
+      return fail(c, params.auditLogger, correlationId, auth.context, 406, "not_acceptable");
     }
 
     if (!protocolVersionIsSupported(c.req.header("mcp-protocol-version"))) {
-      return fail(c, auditLogger, correlationId, auth.context, 400, "unsupported_protocol_version");
+      return fail(c, params.auditLogger, correlationId, auth.context, 400, "unsupported_protocol_version");
     }
 
     let rawBody: string;
@@ -99,7 +141,7 @@ export function createMcpRoutes(
       rawBody = await c.req.text();
     } catch {
       const response = jsonRpcError(null, -32700, "Parse error");
-      emitAudit(auditLogger, {
+      emitAudit(params.auditLogger, {
         event: "mcp.http.request",
         correlationId,
         result: "failure",
@@ -107,13 +149,15 @@ export function createMcpRoutes(
         userId: auth.context.userId,
         clientId: auth.context.clientId,
         resource: auth.context.resource,
+        scope: auth.context.scope,
+        authProfile: auth.context.authProfile,
         denialReason: "parse_error",
       });
       return c.json(response, 400);
     }
 
-    if (bodyByteLength(rawBody) > maxPostBytes) {
-      return fail(c, auditLogger, correlationId, auth.context, 413, "request_too_large");
+    if (bodyByteLength(rawBody) > params.maxPostBytes) {
+      return fail(c, params.auditLogger, correlationId, auth.context, 413, "request_too_large");
     }
 
     let body: unknown;
@@ -121,7 +165,7 @@ export function createMcpRoutes(
       body = JSON.parse(rawBody);
     } catch {
       const response = jsonRpcError(null, -32700, "Parse error");
-      emitAudit(auditLogger, {
+      emitAudit(params.auditLogger, {
         event: "mcp.http.request",
         correlationId,
         result: "failure",
@@ -129,6 +173,8 @@ export function createMcpRoutes(
         userId: auth.context.userId,
         clientId: auth.context.clientId,
         resource: auth.context.resource,
+        scope: auth.context.scope,
+        authProfile: auth.context.authProfile,
         denialReason: "parse_error",
       });
       return c.json(response, 400);
@@ -136,7 +182,7 @@ export function createMcpRoutes(
 
     const validation = validateJsonRpcRequest(body);
     if (!validation.ok) {
-      emitAudit(auditLogger, {
+      emitAudit(params.auditLogger, {
         event: "mcp.http.request",
         correlationId,
         result: validation.status === 202 ? "success" : "failure",
@@ -144,6 +190,8 @@ export function createMcpRoutes(
         userId: auth.context.userId,
         clientId: auth.context.clientId,
         resource: auth.context.resource,
+        scope: auth.context.scope,
+        authProfile: auth.context.authProfile,
         denialReason: validation.reason,
       });
       return validation.status === 202
@@ -151,8 +199,8 @@ export function createMcpRoutes(
         : c.json(validation.response, validation.status);
     }
 
-    const response = await server.handle(validation.request);
-    emitAudit(auditLogger, {
+    const response = await params.server.handle(validation.request, auth.context);
+    emitAudit(params.auditLogger, {
       event: "mcp.http.request",
       correlationId,
       result: response?.error ? "failure" : "success",
@@ -160,6 +208,8 @@ export function createMcpRoutes(
       userId: auth.context.userId,
       clientId: auth.context.clientId,
       resource: auth.context.resource,
+      scope: auth.context.scope,
+      authProfile: auth.context.authProfile,
       method: validation.request.method,
       tool: toolName(validation.request),
       denialReason: response?.error ? "json_rpc_error" : undefined,
@@ -168,12 +218,11 @@ export function createMcpRoutes(
     if (!response) return c.body(null, 202);
     return c.json(response);
   });
-
-  return app;
 }
 
 async function preflight(
   c: Context,
+  expectedProfile: McpOAuthProfileName,
   auditLogger: GameMcpAuditLogger,
   tokenValidator: GameMcpTokenValidator,
 ): Promise<
@@ -217,7 +266,7 @@ async function preflight(
   const requestOrigin = new URL(c.req.url).origin;
   const token = extractBearerToken(c.req.header("Authorization"));
   if (!token) {
-    c.header("WWW-Authenticate", bearerChallenge(requestOrigin));
+    c.header("WWW-Authenticate", bearerChallenge(requestOrigin, expectedProfile));
     emitAudit(auditLogger, {
       event: "mcp.http.request",
       correlationId,
@@ -233,9 +282,9 @@ async function preflight(
 
   let auth: GameMcpAuthResult;
   try {
-    auth = await tokenValidator(token);
+    auth = await tokenValidator(token, expectedProfile);
   } catch {
-    c.header("WWW-Authenticate", bearerChallenge(requestOrigin));
+    c.header("WWW-Authenticate", bearerChallenge(requestOrigin, expectedProfile));
     emitAudit(auditLogger, {
       event: "mcp.http.request",
       correlationId,
@@ -252,7 +301,7 @@ async function preflight(
     };
   }
   if (!auth.ok) {
-    c.header("WWW-Authenticate", bearerChallenge(requestOrigin));
+    c.header("WWW-Authenticate", bearerChallenge(requestOrigin, expectedProfile));
     emitAudit(auditLogger, {
       event: "mcp.http.request",
       correlationId,
@@ -335,6 +384,8 @@ function fail(
     userId: auth.userId,
     clientId: auth.clientId,
     resource: auth.resource,
+    scope: auth.scope,
+    authProfile: auth.authProfile,
     denialReason,
   });
   return c.json({ error: denialReason }, status);

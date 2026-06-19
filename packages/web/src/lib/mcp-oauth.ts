@@ -1,5 +1,7 @@
 export const MCP_OAUTH_CLIENT_ID = "influence-game-mcp-local";
-export const MCP_OAUTH_SCOPE = "mcp";
+export const MCP_OAUTH_GAMES_SCOPE = "games";
+export const MCP_OAUTH_PRODUCER_SCOPE = "mcp";
+export const MCP_OAUTH_SCOPE = MCP_OAUTH_GAMES_SCOPE;
 
 export interface McpOAuthAuthorizeRequest {
   response_type: "code";

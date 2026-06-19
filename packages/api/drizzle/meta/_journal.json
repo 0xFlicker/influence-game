@@ -99,6 +99,13 @@
       "when": 1781913600000,
       "tag": "0013_mcp_oauth_clients",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1782000000000,
+      "tag": "0014_games_scope_mcp_oauth",
+      "breakpoints": true
     }
   ]
 }

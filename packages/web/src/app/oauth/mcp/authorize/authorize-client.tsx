@@ -35,7 +35,7 @@ export function McpOAuthAuthorizeClient() {
 
   const e2e = useE2EAuth();
   const { ready, authenticated, login } = usePrivy();
-  const { loading: permissionsLoading, user } = usePermissions();
+  const { loading: permissionsLoading, user, authError } = usePermissions();
   const effectiveReady = e2e.isE2E ? e2e.ready : ready;
   const effectiveAuth = e2e.isE2E ? e2e.authenticated : authenticated;
 
@@ -64,8 +64,13 @@ export function McpOAuthAuthorizeClient() {
       return;
     }
 
-    if (permissionsLoading) {
+    if (permissionsLoading || (!user && !authError)) {
       setFlow({ kind: "checking" });
+      return;
+    }
+
+    if (authError) {
+      setFlow({ kind: "signin" });
       return;
     }
 
@@ -105,7 +110,7 @@ export function McpOAuthAuthorizeClient() {
     return () => {
       cancelled = true;
     };
-  }, [parsed, effectiveReady, effectiveAuth, permissionsLoading]);
+  }, [parsed, effectiveReady, effectiveAuth, permissionsLoading, user, authError]);
 
   const submitDecision = useCallback(async (
     request: McpOAuthAuthorizeRequest,
@@ -178,7 +183,9 @@ export function McpOAuthAuthorizeClient() {
 
           {flow.kind === "denied" && (
             <ProblemState
-              title="MCP Role Required"
+              title={parsed.ok && isProducerAuthorizationRequest(parsed.request)
+                ? "MCP Role Required"
+                : "Authorization Denied"}
               message={flow.message}
               redirectTo={flow.redirectTo}
             />
@@ -195,57 +202,91 @@ export function McpOAuthAuthorizeClient() {
           {flow.kind === "redirecting" && <StatusMessage message={flow.label} />}
 
           {flow.kind === "ready" && parsed.ok && (
-            <div className="space-y-6">
-              <dl className="grid gap-3 rounded-lg border border-[rgb(var(--border-active)/0.5)] bg-[rgb(var(--surface-raised)/0.42)] p-4 text-sm sm:grid-cols-2">
-                <Detail label="Signed in as" value={user?.displayName ?? user?.walletAddress ?? "Current user"} />
-                <Detail label="Wallet" value={user?.walletAddress ?? "No wallet"} />
-                <Detail label="Client" value={flow.preview.clientId} />
-                <Detail label="Scope" value={flow.preview.scope} />
-                <Detail label="Resource" value={flow.preview.resource} wide />
-                <Detail label="Redirect" value={flow.preview.redirectUri} wide />
-                <Detail
-                  label="Grant"
-                  value="Global read-only Game MCP access, including developer evidence and private reasoning tools"
-                  wide
-                />
-              </dl>
-
-              <p className="influence-copy text-sm">
-                Approving grants bearer access to the deployed Game MCP surface for this environment.
-                This is trusted maintainer access to wired inspection tools, not a per-game or per-player grant.
-              </p>
-
-              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                <button
-                  type="button"
-                  onClick={() => submitDecision(parsed.request, "cancel")}
-                  disabled={submitting !== null}
-                  className="influence-button-quiet rounded-lg px-4 py-2 text-sm font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => submitDecision(parsed.request, "deny")}
-                  disabled={submitting !== null}
-                  className="influence-button-secondary rounded-lg px-4 py-2 text-sm font-medium"
-                >
-                  Deny
-                </button>
-                <button
-                  type="button"
-                  onClick={() => submitDecision(parsed.request, "approve")}
-                  disabled={submitting !== null}
-                  className="influence-button-primary rounded-lg px-5 py-2 text-sm font-medium"
-                >
-                  Approve
-                </button>
-              </div>
-            </div>
+            <ConsentDetails
+              preview={flow.preview}
+              displayName={user?.displayName}
+              walletAddress={user?.walletAddress}
+              submitting={submitting}
+              onDecision={(decision) => submitDecision(parsed.request, decision)}
+            />
           )}
         </div>
       </section>
     </main>
+  );
+}
+
+function isProducerAuthorizationRequest(request: McpOAuthAuthorizeRequest): boolean {
+  if (!request.scope.split(/\s+/).includes("mcp")) return false;
+  try {
+    return new URL(request.resource).pathname === "/mcp/producer";
+  } catch {
+    return false;
+  }
+}
+
+function ConsentDetails({
+  preview,
+  displayName,
+  walletAddress,
+  submitting,
+  onDecision,
+}: {
+  preview: McpOAuthAuthorizePreview;
+  displayName?: string | null;
+  walletAddress?: string | null;
+  submitting: McpOAuthDecision | null;
+  onDecision: (decision: Exclude<McpOAuthDecision, "inspect">) => void;
+}) {
+  const isProducerGrant = preview.scope === "mcp" || preview.authProfile === "producer_mcp";
+  const grant = isProducerGrant
+    ? "Global read-only producer MCP access, including developer evidence and private reasoning tools"
+    : "Access your Influence games via MCP: games you created or joined and your player/agent records";
+  const copy = isProducerGrant
+    ? "Approving grants bearer access to the deployed producer MCP surface for this environment. This is trusted maintainer access to wired inspection tools, not a per-game or per-player grant."
+    : "Approving grants bearer access to your game history on this environment. Private trace content and producer inspection tools are not included.";
+
+  return (
+    <div className="space-y-6">
+      <dl className="grid gap-3 rounded-lg border border-[rgb(var(--border-active)/0.5)] bg-[rgb(var(--surface-raised)/0.42)] p-4 text-sm sm:grid-cols-2">
+        <Detail label="Signed in as" value={displayName ?? walletAddress ?? "Current user"} />
+        <Detail label="Wallet" value={walletAddress ?? "No wallet"} />
+        <Detail label="Client" value={preview.clientId} />
+        <Detail label="Scope" value={preview.scope} />
+        <Detail label="Resource" value={preview.resource} wide />
+        <Detail label="Redirect" value={preview.redirectUri} wide />
+        <Detail label="Grant" value={grant} wide />
+      </dl>
+
+      <p className="influence-copy text-sm">{copy}</p>
+
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        <button
+          type="button"
+          onClick={() => onDecision("cancel")}
+          disabled={submitting !== null}
+          className="influence-button-quiet rounded-lg px-4 py-2 text-sm font-medium"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => onDecision("deny")}
+          disabled={submitting !== null}
+          className="influence-button-secondary rounded-lg px-4 py-2 text-sm font-medium"
+        >
+          Deny
+        </button>
+        <button
+          type="button"
+          onClick={() => onDecision("approve")}
+          disabled={submitting !== null}
+          className="influence-button-primary rounded-lg px-5 py-2 text-sm font-medium"
+        >
+          Approve
+        </button>
+      </div>
+    </div>
   );
 }
 

@@ -8,6 +8,25 @@ import {
   ProductionGameMcpReadModel,
 } from "../game-mcp/read-model.js";
 import type { PrivateTraceReadModel } from "../services/private-trace-read-model.js";
+import type { GameMcpAuthContext } from "../game-mcp/auth.js";
+
+const GAMES_AUTH: GameMcpAuthContext = {
+  userId: "user-1",
+  clientId: "client-1",
+  resource: "http://127.0.0.1:3000/mcp",
+  scope: "games",
+  authProfile: "games_subject",
+  expiresAt: 1_800_000_000,
+};
+
+const PRODUCER_AUTH: GameMcpAuthContext = {
+  userId: "producer-1",
+  clientId: "client-1",
+  resource: "http://127.0.0.1:3000/mcp/producer",
+  scope: "mcp",
+  authProfile: "producer_mcp",
+  expiresAt: 1_800_000_000,
+};
 
 describe("ProductionGameMcpJsonRpcServer", () => {
   test("advertises deployed read-only tools with MCP auth metadata", async () => {
@@ -16,7 +35,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       jsonrpc: "2.0",
       id: 1,
       method: "tools/list",
-    });
+    }, PRODUCER_AUTH);
 
     expect(response?.error).toBeUndefined();
     const tools = ((response?.result as { tools: unknown[] }).tools);
@@ -36,6 +55,27 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(JSON.stringify(searchTool)).not.toContain("maxBytesPerObject");
   });
 
+  test("advertises only user-facing tools for games-scope auth", async () => {
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+    }, GAMES_AUTH);
+
+    expect(response?.error).toBeUndefined();
+    const tools = ((response?.result as { tools: unknown[] }).tools);
+    expect(tools.map((tool) => (tool as { name: string }).name)).toEqual([
+      "list_games",
+      "read_projection",
+      "filter_events",
+      "player_timeline",
+    ]);
+    expect(JSON.stringify(tools)).toContain("\"scopes\":[\"games\"]");
+    expect(JSON.stringify(tools)).not.toContain("read_trace_content");
+    expect(JSON.stringify(tools)).not.toContain("producer\"]");
+  });
+
   test("routes tool calls to the production read model", async () => {
     const calls: string[] = [];
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
@@ -50,13 +90,74 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       id: "call-1",
       method: "tools/call",
       params: { name: "list_games", arguments: { limit: 1 } },
-    });
+    }, PRODUCER_AUTH);
 
     expect(response?.id).toBe("call-1");
     expect(response?.error).toBeUndefined();
     expect(calls).toEqual(["listGames"]);
     const text = ((response?.result as { content: Array<{ text: string }> }).content[0]?.text);
     expect(text).toContain("\"ok\": true");
+  });
+
+  test("forwards games auth context to user-facing resources and tools", async () => {
+    const calls: Array<{ method: string; access: unknown }> = [];
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
+      listGames: async (_access: unknown, _limit?: number) => {
+        calls.push({ method: "listGames", access: _access });
+        return { games: [] };
+      },
+      readProjection: async (_gameIdOrSlug: string, access: unknown) => {
+        calls.push({ method: "readProjection", access });
+        return { projection: null };
+      },
+      filterEvents: async (_args: unknown, access: unknown) => {
+        calls.push({ method: "filterEvents", access });
+        return { events: [] };
+      },
+      playerTimeline: async (_args: unknown, access: unknown) => {
+        calls.push({ method: "playerTimeline", access });
+        return { events: [] };
+      },
+    }));
+
+    await server.handle({
+      jsonrpc: "2.0",
+      id: "resource-read",
+      method: "resources/read",
+      params: { uri: "influence-game://deployed/games" },
+    }, GAMES_AUTH);
+    await server.handle({
+      jsonrpc: "2.0",
+      id: "list",
+      method: "tools/call",
+      params: { name: "list_games", arguments: { limit: 1 } },
+    }, GAMES_AUTH);
+    await server.handle({
+      jsonrpc: "2.0",
+      id: "projection",
+      method: "tools/call",
+      params: { name: "read_projection", arguments: { gameIdOrSlug: "game-1" } },
+    }, GAMES_AUTH);
+    await server.handle({
+      jsonrpc: "2.0",
+      id: "events",
+      method: "tools/call",
+      params: { name: "filter_events", arguments: { gameIdOrSlug: "game-1" } },
+    }, GAMES_AUTH);
+    await server.handle({
+      jsonrpc: "2.0",
+      id: "timeline",
+      method: "tools/call",
+      params: { name: "player_timeline", arguments: { gameIdOrSlug: "game-1", player: "Ada" } },
+    }, GAMES_AUTH);
+
+    expect(calls).toEqual([
+      { method: "listGames", access: GAMES_AUTH },
+      { method: "listGames", access: GAMES_AUTH },
+      { method: "readProjection", access: GAMES_AUTH },
+      { method: "filterEvents", access: GAMES_AUTH },
+      { method: "playerTimeline", access: GAMES_AUTH },
+    ]);
   });
 
   test("rejects unknown or mutation-shaped tools before read model calls", async () => {
@@ -66,10 +167,24 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       id: "bad-tool",
       method: "tools/call",
       params: { name: "start_game", arguments: { gameIdOrSlug: "g1" } },
-    });
+    }, PRODUCER_AUTH);
 
     expect(response?.error?.message).toBe(
       "Unknown or mutation-shaped tool is not supported: start_game",
+    );
+  });
+
+  test("rejects producer-only tools for games-scope auth", async () => {
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: "trace-tool",
+      method: "tools/call",
+      params: { name: "read_trace_content", arguments: { manifestId: "m1" } },
+    }, GAMES_AUTH);
+
+    expect(response?.error?.message).toBe(
+      "Unknown or producer-only tool is not supported for scope=games: read_trace_content",
     );
   });
 
@@ -95,7 +210,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
           maxBytesPerObject: 1,
         },
       },
-    });
+    }, PRODUCER_AUTH);
 
     expect(response?.error).toBeUndefined();
     expect(calls).toEqual([{
@@ -128,7 +243,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       } as unknown as PrivateTraceReadModel,
     );
 
-    await readModel.readTraceContent({ manifestId: "manifest-1" });
+    await readModel.readTraceContent({ manifestId: "manifest-1" }, PRODUCER_AUTH);
 
     expect(calls).toEqual([{
       manifestId: "manifest-1",
@@ -160,6 +275,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const timeline = await ProductionGameMcpReadModel.prototype.playerTimeline.call(
       readModel,
       { gameIdOrSlug: "game-1", player: "Ada" },
+      PRODUCER_AUTH,
     );
 
     expect(timeline.canonicalGameFacts).toMatchObject({
@@ -188,7 +304,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         jsonrpc: "2.0",
         id: "init",
         method: "initialize",
-      });
+      }, PRODUCER_AUTH);
 
       expect(response?.error).toBeUndefined();
       expect(response?.result).toMatchObject({

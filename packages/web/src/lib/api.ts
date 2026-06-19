@@ -292,6 +292,7 @@ export interface McpOAuthAuthorizePreview {
   redirectUri: string;
   resource: string;
   scope: string;
+  authProfile?: "games_subject" | "producer_mcp";
   hasMcpRole: boolean;
   expiresIn: number;
   walletAddress: string | null;
