@@ -426,6 +426,65 @@ export const addressRoles = pgTable("address_roles", {
 ]);
 
 // ---------------------------------------------------------------------------
+// MCP OAuth — Authorization Codes
+// ---------------------------------------------------------------------------
+
+export const mcpOauthAuthorizationCodes = pgTable("mcp_oauth_authorization_codes", {
+  id: text("id").primaryKey(), // UUID
+  codeHash: text("code_hash").notNull().unique(), // sha256:<hex>; raw code is never stored
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  walletAddress: text("wallet_address").notNull(),
+  clientId: text("client_id").notNull(),
+  redirectUri: text("redirect_uri").notNull(),
+  scope: text("scope").notNull(),
+  codeChallenge: text("code_challenge").notNull(),
+  codeChallengeMethod: text("code_challenge_method").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  usedAt: text("used_at"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("mcp_oauth_authorization_codes_code_hash_unique").on(table.codeHash),
+  index("mcp_oauth_authorization_codes_user_id_idx").on(table.userId),
+  index("mcp_oauth_authorization_codes_expires_at_idx").on(table.expiresAt),
+  check("mcp_oauth_authorization_codes_scope_check", sql`${table.scope} = 'mcp'`),
+  check("mcp_oauth_authorization_codes_pkce_method_check", sql`${table.codeChallengeMethod} = 'S256'`),
+]);
+
+// ---------------------------------------------------------------------------
+// MCP OAuth — Access Tokens
+// ---------------------------------------------------------------------------
+
+export const mcpOauthAccessTokens = pgTable("mcp_oauth_access_tokens", {
+  id: text("id").primaryKey(), // UUID
+  tokenHash: text("token_hash").notNull().unique(), // sha256:<hex>; raw token is never stored
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  walletAddress: text("wallet_address").notNull(),
+  clientId: text("client_id").notNull(),
+  scope: text("scope").notNull(),
+  audience: text("audience").notNull(),
+  purpose: text("purpose").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  revokedAt: text("revoked_at"),
+  lastUsedAt: text("last_used_at"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("mcp_oauth_access_tokens_token_hash_unique").on(table.tokenHash),
+  index("mcp_oauth_access_tokens_user_id_idx").on(table.userId),
+  index("mcp_oauth_access_tokens_expires_at_idx").on(table.expiresAt),
+  check("mcp_oauth_access_tokens_scope_check", sql`${table.scope} = 'mcp'`),
+  check("mcp_oauth_access_tokens_audience_check", sql`${table.audience} = 'game-mcp'`),
+  check("mcp_oauth_access_tokens_purpose_check", sql`${table.purpose} = 'mcp_access'`),
+]);
+
+// ---------------------------------------------------------------------------
 // Free Game Queue
 // ---------------------------------------------------------------------------
 

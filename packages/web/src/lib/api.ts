@@ -271,6 +271,50 @@ export async function checkInviteRequired(): Promise<{ required: boolean }> {
 }
 
 // ---------------------------------------------------------------------------
+// MCP OAuth API calls
+// ---------------------------------------------------------------------------
+
+export interface McpOAuthAuthorizeRequest {
+  response_type: "code";
+  client_id: string;
+  redirect_uri: string;
+  scope: string;
+  state: string;
+  code_challenge: string;
+  code_challenge_method: "S256";
+}
+
+export type McpOAuthDecision = "inspect" | "approve" | "deny" | "cancel";
+
+export interface McpOAuthAuthorizePreview {
+  clientId: string;
+  redirectUri: string;
+  scope: string;
+  hasMcpRole: boolean;
+  expiresIn: number;
+  walletAddress: string | null;
+}
+
+export interface McpOAuthAuthorizeRedirect {
+  redirectTo: string;
+  expiresIn?: number;
+}
+
+export type McpOAuthAuthorizeResponse =
+  | McpOAuthAuthorizePreview
+  | McpOAuthAuthorizeRedirect;
+
+export async function authorizeMcpOAuth(
+  request: McpOAuthAuthorizeRequest,
+  decision: McpOAuthDecision,
+): Promise<McpOAuthAuthorizeResponse> {
+  return apiFetch("/api/oauth/mcp/authorize", {
+    method: "POST",
+    body: JSON.stringify({ ...request, decision }),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Invite code types
 // ---------------------------------------------------------------------------
 

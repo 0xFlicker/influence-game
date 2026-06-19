@@ -93,6 +93,24 @@ describe("gamer role seed", () => {
   });
 });
 
+describe("mcp role seed", () => {
+  test("resolves as a role marker without app permissions", async () => {
+    const db = await setupDB();
+    await createUser(db, "0xmcp000000000000000000000000000000000001", "MCP");
+    await assignRole(db, "0xmcp000000000000000000000000000000000001", "mcp");
+
+    const resolved = await getPermissionsForAddress(
+      db,
+      "0xmcp000000000000000000000000000000000001",
+    );
+
+    expect(resolved.roles).toEqual(["mcp"]);
+    expect(resolved.permissions).toEqual([]);
+    expect(resolved.permissions).not.toContain("manage_roles");
+    expect(resolved.permissions).not.toContain("view_admin");
+  });
+});
+
 describe("admin route RBAC", () => {
   let db: DrizzleDB;
   let app: Hono;

@@ -58,6 +58,12 @@ const ROLES = [
     ],
   },
   {
+    name: "mcp",
+    description: "Can authorize global MCP access through OAuth",
+    isSystem: 1,
+    permissions: [],
+  },
+  {
     name: "player",
     description: "Standard player who can join games",
     isSystem: 0,

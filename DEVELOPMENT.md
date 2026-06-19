@@ -410,6 +410,8 @@ Simulation batches are written under `packages/engine/docs/simulations/`. Use `g
 
 For local MCP queries across past and current simulations, run `cd packages/engine && bun run mcp:game -- docs/simulations`. The MCP is read-only, scans the corpus on demand, and requires `sessionId + gameNumber` for game-specific projection/timeline queries. Tool results include MCP `resourceUri` values for full artifacts; use `resources/read` with those URIs for events, turns, progress, transcript, or game JSON instead of treating `sourcePath` as repo-root-relative. Use `search_logs` over `sources: ["turns"]` for `mingle-intent`, `mingle-room-assignment`, `mingle-turn`, `strategic-reflection`, `strategy-packet`, `strategicLens`, `decisionLog`, `gotoPlayerName`, `gotoStatus`, `empower-revote`, `candidate-selection`, `power-action`, or `shieldPullUp` when validating whether agents are using open strategic choices. Use `search_logs` over `sources: ["turns", "transcript"]` for `house-mc-summary`, legacy `[House MC]`, `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or named House alliances when validating House producer carry-forward.
 
+For OAuth-gated Game MCP validation, first give the signed-in wallet the `mcp` role and set the same high-entropy `INFLUENCE_MCP_INTROSPECTION_SECRET` for the API and local bridge. With the API on `http://127.0.0.1:3000` and web on `http://localhost:3001`, run `cd packages/engine && bun run mcp:game:login`, approve `scope=mcp` in the browser, then launch the bridge with `bun run mcp:game:oauth -- docs/simulations`. The helper saves the one-hour token to `~/.influence-game/mcp-token.json` with user-only file permissions; override with `INFLUENCE_MCP_TOKEN_FILE` for connected MCP clients. The bridge reads `INFLUENCE_MCP_TOKEN` first and then the saved token file. The token has no refresh token; rerun the helper and restart the MCP client/bridge after expiry. `scope=mcp` is global access to wired MCP surfaces, with read-only Game MCP as the V0 surface. Do not describe it as per-user private-trace, per-agent, or per-game authorization; Trace MCP/private-content reads remain separate local tooling unless wired later.
+
 For API-backed durable runs, use `./scripts/run-trace-mcp-local.sh` from a trusted local environment. This local Trace MCP reads Postgres durable-run state and private trace manifests, then opens raw trace content only through the explicit `read_content` tool. The wrapper bootstraps local Postgres and local private content S3, sources `.env.private-trace.local`, runs API migrations, sends setup logs to stderr, and then starts the stdio MCP server. It relies on the same local DB/private-storage env as the API (`DATABASE_URL`, `LINODE_PRIVATE_CONTENT_ENDPOINT`, `LINODE_PRIVATE_CONTENT_ACCESS_KEY`, `LINODE_PRIVATE_CONTENT_SECRET_KEY`, `LINODE_PRIVATE_CONTENT_BUCKET`) and is deliberately not a production/admin MCP surface. Use `bun run trace:local:smoke` for a one-command local Postgres + private content S3 writer/read/search validation. Keep browser login, releasable packaging, cross-run trace search, and web UI affordances out until those are designed as their own slice.
 
 `InfluenceAgent` uses OpenAI-compatible chat completions. Hosted OpenAI runs use `OPENAI_API_KEY`; local runs can use `INFLUENCE_LLM_BASE_URL` with LM Studio. Current repo defaults are budget `gpt-5-nano`, standard `gpt-5-mini`, and premium `gpt-5.4-mini`; override server-side tiers with `INFLUENCE_MODEL_BUDGET`, `INFLUENCE_MODEL_STANDARD`, and `INFLUENCE_MODEL_PREMIUM` when testing local models.
@@ -437,14 +439,13 @@ bun run simulate -- --games 2 --players 8 --personas Atlas,Vera,Finn,Mira,Rex,Ly
 Run the local browser stack with explicit Doppler dev config:
 
 ```bash
-doppler run --project social-strategy-agent --config dev -- \
-  env PORT=3000 HOST=127.0.0.1 CORS_ORIGINS=http://localhost:3001 \
-  bun run dev:api
+bun run s3:bootstrap
+doppler run --project social-strategy-agent --config dev -- env PORT=3000 bun run dev:api
 
-doppler run --project social-strategy-agent --config dev -- \
-  env PORT=3001 API_URL=http://127.0.0.1:3000 WS_URL=ws://127.0.0.1:3000 API_BACKEND_URL=http://127.0.0.1:3000 \
-  bun run dev:web
+doppler run --project social-strategy-agent --config dev -- env PORT=3001 bun run dev:web
 ```
+
+The private trace env has to be loaded into the API process before a game starts. If the API was already running, restart it after sourcing `.env.private-trace.local`; the trace writer is best-effort and gameplay can complete without private trace manifests when these vars are missing.
 
 The web command is Doppler-wrapped because runtime config such as Privy, admin address, API URL, and websocket URL may come from the shared dev config. The API URL uses `127.0.0.1` rather than `localhost` so Chrome does not resolve the API to IPv6 `[::1]` and accidentally hit another local dev server.
 
@@ -481,7 +482,7 @@ LINODE_PRIVATE_CONTENT_SECRET_KEY=influence-private
 LINODE_PRIVATE_CONTENT_BUCKET=influence-private-content-local
 ```
 
-The script starts a Docker MinIO container named `influence-private-content-s3`, creates the private bucket, and writes `.env.private-trace.local`. Keep `LINODE_PRIVATE_CONTENT_BUCKET` separate from `LINODE_OBJ_BUCKET`; the writer rejects the public/profile bucket for raw trace content. Staging/production must set `LINODE_PRIVATE_CONTENT_ENDPOINT`, `LINODE_PRIVATE_CONTENT_ACCESS_KEY`, `LINODE_PRIVATE_CONTENT_SECRET_KEY`, and `LINODE_PRIVATE_CONTENT_BUCKET`; the private content key should be scoped to that bucket rather than reusing the profile-picture upload key. Run `bun run trace:local:smoke` to bootstrap Postgres and local private content S3, then write/read/search one private trace through the real storage adapter.
+The script starts a Docker MinIO container, creates the private bucket, and writes `.env.private-trace.local`. Restarting Docker does not usually require updating that file if the same MinIO container, ports, bucket, and credentials are still present. If the container was recreated, credentials changed, or trace manifests are missing after a run, rerun `bun run s3:bootstrap`, restart the API with the env sourced, and run `bun run trace:local:smoke` to verify write/read/search through the real storage adapter. Keep `LINODE_PRIVATE_CONTENT_BUCKET` separate from `LINODE_OBJ_BUCKET`; the writer rejects the public/profile bucket for raw trace content. Staging/production must set `LINODE_PRIVATE_CONTENT_ENDPOINT`, `LINODE_PRIVATE_CONTENT_ACCESS_KEY`, `LINODE_PRIVATE_CONTENT_SECRET_KEY`, and `LINODE_PRIVATE_CONTENT_BUCKET`; the private content key should be scoped to that bucket rather than reusing the profile-picture upload key.
 
 For Codex or another MCP client, configure the command as the wrapper script directly so setup output stays on stderr and the MCP JSON-RPC stream stays clean:
 

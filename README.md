@@ -79,6 +79,16 @@ bun run mcp:game -- docs/simulations
 
 The game MCP is read-only. It discovers past and currently-writing simulation batches, addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and can list sessions/games, filter events, search logs, read player timelines, and return cited linked records when source pointers are present. Passing a single batch directory still works for focused inspection, but returned records include a `sessionId`. For strategy-observability validation, search turns logs for `mingle-intent`, `mingle-room-assignment`, `mingle-turn`, `strategic-reflection`, `strategy-packet`, `strategicLens`, `decisionLog`, `gotoPlayerName`, `gotoStatus`, `empower-revote`, `candidate-selection`, `power-action`, or `shieldPullUp`. For House producer validation, search for `house-mc-summary`, legacy `[House MC]`, `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or named House alliances.
 
+To exercise the OAuth-gated local Game MCP bridge, assign the signed-in wallet the `mcp` role, configure the API and bridge with the same high-entropy `INFLUENCE_MCP_INTROSPECTION_SECRET`, then run:
+
+```bash
+cd packages/engine
+bun run mcp:game:login
+bun run mcp:game:oauth -- docs/simulations
+```
+
+The helper opens a PKCE authorization-code flow at `/oauth/mcp/authorize`, exchanges the code for a one-hour opaque MCP bearer token, and saves it to `~/.influence-game/mcp-token.json` with user-only file permissions. Override that path with `INFLUENCE_MCP_TOKEN_FILE` if a connected MCP client needs a different handoff location. The bridge reads `INFLUENCE_MCP_TOKEN` first, then falls back to the saved token file, introspects before each JSON-RPC request, and delegates to the existing read-only Game MCP only when the token is active for `aud=game-mcp`, `purpose=mcp_access`, and `scope=mcp`. The `mcp` scope is global access to MCP surfaces wired behind it; V0 wires only Game MCP and does not add per-user, per-private-trace, per-agent, or per-game filters after OAuth. Trace MCP/private-content access remains separate local tooling unless it is explicitly wired later. Web/API base URLs must be HTTPS outside explicit loopback development hosts.
+
 For API-backed durable runs, owner-backed games can write private decision trace content to the configured private content bucket and keep only manifests/counts in Postgres. To inspect those traces from a trusted local MCP client:
 
 ```bash
@@ -94,12 +104,11 @@ To watch games live in a browser:
 **Terminal 1 -- Start the API server:**
 
 ```bash
-doppler run --project social-strategy-agent --config dev -- \
-  env PORT=3000 HOST=127.0.0.1 CORS_ORIGINS=http://localhost:3001 \
-  bun run dev:api
+bun run s3:bootstrap
+doppler run --project social-strategy-agent --config dev -- env PORT=3000  bun run dev:api
 ```
 
-The API runs on `http://127.0.0.1:3000` by default. It connects to a local PostgreSQL database (`influence_dev` on port 54320).
+The API runs on `http://127.0.0.1:3000` by default. It connects to a local PostgreSQL database (`influence_dev` on port 54320). The private trace env must be present in the API process before a game starts; restart the API after sourcing `.env.private-trace.local` or trace manifests will not be written.
 
 **Terminal 2 -- Start the web frontend:**
 
@@ -216,7 +225,7 @@ source .env.private-trace.local
 set +a
 ```
 
-The bootstrap uses `http://127.0.0.1:19000` by default, creates `influence-private-content-local`, and writes the required private trace env vars to `.env.private-trace.local`. Run `bun run trace:local:smoke` to start local Postgres + local private content S3 and verify a trace write/read/search round trip.
+The bootstrap uses `http://127.0.0.1:19000` by default, creates `influence-private-content-local`, and writes the required private trace env vars to `.env.private-trace.local`. Restarting Docker does not usually make the file stale if the same MinIO container, ports, bucket, and credentials remain in place. If the container was recreated, credentials changed, or storage writes look missing, rerun `bun run s3:bootstrap` and then `bun run trace:local:smoke` to verify a trace write/read/search round trip.
 
 Staging/production must set `LINODE_PRIVATE_CONTENT_ENDPOINT`, `LINODE_PRIVATE_CONTENT_ACCESS_KEY`, `LINODE_PRIVATE_CONTENT_SECRET_KEY`, and `LINODE_PRIVATE_CONTENT_BUCKET` for private traces. The private access key should be scoped to the private content bucket and is intentionally separate from the profile-picture `LINODE_OBJ_*` credentials.
 

@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: OAuth Gate for Global Game MCP Access</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8f5;
+      --panel: #ffffff;
+      --ink: #1b1f23;
+      --muted: #59636f;
+      --line: #d9dfdc;
+      --soft: #eef5f0;
+      --soft-2: #f8efe7;
+      --soft-3: #eef1f7;
+      --accent: #1f7a5c;
+      --accent-ink: #145840;
+      --rust: #a35221;
+      --plum: #6c3d6c;
+      --code-bg: #f0f2ef;
+      --shadow: 0 14px 38px rgba(21, 31, 26, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.55;
+    }
+
+    a {
+      color: var(--accent-ink);
+      text-underline-offset: 0.18em;
+    }
+
+    code {
+      background: var(--code-bg);
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: 0.08rem 0.28rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.9em;
+    }
+
+    .page {
+      width: min(960px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 42px 0 64px;
+    }
+
+    .hero,
+    section,
+    footer {
+      margin-block: 24px;
+    }
+
+    .hero,
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 32px;
+    }
+
+    section {
+      padding: 28px;
+      box-shadow: 0 8px 24px rgba(21, 31, 26, 0.04);
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent-ink);
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 14ch;
+      font-size: clamp(2.15rem, 5vw, 4.1rem);
+    }
+
+    h2 {
+      margin-bottom: 14px;
+      font-size: 1.65rem;
+    }
+
+    h3 {
+      font-size: 1.18rem;
+    }
+
+    p {
+      max-width: 74ch;
+    }
+
+    .lede {
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 1.08rem;
+    }
+
+    .metadata,
+    .card-meta,
+    .stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 22px 0 0;
+    }
+
+    .metadata div,
+    .stats div,
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--soft);
+      color: var(--accent-ink);
+      padding: 7px 11px;
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+
+    .metadata dt,
+    .card-meta dt {
+      display: inline;
+      margin-right: 4px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .metadata dd,
+    .card-meta dd {
+      display: inline;
+      margin: 0;
+    }
+
+    .context-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .context-grid article,
+    .callout {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfcfa;
+    }
+
+    .context-grid h3 {
+      margin-bottom: 8px;
+      color: var(--accent-ink);
+      font-size: 1rem;
+    }
+
+    .context-grid p,
+    .callout p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .scope-grid,
+    .axis-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      padding: 0;
+      margin: 0;
+      list-style: none;
+    }
+
+    .scope-grid li,
+    .axis-list li {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      color: #313a46;
+      font-weight: 700;
+    }
+
+    .scope-grid li {
+      background: var(--soft);
+    }
+
+    .axis-list li {
+      background: var(--soft-3);
+    }
+
+    .jump-list {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--soft);
+      padding: 14px 16px;
+      margin: 10px 0 22px;
+    }
+
+    .jump-list p {
+      margin: 0 0 8px;
+      color: var(--accent-ink);
+      font-weight: 800;
+    }
+
+    .jump-list ol {
+      margin: 0;
+      padding-left: 22px;
+      columns: 2;
+      column-gap: 28px;
+    }
+
+    .jump-list li {
+      break-inside: avoid;
+      margin: 4px 0;
+    }
+
+    .idea-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 20px;
+      margin-top: 18px;
+      background: #fff;
+    }
+
+    .idea-head {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 12px;
+      align-items: start;
+      margin-bottom: 12px;
+    }
+
+    .id-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      border: 1px solid #ead4c2;
+      border-radius: 999px;
+      padding: 5px 10px;
+      background: var(--soft-2);
+      color: var(--rust);
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .card-meta {
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .card-meta div {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #f8faf7;
+      padding: 5px 9px;
+      font-size: 0.85rem;
+    }
+
+    .idea-fields {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 10px 14px;
+      margin: 14px 0 0;
+    }
+
+    .idea-fields dt {
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .idea-fields dd {
+      margin: 0;
+    }
+
+    .basis-tag {
+      display: inline-block;
+      margin-right: 4px;
+      color: var(--plum);
+      font-weight: 800;
+    }
+
+    .mini-diagram {
+      margin: 16px 0 2px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfa;
+      overflow: hidden;
+    }
+
+    .mini-diagram svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .rejection-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.94rem;
+    }
+
+    .rejection-table th,
+    .rejection-table td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .rejection-table th {
+      color: var(--accent-ink);
+      background: var(--soft);
+    }
+
+    .sources {
+      columns: 2;
+      column-gap: 30px;
+      padding-left: 22px;
+    }
+
+    .sources li {
+      break-inside: avoid;
+      margin: 6px 0;
+    }
+
+    .composition-signal {
+      border-top: 1px solid var(--line);
+      padding: 18px 0 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    @media (max-width: 720px) {
+      .page {
+        width: min(100vw - 20px, 960px);
+        padding-top: 18px;
+      }
+
+      .hero,
+      section {
+        padding: 20px;
+      }
+
+      .jump-list ol,
+      .sources {
+        columns: 1;
+      }
+
+      .idea-head,
+      .idea-fields {
+        grid-template-columns: 1fr;
+      }
+
+      .idea-fields {
+        gap: 4px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">Ideation revision</p>
+      <h1>OAuth Gate for Global Game MCP Access</h1>
+      <p class="lede">A narrowed V0: add an <code>mcp</code> role, allow only that role to authorize the <code>mcp</code> OAuth scope via authorization code plus PKCE, and treat a valid <code>mcp</code> token as global Game MCP access for testing and validation.</p>
+      <dl class="metadata" aria-label="Document metadata">
+        <div><dt>Date</dt><dd><time datetime="2026-06-18">2026-06-18</time></dd></div>
+        <div><dt>Topic</dt><dd>oauth-global-game-mcp-access</dd></div>
+        <div><dt>Focus</dt><dd>Role-gated OAuth flow for global Game MCP access</dd></div>
+        <div><dt>Mode</dt><dd>repo-grounded</dd></div>
+      </dl>
+      <div class="stats" aria-label="Ideation counts">
+        <div>5 ranked ideas</div>
+        <div>1 V0 spine</div>
+        <div>Global MCP scope</div>
+      </div>
+    </header>
+
+    <section id="grounding-context">
+      <h2>Grounding Context</h2>
+      <p><strong>Codebase Context.</strong> The initial ideation over-weighted eventual access-control shape: per-agent grants, per-game resources, consent ledgers, and private trace boundaries. The corrected first slice is narrower and more useful: create a working OAuth 2.1-style loop for the Game MCP where possession of a role-bound <code>mcp</code> scope grants intentionally global MCP access.</p>
+      <div class="context-grid">
+        <article>
+          <h3>Game MCP is the target</h3>
+          <p>The repo's Game MCP is a read-only query surface over simulation artifacts. It lists sessions and games, rebuilds projections from event logs, searches logs, reads timelines, and exposes artifact resource URIs.</p>
+        </article>
+        <article>
+          <h3>RBAC already has the hook</h3>
+          <p>The API already seeds roles and permissions, assigns roles by wallet address, and includes roles and permissions in the backend session JWT. A new <code>mcp</code> role fits the existing RBAC shape.</p>
+        </article>
+        <article>
+          <h3>The scope is deliberately global</h3>
+          <p>For V0, <code>scope=mcp</code> is not a row-level or agent-level grant. If the user has the <code>mcp</code> role, they can authorize the scope; a token with that scope can access the Game MCP globally.</p>
+        </article>
+        <article>
+          <h3>Trace and private-agent boundaries wait</h3>
+          <p>Trace MCP, private content, per-agent consent, and per-game grants remain future cuts. They should not block the first OAuth validation loop.</p>
+        </article>
+      </div>
+      <aside class="callout">
+        <p>The security posture is intentionally narrow rather than elaborate: only role-bound users can mint the scope, the scope name is honest about its global authority, and the implementation is for trusted testing and validation before any broader user-facing delegation model exists.</p>
+      </aside>
+    </section>
+
+    <section id="v0-scope-boundary">
+      <h2>V0 Scope Boundary</h2>
+      <ul class="scope-grid">
+        <li>In: seed a new <code>mcp</code> role.</li>
+        <li>In: expose OAuth authorization-code plus PKCE for <code>scope=mcp</code>.</li>
+        <li>In: authorize <code>scope=mcp</code> only when the logged-in user has the <code>mcp</code> role.</li>
+        <li>In: make a valid <code>mcp</code> token grant global Game MCP access.</li>
+        <li>Out: per-agent, per-game, row-level, or private trace authorization.</li>
+        <li>Out: dynamic client registration, browser refresh tokens, and external multi-client policy.</li>
+      </ul>
+    </section>
+
+    <section id="topic-axes">
+      <h2>Topic Axes</h2>
+      <ul class="axis-list">
+        <li>Role-gated OAuth entry</li>
+        <li>Game MCP resource exposure</li>
+        <li>Token validation and session separation</li>
+        <li>Developer validation loop</li>
+        <li>Explicit deferral of fine-grained grants</li>
+      </ul>
+    </section>
+
+    <section id="ranked-ideas">
+      <h2>Ranked Ideas</h2>
+      <nav class="jump-list" aria-label="Ranked idea jump list">
+        <p>Jump to an idea</p>
+        <ol>
+          <li><a href="#idea-1"><code>mcp</code> Role plus <code>mcp</code> Scope as the V0 Contract</a></li>
+          <li><a href="#idea-2">Minimal PKCE Authorization Server for First-Party MCP</a></li>
+          <li><a href="#idea-3">Protected HTTP Game MCP Resource Server</a></li>
+          <li><a href="#idea-4">Seeded Maintainer Smoke Loop</a></li>
+          <li><a href="#idea-5">Explicit Fine-Grained Grant Deferral</a></li>
+        </ol>
+      </nav>
+
+      <article id="idea-1" class="idea-card">
+        <header class="idea-head">
+          <span class="id-chip">Idea 1.</span>
+          <div>
+            <h3><code>mcp</code> Role plus <code>mcp</code> Scope as the V0 Contract</h3>
+            <dl class="card-meta">
+              <div><dt>Axis</dt><dd>Role-gated OAuth entry</dd></div>
+              <div><dt>Confidence</dt><dd>92%</dd></div>
+              <div><dt>Complexity</dt><dd>Medium</dd></div>
+            </dl>
+          </div>
+        </header>
+        <dl class="idea-fields">
+          <dt>Description</dt>
+          <dd>Add a system role named <code>mcp</code>. A logged-in user with that role may authorize exactly one initial OAuth scope, <code>mcp</code>. The scope is intentionally global: a token bearing it means the holder can use the Game MCP without per-game, per-agent, or private-boundary checks in this pass.</dd>
+          <dt>Basis</dt>
+          <dd><span class="basis-tag">direct:</span><code>packages/api/src/db/rbac-seed.ts</code> already seeds role and permission records, and <code>address_roles</code> already binds wallet addresses to roles. <span class="basis-tag">direct:</span>The Game MCP is documented as read-only over local simulation artifacts, which makes a global maintainer/testing scope a reasonable V0.</dd>
+          <dt>Rationale</dt>
+          <dd>This is the strongest correction because it turns OAuth from a broad product authorization system into a focused gate for one trusted user role. It gives the implementation a simple invariant: role check at authorization time, global Game MCP authority at resource time.</dd>
+          <dt>Downsides</dt>
+          <dd>The scope is powerful by design. The UI and docs must call it global access, and assigning the <code>mcp</code> role should remain deliberate. This is not suitable as a public user delegation model without later narrowing work.</dd>
+          <dt>Confidence</dt>
+          <dd>92%</dd>
+          <dt>Complexity</dt>
+          <dd>Medium</dd>
+        </dl>
+        <figure class="mini-diagram" aria-label="Global MCP OAuth flow diagram">
+          <svg viewBox="0 0 900 220" role="img" aria-labelledby="idea1-title idea1-desc">
+            <title id="idea1-title">Role-gated global Game MCP OAuth flow</title>
+            <desc id="idea1-desc">A user with the mcp role authorizes scope mcp through PKCE and receives a token that grants global Game MCP access.</desc>
+            <defs>
+              <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+                <path d="M0,0 L10,4 L0,8 Z" fill="#1f7a5c"></path>
+              </marker>
+            </defs>
+            <rect x="26" y="50" width="154" height="70" rx="8" fill="#eef5f0" stroke="#b9d3c5"></rect>
+            <text x="103" y="78" text-anchor="middle" font-size="15" font-weight="700" fill="#145840">User session</text>
+            <text x="103" y="99" text-anchor="middle" font-size="12" fill="#41534b">has role: mcp</text>
+            <line x1="190" y1="85" x2="278" y2="85" stroke="#1f7a5c" stroke-width="3" marker-end="url(#arrow)"></line>
+            <rect x="288" y="34" width="184" height="102" rx="8" fill="#f8efe7" stroke="#e4c6ae"></rect>
+            <text x="380" y="65" text-anchor="middle" font-size="15" font-weight="700" fill="#8b451b">OAuth authorize</text>
+            <text x="380" y="88" text-anchor="middle" font-size="12" fill="#5d4738">code + PKCE</text>
+            <text x="380" y="110" text-anchor="middle" font-size="12" fill="#5d4738">requested scope: mcp</text>
+            <line x1="482" y1="85" x2="570" y2="85" stroke="#1f7a5c" stroke-width="3" marker-end="url(#arrow)"></line>
+            <rect x="580" y="50" width="148" height="70" rx="8" fill="#eef1f7" stroke="#c8d1e3"></rect>
+            <text x="654" y="78" text-anchor="middle" font-size="15" font-weight="700" fill="#32425c">Access token</text>
+            <text x="654" y="99" text-anchor="middle" font-size="12" fill="#4e596b">scope: mcp</text>
+            <line x1="738" y1="85" x2="810" y2="85" stroke="#1f7a5c" stroke-width="3" marker-end="url(#arrow)"></line>
+            <rect x="820" y="50" width="54" height="70" rx="8" fill="#eef5f0" stroke="#b9d3c5"></rect>
+            <text x="847" y="78" text-anchor="middle" font-size="14" font-weight="700" fill="#145840">MCP</text>
+            <text x="847" y="99" text-anchor="middle" font-size="12" fill="#41534b">global</text>
+            <rect x="588" y="150" width="276" height="38" rx="8" fill="#fbfcfa" stroke="#d9dfdc"></rect>
+            <text x="726" y="174" text-anchor="middle" font-size="13" fill="#59636f">No per-game or per-agent checks in V0</text>
+          </svg>
+        </figure>
+      </article>
+
+      <article id="idea-2" class="idea-card">
+        <header class="idea-head">
+          <span class="id-chip">Idea 2.</span>
+          <div>
+            <h3>Minimal PKCE Authorization Server for First-Party MCP</h3>
+            <dl class="card-meta">
+              <div><dt>Axis</dt><dd>Token validation and session separation</dd></div>
+              <div><dt>Confidence</dt><dd>84%</dd></div>
+              <div><dt>Complexity</dt><dd>Medium</dd></div>
+            </dl>
+          </div>
+        </header>
+        <dl class="idea-fields">
+          <dt>Description</dt>
+          <dd>Implement the smallest authorization-code plus PKCE surface needed for a first-party MCP client: authorization endpoint, code storage, token exchange, token validation, and a static client configuration. The authorize step uses the existing app session to identify the user and checks the <code>mcp</code> role before issuing a code for <code>scope=mcp</code>.</dd>
+          <dt>Basis</dt>
+          <dd><span class="basis-tag">direct:</span>The current login flow already turns Privy identity into a backend session, so authorization can reuse the app session as the human-auth prerequisite. <span class="basis-tag">external:</span>OAuth 2.1 draft -15 centers authorization code plus PKCE for browser/public-client flows.</dd>
+          <dt>Rationale</dt>
+          <dd>This keeps the work standards-shaped while avoiding a full product authorization platform. No refresh tokens, no dynamic client registration, and no consent matrix are needed for the first Game MCP validation loop.</dd>
+          <dt>Downsides</dt>
+          <dd>Even a minimal flow needs careful code expiry, redirect URI checks, PKCE verifier validation, and token signing/verification tests. The payoff is a real OAuth loop instead of a custom API key.</dd>
+          <dt>Confidence</dt>
+          <dd>84%</dd>
+          <dt>Complexity</dt>
+          <dd>Medium</dd>
+        </dl>
+      </article>
+
+      <article id="idea-3" class="idea-card">
+        <header class="idea-head">
+          <span class="id-chip">Idea 3.</span>
+          <div>
+            <h3>Protected HTTP Game MCP Resource Server</h3>
+            <dl class="card-meta">
+              <div><dt>Axis</dt><dd>Game MCP resource exposure</dd></div>
+              <div><dt>Confidence</dt><dd>80%</dd></div>
+              <div><dt>Complexity</dt><dd>High</dd></div>
+            </dl>
+          </div>
+        </header>
+        <dl class="idea-fields">
+          <dt>Description</dt>
+          <dd>Expose the Game MCP through a protected HTTP transport or API-backed wrapper that validates bearer tokens for <code>scope=mcp</code>. Once validated, the request gets the same read-only global capabilities as the current local Game MCP: sessions, games, projections, log search, timelines, linked records, and artifact resources.</dd>
+          <dt>Basis</dt>
+          <dd><span class="basis-tag">direct:</span><code>packages/engine/src/game-mcp/server.ts</code> already implements the JSON-RPC tool/resource behavior over a read model. <span class="basis-tag">external:</span>The MCP 2025-06-18 authorization spec uses OAuth 2.1-style authorization and protected resource metadata for HTTP transports.</dd>
+          <dt>Rationale</dt>
+          <dd>The OAuth flow only matters if a real MCP client can use the token. Protecting a Game MCP HTTP surface is the narrow end-to-end test: authorize, exchange, connect, list/read/search.</dd>
+          <dt>Downsides</dt>
+          <dd>This is the largest implementation slice because the current Game MCP is local stdio/corpus oriented. The wrapper should reuse the existing read model and avoid changing the underlying MCP query semantics.</dd>
+          <dt>Confidence</dt>
+          <dd>80%</dd>
+          <dt>Complexity</dt>
+          <dd>High</dd>
+        </dl>
+      </article>
+
+      <article id="idea-4" class="idea-card">
+        <header class="idea-head">
+          <span class="id-chip">Idea 4.</span>
+          <div>
+            <h3>Seeded Maintainer Smoke Loop</h3>
+            <dl class="card-meta">
+              <div><dt>Axis</dt><dd>Developer validation loop</dd></div>
+              <div><dt>Confidence</dt><dd>86%</dd></div>
+              <div><dt>Complexity</dt><dd>Low</dd></div>
+            </dl>
+          </div>
+        </header>
+        <dl class="idea-fields">
+          <dt>Description</dt>
+          <dd>Add an explicit smoke path that seeds or assigns the <code>mcp</code> role to a maintainer address, runs the OAuth PKCE flow, obtains a token with <code>scope=mcp</code>, and verifies Game MCP calls such as initialize, list sessions, list games, and read projection. The negative path should prove a non-role user cannot authorize the scope.</dd>
+          <dt>Basis</dt>
+          <dd><span class="basis-tag">direct:</span>The repo already treats Game MCP smoke and current-session checks as a first-class validation pattern. <span class="basis-tag">reasoned:</span>A global test scope is acceptable only if role assignment and denied authorization are both easy to verify.</dd>
+          <dt>Rationale</dt>
+          <dd>This turns the slice into a concrete validation loop instead of an abstract auth implementation. It also matches the stated use: one trusted maintainer testing and validating the Game MCP.</dd>
+          <dt>Downsides</dt>
+          <dd>Local OAuth testing can be fiddly because redirects, ports, and browser session state all matter. The smoke should document exact local URLs and expected denial points.</dd>
+          <dt>Confidence</dt>
+          <dd>86%</dd>
+          <dt>Complexity</dt>
+          <dd>Low</dd>
+        </dl>
+      </article>
+
+      <article id="idea-5" class="idea-card">
+        <header class="idea-head">
+          <span class="id-chip">Idea 5.</span>
+          <div>
+            <h3>Explicit Fine-Grained Grant Deferral</h3>
+            <dl class="card-meta">
+              <div><dt>Axis</dt><dd>Explicit deferral of fine-grained grants</dd></div>
+              <div><dt>Confidence</dt><dd>88%</dd></div>
+              <div><dt>Complexity</dt><dd>Low</dd></div>
+            </dl>
+          </div>
+        </header>
+        <dl class="idea-fields">
+          <dt>Description</dt>
+          <dd>Write the V0 docs and code comments so the global nature of <code>scope=mcp</code> is impossible to miss. Per-agent grants, per-game row boundaries, private trace scopes, consent receipts, and revocation dashboards are future work, not hidden requirements of this slice.</dd>
+          <dt>Basis</dt>
+          <dd><span class="basis-tag">direct:</span>The repo already separates Game MCP, Trace MCP, public/canonical game state, and producer-visible artifacts in documentation. <span class="basis-tag">reasoned:</span>Making the deferral explicit prevents the first OAuth implementation from being dragged back into broad access-control design.</dd>
+          <dt>Rationale</dt>
+          <dd>The biggest risk is scope creep, not insufficient security architecture. This idea protects the narrow loop by documenting what the token can do, who can mint it, and why that is intentionally enough for V0.</dd>
+          <dt>Downsides</dt>
+          <dd>The deferral can look blunt to a future reviewer. The fix is to label it as a maintainer/testing boundary and pair it with role-gated issuance plus a denial test.</dd>
+          <dt>Confidence</dt>
+          <dd>88%</dd>
+          <dt>Complexity</dt>
+          <dd>Low</dd>
+        </dl>
+      </article>
+    </section>
+
+    <section id="rejection-summary">
+      <h2>Rejection Summary</h2>
+      <table class="rejection-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Idea</th>
+            <th>Reason Rejected</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>Per-agent or per-game OAuth grants</td><td>Rejected for V0 as scope overrun. The initial goal is role-bound global Game MCP access.</td></tr>
+          <tr><td>2</td><td>Consent receipt ledger and revocation dashboard</td><td>Useful later, but too productized for one trusted maintainer validating MCP access.</td></tr>
+          <tr><td>3</td><td>Private Trace MCP authorization</td><td>Out of scope. Trace/private content has a separate local-dev boundary and should not block Game MCP auth.</td></tr>
+          <tr><td>4</td><td>Resource-bound scope namespace for every route</td><td>Too broad for V0. The first registry can be a single supported scope: <code>mcp</code>.</td></tr>
+          <tr><td>5</td><td>Browser refresh tokens</td><td>Rejected for V0. A short-lived access token is enough to prove the flow.</td></tr>
+          <tr><td>6</td><td>Dynamic client registration</td><td>Rejected for V0. Use a static first-party MCP client while the flow is still experimental.</td></tr>
+          <tr><td>7</td><td>DPoP or sender-constrained tokens</td><td>Deferred hardening. Role-gated issuance and short token lifetime are sufficient for the trusted local/testing slice.</td></tr>
+          <tr><td>8</td><td>Existing app JWT with an <code>mcp</code> claim only</td><td>Rejected because it avoids proving the OAuth code-plus-PKCE flow, which is the point of the slice.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sources-references">
+      <h2>Sources &amp; References</h2>
+      <ul class="sources">
+        <li><a href="https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/">OAuth 2.1 draft, draft-ietf-oauth-v2-1-15</a></li>
+        <li><a href="https://www.rfc-editor.org/rfc/rfc7636.html">RFC 7636, Proof Key for Code Exchange</a></li>
+        <li><a href="https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization">Model Context Protocol authorization specification, 2025-06-18</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/README.md"><code>README.md</code></a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/DEVELOPMENT.md"><code>DEVELOPMENT.md</code></a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/db/rbac-seed.ts"><code>packages/api/src/db/rbac-seed.ts</code></a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/db/schema.ts"><code>packages/api/src/db/schema.ts</code></a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/middleware/auth.ts"><code>packages/api/src/middleware/auth.ts</code></a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-mcp/server.ts"><code>packages/engine/src/game-mcp/server.ts</code></a></li>
+      </ul>
+    </section>
+
+    <footer class="composition-signal">
+      Composed 2026-06-18T19:03:06Z by ce-ideate from user prompt context; revised 2026-06-18T19:28:00Z around role-gated global Game MCP access.
+    </footer>
+  </main>
+</body>
+</html>

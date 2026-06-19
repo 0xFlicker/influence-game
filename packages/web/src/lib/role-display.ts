@@ -2,6 +2,7 @@ const ROLE_LABELS: Record<string, string> = {
   sysop: "Sysop",
   admin: "Admin",
   gamer: "Game Operator",
+  mcp: "MCP Access",
   player: "Player",
 };
 
@@ -9,6 +10,7 @@ const ROLE_BADGE_STYLES: Record<string, string> = {
   sysop: "bg-red-900/40 text-red-300 border border-red-800/70",
   admin: "bg-blue-900/40 text-blue-300 border border-blue-800/70",
   gamer: "bg-amber-900/40 text-amber-300 border border-amber-800/70",
+  mcp: "bg-cyan-900/40 text-cyan-300 border border-cyan-800/70",
   player: "bg-emerald-900/40 text-emerald-300 border border-emerald-800/70",
 };
 

@@ -14,6 +14,7 @@ import { runMigrations } from "./db/migrate.js";
 import { seedRBAC } from "./db/rbac-seed.js";
 import { createGameRoutes } from "./routes/games.js";
 import { createAuthRoutes } from "./routes/auth.js";
+import { createMcpOAuthRoutes } from "./routes/mcp-oauth.js";
 import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
 import { createAdminRoutes } from "./routes/admin.js";
 import { createFreeQueueRoutes } from "./routes/free-queue.js";
@@ -190,6 +191,10 @@ app.get("/", (c) => {
 // Auth routes
 const authRoutes = createAuthRoutes(db);
 app.route("/", authRoutes);
+
+// MCP OAuth routes
+const mcpOAuthRoutes = createMcpOAuthRoutes(db);
+app.route("/", mcpOAuthRoutes);
 
 // Game routes
 const gameRoutes = createGameRoutes(db);

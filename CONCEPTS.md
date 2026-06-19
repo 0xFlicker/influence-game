@@ -100,6 +100,18 @@ A derived read model rebuilt from canonical game events, such as current board s
 
 The local game MCP is a corpus-level projection host over simulation artifacts. It scans sessions under `packages/engine/docs/simulations/`, addresses games by `sessionId + gameNumber`, and stays read-only.
 
+## MCP role / MCP scope
+
+The V0 authorization boundary for trusted MCP validation. A user with the `mcp` role may authorize the OAuth `mcp` scope, and a token with that scope grants global access to the MCP surfaces wired behind that scope. The first wired surface is read-only Game MCP, including its existing producer-visible simulation artifacts. V0 does not add per-user, per-private-trace, per-agent, or per-game filtering after OAuth.
+
+## Game MCP OAuth token producer
+
+The app/API-side V0 OAuth surface that turns an existing logged-in app session plus the `mcp` role into a short-lived MCP bearer token. It owns the first-party authorization entrypoint, token exchange, static local MCP client policy, and token contract for the `game-mcp` audience. It is not a normal app session token, dynamic external client platform, or public hosted MCP surface.
+
+## Game MCP OAuth bridge
+
+A local developer bridge that validates a token with `scope=mcp` before delegating to the existing stdio Game MCP behavior. The bridge proves the OAuth authorization-code plus PKCE loop for trusted MCP validation without packaging a production HTTP MCP endpoint.
+
 ## Durable game-run kernel
 
 The first durable API runtime layer for live game execution. It binds API game identity into canonical events, persists ordered accepted-domain facts, enforces single-writer ownership, and defines checkpoint/evidence boundaries. It is not itself a claim that stopped games can resume; resume depends on later checkpoint hydration.

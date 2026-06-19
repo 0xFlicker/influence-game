@@ -6,6 +6,7 @@ describe("formatRoleName", () => {
     expect(formatRoleName("sysop")).toBe("Sysop");
     expect(formatRoleName("admin")).toBe("Admin");
     expect(formatRoleName("gamer")).toBe("Game Operator");
+    expect(formatRoleName("mcp")).toBe("MCP Access");
     expect(formatRoleName("player")).toBe("Player");
   });
 
@@ -17,6 +18,7 @@ describe("formatRoleName", () => {
 describe("getRoleBadgeClass", () => {
   it("returns themed badge styles for known roles", () => {
     expect(getRoleBadgeClass("gamer")).toContain("bg-amber-900/40");
+    expect(getRoleBadgeClass("mcp")).toContain("bg-cyan-900/40");
     expect(getRoleBadgeClass("sysop")).toContain("bg-red-900/40");
   });
 
