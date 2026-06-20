@@ -326,4 +326,22 @@ describe("match watch model", () => {
     expect(juryModel.phaseLabel).toBe("Jury Questions");
     expect(juryModel.phaseSegments.find((segment) => segment.key === "END")?.state).toBe("current");
   });
+
+  it("keeps historical whisper separate from current mingle in the watch rail", () => {
+    const model = buildMatchWatchModel({
+      game: {
+        ...baseGame(),
+        currentPhase: "WHISPER",
+      },
+      messages: [],
+      live: false,
+      connStatus: "replay",
+    });
+
+    expect(model.phase).toBe("WHISPER");
+    expect(model.phaseLabel).toBe("Whisper");
+    expect(model.phaseSegments.map((segment) => segment.key)).toContain("WHISPER");
+    expect(model.phaseSegments.find((segment) => segment.key === "WHISPER")?.state).toBe("current");
+    expect(model.phaseSegments.map((segment) => segment.key)).not.toContain("MINGLE");
+  });
 });

@@ -103,10 +103,8 @@ export const PHASE_LABELS: Record<PhaseKey, string> = {
   INIT: "Waiting Room",
   INTRODUCTION: "Introductions",
   LOBBY: "Public Lobby",
-  // Both keys map to "Mingle" for user display.
-  // "WHISPER" only appears for legacy/historical data (old transcripts, replays).
-  // Current games always emit "MINGLE". See plan U4: historical Whisper replay polish is out of scope.
-  WHISPER: "Mingle",
+  // WHISPER is a distinct historical phase; current room movement uses MINGLE.
+  WHISPER: "Whisper",
   MINGLE: "Mingle",
   RUMOR: "Rumor Phase",
   VOTE: "Voting",

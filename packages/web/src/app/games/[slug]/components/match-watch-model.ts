@@ -20,6 +20,16 @@ const MATCH_WATCH_PHASES: readonly PhaseKey[] = [
   "COUNCIL",
   "END",
 ];
+const MATCH_WATCH_WHISPER_PHASES: readonly PhaseKey[] = [
+  "INTRODUCTION",
+  "LOBBY",
+  "WHISPER",
+  "VOTE",
+  "POWER",
+  "REVEAL",
+  "COUNCIL",
+  "END",
+];
 
 export type MatchWatchMode = "live" | "replay";
 export type MatchWatchPhaseSegmentState = "past" | "current" | "future";
@@ -249,9 +259,10 @@ function normalizePhase(phase: string): PhaseKey {
 }
 
 function buildPhaseSegments(currentPhase: PhaseKey): MatchWatchPhaseSegment[] {
+  const phases = currentPhase === "WHISPER" ? MATCH_WATCH_WHISPER_PHASES : MATCH_WATCH_PHASES;
   const shellPhase = toShellPhaseSegment(currentPhase);
-  const currentIndex = MATCH_WATCH_PHASES.indexOf(shellPhase);
-  return MATCH_WATCH_PHASES.map((phase, index) => {
+  const currentIndex = phases.indexOf(shellPhase);
+  return phases.map((phase, index) => {
     let state: MatchWatchPhaseSegmentState = "future";
     if (currentIndex === -1) {
       state = phase === shellPhase ? "current" : "future";
@@ -278,8 +289,6 @@ function toShellPhaseSegment(phase: PhaseKey): PhaseKey {
     case "CLOSING_ARGUMENTS":
     case "JURY_VOTE":
       return "END";
-    case "WHISPER":
-      return "MINGLE";
     case "RUMOR":
       return "VOTE";
     case "PLEA":
