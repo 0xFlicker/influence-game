@@ -2258,10 +2258,11 @@ describe("Diary Room - interview mechanics", () => {
     expect(diaryScoped.length).toBeGreaterThan(0);
 
     // Should have both House questions and agent answers
-    const houseQuestions = diaryScoped.filter((e) => e.from.startsWith("House"));
+    const houseQuestions = diaryScoped.filter((e) => e.from.startsWith("House ->"));
     const agentAnswers = diaryScoped.filter((e) => !e.from.startsWith("House"));
     expect(houseQuestions.length).toBeGreaterThan(0);
     expect(agentAnswers.length).toBeGreaterThan(0);
+    expect(diaryScoped.some((e) => e.from === "House")).toBe(false);
   });
 
   it("diary rooms run after Introduction only; thinking replaces diary for other phases", async () => {

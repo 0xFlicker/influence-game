@@ -222,7 +222,6 @@ export class DiaryRoom {
       const result = await this.houseInterviewer.generateFollowUpOrClose(updatedContext, sessionExchanges);
 
       if (result.type === "close") {
-        this.logger.logDiary("House", result.message);
         break;
       }
 
@@ -257,10 +256,6 @@ export class DiaryRoom {
         question: result.question,
         answer: followUpResponse.message,
       });
-    }
-
-    if (sessionExchanges.length >= MAX_QUESTIONS) {
-      this.logger.logDiary("House", `That's enough for now, ${playerName}. The House sees everything.`);
     }
   }
 
