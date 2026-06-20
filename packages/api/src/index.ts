@@ -22,14 +22,13 @@ import { createFreeQueueRoutes } from "./routes/free-queue.js";
 import { createUploadRoutes } from "./routes/upload.js";
 import { createProfileRoutes } from "./routes/profile.js";
 import { createCognitiveArtifactRoutes } from "./routes/cognitive-artifacts.js";
-import { verifySessionToken } from "./middleware/auth.js";
 import { getStorageStatus } from "./lib/storage.js";
-import { getGameSnapshot } from "./services/game-lifecycle.js";
+import { getGameWatchState } from "./services/game-watch-state.js";
 import {
   setServer,
   handleOpen,
   handleClose,
-  sendSnapshot,
+  sendWatchState,
   type WsConnectionData,
 } from "./services/ws-manager.js";
 
@@ -260,19 +259,6 @@ const server = Bun.serve<WsConnectionData>({
         return new Response("Game not found", { status: 404 });
       }
 
-      const hasActiveRunner = getGameSnapshot(gameRow.id) !== null;
-      if (gameRow.status === "in_progress" || hasActiveRunner) {
-        const token = url.searchParams.get("token");
-        const session = token ? await verifySessionToken(token) : null;
-        const canViewLive =
-          session?.roles.includes("sysop") ||
-          session?.roles.includes("admin") ||
-          session?.permissions.includes("view_admin");
-        if (!canViewLive) {
-          return new Response("Live game stream requires admin access", { status: session ? 403 : 401 });
-        }
-      }
-
       const gameId = gameRow.id;
 
       const upgraded = server.upgrade(req, {
@@ -291,12 +277,17 @@ const server = Bun.serve<WsConnectionData>({
     open(ws) {
       handleOpen(ws);
 
-      // Send state snapshot for catch-up if game is running
+      // Send persisted viewer-safe watch state for catch-up.
       const { gameId } = ws.data;
-      const snapshot = getGameSnapshot(gameId);
-      if (snapshot) {
-        sendSnapshot(ws, snapshot);
-      }
+      void getGameWatchState(db, gameId)
+        .then((state) => {
+          if (state) sendWatchState(ws, state);
+        })
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn(`[ws] Failed to send watch-state catch-up for ${gameId}:`, message);
+          ws.close(1011, "Watch state is unavailable");
+        });
     },
     close(ws) {
       handleClose(ws);

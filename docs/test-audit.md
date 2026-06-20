@@ -33,7 +33,7 @@ Fast, deterministic, zero-cost. **Run on every commit.**
 ### packages/api/src/__tests__/websocket.test.ts
 - **Tests:** 10
 - **Duration:** <100ms
-- **What it covers:** WebSocket manager: handleOpen/handleClose subscriptions, observer counting, broadcastGameEvent translation (transcript_entry -> message, phase_change, player_eliminated, game_over), sendSnapshot to single client, graceful no-server handling
+- **What it covers:** WebSocket manager: handleOpen/handleClose subscriptions, observer counting, broadcastGameEvent translation (transcript_entry -> message, phase_change, player_eliminated, game_over), watch-state catch-up/update delivery, graceful no-server handling
 - **Dependencies:** None. Mock WebSocket and Server objects.
 - **Stateful:** No
 

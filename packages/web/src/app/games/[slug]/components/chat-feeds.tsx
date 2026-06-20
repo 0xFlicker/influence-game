@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type { ReactNode } from "react";
 import type { TranscriptEntry, GamePlayer, PhaseKey } from "@/lib/api";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { MessageBubble } from "./message-bubble";
@@ -14,26 +15,29 @@ export function GroupChatFeed({
   messages,
   players,
   showThinking,
+  typingIndicator,
 }: {
   messages: TranscriptEntry[];
   players: GamePlayer[];
   phase: PhaseKey;
   showThinking?: boolean;
+  typingIndicator?: ReactNode;
 }) {
   const feedRef = useRef<HTMLDivElement>(null);
+  const hasTypingIndicator = Boolean(typingIndicator);
 
   useEffect(() => {
     if (feedRef.current) {
       feedRef.current.scrollTop = feedRef.current.scrollHeight;
     }
-  }, [messages.length]);
+  }, [messages.length, hasTypingIndicator]);
 
   return (
     <div
       ref={feedRef}
       className="h-full min-h-0 flex-1 overflow-y-auto p-4 md:p-6"
     >
-      {messages.length === 0 ? (
+      {messages.length === 0 && !typingIndicator ? (
         <div className="flex items-center justify-center h-full">
           <p className="text-white/20 text-sm animate-pulse">Waiting for messages…</p>
         </div>
@@ -44,6 +48,7 @@ export function GroupChatFeed({
               <MessageBubble msg={msg} players={players} showThinking={showThinking} />
             </div>
           ))}
+          {typingIndicator}
         </div>
       )}
     </div>

@@ -34,6 +34,10 @@ import {
   getRedactedKernelHealth,
   getRedactedKernelHealthByGameId,
 } from "../services/game-kernel-health.js";
+import {
+  buildGameWatchState,
+  type GameWatchState,
+} from "../services/game-watch-state.js";
 import { broadcastRaw } from "../services/ws-manager.js";
 import { generateUniqueSlug } from "../lib/slug.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
@@ -53,6 +57,13 @@ function publicErrorInfo(status: GameStatus, config: Record<string, unknown>): s
     return PUBLIC_SUSPENDED_ERROR_INFO;
   }
   return typeof config.errorInfo === "string" ? config.errorInfo : undefined;
+}
+
+type GameWatchStateSummary = Omit<GameWatchState, "players">;
+
+function summarizeWatchState(state: GameWatchState): GameWatchStateSummary {
+  const { players: _players, ...summary } = state;
+  return summary;
 }
 
 // ---------------------------------------------------------------------------
@@ -194,39 +205,28 @@ export function createGameRoutes(db: DrizzleDB) {
 
     const summaries = await Promise.all(rows.map(async (game) => {
       const config = JSON.parse(game.config);
-      const players = await db
-        .select()
-        .from(schema.gamePlayers)
-        .where(eq(schema.gamePlayers.gameId, game.id));
-
-      const result = await db
-        .select()
-        .from(schema.gameResults)
-        .where(eq(schema.gameResults.gameId, game.id));
-
-      const winnerPlayer = result[0]?.winnerId
-        ? players.find((p) => p.id === result[0]!.winnerId)
-        : null;
+      const watchState = await buildGameWatchState(db, game);
 
       return {
         id: game.id,
         slug: game.slug ?? undefined,
         gameNumber: 0, // Populated below
         status: game.status,
-        playerCount: game.maxPlayers ?? config.maxPlayers ?? players.length,
-        currentRound: 0,
+        playerCount: game.maxPlayers ?? config.maxPlayers ?? watchState.counts.totalPlayers,
+        currentRound: watchState.currentRound,
         maxRounds: config.maxRounds ?? 10,
-        currentPhase: game.status === "completed" ? "END" : game.status === "suspended" ? "SUSPENDED" : "INIT",
+        currentPhase: watchState.currentPhase,
         phaseTimeRemaining: null,
-        alivePlayers: players.length,
-        eliminatedPlayers: 0,
+        alivePlayers: watchState.counts.alivePlayers,
+        eliminatedPlayers: watchState.counts.eliminatedPlayers,
         modelTier: config.modelTier ?? "budget",
         visibility: config.visibility ?? "public",
         viewerMode: config.viewerMode ?? "speedrun",
         trackType: game.trackType,
-        winner: winnerPlayer ? JSON.parse(winnerPlayer.persona).name : undefined,
+        winner: watchState.winner?.name,
         errorInfo: publicErrorInfo(game.status, config),
         kernelHealth: kernelHealthByGameId.get(game.id),
+        watchState: summarizeWatchState(watchState),
         createdAt: game.createdAt,
         startedAt: game.startedAt ?? undefined,
         completedAt: game.endedAt ?? undefined,
@@ -260,19 +260,10 @@ export function createGameRoutes(db: DrizzleDB) {
 
     const config = JSON.parse(game.config);
 
-    const players = await db
-      .select()
-      .from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.gameId, game.id));
-
     const result = await db
       .select()
       .from(schema.gameResults)
       .where(eq(schema.gameResults.gameId, game.id));
-
-    const winnerPlayer = result[0]?.winnerId
-      ? players.find((p) => p.id === result[0]!.winnerId)
-      : null;
 
     // Compute game number from creation order
     const allGamesOrdered = (await db
@@ -280,42 +271,32 @@ export function createGameRoutes(db: DrizzleDB) {
       .from(schema.games))
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     const gameNumber = allGamesOrdered.findIndex((g) => g.id === game.id) + 1;
+    const watchState = await buildGameWatchState(db, game);
 
     const detail = {
       id: game.id,
       slug: game.slug ?? undefined,
       gameNumber,
       status: game.status,
-      currentRound: result[0]?.roundsPlayed ?? 0,
+      currentRound: watchState.currentRound,
       maxRounds: config.maxRounds ?? 10,
-      currentPhase: game.status === "completed" ? "END" : game.status === "suspended" ? "SUSPENDED" : "INIT",
-      players: await Promise.all(players.map(async (p) => {
-        const persona = JSON.parse(p.persona);
-        // Resolve avatar from linked agent profile if available
-        let avatarUrl: string | undefined;
-        if (p.agentProfileId) {
-          const profile = (await db
-            .select({ avatarUrl: schema.agentProfiles.avatarUrl })
-            .from(schema.agentProfiles)
-            .where(eq(schema.agentProfiles.id, p.agentProfileId)))[0];
-          avatarUrl = profile?.avatarUrl ?? undefined;
-        }
-        return {
-          id: p.id,
-          name: persona.name ?? "Unknown",
-          persona: persona.personality ?? persona.name ?? "Unknown",
-          status: "alive" as const,
-          shielded: false,
-          avatarUrl,
-        };
+      currentPhase: watchState.currentPhase,
+      players: watchState.players.map((player) => ({
+        id: player.id,
+        name: player.name,
+        persona: player.persona,
+        status: player.status,
+        shielded: player.shielded,
+        ...(player.avatarUrl && { avatarUrl: player.avatarUrl }),
       })),
       modelTier: config.modelTier ?? "budget",
       visibility: config.visibility ?? "public",
       viewerMode: config.viewerMode ?? "speedrun",
-      winner: winnerPlayer ? JSON.parse(winnerPlayer.persona).name : undefined,
+      winner: watchState.winner?.name,
       tokenUsage: result[0]?.tokenUsage ? JSON.parse(result[0].tokenUsage) : undefined,
       errorInfo: publicErrorInfo(game.status, config),
       kernelHealth: await getRedactedKernelHealth(db, game.id),
+      watchState,
       createdAt: game.createdAt,
       startedAt: game.startedAt ?? undefined,
       completedAt: game.endedAt ?? undefined,
@@ -533,16 +514,9 @@ export function createGameRoutes(db: DrizzleDB) {
       return c.json({ error: "Game is already full" }, 400);
     }
 
-    // Step 2: Broadcast players_filled immediately
     const totalPlayers = existingPlayers.length + addedPlayers.length;
-    broadcastRaw(gameId, {
-      type: "players_filled",
-      gameId,
-      players: addedPlayers,
-      totalPlayers,
-    });
 
-    // Step 3: Fire-and-forget persona generation in background
+    // Fill progress stays on the authenticated HTTP operation path, not the product watch stream.
     const openai = createLlmClientFromEnv()?.client ?? null;
 
     if (openai) {
@@ -575,11 +549,7 @@ export function createGameRoutes(db: DrizzleDB) {
         }
 
         if (updatedPlayers.length > 0) {
-          broadcastRaw(gameId, {
-            type: "players_updated",
-            gameId,
-            players: updatedPlayers,
-          });
+          console.log(`[games] Generated personas for ${updatedPlayers.length} filled player(s) in ${gameId}`);
         }
       })();
     }
@@ -923,6 +893,7 @@ export function createGameRoutes(db: DrizzleDB) {
         ...(row.roomId != null && { roomId: row.roomId }),
         ...(roomMetadata && { roomMetadata }),
         text: row.text,
+        thinking: row.thinking,
         timestamp: row.timestamp,
       };
     });

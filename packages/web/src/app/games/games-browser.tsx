@@ -15,10 +15,8 @@ import {
   type GameSummary,
   type ModelTier,
   type TrackType,
-  type WsGameEvent,
 } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useGameWebSocket } from "@/app/games/[slug]/components/use-game-websocket";
 
 function phaseLabel(phase: string): string {
   const labels: Record<string, string> = {
@@ -69,7 +67,6 @@ interface FiltersState {
 interface GameCardProps {
   game: GameSummary;
   onJoin?: (game: GameSummary) => void;
-  isAdmin?: boolean;
   canFill: boolean;
   canStart: boolean;
   canStop: boolean;
@@ -81,7 +78,6 @@ interface GameCardProps {
 function GameCard({
   game,
   onJoin,
-  isAdmin,
   canFill,
   canStart,
   canStop,
@@ -113,32 +109,6 @@ function GameCard({
     },
     [game.id, onGameUpdate],
   );
-
-  const handleWsEvent = useCallback(
-    (event: WsGameEvent) => {
-      if (event.type === "players_filled") {
-        applyFilledState(event);
-        setFilling(false);
-        void onRefresh();
-      }
-
-      if (event.type === "players_updated") {
-        onGameUpdate(game.id, (current) => ({
-          ...current,
-          alivePlayers: Math.max(current.alivePlayers, event.players.length),
-        }));
-      }
-
-      if (event.type === "error") {
-        setActionError(event.message);
-        setFilling(false);
-        void onRefresh();
-      }
-    },
-    [applyFilledState, game.id, onGameUpdate, onRefresh],
-  );
-
-  useGameWebSocket(game.id, filling, handleWsEvent);
 
   async function handleFill() {
     setActionError(null);
@@ -274,8 +244,8 @@ function GameCard({
                 AI personas are being generated. Start will unlock here as soon as the game is full.
               </p>
             )}
-            {isLive && !isAdmin && (
-              <p className="influence-copy-muted text-xs mt-2">Replay available when game finishes</p>
+            {isLive && (
+              <p className="influence-copy-muted text-xs mt-2">Watch live now</p>
             )}
             {actionError && (
               <p className="text-red-400/80 text-xs mt-2">{actionError}</p>
@@ -401,7 +371,7 @@ interface GamesBrowserProps {
 }
 
 export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
-  const { isAdmin, hasPermission } = usePermissions();
+  const { hasPermission } = usePermissions();
   const [filters, setFilters] = useState<FiltersState>({ status: "all", tier: "all", track: "all", search: "" });
   const [games, setGames] = useState<GameSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -595,7 +565,6 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
               key={game.id}
               game={game}
               onJoin={onJoin}
-              isAdmin={isAdmin}
               canFill={canFill}
               canStart={canStart}
               canStop={canStop}

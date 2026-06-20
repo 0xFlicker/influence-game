@@ -13,12 +13,14 @@ import {
   handleClose,
   broadcastGameEvent,
   broadcastRaw,
-  sendSnapshot,
+  broadcastWatchState,
+  sendWatchState,
   getObserverCount,
   type WsConnectionData,
 } from "../services/ws-manager.js";
 import { Phase } from "@influence/engine";
-import type { GameStreamEvent, GameStateSnapshot } from "@influence/engine";
+import type { GameStreamEvent } from "@influence/engine";
+import type { GameWatchState } from "../services/game-watch-state.js";
 
 // ---------------------------------------------------------------------------
 // Mock WebSocket & Server
@@ -134,7 +136,7 @@ describe("WebSocket Manager", () => {
     expect(parsed.entry.text).toBe("Hello everyone!");
   });
 
-  test("broadcastGameEvent strips hidden thinking from transcript entries", () => {
+  test("broadcastGameEvent preserves thinking while stripping reasoning context from transcript entries", () => {
     const { server, published } = createMockServer();
     setServer(server);
 
@@ -147,7 +149,7 @@ describe("WebSocket Manager", () => {
         from: "Alice",
         scope: "mingle",
         text: "Let's compare notes.",
-        thinking: "Private strategy packet reasoning.",
+        thinking: "Viewer-facing strategy note.",
         reasoningContext: "Native hidden reasoning context.",
       },
     };
@@ -157,7 +159,34 @@ describe("WebSocket Manager", () => {
     const parsed = JSON.parse(published[0]!.data);
     expect(parsed.type).toBe("message");
     expect(parsed.entry.text).toBe("Let's compare notes.");
-    expect(parsed.entry.thinking).toBeUndefined();
+    expect(parsed.entry.thinking).toBe("Viewer-facing strategy note.");
+    expect(parsed.entry.reasoningContext).toBeUndefined();
+  });
+
+  test("broadcastGameEvent preserves thinking-scope transcript entries", () => {
+    const { server, published } = createMockServer();
+    setServer(server);
+
+    const event: GameStreamEvent = {
+      type: "transcript_entry",
+      entry: {
+        round: 1,
+        phase: Phase.MINGLE,
+        timestamp: Date.now(),
+        from: "Alice",
+        scope: "thinking",
+        text: "Strategic read for viewers.",
+        reasoningContext: "Native hidden reasoning context.",
+      },
+    };
+
+    broadcastGameEvent("game-private", event);
+
+    expect(published).toHaveLength(1);
+    const parsed = JSON.parse(published[0]!.data);
+    expect(parsed.type).toBe("message");
+    expect(parsed.entry.scope).toBe("thinking");
+    expect(parsed.entry.text).toBe("Strategic read for viewers.");
     expect(parsed.entry.reasoningContext).toBeUndefined();
   });
 
@@ -305,42 +334,38 @@ describe("WebSocket Manager", () => {
     });
   });
 
-  test("sendSnapshot sends game_state event to single client", () => {
+  test("sendWatchState sends watch_state event to single client", () => {
     const { ws, sent } = createMockWs("game-123");
 
-    const snapshot: GameStateSnapshot = {
-      gameId: "game-123",
-      round: 2,
-      alivePlayers: [
-        { id: "p1", name: "Alice", shielded: false },
-        { id: "p2", name: "Bob", shielded: true },
-      ],
-      eliminatedPlayers: [{ id: "p3", name: "Charlie" }],
-      transcript: [
-        {
-          round: 1,
-          phase: Phase.LOBBY,
-          timestamp: 1000,
-          from: "Alice",
-          scope: "public",
-          text: "Hello!",
-          thinking: "Hidden snapshot thinking.",
-          reasoningContext: "Hidden snapshot reasoning.",
-        },
-      ],
-    };
+    const state = watchStateFixture("game-123", 7);
 
-    sendSnapshot(ws, snapshot);
+    sendWatchState(ws, state);
 
     expect(sent).toHaveLength(1);
     const parsed = JSON.parse(sent[0]!);
-    expect(parsed.type).toBe("game_state");
-    expect(parsed.snapshot.gameId).toBe("game-123");
-    expect(parsed.snapshot.alivePlayers).toHaveLength(2);
-    expect(parsed.snapshot.eliminatedPlayers).toHaveLength(1);
-    expect(parsed.snapshot.transcript).toHaveLength(1);
-    expect(parsed.snapshot.transcript[0].thinking).toBeUndefined();
-    expect(parsed.snapshot.transcript[0].reasoningContext).toBeUndefined();
+    expect(parsed.type).toBe("watch_state");
+    expect(parsed.state.gameId).toBe("game-123");
+    expect(parsed.state.eventCursor.sequence).toBe(7);
+    expect(JSON.stringify(parsed)).not.toContain("thinking");
+    expect(JSON.stringify(parsed)).not.toContain("reasoningContext");
+  });
+
+  test("broadcastWatchState publishes watch_state updates with cursor", () => {
+    const { server, published } = createMockServer();
+    setServer(server);
+
+    broadcastWatchState("game-watch", watchStateFixture("game-watch", 11));
+
+    expect(published[0]!.topic).toBe("game:game-watch");
+    const parsed = JSON.parse(published[0]!.data);
+    expect(parsed).toMatchObject({
+      type: "watch_state",
+      state: {
+        gameId: "game-watch",
+        eventCursor: { sequence: 11 },
+        projection: { availability: "available" },
+      },
+    });
   });
 
   test("broadcastGameEvent does nothing without server", () => {
@@ -354,3 +379,43 @@ describe("WebSocket Manager", () => {
     });
   });
 });
+
+function watchStateFixture(gameId: string, sequence: number): GameWatchState {
+  return {
+    schemaVersion: 1,
+    gameId,
+    status: "in_progress",
+    source: "durable_projection",
+    currentRound: 2,
+    currentPhase: "LOBBY",
+    maxRounds: 9,
+    eventCursor: {
+      sequence,
+      source: "trusted_prefix",
+      eventType: "round.started",
+      createdAt: "2026-06-20T00:00:00.000Z",
+    },
+    projection: {
+      availability: "available",
+      eventLogStatus: "complete",
+      projectionStatus: "complete",
+      eventCount: sequence,
+      trustedEventCount: sequence,
+      validPrefixLength: sequence,
+      lastTrustedSequence: sequence,
+      diagnostics: [],
+    },
+    players: [
+      { id: "p1", name: "Alice", persona: "strategic", status: "alive", shielded: false },
+      { id: "p2", name: "Bob", persona: "social", status: "alive", shielded: true },
+      { id: "p3", name: "Charlie", persona: "honest", status: "eliminated", shielded: false },
+    ],
+    counts: {
+      totalPlayers: 3,
+      alivePlayers: 2,
+      eliminatedPlayers: 1,
+      unknownPlayers: 0,
+    },
+    final: { status: "not_final" },
+  };
+}

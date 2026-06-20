@@ -660,6 +660,22 @@ export function DramaticReplayViewer({
   // Is the current message an elimination announcement?
   const isElimination = currentMessage?.scope === "system" && (currentMessage.text.includes("ELIMINATED:") || currentMessage.text.includes("AUTO-ELIMINATE:"));
 
+  const chatTypingIndicator = messagePhase === "typing" && currentMessage && !isSystemMessage ? (
+    <div className="flex items-center gap-2 px-1 py-1 animate-[fadeIn_0.2s_ease-out]">
+      {isCurrentRumor ? (
+        <span className="w-6 h-6 rounded-full bg-purple-900/40 flex items-center justify-center text-xs">🗣</span>
+      ) : currentPlayer ? (
+        <AgentAvatar avatarUrl={currentPlayer.avatarUrl} persona={currentPlayer.persona} name={currentPlayer.name} size="6" />
+      ) : null}
+      <span className={`text-xs ${isCurrentRumor ? "text-purple-300/70 italic" : "text-white/40"}`}>{currentPlayerName}</span>
+      <div className="flex items-center gap-1">
+        <span className="w-1.5 h-1.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1.2s" }} />
+        <span className="w-1.5 h-1.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "200ms", animationDuration: "1.2s" }} />
+        <span className="w-1.5 h-1.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "400ms", animationDuration: "1.2s" }} />
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div
       className="fixed inset-0 z-30 influence-shell flex flex-col cursor-pointer select-none"
@@ -788,23 +804,13 @@ export function DramaticReplayViewer({
           {/* --- Chat-style: Group Chat Feed --- */}
           {isChatFeedScene && (
             <div className="flex h-full min-h-0 flex-col gap-2">
-              <GroupChatFeed messages={chatFeedMessages} players={replayPlayers} phase={scene.phase} showThinking={showThinking} />
-              {/* Typing indicator below chat feed */}
-              {messagePhase === "typing" && currentMessage && !isSystemMessage && (
-                <div className="flex items-center gap-2 px-4 animate-[fadeIn_0.2s_ease-out]">
-                  {isCurrentRumor ? (
-                    <span className="w-6 h-6 rounded-full bg-purple-900/40 flex items-center justify-center text-xs">🗣</span>
-                  ) : currentPlayer ? (
-                    <AgentAvatar avatarUrl={currentPlayer.avatarUrl} persona={currentPlayer.persona} name={currentPlayer.name} size="6" />
-                  ) : null}
-                  <span className={`text-xs ${isCurrentRumor ? "text-purple-300/70 italic" : "text-white/40"}`}>{currentPlayerName}</span>
-                  <div className="flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "0ms", animationDuration: "1.2s" }} />
-                    <span className="w-1.5 h-1.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "200ms", animationDuration: "1.2s" }} />
-                    <span className="w-1.5 h-1.5 rounded-full bg-white/25 animate-bounce" style={{ animationDelay: "400ms", animationDuration: "1.2s" }} />
-                  </div>
-                </div>
-              )}
+              <GroupChatFeed
+                messages={chatFeedMessages}
+                players={replayPlayers}
+                phase={scene.phase}
+                showThinking={showThinking}
+                typingIndicator={chatTypingIndicator}
+              />
             </div>
           )}
 

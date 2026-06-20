@@ -21,6 +21,12 @@ export interface DurablePlayerStatusSummary {
   totalCount: number;
   aliveCount: number;
   eliminatedCount: number;
+  players: Array<{
+    id: string;
+    name: string;
+    status: "alive" | "eliminated";
+    shielded: boolean;
+  }>;
   aliveIds: string[];
   eliminatedIds: string[];
   aliveNames: string[];
@@ -68,7 +74,9 @@ function nameFor(projection: CanonicalGameProjection, playerId: string | null): 
 }
 
 function summarizePlayers(projection: CanonicalGameProjection): DurablePlayerStatusSummary {
-  const players = Object.values(projection.players);
+  const players = projection.playerOrder
+    .map((playerId) => projection.players[playerId])
+    .filter((player): player is NonNullable<typeof player> => player !== undefined);
   const alive = players.filter((player) => player.status !== "eliminated");
   const eliminated = players.filter((player) => player.status === "eliminated");
 
@@ -76,6 +84,12 @@ function summarizePlayers(projection: CanonicalGameProjection): DurablePlayerSta
     totalCount: players.length,
     aliveCount: alive.length,
     eliminatedCount: eliminated.length,
+    players: players.map((player) => ({
+      id: player.id,
+      name: player.name,
+      status: player.status === "eliminated" ? "eliminated" : "alive",
+      shielded: player.shielded,
+    })),
     aliveIds: alive.map((player) => player.id),
     eliminatedIds: eliminated.map((player) => player.id),
     aliveNames: alive.map((player) => player.name),

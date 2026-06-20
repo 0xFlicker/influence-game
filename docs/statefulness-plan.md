@@ -137,7 +137,7 @@ Build a `GameRunner.fromCheckpoint()` static factory that reconstructs a game mi
 
 **What CANNOT be restored**:
 - LLM conversation history per agent — the OpenAI/Anthropic conversation context is lost. Agents resume with a fresh context window but can be given a summary of prior rounds from the transcript.
-- `ViewerEventPacer` queue — acceptable loss; viewers reconnect and get a catch-up snapshot.
+- `ViewerEventPacer` queue — acceptable loss; viewers reconnect and get persisted `GameWatchState` catch-up. This restores viewer shell facts, not runner execution.
 
 **Mitigation for lost LLM context**: When resuming, inject a "game recap" system message into each agent's context built from the checkpoint transcript. This gives agents enough context to continue play, though they lose nuanced conversation memory. This is an acceptable tradeoff — games are short (4 rounds typical).
 

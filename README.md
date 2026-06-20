@@ -126,9 +126,9 @@ The frontend runs on `http://localhost:3001`. Doppler injects Privy/admin/runtim
 **Then:**
 
 1. Open `http://localhost:3001` in your browser
-2. Sign in via Privy (wallet or email)
+2. Sign in via Privy (wallet or email) for admin operations
 3. Use the admin panel to create a new game, configure player count, and start it
-4. Watch the game unfold live via WebSocket
+4. Open the game URL to watch it live; basic watching is public-by-URL, while fill/admin operations and private evidence remain auth-gated
 
 ### 4. Run tests
 

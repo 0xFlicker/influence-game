@@ -9,6 +9,13 @@ import { createEvidenceManifest } from "../services/game-evidence.js";
 import { getDurableRunInspection } from "../services/game-durable-run.js";
 import { acquireGameRunOwner } from "../services/game-ownership.js";
 import { abortAllGames, startGame } from "../services/game-lifecycle.js";
+import {
+  handleClose,
+  handleOpen,
+  setServer,
+  type WsConnectionData,
+} from "../services/ws-manager.js";
+import type { ServerWebSocket } from "bun";
 import { setupTestDB } from "./test-utils.js";
 import {
   createCanonicalEventFixture,
@@ -38,6 +45,22 @@ async function waitForCompletedDurableInspection(db: DrizzleDB, gameId: string) 
 describe("durable run inspection read model", () => {
   let db: DrizzleDB;
 
+  function openMockObserver(gameId: string): ServerWebSocket<WsConnectionData> {
+    const subscriptions = new Set<string>();
+    const ws = {
+      data: { gameId },
+      subscribe(topic: string) {
+        subscriptions.add(topic);
+      },
+      unsubscribe(topic: string) {
+        subscriptions.delete(topic);
+      },
+      send() {},
+    } as unknown as ServerWebSocket<WsConnectionData>;
+    handleOpen(ws);
+    return ws;
+  }
+
   beforeAll(() => {
     process.env.LINODE_OBJ_BUCKET = "public-profile-pictures";
     process.env.LINODE_PRIVATE_CONTENT_BUCKET = "private-content";
@@ -60,6 +83,7 @@ describe("durable run inspection read model", () => {
 
   afterEach(async () => {
     await abortAllGames();
+    setServer({ publish() {} });
   });
 
   test("inspects durable events and checkpoints written by the API lifecycle runner", async () => {
@@ -95,28 +119,53 @@ describe("durable run inspection read model", () => {
     expect(owner.ok).toBeTrue();
     if (!owner.ok) throw new Error(owner.error);
 
-    const startResult = await startGame(db, gameId, owner.claim.ownerEpoch);
-    expect(startResult.error).toBeUndefined();
+    const published: Array<{ topic: string; data: string }> = [];
+    setServer({
+      publish(topic: string, data: string) {
+        published.push({ topic, data });
+      },
+    });
+    const observer = openMockObserver(gameId);
 
-    const inspection = await waitForCompletedDurableInspection(db, gameId);
+    try {
+      const startResult = await startGame(db, gameId, owner.claim.ownerEpoch);
+      expect(startResult.error).toBeUndefined();
 
-    expect(inspection.game.status).toBe("completed");
-    expect(inspection.kernel.owner?.status).toBe("closed");
-    expect(inspection.eventLog.status).toBe("complete");
-    expect(inspection.eventLog.rowCount).toBeGreaterThan(0);
-    expect(inspection.projection.status).toBe("complete");
-    expect(inspection.projection.replayedEventCount).toBe(inspection.eventLog.rowCount);
-    expect(inspection.checkpoints.count).toBeGreaterThan(0);
-    expect(inspection.checkpoints.entries.every((checkpoint) => checkpoint.resumeAvailable === false)).toBeTrue();
-    expect(inspection.evidence.totalCount).toBe(0);
-    expect(inspection.diagnostics).toEqual([]);
+      const inspection = await waitForCompletedDurableInspection(db, gameId);
 
-    const transcriptRows = await db
-      .select()
-      .from(schema.transcripts)
-      .where(eq(schema.transcripts.gameId, gameId));
-    expect(transcriptRows.some((row) => row.phase === "DIARY_ROOM" && row.text === "--- Diary Room (after COUNCIL) ---")).toBeTrue();
-    expect(transcriptRows.some((row) => row.phase === "DIARY_ROOM" && row.scope === "diary" && row.text === "diary entry")).toBeTrue();
+      expect(inspection.game.status).toBe("completed");
+      expect(inspection.kernel.owner?.status).toBe("closed");
+      expect(inspection.eventLog.status).toBe("complete");
+      expect(inspection.eventLog.rowCount).toBeGreaterThan(0);
+      expect(inspection.projection.status).toBe("complete");
+      expect(inspection.projection.replayedEventCount).toBe(inspection.eventLog.rowCount);
+      expect(inspection.checkpoints.count).toBeGreaterThan(0);
+      expect(inspection.checkpoints.entries.every((checkpoint) => checkpoint.resumeAvailable === false)).toBeTrue();
+      expect(inspection.evidence.totalCount).toBe(0);
+      expect(inspection.diagnostics).toEqual([]);
+
+      const finalWatchState = published
+        .map((message) => JSON.parse(message.data) as { type: string; state?: { status?: string; currentPhase?: string; gameId?: string } })
+        .filter((message) => message.type === "watch_state")
+        .findLast((message) => message.state?.status === "completed");
+      expect(finalWatchState).toMatchObject({
+        type: "watch_state",
+        state: {
+          gameId,
+          status: "completed",
+          currentPhase: "END",
+        },
+      });
+
+      const transcriptRows = await db
+        .select()
+        .from(schema.transcripts)
+        .where(eq(schema.transcripts.gameId, gameId));
+      expect(transcriptRows.some((row) => row.phase === "DIARY_ROOM" && row.text === "--- Diary Room (after COUNCIL) ---")).toBeTrue();
+      expect(transcriptRows.some((row) => row.phase === "DIARY_ROOM" && row.scope === "diary" && row.text === "diary entry")).toBeTrue();
+    } finally {
+      handleClose(observer);
+    }
   });
 
   test("summarizes API kernel events, checkpoints, and private trace manifests without exposing raw content", async () => {

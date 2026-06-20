@@ -112,6 +112,14 @@ A derived read model rebuilt from canonical game events, such as current board s
 
 The local game MCP is a corpus-level projection host over simulation artifacts. It scans sessions under `packages/engine/docs/simulations/`, addresses games by `sessionId + gameNumber`, and stays read-only.
 
+## GameWatchState
+
+A viewer-safe web read model for live and completed games, derived from persisted canonical events and canonical projection. It supplies shell-level facts such as round, phase, alive/out status, shield state when known, winner/final state, event head, and projection availability. GameWatchState replaces runtime `GameStateSnapshot` websocket payloads as the product watch authority; it is not raw canonical event envelopes, checkpoint payload, transcript prose, private reasoning, producer evidence, or a claim of crash-safe resume.
+
+## MatchWatchShell
+
+The default web watch surface for live in-progress games and completed replays. It should consume GameWatchState for authoritative shell-level match facts while reusing phase theaters and replay controls for display. Richer audience-omniscient context, durable receipts, relationship edges, and checkpoint-shaped thought/strategy summaries belong to later data-load slices. It is a viewer product surface, not a claim that active game execution is crash-safe or resumable.
+
 ## MCP role / MCP scope
 
 The privileged authorization boundary for trusted MCP validation. A user with the `mcp` role may authorize the OAuth `mcp` scope, and a token with that scope grants global access to the producer MCP surfaces wired behind that scope. It is not user-scoped and should not be reused for ordinary player game-history access.

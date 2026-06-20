@@ -15,6 +15,15 @@ import { createSessionToken } from "../middleware/auth.js";
 import { randomUUID } from "crypto";
 import { setupTestDB } from "./test-utils.js";
 import { abortAllGames } from "../services/game-lifecycle.js";
+import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
+import { setServer } from "../services/ws-manager.js";
+import { Phase, type CanonicalGameEvent } from "@influence/engine";
+import {
+  createCanonicalEventFixture,
+  createResolvedRoundCanonicalEventFixture,
+  insertCanonicalEventRows,
+  insertOwner,
+} from "./durable-run-test-utils.js";
 
 // ---------------------------------------------------------------------------
 // Set required env vars for auth
@@ -145,6 +154,66 @@ async function markGameCompleted(db: DrizzleDB, gameId: string): Promise<void> {
   await db.update(schema.games)
     .set({ status: "completed", endedAt: new Date().toISOString() })
     .where(eq(schema.games.id, gameId));
+}
+
+async function insertFixturePlayers(db: DrizzleDB, gameId: string): Promise<void> {
+  const players = [
+    { id: "atlas", name: "Atlas" },
+    { id: "echo", name: "Echo" },
+    { id: "mira", name: "Mira" },
+    { id: "nyx", name: "Nyx" },
+  ];
+  await db.insert(schema.gamePlayers).values(players.map((player) => ({
+    id: player.id,
+    gameId,
+    persona: JSON.stringify({
+      name: player.name,
+      personality: `${player.name} persona`,
+      personaKey: "strategic",
+    }),
+    agentConfig: JSON.stringify({ model: "test-model", temperature: 0 }),
+  })));
+}
+
+async function markGameInProgress(db: DrizzleDB, gameId: string): Promise<void> {
+  await db.update(schema.games)
+    .set({ status: "in_progress", startedAt: new Date().toISOString() })
+    .where(eq(schema.games.id, gameId));
+}
+
+async function insertResult(
+  db: DrizzleDB,
+  gameId: string,
+  params: { winnerId: string | null; roundsPlayed: number },
+): Promise<void> {
+  await db.insert(schema.gameResults).values({
+    id: randomUUID(),
+    gameId,
+    winnerId: params.winnerId,
+    roundsPlayed: params.roundsPlayed,
+    tokenUsage: JSON.stringify({ promptTokens: 0, completionTokens: 0, totalTokens: 0 }),
+  });
+}
+
+function advanceToRoundTwo(events: readonly CanonicalGameEvent[]): readonly CanonicalGameEvent[] {
+  const last = events.at(-1);
+  if (!last) throw new Error("Expected fixture events");
+  return [
+    ...events,
+    {
+      sequence: last.sequence + 1,
+      gameId: last.gameId,
+      round: 2,
+      phase: Phase.LOBBY,
+      type: "round.started",
+      timestamp: "2026-06-20T00:00:00.000Z",
+      source: "engine",
+      visibility: "system",
+      payloadVersion: 1,
+      sourcePointers: [],
+      payload: { round: 2 },
+    },
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -378,6 +447,39 @@ describe("Game REST API", () => {
       expect(body[0]!.playerCount).toBe(6);
       expect(body[0]!.alivePlayers).toBe(2);
     });
+
+    test("summaries use durable projection for live round, phase, and alive/out counts", async () => {
+      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      await insertFixturePlayers(db, id);
+      await markGameInProgress(db, id);
+      const ownerEpoch = await insertOwner(db, id);
+      const events = advanceToRoundTwo(createResolvedRoundCanonicalEventFixture(id));
+      await appendGameEvents(db, { gameId: id, ownerEpoch, events });
+
+      const res = await app.request("/api/games?status=in_progress");
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Array<{
+        id: string;
+        currentRound: number;
+        currentPhase: string;
+        alivePlayers: number;
+        eliminatedPlayers: number;
+        watchState: { source: string; eventCursor: { sequence: number } };
+      }>;
+
+      expect(body).toHaveLength(1);
+      expect(body[0]).toMatchObject({
+        id,
+        currentRound: 2,
+        currentPhase: "LOBBY",
+        alivePlayers: 3,
+        eliminatedPlayers: 1,
+        watchState: {
+          source: "durable_projection",
+          eventCursor: { sequence: events.length },
+        },
+      });
+    });
   });
 
   // =========================================================================
@@ -407,6 +509,120 @@ describe("Game REST API", () => {
     test("returns 404 for non-existent game", async () => {
       const res = await app.request(`/api/games/${randomUUID()}`);
       expect(res.status).toBe(404);
+    });
+
+    test("returns public durable watch state for in-progress games without auth", async () => {
+      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      await insertFixturePlayers(db, id);
+      await markGameInProgress(db, id);
+      const ownerEpoch = await insertOwner(db, id);
+      const events = advanceToRoundTwo(createResolvedRoundCanonicalEventFixture(id));
+      await appendGameEvents(db, { gameId: id, ownerEpoch, events });
+
+      const res = await app.request(`/api/games/${id}`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        currentRound: number;
+        currentPhase: string;
+        players: Array<{ id: string; status: string }>;
+        watchState: {
+          source: string;
+          currentRound: number;
+          currentPhase: string;
+          counts: { alivePlayers: number; eliminatedPlayers: number };
+        };
+      };
+
+      expect(body.currentRound).toBe(2);
+      expect(body.currentPhase).toBe("LOBBY");
+      expect(body.players.filter((player) => player.status === "eliminated")).toHaveLength(1);
+      expect(body.watchState).toMatchObject({
+        source: "durable_projection",
+        currentRound: 2,
+        currentPhase: "LOBBY",
+        counts: { alivePlayers: 3, eliminatedPlayers: 1 },
+      });
+    });
+
+    test("labels older completed games as best-available terminal watch state", async () => {
+      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      await insertFixturePlayers(db, id);
+      await insertResult(db, id, { winnerId: "mira", roundsPlayed: 4 });
+      await markGameCompleted(db, id);
+
+      const res = await app.request(`/api/games/${id}`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        currentRound: number;
+        currentPhase: string;
+        winner?: string;
+        players: Array<{ id: string; status: string }>;
+        watchState: {
+          source: string;
+          projection: { availability: string; eventLogStatus: string };
+          final: { winner?: { name: string; source: string } };
+        };
+      };
+
+      expect(body).toMatchObject({
+        currentRound: 4,
+        currentPhase: "END",
+        winner: "Mira",
+        watchState: {
+          source: "best_available_terminal_result",
+          projection: { availability: "unavailable", eventLogStatus: "empty" },
+          final: { winner: { name: "Mira", source: "best_available_terminal_result" } },
+        },
+      });
+      expect(body.players.find((player) => player.id === "mira")?.status).toBe("alive");
+      expect(body.players.filter((player) => player.id !== "mira").map((player) => player.status)).toEqual([
+        "unknown",
+        "unknown",
+        "unknown",
+      ]);
+    });
+
+    test("returns degraded watch state for invalid durable logs without trusting invalid suffix", async () => {
+      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      await insertFixturePlayers(db, id);
+      await markGameInProgress(db, id);
+      const ownerEpoch = await insertOwner(db, id, { lastPersistedEventSequence: 3 });
+      const events = createCanonicalEventFixture(id).slice(0, 3);
+      await insertCanonicalEventRows(db, id, ownerEpoch, events, {
+        eventHash: (event) => event.sequence === 2
+          ? "sha256:not-the-real-event-hash"
+          : hashCanonicalEvent(event),
+      });
+
+      const res = await app.request(`/api/games/${id}`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        currentRound: number;
+        currentPhase: string;
+        watchState: {
+          source: string;
+          eventCursor: { sequence: number };
+          projection: {
+            availability: string;
+            eventLogStatus: string;
+            validPrefixLength: number;
+            firstInvalidSequence: number;
+          };
+        };
+      };
+
+      expect(body.currentRound).toBe(0);
+      expect(body.currentPhase).toBe("INIT");
+      expect(body.watchState).toMatchObject({
+        source: "degraded",
+        eventCursor: { sequence: 1 },
+        projection: {
+          availability: "degraded",
+          eventLogStatus: "invalid",
+          validPrefixLength: 1,
+          firstInvalidSequence: 2,
+        },
+      });
     });
   });
 
@@ -494,6 +710,68 @@ describe("Game REST API", () => {
 
       const players = await db.select().from(schema.gamePlayers);
       expect(players[0]!.userId).toBe(REGULAR_USER_ID);
+    });
+  });
+
+  // =========================================================================
+  // POST /api/games/:id/fill
+  // =========================================================================
+
+  describe("POST /api/games/:id/fill", () => {
+    test("returns fill state for refresh without broadcasting operational player frames", async () => {
+      const envKeys = [
+        "INFLUENCE_LLM_BASE_URL",
+        "OPENAI_BASE_URL",
+        "LM_STUDIO_BASE_URL",
+        "INFLUENCE_LLM_API_KEY",
+        "OPENAI_API_KEY",
+        "LM_STUDIO_API_KEY",
+      ] as const;
+      const savedEnv = new Map<string, string | undefined>(
+        envKeys.map((key) => [key, process.env[key]]),
+      );
+      for (const key of envKeys) {
+        delete process.env[key];
+      }
+
+      try {
+        const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+        await joinTestPlayer(app, id, "Atlas", userToken);
+
+        const published: Array<{ topic: string; data: string }> = [];
+        setServer({
+          publish(topic: string, data: string) {
+            published.push({ topic, data });
+          },
+        });
+
+        const res = await app.request(`/api/games/${id}/fill`, authPost(adminToken));
+        expect(res.status).toBe(202);
+        const body = (await res.json()) as {
+          filling: true;
+          filled: number;
+          totalPlayers: number;
+          players: Array<{ id: string; name: string; archetype: string }>;
+        };
+        expect(body.filling).toBe(true);
+        expect(body.filled).toBe(3);
+        expect(body.totalPlayers).toBe(4);
+        expect(body.players).toHaveLength(3);
+        expect(published).toEqual([]);
+
+        const detailRes = await app.request(`/api/games/${id}`);
+        const detail = (await detailRes.json()) as { players: unknown[] };
+        expect(detail.players).toHaveLength(4);
+      } finally {
+        setServer({ publish() {} });
+        for (const [key, value] of savedEnv) {
+          if (value === undefined) {
+            delete process.env[key];
+          } else {
+            process.env[key] = value;
+          }
+        }
+      }
     });
   });
 
@@ -624,6 +902,7 @@ describe("Game REST API", () => {
             fromPlayerId: playerId,
             scope: "public",
             text: "I am Atlas.",
+            thinking: "I want viewers to understand my opening posture.",
             timestamp: Date.now(),
           },
           {
@@ -644,12 +923,15 @@ describe("Game REST API", () => {
         fromPlayerName: string | null;
         scope: string;
         text: string;
+        thinking: string | null;
       }>;
       expect(body).toHaveLength(2);
       expect(body[0]!.fromPlayerName).toBe("Atlas");
       expect(body[0]!.scope).toBe("public");
+      expect(body[0]!.thinking).toBe("I want viewers to understand my opening posture.");
       expect(body[1]!.fromPlayerName).toBeNull();
       expect(body[1]!.scope).toBe("system");
+      expect(body[1]!.thinking).toBeNull();
     });
 
     test("transcript entries are ordered by timestamp", async () => {

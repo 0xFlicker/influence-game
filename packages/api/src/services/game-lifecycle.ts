@@ -20,11 +20,11 @@ import {
 } from "@influence/engine";
 import type {
   AgentResponse,
+  CanonicalGameEvent,
   IAgent,
   MingleIntentAction,
   Personality,
   GameConfig,
-  GameStateSnapshot,
   PhaseContext,
   PrivateDecisionTrace,
   PrivateTraceSink,
@@ -38,11 +38,12 @@ import type {
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { PgMemoryStore } from "../db/memory-store.js";
-import { broadcastGameEvent, broadcastRaw } from "./ws-manager.js";
+import { broadcastGameEvent, broadcastRaw, broadcastWatchState, getObserverCount } from "./ws-manager.js";
 import { ViewerEventPacer } from "./viewer-event-pacer.js";
 import { calculateEloChanges } from "./elo.js";
 import type { PlayerResult } from "./elo.js";
 import { appendGameEvents } from "./game-events.js";
+import { getGameWatchState } from "./game-watch-state.js";
 import { writeGameCheckpoint } from "./game-checkpoints.js";
 import {
   assertOwnerActive,
@@ -177,11 +178,33 @@ export async function abortAllGames(): Promise<void> {
   await Promise.all(promises);
 }
 
-/** Get a state snapshot for a running game (for WebSocket catch-up). */
-export function getGameSnapshot(gameId: string): GameStateSnapshot | null {
-  const active = activeGames.get(gameId);
-  if (!active) return null;
-  return active.runner.getStateSnapshot();
+export async function appendDurableEventsAndPublishWatchState(
+  db: DrizzleDB,
+  params: {
+    gameId: string;
+    ownerEpoch: string;
+    events: readonly CanonicalGameEvent[];
+  },
+): Promise<void> {
+  await appendGameEvents(db, params);
+  await publishCurrentWatchState(db, params.gameId, "durable append");
+}
+
+async function publishCurrentWatchState(
+  db: DrizzleDB,
+  gameId: string,
+  reason: string,
+): Promise<void> {
+  if (getObserverCount(gameId) === 0) return;
+  try {
+    const watchState = await getGameWatchState(db, gameId);
+    if (watchState) {
+      broadcastWatchState(gameId, watchState);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[game-lifecycle] Watch-state publish failed after ${reason} for game ${gameId}: ${message}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -692,7 +715,7 @@ export async function startGame(
     ...(privateTraceSink && { privateTraceSink }),
     tokenTracker,
     ...(ownerEpoch && {
-      durableEventSink: (events) => appendGameEvents(db, { gameId, ownerEpoch, events }),
+      durableEventSink: (events) => appendDurableEventsAndPublishWatchState(db, { gameId, ownerEpoch, events }),
       durableCheckpointSink: async (checkpoint) => {
         const result = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
         if (!result.ok) {
@@ -755,6 +778,7 @@ async function runGameAsync(
       tokenTracker,
       gameConfig,
     });
+    await publishCurrentWatchState(db, gameId, "completion");
     persistedTranscriptEntries = result.transcript.length;
     if (ownerEpoch) {
       broadcastRaw(gameId, {

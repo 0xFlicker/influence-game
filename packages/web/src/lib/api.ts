@@ -107,6 +107,18 @@ export type TrackType = "custom" | "free";
 export type KernelHealthStatus = "healthy" | "degraded" | "suspended" | "unknown";
 export type CognitiveArtifactType = "reasoning" | "thinking" | "strategy";
 export type CognitiveArtifactActorRole = "player" | "juror" | "house" | "system" | "producer";
+export type GameWatchStateSource = "durable_projection" | "degraded" | "best_available_terminal_result" | "pre_kernel_empty";
+export type GameWatchProjectionAvailability = "available" | "degraded" | "unavailable";
+export type GameWatchPlayerStatus = "alive" | "eliminated" | "unknown";
+export type GameWatchDiagnosticCode =
+  | "duplicate_sequence"
+  | "hash_mismatch"
+  | "invalid_envelope"
+  | "metadata_mismatch"
+  | "projection_replay_failed"
+  | "sequence_gap"
+  | "unsupported_payload_version"
+  | "wrong_game";
 
 export interface KernelHealthSummary {
   status: KernelHealthStatus;
@@ -118,6 +130,86 @@ export interface KernelHealthSummary {
   hasCheckpoints: boolean;
   hasEvidenceManifests: boolean;
 }
+
+export interface GameWatchDiagnosticSummary {
+  code: GameWatchDiagnosticCode;
+  severity: "error";
+  message: string;
+  sequence?: number;
+  eventType?: string;
+}
+
+export interface GameWatchEventCursor {
+  sequence: number;
+  source: "trusted_prefix" | "none";
+  eventType?: string;
+  createdAt?: string;
+}
+
+export interface GameWatchProjectionState {
+  availability: GameWatchProjectionAvailability;
+  eventLogStatus: "empty" | "complete" | "invalid";
+  projectionStatus: "empty" | "complete" | "incomplete" | "failed";
+  eventCount: number;
+  trustedEventCount: number;
+  validPrefixLength: number;
+  lastTrustedSequence: number;
+  firstInvalidSequence?: number;
+  persistedHead?: {
+    sequence: number;
+    eventType: string;
+    createdAt: string;
+  };
+  diagnostics: GameWatchDiagnosticSummary[];
+}
+
+export interface GameWatchPlayer {
+  id: string;
+  name: string;
+  persona: string;
+  status: GameWatchPlayerStatus;
+  shielded: boolean;
+  avatarUrl?: string;
+}
+
+export interface GameWatchFinalState {
+  status: "not_final" | "final";
+  winner?: {
+    id: string;
+    name: string;
+    method?: string;
+    source: "durable_projection" | "degraded" | "best_available_terminal_result";
+  };
+  roundsPlayed?: number;
+}
+
+export interface GameWatchState {
+  schemaVersion: 1;
+  gameId: string;
+  slug?: string;
+  status: GameStatus;
+  source: GameWatchStateSource;
+  currentRound: number;
+  currentPhase: string;
+  maxRounds: number;
+  eventCursor: GameWatchEventCursor;
+  projection: GameWatchProjectionState;
+  players: GameWatchPlayer[];
+  counts: {
+    totalPlayers: number;
+    alivePlayers: number;
+    eliminatedPlayers: number;
+    unknownPlayers: number;
+  };
+  final: GameWatchFinalState;
+  winner?: {
+    id: string;
+    name: string;
+    method?: string;
+  };
+}
+
+export type GameWatchStateSummary = Omit<GameWatchState, "players">;
 
 export interface CreateGameParams {
   playerCount: 4 | 6 | 8 | 10 | 12;
@@ -152,6 +244,7 @@ export interface GameSummary {
   winnerPersona?: string;
   errorInfo?: string;
   kernelHealth?: KernelHealthSummary;
+  watchState?: GameWatchStateSummary;
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
@@ -637,7 +730,7 @@ export type PhaseKey =
   | "SUSPENDED"
   | "END";
 
-export type PlayerState = "alive" | "eliminated";
+export type PlayerState = "alive" | "eliminated" | "unknown";
 
 export interface GamePlayer {
   id: string;
@@ -720,6 +813,7 @@ export interface GameDetail {
   finalists?: [string, string];
   errorInfo?: string;
   kernelHealth?: KernelHealthSummary;
+  watchState?: GameWatchState;
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
@@ -742,14 +836,8 @@ export interface WsTranscriptEntry {
 /** WebSocket event types pushed from the server (matches WsOutboundEvent in packages/api) */
 export type WsGameEvent =
   | {
-      type: "game_state";
-      snapshot: {
-        gameId: string;
-        round: number;
-        alivePlayers: Array<{ id: string; name: string; shielded: boolean }>;
-        eliminatedPlayers: Array<{ id: string; name: string }>;
-        transcript: WsTranscriptEntry[];
-      };
+      type: "watch_state";
+      state: GameWatchState;
     }
   | {
       type: "phase_change";
@@ -777,17 +865,6 @@ export type WsGameEvent =
       terminal: true;
       reasonCode: string;
       message?: string;
-    }
-  | {
-      type: "players_filled";
-      gameId: string;
-      players: Array<{ id: string; name: string; archetype: string }>;
-      totalPlayers: number;
-    }
-  | {
-      type: "players_updated";
-      gameId: string;
-      players: Array<{ id: string; name: string; archetype: string }>;
     }
   | {
       type: "error";

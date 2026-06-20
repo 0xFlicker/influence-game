@@ -4,8 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAccount } from "wagmi";
-import { listGames, stopGame, startGame, fillGame, isFillAccepted, hideGame, type GameSummary, type WsGameEvent } from "@/lib/api";
-import { useGameWebSocket } from "@/app/games/[slug]/components/use-game-websocket";
+import { listGames, stopGame, startGame, fillGame, isFillAccepted, hideGame, type GameSummary } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { TruncatedAddress } from "@/components/truncated-address";
 
@@ -118,24 +117,6 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
   const [hiding, setHiding] = useState(false);
   const [confirmHide, setConfirmHide] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-
-  const handleWsEvent = useCallback(
-    (ev: WsGameEvent) => {
-      if (ev.type === "players_filled") {
-        setFilling(false);
-        onRefresh();
-      }
-      if (ev.type === "error") {
-        setFilling(false);
-        setActionError(ev.message);
-        onRefresh();
-      }
-    },
-    [onRefresh],
-  );
-
-  // Connect to game WS only while filling to receive players_filled confirmation
-  useGameWebSocket(game.id, filling, handleWsEvent);
 
   async function handleFill() {
     setActionError(null);

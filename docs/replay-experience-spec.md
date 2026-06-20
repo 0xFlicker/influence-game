@@ -323,6 +323,8 @@ Auto-play stops at the final scene's final message unless looping is enabled (V2
 | Controls | None | Full play/pause/scrub/speed |
 | Elimination pacing | Choreographed (live) | Choreographed + auto-pause |
 
+Live and replay watch surfaces should treat `GameWatchState` as the authoritative source for shell-level match facts: round, phase, alive/out status, shield state when known, final state, winner, and projection availability. WebSocket display events and replay transcript scenes explain what the viewer sees; they are not the source of truth for match state.
+
 **Key replay-exclusive unlocks:**
 1. Full whisper content (private rooms reveal)
 2. Speed control (analysis mode at 4x, cinematic at 0.5x)

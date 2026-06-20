@@ -8,13 +8,12 @@ import {
   getGameTranscript,
   getAuthToken,
   type GameDetail,
-  type GamePlayer,
   type GameSummary,
+  type GameStatus,
   type TranscriptEntry,
   type WsGameEvent,
   type PhaseKey,
 } from "@/lib/api";
-import { usePermissions } from "@/hooks/use-permissions";
 import { audioCue } from "@/lib/audio-cues";
 import { JoinGameModal } from "@/app/dashboard/join-game-modal";
 
@@ -36,6 +35,10 @@ import {
 } from "./components/constants";
 import { wsEntryToTranscriptEntry } from "./components/message-parsing";
 import { useGameWebSocket } from "./components/use-game-websocket";
+import {
+  applyWatchStateToGameDetail,
+  shouldApplyWatchStateUpdate,
+} from "./components/match-watch-model";
 import { ReplayControls } from "./components/replay-controls";
 import { MessageBubble } from "./components/message-bubble";
 import { PhaseTransitionOverlay } from "./components/phase-transition";
@@ -64,7 +67,6 @@ export function GameViewer({
   mode,
 }: GameViewerProps) {
   const { authenticated, login } = usePrivy();
-  const { isAdmin, loading: permLoading } = usePermissions();
   const router = useRouter();
   const [joinModalOpen, setJoinModalOpen] = useState(false);
   const [joinedSuccess, setJoinedSuccess] = useState(false);
@@ -84,6 +86,13 @@ export function GameViewer({
   const msgIdRef = useRef(-1);
   // maxRounds ref so handleWsEvent can access it without being a dep
   const maxRoundsRef = useRef<number>(initialGame?.maxRounds ?? 9);
+  const watchCursorRef = useRef<number>(
+    initialGame?.watchState?.eventCursor.sequence ?? 0,
+  );
+  const gameStatusRef = useRef<GameStatus>(initialGame?.status ?? "waiting");
+  const watchFinalStatusRef = useRef<"not_final" | "final" | undefined>(
+    initialGame?.watchState?.final.status,
+  );
   // Track players whose next public message is their elimination last words.
   // Map: playerId → true (present = awaiting last words)
   const awaitingLastWordsRef = useRef<Set<string>>(new Set());
@@ -100,21 +109,27 @@ export function GameViewer({
   const [revealQueue, setRevealQueue] = useState<TranscriptEntry[]>([]);
   const [revealShown, setRevealShown] = useState<TranscriptEntry[]>([]);
   // Track phase in a ref so handleWsEvent (useCallback) can access it without stale closure
-  const currentPhaseRef = useRef<PhaseKey>("INIT");
+  const currentPhaseRef = useRef<PhaseKey>(
+    (initialGame?.watchState?.currentPhase ?? initialGame?.currentPhase ?? "INIT") as PhaseKey,
+  );
   // Speedrun flag — derive early so useEffects can use it as dependency
   const isSpeedrun = game?.viewerMode === "speedrun";
   // Diary Room tab state (desktop toggle)
   const [activeTab, setActiveTab] = useState<"stage" | "diary">("stage");
   const [newDiaryCount, setNewDiaryCount] = useState(0);
   const activeTabRef = useRef<"stage" | "diary">("stage");
-  activeTabRef.current = activeTab;
   // Mobile 4-tab state
   type MobileTab = "chat" | "players" | "diary" | "votes";
   const [mobileTab, setMobileTab] = useState<MobileTab>("chat");
   const [newChatCount, setNewChatCount] = useState(0);
   const [newEliminationsCount, setNewEliminationsCount] = useState(0);
   const mobileTabRef = useRef<MobileTab>("chat");
-  mobileTabRef.current = mobileTab;
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+  useEffect(() => {
+    mobileTabRef.current = mobileTab;
+  }, [mobileTab]);
   // Auth state (for diary room gate)
   const [isAuthenticated, setIsAuthenticated] = useState(() =>
     typeof window !== "undefined" ? !!getAuthToken() : false,
@@ -156,6 +171,12 @@ export function GameViewer({
   useEffect(() => {
     if (initialGame) {
       // Already have game data; set replay index to end
+      maxRoundsRef.current = initialGame.maxRounds;
+      watchCursorRef.current = initialGame.watchState?.eventCursor.sequence ?? 0;
+      gameStatusRef.current = initialGame.status;
+      watchFinalStatusRef.current = initialGame.watchState?.final.status;
+      currentPhaseRef.current = (initialGame.watchState?.currentPhase ??
+        initialGame.currentPhase) as PhaseKey;
       setReplayIndex((initialMessages?.length ?? 1) - 1);
       return;
     }
@@ -167,6 +188,11 @@ export function GameViewer({
         const gameData = await getGame(gameId);
         setGame(gameData);
         maxRoundsRef.current = gameData.maxRounds;
+        watchCursorRef.current = gameData.watchState?.eventCursor.sequence ?? 0;
+        gameStatusRef.current = gameData.status;
+        watchFinalStatusRef.current = gameData.watchState?.final.status;
+        currentPhaseRef.current = (gameData.watchState?.currentPhase ??
+          gameData.currentPhase) as PhaseKey;
         if (
           gameData.status === "completed" ||
           gameData.status === "cancelled"
@@ -351,71 +377,38 @@ export function GameViewer({
   const handleWsEvent = useCallback(
     (ev: WsGameEvent) => {
       switch (ev.type) {
-        case "game_state": {
-          const { snapshot } = ev;
-          // Derive current phase from last transcript entry (snapshot lacks explicit phase field)
-          const lastEntry = snapshot.transcript.at(-1);
-          const snapshotPhase = (lastEntry?.phase ?? "INIT") as PhaseKey;
-
-          // Build a complete player registry from all sources (alive + eliminated)
-          setGame((g) => {
-            if (!g) return g;
-
-            const playerMap = new Map<string, GamePlayer>();
-
-            // Seed with existing players (preserves persona info from getGame())
-            for (const p of g.players) {
-              playerMap.set(p.id, p);
-            }
-
-            // Update/add alive players from snapshot
-            for (const ap of snapshot.alivePlayers) {
-              const existing = playerMap.get(ap.id);
-              playerMap.set(ap.id, {
-                id: ap.id,
-                name: ap.name,
-                persona: existing?.persona ?? "strategic",
-                status: "alive" as const,
-                shielded: ap.shielded,
-              });
-            }
-
-            // Update/add eliminated players from snapshot
-            for (const ep of snapshot.eliminatedPlayers) {
-              const existing = playerMap.get(ep.id);
-              playerMap.set(ep.id, {
-                id: ep.id,
-                name: ep.name,
-                persona: existing?.persona ?? "strategic",
-                status: "eliminated" as const,
-                shielded: false,
-              });
-            }
-
-            return {
-              ...g,
-              currentRound: snapshot.round,
-              currentPhase: snapshotPhase,
-              players: Array.from(playerMap.values()),
-            };
-          });
-
-          // Sync phase ref so REVEAL/COUNCIL queue logic works immediately on reconnect
-          if (snapshotPhase !== "INIT") {
-            currentPhaseRef.current = snapshotPhase;
+        case "watch_state": {
+          const { state } = ev;
+          if (!shouldApplyWatchStateUpdate(
+            watchCursorRef.current,
+            state,
+            gameStatusRef.current,
+            watchFinalStatusRef.current,
+          )) {
+            break;
           }
-          // Detect shield state changes to trigger shatter animation + audio
+
+          watchCursorRef.current = state.eventCursor.sequence;
+          gameStatusRef.current = state.status;
+          watchFinalStatusRef.current = state.final.status;
+          maxRoundsRef.current = state.maxRounds;
+          setGame((g) => (g ? applyWatchStateToGameDetail(g, state) : g));
+
+          if (state.currentPhase !== "INIT") {
+            currentPhaseRef.current = state.currentPhase as PhaseKey;
+          }
+
           const newlyUnshielded: string[] = [];
-          for (const ap of snapshot.alivePlayers) {
-            const wasShielded = prevShieldedRef.current.get(ap.id);
-            if (wasShielded === false && ap.shielded) {
+          for (const player of state.players) {
+            const wasShielded = prevShieldedRef.current.get(player.id);
+            if (wasShielded === false && player.shielded) {
               // Shield just granted
               audioCue.sting("shield_granted");
             }
-            if (wasShielded === true && !ap.shielded) {
-              newlyUnshielded.push(ap.id);
+            if (wasShielded === true && !player.shielded) {
+              newlyUnshielded.push(player.id);
             }
-            prevShieldedRef.current.set(ap.id, ap.shielded);
+            prevShieldedRef.current.set(player.id, player.shielded);
           }
           if (newlyUnshielded.length > 0) {
             setRecentlyUnshielded(
@@ -430,21 +423,11 @@ export function GameViewer({
               });
             }, 800);
           }
-          // Load catch-up transcript
-          let id = msgIdRef.current;
-          const msgs = snapshot.transcript.map((entry) =>
-            wsEntryToTranscriptEntry(entry, snapshot.gameId, id--),
-          );
-          msgIdRef.current = id;
-          setMessages(msgs);
           break;
         }
         case "phase_change": {
           const prevPhase = currentPhaseRef.current;
           currentPhaseRef.current = ev.phase as PhaseKey;
-          setGame((g) =>
-            g ? { ...g, currentPhase: ev.phase, currentRound: ev.round } : g,
-          );
           // When entering REVEAL: reset reveal panel for new round
           if (ev.phase === "REVEAL") {
             setRevealShown([]);
@@ -545,47 +528,13 @@ export function GameViewer({
           // Audio: player eliminated sting + drama zone
           audioCue.sting("player_eliminated");
           audioCue.zone("drama");
-          setGame((g) => {
-            if (!g) return g;
-            const found = g.players.some((p) => p.id === ev.playerId);
-            const updated = found
-              ? g.players.map((p) =>
-                  p.id === ev.playerId
-                    ? {
-                        ...p,
-                        status: "eliminated" as const,
-                        name: ev.playerName || p.name,
-                      }
-                    : p,
-                )
-              : [
-                  ...g.players,
-                  {
-                    id: ev.playerId,
-                    name: ev.playerName,
-                    persona: "strategic",
-                    status: "eliminated" as const,
-                    shielded: false,
-                  },
-                ];
-            return { ...g, players: updated };
-          });
           break;
         case "game_over":
-          setGame((g) =>
-            g
-              ? {
-                  ...g,
-                  status: "completed",
-                  currentPhase: "END",
-                  winner: ev.winnerName,
-                }
-              : g,
-          );
           audioCue.sting("winner_announced");
           audioCue.zone("resolution");
           break;
         case "game_status":
+          gameStatusRef.current = ev.status;
           setGame((g) =>
             g
               ? {
@@ -599,17 +548,7 @@ export function GameViewer({
           setLoadError(null);
           break;
         case "error":
-          setGame((g) =>
-            g
-              ? {
-                  ...g,
-                  status: "suspended",
-                  currentPhase: "SUSPENDED",
-                  errorInfo: ev.message,
-                }
-              : g,
-          );
-          setLoadError(null);
+          setLoadError(ev.message);
           break;
       }
     },
@@ -618,7 +557,7 @@ export function GameViewer({
 
   const wsStatus = useGameWebSocket(
     gameId,
-    !!gameId && game?.status === "in_progress" && isAdmin,
+    !!gameId && game?.status === "in_progress",
     handleWsEvent,
   );
 
@@ -664,26 +603,6 @@ export function GameViewer({
             {health.durableEventCount} durable events · {health.checkpointCount} checkpoints · {health.evidenceManifestCount} evidence manifests
           </p>
         )}
-        <button
-          onClick={() => router.push("/games")}
-          className="mt-2 text-sm px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/70 transition-colors"
-        >
-          Browse games
-        </button>
-      </div>
-    );
-  }
-
-  // Gate live match viewing to admin-only (INF-92).
-  // Non-admin users see a "game in progress" notice instead of the live feed.
-  if (game.status === "in_progress" && !permLoading && !isAdmin) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center px-4">
-        <div className="text-4xl">&#x1f3ac;</div>
-        <h2 className="text-xl font-semibold text-white">Game in progress</h2>
-        <p className="text-white/50 text-sm max-w-md">
-          Check back once the game is finished to watch the full replay.
-        </p>
         <button
           onClick={() => router.push("/games")}
           className="mt-2 text-sm px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/70 transition-colors"

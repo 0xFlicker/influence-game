@@ -6,7 +6,8 @@
  */
 
 import type { ServerWebSocket } from "bun";
-import type { GameStreamEvent, GameStateSnapshot, TranscriptEntry } from "@influence/engine";
+import type { GameStreamEvent, TranscriptEntry } from "@influence/engine";
+import type { GameWatchState } from "./game-watch-state.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -18,14 +19,12 @@ export interface WsConnectionData {
 
 /** Event shape sent to WebSocket clients (matches WsGameEvent in web/lib/api.ts) */
 export type WsOutboundEvent =
-  | { type: "game_state"; snapshot: GameStateSnapshot }
+  | { type: "watch_state"; state: GameWatchState }
   | { type: "phase_change"; phase: string; round: number; alivePlayers: string[] }
   | { type: "message"; entry: TranscriptEntry }
   | { type: "player_eliminated"; playerId: string; playerName: string; round: number }
   | { type: "game_over"; winner?: string; winnerName?: string; totalRounds: number }
   | { type: "game_status"; gameId: string; status: "suspended" | "cancelled"; terminal: true; reasonCode: string; message?: string }
-  | { type: "players_filled"; gameId: string; players: Array<{ id: string; name: string; archetype: string }>; totalPlayers: number }
-  | { type: "players_updated"; gameId: string; players: Array<{ id: string; name: string; archetype: string }> }
   | { type: "error"; message: string };
 
 // ---------------------------------------------------------------------------
@@ -57,15 +56,8 @@ function gameTopic(gameId: string): string {
 }
 
 function sanitizeTranscriptEntry(entry: TranscriptEntry): TranscriptEntry {
-  const { thinking: _thinking, reasoningContext: _reasoningContext, ...safeEntry } = entry;
+  const { reasoningContext: _reasoningContext, ...safeEntry } = entry;
   return safeEntry;
-}
-
-function sanitizeSnapshot(snapshot: GameStateSnapshot): GameStateSnapshot {
-  return {
-    ...snapshot,
-    transcript: snapshot.transcript.map(sanitizeTranscriptEntry),
-  };
 }
 
 /** Called when a new WebSocket connection opens. */
@@ -133,12 +125,17 @@ export function broadcastRaw(gameId: string, event: WsOutboundEvent): void {
   _server.publish(gameTopic(gameId), JSON.stringify(event));
 }
 
-/** Send a state snapshot to a single client (for catch-up on connect). */
-export function sendSnapshot(
+/** Broadcast viewer-safe watch state to all observers of a game. */
+export function broadcastWatchState(gameId: string, state: GameWatchState): void {
+  broadcastRaw(gameId, { type: "watch_state", state });
+}
+
+/** Send viewer-safe watch state to a single client (for catch-up on connect). */
+export function sendWatchState(
   ws: ServerWebSocket<WsConnectionData>,
-  snapshot: GameStateSnapshot,
+  state: GameWatchState,
 ): void {
-  const outbound: WsOutboundEvent = { type: "game_state", snapshot: sanitizeSnapshot(snapshot) };
+  const outbound: WsOutboundEvent = { type: "watch_state", state };
   ws.send(JSON.stringify(outbound));
 }
 
