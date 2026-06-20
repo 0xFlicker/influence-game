@@ -19,6 +19,12 @@ The current watch experience already has strong replay machinery: scene grouping
 
 ---
 
+## Current State and Remaining Delta
+
+The shell, local watch model, route branch, and focused model/shell tests now exist on this branch. Remaining work is to align the route and proof with the product decision that `MatchWatchShell` owns eligible watch states: completed transcript routes should enter the shell directly, stale replay-spec language should not describe a classic fallback, and e2e/browser checks should assert the shell in live and replay modes.
+
+---
+
 ## Requirements
 
 **Route Ownership**
@@ -147,7 +153,7 @@ flowchart TB
   - `packages/web/src/app/games/[slug]/components/types.ts`
   - `packages/web/src/__tests__/match-watch-model.test.ts`
   - `packages/web/src/__tests__/game-viewer-routing.test.ts`
-- **Approach:** Replace the `DramaticReplayViewer` route branch with `MatchWatchShell` for eligible watch states. Keep waiting, joining, game-over-results choice, load-error, and no-replay behavior outside the shell. Remove or neutralize the old `mode=classic` bypass from normal watch routing so product navigation has one watch surface.
+- **Approach:** Replace the `DramaticReplayViewer` route branch with `MatchWatchShell` for eligible watch states. Keep waiting, joining, load-error, and no-replay behavior outside the shell. Completed transcript games should enter the shell directly rather than stopping on a replay/results choice screen. Remove or neutralize the old `mode=classic` bypass from normal watch routing so product navigation has one watch surface.
 - **Patterns to follow:** Use the existing `GameViewer` SSR/client-load split and websocket event handling. Keep completed-game transcript loading in the current route path.
 - **Test scenarios:**
   - Covers AE1. In-progress game routing chooses `MatchWatchShell`.

@@ -61,6 +61,7 @@ export interface DiaryRoomData {
 }
 
 export type ConnStatus = "connecting" | "live" | "disconnected" | "reconnecting";
+export type WatchConnStatus = ConnStatus | "replay";
 
 export interface GameViewerProps {
   gameId: string;

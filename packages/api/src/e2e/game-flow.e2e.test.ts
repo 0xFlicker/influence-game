@@ -325,10 +325,14 @@ describe("E2E: Full Game Flow", () => {
           { timeout: 15000 },
         );
 
+        await page.waitForSelector(
+          '[data-testid="match-watch-shell"][data-watch-mode="live"]',
+          { timeout: 15000 },
+        );
         const initialText = await getPageText(page);
         expect(initialText).not.toContain("Access denied");
         expect(initialText).not.toContain("Connect wallet");
-        expect(initialText).toContain("Game #");
+        expect(initialText).toContain("Watch Room");
 
         // Poll game status via API until completion (timeout 10 min)
         const POLL_INTERVAL_MS = 5000;
@@ -362,19 +366,21 @@ describe("E2E: Full Game Flow", () => {
         expect(finalGame!.status).toBe("completed");
         expect(finalGame!.currentRound).toBeGreaterThan(0);
 
-        // Reload page to see final results (completed game renders as replay)
+        // Reload page to watch the completed transcript in replay shell mode.
         await page.goto(`${servers.webUrl}/games/${gameSlug}`, {
           waitUntil: "networkidle2",
           timeout: 30000,
         });
 
-        await page.waitForFunction(
-          "document.body.innerText.includes('Game #') && document.body.innerText.length > 100",
+        await page.waitForSelector(
+          '[data-testid="match-watch-shell"][data-watch-mode="replay"]',
           { timeout: 15000 },
         );
 
         const finalText = await getPageText(page);
-        expect(finalText).toContain("Game #");
+        expect(finalText).toContain("Watch Room");
+        expect(finalText).toContain("Replay");
+        expect(finalText).not.toContain("Watch Replay");
 
         // Game should show completed status
         expect(finalGame!.status).toBe("completed");

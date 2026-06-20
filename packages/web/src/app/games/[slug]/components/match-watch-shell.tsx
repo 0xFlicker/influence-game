@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
-import type { GameDetail, GamePlayer, TranscriptEntry } from "@/lib/api";
+import type { GameDetail, TranscriptEntry } from "@/lib/api";
 import { setEndgameAttr, setPhaseAttr } from "./constants";
 import { DramaticReplayViewer } from "./dramatic-replay-viewer";
 import {
@@ -13,26 +13,18 @@ import {
   type MatchWatchPlayerCard,
   type MatchWatchPlaybackState,
 } from "./match-watch-model";
-
-type MatchWatchConnStatus =
-  | "connecting"
-  | "live"
-  | "disconnected"
-  | "reconnecting"
-  | "replay";
+import type { WatchConnStatus } from "./types";
 
 export function MatchWatchShell({
   game,
   messages,
-  players,
   live = false,
   connStatus,
 }: {
   game: GameDetail;
   messages: TranscriptEntry[];
-  players: GamePlayer[];
   live?: boolean;
-  connStatus?: MatchWatchConnStatus;
+  connStatus?: WatchConnStatus;
 }) {
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [playbackState, setPlaybackState] = useState<MatchWatchPlaybackState | null>(null);
@@ -77,10 +69,10 @@ export function MatchWatchShell({
 
       <div className="relative grid min-h-0 flex-1 grid-cols-1 gap-3 px-3 pb-3 xl:grid-cols-[18rem_minmax(0,1fr)_22rem]">
         <CastRail model={model} onSelectPlayer={setSelectedPlayerId} />
+        <MobileContextPanel model={model} onSelectPlayer={setSelectedPlayerId} />
         <TheaterPanel
           game={game}
           messages={messages}
-          players={players}
           live={live}
           connStatus={connStatus}
           model={model}
@@ -91,6 +83,74 @@ export function MatchWatchShell({
 
       <ReplayDock model={model} />
     </main>
+  );
+}
+
+function MobileContextPanel({
+  model,
+  onSelectPlayer,
+}: {
+  model: MatchWatchModel;
+  onSelectPlayer: (playerId: string) => void;
+}) {
+  const selected = model.selectedPlayer;
+  return (
+    <section className="flex min-h-0 flex-col gap-2 rounded-lg border border-white/10 bg-black/45 p-3 shadow-panel backdrop-blur-glass xl:hidden">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/70">
+          Cast
+        </h2>
+        <span className="shrink-0 text-[9px] uppercase tracking-[0.14em] text-white/35">
+          {model.counts.alivePlayers} alive / {model.counts.eliminatedPlayers} out
+        </span>
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Cast selection">
+        {model.players.map((card) => (
+          <button
+            key={card.player.id}
+            type="button"
+            onClick={() => onSelectPlayer(card.player.id)}
+            className={`flex h-10 min-w-28 items-center gap-2 rounded-md border px-2 text-left ${
+              card.isSelected
+                ? "border-phase/40 bg-phase/[0.12]"
+                : "border-white/10 bg-white/[0.03]"
+            }`}
+          >
+            <AgentAvatar
+              avatarUrl={card.player.avatarUrl}
+              persona={card.player.persona}
+              name={card.player.name}
+              size="6"
+            />
+            <span className="min-w-0">
+              <span className="block truncate text-[11px] font-medium text-white/85">
+                {card.player.name}
+              </span>
+              <span className="block truncate text-[8px] uppercase tracking-[0.1em] text-white/35">
+                {card.statusLabel}
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {selected ? (
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-white/10 bg-white/[0.025] px-3 py-2">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold text-white/90">
+              {selected.player.name}
+            </div>
+            <div className="mt-0.5 truncate text-[10px] text-white/40">
+              {selected.player.persona}
+            </div>
+          </div>
+          <span className={`rounded px-2 py-1 text-[9px] uppercase tracking-[0.12em] ${statusClasses(selected)}`}>
+            {selected.detail}
+          </span>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -108,7 +168,7 @@ function ShellHeader({ model }: { model: MatchWatchModel }) {
           {model.matchTitle}
         </div>
         <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-white/35">
-          {model.roundLabel} replay
+          {model.roundLabel} {model.connectionLabel}
         </div>
       </div>
 
@@ -246,7 +306,6 @@ function CastMetric({ label, value }: { label: string; value: string }) {
 function TheaterPanel({
   game,
   messages,
-  players,
   live,
   connStatus,
   model,
@@ -254,9 +313,8 @@ function TheaterPanel({
 }: {
   game: GameDetail;
   messages: TranscriptEntry[];
-  players: GamePlayer[];
   live: boolean;
-  connStatus?: MatchWatchConnStatus;
+  connStatus?: WatchConnStatus;
   model: MatchWatchModel;
   onPlaybackStateChange: (state: MatchWatchPlaybackState) => void;
 }) {
@@ -282,7 +340,7 @@ function TheaterPanel({
         <DramaticReplayViewer
           game={game}
           messages={messages}
-          players={players}
+          players={game.players}
           live={live}
           connStatus={connStatus}
           embedded
@@ -308,9 +366,9 @@ function InspectorPanel({ model }: { model: MatchWatchModel }) {
       {selected ? <InspectorHero card={selected} /> : null}
 
       <div className="grid h-11 shrink-0 grid-cols-3 gap-1 border-b border-white/10 px-2 py-1.5">
-        <InspectorTab active>Overview</InspectorTab>
-        <InspectorTab>Thoughts</InspectorTab>
-        <InspectorTab>Receipts</InspectorTab>
+        <InspectorLabel active>Overview</InspectorLabel>
+        <InspectorLabel>Thoughts</InspectorLabel>
+        <InspectorLabel>Receipts</InspectorLabel>
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
@@ -361,7 +419,7 @@ function InspectorHero({ card }: { card: MatchWatchPlayerCard }) {
   );
 }
 
-function InspectorTab({
+function InspectorLabel({
   active,
   children,
 }: {
@@ -369,16 +427,15 @@ function InspectorTab({
   children: string;
 }) {
   return (
-    <button
-      type="button"
-      className={`rounded-md text-[8px] uppercase tracking-[0.12em] ${
+    <div
+      className={`grid place-items-center rounded-md text-[8px] uppercase tracking-[0.12em] ${
         active
           ? "border border-phase/20 bg-phase/[0.12] text-white/75"
-          : "text-white/30 hover:bg-white/[0.03] hover:text-white/55"
+          : "text-white/30"
       }`}
     >
       {children}
-    </button>
+    </div>
   );
 }
 
@@ -488,9 +545,6 @@ function isSamePlaybackState(
   return (
     current.round === next.round &&
     current.phase === next.phase &&
-    current.counts.alivePlayers === next.counts.alivePlayers &&
-    current.counts.eliminatedPlayers === next.counts.eliminatedPlayers &&
-    current.counts.unknownPlayers === next.counts.unknownPlayers &&
     current.visibleMessages.length === next.visibleMessages.length &&
     current.players.length === next.players.length &&
     currentLastMessage?.id === nextLastMessage?.id &&

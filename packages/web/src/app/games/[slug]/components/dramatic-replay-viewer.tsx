@@ -40,6 +40,7 @@ import { buildReplayScenes } from "./spectacle-viewer";
 import { shouldSuppressDramaticAdvance } from "./dramatic-interaction";
 import { getHouseSummaryExtraHoldMs, getJuryClosingStatementsExtraHoldMs, getJuryOpeningStatementsExtraHoldMs, getJuryQuestionsExtraHoldMs } from "./dramatic-timing";
 import type { MatchWatchPlaybackState } from "./match-watch-model";
+import type { WatchConnStatus } from "./types";
 
 export function DramaticReplayViewer({
   game,
@@ -54,7 +55,7 @@ export function DramaticReplayViewer({
   messages: TranscriptEntry[];
   players: GamePlayer[];
   live?: boolean;
-  connStatus?: "connecting" | "live" | "disconnected" | "reconnecting" | "replay";
+  connStatus?: WatchConnStatus;
   embedded?: boolean;
   onPlaybackStateChange?: (state: MatchWatchPlaybackState) => void;
 }) {
@@ -272,18 +273,10 @@ export function DramaticReplayViewer({
 
   useEffect(() => {
     if (!scene || !onPlaybackStateChange) return;
-    const eliminatedPlayers = replayPlayers.filter((player) => player.status === "eliminated").length;
-    const unknownPlayers = 0;
     onPlaybackStateChange({
       round: scene.round,
       phase: scene.phase,
       players: replayPlayers,
-      counts: {
-        totalPlayers: replayPlayers.length,
-        alivePlayers: replayPlayers.length - eliminatedPlayers - unknownPlayers,
-        eliminatedPlayers,
-        unknownPlayers,
-      },
       visibleMessages: allVisibleMessages,
     });
   }, [allVisibleMessages, onPlaybackStateChange, replayPlayers, scene]);
@@ -573,9 +566,13 @@ export function DramaticReplayViewer({
 
   // Reset auto-hide timer helper
   const resetControlsTimer = useCallback(() => {
+    if (embedded) {
+      setControlsVisible(true);
+      return;
+    }
     if (controlsTimer.current) clearTimeout(controlsTimer.current);
     controlsTimer.current = setTimeout(() => setControlsVisible(false), 3000);
-  }, []);
+  }, [embedded]);
 
   // Click/tap handler — if controls are hidden, show them first (don't advance).
   // If controls are already visible, advance the message.
@@ -591,16 +588,18 @@ export function DramaticReplayViewer({
 
   // Auto-hide controls (mouse for desktop)
   const handleMouseMove = useCallback(() => {
+    if (embedded) return;
     setControlsVisible(true);
     resetControlsTimer();
-  }, [resetControlsTimer]);
+  }, [embedded, resetControlsTimer]);
 
   // Auto-hide controls (touch for mobile)
   const handleTouchStart = useCallback(() => {
+    if (embedded) return;
     if (controlsVisible) {
       resetControlsTimer();
     }
-  }, [controlsVisible, resetControlsTimer]);
+  }, [controlsVisible, embedded, resetControlsTimer]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -702,19 +701,22 @@ export function DramaticReplayViewer({
 
   return (
     <div
-      className={`influence-shell flex flex-col cursor-pointer select-none ${
+      className={`flex flex-col cursor-pointer select-none ${
         embedded
           ? "relative h-full min-h-0 overflow-hidden"
-          : "fixed inset-0 z-30"
+          : "fixed inset-0 z-30 influence-shell"
       }`}
       onClick={handleClick}
       onMouseMove={handleMouseMove}
       onTouchStart={handleTouchStart}
     >
-      {/* Cinematic atmosphere layers */}
-      <div className="influence-phase-atmosphere" />
-      <div className="influence-phase-vignette" />
-      {ENDGAME_PHASES.has(scene.phase) && <div className="influence-endgame-atmosphere" />}
+      {!embedded && (
+        <>
+          <div className="influence-phase-atmosphere" />
+          <div className="influence-phase-vignette" />
+          {ENDGAME_PHASES.has(scene.phase) && <div className="influence-endgame-atmosphere" />}
+        </>
+      )}
 
       {/* Overlays */}
       {activePhaseTransition && (

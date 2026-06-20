@@ -370,19 +370,13 @@ Live and replay watch surfaces should treat `GameWatchState` as the authoritativ
 
 ### 8.1 Entry Point
 
-In `game-viewer.tsx`, the current replay path is:
-
-```typescript
-const isReplay = !!game && game.status !== "in_progress" && game.status !== "waiting";
-```
-
-Add a prop or URL param `?mode=dramatic` to opt into the new viewer. Default to the new experience for all completed games once stable. Keep the raw message-feed view accessible via `?mode=classic` for analysis purposes.
+In `game-viewer.tsx`, the watch path now routes eligible live games and completed transcript replays into `MatchWatchShell`. The shell embeds `DramaticReplayViewer` as its theater instead of exposing a separate classic message-feed fallback.
 
 ### 8.2 Route
 
-New route: `/games/[slug]?mode=dramatic` or `/games/[slug]/replay`
+Primary route: `/games/[slug]`
 
-The `page.tsx` for `games/[slug]` should detect completed games and default to the dramatic replay viewer.
+The `page.tsx` for `games/[slug]` should continue to load game detail, transcript data, and watch state, then let `GameViewer` select the shell for eligible watch states.
 
 ### 8.3 Data Requirements
 

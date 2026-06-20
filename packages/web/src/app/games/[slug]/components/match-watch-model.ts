@@ -8,6 +8,7 @@ import type {
   TranscriptEntry,
 } from "@/lib/api";
 import { PHASE_LABELS } from "./constants";
+import type { WatchConnStatus } from "./types";
 
 const MATCH_WATCH_PHASES: readonly PhaseKey[] = [
   "INTRODUCTION",
@@ -71,7 +72,6 @@ export interface MatchWatchPlaybackState {
   round: number;
   phase: PhaseKey;
   players: GamePlayer[];
-  counts: MatchWatchCounts;
   visibleMessages: TranscriptEntry[];
 }
 
@@ -179,15 +179,17 @@ export function buildMatchWatchModel({
   game: GameDetail;
   messages: readonly TranscriptEntry[];
   live: boolean;
-  connStatus?: "connecting" | "live" | "disconnected" | "reconnecting" | "replay";
+  connStatus?: WatchConnStatus;
   selectedPlayerId?: string | null;
   playbackState?: MatchWatchPlaybackState | null;
 }): MatchWatchModel {
   const watchState = game.watchState;
   const phase = playbackState?.phase ?? normalizePhase(watchState?.currentPhase ?? game.currentPhase);
   const round = playbackState?.round ?? watchState?.currentRound ?? game.currentRound;
-  const counts = playbackState?.counts ?? deriveMatchWatchCounts(game);
   const modelPlayers = playbackState?.players ?? game.players;
+  const counts = playbackState
+    ? deriveMatchWatchCountsFromPlayers(modelPlayers)
+    : deriveMatchWatchCounts(game);
   const visibleMessages = playbackState?.visibleMessages ?? messages;
   const selectedPlayer = resolveSelectedPlayer(modelPlayers, selectedPlayerId);
   const players = modelPlayers.map((player) => {
@@ -224,12 +226,16 @@ function deriveMatchWatchCounts(game: GameDetail): MatchWatchCounts {
     return game.watchState.counts;
   }
 
-  const alivePlayers = game.players.filter((player) => player.status === "alive").length;
-  const eliminatedPlayers = game.players.filter((player) => player.status === "eliminated").length;
-  const unknownPlayers = game.players.filter((player) => player.status === "unknown").length;
+  return deriveMatchWatchCountsFromPlayers(game.players);
+}
+
+function deriveMatchWatchCountsFromPlayers(players: readonly GamePlayer[]): MatchWatchCounts {
+  const alivePlayers = players.filter((player) => player.status === "alive").length;
+  const eliminatedPlayers = players.filter((player) => player.status === "eliminated").length;
+  const unknownPlayers = players.filter((player) => player.status === "unknown").length;
 
   return {
-    totalPlayers: game.players.length,
+    totalPlayers: players.length,
     alivePlayers,
     eliminatedPlayers,
     unknownPlayers,
@@ -241,11 +247,12 @@ function normalizePhase(phase: string): PhaseKey {
 }
 
 function buildPhaseSegments(currentPhase: PhaseKey): MatchWatchPhaseSegment[] {
-  const currentIndex = MATCH_WATCH_PHASES.indexOf(currentPhase);
+  const shellPhase = toShellPhaseSegment(currentPhase);
+  const currentIndex = MATCH_WATCH_PHASES.indexOf(shellPhase);
   return MATCH_WATCH_PHASES.map((phase, index) => {
     let state: MatchWatchPhaseSegmentState = "future";
     if (currentIndex === -1) {
-      state = phase === currentPhase ? "current" : "future";
+      state = phase === shellPhase ? "current" : "future";
     } else if (index < currentIndex) {
       state = "past";
     } else if (index === currentIndex) {
@@ -258,6 +265,31 @@ function buildPhaseSegments(currentPhase: PhaseKey): MatchWatchPhaseSegment[] {
       state,
     };
   });
+}
+
+function toShellPhaseSegment(phase: PhaseKey): PhaseKey {
+  switch (phase) {
+    case "DIARY_ROOM":
+      return "LOBBY";
+    case "OPENING_STATEMENTS":
+    case "JURY_QUESTIONS":
+    case "CLOSING_ARGUMENTS":
+    case "JURY_VOTE":
+      return "END";
+    case "WHISPER":
+      return "MINGLE";
+    case "RUMOR":
+      return "VOTE";
+    case "PLEA":
+    case "ACCUSATION":
+    case "DEFENSE":
+      return "COUNCIL";
+    case "INIT":
+    case "SUSPENDED":
+      return "INTRODUCTION";
+    default:
+      return phase;
+  }
 }
 
 function resolveSelectedPlayer(
@@ -285,7 +317,7 @@ function getPlayerStatusLabel(status: PlayerState): string {
 
 function getConnectionLabel(
   live: boolean,
-  connStatus?: "connecting" | "live" | "disconnected" | "reconnecting" | "replay",
+  connStatus?: WatchConnStatus,
 ): string {
   if (!live) return "Replay";
   switch (connStatus) {

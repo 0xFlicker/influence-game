@@ -269,12 +269,6 @@ describe("match watch model", () => {
         round: 1,
         phase: "LOBBY",
         players: baseGame().players,
-        counts: {
-          totalPlayers: 2,
-          alivePlayers: 2,
-          eliminatedPlayers: 0,
-          unknownPlayers: 0,
-        },
         visibleMessages: [
           {
             id: 2,
@@ -302,5 +296,34 @@ describe("match watch model", () => {
     expect(model.latestPublicMessage?.text).toBe("This is still the lobby.");
     expect(model.phaseSegments.find((segment) => segment.key === "LOBBY")?.state).toBe("current");
     expect(model.phaseSegments.find((segment) => segment.key === "END")?.state).toBe("future");
+  });
+
+  it("keeps the phase rail current for diary and jury subphases", () => {
+    const diaryModel = buildMatchWatchModel({
+      game: {
+        ...baseGame(),
+        currentPhase: "DIARY_ROOM",
+      },
+      messages: [],
+      live: true,
+      connStatus: "live",
+    });
+    const juryModel = buildMatchWatchModel({
+      game: {
+        ...baseGame(),
+        status: "completed",
+        currentPhase: "JURY_QUESTIONS",
+      },
+      messages: [],
+      live: false,
+      connStatus: "replay",
+    });
+
+    expect(diaryModel.phase).toBe("DIARY_ROOM");
+    expect(diaryModel.phaseLabel).toBe("Diary Room");
+    expect(diaryModel.phaseSegments.find((segment) => segment.key === "LOBBY")?.state).toBe("current");
+    expect(juryModel.phase).toBe("JURY_QUESTIONS");
+    expect(juryModel.phaseLabel).toBe("Jury Questions");
+    expect(juryModel.phaseSegments.find((segment) => segment.key === "END")?.state).toBe("current");
   });
 });
