@@ -5,7 +5,6 @@ import { AgentAvatar } from "@/components/agent-avatar";
 import { Typewriter } from "@/components/typewriter";
 import type { ReplayScene, SpectacleMessagePhase } from "./types";
 import { HOUSE_INTROS, phaseToRoomType } from "./constants";
-import { diaryPlayerName } from "./diary-room";
 
 // ---------------------------------------------------------------------------
 // buildReplayScenes — groups transcript into per-phase (and per-room) scenes
@@ -64,23 +63,15 @@ function parseWhisperRooms(msgs: TranscriptEntry[]): Array<{ roomId: number; pla
 }
 
 export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] {
-  // Group messages by round+phase, but split DIARY_ROOM into separate groups
-  // for each contiguous batch. Each runDiaryRoom(precedingPhase) produces a
-  // contiguous run of diary entries in the transcript; by assigning a unique
-  // key per run we keep post-LOBBY diary rooms separate from post-COUNCIL ones.
+  // Diary entries are archived in the inspector and intentionally omitted
+  // from the main gameplay loop.
   const grouped = new Map<string, TranscriptEntry[]>();
-  let diaryBatch = 0;
-  let prevWasDiary = false;
   for (const msg of transcript) {
-    let key: string;
-    if (msg.phase === "DIARY_ROOM") {
-      if (!prevWasDiary) diaryBatch++;
-      key = `R${msg.round}-DIARY_ROOM-${diaryBatch}`;
-      prevWasDiary = true;
-    } else {
-      key = `R${msg.round}-${msg.phase}`;
-      prevWasDiary = false;
+    if (msg.phase === "DIARY_ROOM" || msg.scope === "diary") {
+      continue;
     }
+
+    const key = `R${msg.round}-${msg.phase}`;
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key)!.push(msg);
   }
@@ -155,42 +146,6 @@ export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] 
             houseIntro: null,
           });
         }
-      }
-
-    } else if (phase === "DIARY_ROOM") {
-      // Sequential: one scene per player
-      const playerMap = new Map<string, TranscriptEntry[]>();
-      for (const msg of msgs) {
-        if (msg.scope !== "diary" || !msg.fromPlayerId) continue;
-        const name = diaryPlayerName(msg.fromPlayerId);
-        if (!playerMap.has(name)) playerMap.set(name, []);
-        playerMap.get(name)!.push(msg);
-      }
-
-      if (playerMap.size > 0) {
-        let idx = 0;
-        for (const [playerName, playerMsgs] of playerMap.entries()) {
-          scenes.push({
-            id: `${id}-diary-${idx}`,
-            round,
-            phase,
-            roomType,
-            messages: playerMsgs,
-            houseIntro: idx === 0 ? (HOUSE_INTROS[phase] ?? null) : null,
-            diaryPlayer: { playerName },
-          });
-          idx++;
-        }
-      } else {
-        // Fallback: system-only diary messages
-        scenes.push({
-          id,
-          round,
-          phase,
-          roomType,
-          messages: msgs,
-          houseIntro: HOUSE_INTROS[phase] ?? null,
-        });
       }
 
     } else {
