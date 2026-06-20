@@ -31,7 +31,7 @@ Set these per deployed environment:
 ```bash
 MCP_OAUTH_GAMES_RESOURCE_URI=https://<api-host>/mcp
 MCP_OAUTH_PRODUCER_RESOURCE_URI=https://<api-host>/mcp/producer
-MCP_OAUTH_WEB_BASE_URL=https://<web-host>
+WEB_BASE_URL=https://<web-host>
 MCP_OAUTH_AUTHORIZATION_SERVER_ISSUER=https://<api-host>
 MCP_ALLOWED_ORIGINS=https://<api-host>
 ```

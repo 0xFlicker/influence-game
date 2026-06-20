@@ -524,6 +524,15 @@ The API respects `PORT` and `HOST` env vars (set in Doppler per environment). In
 
 **Staging database:** Uses the same PostgreSQL instance with staging-specific config via Doppler. Migrations run automatically during deployment.
 
+**Watch-state summary backfill:** The `game_watch_state_summaries` migration runs during deploy, but existing-game summary population is an explicit one-off command. After an API image containing the bundled backfill script has deployed, run it from the target host so it uses that environment's Compose env file:
+
+```bash
+ssh root@influence-staging 'cd /opt/influence && docker compose run --rm --no-deps api bun run dist/backfill-game-watch-state-summaries.js'
+ssh root@influence-prod 'cd /opt/influence && docker compose run --rm --no-deps api bun run dist/backfill-game-watch-state-summaries.js'
+```
+
+Use `--force` at the end of the same command only for a full repair refresh.
+
 **Critical:** Use only the Influence database/schema for this app. If an old `paperclip` database exists on a shared local PostgreSQL instance, treat it as historical external data and do not create Influence tables there.
 
 ### Statefulness Risk

@@ -35,7 +35,7 @@ beforeAll(() => {
   process.env.MCP_OAUTH_GAMES_RESOURCE_URI = RESOURCE_URI;
   process.env.MCP_OAUTH_PRODUCER_RESOURCE_URI = PRODUCER_RESOURCE_URI;
   process.env.MCP_OAUTH_RESOURCE_URI = RESOURCE_URI;
-  process.env.MCP_OAUTH_WEB_BASE_URL = "http://localhost:3001";
+  process.env.WEB_BASE_URL = "http://localhost:3001";
 });
 
 describe("MCP OAuth routes", () => {
