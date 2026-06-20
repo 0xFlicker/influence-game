@@ -188,7 +188,7 @@ Out of scope:
 - The durable game-run kernel remains the write-side source for API event rows, owner epochs, checkpoint capsules, and evidence manifests.
 - The canonical projection reducer remains the authority for deriving board state from canonical events.
 - Existing admin auth and permission middleware are sufficient for this first operator-only API surface.
-- Local smoke verification can run against a real Postgres-backed API game before the slice is considered complete.
+- Local smoke verification can run against a real Postgres-backed API game before the slice is considered complete. Local Postgres runs in Docker; sandboxed agents usually need elevated sandbox access for DB-backed commands against `127.0.0.1:54320`.
 
 ---
 

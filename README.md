@@ -98,7 +98,7 @@ For API-backed durable runs, owner-backed games can write private decision trace
 ./scripts/run-trace-mcp-local.sh
 ```
 
-The Trace MCP is local-dev-only. The wrapper starts local Postgres and local private content S3, sources `.env.private-trace.local`, runs API migrations, sends setup logs to stderr, and then starts the stdio MCP server. It uses local API database and private-storage environment variables, calls the existing manifest read path for `read_content`, and exposes `list_durable_runs`, `inspect_durable_run`, `list_manifests`, `read_content`, and `search_reasoning_traces`. It is not a product/admin MCP endpoint, does not include browser login, and is not packaged for external release yet. Use `bun run trace:local:smoke` to validate the local DB + private content S3 writer/read path end to end.
+The Trace MCP is local-dev-only. The wrapper starts local Postgres and local private content S3, sources `.env.private-trace.local`, runs API migrations, sends setup logs to stderr, and then starts the stdio MCP server. It uses local API database and private-storage environment variables, calls the existing manifest read path for `read_content`, and exposes `list_durable_runs`, `inspect_durable_run`, `list_manifests`, `read_content`, and `search_reasoning_traces`. It is not a product/admin MCP endpoint, does not include browser login, and is not packaged for external release yet. Use `bun run trace:local:smoke` to validate the local DB + private content S3 writer/read path end to end. Local Postgres runs in Docker; sandboxed agents usually need elevated sandbox access for DB-backed commands against `127.0.0.1:54320`.
 
 ### 3. Run the full stack (API + Web UI)
 
@@ -202,7 +202,7 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `PORT` | No | `3000` | HTTP server port |
 | `CORS_ORIGIN` | No | -- | Allowed CORS origin when using a single origin |
 | `CORS_ORIGINS` | No | -- | Comma-separated list of allowed CORS origins. Overrides `CORS_ORIGIN` when set |
-| `DATABASE_URL` | No | `postgresql://influence:influence@127.0.0.1:54320/influence_dev` | PostgreSQL connection string |
+| `DATABASE_URL` | No | `postgresql://influence:influence@127.0.0.1:54320/influence_dev` | PostgreSQL connection string. The local default points at Docker; sandboxed agents usually need elevated access. |
 | `INFLUENCE_STORAGE_BACKEND` | No | auto | `s3`, `local`, or `disabled`; auto uses S3 when Linode vars exist and local filesystem in local dev |
 | `INFLUENCE_LOCAL_UPLOAD_DIR` | No | `.local-uploads` | Directory for local filesystem profile-picture uploads |
 | `LINODE_OBJ_ENDPOINT` | Required for S3 | -- | S3-compatible Linode Object Storage endpoint |
@@ -214,7 +214,7 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `LINODE_PRIVATE_CONTENT_SECRET_KEY` | Required for private traces | -- | Secret key scoped to the private content bucket |
 | `LINODE_PRIVATE_CONTENT_BUCKET` | Required for private traces | -- | Private content bucket for raw prompt/response/reasoning trace content |
 
-For local API development and DB-backed tests, start the shared Postgres container and ensure both local databases exist:
+For local API development and DB-backed tests, start the shared Postgres container and ensure both local databases exist. Local Postgres runs in Docker on `127.0.0.1:54320`; sandboxed agents usually need elevated sandbox access for these DB-backed commands.
 
 ```bash
 bun run db:bootstrap

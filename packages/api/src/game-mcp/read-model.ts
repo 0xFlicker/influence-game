@@ -16,7 +16,7 @@ import {
 } from "../services/game-event-read-model.js";
 import { getPersistedGameProjection } from "../services/game-projection-read-model.js";
 import type { PersistedGameProjectionRead } from "../services/game-projection-read-model.js";
-import { PrivateTraceReadModel } from "../services/private-trace-read-model.js";
+import { MAX_TRACE_MANIFEST_LIMIT, PrivateTraceReadModel } from "../services/private-trace-read-model.js";
 import {
   CognitiveArtifactReadModel,
   type ListCognitiveArtifactsParams,
@@ -348,7 +348,7 @@ export class ProductionGameMcpReadModel {
       schemaVersion: 1,
       developerEvidence: await this.privateTrace.listManifests(
         gameIdOrSlug,
-        clamp(limit ?? 50, 1, 200),
+        clamp(limit ?? 50, 1, MAX_TRACE_MANIFEST_LIMIT),
       ),
     };
   }

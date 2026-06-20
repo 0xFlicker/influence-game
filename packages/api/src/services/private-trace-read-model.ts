@@ -16,6 +16,7 @@ const LOCAL_PRODUCER_ACCESSOR: EvidenceAccessor = {
 };
 
 const DEFAULT_TRACE_SEARCH_SCAN_BYTES = 8 * 1024 * 1024;
+export const MAX_TRACE_MANIFEST_LIMIT = 500;
 
 export interface PrivateTraceManifestIndexEntry {
   id: string;
@@ -253,7 +254,7 @@ export class PrivateTraceReadModel {
         eq(schema.gameEvidenceManifests.evidenceType, PRIVATE_TRACE_EVIDENCE_TYPE),
       ))
       .orderBy(desc(schema.gameEvidenceManifests.createdAt))
-      .limit(Math.max(1, Math.min(limit, 200)));
+      .limit(Math.max(1, Math.min(limit, MAX_TRACE_MANIFEST_LIMIT)));
 
     return {
       gameId,
@@ -351,7 +352,7 @@ export class PrivateTraceReadModel {
   }
 
   async searchReasoningTraces(options: PrivateTraceSearchOptions): Promise<PrivateTraceSearchResult> {
-    const listed = await this.listManifests(options.gameIdOrSlug, 200);
+    const listed = await this.listManifests(options.gameIdOrSlug, MAX_TRACE_MANIFEST_LIMIT);
     const query = options.query.trim().toLowerCase();
     if (!query) return { gameId: listed.gameId, matches: [] };
 

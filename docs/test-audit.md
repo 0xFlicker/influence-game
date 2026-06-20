@@ -72,7 +72,7 @@ Fast, deterministic, zero-cost. **Run on every commit.**
 Medium speed, deterministic, zero LLM cost. **Run before merging API changes.**
 
 All DB tests use `setupTestDB()` which:
-1. Connects to `TEST_DATABASE_URL` (default: `postgresql://influence:influence@127.0.0.1:54320/influence_test`)
+1. Connects to `TEST_DATABASE_URL` (default: `postgresql://influence:influence@127.0.0.1:54320/influence_test`). Local Postgres runs in Docker; sandboxed agents usually need elevated sandbox access for DB-backed tests against `127.0.0.1:54320`.
 2. Runs Drizzle migrations once per process
 3. Truncates all Influence tables via CASCADE before each test
 

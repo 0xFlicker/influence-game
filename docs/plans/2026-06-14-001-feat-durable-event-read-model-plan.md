@@ -54,7 +54,7 @@ The next safe step before checkpoint hydration is to read the event store back a
 
 - R16. Automated tests cover valid logs, empty/pre-kernel games, corrupted logs, admin auth gating, redacted evidence summaries, and non-hydrateable checkpoint summaries. Covers origin R20.
 - R17. Validation proves persisted API envelopes and simulator JSONL envelopes continue to share the canonical projection contract. Covers origin R19.
-- R18. Implementation verification includes a local Postgres-backed API smoke path that inspects durable events/checkpoints written through the live kernel path. Covers origin R21, F4, AE6.
+- R18. Implementation verification includes a local Postgres-backed API smoke path that inspects durable events/checkpoints written through the live kernel path. Local Postgres runs in Docker; sandboxed agents usually need elevated sandbox access for DB-backed commands against `127.0.0.1:54320`. Covers origin R21, F4, AE6.
 
 ---
 
@@ -257,7 +257,7 @@ flowchart TB
 - Given the existing simulator/API parity test runs, persisted API envelopes still match simulator JSONL projection expectations.
 - Given docs describe the new endpoint, they avoid promising `GameRunner.fromCheckpoint()`, simulation import, public RPC, or raw S3 evidence browsing.
 
-**Verification:** The slice is complete only after unit tests prove service behavior and a local Postgres-backed smoke path proves the endpoint can inspect real kernel-written rows.
+**Verification:** The slice is complete only after unit tests prove service behavior and a local Postgres-backed smoke path proves the endpoint can inspect real kernel-written rows. Local Postgres runs in Docker; sandboxed agents usually need elevated sandbox access for DB-backed commands against `127.0.0.1:54320`.
 
 ---
 
@@ -271,7 +271,7 @@ In scope:
 - Projection summaries from canonical event replay.
 - Checkpoint readiness summaries.
 - Redacted evidence manifest summaries.
-- Automated tests and one local Postgres-backed API smoke verification.
+- Automated tests and one local Postgres-backed API smoke verification. Local Postgres runs in Docker; sandboxed agents usually need elevated sandbox access for DB-backed commands against `127.0.0.1:54320`.
 
 Deferred to Follow-Up Work:
 
