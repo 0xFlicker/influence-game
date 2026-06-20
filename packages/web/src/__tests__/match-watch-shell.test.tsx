@@ -75,7 +75,10 @@ describe("MatchWatchShell", () => {
     expect(textHtml).toContain("1 alive / 1 out");
     expect(html).toContain("Strategy Lens");
     expect(html).toContain("Audience Lens");
-    expect(html).toContain("Replay Context");
+    expect(html).toContain("Thinking");
+    expect(html).toContain("Strategy");
+    expect(html).toContain("Receipts");
+    expect(textHtml).toContain("Atlas is alive in round 1.");
     expect(html).toContain("data-replay-controls");
     expect(html).toContain("Speed:");
     expect(html).toContain("Atlas");
@@ -111,8 +114,10 @@ describe("MatchWatchShell", () => {
     expect(html).toContain("<strong class=\"text-xs text-white/95\">1</strong>Out");
     expect(html).toContain("Durable Projection");
     expect(html).toContain("Voting is open.");
+    expect(html).toContain("Thinking");
+    expect(html).toContain("Strategy");
+    expect(html).toContain("Receipts");
     expect(html).not.toContain("Relationship Field");
-    expect(html).not.toContain("Public Receipts");
   });
 });
 

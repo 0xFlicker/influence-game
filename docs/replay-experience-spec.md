@@ -16,7 +16,7 @@ This spec defines the architecture, scene model, room types, timing system, Hous
 
 **Current route ownership (2026-06-20):** `MatchWatchShell` is now the default watch surface for live in-progress games and completed transcript replays. `DramaticReplayViewer` remains the scene/timing theater and is embedded inside the shell so replay controls, keyboard behavior, live catch-up, and phase renderers stay intact. Waiting, joining, load-error, and no-transcript completed games keep their existing non-watch flows.
 
-**Data boundary for shell V0:** Shell-level facts come from `GameWatchState` when present and fall back to the existing game detail/transcript state when that is the best available source. This pass does not load durable relationship edges, vote/deal receipts, or checkpoint-derived thought/strategy summaries.
+**Data boundary for shell V0:** Shell-level facts come from `GameWatchState` when present and fall back to the existing game detail/transcript state when that is the best available source. The selected-agent inspector loads public watch intelligence from `/api/games/:idOrSlug/watch-intelligence`: curated `thinking`, whitelisted `strategy` artifact fields, transcript-level thinking for visible messages, and canonical revealed round facts. It does not expose durable relationship edges, inferred deals/promises, private reasoning traces, `reasoningContext`, prompts, provider responses, storage keys, trace manifests, source pointers, or checkpoint continuity capsules.
 
 ---
 
@@ -334,6 +334,7 @@ Live and replay watch surfaces should treat `GameWatchState` as the authoritativ
 2. Speed control (analysis mode at 4x, cinematic at 0.5x)
 3. Scene scrubbing (jump to any moment)
 4. Diary access without auth
+5. Selected-agent public thinking, strategy notes, and canonical receipts
 
 ---
 
@@ -383,7 +384,7 @@ The `page.tsx` for `games/[slug]` should continue to load game detail, transcrip
 The dramatic replay viewer needs:
 - `GameDetail` (existing) — player roster, winner, metadata
 - `TranscriptEntry[]` (existing) — full transcript from `getGameTranscript()`
-- No new API endpoints required
+- `GET /api/games/:idOrSlug/watch-intelligence` — public selected-agent inspector data for `actorPlayerId`, current/replayed `round`, and `phase`
 
 ---
 

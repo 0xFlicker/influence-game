@@ -426,6 +426,137 @@ export async function readCognitiveArtifact(
   return apiFetch(`/api/games/${gameIdOrSlug}/cognitive-artifacts/${artifactId}${query ? `?${query}` : ""}`);
 }
 
+export type PublicWatchIntelligenceSectionStatus = "available" | "select_player" | "unavailable";
+export type PublicWatchIntelligenceCardKind = "thinking" | "strategy";
+export type PublicWatchIntelligenceCardSource = "cognitive_artifact" | "transcript";
+export type PublicWatchIntelligenceCardContext = "current_phase" | "current_round" | "recent";
+export type RevealedFactsStatus = "available" | "not_yet_resolved" | "not_yet_flushed" | "unavailable";
+export type RevealedCanonicalFactsStatus = "available" | "not_yet_flushed" | "unavailable";
+
+export interface PublicWatchIntelligenceCard {
+  id: string;
+  kind: PublicWatchIntelligenceCardKind;
+  source: PublicWatchIntelligenceCardSource;
+  actorPlayerId: string;
+  title: string;
+  text: string;
+  context: PublicWatchIntelligenceCardContext;
+  round?: number;
+  phase?: string;
+  action?: string;
+  eventSequence?: number;
+  createdAt?: string;
+}
+
+export interface PublicWatchIntelligenceSection {
+  status: PublicWatchIntelligenceSectionStatus;
+  cards: PublicWatchIntelligenceCard[];
+  reason?: string;
+}
+
+export interface PublicWatchIntelligenceRoundFacts {
+  round: number;
+  phase: string | null;
+  players: {
+    alive: Array<{ id: string; name: string }>;
+    eliminated: Array<{ id: string; name: string }>;
+  };
+  standardVote: {
+    status: RevealedFactsStatus;
+    ledger: unknown[];
+    empowerTally: unknown[];
+    empowered: { id: string; name: string } | null;
+    method: string | null;
+    tied: unknown[];
+  };
+  power: {
+    status: RevealedFactsStatus;
+    exposureScores: unknown[];
+    exposureBench: Record<string, unknown>;
+    shieldReplacement: Record<string, unknown> | null;
+    action: Record<string, unknown> | null;
+    shieldGranted: { id: string; name: string } | null;
+    autoEliminated: { id: string; name: string } | null;
+    finalCouncilCandidates: Array<{ id: string; name: string }>;
+    method: string | null;
+  };
+  council: {
+    status: RevealedFactsStatus;
+    ledger: unknown[];
+    eliminated: { id: string; name: string } | null;
+    method: string | null;
+    candidates: Array<{ id: string; name: string }>;
+  };
+}
+
+export interface PublicWatchIntelligenceReceipts {
+  status: "available" | "unavailable";
+  canonicalGameFacts: {
+    roundFacts: PublicWatchIntelligenceRoundFacts;
+    availability: {
+      canonicalFactsStatus: RevealedCanonicalFactsStatus;
+      eventLogStatus: string;
+      projectionStatus: string;
+      artifactDerivedFacts: {
+        status: "not_used";
+        reason: string;
+      };
+      diagnostics: Array<{
+        code: string;
+        severity: "info" | "warning" | "error";
+        message: string;
+      }>;
+    };
+  };
+  reason?: string;
+}
+
+export type PublicWatchIntelligenceResult =
+  | {
+      ok: true;
+      schemaVersion: 1;
+      game: {
+        id: string;
+        slug?: string;
+        status: GameStatus;
+      };
+      context: {
+        selectedPlayerId?: string;
+        selectedPlayerName?: string;
+        round: number;
+        phase: string;
+        source: string;
+      };
+      intelligence: {
+        thinking: PublicWatchIntelligenceSection;
+        strategy: PublicWatchIntelligenceSection;
+        receipts: PublicWatchIntelligenceReceipts;
+      };
+    }
+  | {
+      ok: false;
+      status: "not_found";
+      error: string;
+    };
+
+export async function getPublicWatchIntelligence(
+  gameIdOrSlug: string,
+  params: {
+    actorPlayerId?: string;
+    round?: number;
+    phase?: string;
+    limit?: number;
+  } = {},
+): Promise<PublicWatchIntelligenceResult> {
+  const search = new URLSearchParams();
+  if (params.actorPlayerId) search.set("actorPlayerId", params.actorPlayerId);
+  if (params.round !== undefined) search.set("round", String(params.round));
+  if (params.phase) search.set("phase", params.phase);
+  if (params.limit !== undefined) search.set("limit", String(params.limit));
+  const query = search.toString();
+  return apiFetch(`/api/games/${gameIdOrSlug}/watch-intelligence${query ? `?${query}` : ""}`);
+}
+
 // ---------------------------------------------------------------------------
 // Auth API calls
 // ---------------------------------------------------------------------------

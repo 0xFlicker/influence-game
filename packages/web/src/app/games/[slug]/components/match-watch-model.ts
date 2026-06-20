@@ -54,6 +54,7 @@ export interface MatchWatchPlayerCard {
 export interface MatchWatchModel {
   mode: MatchWatchMode;
   matchTitle: string;
+  round: number;
   roundLabel: string;
   phase: PhaseKey;
   phaseLabel: string;
@@ -206,6 +207,7 @@ export function buildMatchWatchModel({
   return {
     mode: live ? "live" : "replay",
     matchTitle: game.slug?.toUpperCase() ?? `GAME ${game.gameNumber}`,
+    round,
     roundLabel: `Round ${round}`,
     phase,
     phaseLabel: PHASE_LABELS[phase],

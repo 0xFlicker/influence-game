@@ -22,6 +22,7 @@ import { createFreeQueueRoutes } from "./routes/free-queue.js";
 import { createUploadRoutes } from "./routes/upload.js";
 import { createProfileRoutes } from "./routes/profile.js";
 import { createCognitiveArtifactRoutes } from "./routes/cognitive-artifacts.js";
+import { createWatchIntelligenceRoutes } from "./routes/watch-intelligence.js";
 import { getStorageStatus } from "./lib/storage.js";
 import { getGameWatchState } from "./services/game-watch-state.js";
 import {
@@ -204,6 +205,10 @@ app.route("/", mcpRoutes);
 // Game routes
 const gameRoutes = createGameRoutes(db);
 app.route("/", gameRoutes);
+
+// Public watch intelligence routes
+const watchIntelligenceRoutes = createWatchIntelligenceRoutes(db);
+app.route("/", watchIntelligenceRoutes);
 
 // Cognitive artifact routes
 const cognitiveArtifactRoutes = createCognitiveArtifactRoutes(db);

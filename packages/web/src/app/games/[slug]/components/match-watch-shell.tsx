@@ -1,11 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { AgentAvatar } from "@/components/agent-avatar";
-import type { GameDetail, TranscriptEntry } from "@/lib/api";
+import {
+  getPublicWatchIntelligence,
+  type GameDetail,
+  type PublicWatchIntelligenceResult,
+  type TranscriptEntry,
+} from "@/lib/api";
 import { setEndgameAttr, setPhaseAttr } from "./constants";
 import { DramaticReplayViewer } from "./dramatic-replay-viewer";
+import {
+  buildMatchWatchIntelligenceModel,
+  type MatchWatchIntelligenceModel,
+  type MatchWatchIntelligenceSectionModel,
+} from "./match-watch-intelligence-model";
 import {
   buildMatchWatchModel,
   type MatchWatchModel,
@@ -28,6 +38,9 @@ export function MatchWatchShell({
 }) {
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [playbackState, setPlaybackState] = useState<MatchWatchPlaybackState | null>(null);
+  const [intelligence, setIntelligence] = useState<PublicWatchIntelligenceResult | null>(null);
+  const [intelligenceLoadState, setIntelligenceLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [intelligenceError, setIntelligenceError] = useState<string | null>(null);
   const handlePlaybackStateChange = useCallback((state: MatchWatchPlaybackState) => {
     setPlaybackState((current) => {
       if (isSamePlaybackState(current, state)) return current;
@@ -46,6 +59,18 @@ export function MatchWatchShell({
       }),
     [game, messages, live, connStatus, selectedPlayerId, playbackState],
   );
+  const visibleMessages = live ? messages : playbackState?.visibleMessages ?? messages;
+  const intelligenceModel = useMemo(
+    () =>
+      buildMatchWatchIntelligenceModel({
+        model,
+        intelligence,
+        visibleMessages,
+        loadState: intelligenceLoadState,
+        error: intelligenceError,
+      }),
+    [model, intelligence, visibleMessages, intelligenceLoadState, intelligenceError],
+  );
 
   useEffect(() => {
     setPhaseAttr(model.phase);
@@ -55,6 +80,44 @@ export function MatchWatchShell({
       document.documentElement.removeAttribute("data-endgame");
     };
   }, [model.phase]);
+
+  useEffect(() => {
+    if (!model.selectedPlayerId) {
+      startTransition(() => {
+        setIntelligence(null);
+        setIntelligenceLoadState("idle");
+        setIntelligenceError(null);
+      });
+      return;
+    }
+
+    let cancelled = false;
+    startTransition(() => {
+      setIntelligenceLoadState("loading");
+      setIntelligenceError(null);
+    });
+    void getPublicWatchIntelligence(game.slug ?? game.id, {
+      actorPlayerId: model.selectedPlayerId,
+      round: model.round,
+      phase: model.phase,
+      limit: 4,
+    })
+      .then((result) => {
+        if (cancelled) return;
+        setIntelligence(result);
+        setIntelligenceLoadState("ready");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setIntelligence(null);
+        setIntelligenceLoadState("error");
+        setIntelligenceError("Public intelligence is not available for this moment.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [game.id, game.slug, model.selectedPlayerId, model.round, model.phase]);
 
   return (
     <main
@@ -78,7 +141,7 @@ export function MatchWatchShell({
           model={model}
           onPlaybackStateChange={handlePlaybackStateChange}
         />
-        <InspectorPanel model={model} />
+        <InspectorPanel model={model} intelligence={intelligenceModel} />
       </div>
 
       <ReplayDock model={model} />
@@ -359,34 +422,42 @@ function TheaterChip({ children }: { children: ReactNode }) {
   );
 }
 
-function InspectorPanel({ model }: { model: MatchWatchModel }) {
+type InspectorTab = "overview" | "thinking" | "strategy" | "receipts";
+
+function InspectorPanel({
+  model,
+  intelligence,
+}: {
+  model: MatchWatchModel;
+  intelligence: MatchWatchIntelligenceModel;
+}) {
   const selected = model.selectedPlayer;
+  const [activeTab, setActiveTab] = useState<InspectorTab>("overview");
+
   return (
     <aside className="hidden min-h-0 flex-col overflow-hidden rounded-lg border border-white/10 bg-black/45 shadow-panel backdrop-blur-glass xl:flex">
       {selected ? <InspectorHero card={selected} /> : null}
 
-      <div className="grid h-11 shrink-0 grid-cols-3 gap-1 border-b border-white/10 px-2 py-1.5">
-        <InspectorLabel active>Overview</InspectorLabel>
-        <InspectorLabel>Thoughts</InspectorLabel>
-        <InspectorLabel>Receipts</InspectorLabel>
+      <div className="grid h-11 shrink-0 grid-cols-4 gap-1 border-b border-white/10 px-2 py-1.5" role="tablist" aria-label="Inspector sections">
+        <InspectorLabel active={activeTab === "overview"} onClick={() => setActiveTab("overview")}>Overview</InspectorLabel>
+        <InspectorLabel active={activeTab === "thinking"} onClick={() => setActiveTab("thinking")}>Thinking</InspectorLabel>
+        <InspectorLabel active={activeTab === "strategy"} onClick={() => setActiveTab("strategy")}>Strategy</InspectorLabel>
+        <InspectorLabel active={activeTab === "receipts"} onClick={() => setActiveTab("receipts")}>Receipts</InspectorLabel>
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-        <InspectorBlock title="Audience Lens" meta={model.sourceLabel}>
-          <NumberedLine index={1}>
-            {selected
-              ? `${selected.player.name} is ${selected.statusLabel.toLowerCase()} in ${model.roundLabel.toLowerCase()}.`
-              : "No selected agent."}
-          </NumberedLine>
-          <NumberedLine index={2}>
-            {model.latestPublicMessage?.text ?? "No visible transcript entries yet."}
-          </NumberedLine>
-        </InspectorBlock>
-
-        <InspectorBlock title="Replay Context" meta={model.roundLabel}>
-          <ReceiptLine label={model.phaseLabel} value={model.connectionLabel} />
-          <ReceiptLine label={model.sourceLabel} value={model.mode} />
-        </InspectorBlock>
+        {activeTab === "overview" ? (
+          <InspectorSection title="Audience Lens" meta={model.sourceLabel} section={intelligence.overview} />
+        ) : null}
+        {activeTab === "thinking" ? (
+          <InspectorSection title="Public Thinking" meta={sectionMeta(intelligence)} section={intelligence.thinking} />
+        ) : null}
+        {activeTab === "strategy" ? (
+          <InspectorSection title="Public Strategy" meta={sectionMeta(intelligence)} section={intelligence.strategy} />
+        ) : null}
+        {activeTab === "receipts" ? (
+          <InspectorReceipts receipts={intelligence.receipts} roundLabel={model.roundLabel} />
+        ) : null}
       </div>
     </aside>
   );
@@ -421,32 +492,38 @@ function InspectorHero({ card }: { card: MatchWatchPlayerCard }) {
 
 function InspectorLabel({
   active,
+  onClick,
   children,
 }: {
   active?: boolean;
+  onClick: () => void;
   children: string;
 }) {
   return (
-    <div
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active ? "true" : "false"}
+      onClick={onClick}
       className={`grid place-items-center rounded-md text-[8px] uppercase tracking-[0.12em] ${
         active
           ? "border border-phase/20 bg-phase/[0.12] text-white/75"
-          : "text-white/30"
+          : "text-white/30 hover:bg-white/[0.03] hover:text-white/55"
       }`}
     >
       {children}
-    </div>
+    </button>
   );
 }
 
-function InspectorBlock({
+function InspectorSection({
   title,
   meta,
-  children,
+  section,
 }: {
   title: string;
   meta: string;
-  children: ReactNode;
+  section: MatchWatchIntelligenceSectionModel;
 }) {
   return (
     <section className="rounded-md border border-white/10 bg-white/[0.02] p-3">
@@ -458,25 +535,77 @@ function InspectorBlock({
           {meta}
         </span>
       </div>
-      <div className="space-y-2">{children}</div>
+      {section.cards.length > 0 ? (
+        <div className="space-y-3">
+          {section.cards.map((card) => (
+            <IntelligenceCard key={card.id} card={card} />
+          ))}
+        </div>
+      ) : (
+        <EmptyInspectorState reason={section.reason ?? "No public intelligence available."} />
+      )}
     </section>
   );
 }
 
-function NumberedLine({
-  index,
-  children,
+function IntelligenceCard({
+  card,
 }: {
-  index: number;
-  children: string;
+  card: MatchWatchIntelligenceSectionModel["cards"][number];
 }) {
   return (
-    <div className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-2 text-[10px] leading-5 text-white/65">
-      <span className="grid h-5 place-items-center rounded bg-phase/[0.15] text-[9px] text-phase">
-        {index}
-      </span>
-      <p className="line-clamp-3 min-w-0">{children}</p>
+    <div className="border-t border-white/5 pt-3 first:border-t-0 first:pt-0">
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <h4 className="truncate text-[10px] font-semibold text-white/80">{card.title}</h4>
+        <span className="shrink-0 text-[7px] uppercase tracking-[0.12em] text-white/30">
+          {card.meta}
+        </span>
+      </div>
+      <p className="line-clamp-5 text-[10px] leading-5 text-white/65">{card.body}</p>
     </div>
+  );
+}
+
+function EmptyInspectorState({ reason }: { reason: string }) {
+  return (
+    <p className="rounded-md border border-dashed border-white/10 px-3 py-4 text-[10px] leading-5 text-white/38">
+      {reason}
+    </p>
+  );
+}
+
+function InspectorReceipts({
+  receipts,
+  roundLabel,
+}: {
+  receipts: MatchWatchIntelligenceModel["receipts"];
+  roundLabel: string;
+}) {
+  return (
+    <section className="rounded-md border border-white/10 bg-white/[0.02] p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-[8px] font-semibold uppercase tracking-[0.16em] text-white/55">
+          Public Receipts
+        </h3>
+        <span className="truncate text-[7px] uppercase tracking-[0.12em] text-white/25">
+          {roundLabel}
+        </span>
+      </div>
+      {receipts.lines.length > 0 ? (
+        <div className="space-y-2">
+          {receipts.lines.map((line) => (
+            <ReceiptLine key={line.label} label={line.label} value={line.value} />
+          ))}
+        </div>
+      ) : (
+        <EmptyInspectorState reason={receipts.reason ?? "No public receipts available."} />
+      )}
+      {receipts.reason ? (
+        <p className="mt-3 border-t border-white/5 pt-3 text-[9px] leading-4 text-white/35">
+          {receipts.reason}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -489,6 +618,19 @@ function ReceiptLine({ label, value }: { label: string; value: string }) {
       </span>
     </div>
   );
+}
+
+function sectionMeta(intelligence: MatchWatchIntelligenceModel): string {
+  switch (intelligence.loadState) {
+    case "loading":
+      return "Loading";
+    case "error":
+      return "Unavailable";
+    case "ready":
+      return "Public";
+    case "idle":
+      return "Ready";
+  }
 }
 
 function ReplayDock({ model }: { model: MatchWatchModel }) {
