@@ -26,6 +26,8 @@ const REDIRECT_URI = "http://127.0.0.1:34789/oauth/callback";
 const DYNAMIC_REDIRECT_URI = "http://127.0.0.1:49281/codex/callback";
 const RESOURCE_URI = "http://127.0.0.1:3000/mcp";
 const PRODUCER_RESOURCE_URI = "http://127.0.0.1:3000/mcp/producer";
+const DEPLOYED_RESOURCE_URI = "https://influence.example/mcp";
+const DEPLOYED_PRODUCER_RESOURCE_URI = "https://influence.example/mcp/producer";
 const INTROSPECTION_SECRET = "test-introspection-secret";
 
 beforeAll(() => {
@@ -34,7 +36,6 @@ beforeAll(() => {
   process.env.INFLUENCE_MCP_INTROSPECTION_SECRET = INTROSPECTION_SECRET;
   process.env.MCP_OAUTH_GAMES_RESOURCE_URI = RESOURCE_URI;
   process.env.MCP_OAUTH_PRODUCER_RESOURCE_URI = PRODUCER_RESOURCE_URI;
-  process.env.MCP_OAUTH_RESOURCE_URI = RESOURCE_URI;
   process.env.WEB_BASE_URL = "http://localhost:3001";
 });
 
@@ -58,7 +59,7 @@ describe("MCP OAuth routes", () => {
     expect(protectedResource.status).toBe(200);
     expect(await jsonObject(protectedResource)).toMatchObject({
       resource: RESOURCE_URI,
-      authorization_servers: ["http://localhost"],
+      authorization_servers: ["http://127.0.0.1:3000"],
       scopes_supported: ["games"],
       bearer_methods_supported: ["header"],
       resource_name: "Influence Games MCP",
@@ -84,15 +85,51 @@ describe("MCP OAuth routes", () => {
     const authorizationServer = await app.request("/.well-known/oauth-authorization-server");
     expect(authorizationServer.status).toBe(200);
     expect(await jsonObject(authorizationServer)).toMatchObject({
-      issuer: "http://localhost",
+      issuer: "http://127.0.0.1:3000",
       authorization_endpoint: "http://localhost:3001/oauth/mcp/authorize",
-      token_endpoint: "http://localhost/api/oauth/mcp/token",
-      registration_endpoint: "http://localhost/api/oauth/mcp/register",
+      token_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/token",
+      registration_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/register",
       scopes_supported: ["games", "mcp"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
       client_id: MCP_OAUTH_CLIENT_ID,
     });
+  });
+
+  test("derives public API OAuth metadata from the games resource origin", async () => {
+    const previousGamesResource = process.env.MCP_OAUTH_GAMES_RESOURCE_URI;
+    const previousProducerResource = process.env.MCP_OAUTH_PRODUCER_RESOURCE_URI;
+    const previousWebBase = process.env.WEB_BASE_URL;
+
+    process.env.MCP_OAUTH_GAMES_RESOURCE_URI = DEPLOYED_RESOURCE_URI;
+    process.env.MCP_OAUTH_PRODUCER_RESOURCE_URI = DEPLOYED_PRODUCER_RESOURCE_URI;
+    process.env.WEB_BASE_URL = "https://influence.example";
+
+    try {
+      const authorizationServer = await app.request(
+        "http://internal-caddy/.well-known/oauth-authorization-server",
+      );
+      expect(authorizationServer.status).toBe(200);
+      expect(await jsonObject(authorizationServer)).toMatchObject({
+        issuer: "https://influence.example",
+        authorization_endpoint: "https://influence.example/oauth/mcp/authorize",
+        token_endpoint: "https://influence.example/api/oauth/mcp/token",
+        registration_endpoint: "https://influence.example/api/oauth/mcp/register",
+      });
+
+      const protectedResource = await app.request(
+        "http://internal-caddy/.well-known/oauth-protected-resource/mcp",
+      );
+      expect(protectedResource.status).toBe(200);
+      expect(await jsonObject(protectedResource)).toMatchObject({
+        resource: DEPLOYED_RESOURCE_URI,
+        authorization_servers: ["https://influence.example"],
+      });
+    } finally {
+      process.env.MCP_OAUTH_GAMES_RESOURCE_URI = previousGamesResource;
+      process.env.MCP_OAUTH_PRODUCER_RESOURCE_URI = previousProducerResource;
+      process.env.WEB_BASE_URL = previousWebBase;
+    }
   });
 
   test("registers public OAuth clients for fresh games-scope client installs", async () => {

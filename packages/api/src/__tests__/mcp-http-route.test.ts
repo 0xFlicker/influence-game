@@ -27,7 +27,6 @@ beforeAll(() => {
   process.env.JWT_SECRET = "test-jwt-secret-mcp-http";
   process.env.MCP_OAUTH_GAMES_RESOURCE_URI = RESOURCE_URI;
   process.env.MCP_OAUTH_PRODUCER_RESOURCE_URI = PRODUCER_RESOURCE_URI;
-  process.env.MCP_OAUTH_RESOURCE_URI = RESOURCE_URI;
   process.env.MCP_ALLOWED_ORIGINS = "";
 });
 

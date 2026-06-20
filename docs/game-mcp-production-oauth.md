@@ -32,18 +32,14 @@ Set these per deployed environment:
 MCP_OAUTH_GAMES_RESOURCE_URI=https://<api-host>/mcp
 MCP_OAUTH_PRODUCER_RESOURCE_URI=https://<api-host>/mcp/producer
 WEB_BASE_URL=https://<web-host>
-MCP_OAUTH_AUTHORIZATION_SERVER_ISSUER=https://<api-host>
 MCP_ALLOWED_ORIGINS=https://<api-host>
 ```
 
-`MCP_OAUTH_RESOURCE_URI` remains a legacy fallback for the games resource. Prefer `MCP_OAUTH_GAMES_RESOURCE_URI` for new configuration.
+The authorization server metadata derives its public issuer, token endpoint, and registration endpoint from the `MCP_OAUTH_GAMES_RESOURCE_URI` origin. The browser authorization endpoint derives from `WEB_BASE_URL`.
 
-Optional overrides:
+Optional settings:
 
 ```bash
-MCP_OAUTH_AUTHORIZATION_ENDPOINT=https://<web-host>/oauth/mcp/authorize
-MCP_OAUTH_TOKEN_ENDPOINT=https://<api-host>/api/oauth/mcp/token
-MCP_OAUTH_REGISTRATION_ENDPOINT=https://<api-host>/api/oauth/mcp/register
 MCP_OAUTH_ALLOWED_REDIRECT_URIS=https://<client-callback>
 MCP_OAUTH_LOOPBACK_REDIRECT_PATH=/oauth/callback
 # Optional; unset behaves as false.

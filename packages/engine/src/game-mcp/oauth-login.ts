@@ -29,11 +29,11 @@ async function main(): Promise<void> {
     "INFLUENCE_MCP_API_BASE_URL",
   );
   const configuredResourceUri =
-    process.env.INFLUENCE_MCP_RESOURCE_URI ?? process.env.MCP_OAUTH_RESOURCE_URI;
+    process.env.INFLUENCE_MCP_RESOURCE_URI ?? process.env.MCP_OAUTH_GAMES_RESOURCE_URI;
   const resourceUri = configuredResourceUri
     ? requireSafeHttpBaseUrl(
       configuredResourceUri,
-      "INFLUENCE_MCP_RESOURCE_URI",
+      "INFLUENCE_MCP_RESOURCE_URI or MCP_OAUTH_GAMES_RESOURCE_URI",
     ).toString()
     : new URL("/mcp", apiBaseUrl).toString();
   const callbackHost = process.env.INFLUENCE_MCP_CALLBACK_HOST ?? DEFAULT_CALLBACK_HOST;

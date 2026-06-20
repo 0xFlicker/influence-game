@@ -10,7 +10,7 @@ export const MCP_OAUTH_GAMES_SCOPE = "games";
 export const MCP_OAUTH_AUDIENCE = "game-mcp";
 export const MCP_OAUTH_PURPOSE = "mcp_access";
 export const MCP_OAUTH_ISSUER = "influence-game-mcp";
-export const DEFAULT_MCP_OAUTH_RESOURCE_URI = "http://127.0.0.1:3000/mcp";
+export const DEFAULT_MCP_OAUTH_GAMES_RESOURCE_URI = "http://127.0.0.1:3000/mcp";
 export const DEFAULT_MCP_OAUTH_PRODUCER_RESOURCE_URI = "http://127.0.0.1:3000/mcp/producer";
 export const MCP_OAUTH_CLIENT_ID =
   process.env.MCP_OAUTH_CLIENT_ID ?? "influence-game-mcp-local";
@@ -45,7 +45,7 @@ const MCP_OAUTH_RESOURCE_PROFILES: Record<McpOAuthProfileName, McpOAuthResourceP
     protectedResourceMetadataPath: "/.well-known/oauth-protected-resource/mcp",
     resourceName: "Influence Games MCP",
     requiresMcpRole: false,
-    defaultResourceUri: DEFAULT_MCP_OAUTH_RESOURCE_URI,
+    defaultResourceUri: DEFAULT_MCP_OAUTH_GAMES_RESOURCE_URI,
     envVar: "MCP_OAUTH_GAMES_RESOURCE_URI",
   },
   producer: {
@@ -182,10 +182,7 @@ export function getMcpOAuthProfile(name: McpOAuthProfileName): McpOAuthResourceP
 export function getMcpOAuthResourceUri(profileName: McpOAuthProfileName = "games"): string {
   const profile = getMcpOAuthProfile(profileName);
   const configured = requiredString(process.env[profile.envVar]);
-  const legacyConfigured = profileName === "games"
-    ? requiredString(process.env.MCP_OAUTH_RESOURCE_URI)
-    : null;
-  return normalizeResourceUri(configured ?? legacyConfigured ?? profile.defaultResourceUri) ??
+  return normalizeResourceUri(configured ?? profile.defaultResourceUri) ??
     profile.defaultResourceUri;
 }
 
@@ -223,12 +220,8 @@ export function profileForMcpScope(scope: string): McpOAuthResourceProfile | nul
   return getMcpOAuthProfiles().find((profile) => profile.scope === scope) ?? null;
 }
 
-export function getMcpOAuthAuthorizationEndpoint(_apiOrigin?: string): string {
-  const configured = requiredString(process.env.MCP_OAUTH_AUTHORIZATION_ENDPOINT);
-  if (configured) return configured;
-
-  const webBase =
-    requiredString(process.env.WEB_BASE_URL)
+export function getMcpOAuthAuthorizationEndpoint(): string {
+  const webBase = requiredString(process.env.WEB_BASE_URL);
 
   if (!webBase) {
     throw new Error("WEB_BASE_URL is not configured");
@@ -236,25 +229,20 @@ export function getMcpOAuthAuthorizationEndpoint(_apiOrigin?: string): string {
   return new URL("/oauth/mcp/authorize", webBase).toString();
 }
 
-export function getMcpOAuthTokenEndpoint(apiOrigin?: string): string {
-  const configured = requiredString(process.env.MCP_OAUTH_TOKEN_ENDPOINT);
-  if (configured) return configured;
-  return new URL("/api/oauth/mcp/token", apiOrigin ?? "http://127.0.0.1:3000").toString();
+export function getMcpOAuthTokenEndpoint(): string {
+  return new URL("/api/oauth/mcp/token", getMcpOAuthPublicApiOrigin()).toString();
 }
 
-export function getMcpOAuthRegistrationEndpoint(apiOrigin?: string): string {
-  const configured = requiredString(process.env.MCP_OAUTH_REGISTRATION_ENDPOINT);
-  if (configured) return configured;
-  return new URL(
-    "/api/oauth/mcp/register",
-    apiOrigin ?? "http://127.0.0.1:3000",
-  ).toString();
+export function getMcpOAuthRegistrationEndpoint(): string {
+  return new URL("/api/oauth/mcp/register", getMcpOAuthPublicApiOrigin()).toString();
 }
 
-export function getMcpOAuthAuthorizationServerIssuer(apiOrigin?: string): string {
-  const configured = requiredString(process.env.MCP_OAUTH_AUTHORIZATION_SERVER_ISSUER);
-  if (configured) return configured.replace(/\/+$/, "");
-  return (apiOrigin ?? "http://127.0.0.1:3000").replace(/\/+$/, "");
+export function getMcpOAuthAuthorizationServerIssuer(): string {
+  return getMcpOAuthPublicApiOrigin();
+}
+
+function getMcpOAuthPublicApiOrigin(): string {
+  return new URL(getMcpOAuthResourceUri("games")).origin;
 }
 
 export async function hasCurrentMcpRole(

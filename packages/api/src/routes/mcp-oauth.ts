@@ -239,12 +239,11 @@ export function createMcpOAuthRoutes(
   }
 
   app.get("/.well-known/oauth-authorization-server", (c) => {
-    const origin = requestOrigin(c);
     return c.json({
-      issuer: getMcpOAuthAuthorizationServerIssuer(origin),
-      authorization_endpoint: getMcpOAuthAuthorizationEndpoint(origin),
-      token_endpoint: getMcpOAuthTokenEndpoint(origin),
-      registration_endpoint: getMcpOAuthRegistrationEndpoint(origin),
+      issuer: getMcpOAuthAuthorizationServerIssuer(),
+      authorization_endpoint: getMcpOAuthAuthorizationEndpoint(),
+      token_endpoint: getMcpOAuthTokenEndpoint(),
+      registration_endpoint: getMcpOAuthRegistrationEndpoint(),
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code"],
       code_challenge_methods_supported: ["S256"],
@@ -281,20 +280,14 @@ function getCorrelationId(c: Context): string {
     randomUUID();
 }
 
-function requestOrigin(c: Context): string {
-  const url = new URL(c.req.url);
-  return url.origin;
-}
-
 function buildProtectedResourceMetadata(
-  c: Context,
+  _c: Context,
   profileName: McpOAuthProfileName,
 ): Record<string, unknown> {
-  const origin = requestOrigin(c);
   const profile = getMcpOAuthProfile(profileName);
   return {
     resource: getMcpOAuthProfileResourceUri(profile),
-    authorization_servers: [getMcpOAuthAuthorizationServerIssuer(origin)],
+    authorization_servers: [getMcpOAuthAuthorizationServerIssuer()],
     scopes_supported: [profile.scope],
     bearer_methods_supported: ["header"],
     resource_name: profile.resourceName,
