@@ -228,9 +228,11 @@ export function getMcpOAuthAuthorizationEndpoint(_apiOrigin?: string): string {
   if (configured) return configured;
 
   const webBase =
-    requiredString(process.env.MCP_OAUTH_WEB_BASE_URL) ??
-    requiredString(process.env.NEXT_PUBLIC_SITE_URL) ??
-    "http://localhost:3001";
+    requiredString(process.env.WEB_BASE_URL)
+
+  if (!webBase) {
+    throw new Error("WEB_BASE_URL is not configured");
+  }
   return new URL("/oauth/mcp/authorize", webBase).toString();
 }
 
