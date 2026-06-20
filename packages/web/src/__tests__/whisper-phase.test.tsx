@@ -126,6 +126,7 @@ describe("buildWhisperStageData", () => {
     expect(html).toContain("Mingle Movement");
     expect(html).toContain("flex h-full min-h-0 w-full flex-col");
     expect(html).toContain("min-h-0 flex-1 overflow-y-auto");
+    expect(html).not.toContain("data-controls");
     expect(html).not.toContain("Whisper Room 12");
     expect(html).not.toContain("MINGLE: OPEN ROOMS");
     expect(html).not.toContain("HOUSE MAP");
@@ -167,6 +168,7 @@ describe("buildWhisperStageData", () => {
     expect(html).toContain("MINGLE MAP");
     expect(html).toContain("The House assigns agents to Mingle rooms");
     expect(html).toContain("Waiting for the House to finish assigning Mingle rooms");
+    expect(html).not.toContain("data-controls");
     expect(html).not.toContain("Whisper Room Assignments");
     expect(html).not.toContain("secretly chose another player to whisper with");
   });

@@ -266,7 +266,7 @@ export default function RulesPage() {
                 ],
                 [
                   "Protect",
-                  "Shield one player from being a council candidate. That player cannot be revealed as a candidate this round or next. If a current candidate is protected, the replacement comes from the remaining exposure bench first. If the bench cannot fill the slot, the empowered player fills it from the remaining live field.",
+                  "Shield one player from being a council candidate for the current Council. If a current candidate is protected, the replacement comes from the remaining exposure bench first. If the bench cannot fill the slot, the empowered player fills it from the remaining live field.",
                 ],
                 ["Pass", "Do nothing. Let the council decide."],
               ]}
@@ -298,9 +298,9 @@ export default function RulesPage() {
         <Section id="shields" title="Shields">
           <P>
             When the empowered player uses <Em>Protect</Em>, the protected
-            player gains a <Em>one-round shield</Em>. Shielded players cannot
-            appear as council candidates during the next round&apos;s Reveal.
-            Shields expire automatically after one round and do not stack.
+            player gains a <Em>Council shield</Em>. Shielded players cannot
+            appear as council candidates for the current Council. Shields
+            expire automatically after that Council and do not stack.
           </P>
         </Section>
 

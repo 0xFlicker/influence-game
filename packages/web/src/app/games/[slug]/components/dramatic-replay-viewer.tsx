@@ -37,6 +37,8 @@ import { buildDiaryRooms, DiaryRoomChat } from "./diary-room";
 import type { WhisperRoomStage } from "./types";
 import { VoteTallyOverlay, SpectacleMessageContent } from "./vote-display";
 import { buildReplayScenes } from "./spectacle-viewer";
+import { shouldSuppressDramaticAdvance } from "./dramatic-interaction";
+import { getHouseSummaryExtraHoldMs, getJuryClosingStatementsExtraHoldMs, getJuryOpeningStatementsExtraHoldMs, getJuryQuestionsExtraHoldMs } from "./dramatic-timing";
 
 export function DramaticReplayViewer({
   game,
@@ -194,6 +196,7 @@ export function DramaticReplayViewer({
   const isOverviewScene = !!scene && !!scene.isOverview;
   const isJuryScene = !!scene && scene.phase === "JURY_QUESTIONS" && !isThinkingOnlyScene;
   const isChatStyleScene = isChatFeedScene || isWhisperScene || isDiaryScene || isJuryScene;
+  const usesFullHeightContent = isChatStyleScene || isOverviewScene || isOpenWhisperScene;
 
   // Messages visible in current scene's chat feed (for chat-style phases)
   const chatFeedMessages = useMemo(() => {
@@ -413,8 +416,12 @@ export function DramaticReplayViewer({
         const isPaced = PACED_PHASES.has(scene.phase);
         const sceneEndHold = (isWhisperScene || isDiaryScene) ? DIARY_WHISPER_SCENE_END_HOLD_MS : INTER_SCENE_PAUSE_MS;
         const pacedExtra = (isPaced && isLastInScene) ? PHASE_END_PAUSE_MS : 0;
+        const houseSummaryExtra = getHouseSummaryExtraHoldMs(currentMessage, scene.messages, messageIndex);
+        const juryOpeningExtra = getJuryOpeningStatementsExtraHoldMs(currentMessage, scene.messages, messageIndex);
+        const juryQuestionsExtra = getJuryQuestionsExtraHoldMs(currentMessage, scene.messages, messageIndex);
+        const juryClosingExtra = getJuryClosingStatementsExtraHoldMs(currentMessage, scene.messages, messageIndex);
         const holdMs = isLastInScene
-          ? (sceneEndHold + pacedExtra) / speed
+          ? (sceneEndHold + pacedExtra + houseSummaryExtra + juryOpeningExtra + juryQuestionsExtra + juryClosingExtra) / speed
           : Math.max(CHAT_POST_MSG_BASE_MS, currentMessage.text.length * CHAT_POST_MSG_PER_CHAR_MS) / speed;
 
         if (isPaced && isLastInScene) setShowPhaseEndingCue(true);
@@ -442,9 +449,13 @@ export function DramaticReplayViewer({
 
       // Hold time proportional to message length; dramatic phases get extra weight
       const dramaticMul = DRAMATIC_PHASES.has(scene.phase) ? DRAMATIC_PHASE_MULTIPLIER : 1;
+      const houseSummaryExtra = getHouseSummaryExtraHoldMs(currentMessage, scene.messages, messageIndex);
+      const juryOpeningExtra = getJuryOpeningStatementsExtraHoldMs(currentMessage, scene.messages, messageIndex);
+      const juryQuestionsExtra = getJuryQuestionsExtraHoldMs(currentMessage, scene.messages, messageIndex);
+      const juryClosingExtra = getJuryClosingStatementsExtraHoldMs(currentMessage, scene.messages, messageIndex);
       const holdMs = isLastInScene
-        ? (INTER_SCENE_PAUSE_MS * dramaticMul) / speed
-        : (Math.max(POST_REVEAL_BASE_MS, currentMessage.text.length * POST_REVEAL_PER_CHAR_MS) * dramaticMul) / speed;
+        ? ((INTER_SCENE_PAUSE_MS * dramaticMul) + houseSummaryExtra + juryOpeningExtra + juryQuestionsExtra + juryClosingExtra) / speed
+        : ((Math.max(POST_REVEAL_BASE_MS, currentMessage.text.length * POST_REVEAL_PER_CHAR_MS) * dramaticMul) + houseSummaryExtra + juryOpeningExtra + juryQuestionsExtra + juryClosingExtra) / speed;
 
       // Live mode at end of available scenes: wait for new data (INF-83)
       if (live && isLastScene && isLastInScene) {
@@ -545,7 +556,7 @@ export function DramaticReplayViewer({
   // Click/tap handler — if controls are hidden, show them first (don't advance).
   // If controls are already visible, advance the message.
   const handleClick = useCallback((e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest("[data-controls]")) return;
+    if (shouldSuppressDramaticAdvance(e.target)) return;
     if (!controlsVisible && isPlaying) {
       setControlsVisible(true);
       resetControlsTimer();
@@ -693,7 +704,7 @@ export function DramaticReplayViewer({
       {/* Exit button — top-left, auto-hides with controls */}
       <button
         type="button"
-        data-controls
+        data-replay-controls
         onClick={(e) => {
           e.stopPropagation();
           window.history.back();
@@ -737,7 +748,7 @@ export function DramaticReplayViewer({
 
       {/* Game state HUD — top-right corner, auto-hides with controls, hidden on mobile */}
       <div
-        data-controls
+        data-replay-controls
         className={`fixed top-14 right-4 z-[60] transition-opacity duration-500 hidden md:block ${
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
@@ -767,17 +778,16 @@ export function DramaticReplayViewer({
 
       {/* Center — phase-aware content */}
       <div
-        ref={(isDiaryScene || (isWhisperScene && !isOpenWhisperScene)) ? stackedScrollRef : undefined}
         className={`flex-1 min-h-0 flex ${
-          isOpenWhisperScene
+          usesFullHeightContent
             ? "items-stretch overflow-hidden"
-            : `${isChatStyleScene ? ((isDiaryScene || isWhisperScene) ? "items-start" : "items-end") : "items-center"} overflow-y-auto`
+            : "items-center overflow-y-auto"
         } justify-center px-4 md:px-8 py-4 md:py-8`}
       >
-        <div className={`w-full min-h-0 ${isOpenWhisperScene ? "h-full" : ""} ${(isDiaryScene || isWhisperScene || isOverviewScene || isOpenWhisperScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
+        <div className={`w-full min-h-0 ${usesFullHeightContent ? "h-full" : ""} ${(isDiaryScene || isWhisperScene || isOverviewScene || isOpenWhisperScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
           {/* --- Chat-style: Group Chat Feed --- */}
           {isChatFeedScene && (
-            <div className="flex flex-col gap-2">
+            <div className="flex h-full min-h-0 flex-col gap-2">
               <GroupChatFeed messages={chatFeedMessages} players={replayPlayers} phase={scene.phase} showThinking={showThinking} />
               {/* Typing indicator below chat feed */}
               {messagePhase === "typing" && currentMessage && !isSystemMessage && (
@@ -810,7 +820,7 @@ export function DramaticReplayViewer({
           )}
 
           {isWhisperScene && !isOpenWhisperScene && (
-            <div className="flex flex-col gap-4">
+            <div ref={stackedScrollRef} className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1">
               {previousWhisperRooms.map((prevRoom) => (
                 <div key={`mingle-prev-${prevRoom.roomId}`} className="opacity-60">
                   <WhisperRoomDM room={prevRoom} players={replayPlayers} showThinking={showThinking} />
@@ -824,14 +834,16 @@ export function DramaticReplayViewer({
 
           {/* --- Chat-style: Diary Room DM (stacked) --- */}
           {isDiaryScene && (
-            <div className="flex flex-col gap-4">
+            <div ref={stackedScrollRef} className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1">
               {previousDiaryRooms.map((prevRoom) => (
-                <div key={`diary-prev-${prevRoom.playerName}`} className="opacity-60">
+                <div key={`diary-prev-${prevRoom.playerName}`} className="flex max-h-full min-h-0 flex-shrink-0 flex-col opacity-60">
                   <DiaryRoomChat room={prevRoom} showThinking={showThinking} />
                 </div>
               ))}
               {diaryRoomData && (
-                <DiaryRoomChat room={diaryRoomData} showThinking={showThinking} />
+                <div className="flex max-h-full min-h-0 flex-shrink-0 flex-col">
+                  <DiaryRoomChat room={diaryRoomData} showThinking={showThinking} />
+                </div>
               )}
             </div>
           )}
@@ -932,7 +944,7 @@ export function DramaticReplayViewer({
 
       {/* Bottom controls — auto-hide when playing */}
       <div
-        data-controls
+        data-replay-controls
         className={`flex-shrink-0 px-3 md:px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:py-4 transition-opacity duration-500 z-[60] ${
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}

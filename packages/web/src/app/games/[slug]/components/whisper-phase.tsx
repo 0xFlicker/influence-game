@@ -541,7 +541,7 @@ export function OpenWhisperRoomsView({
   }
 
   return (
-    <div data-controls className="flex h-full min-h-0 w-full flex-col p-3 md:p-0">
+    <div className="flex h-full min-h-0 w-full flex-col p-3 md:p-0">
       <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-3 md:gap-4">
         <div className="flex-shrink-0 rounded-2xl border border-white/10 bg-black/35 px-4 py-3 md:px-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -674,7 +674,6 @@ export function WhisperRoomDM({
           onFocus();
         }
       }}
-      data-controls
     >
       <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-purple-900/20 flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
@@ -794,7 +793,7 @@ export function WhisperAllocationOverview({
   const isMingleStage = mode === "mingle" || (mode === undefined && !!stage.hasRoomMetadata);
 
   return (
-    <div data-controls className="flex-1 overflow-y-auto p-4 md:p-6">
+    <div className="h-full min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
       <div className="text-center mb-6">
         <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-purple-300/70 mb-2">
           {isMingleStage ? "MINGLE MAP" : "Whisper Room Assignments"}

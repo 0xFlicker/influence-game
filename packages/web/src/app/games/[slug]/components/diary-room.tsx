@@ -299,14 +299,14 @@ export function DiaryRoomChat({
   showThinking?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-purple-400/20 bg-black/30 flex flex-col overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-purple-900/20">
+    <div className="rounded-2xl border border-purple-400/20 bg-black/30 flex flex-1 min-h-0 flex-col overflow-hidden">
+      <div className="flex flex-shrink-0 items-center gap-2 px-4 py-2.5 border-b border-purple-900/20">
         {room.player && <AgentAvatar avatarUrl={room.player.avatarUrl} persona={room.player.persona} name={room.player.name} size="6" />}
         <p className="text-xs font-semibold text-white truncate">{room.playerName}</p>
         <span className="text-[9px] uppercase tracking-[0.2em] text-purple-300/45 ml-auto">Diary</span>
       </div>
 
-      <div className="p-3 space-y-2">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-2">
         {room.entries.length === 0 ? (
           <p className="text-xs text-white/30 italic text-center py-6">Awaiting…</p>
         ) : (
