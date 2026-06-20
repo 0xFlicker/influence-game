@@ -40,6 +40,7 @@ const INFLUENCE_TABLES = [
   "game_evidence_manifest_reads",
   "game_evidence_manifests",
   "game_checkpoints",
+  "game_watch_state_summaries",
   "game_events",
   "game_run_owners",
   "free_track_ratings",

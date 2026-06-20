@@ -159,6 +159,16 @@ export const gameResults = pgTable("game_results", {
 export type DurableRunSource = "api" | "simulation_import";
 export type GameRunOwnerStatus = "active" | "closed" | "revoked" | "expired";
 export type KernelHealthStatus = "healthy" | "degraded" | "suspended";
+export type GameWatchStateSummarySource =
+  | "durable_projection"
+  | "degraded"
+  | "best_available_terminal_result"
+  | "pre_kernel_empty";
+export type GameWatchStateSummaryCursorSource = "trusted_prefix" | "none";
+export type GameWatchStateSummaryProjectionAvailability = "available" | "degraded" | "unavailable";
+export type GameWatchStateSummaryEventLogStatus = "empty" | "complete" | "invalid";
+export type GameWatchStateSummaryProjectionStatus = "empty" | "complete" | "incomplete" | "failed";
+export type GameWatchStateSummaryFinalStatus = "not_final" | "final";
 export type EvidenceRedactionStatus = "active" | "expired" | "redacted";
 export type CognitiveArtifactType = "reasoning" | "thinking" | "strategy";
 export type CognitiveArtifactActorRole = "player" | "juror" | "house" | "system" | "producer";
@@ -245,6 +255,102 @@ export const gameEvents = pgTable("game_events", {
   check("game_events_envelope_sequence_check", sql`${table.envelope} ? 'sequence' AND ((${table.envelope}->>'sequence')::integer) = ${table.sequence}`),
   check("game_events_envelope_type_check", sql`${table.envelope} ? 'type' AND (${table.envelope}->>'type') = ${table.eventType}`),
   check("game_events_envelope_payload_version_check", sql`${table.envelope} ? 'payloadVersion' AND ((${table.envelope}->>'payloadVersion')::integer) = ${table.payloadVersion}`),
+]);
+
+export const gameWatchStateSummaries = pgTable("game_watch_state_summaries", {
+  gameId: text("game_id")
+    .primaryKey()
+    .references(() => games.id),
+  slug: text("slug"),
+  schemaVersion: integer("schema_version").notNull().default(1),
+  status: text("status").notNull().$type<GameStatus>(),
+  source: text("source").notNull().$type<GameWatchStateSummarySource>(),
+  currentRound: integer("current_round").notNull().default(0),
+  currentPhase: text("current_phase").notNull().default("INIT"),
+  maxRounds: integer("max_rounds").notNull().default(10),
+  totalPlayers: integer("total_players").notNull().default(0),
+  alivePlayers: integer("alive_players").notNull().default(0),
+  eliminatedPlayers: integer("eliminated_players").notNull().default(0),
+  unknownPlayers: integer("unknown_players").notNull().default(0),
+  eventCursorSequence: integer("event_cursor_sequence").notNull().default(0),
+  eventCursorSource: text("event_cursor_source").notNull().$type<GameWatchStateSummaryCursorSource>().default("none"),
+  eventCursorEventType: text("event_cursor_event_type"),
+  eventCursorCreatedAt: text("event_cursor_created_at"),
+  projectionAvailability: text("projection_availability")
+    .notNull()
+    .$type<GameWatchStateSummaryProjectionAvailability>()
+    .default("unavailable"),
+  projectionEventLogStatus: text("projection_event_log_status")
+    .notNull()
+    .$type<GameWatchStateSummaryEventLogStatus>()
+    .default("empty"),
+  projectionStatus: text("projection_status")
+    .notNull()
+    .$type<GameWatchStateSummaryProjectionStatus>()
+    .default("empty"),
+  projectionEventCount: integer("projection_event_count").notNull().default(0),
+  projectionTrustedEventCount: integer("projection_trusted_event_count").notNull().default(0),
+  projectionValidPrefixLength: integer("projection_valid_prefix_length").notNull().default(0),
+  projectionLastTrustedSequence: integer("projection_last_trusted_sequence").notNull().default(0),
+  projectionFirstInvalidSequence: integer("projection_first_invalid_sequence"),
+  projectionPersistedHead: jsonb("projection_persisted_head").$type<{
+    sequence: number;
+    eventType: string;
+    createdAt: string;
+  }>(),
+  projectionDiagnostics: jsonb("projection_diagnostics")
+    .$type<ReadonlyArray<Record<string, unknown>>>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  finalStatus: text("final_status")
+    .notNull()
+    .$type<GameWatchStateSummaryFinalStatus>()
+    .default("not_final"),
+  winnerId: text("winner_id"),
+  winnerName: text("winner_name"),
+  winnerMethod: text("winner_method"),
+  winnerSource: text("winner_source").$type<Exclude<GameWatchStateSummarySource, "pre_kernel_empty">>(),
+  roundsPlayed: integer("rounds_played"),
+  lastRefreshReason: text("last_refresh_reason"),
+  refreshedAt: text("refreshed_at")
+    .notNull()
+    .default(sql`now()::text`),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  index("game_watch_state_summaries_status_idx").on(table.status),
+  index("game_watch_state_summaries_source_idx").on(table.source),
+  check("game_watch_state_summaries_schema_version_check", sql`${table.schemaVersion} > 0`),
+  check("game_watch_state_summaries_status_check", sql`${table.status} IN ('waiting', 'in_progress', 'completed', 'cancelled', 'suspended')`),
+  check("game_watch_state_summaries_source_check", sql`${table.source} IN ('durable_projection', 'degraded', 'best_available_terminal_result', 'pre_kernel_empty')`),
+  check("game_watch_state_summaries_current_round_check", sql`${table.currentRound} >= 0`),
+  check("game_watch_state_summaries_max_rounds_check", sql`${table.maxRounds} > 0`),
+  check("game_watch_state_summaries_counts_check", sql`
+    ${table.totalPlayers} >= 0
+    AND ${table.alivePlayers} >= 0
+    AND ${table.eliminatedPlayers} >= 0
+    AND ${table.unknownPlayers} >= 0
+    AND ${table.totalPlayers} = ${table.alivePlayers} + ${table.eliminatedPlayers} + ${table.unknownPlayers}
+  `),
+  check("game_watch_state_summaries_event_cursor_sequence_check", sql`${table.eventCursorSequence} >= 0`),
+  check("game_watch_state_summaries_event_cursor_source_check", sql`${table.eventCursorSource} IN ('trusted_prefix', 'none')`),
+  check("game_watch_state_summaries_projection_availability_check", sql`${table.projectionAvailability} IN ('available', 'degraded', 'unavailable')`),
+  check("game_watch_state_summaries_projection_event_log_status_check", sql`${table.projectionEventLogStatus} IN ('empty', 'complete', 'invalid')`),
+  check("game_watch_state_summaries_projection_status_check", sql`${table.projectionStatus} IN ('empty', 'complete', 'incomplete', 'failed')`),
+  check("game_watch_state_summaries_projection_counts_check", sql`
+    ${table.projectionEventCount} >= 0
+    AND ${table.projectionTrustedEventCount} >= 0
+    AND ${table.projectionValidPrefixLength} >= 0
+    AND ${table.projectionLastTrustedSequence} >= 0
+    AND (${table.projectionFirstInvalidSequence} IS NULL OR ${table.projectionFirstInvalidSequence} > 0)
+  `),
+  check("game_watch_state_summaries_final_status_check", sql`${table.finalStatus} IN ('not_final', 'final')`),
+  check("game_watch_state_summaries_winner_source_check", sql`${table.winnerSource} IS NULL OR ${table.winnerSource} IN ('durable_projection', 'degraded', 'best_available_terminal_result')`),
+  check("game_watch_state_summaries_rounds_played_check", sql`${table.roundsPlayed} IS NULL OR ${table.roundsPlayed} >= 0`),
 ]);
 
 export const gameCheckpoints = pgTable("game_checkpoints", {

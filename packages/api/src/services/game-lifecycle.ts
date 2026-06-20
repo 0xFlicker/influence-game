@@ -43,7 +43,8 @@ import { ViewerEventPacer } from "./viewer-event-pacer.js";
 import { calculateEloChanges } from "./elo.js";
 import type { PlayerResult } from "./elo.js";
 import { appendGameEvents } from "./game-events.js";
-import { getGameWatchState } from "./game-watch-state.js";
+import { getGameWatchState, type GameWatchState } from "./game-watch-state.js";
+import { tryRefreshGameWatchStateSummary } from "./game-watch-state-summary.js";
 import { writeGameCheckpoint } from "./game-checkpoints.js";
 import {
   assertOwnerActive,
@@ -91,6 +92,7 @@ function startOwnerHeartbeat(
         clearInterval(interval);
         runner.abort();
         await markGameSuspended(db, gameId, "owner_heartbeat_failed", { message }).catch(() => {});
+        await tryRefreshGameWatchStateSummary(db, gameId, "owner_heartbeat_failed");
         broadcastRaw(gameId, {
           type: "game_status",
           gameId,
@@ -187,17 +189,19 @@ export async function appendDurableEventsAndPublishWatchState(
   },
 ): Promise<void> {
   await appendGameEvents(db, params);
-  await publishCurrentWatchState(db, params.gameId, "durable append");
+  const refresh = await tryRefreshGameWatchStateSummary(db, params.gameId, "durable_append");
+  await publishCurrentWatchState(db, params.gameId, "durable append", refresh?.watchState);
 }
 
 async function publishCurrentWatchState(
   db: DrizzleDB,
   gameId: string,
   reason: string,
+  prebuiltWatchState?: GameWatchState,
 ): Promise<void> {
   if (getObserverCount(gameId) === 0) return;
   try {
-    const watchState = await getGameWatchState(db, gameId);
+    const watchState = prebuiltWatchState ?? await getGameWatchState(db, gameId);
     if (watchState) {
       broadcastWatchState(gameId, watchState);
     }
@@ -778,7 +782,8 @@ async function runGameAsync(
       tokenTracker,
       gameConfig,
     });
-    await publishCurrentWatchState(db, gameId, "completion");
+    const refresh = await tryRefreshGameWatchStateSummary(db, gameId, "completion");
+    await publishCurrentWatchState(db, gameId, "completion", refresh?.watchState);
     persistedTranscriptEntries = result.transcript.length;
     if (ownerEpoch) {
       broadcastRaw(gameId, {
@@ -833,6 +838,7 @@ async function runGameAsync(
         .where(and(eq(schema.games.id, gameId), eq(schema.games.status, "in_progress")))
         .returning({ id: schema.games.id });
       if (cancelled.length > 0) {
+        await tryRefreshGameWatchStateSummary(db, gameId, "runner_cancelled");
         broadcastRaw(gameId, {
           type: "game_status",
           gameId,
@@ -866,6 +872,7 @@ async function runGameAsync(
           .set({ config: JSON.stringify(updatedConfig) })
           .where(eq(schema.games.id, gameId));
         await markGameSuspended(db, gameId, "runner_failed", { message: errorMessage });
+        await tryRefreshGameWatchStateSummary(db, gameId, "runner_failed");
         broadcastRaw(gameId, {
           type: "game_status",
           gameId,
@@ -884,6 +891,7 @@ async function runGameAsync(
             config: JSON.stringify(fallbackConfig),
           })
           .where(eq(schema.games.id, gameId));
+        await tryRefreshGameWatchStateSummary(db, gameId, "legacy_runner_failed");
       }
     } catch (dbErr) {
       console.error(`[game-lifecycle] Failed to update game ${gameId} status after error:`, dbErr);

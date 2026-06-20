@@ -37,6 +37,7 @@ import {
   markOwnerStartupFailed,
 } from "../services/game-ownership.js";
 import { getRedactedKernelHealth } from "../services/game-kernel-health.js";
+import { tryRefreshGameWatchStateSummary } from "../services/game-watch-state-summary.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -373,6 +374,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       await db.delete(schema.freeGameQueue)
         .where(eq(schema.freeGameQueue.id, entry.id));
     }
+    await tryRefreshGameWatchStateSummary(db, gameId, "free_queue_draw");
 
     return c.json({
       drawn: true,
@@ -418,10 +420,12 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
     if (!owner.ok) {
       return c.json({ error: owner.error }, owner.statusCode);
     }
+    await tryRefreshGameWatchStateSummary(db, game.id, "free_queue_started");
 
     const result = await startGame(db, game.id, owner.claim.ownerEpoch);
     if (result.error) {
       await markOwnerStartupFailed(db, game.id, owner.claim.ownerEpoch, result.error);
+      await tryRefreshGameWatchStateSummary(db, game.id, "free_queue_startup_failed");
       return c.json({ error: result.error }, 500);
     }
 

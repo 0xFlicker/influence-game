@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: GameWatchState Summary Read Model</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f5f3ed;
+      --ink: #18231f;
+      --muted: #56635e;
+      --soft: #6f7a75;
+      --line: #d8ded7;
+      --panel: #fffefa;
+      --panel-soft: #eef4f1;
+      --green: #25745d;
+      --green-soft: #e4f1eb;
+      --blue: #17689b;
+      --blue-soft: #e5f1f8;
+      --amber: #9a6412;
+      --amber-soft: #f8ebd1;
+      --plum: #6d4a81;
+      --plum-soft: #efe6f4;
+      --red: #9d443c;
+      --red-soft: #f8e5e1;
+      --shadow: 0 14px 34px rgba(34, 43, 39, 0.08);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-size: 15px;
+      line-height: 1.62;
+    }
+    a {
+      color: var(--blue);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+    code {
+      color: #263d38;
+      background: #edf2ee;
+      border: 1px solid #d8e1db;
+      border-radius: 5px;
+      padding: 0.08rem 0.28rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+    }
+    strong { color: inherit; font-weight: 760; }
+    .page {
+      width: min(1120px, calc(100vw - 36px));
+      margin: 0 auto;
+      padding: 34px 0 54px;
+    }
+    header, section {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    header { padding: 30px; }
+    section {
+      margin-top: 24px;
+      padding: 24px;
+      box-shadow: 0 8px 24px rgba(34, 43, 39, 0.055);
+    }
+    .eyebrow, .section-label {
+      margin: 0 0 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.72rem;
+      font-weight: 820;
+    }
+    .eyebrow { color: var(--green); }
+    .section-label { color: var(--amber); }
+    h1, h2, h3 {
+      margin: 0;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+    h1 {
+      max-width: 920px;
+      font-size: clamp(2rem, 4vw, 3.25rem);
+    }
+    h2 { font-size: 1.55rem; margin-bottom: 14px; }
+    h3 { font-size: 1.16rem; }
+    p {
+      max-width: 78ch;
+      margin: 0 0 1rem;
+      color: var(--muted);
+    }
+    ul, ol { color: var(--muted); }
+    .lede {
+      max-width: 88ch;
+      margin-top: 16px;
+      color: #33413d;
+      font-size: 1.03rem;
+    }
+    .meta-grid, .stats {
+      display: grid;
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .meta-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .stats { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .meta, .stat {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-soft);
+      padding: 12px 14px;
+    }
+    .meta dt, .stat dt {
+      margin: 0;
+      color: var(--soft);
+      font-size: 0.72rem;
+      font-weight: 820;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .meta dd, .stat dd {
+      margin: 2px 0 0;
+      color: var(--ink);
+      font-weight: 760;
+    }
+    .axis-list, .evidence-list, .plan-list {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .axis-list li, .evidence-list li, .plan-list li {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfa;
+      padding: 12px 14px;
+      color: var(--muted);
+    }
+    .axis-list strong, .evidence-list strong, .plan-list strong {
+      display: block;
+      color: var(--ink);
+      margin-bottom: 2px;
+    }
+    .jump-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin: 0 0 18px;
+      padding: 0;
+      list-style: none;
+    }
+    .jump-list a {
+      display: block;
+      border: 1px solid #d4e1dc;
+      border-radius: 8px;
+      background: var(--green-soft);
+      padding: 10px 12px;
+      color: #1f5948;
+      text-decoration: none;
+      font-weight: 760;
+    }
+    .idea-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfa;
+      padding: 18px;
+      margin-top: 14px;
+    }
+    .idea-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 12px;
+    }
+    .idea-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .rank {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      background: var(--blue-soft);
+      color: var(--blue);
+      font-weight: 820;
+      flex: 0 0 auto;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      border: 1px solid #d8e2dc;
+      background: #f2f5f1;
+      color: #52635f;
+      padding: 4px 9px;
+      font-size: 0.76rem;
+      font-weight: 760;
+    }
+    .chip.conf { background: var(--blue-soft); border-color: #c9ddea; color: var(--blue); }
+    .chip.cx { background: var(--amber-soft); border-color: #ead3a8; color: var(--amber); }
+    .chip.axis { background: var(--plum-soft); border-color: #dccbe5; color: var(--plum); }
+    .field-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .field {
+      border: 1px solid #e1e6df;
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px;
+    }
+    .field.wide { grid-column: 1 / -1; }
+    .field dt {
+      margin: 0 0 4px;
+      color: var(--soft);
+      font-size: 0.72rem;
+      font-weight: 820;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .field dd { margin: 0; color: var(--muted); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+      font-size: 0.93rem;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 11px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      color: #33413d;
+      background: var(--panel-soft);
+      font-size: 0.74rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    tr:last-child td { border-bottom: 0; }
+    td { color: var(--muted); }
+    .callout {
+      border: 1px solid #d7e2dc;
+      border-radius: 8px;
+      background: var(--green-soft);
+      padding: 16px;
+      color: #244f43;
+      margin-top: 14px;
+    }
+    .callout.warn {
+      background: var(--amber-soft);
+      border-color: #ecd6ad;
+      color: #6c470e;
+    }
+    .composition-signal {
+      margin-top: 24px;
+      color: var(--soft);
+      font-size: 0.86rem;
+      text-align: center;
+    }
+    @media (max-width: 760px) {
+      .meta-grid, .stats, .field-grid, .jump-list { grid-template-columns: 1fr; }
+      header, section { padding: 20px; }
+      .idea-head { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">Ideation</p>
+      <h1>GameWatchState Summary Read Model</h1>
+      <p class="lede">Fix the remaining commit <code>857c197</code> review finding by moving <code>GET /api/games</code> off per-game canonical event replay and onto compact, persisted watch summaries.</p>
+      <dl class="meta-grid">
+        <div class="meta"><dt>Date</dt><dd><time datetime="2026-06-20">2026-06-20</time></dd></div>
+        <div class="meta"><dt>Topic</dt><dd>game-watch-state-summary-read-model</dd></div>
+        <div class="meta"><dt>Focus</dt><dd>O(number of games) list reads</dd></div>
+        <div class="meta"><dt>Mode</dt><dd>repo-grounded</dd></div>
+      </dl>
+      <dl class="stats">
+        <div class="stat"><dt>Raw Ideas</dt><dd>6</dd></div>
+        <div class="stat"><dt>Survivors</dt><dd>4</dd></div>
+        <div class="stat"><dt>Top Pick</dt><dd>summary table</dd></div>
+        <div class="stat"><dt>API Change</dt><dd>none intended</dd></div>
+        <div class="stat"><dt>Auth Change</dt><dd>none</dd></div>
+      </dl>
+    </header>
+
+    <section id="grounding-context">
+      <p class="section-label">Codebase Context</p>
+      <h2>Grounding Context</h2>
+      <ul class="evidence-list">
+        <li><strong>The list route pays detail cost per visible game.</strong> <code>GET /api/games</code> loads visible game rows, then maps every row through <code>buildGameWatchState(db, game)</code> before returning summary fields and <code>summarizeWatchState</code>. Evidence: <a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/routes/games.ts#L190-L229"><code>packages/api/src/routes/games.ts:190</code></a>.</li>
+        <li><strong>Full watch-state build does the expensive work the list does not need.</strong> <code>buildGameWatchState</code> loads player identities and terminal results, reads persisted events, replays projection, builds player rows, then only later can the route drop <code>players</code>. Evidence: <a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-watch-state.ts#L150-L222"><code>game-watch-state.ts:150</code></a>.</li>
+        <li><strong>The event reader validates the whole ordered log.</strong> <code>getPersistedGameEvents</code> selects rows from <code>game_events</code> ordered by sequence, validates metadata, recomputes hashes, and returns a trusted prefix. Evidence: <a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-event-read-model.ts#L222-L243"><code>game-event-read-model.ts:222</code></a>.</li>
+        <li><strong>The projection reader replays every trusted event in memory.</strong> <code>getPersistedGameProjection</code> starts from <code>createEmptyProjection</code> and calls <code>applyCanonicalEvent</code> for each trusted event. Evidence: <a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-projection-read-model.ts#L174-L185"><code>game-projection-read-model.ts:174</code></a>.</li>
+        <li><strong>There is already a clean write-side seam.</strong> <code>appendDurableEventsAndPublishWatchState</code> wraps durable append and watch-state publish, and <code>persistCompletedGame</code> owns terminal result/status creation. Evidence: <a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-lifecycle.ts#L181-L190"><code>game-lifecycle.ts:181</code></a> and <a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-lifecycle.ts#L426-L540"><code>game-lifecycle.ts:426</code></a>.</li>
+        <li><strong>The existing tests define the correctness bar.</strong> Route tests expect list/detail to return durable round, phase, counts, winner, projection status, and cursor fields, while service tests verify degraded logs and private-field stripping. Evidence: <a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/__tests__/games-api.test.ts#L451-L620"><code>games-api.test.ts:451</code></a> and <a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/__tests__/game-watch-state.test.ts#L24-L259"><code>game-watch-state.test.ts:24</code></a>.</li>
+        <li><strong>Prior local guidance supports rebuildable summaries, not private leakage.</strong> The durable architecture separates canonical game events as accepted board facts from private agent-turn evidence and replayable projections. Evidence: <a href="https://github.com/0xFlicker/influence-game/blob/main/docs/solutions/architecture-patterns/agent-strategy-observability-spine.md#L40-L62"><code>docs/solutions/architecture-patterns/agent-strategy-observability-spine.md:40</code></a>.</li>
+      </ul>
+      <div class="callout">
+        Recommended interpretation: the first watch-state slice deliberately deferred materialization. This review finding is the trigger to add it, but only for compact list summaries. Detail reads and websocket catch-up should keep full replay/validation semantics.
+      </div>
+    </section>
+
+    <section id="topic-axes">
+      <p class="section-label">Surface Map</p>
+      <h2>Topic Axes</h2>
+      <ul class="axis-list">
+        <li><strong>List API shape</strong> Preserve current public list payload fields and public-by-URL watch behavior while removing per-row full replay.</li>
+        <li><strong>Summary storage and refresh lifecycle</strong> Decide what compact row exists, where it is updated, and which status/player/result transitions must refresh it.</li>
+        <li><strong>Migration and stale-summary handling</strong> Make existing games correct after deploy and make missing/stale rows visible without moving replay back into the list route.</li>
+        <li><strong>Future append/checkpoint fit</strong> Keep the design compatible with incremental durable append, checkpoint boundaries, and potential projection caching without forcing that larger rewrite now.</li>
+      </ul>
+    </section>
+
+    <section id="ranked-ideas">
+      <p class="section-label">Ranked Ideas</p>
+      <h2>Ranked Ideas</h2>
+      <ul class="jump-list">
+        <li><a href="#idea-1">1. Materialized <code>game_watch_state_summaries</code></a></li>
+        <li><a href="#idea-2">2. Summary refresh service as the boundary</a></li>
+        <li><a href="#idea-3">3. Projection cache as a later foundation</a></li>
+        <li><a href="#idea-4">4. Lazy repair only as compatibility glue</a></li>
+      </ul>
+
+      <article class="idea-card" id="idea-1">
+        <div class="idea-head">
+          <div class="idea-title"><span class="rank">1</span><h3>Materialized <code>game_watch_state_summaries</code></h3></div>
+          <div class="chips"><span class="chip axis">Summary storage</span><span class="chip conf">Conf 88%</span><span class="chip cx">Cx Medium</span></div>
+        </div>
+        <dl class="field-grid">
+          <div class="field wide"><dt>Description</dt><dd>Add a compact persisted table keyed by <code>game_id</code> that stores the viewer-safe <code>GameWatchState</code> summary without <code>players</code>. The list route batch reads these rows for all visible games and keeps the existing top-level fields by projecting from the summary row.</dd></div>
+          <div class="field wide"><dt>Basis</dt><dd><strong>direct:</strong> The current list route calls <code>buildGameWatchState</code> for every visible row, while <code>buildGameWatchState</code> reads and replays the durable event log before returning fields that the list then summarizes.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>This fixes the reviewed complexity class directly: list reads become O(number of listed games) over <code>games</code>, kernel-health rows, and compact summary rows. Full correctness stays in the detail/watch path.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Adds a table, migration, refresh service, backfill story, and stale-row discipline. The first version may still refresh from full replay on writes until incremental projection caching exists.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea-card" id="idea-2">
+        <div class="idea-head">
+          <div class="idea-title"><span class="rank">2</span><h3>Summary refresh service as the boundary</h3></div>
+          <div class="chips"><span class="chip axis">Lifecycle</span><span class="chip conf">Conf 84%</span><span class="chip cx">Cx Medium</span></div>
+        </div>
+        <dl class="field-grid">
+          <div class="field wide"><dt>Description</dt><dd>Create a service such as <code>game-watch-state-summary.ts</code> with <code>refreshGameWatchStateSummary</code>, <code>getGameWatchStateSummariesByGameIds</code>, and shared mappers between persisted rows and the list response shape. Use it after durable append, terminal completion, cancellation/suspension, game creation, joins, and fill operations.</dd></div>
+          <div class="field wide"><dt>Basis</dt><dd><strong>direct:</strong> The lifecycle already has a durable append plus publish seam, and completion already centralizes result/status writes. These are better update points than the HTTP list route.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>A single service keeps the table from becoming a second, divergent watch contract. It also gives tests a clean place to prove summaries exclude private evidence and match current watch-state scalar fields.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Care is needed around transactions. A summary refresh failure should not corrupt canonical truth, but it should be observable and repaired rather than silently leaving stale list data.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea-card" id="idea-3">
+        <div class="idea-head">
+          <div class="idea-title"><span class="rank">3</span><h3>Projection cache as a later foundation</h3></div>
+          <div class="chips"><span class="chip axis">Future fit</span><span class="chip conf">Conf 62%</span><span class="chip cx">Cx High</span></div>
+        </div>
+        <dl class="field-grid">
+          <div class="field wide"><dt>Description</dt><dd>Instead of only storing watch summaries, add a broader projection cache or snapshot table keyed by <code>game_id</code> and event head, then derive <code>GameWatchState</code> summaries from that. This could eventually support incremental append and checkpoint-aligned inspection.</dd></div>
+          <div class="field wide"><dt>Basis</dt><dd><strong>reasoned:</strong> The current cost comes from replaying canonical events into projection. Persisting a reusable projection head attacks the shared root for list, detail, MCP, and future checkpoint work.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>This is the best long-term infrastructure direction if replay cost becomes a system-wide bottleneck.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Too broad for this review fix. It would require larger schema choices, stronger projection-versioning semantics, and extra privacy review if a full projection object is stored.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea-card" id="idea-4">
+        <div class="idea-head">
+          <div class="idea-title"><span class="rank">4</span><h3>Lazy repair only as compatibility glue</h3></div>
+          <div class="chips"><span class="chip axis">Migration</span><span class="chip conf">Conf 55%</span><span class="chip cx">Cx Low</span></div>
+        </div>
+        <dl class="field-grid">
+          <div class="field wide"><dt>Description</dt><dd>Permit targeted summary repair when a row is missing, but do not make cache-on-read the normal design. The deployment path should backfill existing games before relying on the list route, and regular writes should keep summaries current.</dd></div>
+          <div class="field wide"><dt>Basis</dt><dd><strong>reasoned:</strong> A missing-row fallback is useful for compatibility, but if the list route repairs every visible row on a cold request, it recreates the exact O(all events for all games) behavior under a new name.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>This keeps the system robust during migration without letting lazy caching become the architecture.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>The fallback policy needs a hard guardrail. Tests should prove the happy-path list route does not call event replay when summaries exist.</dd></div>
+        </dl>
+      </article>
+    </section>
+
+    <section id="comparison">
+      <p class="section-label">Comparison</p>
+      <h2>Approach Comparison</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Approach</th>
+            <th>Correctness</th>
+            <th>Migration Complexity</th>
+            <th>Stale-Summary Risk</th>
+            <th>API Shape</th>
+            <th>Testability</th>
+            <th>Future Fit</th>
+            <th>Verdict</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong><code>game_watch_state_summaries</code></strong></td>
+            <td>High if populated from the existing watch-state mapper and event-head metadata.</td>
+            <td>Medium: one table, schema, migration, test truncation, backfill.</td>
+            <td>Medium, mitigated by write-side refresh and stale-row metadata.</td>
+            <td>Stable. Route payload can stay unchanged.</td>
+            <td>High. Tests can assert list reads summaries and detail still replays.</td>
+            <td>High. Can later be fed by projection cache or checkpoint append.</td>
+            <td>Recommended.</td>
+          </tr>
+          <tr>
+            <td><strong>Projection cache table</strong></td>
+            <td>High, potentially stronger for all consumers.</td>
+            <td>High: projection versioning and cache invalidation become first-class.</td>
+            <td>Lower if incremental append is done right, higher if partial.</td>
+            <td>Stable for HTTP, but internal service contracts widen.</td>
+            <td>Medium. More state must be proven equivalent to replay.</td>
+            <td>Highest.</td>
+            <td>Defer until replay cost affects multiple consumers.</td>
+          </tr>
+          <tr>
+            <td><strong>Batch replay visible games</strong></td>
+            <td>High because it still replays canonical truth.</td>
+            <td>Low.</td>
+            <td>None beyond current source truth.</td>
+            <td>Stable.</td>
+            <td>Medium. Need performance/instrumentation tests.</td>
+            <td>Low. Still O(total visible events).</td>
+            <td>Reject for this finding.</td>
+          </tr>
+          <tr>
+            <td><strong>Lazy cache-on-read</strong></td>
+            <td>Medium-high after warm-up.</td>
+            <td>Medium.</td>
+            <td>High unless strict repair and invalidation rules exist.</td>
+            <td>Stable.</td>
+            <td>High for isolated cases, weaker for cold-list behavior.</td>
+            <td>Medium.</td>
+            <td>Use only as guarded fallback.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="recommended-approach">
+      <p class="section-label">Recommendation</p>
+      <h2>Recommended Approach</h2>
+      <p>Add a first-class <code>game_watch_state_summaries</code> table keyed by <code>game_id</code>. Store only viewer-safe list/detail summary fields: schema version, game status, source, current round, current phase, max rounds, counts, event cursor, projection availability/status/counts/diagnostics, final state, winner fields, and timestamps. Do not store <code>players</code>, raw event envelopes, source pointers, event hashes, owner epochs, checkpoint payloads, private traces, <code>thinking</code>, or <code>reasoningContext</code>.</p>
+      <p>The normal list route should batch load summaries for returned game IDs and never call <code>buildGameWatchState</code> for each row. <code>GET /api/games/:id</code> and websocket catch-up can keep using full <code>buildGameWatchState</code> so detail correctness is not capped by a stale or compact summary. If a summary is missing, detail and catch-up can repair by full build; the list path should rely on backfilled/write-maintained rows and avoid broad request-time replay.</p>
+      <div class="callout warn">
+        First implementation can refresh summaries by calling the existing full watch-state builder on write-side transitions. That moves the work off the list route and keeps the code small. The row schema should still carry event-head metadata so a later ce-work session can replace refresh internals with an incremental projection cache without changing the list API again.
+      </div>
+    </section>
+
+    <section id="implementation-plan">
+      <p class="section-label">Follow-Up</p>
+      <h2>Recommended Implementation Plan</h2>
+      <ol class="plan-list">
+        <li><strong>Schema and migration.</strong> Add <code>gameWatchStateSummaries</code> to <code>packages/api/src/db/schema.ts</code>, add <code>packages/api/drizzle/0017_game_watch_state_summaries.sql</code> plus Drizzle meta, and add the table to the test truncation list. Use <code>game_id</code> as the primary key and foreign key to <code>games.id</code>.</li>
+        <li><strong>Summary service.</strong> Add a service that can convert <code>GameWatchState</code> to a persisted summary row and reconstruct the list route's <code>watchState</code> summary. Keep the mapper shared with route code so the public contract does not fork.</li>
+        <li><strong>Write-side refreshes.</strong> Call the summary refresh after game creation, join/fill roster changes, start/stop status changes, durable event append, suspension/cancellation, and terminal completion. Put the durable append call near <code>appendDurableEventsAndPublishWatchState</code>; put terminal refresh immediately after <code>persistCompletedGame</code> succeeds and before publishing final watch state.</li>
+        <li><strong>Backfill compatibility.</strong> Add a one-time backfill command or deploy step that replays existing games once and writes summaries. The list route should not become the backfill worker. Missing summaries after deploy should be logged as repair debt, not silently repaired by replaying every visible log.</li>
+        <li><strong>List route rewrite.</strong> Replace the <code>Promise.all(rows.map(buildGameWatchState))</code> path in <code>GET /api/games</code> with one batch summary read keyed by returned game IDs. Preserve the current response shape, status filtering, hidden-game exclusion, game-number assignment, kernel-health merge, public access, and winner/count/cursor fields.</li>
+        <li><strong>Tests.</strong> Add route tests proving the list route returns correct round, phase, counts, winner, source, projection status, and cursor from summaries. Add a regression that would fail if list replayed <code>game_events</code>, for example by corrupting event rows after summary write and showing list still uses the summary while detail degrades through full replay, or by injecting a watch-state builder dependency that throws on list use.</li>
+        <li><strong>Privacy and stale-row tests.</strong> Extend watch-state tests so persisted summaries do not contain private/prod evidence fields, and add service tests for missing summary, stale schema version, terminal fallback, and degraded projection summaries.</li>
+        <li><strong>Docs.</strong> Update the June 20 watch-state plan or a short docs note to say materialization is now part of the list-read path, while detail/watch state remains replay-validated and public watching remains public-by-URL.</li>
+      </ol>
+    </section>
+
+    <section id="rejection-summary">
+      <p class="section-label">Cuts</p>
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>Batch replay all visible game logs</td><td>Still O(all events for all visible games); only improves query round trips.</td></tr>
+          <tr><td>2</td><td>Full projection cache as the immediate fix</td><td>Strong future direction, but too much schema and invalidation work for a targeted code-review finding.</td></tr>
+          <tr><td>3</td><td>Lazy cache-on-read as the primary path</td><td>Cold list requests would replay every missing row, recreating the problem during deploy or cache loss.</td></tr>
+          <tr><td>4</td><td>Denormalize watch fields onto <code>games</code></td><td>Pollutes the source table with derived viewer state and gives future projection/checkpoint flows a cramped home.</td></tr>
+          <tr><td>5</td><td>Paginate or filter harder</td><td>Avoids some pain but leaves each visible row on the expensive full-replay path.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer class="composition-signal">Composed 2026-06-20T07:26:39Z by ce-ideate from local repo evidence and the commit 857c197 review finding.</footer>
+  </main>
+</body>
+</html>

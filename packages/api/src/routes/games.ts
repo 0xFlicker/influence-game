@@ -36,8 +36,12 @@ import {
 } from "../services/game-kernel-health.js";
 import {
   buildGameWatchState,
-  type GameWatchState,
 } from "../services/game-watch-state.js";
+import {
+  buildFallbackGameWatchStateSummary,
+  getGameWatchStateSummaryReadsByGameIds,
+  tryRefreshGameWatchStateSummary,
+} from "../services/game-watch-state-summary.js";
 import { broadcastRaw } from "../services/ws-manager.js";
 import { generateUniqueSlug } from "../lib/slug.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
@@ -57,13 +61,6 @@ function publicErrorInfo(status: GameStatus, config: Record<string, unknown>): s
     return PUBLIC_SUSPENDED_ERROR_INFO;
   }
   return typeof config.errorInfo === "string" ? config.errorInfo : undefined;
-}
-
-type GameWatchStateSummary = Omit<GameWatchState, "players">;
-
-function summarizeWatchState(state: GameWatchState): GameWatchStateSummary {
-  const { players: _players, ...summary } = state;
-  return summary;
 }
 
 // ---------------------------------------------------------------------------
@@ -175,6 +172,7 @@ export function createGameRoutes(db: DrizzleDB) {
         maxPlayers,
         createdById: user?.id ?? null,
       });
+    await tryRefreshGameWatchStateSummary(db, gameId, "game_created");
 
     // Game number = total count of games (this is the newest)
     const allGames = await db.select({ id: schema.games.id }).from(schema.games);
@@ -202,10 +200,14 @@ export function createGameRoutes(db: DrizzleDB) {
     }
 
     const kernelHealthByGameId = await getRedactedKernelHealthByGameId(db, rows.map((game) => game.id));
+    const watchSummaryReadsByGameId = await getGameWatchStateSummaryReadsByGameIds(db, rows.map((game) => game.id));
 
-    const summaries = await Promise.all(rows.map(async (game) => {
+    const summaries = rows.map((game) => {
       const config = JSON.parse(game.config);
-      const watchState = await buildGameWatchState(db, game);
+      const summaryRead = watchSummaryReadsByGameId.get(game.id) ?? { status: "missing" as const };
+      const watchState = summaryRead.status === "current"
+        ? summaryRead.summary
+        : buildFallbackGameWatchStateSummary(game, config);
 
       return {
         id: game.id,
@@ -226,12 +228,13 @@ export function createGameRoutes(db: DrizzleDB) {
         winner: watchState.winner?.name,
         errorInfo: publicErrorInfo(game.status, config),
         kernelHealth: kernelHealthByGameId.get(game.id),
-        watchState: summarizeWatchState(watchState),
+        watchState,
+        watchStateSummaryStatus: summaryRead.status,
         createdAt: game.createdAt,
         startedAt: game.startedAt ?? undefined,
         completedAt: game.endedAt ?? undefined,
       };
-    }));
+    });
 
     // Assign game numbers by creation order
     summaries.forEach((s, i) => {
@@ -419,6 +422,7 @@ export function createGameRoutes(db: DrizzleDB) {
         persona: JSON.stringify(persona),
         agentConfig: JSON.stringify(agentConfig),
       });
+    await tryRefreshGameWatchStateSummary(db, gameId, "player_joined");
 
     return c.json({ playerId }, 201);
   });
@@ -515,6 +519,7 @@ export function createGameRoutes(db: DrizzleDB) {
     }
 
     const totalPlayers = existingPlayers.length + addedPlayers.length;
+    await tryRefreshGameWatchStateSummary(db, gameId, "players_filled");
 
     // Fill progress stays on the authenticated HTTP operation path, not the product watch stream.
     const openai = createLlmClientFromEnv()?.client ?? null;
@@ -637,6 +642,7 @@ export function createGameRoutes(db: DrizzleDB) {
     if (!owner.ok) {
       return c.json({ error: owner.error }, owner.statusCode);
     }
+    await tryRefreshGameWatchStateSummary(db, gameId, "game_started");
 
     // Await startGame to catch configuration errors (missing API key, etc.)
     // before returning success to the client. The actual game execution
@@ -644,6 +650,7 @@ export function createGameRoutes(db: DrizzleDB) {
     const result = await startGame(db, gameId, owner.claim.ownerEpoch);
     if (result.error) {
       await markOwnerStartupFailed(db, gameId, owner.claim.ownerEpoch, result.error);
+      await tryRefreshGameWatchStateSummary(db, gameId, "startup_failed");
       return c.json({ error: result.error }, 500);
     }
 
@@ -691,6 +698,7 @@ export function createGameRoutes(db: DrizzleDB) {
         .where(eq(schema.games.id, gameId)))[0];
       return c.json({ status: current?.status ?? game.status });
     }
+    await tryRefreshGameWatchStateSummary(db, gameId, "game_cancelled");
 
     broadcastRaw(gameId, {
       type: "game_status",

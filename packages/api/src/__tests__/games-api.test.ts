@@ -7,7 +7,7 @@
 
 import { describe, test, expect, beforeEach, beforeAll, afterEach, afterAll } from "bun:test";
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import type { DrizzleDB } from "../db/index.js";
 import { createGameRoutes } from "../routes/games.js";
@@ -16,6 +16,7 @@ import { randomUUID } from "crypto";
 import { setupTestDB } from "./test-utils.js";
 import { abortAllGames } from "../services/game-lifecycle.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
+import { refreshGameWatchStateSummary } from "../services/game-watch-state-summary.js";
 import { setServer } from "../services/ws-manager.js";
 import { Phase, type CanonicalGameEvent } from "@influence/engine";
 import {
@@ -455,6 +456,7 @@ describe("Game REST API", () => {
       const ownerEpoch = await insertOwner(db, id);
       const events = advanceToRoundTwo(createResolvedRoundCanonicalEventFixture(id));
       await appendGameEvents(db, { gameId: id, ownerEpoch, events });
+      await refreshGameWatchStateSummary(db, id, "test");
 
       const res = await app.request("/api/games?status=in_progress");
       expect(res.status).toBe(200);
@@ -464,6 +466,7 @@ describe("Game REST API", () => {
         currentPhase: string;
         alivePlayers: number;
         eliminatedPlayers: number;
+        watchStateSummaryStatus: string;
         watchState: { source: string; eventCursor: { sequence: number } };
       }>;
 
@@ -474,9 +477,89 @@ describe("Game REST API", () => {
         currentPhase: "LOBBY",
         alivePlayers: 3,
         eliminatedPlayers: 1,
+        watchStateSummaryStatus: "current",
         watchState: {
           source: "durable_projection",
           eventCursor: { sequence: events.length },
+        },
+      });
+    });
+
+    test("summaries do not replay event logs while detail still validates them", async () => {
+      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      await insertFixturePlayers(db, id);
+      await markGameInProgress(db, id);
+      const ownerEpoch = await insertOwner(db, id);
+      const events = advanceToRoundTwo(createResolvedRoundCanonicalEventFixture(id));
+      await appendGameEvents(db, { gameId: id, ownerEpoch, events });
+      await refreshGameWatchStateSummary(db, id, "test");
+      await db.update(schema.gameEvents)
+        .set({ eventHash: "sha256:not-the-real-event-hash" })
+        .where(and(
+          eq(schema.gameEvents.gameId, id),
+          eq(schema.gameEvents.sequence, 2),
+        ));
+
+      const listRes = await app.request("/api/games?status=in_progress");
+      const list = (await listRes.json()) as Array<{
+        currentRound: number;
+        currentPhase: string;
+        watchStateSummaryStatus: string;
+        watchState: { source: string; eventCursor: { sequence: number } };
+      }>;
+      const detailRes = await app.request(`/api/games/${id}`);
+      const detail = (await detailRes.json()) as {
+        watchState: {
+          source: string;
+          eventCursor: { sequence: number };
+          projection: { eventLogStatus: string; firstInvalidSequence: number };
+        };
+      };
+
+      expect(list[0]).toMatchObject({
+        currentRound: 2,
+        currentPhase: "LOBBY",
+        watchStateSummaryStatus: "current",
+        watchState: {
+          source: "durable_projection",
+          eventCursor: { sequence: events.length },
+        },
+      });
+      expect(detail.watchState).toMatchObject({
+        source: "degraded",
+        eventCursor: { sequence: 1 },
+        projection: {
+          eventLogStatus: "invalid",
+          firstInvalidSequence: 2,
+        },
+      });
+    });
+
+    test("missing summaries use a safe list fallback instead of replaying events", async () => {
+      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      await insertFixturePlayers(db, id);
+      await markGameInProgress(db, id);
+      const ownerEpoch = await insertOwner(db, id);
+      const events = advanceToRoundTwo(createResolvedRoundCanonicalEventFixture(id));
+      await appendGameEvents(db, { gameId: id, ownerEpoch, events });
+      await db.delete(schema.gameWatchStateSummaries)
+        .where(eq(schema.gameWatchStateSummaries.gameId, id));
+
+      const res = await app.request("/api/games?status=in_progress");
+      const body = (await res.json()) as Array<{
+        currentRound: number;
+        currentPhase: string;
+        watchStateSummaryStatus: string;
+        watchState: { source: string; projection: { availability: string } };
+      }>;
+
+      expect(body[0]).toMatchObject({
+        currentRound: 0,
+        currentPhase: "INIT",
+        watchStateSummaryStatus: "missing",
+        watchState: {
+          source: "pre_kernel_empty",
+          projection: { availability: "unavailable" },
         },
       });
     });

@@ -120,6 +120,20 @@
       "when": 1782172800000,
       "tag": "0016_allow_intro_cognitive_artifact_round",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1782259200000,
+      "tag": "0017_game_watch_state_summaries",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1782345600000,
+      "tag": "0018_add_summary_slug_column",
+      "breakpoints": true
     }
   ]
 }

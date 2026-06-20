@@ -116,6 +116,10 @@ The local game MCP is a corpus-level projection host over simulation artifacts. 
 
 A viewer-safe web read model for live and completed games, derived from persisted canonical events and canonical projection. It supplies shell-level facts such as round, phase, alive/out status, shield state when known, winner/final state, event head, and projection availability. GameWatchState replaces runtime `GameStateSnapshot` websocket payloads as the product watch authority; it is not raw canonical event envelopes, checkpoint payload, transcript prose, private reasoning, producer evidence, or a claim of crash-safe resume.
 
+## GameWatchState summary
+
+A compact persisted viewer-safe summary of `GameWatchState` for game list reads. It carries list-level facts such as source, round, phase, counts, winner/final state, event cursor, and projection availability so discovery pages do not replay every visible game's full canonical event log. It is not the detail/watch authority and must not contain full player rows, raw canonical events, source pointers, private traces, or producer evidence.
+
 ## MatchWatchShell
 
 The default web watch surface for live in-progress games and completed replays. It should consume GameWatchState for authoritative shell-level match facts while reusing phase theaters and replay controls for display. Richer audience-omniscient context, durable receipts, relationship edges, and checkpoint-shaped thought/strategy summaries belong to later data-load slices. It is a viewer product surface, not a claim that active game execution is crash-safe or resumable.

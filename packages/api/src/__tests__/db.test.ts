@@ -592,6 +592,65 @@ describe("Database Schema", () => {
       expect(threw).toBe(true);
     });
 
+    test("game watch state summaries store compact rows and enforce counts", async () => {
+      const { gameId } = await createGameOwner();
+      const validSummary = {
+        gameId,
+        slug: "schema-summary-row",
+        schemaVersion: 1,
+        status: "in_progress" as const,
+        source: "durable_projection" as const,
+        currentRound: 1,
+        currentPhase: "LOBBY",
+        maxRounds: 10,
+        totalPlayers: 2,
+        alivePlayers: 1,
+        eliminatedPlayers: 1,
+        unknownPlayers: 0,
+        eventCursorSequence: 1,
+        eventCursorSource: "trusted_prefix" as const,
+        eventCursorEventType: "round.resolved",
+        projectionAvailability: "available" as const,
+        projectionEventLogStatus: "complete" as const,
+        projectionStatus: "complete" as const,
+        projectionEventCount: 1,
+        projectionTrustedEventCount: 1,
+        projectionValidPrefixLength: 1,
+        projectionLastTrustedSequence: 1,
+        projectionDiagnostics: [],
+        finalStatus: "not_final" as const,
+        lastRefreshReason: "schema_test",
+      };
+
+      await db.insert(schema.gameWatchStateSummaries).values(validSummary);
+
+      const rows = await db
+        .select()
+        .from(schema.gameWatchStateSummaries)
+        .where(eq(schema.gameWatchStateSummaries.gameId, gameId));
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.source).toBe("durable_projection");
+      expect(rows[0]!.eventCursorSequence).toBe(1);
+
+      const invalidGameId = randomUUID();
+      await db.insert(schema.games)
+        .values({ id: invalidGameId, config: "{}" });
+
+      let threw = false;
+      try {
+        await db.insert(schema.gameWatchStateSummaries)
+          .values({
+            ...validSummary,
+            gameId: invalidGameId,
+            totalPlayers: 3,
+          });
+      } catch {
+        threw = true;
+      }
+      expect(threw).toBe(true);
+    });
+
     test("checkpoint and evidence manifest rows reference durable boundaries", async () => {
       const { gameId, ownerEpoch } = await createGameOwner();
       const eventEnvelope = {

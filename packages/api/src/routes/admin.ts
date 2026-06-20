@@ -26,6 +26,7 @@ import { parseJsonBody } from "../lib/parse-json-body.js";
 import { generateInviteCode } from "../lib/invite-codes.js";
 import { getRedactedKernelHealthByGameId } from "../services/game-kernel-health.js";
 import { getDurableRunInspection } from "../services/game-durable-run.js";
+import { tryRefreshGameWatchStateSummary } from "../services/game-watch-state-summary.js";
 import { randomUUID } from "crypto";
 
 // ---------------------------------------------------------------------------
@@ -941,6 +942,7 @@ export function createAdminRoutes(db: DrizzleDB) {
           });
         }
       });
+      await tryRefreshGameWatchStateSummary(db, newGameId, "admin_import");
 
       return c.json({ id: newGameId, gameId: newGameId, slug }, 201);
     } catch (err) {
