@@ -1,7 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { renderToString } from "react-dom/server";
 import type { GameDetail, GameWatchState, TranscriptEntry } from "../lib/api";
-import { buildDiaryArchiveEntries, MatchWatchShell } from "../app/games/[slug]/components/match-watch-shell";
+import {
+  buildDiaryArchiveEntries,
+  buildReplayTranscriptSlice,
+  MatchWatchShell,
+} from "../app/games/[slug]/components/match-watch-shell";
 import { buildReplayScenes } from "../app/games/[slug]/components/spectacle-viewer";
 
 function game(): GameDetail {
@@ -206,6 +210,60 @@ describe("MatchWatchShell", () => {
 
     expect(scenes.map((scene) => scene.phase)).toEqual(["LOBBY", "VOTE"]);
     expect(scenes.flatMap((scene) => scene.messages).map((message) => message.scope)).not.toContain("diary");
+  });
+
+  it("limits diary archive source rows to the current replay cursor", () => {
+    const transcript = [
+      entry({ id: 1, phase: "LOBBY", scope: "public", text: "Lobby opens.", timestamp: 100 }),
+      entry({
+        id: 2,
+        phase: "DIARY_ROOM",
+        fromPlayerId: "House -> Atlas",
+        fromPlayerName: null,
+        scope: "diary",
+        text: "Atlas, what did you notice?",
+        timestamp: 200,
+      }),
+      entry({
+        id: 3,
+        phase: "DIARY_ROOM",
+        fromPlayerId: "Atlas",
+        fromPlayerName: "Atlas",
+        scope: "diary",
+        text: "Lyra is gathering votes.",
+        timestamp: 210,
+      }),
+      entry({ id: 4, phase: "VOTE", scope: "public", text: "Votes open.", timestamp: 300 }),
+      entry({
+        id: 5,
+        phase: "DIARY_ROOM",
+        round: 2,
+        fromPlayerId: "House -> Lyra",
+        fromPlayerName: null,
+        scope: "diary",
+        text: "Lyra, what changed?",
+        timestamp: 400,
+      }),
+      entry({
+        id: 6,
+        phase: "DIARY_ROOM",
+        round: 2,
+        fromPlayerId: "Lyra",
+        fromPlayerName: "Lyra",
+        scope: "diary",
+        text: "Atlas lost the room.",
+        timestamp: 410,
+      }),
+      entry({ id: 7, phase: "POWER", scope: "public", text: "Power opens.", timestamp: 500 }),
+    ];
+
+    const throughLobby = buildReplayTranscriptSlice(transcript, [transcript[0]!]);
+    const throughVote = buildReplayTranscriptSlice(transcript, [transcript[0]!, transcript[3]!]);
+    const throughPower = buildReplayTranscriptSlice(transcript, [transcript[0]!, transcript[3]!, transcript[6]!]);
+
+    expect(buildDiaryArchiveEntries(throughLobby)).toEqual([]);
+    expect(buildDiaryArchiveEntries(throughVote).map((diary) => diary.playerName)).toEqual(["Atlas"]);
+    expect(buildDiaryArchiveEntries(throughPower).map((diary) => diary.playerName)).toEqual(["Lyra", "Atlas"]);
   });
 });
 

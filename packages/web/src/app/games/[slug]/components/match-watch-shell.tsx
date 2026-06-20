@@ -61,6 +61,10 @@ export function MatchWatchShell({
     [game, messages, live, connStatus, selectedPlayerId, playbackState],
   );
   const visibleMessages = live ? messages : playbackState?.visibleMessages ?? messages;
+  const inspectorMessages = useMemo(
+    () => (live ? messages : buildReplayTranscriptSlice(messages, playbackState?.visibleMessages)),
+    [live, messages, playbackState?.visibleMessages],
+  );
   const intelligenceModel = useMemo(
     () =>
       buildMatchWatchIntelligenceModel({
@@ -142,7 +146,7 @@ export function MatchWatchShell({
           model={model}
           onPlaybackStateChange={handlePlaybackStateChange}
         />
-        <InspectorPanel model={model} intelligence={intelligenceModel} messages={messages} />
+        <InspectorPanel model={model} intelligence={intelligenceModel} messages={inspectorMessages} />
       </div>
 
       <ReplayDock model={model} />
@@ -675,6 +679,21 @@ export function buildDiaryArchiveEntries(messages: readonly TranscriptEntry[]): 
       return [];
     })
     .sort((left, right) => right.timestamp - left.timestamp || right.id.localeCompare(left.id));
+}
+
+export function buildReplayTranscriptSlice(
+  messages: readonly TranscriptEntry[],
+  visibleReplayMessages: readonly TranscriptEntry[] | null | undefined,
+): TranscriptEntry[] {
+  const cursor = visibleReplayMessages?.at(-1);
+  if (!cursor) return [];
+
+  const cursorIndex = messages.findIndex((message) => message.id === cursor.id);
+  if (cursorIndex >= 0) {
+    return messages.slice(0, cursorIndex + 1);
+  }
+
+  return messages.filter((message) => message.timestamp <= cursor.timestamp);
 }
 
 function sectionMeta(intelligence: MatchWatchIntelligenceModel): string | undefined {
