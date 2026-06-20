@@ -94,7 +94,9 @@ describe("MatchWatchShell", () => {
     expect(html).not.toContain("Public Thinking");
     expect(html).not.toContain("Public Strategy");
     expect(html).not.toContain("Public Receipts");
-    expect(html).not.toContain('title="Exit"');
+    expect(html).toContain('href="/games"');
+    expect(html).toContain('aria-label="Exit watch room"');
+    expect(html).toContain('title="Exit"');
   });
 
   it("renders live shell state from durable watch state without replay copy", () => {

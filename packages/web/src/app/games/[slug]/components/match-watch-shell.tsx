@@ -2,6 +2,7 @@
 
 import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { AgentAvatar } from "@/components/agent-avatar";
 import {
   getPublicWatchIntelligence,
@@ -224,7 +225,7 @@ function MobileContextPanel({
 
 function ShellHeader({ model }: { model: MatchWatchModel }) {
   return (
-    <header className="relative mx-3 mt-3 grid min-h-14 shrink-0 grid-cols-1 items-center gap-3 rounded-lg border border-white/10 bg-black/45 px-4 py-3 shadow-panel backdrop-blur-glass lg:grid-cols-[18rem_minmax(0,1fr)_18rem] lg:py-0">
+    <header className="relative mx-3 mt-3 grid min-h-14 shrink-0 grid-cols-1 items-center gap-3 rounded-lg border border-white/10 bg-black/45 px-4 py-3 shadow-panel backdrop-blur-glass lg:grid-cols-[18rem_minmax(0,1fr)_22rem] lg:py-0">
       <div className="flex min-w-0 items-center gap-4">
         <div className="text-sm font-medium tracking-[0.45em] text-white/90">INFLUENCE</div>
         <div className="hidden h-5 w-px bg-white/10 sm:block" />
@@ -241,6 +242,14 @@ function ShellHeader({ model }: { model: MatchWatchModel }) {
       </div>
 
       <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
+        <Link
+          href="/games"
+          aria-label="Exit watch room"
+          title="Exit"
+          className="inline-flex h-8 items-center rounded-md border border-white/10 bg-white/[0.03] px-3 text-[10px] uppercase tracking-[0.14em] text-white/55 transition-colors hover:border-white/25 hover:bg-white/[0.06] hover:text-white/85 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phase/60"
+        >
+          Exit
+        </Link>
         <StatusPill value={model.counts.alivePlayers} label="Alive" />
         <StatusPill value={model.counts.eliminatedPlayers} label="Out" />
         <span className="inline-flex h-8 items-center gap-2 rounded-md border border-phase/30 bg-phase/10 px-3 text-[10px] uppercase tracking-[0.14em] text-white/80">
