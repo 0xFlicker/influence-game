@@ -229,12 +229,12 @@ export function createMcpOAuthRoutes(
   });
 
   app.get("/.well-known/oauth-protected-resource", (c) => {
-    return c.json(buildProtectedResourceMetadata(c, "games"));
+    return c.json(buildProtectedResourceMetadata("games"));
   });
 
   for (const profile of getMcpOAuthProfiles()) {
     app.get(profile.protectedResourceMetadataPath, (c) => {
-      return c.json(buildProtectedResourceMetadata(c, profile.name));
+      return c.json(buildProtectedResourceMetadata(profile.name));
     });
   }
 
@@ -280,10 +280,7 @@ function getCorrelationId(c: Context): string {
     randomUUID();
 }
 
-function buildProtectedResourceMetadata(
-  _c: Context,
-  profileName: McpOAuthProfileName,
-): Record<string, unknown> {
+function buildProtectedResourceMetadata(profileName: McpOAuthProfileName): Record<string, unknown> {
   const profile = getMcpOAuthProfile(profileName);
   return {
     resource: getMcpOAuthProfileResourceUri(profile),
