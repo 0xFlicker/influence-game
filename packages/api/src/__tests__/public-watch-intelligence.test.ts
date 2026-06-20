@@ -157,6 +157,106 @@ describe("getPublicWatchIntelligence", () => {
     expect(JSON.stringify(result)).not.toContain("This should wait");
   });
 
+  test("renders structured strategy packets and prevents repeated decision logs from crowding the section", async () => {
+    const gameId = await seedGameWithPlayers(db, "watch-intelligence-strategy-packet");
+    const ownerEpoch = await insertOwner(db, gameId);
+    const events = createResolvedRoundCanonicalEventFixture(gameId);
+    await appendGameEvents(db, { gameId, ownerEpoch, events });
+    const sequenceFromEnd = (offset: number): number => {
+      const sequence = events[events.length - offset]?.sequence;
+      if (sequence === undefined) throw new Error("Expected enough canonical events for strategy fixture");
+      return sequence;
+    };
+
+    await insertArtifact(db, {
+      id: "current-council-strategy",
+      gameId,
+      actorPlayerId: "atlas",
+      artifactType: "strategy",
+      action: "last-message",
+      phase: "COUNCIL",
+      eventSequence: sequenceFromEnd(1),
+      payload: {
+        decisionLog: "Keep final words brief and do not name a fresh target.",
+        strategyPacketSummary: {
+          revisionId: "r1-introduction-1",
+          previousRevisionId: null,
+          updatedAtRound: 1,
+          updatedAtPhase: "INTRODUCTION",
+          objective: "Build rapport while identifying one reliable collaborator.",
+          targetPosture: "No named target yet.",
+          coalitionPosture: "Stay close to Mira without sounding locked.",
+          nextSocialProbe: "Ask Bob for one concrete loyalty signal.",
+          strategicLens: "coalition_geometry",
+          strategicLensRationale: "Early room shape matters more than vote math.",
+          uncertainty: "Bob may be mirroring the room.",
+          reviseTrigger: "Mira stops reciprocating trust.",
+          changedSincePrevious: "First packet.",
+        },
+      },
+    });
+    await insertArtifact(db, {
+      id: "mingle-strategy-with-lens",
+      gameId,
+      actorPlayerId: "atlas",
+      artifactType: "strategy",
+      action: "mingle-turn",
+      phase: "MINGLE",
+      eventSequence: sequenceFromEnd(2),
+      payload: {
+        decisionLog: "Open a soft Bob conversation without committing.",
+        strategicLens: "coalition_geometry",
+        strategicLensRationale: "Bob and Mira are the likely hinge relationships.",
+      },
+    });
+    await insertArtifact(db, {
+      id: "older-mingle-strategy-a",
+      gameId,
+      actorPlayerId: "atlas",
+      artifactType: "strategy",
+      action: "mingle-turn",
+      phase: "MINGLE",
+      eventSequence: sequenceFromEnd(3),
+      payload: {
+        decisionLog: "Repeat a low-risk Bob probe.",
+      },
+    });
+    await insertArtifact(db, {
+      id: "older-mingle-strategy-b",
+      gameId,
+      actorPlayerId: "atlas",
+      artifactType: "strategy",
+      action: "mingle-turn",
+      phase: "MINGLE",
+      eventSequence: sequenceFromEnd(4),
+      payload: {
+        decisionLog: "Keep options open and avoid hard targets.",
+      },
+    });
+
+    const result = await getPublicWatchIntelligence(db, {
+      gameIdOrSlug: "watch-intelligence-strategy-packet",
+      actorPlayerId: "atlas",
+      round: 1,
+      phase: "COUNCIL",
+      limit: 4,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Expected ok result");
+    const strategyCards = result.intelligence.strategy.cards;
+    expect(strategyCards.map((card) => card.title)).toEqual([
+      "Decision Log",
+      "Strategy Packet",
+      "Strategic Lens",
+      "Lens Rationale",
+    ]);
+    expect(strategyCards.find((card) => card.title === "Strategy Packet")?.text).toContain(
+      "Objective: Build rapport while identifying one reliable collaborator.",
+    );
+    expect(strategyCards.filter((card) => card.title === "Decision Log")).toHaveLength(1);
+  });
+
   test("does not leak same-round future phase intelligence into an earlier replay phase", async () => {
     const gameId = await seedGameWithPlayers(db, "watch-intelligence-phase-boundary");
     await insertArtifact(db, {

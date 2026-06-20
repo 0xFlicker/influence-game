@@ -111,7 +111,7 @@ export function MatchWatchShell({
         if (cancelled) return;
         setIntelligence(null);
         setIntelligenceLoadState("error");
-        setIntelligenceError("Public intelligence is not available for this moment.");
+        setIntelligenceError("Intelligence is not available for this moment.");
       });
 
     return () => {
@@ -316,8 +316,7 @@ function CastRail({
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-px border-b border-white/10 bg-white/10">
-        <CastMetric label="Source" value={model.sourceLabel} />
+      <div className="grid grid-cols-1 gap-px border-b border-white/10 bg-white/10">
         <CastMetric label="Phase" value={model.phaseLabel} />
       </div>
 
@@ -393,7 +392,6 @@ function TheaterPanel({
           </h1>
         </div>
         <div className="flex flex-wrap gap-2">
-          <TheaterChip>{model.sourceLabel}</TheaterChip>
           <TheaterChip>{model.counts.totalPlayers} agents</TheaterChip>
           <TheaterChip>{model.connectionLabel}</TheaterChip>
         </div>
@@ -447,13 +445,13 @@ function InspectorPanel({
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {activeTab === "overview" ? (
-          <InspectorSection title="Audience Lens" meta={model.sourceLabel} section={intelligence.overview} />
+          <InspectorSection title="Audience Lens" section={intelligence.overview} />
         ) : null}
         {activeTab === "thinking" ? (
-          <InspectorSection title="Public Thinking" meta={sectionMeta(intelligence)} section={intelligence.thinking} />
+          <InspectorSection title="Thinking" meta={sectionMeta(intelligence)} section={intelligence.thinking} />
         ) : null}
         {activeTab === "strategy" ? (
-          <InspectorSection title="Public Strategy" meta={sectionMeta(intelligence)} section={intelligence.strategy} />
+          <InspectorSection title="Strategy" meta={sectionMeta(intelligence)} section={intelligence.strategy} />
         ) : null}
         {activeTab === "receipts" ? (
           <InspectorReceipts receipts={intelligence.receipts} roundLabel={model.roundLabel} />
@@ -522,7 +520,7 @@ function InspectorSection({
   section,
 }: {
   title: string;
-  meta: string;
+  meta?: string;
   section: MatchWatchIntelligenceSectionModel;
 }) {
   return (
@@ -531,9 +529,11 @@ function InspectorSection({
         <h3 className="text-[8px] font-semibold uppercase tracking-[0.16em] text-white/55">
           {title}
         </h3>
-        <span className="truncate text-[7px] uppercase tracking-[0.12em] text-white/25">
-          {meta}
-        </span>
+        {meta ? (
+          <span className="truncate text-[7px] uppercase tracking-[0.12em] text-white/25">
+            {meta}
+          </span>
+        ) : null}
       </div>
       {section.cards.length > 0 ? (
         <div className="space-y-3">
@@ -542,7 +542,7 @@ function InspectorSection({
           ))}
         </div>
       ) : (
-        <EmptyInspectorState reason={section.reason ?? "No public intelligence available."} />
+        <EmptyInspectorState reason={section.reason ?? "No intelligence available."} />
       )}
     </section>
   );
@@ -585,7 +585,7 @@ function InspectorReceipts({
     <section className="rounded-md border border-white/10 bg-white/[0.02] p-3">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-[8px] font-semibold uppercase tracking-[0.16em] text-white/55">
-          Public Receipts
+          Receipts
         </h3>
         <span className="truncate text-[7px] uppercase tracking-[0.12em] text-white/25">
           {roundLabel}
@@ -598,7 +598,7 @@ function InspectorReceipts({
           ))}
         </div>
       ) : (
-        <EmptyInspectorState reason={receipts.reason ?? "No public receipts available."} />
+        <EmptyInspectorState reason={receipts.reason ?? "No receipts available."} />
       )}
       {receipts.reason ? (
         <p className="mt-3 border-t border-white/5 pt-3 text-[9px] leading-4 text-white/35">
@@ -620,16 +620,16 @@ function ReceiptLine({ label, value }: { label: string; value: string }) {
   );
 }
 
-function sectionMeta(intelligence: MatchWatchIntelligenceModel): string {
+function sectionMeta(intelligence: MatchWatchIntelligenceModel): string | undefined {
   switch (intelligence.loadState) {
     case "loading":
       return "Loading";
     case "error":
       return "Unavailable";
     case "ready":
-      return "Public";
+      return undefined;
     case "idle":
-      return "Ready";
+      return undefined;
   }
 }
 
@@ -639,9 +639,6 @@ function ReplayDock({ model }: { model: MatchWatchModel }) {
       <div className="min-w-0">
         <div className="truncate text-[10px] font-medium uppercase tracking-[0.14em] text-white/70">
           {model.roundLabel} / {model.phaseLabel}
-        </div>
-        <div className="mt-1 truncate text-[9px] uppercase tracking-[0.12em] text-white/30">
-          {model.sourceLabel}
         </div>
       </div>
 

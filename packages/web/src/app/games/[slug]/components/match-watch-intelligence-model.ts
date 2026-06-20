@@ -73,6 +73,24 @@ const INTELLIGENCE_PHASE_RANKS = new Map(
   INTELLIGENCE_PHASE_ORDER.map((phase, index) => [phase, index]),
 );
 
+const STRATEGIC_LENS_LABELS: Readonly<Record<string, string>> = {
+  vote_math: "Vote Math",
+  room_traffic: "Room Traffic",
+  promise_debt: "Promise Debt",
+  power_position: "Power Position",
+  private_inconsistency: "Private Inconsistency",
+  coalition_geometry: "Coalition Geometry",
+  information_control: "Information Control",
+  jury_threat: "Jury Threat",
+  loyalty_stress: "Loyalty Stress",
+  retaliation_risk: "Retaliation Risk",
+  social_cover: "Social Cover",
+  timing_pattern: "Timing Pattern",
+  presentation_read: "Presentation Read",
+  relationship_repair: "Relationship Repair",
+  broad_read: "Broad Read",
+};
+
 export function buildMatchWatchIntelligenceModel({
   model,
   intelligence,
@@ -103,7 +121,7 @@ export function buildMatchWatchIntelligenceModel({
     overview: {
       status: selected ? "available" : "select_player",
       cards: overviewCards,
-      ...(!selected && { reason: "Select a player to inspect their public read." }),
+      ...(!selected && { reason: "Select a player to inspect their read." }),
     },
     thinking: cardsSection({
       cards: thinkingCards,
@@ -111,9 +129,9 @@ export function buildMatchWatchIntelligenceModel({
       fallbackReason: server?.intelligence.thinking.reason,
       emptyReason: selected
         ? loadState === "loading"
-          ? "Loading public thinking..."
-          : error ?? "No public thinking has been captured for this player yet."
-        : "Select a player to inspect their public thinking.",
+          ? "Loading thinking..."
+          : error ?? "No thinking has been captured for this player yet."
+        : "Select a player to inspect their thinking.",
     }),
     strategy: cardsSection({
       cards: strategyCards,
@@ -121,9 +139,9 @@ export function buildMatchWatchIntelligenceModel({
       fallbackReason: server?.intelligence.strategy.reason,
       emptyReason: selected
         ? loadState === "loading"
-          ? "Loading public strategy..."
-          : error ?? "No public strategy notes have been captured for this player yet."
-        : "Select a player to inspect their public strategy.",
+          ? "Loading strategy..."
+          : error ?? "No strategy notes have been captured for this player yet."
+        : "Select a player to inspect their strategy.",
     }),
     receipts: buildReceiptsModel(server?.intelligence.receipts, loadState, error),
   };
@@ -149,15 +167,15 @@ function buildOverviewCards(model: MatchWatchModel): MatchWatchIntelligenceCardM
       title: selected ? selected.player.name : "No Agent Selected",
       body: selected
         ? `${selected.player.name} is ${selected.statusLabel.toLowerCase()} in ${model.roundLabel.toLowerCase()}.`
-        : "Select an agent from the cast to inspect their public thinking, strategy, and receipts.",
+        : "Select an agent from the cast to inspect their thinking, strategy, and receipts.",
       meta: model.phaseLabel,
       context: "current_phase",
     },
     {
       id: "latest-message",
       title: "Visible Beat",
-      body: model.latestPublicMessage?.text ?? "No visible transcript entries yet.",
-      meta: model.sourceLabel,
+      body: model.latestPublicMessage?.text ?? "No visible messages yet.",
+      meta: model.phaseLabel,
       context: "recent",
     },
   ];
@@ -214,17 +232,36 @@ function cardModel(card: PublicWatchIntelligenceCard): MatchWatchIntelligenceCar
   return {
     id: card.id,
     title: card.title,
-    body: card.text,
+    body: cardBody(card),
     meta: cardMeta(card),
     context: card.context,
   };
+}
+
+function cardBody(card: PublicWatchIntelligenceCard): string {
+  if (card.title === "Strategic Lens") {
+    return strategicLensLabel(card.text);
+  }
+  return card.text;
+}
+
+function strategicLensLabel(value: string): string {
+  const trimmed = value.trim();
+  return STRATEGIC_LENS_LABELS[trimmed] ?? titleCaseIdentifier(trimmed);
+}
+
+function titleCaseIdentifier(value: string): string {
+  return value
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function cardMeta(card: PublicWatchIntelligenceCard): string {
   const parts = [
     card.round !== undefined ? `R${card.round}` : null,
     card.phase ? phaseLabel(card.phase) : null,
-    card.source === "cognitive_artifact" ? "Artifact" : "Transcript",
   ].filter((part): part is string => Boolean(part));
   return parts.join(" / ");
 }
@@ -319,10 +356,6 @@ function buildReceiptsModel(
       { label: "Standard Vote", value: titleCaseStatus(facts.standardVote.status) },
       { label: "Power", value: titleCaseStatus(facts.power.status) },
       { label: "Council", value: titleCaseStatus(facts.council.status) },
-      {
-        label: "Artifact Facts",
-        value: availability.artifactDerivedFacts.status === "not_used" ? "Not Used" : "Unavailable",
-      },
     ],
     ...(receipts.reason && { reason: receipts.reason }),
   };

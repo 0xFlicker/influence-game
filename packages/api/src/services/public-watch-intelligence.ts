@@ -222,11 +222,12 @@ export async function getPublicWatchIntelligence(
     contextRound,
     contextPhase,
   ).slice(0, limit);
-  const strategyCards = rankCards(
+  const strategyCards = selectStrategyCards(
     artifactCards.filter((card) => card.kind === "strategy"),
     contextRound,
     contextPhase,
-  ).slice(0, limit);
+    limit,
+  );
 
   return {
     ok: true,
@@ -408,6 +409,16 @@ function transcriptThinkingCardFromRow(
 
 function textFromPayloadField(payload: Record<string, unknown>, field: string): string | null {
   const value = payload[field];
+  if (field === "strategyPacketSummary") {
+    return textFromStrategyPacketSummary(value);
+  }
+  if (field === "strategicReflectionSummary") {
+    return textFromStrategicReflectionSummary(value);
+  }
+  return textFromStringOrSummary(value);
+}
+
+function textFromStringOrSummary(value: unknown): string | null {
   if (typeof value === "string") {
     return normalizeText(value);
   }
@@ -415,6 +426,53 @@ function textFromPayloadField(payload: Record<string, unknown>, field: string): 
     return normalizeText(value.summary) ?? normalizeText(value.text);
   }
   return null;
+}
+
+function textFromStrategyPacketSummary(value: unknown): string | null {
+  const directText = textFromStringOrSummary(value);
+  if (directText) return directText;
+  if (!isRecord(value)) return null;
+
+  const parts = [
+    labeledText("Objective", value.objective),
+    labeledText("Coalition", value.coalitionPosture),
+    labeledText("Target", value.targetPosture),
+    labeledText("Next probe", value.nextSocialProbe),
+    labeledText("Revise if", value.reviseTrigger),
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+function textFromStrategicReflectionSummary(value: unknown): string | null {
+  const directText = textFromStringOrSummary(value);
+  if (directText) return directText;
+  if (!isRecord(value)) return null;
+
+  const parts = [
+    labeledText("Plan", value.plan),
+    labeledList("Allies", value.allies),
+    labeledList("Threats", value.threats),
+    labeledText("Lens", value.strategicLens),
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+function labeledText(label: string, value: unknown): string | null {
+  const text = normalizeText(value);
+  return text ? `${label}: ${punctuate(text)}` : null;
+}
+
+function labeledList(label: string, value: unknown): string | null {
+  if (!Array.isArray(value)) return null;
+  const text = value
+    .map((item) => normalizeText(item))
+    .filter((item): item is string => item !== null)
+    .join(", ");
+  return text ? `${label}: ${punctuate(text)}` : null;
+}
+
+function punctuate(text: string): string {
+  return /[.!?](?:["')\]]|\u201d|\u2019)*$/.test(text) ? text : `${text}.`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -480,6 +538,34 @@ function rankCards(
     if (sequenceDiff !== 0) return sequenceDiff;
     return Date.parse(b.createdAt ?? "") - Date.parse(a.createdAt ?? "");
   });
+}
+
+function selectStrategyCards(
+  cards: PublicWatchIntelligenceCard[],
+  round: number,
+  phase: string,
+  limit: number,
+): PublicWatchIntelligenceCard[] {
+  const ranked = rankCards(cards, round, phase);
+  const selected: PublicWatchIntelligenceCard[] = [];
+  const selectedIds = new Set<string>();
+  const selectedTitles = new Set<string>();
+
+  for (const card of ranked) {
+    if (selectedTitles.has(card.title)) continue;
+    selected.push(card);
+    selectedIds.add(card.id);
+    selectedTitles.add(card.title);
+    if (selected.length === limit) return selected;
+  }
+
+  for (const card of ranked) {
+    if (selectedIds.has(card.id)) continue;
+    selected.push(card);
+    if (selected.length === limit) return selected;
+  }
+
+  return selected;
 }
 
 function contextRank(

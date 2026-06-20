@@ -85,6 +85,8 @@ describe("MatchWatchShell", () => {
     expect(html).toContain("Lyra");
     expect(html).toContain("relative h-full min-h-0 overflow-hidden");
     expect(html).not.toContain("Relationship Field");
+    expect(html).not.toContain("Public Thinking");
+    expect(html).not.toContain("Public Strategy");
     expect(html).not.toContain("Public Receipts");
     expect(html).not.toContain('title="Exit"');
   });
@@ -112,12 +114,15 @@ describe("MatchWatchShell", () => {
     expect(html).toContain("Voting");
     expect(html).toContain("<strong class=\"text-xs text-white/95\">1</strong>Alive");
     expect(html).toContain("<strong class=\"text-xs text-white/95\">1</strong>Out");
-    expect(html).toContain("Durable Projection");
+    expect(html).not.toContain("Durable Projection");
     expect(html).toContain("Voting is open.");
     expect(html).toContain("Thinking");
     expect(html).toContain("Strategy");
     expect(html).toContain("Receipts");
     expect(html).not.toContain("Relationship Field");
+    expect(html).not.toContain("Public Thinking");
+    expect(html).not.toContain("Public Strategy");
+    expect(html).not.toContain("Public Receipts");
   });
 });
 

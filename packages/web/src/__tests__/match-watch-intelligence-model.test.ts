@@ -105,8 +105,17 @@ describe("match watch intelligence model", () => {
       "Mira is a useful shield.",
       "Keep the public vote simple.",
     ]);
-    expect(model.strategy.cards[0]?.body).toBe("Keep two blocs interested.");
-    expect(model.receipts.lines).toContainEqual({ label: "Artifact Facts", value: "Not Used" });
+    expect(model.thinking.cards.map((card) => card.meta)).toEqual(["R1 / Voting", "R1 / Voting"]);
+    expect(model.strategy.cards[0]?.body).toBe("Coalition Geometry");
+    expect(JSON.stringify(model.strategy)).not.toContain("coalition_geometry");
+    expect(model.receipts.lines.map((line) => line.label)).toEqual([
+      "Canonical Facts",
+      "Standard Vote",
+      "Power",
+      "Council",
+    ]);
+    expect(JSON.stringify(model)).not.toContain("Artifact");
+    expect(JSON.stringify(model)).not.toContain("Transcript");
   });
 
   it("keeps sections in select-player state before a player is selected", () => {
@@ -126,7 +135,7 @@ describe("match watch intelligence model", () => {
 
     expect(model.overview.status).toBe("available");
     expect(model.thinking.status).toBe("unavailable");
-    expect(model.thinking.reason).toBe("No public thinking has been captured for this player yet.");
+    expect(model.thinking.reason).toBe("No thinking has been captured for this player yet.");
   });
 
   it("ignores stale server intelligence while the current selected context is loading", () => {
@@ -236,7 +245,7 @@ function publicIntelligence({
             source: "cognitive_artifact",
             actorPlayerId: "p1",
             title: "Strategic Lens",
-            text: "Keep two blocs interested.",
+            text: "coalition_geometry",
             context: "current_phase",
             round: 1,
             phase: "VOTE",
