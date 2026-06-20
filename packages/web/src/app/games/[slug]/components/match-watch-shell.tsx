@@ -9,8 +9,9 @@ import {
   type PublicWatchIntelligenceResult,
   type TranscriptEntry,
 } from "@/lib/api";
-import { setEndgameAttr, setPhaseAttr } from "./constants";
+import { formatTime, PHASE_LABELS, setEndgameAttr, setPhaseAttr } from "./constants";
 import { DramaticReplayViewer } from "./dramatic-replay-viewer";
+import { diaryPlayerName, groupMessages } from "./diary-room";
 import {
   buildMatchWatchIntelligenceModel,
   type MatchWatchIntelligenceModel,
@@ -60,6 +61,10 @@ export function MatchWatchShell({
     [game, messages, live, connStatus, selectedPlayerId, playbackState],
   );
   const visibleMessages = live ? messages : playbackState?.visibleMessages ?? messages;
+  const inspectorMessages = useMemo(
+    () => (live ? messages : buildReplayTranscriptSlice(messages, playbackState?.visibleMessages)),
+    [live, messages, playbackState?.visibleMessages],
+  );
   const intelligenceModel = useMemo(
     () =>
       buildMatchWatchIntelligenceModel({
@@ -141,7 +146,7 @@ export function MatchWatchShell({
           model={model}
           onPlaybackStateChange={handlePlaybackStateChange}
         />
-        <InspectorPanel model={model} intelligence={intelligenceModel} />
+        <InspectorPanel model={model} intelligence={intelligenceModel} messages={inspectorMessages} />
       </div>
 
       <ReplayDock model={model} />
@@ -420,17 +425,20 @@ function TheaterChip({ children }: { children: ReactNode }) {
   );
 }
 
-type InspectorTab = "overview" | "thinking" | "strategy" | "receipts";
+type InspectorTab = "overview" | "thinking" | "strategy" | "diary";
 
 function InspectorPanel({
   model,
   intelligence,
+  messages,
 }: {
   model: MatchWatchModel;
   intelligence: MatchWatchIntelligenceModel;
+  messages: TranscriptEntry[];
 }) {
   const selected = model.selectedPlayer;
   const [activeTab, setActiveTab] = useState<InspectorTab>("overview");
+  const diaryEntries = useMemo(() => buildDiaryArchiveEntries(messages), [messages]);
 
   return (
     <aside className="hidden min-h-0 flex-col overflow-hidden rounded-lg border border-white/10 bg-black/45 shadow-panel backdrop-blur-glass xl:flex">
@@ -440,7 +448,7 @@ function InspectorPanel({
         <InspectorLabel active={activeTab === "overview"} onClick={() => setActiveTab("overview")}>Overview</InspectorLabel>
         <InspectorLabel active={activeTab === "thinking"} onClick={() => setActiveTab("thinking")}>Thinking</InspectorLabel>
         <InspectorLabel active={activeTab === "strategy"} onClick={() => setActiveTab("strategy")}>Strategy</InspectorLabel>
-        <InspectorLabel active={activeTab === "receipts"} onClick={() => setActiveTab("receipts")}>Receipts</InspectorLabel>
+        <InspectorLabel active={activeTab === "diary"} onClick={() => setActiveTab("diary")}>Diary</InspectorLabel>
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
@@ -453,8 +461,8 @@ function InspectorPanel({
         {activeTab === "strategy" ? (
           <InspectorSection title="Strategy" meta={sectionMeta(intelligence)} section={intelligence.strategy} />
         ) : null}
-        {activeTab === "receipts" ? (
-          <InspectorReceipts receipts={intelligence.receipts} roundLabel={model.roundLabel} />
+        {activeTab === "diary" ? (
+          <InspectorDiary entries={diaryEntries} />
         ) : null}
       </div>
     </aside>
@@ -574,50 +582,118 @@ function EmptyInspectorState({ reason }: { reason: string }) {
   );
 }
 
-function InspectorReceipts({
-  receipts,
-  roundLabel,
-}: {
-  receipts: MatchWatchIntelligenceModel["receipts"];
-  roundLabel: string;
-}) {
+interface DiaryArchiveEntry {
+  id: string;
+  playerName: string;
+  round: number;
+  phase: TranscriptEntry["phase"];
+  timestamp: number;
+  questionText?: string;
+  answerText: string | null;
+}
+
+function InspectorDiary({ entries }: { entries: DiaryArchiveEntry[] }) {
   return (
     <section className="rounded-md border border-white/10 bg-white/[0.02] p-3">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-[8px] font-semibold uppercase tracking-[0.16em] text-white/55">
-          Receipts
+          Diary
         </h3>
         <span className="truncate text-[7px] uppercase tracking-[0.12em] text-white/25">
-          {roundLabel}
+          Newest first
         </span>
       </div>
-      {receipts.lines.length > 0 ? (
-        <div className="space-y-2">
-          {receipts.lines.map((line) => (
-            <ReceiptLine key={line.label} label={line.label} value={line.value} />
+      {entries.length > 0 ? (
+        <div className="space-y-3">
+          {entries.map((entry) => (
+            <DiaryArchiveCard key={entry.id} entry={entry} />
           ))}
         </div>
       ) : (
-        <EmptyInspectorState reason={receipts.reason ?? "No receipts available."} />
+        <EmptyInspectorState reason="No diary entries yet." />
       )}
-      {receipts.reason ? (
-        <p className="mt-3 border-t border-white/5 pt-3 text-[9px] leading-4 text-white/35">
-          {receipts.reason}
-        </p>
-      ) : null}
     </section>
   );
 }
 
-function ReceiptLine({ label, value }: { label: string; value: string }) {
+function DiaryArchiveCard({ entry }: { entry: DiaryArchiveEntry }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-t border-white/5 pt-2 first:border-t-0 first:pt-0">
-      <span className="truncate text-[10px] text-white/65">{label}</span>
-      <span className="shrink-0 text-[8px] uppercase tracking-[0.12em] text-white/35">
-        {value}
-      </span>
-    </div>
+    <article className="border-t border-white/5 pt-3 first:border-t-0 first:pt-0">
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h4 className="truncate text-[10px] font-semibold text-white/82">{entry.playerName}</h4>
+          <p className="mt-0.5 truncate text-[7px] uppercase tracking-[0.12em] text-white/30">
+            Round {entry.round} / {PHASE_LABELS[entry.phase]}
+          </p>
+        </div>
+        <span className="shrink-0 text-[7px] uppercase tracking-[0.12em] text-white/28">
+          {formatTime(entry.timestamp)}
+        </span>
+      </div>
+      {entry.questionText ? (
+        <p className="mb-2 rounded border border-purple-300/10 bg-purple-300/[0.04] px-2.5 py-2 text-[9px] italic leading-4 text-purple-100/50">
+          {entry.questionText}
+        </p>
+      ) : null}
+      {entry.answerText ? (
+        <p className="line-clamp-6 text-[10px] leading-5 text-white/65">{entry.answerText}</p>
+      ) : (
+        <p className="text-[10px] italic leading-5 text-white/35">Awaiting response...</p>
+      )}
+    </article>
   );
+}
+
+export function buildDiaryArchiveEntries(messages: readonly TranscriptEntry[]): DiaryArchiveEntry[] {
+  return groupMessages([...messages])
+    .flatMap((item): DiaryArchiveEntry[] => {
+      if (item.kind === "diary_pair") {
+        const targetName = item.question.fromPlayerId
+          ? diaryPlayerName(item.question.fromPlayerId)
+          : item.answer?.fromPlayerName ?? "Unknown";
+        return [{
+          id: `diary-pair-${item.question.id}-${item.answer?.id ?? "pending"}`,
+          playerName: targetName,
+          round: item.answer?.round ?? item.question.round,
+          phase: item.answer?.phase ?? item.question.phase,
+          timestamp: item.answer?.timestamp ?? item.question.timestamp,
+          questionText: item.question.text,
+          answerText: item.answer?.text ?? null,
+        }];
+      }
+
+      if (item.kind === "diary_orphan_answer") {
+        const playerName =
+          item.answer.fromPlayerName ??
+          (item.answer.fromPlayerId ? diaryPlayerName(item.answer.fromPlayerId) : "Unknown");
+        return [{
+          id: `diary-entry-${item.answer.id}`,
+          playerName,
+          round: item.answer.round,
+          phase: item.answer.phase,
+          timestamp: item.answer.timestamp,
+          answerText: item.answer.text,
+        }];
+      }
+
+      return [];
+    })
+    .sort((left, right) => right.timestamp - left.timestamp || right.id.localeCompare(left.id));
+}
+
+export function buildReplayTranscriptSlice(
+  messages: readonly TranscriptEntry[],
+  visibleReplayMessages: readonly TranscriptEntry[] | null | undefined,
+): TranscriptEntry[] {
+  const cursor = visibleReplayMessages?.at(-1);
+  if (!cursor) return [];
+
+  const cursorIndex = messages.findIndex((message) => message.id === cursor.id);
+  if (cursorIndex >= 0) {
+    return messages.slice(0, cursorIndex + 1);
+  }
+
+  return messages.filter((message) => message.timestamp <= cursor.timestamp);
 }
 
 function sectionMeta(intelligence: MatchWatchIntelligenceModel): string | undefined {

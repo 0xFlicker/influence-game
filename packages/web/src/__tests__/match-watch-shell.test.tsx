@@ -1,7 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { renderToString } from "react-dom/server";
 import type { GameDetail, GameWatchState, TranscriptEntry } from "../lib/api";
-import { MatchWatchShell } from "../app/games/[slug]/components/match-watch-shell";
+import {
+  buildDiaryArchiveEntries,
+  buildReplayTranscriptSlice,
+  MatchWatchShell,
+} from "../app/games/[slug]/components/match-watch-shell";
+import { buildReplayScenes } from "../app/games/[slug]/components/spectacle-viewer";
 
 function game(): GameDetail {
   return {
@@ -77,7 +82,8 @@ describe("MatchWatchShell", () => {
     expect(html).toContain("Audience Lens");
     expect(html).toContain("Thinking");
     expect(html).toContain("Strategy");
-    expect(html).toContain("Receipts");
+    expect(html).toContain("Diary");
+    expect(html).not.toContain("Receipts");
     expect(textHtml).toContain("Atlas is alive in round 1.");
     expect(html).toContain("data-replay-controls");
     expect(html).toContain("Speed:");
@@ -118,11 +124,146 @@ describe("MatchWatchShell", () => {
     expect(html).toContain("Voting is open.");
     expect(html).toContain("Thinking");
     expect(html).toContain("Strategy");
-    expect(html).toContain("Receipts");
+    expect(html).toContain("Diary");
+    expect(html).not.toContain("Receipts");
     expect(html).not.toContain("Relationship Field");
     expect(html).not.toContain("Public Thinking");
     expect(html).not.toContain("Public Strategy");
     expect(html).not.toContain("Public Receipts");
+  });
+
+  it("builds newest-first diary archive entries with paired House questions", () => {
+    const entries = buildDiaryArchiveEntries([
+      entry({ id: 10, phase: "LOBBY", scope: "public", text: "Lobby opens.", timestamp: 100 }),
+      entry({
+        id: 11,
+        phase: "DIARY_ROOM",
+        fromPlayerId: "House -> Atlas",
+        fromPlayerName: null,
+        scope: "diary",
+        text: "Atlas, who do you trust?",
+        timestamp: 200,
+      }),
+      entry({
+        id: 12,
+        phase: "DIARY_ROOM",
+        fromPlayerId: "Atlas",
+        fromPlayerName: "Atlas",
+        scope: "diary",
+        text: "I trust Lyra for now.",
+        timestamp: 210,
+      }),
+      entry({ id: 13, phase: "VOTE", scope: "public", text: "Votes open.", timestamp: 300 }),
+      entry({
+        id: 14,
+        phase: "DIARY_ROOM",
+        round: 2,
+        fromPlayerId: "House -> Lyra",
+        fromPlayerName: null,
+        scope: "diary",
+        text: "Lyra, what changed?",
+        timestamp: 400,
+      }),
+      entry({
+        id: 15,
+        phase: "DIARY_ROOM",
+        round: 2,
+        fromPlayerId: "Lyra",
+        fromPlayerName: "Lyra",
+        scope: "diary",
+        text: "Atlas gave me a real receipt.",
+        timestamp: 410,
+      }),
+    ]);
+
+    expect(entries.map((diary) => diary.playerName)).toEqual(["Lyra", "Atlas"]);
+    expect(entries.map((diary) => diary.round)).toEqual([2, 1]);
+    expect(entries[0]?.questionText).toBe("Lyra, what changed?");
+    expect(entries[0]?.answerText).toBe("Atlas gave me a real receipt.");
+    expect(entries[1]?.questionText).toBe("Atlas, who do you trust?");
+    expect(entries[1]?.answerText).toBe("I trust Lyra for now.");
+  });
+
+  it("keeps diary-room transcript entries out of replay theater scenes", () => {
+    const scenes = buildReplayScenes([
+      entry({ id: 1, phase: "LOBBY", scope: "public", text: "Lobby opens.", timestamp: 100 }),
+      entry({
+        id: 2,
+        phase: "DIARY_ROOM",
+        fromPlayerId: "House -> Atlas",
+        fromPlayerName: null,
+        scope: "diary",
+        text: "Atlas, what are you hiding?",
+        timestamp: 200,
+      }),
+      entry({
+        id: 3,
+        phase: "DIARY_ROOM",
+        fromPlayerId: "Atlas",
+        fromPlayerName: "Atlas",
+        scope: "diary",
+        text: "A lot.",
+        timestamp: 210,
+      }),
+      entry({ id: 4, phase: "VOTE", scope: "public", text: "Votes open.", timestamp: 300 }),
+    ]);
+
+    expect(scenes.map((scene) => scene.phase)).toEqual(["LOBBY", "VOTE"]);
+    expect(scenes.flatMap((scene) => scene.messages).map((message) => message.scope)).not.toContain("diary");
+  });
+
+  it("limits diary archive source rows to the current replay cursor", () => {
+    const transcript = [
+      entry({ id: 1, phase: "LOBBY", scope: "public", text: "Lobby opens.", timestamp: 100 }),
+      entry({
+        id: 2,
+        phase: "DIARY_ROOM",
+        fromPlayerId: "House -> Atlas",
+        fromPlayerName: null,
+        scope: "diary",
+        text: "Atlas, what did you notice?",
+        timestamp: 200,
+      }),
+      entry({
+        id: 3,
+        phase: "DIARY_ROOM",
+        fromPlayerId: "Atlas",
+        fromPlayerName: "Atlas",
+        scope: "diary",
+        text: "Lyra is gathering votes.",
+        timestamp: 210,
+      }),
+      entry({ id: 4, phase: "VOTE", scope: "public", text: "Votes open.", timestamp: 300 }),
+      entry({
+        id: 5,
+        phase: "DIARY_ROOM",
+        round: 2,
+        fromPlayerId: "House -> Lyra",
+        fromPlayerName: null,
+        scope: "diary",
+        text: "Lyra, what changed?",
+        timestamp: 400,
+      }),
+      entry({
+        id: 6,
+        phase: "DIARY_ROOM",
+        round: 2,
+        fromPlayerId: "Lyra",
+        fromPlayerName: "Lyra",
+        scope: "diary",
+        text: "Atlas lost the room.",
+        timestamp: 410,
+      }),
+      entry({ id: 7, phase: "POWER", scope: "public", text: "Power opens.", timestamp: 500 }),
+    ];
+
+    const throughLobby = buildReplayTranscriptSlice(transcript, [transcript[0]!]);
+    const throughVote = buildReplayTranscriptSlice(transcript, [transcript[0]!, transcript[3]!]);
+    const throughPower = buildReplayTranscriptSlice(transcript, [transcript[0]!, transcript[3]!, transcript[6]!]);
+
+    expect(buildDiaryArchiveEntries(throughLobby)).toEqual([]);
+    expect(buildDiaryArchiveEntries(throughVote).map((diary) => diary.playerName)).toEqual(["Atlas"]);
+    expect(buildDiaryArchiveEntries(throughPower).map((diary) => diary.playerName)).toEqual(["Lyra", "Atlas"]);
   });
 });
 
