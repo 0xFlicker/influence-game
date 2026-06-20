@@ -186,7 +186,7 @@ describe("GameWatchState", () => {
     ]);
   });
 
-  test("surfaces public post-vote pressure statuses before council", async () => {
+  test("surfaces public post-vote pressure statuses during pre-council Mingle", async () => {
     const gameId = await insertGame(db, {
       slug: "watch-post-vote-pressure",
       status: "in_progress",
@@ -201,7 +201,7 @@ describe("GameWatchState", () => {
     const players = state?.players ?? [];
 
     expect(state).toMatchObject({
-      currentPhase: "VOTE",
+      currentPhase: "MINGLE",
       players: expect.arrayContaining([
         expect.objectContaining({
           id: "mira",
@@ -434,6 +434,14 @@ function createPostVotePressureFixture(gameId: string): readonly CanonicalGameEv
   state.recordVote("mira", "echo", "atlas");
   state.recordVote("nyx", "mira", "echo");
   state.tallyEmpowerVotes();
+  state.recordRoomAllocations([
+    {
+      roomId: 1,
+      round: 1,
+      beat: 1,
+      playerIds: ["atlas", "echo", "mira", "nyx"],
+    },
+  ], [], []);
 
   return state.getCanonicalEvents();
 }

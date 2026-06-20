@@ -213,7 +213,7 @@ function MobileContextPanel({
             <CastStatusTags card={selected} />
           </div>
           <span className={`rounded px-2 py-1 text-[9px] uppercase tracking-[0.12em] ${statusClasses(selected)}`}>
-            {selected.detail}
+            {selected.statusLabel}
           </span>
         </div>
       ) : null}
@@ -384,6 +384,8 @@ function CastStatusTags({
   compact?: boolean;
 }) {
   const tags = compact ? card.statusTags.slice(0, 1) : card.statusTags;
+  if (tags.length === 0) return null;
+
   return (
     <span className={`mt-1 flex min-w-0 flex-wrap gap-1 ${compact ? "max-w-20" : ""}`}>
       {tags.map((tag) => (
@@ -410,12 +412,6 @@ function statusTagClasses(tag: MatchWatchPlayerStatusTag): string {
       return "border-fuchsia-300/25 bg-fuchsia-400/10 text-fuchsia-200";
     case "shielded":
       return "border-sky-300/25 bg-sky-400/10 text-sky-200";
-    case "alive":
-      return "border-emerald-300/15 bg-emerald-400/5 text-emerald-200/70";
-    case "eliminated":
-      return "border-rose-300/15 bg-rose-400/5 text-rose-200/70";
-    case "unknown":
-      return "border-white/10 bg-white/[0.03] text-white/45";
   }
 }
 
@@ -535,7 +531,7 @@ function InspectorHero({ card }: { card: MatchWatchPlayerCard }) {
           <CastStatusTags card={card} />
           <div className="mt-3 flex flex-wrap gap-2">
             <span className={`rounded px-2 py-1 text-[9px] uppercase tracking-[0.12em] ${statusClasses(card)}`}>
-              {card.detail}
+              {card.statusLabel}
             </span>
           </div>
         </div>

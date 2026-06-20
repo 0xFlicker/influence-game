@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { GameDetail, GameWatchState } from "../lib/api";
+import type { GameDetail, GameWatchState, PhaseKey, TranscriptEntry } from "../lib/api";
 import {
   applyWatchStateToGameDetail,
   buildMatchWatchModel,
@@ -96,6 +96,60 @@ function watchState(overrides: Partial<GameWatchState> = {}): GameWatchState {
     },
     ...overrides,
   };
+}
+
+function transcriptEntry(overrides: Partial<TranscriptEntry> = {}): TranscriptEntry {
+  return {
+    id: 1,
+    gameId: "game-1",
+    round: 1,
+    phase: "VOTE",
+    fromPlayerId: null,
+    fromPlayerName: null,
+    scope: "system",
+    toPlayerIds: null,
+    text: "Voting is open.",
+    timestamp: 1,
+    ...overrides,
+  };
+}
+
+function replayPressureMessages(phase: PhaseKey = "MINGLE"): TranscriptEntry[] {
+  return [
+    transcriptEntry({
+      id: 1,
+      text: "Alice votes: empower=Alice, expose=Bob",
+    }),
+    transcriptEntry({
+      id: 2,
+      text: "Bob votes: empower=Alice, expose=Cara",
+    }),
+    transcriptEntry({
+      id: 3,
+      text: "Cara votes: empower=Alice, expose=Bob",
+    }),
+    transcriptEntry({
+      id: 4,
+      text: "Dax votes: empower=Bob, expose=Dax",
+    }),
+    transcriptEntry({
+      id: 5,
+      text: "Empowered: Alice",
+    }),
+    transcriptEntry({
+      id: 6,
+      text: "Initial Council pair resolved before Mingle: Bob and Cara (exposure_bench)",
+    }),
+    transcriptEntry({
+      id: 7,
+      text: "Post-vote pressure: Alice is empowered. Current at-risk: Bob (2), Cara (1). Replacement risk if a shield is granted: Dax (1).",
+    }),
+    transcriptEntry({
+      id: 8,
+      phase,
+      text: "The room reacts to the vote.",
+    }),
+  ];
 }
 
 describe("match watch model", () => {
@@ -313,6 +367,86 @@ describe("match watch model", () => {
     });
   });
 
+  it("does not render duplicate life-state tags when no pressure applies", () => {
+    const model = buildMatchWatchModel({
+      game: baseGame(),
+      messages: [],
+      live: true,
+      connStatus: "live",
+    });
+
+    expect(model.players.map((card) => card.statusLabel)).toEqual(["Alive", "Alive"]);
+    expect(model.players.map((card) => card.statusTags)).toEqual([[], []]);
+    expect(model.players.map((card) => card.detail)).toEqual(["", ""]);
+  });
+
+  it("reconstructs replay pressure tags from the visible vote-to-council transcript", () => {
+    const players = [
+      ...baseGame().players,
+      {
+        id: "p3",
+        name: "Cara",
+        persona: "watchful",
+        status: "alive" as const,
+        shielded: false,
+      },
+      {
+        id: "p4",
+        name: "Dax",
+        persona: "direct",
+        status: "alive" as const,
+        shielded: false,
+      },
+    ];
+    const model = buildMatchWatchModel({
+      game: {
+        ...baseGame(),
+        status: "completed",
+        currentRound: 4,
+        currentPhase: "END",
+        players,
+      },
+      messages: [],
+      live: false,
+      connStatus: "replay",
+      playbackState: {
+        round: 1,
+        phase: "MINGLE",
+        players,
+        visibleMessages: replayPressureMessages(),
+      },
+    });
+
+    expect(model.players.map((card) => [card.player.name, card.statusTags.map((tag) => tag.label)])).toEqual([
+      ["Alice", ["Empowered"]],
+      ["Bob", ["At Risk"]],
+      ["Cara", ["At Risk"]],
+      ["Dax", ["Exposed"]],
+    ]);
+  });
+
+  it("clears replay pressure outside the vote-to-council window", () => {
+    const model = buildMatchWatchModel({
+      game: baseGame(),
+      messages: [],
+      live: false,
+      connStatus: "replay",
+      playbackState: {
+        round: 1,
+        phase: "LOBBY",
+        players: baseGame().players.map((player) => ({
+          ...player,
+          pressureStatus: "at_risk" as const,
+          exposeScore: 2,
+        })),
+        visibleMessages: replayPressureMessages("LOBBY"),
+      },
+    });
+
+    expect(model.players.map((card) => card.statusTags)).toEqual([[], []]);
+    expect(model.players.map((card) => card.detail)).toEqual(["", ""]);
+  });
+
   it("uses replay playback state over terminal watch state for completed replay chrome", () => {
     const game = applyWatchStateToGameDetail(baseGame(), watchState({
       status: "completed",
@@ -381,7 +515,8 @@ describe("match watch model", () => {
     expect(model.counts.alivePlayers).toBe(2);
     expect(model.counts.eliminatedPlayers).toBe(0);
     expect(model.selectedPlayer?.player.name).toBe("Alice");
-    expect(model.selectedPlayer?.detail).toBe("Alive");
+    expect(model.selectedPlayer?.detail).toBe("");
+    expect(model.selectedPlayer?.statusTags).toEqual([]);
     expect(model.latestPublicMessage?.text).toBe("This is still the lobby.");
     expect(model.phaseSegments.find((segment) => segment.key === "LOBBY")?.state).toBe("current");
     expect(model.phaseSegments.find((segment) => segment.key === "END")?.state).toBe("future");
