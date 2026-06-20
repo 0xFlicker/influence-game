@@ -92,7 +92,7 @@ export function DiaryQACard({
         </span>
         {player && (
           <span className="text-purple-300/60 flex items-center gap-1">
-            <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />
+            <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="6" />
             <span>{player.name}{isJuror ? " (juror)" : ""}</span>
           </span>
         )}
@@ -111,7 +111,7 @@ export function DiaryQACard({
           {answer ? (
             <div className="ml-3 border-l-2 border-purple-700/40 pl-3">
               <div className="flex items-center gap-1.5 mb-0.5">
-                {player && <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />}
+                {player && <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="6" />}
                 <span className="font-semibold text-white/70">{targetName}</span>
                 <span className="text-white/20 ml-auto flex-shrink-0">
                   {formatTime(answer.timestamp)}
@@ -154,7 +154,7 @@ export function DiaryEntryCard({
         <span className="font-semibold uppercase tracking-wider text-purple-400/70">📔 Diary</span>
         {player && (
           <span className="text-purple-300/60 flex items-center gap-1">
-            <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />
+            <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="6" />
             <span>{player.name}</span>
           </span>
         )}
@@ -301,7 +301,7 @@ export function DiaryRoomChat({
   return (
     <div className="rounded-2xl border border-purple-400/20 bg-black/30 flex flex-1 min-h-0 flex-col overflow-hidden">
       <div className="flex flex-shrink-0 items-center gap-2 px-4 py-2.5 border-b border-purple-900/20">
-        {room.player && <AgentAvatar avatarUrl={room.player.avatarUrl} persona={room.player.persona} name={room.player.name} size="6" />}
+        {room.player && <AgentAvatar avatarUrl={room.player.avatarUrl} personaKey={room.player.personaKey} persona={room.player.persona} name={room.player.name} size="6" />}
         <p className="text-xs font-semibold text-white truncate">{room.playerName}</p>
         <span className="text-[9px] uppercase tracking-[0.2em] text-purple-300/45 ml-auto">Diary</span>
       </div>
@@ -339,7 +339,7 @@ export function DiaryRoomChat({
                     </div>
                   </div>
                   <div className="flex-shrink-0 mt-1">
-                    {room.player ? <AgentAvatar avatarUrl={room.player.avatarUrl} persona={room.player.persona} name={room.player.name} size="6" /> : <span className="w-6 h-6 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>}
+                    {room.player ? <AgentAvatar avatarUrl={room.player.avatarUrl} personaKey={room.player.personaKey} persona={room.player.persona} name={room.player.name} size="6" /> : <span className="w-6 h-6 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>}
                   </div>
                 </div>
               ) : (
@@ -414,7 +414,7 @@ export function DiaryRoomGridView({
                     : "border-white/10 bg-white/5 text-white/50 hover:border-purple-300/30"
                 }`}
               >
-                {room.player && <AgentAvatar avatarUrl={room.player.avatarUrl} persona={room.player.persona} name={room.player.name} size="6" />}
+                {room.player && <AgentAvatar avatarUrl={room.player.avatarUrl} personaKey={room.player.personaKey} persona={room.player.persona} name={room.player.name} size="6" />}
                 <span className="truncate max-w-[6rem]">{room.playerName}</span>
                 {room.entries.length > 0 && (
                   <span className="text-[8px] text-purple-300/40">{room.entries.length}</span>

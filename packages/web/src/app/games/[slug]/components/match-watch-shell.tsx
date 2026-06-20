@@ -23,6 +23,7 @@ import {
   type MatchWatchModel,
   type MatchWatchPhaseSegment,
   type MatchWatchPlayerCard,
+  type MatchWatchPlayerStatusTag,
   type MatchWatchPlaybackState,
 } from "./match-watch-model";
 import type { WatchConnStatus } from "./types";
@@ -188,6 +189,7 @@ function MobileContextPanel({
           >
             <AgentAvatar
               avatarUrl={card.player.avatarUrl}
+              personaKey={card.player.personaKey}
               persona={card.player.persona}
               name={card.player.name}
               size="6"
@@ -196,9 +198,7 @@ function MobileContextPanel({
               <span className="block truncate text-[11px] font-medium text-white/85">
                 {card.player.name}
               </span>
-              <span className="block truncate text-[8px] uppercase tracking-[0.1em] text-white/35">
-                {card.statusLabel}
-              </span>
+              <CastStatusTags card={card} compact />
             </span>
           </button>
         ))}
@@ -210,9 +210,7 @@ function MobileContextPanel({
             <div className="truncate text-sm font-semibold text-white/90">
               {selected.player.name}
             </div>
-            <div className="mt-0.5 truncate text-[10px] text-white/40">
-              {selected.player.persona}
-            </div>
+            <CastStatusTags card={selected} />
           </div>
           <span className={`rounded px-2 py-1 text-[9px] uppercase tracking-[0.12em] ${statusClasses(selected)}`}>
             {selected.detail}
@@ -348,6 +346,7 @@ function CastRail({
           >
             <AgentAvatar
               avatarUrl={card.player.avatarUrl}
+              personaKey={card.player.personaKey}
               persona={card.player.persona}
               name={card.player.name}
               size="8"
@@ -356,9 +355,7 @@ function CastRail({
               <span className="block truncate text-sm font-medium text-white/90">
                 {card.player.name}
               </span>
-              <span className="mt-0.5 block truncate text-[10px] text-white/35">
-                {card.player.persona}
-              </span>
+              <CastStatusTags card={card} />
             </span>
             <span className={`justify-self-end rounded px-1.5 py-1 text-[9px] uppercase tracking-[0.12em] ${statusClasses(card)}`}>
               {card.statusLabel}
@@ -377,6 +374,49 @@ function CastMetric({ label, value }: { label: string; value: string }) {
       <div className="mt-1 truncate text-[11px] font-medium text-white/75">{value}</div>
     </div>
   );
+}
+
+function CastStatusTags({
+  card,
+  compact,
+}: {
+  card: MatchWatchPlayerCard;
+  compact?: boolean;
+}) {
+  const tags = compact ? card.statusTags.slice(0, 1) : card.statusTags;
+  return (
+    <span className={`mt-1 flex min-w-0 flex-wrap gap-1 ${compact ? "max-w-20" : ""}`}>
+      {tags.map((tag) => (
+        <span
+          key={`${card.player.id}-${tag.kind}`}
+          title={tag.title}
+          className={`inline-flex max-w-full items-center gap-1 rounded border px-1.5 py-0.5 text-[8px] uppercase leading-none tracking-[0.1em] ${statusTagClasses(tag)}`}
+        >
+          <span aria-hidden="true" className="text-[9px] leading-none">{tag.icon}</span>
+          <span className="truncate">{tag.label}</span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function statusTagClasses(tag: MatchWatchPlayerStatusTag): string {
+  switch (tag.kind) {
+    case "empowered":
+      return "border-amber-300/25 bg-amber-400/10 text-amber-200";
+    case "at_risk":
+      return "border-rose-300/25 bg-rose-400/10 text-rose-200";
+    case "exposed":
+      return "border-fuchsia-300/25 bg-fuchsia-400/10 text-fuchsia-200";
+    case "shielded":
+      return "border-sky-300/25 bg-sky-400/10 text-sky-200";
+    case "alive":
+      return "border-emerald-300/15 bg-emerald-400/5 text-emerald-200/70";
+    case "eliminated":
+      return "border-rose-300/15 bg-rose-400/5 text-rose-200/70";
+    case "unknown":
+      return "border-white/10 bg-white/[0.03] text-white/45";
+  }
 }
 
 function TheaterPanel({
@@ -485,15 +525,14 @@ function InspectorHero({ card }: { card: MatchWatchPlayerCard }) {
       <div className="relative flex items-start gap-3">
         <AgentAvatar
           avatarUrl={card.player.avatarUrl}
+          personaKey={card.player.personaKey}
           persona={card.player.persona}
           name={card.player.name}
           size="16"
         />
         <div className="min-w-0 pt-1">
           <h2 className="truncate text-xl font-semibold text-white/95">{card.player.name}</h2>
-          <p className="mt-1 truncate text-[10px] uppercase tracking-[0.12em] text-white/40">
-            {card.player.persona}
-          </p>
+          <CastStatusTags card={card} />
           <div className="mt-3 flex flex-wrap gap-2">
             <span className={`rounded px-2 py-1 text-[9px] uppercase tracking-[0.12em] ${statusClasses(card)}`}>
               {card.detail}
@@ -779,7 +818,9 @@ function isSamePlaybackState(
         nextPlayer &&
         player.id === nextPlayer.id &&
         player.status === nextPlayer.status &&
-        player.shielded === nextPlayer.shielded
+        player.shielded === nextPlayer.shielded &&
+        player.pressureStatus === nextPlayer.pressureStatus &&
+        player.exposeScore === nextPlayer.exposeScore
       );
     })
   );

@@ -110,6 +110,7 @@ export type CognitiveArtifactActorRole = "player" | "juror" | "house" | "system"
 export type GameWatchStateSource = "durable_projection" | "degraded" | "best_available_terminal_result" | "pre_kernel_empty";
 export type GameWatchProjectionAvailability = "available" | "degraded" | "unavailable";
 export type GameWatchPlayerStatus = "alive" | "eliminated" | "unknown";
+export type GameWatchPlayerPressureStatus = "empowered" | "at_risk" | "exposed";
 export type GameWatchDiagnosticCode =
   | "duplicate_sequence"
   | "hash_mismatch"
@@ -167,8 +168,11 @@ export interface GameWatchPlayer {
   id: string;
   name: string;
   persona: string;
+  personaKey?: string;
   status: GameWatchPlayerStatus;
   shielded: boolean;
+  pressureStatus?: GameWatchPlayerPressureStatus;
+  exposeScore?: number;
   avatarUrl?: string;
 }
 
@@ -867,8 +871,11 @@ export interface GamePlayer {
   id: string;
   name: string;
   persona: string;
+  personaKey?: string;
   status: PlayerState;
   shielded: boolean;
+  pressureStatus?: GameWatchPlayerPressureStatus;
+  exposeScore?: number;
   avatarUrl?: string;
 }
 

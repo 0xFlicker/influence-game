@@ -39,7 +39,7 @@ export function MessageBubble({ msg, players, showThinking }: { msg: TranscriptE
     return (
       <div className="ml-4 border-l-2 border-purple-700/40 pl-3 py-1">
         <div className="flex items-center gap-1.5 mb-0.5">
-          {player && <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />}
+          {player && <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="6" />}
           <span className="text-xs font-semibold text-white/60">{msg.fromPlayerId}</span>
         </div>
         <p className="text-xs text-white/55 italic">{msg.text}</p>
@@ -71,7 +71,7 @@ export function MessageBubble({ msg, players, showThinking }: { msg: TranscriptE
           {isAnonymousRumor ? (
             <span className="w-7 h-7 rounded-full bg-purple-900/40 flex items-center justify-center text-sm">🗣</span>
           ) : player ? (
-            <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="8" />
+            <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="8" />
           ) : (
             <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-sm">?</span>
           )}

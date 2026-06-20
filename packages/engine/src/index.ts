@@ -39,6 +39,12 @@ export type {
   ProjectedPlayer,
   ProjectedRoomAllocation,
 } from "./game-projection";
+export { buildPostVotePressureProjection } from "./post-vote-pressure";
+export type {
+  PostVotePressurePlayer,
+  PostVotePressureProjection,
+  PostVotePressureStatus,
+} from "./post-vote-pressure";
 export { buildRevealedRoundFacts } from "./revealed-round-facts";
 export type {
   BuildRevealedRoundFactsOptions,

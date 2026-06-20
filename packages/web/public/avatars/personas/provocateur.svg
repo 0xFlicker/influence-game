@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F43F5E"/>
+      <stop offset="50%" stop-color="#A21CAF"/>
+      <stop offset="100%" stop-color="#4C1D95"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="64" fill="url(#bg)"/>
+  <g transform="translate(64,64)" fill="white" opacity="0.95">
+    <!-- Timed reveal spark -->
+    <circle cx="0" cy="2" r="11" fill="white"/>
+    <path d="M0,-38 L5,-10 H-5Z"/>
+    <path d="M0,42 L-5,14 H5Z" opacity="0.72"/>
+    <path d="M-38,2 L-10,-3 V7Z"/>
+    <path d="M38,2 L10,7 V-3Z" opacity="0.72"/>
+    <path d="M-26,-26 L-8,-8 L-14,-2 L-32,-20Z" opacity="0.58"/>
+    <path d="M26,-26 L8,-8 L14,-2 L32,-20Z" opacity="0.58"/>
+    <path d="M-24,28 L-8,10 L-2,16 L-18,34Z" opacity="0.42"/>
+    <path d="M24,28 L8,10 L2,16 L18,34Z" opacity="0.42"/>
+  </g>
+</svg>

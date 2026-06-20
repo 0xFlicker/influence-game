@@ -70,14 +70,17 @@ function watchState(overrides: Partial<GameWatchState> = {}): GameWatchState {
       {
         id: "p1",
         name: "Alice",
-        persona: "strategic",
+        persona: "Alice watches the table carefully.",
+        personaKey: "observer",
         status: "alive",
         shielded: true,
+        pressureStatus: "empowered",
       },
       {
         id: "p2",
         name: "Bob",
         persona: "diplomat",
+        personaKey: "diplomat",
         status: "eliminated",
         shielded: false,
       },
@@ -102,6 +105,11 @@ describe("match watch model", () => {
     expect(next.currentRound).toBe(2);
     expect(next.currentPhase).toBe("VOTE");
     expect(next.players.find((player) => player.id === "p1")?.shielded).toBe(true);
+    expect(next.players.find((player) => player.id === "p1")).toMatchObject({
+      persona: "Alice watches the table carefully.",
+      personaKey: "observer",
+      pressureStatus: "empowered",
+    });
     expect(next.players.find((player) => player.id === "p2")?.status).toBe("eliminated");
     expect(next.watchState?.eventCursor.sequence).toBe(12);
   });
@@ -139,6 +147,39 @@ describe("match watch model", () => {
   it("keeps unknown watch status from inventing a player transition", () => {
     expect(watchStatusToPlayerState("unknown", "eliminated")).toBe("eliminated");
     expect(watchStatusToPlayerState("unknown")).toBe("unknown");
+  });
+
+  it("clears stale pressure fields when the newest watch state omits them", () => {
+    const next = applyWatchStateToGameDetail(
+      {
+        ...baseGame(),
+        players: baseGame().players.map((player) => ({
+          ...player,
+          pressureStatus: "at_risk" as const,
+          exposeScore: 2,
+        })),
+      },
+      watchState({
+        players: [
+          {
+            id: "p1",
+            name: "Alice",
+            persona: "strategic",
+            status: "alive",
+            shielded: false,
+          },
+          {
+            id: "p2",
+            name: "Bob",
+            persona: "diplomat",
+            status: "alive",
+            shielded: false,
+          },
+        ],
+      }),
+    );
+
+    expect(next.players.some((player) => player.pressureStatus || player.exposeScore !== undefined)).toBe(false);
   });
 
   it("routes live games and completed transcript replays into the shell", () => {
@@ -219,9 +260,57 @@ describe("match watch model", () => {
     });
     expect(model.selectedPlayer?.player.name).toBe("Bob");
     expect(model.selectedPlayer?.statusLabel).toBe("Out");
+    expect(model.players.find((card) => card.player.id === "p1")?.statusTags.map((tag) => tag.label)).toEqual([
+      "Empowered",
+      "Shielded",
+    ]);
     expect(model.sourceLabel).toBe("Durable Projection");
     expect(model.phaseSegments.find((segment) => segment.key === "VOTE")?.state).toBe("current");
     expect(model.phaseSegments.find((segment) => segment.key === "MINGLE")?.state).toBe("past");
+  });
+
+  it("builds pressure status tags for post-vote cast rows", () => {
+    const model = buildMatchWatchModel({
+      game: {
+        ...baseGame(),
+        currentPhase: "VOTE",
+        players: [
+          {
+            id: "p1",
+            name: "Alice",
+            persona: "strategic",
+            status: "alive",
+            shielded: false,
+            pressureStatus: "empowered",
+          },
+          {
+            id: "p2",
+            name: "Bob",
+            persona: "diplomat",
+            status: "alive",
+            shielded: false,
+            pressureStatus: "at_risk",
+            exposeScore: 2,
+          },
+        ],
+      },
+      messages: [],
+      live: true,
+      connStatus: "live",
+    });
+
+    expect(model.players.map((card) => card.detail)).toEqual(["Empowered", "At Risk"]);
+    expect(model.players[0]?.statusTags[0]).toMatchObject({
+      kind: "empowered",
+      icon: "👑",
+      label: "Empowered",
+    });
+    expect(model.players[1]?.statusTags[0]).toMatchObject({
+      kind: "at_risk",
+      icon: "⚠",
+      label: "At Risk",
+      title: "At risk for Council",
+    });
   });
 
   it("uses replay playback state over terminal watch state for completed replay chrome", () => {

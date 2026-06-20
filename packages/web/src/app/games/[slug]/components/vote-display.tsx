@@ -97,7 +97,7 @@ export function VoteTallyOverlay({
                       : "bg-white/[0.02]"
                 }`}
               >
-                <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />
+                <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="6" />
                 <span className="min-w-0 flex-1 truncate text-xs text-white/60">{player.name}</span>
                 <div className="ml-auto grid w-[5.5rem] grid-cols-2 items-center gap-1.5 justify-items-end">
                   <div className="flex h-5 w-10 justify-end">
@@ -156,7 +156,7 @@ export function VoteTallyOverlay({
                     : "bg-white/[0.02]"
                 }`}
               >
-                {player && <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />}
+                {player && <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="6" />}
                 <span className="text-xs text-white/60 flex-1">{name}</span>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded ${
                   count === maxVotes ? "text-red-300 bg-red-900/40 font-bold" : "text-red-400/70 bg-red-900/20"
@@ -193,7 +193,7 @@ export function VoteTallyOverlay({
             const player = players.find((p) => p.name === name);
             return (
               <div key={name} className="text-center">
-                {player && <div className="mb-1 flex justify-center"><AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="10" /></div>}
+                {player && <div className="mb-1 flex justify-center"><AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="10" /></div>}
                 <p className="text-sm text-white/70 font-semibold">{name}</p>
                 <p className="text-3xl font-bold text-amber-400 mt-1">{count}</p>
               </div>
@@ -236,7 +236,7 @@ export function VoteTallyOverlay({
                   : "bg-white/[0.02]"
               }`}
             >
-              {player && <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />}
+              {player && <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="6" />}
               <span className="text-xs text-white/60 flex-1">{name}</span>
               <span className={`text-[10px] px-1.5 py-0.5 rounded ${
                 count === maxElim ? "text-red-300 bg-red-900/40 font-bold" : "text-red-400/70 bg-red-900/20"
@@ -285,7 +285,7 @@ export function StyledVoteCard({
           </div>
         )}
         <div className="flex items-center justify-center gap-3 mb-6">
-          {voterPlayer && <AgentAvatar avatarUrl={voterPlayer.avatarUrl} persona={voterPlayer.persona} name={voterPlayer.name} size="10" />}
+          {voterPlayer && <AgentAvatar avatarUrl={voterPlayer.avatarUrl} personaKey={voterPlayer.personaKey} persona={voterPlayer.persona} name={voterPlayer.name} size="10" />}
           <span className="text-lg font-semibold text-white/70">{vote.voter}</span>
         </div>
         <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl px-8 py-6 inline-block max-w-md">
@@ -293,14 +293,14 @@ export function StyledVoteCard({
             <div className="flex items-center gap-3">
               <span className="text-amber-400 text-sm uppercase tracking-wider w-20 text-right">Empower</span>
               <span className="text-xl">👑</span>
-              {empowerPlayer && <AgentAvatar avatarUrl={empowerPlayer.avatarUrl} persona={empowerPlayer.persona} name={empowerPlayer.name} size="6" />}
+              {empowerPlayer && <AgentAvatar avatarUrl={empowerPlayer.avatarUrl} personaKey={empowerPlayer.personaKey} persona={empowerPlayer.persona} name={empowerPlayer.name} size="6" />}
               <span className="text-lg font-semibold text-amber-300">{vote.empower}</span>
             </div>
             <div className="border-t border-white/5" />
             <div className="flex items-center gap-3">
               <span className="text-red-400 text-sm uppercase tracking-wider w-20 text-right">Expose</span>
               <span className="text-xl">⚡</span>
-              {exposePlayer && <AgentAvatar avatarUrl={exposePlayer.avatarUrl} persona={exposePlayer.persona} name={exposePlayer.name} size="6" />}
+              {exposePlayer && <AgentAvatar avatarUrl={exposePlayer.avatarUrl} personaKey={exposePlayer.personaKey} persona={exposePlayer.persona} name={exposePlayer.name} size="6" />}
               <span className="text-lg font-semibold text-red-300">{vote.expose}</span>
             </div>
             {voterRumor && (
@@ -340,7 +340,7 @@ export function StyledVoteCard({
           </div>
         )}
         <div className="flex items-center justify-center gap-3 mb-6">
-          {voterPlayer && <AgentAvatar avatarUrl={voterPlayer.avatarUrl} persona={voterPlayer.persona} name={voterPlayer.name} size="10" />}
+          {voterPlayer && <AgentAvatar avatarUrl={voterPlayer.avatarUrl} personaKey={voterPlayer.personaKey} persona={voterPlayer.persona} name={voterPlayer.name} size="10" />}
           <span className="text-lg font-semibold text-white/70">{reVote.voter}</span>
           <span className="text-xs text-yellow-400/50 uppercase tracking-wider">(re-vote)</span>
         </div>
@@ -348,7 +348,7 @@ export function StyledVoteCard({
           <p className="text-xs text-yellow-400/50 uppercase tracking-wider mb-2">Empower</p>
           <div className="flex items-center justify-center gap-3">
             <span className="text-xl">👑</span>
-            {empowerPlayer && <AgentAvatar avatarUrl={empowerPlayer.avatarUrl} persona={empowerPlayer.persona} name={empowerPlayer.name} size="10" />}
+            {empowerPlayer && <AgentAvatar avatarUrl={empowerPlayer.avatarUrl} personaKey={empowerPlayer.personaKey} persona={empowerPlayer.persona} name={empowerPlayer.name} size="10" />}
             <span className="text-2xl font-bold text-yellow-300">{reVote.empower}</span>
           </div>
         </div>
@@ -373,13 +373,13 @@ export function StyledVoteCard({
           </div>
         )}
         <div className="flex items-center justify-center gap-3 mb-6">
-          {voterPlayer && <AgentAvatar avatarUrl={voterPlayer.avatarUrl} persona={voterPlayer.persona} name={voterPlayer.name} size="10" />}
+          {voterPlayer && <AgentAvatar avatarUrl={voterPlayer.avatarUrl} personaKey={voterPlayer.personaKey} persona={voterPlayer.persona} name={voterPlayer.name} size="10" />}
           <span className="text-lg font-semibold text-white/70">{councilVote.voter}</span>
         </div>
         <div className="bg-red-900/10 border border-red-500/15 rounded-2xl px-8 py-6 inline-block">
           <p className="text-xs text-red-400/50 uppercase tracking-wider mb-2">Votes to eliminate</p>
           <div className="flex items-center justify-center gap-3">
-            {targetPlayer && <AgentAvatar avatarUrl={targetPlayer.avatarUrl} persona={targetPlayer.persona} name={targetPlayer.name} size="10" />}
+            {targetPlayer && <AgentAvatar avatarUrl={targetPlayer.avatarUrl} personaKey={targetPlayer.personaKey} persona={targetPlayer.persona} name={targetPlayer.name} size="10" />}
             <span className="text-2xl font-bold text-red-300">{councilVote.target}</span>
           </div>
         </div>
@@ -404,14 +404,14 @@ export function StyledVoteCard({
           </div>
         )}
         <div className="flex items-center justify-center gap-3 mb-6">
-          {jurorPlayer && <AgentAvatar avatarUrl={jurorPlayer.avatarUrl} persona={jurorPlayer.persona} name={jurorPlayer.name} size="10" />}
+          {jurorPlayer && <AgentAvatar avatarUrl={jurorPlayer.avatarUrl} personaKey={jurorPlayer.personaKey} persona={jurorPlayer.persona} name={jurorPlayer.name} size="10" />}
           <span className="text-lg font-semibold text-white/50">{juryVote.juror}</span>
           <span className="text-xs text-white/25 uppercase tracking-wider">(juror)</span>
         </div>
         <div className="bg-amber-900/10 border border-amber-500/15 rounded-2xl px-8 py-6 inline-block">
           <p className="text-xs text-amber-400/50 uppercase tracking-wider mb-2">Votes for</p>
           <div className="flex items-center justify-center gap-3">
-            {targetPlayer && <AgentAvatar avatarUrl={targetPlayer.avatarUrl} persona={targetPlayer.persona} name={targetPlayer.name} size="10" />}
+            {targetPlayer && <AgentAvatar avatarUrl={targetPlayer.avatarUrl} personaKey={targetPlayer.personaKey} persona={targetPlayer.persona} name={targetPlayer.name} size="10" />}
             <span className="text-2xl font-bold text-amber-300">{juryVote.target}</span>
           </div>
         </div>
@@ -438,7 +438,7 @@ export function StyledVoteCard({
         )}
         <div className="flex items-center justify-center gap-3 mb-6">
           <span className="text-2xl">👑</span>
-          {agentPlayer && <AgentAvatar avatarUrl={agentPlayer.avatarUrl} persona={agentPlayer.persona} name={agentPlayer.name} size="10" />}
+          {agentPlayer && <AgentAvatar avatarUrl={agentPlayer.avatarUrl} personaKey={agentPlayer.personaKey} persona={agentPlayer.persona} name={agentPlayer.name} size="10" />}
           <span className="text-lg font-semibold text-amber-300">{powerAction.agent}</span>
         </div>
         <div className={`${isProtect ? "bg-blue-900/10 border-blue-500/15" : "bg-red-900/15 border-red-500/20"} border rounded-2xl px-8 py-6 inline-block`}>
@@ -447,7 +447,7 @@ export function StyledVoteCard({
           </p>
           <div className="flex items-center justify-center gap-3">
             <span className="text-2xl">{isProtect ? "🛡" : "💀"}</span>
-            {targetPlayer && <AgentAvatar avatarUrl={targetPlayer.avatarUrl} persona={targetPlayer.persona} name={targetPlayer.name} size="10" />}
+            {targetPlayer && <AgentAvatar avatarUrl={targetPlayer.avatarUrl} personaKey={targetPlayer.personaKey} persona={targetPlayer.persona} name={targetPlayer.name} size="10" />}
             <span className={`text-2xl font-bold ${isProtect ? "text-blue-300" : "text-red-300"}`}>
               {powerAction.target}
             </span>
@@ -468,7 +468,7 @@ export function StyledVoteCard({
             const p = players.find((pl) => pl.name === name);
             return (
               <div key={name} className="text-center">
-                {p && <div className="mb-1 flex justify-center"><AgentAvatar avatarUrl={p.avatarUrl} persona={p.persona} name={p.name} size="10" /></div>}
+                {p && <div className="mb-1 flex justify-center"><AgentAvatar avatarUrl={p.avatarUrl} personaKey={p.personaKey} persona={p.persona} name={p.name} size="10" /></div>}
                 <p className="text-sm font-semibold text-yellow-200">{name}</p>
               </div>
             );
@@ -489,7 +489,7 @@ export function StyledVoteCard({
         <p className="text-xs text-emerald-400/50 uppercase tracking-[0.3em] mb-4">◆ RE-VOTE RESOLVED ◆</p>
         <div className="flex items-center justify-center gap-4">
           <span className="text-4xl">👑</span>
-          {resolvedPlayer && <AgentAvatar avatarUrl={resolvedPlayer.avatarUrl} persona={resolvedPlayer.persona} name={resolvedPlayer.name} size="12" />}
+          {resolvedPlayer && <AgentAvatar avatarUrl={resolvedPlayer.avatarUrl} personaKey={resolvedPlayer.personaKey} persona={resolvedPlayer.persona} name={resolvedPlayer.name} size="12" />}
         </div>
         <p className="text-2xl font-bold text-emerald-300 mt-4 tracking-wide">{reVoteResolved.name}</p>
         <p className="text-xs text-emerald-400/30 mt-2 uppercase tracking-wider">
@@ -510,7 +510,7 @@ export function StyledVoteCard({
           <div className="absolute inset-0 rounded-full bg-purple-500/20 animate-ping" />
           <div className="relative flex items-center justify-center gap-4">
             <span className="text-5xl animate-[spin_1s_ease-out]">🎡</span>
-            {wheelPlayer && <AgentAvatar avatarUrl={wheelPlayer.avatarUrl} persona={wheelPlayer.persona} name={wheelPlayer.name} size="12" />}
+            {wheelPlayer && <AgentAvatar avatarUrl={wheelPlayer.avatarUrl} personaKey={wheelPlayer.personaKey} persona={wheelPlayer.persona} name={wheelPlayer.name} size="12" />}
           </div>
         </div>
         <p className="text-2xl font-bold text-purple-300 mt-4 tracking-wide">{wheel.name}</p>
@@ -529,7 +529,7 @@ export function StyledVoteCard({
         <p className="text-xs text-amber-400/40 uppercase tracking-[0.3em] mb-4">◆ EMPOWERED ◆</p>
         <div className="flex items-center justify-center gap-4">
           <span className="text-4xl">👑</span>
-          {empPlayer && <AgentAvatar avatarUrl={empPlayer.avatarUrl} persona={empPlayer.persona} name={empPlayer.name} size="16" />}
+          {empPlayer && <AgentAvatar avatarUrl={empPlayer.avatarUrl} personaKey={empPlayer.personaKey} persona={empPlayer.persona} name={empPlayer.name} size="16" />}
         </div>
         <p className="text-3xl font-bold text-amber-300 mt-4 tracking-wide">{empowered.name}</p>
         <p className="text-xs text-amber-400/30 mt-2 uppercase tracking-wider">
@@ -547,7 +547,7 @@ export function StyledVoteCard({
         <p className="text-xs text-amber-400/40 uppercase tracking-[0.4em] mb-6">◆ ◆ ◆</p>
         <p className="text-sm text-white/30 uppercase tracking-[0.3em] mb-4">THE WINNER IS</p>
         <div className="flex items-center justify-center gap-4 mb-4">
-          {winPlayer && <AgentAvatar avatarUrl={winPlayer.avatarUrl} persona={winPlayer.persona} name={winPlayer.name} size="16" />}
+          {winPlayer && <AgentAvatar avatarUrl={winPlayer.avatarUrl} personaKey={winPlayer.personaKey} persona={winPlayer.persona} name={winPlayer.name} size="16" />}
         </div>
         <p className="text-4xl md:text-5xl font-bold text-amber-300 tracking-wide">{winner.winner}</p>
         <p className="text-xs text-amber-400/30 mt-4 uppercase tracking-[0.4em]">◆ ◆ ◆</p>
@@ -562,13 +562,13 @@ export function StyledVoteCard({
     return (
       <div className="text-center animate-[fadeIn_0.3s_ease-out]">
         <div className="flex items-center justify-center gap-3 mb-6">
-          {voterPlayer && <AgentAvatar avatarUrl={voterPlayer.avatarUrl} persona={voterPlayer.persona} name={voterPlayer.name} size="10" />}
+          {voterPlayer && <AgentAvatar avatarUrl={voterPlayer.avatarUrl} personaKey={voterPlayer.personaKey} persona={voterPlayer.persona} name={voterPlayer.name} size="10" />}
           <span className="text-lg font-semibold text-white/70">{elimVote.voter}</span>
         </div>
         <div className="bg-red-900/10 border border-red-500/15 rounded-2xl px-8 py-6 inline-block">
           <p className="text-xs text-red-400/50 uppercase tracking-wider mb-2">Votes to eliminate</p>
           <div className="flex items-center justify-center gap-3">
-            {targetPlayer && <AgentAvatar avatarUrl={targetPlayer.avatarUrl} persona={targetPlayer.persona} name={targetPlayer.name} size="10" />}
+            {targetPlayer && <AgentAvatar avatarUrl={targetPlayer.avatarUrl} personaKey={targetPlayer.personaKey} persona={targetPlayer.persona} name={targetPlayer.name} size="10" />}
             <span className="text-2xl font-bold text-red-300">{elimVote.target}</span>
           </div>
         </div>
@@ -606,13 +606,13 @@ export function JuryQuestionFrame({
         {/* Juror → Finalist framing */}
         <div className="flex items-center justify-center gap-6 mb-8">
           <div className="text-center">
-            {fromPlayer && <div className="mb-1 flex justify-center"><AgentAvatar avatarUrl={fromPlayer.avatarUrl} persona={fromPlayer.persona} name={fromPlayer.name} size="10" /></div>}
+            {fromPlayer && <div className="mb-1 flex justify-center"><AgentAvatar avatarUrl={fromPlayer.avatarUrl} personaKey={fromPlayer.personaKey} persona={fromPlayer.persona} name={fromPlayer.name} size="10" /></div>}
             <span className="text-sm text-white/50">{fromName}</span>
             <span className="text-[10px] text-white/25 block uppercase">juror</span>
           </div>
           <span className="text-white/15 text-lg">→</span>
           <div className="text-center">
-            {finalistPlayer && <div className="mb-1 flex justify-center"><AgentAvatar avatarUrl={finalistPlayer.avatarUrl} persona={finalistPlayer.persona} name={finalistPlayer.name} size="10" /></div>}
+            {finalistPlayer && <div className="mb-1 flex justify-center"><AgentAvatar avatarUrl={finalistPlayer.avatarUrl} personaKey={finalistPlayer.personaKey} persona={finalistPlayer.persona} name={finalistPlayer.name} size="10" /></div>}
             <span className="text-sm text-white/70 font-semibold">{question.finalist}</span>
             <span className="text-[10px] text-white/25 block uppercase">finalist</span>
           </div>
@@ -637,7 +637,7 @@ export function JuryQuestionFrame({
     return (
       <div className="text-center animate-[fadeIn_0.3s_ease-out]">
         <div className="flex items-center justify-center gap-3 mb-8">
-          {fromPlayer && <AgentAvatar avatarUrl={fromPlayer.avatarUrl} persona={fromPlayer.persona} name={fromPlayer.name} size="12" />}
+          {fromPlayer && <AgentAvatar avatarUrl={fromPlayer.avatarUrl} personaKey={fromPlayer.personaKey} persona={fromPlayer.persona} name={fromPlayer.name} size="12" />}
           <span className="text-xl font-semibold text-white/80">{fromName}</span>
         </div>
         <div className="bg-white/[0.04] border border-white/[0.06] rounded-2xl px-8 py-6 inline-block max-w-xl text-left">
@@ -744,7 +744,7 @@ export function SpectacleMessageContent({
             {isAnonymousRumor ? (
               <span className="w-10 h-10 rounded-full bg-purple-900/40 flex items-center justify-center text-xl">🗣</span>
             ) : currentPlayer ? (
-              <AgentAvatar avatarUrl={currentPlayer.avatarUrl} persona={currentPlayer.persona} name={currentPlayer.name} size="10" />
+              <AgentAvatar avatarUrl={currentPlayer.avatarUrl} personaKey={currentPlayer.personaKey} persona={currentPlayer.persona} name={currentPlayer.name} size="10" />
             ) : null}
             <span className={`text-lg font-semibold ${isAnonymousRumor ? "text-purple-300/70 italic" : "text-white/70"}`}>{currentPlayerName}</span>
             {isAnonymousRumor && (

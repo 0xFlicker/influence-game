@@ -40,7 +40,7 @@ export function RevealMessageItem({
   return (
     <div className="flex gap-3 animate-[fadePure_0.4s_ease-out]">
       <div className="flex-shrink-0">
-        {player ? <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="8" /> : <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-sm">?</span>}
+        {player ? <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="8" /> : <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-sm">?</span>}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-xs font-semibold text-white/70 mb-0.5">{name}</p>

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22C55E"/>
+      <stop offset="100%" stop-color="#14532D"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="64" fill="url(#bg)"/>
+  <g transform="translate(64,64)" fill="none" stroke="white" stroke-linecap="round" stroke-linejoin="round" opacity="0.95">
+    <!-- Shield and halo -->
+    <ellipse cx="0" cy="-30" rx="20" ry="7" stroke-width="4" opacity="0.64"/>
+    <path d="M0,-14 C12,-4 22,-4 22,-4 V8 C22,24 11,34 0,40 C-11,34 -22,24 -22,8 V-4 C-22,-4 -12,-4 0,-14Z" stroke-width="5" fill="white" fill-opacity="0.14"/>
+    <path d="M0,-2 V23" stroke-width="5"/>
+    <path d="M-10,8 H10" stroke-width="5"/>
+  </g>
+</svg>

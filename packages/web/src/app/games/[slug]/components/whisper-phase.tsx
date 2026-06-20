@@ -208,7 +208,7 @@ function AgentInitial({
   size?: "6" | "8" | "10";
 }) {
   if (player) {
-    return <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size={size} />;
+    return <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size={size} />;
   }
 
   const sizeClass = size === "10" ? "h-10 w-10" : size === "6" ? "h-6 w-6" : "h-8 w-8";
@@ -609,7 +609,7 @@ function WhisperRoomSealed({
       <div className="p-4 flex flex-col items-center justify-center gap-3 min-h-[120px]">
         <div className="flex items-center gap-3">
           {occupants.slice(0, 4).map((player, index) => player ? (
-            <AgentAvatar key={player.id} avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="8" />
+            <AgentAvatar key={player.id} avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="8" />
           ) : (
             <span key={`unknown-${index}`} className="w-8 h-8 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>
           ))}
@@ -732,7 +732,7 @@ export function WhisperRoomDM({
                 {!isOwner && (
                   <div className="flex-shrink-0 mt-1">
                     {player ? (
-                      <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />
+                      <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="6" />
                     ) : (
                       <span className="w-6 h-6 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>
                     )}
@@ -758,7 +758,7 @@ export function WhisperRoomDM({
                 {isOwner && (
                   <div className="flex-shrink-0 mt-1">
                     {player ? (
-                      <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="6" />
+                      <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="6" />
                     ) : (
                       <span className="w-6 h-6 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>
                     )}
@@ -837,7 +837,7 @@ export function WhisperAllocationOverview({
                       return (
                         <div key={`${room.roomId}-${name}`} className="flex flex-col items-center gap-1.5">
                           {player ? (
-                            <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="10" />
+                            <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="10" />
                           ) : (
                             <span className="w-10 h-10 rounded-full bg-purple-900/30 flex items-center justify-center text-sm text-purple-300/60">?</span>
                           )}
@@ -860,7 +860,7 @@ export function WhisperAllocationOverview({
               <div className="flex items-center justify-center gap-4 flex-wrap">
                 {stage.commons.map((player) => (
                   <div key={player.id} className="flex flex-col items-center gap-1.5">
-                    <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="8" />
+                    <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="8" />
                     <span className="text-xs text-white/60">{player.name}</span>
                   </div>
                 ))}

@@ -1,3 +1,4 @@
+import { buildPostVotePressureProjection } from "@influence/engine";
 import { asc, eq, or } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -26,6 +27,7 @@ export type GameWatchProjectionAvailability =
   | "unavailable";
 
 export type GameWatchPlayerStatus = "alive" | "eliminated" | "unknown";
+export type GameWatchPlayerPressureStatus = "empowered" | "at_risk" | "exposed";
 
 type GameWatchDiagnosticCode =
   | PersistedEventDiagnostic["code"]
@@ -67,8 +69,11 @@ export interface GameWatchPlayer {
   id: string;
   name: string;
   persona: string;
+  personaKey?: string;
   status: GameWatchPlayerStatus;
   shielded: boolean;
+  pressureStatus?: GameWatchPlayerPressureStatus;
+  exposeScore?: number;
   avatarUrl?: string;
 }
 
@@ -120,12 +125,18 @@ interface PlayerIdentity {
   id: string;
   name: string;
   persona: string;
+  personaKey?: string;
   avatarUrl?: string;
 }
 
 interface TerminalResult {
   winnerId: string | null;
   roundsPlayed: number;
+}
+
+interface GameWatchPlayerPressure {
+  pressureStatus: GameWatchPlayerPressureStatus;
+  exposeScore?: number;
 }
 
 export async function getGameWatchState(
@@ -161,8 +172,11 @@ export async function buildGameWatchState(
   const projection = getPersistedGameProjection(persistedEvents);
   const source = classifySource(game.status, result, projection);
   const projectedSummary = projection.summary;
+  const pressureByPlayerId = projectedSummary
+    ? buildPressureByPlayerId(projectedSummary)
+    : new Map<string, GameWatchPlayerPressure>();
   const watchPlayers = projectedSummary
-    ? buildProjectedPlayers(players, projectedSummary.players.players)
+    ? buildProjectedPlayers(players, projectedSummary.players.players, pressureByPlayerId)
     : buildFallbackPlayers(players, result, source);
   const counts = countPlayers(watchPlayers);
   const winner = projectedSummary?.winner
@@ -241,14 +255,16 @@ async function loadPlayerIdentities(
   return rows.map((row) => {
     const persona = parseConfig(row.persona);
     const personaName = stringFromConfig(persona.name);
+    const personaKey = stringFromConfig(persona.personaKey);
     const personaDescription =
       stringFromConfig(persona.personalityBlurb) ??
       stringFromConfig(persona.personality) ??
-      stringFromConfig(persona.personaKey);
+      personaKey;
     return {
       id: row.id,
       name: personaName ?? "Unknown",
       persona: personaDescription ?? "Unknown",
+      ...(personaKey && { personaKey }),
       ...(row.avatarUrl && { avatarUrl: row.avatarUrl }),
     };
   });
@@ -267,6 +283,78 @@ async function loadTerminalResult(
     .where(eq(schema.gameResults.gameId, gameId))
     .limit(1))[0];
   return row ?? null;
+}
+
+function buildExposeScores(exposeVotes: Record<string, string>): Record<string, number> {
+  const scores: Record<string, number> = {};
+  for (const exposedPlayerId of Object.values(exposeVotes)) {
+    scores[exposedPlayerId] = (scores[exposedPlayerId] ?? 0) + 1;
+  }
+  return scores;
+}
+
+function isPressureDisplayPhase(phase: string | null): boolean {
+  return (
+    phase === "VOTE" ||
+    phase === "MINGLE" ||
+    phase === "POWER" ||
+    phase === "REVEAL" ||
+    phase === "COUNCIL"
+  );
+}
+
+function buildPressureByPlayerId(
+  summary: NonNullable<PersistedGameProjectionRead["summary"]>,
+): Map<string, GameWatchPlayerPressure> {
+  const pressureByPlayerId = new Map<string, GameWatchPlayerPressure>();
+  const empoweredId = summary.voteState.empoweredId;
+  if (!empoweredId || !isPressureDisplayPhase(summary.phase)) return pressureByPlayerId;
+
+  const exposeScores = buildExposeScores(summary.voteState.exposeVotes);
+  const alivePlayers = summary.players.players
+    .filter((player) => player.status === "alive")
+    .map((player) => ({
+      id: player.id,
+      name: player.name,
+      shielded: player.shielded,
+    }));
+  const finalCouncilCandidateIds = new Set(summary.voteState.councilCandidates ?? []);
+  const atRiskIds = new Set(finalCouncilCandidateIds);
+
+  if (atRiskIds.size === 0) {
+    const pressure = buildPostVotePressureProjection({
+      alivePlayers,
+      exposeScores,
+      empoweredId,
+    });
+    for (const player of pressure?.players ?? []) {
+      if (player.status === "locked_at_risk" || player.status === "current_at_risk") {
+        atRiskIds.add(player.id);
+      }
+    }
+  }
+
+  for (const player of alivePlayers) {
+    const exposeScore = exposeScores[player.id] ?? 0;
+    if (player.id === empoweredId) {
+      pressureByPlayerId.set(player.id, {
+        pressureStatus: "empowered",
+        ...(exposeScore > 0 && { exposeScore }),
+      });
+    } else if (atRiskIds.has(player.id)) {
+      pressureByPlayerId.set(player.id, {
+        pressureStatus: "at_risk",
+        ...(exposeScore > 0 && { exposeScore }),
+      });
+    } else if (exposeScore > 0) {
+      pressureByPlayerId.set(player.id, {
+        pressureStatus: "exposed",
+        exposeScore,
+      });
+    }
+  }
+
+  return pressureByPlayerId;
 }
 
 function classifySource(
@@ -303,18 +391,23 @@ function buildProjectedPlayers(
     status: "alive" | "eliminated";
     shielded: boolean;
   }>,
+  pressureByPlayerId: ReadonlyMap<string, GameWatchPlayerPressure>,
 ): GameWatchPlayer[] {
   const identityById = new Map(identities.map((identity) => [identity.id, identity]));
   const projectedIds = new Set(projectedPlayers.map((player) => player.id));
   return [
     ...projectedPlayers.map((projected) => {
       const identity = identityById.get(projected.id);
+      const pressure = pressureByPlayerId.get(projected.id);
       return {
         id: projected.id,
         name: identity?.name ?? projected.name,
         persona: identity?.persona ?? "Unknown",
+        ...(identity?.personaKey && { personaKey: identity.personaKey }),
         status: projected.status,
         shielded: projected.shielded,
+        ...(pressure?.pressureStatus && { pressureStatus: pressure.pressureStatus }),
+        ...(pressure?.exposeScore !== undefined && { exposeScore: pressure.exposeScore }),
         ...(identity?.avatarUrl && { avatarUrl: identity.avatarUrl }),
       };
     }),
@@ -324,6 +417,7 @@ function buildProjectedPlayers(
         id: identity.id,
         name: identity.name,
         persona: identity.persona,
+        ...(identity.personaKey && { personaKey: identity.personaKey }),
         status: "unknown" as const,
         shielded: false,
         ...(identity.avatarUrl && { avatarUrl: identity.avatarUrl }),
@@ -348,6 +442,7 @@ function buildFallbackPlayers(
       id: identity.id,
       name: identity.name,
       persona: identity.persona,
+      ...(identity.personaKey && { personaKey: identity.personaKey }),
       status: terminalStatus,
       shielded: false,
       ...(identity.avatarUrl && { avatarUrl: identity.avatarUrl }),

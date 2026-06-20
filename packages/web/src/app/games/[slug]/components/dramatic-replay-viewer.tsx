@@ -688,7 +688,7 @@ export function DramaticReplayViewer({
       {isCurrentRumor ? (
         <span className="w-6 h-6 rounded-full bg-purple-900/40 flex items-center justify-center text-xs">🗣</span>
       ) : currentPlayer ? (
-        <AgentAvatar avatarUrl={currentPlayer.avatarUrl} persona={currentPlayer.persona} name={currentPlayer.name} size="6" />
+        <AgentAvatar avatarUrl={currentPlayer.avatarUrl} personaKey={currentPlayer.personaKey} persona={currentPlayer.persona} name={currentPlayer.name} size="6" />
       ) : null}
       <span className={`text-xs ${isCurrentRumor ? "text-purple-300/70 italic" : "text-white/40"}`}>{currentPlayerName}</span>
       <div className="flex items-center gap-1">
@@ -918,7 +918,7 @@ export function DramaticReplayViewer({
                     {isCurrentRumor ? (
                       <span className="w-10 h-10 rounded-full bg-purple-900/40 flex items-center justify-center text-xl">🗣</span>
                     ) : currentPlayer ? (
-                      <AgentAvatar avatarUrl={currentPlayer.avatarUrl} persona={currentPlayer.persona} name={currentPlayer.name} size="10" />
+                      <AgentAvatar avatarUrl={currentPlayer.avatarUrl} personaKey={currentPlayer.personaKey} persona={currentPlayer.persona} name={currentPlayer.name} size="10" />
                     ) : null}
                     <span className={`text-lg font-semibold ${isCurrentRumor ? "text-purple-300/70 italic" : "text-white/60"}`}>{currentPlayerName}</span>
                     {isCurrentRumor && (

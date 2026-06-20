@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
-import { Phase, type CanonicalGameEvent } from "@influence/engine";
+import { GameState, Phase, type CanonicalGameEvent } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
@@ -59,6 +59,7 @@ describe("GameWatchState", () => {
       id: "atlas",
       name: "Atlas Prime",
       persona: "profiled strategist",
+      personaKey: "strategic",
       status: "eliminated",
       shielded: false,
       avatarUrl: "https://example.test/atlas.png",
@@ -152,6 +153,73 @@ describe("GameWatchState", () => {
     });
     expect(state?.players).toHaveLength(2);
     expect(state?.players.every((player) => player.status === "alive")).toBe(true);
+  });
+
+  test("keeps generated persona display text separate from avatar persona key", async () => {
+    const gameId = await insertGame(db, {
+      slug: "watch-generated-persona-key",
+      status: "waiting",
+      config: gameConfig(),
+    });
+    await db.insert(schema.gamePlayers).values({
+      id: "zara",
+      gameId,
+      persona: JSON.stringify({
+        name: "Zara Quinn",
+        personality: "observer",
+        personaKey: "observer",
+        personalityBlurb: "Zara is exuberant and unpredictable.",
+      }),
+      agentConfig: JSON.stringify({ model: "test-model", temperature: 0 }),
+    });
+
+    const state = await getGameWatchState(db, gameId);
+
+    expect(state?.players).toEqual([
+      expect.objectContaining({
+        id: "zara",
+        name: "Zara Quinn",
+        persona: "Zara is exuberant and unpredictable.",
+        personaKey: "observer",
+        status: "alive",
+      }),
+    ]);
+  });
+
+  test("surfaces public post-vote pressure statuses before council", async () => {
+    const gameId = await insertGame(db, {
+      slug: "watch-post-vote-pressure",
+      status: "in_progress",
+      config: gameConfig(),
+    });
+    await insertFixturePlayers(db, gameId);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const events = createPostVotePressureFixture(gameId);
+    await appendGameEvents(db, { gameId, ownerEpoch, events });
+
+    const state = await getGameWatchState(db, "watch-post-vote-pressure");
+    const players = state?.players ?? [];
+
+    expect(state).toMatchObject({
+      currentPhase: "VOTE",
+      players: expect.arrayContaining([
+        expect.objectContaining({
+          id: "mira",
+          pressureStatus: "empowered",
+        }),
+        expect.objectContaining({
+          id: "atlas",
+          pressureStatus: "at_risk",
+          exposeScore: 2,
+        }),
+        expect.objectContaining({
+          id: "echo",
+          pressureStatus: "at_risk",
+          exposeScore: 2,
+        }),
+      ]),
+    });
+    expect(players.find((player) => player.id === "nyx")?.pressureStatus).toBeUndefined();
   });
 
   test("uses only the trusted prefix for degraded invalid event logs", async () => {
@@ -347,6 +415,27 @@ function advanceToRoundTwo(events: readonly CanonicalGameEvent[]): readonly Cano
       payload: { round: 2 },
     },
   ];
+}
+
+function createPostVotePressureFixture(gameId: string): readonly CanonicalGameEvent[] {
+  const state = new GameState(
+    [
+      { id: "atlas", name: "Atlas" },
+      { id: "echo", name: "Echo" },
+      { id: "mira", name: "Mira" },
+      { id: "nyx", name: "Nyx" },
+    ],
+    { gameId, now: () => 1_720_000_000_000 },
+  );
+
+  state.startRound();
+  state.recordVote("atlas", "mira", "echo");
+  state.recordVote("echo", "mira", "atlas");
+  state.recordVote("mira", "echo", "atlas");
+  state.recordVote("nyx", "mira", "echo");
+  state.tallyEmpowerVotes();
+
+  return state.getCanonicalEvents();
 }
 
 function withJuryWinner(

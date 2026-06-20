@@ -100,12 +100,14 @@ describe("MatchWatchShell", () => {
   });
 
   it("renders live shell state from durable watch state without replay copy", () => {
+    const durableWatchState = watchState();
     const currentGame = {
       ...game(),
       status: "in_progress" as const,
       currentRound: 2,
       currentPhase: "VOTE" as const,
-      watchState: watchState(),
+      players: durableWatchState.players,
+      watchState: durableWatchState,
     };
     const html = renderToString(
       <MatchWatchShell
@@ -120,8 +122,13 @@ describe("MatchWatchShell", () => {
     expect(html).toContain('data-watch-mode="live"');
     expect(textHtml).toContain("Round 2 Live");
     expect(html).toContain("Voting");
-    expect(html).toContain("<strong class=\"text-xs text-white/95\">1</strong>Alive");
+    expect(html).toContain("<strong class=\"text-xs text-white/95\">3</strong>Alive");
     expect(html).toContain("<strong class=\"text-xs text-white/95\">1</strong>Out");
+    expect(textHtml).toContain("Empowered");
+    expect(textHtml).toContain("At Risk");
+    expect(textHtml).toContain("Exposed x2");
+    expect(textHtml).not.toContain("Atlas carries a quiet, gravitational strategy.");
+    expect(textHtml).not.toContain("Lyra gathers pressure with social warmth.");
     expect(html).not.toContain("Durable Projection");
     expect(html).toContain("Voting is open.");
     expect(html).toContain("Thinking");
@@ -299,21 +306,44 @@ function watchState(): GameWatchState {
       {
         id: "p1",
         name: "Atlas",
-        persona: "observer",
+        persona: "Atlas carries a quiet, gravitational strategy.",
+        personaKey: "observer",
+        pressureStatus: "empowered",
         status: "alive",
         shielded: false,
       },
       {
         id: "p2",
         name: "Lyra",
-        persona: "strategic",
+        persona: "Lyra gathers pressure with social warmth.",
+        personaKey: "strategic",
+        pressureStatus: "at_risk",
+        exposeScore: 2,
+        status: "alive",
+        shielded: false,
+      },
+      {
+        id: "p3",
+        name: "Echo",
+        persona: "Echo keeps grudges indexed.",
+        personaKey: "contrarian",
+        pressureStatus: "exposed",
+        exposeScore: 2,
+        status: "alive",
+        shielded: false,
+      },
+      {
+        id: "p4",
+        name: "Rex",
+        persona: "Rex has already left the board.",
+        personaKey: "aggressive",
         status: "eliminated",
         shielded: false,
       },
     ],
     counts: {
-      totalPlayers: 2,
-      alivePlayers: 1,
+      totalPlayers: 4,
+      alivePlayers: 3,
       eliminatedPlayers: 1,
       unknownPlayers: 0,
     },

@@ -211,7 +211,7 @@ export function SpectacleMessageSpotlight({
               {isAnonymousRumor ? (
                 <span className="w-10 h-10 rounded-full bg-purple-900/40 flex items-center justify-center text-xl">🗣</span>
               ) : player ? (
-                <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="10" />
+                <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="10" />
               ) : null}
               <span className={`text-lg font-semibold ${isAnonymousRumor ? "text-purple-300/70 italic" : "text-white/60"}`}>{playerName}</span>
               {isAnonymousRumor && (
@@ -237,7 +237,7 @@ export function SpectacleMessageSpotlight({
                 {isAnonymousRumor ? (
                   <span className="w-10 h-10 rounded-full bg-purple-900/40 flex items-center justify-center text-xl">🗣</span>
                 ) : player ? (
-                  <AgentAvatar avatarUrl={player.avatarUrl} persona={player.persona} name={player.name} size="10" />
+                  <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="10" />
                 ) : null}
                 <span className={`text-lg font-semibold ${isAnonymousRumor ? "text-purple-300/70 italic" : "text-white/70"}`}>{playerName}</span>
                 {isAnonymousRumor && (

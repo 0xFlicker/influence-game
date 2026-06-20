@@ -1,6 +1,7 @@
 import type {
   GameDetail,
   GamePlayer,
+  GameWatchPlayerPressureStatus,
   GameWatchPlayerStatus,
   GameWatchState,
   PhaseKey,
@@ -53,9 +54,24 @@ export interface MatchWatchPhaseSegment {
   state: MatchWatchPhaseSegmentState;
 }
 
+export type MatchWatchPlayerStatusTagKind =
+  | GameWatchPlayerPressureStatus
+  | "shielded"
+  | "alive"
+  | "eliminated"
+  | "unknown";
+
+export interface MatchWatchPlayerStatusTag {
+  kind: MatchWatchPlayerStatusTagKind;
+  label: string;
+  icon: string;
+  title: string;
+}
+
 export interface MatchWatchPlayerCard {
   player: GamePlayer;
   statusLabel: string;
+  statusTags: MatchWatchPlayerStatusTag[];
   isSelected: boolean;
   isAlive: boolean;
   detail: string;
@@ -117,8 +133,13 @@ export function applyWatchStateToGameDetail(
       id: player.id,
       name: player.name,
       persona: player.persona || existing?.persona || "Unknown",
+      ...(player.personaKey || existing?.personaKey
+        ? { personaKey: player.personaKey ?? existing?.personaKey }
+        : {}),
       status: watchStatusToPlayerState(player.status, existing?.status),
       shielded: player.shielded,
+      ...(player.pressureStatus ? { pressureStatus: player.pressureStatus } : {}),
+      ...(player.exposeScore !== undefined ? { exposeScore: player.exposeScore } : {}),
       ...(player.avatarUrl || existing?.avatarUrl
         ? { avatarUrl: player.avatarUrl ?? existing?.avatarUrl }
         : {}),
@@ -205,12 +226,14 @@ export function buildMatchWatchModel({
   const selectedPlayer = resolveSelectedPlayer(modelPlayers, selectedPlayerId);
   const players = modelPlayers.map((player) => {
     const statusLabel = getPlayerStatusLabel(player.status);
+    const statusTags = buildPlayerStatusTags(player, statusLabel);
     return {
       player,
       statusLabel,
+      statusTags,
       isSelected: selectedPlayer?.id === player.id,
       isAlive: player.status === "alive",
-      detail: player.shielded ? `${statusLabel} - shielded` : statusLabel,
+      detail: statusTags.map((tag) => tag.label).join(" / "),
     };
   });
 
@@ -324,6 +347,57 @@ function getPlayerStatusLabel(status: PlayerState): string {
     case "unknown":
       return "Unknown";
   }
+}
+
+function buildPlayerStatusTags(player: GamePlayer, statusLabel: string): MatchWatchPlayerStatusTag[] {
+  const tags: MatchWatchPlayerStatusTag[] = [];
+
+  if (player.pressureStatus === "empowered") {
+    tags.push({
+      kind: "empowered",
+      icon: "👑",
+      label: "Empowered",
+      title: "Empowered by the vote",
+    });
+  } else if (player.pressureStatus === "at_risk") {
+    tags.push({
+      kind: "at_risk",
+      icon: "⚠",
+      label: "At Risk",
+      title: "At risk for Council",
+    });
+  } else if (player.pressureStatus === "exposed") {
+    const exposeLabel = player.exposeScore && player.exposeScore > 1
+      ? `Exposed x${player.exposeScore}`
+      : "Exposed";
+    tags.push({
+      kind: "exposed",
+      icon: "⚡",
+      label: exposeLabel,
+      title: player.exposeScore
+        ? `${player.exposeScore} expose vote${player.exposeScore === 1 ? "" : "s"}`
+        : "Received expose pressure",
+    });
+  }
+
+  if (player.shielded && player.status === "alive") {
+    tags.push({
+      kind: "shielded",
+      icon: "🛡",
+      label: "Shielded",
+      title: "Protected from Council candidacy",
+    });
+  }
+
+  if (tags.length > 0) return tags;
+
+  if (player.status === "alive") {
+    return [{ kind: "alive", icon: "●", label: statusLabel, title: "Alive" }];
+  }
+  if (player.status === "eliminated") {
+    return [{ kind: "eliminated", icon: "×", label: statusLabel, title: "Eliminated" }];
+  }
+  return [{ kind: "unknown", icon: "?", label: statusLabel, title: "Unknown status" }];
 }
 
 function getConnectionLabel(

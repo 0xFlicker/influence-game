@@ -173,7 +173,7 @@ export function PlayerRoster({
                   : ""
               }`}
             >
-              <AgentAvatar avatarUrl={p.avatarUrl} persona={p.persona} name={p.name} size="8" />
+              <AgentAvatar avatarUrl={p.avatarUrl} personaKey={p.personaKey} persona={p.persona} name={p.name} size="8" />
               <span className={`font-medium ${isEmpowered ? "text-amber-200" : "text-white"}`}>
                 {p.name}
               </span>
