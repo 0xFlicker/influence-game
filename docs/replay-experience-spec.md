@@ -12,7 +12,11 @@
 
 The current replay experience is a flat message feed with manual prev/next navigation — it reads like a log, not an experience. The board wants a **video-like replay** that takes a viewer through the game as a living narrative: rooms that change, dramatic reveals, private conversations made visible, and The House interjecting at key moments.
 
-This spec defines the architecture, scene model, room types, timing system, House overlay mechanics, and replay controls for the dramatic replay experience. It is designed to be implemented as a standalone `DramaticReplayViewer` component that replaces the current replay rendering path in `game-viewer.tsx`.
+This spec defines the architecture, scene model, room types, timing system, House overlay mechanics, and replay controls for the dramatic replay experience. The original implementation target was a standalone `DramaticReplayViewer` component replacing the current replay rendering path in `game-viewer.tsx`.
+
+**Current route ownership (2026-06-20):** `MatchWatchShell` is now the default watch surface for live in-progress games and completed transcript replays. `DramaticReplayViewer` remains the scene/timing theater and is embedded inside the shell so replay controls, keyboard behavior, live catch-up, and phase renderers stay intact. Waiting, joining, load-error, and no-transcript completed games keep their existing non-watch flows.
+
+**Data boundary for shell V0:** Shell-level facts come from `GameWatchState` when present and fall back to the existing game detail/transcript state when that is the best available source. This pass does not load durable relationship edges, vote/deal receipts, or checkpoint-derived thought/strategy summaries.
 
 ---
 

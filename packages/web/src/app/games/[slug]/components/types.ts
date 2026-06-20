@@ -70,8 +70,6 @@ export interface GameViewerProps {
    */
   initialGame?: GameDetail;
   initialMessages?: TranscriptEntry[];
-  /** "classic" forces the old message-stepper replay; "dramatic" (or undefined) uses scene-based replay for completed games. */
-  mode?: string;
 }
 
 export type SpectacleMessagePhase = "typing" | "revealing" | "done";

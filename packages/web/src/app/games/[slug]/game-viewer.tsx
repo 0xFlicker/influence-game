@@ -37,6 +37,7 @@ import { wsEntryToTranscriptEntry } from "./components/message-parsing";
 import { useGameWebSocket } from "./components/use-game-websocket";
 import {
   applyWatchStateToGameDetail,
+  getMatchWatchRouteDecision,
   shouldApplyWatchStateUpdate,
 } from "./components/match-watch-model";
 import { ReplayControls } from "./components/replay-controls";
@@ -58,13 +59,12 @@ import {
 } from "./components/diary-room";
 import { RevealModeView } from "./components/reveal-choreography";
 import { SpectacleMessageSpotlight } from "./components/spectacle-viewer";
-import { DramaticReplayViewer } from "./components/dramatic-replay-viewer";
+import { MatchWatchShell } from "./components/match-watch-shell";
 
 export function GameViewer({
   gameId,
   initialGame,
   initialMessages,
-  mode,
 }: GameViewerProps) {
   const { authenticated, login } = usePrivy();
   const router = useRouter();
@@ -734,19 +734,14 @@ export function GameViewer({
     );
   }
 
-  // Route to dramatic viewer for completed games (replay) and live in_progress games
-  // (unless ?mode=classic). Waiting games skip this — they need the join UI.
-  const useDramaticViewer =
-    mode !== "classic" &&
-    ((isReplay && messages.length > 0) ||
-      (!isReplay && game.status === "in_progress"));
-  if (useDramaticViewer) {
+  const matchWatchDecision = getMatchWatchRouteDecision(game, messages);
+  if (matchWatchDecision.eligible) {
     return (
-      <DramaticReplayViewer
+      <MatchWatchShell
         game={game}
         messages={messages}
         players={game.players}
-        live={!isReplay}
+        live={matchWatchDecision.mode === "live"}
         connStatus={connStatus}
       />
     );

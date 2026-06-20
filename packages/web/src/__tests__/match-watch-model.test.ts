@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import type { GameDetail, GameWatchState } from "../lib/api";
 import {
   applyWatchStateToGameDetail,
+  buildMatchWatchModel,
+  getMatchWatchRouteDecision,
   shouldApplyWatchStateUpdate,
   watchStatusToPlayerState,
 } from "../app/games/[slug]/components/match-watch-model";
@@ -137,5 +139,168 @@ describe("match watch model", () => {
   it("keeps unknown watch status from inventing a player transition", () => {
     expect(watchStatusToPlayerState("unknown", "eliminated")).toBe("eliminated");
     expect(watchStatusToPlayerState("unknown")).toBe("unknown");
+  });
+
+  it("routes live games and completed transcript replays into the shell", () => {
+    const liveDecision = getMatchWatchRouteDecision(baseGame(), []);
+    expect(liveDecision).toEqual({
+      eligible: true,
+      mode: "live",
+      reason: "live_game",
+    });
+
+    const completedGame = {
+      ...baseGame(),
+      status: "completed" as const,
+      currentPhase: "END" as const,
+    };
+    const replayDecision = getMatchWatchRouteDecision(completedGame, [
+      {
+        id: 1,
+        gameId: "game-1",
+        round: 1,
+        phase: "END",
+        fromPlayerId: null,
+        fromPlayerName: null,
+        scope: "system",
+        toPlayerIds: null,
+        text: "Game over.",
+        timestamp: 1,
+      },
+    ]);
+
+    expect(replayDecision).toEqual({
+      eligible: true,
+      mode: "replay",
+      reason: "replay_transcript",
+    });
+  });
+
+  it("keeps waiting and empty completed games out of the shell", () => {
+    expect(getMatchWatchRouteDecision({
+      ...baseGame(),
+      status: "waiting",
+    }, [])).toEqual({
+      eligible: false,
+      mode: null,
+      reason: "waiting",
+    });
+
+    expect(getMatchWatchRouteDecision({
+      ...baseGame(),
+      status: "completed",
+      currentPhase: "END",
+    }, [])).toEqual({
+      eligible: false,
+      mode: null,
+      reason: "no_replay_transcript",
+    });
+  });
+
+  it("builds shell display state from watch state before transcript fallbacks", () => {
+    const game = applyWatchStateToGameDetail(baseGame(), watchState());
+    const model = buildMatchWatchModel({
+      game,
+      messages: [],
+      live: true,
+      connStatus: "live",
+      selectedPlayerId: "p2",
+    });
+
+    expect(model.mode).toBe("live");
+    expect(model.roundLabel).toBe("Round 2");
+    expect(model.phase).toBe("VOTE");
+    expect(model.phaseLabel).toBe("Voting");
+    expect(model.counts).toEqual({
+      totalPlayers: 2,
+      alivePlayers: 1,
+      eliminatedPlayers: 1,
+      unknownPlayers: 0,
+    });
+    expect(model.selectedPlayer?.player.name).toBe("Bob");
+    expect(model.selectedPlayer?.statusLabel).toBe("Out");
+    expect(model.sourceLabel).toBe("Durable Projection");
+    expect(model.phaseSegments.find((segment) => segment.key === "VOTE")?.state).toBe("current");
+    expect(model.phaseSegments.find((segment) => segment.key === "MINGLE")?.state).toBe("past");
+  });
+
+  it("uses replay playback state over terminal watch state for completed replay chrome", () => {
+    const game = applyWatchStateToGameDetail(baseGame(), watchState({
+      status: "completed",
+      currentRound: 4,
+      currentPhase: "END",
+      players: [
+        {
+          id: "p1",
+          name: "Alice",
+          persona: "strategic",
+          status: "alive",
+          shielded: true,
+        },
+        {
+          id: "p2",
+          name: "Bob",
+          persona: "diplomat",
+          status: "eliminated",
+          shielded: false,
+        },
+      ],
+      counts: {
+        totalPlayers: 2,
+        alivePlayers: 1,
+        eliminatedPlayers: 1,
+        unknownPlayers: 0,
+      },
+      final: {
+        status: "final",
+        winner: {
+          id: "p1",
+          name: "Alice",
+          source: "durable_projection",
+        },
+      },
+    }));
+    const model = buildMatchWatchModel({
+      game,
+      messages: [],
+      live: false,
+      connStatus: "replay",
+      playbackState: {
+        round: 1,
+        phase: "LOBBY",
+        players: baseGame().players,
+        counts: {
+          totalPlayers: 2,
+          alivePlayers: 2,
+          eliminatedPlayers: 0,
+          unknownPlayers: 0,
+        },
+        visibleMessages: [
+          {
+            id: 2,
+            gameId: "game-1",
+            round: 1,
+            phase: "LOBBY",
+            fromPlayerId: "p2",
+            fromPlayerName: "Bob",
+            scope: "public",
+            toPlayerIds: null,
+            text: "This is still the lobby.",
+            timestamp: 2,
+          },
+        ],
+      },
+    });
+
+    expect(model.roundLabel).toBe("Round 1");
+    expect(model.phase).toBe("LOBBY");
+    expect(model.phaseLabel).toBe("Public Lobby");
+    expect(model.counts.alivePlayers).toBe(2);
+    expect(model.counts.eliminatedPlayers).toBe(0);
+    expect(model.selectedPlayer?.player.name).toBe("Alice");
+    expect(model.selectedPlayer?.detail).toBe("Alive");
+    expect(model.latestPublicMessage?.text).toBe("This is still the lobby.");
+    expect(model.phaseSegments.find((segment) => segment.key === "LOBBY")?.state).toBe("current");
+    expect(model.phaseSegments.find((segment) => segment.key === "END")?.state).toBe("future");
   });
 });

@@ -39,6 +39,7 @@ import { VoteTallyOverlay, SpectacleMessageContent } from "./vote-display";
 import { buildReplayScenes } from "./spectacle-viewer";
 import { shouldSuppressDramaticAdvance } from "./dramatic-interaction";
 import { getHouseSummaryExtraHoldMs, getJuryClosingStatementsExtraHoldMs, getJuryOpeningStatementsExtraHoldMs, getJuryQuestionsExtraHoldMs } from "./dramatic-timing";
+import type { MatchWatchPlaybackState } from "./match-watch-model";
 
 export function DramaticReplayViewer({
   game,
@@ -46,12 +47,16 @@ export function DramaticReplayViewer({
   players,
   live = false,
   connStatus,
+  embedded = false,
+  onPlaybackStateChange,
 }: {
   game: GameDetail;
   messages: TranscriptEntry[];
   players: GamePlayer[];
   live?: boolean;
   connStatus?: "connecting" | "live" | "disconnected" | "reconnecting" | "replay";
+  embedded?: boolean;
+  onPlaybackStateChange?: (state: MatchWatchPlaybackState) => void;
 }) {
   const [showThinking, setShowThinking] = useState(!live); // default true for replay
   // Backward compat: always filter out old scope='thinking' entries (they lack per-message association)
@@ -261,8 +266,27 @@ export function DramaticReplayViewer({
     players.map((p) => ({
       ...p,
       status: eliminatedIds.has(p.id) ? "eliminated" as const : "alive" as const,
+      shielded: live ? p.shielded : false,
     })),
-  [players, eliminatedIds]);
+  [players, eliminatedIds, live]);
+
+  useEffect(() => {
+    if (!scene || !onPlaybackStateChange) return;
+    const eliminatedPlayers = replayPlayers.filter((player) => player.status === "eliminated").length;
+    const unknownPlayers = 0;
+    onPlaybackStateChange({
+      round: scene.round,
+      phase: scene.phase,
+      players: replayPlayers,
+      counts: {
+        totalPlayers: replayPlayers.length,
+        alivePlayers: replayPlayers.length - eliminatedPlayers - unknownPlayers,
+        eliminatedPlayers,
+        unknownPlayers,
+      },
+      visibleMessages: allVisibleMessages,
+    });
+  }, [allVisibleMessages, onPlaybackStateChange, replayPlayers, scene]);
 
   // For per-player diary scenes: build a DiaryRoomData for single-player rendering
   const diaryRoomData = useMemo(() => {
@@ -636,7 +660,7 @@ export function DramaticReplayViewer({
 
   if (!scene || totalScenes === 0) {
     return (
-      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center gap-4">
+      <div className={`${embedded ? "relative h-full min-h-[24rem]" : "fixed inset-0"} bg-black flex flex-col items-center justify-center gap-4`}>
         {live ? (
           <>
             <div className="flex items-center gap-1.5">
@@ -678,7 +702,11 @@ export function DramaticReplayViewer({
 
   return (
     <div
-      className="fixed inset-0 z-30 influence-shell flex flex-col cursor-pointer select-none"
+      className={`influence-shell flex flex-col cursor-pointer select-none ${
+        embedded
+          ? "relative h-full min-h-0 overflow-hidden"
+          : "fixed inset-0 z-30"
+      }`}
       onClick={handleClick}
       onMouseMove={handleMouseMove}
       onTouchStart={handleTouchStart}
@@ -709,7 +737,7 @@ export function DramaticReplayViewer({
         />
       )}
       {showHouseOverlay && scene.houseIntro && (
-        <div className="fixed inset-0 z-40 bg-black/90 flex flex-col items-center justify-center animate-[fadeIn_0.3s_ease-out]">
+        <div className={`${embedded ? "absolute" : "fixed"} inset-0 z-40 bg-black/90 flex flex-col items-center justify-center animate-[fadeIn_0.3s_ease-out]`}>
           <p className="text-white/20 text-xs tracking-[0.4em] uppercase mb-4">◆ THE HOUSE ◆</p>
           <p className="text-white/60 italic text-lg max-w-lg text-center px-6 leading-relaxed">
             {scene.houseIntro}
@@ -718,65 +746,71 @@ export function DramaticReplayViewer({
       )}
 
       {/* Exit button — top-left, auto-hides with controls */}
-      <button
-        type="button"
-        data-replay-controls
-        onClick={(e) => {
-          e.stopPropagation();
-          window.history.back();
-        }}
-        className={`fixed top-[max(1rem,env(safe-area-inset-top))] left-4 z-[70] w-9 h-9 flex items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/50 hover:text-white hover:border-white/25 transition-all duration-500 ${
-          controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
-        }`}
-        title="Exit"
-      >
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-          <path d="M1 1l12 12M13 1L1 13" />
-        </svg>
-      </button>
+      {!embedded && (
+        <button
+          type="button"
+          data-replay-controls
+          onClick={(e) => {
+            e.stopPropagation();
+            window.history.back();
+          }}
+          className={`fixed top-[max(1rem,env(safe-area-inset-top))] left-4 z-[70] w-9 h-9 flex items-center justify-center rounded-full border border-white/10 bg-black/50 text-white/50 hover:text-white hover:border-white/25 transition-all duration-500 ${
+            controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
+          }`}
+          title="Exit"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <path d="M1 1l12 12M13 1L1 13" />
+          </svg>
+        </button>
+      )}
 
       {/* Top bar — phase context */}
-      <div className={`flex-shrink-0 px-4 md:px-6 pt-4 md:pt-5 pb-2 md:pb-3 flex items-center justify-between z-[60] pointer-events-none transition-opacity duration-500 ${
-        controlsVisible || !isPlaying ? "opacity-100" : "opacity-0"
-      }`}>
-        <div className="flex items-center gap-2 md:gap-3 pl-10 min-w-0">
-          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ROOM_TYPE_COLORS[scene.roomType]}`} />
-          <span className={`text-xs font-semibold uppercase tracking-[0.25em] ${phaseColor(scene.phase)} truncate`}>
-            {isOpenWhisperScene ? "MINGLE" : (PHASE_TRANSITION_LABELS[scene.phase] ?? scene.phase)}
-          </span>
-          {roomLabel && (
-            <span className="text-xs text-purple-300/50 hidden md:inline">{roomLabel}</span>
-          )}
-          {isNewRound && (
-            <span className="text-xs text-white/25 uppercase tracking-wider hidden md:inline">
-              Round {scene.round}
+      {!embedded && (
+        <div className={`flex-shrink-0 px-4 md:px-6 pt-4 md:pt-5 pb-2 md:pb-3 flex items-center justify-between z-[60] pointer-events-none transition-opacity duration-500 ${
+          controlsVisible || !isPlaying ? "opacity-100" : "opacity-0"
+        }`}>
+          <div className="flex items-center gap-2 md:gap-3 pl-10 min-w-0">
+            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ROOM_TYPE_COLORS[scene.roomType]}`} />
+            <span className={`text-xs font-semibold uppercase tracking-[0.25em] ${phaseColor(scene.phase)} truncate`}>
+              {isOpenWhisperScene ? "MINGLE" : (PHASE_TRANSITION_LABELS[scene.phase] ?? scene.phase)}
             </span>
-          )}
+            {roomLabel && (
+              <span className="text-xs text-purple-300/50 hidden md:inline">{roomLabel}</span>
+            )}
+            {isNewRound && (
+              <span className="text-xs text-white/25 uppercase tracking-wider hidden md:inline">
+                Round {scene.round}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
+            {/* Compact mobile HUD: round + player counts */}
+            <span className="text-[10px] text-white/30 md:hidden">
+              R{scene.round} · {aliveCount} alive
+            </span>
+            <ConnectionBadge status={connStatus ?? "replay"} />
+          </div>
         </div>
-        <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
-          {/* Compact mobile HUD: round + player counts */}
-          <span className="text-[10px] text-white/30 md:hidden">
-            R{scene.round} · {aliveCount} alive
-          </span>
-          <ConnectionBadge status={connStatus ?? "replay"} />
-        </div>
-      </div>
+      )}
 
       {/* Game state HUD — top-right corner, auto-hides with controls, hidden on mobile */}
-      <div
-        data-replay-controls
-        className={`fixed top-14 right-4 z-[60] transition-opacity duration-500 hidden md:block ${
-          controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
-        }`}
-      >
-        <GameStateHUD
-          players={replayPlayers}
-          currentRound={scene.round}
-          maxRounds={game.maxRounds}
-          phase={scene.phase}
-          empoweredPlayerId={null}
-        />
-      </div>
+      {!embedded && (
+        <div
+          data-replay-controls
+          className={`fixed top-14 right-4 z-[60] transition-opacity duration-500 hidden md:block ${
+            controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
+          }`}
+        >
+          <GameStateHUD
+            players={replayPlayers}
+            currentRound={scene.round}
+            maxRounds={game.maxRounds}
+            phase={scene.phase}
+            empoweredPlayerId={null}
+          />
+        </div>
+      )}
 
       {/* Scene progress bar */}
       <div className="px-6 z-[60]">
