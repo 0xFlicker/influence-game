@@ -429,8 +429,15 @@ function applyReplayPressureToPlayers(
 }
 
 function clearPressureFields(player: GamePlayer): GamePlayer {
-  const { pressureStatus: _pressureStatus, exposeScore: _exposeScore, ...rest } = player;
-  return rest;
+  return {
+    id: player.id,
+    name: player.name,
+    persona: player.persona,
+    ...(player.personaKey ? { personaKey: player.personaKey } : {}),
+    status: player.status,
+    shielded: player.shielded,
+    ...(player.avatarUrl ? { avatarUrl: player.avatarUrl } : {}),
+  };
 }
 
 function deriveReplayPressure(
