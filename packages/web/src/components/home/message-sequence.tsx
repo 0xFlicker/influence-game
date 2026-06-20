@@ -110,11 +110,11 @@ export function MessageSequence() {
 
                 <div className={`min-w-0 ${isRight ? "home-message-content-right" : "flex-1"}`}>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                    <h3 className="text-sm font-semibold text-text-primary">
+                    <h3 className="shrink-0 whitespace-nowrap text-sm font-semibold text-text-primary">
                       {beat.speaker}
                     </h3>
                     {agent ? (
-                      <span className="text-[11px] uppercase tracking-[0.18em] text-text-secondary/80">
+                      <span className="shrink-0 whitespace-nowrap text-[11px] uppercase tracking-[0.18em] text-text-secondary/80">
                         {agent.archetype}
                       </span>
                     ) : null}

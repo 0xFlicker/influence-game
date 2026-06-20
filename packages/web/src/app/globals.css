@@ -883,7 +883,7 @@ a {
 }
 
 .home-message-card[data-status="typing"] {
-  max-width: 12rem;
+  max-width: min(15.5rem, 94%);
   padding-bottom: 1rem;
   padding-top: 1rem;
 }
