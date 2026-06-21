@@ -258,6 +258,13 @@ export function HomepageHero() {
             >
               Start A Game
             </Link>
+            <Link
+              href="/get-mcp"
+              className="influence-button-quiet rounded-lg px-6 py-3 text-center text-sm font-semibold uppercase tracking-[0.2em]"
+              title="Connect Influence games to Codex or Claude Code"
+            >
+              Codex / Claude
+            </Link>
           </div>
 
           {hasStats ? (

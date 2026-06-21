@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: MCP Install Callout and Instructions</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070910;
+      --panel: #111722;
+      --panel-2: #161f2d;
+      --panel-3: #0d131d;
+      --text: #f4f7fb;
+      --muted: #aab5c4;
+      --line: #2d3a4c;
+      --accent: #91d7ff;
+      --accent-2: #d9b36c;
+      --good: #79d6a3;
+      --warn: #ffbf7a;
+      --bad: #ff8f8f;
+      --code: #05070c;
+      --shadow: 0 22px 58px rgba(0, 0, 0, 0.32);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 18% 0%, rgba(145, 215, 255, 0.14), transparent 30rem),
+        radial-gradient(circle at 88% 8%, rgba(217, 179, 108, 0.12), transparent 26rem),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px;
+      line-height: 1.62;
+    }
+
+    a { color: var(--accent); text-underline-offset: 0.18em; }
+
+    code {
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--code);
+      color: #e8f2ff;
+      padding: 0.08rem 0.28rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    .page {
+      width: min(1040px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 42px 0 66px;
+    }
+
+    .hero,
+    section,
+    footer {
+      margin-block: 22px;
+    }
+
+    .hero,
+    section {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: linear-gradient(180deg, rgba(22, 31, 45, 0.96), rgba(13, 19, 29, 0.98));
+      box-shadow: var(--shadow);
+    }
+
+    .hero { padding: 32px; }
+    section { padding: 26px; }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 16ch;
+      font-size: clamp(2.1rem, 5vw, 4rem);
+    }
+
+    h2 { margin-bottom: 14px; font-size: 1.45rem; }
+    h3 { font-size: 1.08rem; }
+    p { max-width: 78ch; }
+
+    ul,
+    ol { padding-left: 1.25rem; }
+    li + li { margin-top: 0.42rem; }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent-2);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .lede {
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 1.05rem;
+    }
+
+    .metadata,
+    .stats,
+    .card-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 20px 0 0;
+    }
+
+    .metadata div,
+    .stats div,
+    .pill {
+      border: 1px solid rgba(145, 215, 255, 0.28);
+      border-radius: 999px;
+      background: rgba(145, 215, 255, 0.08);
+      color: #d9f2ff;
+      padding: 7px 11px;
+      font-size: 0.88rem;
+      font-weight: 700;
+    }
+
+    .metadata dt,
+    .card-meta dt {
+      display: inline;
+      margin-right: 4px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .metadata dd,
+    .card-meta dd {
+      display: inline;
+      margin: 0;
+    }
+
+    .callout {
+      border: 1px solid rgba(217, 179, 108, 0.38);
+      border-radius: 8px;
+      background: rgba(217, 179, 108, 0.10);
+      padding: 16px;
+    }
+
+    .axis-list,
+    .jump-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 12px;
+      padding: 0;
+      margin: 0;
+      list-style: none;
+    }
+
+    .axis-list li,
+    .jump-list li {
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 12px;
+    }
+
+    .jump-list a {
+      display: block;
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .jump-list span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+
+    .idea-card {
+      margin-top: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.035);
+      padding: 20px;
+    }
+
+    .idea-card h3 {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 10px;
+      color: var(--text);
+    }
+
+    .rank {
+      color: var(--accent-2);
+      font-size: 0.95rem;
+      font-weight: 900;
+    }
+
+    .card-meta {
+      margin-top: 12px;
+      gap: 8px;
+    }
+
+    .card-meta div {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 5px 9px;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+
+    .field {
+      margin-top: 12px;
+    }
+
+    .field strong {
+      color: #d9f2ff;
+    }
+
+    .diagram {
+      margin-top: 16px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-3);
+      padding: 14px;
+    }
+
+    svg {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 11px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: rgba(255, 255, 255, 0.05);
+      color: #d9f2ff;
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    .composition-signal {
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">Ideation</p>
+      <h1>MCP Install Callout and Instructions</h1>
+      <p class="lede">Ranked directions for making the existing Influence MCP installable from the app, with one page that helps users add it to Codex or Claude without losing the OAuth and scope boundaries that already matter.</p>
+      <dl class="metadata">
+        <div><dt>Date</dt><dd>2026-06-21</dd></div>
+        <div><dt>Topic</dt><dd>mcp-install-callout-instructions</dd></div>
+        <div><dt>Focus</dt><dd>UI callout plus one install-instructions page for Codex and Claude</dd></div>
+        <div><dt>Mode</dt><dd>repo-grounded</dd></div>
+      </dl>
+    </header>
+
+    <section>
+      <h2>Grounding Context</h2>
+      <p>Influence's strategy explicitly prioritizes AI app compatibility: make the product usable from ChatGPT, Claude, and other agent/app surfaces through OAuth, MCP, and manifest-compatible access. It serves the broader agent-development loop by reaching users where AI-native tinkerers already work.</p>
+      <p>The protocol surface is already well shaped. The production docs define two resources: user-facing <code>/mcp</code> with OAuth <code>scope=games</code>, and producer <code>/mcp/producer</code> with <code>scope=mcp</code> plus the current <code>mcp</code> role. The same document already gives Codex TOML snippets and Claude Code HTTP commands, plus operational checks for protected-resource metadata and authorization-server metadata.</p>
+      <p>The current web app has a compact public nav, an authenticated dashboard with Open Games, Your History, and Your Agents, and an OAuth authorization page that already explains the difference between user game access and global producer access. What is missing is product discovery and a user-facing setup path. Today, the MCP exists as a developer doc and OAuth flow, not as a discoverable product affordance.</p>
+      <p>External docs reinforce the shape. Codex supports Streamable HTTP MCP servers and OAuth login, stores MCP configuration in <code>config.toml</code>, and uses server-advertised scopes during OAuth when available. Claude Code recommends HTTP for remote MCP servers, supports <code>claude mcp add --transport http</code>, and authenticates remote MCP servers through <code>/mcp</code> plus the browser flow. The MCP spec requires protected-resource metadata, authorization-server metadata, bearer tokens on every request, resource indicators, HTTPS except localhost redirects, and PKCE.</p>
+      <p>Relevant internal evidence: <code>docs/game-mcp-production-oauth.md:7-10</code>, <code>docs/game-mcp-production-oauth.md:89-124</code>, <code>packages/web/src/components/nav.tsx:37-70</code>, <code>packages/web/src/app/dashboard/dashboard-content.tsx:289-371</code>, <code>packages/web/src/app/oauth/mcp/authorize/authorize-client.tsx:241-247</code>, <code>STRATEGY.md:30-34</code>.</p>
+    </section>
+
+    <section>
+      <h2>Topic Axes</h2>
+      <ul class="axis-list">
+        <li><strong>Discovery moment</strong><br>Where the user first learns this is possible.</li>
+        <li><strong>Single-page instruction contract</strong><br>What one page must say without becoming a protocol manual.</li>
+        <li><strong>Client-specific setup clarity</strong><br>How Codex and Claude instructions stay accurate and copyable.</li>
+        <li><strong>Trust and permission framing</strong><br>How users understand <code>games</code> versus producer <code>mcp</code>.</li>
+        <li><strong>Validation and support loop</strong><br>How the page helps users and maintainers diagnose broken OAuth discovery.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Ranked Ideas</h2>
+      <ul class="jump-list">
+        <li><a href="#idea-1">Dashboard Bridge Card<span>Discovery moment</span></a></li>
+        <li><a href="#idea-2">Role-Aware Setup Page<span>Single-page instruction contract</span></a></li>
+        <li><a href="#idea-3">Client Tabs With Live Snippets<span>Client-specific setup clarity</span></a></li>
+        <li><a href="#idea-4">OAuth Discovery Health Strip<span>Validation and support loop</span></a></li>
+        <li><a href="#idea-5">Permission Receipt Language<span>Trust and permission framing</span></a></li>
+        <li><a href="#idea-6">Post-Install Starter Prompts<span>Discovery moment</span></a></li>
+        <li><a href="#idea-7">Troubleshooting Appendix<span>Validation and support loop</span></a></li>
+      </ul>
+
+      <article class="idea-card" id="idea-1">
+        <h3><span class="rank">1.</span> Dashboard Bridge Card</h3>
+        <dl class="card-meta">
+          <div><dt>Axis</dt><dd>Discovery moment</dd></div>
+          <div><dt>Confidence</dt><dd>88%</dd></div>
+          <div><dt>Complexity</dt><dd>Low</dd></div>
+        </dl>
+        <p class="field"><strong>Description:</strong> Add a compact callout on the authenticated dashboard, near Your History and Your Agents: "Use your Influence games from Codex or Claude." The card links to the single setup page and says what users can do after connecting: list their games, inspect projections, read revealed facts, and review authorized cognitive artifacts.</p>
+        <p class="field"><strong>Basis:</strong> direct: <code>STRATEGY.md:30-34</code> makes AI app compatibility a named track; <code>packages/web/src/app/dashboard/dashboard-content.tsx:334-371</code> shows the dashboard already clusters game history and agents, the exact objects MCP exposes.</p>
+        <p class="field"><strong>Rationale:</strong> This meets users at the moment they have both a reason and the permissions context. It avoids cluttering public navigation while still making MCP visible to the primary user once signed in.</p>
+        <p class="field"><strong>Downsides:</strong> Users with no games or no agents may see a capability before it feels useful, so the card should adapt empty-state copy instead of sounding like a generic integration ad.</p>
+      </article>
+
+      <article class="idea-card" id="idea-2">
+        <h3><span class="rank">2.</span> Role-Aware Setup Page</h3>
+        <dl class="card-meta">
+          <div><dt>Axis</dt><dd>Single-page instruction contract</dd></div>
+          <div><dt>Confidence</dt><dd>86%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <p class="field"><strong>Description:</strong> Create one page, probably <code>/mcp</code> or <code>/connect/mcp</code>, with the user-facing <code>/mcp</code> lane first and a clearly separated producer lane only when the viewer has the <code>mcp</code> role. The default page should not teach producer/private-trace access to ordinary users.</p>
+        <p class="field"><strong>Basis:</strong> direct: <code>docs/game-mcp-production-oauth.md:7-10</code> defines the two resource profiles and says not to reinterpret <code>scope=mcp</code> as user-scoped; <code>packages/web/src/app/oauth/mcp/authorize/authorize-client.tsx:241-247</code> already has distinct user and producer grant copy.</p>
+        <p class="field"><strong>Rationale:</strong> One page keeps the instruction surface easy to find and maintain, but role awareness preserves the literal access boundary. It also gives maintainers one canonical place to update client snippets when Codex or Claude behavior shifts.</p>
+        <p class="field"><strong>Downsides:</strong> Role-aware content creates test burden around signed-out, signed-in, and producer-role states. The page needs to avoid revealing producer instructions through static HTML if that is considered sensitive.</p>
+        <div class="diagram" aria-label="Role-aware setup page flow">
+          <svg width="820" height="190" viewBox="0 0 820 190" role="img">
+            <rect x="24" y="48" width="170" height="92" rx="8" fill="#111722" stroke="#91d7ff"/>
+            <text x="109" y="82" fill="#f4f7fb" text-anchor="middle" font-size="15" font-weight="700">Setup page</text>
+            <text x="109" y="108" fill="#aab5c4" text-anchor="middle" font-size="12">one route</text>
+            <path d="M194 94 H308" stroke="#91d7ff" stroke-width="2"/>
+            <path d="M194 116 C250 116 255 150 308 150" stroke="#d9b36c" stroke-width="2" fill="none"/>
+            <rect x="308" y="48" width="214" height="92" rx="8" fill="#0d131d" stroke="#91d7ff"/>
+            <text x="415" y="78" fill="#f4f7fb" text-anchor="middle" font-size="15" font-weight="700">User lane</text>
+            <text x="415" y="104" fill="#aab5c4" text-anchor="middle" font-size="12">/mcp, scope=games</text>
+            <rect x="308" y="124" width="214" height="44" rx="8" fill="#15140f" stroke="#d9b36c"/>
+            <text x="415" y="151" fill="#f4f7fb" text-anchor="middle" font-size="13" font-weight="700">Producer appendix if role=mcp</text>
+            <path d="M522 94 H638" stroke="#91d7ff" stroke-width="2"/>
+            <rect x="638" y="48" width="158" height="92" rx="8" fill="#111722" stroke="#91d7ff"/>
+            <text x="717" y="82" fill="#f4f7fb" text-anchor="middle" font-size="15" font-weight="700">Codex / Claude</text>
+            <text x="717" y="108" fill="#aab5c4" text-anchor="middle" font-size="12">copy, auth, test</text>
+          </svg>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-3">
+        <h3><span class="rank">3.</span> Client Tabs With Live Snippets</h3>
+        <dl class="card-meta">
+          <div><dt>Axis</dt><dd>Client-specific setup clarity</dd></div>
+          <div><dt>Confidence</dt><dd>84%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <p class="field"><strong>Description:</strong> Put Codex and Claude Code in tabs or segmented controls. Codex should show a <code>config.toml</code> block for <code>[mcp_servers.influence_game]</code>, plus <code>codex mcp login influence_game</code>. Claude should show <code>claude mcp add --transport http influence-game https://.../mcp</code> and the instruction to run <code>/mcp</code> in Claude Code to authenticate.</p>
+        <p class="field"><strong>Basis:</strong> direct: <code>docs/game-mcp-production-oauth.md:91-124</code> already provides both client paths. external: OpenAI documents Streamable HTTP <code>url</code> config and OAuth login for Codex; Anthropic documents HTTP remote server setup with <code>claude mcp add --transport http</code> and browser authentication through <code>/mcp</code>.</p>
+        <p class="field"><strong>Rationale:</strong> A single generic "add an MCP" page will be annoying because users do not install Codex and Claude the same way. Client tabs let the page stay single-source while still feeling native to each tool.</p>
+        <p class="field"><strong>Downsides:</strong> Codex CLI support for adding HTTP servers via CLI may be less visible than direct TOML config in the docs, so Codex copy should prefer the documented config path unless the exact CLI syntax is verified in the implementation pass.</p>
+      </article>
+
+      <article class="idea-card" id="idea-4">
+        <h3><span class="rank">4.</span> OAuth Discovery Health Strip</h3>
+        <dl class="card-meta">
+          <div><dt>Axis</dt><dd>Validation and support loop</dd></div>
+          <div><dt>Confidence</dt><dd>80%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <p class="field"><strong>Description:</strong> Add a small status strip to the setup page that checks the current environment's public MCP readiness: protected-resource metadata, authorization-server metadata, and unauthenticated <code>POST /mcp</code> challenge shape. For normal users, render plain statuses like "OAuth discovery ready"; for maintainers, expose exact endpoint results.</p>
+        <p class="field"><strong>Basis:</strong> direct: <code>docs/game-mcp-production-oauth.md:137-148</code> lists these checks as readiness gates. external: the MCP authorization spec requires protected-resource metadata, authorization-server metadata, and <code>WWW-Authenticate</code> discovery on 401 responses.</p>
+        <p class="field"><strong>Rationale:</strong> This turns a historically brittle routing problem into a visible product/support signal. If a deployment breaks OAuth discovery, the instructions page becomes the first diagnostic surface instead of a dead-end copy block.</p>
+        <p class="field"><strong>Downsides:</strong> A live health strip can create noise if staging or local development intentionally lacks public metadata. It should be environment-aware and degrade to "not checked" rather than presenting false failure as user error.</p>
+      </article>
+
+      <article class="idea-card" id="idea-5">
+        <h3><span class="rank">5.</span> Permission Receipt Language</h3>
+        <dl class="card-meta">
+          <div><dt>Axis</dt><dd>Trust and permission framing</dd></div>
+          <div><dt>Confidence</dt><dd>82%</dd></div>
+          <div><dt>Complexity</dt><dd>Low</dd></div>
+        </dl>
+        <p class="field"><strong>Description:</strong> Make the setup page use the same grant language as the OAuth consent screen, and add a "what this can read" receipt before the user starts. For <code>games</code>, say created/joined games and owned player/agent records; for producer <code>mcp</code>, say global developer inspection and private reasoning tools.</p>
+        <p class="field"><strong>Basis:</strong> direct: <code>docs/game-mcp-production-oauth.md:66-87</code> enumerates user and producer tools; <code>packages/web/src/app/oauth/mcp/authorize/authorize-client.tsx:241-247</code> already contains concise grant descriptions.</p>
+        <p class="field"><strong>Rationale:</strong> The setup page is pre-consent; it should prepare the user for what the OAuth screen will ask. Reusing the consent language reduces drift and makes later security reviews easier.</p>
+        <p class="field"><strong>Downsides:</strong> If the page gets too careful, it may feel like a warning wall. Keep it receipt-shaped, not legalistic.</p>
+      </article>
+
+      <article class="idea-card" id="idea-6">
+        <h3><span class="rank">6.</span> Post-Install Starter Prompts</h3>
+        <dl class="card-meta">
+          <div><dt>Axis</dt><dd>Discovery moment</dd></div>
+          <div><dt>Confidence</dt><dd>74%</dd></div>
+          <div><dt>Complexity</dt><dd>Low</dd></div>
+        </dl>
+        <p class="field"><strong>Description:</strong> After the install snippets, show three copyable starter prompts: list my Influence games, summarize my latest completed game, and read my agent's strategy artifacts for a specific game. Optionally add a per-game replay link that says "Ask Codex or Claude about this game" and points back to setup if the user has not connected yet.</p>
+        <p class="field"><strong>Basis:</strong> direct: <code>docs/game-mcp-production-oauth.md:66-74</code> lists user-facing MCP tools; <code>STRATEGY.md:36-40</code> says reasoning access turns watching into improvement.</p>
+        <p class="field"><strong>Rationale:</strong> Install docs are necessary but not sufficient. Starter prompts help the user experience the agent-development loop immediately after configuration.</p>
+        <p class="field"><strong>Downsides:</strong> This can drift into product support for client prompting. Keep examples few and tied to actual tool capabilities.</p>
+      </article>
+
+      <article class="idea-card" id="idea-7">
+        <h3><span class="rank">7.</span> Troubleshooting Appendix</h3>
+        <dl class="card-meta">
+          <div><dt>Axis</dt><dd>Validation and support loop</dd></div>
+          <div><dt>Confidence</dt><dd>76%</dd></div>
+          <div><dt>Complexity</dt><dd>Low</dd></div>
+        </dl>
+        <p class="field"><strong>Description:</strong> Add a short appendix with the real failure modes: OAuth page does not open, "No authorization support detected", wrong scope/resource, token expired, and producer role required. Keep it task-oriented and link each symptom to the specific setup or environment check.</p>
+        <p class="field"><strong>Basis:</strong> direct: <code>docs/game-mcp-production-oauth.md:141-148</code> lists failure checks; memory from prior Influence MCP work says staging/prod failures often came from root-level well-known and <code>/mcp</code> routes reaching the wrong service.</p>
+        <p class="field"><strong>Rationale:</strong> This buys support leverage without expanding the main page. It also preserves hard-won operational knowledge where a user or maintainer will look when connecting a client.</p>
+        <p class="field"><strong>Downsides:</strong> Troubleshooting copy can stale quickly. The appendix should link to live health checks and current docs rather than becoming a giant runbook.</p>
+      </article>
+    </section>
+
+    <section>
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Idea</th>
+            <th>Reason Rejected</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>Top-nav MCP link for everyone</td>
+            <td>Too prominent for an authenticated integration; likely clutters the public nav before users have game history or agents.</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>Separate Codex and Claude pages</td>
+            <td>Duplicates protocol truth and makes drift more likely; client tabs preserve specificity inside one canonical page.</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>README-only setup instructions</td>
+            <td>Already mostly exists in docs, but the request is for UI discovery and a page users can reach from the app.</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>Homepage MCP hero</td>
+            <td>Scope overrun; MCP is a powerful companion surface, not the first public explanation of the game.</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>ChatGPT app submission instructions now</td>
+            <td>Current docs explicitly keep public ChatGPT app submission out of scope; Codex and Claude are the requested targets.</td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td>Admin-only MCP setup page</td>
+            <td>Confuses producer access with user-facing <code>games</code> access and hides the main product loop from ordinary agent owners.</td>
+          </tr>
+          <tr>
+            <td>7</td>
+            <td>OAuth audit-log viewer</td>
+            <td>Interesting maintainer tool, but too far beyond a setup callout and instructions page.</td>
+          </tr>
+          <tr>
+            <td>8</td>
+            <td>QR/deep links into clients</td>
+            <td>Unverified client support and too much ceremony for a copy-paste developer workflow.</td>
+          </tr>
+          <tr>
+            <td>9</td>
+            <td>Profile settings callout only</td>
+            <td>Too buried for a capability that connects directly to games and agents; dashboard placement is stronger.</td>
+          </tr>
+          <tr>
+            <td>10</td>
+            <td>Local-dev snippets as a primary lane</td>
+            <td>Useful for maintainers, but the requested page should teach the deployed user path first.</td>
+          </tr>
+          <tr>
+            <td>11</td>
+            <td>Consent page cross-link as the main move</td>
+            <td>Helpful supporting detail, but it only catches users after they are already in the OAuth flow.</td>
+          </tr>
+          <tr>
+            <td>12</td>
+            <td>Post-auth return page</td>
+            <td>Overbuilt for the current OAuth client flow; the client already owns the callback experience.</td>
+          </tr>
+          <tr>
+            <td>13</td>
+            <td>Standalone tool capability matrix</td>
+            <td>Better folded into permission receipt copy; a large matrix would make setup feel more complex than it is.</td>
+          </tr>
+          <tr>
+            <td>14</td>
+            <td>Minimal footer link only</td>
+            <td>Too easy to miss and does not create the product-level callout the request is aiming at.</td>
+          </tr>
+          <tr>
+            <td>15</td>
+            <td>Interactive CLI command wizard</td>
+            <td>Nice polish, but static client tabs with copy buttons solve the primary problem with less surface area.</td>
+          </tr>
+          <tr>
+            <td>16</td>
+            <td>Copy-all config package</td>
+            <td>Duplicates the client tab idea and risks users pasting producer config when they only need user access.</td>
+          </tr>
+          <tr>
+            <td>17</td>
+            <td>Producer-only warning banner</td>
+            <td>Valid as page copy, but too narrow to stand as its own product direction.</td>
+          </tr>
+          <tr>
+            <td>18</td>
+            <td>Game history row-only callout</td>
+            <td>Too narrow; a dashboard card plus optional replay starter prompt covers more states.</td>
+          </tr>
+          <tr>
+            <td>19</td>
+            <td>Rules page instructions</td>
+            <td>Wrong information scent; MCP setup is an app/tooling action, not game-rule education.</td>
+          </tr>
+          <tr>
+            <td>20</td>
+            <td>Public marketing section for MCP</td>
+            <td>Likely confusing before users understand games or agents; keep public marketing focused on the game.</td>
+          </tr>
+          <tr>
+            <td>21</td>
+            <td>Separate maintainer runbook page</td>
+            <td>Too much documentation sprawl; maintainer notes should live as an appendix or existing docs link.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Sources And References</h2>
+      <ul>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/game-mcp-production-oauth.md">docs/game-mcp-production-oauth.md</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/web/src/app/dashboard/dashboard-content.tsx">packages/web/src/app/dashboard/dashboard-content.tsx</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/web/src/app/oauth/mcp/authorize/authorize-client.tsx">packages/web/src/app/oauth/mcp/authorize/authorize-client.tsx</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/STRATEGY.md">STRATEGY.md</a></li>
+        <li><a href="https://developers.openai.com/codex/mcp">OpenAI Codex MCP docs</a></li>
+        <li><a href="https://docs.anthropic.com/en/docs/claude-code/mcp">Claude Code MCP docs</a></li>
+        <li><a href="https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization">MCP authorization spec</a></li>
+        <li><a href="https://modelcontextprotocol.io/specification/2025-06-18/basic/transports">MCP transports spec</a></li>
+      </ul>
+    </section>
+
+    <footer class="composition-signal">
+      Composed 2026-06-21 by ce-ideate from the prompt: UI call-out and single Codex/Claude MCP instructions page.
+    </footer>
+  </main>
+</body>
+</html>

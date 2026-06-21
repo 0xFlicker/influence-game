@@ -90,13 +90,9 @@ Producer MCP exposes the same read-only game and cognitive artifact tools with p
 
 ### User Game MCP
 
-Configure the user-facing server as:
+Player-facing setup lives at `/get-mcp`. Send players there for the current environment's `/mcp` URL, Codex commands, Claude Code commands, sign-in guidance, and browser OAuth explanation.
 
-```toml
-[mcp_servers.influence_game]
-url = "https://<api-host>/mcp"
-tool_timeout_sec = 60
-```
+Do not send players directly to `/mcp`; it is the Streamable HTTP MCP resource endpoint, not a human setup page.
 
 The protected-resource metadata for `/mcp` advertises `scopes_supported: ["games"]`. Ready means a fresh client can initialize, complete OAuth in the browser, store/use a `games` token, call `list_games`, and call at least one accessible game-specific tool such as `read_projection` or `filter_events`.
 
@@ -114,14 +110,13 @@ The producer protected-resource metadata advertises `scopes_supported: ["mcp"]`.
 
 ### Claude Code
 
-Claude Code should use the HTTP transport:
+Player-facing Claude Code setup is on `/get-mcp`. Internal producer validation should use the HTTP transport against the producer resource:
 
 ```bash
-claude mcp add --transport http influence-game https://<api-host>/mcp
 claude mcp add --transport http influence-game-producer https://<api-host>/mcp/producer
 ```
 
-Use `/mcp` inside Claude Code to authenticate when it reports OAuth is needed. Claude Code checks protected resource metadata first, then authorization server metadata, can use dynamic client registration for public clients, and can override metadata discovery with `authServerMetadataUrl` if a deployment proxy blocks standard well-known paths.
+Use Claude Code's MCP authentication flow when it reports OAuth is needed. Claude Code checks protected resource metadata first, then authorization server metadata, can use dynamic client registration for public clients, and can override metadata discovery with `authServerMetadataUrl` if a deployment proxy blocks standard well-known paths.
 
 ### ChatGPT Developer Mode / Apps SDK
 
