@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { resolveApiUrl } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
 
 const PERSONA_AVATAR_KEYS = [
@@ -43,13 +44,51 @@ function fallbackPersonaKey(name: string): string {
   return PERSONA_AVATAR_KEYS[hash % PERSONA_AVATAR_KEYS.length] ?? "strategic";
 }
 
+function normalizeUploadedAvatarUrl(avatarUrl: string): string {
+  const trimmed = avatarUrl.trim();
+  if (trimmed.startsWith("/api/")) {
+    return resolveApiUrl(trimmed);
+  }
+
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return trimmed;
+  }
+
+  for (const key of url.searchParams.keys()) {
+    const normalized = key.toLowerCase();
+    if (
+      normalized.startsWith("x-amz-")
+      || normalized === "expires"
+      || normalized === "signature"
+    ) {
+      const stablePublicUrl = pathStyleS3PublicAvatarUrl(url);
+      if (stablePublicUrl) return stablePublicUrl;
+
+      url.search = "";
+      url.hash = "";
+      return url.toString();
+    }
+  }
+
+  return trimmed;
+}
+
+function pathStyleS3PublicAvatarUrl(url: URL): string | null {
+  const [bucket, ...keyParts] = url.pathname.split("/").filter(Boolean);
+  if (!bucket || keyParts[0] !== "pfp") return null;
+  return `https://${bucket}.${url.host}/${keyParts.join("/")}`;
+}
+
 export function resolveAgentAvatarUrl(
   avatarUrl: string | null | undefined,
   persona: string,
   name: string,
   personaKey?: string | null,
 ): string {
-  if (avatarUrl) return avatarUrl;
+  if (avatarUrl) return normalizeUploadedAvatarUrl(avatarUrl);
   const key =
     normalizePersonaKey(personaKey) ??
     normalizePersonaKey(persona) ??

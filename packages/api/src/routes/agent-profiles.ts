@@ -24,6 +24,7 @@ import {
   type AuthEnv,
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
+import { normalizeUploadedAvatarUrl } from "../lib/storage.js";
 
 // Valid personality archetype keys
 const VALID_PERSONA_KEYS = new Set([
@@ -31,6 +32,26 @@ const VALID_PERSONA_KEYS = new Set([
   "aggressive", "loyalist", "observer", "diplomat", "wildcard",
   "contrarian", "provocateur", "martyr",
 ]);
+
+type ParsedAvatarUrl =
+  | { ok: true; value: string | null | undefined }
+  | { ok: false; error: string };
+
+function parseAvatarUrl(value: unknown, publicBaseUrl: string): ParsedAvatarUrl {
+  if (value === undefined) return { ok: true, value: undefined };
+  if (value === null) return { ok: true, value: null };
+  if (typeof value !== "string") {
+    return { ok: false, error: "avatarUrl must be a string or null" };
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) return { ok: true, value: null };
+
+  return {
+    ok: true,
+    value: normalizeUploadedAvatarUrl(trimmed, publicBaseUrl),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Factory — creates a Hono sub-app with injected DB
@@ -164,6 +185,11 @@ Respond with JSON only:
       return c.json({ error: `Invalid personaKey. Must be one of: ${[...VALID_PERSONA_KEYS].join(", ")}` }, 400);
     }
 
+    const parsedAvatarUrl = parseAvatarUrl(avatarUrl, new URL(c.req.url).origin);
+    if (!parsedAvatarUrl.ok) {
+      return c.json({ error: parsedAvatarUrl.error }, 400);
+    }
+
     const user = c.get("user");
     const id = randomUUID();
     const now = new Date().toISOString();
@@ -177,7 +203,7 @@ Respond with JSON only:
         personality,
         strategyStyle: strategyStyle ?? null,
         personaKey: personaKey ?? null,
-        avatarUrl: avatarUrl ?? null,
+        avatarUrl: parsedAvatarUrl.value ?? null,
         gamesPlayed: 0,
         gamesWon: 0,
         createdAt: now,
@@ -265,6 +291,11 @@ Respond with JSON only:
       return c.json({ error: `Invalid personaKey. Must be one of: ${[...VALID_PERSONA_KEYS].join(", ")}` }, 400);
     }
 
+    const parsedAvatarUrl = parseAvatarUrl(avatarUrl, new URL(c.req.url).origin);
+    if (!parsedAvatarUrl.ok) {
+      return c.json({ error: parsedAvatarUrl.error }, 400);
+    }
+
     // If personality-defining fields changed and the agent has played games, reset stats
     const personalityChanged =
       (name !== undefined && name !== existing.name) ||
@@ -284,7 +315,7 @@ Respond with JSON only:
     if (personality !== undefined) updates.personality = personality;
     if (strategyStyle !== undefined) updates.strategyStyle = strategyStyle;
     if (personaKey !== undefined) updates.personaKey = personaKey;
-    if (avatarUrl !== undefined) updates.avatarUrl = avatarUrl;
+    if (avatarUrl !== undefined) updates.avatarUrl = parsedAvatarUrl.value;
     if (resetStats) {
       updates.gamesPlayed = 0;
       updates.gamesWon = 0;

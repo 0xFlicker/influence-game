@@ -11,6 +11,16 @@ export function setApiBase(url: string): void {
   API_BASE = url;
 }
 
+export function resolveApiUrl(pathOrUrl: string): string {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(pathOrUrl)) {
+    return pathOrUrl;
+  }
+  if (pathOrUrl.startsWith("/")) {
+    return `${API_BASE.replace(/\/$/, "")}${pathOrUrl}`;
+  }
+  return pathOrUrl;
+}
+
 // ---------------------------------------------------------------------------
 // Auth token storage (client-side only)
 // ---------------------------------------------------------------------------
@@ -61,7 +71,7 @@ export async function apiFetch<T>(
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  const url = `${API_BASE}${path}`;
+  const url = resolveApiUrl(path);
   console.log(`API ${options?.method ?? "GET"} ${url}`);
   const res = await fetch(url, {
     ...options,
@@ -1281,7 +1291,7 @@ export async function uploadProfilePicture(file: File): Promise<UploadResult> {
   });
 
   // Step 2: PUT the file directly to object storage
-  const putRes = await fetch(uploadUrl, {
+  const putRes = await fetch(resolveApiUrl(uploadUrl), {
     method: "PUT",
     headers: { "Content-Type": file.type, "x-amz-acl": "public-read" },
     body: file,
@@ -1291,7 +1301,7 @@ export async function uploadProfilePicture(file: File): Promise<UploadResult> {
     throw new Error(`Upload failed: ${putRes.status}`);
   }
 
-  return { publicUrl, key };
+  return { publicUrl: resolveApiUrl(publicUrl), key };
 }
 
 // ---------------------------------------------------------------------------

@@ -116,10 +116,11 @@ export async function generatePresignedUpload(
   key: string,
   contentType: string,
   expiresIn = 300,
+  publicBaseUrl?: string,
 ): Promise<PresignedUploadResult> {
   const backend = getStorageBackend();
   if (backend === "local") {
-    return generateLocalUpload(key, contentType, expiresIn);
+    return generateLocalUpload(key, contentType, expiresIn, publicBaseUrl);
   }
   if (backend === "disabled") {
     throw new Error("Object storage is not configured");
@@ -150,6 +151,7 @@ function generateLocalUpload(
   key: string,
   contentType: string,
   expiresIn: number,
+  publicBaseUrl?: string,
 ): PresignedUploadResult {
   validateLocalKey(key);
 
@@ -162,9 +164,12 @@ function generateLocalUpload(
     token,
   });
 
+  const uploadPath = `/api/upload/local?${params.toString()}`;
+  const publicPath = getLocalPublicUploadPath(key);
+
   return {
-    uploadUrl: `/api/upload/local?${params.toString()}`,
-    publicUrl: `/api/uploads/local?key=${encodeURIComponent(key)}`,
+    uploadUrl: absolutizeApiUrl(uploadPath, publicBaseUrl),
+    publicUrl: absolutizeApiUrl(publicPath, publicBaseUrl),
     key,
   };
 }
@@ -227,6 +232,39 @@ export async function readLocalUpload(key: string): Promise<{
   }
 }
 
+export function normalizeUploadedAvatarUrl(
+  avatarUrl: string,
+  publicBaseUrl?: string,
+): string {
+  const trimmed = avatarUrl.trim();
+  if (!trimmed) return trimmed;
+
+  const parsed = parseUrl(trimmed, publicBaseUrl);
+  if (!parsed) return trimmed;
+
+  if (parsed.pathname === "/api/upload/local") {
+    const key = parsed.searchParams.get("key");
+    return key
+      ? absolutizeApiUrl(getLocalPublicUploadPath(key), publicBaseUrl ?? parsed.origin)
+      : trimmed;
+  }
+
+  if (parsed.pathname === "/api/uploads/local") {
+    return absolutizeApiUrl(`${parsed.pathname}${parsed.search}`, publicBaseUrl ?? parsed.origin);
+  }
+
+  if (!hasExpiringSignatureParams(parsed)) {
+    return trimmed;
+  }
+
+  const configuredPublicUrl = publicObjectUrlFromConfiguredS3(parsed);
+  if (configuredPublicUrl) return configuredPublicUrl;
+
+  parsed.search = "";
+  parsed.hash = "";
+  return parsed.toString();
+}
+
 export class LocalUploadError extends Error {
   constructor(
     public readonly status: 400 | 413,
@@ -253,6 +291,67 @@ function getLocalUploadPath(key: string): string {
     throw new LocalUploadError(400, "Invalid upload key");
   }
   return filePath;
+}
+
+function getLocalPublicUploadPath(key: string): string {
+  validateLocalKey(key);
+  return `/api/uploads/local?key=${encodeURIComponent(key)}`;
+}
+
+function absolutizeApiUrl(pathOrUrl: string, publicBaseUrl?: string): string {
+  if (!publicBaseUrl || /^[a-z][a-z0-9+.-]*:\/\//i.test(pathOrUrl)) {
+    return pathOrUrl;
+  }
+  return new URL(pathOrUrl, publicBaseUrl).toString();
+}
+
+function parseUrl(value: string, publicBaseUrl?: string): URL | null {
+  try {
+    return new URL(value, publicBaseUrl);
+  } catch {
+    return null;
+  }
+}
+
+function hasExpiringSignatureParams(url: URL): boolean {
+  for (const key of url.searchParams.keys()) {
+    const normalized = key.toLowerCase();
+    if (
+      normalized.startsWith("x-amz-")
+      || normalized === "expires"
+      || normalized === "signature"
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function publicObjectUrlFromConfiguredS3(url: URL): string | null {
+  const endpoint = process.env.LINODE_OBJ_ENDPOINT;
+  const bucket = process.env.LINODE_OBJ_BUCKET;
+  if (!endpoint || !bucket) return null;
+
+  let endpointHost: string;
+  try {
+    endpointHost = new URL(endpoint).host;
+  } catch {
+    return null;
+  }
+
+  const bucketHost = `${bucket}.${endpointHost}`;
+  if (url.host === bucketHost) {
+    const key = url.pathname.replace(/^\/+/, "");
+    return key ? `https://${bucketHost}/${key}` : null;
+  }
+
+  if (url.host !== endpointHost) return null;
+
+  const pathPrefix = `/${bucket}/`;
+  if (!url.pathname.startsWith(pathPrefix)) return null;
+
+  const key = url.pathname.slice(pathPrefix.length);
+  return key ? `https://${bucketHost}/${key}` : null;
 }
 
 function validateLocalKey(key: string): void {

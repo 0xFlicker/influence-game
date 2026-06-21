@@ -135,7 +135,12 @@ export function createUploadRoutes(db: DrizzleDB) {
     const ext = MIME_TO_EXT[contentType] ?? "bin";
     const key = `pfp/${user.id}/${randomUUID()}.${ext}`;
 
-    const result = await generatePresignedUpload(key, contentType);
+    const result = await generatePresignedUpload(
+      key,
+      contentType,
+      300,
+      new URL(c.req.url).origin,
+    );
 
     return c.json({
       uploadUrl: result.uploadUrl,

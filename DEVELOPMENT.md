@@ -451,7 +451,7 @@ The web command is Doppler-wrapped because runtime config such as Privy, admin a
 
 ### Local Upload Storage
 
-Profile-picture uploads use Linode Object Storage when `LINODE_OBJ_ENDPOINT`, `LINODE_OBJ_ACCESS_KEY`, `LINODE_OBJ_SECRET_KEY`, and `LINODE_OBJ_BUCKET` are present. In local dev, if those vars are absent, the API automatically uses a filesystem-backed upload endpoint instead and writes files under `packages/api/.local-uploads/` by default.
+Profile-picture uploads use Linode Object Storage when `LINODE_OBJ_ENDPOINT`, `LINODE_OBJ_ACCESS_KEY`, `LINODE_OBJ_SECRET_KEY`, and `LINODE_OBJ_BUCKET` are present. In local dev, if those vars are absent, the API automatically uses a filesystem-backed upload endpoint instead and writes files under `packages/api/.local-uploads/` by default. Local upload and read URLs are returned as absolute API-origin URLs so the browser does not resolve them against the separate web dev server origin.
 
 Useful overrides:
 

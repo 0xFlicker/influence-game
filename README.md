@@ -233,7 +233,7 @@ The bootstrap uses `http://127.0.0.1:19000` by default, creates `influence-priva
 
 Staging/production must set `LINODE_PRIVATE_CONTENT_ENDPOINT`, `LINODE_PRIVATE_CONTENT_ACCESS_KEY`, `LINODE_PRIVATE_CONTENT_SECRET_KEY`, and `LINODE_PRIVATE_CONTENT_BUCKET` for private traces. The private access key should be scoped to the private content bucket and is intentionally separate from the profile-picture `LINODE_OBJ_*` credentials.
 
-When the Linode variables are absent in local dev, the API falls back to filesystem-backed upload URLs and stores files under `packages/api/.local-uploads/` by default. Staging/production should use the S3 backend.
+When the Linode variables are absent in local dev, the API falls back to filesystem-backed upload URLs and stores files under `packages/api/.local-uploads/` by default. The API returns absolute local upload/read URLs from the request origin so the browser can upload through `127.0.0.1:3000` while the web app runs on `localhost:3001`. Staging/production should use the S3 backend.
 
 ### Web (`packages/web`) -- set in `packages/web/.env.local`
 

@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { Hono } from "hono";
 import type { DrizzleDB } from "../db/index.js";
-import { generatePresignedUpload, getStorageBackend } from "../lib/storage.js";
+import {
+  generatePresignedUpload,
+  getStorageBackend,
+  normalizeUploadedAvatarUrl,
+} from "../lib/storage.js";
 import { createUploadRoutes } from "../routes/upload.js";
 import { assertPrivateContentStoragePointer } from "../services/game-evidence.js";
 import { getPrivateTraceStorageConfig } from "../services/private-trace-storage.js";
@@ -80,6 +84,40 @@ describe("local filesystem upload storage", () => {
     expect(get.status).toBe(200);
     expect(get.headers.get("Content-Type")).toBe("image/png");
     expect(Array.from(new Uint8Array(await get.arrayBuffer()))).toEqual([1, 2, 3]);
+  });
+
+  test("returns absolute local upload URLs when a public base URL is supplied", async () => {
+    const upload = await generatePresignedUpload(
+      "pfp/user-1/avatar.png",
+      "image/png",
+      300,
+      "http://127.0.0.1:3000",
+    );
+
+    expect(upload.uploadUrl).toStartWith("http://127.0.0.1:3000/api/upload/local?");
+    expect(upload.publicUrl).toBe(
+      "http://127.0.0.1:3000/api/uploads/local?key=pfp%2Fuser-1%2Favatar.png",
+    );
+  });
+
+  test("normalizes local upload PUT URLs to stable read URLs", () => {
+    const uploadUrl =
+      "/api/upload/local?key=pfp%2Fuser-1%2Favatar.png&contentType=image%2Fpng&expiresAt=123&token=abc";
+
+    expect(normalizeUploadedAvatarUrl(uploadUrl, "http://127.0.0.1:3000")).toBe(
+      "http://127.0.0.1:3000/api/uploads/local?key=pfp%2Fuser-1%2Favatar.png",
+    );
+  });
+
+  test("normalizes expiring S3 signed avatar URLs to stable public URLs", () => {
+    process.env.LINODE_OBJ_ENDPOINT = "https://us-iad-1.linodeobjects.com";
+    process.env.LINODE_OBJ_BUCKET = "influence-pfp";
+    const signedUrl =
+      "https://us-iad-1.linodeobjects.com/influence-pfp/pfp/user-1/avatar.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=300&X-Amz-Signature=abc123";
+
+    expect(normalizeUploadedAvatarUrl(signedUrl)).toBe(
+      "https://influence-pfp.us-iad-1.linodeobjects.com/pfp/user-1/avatar.png",
+    );
   });
 
   test("rejects tampered local upload URLs", async () => {
