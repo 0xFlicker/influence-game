@@ -9,6 +9,8 @@ There are two MCP resource profiles:
 
 Do not reinterpret `scope=mcp` as user-scoped. Do not expose private trace content or trace metadata through `scope=games`; trace remains producer-only. User-facing reasoning/thinking/strategy access uses first-class cognitive artifact rows captured for new games, never reads or reconstructs from producer private traces.
 
+The public web watch websocket is a separate viewer surface, not an MCP resource. It may carry viewer-safe transcript text, room metadata, and `thinking` selected into the public websocket transcript payload, but websocket hardening does not grant `scope=games` access to producer traces or change the `/mcp` and `/mcp/producer` split.
+
 ## Server Surface
 
 - User MCP endpoint: `POST /mcp`

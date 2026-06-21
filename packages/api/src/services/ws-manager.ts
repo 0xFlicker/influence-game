@@ -17,15 +17,43 @@ export interface WsConnectionData {
   gameId: string;
 }
 
+type PublicWsRoomMetadata = {
+  rooms: Array<{
+    roomId: number;
+    round: number;
+    beat: number;
+    playerIds: string[];
+  }>;
+  excluded: string[];
+};
+
+/** Public transcript entry sent to WebSocket clients (matches WsTranscriptEntry in web/lib/api.ts). */
+export interface PublicWsTranscriptEntry {
+  round: TranscriptEntry["round"];
+  phase: TranscriptEntry["phase"];
+  from: TranscriptEntry["from"];
+  scope: TranscriptEntry["scope"];
+  to?: TranscriptEntry["to"];
+  roomId?: TranscriptEntry["roomId"];
+  roomMetadata?: PublicWsRoomMetadata;
+  text: TranscriptEntry["text"];
+  thinking?: TranscriptEntry["thinking"];
+  anonymous?: TranscriptEntry["anonymous"];
+  displayOrder?: TranscriptEntry["displayOrder"];
+  timestamp: TranscriptEntry["timestamp"];
+}
+
 /** Event shape sent to WebSocket clients (matches WsGameEvent in web/lib/api.ts) */
 export type WsOutboundEvent =
   | { type: "watch_state"; state: GameWatchState }
   | { type: "phase_change"; phase: string; round: number; alivePlayers: string[] }
-  | { type: "message"; entry: TranscriptEntry }
+  | { type: "message"; entry: PublicWsTranscriptEntry }
   | { type: "player_eliminated"; playerId: string; playerName: string; round: number }
   | { type: "game_over"; winner?: string; winnerName?: string; totalRounds: number }
   | { type: "game_status"; gameId: string; status: "suspended" | "cancelled"; terminal: true; reasonCode: string; message?: string }
   | { type: "error"; message: string };
+
+type WsRawOutboundEvent = Exclude<WsOutboundEvent, { type: "message" }>;
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -55,9 +83,37 @@ function gameTopic(gameId: string): string {
   return `game:${gameId}`;
 }
 
-function sanitizeTranscriptEntry(entry: TranscriptEntry): TranscriptEntry {
-  const { reasoningContext: _reasoningContext, ...safeEntry } = entry;
-  return safeEntry;
+function buildPublicRoomMetadata(
+  roomMetadata: TranscriptEntry["roomMetadata"] | undefined,
+): PublicWsRoomMetadata | undefined {
+  if (!roomMetadata) return undefined;
+
+  return {
+    rooms: roomMetadata.rooms.map((room) => ({
+      roomId: room.roomId,
+      round: room.round,
+      beat: room.beat,
+      playerIds: [...room.playerIds],
+    })),
+    excluded: [...roomMetadata.excluded],
+  };
+}
+
+function buildPublicTranscriptEntry(entry: TranscriptEntry): PublicWsTranscriptEntry {
+  return {
+    round: entry.round,
+    phase: entry.phase,
+    timestamp: entry.timestamp,
+    from: entry.from,
+    scope: entry.scope,
+    to: entry.to,
+    roomId: entry.roomId,
+    roomMetadata: buildPublicRoomMetadata(entry.roomMetadata),
+    text: entry.text,
+    thinking: entry.thinking,
+    anonymous: entry.anonymous,
+    displayOrder: entry.displayOrder,
+  };
 }
 
 /** Called when a new WebSocket connection opens. */
@@ -88,7 +144,7 @@ export function broadcastGameEvent(gameId: string, event: GameStreamEvent): void
     case "agent_turn":
       return;
     case "transcript_entry":
-      outbound = { type: "message", entry: sanitizeTranscriptEntry(event.entry) };
+      outbound = { type: "message", entry: buildPublicTranscriptEntry(event.entry) };
       break;
     case "phase_change":
       outbound = {
@@ -119,10 +175,12 @@ export function broadcastGameEvent(gameId: string, event: GameStreamEvent): void
   _server.publish(gameTopic(gameId), JSON.stringify(outbound));
 }
 
-/** Broadcast a raw WsOutboundEvent to all observers of a game. */
-export function broadcastRaw(gameId: string, event: WsOutboundEvent): void {
+/** Broadcast a non-message WsOutboundEvent to all observers of a game. */
+export function broadcastRaw(gameId: string, event: WsRawOutboundEvent): void {
   if (!_server) return;
-  _server.publish(gameTopic(gameId), JSON.stringify(event));
+  const outbound = event as WsOutboundEvent;
+  if (outbound.type === "message") return;
+  _server.publish(gameTopic(gameId), JSON.stringify(outbound));
 }
 
 /** Broadcast viewer-safe watch state to all observers of a game. */

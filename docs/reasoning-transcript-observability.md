@@ -102,6 +102,18 @@ export interface TranscriptEntry {
 }
 ```
 
+Public websocket `message` events do not publish the internal `TranscriptEntry`
+object directly. `packages/api/src/services/ws-manager.ts` builds a
+`PublicWsTranscriptEntry` by selecting the viewer-safe fields used by the web
+client: round, phase, sender, scope, recipients, room identifiers, public room
+metadata (`rooms` and `excluded` only), text, timestamp, and viewer-facing
+`thinking`, plus viewer-safe anonymous rumor metadata (`anonymous` and
+`displayOrder`). Hidden `reasoningContext`, room allocation diagnostics,
+prompts, raw provider responses, storage keys, source pointers, decision logs,
+private trace manifests, and producer-only evidence must stay out of that
+websocket payload. This keeps live watch/replay useful without changing MCP or
+cognitive-artifact authorization policy.
+
 For `--chatty` live viewing (`simulate.ts`):
 
 ```ts
