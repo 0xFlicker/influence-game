@@ -710,6 +710,45 @@ describe("Game REST API", () => {
   });
 
   // =========================================================================
+  // GET /api/player/games
+  // =========================================================================
+
+  describe("GET /api/player/games", () => {
+    test("returns only completed game history for the authenticated player", async () => {
+      const { id: waitingGameId } = await createTestGame(app, adminToken, { playerCount: 4 });
+      await joinTestPlayer(app, waitingGameId, "Zara Quinn", userToken);
+
+      const { id: inProgressGameId } = await createTestGame(app, adminToken, { playerCount: 4 });
+      await joinTestPlayer(app, inProgressGameId, "Kai Rivers", userToken);
+      await markGameInProgress(db, inProgressGameId);
+
+      const { id: completedGameId } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { playerId } = await joinTestPlayer(app, completedGameId, "Atlas Vale", userToken);
+      await insertResult(db, completedGameId, { winnerId: playerId, roundsPlayed: 3 });
+      await markGameCompleted(db, completedGameId);
+
+      const res = await app.request("/api/player/games", {
+        headers: { Authorization: `Bearer ${userToken}` },
+      });
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Array<{
+        gameId: string;
+        agentName: string;
+        rounds: number;
+        winner: boolean;
+      }>;
+      expect(body).toHaveLength(1);
+      expect(body[0]).toMatchObject({
+        gameId: completedGameId,
+        agentName: "Atlas Vale",
+        rounds: 3,
+        winner: true,
+      });
+    });
+  });
+
+  // =========================================================================
   // POST /api/games/:id/join
   // =========================================================================
 

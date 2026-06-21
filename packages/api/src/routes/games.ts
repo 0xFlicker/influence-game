@@ -799,6 +799,7 @@ export function createGameRoutes(db: DrizzleDB) {
           .from(schema.games)
           .where(and(eq(schema.games.id, playerRecord.gameId), isNull(schema.games.hiddenAt))))[0];
         if (!game) return null;
+        if (game.status !== "completed" || !game.endedAt) return null;
 
         const config = JSON.parse(game.config);
         const persona = JSON.parse(playerRecord.persona);
