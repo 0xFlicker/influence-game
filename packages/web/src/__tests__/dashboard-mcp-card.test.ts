@@ -12,7 +12,7 @@ describe("dashboard MCP setup card", () => {
     expect(source).toContain("McpSetupCard");
     expect(source).toContain('href="/get-mcp"');
     expect(source).toContain("Connect your Influence games to Codex or Claude Code");
-    expect(source).toContain("played > 0");
+    expect(source).toContain("control.stats.gamesPlayed > 0");
   });
 
   it("has useful copy for players with and without history", () => {
@@ -21,9 +21,9 @@ describe("dashboard MCP setup card", () => {
     expect(source).toContain("games tied to your account");
   });
 
-  it("places the setup card before the open games section", () => {
+  it("places the setup card before Mission Control", () => {
     expect(source.indexOf("<McpSetupCard")).toBeLessThan(
-      source.indexOf("Open Games"),
+      source.indexOf("<MissionControlOverview"),
     );
   });
 
