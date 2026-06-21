@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Dashboard UX Redesign</title>
+  <style>
+    :root {
+      --bg: #0d0f16;
+      --panel: #151925;
+      --panel-2: #1b2030;
+      --text: #eef2ff;
+      --muted: #9aa4b8;
+      --subtle: #6f7a91;
+      --accent: #7dd3fc;
+      --accent-2: #a7f3d0;
+      --warn: #fde68a;
+      --line: rgba(160, 174, 192, 0.22);
+      --line-strong: rgba(160, 174, 192, 0.36);
+      --danger: #fca5a5;
+      color-scheme: dark;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(900px 420px at 50% -10%, rgba(125, 211, 252, 0.12), transparent 64%),
+        linear-gradient(180deg, #10131d 0%, var(--bg) 34%, #0a0c12 100%);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { color: #dbeafe; background: rgba(125, 211, 252, 0.08); padding: 0.08rem 0.28rem; border-radius: 0.3rem; }
+
+    .page {
+      width: min(960px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 48px 0 56px;
+    }
+
+    header {
+      border: 1px solid var(--line);
+      background: rgba(21, 25, 37, 0.78);
+      border-radius: 14px;
+      padding: 28px;
+      box-shadow: 0 18px 80px rgba(0, 0, 0, 0.28);
+    }
+
+    .eyebrow {
+      color: var(--accent-2);
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      margin: 0 0 8px;
+    }
+
+    h1, h2, h3 { line-height: 1.15; margin: 0; }
+    h1 { font-size: clamp(2rem, 5vw, 3.4rem); letter-spacing: -0.03em; }
+    h2 { font-size: 1.45rem; margin-bottom: 16px; }
+    h3 { font-size: 1.05rem; }
+
+    p { margin: 0; max-width: 72ch; }
+    .intro { margin-top: 14px; color: var(--muted); font-size: 1.02rem; }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 22px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 0.35rem 0.7rem;
+      font-size: 0.82rem;
+      white-space: nowrap;
+    }
+
+    section { margin-top: 34px; }
+
+    .panel {
+      border: 1px solid var(--line);
+      background: rgba(21, 25, 37, 0.74);
+      border-radius: 12px;
+      padding: 22px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .axis {
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.035);
+      border-radius: 10px;
+      padding: 14px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .jump-list {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
+    .jump-list a {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.035);
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: var(--text);
+    }
+
+    .jump-list span { color: var(--muted); font-size: 0.82rem; }
+
+    .idea {
+      border: 1px solid var(--line-strong);
+      background:
+        linear-gradient(180deg, rgba(125, 211, 252, 0.07), transparent 36%),
+        rgba(21, 25, 37, 0.9);
+      border-radius: 14px;
+      padding: 24px;
+      margin-top: 16px;
+    }
+
+    .idea-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .rank {
+      color: var(--accent-2);
+      font-weight: 800;
+      font-size: 0.9rem;
+      letter-spacing: 0.08em;
+    }
+
+    .idea-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin: 12px 0 16px;
+    }
+
+    .label {
+      color: var(--subtle);
+      display: block;
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin: 16px 0 4px;
+    }
+
+    .basis {
+      border-left: 3px solid var(--accent);
+      background: rgba(125, 211, 252, 0.06);
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: #c9d8ea;
+    }
+
+    .diagram {
+      margin: 18px 0 4px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 12px;
+      overflow: auto;
+    }
+
+    svg { display: block; max-width: 100%; height: auto; }
+    .svg-box { fill: rgba(125, 211, 252, 0.1); stroke: rgba(125, 211, 252, 0.48); }
+    .svg-box-2 { fill: rgba(167, 243, 208, 0.1); stroke: rgba(167, 243, 208, 0.48); }
+    .svg-text { fill: #e5eefb; font-size: 13px; font-weight: 650; }
+    .svg-muted { fill: #9aa4b8; font-size: 11px; }
+    .svg-line { stroke: rgba(238, 242, 255, 0.5); stroke-width: 1.5; marker-end: url(#arrow); }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 10px;
+      font-size: 0.9rem;
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.04);
+      font-size: 0.76rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    td { color: #d9e2f1; }
+    tr:last-child td { border-bottom: 0; }
+
+    .sources li { margin: 0.35rem 0; color: var(--muted); }
+
+    .composition-signal {
+      margin-top: 36px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--subtle);
+      font-size: 0.82rem;
+    }
+
+    @media (max-width: 760px) {
+      .page { width: min(100vw - 22px, 960px); padding-top: 24px; }
+      header, .panel, .idea { padding: 18px; }
+      .grid { grid-template-columns: 1fr; }
+      .idea-head { display: block; }
+      table { font-size: 0.82rem; }
+      th, td { padding: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">Ideation</p>
+      <h1>Dashboard UX Redesign</h1>
+      <p class="intro">A ranked idea set for making `/dashboard` feel less like a pile of useful objects and more like a personal command center for the agent-owner loop.</p>
+      <div class="meta">
+        <span class="chip">Date: <time datetime="2026-06-21">2026-06-21</time></span>
+        <span class="chip">Topic: dashboard-ux-redesign</span>
+        <span class="chip">Focus: UX redesign of `/dashboard`</span>
+        <span class="chip">Mode: repo-grounded</span>
+        <span class="chip">40 raw ideas, 7 survivors</span>
+      </div>
+    </header>
+
+    <section class="panel" id="grounding-context">
+      <h2>Grounding Context</h2>
+      <p>Influence is currently framed as an agent development and spectator loop: users create and tune persistent competitors, watch games expose behavior, and eventually improve agents after games. The signed-in dashboard is authenticated, sits in a single `max-w-4xl` column, and currently stacks account stats, a full open-games browser, game history, and a saved-agent preview.</p>
+      <p style="margin-top: 12px;">The page has useful ingredients, but the composition mixes four jobs: personal status, open-game discovery, replay/history review, and saved-agent inventory. Existing dedicated surfaces already exist for `/games`, `/games/free`, `/dashboard/agents`, and `/dashboard/profile`, so the dashboard redesign should clarify what the user should do next rather than replicate every focused page.</p>
+      <p style="margin-top: 12px;">External UX anchors: NN/g's visibility-of-system-status heuristic supports making current status and next steps obvious; dashboard pattern research frames dashboards as curated at-a-glance lenses rather than all-purpose data dumps.</p>
+    </section>
+
+    <section class="panel" id="topic-axes">
+      <h2>Topic Axes</h2>
+      <div class="grid">
+        <div class="axis">Next action and personal status</div>
+        <div class="axis">Open-game discovery and join flow</div>
+        <div class="axis">History, replay, and learning loop</div>
+        <div class="axis">Saved-agent inventory and management</div>
+        <div class="axis">Cross-page navigation between dashboard, free games, games, and agents</div>
+      </div>
+    </section>
+
+    <section id="ranked-ideas">
+      <h2>Ranked Ideas</h2>
+      <nav class="jump-list" aria-label="Ranked idea links">
+        <a href="#idea-1"><strong>1. Mission-Control Overview</strong><span>Next action · 86% · Medium</span></a>
+        <a href="#idea-2"><strong>2. Owner Loop Tabs</strong><span>Navigation · 80% · Medium</span></a>
+        <a href="#idea-3"><strong>3. Open Games Preview, Not Full Browser</strong><span>Join flow · 82% · Low</span></a>
+        <a href="#idea-4"><strong>4. Progressive Dashboard States</strong><span>Status · 76% · Medium</span></a>
+        <a href="#idea-5"><strong>5. Agent Bench Snapshot</strong><span>Agents · 78% · Low-Medium</span></a>
+        <a href="#idea-6"><strong>6. Recent Result to Improve CTA</strong><span>Learning loop · 74% · Medium</span></a>
+        <a href="#idea-7"><strong>7. Dashboard Local Nav With Section State</strong><span>Navigation · 68% · Medium</span></a>
+      </nav>
+
+      <article class="idea" id="idea-1">
+        <div class="idea-head">
+          <div>
+            <div class="rank">IDEA 1</div>
+            <h3>Mission-Control Overview</h3>
+          </div>
+          <div class="idea-meta">
+            <span class="chip">Axis: Next action and personal status</span>
+            <span class="chip">Confidence: 86%</span>
+            <span class="chip">Complexity: Medium</span>
+          </div>
+        </div>
+        <p>Turn the top of `/dashboard` into a state-aware overview that answers, in order: what is happening with my agents, what can I do next, and what should I review? The page would keep the existing ingredients but recompose them into a compact personal status band, one primary next action, and three short modules: active/live, recent result, and agent bench.</p>
+        <div class="diagram">
+          <svg width="850" height="170" viewBox="0 0 850 170" role="img" aria-label="Mission control dashboard concept">
+            <defs>
+              <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L7,3 z" fill="rgba(238,242,255,0.58)"></path>
+              </marker>
+            </defs>
+            <rect class="svg-box" x="18" y="22" width="190" height="72" rx="12"></rect>
+            <text class="svg-text" x="38" y="52">Personal Status</text>
+            <text class="svg-muted" x="38" y="74">queued, live, agents, wins</text>
+            <line class="svg-line" x1="214" y1="58" x2="272" y2="58"></line>
+            <rect class="svg-box-2" x="280" y="22" width="230" height="72" rx="12"></rect>
+            <text class="svg-text" x="300" y="52">One Next Action</text>
+            <text class="svg-muted" x="300" y="74">join, watch, create, improve</text>
+            <line class="svg-line" x1="516" y1="58" x2="574" y2="58"></line>
+            <rect class="svg-box" x="582" y="22" width="250" height="72" rx="12"></rect>
+            <text class="svg-text" x="602" y="52">Short Modules</text>
+            <text class="svg-muted" x="602" y="74">active game, last result, agent bench</text>
+            <rect class="svg-box" x="76" y="118" width="700" height="28" rx="8"></rect>
+            <text class="svg-muted" x="96" y="137">Detailed lists move one click down: /games, /games/free, /dashboard/agents, full history</text>
+          </svg>
+        </div>
+        <span class="label">Basis</span>
+        <p class="basis">direct: `dashboard-content.tsx:318-371` stacks Open Games, Your History, and Your Agents; `games-browser.tsx:493-554` brings full filters into the dashboard; external: NN/g status visibility says users need current system state to decide next steps.</p>
+        <span class="label">Rationale</span>
+        <p>This directly addresses the user's "too much stuff" reaction without discarding useful surfaces. It gives the dashboard a job: orient the signed-in owner and route them to the right action.</p>
+        <span class="label">Downsides</span>
+        <p>Needs a small personal-status composition layer and careful priority rules so the "one next action" is helpful rather than bossy.</p>
+      </article>
+
+      <article class="idea" id="idea-2">
+        <div class="idea-head">
+          <div>
+            <div class="rank">IDEA 2</div>
+            <h3>Owner Loop Tabs</h3>
+          </div>
+          <div class="idea-meta">
+            <span class="chip">Axis: Cross-page navigation</span>
+            <span class="chip">Confidence: 80%</span>
+            <span class="chip">Complexity: Medium</span>
+          </div>
+        </div>
+        <p>Organize the dashboard around four owner intents: Prepare, Play, Review, Improve. Prepare shows saved agents and create/edit entry points; Play shows joinable/open or queue status; Review shows recent history and replay; Improve highlights post-game agent edits when available.</p>
+        <div class="diagram">
+          <svg width="850" height="130" viewBox="0 0 850 130" role="img" aria-label="Owner loop tab concept">
+            <rect class="svg-box-2" x="24" y="28" width="170" height="62" rx="12"></rect>
+            <text class="svg-text" x="64" y="56">Prepare</text>
+            <text class="svg-muted" x="52" y="76">agents</text>
+            <line class="svg-line" x1="200" y1="59" x2="262" y2="59"></line>
+            <rect class="svg-box" x="270" y="28" width="150" height="62" rx="12"></rect>
+            <text class="svg-text" x="326" y="56">Play</text>
+            <text class="svg-muted" x="314" y="76">join/queue</text>
+            <line class="svg-line" x1="426" y1="59" x2="488" y2="59"></line>
+            <rect class="svg-box" x="496" y="28" width="150" height="62" rx="12"></rect>
+            <text class="svg-text" x="548" y="56">Review</text>
+            <text class="svg-muted" x="536" y="76">replay</text>
+            <line class="svg-line" x1="652" y1="59" x2="714" y2="59"></line>
+            <rect class="svg-box-2" x="722" y="28" width="104" height="62" rx="12"></rect>
+            <text class="svg-text" x="744" y="56">Improve</text>
+            <text class="svg-muted" x="744" y="76">edit</text>
+          </svg>
+        </div>
+        <span class="label">Basis</span>
+        <p class="basis">direct: `STRATEGY.md` frames Influence as users creating and tuning persistent competitors, then watching games expose behavior; `dashboard-content.tsx:352-370` already links to agent creation/management; `dashboard-content.tsx:46-95` already links history to replay.</p>
+        <span class="label">Rationale</span>
+        <p>The labels map to the product's actual loop, not generic account-dashboard categories. This gives collapsible/navigation structure a meaning that can survive future features.</p>
+        <span class="label">Downsides</span>
+        <p>"Improve" may be thin until post-game reasoning/edit flows exist, so the tab may need an empty or disabled state at first.</p>
+      </article>
+
+      <article class="idea" id="idea-3">
+        <div class="idea-head">
+          <div>
+            <div class="rank">IDEA 3</div>
+            <h3>Open Games Preview, Not Full Browser</h3>
+          </div>
+          <div class="idea-meta">
+            <span class="chip">Axis: Open-game discovery and join flow</span>
+            <span class="chip">Confidence: 82%</span>
+            <span class="chip">Complexity: Low</span>
+          </div>
+        </div>
+        <p>Replace the full embedded `GamesBrowser` on the dashboard with a curated preview: a few joinable games, a live game to watch if present, and a single "Browse all games" link. Keep filters, status tabs, tier select, and long list behavior on `/games`.</p>
+        <span class="label">Basis</span>
+        <p class="basis">direct: `/dashboard` embeds `GamesBrowser` with `compact={false}` at `dashboard-content.tsx:328-331`; `GamesBrowser` renders search, status tabs, tier and track selects at `games-browser.tsx:493-554`; `/games` already exists as the broader browse surface.</p>
+        <span class="label">Rationale</span>
+        <p>This is the smallest high-leverage decluttering move. It preserves discovery while letting the dashboard stay personal and action-oriented.</p>
+        <span class="label">Downsides</span>
+        <p>If open-game volume is tiny, a preview may feel redundant with `/games`; it needs smart empty states and a clear fallback link.</p>
+      </article>
+
+      <article class="idea" id="idea-4">
+        <div class="idea-head">
+          <div>
+            <div class="rank">IDEA 4</div>
+            <h3>Progressive Dashboard States</h3>
+          </div>
+          <div class="idea-meta">
+            <span class="chip">Axis: Next action and personal status</span>
+            <span class="chip">Confidence: 76%</span>
+            <span class="chip">Complexity: Medium</span>
+          </div>
+        </div>
+        <p>Make the dashboard adapt to owner maturity. A new user sees "create an agent" and "join the free queue"; an active competitor sees queue/live/open-game status; a returning owner sees recent results, replay, and agent improvement prompts. Advanced lists stay available, but they are not all front-loaded.</p>
+        <span class="label">Basis</span>
+        <p class="basis">direct: current empty states already distinguish no history and no agents at `dashboard-content.tsx:47-51` and `dashboard-content.tsx:150-162`; `/games/free` has richer signed-out, queued, no-agent, and selected-agent states at `free-game-content.tsx:124-220`; external: dashboard research highlights tailoring to user needs as desirable and feasible.</p>
+        <span class="label">Rationale</span>
+        <p>The dashboard can feel simpler without hiding power-user affordances permanently. The user only sees the complexity that matches their current relationship to the game.</p>
+        <span class="label">Downsides</span>
+        <p>Requires clear state precedence and regression coverage so users do not lose access to expected sections when data changes.</p>
+      </article>
+
+      <article class="idea" id="idea-5">
+        <div class="idea-head">
+          <div>
+            <div class="rank">IDEA 5</div>
+            <h3>Agent Bench Snapshot</h3>
+          </div>
+          <div class="idea-meta">
+            <span class="chip">Axis: Saved-agent inventory and management</span>
+            <span class="chip">Confidence: 78%</span>
+            <span class="chip">Complexity: Low-Medium</span>
+          </div>
+        </div>
+        <p>Reframe saved agents as a playable bench rather than a mini inventory list. Show the top few active agents with performance, persona, and the next relevant action: queue, join, edit, or manage. The full CRUD page remains `/dashboard/agents`.</p>
+        <span class="label">Basis</span>
+        <p class="basis">direct: the dashboard previews only three agents unless searching at `dashboard-content.tsx:189-222`; the saved-agent page already handles create/edit/delete at `agents-content.tsx:82-182`; strategy tracks "Agents created" and "Agent edits after game" as product metrics.</p>
+        <span class="label">Rationale</span>
+        <p>This makes agents feel like the user's core objects, not a sidebar afterthought. It also attaches cleanly to the soft-delete contract without requiring a new management page.</p>
+        <span class="label">Downsides</span>
+        <p>Needs careful copy so "bench" or equivalent product language feels natural for social-strategy agents, not sports cosplay unless that voice is intentional.</p>
+      </article>
+
+      <article class="idea" id="idea-6">
+        <div class="idea-head">
+          <div>
+            <div class="rank">IDEA 6</div>
+            <h3>Recent Result to Improve CTA</h3>
+          </div>
+          <div class="idea-meta">
+            <span class="chip">Axis: History, replay, and learning loop</span>
+            <span class="chip">Confidence: 74%</span>
+            <span class="chip">Complexity: Medium</span>
+          </div>
+        </div>
+        <p>Add a post-game card that turns the latest result into a learning prompt: replay the game, inspect how the agent did, and edit the agent. It should appear above or beside history rather than requiring the user to infer improvement from a table row.</p>
+        <span class="label">Basis</span>
+        <p class="basis">direct: history rows currently offer a `Replay` link at `dashboard-content.tsx:82-88`; strategy explicitly lists "Agent edits after game" as a planned metric and connects reasoning access to improvement.</p>
+        <span class="label">Rationale</span>
+        <p>This is the dashboard move most aligned with Influence's long-term differentiation: games are not just outcomes, they are evidence for improving the agent.</p>
+        <span class="label">Downsides</span>
+        <p>May need additional API shape to map results cleanly back to editable agent profiles, especially when profiles are later soft-deleted or edited after a game.</p>
+      </article>
+
+      <article class="idea" id="idea-7">
+        <div class="idea-head">
+          <div>
+            <div class="rank">IDEA 7</div>
+            <h3>Dashboard Local Nav With Section State</h3>
+          </div>
+          <div class="idea-meta">
+            <span class="chip">Axis: Cross-page navigation</span>
+            <span class="chip">Confidence: 68%</span>
+            <span class="chip">Complexity: Medium</span>
+          </div>
+        </div>
+        <p>Add a compact local nav or segmented control inside `/dashboard` for Overview, Games, History, and Agents, with remembered section state on the client. This directly addresses the "too much stuff" feeling while keeping current sections reachable.</p>
+        <span class="label">Basis</span>
+        <p class="basis">direct: the top nav links to Dashboard and Profile for signed-in users but not Agents at `nav.tsx:55-64`; the dashboard's three major sections are vertically stacked at `dashboard-content.tsx:318-371`; user context explicitly suggested collapsible sections or nav.</p>
+        <span class="label">Rationale</span>
+        <p>This is the most literal response to the observed problem and can compose with stronger ideas above. It becomes more valuable if paired with Mission-Control Overview or Owner Loop Tabs.</p>
+        <span class="label">Downsides</span>
+        <p>By itself, this mostly organizes clutter; it does not decide what matters. It should be treated as a supporting interaction pattern, not the whole redesign.</p>
+      </article>
+    </section>
+
+    <section class="panel" id="rejection-summary">
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>7</td><td>Per-section collapse only</td><td>Useful tactic, but below the ambition floor unless attached to a clearer dashboard job.</td></tr>
+          <tr><td>10</td><td>Auto-create agent CTA in join context</td><td>Already partly covered by the join modal's inline create flow.</td></tr>
+          <tr><td>11</td><td>Default to free-game queue</td><td>Overweights one participation mode; better as a status module or state-specific CTA.</td></tr>
+          <tr><td>12</td><td>Hide history until it exists</td><td>Covered by Progressive Dashboard States; too small alone.</td></tr>
+          <tr><td>13</td><td>Combine stats and history</td><td>Good detail but not a direction worth brainstorming alone.</td></tr>
+          <tr><td>15</td><td>Dashboard as inbox</td><td>Strong metaphor but narrower than Mission-Control Overview and risks notification clutter.</td></tr>
+          <tr><td>16</td><td>Dashboard as timeline</td><td>Interesting, but less aligned with next action; better as a history variant.</td></tr>
+          <tr><td>17</td><td>Command palette dashboard</td><td>Likely too abstract/power-user for the immediate audience.</td></tr>
+          <tr><td>18</td><td>Remove open-game discovery entirely</td><td>Too severe; previewing joinable games preserves a useful dashboard entry point.</td></tr>
+          <tr><td>19</td><td>Dashboard as watchlist</td><td>Scope drift toward replay/watch product rather than personal owner hub.</td></tr>
+          <tr><td>20</td><td>Shared personal hub data model</td><td>Implementation leverage, not a UX direction by itself.</td></tr>
+          <tr><td>21</td><td>Dashboard module contract</td><td>Implementation pattern; should follow a selected UX direction.</td></tr>
+          <tr><td>23</td><td>Persistent section preferences</td><td>Supporting detail for local nav/collapse, not a standalone idea.</td></tr>
+          <tr><td>24</td><td>Agent performance rows</td><td>Covered by Agent Bench Snapshot with more product framing.</td></tr>
+          <tr><td>25</td><td>Cross-link free queue status</td><td>Good module within Mission-Control Overview, not a separate direction.</td></tr>
+          <tr><td>26</td><td>RPG party camp</td><td>Useful analogy, but voice may be too themed for current Influence UI.</td></tr>
+          <tr><td>27</td><td>Sports team manager</td><td>Feeds Agent Bench Snapshot; sports metaphor may over-color the product.</td></tr>
+          <tr><td>28</td><td>Trading terminal lite</td><td>Too dense for the user's stated overload problem.</td></tr>
+          <tr><td>29</td><td>Inbox zero</td><td>Covered by next-action/status concepts with less notification baggage.</td></tr>
+          <tr><td>30</td><td>Fitness app home</td><td>Good streak/progress analogy, but too weakly grounded in current surfaces.</td></tr>
+          <tr><td>31</td><td>One-screen mobile dashboard</td><td>Strong constraint for implementation, but too rigid as the product concept.</td></tr>
+          <tr><td>32</td><td>No dashboard page</td><td>Subject replacement; the request is redesigning `/dashboard`, not removing it.</td></tr>
+          <tr><td>33</td><td>Dashboard with zero tables</td><td>Potential detail for history, but not enough evidence to ban tables wholesale.</td></tr>
+          <tr><td>34</td><td>Only one primary CTA</td><td>Good rule inside Mission-Control Overview; too reductive alone.</td></tr>
+          <tr><td>35</td><td>Role modes</td><td>Interesting but too expensive/complex before validating basic owner states.</td></tr>
+          <tr><td>36</td><td>Dashboard as left-nav shell</td><td>Likely too much routing work for the immediate UX pain.</td></tr>
+          <tr><td>38</td><td>Owner Loop Tabs as full rewrite</td><td>Kept as Idea 2, trimmed to an organizing model rather than a full route rewrite.</td></tr>
+          <tr><td>39</td><td>Personal status rail</td><td>Partially kept as Idea 7; standalone rail has responsive complexity.</td></tr>
+          <tr><td>40</td><td>Progressive Dashboard</td><td>Kept as Idea 4 with clearer state logic.</td></tr>
+          <tr><td>-</td><td>Generic cards-only redesign</td><td>Rejected as visual reshuffling without changing the task model.</td></tr>
+          <tr><td>-</td><td>New standalone agent management page</td><td>Already exists enough for current needs; the dashboard problem is organization.</td></tr>
+          <tr><td>-</td><td>Admin-oriented dashboard controls</td><td>Out of scope for the signed-in owner dashboard.</td></tr>
+          <tr><td>-</td><td>Full analytics dashboard</td><td>Over-expands into metrics/BI; user need is personal action and orientation.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel sources" id="sources">
+      <h2>Sources And References</h2>
+      <ul>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/STRATEGY.md">STRATEGY.md</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/web/src/app/dashboard/dashboard-content.tsx">packages/web/src/app/dashboard/dashboard-content.tsx</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/web/src/app/games/games-browser.tsx">packages/web/src/app/games/games-browser.tsx</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/web/src/app/games/free/free-game-content.tsx">packages/web/src/app/games/free/free-game-content.tsx</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/web/src/app/dashboard/join-game-modal.tsx">packages/web/src/app/dashboard/join-game-modal.tsx</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/web/src/components/nav.tsx">packages/web/src/components/nav.tsx</a></li>
+        <li><a href="https://www.nngroup.com/articles/visibility-system-status/">NN/g: Visibility of System Status</a></li>
+        <li><a href="https://www.nngroup.com/articles/ten-usability-heuristics/">NN/g: 10 Usability Heuristics</a></li>
+        <li><a href="https://dashboarddesignpatterns.github.io/">Dashboard Design Patterns</a></li>
+        <li><a href="https://arxiv.org/abs/2209.06363">Data Quality, Mismatched Expectations, and Moving Requirements</a></li>
+      </ul>
+    </section>
+
+    <footer class="composition-signal">Composed 2026-06-21T00:00Z by ce-ideate from the prompt "UX redesign of the `/dashboard` page".</footer>
+  </main>
+</body>
+</html>
