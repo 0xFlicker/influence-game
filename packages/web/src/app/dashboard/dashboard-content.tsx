@@ -95,6 +95,32 @@ function HistorySection({ history }: { history: PlayerGameResult[] }) {
   );
 }
 
+export function McpSetupCard({ hasHistory }: { hasHistory: boolean }) {
+  return (
+    <section className="influence-panel rounded-xl p-5 sm:p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="influence-section-title">Games MCP</p>
+          <h2 className="mt-2 text-lg font-semibold text-text-primary">
+            Connect your Influence games to Codex or Claude Code
+          </h2>
+          <p className="influence-copy mt-2 max-w-2xl text-sm leading-6">
+            {hasHistory
+              ? "Use your game history from an AI coding client without granting maintainer access or internal inspection."
+              : "Join or complete a game, then let an AI coding client read the games tied to your account."}
+          </p>
+        </div>
+        <Link
+          href="/get-mcp"
+          className="influence-button-secondary shrink-0 rounded-lg px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.18em]"
+        >
+          Connect MCP
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Saved agents section
 // ---------------------------------------------------------------------------
@@ -313,6 +339,10 @@ export function DashboardContent() {
               </div>
             </div>
           )}
+        </div>
+
+        <div className="mb-10">
+          <McpSetupCard hasHistory={played > 0} />
         </div>
 
         {/* Open games to join */}
