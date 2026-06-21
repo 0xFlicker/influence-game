@@ -35,6 +35,10 @@ export function DashboardGamePreview({
   error,
   onJoin,
 }: DashboardGamePreviewProps) {
+  const hasGames = games.length > 0;
+  const showLoading = loading && !hasGames;
+  const showError = Boolean(error) && !hasGames;
+
   return (
     <section className="influence-panel rounded-xl p-5" data-testid="dashboard-game-preview">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -47,13 +51,13 @@ export function DashboardGamePreview({
         </Link>
       </div>
 
-      {loading ? (
+      {showLoading ? (
         <div className="influence-empty-state rounded-lg p-6 text-center text-sm">Loading games...</div>
-      ) : error ? (
+      ) : showError ? (
         <div className="rounded-lg border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-300">
           {error}
         </div>
-      ) : games.length === 0 ? (
+      ) : !hasGames ? (
         <div className="influence-empty-state rounded-lg p-6 text-center text-sm">
           No live or open games right now.
           <div className="mt-2">

@@ -73,7 +73,6 @@ export function DashboardContent() {
       return;
     }
 
-    setHistoryLoading(true);
     setHistoryError(null);
     getPlayerGames()
       .then(setHistory)
@@ -90,7 +89,6 @@ export function DashboardContent() {
       return;
     }
 
-    setAgentsLoading(true);
     setAgentsError(null);
     listAgents()
       .then(setAgents)
@@ -102,7 +100,6 @@ export function DashboardContent() {
   }, [authenticated]);
 
   const fetchGames = useCallback(() => {
-    setGamesLoading(true);
     setGamesError(null);
     listGames()
       .then(setGames)

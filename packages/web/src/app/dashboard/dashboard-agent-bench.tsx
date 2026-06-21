@@ -29,6 +29,9 @@ function placementText(result: PlayerGameResult): string {
 }
 
 export function DashboardRecentResult({ result, loading, error }: DashboardRecentResultProps) {
+  const showLoading = loading && !result;
+  const showError = Boolean(error) && !result;
+
   return (
     <section className="influence-panel rounded-xl p-5" data-testid="dashboard-recent-result">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -38,9 +41,9 @@ export function DashboardRecentResult({ result, loading, error }: DashboardRecen
         </div>
       </div>
 
-      {loading ? (
+      {showLoading ? (
         <div className="influence-empty-state rounded-lg p-6 text-center text-sm">Loading result...</div>
-      ) : error ? (
+      ) : showError ? (
         <div className="rounded-lg border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-300">
           {error}
         </div>
@@ -70,6 +73,10 @@ export function DashboardRecentResult({ result, loading, error }: DashboardRecen
 }
 
 export function DashboardAgentBench({ agents, loading, error }: DashboardAgentBenchProps) {
+  const hasAgents = agents.length > 0;
+  const showLoading = loading && !hasAgents;
+  const showError = Boolean(error) && !hasAgents;
+
   return (
     <section className="influence-panel rounded-xl p-5" data-testid="dashboard-agent-bench">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -87,13 +94,13 @@ export function DashboardAgentBench({ agents, loading, error }: DashboardAgentBe
         </div>
       </div>
 
-      {loading ? (
+      {showLoading ? (
         <div className="influence-empty-state rounded-lg p-6 text-center text-sm">Loading agents...</div>
-      ) : error ? (
+      ) : showError ? (
         <div className="rounded-lg border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-300">
           {error}
         </div>
-      ) : agents.length === 0 ? (
+      ) : !hasAgents ? (
         <div className="influence-panel-dashed rounded-lg p-6 text-center">
           <p className="influence-copy text-sm">No saved agents yet</p>
           <p className="influence-copy-muted mt-1 text-xs">Create a competitor before joining games.</p>

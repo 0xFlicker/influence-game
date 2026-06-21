@@ -167,6 +167,37 @@ describe("dashboard mission-control overview", () => {
     expect(textHtml).not.toContain("Game #1");
   });
 
+  it("keeps existing game preview visible during background refresh", () => {
+    const html = renderToString(
+      <DashboardGamePreview
+        games={[game({ gameNumber: 8 })]}
+        queueSummary={null}
+        loading
+        error={null}
+        onJoin={() => undefined}
+      />,
+    );
+    const textHtml = withoutReactTextMarkers(html);
+
+    expect(textHtml).toContain("Game #8");
+    expect(textHtml).not.toContain("Loading games");
+  });
+
+  it("keeps existing result and agent previews visible during background refresh", () => {
+    const html = renderToString(
+      <>
+        <DashboardRecentResult result={result({ gameNumber: 9 })} loading error={null} />
+        <DashboardAgentBench agents={[agent({ name: "Lyra" })]} loading error={null} />
+      </>,
+    );
+    const textHtml = withoutReactTextMarkers(html);
+
+    expect(textHtml).toContain("Game #9");
+    expect(textHtml).toContain("Lyra");
+    expect(textHtml).not.toContain("Loading result");
+    expect(textHtml).not.toContain("Loading agents");
+  });
+
   it("routes empty agent state to agent creation", () => {
     const html = renderDashboardSurface({
       agents: [],
