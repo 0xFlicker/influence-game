@@ -928,6 +928,11 @@ export interface WhisperRoomMetadata {
   diagnostics?: WhisperSessionDiagnostics;
 }
 
+export interface WsRoomMetadata {
+  rooms: WhisperRoomAllocation[];
+  excluded: string[];
+}
+
 export interface TranscriptEntry {
   id: number;
   gameId: string;
@@ -967,7 +972,7 @@ export interface GameDetail {
   completedAt?: string;
 }
 
-/** Engine-format transcript entry received over WebSocket (differs from DB TranscriptEntry) */
+/** Public transcript entry received over WebSocket (matches PublicWsTranscriptEntry in packages/api) */
 export interface WsTranscriptEntry {
   round: number;
   phase: string;
@@ -975,9 +980,11 @@ export interface WsTranscriptEntry {
   scope: TranscriptScope;
   to?: string[];
   roomId?: number;
-  roomMetadata?: WhisperRoomMetadata;
+  roomMetadata?: WsRoomMetadata;
   text: string;
   thinking?: string | null;
+  anonymous?: boolean;
+  displayOrder?: number;
   timestamp: number;
 }
 

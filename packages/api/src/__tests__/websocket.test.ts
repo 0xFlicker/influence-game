@@ -22,6 +22,17 @@ import { Phase } from "@influence/engine";
 import type { GameStreamEvent } from "@influence/engine";
 import type { GameWatchState } from "../services/game-watch-state.js";
 
+type TranscriptEntryEvent = Extract<GameStreamEvent, { type: "transcript_entry" }>;
+type TranscriptEntryWithPrivateFields = TranscriptEntryEvent["entry"] & {
+  decisionLog: string;
+  privateTraceManifest: { bucket: string; key: string; marker: string };
+  prompt: string;
+  providerPayload: { marker: string };
+  rawResponse: { marker: string };
+  sourcePointers: Array<{ marker: string }>;
+  storageKey: string;
+};
+
 // ---------------------------------------------------------------------------
 // Mock WebSocket & Server
 // ---------------------------------------------------------------------------
@@ -217,8 +228,147 @@ describe("WebSocket Manager", () => {
 
     const parsed = JSON.parse(published[0]!.data);
     expect(parsed.type).toBe("message");
+    expect(parsed.entry).toEqual({
+      round: 1,
+      phase: Phase.MINGLE,
+      timestamp: event.entry.timestamp,
+      from: "House",
+      scope: "system",
+      text: "Beat 1: Room 1: Alice, Bob | Room 2: Empty",
+      roomMetadata: {
+        rooms: [
+          { roomId: 1, round: 1, beat: 1, playerIds: ["p1", "p2"] },
+          { roomId: 2, round: 1, beat: 1, playerIds: [] },
+        ],
+        excluded: [],
+      },
+    });
     expect(parsed.entry.roomMetadata.rooms).toHaveLength(2);
     expect(parsed.entry.roomMetadata.rooms[1].playerIds).toEqual([]);
+  });
+
+  test("broadcastGameEvent serializes only the public transcript message fields", () => {
+    const { server, published } = createMockServer();
+    setServer(server);
+
+    const entry: TranscriptEntryWithPrivateFields = {
+      round: 2,
+      phase: Phase.MINGLE,
+      timestamp: Date.now(),
+      from: "Alice",
+      scope: "mingle",
+      to: ["p2"],
+      roomId: 3,
+      roomMetadata: {
+        rooms: [{ roomId: 3, round: 2, beat: 1, playerIds: ["p1", "p2"] }],
+        excluded: ["p4"],
+        diagnostics: {
+          round: 2,
+          beat: 1,
+          roomCount: 3,
+          eligiblePlayers: [{ id: "p1", name: "Alice" }],
+          assignments: [
+            {
+              player: { id: "p1", name: "Alice" },
+              assignedRoomId: 3,
+              source: "house",
+              repairNotes: ["PRIVATE_REPAIR_NOTE_SENTINEL"],
+              intent: {
+                seekPlayers: ["Bob"],
+                avoidPlayers: ["Charlie"],
+                preferredRoomSize: "pair",
+                purpose: "PRIVATE_ROOM_INTENT_SENTINEL",
+                provisionalTarget: "Charlie",
+                noTargetReason: null,
+                openingAsk: "PRIVATE_OPENING_ASK_SENTINEL",
+                strategicLens: "room_traffic",
+                strategicLensRationale: "PRIVATE_STRATEGIC_LENS_SENTINEL",
+              },
+            },
+          ],
+          allocatedRooms: [
+            {
+              roomId: 3,
+              beat: 1,
+              players: [{ id: "p1", name: "Alice" }],
+              conversationRan: true,
+            },
+          ],
+          actions: [
+            {
+              player: { id: "p1", name: "Alice" },
+              turn: 1,
+              fromRoomId: 3,
+              toRoomId: 3,
+              moved: false,
+              action: "talk",
+              gotoRoomId: null,
+              gotoPlayerName: "PRIVATE_GOTO_PLAYER_SENTINEL",
+              gotoStatus: "valid",
+            },
+          ],
+        },
+      },
+      text: "Let's keep this room aligned.",
+      thinking: "PUBLIC_THINKING_SENTINEL",
+      anonymous: true,
+      displayOrder: 2,
+      reasoningContext: "PRIVATE_REASONING_SENTINEL",
+      decisionLog: "PRIVATE_DECISION_LOG_SENTINEL",
+      privateTraceManifest: {
+        bucket: "PRIVATE_TRACE_BUCKET_SENTINEL",
+        key: "PRIVATE_TRACE_STORAGE_KEY_SENTINEL",
+        marker: "PRIVATE_TRACE_MARKER_SENTINEL",
+      },
+      prompt: "PRIVATE_PROMPT_SENTINEL",
+      providerPayload: { marker: "PRIVATE_PROVIDER_PAYLOAD_SENTINEL" },
+      rawResponse: { marker: "PRIVATE_RAW_RESPONSE_SENTINEL" },
+      sourcePointers: [{ marker: "PRIVATE_SOURCE_POINTER_SENTINEL" }],
+      storageKey: "PRIVATE_STORAGE_KEY_SENTINEL",
+    };
+    const event: GameStreamEvent = { type: "transcript_entry", entry };
+
+    broadcastGameEvent("game-sentinel", event);
+
+    const parsed = JSON.parse(published[0]!.data);
+    expect(parsed).toEqual({
+      type: "message",
+      entry: {
+        round: 2,
+        phase: Phase.MINGLE,
+        timestamp: entry.timestamp,
+        from: "Alice",
+        scope: "mingle",
+        to: ["p2"],
+        roomId: 3,
+        roomMetadata: {
+          rooms: [{ roomId: 3, round: 2, beat: 1, playerIds: ["p1", "p2"] }],
+          excluded: ["p4"],
+        },
+        text: "Let's keep this room aligned.",
+        thinking: "PUBLIC_THINKING_SENTINEL",
+        anonymous: true,
+        displayOrder: 2,
+      },
+    });
+
+    const serialized = JSON.stringify(parsed);
+    expect(serialized).toContain("PUBLIC_THINKING_SENTINEL");
+    expect(serialized).not.toContain("PRIVATE_REASONING_SENTINEL");
+    expect(serialized).not.toContain("PRIVATE_DECISION_LOG_SENTINEL");
+    expect(serialized).not.toContain("PRIVATE_TRACE_BUCKET_SENTINEL");
+    expect(serialized).not.toContain("PRIVATE_TRACE_STORAGE_KEY_SENTINEL");
+    expect(serialized).not.toContain("PRIVATE_TRACE_MARKER_SENTINEL");
+    expect(serialized).not.toContain("PRIVATE_PROMPT_SENTINEL");
+    expect(serialized).not.toContain("PRIVATE_PROVIDER_PAYLOAD_SENTINEL");
+    expect(serialized).not.toContain("PRIVATE_RAW_RESPONSE_SENTINEL");
+    expect(serialized).not.toContain("PRIVATE_SOURCE_POINTER_SENTINEL");
+    expect(serialized).not.toContain("PRIVATE_STORAGE_KEY_SENTINEL");
+    expect(serialized).not.toContain("PRIVATE_REPAIR_NOTE_SENTINEL");
+    expect(serialized).not.toContain("PRIVATE_ROOM_INTENT_SENTINEL");
+    expect(serialized).not.toContain("PRIVATE_OPENING_ASK_SENTINEL");
+    expect(serialized).not.toContain("PRIVATE_STRATEGIC_LENS_SENTINEL");
+    expect(serialized).not.toContain("PRIVATE_GOTO_PLAYER_SENTINEL");
   });
 
   test("broadcastGameEvent ignores internal agent_turn events", () => {
@@ -332,6 +482,28 @@ describe("WebSocket Manager", () => {
       reasonCode: "runner_failed",
       message: "Game suspended.",
     });
+  });
+
+  test("broadcastRaw ignores message events that bypass the TypeScript boundary", () => {
+    const { server, published } = createMockServer();
+    setServer(server);
+
+    const unsafeMessage = {
+      type: "message",
+      entry: {
+        round: 1,
+        phase: Phase.MINGLE,
+        timestamp: Date.now(),
+        from: "Alice",
+        scope: "mingle",
+        text: "Unsafe raw message",
+        reasoningContext: "PRIVATE_RAW_BYPASS_SENTINEL",
+      },
+    } as unknown as Parameters<typeof broadcastRaw>[1];
+
+    broadcastRaw("game-unsafe-raw", unsafeMessage);
+
+    expect(published).toHaveLength(0);
   });
 
   test("sendWatchState sends watch_state event to single client", () => {

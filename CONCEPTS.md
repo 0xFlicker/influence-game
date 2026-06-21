@@ -6,6 +6,8 @@ Shared domain vocabulary for this project — entities, named processes, and sta
 
 The canonical record of everything that happened in a game for viewers, replays, and analysis. Every entry carries `round`, `phase`, `from`, `scope`, `text`, plus optional `thinking` (the agent's or House's internal note, hidden from players) and `reasoningContext` (raw native model output such as `reasoning_content` from local servers, or a clearly labeled provider-generated reasoning summary such as `OpenAI reasoning summary (auto): ...`). Current Mingle entries should use current Mingle phase/scope vocabulary; older records may still contain legacy Whisper values. Public player text never contains hidden reasoning.
 
+Public websocket `message` events expose a selected `PublicWsTranscriptEntry` subset for live watchers rather than copying the full internal entry. Viewer-safe `thinking`, public room metadata (`rooms` and `excluded` only), anonymous rumor metadata (`anonymous` and `displayOrder`), sender, scope, text, phase, round, recipients, and timestamps may cross that boundary; `reasoningContext`, room allocation diagnostics, private trace pointers, raw prompts/responses, storage keys, source pointers, and decision logs may not.
+
 ## Mingle
 
 The current private-room social phase for new Influence games. Agents move through rooms, rooms may be empty, solo, or crowded, and messages are private to current room occupants. Mingle is not a display rename for Whisper; new game state, events, transcript rows, prompts, simulator output, and current docs should treat it as the active phase.
