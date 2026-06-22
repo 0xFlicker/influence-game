@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Refactoring Sessions from Comments, TODOs, and Research</title>
+  <style>
+    :root {
+      --bg: #f7f4ec;
+      --panel: #fffdf8;
+      --ink: #1f2526;
+      --muted: #65706f;
+      --line: #d8d1c2;
+      --accent: #166b6b;
+      --accent-soft: #dcefed;
+      --amber: #8a5b14;
+      --amber-soft: #f4dfb7;
+      --rose: #9d3f44;
+      --rose-soft: #f1d6d8;
+      --green: #2f6f45;
+      --green-soft: #dcebdc;
+      --code: #2f3436;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px;
+      line-height: 1.55;
+    }
+    a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+    code {
+      color: var(--code);
+      background: rgba(31, 37, 38, 0.07);
+      padding: 0.1rem 0.28rem;
+      border-radius: 5px;
+      font-size: 0.92em;
+    }
+    .page {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 42px 22px 56px;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 26px;
+      margin-bottom: 26px;
+    }
+    .kicker {
+      color: var(--accent);
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+    }
+    h1 {
+      margin: 0.4rem 0 0.8rem;
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      line-height: 1.04;
+      letter-spacing: 0;
+      max-width: 13ch;
+    }
+    h2 {
+      margin: 2rem 0 0.8rem;
+      font-size: 1.45rem;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+    h3 {
+      margin: 0 0 0.7rem;
+      font-size: 1.08rem;
+      letter-spacing: 0;
+    }
+    p { max-width: 74ch; }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 5px 10px;
+      background: rgba(255, 253, 248, 0.72);
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin: 22px 0;
+    }
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .stat strong {
+      display: block;
+      font-size: 1.55rem;
+      line-height: 1;
+    }
+    .stat span {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+    .section {
+      margin-top: 26px;
+    }
+    .callout {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 16px 18px;
+    }
+    .axes {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      padding: 0;
+      list-style: none;
+    }
+    .axes li {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 12px 14px;
+      font-weight: 650;
+    }
+    .jump-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 14px 0 18px;
+    }
+    .jump-list a {
+      display: block;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 10px 12px;
+      text-decoration: none;
+      font-weight: 650;
+    }
+    .idea-card {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 20px;
+      margin: 16px 0;
+    }
+    .idea-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 10px;
+    }
+    .rank {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: white;
+      font-weight: 800;
+      flex: 0 0 auto;
+    }
+    .idea-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: flex-end;
+      min-width: 190px;
+    }
+    .badge {
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #184b4b;
+      background: var(--accent-soft);
+    }
+    .badge.low { background: var(--green-soft); color: var(--green); }
+    .badge.med { background: var(--amber-soft); color: var(--amber); }
+    .badge.axis { background: #ece6da; color: #4d4b45; }
+    .fields {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 8px 14px;
+      margin-top: 12px;
+    }
+    .fields dt {
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .fields dd {
+      margin: 0;
+    }
+    .diagram {
+      margin: 16px 0 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfaf5;
+      padding: 12px;
+      overflow-x: auto;
+    }
+    .diagram svg {
+      display: block;
+      width: 100%;
+      min-width: 620px;
+      height: auto;
+    }
+    .diagram text {
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      fill: var(--ink);
+      font-size: 13px;
+    }
+    .node {
+      fill: white;
+      stroke: #bfb7a7;
+      stroke-width: 1.5;
+    }
+    .node.accent { fill: var(--accent-soft); stroke: var(--accent); }
+    .node.warn { fill: var(--amber-soft); stroke: var(--amber); }
+    .node.ok { fill: var(--green-soft); stroke: var(--green); }
+    .arrow {
+      stroke: #66706f;
+      stroke-width: 1.7;
+      fill: none;
+      marker-end: url(#arrow);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      display: table;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #eee7d9;
+      font-size: 0.86rem;
+    }
+    tr:last-child td { border-bottom: 0; }
+    .refs li { margin-bottom: 6px; }
+    footer {
+      margin-top: 34px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+    @media (max-width: 760px) {
+      .summary-grid,
+      .axes,
+      .jump-list {
+        grid-template-columns: 1fr;
+      }
+      .idea-head {
+        display: block;
+      }
+      .badges {
+        justify-content: flex-start;
+        margin-top: 10px;
+      }
+      .fields {
+        grid-template-columns: 1fr;
+      }
+      table {
+        display: block;
+        overflow-x: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div class="kicker">ce-ideate artifact</div>
+      <h1>Refactoring Sessions from Comments, TODOs, and Research</h1>
+      <p>Ranked refactoring directions for Influence, grounded in repository comments, TODOs, recent planning docs, solution notes, and external technical-debt research.</p>
+      <div class="meta">
+        <span class="pill">Date: <time datetime="2026-06-21">2026-06-21</time></span>
+        <span class="pill">Topic: refactoring-session-comments-todos-research</span>
+        <span class="pill">Focus: comments, TODOs, and research-backed refactoring</span>
+        <span class="pill">Mode: repo-grounded</span>
+      </div>
+    </header>
+
+    <section class="summary-grid" aria-label="Run summary">
+      <div class="stat"><strong>26</strong><span>raw candidates</span></div>
+      <div class="stat"><strong>7</strong><span>ranked survivors</span></div>
+      <div class="stat"><strong>19</strong><span>cut or folded</span></div>
+      <div class="stat"><strong>4</strong><span>topic axes covered</span></div>
+    </section>
+
+    <section class="section" id="grounding">
+      <h2>Grounding Context</h2>
+      <div class="callout">
+        <p>Influence is a Bun/TypeScript monorepo with engine, API, and web packages. Current strategy weights AI app compatibility, agent reasoning access, resiliency, and replay/sharing. The strongest refactor signals clustered around boundaries the repo already cares about: public versus private evidence, durable watch state versus display events, and inspection/readiness versus crash-safe resume.</p>
+        <p>The most concrete code-level debt signals were a public-upload S3 presigner `as any`, a web lint TODO around auth/session derived state, process-local live-run orchestration in `game-lifecycle.ts`, and a websocket event union that still mixes authoritative watch state with display and status events. Recent solution docs reinforced two patterns: strategy evidence should move through typed artifacts, and raw trace reads should use ranged `maxBytes` response caps rather than all-or-nothing object rejection.</p>
+        <p>External SATD research supports treating code comments, issues, and documented research as related but distinct debt signals. The useful refactoring pattern is a small repayment session with a testable seam, not broad aesthetic cleanup.</p>
+      </div>
+    </section>
+
+    <section class="section" id="axes">
+      <h2>Topic Axes</h2>
+      <ul class="axes">
+        <li>Storage and type-quality debt</li>
+        <li>Live-run resilience debt</li>
+        <li>Watch/read-model boundary debt</li>
+        <li>Reasoning/private-evidence boundary debt</li>
+      </ul>
+    </section>
+
+    <section class="section" id="ranked-ideas">
+      <h2>Ranked Ideas</h2>
+      <nav class="jump-list" aria-label="Ranked idea links">
+        <a href="#idea-1">1. Public Boundary Hardening Session</a>
+        <a href="#idea-2">2. Crash-Honesty Extraction Session</a>
+        <a href="#idea-3">3. Watch Stream Contract Split</a>
+        <a href="#idea-4">4. Public Upload Presigner Type Cleanup</a>
+        <a href="#idea-5">5. Cognitive Artifact Policy Module</a>
+        <a href="#idea-6">6. Auth Session Hook and Lint TODO Cleanup</a>
+        <a href="#idea-7">7. Living Refactor Queue from Research Docs</a>
+      </nav>
+
+      <article class="idea-card" id="idea-1">
+        <div class="idea-head">
+          <div class="idea-title"><span class="rank">1</span><h3>Public Boundary Hardening Session</h3></div>
+          <div class="badges"><span class="badge">Conf 88%</span><span class="badge med">Medium</span><span class="badge axis">Reasoning/private evidence</span></div>
+        </div>
+        <p>Extract selected-field DTO builders and shared privacy sentinel tests for websocket transcript entries plus one games-scope MCP/cognitive response path. The session changes construction style, not policy: public payloads are built from allowed fields instead of broad internal objects with late redaction.</p>
+        <dl class="fields">
+          <dt>Basis</dt><dd><strong>direct:</strong> `ws-manager.ts` strips `reasoningContext` from a broad `TranscriptEntry`; docs and tests repeatedly define which fields cannot cross public surfaces.</dd>
+          <dt>Rationale</dt><dd>This protects watch/replay, MCP, and future sharing surfaces at once while staying inside existing product boundaries.</dd>
+          <dt>Downsides</dt><dd>Medium scope; can become too abstract if it tries to convert every public route in one pass.</dd>
+        </dl>
+        <figure class="diagram" aria-label="Public boundary DTO flow">
+          <svg viewBox="0 0 760 190" role="img">
+            <defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#66706f"></path></marker></defs>
+            <rect class="node warn" x="30" y="35" width="160" height="70" rx="8"></rect>
+            <text x="110" y="66" text-anchor="middle">Internal trace</text>
+            <text x="110" y="84" text-anchor="middle">or transcript</text>
+            <path class="arrow" d="M200 70 H300"></path>
+            <rect class="node accent" x="310" y="28" width="170" height="84" rx="8"></rect>
+            <text x="395" y="60" text-anchor="middle">Selected-field</text>
+            <text x="395" y="78" text-anchor="middle">public DTO builder</text>
+            <path class="arrow" d="M490 70 H585"></path>
+            <rect class="node ok" x="595" y="35" width="135" height="70" rx="8"></rect>
+            <text x="662" y="66" text-anchor="middle">Viewer-safe</text>
+            <text x="662" y="84" text-anchor="middle">payload</text>
+            <text x="395" y="145" text-anchor="middle" fill="#65706f">Sentinel tests assert no reasoningContext, prompts, responses, storage keys, or trace manifests.</text>
+          </svg>
+        </figure>
+      </article>
+
+      <article class="idea-card" id="idea-2">
+        <div class="idea-head">
+          <div class="idea-title"><span class="rank">2</span><h3>Crash-Honesty Extraction Session</h3></div>
+          <div class="badges"><span class="badge">Conf 84%</span><span class="badge med">Medium</span><span class="badge axis">Live-run resilience</span></div>
+        </div>
+        <p>Extract startup suspension and suspended-run/readiness labeling into named services and typed response affordances. Preserve the current truth: durable evidence makes runs inspectable, not resumable.</p>
+        <dl class="fields">
+          <dt>Basis</dt><dd><strong>direct:</strong> `AGENTS.md`, `DEVELOPMENT.md`, `docs/statefulness-plan.md`, and startup code all revolve around the not-crash-safe boundary.</dd>
+          <dt>Rationale</dt><dd>It pays down the repo's named operational risk without pretending to implement hydration.</dd>
+          <dt>Downsides</dt><dd>Needs careful naming so it does not become a stealth resume project.</dd>
+        </dl>
+        <figure class="diagram" aria-label="Crash honesty lifecycle">
+          <svg viewBox="0 0 760 180" role="img">
+            <defs><marker id="arrow2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#66706f"></path></marker></defs>
+            <rect class="node warn" x="32" y="38" width="145" height="64" rx="8"></rect>
+            <text x="105" y="66" text-anchor="middle">Process stops</text>
+            <text x="105" y="84" text-anchor="middle">mid-game</text>
+            <path class="arrow" marker-end="url(#arrow2)" d="M187 70 H288"></path>
+            <rect class="node accent" x="300" y="32" width="170" height="76" rx="8"></rect>
+            <text x="385" y="64" text-anchor="middle">Startup suspension</text>
+            <text x="385" y="82" text-anchor="middle">service</text>
+            <path class="arrow" marker-end="url(#arrow2)" d="M480 70 H580"></path>
+            <rect class="node ok" x="592" y="38" width="140" height="64" rx="8"></rect>
+            <text x="662" y="66" text-anchor="middle">Inspectable</text>
+            <text x="662" y="84" text-anchor="middle">not resumable</text>
+            <text x="385" y="140" text-anchor="middle" fill="#65706f">The refactor makes that distinction a service and response contract, not only prose.</text>
+          </svg>
+        </figure>
+      </article>
+
+      <article class="idea-card" id="idea-3">
+        <div class="idea-head">
+          <div class="idea-title"><span class="rank">3</span><h3>Watch Stream Contract Split</h3></div>
+          <div class="badges"><span class="badge">Conf 82%</span><span class="badge med">Medium</span><span class="badge axis">Watch/read model</span></div>
+        </div>
+        <p>Split the websocket event model into authoritative watch-state updates, sanitized display events, and operational/status events. Keep transport behavior stable where useful, but make TypeScript and tests encode that only `watch_state` carries shell-state authority.</p>
+        <dl class="fields">
+          <dt>Basis</dt><dd><strong>direct:</strong> `ws-manager.ts` still keeps `watch_state`, phase changes, messages, status, and errors in one outbound union despite watch-state docs requiring durable state as the authority.</dd>
+          <dt>Rationale</dt><dd>This makes the public watch contract harder to regress as the match watcher evolves.</dd>
+          <dt>Downsides</dt><dd>Could overlap with the public boundary session; best as either its first sub-slice or a standalone watch-focused refactor.</dd>
+        </dl>
+      </article>
+
+      <article class="idea-card" id="idea-4">
+        <div class="idea-head">
+          <div class="idea-title"><span class="rank">4</span><h3>Public Upload Presigner Type Cleanup</h3></div>
+          <div class="badges"><span class="badge">Conf 92%</span><span class="badge low">Low</span><span class="badge axis">Type quality</span></div>
+        </div>
+        <p>Remove the `getSignedUrl(client as any, ...)` escape in `packages/api/src/lib/storage.ts` by introducing a typed presigner helper or correcting the AWS client/command type seam. Keep public and local upload behavior unchanged.</p>
+        <dl class="fields">
+          <dt>Basis</dt><dd><strong>direct:</strong> storage code disables `no-explicit-any` while repo docs and eslint rules say `as any` is not allowed.</dd>
+          <dt>Rationale</dt><dd>It is the smallest high-confidence debt repayment, and it reinforces the codebase's typed-boundary norm.</dd>
+          <dt>Downsides</dt><dd>Low strategic value beyond trust/discipline unless paired with a broader typed-boundary cleanup.</dd>
+        </dl>
+      </article>
+
+      <article class="idea-card" id="idea-5">
+        <div class="idea-head">
+          <div class="idea-title"><span class="rank">5</span><h3>Cognitive Artifact Policy Module</h3></div>
+          <div class="badges"><span class="badge">Conf 80%</span><span class="badge med">Medium</span><span class="badge axis">Reasoning/private evidence</span></div>
+        </div>
+        <p>Consolidate owner/participant/producer cognitive-artifact access labels, no-capture statuses, and no-private-trace-fallback language into a small policy module consumed by API routes, MCP read model, and tests.</p>
+        <dl class="fields">
+          <dt>Basis</dt><dd><strong>direct:</strong> requirements, docs, read-model code, and tests all enforce the same owner-only reasoning / participant-visible thinking-strategy / producer trace split.</dd>
+          <dt>Rationale</dt><dd>The policy is correct but spread out; a policy module reduces future fallback mistakes.</dd>
+          <dt>Downsides</dt><dd>Must stay behavior-preserving and avoid inventing a new auth model.</dd>
+        </dl>
+      </article>
+
+      <article class="idea-card" id="idea-6">
+        <div class="idea-head">
+          <div class="idea-title"><span class="rank">6</span><h3>Auth Session Hook and Lint TODO Cleanup</h3></div>
+          <div class="badges"><span class="badge">Conf 74%</span><span class="badge low">Low</span><span class="badge axis">Frontend/type hygiene</span></div>
+        </div>
+        <p>Replace repeated web `auth:session-ready` / `auth:expired` listeners with a small hook or derived session state helper, then narrow or remove the repo-level eslint warning TODO for `react-hooks/set-state-in-effect`.</p>
+        <dl class="fields">
+          <dt>Basis</dt><dd><strong>direct:</strong> `packages/web/eslint.config.mjs` carries a TODO to refactor to derived state, and several web files subscribe to the same auth session events.</dd>
+          <dt>Rationale</dt><dd>It retires a real TODO and prevents a narrow exception from living as global lint posture.</dd>
+          <dt>Downsides</dt><dd>Needs browser/auth flow verification; easy to overreach into auth UX.</dd>
+        </dl>
+      </article>
+
+      <article class="idea-card" id="idea-7">
+        <div class="idea-head">
+          <div class="idea-title"><span class="rank">7</span><h3>Living Refactor Queue from Research Docs</h3></div>
+          <div class="badges"><span class="badge">Conf 68%</span><span class="badge med">Medium</span><span class="badge axis">Research/docs debt</span></div>
+        </div>
+        <p>Add a lightweight index over docs/plans/brainstorms follow-ups that marks implemented, deferred, obsolete, or still-refactorable claims. Start with statefulness, watch state, and cognitive artifacts, and optionally feed it with a repeatable TODO/comment scan.</p>
+        <dl class="fields">
+          <dt>Basis</dt><dd><strong>direct + external:</strong> the repo's research docs contain many deferred boundaries, and SATD research supports treating comment and issue/documented debt as related but distinct inputs.</dd>
+          <dt>Rationale</dt><dd>It turns rich research artifacts into a repeatable maintenance queue instead of repeated archaeology.</dd>
+          <dt>Downsides</dt><dd>Process-heavy; should stay tiny and repo-local.</dd>
+        </dl>
+      </article>
+    </section>
+
+    <section class="section" id="rejections">
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead><tr><th>Idea</th><th>Reason Cut or Folded</th></tr></thead>
+        <tbody>
+          <tr><td>Reusable debt scanner script alone</td><td>Useful, but weaker than the living refactor queue unless tied to docs/plans status.</td></tr>
+          <tr><td>Remove transcript-derived watch fallbacks wholesale</td><td>Too broad and risks changing replay/theater behavior; narrowed into watch stream contract split.</td></tr>
+          <tr><td>Owner-epoch write guard helper</td><td>Sound, but needs a deeper audit before ranking above crash-honesty extraction.</td></tr>
+          <tr><td>Promote not-crash-safe into type/API affordance</td><td>Folded into Crash-Honesty Extraction.</td></tr>
+          <tr><td>Public cognitive card type only</td><td>Folded into Public Boundary Hardening.</td></tr>
+          <tr><td>API-wide public DTO package</td><td>Good direction, but too abstract as a first slice; folded into Public Boundary Hardening.</td></tr>
+          <tr><td>Full game-lifecycle decomposition</td><td>Valuable but too large for a first refactoring session based on TODO/comment evidence.</td></tr>
+          <tr><td>Games MCP discriminated access union</td><td>Interesting, but less urgent than consolidating public DTO construction and policy tests.</td></tr>
+          <tr><td>Watch summary/live refresh shared builder</td><td>Plausible, but needs a fresh code audit to confirm drift before ranking.</td></tr>
+          <tr><td>Security-lane model</td><td>Useful metaphor, but too conceptual unless attached to DTO/test helper work.</td></tr>
+          <tr><td>Flight-recorder status</td><td>Folded into Crash-Honesty Extraction.</td></tr>
+          <tr><td>Ledger-close terminal writes</td><td>Good future slice, but high-risk without focused terminal-write tests first.</td></tr>
+          <tr><td>30-minute `as any` only</td><td>Kept as Public Upload Presigner Type Cleanup, with clearer scope.</td></tr>
+          <tr><td>2-day public DTO pattern</td><td>Folded into Public Boundary Hardening.</td></tr>
+          <tr><td>Week-long lifecycle decomposition</td><td>Too large; folded down into Crash-Honesty Extraction.</td></tr>
+          <tr><td>Tiny Trust Cleanup combining storage + auth</td><td>Split, because the storage presigner and auth hook have different validation paths.</td></tr>
+          <tr><td>Broad cleanup comments/TODOs</td><td>Too vague and below the ambition floor.</td></tr>
+          <tr><td>Product feature additions from docs</td><td>Scope overrun; this run is refactoring ideation, not feature planning.</td></tr>
+          <tr><td>Full resume/hydration implementation</td><td>Subject overrun and contradicts the explicit current boundary.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section" id="references">
+      <h2>Sources and References</h2>
+      <ul class="refs">
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/AGENTS.md">AGENTS.md</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/STRATEGY.md">STRATEGY.md</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/statefulness-plan.md">docs/statefulness-plan.md</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/reasoning-transcript-observability.md">docs/reasoning-transcript-observability.md</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/game-mcp-production-oauth.md">docs/game-mcp-production-oauth.md</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/solutions/architecture-patterns/agent-strategy-observability-spine.md">docs/solutions/architecture-patterns/agent-strategy-observability-spine.md</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/solutions/runtime-errors/production-game-mcp-raw-trace-read-limit.md">docs/solutions/runtime-errors/production-game-mcp-raw-trace-read-limit.md</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/ws-manager.ts">packages/api/src/services/ws-manager.ts</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/lib/storage.ts">packages/api/src/lib/storage.ts</a></li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/web/eslint.config.mjs">packages/web/eslint.config.mjs</a></li>
+        <li><a href="https://arxiv.org/abs/2408.15109">Comments or Issues: Where to Document Technical Debt?</a></li>
+        <li><a href="https://arxiv.org/abs/2203.05660">Refactoring Debt: Myth or Reality?</a></li>
+        <li><a href="https://arxiv.org/abs/2206.14764">Potential Technical Debt and Its Resolution in Code Reviews</a></li>
+      </ul>
+    </section>
+
+    <footer>
+      Composed 2026-06-21T06:53:45Z by ce-ideate from the prompt context "a refactoring session based off of comments, todos, or research".
+    </footer>
+  </main>
+</body>
+</html>
