@@ -80,10 +80,25 @@ jobs:
         id: sha
         run: echo "short=$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push
+      - name: Build and push API
+        if: matrix.target == 'api'
         run: |
           docker build -f ${{ matrix.dockerfile }} \
             --build-arg GIT_SHA=${{ github.sha }} \
+            -t ${{ matrix.image }}:${{ steps.sha.outputs.short }} \
+            -t ${{ matrix.image }}:staging \
+            .
+          docker push ${{ matrix.image }}:${{ steps.sha.outputs.short }}
+          docker push ${{ matrix.image }}:staging
+
+      - name: Build and push web
+        if: matrix.target == 'web'
+        env:
+          PRIVY_APP_ID: ${{ secrets.PRIVY_APP_ID }}
+        run: |
+          docker build -f ${{ matrix.dockerfile }} \
+            --build-arg GIT_SHA=${{ github.sha }} \
+            --build-arg PRIVY_APP_ID="${PRIVY_APP_ID}" \
             -t ${{ matrix.image }}:${{ steps.sha.outputs.short }} \
             -t ${{ matrix.image }}:staging \
             .

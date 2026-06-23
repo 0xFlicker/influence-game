@@ -26,6 +26,8 @@ COPY --from=deps /app/packages/engine/node_modules ./packages/engine/node_module
 ENV PATH="/app/node_modules/.bin:$PATH"
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DOCKER_BUILD=1
+ARG PRIVY_APP_ID
+ENV PRIVY_APP_ID=${PRIVY_APP_ID}
 
 WORKDIR /app/packages/web
 RUN bun run build

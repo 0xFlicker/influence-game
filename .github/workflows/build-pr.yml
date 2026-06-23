@@ -152,10 +152,23 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build and push API
+        if: matrix.target == 'api'
         run: |
           docker build -f ${{ matrix.dockerfile }} \
             --build-arg GIT_SHA=${{ needs.ephemeral-status.outputs.head_sha }} \
+            -t ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }} \
+            .
+          docker push ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }}
+
+      - name: Build and push web
+        if: matrix.target == 'web'
+        env:
+          PRIVY_APP_ID: ${{ secrets.PRIVY_APP_ID }}
+        run: |
+          docker build -f ${{ matrix.dockerfile }} \
+            --build-arg GIT_SHA=${{ needs.ephemeral-status.outputs.head_sha }} \
+            --build-arg PRIVY_APP_ID="${PRIVY_APP_ID}" \
             -t ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }} \
             .
           docker push ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }}
