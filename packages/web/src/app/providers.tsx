@@ -1,7 +1,11 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { RuntimeConfigProvider, useRuntimeConfig } from "@/lib/runtime-config";
+import {
+  RuntimeConfigProvider,
+  useRuntimeConfig,
+  type PublicRuntimeConfig,
+} from "@/lib/runtime-config";
 import { PrivyProvider, usePrivy } from "@privy-io/react-auth";
 import {
   WagmiProvider as PrivyWagmiProvider,
@@ -177,9 +181,15 @@ function AuthSync({ children }: { children: React.ReactNode }) {
 // Dummy Privy app ID for e2e mode (Privy SDK requires a non-empty string)
 const E2E_PRIVY_APP_ID = "e2e-dummy-privy-app-id";
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({
+  children,
+  initialRuntimeConfig,
+}: {
+  children: React.ReactNode;
+  initialRuntimeConfig?: PublicRuntimeConfig;
+}) {
   return (
-    <RuntimeConfigProvider>
+    <RuntimeConfigProvider initialConfig={initialRuntimeConfig}>
       <InnerProviders>{children}</InnerProviders>
     </RuntimeConfigProvider>
   );
@@ -188,11 +198,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
 function InnerProviders({ children }: { children: React.ReactNode }) {
   const runtimeConfig = useRuntimeConfig();
   const [e2e, setE2e] = useState(false);
-  const [checked, setChecked] = useState(false);
 
   useEffect(() => {
     setE2e(isE2EMode());
-    setChecked(true);
   }, []);
 
   const privyAppId = e2e
@@ -206,10 +214,6 @@ function InnerProviders({ children }: { children: React.ReactNode }) {
     return { isE2E: true, authenticated: hasToken, ready: true };
   }, [e2e]);
 
-  if (!checked || !runtimeConfig.ready) {
-    return null; // Wait for client-side e2e detection and runtime config
-  }
-
   if (!privyAppId) {
     throw new Error("PRIVY_APP_ID is not set (check runtime env or NEXT_PUBLIC_PRIVY_APP_ID)");
   }
@@ -217,6 +221,7 @@ function InnerProviders({ children }: { children: React.ReactNode }) {
   return (
     <E2EAuthContext.Provider value={e2eAuth}>
       <PrivyProvider
+        key={privyAppId}
         appId={privyAppId}
         config={{
           loginMethods: ["email", "wallet"],

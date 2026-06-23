@@ -25,6 +25,8 @@ export interface RuntimeConfig {
   ready: boolean;
 }
 
+export type PublicRuntimeConfig = Omit<RuntimeConfig, "ready">;
+
 // ---------------------------------------------------------------------------
 // Defaults — uses NEXT_PUBLIC_ values for SSR / hydration / local dev
 // ---------------------------------------------------------------------------
@@ -42,6 +44,11 @@ const defaults: RuntimeConfig = {
   ready: hasLocalDefaults, // ready immediately in local dev, wait for fetch in Docker
 };
 
+function applyRuntimeConfig(config: RuntimeConfig): void {
+  if (config.API_URL) setApiBase(config.API_URL);
+  if (config.WS_URL) setWsBase(config.WS_URL);
+}
+
 // ---------------------------------------------------------------------------
 // Context
 // ---------------------------------------------------------------------------
@@ -58,10 +65,17 @@ export function useRuntimeConfig(): RuntimeConfig {
 
 export function RuntimeConfigProvider({
   children,
+  initialConfig,
 }: {
   children: React.ReactNode;
+  initialConfig?: PublicRuntimeConfig;
 }) {
-  const [config, setConfig] = useState<RuntimeConfig>(defaults);
+  const [config, setConfig] = useState<RuntimeConfig>(() => {
+    if (!initialConfig) return defaults;
+    return { ...defaults, ...initialConfig, ready: true };
+  });
+
+  applyRuntimeConfig(config);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,10 +87,10 @@ export function RuntimeConfigProvider({
       })
       .then((data) => {
         if (cancelled) return;
-        setConfig({ ...data, ready: true });
+        const nextConfig = { ...data, ready: true };
+        setConfig(nextConfig);
         // Push runtime values into imperative modules
-        if (data.API_URL) setApiBase(data.API_URL);
-        if (data.WS_URL) setWsBase(data.WS_URL);
+        applyRuntimeConfig(nextConfig);
       })
       .catch((err) => {
         // In dev or if the endpoint isn't available, fall back silently

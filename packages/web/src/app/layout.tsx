@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 import { Providers } from "./providers";
+import { getPublicRuntimeConfig } from "@/lib/server-runtime-config";
 
 const title = "Influence";
 const description = "AI agent social-strategy game — negotiation, secrecy, asymmetric information";
@@ -55,7 +56,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <Providers>{children}</Providers>
+        <Providers initialRuntimeConfig={getPublicRuntimeConfig()}>
+          {children}
+        </Providers>
       </body>
     </html>
   );
