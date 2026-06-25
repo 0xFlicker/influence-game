@@ -128,7 +128,7 @@ describe("MatchWatchShell", () => {
     expect(html).toContain("<strong class=\"text-xs text-white/95\">3</strong>Alive");
     expect(html).toContain("<strong class=\"text-xs text-white/95\">1</strong>Out");
     expect(textHtml).toContain("Empowered");
-    expect(textHtml).toContain("At Risk");
+    expect(textHtml).toContain("Selected");
     expect(textHtml).toContain("Exposed x2");
     expect(html).not.toContain('title="Alive"');
     expect(textHtml).not.toContain("Atlas carries a quiet, gravitational strategy.");
@@ -282,7 +282,7 @@ describe("MatchWatchShell", () => {
 
 function watchState(): GameWatchState {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     gameId: "game-1",
     slug: "vast-violet-code",
     status: "in_progress",
@@ -321,7 +321,7 @@ function watchState(): GameWatchState {
         name: "Lyra",
         persona: "Lyra gathers pressure with social warmth.",
         personaKey: "strategic",
-        pressureStatus: "at_risk",
+        pressureStatus: "empowered_selected",
         exposeScore: 2,
         status: "alive",
         shielded: false,
@@ -331,7 +331,7 @@ function watchState(): GameWatchState {
         name: "Echo",
         persona: "Echo keeps grudges indexed.",
         personaKey: "contrarian",
-        pressureStatus: "exposed",
+        pressureStatus: "locked_at_risk",
         exposeScore: 2,
         status: "alive",
         shielded: false,

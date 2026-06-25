@@ -406,10 +406,15 @@ function statusTagClasses(tag: MatchWatchPlayerStatusTag): string {
   switch (tag.kind) {
     case "empowered":
       return "border-amber-300/25 bg-amber-400/10 text-amber-200";
-    case "at_risk":
+    case "empowered_selected":
       return "border-rose-300/25 bg-rose-400/10 text-rose-200";
-    case "exposed":
+    case "locked_at_risk":
+    case "selectable_exposed":
       return "border-fuchsia-300/25 bg-fuchsia-400/10 text-fuchsia-200";
+    case "replacement_risk":
+      return "border-orange-300/25 bg-orange-400/10 text-orange-200";
+    case "fallback_risk":
+      return "border-white/15 bg-white/[0.04] text-white/55";
     case "shielded":
       return "border-sky-300/25 bg-sky-400/10 text-sky-200";
   }

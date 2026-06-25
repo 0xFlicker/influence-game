@@ -51,12 +51,18 @@ interface AppendCanonicalEventOptions {
 function serializeInitialCandidateResolution(resolution: InitialExposureBenchResolution): Record<string, unknown> {
   return {
     mode: resolution.mode,
+    alivePlayers: resolution.alivePlayers.map((player) => ({ ...player })),
+    empoweredId: resolution.empoweredId,
+    exposeScores: { ...resolution.exposeScores },
     exposureBench: resolution.exposureBench.map((entry) => ({ ...entry })),
+    rawExposePressure: resolution.rawExposePressure.map((entry) => ({ ...entry })),
     lockedCandidates: [...resolution.lockedCandidates],
+    choice: { ...resolution.choice, eligibleCandidateIds: [...resolution.choice.eligibleCandidateIds] },
     eligibleCandidateIds: [...resolution.choice.eligibleCandidateIds],
     requiredCount: resolution.choice.requiredCount,
     choiceReason: resolution.choice.reason,
     selectedCandidateIds: [...resolution.selectedCandidateIds],
+    candidates: resolution.candidates ? [...resolution.candidates] : null,
     fallbackApplied: resolution.fallbackApplied,
     fallbackReason: resolution.fallbackReason,
   };
@@ -65,12 +71,20 @@ function serializeInitialCandidateResolution(resolution: InitialExposureBenchRes
 function serializeShieldReplacementResolution(resolution: ShieldReplacementResolution): Record<string, unknown> {
   return {
     mode: resolution.mode,
+    alivePlayers: resolution.alivePlayers.map((player) => ({ ...player })),
+    empoweredId: resolution.empoweredId,
+    exposeScores: { ...resolution.exposeScores },
+    exposureBench: resolution.exposureBench.map((entry) => ({ ...entry })),
+    rawExposePressure: resolution.rawExposePressure.map((entry) => ({ ...entry })),
     protectedCandidateId: resolution.protectedCandidateId,
     remainingCandidateIds: [...resolution.remainingCandidateIds],
+    lockedCandidates: [...resolution.lockedCandidates],
+    choice: { ...resolution.choice, eligibleCandidateIds: [...resolution.choice.eligibleCandidateIds] },
     eligibleCandidateIds: [...resolution.choice.eligibleCandidateIds],
     requiredCount: resolution.choice.requiredCount,
     choiceReason: resolution.choice.reason,
     selectedCandidateIds: [...resolution.selectedCandidateIds],
+    candidates: resolution.candidates ? [...resolution.candidates] : null,
     fallbackApplied: resolution.fallbackApplied,
     fallbackReason: resolution.fallbackReason,
   };

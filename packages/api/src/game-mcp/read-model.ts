@@ -539,6 +539,7 @@ function redactGamesScopeProjection(
         empoweredName: null,
         councilCandidates: null,
         councilCandidateNames: null,
+        candidateResolution: null,
         powerAction: null,
       },
     },

@@ -120,7 +120,13 @@ export type CognitiveArtifactActorRole = "player" | "juror" | "house" | "system"
 export type GameWatchStateSource = "durable_projection" | "degraded" | "best_available_terminal_result" | "pre_kernel_empty";
 export type GameWatchProjectionAvailability = "available" | "degraded" | "unavailable";
 export type GameWatchPlayerStatus = "alive" | "eliminated" | "unknown";
-export type GameWatchPlayerPressureStatus = "empowered" | "at_risk" | "exposed";
+export type GameWatchPlayerPressureStatus =
+  | "empowered"
+  | "locked_at_risk"
+  | "empowered_selected"
+  | "selectable_exposed"
+  | "replacement_risk"
+  | "fallback_risk";
 export type GameWatchDiagnosticCode =
   | "duplicate_sequence"
   | "hash_mismatch"
@@ -198,7 +204,7 @@ export interface GameWatchFinalState {
 }
 
 export interface GameWatchState {
-  schemaVersion: 1;
+  schemaVersion: 2;
   gameId: string;
   slug?: string;
   status: GameStatus;

@@ -372,24 +372,51 @@ function buildPlayerStatusTags(player: GamePlayer): MatchWatchPlayerStatusTag[] 
       label: "Empowered",
       title: "Empowered by the vote",
     });
-  } else if (player.pressureStatus === "at_risk") {
+  } else if (player.pressureStatus === "locked_at_risk") {
+    const exposeLabel = buildExposeLabel(player.exposeScore);
     tags.push({
-      kind: "at_risk",
-      icon: "⚠",
-      label: "At Risk",
-      title: "At risk for Council",
-    });
-  } else if (player.pressureStatus === "exposed") {
-    const exposeLabel = player.exposeScore && player.exposeScore > 1
-      ? `Exposed x${player.exposeScore}`
-      : "Exposed";
-    tags.push({
-      kind: "exposed",
+      kind: "locked_at_risk",
       icon: "⚡",
       label: exposeLabel,
       title: player.exposeScore
-        ? `${player.exposeScore} expose vote${player.exposeScore === 1 ? "" : "s"}`
-        : "Received expose pressure",
+        ? `${player.exposeScore} expose vote${player.exposeScore === 1 ? "" : "s"} locked this Council danger`
+        : "Vote-derived Council danger",
+    });
+  } else if (player.pressureStatus === "empowered_selected") {
+    tags.push({
+      kind: "empowered_selected",
+      icon: "⚠",
+      label: player.exposeScore && player.exposeScore > 0
+        ? `Selected x${player.exposeScore}`
+        : "Selected",
+      title: player.exposeScore && player.exposeScore > 0
+        ? "Selected by the empowered player from unresolved exposed pressure"
+        : "Selected by the empowered player, not from expose votes",
+    });
+  } else if (player.pressureStatus === "selectable_exposed") {
+    tags.push({
+      kind: "selectable_exposed",
+      icon: "⚡",
+      label: buildExposeLabel(player.exposeScore),
+      title: player.exposeScore
+        ? `${player.exposeScore} expose vote${player.exposeScore === 1 ? "" : "s"} and still selectable`
+        : "Selectable exposed pressure",
+    });
+  } else if (player.pressureStatus === "replacement_risk") {
+    tags.push({
+      kind: "replacement_risk",
+      icon: "↗",
+      label: player.exposeScore && player.exposeScore > 0
+        ? `Bench Risk x${player.exposeScore}`
+        : "Bench Risk",
+      title: "Could be pulled up from the remaining exposure bench",
+    });
+  } else if (player.pressureStatus === "fallback_risk") {
+    tags.push({
+      kind: "fallback_risk",
+      icon: "⚠",
+      label: "Fallback Risk",
+      title: "Could be pulled up only through all-player fallback, not expose votes",
     });
   }
 
@@ -404,6 +431,12 @@ function buildPlayerStatusTags(player: GamePlayer): MatchWatchPlayerStatusTag[] 
 
   if (tags.length > 0) return tags;
   return [];
+}
+
+function buildExposeLabel(exposeScore?: number): string {
+  return exposeScore && exposeScore > 1
+    ? `Exposed x${exposeScore}`
+    : "Exposed";
 }
 
 function applyReplayPressureToPlayers(
@@ -457,6 +490,7 @@ function deriveReplayPressure(
 
   let empoweredName: string | null = null;
   let currentAtRisk: Array<{ name: string; exposeScore?: number }> = [];
+  let initialCurrentAtRisk: Array<{ name: string; exposeScore?: number }> = [];
   const exposeScoresByName = new Map<string, number>();
   const shieldedNames = new Set<string>();
 
@@ -477,6 +511,9 @@ function deriveReplayPressure(
     if (pressureSummary) {
       empoweredName = pressureSummary.empoweredName;
       currentAtRisk = pressureSummary.currentAtRisk;
+      if (initialCurrentAtRisk.length === 0) {
+        initialCurrentAtRisk = pressureSummary.currentAtRisk;
+      }
     }
 
     const initialPair = parseInitialCouncilPair(message.text);
@@ -485,6 +522,9 @@ function deriveReplayPressure(
         name,
         exposeScore: exposeScoresByName.get(name),
       }));
+      if (initialCurrentAtRisk.length === 0) {
+        initialCurrentAtRisk = currentAtRisk;
+      }
     }
 
     const powerLobbyPair = parsePowerLobbyPair(message.text);
@@ -523,32 +563,14 @@ function deriveReplayPressure(
   );
   if (!aliveNames.has(empoweredName)) return null;
 
-  const atRiskNames: Set<string> = new Set(
-    currentAtRisk
-      .map((entry) => entry.name)
-      .filter((name) => aliveNames.has(name) && name !== empoweredName && !shieldedNames.has(name)),
-  );
-
-  if (atRiskNames.size === 0) {
-    let fallbackAtRiskCount = 0;
-    for (const [name, score] of [...exposeScoresByName.entries()].sort(byScoreThenName)) {
-      if (score <= 0 || name === empoweredName || shieldedNames.has(name) || !aliveNames.has(name)) continue;
-      atRiskNames.add(name);
-      fallbackAtRiskCount += 1;
-      if (fallbackAtRiskCount === 2) break;
-    }
-  }
-
-  const statusByName = new Map<string, GameWatchPlayerPressureStatus>();
-  statusByName.set(empoweredName, "empowered");
-  for (const name of atRiskNames) {
-    statusByName.set(name, "at_risk");
-  }
-  for (const [name, score] of exposeScoresByName) {
-    if (score > 0 && aliveNames.has(name) && !statusByName.has(name) && !shieldedNames.has(name)) {
-      statusByName.set(name, "exposed");
-    }
-  }
+  const statusByName = deriveReplayPressureStatuses({
+    aliveNames,
+    empoweredName,
+    currentAtRiskNames: currentAtRisk.map((entry) => entry.name),
+    initialCurrentAtRiskNames: initialCurrentAtRisk.map((entry) => entry.name),
+    exposeScoresByName,
+    shieldedNames,
+  });
 
   return {
     statusByName,
@@ -562,6 +584,106 @@ function byScoreThenName(
   [nameB, scoreB]: [string, number],
 ): number {
   return scoreB - scoreA || nameA.localeCompare(nameB);
+}
+
+function deriveReplayPressureStatuses({
+  aliveNames,
+  empoweredName,
+  currentAtRiskNames,
+  initialCurrentAtRiskNames,
+  exposeScoresByName,
+  shieldedNames,
+}: {
+  aliveNames: Set<string>;
+  empoweredName: string;
+  currentAtRiskNames: string[];
+  initialCurrentAtRiskNames: string[];
+  exposeScoresByName: Map<string, number>;
+  shieldedNames: Set<string>;
+}): Map<string, GameWatchPlayerPressureStatus> {
+  const statusByName = new Map<string, GameWatchPlayerPressureStatus>();
+  statusByName.set(empoweredName, "empowered");
+
+  const rawExposureBench = [...exposeScoresByName.entries()]
+    .filter(([name, score]) => score > 0 && name !== empoweredName && aliveNames.has(name))
+    .sort(byScoreThenName)
+    .map(([name]) => name);
+  const exposureBench = rawExposureBench.filter((name) => !shieldedNames.has(name));
+  const currentCandidates = currentAtRiskNames
+    .filter((name) => aliveNames.has(name) && name !== empoweredName && !shieldedNames.has(name));
+  const effectiveCandidates = currentCandidates.length > 0
+    ? currentCandidates.slice(0, 2)
+    : exposureBench.slice(0, 2);
+  const candidateSet = new Set(effectiveCandidates);
+  const initialCandidateNames = initialCurrentAtRiskNames.length > 0
+    ? initialCurrentAtRiskNames.filter((name) => aliveNames.has(name) && name !== empoweredName)
+    : effectiveCandidates;
+  const initialCandidateSet = new Set(initialCandidateNames);
+  const lockedNames = new Set(
+    resolveLockedExposedNames(rawExposureBench, exposeScoresByName)
+      .filter((name) => initialCandidateSet.has(name)),
+  );
+  const shieldedInitialCandidate = initialCandidateNames.some((name) => shieldedNames.has(name));
+  const benchCanFillShieldReplacement = exposureBench.some((name) => !candidateSet.has(name));
+
+  for (const name of effectiveCandidates) {
+    const exposeScore = exposeScoresByName.get(name) ?? 0;
+    const pressureStatus: GameWatchPlayerPressureStatus =
+      lockedNames.has(name) && exposeScore > 0
+        ? "locked_at_risk"
+        : shieldedInitialCandidate && !initialCandidateSet.has(name) && exposeScore === 0 && !benchCanFillShieldReplacement
+          ? "fallback_risk"
+          : shieldedInitialCandidate && !initialCandidateSet.has(name) && exposeScore > 0
+            ? "replacement_risk"
+            : "empowered_selected";
+    statusByName.set(name, pressureStatus);
+  }
+
+  for (const name of exposureBench) {
+    if (statusByName.has(name)) continue;
+    statusByName.set(name, candidateSet.size >= 2 ? "replacement_risk" : "selectable_exposed");
+  }
+
+  if (!shieldedInitialCandidate && !benchCanFillShieldReplacement && candidateSet.size > 0) {
+    for (const name of aliveNames) {
+      if (
+        name !== empoweredName &&
+        !statusByName.has(name) &&
+        !shieldedNames.has(name)
+      ) {
+        statusByName.set(name, "fallback_risk");
+      }
+    }
+  }
+
+  return statusByName;
+}
+
+function resolveLockedExposedNames(
+  exposureBench: readonly string[],
+  exposeScoresByName: ReadonlyMap<string, number>,
+): string[] {
+  if (exposureBench.length === 0) return [];
+  if (exposureBench.length === 1) return [exposureBench[0]!];
+  if (exposureBench.length === 2) return [...exposureBench];
+
+  const lockedNames: string[] = [];
+  let remainingSlots = 2;
+  let index = 0;
+  while (index < exposureBench.length && remainingSlots > 0) {
+    const score = exposeScoresByName.get(exposureBench[index]!) ?? 0;
+    const tier = exposureBench
+      .slice(index)
+      .filter((name) => (exposeScoresByName.get(name) ?? 0) === score);
+    if (tier.length <= remainingSlots) {
+      lockedNames.push(...tier);
+      remainingSlots -= tier.length;
+      index += tier.length;
+      continue;
+    }
+    break;
+  }
+  return lockedNames;
 }
 
 function isResolvedCouncilOrPowerElimination(message: TranscriptEntry): boolean {

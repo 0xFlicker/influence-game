@@ -43,6 +43,7 @@ export interface DurableVoteStateSummary {
   empoweredName: string | null;
   councilCandidates: [string, string] | null;
   councilCandidateNames: [string, string] | null;
+  candidateResolution: CanonicalGameProjection["candidateResolution"];
   powerAction: CanonicalGameProjection["powerAction"];
 }
 
@@ -127,6 +128,23 @@ export function summarizeCanonicalProjection(
       empoweredName: nameFor(projection, projection.empoweredId),
       councilCandidates,
       councilCandidateNames,
+      candidateResolution: projection.candidateResolution
+        ? {
+            exposeScores: { ...projection.candidateResolution.exposeScores },
+            candidates: projection.candidateResolution.candidates
+              ? [projection.candidateResolution.candidates[0], projection.candidateResolution.candidates[1]]
+              : null,
+            autoEliminated: projection.candidateResolution.autoEliminated,
+            shieldGranted: projection.candidateResolution.shieldGranted,
+            method: projection.candidateResolution.method,
+            ...(projection.candidateResolution.initialResolution
+              ? { initialResolution: { ...projection.candidateResolution.initialResolution } }
+              : {}),
+            ...(projection.candidateResolution.shieldReplacement
+              ? { shieldReplacement: { ...projection.candidateResolution.shieldReplacement } }
+              : {}),
+          }
+        : null,
       powerAction: projection.powerAction ? { ...projection.powerAction } : null,
     },
     acceptedOutcomes: {

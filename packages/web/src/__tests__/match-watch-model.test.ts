@@ -42,7 +42,7 @@ function baseGame(): GameDetail {
 
 function watchState(overrides: Partial<GameWatchState> = {}): GameWatchState {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     gameId: "game-1",
     slug: "public-game",
     status: "in_progress",
@@ -209,7 +209,7 @@ describe("match watch model", () => {
         ...baseGame(),
         players: baseGame().players.map((player) => ({
           ...player,
-          pressureStatus: "at_risk" as const,
+          pressureStatus: "locked_at_risk" as const,
           exposeScore: 2,
         })),
       },
@@ -343,7 +343,7 @@ describe("match watch model", () => {
             persona: "diplomat",
             status: "alive",
             shielded: false,
-            pressureStatus: "at_risk",
+            pressureStatus: "locked_at_risk",
             exposeScore: 2,
           },
         ],
@@ -353,17 +353,17 @@ describe("match watch model", () => {
       connStatus: "live",
     });
 
-    expect(model.players.map((card) => card.detail)).toEqual(["Empowered", "At Risk"]);
+    expect(model.players.map((card) => card.detail)).toEqual(["Empowered", "Exposed x2"]);
     expect(model.players[0]?.statusTags[0]).toMatchObject({
       kind: "empowered",
       icon: "👑",
       label: "Empowered",
     });
     expect(model.players[1]?.statusTags[0]).toMatchObject({
-      kind: "at_risk",
-      icon: "⚠",
-      label: "At Risk",
-      title: "At risk for Council",
+      kind: "locked_at_risk",
+      icon: "⚡",
+      label: "Exposed x2",
+      title: "2 expose votes locked this Council danger",
     });
   });
 
@@ -419,9 +419,130 @@ describe("match watch model", () => {
 
     expect(model.players.map((card) => [card.player.name, card.statusTags.map((tag) => tag.label)])).toEqual([
       ["Alice", ["Empowered"]],
-      ["Bob", ["At Risk"]],
-      ["Cara", ["At Risk"]],
-      ["Dax", ["Exposed"]],
+      ["Bob", ["Exposed x2"]],
+      ["Cara", ["Selected x1"]],
+      ["Dax", ["Bench Risk x1"]],
+    ]);
+  });
+
+  it("marks exactly two exposed replay candidates as exposed and everyone else as fallback risk", () => {
+    const players = [
+      ...baseGame().players,
+      {
+        id: "p3",
+        name: "Cara",
+        persona: "watchful",
+        status: "alive" as const,
+        shielded: false,
+      },
+      {
+        id: "p4",
+        name: "Dax",
+        persona: "direct",
+        status: "alive" as const,
+        shielded: false,
+      },
+    ];
+    const model = buildMatchWatchModel({
+      game: {
+        ...baseGame(),
+        status: "completed",
+        currentRound: 4,
+        currentPhase: "END",
+        players,
+      },
+      messages: [],
+      live: false,
+      connStatus: "replay",
+      playbackState: {
+        round: 1,
+        phase: "MINGLE",
+        players,
+        visibleMessages: [
+          transcriptEntry({ id: 1, text: "Alice votes: empower=Alice, expose=Bob" }),
+          transcriptEntry({ id: 2, text: "Bob votes: empower=Alice, expose=Cara" }),
+          transcriptEntry({ id: 3, text: "Cara votes: empower=Alice, expose=Bob" }),
+          transcriptEntry({ id: 4, text: "Dax votes: empower=Alice, expose=Bob" }),
+          transcriptEntry({ id: 5, text: "Empowered: Alice" }),
+          transcriptEntry({
+            id: 6,
+            text: "Initial Council pair resolved before Mingle: Bob and Cara (exposure_locked)",
+          }),
+          transcriptEntry({
+            id: 7,
+            text: "Post-vote pressure: Alice is empowered. Current at-risk: Bob (3), Cara (1). Replacement risk if a shield is granted: none.",
+          }),
+        ],
+      },
+    });
+
+    expect(model.players.map((card) => [card.player.name, card.statusTags.map((tag) => tag.label)])).toEqual([
+      ["Alice", ["Empowered"]],
+      ["Bob", ["Exposed x3"]],
+      ["Cara", ["Exposed"]],
+      ["Dax", ["Fallback Risk"]],
+    ]);
+  });
+
+  it("keeps shield fallback pull-ups distinct from empowered-selected replay candidates", () => {
+    const players = [
+      ...baseGame().players,
+      {
+        id: "p3",
+        name: "Cara",
+        persona: "watchful",
+        status: "alive" as const,
+        shielded: false,
+      },
+      {
+        id: "p4",
+        name: "Dax",
+        persona: "direct",
+        status: "alive" as const,
+        shielded: false,
+      },
+    ];
+    const model = buildMatchWatchModel({
+      game: {
+        ...baseGame(),
+        status: "completed",
+        currentRound: 4,
+        currentPhase: "END",
+        players,
+      },
+      messages: [],
+      live: false,
+      connStatus: "replay",
+      playbackState: {
+        round: 1,
+        phase: "REVEAL",
+        players,
+        visibleMessages: [
+          transcriptEntry({ id: 1, text: "Alice votes: empower=Alice, expose=Bob" }),
+          transcriptEntry({ id: 2, text: "Bob votes: empower=Alice, expose=Cara" }),
+          transcriptEntry({ id: 3, text: "Cara votes: empower=Alice, expose=Bob" }),
+          transcriptEntry({ id: 4, text: "Dax votes: empower=Alice, expose=Bob" }),
+          transcriptEntry({ id: 5, text: "Empowered: Alice" }),
+          transcriptEntry({
+            id: 6,
+            text: "Initial Council pair resolved before Mingle: Bob and Cara (exposure_locked)",
+          }),
+          transcriptEntry({
+            id: 7,
+            text: "Post-vote pressure: Alice is empowered. Current at-risk: Bob (3), Cara (1). Replacement risk if a shield is granted: none.",
+          }),
+          transcriptEntry({ id: 8, phase: "POWER", text: "Alice power action: protect -> Bob" }),
+          transcriptEntry({ id: 9, phase: "POWER", text: "Bob is protected (shield granted)" }),
+          transcriptEntry({ id: 10, phase: "REVEAL", text: "=== REVEAL PHASE === Council candidates: Cara vs Dax" }),
+        ],
+      },
+    });
+
+    expect(model.players.map((card) => [card.player.name, card.statusTags.map((tag) => tag.label)])).toEqual([
+      ["Alice", ["Empowered"]],
+      ["Bob", ["Shielded"]],
+      ["Cara", ["Exposed"]],
+      ["Dax", ["Fallback Risk"]],
     ]);
   });
 
@@ -436,7 +557,7 @@ describe("match watch model", () => {
         phase: "LOBBY",
         players: baseGame().players.map((player) => ({
           ...player,
-          pressureStatus: "at_risk" as const,
+          pressureStatus: "locked_at_risk" as const,
           exposeScore: 2,
         })),
         visibleMessages: replayPressureMessages("LOBBY"),
