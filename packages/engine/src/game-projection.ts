@@ -39,6 +39,15 @@ export interface CanonicalGameProjection {
   currentCouncilTally: CouncilVoteTally;
   empoweredId: UUID | null;
   councilCandidates: [UUID, UUID] | null;
+  candidateResolution: {
+    exposeScores: Record<UUID, number>;
+    candidates: [UUID, UUID] | null;
+    autoEliminated: UUID | null;
+    shieldGranted: UUID | null;
+    method: "two_player" | "auto_eliminate" | "expose_scores" | "exposure_bench" | "exposure_bench_protect" | "insufficient_candidates";
+    initialResolution?: Record<string, unknown>;
+    shieldReplacement?: Record<string, unknown>;
+  } | null;
   powerAction: PowerAction | null;
   roomAllocations: Record<number, ProjectedRoomAllocation>;
   jury: JuryMember[];
@@ -67,6 +76,7 @@ export function createEmptyProjection(gameId: UUID): CanonicalGameProjection {
     currentCouncilTally: { votes: {} },
     empoweredId: null,
     councilCandidates: null,
+    candidateResolution: null,
     powerAction: null,
     roomAllocations: {},
     jury: [],
@@ -109,6 +119,7 @@ function applyRoundReset(projection: CanonicalGameProjection, round: number): vo
   projection.currentCouncilTally = { votes: {} };
   projection.empoweredId = null;
   projection.councilCandidates = null;
+  projection.candidateResolution = null;
   projection.powerAction = null;
   projection.endgameEliminationTally = { votes: {} };
   projection.juryVoteTally = { votes: {} };
@@ -192,6 +203,15 @@ export function applyCanonicalEvent(
     }
     case "power.candidates_resolved": {
       projection.councilCandidates = event.payload.candidates ? [...event.payload.candidates] : null;
+      projection.candidateResolution = {
+        exposeScores: { ...event.payload.exposeScores },
+        candidates: event.payload.candidates ? [...event.payload.candidates] : null,
+        autoEliminated: event.payload.autoEliminated,
+        shieldGranted: event.payload.shieldGranted,
+        method: event.payload.method,
+        ...(event.payload.initialResolution ? { initialResolution: { ...event.payload.initialResolution } } : {}),
+        ...(event.payload.shieldReplacement ? { shieldReplacement: { ...event.payload.shieldReplacement } } : {}),
+      };
       if (event.payload.shieldGranted) {
         const player = projection.players[event.payload.shieldGranted];
         if (player) projection.players[event.payload.shieldGranted] = { ...player, shielded: true };

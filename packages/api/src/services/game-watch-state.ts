@@ -1,4 +1,4 @@
-import { buildPostVotePressureProjection } from "@influence/engine";
+import { buildPostVotePressureProjection, type PostVotePressureStatus } from "@influence/engine";
 import { asc, eq, or } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -27,7 +27,7 @@ export type GameWatchProjectionAvailability =
   | "unavailable";
 
 export type GameWatchPlayerStatus = "alive" | "eliminated" | "unknown";
-export type GameWatchPlayerPressureStatus = "empowered" | "at_risk" | "exposed";
+export type GameWatchPlayerPressureStatus = Exclude<PostVotePressureStatus, "current_at_risk" | "safe">;
 
 type GameWatchDiagnosticCode =
   | PersistedEventDiagnostic["code"]
@@ -89,7 +89,7 @@ export interface GameWatchFinalState {
 }
 
 export interface GameWatchState {
-  schemaVersion: 1;
+  schemaVersion: 2;
   gameId: string;
   slug?: string;
   status: GameStatus;
@@ -138,6 +138,14 @@ interface GameWatchPlayerPressure {
   pressureStatus: GameWatchPlayerPressureStatus;
   exposeScore?: number;
 }
+
+type PostVotePressureInput = Parameters<typeof buildPostVotePressureProjection>[0];
+type InitialPressureResolution = NonNullable<PostVotePressureInput["initialResolution"]>;
+type ResolutionMode = InitialPressureResolution["mode"];
+type ChoiceReason = InitialPressureResolution["choice"]["reason"];
+type FallbackReason = InitialPressureResolution["fallbackReason"];
+type ExposureEntry = InitialPressureResolution["exposureBench"][number];
+type PressurePlayer = InitialPressureResolution["alivePlayers"][number];
 
 export async function getGameWatchState(
   db: GameWatchDB,
@@ -200,7 +208,7 @@ export async function buildGameWatchState(
   const final = buildFinalState(game.status, source, winner, result);
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     gameId: game.id,
     ...(game.slug && { slug: game.slug }),
     status: game.status,
@@ -318,21 +326,73 @@ function buildPressureByPlayerId(
       name: player.name,
       shielded: player.shielded,
     }));
-  const finalCouncilCandidateIds = new Set(summary.voteState.councilCandidates ?? []);
-  const atRiskIds = new Set(finalCouncilCandidateIds);
+  const candidateResolution = summary.voteState.candidateResolution;
+  const initialResolution = buildInitialPressureResolution(
+    candidateResolution?.initialResolution,
+    alivePlayers,
+    empoweredId,
+    exposeScores,
+  );
+  const shieldReplacement = recordFrom(candidateResolution?.shieldReplacement);
 
-  if (atRiskIds.size === 0) {
-    const pressure = buildPostVotePressureProjection({
+  if (candidateResolution?.candidates && shieldReplacement) {
+    applyResolvedShieldPressure({
+      pressureByPlayerId,
       alivePlayers,
       exposeScores,
       empoweredId,
+      candidateIds: candidateResolution.candidates,
+      initialResolution,
+      shieldReplacement,
     });
-    for (const player of pressure?.players ?? []) {
-      if (player.status === "locked_at_risk" || player.status === "current_at_risk") {
-        atRiskIds.add(player.id);
-      }
+    return pressureByPlayerId;
+  }
+
+  const pressure = buildPostVotePressureProjection({
+    alivePlayers,
+    exposeScores,
+    empoweredId,
+    initialResolution,
+  });
+  for (const player of pressure?.players ?? []) {
+    const status = publicPressureStatus(player.status);
+    if (status) {
+      pressureByPlayerId.set(player.id, {
+        pressureStatus: status,
+        ...(player.exposeScore > 0 && { exposeScore: player.exposeScore }),
+      });
     }
   }
+
+  return pressureByPlayerId;
+}
+
+function publicPressureStatus(status: PostVotePressureStatus): GameWatchPlayerPressureStatus | null {
+  if (status === "safe") return null;
+  if (status === "current_at_risk") return "locked_at_risk";
+  return status;
+}
+
+function applyResolvedShieldPressure({
+  pressureByPlayerId,
+  alivePlayers,
+  exposeScores,
+  empoweredId,
+  candidateIds,
+  initialResolution,
+  shieldReplacement,
+}: {
+  pressureByPlayerId: Map<string, GameWatchPlayerPressure>;
+  alivePlayers: PressurePlayer[];
+  exposeScores: Record<string, number>;
+  empoweredId: string;
+  candidateIds: [string, string];
+  initialResolution: InitialPressureResolution | null;
+  shieldReplacement: Record<string, unknown>;
+}): void {
+  const candidateIdSet = new Set(candidateIds);
+  const lockedIds = new Set(initialResolution?.lockedCandidates ?? []);
+  const shieldMode = stringFrom(shieldReplacement.mode);
 
   for (const player of alivePlayers) {
     const exposeScore = exposeScores[player.id] ?? 0;
@@ -341,20 +401,207 @@ function buildPressureByPlayerId(
         pressureStatus: "empowered",
         ...(exposeScore > 0 && { exposeScore }),
       });
-    } else if (atRiskIds.has(player.id)) {
+      continue;
+    }
+
+    if (candidateIdSet.has(player.id)) {
+      const pressureStatus: GameWatchPlayerPressureStatus =
+        lockedIds.has(player.id) && exposeScore > 0
+          ? "locked_at_risk"
+          : shieldMode === "all_player_fallback_replacement" && exposeScore === 0
+            ? "fallback_risk"
+            : exposeScore > 0
+              ? "replacement_risk"
+              : "empowered_selected";
       pressureByPlayerId.set(player.id, {
-        pressureStatus: "at_risk",
+        pressureStatus,
         ...(exposeScore > 0 && { exposeScore }),
       });
-    } else if (exposeScore > 0) {
+      continue;
+    }
+
+    if (player.shielded) {
+      continue;
+    }
+
+    if (exposeScore > 0) {
       pressureByPlayerId.set(player.id, {
-        pressureStatus: "exposed",
+        pressureStatus: "replacement_risk",
         exposeScore,
       });
     }
   }
+}
 
-  return pressureByPlayerId;
+function buildInitialPressureResolution(
+  raw: Record<string, unknown> | undefined,
+  alivePlayers: PressurePlayer[],
+  empoweredId: string,
+  exposeScores: Record<string, number>,
+): InitialPressureResolution | null {
+  const record = recordFrom(raw);
+  if (!record) return null;
+
+  const mode = initialModeFrom(record.mode);
+  if (!mode) return null;
+
+  const resolutionAlivePlayers = pressurePlayersFrom(record.alivePlayers) ?? alivePlayers;
+  const resolutionExposeScores = numberRecordFrom(record.exposeScores) ?? exposeScores;
+  const exposureBench = exposureEntriesFrom(record.exposureBench) ?? buildExposureBench(resolutionAlivePlayers, empoweredId, resolutionExposeScores);
+  const rawExposePressure = exposureEntriesFrom(record.rawExposePressure) ?? buildRawExposePressure(resolutionAlivePlayers, resolutionExposeScores);
+  const lockedCandidates = stringArrayFrom(record.lockedCandidates) ?? [];
+  const selectedCandidateIds = stringArrayFrom(record.selectedCandidateIds) ?? [];
+  const candidates = pairFrom(record.candidates) ?? pairFrom([...lockedCandidates, ...selectedCandidateIds]);
+  const choiceRecord = recordFrom(record.choice);
+  const eligibleCandidateIds =
+    stringArrayFrom(choiceRecord?.eligibleCandidateIds)
+    ?? stringArrayFrom(record.eligibleCandidateIds)
+    ?? [];
+  const requiredCount =
+    numberFrom(choiceRecord?.requiredCount)
+    ?? numberFrom(record.requiredCount)
+    ?? selectedCandidateIds.length;
+  const choiceReason =
+    choiceReasonFrom(choiceRecord?.reason)
+    ?? choiceReasonFrom(record.choiceReason)
+    ?? "none";
+
+  return {
+    alivePlayers: resolutionAlivePlayers,
+    empoweredId: stringFrom(record.empoweredId) ?? empoweredId,
+    exposeScores: resolutionExposeScores,
+    exposureBench,
+    rawExposePressure,
+    lockedCandidates,
+    choice: {
+      requiredCount,
+      eligibleCandidateIds,
+      reason: choiceReason,
+    },
+    selectedCandidateIds,
+    candidates,
+    fallbackApplied: booleanFrom(record.fallbackApplied) ?? false,
+    fallbackReason: fallbackReasonFrom(record.fallbackReason),
+    mode,
+  };
+}
+
+function recordFrom(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function stringFrom(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function numberFrom(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function booleanFrom(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+function stringArrayFrom(value: unknown): string[] | null {
+  return Array.isArray(value) && value.every((item): item is string => typeof item === "string")
+    ? [...value]
+    : null;
+}
+
+function pairFrom(value: unknown): [string, string] | null {
+  const strings = stringArrayFrom(value);
+  const first = strings?.[0];
+  const second = strings?.[1];
+  return first && second ? [first, second] : null;
+}
+
+function pressurePlayersFrom(value: unknown): PressurePlayer[] | null {
+  if (!Array.isArray(value)) return null;
+  const players: PressurePlayer[] = [];
+  for (const item of value) {
+    const record = recordFrom(item);
+    const id = stringFrom(record?.id);
+    const name = stringFrom(record?.name);
+    const shielded = booleanFrom(record?.shielded);
+    if (!id || !name || shielded === null) return null;
+    players.push({ id, name, shielded });
+  }
+  return players;
+}
+
+function exposureEntriesFrom(value: unknown): ExposureEntry[] | null {
+  if (!Array.isArray(value)) return null;
+  const entries: ExposureEntry[] = [];
+  for (const item of value) {
+    const record = recordFrom(item);
+    const id = stringFrom(record?.id);
+    const name = stringFrom(record?.name);
+    const exposeScore = numberFrom(record?.exposeScore);
+    if (!id || !name || exposeScore === null) return null;
+    entries.push({ id, name, exposeScore });
+  }
+  return entries;
+}
+
+function buildExposureBench(
+  alivePlayers: readonly PressurePlayer[],
+  empoweredId: string,
+  exposeScores: Record<string, number>,
+): ExposureEntry[] {
+  return buildRawExposePressure(alivePlayers, exposeScores)
+    .filter((entry) => entry.id !== empoweredId && entry.exposeScore > 0 && !alivePlayers.find((player) => player.id === entry.id)?.shielded);
+}
+
+function buildRawExposePressure(
+  alivePlayers: readonly PressurePlayer[],
+  exposeScores: Record<string, number>,
+): ExposureEntry[] {
+  return [...alivePlayers]
+    .sort((a, b) => (exposeScores[b.id] ?? 0) - (exposeScores[a.id] ?? 0) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+    .map((player) => ({
+      id: player.id,
+      name: player.name,
+      exposeScore: exposeScores[player.id] ?? 0,
+    }));
+}
+
+function numberRecordFrom(value: unknown): Record<string, number> | null {
+  const record = recordFrom(value);
+  if (!record) return null;
+  const entries = Object.entries(record);
+  if (!entries.every(([, entryValue]) => typeof entryValue === "number" && Number.isFinite(entryValue))) return null;
+  return Object.fromEntries(entries) as Record<string, number>;
+}
+
+function initialModeFrom(value: unknown): ResolutionMode | null {
+  return value === "all_player_fallback"
+    || value === "one_locked_one_choice"
+    || value === "exposure_locked"
+    || value === "higher_votes_choice"
+    ? value
+    : null;
+}
+
+function choiceReasonFrom(value: unknown): ChoiceReason | null {
+  return value === "none"
+    || value === "zero_bench"
+    || value === "one_bench"
+    || value === "tied_exposure_tier"
+    || value === "shield_replacement_tier"
+    || value === "shield_replacement_fallback"
+    ? value
+    : null;
+}
+
+function fallbackReasonFrom(value: unknown): FallbackReason {
+  return value === "bench_too_small"
+    || value === "bench_exhausted"
+    || value === "missing_selection"
+    || value === "invalid_selection"
+    ? value
+    : null;
 }
 
 function classifySource(

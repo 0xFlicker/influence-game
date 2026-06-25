@@ -55,6 +55,86 @@ describe("post-vote pressure projection", () => {
     expect(projection!.currentAtRisk.map((p) => p.name)).toEqual(["Gamma", "Delta"]);
   });
 
+  it("marks exactly two eligible exposed receivers as locked vote-derived pressure", () => {
+    const alpha = player("Alpha");
+    const beta = player("Beta");
+    const gamma = player("Gamma");
+    const delta = player("Delta");
+    const projection = buildPostVotePressureProjection({
+      alivePlayers: [alpha, beta, gamma, delta],
+      empoweredId: alpha.id,
+      exposeScores: {
+        [beta.id]: 3,
+        [gamma.id]: 1,
+      },
+    });
+
+    expect(projection!.currentAtRisk.map((p) => p.name)).toEqual(["Beta", "Gamma"]);
+    expect(projection!.replacementRisk).toEqual([]);
+    expect(projection!.players.map((p) => [p.name, p.status])).toEqual([
+      ["Alpha", "empowered"],
+      ["Beta", "locked_at_risk"],
+      ["Gamma", "locked_at_risk"],
+      ["Delta", "fallback_risk"],
+    ]);
+  });
+
+  it("treats shield pull-up from an exhausted two-player exposure bench as fallback risk", () => {
+    const alpha = player("Alpha");
+    const beta = player("Beta");
+    const gamma = player("Gamma");
+    const delta = player("Delta");
+    const projection = buildPostVotePressureProjection({
+      alivePlayers: [alpha, beta, gamma, delta],
+      empoweredId: alpha.id,
+      exposeScores: {
+        [beta.id]: 3,
+        [gamma.id]: 1,
+      },
+    });
+
+    expect(projection!.shieldScenarios).toEqual([
+      {
+        shieldedPlayer: { id: beta.id, name: "Beta" },
+        resultingAtRisk: [
+          { id: gamma.id, name: "Gamma", exposeScore: 1 },
+          { id: delta.id, name: "Delta", exposeScore: 0 },
+        ],
+      },
+      {
+        shieldedPlayer: { id: gamma.id, name: "Gamma" },
+        resultingAtRisk: [
+          { id: beta.id, name: "Beta", exposeScore: 3 },
+          { id: delta.id, name: "Delta", exposeScore: 0 },
+        ],
+      },
+    ]);
+    expect(projection!.players.find((p) => p.name === "Delta")?.status).toBe("fallback_risk");
+  });
+
+  it("keeps exposed bench replacement distinct from all-player fallback", () => {
+    const alpha = player("Alpha");
+    const beta = player("Beta");
+    const gamma = player("Gamma");
+    const delta = player("Delta");
+    const projection = buildPostVotePressureProjection({
+      alivePlayers: [alpha, beta, gamma, delta],
+      empoweredId: alpha.id,
+      exposeScores: {
+        [beta.id]: 4,
+        [gamma.id]: 2,
+        [delta.id]: 1,
+      },
+    });
+
+    expect(projection!.players.map((p) => [p.name, p.status])).toEqual([
+      ["Alpha", "empowered"],
+      ["Beta", "locked_at_risk"],
+      ["Gamma", "locked_at_risk"],
+      ["Delta", "replacement_risk"],
+    ]);
+  });
+
   it("returns null until an empowered player is known", () => {
     const alpha = player("Alpha");
 

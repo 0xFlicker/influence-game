@@ -36,7 +36,7 @@ describe("GameWatchState", () => {
 
     expect(state).not.toBeNull();
     expect(state).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       gameId,
       slug: "watch-live-projection",
       source: "durable_projection",
@@ -209,17 +209,56 @@ describe("GameWatchState", () => {
         }),
         expect.objectContaining({
           id: "atlas",
-          pressureStatus: "at_risk",
+          pressureStatus: "locked_at_risk",
           exposeScore: 2,
         }),
         expect.objectContaining({
           id: "echo",
-          pressureStatus: "at_risk",
+          pressureStatus: "locked_at_risk",
           exposeScore: 2,
         }),
       ]),
     });
     expect(players.find((player) => player.id === "nyx")?.pressureStatus).toBeUndefined();
+  });
+
+  test("distinguishes shield fallback replacements from vote-derived exposed candidates", async () => {
+    const gameId = await insertGame(db, {
+      slug: "watch-shield-fallback-pressure",
+      status: "in_progress",
+      config: gameConfig(),
+    });
+    await insertFixturePlayers(db, gameId);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const events = createShieldFallbackPressureFixture(gameId);
+    await appendGameEvents(db, { gameId, ownerEpoch, events });
+
+    const state = await getGameWatchState(db, "watch-shield-fallback-pressure");
+    const players = state?.players ?? [];
+
+    expect(state).toMatchObject({
+      currentPhase: "POWER",
+      players: expect.arrayContaining([
+        expect.objectContaining({
+          id: "mira",
+          pressureStatus: "empowered",
+        }),
+        expect.objectContaining({
+          id: "echo",
+          pressureStatus: "locked_at_risk",
+          exposeScore: 2,
+        }),
+        expect.objectContaining({
+          id: "nyx",
+          pressureStatus: "fallback_risk",
+        }),
+      ]),
+    });
+    expect(players.find((player) => player.id === "atlas")).toMatchObject({
+      shielded: true,
+      exposeScore: undefined,
+      pressureStatus: undefined,
+    });
   });
 
   test("uses only the trusted prefix for degraded invalid event logs", async () => {
@@ -442,6 +481,29 @@ function createPostVotePressureFixture(gameId: string): readonly CanonicalGameEv
       playerIds: ["atlas", "echo", "mira", "nyx"],
     },
   ], [], []);
+
+  return state.getCanonicalEvents();
+}
+
+function createShieldFallbackPressureFixture(gameId: string): readonly CanonicalGameEvent[] {
+  const state = new GameState(
+    [
+      { id: "atlas", name: "Atlas" },
+      { id: "echo", name: "Echo" },
+      { id: "mira", name: "Mira" },
+      { id: "nyx", name: "Nyx" },
+    ],
+    { gameId, now: () => 1_720_000_000_000 },
+  );
+
+  state.startRound();
+  state.recordVote("atlas", "mira", "echo");
+  state.recordVote("echo", "mira", "atlas");
+  state.recordVote("mira", "echo", "atlas");
+  state.recordVote("nyx", "mira", "echo");
+  state.tallyEmpowerVotes();
+  state.setPowerAction({ action: "protect", target: "atlas" });
+  state.determineCandidates(["nyx"]);
 
   return state.getCanonicalEvents();
 }

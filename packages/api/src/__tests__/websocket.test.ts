@@ -554,7 +554,7 @@ describe("WebSocket Manager", () => {
 
 function watchStateFixture(gameId: string, sequence: number): GameWatchState {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     gameId,
     status: "in_progress",
     source: "durable_projection",
