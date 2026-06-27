@@ -2,7 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createGame, estimateCost, type CreateGameParams, type PersonaKey } from "@/lib/api";
+import {
+  createGame,
+  estimateCost,
+  type CreateGameParams,
+  type ModelReasoningPolicy,
+  type ModelTier,
+  type PersonaKey,
+} from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Persona definitions (matches engine PERSONALITY_PROMPTS)
@@ -31,6 +38,59 @@ const PERSONAS: {
 
 const ALL_PERSONA_KEYS = PERSONAS.map((p) => p.key);
 
+type ModelCatalogId =
+  | "openai:gpt-5-nano"
+  | "openai:gpt-5-mini"
+  | "openai:gpt-5.4-mini"
+  | "katana:grok-4-3";
+
+const GAME_MODELS: Array<{
+  catalogId: ModelCatalogId;
+  label: string;
+  sublabel: string;
+  tier: ModelTier;
+  hasCostEstimate: boolean;
+}> = [
+  {
+    catalogId: "openai:gpt-5-nano",
+    label: "OpenAI gpt-5-nano",
+    sublabel: "Fast baseline play",
+    tier: "budget",
+    hasCostEstimate: true,
+  },
+  {
+    catalogId: "openai:gpt-5-mini",
+    label: "OpenAI gpt-5-mini",
+    sublabel: "Stronger strategy",
+    tier: "standard",
+    hasCostEstimate: true,
+  },
+  {
+    catalogId: "openai:gpt-5.4-mini",
+    label: "OpenAI gpt-5.4-mini",
+    sublabel: "Most capable OpenAI option",
+    tier: "premium",
+    hasCostEstimate: true,
+  },
+  {
+    catalogId: "katana:grok-4-3",
+    label: "xAI Grok 4.3",
+    sublabel: "Reasoning-heavy strategy test",
+    tier: "budget",
+    hasCostEstimate: false,
+  },
+];
+
+const THINKING_DEPTHS: Array<{
+  value: Exclude<ModelReasoningPolicy, "action-policy">;
+  label: string;
+  sublabel: string;
+}> = [
+  { value: "low", label: "Low", sublabel: "Lighter deliberation" },
+  { value: "medium", label: "Medium", sublabel: "Default strategy depth" },
+  { value: "high", label: "High", sublabel: "Heavier deliberation" },
+];
+
 // ---------------------------------------------------------------------------
 // Form state
 // ---------------------------------------------------------------------------
@@ -39,6 +99,8 @@ interface FormState {
   playerCount: 4 | 6 | 8 | 10 | 12;
   slotType: "all_ai" | "mixed";
   modelTier: "budget" | "standard" | "premium";
+  modelCatalogId: ModelCatalogId;
+  reasoningPolicy: Exclude<ModelReasoningPolicy, "action-policy">;
   personaPool: PersonaKey[];
   fillStrategy: "random" | "balanced";
   timingPreset: "fast" | "standard" | "slow" | "custom";
@@ -51,6 +113,8 @@ const DEFAULT_STATE: FormState = {
   playerCount: 6,
   slotType: "all_ai",
   modelTier: "budget",
+  modelCatalogId: "openai:gpt-5-nano",
+  reasoningPolicy: "medium",
   personaPool: [...ALL_PERSONA_KEYS],
   fillStrategy: "balanced",
   timingPreset: "standard",
@@ -155,6 +219,10 @@ export function CreateGameForm() {
     try {
       const params: CreateGameParams = {
         ...form,
+        modelSelection: {
+          catalogId: form.modelCatalogId,
+          reasoningPolicy: form.reasoningPolicy,
+        },
         playerCount: form.playerCount,
       };
       const { slug } = await createGame(params);
@@ -165,7 +233,10 @@ export function CreateGameForm() {
     }
   }
 
-  const costEstimate = estimateCost(form.playerCount, form.modelTier);
+  const selectedModel = GAME_MODELS.find((model) => model.catalogId === form.modelCatalogId) ?? GAME_MODELS[0]!;
+  const costEstimate = selectedModel.hasCostEstimate
+    ? `${estimateCost(form.playerCount, selectedModel.tier)}/game`
+    : "Unavailable";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -191,17 +262,30 @@ export function CreateGameForm() {
         />
       </SectionCard>
 
-      {/* Model tier */}
-      <SectionCard title="Model Tier">
+      {/* Model */}
+      <SectionCard title="Model">
         <RadioGroup
           label="Select model"
-          value={form.modelTier}
-          options={[
-            { value: "budget", label: "Budget", sublabel: "gpt-5.1-nano" },
-            { value: "standard", label: "Standard", sublabel: "gpt-5.1-mini" },
-            { value: "premium", label: "Premium", sublabel: "gpt-5.4-mini" },
-          ]}
-          onChange={(v) => set("modelTier", v)}
+          value={form.modelCatalogId}
+          options={GAME_MODELS.map((model) => ({
+            value: model.catalogId,
+            label: model.label,
+            sublabel: model.sublabel,
+          }))}
+          onChange={(v) => {
+            const nextModel = GAME_MODELS.find((model) => model.catalogId === v);
+            setForm((prev) => ({
+              ...prev,
+              modelCatalogId: v,
+              modelTier: nextModel?.tier ?? prev.modelTier,
+            }));
+          }}
+        />
+        <RadioGroup
+          label="Thinking depth"
+          value={form.reasoningPolicy}
+          options={THINKING_DEPTHS}
+          onChange={(v) => set("reasoningPolicy", v)}
         />
       </SectionCard>
 
@@ -353,7 +437,7 @@ export function CreateGameForm() {
       <div className="flex items-center justify-between pt-2">
         <p className="text-sm text-white/40">
           Cost estimate:{" "}
-          <span className="text-white/70 font-medium">{costEstimate}/game</span>
+          <span className="text-white/70 font-medium">{costEstimate}</span>
         </p>
         <div className="flex items-center gap-3">
           {error && <p className="text-red-400 text-sm">{error}</p>}

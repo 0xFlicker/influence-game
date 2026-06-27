@@ -20,6 +20,7 @@ import type { CanonicalGameEvent, CanonicalSourcePointer } from "./canonical-eve
 import type { PostVotePressureProjection } from "./post-vote-pressure";
 import type { CanonicalGameProjection } from "./game-projection";
 import type { TokenCostCursor, TokenTracker } from "./token-tracker.js";
+import type { ModelReasoningEffort, ModelReasoningPolicy, ProviderProfileId } from "./model-catalog";
 export type { TokenCostCursor };
 
 export type { MingleIntentSummary, MinglePreferredRoomSize, StrategicLens } from "./types";
@@ -315,11 +316,16 @@ export interface PrivateDecisionTrace {
   createdAt: string;
   model: {
     provider?: string;
+    providerProfileId?: ProviderProfileId;
+    catalogId?: string;
     name: string;
   };
+  requestedReasoningEffort?: ModelReasoningEffort;
+  reasoningPolicy?: ModelReasoningPolicy;
   prompt: {
     messages: PrivateDecisionTraceMessage[];
   };
+  request?: unknown;
   response: {
     raw: unknown;
     finishReason?: string | null;
@@ -327,6 +333,15 @@ export interface PrivateDecisionTrace {
     toolCalls?: PrivateDecisionTraceToolCall[];
   };
   output?: unknown;
+  usage?: {
+    promptTokens?: number;
+    completionTokens?: number;
+    cachedTokens?: number;
+    reasoningTokens?: number;
+    totalTokens?: number;
+    routerBilling?: Record<string, unknown>;
+    diagnostics?: string[];
+  };
   emittedThinking?: string;
   reasoningContext?: string;
   providerReasoningSummary?: ProviderReasoningSummary;

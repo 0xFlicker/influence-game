@@ -66,12 +66,29 @@ function makeTrace(overrides: Partial<PrivateDecisionTrace> = {}): PrivateDecisi
     phase: Phase.VOTE,
     round: 1,
     createdAt: "2026-06-15T00:00:00.000Z",
-    model: { name: "gpt-5-nano" },
+    model: {
+      provider: "katana",
+      providerProfileId: "katana",
+      catalogId: "katana:grok-4-3",
+      name: "grok-4-3",
+    },
+    requestedReasoningEffort: "high",
+    reasoningPolicy: "high",
     prompt: {
       messages: [
         { role: "system", content: "system prompt secret" },
         { role: "user", content: "full prompt secret" },
       ],
+    },
+    request: {
+      providerProfileId: "katana",
+      catalogId: "katana:grok-4-3",
+      model: "grok-4-3",
+      messages: [
+        { role: "system", content: "system prompt secret" },
+        { role: "user", content: "full prompt secret" },
+      ],
+      reasoning_effort: "high",
     },
     response: {
       raw: {
@@ -106,6 +123,17 @@ function makeTrace(overrides: Partial<PrivateDecisionTrace> = {}): PrivateDecisi
       empower: "Mira",
       expose: "Vera",
       reasoningContext: "native reasoning secret",
+    },
+    usage: {
+      promptTokens: 100,
+      completionTokens: 25,
+      cachedTokens: 12,
+      reasoningTokens: 8,
+      totalTokens: 125,
+      routerBilling: {
+        credits: 17,
+        providerCostUsd: 0.0042,
+      },
     },
     emittedThinking: "private thought secret",
     reasoningContext: "native reasoning secret",
@@ -217,8 +245,27 @@ describe("private trace writer", () => {
       action: "vote",
       phase: "VOTE",
       round: 1,
-      modelName: "gpt-5-nano",
+      model: {
+        name: "grok-4-3",
+        provider: "katana",
+        providerProfileId: "katana",
+        catalogId: "katana:grok-4-3",
+      },
+      modelName: "grok-4-3",
+      requestedReasoningEffort: "high",
+      reasoningPolicy: "high",
       promptMessageCount: 2,
+      usage: {
+        promptTokens: 100,
+        completionTokens: 25,
+        cachedTokens: 12,
+        reasoningTokens: 8,
+        totalTokens: 125,
+        routerBilling: {
+          credits: 17,
+          providerCostUsd: 0.0042,
+        },
+      },
       toolName: "cast_votes",
       providerReasoningSummaryByteLength: expect.any(Number),
       strategicDecision: {
@@ -230,6 +277,7 @@ describe("private trace writer", () => {
     });
     expect(metadata.byteLength).toBeGreaterThan(0);
     expect(metadata.promptByteLength).toBeGreaterThan(0);
+    expect(metadata.requestByteLength).toBeGreaterThan(0);
     expect(metadata.responseByteLength).toBeGreaterThan(0);
     expect(String(metadata.sha256)).toStartWith("sha256:");
     expect(JSON.stringify(metadata)).not.toContain("full prompt secret");
@@ -241,6 +289,19 @@ describe("private trace writer", () => {
     const index = await readModel.listManifests(gameId);
     expect(index.manifests[0]).toMatchObject({
       id: result.manifestId,
+      model: {
+        name: "grok-4-3",
+        providerProfileId: "katana",
+        catalogId: "katana:grok-4-3",
+      },
+      requestedReasoningEffort: "high",
+      reasoningPolicy: "high",
+      usage: {
+        totalTokens: 125,
+        routerBilling: {
+          credits: 17,
+        },
+      },
       strategicDecision: {
         decisionLogBytes: expect.any(Number),
       },

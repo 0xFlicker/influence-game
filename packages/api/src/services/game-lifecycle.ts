@@ -15,8 +15,9 @@ import {
   Phase,
   TokenTracker,
   createLlmClientFromEnv,
-  estimateCost,
-  resolveModelForTier,
+  estimateCostForKnownModel,
+  normalizeGameModelSelection,
+  resolveModelSelection,
 } from "@influence/engine";
 import type {
   AgentResponse,
@@ -374,9 +375,13 @@ async function persistCompletedGame(
   },
 ): Promise<void> {
   const now = new Date().toISOString();
-  const model = resolveModelForTier(params.gameConfig.modelTier as string | undefined);
+  const resolvedModelSelection = resolveModelSelection(
+    normalizeGameModelSelection(params.gameConfig.modelSelection),
+    params.gameConfig.modelTier as string | undefined,
+  );
+  const model = resolvedModelSelection.modelId;
   const usage = params.tokenTracker.getTotalUsage();
-  const cost = estimateCost(usage, model);
+  const cost = estimateCostForKnownModel(usage, model);
   const updatedConfig = { ...params.gameConfig, viewerMode: "replay" };
 
   await db.transaction(async (tx) => {
@@ -440,7 +445,7 @@ async function persistCompletedGame(
           reasoningTokens: usage.reasoningTokens,
           totalTokens: usage.totalTokens,
           emptyResponses: usage.emptyResponses,
-          estimatedCost: cost.totalCost,
+          estimatedCost: cost?.totalCost ?? null,
           perAction: params.tokenTracker.getAllUsage(),
         }),
       });
@@ -601,6 +606,82 @@ export function buildEngineConfigFromGameRecord(
   };
 }
 
+function providerPreflightEnabled(env: NodeJS.ProcessEnv): boolean {
+  const value = env.INFLUENCE_LLM_PREFLIGHT?.trim().toLowerCase();
+  return value !== "off" && value !== "false" && value !== "0";
+}
+
+function providerPreflightTimeoutMs(env: NodeJS.ProcessEnv): number {
+  const configured = Number(env.INFLUENCE_LLM_PREFLIGHT_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured > 0 ? configured : 10_000;
+}
+
+function publicProviderStartupError(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return String(error);
+}
+
+export async function validateGameStartReadiness(
+  db: DrizzleDB,
+  gameId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ error?: string }> {
+  const game = (await db
+    .select()
+    .from(schema.games)
+    .where(eq(schema.games.id, gameId)))[0];
+
+  if (!game) {
+    return { error: "Game not found" };
+  }
+
+  let gameConfig: Record<string, unknown>;
+  try {
+    gameConfig = JSON.parse(game.config) as Record<string, unknown>;
+  } catch {
+    return { error: "Invalid game configuration" };
+  }
+
+  let resolvedModelSelection;
+  try {
+    resolvedModelSelection = resolveModelSelection(
+      normalizeGameModelSelection(gameConfig.modelSelection),
+      gameConfig.modelTier as string | undefined,
+    );
+  } catch (error) {
+    return { error: publicProviderStartupError(error) };
+  }
+
+  if (env.INFLUENCE_API_TEST_MOCK_RUNNER === "true") {
+    return {};
+  }
+
+  const llmConfig = createLlmClientFromEnv(env, {
+    maxRetries: 0,
+    providerProfileId: resolvedModelSelection.providerProfile.id,
+    timeout: providerPreflightTimeoutMs(env),
+  });
+  if (!llmConfig) {
+    return { error: "LLM provider not configured" };
+  }
+
+  if (!providerPreflightEnabled(env)) {
+    return {};
+  }
+
+  try {
+    await llmConfig.client.models.retrieve(resolvedModelSelection.modelId);
+  } catch (error) {
+    return {
+      error: `LLM provider preflight failed: ${publicProviderStartupError(error)}`,
+    };
+  }
+
+  return {};
+}
+
 export async function startGame(
   db: DrizzleDB,
   gameId: string,
@@ -639,7 +720,16 @@ export async function startGame(
   const gameConfig = JSON.parse(game.config) as Record<string, unknown>;
 
   const useTestMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER === "true";
-  const llmConfig = useTestMockRunner ? null : createLlmClientFromEnv();
+  const resolvedModelSelection = resolveModelSelection(
+    normalizeGameModelSelection(gameConfig.modelSelection),
+    gameConfig.modelTier as string | undefined,
+  );
+
+  const llmConfig = useTestMockRunner
+    ? null
+    : createLlmClientFromEnv(process.env, {
+        providerProfileId: resolvedModelSelection.providerProfile.id,
+      });
   if (!llmConfig) {
     if (!useTestMockRunner) {
       return { error: "LLM provider not configured" };
@@ -676,7 +766,7 @@ export async function startGame(
     const personality = resolvePersonality(
       persona.personaKey ?? persona.personality,
     );
-    const model = agentCfg.model ?? resolveModelForTier(gameConfig.modelTier as string | undefined);
+    const model = agentCfg.model ?? resolvedModelSelection.modelId;
 
     const memoryStore = new PgMemoryStore(db);
     const agent = new InfluenceAgent(
@@ -690,6 +780,10 @@ export async function startGame(
       {
         toolChoiceMode: llmConfig.toolChoiceMode,
         ...(llmConfig.openAIReasoningSummary && { openAIReasoningSummary: llmConfig.openAIReasoningSummary }),
+        providerProfileId: resolvedModelSelection.providerProfile.id,
+        catalogId: resolvedModelSelection.catalogId,
+        modelCapabilities: resolvedModelSelection.model.capabilities,
+        reasoningPolicy: resolvedModelSelection.reasoningPolicy,
         ...(privateTraceSink && { privateTraceSink }),
       },
     );
@@ -702,10 +796,14 @@ export async function startGame(
   const houseInterviewer = !useTestMockRunner && llmConfig
     ? new LLMHouseInterviewer(
         llmConfig.client,
-        resolveModelForTier(gameConfig.modelTier as string | undefined),
+        resolvedModelSelection.modelId,
         {
           gameId,
           toolChoiceMode: llmConfig.toolChoiceMode,
+          providerProfileId: resolvedModelSelection.providerProfile.id,
+          catalogId: resolvedModelSelection.catalogId,
+          modelCapabilities: resolvedModelSelection.model.capabilities,
+          reasoningPolicy: resolvedModelSelection.reasoningPolicy,
           ...(ownerEpoch && { ownerEpoch }),
           ...(privateTraceSink && { privateTraceSink }),
         },

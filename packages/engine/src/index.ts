@@ -158,6 +158,35 @@ export {
   resolveToolChoiceMode,
 } from "./llm-client";
 export type { LlmClientConfig, LlmToolChoiceMode, ModelTier, OpenAIReasoningSummaryMode } from "./llm-client";
+export {
+  MODEL_CATALOG,
+  MODEL_REASONING_EFFORTS,
+  MODEL_REASONING_POLICIES,
+  PROVIDER_PROFILES,
+  gameReadyCatalogEntries,
+  formatGameModelSelectionLabel,
+  formatModelReasoningPolicy,
+  formatResolvedModelSelectionLabel,
+  inferModelCapabilities,
+  modelCatalogEntryById,
+  normalizeGameModelSelection,
+  normalizeReasoningPolicy,
+  providerProfileById,
+  resolveCatalogIdForModel,
+  resolveModelSelection,
+  tierToCatalogId,
+} from "./model-catalog";
+export type {
+  GameModelSelection,
+  ModelCatalogEntry,
+  ModelEvaluationStatus,
+  ModelReasoningEffort,
+  ModelReasoningPolicy,
+  ModelRequestCapabilities,
+  ProviderProfile,
+  ProviderProfileId,
+  ResolvedModelSelection,
+} from "./model-catalog";
 
 // Memory store
 export { InMemoryMemoryStore } from "./memory-store";
@@ -167,6 +196,7 @@ export type { MemoryStore, MemoryRecord, MemoryType } from "./memory-store";
 export {
   TokenTracker,
   estimateCost,
+  estimateCostForKnownModel,
   estimateCostAllModels,
   MODEL_PRICING,
 } from "./token-tracker";

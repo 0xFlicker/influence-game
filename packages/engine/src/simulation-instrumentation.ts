@@ -27,6 +27,9 @@ export interface SimulatorArgsSnapshot {
   players: number;
   personas: string[] | null;
   model: string;
+  modelCatalogId?: string;
+  providerProfileId?: string;
+  reasoningPolicy?: string;
   variant: string;
   gameTimeoutMs: number;
   llmTimeoutMs: number;

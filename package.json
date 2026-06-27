@@ -17,6 +17,7 @@
     "test:engine:full": "cd packages/engine && doppler run --project social-strategy-agent --config dev -- bun test",
     "simulate": "cd packages/engine && doppler run --project social-strategy-agent --config dev -- bun run src/simulate.ts",
     "simulate:local": "cd packages/engine && bun run src/simulate.ts",
+    "simulate:katana:grok:smoke": "cd packages/engine && doppler run --project social-strategy-agent --config dev -- bun run src/simulate.ts --games 1 --players 4 --variant mingle --model-catalog katana:grok-4-3 --reasoning-policy low --game-timeout-sec 900 --llm-timeout-sec 120",
     "e2e": "bun scripts/e2e-test.ts",
     "test:e2e": "bunx playwright test",
     "typecheck": "bun run --filter '*' typecheck",

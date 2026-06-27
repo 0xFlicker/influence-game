@@ -1,4 +1,9 @@
 import OpenAI from "openai";
+import {
+  DEFAULT_TIER_MODELS,
+  PROVIDER_PROFILES,
+  type ProviderProfileId,
+} from "./model-catalog";
 
 export type ModelTier = "budget" | "standard" | "premium";
 export type LlmToolChoiceMode = "named" | "required" | "auto" | "json_schema";
@@ -10,6 +15,7 @@ export interface LlmClientConfig {
   baseURL?: string;
   baseURLSource?: string;
   providerLabel: string;
+  providerProfileId: ProviderProfileId;
   toolChoiceMode: LlmToolChoiceMode;
   openAIReasoningSummary?: OpenAIReasoningSummaryMode;
 }
@@ -17,19 +23,8 @@ export interface LlmClientConfig {
 export interface CreateLlmClientOptions {
   timeout?: number;
   maxRetries?: number;
+  providerProfileId?: ProviderProfileId;
 }
-
-const DEFAULT_TIER_MODELS: Record<ModelTier, string> = {
-  budget: "gpt-5-nano",
-  standard: "gpt-5-mini",
-  premium: "gpt-5.4-mini",
-};
-
-const MODEL_ENV_BY_TIER: Record<ModelTier, string> = {
-  budget: "INFLUENCE_MODEL_BUDGET",
-  standard: "INFLUENCE_MODEL_STANDARD",
-  premium: "INFLUENCE_MODEL_PREMIUM",
-};
 
 function firstEnv(
   env: NodeJS.ProcessEnv,
@@ -78,12 +73,21 @@ function normalizeOpenAIReasoningSummaryMode(value: string | undefined): OpenAIR
   return null;
 }
 
+function resolveProfileId(baseURL: string | undefined, explicitProfileId?: ProviderProfileId): ProviderProfileId {
+  if (explicitProfileId) return explicitProfileId;
+  if (!baseURL) return "openai";
+  return isLocalBaseURL(baseURL) ? "lm-studio" : "custom-openai-compatible";
+}
+
 export function resolveToolChoiceMode(
   env: NodeJS.ProcessEnv = process.env,
   baseURL?: string,
+  providerProfileId?: ProviderProfileId,
 ): LlmToolChoiceMode {
+  const profile = providerProfileId ? PROVIDER_PROFILES[providerProfileId] : undefined;
   return normalizeToolChoiceMode(env.INFLUENCE_LLM_TOOL_CHOICE_MODE)
     ?? normalizeToolChoiceMode(env.INFLUENCE_LLM_TOOL_CHOICE)
+    ?? profile?.defaultToolChoiceMode
     ?? (isLocalBaseURL(baseURL) ? "required" : "named");
 }
 
@@ -102,34 +106,50 @@ export function resolveOpenAIReasoningSummaryMode(
 
 export function resolveModelForTier(
   tier: string | null | undefined,
-  env: NodeJS.ProcessEnv = process.env,
 ): string {
   const normalized = tier === "premium" || tier === "standard" || tier === "budget"
     ? tier
     : "budget";
-  const envKey = MODEL_ENV_BY_TIER[normalized];
-  return env[envKey]?.trim() || DEFAULT_TIER_MODELS[normalized];
+  return DEFAULT_TIER_MODELS[normalized];
 }
 
 export function createLlmClientFromEnv(
   env: NodeJS.ProcessEnv = process.env,
   options: CreateLlmClientOptions = {},
 ): LlmClientConfig | null {
-  const baseURLConfig = firstEnv(env, [
-    "INFLUENCE_LLM_BASE_URL",
-    "OPENAI_BASE_URL",
-    "LM_STUDIO_BASE_URL",
-  ]);
-  const apiKeyConfig = firstEnv(env, [
-    "INFLUENCE_LLM_API_KEY",
-    "OPENAI_API_KEY",
-    "LM_STUDIO_API_KEY",
-  ]);
+  const explicitProfileId = options.providerProfileId;
+  const katanaKey = env.API_KAT_IMGNAI_KEY?.trim();
+  const katanaSecret = env.API_KAT_IMGNAI_SECRET?.trim();
+  const explicitKatana = explicitProfileId === "katana";
+  const explicitOpenAI = explicitProfileId === "openai";
+
+  const baseURLConfig = explicitKatana
+    ? { value: PROVIDER_PROFILES.katana.baseURL!, key: "katana-profile" }
+    : explicitOpenAI
+      ? null
+    : firstEnv(env, [
+        "INFLUENCE_LLM_BASE_URL",
+        "OPENAI_BASE_URL",
+        "LM_STUDIO_BASE_URL",
+      ]);
+  const apiKeyConfig = explicitKatana
+    ? katanaKey && katanaSecret
+      ? { value: `${katanaKey}:${katanaSecret}`, key: "API_KAT_IMGNAI_KEY+API_KAT_IMGNAI_SECRET" }
+      : null
+    : explicitOpenAI
+      ? firstEnv(env, ["OPENAI_API_KEY"])
+    : firstEnv(env, [
+        "INFLUENCE_LLM_API_KEY",
+        "OPENAI_API_KEY",
+        "LM_STUDIO_API_KEY",
+      ]);
 
   const baseURL = baseURLConfig?.value;
-  const apiKey = apiKeyConfig?.value ?? (baseURL ? "lm-studio" : undefined);
+  const providerProfileId = resolveProfileId(baseURL, explicitProfileId);
+  const apiKey = apiKeyConfig?.value ?? (baseURL && providerProfileId === "lm-studio" ? "lm-studio" : undefined);
   if (!apiKey) return null;
   const openAIReasoningSummary = resolveOpenAIReasoningSummaryMode(env, baseURL);
+  const profile = PROVIDER_PROFILES[providerProfileId];
 
   return {
     client: new OpenAI({
@@ -141,9 +161,10 @@ export function createLlmClientFromEnv(
     apiKeySource: apiKeyConfig?.key ?? "local-default",
     baseURL,
     baseURLSource: baseURLConfig?.key,
-    providerLabel: providerLabel(baseURL),
-    toolChoiceMode: resolveToolChoiceMode(env, baseURL),
-    ...(openAIReasoningSummary && { openAIReasoningSummary }),
+    providerLabel: explicitProfileId ? profile.label : providerLabel(baseURL),
+    providerProfileId,
+    toolChoiceMode: resolveToolChoiceMode(env, baseURL, providerProfileId),
+    ...(providerProfileId === "openai" && openAIReasoningSummary && { openAIReasoningSummary }),
   };
 }
 

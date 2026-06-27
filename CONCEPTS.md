@@ -70,7 +70,7 @@ Legacy vocabulary for the old private-message/private-room phase and for histori
 
 ## reasoningContext
 
-The debug-display lane for model-side reasoning evidence captured alongside an agent's structured decision or message. For local OpenAI-compatible servers this is raw native model output such as LM Studio `reasoning_content`. For hosted OpenAI Responses calls with summaries enabled, this can be a clearly labeled provider-generated summary such as `OpenAI reasoning summary (auto): ...`. It is distinct from the synthesized `thinking` field, written through `logSystem` / `logPublic` etc. onto `TranscriptEntry`, and visible only in `--chatty` output, full transcripts, and debug surfaces — never to other players.
+The debug-display lane for model-side reasoning evidence captured alongside an agent's structured decision or message. For local OpenAI-compatible servers this is raw native model output such as LM Studio `reasoning_content`. For hosted OpenAI Responses calls with summaries enabled, this can be a clearly labeled provider-generated summary such as `OpenAI reasoning summary (auto): ...`. It is distinct from the synthesized `thinking` field, written through `logSystem` / `logPublic` etc. onto `TranscriptEntry`, and visible in `--chatty` output, full transcripts, debug surfaces, and owner-scoped reasoning artifacts when the artifact access policy permits it. It is never public transcript speech or visible to other players as dialogue.
 
 ## OpenAI reasoning summary
 
@@ -79,6 +79,10 @@ A provider-generated summary from hosted OpenAI's Responses API reasoning summar
 ## Cognitive artifact
 
 A first-class product read-model record for an agent's reasoning, thinking, or strategy in new games. Cognitive artifacts are captured at decision time from structured trace inputs but are not sanitized views over producer private traces, canonical game truth, or checkpoint resume state. Reasoning artifacts may contain raw native `reasoningContext` or provider-generated summary text as `reasoningSummary`; provider debug wrappers such as `parts` and `outputItemIds` stay out of user-facing payloads. User-facing access is artifact-specific: reasoning is owner-only, thinking and strategy are available to the owner plus same-game participants, and producer/admin surfaces may read all split artifacts directly.
+
+## Player-private reasoning lane
+
+The owner-accessible product lane for an agent's private reasoning and strategy, including reasoning artifacts and strategy reflections exposed through authorized game/MCP contexts for the user's own agents. Player-private reasoning can include the agent's `thinking`, `reasoningContext`, reasoning summaries, and strategic reflection content when artifact policy allows it. It must not include producer-only wrappers such as full prompt requests, raw provider responses, provider profile metadata, model IDs, requested reasoning effort, token or usage counts, router billing fields, private trace storage keys, or provider debug envelopes unless a later product decision explicitly creates a sanitized player-facing form.
 
 ## chatty mode
 
@@ -194,9 +198,13 @@ The durable single-writer ownership marker for a live game run. An owner epoch l
 
 A producer/debug metadata record that points to raw LLM evidence such as prompts, model responses, `thinking`, `reasoningContext`, provider reasoning summaries, and normalized agent-turn objects. The manifest may be stored in Postgres while raw content lives in private object storage; neither the manifest nor the raw evidence is player-visible dialogue or canonical board state.
 
+## Producer private trace data
+
+The maintainer/debug evidence lane that can include full prompt requests, raw model responses, tool calls, provider profile, model ID, requested reasoning effort, observed reasoning metadata, token or usage counts, router billing fields, storage pointers, and normalized decision records. Producer private trace data may contain the same reasoning and strategy material that later feeds player-private reasoning artifacts, but it also contains operational and provider evidence that is not part of the player-private product lane.
+
 ## Private trace content
 
-The raw JSON/JSONL producer evidence addressed by a private evidence manifest, such as decision-call prompts, model responses, `thinking`, `reasoningContext`, provider reasoning summaries, tool arguments, action names, actor context, phase, round, and canonical event boundary. Private trace content is for local producer/debug inspection and must not become public transcript, canonical board truth, or checkpoint resume authority.
+The raw JSON/JSONL producer evidence addressed by a private evidence manifest, such as full prompt requests, model responses, `thinking`, `reasoningContext`, provider reasoning summaries, tool arguments, action names, actor context, phase, round, provider metadata, usage or billing metadata, and canonical event boundary. Private trace content is producer private trace data for local producer/debug inspection and must not become public transcript, canonical board truth, checkpoint resume authority, or unsanitized player-private product data.
 
 ## Local Trace MCP
 

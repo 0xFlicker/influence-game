@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   fillGame,
+  formatGameModelLabel,
   hideGame,
   isFillAccepted,
   listGames,
@@ -32,10 +33,6 @@ function phaseLabel(phase: string): string {
     done: "DONE",
   };
   return labels[phase] ?? phase.toUpperCase();
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 function timeAgo(iso: string): string {
@@ -204,7 +201,7 @@ function GameCard({
 
             <div className="flex items-center gap-4 text-xs influence-copy mb-3 flex-wrap">
               <span>{game.playerCount} players</span>
-              <span>{capitalize(game.modelTier)} tier</span>
+              <span>{formatGameModelLabel(game.modelSelection, game.modelTier, game.modelLabel)}</span>
               {slotsInfo && (
                 <span className={isReadyToStart ? "text-green-300/80" : "text-indigo-400/70"}>
                   {slotsInfo}
@@ -446,7 +443,8 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
       if (filters.tier !== "all" && g.modelTier !== filters.tier) return false;
       if (filters.track !== "all" && (g.trackType ?? "custom") !== filters.track) return false;
       if (searchQuery) {
-        const haystack = `Game #${g.gameNumber} ${g.winner ?? ""} ${g.winnerPersona ?? ""} ${g.modelTier} ${g.trackType ?? ""}`.toLowerCase();
+        const modelLabel = formatGameModelLabel(g.modelSelection, g.modelTier, g.modelLabel);
+        const haystack = `Game #${g.gameNumber} ${g.winner ?? ""} ${g.winnerPersona ?? ""} ${modelLabel} ${g.modelTier} ${g.trackType ?? ""}`.toLowerCase();
         if (!haystack.includes(searchQuery)) return false;
       }
       return true;

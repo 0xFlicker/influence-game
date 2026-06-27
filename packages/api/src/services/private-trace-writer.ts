@@ -52,10 +52,28 @@ export interface PrivateTraceManifestMetadata {
   action: string;
   phase?: string;
   round?: number;
+  model: {
+    name: string;
+    provider?: string;
+    providerProfileId?: string;
+    catalogId?: string;
+  };
   modelName: string;
+  requestedReasoningEffort?: string;
+  reasoningPolicy?: string;
   promptMessageCount: number;
   promptByteLength: number;
+  requestByteLength: number;
   responseByteLength: number;
+  usage?: {
+    promptTokens?: number;
+    completionTokens?: number;
+    cachedTokens?: number;
+    reasoningTokens?: number;
+    totalTokens?: number;
+    routerBilling?: Record<string, unknown>;
+    diagnostics?: string[];
+  };
   toolArgumentByteLength: number;
   emittedThinkingByteLength: number;
   reasoningContextByteLength: number;
@@ -111,10 +129,20 @@ function buildTraceMetadata(trace: PrivateDecisionTrace, body: string, createdAt
     action: trace.action,
     ...(trace.phase && { phase: trace.phase }),
     ...(trace.round !== undefined && { round: trace.round }),
+    model: {
+      name: trace.model.name,
+      ...(trace.model.provider && { provider: trace.model.provider }),
+      ...(trace.model.providerProfileId && { providerProfileId: trace.model.providerProfileId }),
+      ...(trace.model.catalogId && { catalogId: trace.model.catalogId }),
+    },
     modelName: trace.model.name,
+    ...(trace.requestedReasoningEffort && { requestedReasoningEffort: trace.requestedReasoningEffort }),
+    ...(trace.reasoningPolicy && { reasoningPolicy: trace.reasoningPolicy }),
     promptMessageCount: trace.prompt.messages.length,
     promptByteLength: byteLength(trace.prompt),
+    requestByteLength: byteLength(trace.request),
     responseByteLength: byteLength(trace.response),
+    ...(trace.usage && { usage: trace.usage }),
     toolArgumentByteLength: byteLength(trace.toolArguments),
     emittedThinkingByteLength: byteLength(trace.emittedThinking),
     reasoningContextByteLength: byteLength(trace.reasoningContext),

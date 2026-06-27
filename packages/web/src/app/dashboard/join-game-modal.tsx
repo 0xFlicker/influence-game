@@ -5,6 +5,7 @@ import {
   joinGame,
   listAgents,
   createAgent,
+  formatGameModelLabel,
   getAuthToken,
   type GameSummary,
   type PersonaKey,
@@ -61,9 +62,6 @@ function AgentPicker({
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
         {agents.map((agent) => {
-          const persona = agent.personaKey
-            ? PERSONAS.find((p) => p.key === agent.personaKey)
-            : undefined;
           const isSelected = selectedId === agent.id;
           return (
             <button
@@ -216,7 +214,7 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
             <div>
               <h2 className="text-xl font-bold text-text-primary">Join Game #{game.gameNumber}</h2>
               <p className="influence-copy text-sm mt-1">
-                {game.playerCount}-player · {game.modelTier.charAt(0).toUpperCase() + game.modelTier.slice(1)} tier
+                {game.playerCount}-player · {formatGameModelLabel(game.modelSelection, game.modelTier, game.modelLabel)}
               </p>
             </div>
             <button

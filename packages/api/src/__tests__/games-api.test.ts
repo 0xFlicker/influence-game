@@ -324,6 +324,97 @@ describe("Game REST API", () => {
         .from(schema.games)
         .where(eq(schema.games.id, body.id)))[0]!;
       expect(game.cognitiveArtifactCaptureVersion).toBe(1);
+      const config = JSON.parse(game.config);
+      expect(config.modelTier).toBe("budget");
+      expect(config.modelSelection).toEqual({
+        catalogId: "openai:gpt-5-nano",
+        reasoningPolicy: "action-policy",
+      });
+    });
+
+    test("accepts game-ready Katana model selection", async () => {
+      const res = await app.request(
+        "/api/games",
+        json(
+          {
+            playerCount: 6,
+            modelSelection: {
+              catalogId: "katana:grok-4-3",
+              reasoningPolicy: "high",
+            },
+            timingPreset: "standard",
+            maxRounds: 10,
+            visibility: "public",
+          },
+          adminToken,
+        ),
+      );
+
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { id: string };
+      const game = (await db
+        .select()
+        .from(schema.games)
+        .where(eq(schema.games.id, body.id)))[0]!;
+      const config = JSON.parse(game.config);
+      expect(config.modelSelection).toEqual({
+        catalogId: "katana:grok-4-3",
+        reasoningPolicy: "high",
+      });
+    });
+
+    test("rejects invalid reasoning policy", async () => {
+      const res = await app.request(
+        "/api/games",
+        json(
+          {
+            playerCount: 6,
+            modelSelection: {
+              catalogId: "katana:grok-4-3",
+              reasoningPolicy: "none",
+            },
+          },
+          adminToken,
+        ),
+      );
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "Invalid model selection" });
+    });
+
+    test("rejects back-burner model selections for active games", async () => {
+      const res = await app.request(
+        "/api/games",
+        json(
+          {
+            playerCount: 6,
+            modelCatalogId: "katana:q-naifu-a3b",
+          },
+          adminToken,
+        ),
+      );
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "Model is not game-ready" });
+    });
+
+    test("rejects unknown explicit model catalog selections", async () => {
+      const res = await app.request(
+        "/api/games",
+        json(
+          {
+            playerCount: 6,
+            modelSelection: {
+              catalogId: "katana:grok-4-33",
+              reasoningPolicy: "high",
+            },
+          },
+          adminToken,
+        ),
+      );
+
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "Unknown model selection" });
     });
 
     test("creates game with auto maxRounds", async () => {
@@ -402,6 +493,20 @@ describe("Game REST API", () => {
       const res = await app.request("/api/games");
       const body = (await res.json()) as unknown[];
       expect(body).toHaveLength(2);
+    });
+
+    test("returns sanitized model labels instead of raw model selections", async () => {
+      await createTestGame(app, adminToken, {
+        modelSelection: {
+          catalogId: "katana:grok-4-3",
+          reasoningPolicy: "medium",
+        },
+      });
+
+      const res = await app.request("/api/games");
+      const body = (await res.json()) as Array<Record<string, unknown>>;
+      expect(body[0]!.modelLabel).toBe("xAI Grok 4.3 · Medium");
+      expect(body[0]).not.toHaveProperty("modelSelection");
     });
 
     test("filters by status", async () => {
@@ -571,7 +676,12 @@ describe("Game REST API", () => {
 
   describe("GET /api/games/:id", () => {
     test("returns game details with players", async () => {
-      const { id } = await createTestGame(app, adminToken);
+      const { id } = await createTestGame(app, adminToken, {
+        modelSelection: {
+          catalogId: "katana:grok-4-3",
+          reasoningPolicy: "low",
+        },
+      });
       await joinTestPlayer(app, id, "Atlas", userToken, "Strategic calculator");
       await joinTestPlayer(app, id, "Vera", userToken, "Master manipulator");
 
@@ -582,11 +692,14 @@ describe("Game REST API", () => {
         id: string;
         status: string;
         players: Array<{ name: string; persona: string }>;
+        modelLabel: string;
       };
       expect(body.id).toBe(id);
       expect(body.status).toBe("waiting");
       expect(body.players).toHaveLength(2);
       expect(body.players[0]!.name).toBe("Atlas");
+      expect(body.modelLabel).toBe("xAI Grok 4.3 · Low");
+      expect(body).not.toHaveProperty("modelSelection");
     });
 
     test("returns 404 for non-existent game", async () => {
@@ -949,6 +1062,21 @@ describe("Game REST API", () => {
       const players = await db.select().from(schema.gamePlayers);
       expect(players[0]!.userId).toBe(REGULAR_USER_ID);
     });
+
+    test("records joined player model from game model selection", async () => {
+      const { id } = await createTestGame(app, adminToken, {
+        modelSelection: {
+          catalogId: "katana:grok-4-3",
+          reasoningPolicy: "medium",
+        },
+      });
+
+      await joinTestPlayer(app, id, "Atlas", userToken);
+
+      const players = await db.select().from(schema.gamePlayers);
+      const agentConfig = JSON.parse(players[0]!.agentConfig);
+      expect(agentConfig.model).toBe("grok-4-3");
+    });
   });
 
   // =========================================================================
@@ -1000,6 +1128,13 @@ describe("Game REST API", () => {
         const detailRes = await app.request(`/api/games/${id}`);
         const detail = (await detailRes.json()) as { players: unknown[] };
         expect(detail.players).toHaveLength(4);
+
+        const filledPlayers = await db
+          .select()
+          .from(schema.gamePlayers)
+          .where(eq(schema.gamePlayers.gameId, id));
+        expect(filledPlayers.map((player) => JSON.parse(player.agentConfig).model))
+          .toEqual(["gpt-5-nano", "gpt-5-nano", "gpt-5-nano", "gpt-5-nano"]);
       } finally {
         setServer({ publish() {} });
         for (const [key, value] of savedEnv) {
@@ -1010,6 +1145,28 @@ describe("Game REST API", () => {
           }
         }
       }
+    });
+
+    test("records filled player models from game model selection", async () => {
+      const { id } = await createTestGame(app, adminToken, {
+        playerCount: 4,
+        modelSelection: {
+          catalogId: "katana:grok-4-3",
+          reasoningPolicy: "low",
+        },
+      });
+
+      await joinTestPlayer(app, id, "Atlas", userToken);
+
+      const res = await app.request(`/api/games/${id}/fill`, authPost(adminToken));
+      expect(res.status).toBe(202);
+
+      const players = await db
+        .select()
+        .from(schema.gamePlayers)
+        .where(eq(schema.gamePlayers.gameId, id));
+      expect(players.map((player) => JSON.parse(player.agentConfig).model))
+        .toEqual(["grok-4-3", "grok-4-3", "grok-4-3", "grok-4-3"]);
     });
   });
 
@@ -1038,6 +1195,51 @@ describe("Game REST API", () => {
         .from(schema.games))[0]!;
       expect(game.status).toBe("in_progress");
       expect(game.startedAt).toBeTruthy();
+    });
+
+    test("rejects provider startup before claiming the run", async () => {
+      const { id } = await createTestGame(app, adminToken);
+
+      for (let i = 0; i < 4; i++) {
+        await joinTestPlayer(app, id, `Player${i}`, userToken);
+      }
+
+      const savedEnv = {
+        mockRunner: process.env.INFLUENCE_API_TEST_MOCK_RUNNER,
+        openaiKey: process.env.OPENAI_API_KEY,
+      };
+      process.env.INFLUENCE_API_TEST_MOCK_RUNNER = "false";
+      delete process.env.OPENAI_API_KEY;
+      try {
+        const res = await app.request(`/api/games/${id}/start`, authPost(adminToken));
+        expect(res.status).toBe(500);
+        const body = (await res.json()) as { error: string };
+        expect(body.error).toBe("LLM provider not configured");
+
+        const game = (await db
+          .select()
+          .from(schema.games)
+          .where(eq(schema.games.id, id)))[0]!;
+        expect(game.status).toBe("waiting");
+        expect(game.startedAt).toBeNull();
+
+        const owners = await db
+          .select()
+          .from(schema.gameRunOwners)
+          .where(eq(schema.gameRunOwners.gameId, id));
+        expect(owners).toHaveLength(0);
+      } finally {
+        if (savedEnv.mockRunner === undefined) {
+          delete process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
+        } else {
+          process.env.INFLUENCE_API_TEST_MOCK_RUNNER = savedEnv.mockRunner;
+        }
+        if (savedEnv.openaiKey === undefined) {
+          delete process.env.OPENAI_API_KEY;
+        } else {
+          process.env.OPENAI_API_KEY = savedEnv.openaiKey;
+        }
+      }
     });
 
     test("rejects start with too few players", async () => {

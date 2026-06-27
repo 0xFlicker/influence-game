@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type OpenAI from "openai";
 import { LLMHouseInterviewer } from "../house-interviewer";
+import type { PrivateDecisionTrace } from "../game-runner";
+import { modelCatalogEntryById } from "../model-catalog";
 
 type StubResponse = {
   content?: string | null;
@@ -282,5 +284,49 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
     await house.assignMingleRooms(makeAssignmentContext());
 
     expect(requests[0]?.max_tokens).toBe(4096);
+  });
+
+  it("uses Katana Grok reasoning effort without OpenAI max-completion params", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const grok = modelCatalogEntryById("katana:grok-4-3");
+    if (!grok) throw new Error("Missing Katana Grok catalog entry");
+    const house = new LLMHouseInterviewer(
+      makeOpenAIStub(requests, [{ content: assignmentContent() }]),
+      grok.modelId,
+      {
+        providerProfileId: "katana",
+        catalogId: grok.id,
+        modelCapabilities: grok.capabilities,
+        reasoningPolicy: "medium",
+        privateTraceSink: (trace) => {
+          traces.push(trace);
+        },
+      },
+    );
+
+    await house.assignMingleRooms(makeAssignmentContext());
+
+    expect(requests[0]).toMatchObject({
+      model: "grok-4-3",
+      max_tokens: expect.any(Number),
+      reasoning_effort: "medium",
+    });
+    expect(requests[0]).not.toHaveProperty("max_completion_tokens");
+    expect(traces[0]).toMatchObject({
+      model: {
+        provider: "katana",
+        providerProfileId: "katana",
+        catalogId: "katana:grok-4-3",
+        name: "grok-4-3",
+      },
+      requestedReasoningEffort: "medium",
+      reasoningPolicy: "medium",
+      usage: {
+        promptTokens: 10,
+        completionTokens: 20,
+        totalTokens: 30,
+      },
+    });
   });
 });

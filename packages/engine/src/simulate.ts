@@ -15,6 +15,7 @@
  *   bun run simulate -- --variant mingle --house-summaries
  *   bun run simulate -- --variant mingle --rich-producer
  *   bun run simulate -- --variant mingle --chatty --reasoning-summary auto
+ *   bun run simulate -- --model-catalog katana:grok-4-3 --reasoning-policy high
  *
  * Chatty / live formatted transcript (great for watching local model Mingle behavior and per-decision reasoning):
  *   INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
@@ -102,6 +103,15 @@ import {
 } from "./simulation-instrumentation";
 import { createLlmClientFromEnv, describeLlmProvider } from "./llm-client";
 import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode } from "./llm-client";
+import {
+  inferModelCapabilities,
+  normalizeReasoningPolicy,
+  resolveCatalogIdForModel,
+  resolveModelSelection,
+  type ModelReasoningPolicy,
+  type ModelRequestCapabilities,
+  type ProviderProfileId,
+} from "./model-catalog";
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing
@@ -117,6 +127,8 @@ export interface SimArgs {
   players: number;
   personas: string[] | null;
   model: string;
+  modelCatalogId?: string;
+  reasoningPolicy?: ModelReasoningPolicy;
   variant: string;
   gameTimeoutMs: number;
   llmTimeoutMs: number;
@@ -132,6 +144,14 @@ export interface SimArgs {
   enableDiary?: boolean;
   /** Hosted OpenAI Responses API reasoning summary mode. Null disables it. */
   openAIReasoningSummary?: OpenAIReasoningSummaryMode | null;
+}
+
+interface SimulationModelRuntime {
+  modelId: string;
+  providerProfileId: ProviderProfileId;
+  catalogId?: string;
+  capabilities: ModelRequestCapabilities;
+  reasoningPolicy: ModelReasoningPolicy;
 }
 
 function readPositiveInt(value: string | undefined, fallback: number): number {
@@ -161,6 +181,10 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
     players: 6,
     personas: null,
     model: "gpt-5-nano",
+    ...(process.env.INFLUENCE_SIM_MODEL_CATALOG_ID && { modelCatalogId: process.env.INFLUENCE_SIM_MODEL_CATALOG_ID }),
+    ...(normalizeReasoningPolicy(process.env.INFLUENCE_SIM_REASONING_POLICY) && {
+      reasoningPolicy: normalizeReasoningPolicy(process.env.INFLUENCE_SIM_REASONING_POLICY)!,
+    }),
     variant: process.env.INFLUENCE_SIM_VARIANT ?? "baseline",
     gameTimeoutMs: readPositiveInt(envGameTimeout, DEFAULT_GAME_TIMEOUT_MS),
     llmTimeoutMs: readPositiveInt(process.env.INFLUENCE_SIM_LLM_TIMEOUT_MS, DEFAULT_LLM_TIMEOUT_MS),
@@ -186,6 +210,17 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       i++;
     } else if (arg === "--model" && next) {
       args.model = next;
+      i++;
+    } else if ((arg === "--model-catalog" || arg === "--model-catalog-id") && next) {
+      args.modelCatalogId = next;
+      i++;
+    } else if ((arg === "--reasoning-policy" || arg === "--thinking-depth") && next) {
+      const reasoningPolicy = normalizeReasoningPolicy(next);
+      if (reasoningPolicy) {
+        args.reasoningPolicy = reasoningPolicy;
+      } else {
+        console.warn(`Ignoring invalid reasoning policy "${next}". Use action-policy, low, medium, or high.`);
+      }
       i++;
     } else if (arg === "--variant" && next) {
       args.variant = next;
@@ -277,6 +312,7 @@ function buildRunMetadata(
   args: SimArgs,
   timestamp: string,
   openAIReasoningSummary?: OpenAIReasoningSummaryMode,
+  modelRuntime?: SimulationModelRuntime,
 ): SimulationRunMetadata {
   return {
     variant: args.variant,
@@ -288,7 +324,12 @@ function buildRunMetadata(
       games: args.games,
       players: args.players,
       personas: args.personas,
-      model: args.model,
+      model: modelRuntime?.modelId ?? args.model,
+      ...(modelRuntime?.catalogId && { modelCatalogId: modelRuntime.catalogId }),
+      ...(modelRuntime?.providerProfileId && { providerProfileId: modelRuntime.providerProfileId }),
+      ...(modelRuntime?.reasoningPolicy && { reasoningPolicy: modelRuntime.reasoningPolicy }),
+      ...(args.modelCatalogId && { modelCatalogId: args.modelCatalogId }),
+      ...(args.reasoningPolicy && { reasoningPolicy: args.reasoningPolicy }),
       variant: args.variant,
       gameTimeoutMs: args.gameTimeoutMs,
       llmTimeoutMs: args.llmTimeoutMs,
@@ -400,7 +441,7 @@ function selectCast(
   count: number,
   requestedPersonas: string[] | null,
   openai: OpenAI,
-  model: string,
+  modelRuntime: SimulationModelRuntime,
   toolChoiceMode: LlmToolChoiceMode = "named",
   openAIReasoningSummary?: OpenAIReasoningSummaryMode,
 ): InfluenceAgent[] {
@@ -426,9 +467,13 @@ function selectCast(
 
   return selected.map(({ name, personality }) => {
     const id: UUID = randomUUID();
-    return new InfluenceAgent(id, name, personality, openai, model, undefined, undefined, {
+    return new InfluenceAgent(id, name, personality, openai, modelRuntime.modelId, undefined, undefined, {
       toolChoiceMode,
       ...(openAIReasoningSummary && { openAIReasoningSummary }),
+      providerProfileId: modelRuntime.providerProfileId,
+      ...(modelRuntime.catalogId && { catalogId: modelRuntime.catalogId }),
+      modelCapabilities: modelRuntime.capabilities,
+      reasoningPolicy: modelRuntime.reasoningPolicy,
     });
   });
 }
@@ -1231,6 +1276,39 @@ function attachProgressLogger(
   });
 }
 
+function resolveCatalogBackedSimulationModel(args: SimArgs): SimulationModelRuntime | null {
+  if (!args.modelCatalogId) return null;
+  const resolved = resolveModelSelection(
+    {
+      catalogId: args.modelCatalogId,
+      ...(args.reasoningPolicy && { reasoningPolicy: args.reasoningPolicy }),
+    },
+    undefined,
+  );
+  return {
+    modelId: resolved.modelId,
+    providerProfileId: resolved.providerProfile.id,
+    catalogId: resolved.catalogId,
+    capabilities: resolved.model.capabilities,
+    reasoningPolicy: resolved.reasoningPolicy,
+  };
+}
+
+function resolveLegacySimulationModel(
+  args: SimArgs,
+  providerProfileId: ProviderProfileId,
+): SimulationModelRuntime {
+  return {
+    modelId: args.model,
+    providerProfileId,
+    ...(resolveCatalogIdForModel(args.model, providerProfileId) && {
+      catalogId: resolveCatalogIdForModel(args.model, providerProfileId),
+    }),
+    capabilities: inferModelCapabilities(args.model, providerProfileId),
+    reasoningPolicy: args.reasoningPolicy ?? "action-policy",
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -1238,10 +1316,18 @@ function attachProgressLogger(
 async function main() {
   const args = parseArgs();
   const runTimestamp = new Date().toISOString();
+  let catalogModelRuntime: SimulationModelRuntime | null = null;
+  try {
+    catalogModelRuntime = resolveCatalogBackedSimulationModel(args);
+  } catch (error) {
+    console.error(`Error: invalid model catalog selection: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
 
   const llmConfig = createLlmClientFromEnv(process.env, {
     timeout: args.llmTimeoutMs,
     maxRetries: 0,
+    ...(catalogModelRuntime && { providerProfileId: catalogModelRuntime.providerProfileId }),
   });
   if (!llmConfig) {
     console.error(
@@ -1251,13 +1337,17 @@ async function main() {
   }
 
   const openai = llmConfig.client;
+  const modelRuntime = catalogModelRuntime ?? resolveLegacySimulationModel(args, llmConfig.providerProfileId);
+  args.model = modelRuntime.modelId;
   const openAIReasoningSummary = args.openAIReasoningSummary !== undefined
     ? args.openAIReasoningSummary ?? undefined
     : llmConfig.openAIReasoningSummary;
-  const metadata = buildRunMetadata(args, runTimestamp, openAIReasoningSummary);
+  const metadata = buildRunMetadata(args, runTimestamp, openAIReasoningSummary, modelRuntime);
 
   console.log(`\n=== Influence Batch Simulation ===`);
-  console.log(`Games: ${args.games} | Players per game: ${args.players} | Model: ${args.model} | Variant: ${args.variant}`);
+  console.log(`Games: ${args.games} | Players per game: ${args.players} | Model: ${modelRuntime.modelId} | Variant: ${args.variant}`);
+  if (modelRuntime.catalogId) console.log(`Model catalog: ${modelRuntime.catalogId}`);
+  console.log(`Reasoning policy: ${modelRuntime.reasoningPolicy}`);
   console.log(`Provider: ${describeLlmProvider(llmConfig)} | API key: ${llmConfig.apiKeySource} | Tool choice: ${llmConfig.toolChoiceMode}`);
   console.log(`OpenAI reasoning summaries: ${openAIReasoningSummary ?? "off"}`);
   console.log(`Timeouts: game ${(args.gameTimeoutMs / 1000).toFixed(0)}s | LLM request ${(args.llmTimeoutMs / 1000).toFixed(0)}s`);
@@ -1288,7 +1378,7 @@ async function main() {
   const results: GameResult[] = [];
   let timedOutGame = false;
   const flushPartialAndExit = (signal: "SIGINT" | "SIGTERM"): void => {
-    writeBatchArtifacts(batchDir, metadata, args.model, results, true);
+    writeBatchArtifacts(batchDir, metadata, modelRuntime.modelId, results, true);
     console.error(
       `\n${signal} received. Partial aggregate artifacts saved from ${results.filter((result) => result.status === "completed").length} completed game(s) to: ${batchDir}`,
     );
@@ -1302,7 +1392,7 @@ async function main() {
     const startTime = Date.now();
 
     // Create fresh agents for each game
-    const agents = selectCast(args.players, args.personas, openai, args.model, llmConfig.toolChoiceMode, openAIReasoningSummary);
+    const agents = selectCast(args.players, args.personas, openai, modelRuntime, llmConfig.toolChoiceMode, openAIReasoningSummary);
     const playerPersonas: Record<string, string> = {};
     const playerNameById: Record<string, string> = {};
     const gameTracker = new TokenTracker();
@@ -1314,7 +1404,13 @@ async function main() {
 
     console.log(`  Players: ${agents.map((a) => a.name).join(", ")}`);
 
-    const houseInterviewer = new LLMHouseInterviewer(openai, args.model, { toolChoiceMode: llmConfig.toolChoiceMode });
+    const houseInterviewer = new LLMHouseInterviewer(openai, modelRuntime.modelId, {
+      toolChoiceMode: llmConfig.toolChoiceMode,
+      providerProfileId: modelRuntime.providerProfileId,
+      ...(modelRuntime.catalogId && { catalogId: modelRuntime.catalogId }),
+      modelCapabilities: modelRuntime.capabilities,
+      reasoningPolicy: modelRuntime.reasoningPolicy,
+    });
     houseInterviewer.setTokenTracker(gameTracker);
     const runner = new GameRunner(agents, simConfig, houseInterviewer);
     const transcriptPath = join(batchDir, `game-${g}.txt`);
@@ -1329,6 +1425,9 @@ async function main() {
       players: agents.map((agent) => agent.name),
       variant: args.variant,
       model: args.model,
+      ...(modelRuntime.catalogId && { modelCatalogId: modelRuntime.catalogId }),
+      providerProfileId: modelRuntime.providerProfileId,
+      reasoningPolicy: modelRuntime.reasoningPolicy,
       gameTimeoutMs: args.gameTimeoutMs,
       llmTimeoutMs: args.llmTimeoutMs,
       enableStrategicReflections: args.enableStrategicReflections ?? false,
@@ -1422,7 +1521,7 @@ async function main() {
           2,
         ),
       );
-      writeBatchArtifacts(batchDir, metadata, args.model, results, g < args.games);
+      writeBatchArtifacts(batchDir, metadata, modelRuntime.modelId, results, g < args.games);
     } catch (err) {
       if (err instanceof SimulationTimeoutError) timedOutGame = true;
       const durationMs = Date.now() - startTime;
@@ -1472,13 +1571,13 @@ async function main() {
           2,
         ),
       );
-      writeBatchArtifacts(batchDir, metadata, args.model, results, g < args.games);
+      writeBatchArtifacts(batchDir, metadata, modelRuntime.modelId, results, g < args.games);
       if (timedOutGame) break;
     }
   }
 
   // Compute aggregates
-  const { stats, markdown } = writeBatchArtifacts(batchDir, metadata, args.model, results, false);
+  const { stats, markdown } = writeBatchArtifacts(batchDir, metadata, modelRuntime.modelId, results, false);
 
   // Output structured JSON
   console.log("\n=== Aggregate Stats (JSON) ===\n");

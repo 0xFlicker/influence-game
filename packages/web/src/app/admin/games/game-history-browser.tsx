@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { listAdminGames, hideGame, unhideGame, type AdminGameSummary, type GameStatus, type ModelTier } from "@/lib/api";
+import { formatGameModelLabel, hideGame, listAdminGames, unhideGame, type AdminGameSummary, type GameStatus, type ModelTier } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 
 // ---------------------------------------------------------------------------
@@ -17,10 +17,6 @@ type VisibilityFilter = "all" | "visible" | "hidden";
 // ---------------------------------------------------------------------------
 // Row component
 // ---------------------------------------------------------------------------
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
 
 function StatusBadge({ status }: { status: AdminGameSummary["status"] }) {
   const styles: Record<AdminGameSummary["status"], string> = {
@@ -97,7 +93,7 @@ function GameRow({ game, canHide, onToggleVisibility }: { game: AdminGameSummary
       <td className="py-3 px-4 text-white/50 text-sm">
         {game.currentRound > 0 ? game.currentRound : "—"}
       </td>
-      <td className="py-3 px-4 text-white/50 text-sm">{capitalize(game.modelTier)}</td>
+      <td className="py-3 px-4 text-white/50 text-sm">{formatGameModelLabel(game.modelSelection, game.modelTier, game.modelLabel)}</td>
       <td className="py-3 px-4 text-white/40 text-xs">{date}</td>
       <td className="py-3 px-4">
         <StatusBadge status={game.status} />
@@ -225,8 +221,10 @@ export function GameHistoryBrowser() {
     if (visibilityFilter === "hidden" && !g.hidden) return false;
     if (search) {
       const q = search.toLowerCase();
+      const modelLabel = formatGameModelLabel(g.modelSelection, g.modelTier, g.modelLabel).toLowerCase();
       if (
         !g.winner?.toLowerCase().includes(q) &&
+        !modelLabel.includes(q) &&
         !String(g.gameNumber).includes(q)
       )
         return false;

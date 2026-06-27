@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAccount } from "wagmi";
-import { listGames, stopGame, startGame, fillGame, isFillAccepted, hideGame, type GameSummary } from "@/lib/api";
+import { fillGame, formatGameModelLabel, hideGame, isFillAccepted, listGames, startGame, stopGame, type GameSummary } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { TruncatedAddress } from "@/components/truncated-address";
 
@@ -27,10 +27,6 @@ function phaseLabel(phase: string): string {
 function progressPct(game: GameSummary): number {
   if (game.maxRounds === 0) return 0;
   return Math.round((game.currentRound / game.maxRounds) * 100);
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 // ---------------------------------------------------------------------------
@@ -65,7 +61,7 @@ function GameCard({ game, onRefresh, canStop }: { game: GameSummary; onRefresh: 
           <span className="text-white font-semibold">#{game.gameNumber}</span>
           <span className="text-white/50 text-sm">
             {game.playerCount}-player · Round {game.currentRound}/{game.maxRounds} ·{" "}
-            {capitalize(game.modelTier)}
+            {formatGameModelLabel(game.modelSelection, game.modelTier, game.modelLabel)}
           </span>
           <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-white/60 font-mono">
             {phaseLabel(game.currentPhase)}
@@ -185,7 +181,7 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
         <div className="flex items-center gap-3 mb-1">
           <span className="text-white font-semibold">#{game.gameNumber}</span>
           <span className="text-white/50 text-sm">
-            {game.playerCount}-player · {filling ? `${game.playerCount}/${game.playerCount} slots filled` : "Not started"} · {capitalize(game.modelTier)}
+            {game.playerCount}-player · {filling ? `${game.playerCount}/${game.playerCount} slots filled` : "Not started"} · {formatGameModelLabel(game.modelSelection, game.modelTier, game.modelLabel)}
           </span>
           {filling && (
             <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 text-indigo-400 animate-pulse">
@@ -337,7 +333,7 @@ function RecentGameRow({ game, canHide, onRefresh }: { game: GameSummary; canHid
       </td>
       <td className="py-3 px-4 text-white/50 text-sm">{game.playerCount}p</td>
       <td className="py-3 px-4 text-white/50 text-sm">{game.currentRound}</td>
-      <td className="py-3 px-4 text-white/50 text-sm">{capitalize(game.modelTier)}</td>
+      <td className="py-3 px-4 text-white/50 text-sm">{formatGameModelLabel(game.modelSelection, game.modelTier, game.modelLabel)}</td>
       <td className="py-3 px-4 text-white/40 text-xs">{date}</td>
       <td className="py-3 px-4">
         <StatusBadge status={game.status} errorInfo={game.errorInfo} />

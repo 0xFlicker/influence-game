@@ -90,6 +90,18 @@ describe("simulation variant config", () => {
     expect(args.chatty).toBe(false);
   });
 
+  it("parses explicit model catalog and reasoning policy for router simulations", () => {
+    const args = parseArgs([
+      "--model-catalog",
+      "katana:grok-4-3",
+      "--reasoning-policy",
+      "high",
+    ]);
+
+    expect(args.modelCatalogId).toBe("katana:grok-4-3");
+    expect(args.reasoningPolicy).toBe("high");
+  });
+
   it("supports the short summaries alias and explicit disable flag", () => {
     expect(parseArgs(["--summaries"]).houseSummaries).toBe(true);
     expect(parseArgs(["--summaries", "--no-house-summaries"]).houseSummaries).toBe(false);

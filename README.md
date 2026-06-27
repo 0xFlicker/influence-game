@@ -41,6 +41,9 @@ bun run simulate -- --games 1 --players 4 --personas Atlas,Vera,Finn,Mira
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 4 --model <lm-studio-model-id>
 
+# Katana / IMGNAI Grok router smoke (uses Doppler dev secrets)
+bun run simulate:katana:grok:smoke
+
 # For Mingle + decision visibility (recommended):
 # INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 #   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
@@ -68,6 +71,8 @@ bun run simulate -- --variant power-lobby-mingle
 ```
 
 The root `simulate` script injects hosted-provider secrets from the Doppler `social-strategy-agent` project's `dev` config. Use `simulate:local` when testing LM Studio or another OpenAI-compatible local endpoint.
+
+Simulation model selection supports both legacy `--model <id>` and explicit catalog-backed runs. Use `--model-catalog katana:grok-4-3 --reasoning-policy low|medium|high` to test router-backed Grok through the shared provider catalog. Admin-created games now store `modelSelection.catalogId` plus `reasoningPolicy`; `budget` / `standard` / `premium` remains only as a fixed compatibility fallback for older callers and games.
 
 Output includes a round-by-round transcript, per-persona win rates, token cost estimates, and per-game artifacts under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis with `thinking` / `reasoningContext` (including labeled OpenAI reasoning summaries when enabled), `game-N-events.jsonl` for replayable accepted domain events, `game-N-progress.jsonl` for lightweight progress, and `game-N.txt` for human-readable transcript review. Simulator event JSONL uses the same canonical event envelope that API-backed games persist in Postgres, but CLI simulations remain local artifacts and do not write API database rows. Mingle intent, House room-assignment, Mingle turn, vote, private `candidate-selection`, power (including bundled `shieldPullUp` when Protect needs a replacement), and House MC summary records are written to turns JSONL by default; Mingle intent player targets are repaired to living, non-self players before House assignment, and Mingle intent, strategic reflection, and Strategy Thread packet records can include `strategicLens` metadata. Strategic reflection and `strategy-packet` records are written when `--strategic-reflections` is enabled; the hidden cadence is an initial post-Introduction reflection, later-round pre-vote and post-vote reflections, plus post-Council diary-phase reflection when Council diary sessions run. Later private decisions may include `decisionLog` receipts that explain strategic pivots for normal reflection carry-forward. `--rich-producer` also writes private `house-strategy-bible`, `house-long-form-summary`, and `house-producer-brief` records. For prompt-continuity validation, check that the Current Board Contract keeps live players, eliminated players, jurors, empowerment, shields, Council status, and endgame status clear; Council diary prompts respect the player's role; Judgment question prompts use questions-only history; and House MC summaries emphasize consequence over player-count bookkeeping.
 
@@ -188,13 +193,14 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `OPENAI_API_KEY` | Yes, unless using local provider | -- | Hosted OpenAI API key for LLM agent calls |
 | `INFLUENCE_LLM_BASE_URL` | No | -- | OpenAI-compatible endpoint, e.g. `http://127.0.0.1:1234/v1` for LM Studio |
 | `INFLUENCE_LLM_API_KEY` | No | `lm-studio` when `INFLUENCE_LLM_BASE_URL` is set | API key for the OpenAI-compatible endpoint |
+| `API_KAT_IMGNAI_KEY` | Required for Katana profile | -- | Katana / IMGNAI router API key, used only for explicit Katana model selections |
+| `API_KAT_IMGNAI_SECRET` | Required for Katana profile | -- | Katana / IMGNAI router API secret |
+| `INFLUENCE_LLM_PREFLIGHT` | No | enabled | API game start validates selected provider/model metadata before claiming the run; set `off` only for incompatible local providers |
+| `INFLUENCE_LLM_PREFLIGHT_TIMEOUT_MS` | No | `10000` | Timeout for API start provider/model preflight |
 | `INFLUENCE_LLM_TOOL_CHOICE_MODE` | No | `required` for local base URLs, otherwise `named` | Structured decision-call mode: `named`, `required`, `auto`, or `json_schema` |
 | `INFLUENCE_OPENAI_REASONING_SUMMARY` | No | `auto` for hosted OpenAI, off for local base URLs | Hosted OpenAI Responses reasoning summary mode: `auto`, `concise`, `detailed`, or `off` |
 | `INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS` | No | `4096` | Minimum completion budget for local structured decisions |
 | `INFLUENCE_LLM_LOCAL_MESSAGE_MIN_TOKENS` | No | `8192` | Minimum completion budget for local public messages |
-| `INFLUENCE_MODEL_BUDGET` | No | `gpt-5-nano` | Server-side budget tier model override |
-| `INFLUENCE_MODEL_STANDARD` | No | `gpt-5-mini` | Server-side standard tier model override |
-| `INFLUENCE_MODEL_PREMIUM` | No | `gpt-5.4-mini` | Server-side premium tier model override |
 | `PRIVY_APP_ID` | Yes | -- | Privy app ID for auth |
 | `PRIVY_APP_SECRET` | Yes | -- | Privy app secret for auth |
 | `JWT_SECRET` | Yes | -- | Secret for signing session JWTs |
@@ -287,6 +293,10 @@ Options:
   --players N      Players per game, 4-10 (default: 6)
   --personas A,B   Comma-separated persona names (default: random selection)
   --model NAME     OpenAI-compatible model ID (default: gpt-5-nano)
+  --model-catalog ID
+                   Catalog-backed provider/model selection, e.g. katana:grok-4-3
+  --reasoning-policy low|medium|high|action-policy
+                   Requested model reasoning policy for catalog or compatible model runs
   --variant NAME   Variant: baseline, mingle, power-lobby,
                    or power-lobby-mingle (default: baseline)
   --chatty         Print live formatted transcript output

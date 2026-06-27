@@ -12,6 +12,13 @@ import type { LlmToolChoiceMode } from "./llm-client";
 import { Phase } from "./types";
 import type { MingleIntentSummary, UUID } from "./types";
 import type { TokenTracker } from "./token-tracker";
+import {
+  inferModelCapabilities,
+  type ModelReasoningEffort,
+  type ModelReasoningPolicy,
+  type ModelRequestCapabilities,
+  type ProviderProfileId,
+} from "./model-catalog";
 import type {
   HouseAllianceHypothesis,
   HouseCouncilRoleFact,
@@ -137,6 +144,10 @@ export interface LLMHouseInterviewerOptions {
   ownerEpoch?: string;
   toolChoiceMode?: LlmToolChoiceMode;
   structuredOutputTimeoutMs?: number;
+  providerProfileId?: ProviderProfileId;
+  modelCapabilities?: ModelRequestCapabilities;
+  reasoningPolicy?: ModelReasoningPolicy;
+  catalogId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -401,6 +412,10 @@ function parseHouseProducerBrief(
 export class LLMHouseInterviewer implements IHouseInterviewer {
   private readonly openai: OpenAI;
   private readonly model: string;
+  private readonly providerProfileId: ProviderProfileId;
+  private readonly catalogId?: string;
+  private readonly modelCapabilities: ModelRequestCapabilities;
+  private readonly reasoningPolicy: ModelReasoningPolicy;
   private readonly privateTraceSink?: PrivateTraceSink;
   private readonly privateTraceGameId?: UUID;
   private readonly privateTraceOwnerEpoch?: string;
@@ -411,6 +426,10 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   constructor(openaiClient: OpenAI, model = "gpt-5-nano", options: LLMHouseInterviewerOptions = {}) {
     this.openai = openaiClient;
     this.model = model;
+    this.providerProfileId = options.providerProfileId ?? "openai";
+    this.catalogId = options.catalogId;
+    this.modelCapabilities = options.modelCapabilities ?? inferModelCapabilities(model, this.providerProfileId);
+    this.reasoningPolicy = options.reasoningPolicy ?? "action-policy";
     this.privateTraceSink = options.privateTraceSink;
     this.privateTraceGameId = options.gameId;
     this.privateTraceOwnerEpoch = options.ownerEpoch;
@@ -424,16 +443,15 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   }
 
   private recordUsage(source: string, response: ChatCompletion): void {
-    if (!this.tokenTracker || !response.usage) return;
-    const reasoningTk = (response.usage as unknown as Record<string, unknown>).completion_tokens_details
-      ? ((response.usage as unknown as Record<string, unknown>).completion_tokens_details as Record<string, number>)?.reasoning_tokens ?? 0
-      : 0;
+    if (!this.tokenTracker) return;
+    const usage = LLMHouseInterviewer.providerUsageMetadata(response);
+    if (!usage || usage.promptTokens === undefined || usage.completionTokens === undefined) return;
     this.tokenTracker.record(
       source,
-      response.usage.prompt_tokens,
-      response.usage.completion_tokens,
-      response.usage.prompt_tokens_details?.cached_tokens ?? 0,
-      reasoningTk,
+      usage.promptTokens,
+      usage.completionTokens,
+      usage.cachedTokens ?? 0,
+      usage.reasoningTokens ?? 0,
     );
   }
 
@@ -490,6 +508,42 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     return readString(record.reasoning_content) || readString(record.reasoning);
   }
 
+  private static readNumberField(value: unknown): number | undefined {
+    return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  }
+
+  private static providerUsageMetadata(response: ChatCompletion): PrivateDecisionTrace["usage"] | undefined {
+    const usage = (response as unknown as Record<string, unknown>).usage;
+    if (!usage || typeof usage !== "object" || Array.isArray(usage)) return undefined;
+    const usageRecord = usage as Record<string, unknown>;
+    const completionDetails = usageRecord.completion_tokens_details &&
+      typeof usageRecord.completion_tokens_details === "object" &&
+      !Array.isArray(usageRecord.completion_tokens_details)
+      ? usageRecord.completion_tokens_details as Record<string, unknown>
+      : {};
+    const promptDetails = usageRecord.prompt_tokens_details &&
+      typeof usageRecord.prompt_tokens_details === "object" &&
+      !Array.isArray(usageRecord.prompt_tokens_details)
+      ? usageRecord.prompt_tokens_details as Record<string, unknown>
+      : {};
+    const routerBilling = usageRecord.imgnai &&
+      typeof usageRecord.imgnai === "object" &&
+      !Array.isArray(usageRecord.imgnai)
+      ? usageRecord.imgnai as Record<string, unknown>
+      : undefined;
+    const diagnostics = "imgnai" in usageRecord && !routerBilling ? ["malformed_router_billing"] : [];
+    const metadata: NonNullable<PrivateDecisionTrace["usage"]> = {
+      ...(LLMHouseInterviewer.readNumberField(usageRecord.prompt_tokens) !== undefined && { promptTokens: LLMHouseInterviewer.readNumberField(usageRecord.prompt_tokens) }),
+      ...(LLMHouseInterviewer.readNumberField(usageRecord.completion_tokens) !== undefined && { completionTokens: LLMHouseInterviewer.readNumberField(usageRecord.completion_tokens) }),
+      ...(LLMHouseInterviewer.readNumberField(promptDetails.cached_tokens) !== undefined && { cachedTokens: LLMHouseInterviewer.readNumberField(promptDetails.cached_tokens) }),
+      ...(LLMHouseInterviewer.readNumberField(completionDetails.reasoning_tokens) !== undefined && { reasoningTokens: LLMHouseInterviewer.readNumberField(completionDetails.reasoning_tokens) }),
+      ...(LLMHouseInterviewer.readNumberField(usageRecord.total_tokens) !== undefined && { totalTokens: LLMHouseInterviewer.readNumberField(usageRecord.total_tokens) }),
+      ...(routerBilling && { routerBilling }),
+      ...(diagnostics.length > 0 && { diagnostics }),
+    };
+    return Object.keys(metadata).length > 0 ? metadata : undefined;
+  }
+
   private async emitPrivateDecisionTrace(params: {
     context: PrivateDecisionTraceContext;
     messages: readonly { role: string; content: unknown; name?: string }[];
@@ -509,6 +563,8 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       LLMHouseInterviewer.extractReasoningContext(message);
     const toolCalls = LLMHouseInterviewer.privateTraceToolCalls(message);
     const content = typeof message?.content === "string" ? message.content : null;
+    const requestedReasoningEffort = this.requestedReasoningEffort();
+    const privateTraceMessages = LLMHouseInterviewer.privateTraceMessages(params.messages);
     const trace: PrivateDecisionTrace = {
       version: 2,
       ...(params.context.gameId && { gameId: params.context.gameId }),
@@ -519,10 +575,23 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       ...(params.context.round !== undefined && { round: params.context.round }),
       createdAt: new Date().toISOString(),
       model: {
+        provider: this.providerProfileId,
+        providerProfileId: this.providerProfileId,
+        ...(this.catalogId && { catalogId: this.catalogId }),
         name: this.model,
       },
+      ...(requestedReasoningEffort && { requestedReasoningEffort }),
+      reasoningPolicy: this.reasoningPolicy,
       prompt: {
-        messages: LLMHouseInterviewer.privateTraceMessages(params.messages),
+        messages: privateTraceMessages,
+      },
+      request: {
+        providerProfileId: this.providerProfileId,
+        ...(this.catalogId && { catalogId: this.catalogId }),
+        model: this.model,
+        messages: privateTraceMessages,
+        ...(requestedReasoningEffort && { reasoning_effort: requestedReasoningEffort }),
+        reasoningPolicy: this.reasoningPolicy,
       },
       response: {
         raw: params.response,
@@ -531,6 +600,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
         ...(toolCalls && { toolCalls }),
       },
       ...(params.output !== undefined && { output: params.output }),
+      ...(LLMHouseInterviewer.providerUsageMetadata(params.response) && { usage: LLMHouseInterviewer.providerUsageMetadata(params.response) }),
       ...(emittedThinking && { emittedThinking }),
       ...(reasoningContext && { reasoningContext }),
       ...(params.context.boundary && { boundary: params.context.boundary }),
@@ -543,16 +613,24 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     }
   }
 
-  /** gpt-5 family requires max_completion_tokens and only accepts default temperature. */
+  private requestedReasoningEffort(): ModelReasoningEffort | undefined {
+    if (!this.modelCapabilities.supportsReasoningEffort) return undefined;
+    if (this.reasoningPolicy === "low" || this.reasoningPolicy === "medium" || this.reasoningPolicy === "high") {
+      return this.reasoningPolicy;
+    }
+    return undefined;
+  }
+
   private modelParams(maxTokens: number, temperature: number) {
-    const isGpt5 = this.model.startsWith("gpt-5");
-    const isReasoning = /^o\d/.test(this.model) || isGpt5;
-    const budget = isReasoning ? maxTokens + 4000 : maxTokens;
+    const usesReasoningBudget = this.modelCapabilities.supportsReasoningEffort || this.modelCapabilities.usesMaxCompletionTokens;
+    const budget = usesReasoningBudget ? maxTokens + 4000 : maxTokens;
+    const reasoningEffort = this.requestedReasoningEffort();
     return {
-      ...(isGpt5 || isReasoning
+      ...(this.modelCapabilities.usesMaxCompletionTokens
         ? { max_completion_tokens: budget }
         : { max_tokens: budget }),
-      ...(!isGpt5 && !isReasoning && { temperature }),
+      ...(this.modelCapabilities.supportsTemperature && { temperature }),
+      ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
     };
   }
 
@@ -1000,19 +1078,7 @@ Respond with JSON only:
       ...this.modelParams(150, 0.9),
     });
 
-    // Track token usage (including cached + reasoning tokens for cost estimation)
-    if (this.tokenTracker && response.usage) {
-      const reasoningTk = (response.usage as unknown as Record<string, unknown>).completion_tokens_details
-        ? ((response.usage as unknown as Record<string, unknown>).completion_tokens_details as Record<string, number>)?.reasoning_tokens ?? 0
-        : 0;
-      this.tokenTracker.record(
-        "House/question",
-        response.usage.prompt_tokens,
-        response.usage.completion_tokens,
-        response.usage.prompt_tokens_details?.cached_tokens ?? 0,
-        reasoningTk,
-      );
-    }
+    this.recordUsage("House/question", response);
 
     const question = response.choices[0]?.message?.content?.trim();
     const output = question && question.length > 0
@@ -1074,18 +1140,7 @@ CLOSE: <your brief closing remark to the player, 1 sentence>`;
       ...this.modelParams(200, 0.8),
     });
 
-    if (this.tokenTracker && response.usage) {
-      const reasoningTk = (response.usage as unknown as Record<string, unknown>).completion_tokens_details
-        ? ((response.usage as unknown as Record<string, unknown>).completion_tokens_details as Record<string, number>)?.reasoning_tokens ?? 0
-        : 0;
-      this.tokenTracker.record(
-        "House/followup",
-        response.usage.prompt_tokens,
-        response.usage.completion_tokens,
-        response.usage.prompt_tokens_details?.cached_tokens ?? 0,
-        reasoningTk,
-      );
-    }
+    this.recordUsage("House/followup", response);
 
     const raw = response.choices[0]?.message?.content?.trim() ?? "";
 

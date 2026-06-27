@@ -85,6 +85,11 @@ export function estimateCost(usage: TokenUsage, pricingOrModel: ModelPricing | s
   };
 }
 
+export function estimateCostForKnownModel(usage: TokenUsage, model: string): CostEstimate | null {
+  const pricing = MODEL_PRICING[model];
+  return pricing ? { ...estimateCost(usage, pricing), model } : null;
+}
+
 /**
  * Estimate costs for the given usage across ALL known model tiers.
  */

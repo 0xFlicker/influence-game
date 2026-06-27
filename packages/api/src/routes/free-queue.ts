@@ -31,7 +31,7 @@ import {
   pickArchetypes,
   resolveModelForTier,
 } from "@influence/engine";
-import { startGame } from "../services/game-lifecycle.js";
+import { startGame, validateGameStartReadiness } from "../services/game-lifecycle.js";
 import {
   acquireGameRunOwner,
   markOwnerStartupFailed,
@@ -416,17 +416,28 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       }, 400);
     }
 
+    const readiness = await validateGameStartReadiness(db, game.id);
+    if (readiness.error) {
+      return c.json({ error: readiness.error }, 500);
+    }
+
     const owner = await acquireGameRunOwner(db, game.id);
     if (!owner.ok) {
       return c.json({ error: owner.error }, owner.statusCode);
     }
     await tryRefreshGameWatchStateSummary(db, game.id, "free_queue_started");
 
-    const result = await startGame(db, game.id, owner.claim.ownerEpoch);
-    if (result.error) {
-      await markOwnerStartupFailed(db, game.id, owner.claim.ownerEpoch, result.error);
+    let startupError: string | undefined;
+    try {
+      const result = await startGame(db, game.id, owner.claim.ownerEpoch);
+      startupError = result.error;
+    } catch (error) {
+      startupError = error instanceof Error ? error.message : String(error);
+    }
+    if (startupError) {
+      await markOwnerStartupFailed(db, game.id, owner.claim.ownerEpoch, startupError);
       await tryRefreshGameWatchStateSummary(db, game.id, "free_queue_startup_failed");
-      return c.json({ error: result.error }, 500);
+      return c.json({ error: startupError }, 500);
     }
 
     return c.json({

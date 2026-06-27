@@ -67,14 +67,28 @@ describe("cognitive artifact writer", () => {
       round: 2,
       createdAt: new Date("2026-06-19T12:00:00.000Z").toISOString(),
       model: {
-        provider: "test",
+        provider: "katana",
+        providerProfileId: "katana",
+        catalogId: "katana:grok-4-3",
         name: "gpt-test",
       },
+      requestedReasoningEffort: "high",
+      reasoningPolicy: "high",
       prompt: {
         messages: [
           { role: "system", content: "SECRET PROMPT SHOULD NOT BE STORED" },
           { role: "user", content: "Visible context" },
         ],
+      },
+      request: {
+        providerProfileId: "katana",
+        catalogId: "katana:grok-4-3",
+        model: "gpt-test",
+        messages: [
+          { role: "system", content: "SECRET PROMPT SHOULD NOT BE STORED" },
+          { role: "user", content: "Visible context" },
+        ],
+        reasoning_effort: "high",
       },
       response: {
         raw: { content: "RAW RESPONSE SECRET SHOULD NOT BE STORED" },
@@ -97,6 +111,14 @@ describe("cognitive artifact writer", () => {
       toolName: "cast_vote",
       toolArguments: {
         apiKeyLikeValue: "TOOL ARG SECRET SHOULD NOT BE STORED",
+      },
+      usage: {
+        promptTokens: 10,
+        completionTokens: 5,
+        totalTokens: 15,
+        routerBilling: {
+          credits: 3,
+        },
       },
       decisionLog: "Vera is gaining too much cover, so I am applying pressure.",
       strategicLens: "vote_math",
@@ -152,6 +174,13 @@ describe("cognitive artifact writer", () => {
     expect(serializedPayloads).not.toContain("openai_responses");
     expect(serializedPayloads).not.toContain("outputItemIds");
     expect(serializedPayloads).not.toContain("rs-test");
+    expect(serializedPayloads).not.toContain("katana");
+    expect(serializedPayloads).not.toContain("grok-4-3");
+    expect(serializedPayloads).not.toContain("gpt-test");
+    expect(serializedPayloads).not.toContain("requestedReasoningEffort");
+    expect(serializedPayloads).not.toContain("reasoningPolicy");
+    expect(serializedPayloads).not.toContain("routerBilling");
+    expect(serializedPayloads).not.toContain("promptTokens");
     expect(serializedPayloads).toContain("I should vote against the unstable coalition.");
     expect(serializedPayloads).toContain("Vera is gaining too much cover");
     expect(serializedPayloads).toContain("strategyPacketSummary");

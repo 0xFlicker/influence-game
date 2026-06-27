@@ -63,7 +63,6 @@ function captureMetadata(trace: PrivateDecisionTrace): Record<string, unknown> {
     },
     ...(trace.phase && { phase: trace.phase }),
     ...(trace.round !== undefined && { round: trace.round }),
-    modelName: trace.model.name,
     traceCreatedAt: trace.createdAt,
   };
 }

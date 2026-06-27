@@ -248,12 +248,41 @@ export interface CreateGameParams {
   playerCount: 4 | 6 | 8 | 10 | 12;
   slotType: "all_ai" | "mixed";
   modelTier: ModelTier;
+  modelSelection?: GameModelSelection;
   personaPool: PersonaKey[];
   fillStrategy: FillStrategy;
   timingPreset: TimingPreset;
   maxRounds: number | "auto";
   visibility: GameVisibility;
   viewerMode: "live" | "speedrun";
+}
+
+export type ModelReasoningPolicy = "action-policy" | "low" | "medium" | "high";
+
+export interface GameModelSelection {
+  catalogId: string;
+  reasoningPolicy: ModelReasoningPolicy;
+}
+
+const REASONING_LABELS: Record<ModelReasoningPolicy, string> = {
+  "action-policy": "Adaptive",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+};
+
+export function formatGameModelLabel(
+  modelSelection: GameModelSelection | undefined,
+  modelTier: ModelTier,
+  modelLabel?: string,
+): string {
+  if (modelLabel) return modelLabel;
+  if (modelSelection) {
+    const reasoningLabel = REASONING_LABELS[modelSelection.reasoningPolicy];
+    return reasoningLabel ? `Selected model · ${reasoningLabel}` : "Selected model";
+  }
+
+  return `${modelTier.charAt(0).toUpperCase()}${modelTier.slice(1)} tier`;
 }
 
 export interface GameSummary {
@@ -269,6 +298,8 @@ export interface GameSummary {
   alivePlayers: number;
   eliminatedPlayers: number;
   modelTier: ModelTier;
+  modelSelection?: GameModelSelection;
+  modelLabel?: string;
   visibility: GameVisibility;
   viewerMode: ViewerMode;
   trackType?: TrackType;
@@ -1106,6 +1137,7 @@ export interface GameDetail {
   currentPhase: PhaseKey;
   players: GamePlayer[];
   modelTier: ModelTier;
+  modelLabel?: string;
   visibility: GameVisibility;
   viewerMode: ViewerMode;
   winner?: string;

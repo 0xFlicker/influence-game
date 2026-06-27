@@ -25,7 +25,7 @@ import {
   requirePermission,
   type AuthEnv,
 } from "../middleware/auth.js";
-import { abortGame, startGame } from "../services/game-lifecycle.js";
+import { abortGame, startGame, validateGameStartReadiness } from "../services/game-lifecycle.js";
 import {
   acquireGameRunOwner,
   markOwnerStartupFailed,
@@ -48,12 +48,15 @@ import {
 import { broadcastRaw } from "../services/ws-manager.js";
 import { generateUniqueSlug } from "../lib/slug.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
+import { modelLabelFromConfig } from "../lib/model-label.js";
 import {
   createLlmClientFromEnv,
   generatePersona,
+  normalizeGameModelSelection,
   pickAgentNames,
   pickArchetypes,
   resolveModelForTier,
+  resolveModelSelection,
 } from "@influence/engine";
 import type { Personality } from "@influence/engine";
 
@@ -86,6 +89,9 @@ export function createGameRoutes(db: DrizzleDB) {
     const {
       playerCount,
       modelTier,
+      modelSelection,
+      modelCatalogId,
+      reasoningPolicy,
       personaPool,
       fillStrategy,
       timingPreset,
@@ -142,6 +148,27 @@ export function createGameRoutes(db: DrizzleDB) {
       : "speedrun"; // Default for admin-created games
 
     const resolvedModelTier = modelTier ?? "budget";
+    const rawModelSelection = modelSelection ?? (
+      typeof modelCatalogId === "string"
+        ? {
+            catalogId: modelCatalogId,
+            ...(reasoningPolicy !== undefined && { reasoningPolicy }),
+          }
+        : undefined
+    );
+    const normalizedModelSelection = normalizeGameModelSelection(rawModelSelection);
+    if (rawModelSelection && !normalizedModelSelection) {
+      return c.json({ error: "Invalid model selection" }, 400);
+    }
+    let resolvedModelSelection;
+    try {
+      resolvedModelSelection = resolveModelSelection(normalizedModelSelection, resolvedModelTier);
+    } catch {
+      return c.json({ error: "Unknown model selection" }, 400);
+    }
+    if (normalizedModelSelection && resolvedModelSelection.model.evaluationStatus !== "game-ready") {
+      return c.json({ error: "Model is not game-ready" }, 400);
+    }
 
     const config = {
       timers,
@@ -149,6 +176,10 @@ export function createGameRoutes(db: DrizzleDB) {
       minPlayers,
       maxPlayers,
       modelTier: resolvedModelTier,
+      modelSelection: {
+        catalogId: resolvedModelSelection.catalogId,
+        reasoningPolicy: resolvedModelSelection.reasoningPolicy,
+      },
       personaPool: personaPool ?? [],
       fillStrategy: fillStrategy ?? "balanced",
       visibility: visibility ?? "public",
@@ -225,6 +256,7 @@ export function createGameRoutes(db: DrizzleDB) {
         alivePlayers: watchState.counts.alivePlayers,
         eliminatedPlayers: watchState.counts.eliminatedPlayers,
         modelTier: config.modelTier ?? "budget",
+        modelLabel: modelLabelFromConfig(config),
         visibility: config.visibility ?? "public",
         viewerMode: config.viewerMode ?? "speedrun",
         trackType: game.trackType,
@@ -299,6 +331,7 @@ export function createGameRoutes(db: DrizzleDB) {
         ...(player.avatarUrl && { avatarUrl: player.avatarUrl }),
       })),
       modelTier: config.modelTier ?? "budget",
+      modelLabel: modelLabelFromConfig(config),
       visibility: config.visibility ?? "public",
       viewerMode: config.viewerMode ?? "speedrun",
       winner: watchState.winner?.name,
@@ -404,7 +437,11 @@ export function createGameRoutes(db: DrizzleDB) {
     // Resolve model from game config
     // -----------------------------------------------------------------------
     const gameConfig = JSON.parse(game.config);
-    const agentModel = resolveModelForTier(gameConfig.modelTier);
+    const resolvedModelSelection = resolveModelSelection(
+      normalizeGameModelSelection(gameConfig.modelSelection),
+      gameConfig.modelTier,
+    );
+    const agentModel = resolvedModelSelection.modelId;
 
     const playerId = randomUUID();
     const persona = {
@@ -476,7 +513,11 @@ export function createGameRoutes(db: DrizzleDB) {
     const archetypes = pickArchetypes(slotsToFill, existingArchetypes);
 
     const config = JSON.parse(game.config);
-    const agentModel = resolveModelForTier(config.modelTier);
+    const resolvedModelSelection = resolveModelSelection(
+      normalizeGameModelSelection(config.modelSelection),
+      config.modelTier,
+    );
+    const agentModel = resolvedModelSelection.modelId;
 
     // Step 1: Create placeholder players immediately (no LLM needed)
     const addedPlayers: Array<{ id: string; name: string; archetype: string }> = [];
@@ -610,6 +651,11 @@ export function createGameRoutes(db: DrizzleDB) {
       );
     }
 
+    const readiness = await validateGameStartReadiness(db, gameId);
+    if (readiness.error) {
+      return c.json({ error: readiness.error }, 500);
+    }
+
     // -----------------------------------------------------------------------
     // Detect and resolve player name collisions before starting
     // -----------------------------------------------------------------------
@@ -653,11 +699,17 @@ export function createGameRoutes(db: DrizzleDB) {
     // Await startGame to catch configuration errors (missing API key, etc.)
     // before returning success to the client. The actual game execution
     // (runGameAsync) runs in the background after this returns.
-    const result = await startGame(db, gameId, owner.claim.ownerEpoch);
-    if (result.error) {
-      await markOwnerStartupFailed(db, gameId, owner.claim.ownerEpoch, result.error);
+    let startupError: string | undefined;
+    try {
+      const result = await startGame(db, gameId, owner.claim.ownerEpoch);
+      startupError = result.error;
+    } catch (error) {
+      startupError = error instanceof Error ? error.message : String(error);
+    }
+    if (startupError) {
+      await markOwnerStartupFailed(db, gameId, owner.claim.ownerEpoch, startupError);
       await tryRefreshGameWatchStateSummary(db, gameId, "startup_failed");
-      return c.json({ error: result.error }, 500);
+      return c.json({ error: startupError }, 500);
     }
 
     return c.json({ status: "in_progress", players: currentPlayers.length });

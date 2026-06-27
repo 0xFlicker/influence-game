@@ -19,6 +19,7 @@ describe("LLM client env config", () => {
     expect(config?.apiKeySource).toBe("OPENAI_API_KEY");
     expect(config?.baseURL).toBeUndefined();
     expect(config?.providerLabel).toBe("OpenAI");
+    expect(config?.providerProfileId).toBe("openai");
     expect(config?.openAIReasoningSummary).toBe("auto");
   });
 
@@ -30,6 +31,7 @@ describe("LLM client env config", () => {
     expect(config).not.toBeNull();
     expect(config?.apiKeySource).toBe("local-default");
     expect(config?.baseURL).toBe("http://127.0.0.1:1234/v1");
+    expect(config?.providerProfileId).toBe("lm-studio");
     expect(config?.toolChoiceMode).toBe("required");
     expect(config?.openAIReasoningSummary).toBeUndefined();
     expect(describeLlmProvider(config!)).toBe(
@@ -48,6 +50,50 @@ describe("LLM client env config", () => {
     expect(config?.apiKeySource).toBe("INFLUENCE_LLM_API_KEY");
     expect(config?.baseURLSource).toBe("INFLUENCE_LLM_BASE_URL");
     expect(config?.baseURL).toBe("http://127.0.0.1:1234/v1");
+  });
+
+  it("uses Katana when explicitly selected", () => {
+    const config = createLlmClientFromEnv(
+      {
+        OPENAI_API_KEY: "openai-key",
+        API_KAT_IMGNAI_KEY: "kat-key",
+        API_KAT_IMGNAI_SECRET: "kat-secret",
+      },
+      { providerProfileId: "katana" },
+    );
+
+    expect(config).not.toBeNull();
+    expect(config?.apiKeySource).toBe("API_KAT_IMGNAI_KEY+API_KAT_IMGNAI_SECRET");
+    expect(config?.baseURL).toBe("https://kat.imgnai.com/v1");
+    expect(config?.baseURLSource).toBe("katana-profile");
+    expect(config?.providerLabel).toBe("Katana (IMGNAI)");
+    expect(config?.providerProfileId).toBe("katana");
+    expect(config?.openAIReasoningSummary).toBeUndefined();
+  });
+
+  it("does not route explicit OpenAI catalog selections to local base URLs", () => {
+    const config = createLlmClientFromEnv(
+      {
+        INFLUENCE_LLM_BASE_URL: "http://127.0.0.1:1234/v1",
+        INFLUENCE_LLM_API_KEY: "local-key",
+        OPENAI_API_KEY: "openai-key",
+      },
+      { providerProfileId: "openai" },
+    );
+
+    expect(config).not.toBeNull();
+    expect(config?.apiKeySource).toBe("OPENAI_API_KEY");
+    expect(config?.baseURL).toBeUndefined();
+    expect(config?.providerProfileId).toBe("openai");
+  });
+
+  it("does not implicitly use Katana credentials for default games", () => {
+    const config = createLlmClientFromEnv({
+      API_KAT_IMGNAI_KEY: "kat-key",
+      API_KAT_IMGNAI_SECRET: "kat-secret",
+    });
+
+    expect(config).toBeNull();
   });
 });
 
@@ -89,22 +135,14 @@ describe("LLM structured output mode config", () => {
   });
 });
 
-describe("model tier env config", () => {
-  it("uses current repo defaults without overrides", () => {
-    expect(resolveModelForTier("budget", {})).toBe("gpt-5-nano");
-    expect(resolveModelForTier("standard", {})).toBe("gpt-5-mini");
-    expect(resolveModelForTier("premium", {})).toBe("gpt-5.4-mini");
-  });
-
-  it("lets local experiments override tier model ids", () => {
-    expect(
-      resolveModelForTier("budget", {
-        INFLUENCE_MODEL_BUDGET: "qwen3-8b",
-      }),
-    ).toBe("qwen3-8b");
+describe("legacy model tier mapping", () => {
+  it("maps tiers to fixed catalog defaults", () => {
+    expect(resolveModelForTier("budget")).toBe("gpt-5-nano");
+    expect(resolveModelForTier("standard")).toBe("gpt-5-mini");
+    expect(resolveModelForTier("premium")).toBe("gpt-5.4-mini");
   });
 
   it("falls back to budget for unknown tiers", () => {
-    expect(resolveModelForTier("unknown", {})).toBe("gpt-5-nano");
+    expect(resolveModelForTier("unknown")).toBe("gpt-5-nano");
   });
 });

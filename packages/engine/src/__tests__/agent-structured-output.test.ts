@@ -4,6 +4,7 @@ import { InfluenceAgent } from "../agent";
 import { TemplateHouseInterviewer } from "../house-interviewer";
 import type { PhaseContext, PrivateDecisionTrace } from "../game-runner";
 import { Phase } from "../types";
+import { modelCatalogEntryById } from "../model-catalog";
 
 function makeContext(phase: Phase = Phase.VOTE): PhaseContext {
   return {
@@ -359,6 +360,63 @@ describe("InfluenceAgent structured output mode", () => {
       expose: "Vera",
       decisionLog: "Rewarded Mira and pressured Vera as a strategic vote receipt.",
       reasoningContext: "Native hidden reasoning for vote.",
+    });
+  });
+
+  it("uses Katana Grok reasoning effort without OpenAI-specific max-completion params", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const grok = modelCatalogEntryById("katana:grok-4-3");
+    if (!grok) throw new Error("Missing Katana Grok catalog entry");
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "cast_votes",
+        {
+          thinking: "I should push Vera now.",
+          empower: "Mira",
+          expose: "Vera",
+        },
+        "Native Grok reasoning for vote.",
+      ),
+      grok.modelId,
+      undefined,
+      undefined,
+      {
+        providerProfileId: "katana",
+        catalogId: grok.id,
+        modelCapabilities: grok.capabilities,
+        reasoningPolicy: "high",
+        openAIReasoningSummary: "auto",
+        privateTraceSink: (trace) => {
+          traces.push(trace);
+        },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getVotes(makeContext(Phase.VOTE));
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      model: "grok-4-3",
+      max_tokens: expect.any(Number),
+      reasoning_effort: "high",
+    });
+    expect(requests[0]).not.toHaveProperty("max_completion_tokens");
+    expect(traces[0]).toMatchObject({
+      model: {
+        provider: "katana",
+        providerProfileId: "katana",
+        catalogId: "katana:grok-4-3",
+        name: "grok-4-3",
+      },
+      requestedReasoningEffort: "high",
+      reasoningPolicy: "high",
+      reasoningContext: "Native Grok reasoning for vote.",
     });
   });
 

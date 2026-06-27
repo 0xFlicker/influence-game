@@ -27,6 +27,7 @@ import { generateInviteCode } from "../lib/invite-codes.js";
 import { getRedactedKernelHealthByGameId } from "../services/game-kernel-health.js";
 import { getDurableRunInspection } from "../services/game-durable-run.js";
 import { tryRefreshGameWatchStateSummary } from "../services/game-watch-state-summary.js";
+import { modelLabelFromConfig } from "../lib/model-label.js";
 import { randomUUID } from "crypto";
 
 // ---------------------------------------------------------------------------
@@ -324,6 +325,8 @@ export function createAdminRoutes(db: DrizzleDB) {
         alivePlayers: players.length,
         eliminatedPlayers: 0,
         modelTier: config.modelTier ?? "budget",
+        modelSelection: config.modelSelection,
+        modelLabel: modelLabelFromConfig(config),
         visibility: config.visibility ?? "public",
         viewerMode: config.viewerMode ?? "speedrun",
         trackType: game.trackType,

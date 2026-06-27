@@ -16,6 +16,10 @@ The engine and API read LLM provider settings through a shared OpenAI-compatible
 | `OPENAI_API_KEY` | unset | Hosted OpenAI key, or an explicit key for compatible providers. |
 | `LM_STUDIO_BASE_URL` | unset | Compatibility alias for LM Studio-specific shell setup. |
 | `LM_STUDIO_API_KEY` | unset | Compatibility alias for LM Studio-specific shell setup. |
+| `API_KAT_IMGNAI_KEY` | unset | Katana router API key. Used only when a game or simulator run explicitly selects the Katana provider profile. |
+| `API_KAT_IMGNAI_SECRET` | unset | Katana router API secret paired with `API_KAT_IMGNAI_KEY`. |
+| `INFLUENCE_LLM_PREFLIGHT` | enabled | API game start validates the selected provider/model before claiming the run. Set to `off` only for local provider experiments where the model metadata endpoint is incompatible. |
+| `INFLUENCE_LLM_PREFLIGHT_TIMEOUT_MS` | `10000` | Timeout for the API start preflight metadata request. |
 | `INFLUENCE_LLM_TOOL_CHOICE_MODE` | `required` for local base URLs, otherwise `named` | Structured decision-call mode. Use `required` for LM Studio servers that reject named OpenAI tool forcing. Other accepted values: `named`, `auto`, `json_schema`. |
 | `INFLUENCE_OPENAI_REASONING_SUMMARY` | `auto` for hosted OpenAI, off for local base URLs | Hosted OpenAI Responses reasoning summary mode: `auto`, `concise`, `detailed`, or `off`. Local OpenAI-compatible base URLs ignore this because they do not implement the hosted summary contract. |
 | `INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS` | `4096` | Minimum completion budget for local structured decision calls. Useful for models that spend many tokens on internal reasoning before producing tool arguments. |
@@ -27,17 +31,26 @@ Local OpenAI-compatible providers are not perfectly identical to OpenAI's hosted
 
 Local public messages skip the hosted-provider `{ thinking, message }` response schema and request visible speech in `message.content`. When a local server returns native reasoning metadata such as LM Studio's `reasoning_content`, the engine stores that value as transcript `reasoningContext`. This keeps malformed hidden reasoning out of public speech while still preserving local model reasoning for viewer/debug surfaces.
 
-## Model Tier Overrides
+API-backed game start performs a provider/model preflight before moving a waiting game into `in_progress`. This catches missing credentials, unavailable model IDs, and incompatible model metadata endpoints before the durable owner claim is created. If a local OpenAI-compatible server can generate normally but does not implement model metadata retrieval, set `INFLUENCE_LLM_PREFLIGHT=off` for that local API process and validate the model with a small simulator run first.
 
-Server-created games resolve model tiers through these variables:
+## Model Selection
 
-| Tier | Variable | Repo default |
-|---|---|---|
-| Budget | `INFLUENCE_MODEL_BUDGET` | `gpt-5-nano` |
-| Standard | `INFLUENCE_MODEL_STANDARD` | `gpt-5-mini` |
-| Premium | `INFLUENCE_MODEL_PREMIUM` | `gpt-5.4-mini` |
+New API-created games store an explicit per-game `modelSelection` with `catalogId` and `reasoningPolicy`. The legacy `budget` / `standard` / `premium` tier remains as a compatibility fallback for old games and older callers, but new admin creation should prefer model + thinking depth.
 
-For a local API/server test, set all three to the LM Studio model ID if you want every tier to use the same local model.
+Initial game-ready catalog entries:
+
+| Catalog ID | Provider | Model ID | Notes |
+|---|---|---|---|
+| `openai:gpt-5-nano` | OpenAI | `gpt-5-nano` | Legacy budget fallback |
+| `openai:gpt-5-mini` | OpenAI | `gpt-5-mini` | Legacy standard fallback |
+| `openai:gpt-5.4-mini` | OpenAI | `gpt-5.4-mini` | Legacy premium fallback |
+| `katana:grok-4-3` | Katana / IMGNAI | `grok-4-3` | Router-backed Grok testing lane |
+
+Back-burner catalog records currently exist for `katana:grok-4-20-multi-agent`, `katana:q-naifu-a3b`, and `katana:glm-5-2`; API game creation rejects them until they are promoted to game-ready. Simulator runs may use catalog records for evaluation.
+
+Reasoning policy is explicit: `low`, `medium`, or `high` for fixed thinking depth, or `action-policy` for the engine's per-action defaults. The admin UI does not offer `none`.
+
+Games without explicit `modelSelection` still map legacy tiers to fixed catalog defaults for old rows and older callers: budget -> `openai:gpt-5-nano`, standard -> `openai:gpt-5-mini`, premium -> `openai:gpt-5.4-mini`. Do not use tier env overrides for new work; choose an explicit catalog/model path instead.
 
 ## Simulator Workflow
 
@@ -49,6 +62,21 @@ For a local API/server test, set all three to the LM Studio model ID if you want
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 4 --model <lm-studio-model-id> \
   --game-timeout-sec 600 --llm-timeout-sec 90
+```
+
+For Katana / IMGNAI router smoke testing, use the catalog path so the simulator selects the Katana provider profile and reasoning policy:
+
+```bash
+bun run simulate:katana:grok:smoke
+```
+
+Or choose the depth manually:
+
+```bash
+doppler run --project social-strategy-agent --config dev -- \
+  bun run simulate -- --games 1 --players 4 --variant mingle \
+  --model-catalog katana:grok-4-3 --reasoning-policy high \
+  --game-timeout-sec 900 --llm-timeout-sec 120
 ```
 
 4. If the model finishes, run a larger test (add `--chatty` for live colored transcript with per-decision thinking/reasoning visibility — highly recommended for Mingle and vote/power/council work):
@@ -108,20 +136,18 @@ To run the API against LM Studio:
 
 ```bash
 export INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1
-export INFLUENCE_MODEL_BUDGET=<lm-studio-model-id>
-export INFLUENCE_MODEL_STANDARD=<lm-studio-model-id>
-export INFLUENCE_MODEL_PREMIUM=<lm-studio-model-id>
 
 doppler run -- bun run dev:api
 ```
 
-The API still needs app/database/auth secrets from Doppler unless you provide equivalent local env vars.
+The API still needs app/database/auth secrets from Doppler unless you provide equivalent local env vars. API game creation is moving toward explicit catalog-backed model selection; for local LM Studio gameplay validation today, prefer the simulator's `--model <lm-studio-model-id>` path until local catalog entries are promoted into the game creation UI/API.
 
 ## What To Record
 
 Create a dated note in `docs/simulations/` or near the generated batch artifacts with:
 
 - model ID and quantization
+- provider profile, catalog ID, and reasoning policy when using explicit model selection
 - command run (include `--chatty` when used)
 - player count, variant, timeout settings
 - whether the game completed

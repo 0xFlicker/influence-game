@@ -15,7 +15,6 @@ import type {
   Response as OpenAIResponse,
   ResponseCreateParamsNonStreaming,
 } from "openai/resources/responses/responses";
-import type { ReasoningEffort } from "openai/resources/shared";
 import type {
   AgentCallOptions,
   AgentResponse,
@@ -48,6 +47,13 @@ import type {
 import { Phase } from "./types";
 import type { UUID, PowerAction } from "./types";
 import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode } from "./llm-client";
+import {
+  inferModelCapabilities,
+  type ModelReasoningEffort,
+  type ModelReasoningPolicy,
+  type ModelRequestCapabilities,
+  type ProviderProfileId,
+} from "./model-catalog";
 import type { MemoryStore } from "./memory-store";
 import type { TokenTracker } from "./token-tracker";
 
@@ -939,12 +945,16 @@ export interface InfluenceAgentOptions {
   privateTraceSink?: PrivateTraceSink;
   /** Hosted OpenAI Responses API reasoning summary mode. OpenAI-compatible local providers stay on chat completions. */
   openAIReasoningSummary?: OpenAIReasoningSummaryMode;
+  providerProfileId?: ProviderProfileId;
+  modelCapabilities?: ModelRequestCapabilities;
+  reasoningPolicy?: ModelReasoningPolicy;
+  catalogId?: string;
 }
 
 type LlmCallOptions = {
   action?: string;
   reasoningOverhead?: number;
-  reasoningEffort?: ReasoningEffort;
+  reasoningEffort?: ModelReasoningEffort;
   reasoningSummary?: OpenAIReasoningSummaryMode | false;
   signal?: AbortSignal;
   privateTrace?: PrivateDecisionTraceContext;
@@ -963,6 +973,10 @@ export class InfluenceAgent implements IAgent {
   private readonly backstory: string;
   private readonly openai: OpenAI;
   private readonly model: string;
+  private readonly providerProfileId: ProviderProfileId;
+  private readonly catalogId?: string;
+  private readonly modelCapabilities: ModelRequestCapabilities;
+  private readonly reasoningPolicy: ModelReasoningPolicy;
   private readonly toolChoiceMode: LlmToolChoiceMode;
   private readonly privateTraceSink?: PrivateTraceSink;
   private readonly openAIReasoningSummary?: OpenAIReasoningSummaryMode;
@@ -997,6 +1011,10 @@ export class InfluenceAgent implements IAgent {
     this.personality = personality;
     this.openai = openaiClient;
     this.model = model;
+    this.providerProfileId = options.providerProfileId ?? "openai";
+    this.catalogId = options.catalogId;
+    this.modelCapabilities = options.modelCapabilities ?? inferModelCapabilities(model, this.providerProfileId);
+    this.reasoningPolicy = options.reasoningPolicy ?? "action-policy";
     this.toolChoiceMode = options.toolChoiceMode ?? "named";
     this.privateTraceSink = options.privateTraceSink;
     this.openAIReasoningSummary = options.openAIReasoningSummary;
@@ -1198,6 +1216,45 @@ export class InfluenceAgent implements IAgent {
     return toolCalls.length > 0 ? toolCalls : undefined;
   }
 
+  private static readNumberField(value: unknown): number | undefined {
+    return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  }
+
+  private static providerUsageMetadata(response: ModelCallResponse): PrivateDecisionTrace["usage"] | undefined {
+    const responseRecord = response as unknown as Record<string, unknown>;
+    const usage = responseRecord.usage;
+    if (!usage || typeof usage !== "object" || Array.isArray(usage)) return undefined;
+    const usageRecord = usage as Record<string, unknown>;
+    const completionDetails = usageRecord.completion_tokens_details &&
+      typeof usageRecord.completion_tokens_details === "object" &&
+      !Array.isArray(usageRecord.completion_tokens_details)
+      ? usageRecord.completion_tokens_details as Record<string, unknown>
+      : {};
+    const promptDetails = usageRecord.prompt_tokens_details &&
+      typeof usageRecord.prompt_tokens_details === "object" &&
+      !Array.isArray(usageRecord.prompt_tokens_details)
+      ? usageRecord.prompt_tokens_details as Record<string, unknown>
+      : {};
+    const routerBilling = usageRecord.imgnai &&
+      typeof usageRecord.imgnai === "object" &&
+      !Array.isArray(usageRecord.imgnai)
+      ? usageRecord.imgnai as Record<string, unknown>
+      : undefined;
+    const diagnostics: string[] = [];
+    if ("imgnai" in usageRecord && !routerBilling) diagnostics.push("malformed_router_billing");
+
+    const metadata: NonNullable<PrivateDecisionTrace["usage"]> = {
+      ...(InfluenceAgent.readNumberField(usageRecord.prompt_tokens) !== undefined && { promptTokens: InfluenceAgent.readNumberField(usageRecord.prompt_tokens) }),
+      ...(InfluenceAgent.readNumberField(usageRecord.completion_tokens) !== undefined && { completionTokens: InfluenceAgent.readNumberField(usageRecord.completion_tokens) }),
+      ...(InfluenceAgent.readNumberField(promptDetails.cached_tokens) !== undefined && { cachedTokens: InfluenceAgent.readNumberField(promptDetails.cached_tokens) }),
+      ...(InfluenceAgent.readNumberField(completionDetails.reasoning_tokens) !== undefined && { reasoningTokens: InfluenceAgent.readNumberField(completionDetails.reasoning_tokens) }),
+      ...(InfluenceAgent.readNumberField(usageRecord.total_tokens) !== undefined && { totalTokens: InfluenceAgent.readNumberField(usageRecord.total_tokens) }),
+      ...(routerBilling && { routerBilling }),
+      ...(diagnostics.length > 0 && { diagnostics }),
+    };
+    return Object.keys(metadata).length > 0 ? metadata : undefined;
+  }
+
   private static isOpenAIResponse(response: ModelCallResponse): response is OpenAIResponse {
     return (response as { object?: unknown }).object === "response";
   }
@@ -1369,6 +1426,8 @@ export class InfluenceAgent implements IAgent {
     const strategyPacketUpdate = normalizeStrategyPacketUpdate(outputRecord.strategyPacket);
     const traceContext = params.options.privateTrace;
     const strategicReflectionSummary = this.privateTraceStrategicReflectionSummary(traceContext.action, outputRecord);
+    const requestedReasoningEffort = this.requestedReasoningEffort(params.options);
+    const privateTraceMessages = InfluenceAgent.privateTraceMessages(params.messages);
     const trace: PrivateDecisionTrace = {
       version: 2,
       ...(traceContext.gameId && { gameId: traceContext.gameId }),
@@ -1379,10 +1438,23 @@ export class InfluenceAgent implements IAgent {
       ...(traceContext.round !== undefined && { round: traceContext.round }),
       createdAt: new Date().toISOString(),
       model: {
+        provider: this.providerProfileId,
+        providerProfileId: this.providerProfileId,
+        ...(this.catalogId && { catalogId: this.catalogId }),
         name: this.model,
       },
+      ...(requestedReasoningEffort && { requestedReasoningEffort }),
+      reasoningPolicy: this.reasoningPolicy,
       prompt: {
-        messages: InfluenceAgent.privateTraceMessages(params.messages),
+        messages: privateTraceMessages,
+      },
+      request: {
+        providerProfileId: this.providerProfileId,
+        ...(this.catalogId && { catalogId: this.catalogId }),
+        model: this.model,
+        messages: privateTraceMessages,
+        ...(requestedReasoningEffort && { reasoning_effort: requestedReasoningEffort }),
+        reasoningPolicy: this.reasoningPolicy,
       },
       response: {
         raw: response,
@@ -1391,6 +1463,7 @@ export class InfluenceAgent implements IAgent {
         ...(responseToolCalls && { toolCalls: responseToolCalls }),
       },
       ...(params.output !== undefined && { output: params.output }),
+      ...(InfluenceAgent.providerUsageMetadata(response) && { usage: InfluenceAgent.providerUsageMetadata(response) }),
       ...(emittedThinking && { emittedThinking }),
       ...(reasoningContext && { reasoningContext }),
       ...(params.providerReasoningSummary && { providerReasoningSummary: params.providerReasoningSummary }),
@@ -3304,38 +3377,28 @@ ${roomSection}
   // LLM calls — free text and tool invocation
   // ---------------------------------------------------------------------------
 
-  /**
-   * Check if the model requires reasoning-model API parameters:
-   * - max_completion_tokens instead of max_tokens
-   * - No temperature parameter (only default 1.0)
-   * - Higher token budgets (reasoning tokens consume completion budget)
-   *
-   * Applies to: o-series (o1, o3, o4), gpt-5 family
-   */
-  private isReasoningModel(): boolean {
-    return /^o\d/.test(this.model) || this.model.startsWith("gpt-5");
+  private usesReasoningBudget(): boolean {
+    return this.modelCapabilities.supportsReasoningEffort || this.modelCapabilities.usesMaxCompletionTokens;
   }
 
-  /**
-   * Check if the model requires max_completion_tokens instead of max_tokens.
-   * All gpt-5 family models require this, even non-reasoning ones like gpt-5.4-mini.
-   */
   private usesCompletionTokensParam(): boolean {
-    return this.isReasoningModel() || this.model.startsWith("gpt-5");
+    return this.modelCapabilities.usesMaxCompletionTokens;
   }
 
-  /** gpt-5/o-series models only accept the default temperature. */
   private supportsCustomTemperature(): boolean {
-    return !this.model.startsWith("gpt-5") && !/^o\d/.test(this.model);
+    return this.modelCapabilities.supportsTemperature;
   }
 
-  /**
-   * Chat-completions function tools reject reasoning_effort for GPT-5.4+.
-   * Observed GPT-5.4 setting: gpt-5.4-nano returned "Function tools with
-   * reasoning_effort are not supported" and required this param to be omitted.
-   */
+  private requestedReasoningEffort(options?: LlmCallOptions): ModelReasoningEffort | undefined {
+    if (!this.modelCapabilities.supportsReasoningEffort) return undefined;
+    if (this.reasoningPolicy === "low" || this.reasoningPolicy === "medium" || this.reasoningPolicy === "high") {
+      return this.reasoningPolicy;
+    }
+    return options?.reasoningEffort;
+  }
+
   private supportsToolReasoningEffort(): boolean {
-    return !/^gpt-5\.[4-9]/.test(this.model);
+    return this.modelCapabilities.supportsToolReasoningEffort;
   }
 
   /**
@@ -3376,17 +3439,15 @@ ${roomSection}
   };
 
   private recordTokenUsage(response: ChatCompletion, sourceKey: string): void {
-    if (!this.tokenTracker || !response.usage) return;
-
-    const reasoningTk = (response.usage as unknown as Record<string, unknown>).completion_tokens_details
-      ? ((response.usage as unknown as Record<string, unknown>).completion_tokens_details as Record<string, number>)?.reasoning_tokens ?? 0
-      : 0;
+    if (!this.tokenTracker) return;
+    const usage = InfluenceAgent.providerUsageMetadata(response);
+    if (!usage || usage.promptTokens === undefined || usage.completionTokens === undefined) return;
     this.tokenTracker.record(
       sourceKey,
-      response.usage.prompt_tokens,
-      response.usage.completion_tokens,
-      response.usage.prompt_tokens_details?.cached_tokens ?? 0,
-      reasoningTk,
+      usage.promptTokens,
+      usage.completionTokens,
+      usage.cachedTokens ?? 0,
+      usage.reasoningTokens ?? 0,
     );
   }
 
@@ -3409,7 +3470,7 @@ ${roomSection}
   private shouldUseOpenAIResponsesForSummary(options?: LlmCallOptions): boolean {
     return Boolean(
       this.resolvedReasoningSummaryMode(options) &&
-        this.isReasoningModel() &&
+        this.modelCapabilities.supportsOpenAIResponses &&
         !this.usesLocalStructuredCompatibility(),
     );
   }
@@ -3417,8 +3478,9 @@ ${roomSection}
   private responseReasoningOptions(options?: LlmCallOptions): ResponseCreateParamsNonStreaming["reasoning"] | undefined {
     const summary = this.resolvedReasoningSummaryMode(options);
     if (!summary) return undefined;
+    const effort = this.requestedReasoningEffort(options);
     return {
-      ...(options?.reasoningEffort && { effort: options.reasoningEffort }),
+      ...(effort && { effort }),
       summary,
     };
   }
@@ -3886,7 +3948,7 @@ ${JSON.stringify(tool.function.parameters)}`,
           ? { max_completion_tokens: effectiveMaxTokens }
           : { max_tokens: effectiveMaxTokens }),
         ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
-        ...(reasoning && this.supportsToolReasoningEffort() && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
+        ...(reasoning && this.supportsToolReasoningEffort() && this.requestedReasoningEffort(options) && { reasoning_effort: this.requestedReasoningEffort(options) }),
         response_format: {
           type: "json_schema",
           json_schema: {
@@ -3950,7 +4012,7 @@ ${JSON.stringify(tool.function.parameters)}`,
     systemPrompt?: string,
     options?: LlmCallOptions,
   ): Promise<string> {
-    const reasoning = this.isReasoningModel();
+    const reasoning = this.usesReasoningBudget();
     const useCompletionTokens = this.usesCompletionTokensParam();
     const overhead = options?.reasoningOverhead ?? InfluenceAgent.REASONING_TOKEN_OVERHEAD;
     let effectiveMaxTokens = this.applyMessageTokenFloor(
@@ -3973,7 +4035,7 @@ ${JSON.stringify(tool.function.parameters)}`,
               ? { max_completion_tokens: effectiveMaxTokens }
               : { max_tokens: effectiveMaxTokens }),
             ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
-            ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
+            ...(this.requestedReasoningEffort(options) && { reasoning_effort: this.requestedReasoningEffort(options) }),
           },
           { signal: options?.signal },
         );
@@ -4048,7 +4110,7 @@ ${JSON.stringify(tool.function.parameters)}`,
       );
     }
 
-    const reasoning = this.isReasoningModel();
+    const reasoning = this.usesReasoningBudget();
     const useCompletionTokens = this.usesCompletionTokensParam();
     const overhead = options?.reasoningOverhead ?? InfluenceAgent.REASONING_TOKEN_OVERHEAD;
     const effectiveMaxTokens = reasoning ? maxTokens + overhead : maxTokens;
@@ -4069,7 +4131,7 @@ ${JSON.stringify(tool.function.parameters)}`,
               ? { max_completion_tokens: effectiveMaxTokens }
               : { max_tokens: effectiveMaxTokens }),
             ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
-            ...(reasoning && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
+            ...(this.requestedReasoningEffort(options) && { reasoning_effort: this.requestedReasoningEffort(options) }),
             response_format: InfluenceAgent.AGENT_RESPONSE_FORMAT,
           },
           { signal: options?.signal },
@@ -4129,7 +4191,7 @@ ${JSON.stringify(tool.function.parameters)}`,
     systemPrompt?: string,
     options?: LlmCallOptions,
   ): Promise<T> {
-    const reasoning = this.isReasoningModel();
+    const reasoning = this.usesReasoningBudget();
     const useCompletionTokens = this.usesCompletionTokensParam();
     const overhead = options?.reasoningOverhead ?? InfluenceAgent.REASONING_TOKEN_OVERHEAD;
     let effectiveMaxTokens = this.applyStructuredTokenFloor(
@@ -4180,7 +4242,7 @@ ${JSON.stringify(tool.function.parameters)}`,
               ? { max_completion_tokens: effectiveMaxTokens }
               : { max_tokens: effectiveMaxTokens }),
             ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
-            ...(reasoning && this.supportsToolReasoningEffort() && options?.reasoningEffort && { reasoning_effort: options.reasoningEffort }),
+            ...(reasoning && this.supportsToolReasoningEffort() && this.requestedReasoningEffort(options) && { reasoning_effort: this.requestedReasoningEffort(options) }),
             tools: [requestTool],
             tool_choice: toolChoice,
             ...(this.toolChoiceMode === "named" && { parallel_tool_calls: false }),

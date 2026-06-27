@@ -31,7 +31,11 @@ export interface PrivateTraceManifestIndexEntry {
   action?: unknown;
   phase?: unknown;
   round?: unknown;
+  model?: unknown;
   modelName?: unknown;
+  requestedReasoningEffort?: unknown;
+  reasoningPolicy?: unknown;
+  usage?: unknown;
   byteLength?: unknown;
   recordCount?: unknown;
   sha256?: unknown;
@@ -171,7 +175,11 @@ function manifestIndexEntry(row: typeof schema.gameEvidenceManifests.$inferSelec
     action: metadata.action,
     phase: metadata.phase,
     round: metadata.round,
+    model: metadata.model,
     modelName: metadata.modelName,
+    requestedReasoningEffort: metadata.requestedReasoningEffort,
+    reasoningPolicy: metadata.reasoningPolicy,
+    usage: metadata.usage,
     byteLength: metadata.byteLength,
     recordCount: metadata.recordCount,
     sha256: metadata.sha256,
