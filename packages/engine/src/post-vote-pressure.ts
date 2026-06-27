@@ -170,12 +170,12 @@ export function buildPostVotePressureProjection(
 export function formatPostVotePressureSummary(
   pressure: PostVotePressureProjection,
 ): string {
-  const currentAtRisk = pressure.currentAtRisk
+  const councilCandidates = pressure.currentAtRisk
     .map((player) => `${player.name} (${player.exposeScore})`)
     .join(", ") || "none";
-  const replacementRisk = pressure.replacementRisk
+  const atRiskIfShieldGranted = pressure.replacementRisk
     .map((player) => `${player.name} (${player.exposeScore})`)
     .join(", ") || "none";
 
-  return `Post-vote pressure: ${pressure.empowered.name} is empowered. Current at-risk: ${currentAtRisk}. Replacement risk if a shield is granted: ${replacementRisk}.`;
+  return `Post-vote pressure: ${pressure.empowered.name} is empowered. Council candidates: ${councilCandidates}. At-risk if a shield is granted: ${atRiskIfShieldGranted}.`;
 }

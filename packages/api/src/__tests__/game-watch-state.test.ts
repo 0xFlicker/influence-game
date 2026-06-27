@@ -4,7 +4,7 @@ import { GameState, Phase, type CanonicalGameEvent } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
-import { getGameWatchState } from "../services/game-watch-state.js";
+import { getGameWatchReplayFrames, getGameWatchState } from "../services/game-watch-state.js";
 import { setupTestDB } from "./test-utils.js";
 import {
   createCanonicalEventFixture,
@@ -219,7 +219,42 @@ describe("GameWatchState", () => {
         }),
       ]),
     });
-    expect(players.find((player) => player.id === "nyx")?.pressureStatus).toBeUndefined();
+    expect(players.find((player) => player.id === "nyx")?.pressureStatus).toBe("fallback_risk");
+  });
+
+  test("builds replay pressure frames from durable events", async () => {
+    const gameId = await insertGame(db, {
+      slug: "watch-replay-pressure-frames",
+      status: "completed",
+      config: gameConfig(),
+    });
+    await insertFixturePlayers(db, gameId);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const events = createPostVotePressureFixture(gameId);
+    await appendGameEvents(db, { gameId, ownerEpoch, events });
+
+    const frames = await getGameWatchReplayFrames(db, "watch-replay-pressure-frames");
+    const mingleFrame = frames?.findLast((frame) => frame.phase === "MINGLE");
+
+    expect(mingleFrame).toMatchObject({
+      eventType: "mingle.rooms_allocated",
+      players: expect.arrayContaining([
+        expect.objectContaining({
+          id: "mira",
+          pressureStatus: "empowered",
+        }),
+        expect.objectContaining({
+          id: "atlas",
+          pressureStatus: "locked_at_risk",
+          exposeScore: 2,
+        }),
+        expect.objectContaining({
+          id: "echo",
+          pressureStatus: "locked_at_risk",
+          exposeScore: 2,
+        }),
+      ]),
+    });
   });
 
   test("distinguishes shield fallback replacements from vote-derived exposed candidates", async () => {
@@ -254,11 +289,10 @@ describe("GameWatchState", () => {
         }),
       ]),
     });
-    expect(players.find((player) => player.id === "atlas")).toMatchObject({
-      shielded: true,
-      exposeScore: undefined,
-      pressureStatus: undefined,
-    });
+    const atlas = players.find((player) => player.id === "atlas");
+    expect(atlas?.shielded).toBe(true);
+    expect(atlas?.exposeScore).toBeUndefined();
+    expect(atlas?.pressureStatus).toBeUndefined();
   });
 
   test("uses only the trusted prefix for degraded invalid event logs", async () => {

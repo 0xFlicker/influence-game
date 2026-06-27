@@ -162,7 +162,7 @@ describe("post-vote pressure projection", () => {
     });
 
     expect(formatPostVotePressureSummary(projection!)).toBe(
-      "Post-vote pressure: Alpha is empowered. Current at-risk: Beta (3), Gamma (1). Replacement risk if a shield is granted: none.",
+      "Post-vote pressure: Alpha is empowered. Council candidates: Beta (3), Gamma (1). At-risk if a shield is granted: none.",
     );
   });
 

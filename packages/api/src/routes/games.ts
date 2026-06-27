@@ -11,6 +11,7 @@
  *   PATCH  /api/games/:id/hide — admin soft-delete (hide from public lists)
  *   PATCH  /api/games/:id/unhide — admin restore hidden game
  *   GET    /api/games/:id/transcript — full transcript export
+ *   GET    /api/games/:id/replay-watch-frames — structured replay watch states
  */
 
 import { Hono } from "hono";
@@ -36,6 +37,7 @@ import {
 } from "../services/game-kernel-health.js";
 import {
   buildGameWatchState,
+  getGameWatchReplayFrames,
 } from "../services/game-watch-state.js";
 import { getCompletedGameResults } from "../services/completed-game-results.js";
 import {
@@ -930,6 +932,35 @@ export function createGameRoutes(db: DrizzleDB) {
     });
 
     return c.json(entries);
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/games/:id/replay-watch-frames — structured replay watch states
+  // -------------------------------------------------------------------------
+
+  app.get("/api/games/:id/replay-watch-frames", async (c) => {
+    const idOrSlug = c.req.param("id");
+
+    const game = (await db
+      .select({
+        id: schema.games.id,
+        slug: schema.games.slug,
+        status: schema.games.status,
+      })
+      .from(schema.games)
+      .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug)))
+      .limit(1))[0];
+
+    if (!game) {
+      return c.json({ error: "Game not found" }, 404);
+    }
+
+    if (game.status !== "completed" && game.status !== "cancelled") {
+      return c.json({ error: "Replay watch frames are only available after replay is public" }, 403);
+    }
+
+    const frames = await getGameWatchReplayFrames(db, idOrSlug);
+    return c.json(frames ?? []);
   });
 
   return app;

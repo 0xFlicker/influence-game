@@ -7,6 +7,7 @@ import { AgentAvatar } from "@/components/agent-avatar";
 import {
   getPublicWatchIntelligence,
   type GameDetail,
+  type GameWatchReplayFrame,
   type PublicWatchIntelligenceResult,
   type TranscriptEntry,
 } from "@/lib/api";
@@ -31,11 +32,13 @@ import type { WatchConnStatus } from "./types";
 export function MatchWatchShell({
   game,
   messages,
+  replayFrames = [],
   live = false,
   connStatus,
 }: {
   game: GameDetail;
   messages: TranscriptEntry[];
+  replayFrames?: GameWatchReplayFrame[];
   live?: boolean;
   connStatus?: WatchConnStatus;
 }) {
@@ -59,8 +62,9 @@ export function MatchWatchShell({
         connStatus,
         selectedPlayerId,
         playbackState: live ? null : playbackState,
+        replayFrames: live ? [] : replayFrames,
       }),
-    [game, messages, live, connStatus, selectedPlayerId, playbackState],
+    [game, messages, live, connStatus, selectedPlayerId, playbackState, replayFrames],
   );
   const visibleMessages = live ? messages : playbackState?.visibleMessages ?? messages;
   const inspectorMessages = useMemo(

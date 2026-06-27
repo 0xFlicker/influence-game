@@ -2,6 +2,7 @@ import type {
   GameDetail,
   GamePlayer,
   GameWatchPlayerPressureStatus,
+  GameWatchReplayFrame,
   GameWatchPlayerStatus,
   GameWatchState,
   PhaseKey,
@@ -9,13 +10,6 @@ import type {
   TranscriptEntry,
 } from "@/lib/api";
 import { PHASE_LABELS } from "./constants";
-import {
-  parseEmpowered,
-  parsePowerAction,
-  parseReVoteResolved,
-  parseVoteMsg,
-  parseWheelDecides,
-} from "./message-parsing";
 import type { WatchConnStatus } from "./types";
 
 const MATCH_WATCH_PHASES: readonly PhaseKey[] = [
@@ -38,14 +32,28 @@ const MATCH_WATCH_WHISPER_PHASES: readonly PhaseKey[] = [
   "COUNCIL",
   "END",
 ];
-const PRESSURE_PLAYBACK_PHASES = new Set<PhaseKey>([
-  "VOTE",
+const REPLAY_FRAME_PHASE_ORDER: readonly PhaseKey[] = [
+  "INIT",
+  "INTRODUCTION",
+  "LOBBY",
+  "WHISPER",
   "MINGLE",
+  "RUMOR",
+  "VOTE",
   "POWER",
   "REVEAL",
   "COUNCIL",
-]);
-
+  "PLEA",
+  "ACCUSATION",
+  "DEFENSE",
+  "DIARY_ROOM",
+  "OPENING_STATEMENTS",
+  "JURY_QUESTIONS",
+  "CLOSING_ARGUMENTS",
+  "JURY_VOTE",
+  "END",
+  "SUSPENDED",
+];
 export type MatchWatchMode = "live" | "replay";
 export type MatchWatchPhaseSegmentState = "past" | "current" | "future";
 
@@ -233,6 +241,7 @@ export function buildMatchWatchModel({
   connStatus,
   selectedPlayerId,
   playbackState,
+  replayFrames,
 }: {
   game: GameDetail;
   messages: readonly TranscriptEntry[];
@@ -240,12 +249,16 @@ export function buildMatchWatchModel({
   connStatus?: WatchConnStatus;
   selectedPlayerId?: string | null;
   playbackState?: MatchWatchPlaybackState | null;
+  replayFrames?: readonly GameWatchReplayFrame[];
 }): MatchWatchModel {
   const watchState = game.watchState;
   const phase = playbackState?.phase ?? normalizePhase(watchState?.currentPhase ?? game.currentPhase);
   const round = playbackState?.round ?? watchState?.currentRound ?? game.currentRound;
+  const replayFrame = playbackState
+    ? selectReplayWatchFrame(replayFrames ?? [], playbackState)
+    : null;
   const modelPlayers = playbackState
-    ? applyReplayPressureToPlayers(playbackState.players, playbackState.visibleMessages, playbackState.round, playbackState.phase)
+    ? applyReplayFrameToPlayers(playbackState.players, replayFrame)
     : game.players;
   const counts = playbackState
     ? deriveMatchWatchCountsFromPlayers(modelPlayers)
@@ -454,26 +467,53 @@ function buildExposeLabel(exposeScore?: number): string {
     : "Exposed";
 }
 
-function applyReplayPressureToPlayers(
+function applyReplayFrameToPlayers(
   players: readonly GamePlayer[],
-  visibleMessages: readonly TranscriptEntry[],
-  round: number,
-  phase: PhaseKey,
+  frame: GameWatchReplayFrame | null,
 ): GamePlayer[] {
-  const pressure = deriveReplayPressure(visibleMessages, players, round, phase);
   const clearedPlayers = players.map(clearPressureFields);
-  if (!pressure) return clearedPlayers;
+  if (!frame) return clearedPlayers;
 
+  const framePlayerById = new Map(frame.players.map((player) => [player.id, player]));
   return clearedPlayers.map((player) => {
-    const pressureStatus = pressure.statusByName.get(player.name);
-    const exposeScore = pressure.exposeScoresByName.get(player.name);
+    const framePlayer = framePlayerById.get(player.id);
+    if (!framePlayer) return player;
     return {
       ...player,
-      shielded: player.shielded || pressure.shieldedNames.has(player.name),
-      ...(pressureStatus ? { pressureStatus } : {}),
-      ...(exposeScore !== undefined && exposeScore > 0 ? { exposeScore } : {}),
+      status: framePlayer.status === "unknown"
+        ? player.status
+        : watchStatusToPlayerState(framePlayer.status, player.status),
+      shielded: framePlayer.shielded,
+      ...(framePlayer.pressureStatus ? { pressureStatus: framePlayer.pressureStatus } : {}),
+      ...(framePlayer.exposeScore !== undefined ? { exposeScore: framePlayer.exposeScore } : {}),
     };
   });
+}
+
+function selectReplayWatchFrame(
+  frames: readonly GameWatchReplayFrame[],
+  playbackState: MatchWatchPlaybackState,
+): GameWatchReplayFrame | null {
+  if (frames.length === 0) return null;
+  const cursorTimestamp = playbackState.visibleMessages.at(-1)?.timestamp;
+  const eligible = typeof cursorTimestamp === "number"
+    ? frames.filter((frame) => frame.timestamp <= cursorTimestamp && isFrameAtOrBeforePlayback(frame, playbackState))
+    : frames.filter((frame) => isFrameAtOrBeforePlayback(frame, playbackState));
+  return eligible.at(-1) ?? null;
+}
+
+function isFrameAtOrBeforePlayback(
+  frame: GameWatchReplayFrame,
+  playbackState: Pick<MatchWatchPlaybackState, "round" | "phase">,
+): boolean {
+  if (frame.round < playbackState.round) return true;
+  if (frame.round > playbackState.round) return false;
+  const framePhaseIndex = REPLAY_FRAME_PHASE_ORDER.indexOf(frame.phase);
+  const playbackPhaseIndex = REPLAY_FRAME_PHASE_ORDER.indexOf(playbackState.phase);
+  if (framePhaseIndex === -1 || playbackPhaseIndex === -1) {
+    return frame.phase === playbackState.phase;
+  }
+  return framePhaseIndex <= playbackPhaseIndex;
 }
 
 function clearPressureFields(player: GamePlayer): GamePlayer {
@@ -486,270 +526,6 @@ function clearPressureFields(player: GamePlayer): GamePlayer {
     shielded: player.shielded,
     ...(player.avatarUrl ? { avatarUrl: player.avatarUrl } : {}),
   };
-}
-
-function deriveReplayPressure(
-  visibleMessages: readonly TranscriptEntry[],
-  players: readonly GamePlayer[],
-  round: number,
-  phase: PhaseKey,
-): {
-  statusByName: Map<string, GameWatchPlayerPressureStatus>;
-  exposeScoresByName: Map<string, number>;
-  shieldedNames: Set<string>;
-} | null {
-  if (!PRESSURE_PLAYBACK_PHASES.has(phase)) return null;
-
-  const roundMessages = visibleMessages.filter((message) => message.round === round);
-  if (roundMessages.some(isResolvedCouncilOrPowerElimination)) return null;
-
-  let empoweredName: string | null = null;
-  let currentAtRisk: Array<{ name: string; exposeScore?: number }> = [];
-  let initialCurrentAtRisk: Array<{ name: string; exposeScore?: number }> = [];
-  const exposeScoresByName = new Map<string, number>();
-  const shieldedNames = new Set<string>();
-
-  for (const message of roundMessages) {
-    const vote = parseVoteMsg(message.text);
-    if (vote) {
-      exposeScoresByName.set(vote.expose, (exposeScoresByName.get(vote.expose) ?? 0) + 1);
-    }
-
-    const empowered = parseEmpowered(message.text)
-      ?? parseReVoteResolved(message.text)
-      ?? parseWheelDecides(message.text);
-    if (empowered) {
-      empoweredName = empowered.name;
-    }
-
-    const pressureSummary = parsePostVotePressureSummary(message.text);
-    if (pressureSummary) {
-      empoweredName = pressureSummary.empoweredName;
-      currentAtRisk = pressureSummary.currentAtRisk;
-      if (initialCurrentAtRisk.length === 0) {
-        initialCurrentAtRisk = pressureSummary.currentAtRisk;
-      }
-    }
-
-    const initialPair = parseInitialCouncilPair(message.text);
-    if (initialPair) {
-      currentAtRisk = initialPair.map((name) => ({
-        name,
-        exposeScore: exposeScoresByName.get(name),
-      }));
-      if (initialCurrentAtRisk.length === 0) {
-        initialCurrentAtRisk = currentAtRisk;
-      }
-    }
-
-    const powerLobbyPair = parsePowerLobbyPair(message.text);
-    if (powerLobbyPair) {
-      currentAtRisk = powerLobbyPair.map((name) => ({
-        name,
-        exposeScore: exposeScoresByName.get(name),
-      }));
-    }
-
-    const powerAction = parsePowerAction(message.text);
-    if (powerAction?.action === "protect") {
-      shieldedNames.add(powerAction.target);
-    }
-
-    const shieldGrant = parseShieldGrant(message.text);
-    if (shieldGrant) {
-      shieldedNames.add(shieldGrant);
-    }
-
-    const revealPair = parseRevealCouncilPair(message.text);
-    if (revealPair) {
-      currentAtRisk = revealPair.map((name) => ({
-        name,
-        exposeScore: exposeScoresByName.get(name),
-      }));
-    }
-  }
-
-  if (!empoweredName) return null;
-
-  const aliveNames = new Set(
-    players
-      .filter((player) => player.status === "alive")
-      .map((player) => player.name),
-  );
-  if (!aliveNames.has(empoweredName)) return null;
-
-  const statusByName = deriveReplayPressureStatuses({
-    aliveNames,
-    empoweredName,
-    currentAtRiskNames: currentAtRisk.map((entry) => entry.name),
-    initialCurrentAtRiskNames: initialCurrentAtRisk.map((entry) => entry.name),
-    exposeScoresByName,
-    shieldedNames,
-  });
-
-  return {
-    statusByName,
-    exposeScoresByName,
-    shieldedNames,
-  };
-}
-
-function byScoreThenName(
-  [nameA, scoreA]: [string, number],
-  [nameB, scoreB]: [string, number],
-): number {
-  return scoreB - scoreA || nameA.localeCompare(nameB);
-}
-
-function deriveReplayPressureStatuses({
-  aliveNames,
-  empoweredName,
-  currentAtRiskNames,
-  initialCurrentAtRiskNames,
-  exposeScoresByName,
-  shieldedNames,
-}: {
-  aliveNames: Set<string>;
-  empoweredName: string;
-  currentAtRiskNames: string[];
-  initialCurrentAtRiskNames: string[];
-  exposeScoresByName: Map<string, number>;
-  shieldedNames: Set<string>;
-}): Map<string, GameWatchPlayerPressureStatus> {
-  const statusByName = new Map<string, GameWatchPlayerPressureStatus>();
-  statusByName.set(empoweredName, "empowered");
-
-  const rawExposureBench = [...exposeScoresByName.entries()]
-    .filter(([name, score]) => score > 0 && name !== empoweredName && aliveNames.has(name))
-    .sort(byScoreThenName)
-    .map(([name]) => name);
-  const exposureBench = rawExposureBench.filter((name) => !shieldedNames.has(name));
-  const currentCandidates = currentAtRiskNames
-    .filter((name) => aliveNames.has(name) && name !== empoweredName && !shieldedNames.has(name));
-  const effectiveCandidates = currentCandidates.length > 0
-    ? currentCandidates.slice(0, 2)
-    : exposureBench.slice(0, 2);
-  const candidateSet = new Set(effectiveCandidates);
-  const initialCandidateNames = initialCurrentAtRiskNames.length > 0
-    ? initialCurrentAtRiskNames.filter((name) => aliveNames.has(name) && name !== empoweredName)
-    : effectiveCandidates;
-  const initialCandidateSet = new Set(initialCandidateNames);
-  const lockedNames = new Set(
-    resolveLockedExposedNames(rawExposureBench, exposeScoresByName)
-      .filter((name) => initialCandidateSet.has(name)),
-  );
-  const shieldedInitialCandidate = initialCandidateNames.some((name) => shieldedNames.has(name));
-  const benchCanFillShieldReplacement = exposureBench.some((name) => !candidateSet.has(name));
-
-  for (const name of effectiveCandidates) {
-    const exposeScore = exposeScoresByName.get(name) ?? 0;
-    const pressureStatus: GameWatchPlayerPressureStatus =
-      lockedNames.has(name) && exposeScore > 0
-        ? "locked_at_risk"
-        : shieldedInitialCandidate && !initialCandidateSet.has(name) && exposeScore === 0 && !benchCanFillShieldReplacement
-          ? "fallback_risk"
-          : shieldedInitialCandidate && !initialCandidateSet.has(name) && exposeScore > 0
-            ? "replacement_risk"
-            : "empowered_selected";
-    statusByName.set(name, pressureStatus);
-  }
-
-  for (const name of exposureBench) {
-    if (statusByName.has(name)) continue;
-    statusByName.set(name, candidateSet.size >= 2 ? "replacement_risk" : "selectable_exposed");
-  }
-
-  if (!shieldedInitialCandidate && !benchCanFillShieldReplacement && candidateSet.size > 0) {
-    for (const name of aliveNames) {
-      if (
-        name !== empoweredName &&
-        !statusByName.has(name) &&
-        !shieldedNames.has(name)
-      ) {
-        statusByName.set(name, "fallback_risk");
-      }
-    }
-  }
-
-  return statusByName;
-}
-
-function resolveLockedExposedNames(
-  exposureBench: readonly string[],
-  exposeScoresByName: ReadonlyMap<string, number>,
-): string[] {
-  if (exposureBench.length === 0) return [];
-  if (exposureBench.length === 1) return [exposureBench[0]!];
-  if (exposureBench.length === 2) return [...exposureBench];
-
-  const lockedNames: string[] = [];
-  let remainingSlots = 2;
-  let index = 0;
-  while (index < exposureBench.length && remainingSlots > 0) {
-    const score = exposeScoresByName.get(exposureBench[index]!) ?? 0;
-    const tier = exposureBench
-      .slice(index)
-      .filter((name) => (exposeScoresByName.get(name) ?? 0) === score);
-    if (tier.length <= remainingSlots) {
-      lockedNames.push(...tier);
-      remainingSlots -= tier.length;
-      index += tier.length;
-      continue;
-    }
-    break;
-  }
-  return lockedNames;
-}
-
-function isResolvedCouncilOrPowerElimination(message: TranscriptEntry): boolean {
-  return message.scope === "system" && (
-    message.text.startsWith("ELIMINATED: ") ||
-    message.text.startsWith("AUTO-ELIMINATE: ")
-  );
-}
-
-function parsePostVotePressureSummary(text: string): {
-  empoweredName: string;
-  currentAtRisk: Array<{ name: string; exposeScore?: number }>;
-} | null {
-  const match = text.match(/^Post-vote pressure: (.+?) is empowered\. Current at-risk: (.+?)\. Replacement risk if a shield is granted: .+\.$/);
-  if (!match) return null;
-  return {
-    empoweredName: match[1]!,
-    currentAtRisk: parseNameScoreList(match[2]!),
-  };
-}
-
-function parseNameScoreList(text: string): Array<{ name: string; exposeScore?: number }> {
-  if (text === "none") return [];
-  return text.split(", ").map((entry) => {
-    const match = entry.match(/^(.+?) \((\d+)\)$/);
-    if (!match) return { name: entry };
-    return {
-      name: match[1]!,
-      exposeScore: Number.parseInt(match[2]!, 10),
-    };
-  });
-}
-
-function parseInitialCouncilPair(text: string): [string, string] | null {
-  const match = text.match(/^Initial Council pair resolved before Mingle: (.+?) and (.+?) \(.+\)$/);
-  return match ? [match[1]!, match[2]!] : null;
-}
-
-function parsePowerLobbyPair(text: string): [string, string] | null {
-  const match = text.match(/^POWER LOBBY: .+? Provisional council pressure falls on (.+?) and (.+?)\. Top expose pressure: .+?\. Protect can still change the final reveal\.$/);
-  return match ? [match[1]!, match[2]!] : null;
-}
-
-function parseShieldGrant(text: string): string | null {
-  const match = text.match(/^(.+?) is protected \(shield granted\)$/);
-  return match ? match[1]! : null;
-}
-
-function parseRevealCouncilPair(text: string): [string, string] | null {
-  const match = text.match(/^=== REVEAL PHASE === Council candidates: (.+?) vs (.+?)$/);
-  return match ? [match[1]!, match[2]!] : null;
 }
 
 function getConnectionLabel(

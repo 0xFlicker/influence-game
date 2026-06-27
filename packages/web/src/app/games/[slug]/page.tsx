@@ -1,6 +1,13 @@
 import { Nav } from "@/components/nav";
 import { GameViewer } from "./game-viewer";
-import { getGame, getGameTranscript, type GameDetail, type TranscriptEntry } from "@/lib/api";
+import {
+  getGame,
+  getGameReplayWatchFrames,
+  getGameTranscript,
+  type GameDetail,
+  type GameWatchReplayFrame,
+  type TranscriptEntry,
+} from "@/lib/api";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -26,11 +33,18 @@ export default async function GameViewerPage({ params, searchParams }: Props) {
 
   let initialGame: GameDetail | undefined;
   let initialMessages: TranscriptEntry[] | undefined;
+  let initialReplayFrames: GameWatchReplayFrame[] | undefined;
 
   try {
     initialGame = await getGame(slug);
-    if (initialGame.status === "completed" && completedMode === "replay") {
-      initialMessages = await getGameTranscript(slug);
+    if (
+      (initialGame.status === "completed" || initialGame.status === "cancelled") &&
+      completedMode === "replay"
+    ) {
+      [initialMessages, initialReplayFrames] = await Promise.all([
+        getGameTranscript(slug),
+        getGameReplayWatchFrames(slug),
+      ]);
     }
   } catch (err) {
     console.error(`[GameViewerPage] SSR fetch failed for slug="${slug}":`, err);
@@ -53,6 +67,7 @@ export default async function GameViewerPage({ params, searchParams }: Props) {
           completedMode={completedMode}
           initialGame={initialGame}
           initialMessages={initialMessages}
+          initialReplayFrames={initialReplayFrames}
         />
       </main>
     </div>

@@ -5,11 +5,13 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useRouter } from "next/navigation";
 import {
   getGame,
+  getGameReplayWatchFrames,
   getGameTranscript,
   getAuthToken,
   type GameDetail,
   type GameSummary,
   type GameStatus,
+  type GameWatchReplayFrame,
   type TranscriptEntry,
   type WsGameEvent,
   type PhaseKey,
@@ -68,6 +70,7 @@ export function GameViewer({
   completedMode = null,
   initialGame,
   initialMessages,
+  initialReplayFrames,
 }: GameViewerProps) {
   const { authenticated, login } = usePrivy();
   const router = useRouter();
@@ -76,6 +79,9 @@ export function GameViewer({
   const [game, setGame] = useState<GameDetail | null>(initialGame ?? null);
   const [messages, setMessages] = useState<TranscriptEntry[]>(
     initialMessages ?? [],
+  );
+  const [replayFrames, setReplayFrames] = useState<GameWatchReplayFrame[]>(
+    initialReplayFrames ?? [],
   );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [replayLoading, setReplayLoading] = useState(false);
@@ -174,12 +180,16 @@ export function GameViewer({
   useEffect(() => {
     let cancelled = false;
 
-    async function loadReplayTranscript(id: string) {
+    async function loadReplayData(id: string) {
       setReplayLoading(true);
       try {
-        const transcript = await getGameTranscript(id);
+        const [transcript, frames] = await Promise.all([
+          getGameTranscript(id),
+          getGameReplayWatchFrames(id),
+        ]);
         if (cancelled) return;
         setMessages(transcript);
+        setReplayFrames(frames);
         setReplayIndex(0);
         setLoadError(null);
       } catch (err) {
@@ -205,11 +215,16 @@ export function GameViewer({
         initialGame.currentPhase) as PhaseKey;
       if (initialMessages) {
         setMessages(initialMessages);
+        setReplayFrames(initialReplayFrames ?? []);
         setReplayIndex(0);
         setReplayLoading(false);
-      } else if (initialGame.status === "completed" && completedMode === "replay") {
-        void loadReplayTranscript(gameId);
+      } else if (
+        (initialGame.status === "completed" || initialGame.status === "cancelled") &&
+        completedMode === "replay"
+      ) {
+        void loadReplayData(gameId);
       } else {
+        setReplayFrames(initialReplayFrames ?? []);
         setReplayLoading(false);
       }
       return () => {
@@ -234,8 +249,11 @@ export function GameViewer({
         watchFinalStatusRef.current = gameData.watchState?.final.status;
         currentPhaseRef.current = (gameData.watchState?.currentPhase ??
           gameData.currentPhase) as PhaseKey;
-        if (gameData.status === "completed" && completedMode === "replay") {
-          await loadReplayTranscript(gameId);
+        if (
+          (gameData.status === "completed" || gameData.status === "cancelled") &&
+          completedMode === "replay"
+        ) {
+          await loadReplayData(gameId);
         }
       } catch (err) {
         if (!cancelled) {
@@ -250,7 +268,7 @@ export function GameViewer({
     return () => {
       cancelled = true;
     };
-  }, [gameId, completedMode, initialGame, initialMessages]);
+  }, [gameId, completedMode, initialGame, initialMessages, initialReplayFrames]);
 
   const feedRef = useRef<HTMLDivElement>(null);
 
@@ -726,6 +744,7 @@ export function GameViewer({
         key={matchWatchKey}
         game={game}
         messages={messages}
+        replayFrames={replayFrames}
         live={matchWatchDecision.mode === "live"}
         connStatus={connStatus}
       />

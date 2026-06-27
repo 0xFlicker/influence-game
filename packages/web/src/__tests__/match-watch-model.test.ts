@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { GameDetail, GameWatchState, PhaseKey, TranscriptEntry } from "../lib/api";
+import type { GameDetail, GameWatchReplayFrame, GameWatchState, PhaseKey, TranscriptEntry } from "../lib/api";
 import {
   applyWatchStateToGameDetail,
   buildMatchWatchModel,
@@ -142,7 +142,7 @@ function replayPressureMessages(phase: PhaseKey = "MINGLE"): TranscriptEntry[] {
     }),
     transcriptEntry({
       id: 7,
-      text: "Post-vote pressure: Alice is empowered. Current at-risk: Bob (2), Cara (1). Replacement risk if a shield is granted: Dax (1).",
+      text: "Post-vote pressure: Alice is empowered. Council candidates: Bob (2), Cara (1). At-risk if a shield is granted: Dax (1).",
     }),
     transcriptEntry({
       id: 8,
@@ -150,6 +150,32 @@ function replayPressureMessages(phase: PhaseKey = "MINGLE"): TranscriptEntry[] {
       text: "The room reacts to the vote.",
     }),
   ];
+}
+
+function replayFrame(
+  players: GameWatchReplayFrame["players"],
+  overrides: Partial<Omit<GameWatchReplayFrame, "players" | "counts">> = {},
+): GameWatchReplayFrame {
+  const alivePlayers = players.filter((player) => player.status === "alive").length;
+  const eliminatedPlayers = players.filter((player) => player.status === "eliminated").length;
+  return {
+    schemaVersion: 1,
+    gameId: "game-1",
+    slug: "public-game",
+    sequence: 1,
+    eventType: "power.candidates_resolved",
+    timestamp: 1,
+    round: 1,
+    phase: "MINGLE",
+    ...overrides,
+    players,
+    counts: {
+      totalPlayers: players.length,
+      alivePlayers,
+      eliminatedPlayers,
+      unknownPlayers: players.length - alivePlayers - eliminatedPlayers,
+    },
+  };
 }
 
 describe("match watch model", () => {
@@ -398,7 +424,7 @@ describe("match watch model", () => {
     expect(model.players.map((card) => card.detail)).toEqual(["", ""]);
   });
 
-  it("reconstructs replay pressure tags from the visible vote-to-council transcript", () => {
+  it("renders replay pressure tags from structured replay watch frames", () => {
     const players = [
       ...baseGame().players,
       {
@@ -433,6 +459,14 @@ describe("match watch model", () => {
         players,
         visibleMessages: replayPressureMessages(),
       },
+      replayFrames: [
+        replayFrame([
+          { ...players[0]!, pressureStatus: "empowered" },
+          { ...players[1]!, pressureStatus: "locked_at_risk", exposeScore: 2 },
+          { ...players[2]!, pressureStatus: "empowered_selected", exposeScore: 1 },
+          { ...players[3]!, pressureStatus: "replacement_risk", exposeScore: 1 },
+        ]),
+      ],
     });
 
     expect(model.players.map((card) => [card.player.name, card.statusTags.map((tag) => tag.label)])).toEqual([
@@ -440,6 +474,126 @@ describe("match watch model", () => {
       ["Bob", ["Exposed x2"]],
       ["Cara", ["Selected x1"]],
       ["Dax", ["Bench Risk x1"]],
+    ]);
+  });
+
+  it("uses replay watch frames to keep tied exposed bench players selectable", () => {
+    const players = [
+      {
+        id: "p1",
+        name: "Arden",
+        persona: "calm",
+        status: "alive" as const,
+        shielded: false,
+      },
+      {
+        id: "p2",
+        name: "Thane",
+        persona: "strategic",
+        status: "alive" as const,
+        shielded: false,
+      },
+      {
+        id: "p3",
+        name: "Echo",
+        persona: "loyal",
+        status: "alive" as const,
+        shielded: false,
+      },
+      {
+        id: "p4",
+        name: "Nyx",
+        persona: "deceptive",
+        status: "alive" as const,
+        shielded: false,
+      },
+      {
+        id: "p5",
+        name: "Jace",
+        persona: "honest",
+        status: "alive" as const,
+        shielded: false,
+      },
+      {
+        id: "p6",
+        name: "Mira",
+        persona: "social",
+        status: "alive" as const,
+        shielded: false,
+      },
+      {
+        id: "p7",
+        name: "Atlas",
+        persona: "paranoid",
+        status: "alive" as const,
+        shielded: false,
+      },
+      {
+        id: "p8",
+        name: "Vera",
+        persona: "aggressive",
+        status: "alive" as const,
+        shielded: false,
+      },
+    ];
+    const model = buildMatchWatchModel({
+      game: {
+        ...baseGame(),
+        status: "completed",
+        currentRound: 4,
+        currentPhase: "END",
+        players,
+      },
+      messages: [],
+      live: false,
+      connStatus: "replay",
+      playbackState: {
+        round: 1,
+        phase: "POWER",
+        players,
+        visibleMessages: [
+          transcriptEntry({ id: 1, text: "Mira votes: empower=Atlas, expose=Nyx" }),
+          transcriptEntry({ id: 2, text: "Jace votes: empower=Nyx, expose=Atlas" }),
+          transcriptEntry({ id: 3, text: "Thane votes: empower=Atlas, expose=Nyx" }),
+          transcriptEntry({ id: 4, text: "Vera votes: empower=Atlas, expose=Jace" }),
+          transcriptEntry({ id: 5, text: "Nyx votes: empower=Arden, expose=Vera" }),
+          transcriptEntry({ id: 6, text: "Arden votes: empower=Atlas, expose=Nyx" }),
+          transcriptEntry({ id: 7, text: "Atlas votes: empower=Mira, expose=Thane" }),
+          transcriptEntry({ id: 8, text: "Echo votes: empower=Atlas, expose=Nyx" }),
+          transcriptEntry({ id: 9, text: "Empowered: Atlas" }),
+          transcriptEntry({
+            id: 10,
+            text: "Initial Council pair resolved before Mingle: Nyx and Vera (higher_votes_choice)",
+          }),
+          transcriptEntry({
+            id: 11,
+            text: "Post-vote pressure: Atlas is empowered. Council candidates: Nyx (4), Vera (1). At-risk if a shield is granted: Jace (1).",
+          }),
+        ],
+      },
+      replayFrames: [
+        replayFrame([
+          players[0]!,
+          { ...players[1]!, pressureStatus: "selectable_exposed", exposeScore: 1 },
+          players[2]!,
+          { ...players[3]!, pressureStatus: "locked_at_risk", exposeScore: 4 },
+          { ...players[4]!, pressureStatus: "replacement_risk", exposeScore: 1 },
+          players[5]!,
+          { ...players[6]!, pressureStatus: "empowered", exposeScore: 1 },
+          { ...players[7]!, pressureStatus: "empowered_selected", exposeScore: 1 },
+        ], { phase: "POWER" }),
+      ],
+    });
+
+    expect(model.players.map((card) => [card.player.name, card.statusTags.map((tag) => tag.label)])).toEqual([
+      ["Arden", []],
+      ["Thane", ["Exposed"]],
+      ["Echo", []],
+      ["Nyx", ["Exposed x4"]],
+      ["Jace", ["Bench Risk x1"]],
+      ["Mira", []],
+      ["Atlas", ["Empowered"]],
+      ["Vera", ["Selected x1"]],
     ]);
   });
 
@@ -488,10 +642,18 @@ describe("match watch model", () => {
           }),
           transcriptEntry({
             id: 7,
-            text: "Post-vote pressure: Alice is empowered. Current at-risk: Bob (3), Cara (1). Replacement risk if a shield is granted: none.",
+            text: "Post-vote pressure: Alice is empowered. Council candidates: Bob (3), Cara (1). At-risk if a shield is granted: none.",
           }),
         ],
       },
+      replayFrames: [
+        replayFrame([
+          { ...players[0]!, pressureStatus: "empowered" },
+          { ...players[1]!, pressureStatus: "locked_at_risk", exposeScore: 3 },
+          { ...players[2]!, pressureStatus: "locked_at_risk", exposeScore: 1 },
+          { ...players[3]!, pressureStatus: "fallback_risk" },
+        ]),
+      ],
     });
 
     expect(model.players.map((card) => [card.player.name, card.statusTags.map((tag) => tag.label)])).toEqual([
@@ -547,13 +709,21 @@ describe("match watch model", () => {
           }),
           transcriptEntry({
             id: 7,
-            text: "Post-vote pressure: Alice is empowered. Current at-risk: Bob (3), Cara (1). Replacement risk if a shield is granted: none.",
+            text: "Post-vote pressure: Alice is empowered. Council candidates: Bob (3), Cara (1). At-risk if a shield is granted: none.",
           }),
           transcriptEntry({ id: 8, phase: "POWER", text: "Alice power action: protect -> Bob" }),
           transcriptEntry({ id: 9, phase: "POWER", text: "Bob is protected (shield granted)" }),
           transcriptEntry({ id: 10, phase: "REVEAL", text: "=== REVEAL PHASE === Council candidates: Cara vs Dax" }),
         ],
       },
+      replayFrames: [
+        replayFrame([
+          { ...players[0]!, pressureStatus: "empowered" },
+          { ...players[1]!, shielded: true },
+          { ...players[2]!, pressureStatus: "locked_at_risk", exposeScore: 1 },
+          { ...players[3]!, pressureStatus: "fallback_risk" },
+        ], { phase: "REVEAL" }),
+      ],
     });
 
     expect(model.players.map((card) => [card.player.name, card.statusTags.map((tag) => tag.label)])).toEqual([

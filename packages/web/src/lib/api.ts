@@ -229,6 +229,19 @@ export interface GameWatchState {
   };
 }
 
+export interface GameWatchReplayFrame {
+  schemaVersion: 1;
+  gameId: string;
+  slug?: string;
+  sequence: number;
+  eventType: string;
+  timestamp: number;
+  round: number;
+  phase: PhaseKey;
+  players: GameWatchPlayer[];
+  counts: GameWatchState["counts"];
+}
+
 export type GameWatchStateSummary = Omit<GameWatchState, "players">;
 
 export interface CreateGameParams {
@@ -1180,6 +1193,12 @@ export async function getGameTranscript(
   id: string,
 ): Promise<TranscriptEntry[]> {
   return apiFetch(`/api/games/${id}/transcript`);
+}
+
+export async function getGameReplayWatchFrames(
+  id: string,
+): Promise<GameWatchReplayFrame[]> {
+  return apiFetch(`/api/games/${id}/replay-watch-frames`);
 }
 
 // ---------------------------------------------------------------------------
