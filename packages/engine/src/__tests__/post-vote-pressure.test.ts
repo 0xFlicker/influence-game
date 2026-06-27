@@ -60,8 +60,9 @@ describe("post-vote pressure projection", () => {
     const beta = player("Beta");
     const gamma = player("Gamma");
     const delta = player("Delta");
+    const echo = player("Echo");
     const projection = buildPostVotePressureProjection({
-      alivePlayers: [alpha, beta, gamma, delta],
+      alivePlayers: [alpha, beta, gamma, delta, echo],
       empoweredId: alpha.id,
       exposeScores: {
         [beta.id]: 3,
@@ -71,11 +72,13 @@ describe("post-vote pressure projection", () => {
 
     expect(projection!.currentAtRisk.map((p) => p.name)).toEqual(["Beta", "Gamma"]);
     expect(projection!.replacementRisk).toEqual([]);
+    expect(projection!.fallbackRisk.map((p) => p.name)).toEqual(["Delta", "Echo"]);
     expect(projection!.players.map((p) => [p.name, p.status])).toEqual([
       ["Alpha", "empowered"],
       ["Beta", "locked_at_risk"],
       ["Gamma", "locked_at_risk"],
       ["Delta", "fallback_risk"],
+      ["Echo", "fallback_risk"],
     ]);
   });
 
@@ -84,8 +87,9 @@ describe("post-vote pressure projection", () => {
     const beta = player("Beta");
     const gamma = player("Gamma");
     const delta = player("Delta");
+    const echo = player("Echo");
     const projection = buildPostVotePressureProjection({
-      alivePlayers: [alpha, beta, gamma, delta],
+      alivePlayers: [alpha, beta, gamma, delta, echo],
       empoweredId: alpha.id,
       exposeScores: {
         [beta.id]: 3,
@@ -109,7 +113,9 @@ describe("post-vote pressure projection", () => {
         ],
       },
     ]);
+    expect(projection!.fallbackRisk.map((p) => p.name)).toEqual(["Delta", "Echo"]);
     expect(projection!.players.find((p) => p.name === "Delta")?.status).toBe("fallback_risk");
+    expect(projection!.players.find((p) => p.name === "Echo")?.status).toBe("fallback_risk");
   });
 
   it("keeps exposed bench replacement distinct from all-player fallback", () => {
@@ -151,8 +157,10 @@ describe("post-vote pressure projection", () => {
     const alpha = player("Alpha");
     const beta = player("Beta");
     const gamma = player("Gamma");
+    const delta = player("Delta");
+    const echo = player("Echo");
     const projection = buildPostVotePressureProjection({
-      alivePlayers: [alpha, beta, gamma],
+      alivePlayers: [alpha, beta, gamma, delta, echo],
       empoweredId: alpha.id,
       exposeScores: {
         [alpha.id]: 2,
@@ -162,7 +170,7 @@ describe("post-vote pressure projection", () => {
     });
 
     expect(formatPostVotePressureSummary(projection!)).toBe(
-      "Post-vote pressure: Alpha is empowered. Council candidates: Beta (3), Gamma (1). At-risk if a shield is granted: none.",
+      "Post-vote pressure: Alpha is empowered. Council candidates: Beta (3), Gamma (1). At-risk if a shield is granted: Delta (0), Echo (0).",
     );
   });
 

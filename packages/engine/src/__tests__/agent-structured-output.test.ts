@@ -1129,6 +1129,7 @@ describe("InfluenceAgent structured output mode", () => {
           { id: "vera-id", name: "Vera", exposeScore: 2 },
         ],
         replacementRisk: [],
+        fallbackRisk: [],
         shieldScenarios: [
           {
             shieldedPlayer: { id: "atlas-id", name: "Atlas" },
@@ -1428,6 +1429,7 @@ describe("InfluenceAgent structured output mode", () => {
         exposePressure: [{ id: "vera-id", name: "Vera", exposeScore: 5 }],
         currentAtRisk: [{ id: "vera-id", name: "Vera", exposeScore: 5 }],
         replacementRisk: [],
+        fallbackRisk: [],
         shieldScenarios: [],
         players: [
           { id: "mira-id", name: "Mira", exposeScore: 0, status: "empowered", shielded: false },
@@ -1907,6 +1909,7 @@ describe("InfluenceAgent structured output mode", () => {
         exposePressure: [{ id: "vera-id", name: "Vera", exposeScore: 4 }],
         currentAtRisk: [{ id: "vera-id", name: "Vera", exposeScore: 4 }],
         replacementRisk: [],
+        fallbackRisk: [],
         shieldScenarios: [],
         players: [
           { id: "atlas-id", name: "Atlas", exposeScore: 0, status: "empowered", shielded: true },

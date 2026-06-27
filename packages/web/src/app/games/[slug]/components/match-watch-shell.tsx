@@ -20,6 +20,7 @@ import {
   type MatchWatchIntelligenceSectionModel,
 } from "./match-watch-intelligence-model";
 import {
+  applyStructuredPostVotePressureSummaries,
   buildMatchWatchModel,
   type MatchWatchModel,
   type MatchWatchPhaseSegment,
@@ -47,6 +48,15 @@ export function MatchWatchShell({
   const [intelligence, setIntelligence] = useState<PublicWatchIntelligenceResult | null>(null);
   const [intelligenceLoadState, setIntelligenceLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [intelligenceError, setIntelligenceError] = useState<string | null>(null);
+  const displayMessages = useMemo(
+    () =>
+      applyStructuredPostVotePressureSummaries({
+        messages,
+        replayFrames: live ? [] : replayFrames,
+        watchState: game.watchState,
+      }),
+    [game.watchState, live, messages, replayFrames],
+  );
   const handlePlaybackStateChange = useCallback((state: MatchWatchPlaybackState) => {
     setPlaybackState((current) => {
       if (isSamePlaybackState(current, state)) return current;
@@ -57,19 +67,19 @@ export function MatchWatchShell({
     () =>
       buildMatchWatchModel({
         game,
-        messages,
+        messages: displayMessages,
         live,
         connStatus,
         selectedPlayerId,
         playbackState: live ? null : playbackState,
         replayFrames: live ? [] : replayFrames,
       }),
-    [game, messages, live, connStatus, selectedPlayerId, playbackState, replayFrames],
+    [game, displayMessages, live, connStatus, selectedPlayerId, playbackState, replayFrames],
   );
-  const visibleMessages = live ? messages : playbackState?.visibleMessages ?? messages;
+  const visibleMessages = live ? displayMessages : playbackState?.visibleMessages ?? displayMessages;
   const inspectorMessages = useMemo(
-    () => (live ? messages : buildReplayTranscriptSlice(messages, playbackState?.visibleMessages)),
-    [live, messages, playbackState?.visibleMessages],
+    () => (live ? displayMessages : buildReplayTranscriptSlice(displayMessages, playbackState?.visibleMessages)),
+    [live, displayMessages, playbackState?.visibleMessages],
   );
   const intelligenceModel = useMemo(
     () =>
@@ -148,7 +158,7 @@ export function MatchWatchShell({
         <MobileContextPanel model={model} onSelectPlayer={setSelectedPlayerId} />
         <TheaterPanel
           game={game}
-          messages={messages}
+          messages={displayMessages}
           live={live}
           connStatus={connStatus}
           model={model}

@@ -127,6 +127,29 @@ export interface MatchWatchPlaybackState {
   visibleMessages: TranscriptEntry[];
 }
 
+export function applyStructuredPostVotePressureSummaries({
+  messages,
+  replayFrames = [],
+  watchState,
+}: {
+  messages: readonly TranscriptEntry[];
+  replayFrames?: readonly GameWatchReplayFrame[];
+  watchState?: GameWatchState;
+}): TranscriptEntry[] {
+  let changed = false;
+  const corrected = messages.map((message) => {
+    if (!isPostVotePressureSummary(message)) return message;
+    const players = selectPressurePlayersForMessage(message, replayFrames)
+      ?? selectCurrentWatchPressurePlayers(message, watchState);
+    const summary = players ? formatStructuredPostVotePressureSummary(players) : null;
+    if (!summary || summary === message.text) return message;
+    changed = true;
+    return { ...message, text: summary };
+  });
+
+  return changed ? corrected : [...messages];
+}
+
 export function shouldApplyWatchStateUpdate(
   currentSequence: number,
   state: GameWatchState,
@@ -316,6 +339,64 @@ function deriveMatchWatchCountsFromPlayers(players: readonly GamePlayer[]): Matc
     eliminatedPlayers,
     unknownPlayers,
   };
+}
+
+function isPostVotePressureSummary(message: TranscriptEntry): boolean {
+  return message.scope === "system" && message.text.startsWith("Post-vote pressure:");
+}
+
+function hasPressureFacts(players: readonly GameWatchReplayFrame["players"][number][]): boolean {
+  return players.some((player) => player.pressureStatus === "empowered");
+}
+
+function selectPressurePlayersForMessage(
+  message: TranscriptEntry,
+  frames: readonly GameWatchReplayFrame[],
+): GameWatchReplayFrame["players"] | null {
+  const candidates = frames.filter(
+    (frame) =>
+      frame.round === message.round &&
+      frame.timestamp <= message.timestamp &&
+      hasPressureFacts(frame.players),
+  );
+  return candidates.at(-1)?.players ?? null;
+}
+
+function selectCurrentWatchPressurePlayers(
+  message: TranscriptEntry,
+  watchState: GameWatchState | undefined,
+): GameWatchState["players"] | null {
+  if (!watchState || watchState.currentRound !== message.round) return null;
+  if (watchState.currentPhase !== "VOTE" && watchState.currentPhase !== "MINGLE") return null;
+  return hasPressureFacts(watchState.players) ? watchState.players : null;
+}
+
+function formatStructuredPostVotePressureSummary(
+  players: readonly (GameWatchReplayFrame["players"][number] | GameWatchState["players"][number])[],
+): string | null {
+  const empowered = players.find((player) => player.pressureStatus === "empowered");
+  if (!empowered) return null;
+
+  const councilCandidates = players
+    .filter((player) =>
+      player.pressureStatus === "locked_at_risk" ||
+      player.pressureStatus === "empowered_selected"
+    )
+    .map(formatPressureName)
+    .join(", ") || "none";
+  const atRiskIfShieldGranted = players
+    .filter((player) =>
+      player.pressureStatus === "replacement_risk" ||
+      player.pressureStatus === "fallback_risk"
+    )
+    .map(formatPressureName)
+    .join(", ") || "none";
+
+  return `Post-vote pressure: ${empowered.name} is empowered. Council candidates: ${councilCandidates}. At-risk if a shield is granted: ${atRiskIfShieldGranted}.`;
+}
+
+function formatPressureName(player: { name: string; exposeScore?: number }): string {
+  return `${player.name} (${player.exposeScore ?? 0})`;
 }
 
 function normalizePhase(phase: string): PhaseKey {

@@ -33,6 +33,7 @@ export interface PostVotePressureProjection {
   exposePressure: Array<{ id: UUID; name: string; exposeScore: number }>;
   currentAtRisk: Array<{ id: UUID; name: string; exposeScore: number }>;
   replacementRisk: Array<{ id: UUID; name: string; exposeScore: number }>;
+  fallbackRisk: Array<{ id: UUID; name: string; exposeScore: number }>;
   shieldScenarios: PostVoteShieldScenario[];
   players: PostVotePressurePlayer[];
 }
@@ -119,6 +120,20 @@ export function buildPostVotePressureProjection(
 
   const replacementRiskIds = new Set<UUID>();
   for (const scenario of shieldScenarios) {
+    const replacement = resolveShieldReplacement({
+      initialResolution,
+      protectedCandidateId: scenario.shieldedPlayer.id,
+    });
+
+    for (const id of replacement.choice.eligibleCandidateIds) {
+      if (currentAtRiskIds.has(id)) continue;
+      if ((input.exposeScores[id] ?? 0) > 0) {
+        replacementRiskIds.add(id);
+      } else {
+        fallbackRiskIds.add(id);
+      }
+    }
+
     for (const player of scenario.resultingAtRisk) {
       if (!currentAtRiskIds.has(player.id)) {
         if (player.exposeScore > 0) {
@@ -133,12 +148,16 @@ export function buildPostVotePressureProjection(
   const replacementRisk = exposePressure
     .filter((player) => replacementRiskIds.has(player.id))
     .map((player) => ({ ...player }));
+  const fallbackRisk = exposePressure
+    .filter((player) => fallbackRiskIds.has(player.id))
+    .map((player) => ({ ...player }));
 
   return {
     empowered: { id: empowered.id, name: empowered.name },
     exposePressure,
     currentAtRisk,
     replacementRisk,
+    fallbackRisk,
     shieldScenarios,
     players: input.alivePlayers.map((player) => {
       let status: PostVotePressureStatus = "safe";
@@ -174,6 +193,7 @@ export function formatPostVotePressureSummary(
     .map((player) => `${player.name} (${player.exposeScore})`)
     .join(", ") || "none";
   const atRiskIfShieldGranted = pressure.replacementRisk
+    .concat(pressure.fallbackRisk)
     .map((player) => `${player.name} (${player.exposeScore})`)
     .join(", ") || "none";
 

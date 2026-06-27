@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { GameDetail, GameWatchReplayFrame, GameWatchState, PhaseKey, TranscriptEntry } from "../lib/api";
 import {
+  applyStructuredPostVotePressureSummaries,
   applyWatchStateToGameDetail,
   buildMatchWatchModel,
   getMatchWatchRouteDecision,
@@ -662,6 +663,56 @@ describe("match watch model", () => {
       ["Cara", ["Exposed"]],
       ["Dax", ["Fallback Risk"]],
     ]);
+  });
+
+  it("rewrites generated post-vote summary copy from structured replay frames", () => {
+    const players = [
+      ...baseGame().players,
+      {
+        id: "p3",
+        name: "Cara",
+        persona: "watchful",
+        status: "alive" as const,
+        shielded: false,
+      },
+      {
+        id: "p4",
+        name: "Dax",
+        persona: "direct",
+        status: "alive" as const,
+        shielded: false,
+      },
+      {
+        id: "p5",
+        name: "Echo",
+        persona: "quiet",
+        status: "alive" as const,
+        shielded: false,
+      },
+    ];
+    const messages = [
+      transcriptEntry({
+        id: 7,
+        text: "Post-vote pressure: Alice is empowered. Council candidates: Bob (3), Cara (1). At-risk if a shield is granted: none.",
+      }),
+    ];
+
+    const corrected = applyStructuredPostVotePressureSummaries({
+      messages,
+      replayFrames: [
+        replayFrame([
+          { ...players[0]!, pressureStatus: "empowered" },
+          { ...players[1]!, pressureStatus: "locked_at_risk", exposeScore: 3 },
+          { ...players[2]!, pressureStatus: "locked_at_risk", exposeScore: 1 },
+          { ...players[3]!, pressureStatus: "fallback_risk" },
+          { ...players[4]!, pressureStatus: "fallback_risk" },
+        ]),
+      ],
+    });
+
+    expect(corrected[0]?.text).toBe(
+      "Post-vote pressure: Alice is empowered. Council candidates: Bob (3), Cara (1). At-risk if a shield is granted: Dax (0), Echo (0).",
+    );
   });
 
   it("keeps shield fallback pull-ups distinct from empowered-selected replay candidates", () => {
