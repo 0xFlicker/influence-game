@@ -78,6 +78,8 @@ export function MatchWatchShell({
       }),
     [model, intelligence, visibleMessages, intelligenceLoadState, intelligenceError],
   );
+  const replayAtFinalResults = !live && Boolean(playbackState) && isReplayAtFinalResults(messages, playbackState?.visibleMessages);
+  const gamePath = game.slug ?? game.id;
 
   useEffect(() => {
     setPhaseAttr(model.phase);
@@ -134,7 +136,7 @@ export function MatchWatchShell({
     >
       <div className="pointer-events-none absolute inset-0 influence-phase-atmosphere" />
       <div className="pointer-events-none absolute inset-0 influence-phase-vignette" />
-      <ShellHeader model={model} />
+      <ShellHeader model={model} gamePath={gamePath} showResultsCta={replayAtFinalResults} />
       <PhaseRail model={model} />
 
       <div className="relative grid min-h-0 flex-1 grid-cols-1 gap-3 px-3 pb-3 xl:grid-cols-[18rem_minmax(0,1fr)_22rem]">
@@ -151,7 +153,7 @@ export function MatchWatchShell({
         <InspectorPanel model={model} intelligence={intelligenceModel} messages={inspectorMessages} />
       </div>
 
-      <ReplayDock model={model} />
+      <ReplayDock model={model} gamePath={gamePath} showResultsCta={replayAtFinalResults} />
     </main>
   );
 }
@@ -221,7 +223,15 @@ function MobileContextPanel({
   );
 }
 
-function ShellHeader({ model }: { model: MatchWatchModel }) {
+function ShellHeader({
+  model,
+  gamePath,
+  showResultsCta,
+}: {
+  model: MatchWatchModel;
+  gamePath: string;
+  showResultsCta: boolean;
+}) {
   return (
     <header className="relative mx-3 mt-3 grid min-h-14 shrink-0 grid-cols-1 items-center gap-3 rounded-lg border border-white/10 bg-black/45 px-4 py-3 shadow-panel backdrop-blur-glass lg:grid-cols-[18rem_minmax(0,1fr)_22rem] lg:py-0">
       <div className="flex min-w-0 items-center gap-4">
@@ -240,6 +250,14 @@ function ShellHeader({ model }: { model: MatchWatchModel }) {
       </div>
 
       <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
+        {showResultsCta ? (
+          <Link
+            href={`/games/${gamePath}?mode=results`}
+            className="inline-flex h-8 items-center rounded-md border border-cyan-300/25 bg-cyan-400/10 px-3 text-[10px] uppercase tracking-[0.14em] text-cyan-100/80 transition-colors hover:border-cyan-200/45 hover:bg-cyan-400/15 hover:text-cyan-50"
+          >
+            Full Results
+          </Link>
+        ) : null}
         <Link
           href="/games"
           aria-label="Exit watch room"
@@ -758,7 +776,15 @@ function sectionMeta(intelligence: MatchWatchIntelligenceModel): string | undefi
   }
 }
 
-function ReplayDock({ model }: { model: MatchWatchModel }) {
+function ReplayDock({
+  model,
+  gamePath,
+  showResultsCta,
+}: {
+  model: MatchWatchModel;
+  gamePath: string;
+  showResultsCta: boolean;
+}) {
   return (
     <footer className="relative mx-3 mb-3 hidden h-14 shrink-0 grid-cols-[18rem_minmax(0,1fr)_18rem] items-center gap-3 rounded-lg border border-white/10 bg-black/50 px-4 shadow-panel backdrop-blur-glass lg:grid">
       <div className="min-w-0">
@@ -782,11 +808,29 @@ function ReplayDock({ model }: { model: MatchWatchModel }) {
         ))}
       </div>
 
-      <div className="justify-self-end rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-white/45">
-        {model.mode}
-      </div>
+      {showResultsCta ? (
+        <Link
+          href={`/games/${gamePath}?mode=results`}
+          className="justify-self-end rounded-md border border-cyan-300/25 bg-cyan-400/10 px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-cyan-100/75 transition-colors hover:bg-cyan-400/15 hover:text-cyan-50"
+        >
+          Full Results
+        </Link>
+      ) : (
+        <div className="justify-self-end rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-white/45">
+          {model.mode}
+        </div>
+      )}
     </footer>
   );
+}
+
+export function isReplayAtFinalResults(
+  messages: readonly TranscriptEntry[],
+  visibleMessages: readonly TranscriptEntry[] | null | undefined,
+): boolean {
+  if (messages.length === 0 || !visibleMessages || visibleMessages.length === 0) return false;
+  const lastVisible = visibleMessages.at(-1);
+  return lastVisible?.phase === "END" || visibleMessages.length >= messages.length;
 }
 
 function statusClasses(card: MatchWatchPlayerCard): string {

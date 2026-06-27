@@ -710,6 +710,122 @@ describe("Game REST API", () => {
   });
 
   // =========================================================================
+  // GET /api/games/:id/results
+  // =========================================================================
+
+  describe("GET /api/games/:id/results", () => {
+    test("returns public completed results from durable canonical events", async () => {
+      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      await insertFixturePlayers(db, id);
+      const ownerEpoch = await insertOwner(db, id);
+      const events = createResolvedRoundCanonicalEventFixture(id);
+      await appendGameEvents(db, { gameId: id, ownerEpoch, events });
+      await insertResult(db, id, { winnerId: "mira", roundsPlayed: 1 });
+      await markGameCompleted(db, id);
+
+      const res = await app.request(`/api/games/${id}/results`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        ok: true;
+        results: {
+          source: string;
+          summary: { winner: { id: string; name: string } | null; roundsPlayed: number };
+          rounds: Array<{
+            canonicalFacts: {
+              roundFacts: {
+                standardVote: { ledger: unknown[] };
+                council: { ledger: unknown[]; eliminated: { id: string } | null };
+              };
+            };
+          }>;
+          eliminationOrder: Array<{ player: { id: string }; source: string }>;
+        };
+      };
+
+      expect(body.ok).toBe(true);
+      expect(body.results.source).toBe("durable_canonical_events");
+      expect(body.results.summary.winner).toEqual({ id: "mira", name: "Mira" });
+      expect(body.results.summary.roundsPlayed).toBe(1);
+      expect(body.results.rounds[0]?.canonicalFacts.roundFacts.standardVote.ledger).toHaveLength(4);
+      expect(body.results.rounds[0]?.canonicalFacts.roundFacts.council.ledger.length).toBeGreaterThan(0);
+      expect(body.results.eliminationOrder[0]?.source).toBe("council");
+    });
+
+    test("returns degraded terminal fallback for older completed games", async () => {
+      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      await insertFixturePlayers(db, id);
+      await insertResult(db, id, { winnerId: "mira", roundsPlayed: 4 });
+      await markGameCompleted(db, id);
+
+      const res = await app.request(`/api/games/${id}/results`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        results: {
+          source: string;
+          availability: { status: string; diagnostics: Array<{ code: string }> };
+          summary: { winner: { id: string; name: string } | null; roundsPlayed: number };
+          rounds: unknown[];
+        };
+      };
+
+      expect(body.results.source).toBe("best_available_terminal_result");
+      expect(body.results.availability.status).toBe("degraded");
+      expect(body.results.availability.diagnostics.map((diagnostic) => diagnostic.code)).toContain("terminal_result_fallback");
+      expect(body.results.summary.winner).toEqual({ id: "mira", name: "Mira" });
+      expect(body.results.summary.roundsPlayed).toBe(4);
+      expect(body.results.rounds).toEqual([]);
+    });
+
+    test("rejects non-completed games as non-entry results", async () => {
+      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      await insertFixturePlayers(db, id);
+
+      const res = await app.request(`/api/games/${id}/results`);
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as { status: string; error: string };
+      expect(body.status).toBe("not_completed");
+      expect(body.error).toContain("completed");
+    });
+
+    test("does not expose cognitive artifact snippets in completed results", async () => {
+      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      await insertFixturePlayers(db, id);
+      await insertResult(db, id, { winnerId: "mira", roundsPlayed: 4 });
+      await markGameCompleted(db, id);
+      await db.insert(schema.gameCognitiveArtifacts).values({
+        id: randomUUID(),
+        gameId: id,
+        artifactType: "strategy",
+        actorRole: "player",
+        actorPlayerId: "mira",
+        action: "jury-vote",
+        phase: "JURY_VOTE",
+        round: 4,
+        visibilityStatus: "active",
+        payloadByteLength: 200,
+        payload: {
+          strategyPacketSummary: "Mira framed the final vote around precise social timing.",
+          reasoningContext: "private reasoning context",
+          storageKey: "private/storage/key",
+          rawProviderResponse: "provider payload",
+        },
+        redactionStatus: "active",
+      });
+
+      const res = await app.request(`/api/games/${id}/results`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      const json = JSON.stringify(body);
+
+      expect(body).not.toHaveProperty("agentContexts");
+      expect(json).not.toContain("Mira framed the final vote around precise social timing.");
+      expect(json).not.toContain("reasoningContext");
+      expect(json).not.toContain("storageKey");
+      expect(json).not.toContain("rawProviderResponse");
+    });
+  });
+
+  // =========================================================================
   // GET /api/player/games
   // =========================================================================
 

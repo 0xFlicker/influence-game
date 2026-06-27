@@ -236,7 +236,7 @@ describe("match watch model", () => {
     expect(next.players.some((player) => player.pressureStatus || player.exposeScore !== undefined)).toBe(false);
   });
 
-  it("routes live games and completed transcript replays into the shell", () => {
+  it("routes live games and explicit completed transcript replays into the shell", () => {
     const liveDecision = getMatchWatchRouteDecision(baseGame(), []);
     expect(liveDecision).toEqual({
       eligible: true,
@@ -249,20 +249,28 @@ describe("match watch model", () => {
       status: "completed" as const,
       currentPhase: "END" as const,
     };
-    const replayDecision = getMatchWatchRouteDecision(completedGame, [
+    const replayTranscript = [
       {
         id: 1,
         gameId: "game-1",
         round: 1,
-        phase: "END",
+        phase: "END" as const,
         fromPlayerId: null,
         fromPlayerName: null,
-        scope: "system",
+        scope: "system" as const,
         toPlayerIds: null,
         text: "Game over.",
         timestamp: 1,
       },
-    ]);
+    ];
+
+    expect(getMatchWatchRouteDecision(completedGame, replayTranscript)).toEqual({
+      eligible: false,
+      mode: null,
+      reason: "completed_choice",
+    });
+
+    const replayDecision = getMatchWatchRouteDecision(completedGame, replayTranscript, "replay");
 
     expect(replayDecision).toEqual({
       eligible: true,
@@ -271,7 +279,7 @@ describe("match watch model", () => {
     });
   });
 
-  it("keeps waiting and empty completed games out of the shell", () => {
+  it("keeps waiting, non-entry terminal, and empty completed replay games out of the shell", () => {
     expect(getMatchWatchRouteDecision({
       ...baseGame(),
       status: "waiting",
@@ -285,10 +293,20 @@ describe("match watch model", () => {
       ...baseGame(),
       status: "completed",
       currentPhase: "END",
-    }, [])).toEqual({
+    }, [], "replay")).toEqual({
       eligible: false,
       mode: null,
       reason: "no_replay_transcript",
+    });
+
+    expect(getMatchWatchRouteDecision({
+      ...baseGame(),
+      status: "cancelled",
+      currentPhase: "END",
+    }, [transcriptEntry()])).toEqual({
+      eligible: false,
+      mode: null,
+      reason: "non_entry_terminal",
     });
   });
 

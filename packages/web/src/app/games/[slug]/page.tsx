@@ -4,6 +4,7 @@ import { getGame, getGameTranscript, type GameDetail, type TranscriptEntry } fro
 
 interface Props {
   params: Promise<{ slug: string }>;
+  searchParams?: Promise<{ mode?: string }>;
 }
 
 export async function generateMetadata({ params }: Props) {
@@ -14,15 +15,21 @@ export async function generateMetadata({ params }: Props) {
   };
 }
 
-export default async function GameViewerPage({ params }: Props) {
+function normalizeCompletedMode(value: string | undefined): "replay" | "results" | null {
+  return value === "replay" || value === "results" ? value : null;
+}
+
+export default async function GameViewerPage({ params, searchParams }: Props) {
   const { slug } = await params;
+  const query = searchParams ? await searchParams : {};
+  const completedMode = normalizeCompletedMode(query.mode);
 
   let initialGame: GameDetail | undefined;
   let initialMessages: TranscriptEntry[] | undefined;
 
   try {
     initialGame = await getGame(slug);
-    if (initialGame.status === "completed" || initialGame.status === "cancelled") {
+    if (initialGame.status === "completed" && completedMode === "replay") {
       initialMessages = await getGameTranscript(slug);
     }
   } catch (err) {
@@ -43,6 +50,7 @@ export default async function GameViewerPage({ params }: Props) {
 
         <GameViewer
           gameId={slug}
+          completedMode={completedMode}
           initialGame={initialGame}
           initialMessages={initialMessages}
         />

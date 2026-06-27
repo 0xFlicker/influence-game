@@ -577,6 +577,134 @@ export async function getPublicWatchIntelligence(
   return apiFetch(`/api/games/${gameIdOrSlug}/watch-intelligence${query ? `?${query}` : ""}`);
 }
 
+export type CompletedGameResultsSource =
+  | "durable_canonical_events"
+  | "best_available_terminal_result"
+  | "unavailable";
+export type CompletedGameResultsAvailabilityStatus = "available" | "degraded" | "unavailable";
+
+export interface CompletedGameResultsPlayerRef {
+  id: string;
+  name: string;
+}
+
+export interface CompletedGameResultsVoteLedgerEntry {
+  voter: CompletedGameResultsPlayerRef;
+  empowerTarget: CompletedGameResultsPlayerRef;
+  exposeTarget: CompletedGameResultsPlayerRef;
+  revoteEmpowerTarget: CompletedGameResultsPlayerRef | null;
+}
+
+export interface CompletedGameResultsSimpleVoteEntry {
+  voter: CompletedGameResultsPlayerRef;
+  target: CompletedGameResultsPlayerRef;
+}
+
+export interface CompletedGameResultsRoundFacts {
+  round: number;
+  phase: string | null;
+  players: {
+    alive: CompletedGameResultsPlayerRef[];
+    eliminated: CompletedGameResultsPlayerRef[];
+  };
+  standardVote: PublicWatchIntelligenceRoundFacts["standardVote"] & {
+    ledger: CompletedGameResultsVoteLedgerEntry[];
+    empowerTally: Array<{ player: CompletedGameResultsPlayerRef; votes: number }>;
+    tied: CompletedGameResultsPlayerRef[];
+  };
+  power: PublicWatchIntelligenceRoundFacts["power"] & {
+    exposureScores: Array<{ player: CompletedGameResultsPlayerRef; votes: number }>;
+  };
+  council: PublicWatchIntelligenceRoundFacts["council"] & {
+    ledger: CompletedGameResultsSimpleVoteEntry[];
+  };
+}
+
+export interface CompletedGameResultsEndgameElimination {
+  round: number;
+  stage: "reckoning" | "tribunal" | "judgment" | null;
+  ledger: CompletedGameResultsSimpleVoteEntry[];
+  juryTiebreakerLedger: CompletedGameResultsSimpleVoteEntry[];
+  eliminated: CompletedGameResultsPlayerRef;
+  method: string;
+}
+
+export interface CompletedGameResultsRound {
+  round: number;
+  canonicalFacts: {
+    roundFacts: CompletedGameResultsRoundFacts;
+    availability: PublicWatchIntelligenceReceipts["canonicalGameFacts"]["availability"];
+  };
+  endgameEliminations: CompletedGameResultsEndgameElimination[];
+}
+
+export interface CompletedGameResultsPlayer extends CompletedGameResultsPlayerRef {
+  placement: number | null;
+  status: "winner" | "finalist" | "eliminated" | "unknown";
+}
+
+export interface CompletedGameResultsElimination {
+  player: CompletedGameResultsPlayerRef;
+  round: number;
+  source: "council" | "endgame" | "jury" | "player_eliminated";
+  method: string | null;
+  juryMember: boolean;
+}
+
+export interface CompletedGameResultsJury {
+  status: "available" | "unavailable";
+  finalists: CompletedGameResultsPlayerRef[];
+  ledger: Array<{ juror: CompletedGameResultsPlayerRef; finalist: CompletedGameResultsPlayerRef }>;
+  voteCounts: Array<{ finalist: CompletedGameResultsPlayerRef; votes: number }>;
+  winner: CompletedGameResultsPlayerRef | null;
+  method: string | null;
+}
+
+export interface CompletedGameResultsVotePattern {
+  player: CompletedGameResultsPlayerRef;
+  signature: string;
+  groupKey: string;
+}
+
+export interface CompletedGameResultsRead {
+  schemaVersion: 1;
+  source: CompletedGameResultsSource;
+  availability: {
+    status: CompletedGameResultsAvailabilityStatus;
+    eventLogStatus: string;
+    projectionStatus: string;
+    diagnostics: Array<{ code: string; severity: "info" | "warning" | "error"; message: string }>;
+  };
+  summary: {
+    winner: CompletedGameResultsPlayerRef | null;
+    winnerMethod: string | null;
+    roundsPlayed: number;
+    finalists: CompletedGameResultsPlayerRef[];
+    playerCount: number;
+  };
+  players: CompletedGameResultsPlayer[];
+  eliminationOrder: CompletedGameResultsElimination[];
+  rounds: CompletedGameResultsRound[];
+  jury: CompletedGameResultsJury;
+  votePatterns: CompletedGameResultsVotePattern[];
+}
+
+export interface CompletedGameResultsResponse {
+  ok: true;
+  schemaVersion: 1;
+  game: {
+    id: string;
+    slug?: string;
+    status: GameStatus;
+    completedAt?: string;
+  };
+  results: CompletedGameResultsRead;
+}
+
+export async function getCompletedGameResults(gameIdOrSlug: string): Promise<CompletedGameResultsResponse> {
+  return apiFetch(`/api/games/${gameIdOrSlug}/results`);
+}
+
 // ---------------------------------------------------------------------------
 // Auth API calls
 // ---------------------------------------------------------------------------

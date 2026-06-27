@@ -60,9 +60,12 @@ import {
 import { RevealModeView } from "./components/reveal-choreography";
 import { SpectacleMessageSpotlight } from "./components/spectacle-viewer";
 import { MatchWatchShell } from "./components/match-watch-shell";
+import { CompletedGameEntry } from "./components/completed-game-entry";
+import { CompletedResultsReview } from "./components/completed-results-review";
 
 export function GameViewer({
   gameId,
+  completedMode = null,
   initialGame,
   initialMessages,
 }: GameViewerProps) {
@@ -75,6 +78,7 @@ export function GameViewer({
     initialMessages ?? [],
   );
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [replayLoading, setReplayLoading] = useState(false);
   const [replayIndex, setReplayIndex] = useState<number>(0);
   const [activeTransition, setActiveTransition] =
     useState<TransitionState | null>(null);
@@ -164,25 +168,65 @@ export function GameViewer({
     };
   }, [game?.currentPhase]);
 
-  // Fetch game data client-side if not provided via props
+  // Fetch game data client-side if not provided via props. On same-page query
+  // changes, Next can preserve this client component, so keep props synced and
+  // explicitly load replay transcript when switching into replay mode.
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadReplayTranscript(id: string) {
+      setReplayLoading(true);
+      try {
+        const transcript = await getGameTranscript(id);
+        if (cancelled) return;
+        setMessages(transcript);
+        setReplayIndex(0);
+        setLoadError(null);
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(
+            err instanceof Error ? err.message : "Failed to load replay.",
+          );
+        }
+      } finally {
+        if (!cancelled) setReplayLoading(false);
+      }
+    }
+
     if (initialGame) {
-      // Already have game data; set replay index to end
+      // Already have game data; completed replays start unspoiled from the first message.
+      setGame(initialGame);
+      setLoadError(null);
       maxRoundsRef.current = initialGame.maxRounds;
       watchCursorRef.current = initialGame.watchState?.eventCursor.sequence ?? 0;
       gameStatusRef.current = initialGame.status;
       watchFinalStatusRef.current = initialGame.watchState?.final.status;
       currentPhaseRef.current = (initialGame.watchState?.currentPhase ??
         initialGame.currentPhase) as PhaseKey;
-      setReplayIndex((initialMessages?.length ?? 1) - 1);
-      return;
+      if (initialMessages) {
+        setMessages(initialMessages);
+        setReplayIndex(0);
+        setReplayLoading(false);
+      } else if (initialGame.status === "completed" && completedMode === "replay") {
+        void loadReplayTranscript(gameId);
+      } else {
+        setReplayLoading(false);
+      }
+      return () => {
+        cancelled = true;
+      };
     }
 
-    if (!gameId) return;
+    if (!gameId) {
+      return () => {
+        cancelled = true;
+      };
+    }
 
     async function load() {
       try {
         const gameData = await getGame(gameId);
+        if (cancelled) return;
         setGame(gameData);
         maxRoundsRef.current = gameData.maxRounds;
         watchCursorRef.current = gameData.watchState?.eventCursor.sequence ?? 0;
@@ -190,23 +234,23 @@ export function GameViewer({
         watchFinalStatusRef.current = gameData.watchState?.final.status;
         currentPhaseRef.current = (gameData.watchState?.currentPhase ??
           gameData.currentPhase) as PhaseKey;
-        if (
-          gameData.status === "completed" ||
-          gameData.status === "cancelled"
-        ) {
-          const transcript = await getGameTranscript(gameId);
-          setMessages(transcript);
-          setReplayIndex(transcript.length > 0 ? transcript.length - 1 : 0);
+        if (gameData.status === "completed" && completedMode === "replay") {
+          await loadReplayTranscript(gameId);
         }
       } catch (err) {
-        setLoadError(
-          err instanceof Error ? err.message : "Failed to load game.",
-        );
+        if (!cancelled) {
+          setLoadError(
+            err instanceof Error ? err.message : "Failed to load game.",
+          );
+        }
       }
     }
 
-    load();
-  }, [gameId, initialGame, initialMessages]);
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [gameId, completedMode, initialGame, initialMessages]);
 
   const feedRef = useRef<HTMLDivElement>(null);
 
@@ -610,10 +654,76 @@ export function GameViewer({
     );
   }
 
-  const matchWatchDecision = getMatchWatchRouteDecision(game, messages);
+  if (game.status === "cancelled") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center px-4">
+        <div className="text-xs px-2 py-1 rounded-full border border-red-900/60 bg-red-950/30 text-red-300 font-medium">
+          Cancelled
+        </div>
+        <h2 className="text-xl font-semibold text-white">Game unavailable</h2>
+        <p className="text-white/50 text-sm max-w-md">
+          This game did not finish cleanly, so replay and completed results are not available.
+        </p>
+        <button
+          onClick={() => router.push("/games")}
+          className="mt-2 text-sm px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/70 transition-colors"
+        >
+          Browse games
+        </button>
+      </div>
+    );
+  }
+
+  if (game.status === "completed" && completedMode === "results") {
+    return <CompletedResultsReview gameId={game.slug ?? game.id} game={game} />;
+  }
+
+  if (game.status === "completed" && completedMode === "replay" && replayLoading && messages.length === 0) {
+    return (
+      <div className="influence-glass rounded-panel p-12 text-center text-white/40 text-sm">
+        Loading replay...
+      </div>
+    );
+  }
+
+  if (game.status === "completed" && completedMode === "replay" && messages.length === 0) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4 text-center">
+        <div className="text-xs font-medium rounded-full border border-amber-900/60 bg-amber-950/30 px-2 py-1 text-amber-200">
+          Replay unavailable
+        </div>
+        <h2 className="text-xl font-semibold text-white">Replay transcript unavailable</h2>
+        <p className="max-w-md text-sm text-white/50">
+          This completed game does not have replay messages available right now.
+        </p>
+        <button
+          onClick={() => router.push(`/games/${game.slug ?? game.id}?mode=results`)}
+          className="mt-2 rounded-lg bg-white/10 px-4 py-2 text-sm text-white/70 transition-colors hover:bg-white/15"
+        >
+          View results
+        </button>
+      </div>
+    );
+  }
+
+  if (game.status === "completed" && completedMode !== "replay") {
+    return (
+      <CompletedGameEntry
+        gameId={game.slug ?? game.id}
+        gameNumber={game.gameNumber}
+        hasReplay={messages.length > 0 || completedMode !== "results"}
+      />
+    );
+  }
+
+  const matchWatchDecision = getMatchWatchRouteDecision(game, messages, completedMode);
   if (matchWatchDecision.eligible) {
+    const matchWatchKey = matchWatchDecision.mode === "live"
+      ? `live:${game.id}`
+      : `replay:${game.id}:${messages.length}:${messages[0]?.id ?? "start"}:${messages[messages.length - 1]?.id ?? "end"}`;
     return (
       <MatchWatchShell
+        key={matchWatchKey}
         game={game}
         messages={messages}
         live={matchWatchDecision.mode === "live"}

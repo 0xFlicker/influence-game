@@ -65,6 +65,7 @@ export type WatchConnStatus = ConnStatus | "replay";
 
 export interface GameViewerProps {
   gameId: string;
+  completedMode?: "replay" | "results" | null;
   /**
    * If provided, renders in replay mode using the supplied data rather than
    * fetching client-side. Used for finished games loaded server-side.

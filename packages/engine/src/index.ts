@@ -39,6 +39,24 @@ export type {
   ProjectedPlayer,
   ProjectedRoomAllocation,
 } from "./game-projection";
+export { buildCompletedGameResults } from "./completed-game-results";
+export type {
+  BuildCompletedGameResultsOptions,
+  CompletedGameResultsAvailabilityStatus,
+  CompletedGameResultsDiagnostic,
+  CompletedGameResultsElimination,
+  CompletedGameResultsEndgameElimination,
+  CompletedGameResultsEndgameVoteEntry,
+  CompletedGameResultsJury,
+  CompletedGameResultsJuryVoteCount,
+  CompletedGameResultsJuryVoteEntry,
+  CompletedGameResultsPlayer,
+  CompletedGameResultsRead,
+  CompletedGameResultsRound,
+  CompletedGameResultsSource,
+  CompletedGameResultsTerminalFallback,
+  CompletedGameResultsVotePattern,
+} from "./completed-game-results";
 export { buildPostVotePressureProjection } from "./post-vote-pressure";
 export type {
   PostVotePressurePlayer,

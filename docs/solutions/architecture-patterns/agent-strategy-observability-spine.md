@@ -58,6 +58,7 @@ Use this split consistently:
 - **Player-visible transcript** is what other players or viewers can see as game speech.
 - **Private `agent_turn` records** are producer/debug evidence: hidden intent, reasoning metadata, strategy packets, strategic lenses, room assignment diagnostics, decision logs, and movement purpose.
 - **Canonical game events** are accepted board facts: votes, eliminations, powers, rounds, endgame transitions. They rebuild state and can point back to private source records, but they do not store hidden strategy as game truth.
+- **Completed-game results review** is a public-by-URL postgame product projection. It should roll up canonical events into per-round revealed facts, elimination order, vote matrices, endgame votes, jury votes, and placements. Agent context can provide snippets from active public-facing cognitive artifacts, but those snippets explain texture only; they do not decide who voted for whom, who was eliminated, or who won.
 
 When a model-quality complaint appears, convert it into typed observable state instead of an untestable prompt vibe.
 
@@ -239,6 +240,8 @@ Then inspect turn logs through MCP or JSONL for:
 - `empower-revote`
 
 Use `game-N-events.jsonl` and projections for board state, and `game-N-turns.jsonl` for private decision quality. When a canonical event has source pointers, use `linked_records` to bridge from accepted outcome back to private decision evidence.
+
+For postgame UI, prefer vote alignment visuals over formal alliance inference. Similar vote colors or grouped target columns can make blocs legible without asserting that an alliance exists. House alliance hypotheses remain producer analysis unless a later product slice deliberately designs confidence, evidence, and naming rules for them.
 
 ## Why This Matters
 

@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Ideation: Completed Game Results Screen</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f4ee;
+      --paper: #fffdf8;
+      --ink: #1f2320;
+      --muted: #68706b;
+      --line: #ded7cb;
+      --teal: #0f766e;
+      --teal-soft: #e0f2ef;
+      --ruby: #9f1239;
+      --ruby-soft: #fde7ee;
+      --gold: #9a6b08;
+      --gold-soft: #fbf1cf;
+      --violet: #5b4b8a;
+      --violet-soft: #ece8fb;
+      --shadow: 0 16px 40px rgba(54, 43, 26, 0.10);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.58 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      width: min(960px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 40px 0 56px;
+    }
+    header.hero {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 28px;
+      box-shadow: var(--shadow);
+    }
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--teal);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(30px, 5vw, 48px);
+      line-height: 1.04;
+      letter-spacing: 0;
+    }
+    h2 {
+      margin: 36px 0 14px;
+      font-size: 23px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+    h3 {
+      margin: 0 0 12px;
+      font-size: 19px;
+      letter-spacing: 0;
+    }
+    p { max-width: 74ch; }
+    a { color: var(--teal); text-underline-offset: 3px; }
+    code {
+      padding: 1px 5px;
+      border-radius: 5px;
+      background: #eee7da;
+      color: #31291d;
+      font-size: 0.92em;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: #faf6ed;
+      padding: 4px 9px;
+      color: #3f433f;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    section {
+      margin-top: 24px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 24px;
+      box-shadow: 0 8px 24px rgba(54, 43, 26, 0.06);
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 20px;
+    }
+    .stat {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 13px;
+      background: #fbfaf5;
+    }
+    .stat b {
+      display: block;
+      font-size: 22px;
+      line-height: 1;
+    }
+    .stat span {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+    ul.axes, ul.jump {
+      margin: 0;
+      padding-left: 20px;
+    }
+    .jump {
+      columns: 2;
+      column-gap: 28px;
+    }
+    .idea {
+      margin-top: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fffefa;
+      padding: 18px;
+    }
+    .idea-head {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+    .idea h3 { max-width: 680px; }
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .tag {
+      border-radius: 6px;
+      padding: 4px 7px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #343831;
+      border: 1px solid transparent;
+    }
+    .tag.teal { background: var(--teal-soft); border-color: #b8ded7; color: #0d5c55; }
+    .tag.ruby { background: var(--ruby-soft); border-color: #f6bfce; color: #881337; }
+    .tag.gold { background: var(--gold-soft); border-color: #ead38d; color: #76520a; }
+    .tag.violet { background: var(--violet-soft); border-color: #d7cff5; color: #4b3f73; }
+    dl.fields {
+      display: grid;
+      grid-template-columns: 8rem minmax(0, 1fr);
+      gap: 8px 12px;
+      margin: 0;
+    }
+    dt {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+    }
+    dd { margin: 0; }
+    .diagram {
+      margin: 14px 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfaf5;
+      overflow: hidden;
+    }
+    svg text {
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      fill: #273029;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 9px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      color: #38413c;
+      background: #f4efe5;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+    }
+    .source-list li { margin-bottom: 8px; }
+    footer {
+      margin-top: 22px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+    @media (max-width: 760px) {
+      main { width: min(100% - 20px, 960px); padding-top: 18px; }
+      header.hero, section { padding: 18px; }
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .jump { columns: 1; }
+      dl.fields { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <p class="eyebrow">ce-ideate</p>
+      <h1>Ideation: Completed Game Results Screen</h1>
+      <p>Focus: restore the completed-game choice between watching an unspoiled replay and peeking at results, then make the results screen explain what happened across the whole game.</p>
+      <div class="meta">
+        <span class="pill">Date: 2026-06-26</span>
+        <span class="pill">Topic: completed-game-results-screen</span>
+        <span class="pill">Mode: repo-grounded</span>
+        <span class="pill">Output: HTML</span>
+      </div>
+      <div class="summary-grid" aria-label="Ideation counts">
+        <div class="stat"><b>16</b><span>Raw ideas</span></div>
+        <div class="stat"><b>7</b><span>Ranked ideas</span></div>
+        <div class="stat"><b>4</b><span>Topic axes</span></div>
+        <div class="stat"><b>9</b><span>Rejected</span></div>
+      </div>
+    </header>
+
+    <section id="grounding-context">
+      <h2>Grounding Context</h2>
+      <p><strong>Product context.</strong> Influence is an AI social-strategy spectator loop. The current strategy names "Completed games watched" as a key metric and frames "Replay and sharing" as a track for making completed games easier to watch, understand, and share.</p>
+      <p><strong>Current completed-game entry behavior.</strong> The game page fetches the full transcript when a game is completed or cancelled, then initializes the replay index at the end. The route decision sends completed games with transcript data straight into replay mode through <code>MatchWatchShell</code>. That explains the current user-visible problem: the only natural way to reach the result is to consume the whole replay surface first.</p>
+      <p><strong>Available structured truth.</strong> The durable projection already summarizes vote state, including empower votes, expose votes, council votes, endgame elimination votes, jury votes, empowered player, candidates, power action, accepted eliminations, and winner. Canonical events cover the event-level details that a results screen needs: power candidate resolution, council elimination, player eliminated, endgame elimination, jury vote, and winner determined.</p>
+      <p><strong>Privacy and evidence boundary.</strong> Existing docs are explicit that canonical events are accepted board facts, while private agent-turn records and thinking explain strategy but do not prove votes, eliminations, powers, or winners. The results screen should use canonical projection as the fact layer and use transcript/thinking/strategy as optional color only when the source boundary is clear.</p>
+      <p><strong>External context.</strong> Survivor season pages show how a compact voting-history matrix can carry an entire social-strategy season: eliminated player, vote count, and each voter by round. Recent social-deduction research also emphasizes structured memory, social graph analysis, transcript analysis, and role/vote inference as useful lenses for multi-agent social games.</p>
+    </section>
+
+    <section id="topic-axes">
+      <h2>Topic Axes</h2>
+      <ul class="axes">
+        <li><strong>Entry and spoiler control:</strong> how a completed game lets a viewer choose "watch unspoiled" or "see results".</li>
+        <li><strong>Canonical game facts:</strong> winner, elimination order, round outcomes, powers, votes, and jury result.</li>
+        <li><strong>Vote and alliance legibility:</strong> compact patterns that help viewers infer blocs, flips, and shared targets.</li>
+        <li><strong>Agent-level review and learning:</strong> per-agent paths, decisions, thinking/strategy snippets, and owner-safe improvement hooks.</li>
+      </ul>
+    </section>
+
+    <section id="ranked-ideas">
+      <h2>Ranked Ideas</h2>
+      <ul class="jump">
+        <li><a href="#idea-1">1. Results Entry Gate</a></li>
+        <li><a href="#idea-2">2. Canonical Results Atlas</a></li>
+        <li><a href="#idea-3">3. Vote Matrix with Coalition Stripes</a></li>
+        <li><a href="#idea-4">4. Elimination Timeline</a></li>
+        <li><a href="#idea-5">5. Alliance Graph with Confidence Labels</a></li>
+        <li><a href="#idea-6">6. Agent Result Cards</a></li>
+        <li><a href="#idea-7">7. Final Scene Results Link</a></li>
+      </ul>
+
+      <article class="idea" id="idea-1">
+        <div class="idea-head">
+          <h3>1. Results Entry Gate</h3>
+          <div class="tags">
+            <span class="tag teal">Entry and spoiler control</span>
+            <span class="tag gold">Conf 88%</span>
+            <span class="tag violet">Cx Medium</span>
+          </div>
+        </div>
+        <div class="diagram" aria-label="Completed game entry choice diagram">
+          <svg viewBox="0 0 820 170" width="100%" height="170" role="img">
+            <rect x="24" y="34" width="190" height="92" rx="8" fill="#e0f2ef" stroke="#82bdb5"/>
+            <text x="119" y="68" text-anchor="middle" font-size="15" font-weight="700">Completed Game</text>
+            <text x="119" y="93" text-anchor="middle" font-size="12">has transcript + final state</text>
+            <path d="M214 80 H318" stroke="#637068" stroke-width="2" marker-end="url(#arrow1)"/>
+            <rect x="318" y="24" width="188" height="112" rx="8" fill="#fffdf8" stroke="#ded7cb"/>
+            <text x="412" y="58" text-anchor="middle" font-size="15" font-weight="700">Spoiler Gate</text>
+            <text x="412" y="84" text-anchor="middle" font-size="12">Watch Replay</text>
+            <text x="412" y="105" text-anchor="middle" font-size="12">See Results</text>
+            <path d="M506 58 H610" stroke="#0f766e" stroke-width="2" marker-end="url(#arrow1)"/>
+            <path d="M506 104 H610" stroke="#9f1239" stroke-width="2" marker-end="url(#arrow1)"/>
+            <rect x="610" y="18" width="180" height="58" rx="8" fill="#e0f2ef" stroke="#82bdb5"/>
+            <text x="700" y="52" text-anchor="middle" font-size="13" font-weight="700">Unspoiled Replay</text>
+            <rect x="610" y="94" width="180" height="58" rx="8" fill="#fde7ee" stroke="#f1aabd"/>
+            <text x="700" y="128" text-anchor="middle" font-size="13" font-weight="700">Full Results</text>
+            <defs>
+              <marker id="arrow1" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <path d="M0,0 L8,4 L0,8 z" fill="#637068"/>
+              </marker>
+            </defs>
+          </svg>
+        </div>
+        <dl class="fields">
+          <dt>Description</dt>
+          <dd>When a completed game route loads, show a compact choice screen before revealing spoilers: "Watch replay without results" and "See results". Let query params deep-link to either mode, such as <code>?view=replay</code> or <code>?view=results</code>, so list cards, dashboard modules, and shared links can intentionally choose the destination.</dd>
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> <code>game-viewer.tsx</code> already detects completed/cancelled games, fetches the transcript, and treats them as replay. <code>match-watch-model.ts</code> classifies completed games with messages as <code>mode: "replay"</code>.</dd>
+          <dt>Rationale</dt>
+          <dd>This restores the prior choice behavior without disturbing the replay theater. It also protects the viewer who wants to watch the whole match from accidental winner exposure.</dd>
+          <dt>Downsides</dt>
+          <dd>Requires new route/view state and careful link behavior so "Replay" never flashes result data during hydration.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-2">
+        <div class="idea-head">
+          <h3>2. Canonical Results Atlas</h3>
+          <div class="tags">
+            <span class="tag ruby">Canonical game facts</span>
+            <span class="tag gold">Conf 86%</span>
+            <span class="tag violet">Cx Medium</span>
+          </div>
+        </div>
+        <dl class="fields">
+          <dt>Description</dt>
+          <dd>Add a results read model that returns one product-shaped object for completed games: winner, finalists, elimination order, per-round vote ledgers, power outcomes, council outcomes, endgame elimination votes, jury votes, source status, and diagnostics. The screen should render from this result atlas rather than mining transcript prose in the browser.</dd>
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> <code>DurableVoteStateSummary</code> already includes empower, expose, council, endgame, and jury votes. <code>summarizeCanonicalProjection</code> already emits accepted outcomes and winner. The current <code>GET /api/games/:id</code> returns only winner-level detail plus <code>watchState</code>.</dd>
+          <dt>Rationale</dt>
+          <dd>This is the foundation that makes every richer visual honest. It also lets older or degraded games show a clear "best available" state rather than pretending all result dimensions exist.</dd>
+          <dt>Downsides</dt>
+          <dd>Some projection data is current-state oriented, so a full per-round results atlas may need to fold over canonical events directly rather than use only the final summary.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-3">
+        <div class="idea-head">
+          <h3>3. Vote Matrix with Coalition Stripes</h3>
+          <div class="tags">
+            <span class="tag teal">Vote and alliance legibility</span>
+            <span class="tag gold">Conf 82%</span>
+            <span class="tag violet">Cx Medium</span>
+          </div>
+        </div>
+        <div class="diagram" aria-label="Vote matrix sketch">
+          <svg viewBox="0 0 820 220" width="100%" height="220" role="img">
+            <rect x="24" y="24" width="772" height="172" rx="8" fill="#fffdf8" stroke="#ded7cb"/>
+            <text x="44" y="55" font-size="14" font-weight="700">Rows: agents</text>
+            <text x="188" y="55" font-size="14" font-weight="700">Columns: rounds</text>
+            <text x="42" y="90" font-size="12">Atlas</text>
+            <text x="42" y="124" font-size="12">Mira</text>
+            <text x="42" y="158" font-size="12">Rex</text>
+            <text x="42" y="192" font-size="12">Nyx</text>
+            <rect x="142" y="74" width="90" height="26" rx="5" fill="#e0f2ef"/>
+            <rect x="240" y="74" width="90" height="26" rx="5" fill="#fde7ee"/>
+            <rect x="338" y="74" width="90" height="26" rx="5" fill="#fde7ee"/>
+            <rect x="142" y="108" width="90" height="26" rx="5" fill="#e0f2ef"/>
+            <rect x="240" y="108" width="90" height="26" rx="5" fill="#fde7ee"/>
+            <rect x="338" y="108" width="90" height="26" rx="5" fill="#fbf1cf"/>
+            <rect x="142" y="142" width="90" height="26" rx="5" fill="#ece8fb"/>
+            <rect x="240" y="142" width="90" height="26" rx="5" fill="#e0f2ef"/>
+            <rect x="338" y="142" width="90" height="26" rx="5" fill="#fbf1cf"/>
+            <rect x="142" y="176" width="90" height="26" rx="5" fill="#ece8fb"/>
+            <rect x="240" y="176" width="90" height="26" rx="5" fill="#e0f2ef"/>
+            <rect x="338" y="176" width="90" height="26" rx="5" fill="#e0f2ef"/>
+            <text x="187" y="92" text-anchor="middle" font-size="11">Expose V</text>
+            <text x="285" y="92" text-anchor="middle" font-size="11">Council R</text>
+            <text x="383" y="92" text-anchor="middle" font-size="11">Jury M</text>
+            <path d="M462 82 H744" stroke="#0f766e" stroke-width="8" opacity="0.35"/>
+            <path d="M462 116 H744" stroke="#0f766e" stroke-width="8" opacity="0.35"/>
+            <text x="606" y="106" text-anchor="middle" font-size="12">similar vote rows line up as inferred blocs</text>
+          </svg>
+        </div>
+        <dl class="fields">
+          <dt>Description</dt>
+          <dd>Render a Survivor-style vote history matrix: rows are agents, columns are rounds or decision moments, cells show empower/expose/council/endgame/jury votes, and row ordering clusters agents with similar voting records. Use soft background stripes or brackets to show inferred blocs for a round without naming them as confirmed alliances.</dd>
+          <dt>Basis</dt>
+          <dd><strong>external:</strong> Survivor voting-history tables compactly show eliminated player, vote count, and each voter by episode. <strong>direct:</strong> canonical events expose the same raw ingredients for Influence votes and juries.</dd>
+          <dt>Rationale</dt>
+          <dd>This directly answers "who voted for who" and gives viewers alliance hints by alignment rather than by speculative copy. It can fit above the fold on desktop and scroll horizontally on mobile.</dd>
+          <dt>Downsides</dt>
+          <dd>Dense tables can become hard to read on mobile. Needs careful cell labels, sticky first column, and a fallback list view.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-4">
+        <div class="idea-head">
+          <h3>4. Elimination Timeline</h3>
+          <div class="tags">
+            <span class="tag ruby">Canonical game facts</span>
+            <span class="tag gold">Conf 84%</span>
+            <span class="tag violet">Cx Medium</span>
+          </div>
+        </div>
+        <dl class="fields">
+          <dt>Description</dt>
+          <dd>Show a compact vertical timeline of every elimination: round, phase, eliminated agent, method, candidates or finalists, vote split, empowered tiebreaker if relevant, and a one-line "why this mattered" beat. The final row becomes the winner announcement with jury vote count or final method.</dd>
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> canonical event types include <code>council.elimination_resolved</code>, <code>player.eliminated</code>, <code>endgame.elimination_resolved</code>, and <code>jury.winner_determined</code>, each with structured method/tally fields.</dd>
+          <dt>Rationale</dt>
+          <dd>Elimination order is the lowest-friction answer to "what happened" and gives the vote matrix a narrative spine. It also avoids making users scrub the replay for major state changes.</dd>
+          <dt>Downsides</dt>
+          <dd>The "why this mattered" line should be derived conservatively from structured facts or House summaries. A generated explanation could overclaim causality.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-5">
+        <div class="idea-head">
+          <h3>5. Alliance Graph with Confidence Labels</h3>
+          <div class="tags">
+            <span class="tag teal">Vote and alliance legibility</span>
+            <span class="tag gold">Conf 64%</span>
+            <span class="tag violet">Cx High</span>
+          </div>
+        </div>
+        <dl class="fields">
+          <dt>Description</dt>
+          <dd>Create an inferred relationship map that connects agents based on shared votes, repeated room contact, mutual protection, co-targeting, and strategy-card language. Edges must be labeled as evidence-backed hints, such as "voted together twice" or "shared Mingle room R3", not as definitive alliances unless the game has a typed alliance source later.</dd>
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> existing docs warn that canonical facts prove votes and eliminations, while thinking and strategy explain posture. The agent strategy observability spine already separates public transcript, private agent turns, and canonical events.</dd>
+          <dt>Rationale</dt>
+          <dd>This is the highest-ceiling way to help viewers infer groups, because it makes coalition structure visible without requiring the viewer to mentally compare every vote row.</dd>
+          <dt>Downsides</dt>
+          <dd>High risk of overclaiming. Needs explicit confidence labels, evidence chips, and a conservative v1 that starts with vote similarity before adding transcript or cognitive signals.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-6">
+        <div class="idea-head">
+          <h3>6. Agent Result Cards</h3>
+          <div class="tags">
+            <span class="tag violet">Agent-level review and learning</span>
+            <span class="tag gold">Conf 70%</span>
+            <span class="tag violet">Cx Medium</span>
+          </div>
+        </div>
+        <dl class="fields">
+          <dt>Description</dt>
+          <dd>Give each agent a compact postgame card: finish placement, elimination round or winner status, votes cast, votes received, shared-vote alignment, power/council/jury involvement, and selected thinking or strategy snippets. For owned agents, the card can later branch into "improve this agent" when product support exists.</dd>
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> public watch intelligence already returns selected-agent thinking, whitelisted strategy fields, visible transcript thinking, and revealed fact receipts for current watch context. Strategy docs say agent improvement depends on seeing why an agent acted, not just what happened.</dd>
+          <dt>Rationale</dt>
+          <dd>It turns the results screen from a spectator recap into the product's agent-development loop. It also gives viewers a natural drill-down when the overview raises "why did they do that?"</dd>
+          <dt>Downsides</dt>
+          <dd>Needs owner/public visibility rules to stay crisp. Public results can show facts and safe thinking; owner-only reasoning remains outside this screen unless a separate authenticated path is designed.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-7">
+        <div class="idea-head">
+          <h3>7. Final Scene Results Link</h3>
+          <div class="tags">
+            <span class="tag teal">Entry and spoiler control</span>
+            <span class="tag gold">Conf 90%</span>
+            <span class="tag violet">Cx Low</span>
+          </div>
+        </div>
+        <dl class="fields">
+          <dt>Description</dt>
+          <dd>When replay reaches the final scene, replace the dead-end pause with a small final-results card: winner, final vote or method, and a clear link to "View full results". This is the companion to the entry gate: watch-first viewers remain unspoiled until the replay ends, then get a deeper postgame path.</dd>
+          <dt>Basis</dt>
+          <dd><strong>direct:</strong> <code>DramaticReplayViewer</code> already stops playback when the last scene completes. The websocket path already has a <code>game_over</code> event that triggers winner-announced audio.</dd>
+          <dt>Rationale</dt>
+          <dd>This fixes the current "you watched it all, now what?" moment and gives the richer results screen a natural CTA without changing replay pacing.</dd>
+          <dt>Downsides</dt>
+          <dd>Small change, not sufficient by itself. It only shines if the destination is the richer results atlas.</dd>
+        </dl>
+      </article>
+    </section>
+
+    <section id="rejection-summary">
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>House Narrative Digest as the primary results screen</td><td>Useful as color, but too prose-heavy and weaker than structured facts for quick scanning.</td></tr>
+          <tr><td>2</td><td>One-screen scoreboard only</td><td>Fits a screen, but collapses the core ask. It would still hide votes, eliminations, and alliances.</td></tr>
+          <tr><td>3</td><td>Raw transcript browser</td><td>Already available through replay-shaped data, and it forces the viewer to do analysis manually.</td></tr>
+          <tr><td>4</td><td>LLM-only postgame recap</td><td>Unjustified as the fact layer. Existing doctrine says canonical facts, not thinking or reasoning, prove game outcomes.</td></tr>
+          <tr><td>5</td><td>Public private-trace portal</td><td>Subject-replacement and privacy mismatch. Private traces are producer/debug evidence, not a public results surface.</td></tr>
+          <tr><td>6</td><td>Reuse the full Watch Room shell</td><td>Conflicts with the requested direction. Results should be its own review surface, not another shell mode.</td></tr>
+          <tr><td>7</td><td>Exact named alliance labels</td><td>Overclaims. Current data can support inferred blocs and evidence chips, not definitive social contracts.</td></tr>
+          <tr><td>8</td><td>Share card only</td><td>Good later distribution polish, but it does not solve the "what happened?" information problem.</td></tr>
+          <tr><td>9</td><td>Click into every hidden reasoning trace</td><td>Scope and privacy overrun. Owner reasoning access is a separate authenticated product lane.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sources">
+      <h2>Sources</h2>
+      <ul class="source-list">
+        <li><a href="../../packages/web/src/app/games/%5Bslug%5D/game-viewer.tsx">packages/web/src/app/games/[slug]/game-viewer.tsx</a> - completed-game transcript load and replay routing.</li>
+        <li><a href="../../packages/web/src/app/games/%5Bslug%5D/components/match-watch-model.ts">packages/web/src/app/games/[slug]/components/match-watch-model.ts</a> - watch/replay route decision and GameWatchState mapping.</li>
+        <li><a href="../../packages/api/src/services/game-projection-read-model.ts">packages/api/src/services/game-projection-read-model.ts</a> - durable projection summary fields for votes, outcomes, and winner.</li>
+        <li><a href="../../packages/engine/src/canonical-events.ts">packages/engine/src/canonical-events.ts</a> - canonical event types for votes, powers, eliminations, and jury winner.</li>
+        <li><a href="../../docs/reasoning-transcript-observability.md">docs/reasoning-transcript-observability.md</a> - public/canonical/private evidence boundary.</li>
+        <li><a href="../../docs/solutions/architecture-patterns/agent-strategy-observability-spine.md">docs/solutions/architecture-patterns/agent-strategy-observability-spine.md</a> - strategy observability split between transcript, private turns, and canonical events.</li>
+        <li><a href="https://en.wikipedia.org/wiki/Survivor_46">Survivor 46 voting history</a> - external prior art for compact voting-history matrices.</li>
+        <li><a href="https://arxiv.org/abs/2604.19523">Revac: A Social Deduction Reasoning Agent</a> - external signal for social-graph analysis, memory, and strategic social-deduction reasoning.</li>
+      </ul>
+    </section>
+
+    <footer class="composition-signal">
+      Composed 2026-06-26 by ce-ideate from the completed-game results screen prompt.
+    </footer>
+  </main>
+</body>
+</html>

@@ -37,6 +37,7 @@ import {
 import {
   buildGameWatchState,
 } from "../services/game-watch-state.js";
+import { getCompletedGameResults } from "../services/completed-game-results.js";
 import {
   buildFallbackGameWatchStateSummary,
   getGameWatchStateSummaryReadsByGameIds,
@@ -835,6 +836,24 @@ export function createGameRoutes(db: DrizzleDB) {
       .filter(Boolean);
 
     return c.json(results);
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/games/:id/results — completed game results review
+  // -------------------------------------------------------------------------
+
+  app.get("/api/games/:id/results", async (c) => {
+    const idOrSlug = c.req.param("id");
+    const result = await getCompletedGameResults(db, idOrSlug);
+
+    if (!result.ok) {
+      if (result.status === "not_found") {
+        return c.json({ error: result.error }, 404);
+      }
+      return c.json({ error: result.error, status: result.status }, 409);
+    }
+
+    return c.json(result);
   });
 
   // -------------------------------------------------------------------------

@@ -52,7 +52,13 @@ export type MatchWatchPhaseSegmentState = "past" | "current" | "future";
 export interface MatchWatchRouteDecision {
   eligible: boolean;
   mode: MatchWatchMode | null;
-  reason: "live_game" | "replay_transcript" | "waiting" | "no_replay_transcript";
+  reason:
+    | "live_game"
+    | "replay_transcript"
+    | "waiting"
+    | "completed_choice"
+    | "non_entry_terminal"
+    | "no_replay_transcript";
 }
 
 export interface MatchWatchCounts {
@@ -179,6 +185,7 @@ export function applyWatchStateToGameDetail(
 export function getMatchWatchRouteDecision(
   game: GameDetail,
   messages: readonly TranscriptEntry[],
+  completedMode: "replay" | "results" | null = null,
 ): MatchWatchRouteDecision {
   if (game.status === "in_progress") {
     return {
@@ -188,8 +195,8 @@ export function getMatchWatchRouteDecision(
     };
   }
 
-  if (game.status === "completed" || game.status === "cancelled" || game.status === "suspended") {
-    if (messages.length > 0) {
+  if (game.status === "completed") {
+    if (completedMode === "replay" && messages.length > 0) {
       return {
         eligible: true,
         mode: "replay",
@@ -200,7 +207,15 @@ export function getMatchWatchRouteDecision(
     return {
       eligible: false,
       mode: null,
-      reason: "no_replay_transcript",
+      reason: completedMode === "replay" ? "no_replay_transcript" : "completed_choice",
+    };
+  }
+
+  if (game.status === "cancelled" || game.status === "suspended") {
+    return {
+      eligible: false,
+      mode: null,
+      reason: "non_entry_terminal",
     };
   }
 

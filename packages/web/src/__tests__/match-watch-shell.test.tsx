@@ -4,6 +4,7 @@ import type { GameDetail, GameWatchState, TranscriptEntry } from "../lib/api";
 import {
   buildDiaryArchiveEntries,
   buildReplayTranscriptSlice,
+  isReplayAtFinalResults,
   MatchWatchShell,
 } from "../app/games/[slug]/components/match-watch-shell";
 import { buildReplayScenes } from "../app/games/[slug]/components/spectacle-viewer";
@@ -277,6 +278,26 @@ describe("MatchWatchShell", () => {
     expect(buildDiaryArchiveEntries(throughLobby)).toEqual([]);
     expect(buildDiaryArchiveEntries(throughVote).map((diary) => diary.playerName)).toEqual(["Atlas"]);
     expect(buildDiaryArchiveEntries(throughPower).map((diary) => diary.playerName)).toEqual(["Lyra", "Atlas"]);
+  });
+
+  it("detects when replay playback has reached the final results moment", () => {
+    const transcript = [
+      entry({ id: 1, phase: "LOBBY", timestamp: 100 }),
+      entry({ id: 2, phase: "VOTE", timestamp: 200 }),
+      entry({ id: 3, phase: "END", text: "Atlas wins.", timestamp: 300 }),
+    ];
+
+    expect(isReplayAtFinalResults(transcript, [transcript[0]!, transcript[1]!])).toBe(false);
+    expect(isReplayAtFinalResults(transcript, transcript)).toBe(true);
+    expect(isReplayAtFinalResults(transcript, [transcript[0]!, transcript[2]!])).toBe(true);
+  });
+
+  it("keeps final results detection off before replay playback starts", () => {
+    const transcript = [entry({ id: 1, phase: "END", text: "Atlas wins.", timestamp: 100 })];
+
+    expect(isReplayAtFinalResults([], [])).toBe(false);
+    expect(isReplayAtFinalResults(transcript, [])).toBe(false);
+    expect(isReplayAtFinalResults(transcript, null)).toBe(false);
   });
 });
 
