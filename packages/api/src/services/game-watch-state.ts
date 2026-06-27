@@ -1,4 +1,9 @@
-import { buildPostVotePressureProjection, type PostVotePressureStatus } from "@influence/engine";
+import {
+  applyCanonicalEvent,
+  buildPostVotePressureProjection,
+  createEmptyProjection,
+  type PostVotePressureStatus,
+} from "@influence/engine";
 import { asc, eq, or } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -9,6 +14,7 @@ import {
 } from "./game-event-read-model.js";
 import {
   getPersistedGameProjection,
+  summarizeCanonicalProjection,
   type PersistedGameProjectionRead,
   type ProjectionReplayDiagnostic,
 } from "./game-projection-read-model.js";
@@ -112,6 +118,19 @@ export interface GameWatchState {
     name: string;
     method?: string;
   };
+}
+
+export interface GameWatchReplayFrame {
+  schemaVersion: 1;
+  gameId: string;
+  slug?: string;
+  sequence: number;
+  eventType: string;
+  timestamp: number;
+  round: number;
+  phase: string;
+  players: GameWatchPlayer[];
+  counts: GameWatchState["counts"];
 }
 
 interface GameRow {
@@ -242,6 +261,58 @@ export async function buildGameWatchState(
     final,
     ...(winner && { winner }),
   };
+}
+
+export async function getGameWatchReplayFrames(
+  db: GameWatchDB,
+  idOrSlug: string,
+): Promise<GameWatchReplayFrame[] | null> {
+  const game = (await db
+    .select({
+      id: schema.games.id,
+      slug: schema.games.slug,
+      config: schema.games.config,
+      status: schema.games.status,
+    })
+    .from(schema.games)
+    .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug)))
+    .limit(1))[0];
+
+  if (!game) return null;
+
+  const [players, persistedEvents] = await Promise.all([
+    loadPlayerIdentities(db, game.id),
+    getPersistedGameEvents(db, game.id),
+  ]);
+  if (persistedEvents.events.length === 0) return [];
+
+  const frames: GameWatchReplayFrame[] = [];
+  let projection = createEmptyProjection(game.id);
+
+  for (const event of persistedEvents.events) {
+    projection = applyCanonicalEvent(projection, event.envelope);
+    const summary = summarizeCanonicalProjection(projection);
+    const pressureByPlayerId = buildPressureByPlayerId(summary);
+    const framePlayers = buildProjectedPlayers(
+      players,
+      summary.players.players,
+      pressureByPlayerId,
+    );
+    frames.push({
+      schemaVersion: 1,
+      gameId: game.id,
+      ...(game.slug && { slug: game.slug }),
+      sequence: event.sequence,
+      eventType: event.eventType,
+      timestamp: Date.parse(event.envelope.timestamp),
+      round: summary.round,
+      phase: summary.phase ?? "INIT",
+      players: framePlayers,
+      counts: countPlayers(framePlayers),
+    });
+  }
+
+  return frames;
 }
 
 async function loadPlayerIdentities(

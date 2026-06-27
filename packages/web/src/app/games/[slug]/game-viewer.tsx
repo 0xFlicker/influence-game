@@ -5,11 +5,13 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useRouter } from "next/navigation";
 import {
   getGame,
+  getGameReplayWatchFrames,
   getGameTranscript,
   getAuthToken,
   type GameDetail,
   type GameSummary,
   type GameStatus,
+  type GameWatchReplayFrame,
   type TranscriptEntry,
   type WsGameEvent,
   type PhaseKey,
@@ -65,6 +67,7 @@ export function GameViewer({
   gameId,
   initialGame,
   initialMessages,
+  initialReplayFrames,
 }: GameViewerProps) {
   const { authenticated, login } = usePrivy();
   const router = useRouter();
@@ -73,6 +76,9 @@ export function GameViewer({
   const [game, setGame] = useState<GameDetail | null>(initialGame ?? null);
   const [messages, setMessages] = useState<TranscriptEntry[]>(
     initialMessages ?? [],
+  );
+  const [replayFrames, setReplayFrames] = useState<GameWatchReplayFrame[]>(
+    initialReplayFrames ?? [],
   );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [replayIndex, setReplayIndex] = useState<number>(0);
@@ -195,7 +201,9 @@ export function GameViewer({
           gameData.status === "cancelled"
         ) {
           const transcript = await getGameTranscript(gameId);
+          const frames = await getGameReplayWatchFrames(gameId);
           setMessages(transcript);
+          setReplayFrames(frames);
           setReplayIndex(transcript.length > 0 ? transcript.length - 1 : 0);
         }
       } catch (err) {
@@ -616,6 +624,7 @@ export function GameViewer({
       <MatchWatchShell
         game={game}
         messages={messages}
+        replayFrames={replayFrames}
         live={matchWatchDecision.mode === "live"}
         connStatus={connStatus}
       />
