@@ -32,6 +32,20 @@ describe("/get-mcp setup page", () => {
     );
   });
 
+  it("does not show non-actionable MCP App provider planning notes", () => {
+    const clients = buildMcpSetupClients("https://api.influence.example/mcp");
+
+    expect(clients.map((client) => client.id)).toEqual([
+      "codex",
+      "claude-code",
+    ]);
+    expect(combinedSource).not.toContain("ChatGPT");
+    expect(combinedSource).not.toContain("Grok");
+    expect(combinedSource).not.toContain("MCP App setup");
+    expect(combinedSource).not.toContain("provider-specific blockers");
+  });
+
+
   it("includes sign-in and browser OAuth guidance", () => {
     expect(combinedSource).toContain("sign in before completing");
     expect(combinedSource).toContain("OAuth-backed setup");

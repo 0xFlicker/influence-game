@@ -33,6 +33,11 @@ import {
   type McpOAuthAuditMetadata,
   secretsEqual,
 } from "../services/mcp-oauth.js";
+import {
+  parseMcpAppProviderId,
+  type McpAppAuditStage,
+  type McpAppProviderId,
+} from "../game-mcp/provider-profiles.js";
 
 export type McpOAuthAuditEventName =
   | "mcp.oauth.register"
@@ -46,6 +51,9 @@ export interface McpOAuthAuditEvent extends McpOAuthAuditMetadata {
   result: "success" | "failure";
   status: number;
   decision?: string;
+  providerId?: McpAppProviderId;
+  appStage?: McpAppAuditStage;
+  redirectUriFamily?: "loopback" | "localhost" | "https" | "custom" | "unknown";
   denialReason?: string;
   active?: boolean;
 }
@@ -67,6 +75,7 @@ export function createMcpOAuthRoutes(
         correlationId,
         result: "failure",
         status: 400,
+        providerId: providerIdHint(c),
         denialReason: "invalid_request",
       });
       return c.json({ error: "invalid_request", error_description: "Invalid request body" }, 400);
@@ -80,6 +89,8 @@ export function createMcpOAuthRoutes(
       scope: result.audit?.scope ?? safeAuditString(result.body.scope),
       result: result.status === 201 ? "success" : "failure",
       status: result.status,
+      providerId: providerIdHint(c),
+      appStage: "discovery",
       denialReason: result.status === 201 ? undefined : bodyErrorCode(result.body),
     });
     return c.json(result.body, result.status);
@@ -96,6 +107,8 @@ export function createMcpOAuthRoutes(
         walletAddress: c.get("user").walletAddress ?? undefined,
         result: "failure",
         status: 400,
+        providerId: providerIdHint(c),
+        appStage: "oauth_start",
         denialReason: "invalid_request",
       });
       return c.json({ error: "invalid_request", error_description: "Invalid request body" }, 400);
@@ -113,6 +126,9 @@ export function createMcpOAuthRoutes(
       scope: safeAuditString(body.scope),
       authProfile: auditAuthProfileForRequest(body.scope, body.resource),
       decision,
+      providerId: providerIdHint(c),
+      appStage: "oauth_start",
+      redirectUriFamily: redirectUriFamily(body.redirect_uri),
       result: authorizeAuditResult(result.status, decision),
       status: result.status,
       denialReason: authorizeDenialReason(result.body, result.status, decision),
@@ -129,6 +145,8 @@ export function createMcpOAuthRoutes(
         correlationId,
         result: "failure",
         status: 400,
+        providerId: providerIdHint(c),
+        appStage: "callback_token_exchange",
         denialReason: "invalid_request",
       });
       return c.json({ error: "invalid_request", error_description: "Invalid request body" }, 400);
@@ -144,6 +162,9 @@ export function createMcpOAuthRoutes(
       resource: result.audit?.resource ?? safeAuditString(body.resource),
       scope: result.audit?.scope ?? safeAuditString(result.body.scope),
       authProfile: result.audit?.authProfile ?? auditAuthProfileForScope(result.body.scope),
+      providerId: providerIdHint(c),
+      appStage: "callback_token_exchange",
+      redirectUriFamily: redirectUriFamily(body.redirect_uri),
       result: result.status === 200 ? "success" : "failure",
       status: result.status,
       denialReason: result.status === 200 ? undefined : bodyErrorCode(result.body),
@@ -160,6 +181,7 @@ export function createMcpOAuthRoutes(
         correlationId,
         result: "failure",
         status: 503,
+        providerId: providerIdHint(c),
         denialReason: "server_error",
       });
       return c.json(
@@ -181,6 +203,7 @@ export function createMcpOAuthRoutes(
         correlationId,
         result: "failure",
         status: 401,
+        providerId: providerIdHint(c),
         denialReason: "invalid_client",
       });
       return c.json(
@@ -200,6 +223,7 @@ export function createMcpOAuthRoutes(
         correlationId,
         result: "failure",
         status: 400,
+        providerId: providerIdHint(c),
         denialReason: "invalid_request",
       });
       return c.json(
@@ -220,6 +244,7 @@ export function createMcpOAuthRoutes(
       resource: introspection.resource,
       scope: introspection.scope,
       authProfile: auditAuthProfileForScope(introspection.scope),
+      providerId: providerIdHint(c),
       result: introspection.active ? "success" : "failure",
       status: 200,
       denialReason: introspection.active ? undefined : "inactive_token",
@@ -318,6 +343,24 @@ function auditAuthProfileForRequest(
 
 function bodyErrorCode(body: Record<string, unknown>): string | undefined {
   return safeAuditString(body.error);
+}
+
+function providerIdHint(c: Context): McpAppProviderId | undefined {
+  return parseMcpAppProviderId(c.req.header("x-mcp-app-provider"));
+}
+
+function redirectUriFamily(value: unknown): McpOAuthAuditEvent["redirectUriFamily"] {
+  const uri = safeAuditString(value);
+  if (!uri) return undefined;
+  try {
+    const parsed = new URL(uri);
+    if (parsed.hostname === "127.0.0.1" || parsed.hostname === "::1") return "loopback";
+    if (parsed.hostname === "localhost") return "localhost";
+    if (parsed.protocol === "https:") return "https";
+    return "custom";
+  } catch {
+    return "unknown";
+  }
 }
 
 function authorizeAuditResult(

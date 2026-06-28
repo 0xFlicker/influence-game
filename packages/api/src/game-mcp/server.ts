@@ -12,6 +12,12 @@ import type {
   CognitiveArtifactActorRole,
   CognitiveArtifactType,
 } from "../db/schema.js";
+import {
+  INFLUENCE_MCP_APP_RESOURCE_URI,
+  createInfluenceMcpAppResource,
+  createInfluenceMcpAppResourceContent,
+  createInfluenceMcpAppToolMeta,
+} from "./app-resource.js";
 
 export interface JsonRpcRequest {
   jsonrpc?: "2.0";
@@ -95,19 +101,25 @@ export class ProductionGameMcpJsonRpcServer {
     }
 
     if (method === "resources/list") {
+      const resources = [
+        {
+          uri: "influence-game://deployed/games",
+          name: isProducer ? "Deployed Influence games" : "Your Influence games",
+          mimeType: "application/json",
+        },
+      ];
       return {
-        resources: [
-          {
-            uri: "influence-game://deployed/games",
-            name: isProducer ? "Deployed Influence games" : "Your Influence games",
-            mimeType: "application/json",
-          },
-        ],
+        resources: isProducer ? resources : [...resources, createInfluenceMcpAppResource()],
       };
     }
 
     if (method === "resources/read") {
       const uri = String(asRecord(params).uri ?? "");
+      if (!isProducer && uri === INFLUENCE_MCP_APP_RESOURCE_URI) {
+        return {
+          contents: [createInfluenceMcpAppResourceContent()],
+        };
+      }
       if (uri !== "influence-game://deployed/games") {
         throw new Error(`Unknown resource URI: ${uri}`);
       }
@@ -207,6 +219,7 @@ function productionGameMcpTools(scope: McpOAuthScope, includeProducerTools: bool
         limit: { type: "number" },
       },
       scope,
+      appMeta: includeProducerTools ? undefined : createInfluenceMcpAppToolMeta(),
     }),
     tool({
       name: "read_projection",
@@ -358,6 +371,7 @@ function tool(input: {
   properties: Record<string, unknown>;
   required?: string[];
   scope: McpOAuthScope;
+  appMeta?: Record<string, unknown>;
 }): unknown {
   const securityScheme = oauthSecurityScheme(input.scope);
   return {
@@ -369,8 +383,12 @@ function tool(input: {
       ...(input.required && { required: input.required }),
     },
     securitySchemes: [securityScheme],
+    annotations: {
+      readOnlyHint: true,
+    },
     _meta: {
       securitySchemes: [securityScheme],
+      ...input.appMeta,
     },
   };
 }

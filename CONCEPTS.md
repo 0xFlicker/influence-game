@@ -158,6 +158,10 @@ A local developer bridge that validates a token with `scope=mcp` before delegati
 
 A deployed Streamable HTTP MCP resource server for trusted validation against API-backed Influence game data. `/mcp` is the user-facing `scope=games` resource constrained by subject claims, while `/mcp/producer` is the privileged `scope=mcp` resource for global producer inspection and private trace tooling.
 
+## Influence MCP App
+
+The host-rendered app layer above Production Game MCP for end-user AI app surfaces such as ChatGPT, Claude, and Grok. An Influence MCP App proves app discovery, OAuth authorization, app-resource or iframe boot, and at least one real `scope=games` read before it tries to become a polished game browser. It is not a new producer scope, a replacement for `/mcp` and `/mcp/producer`, a general third-party OAuth app platform, or evidence that producer private traces are user-visible.
+
 ## Durable game-run kernel
 
 The first durable API runtime layer for live game execution. It binds API game identity into canonical events, persists ordered accepted-domain facts, enforces single-writer ownership, and defines checkpoint/evidence boundaries. It is not itself a claim that stopped games can resume; resume depends on later checkpoint hydration.

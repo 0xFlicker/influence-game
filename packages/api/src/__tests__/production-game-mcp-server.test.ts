@@ -3,6 +3,10 @@ import {
   ProductionGameMcpJsonRpcServer,
   createProductionGameMcpServer,
 } from "../game-mcp/server.js";
+import {
+  INFLUENCE_MCP_APP_RESOURCE_URI,
+  createInfluenceMcpAppResourceContent,
+} from "../game-mcp/app-resource.js";
 import type { DrizzleDB } from "../db/index.js";
 import {
   ProductionGameMcpReadModel,
@@ -81,6 +85,153 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(JSON.stringify(tools)).toContain("\"scopes\":[\"games\"]");
     expect(JSON.stringify(tools)).not.toContain("read_trace_content");
     expect(JSON.stringify(tools)).not.toContain("\"scopes\":[\"mcp\"]");
+  });
+
+  test("advertises list_games as the user-facing MCP App entry point", async () => {
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+    }, GAMES_AUTH);
+
+    expect(response?.error).toBeUndefined();
+    const tools = ((response?.result as { tools: unknown[] }).tools);
+    const listGames = tools.find((tool) =>
+      (tool as { name: string }).name === "list_games"
+    ) as { _meta: Record<string, unknown>; securitySchemes: unknown[] };
+
+    expect(listGames._meta["openai/outputTemplate"]).toBe(INFLUENCE_MCP_APP_RESOURCE_URI);
+    expect(listGames._meta["openai/widgetAccessible"]).toBe(true);
+    expect(listGames._meta.securitySchemes).toEqual(listGames.securitySchemes);
+    expect(JSON.stringify(listGames)).toContain("\"scopes\":[\"games\"]");
+  });
+
+  test("does not advertise producer tools as MCP App entry points", async () => {
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+    }, PRODUCER_AUTH);
+
+    expect(response?.error).toBeUndefined();
+    const tools = ((response?.result as { tools: unknown[] }).tools);
+    expect(JSON.stringify(tools)).not.toContain("openai/outputTemplate");
+    expect(JSON.stringify(tools)).toContain("read_trace_content");
+  });
+
+  test("lists and reads the user-facing MCP App HTML resource", async () => {
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
+    const listed = await server.handle({
+      jsonrpc: "2.0",
+      id: "resources",
+      method: "resources/list",
+    }, GAMES_AUTH);
+    const resources = (listed?.result as { resources: Array<{ uri: string }> }).resources;
+
+    expect(resources.map((resource) => resource.uri)).toContain(INFLUENCE_MCP_APP_RESOURCE_URI);
+
+    const read = await server.handle({
+      jsonrpc: "2.0",
+      id: "app",
+      method: "resources/read",
+      params: { uri: INFLUENCE_MCP_APP_RESOURCE_URI },
+    }, GAMES_AUTH);
+
+    expect(read?.error).toBeUndefined();
+    const contents = (read?.result as { contents: Array<{ mimeType: string; text: string; _meta?: unknown }> }).contents;
+    expect(contents[0]?.mimeType).toBe("text/html");
+    expect(contents[0]?.text).toContain("<!doctype html>");
+    expect(contents[0]?.text).toContain("Influence games");
+    expect(contents[0]?.text).toContain("callTool(\"list_games\"");
+    expect(contents[0]?.text).toContain("JSON.parse(text.text)");
+    expect(contents[0]?.text).toContain("Promise.race");
+    expect(contents[0]?.text).toContain("Timed out while reading Influence games.");
+    expect(contents[0]?.text).not.toContain("return {};");
+    expect(contents[0]?.text).not.toContain("<iframe");
+    expect(contents[0]?.text).not.toContain("access_token");
+    expect(contents[0]?.text).not.toContain("Authorization");
+    expect(contents[0]?.text).not.toContain("/mcp/producer");
+    expect(contents[0]?.text).not.toContain("read_trace_content");
+    expect(JSON.stringify(contents[0]?._meta)).toContain("openai/widgetDescription");
+  });
+
+  test("MCP App HTML renders games through the host tool bridge", async () => {
+    const app = await runMcpAppHtml({
+      callTool: async () => ({
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            canonicalGameFacts: {
+              games: [{
+                slug: "season-one",
+                status: "running",
+                trackType: "mingle",
+                createdAt: "2026-06-28",
+              }],
+            },
+          }),
+        }],
+      }),
+    });
+
+    expect(app.status.textContent).toBe("Connected");
+    expect(app.summary.textContent).toBe("Connected. 1 game available.");
+    expect(app.games.children).toHaveLength(1);
+    expect(app.games.children[0]?.textContent).toContain("season-one");
+    expect(app.games.children[0]?.textContent).toContain("running");
+  });
+
+  test("MCP App HTML renders bridge, malformed payload, and timeout failures", async () => {
+    const missingBridge = await runMcpAppHtml(undefined);
+    expect(missingBridge.status.textContent).toBe("Bridge unavailable");
+    expect(missingBridge.summary.textContent).toContain("did not expose a tool bridge");
+
+    const malformed = await runMcpAppHtml({
+      callTool: async () => ({
+        content: [{ type: "text", text: "{not json" }],
+      }),
+    });
+    expect(malformed.status.textContent).toBe("Read failed");
+    expect(malformed.summary.textContent).toContain("JSON");
+    expect(malformed.summary.textContent).not.toContain("No Influence games");
+
+    const timedOut = await runMcpAppHtml({
+      callTool: () => new Promise(() => undefined),
+    }, {
+      setTimeout: (handler) => {
+        handler();
+        return 0;
+      },
+    });
+    expect(timedOut.status.textContent).toBe("Read failed");
+    expect(timedOut.summary.textContent).toBe("Timed out while reading Influence games.");
+  });
+
+  test("does not list the MCP App resource for producer auth", async () => {
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
+    const listed = await server.handle({
+      jsonrpc: "2.0",
+      id: "resources",
+      method: "resources/list",
+    }, PRODUCER_AUTH);
+    const resources = (listed?.result as { resources: Array<{ uri: string }> }).resources;
+
+    expect(resources.map((resource) => resource.uri)).not.toContain(INFLUENCE_MCP_APP_RESOURCE_URI);
+  });
+
+  test("rejects the MCP App resource for producer auth", async () => {
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
+    const read = await server.handle({
+      jsonrpc: "2.0",
+      id: "producer-app",
+      method: "resources/read",
+      params: { uri: INFLUENCE_MCP_APP_RESOURCE_URI },
+    }, PRODUCER_AUTH);
+
+    expect(read?.result).toBeUndefined();
+    expect(read?.error?.message).toContain(`Unknown resource URI: ${INFLUENCE_MCP_APP_RESOURCE_URI}`);
   });
 
   test("routes tool calls to the production read model", async () => {
@@ -408,6 +559,76 @@ function fakeReadModel(
     readCognitiveArtifact: async () => ({ artifact: null }),
     ...overrides,
   } as unknown as ProductionGameMcpReadModel;
+}
+
+class FakeElement {
+  className = "";
+  children: FakeElement[] = [];
+  private text = "";
+
+  get textContent(): string {
+    return this.text || this.children.map((child) => child.textContent).join("");
+  }
+
+  set textContent(value: string) {
+    this.text = value;
+    this.children = [];
+  }
+
+  append(...children: FakeElement[]): void {
+    this.children.push(...children);
+  }
+}
+
+type FakeOpenAiBridge = {
+  callTool: (...args: unknown[]) => unknown;
+};
+
+async function runMcpAppHtml(
+  openai?: FakeOpenAiBridge,
+  options: {
+    setTimeout?: (handler: () => void, timeout?: number) => unknown;
+  } = {},
+): Promise<{
+  status: FakeElement;
+  summary: FakeElement;
+  games: FakeElement;
+}> {
+  const html = createInfluenceMcpAppResourceContent().text;
+  const script = html.match(/<script>\n([\s\S]*?)\n  <\/script>/)?.[1];
+  if (!script) throw new Error("MCP App script was not found");
+
+  const elements: {
+    status: FakeElement;
+    summary: FakeElement;
+    games: FakeElement;
+    [id: string]: FakeElement;
+  } = {
+    status: new FakeElement(),
+    summary: new FakeElement(),
+    games: new FakeElement(),
+  };
+  const documentShim = {
+    getElementById: (id: string) => elements[id],
+    createElement: (_tagName: string) => new FakeElement(),
+  };
+  const windowShim: {
+    openai?: FakeOpenAiBridge;
+    setTimeout: (handler: () => void, timeout?: number) => unknown;
+  } = {
+    setTimeout: options.setTimeout ??
+      ((handler, timeout) => globalThis.setTimeout(handler, timeout)),
+  };
+  if (openai) windowShim.openai = openai;
+
+  new Function("window", "document", script)(windowShim, documentShim);
+  await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
+
+  return {
+    status: elements.status,
+    summary: elements.summary,
+    games: elements.games,
+  };
 }
 
 function restoreEnv(key: string, value: string | undefined): void {

@@ -9,6 +9,8 @@ There are two MCP resource profiles:
 
 Do not reinterpret `scope=mcp` as user-scoped. Do not expose private trace content or trace metadata through `scope=games`; trace remains producer-only. User-facing reasoning/thinking/strategy access uses first-class cognitive artifact rows captured for new games, never reads or reconstructs from producer private traces.
 
+The MCP App v1 is a thin install proof on top of the user-facing `/mcp` resource. The server returns a raw HTML app resource (`ui://influence/app`) and app-capable hosts render that document inside their own sandboxed iframe. The v1 app does not require a separate Next.js page and does not receive tokens in the resource body or URL.
+
 The public web watch websocket is a separate viewer surface, not an MCP resource. It may carry viewer-safe transcript text, room metadata, and `thinking` selected into the public websocket transcript payload, but websocket hardening does not grant `scope=games` access to producer traces or change the `/mcp` and `/mcp/producer` split.
 
 ## Server Surface
@@ -23,6 +25,7 @@ The public web watch websocket is a separate viewer surface, not an MCP resource
 - Dynamic public client registration: `POST /api/oauth/mcp/register`
 - Authorization endpoint: web `/oauth/mcp/authorize`
 - Token endpoint: API `/api/oauth/mcp/token`
+- MCP App resource: `resources/read` for `ui://influence/app` under `/mcp` only
 
 Both MCP endpoints require `Authorization: Bearer <mcp-token>` on every request, reject bearer tokens in query strings, validate `Origin` when present, accept one JSON-RPC message per POST, return JSON for normal requests, and return `202 Accepted` for accepted notifications/responses.
 
@@ -86,6 +89,8 @@ Producer MCP exposes the same read-only game and cognitive artifact tools with p
 
 `scope=games` cannot discover or invoke producer trace tools and cannot request producer event visibility. Cognitive artifact reads under `scope=games` authorize before returning no-capture or row-existence information. Old games and pre-capture games return `not_captured_for_game` only after the caller is authorized for that game/actor context. `scope=mcp` on `/mcp/producer` preserves the existing global developer access contract and may read split cognitive artifacts directly without using raw trace content as a substitute.
 
+`list_games` is the first app-backed tool. Under `scope=games`, its descriptor includes the OAuth security scheme plus the app UI resource metadata that points to `ui://influence/app`. Producer tools and `/mcp/producer` descriptors do not advertise app UI entry points.
+
 `read_trace_content` defaults to an 8 MiB raw trace read limit and clamps tool-supplied `maxBytes` at 64 MiB. `search_reasoning_traces` exposes `limit` for result count and `maxBytes` for the per-object scan prefix. Both use ranged private-storage reads, so byte caps limit object-store bandwidth and returned content rather than rejecting larger trace objects. These are response-content bounds, separate from the MCP request body limit.
 
 ## Client Paths
@@ -128,8 +133,25 @@ ChatGPT/App SDK compatibility depends on:
 - `WWW-Authenticate` challenges that point at the matching protected-resource metadata and exact scope.
 - Authorization server metadata with authorization endpoint, token endpoint, PKCE S256, dynamic registration, and `scopes_supported`.
 - Tool descriptors carrying OAuth security schemes for the active scope.
+- An app manifest/component configuration that can fetch `ui://influence/app` and render the returned HTML resource in the host iframe.
 
-Public app submission, app UI components, per-tool linking policy, and broad tester rollout remain out of scope.
+Public app submission, polished app UX, per-tool linking policy, and broad tester rollout remain out of scope.
+
+### MCP App Provider Testing
+
+The first MCP App release is production-learning oriented. A useful v1 result is at least one production host completing discovery, OAuth, app resource fetch, iframe boot, and `list_games`. The maintainer can test ChatGPT, Claude, and Grok manually and paste notes, screenshots, host-visible errors, and server correlation IDs into the next planning or debugging agent.
+
+Provider expectations:
+
+| Provider | Type | Current expectation |
+|---|---|---|
+| ChatGPT | MCP App | Requires app manifest/component configuration and a production HTTPS origin for meaningful proof. |
+| Claude | MCP App | Requires the specific Influence client ID to be added to Claude settings before OAuth can complete. |
+| Grok | MCP App | Attempt the standard MCP App path first; if it fails opaquely, record the last observed stage. |
+| Codex | Tool client | Known Streamable HTTP MCP/OAuth compatibility row; does not prove iframe app support. |
+| Claude Code | Tool client | Known Streamable HTTP MCP/OAuth compatibility row; does not prove iframe app support. |
+
+For manual notes, use the same plain-language checkpoints: discovery, OAuth start, callback/token exchange, app resource fetch, iframe boot, and first `list_games` call. If a host warns that refresh tokens are required, capture the exact warning text and server correlation ID, then plan refresh-token support as a follow-up only if provider evidence proves it is required.
 
 ## Operational Checks
 
@@ -142,17 +164,18 @@ Before calling the slice ready on staging:
 5. Wrong resource, wrong scope, expired, revoked, or app-session tokens fail before any read model runs.
 6. A valid `games` token can initialize, list only accessible games, read an accessible projection, read revealed round facts, filter player-visible events, list/read authorized cognitive artifacts, and cannot discover or call trace tools.
 7. A valid producer `mcp` token can initialize `/mcp/producer`, list producer tools, list/read split cognitive artifacts, and read/search private trace content when storage is configured.
-8. Resource-selected OAuth events and MCP request events include correlation ID, method/tool, user/client/resource, issued scope, auth profile, result, status, and denial reason. Dynamic client registration audit records the requested scope set but has no selected auth profile until authorization chooses a resource. Audits never include raw tokens, auth headers, authorization codes, PKCE verifiers, raw prompts, raw responses, reasoning bodies, or storage credentials.
+8. Resource-selected OAuth events and MCP request events include correlation ID, method/tool, user/client/resource, issued scope, auth profile, result, status, provider hint when supplied, app stage when derivable, redirect URI family when present, and denial reason. Dynamic client registration audit records the requested scope set but has no selected auth profile until authorization chooses a resource. Audits never include raw tokens, auth headers, authorization codes, PKCE verifiers, raw prompts, raw responses, reasoning bodies, private trace content, or storage credentials.
+9. Manual staging or production install attempts for ChatGPT, Claude, and Grok have notes with date, provider, last visible checkpoint, host-visible error, screenshot if useful, and server correlation ID when available.
 
 ## Out Of Scope
 
 - User-facing private trace representation, trace-derived summaries, or trace-backed fallback reads.
 - Polished cognitive artifact UX; this slice exposes raw authorized split artifacts and minimal API/client types only.
 - App-side rate limiting. Put rate limiting behind a real gateway in a later durable deploy hardening pass.
-- Refresh tokens.
+- Refresh-token issuance, rotation, reuse detection, and revocation until provider evidence proves it is required.
 - Confidential-client management, client secrets, and a general third-party OAuth app platform.
 - Mutation tools or game lifecycle controls.
-- Public ChatGPT app submission and app UI widgets.
+- Public ChatGPT app submission, broad tester rollout, polished MCP App UX, and a full admin UI for provider install results.
 
 ## References
 

@@ -132,6 +132,79 @@ describe("MCP OAuth routes", () => {
     }
   });
 
+  test("audits MCP App provider and token-exchange redirect family", async () => {
+    const token = await app.request("/api/oauth/mcp/token", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-mcp-app-provider": "chatgpt",
+      },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: "missing-client",
+        redirect_uri: "http://127.0.0.1:49281/callback",
+        resource: RESOURCE_URI,
+        code: "missing-code",
+        code_verifier: "verifier",
+      }).toString(),
+    });
+
+    expect(token.status).toBe(400);
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      event: "mcp.oauth.token",
+      providerId: "chatgpt",
+      appStage: "callback_token_exchange",
+      redirectUriFamily: "loopback",
+      result: "failure",
+    }));
+    expect(JSON.stringify(auditEvents)).not.toContain("verifier");
+    expect(JSON.stringify(auditEvents)).not.toContain("missing-code");
+  });
+
+  test("classifies token-exchange redirect URI families for provider debugging", async () => {
+    const cases: Array<{
+      redirectUri?: string;
+      expected?: McpOAuthAuditEvent["redirectUriFamily"];
+    }> = [
+      { redirectUri: "http://localhost:49281/callback", expected: "localhost" },
+      { redirectUri: "https://chatgpt.example/oauth/callback", expected: "https" },
+      { redirectUri: "myapp://callback", expected: "custom" },
+      { redirectUri: "not a uri", expected: "unknown" },
+      { redirectUri: undefined, expected: undefined },
+    ];
+
+    for (const testCase of cases) {
+      auditEvents = [];
+      const body = new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: "missing-client",
+        resource: RESOURCE_URI,
+        code: "missing-code",
+        code_verifier: "verifier",
+      });
+      if (testCase.redirectUri !== undefined) {
+        body.set("redirect_uri", testCase.redirectUri);
+      }
+
+      const token = await app.request("/api/oauth/mcp/token", {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          "x-mcp-app-provider": "claude",
+        },
+        body: body.toString(),
+      });
+
+      expect(token.status).toBe(400);
+      expect(auditEvents.at(-1)).toMatchObject({
+        event: "mcp.oauth.token",
+        providerId: "claude",
+        appStage: "callback_token_exchange",
+        redirectUriFamily: testCase.expected,
+      });
+    }
+  });
+
   test("registers public OAuth clients for fresh games-scope client installs", async () => {
     const registration = await app.request("/api/oauth/mcp/register", {
       method: "POST",

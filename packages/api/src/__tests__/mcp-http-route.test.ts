@@ -148,6 +148,59 @@ describe("/mcp Streamable HTTP route", () => {
     expect(JSON.stringify(auditEvents)).not.toContain("private-key-detail");
   });
 
+  test("audits MCP App stages and provider hints without changing authorization", async () => {
+    const auditEvents: Array<Record<string, unknown>> = [];
+    const app = createTestApp({
+      handle: async (request) => ({
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        result: { ok: true },
+      }),
+    }, {
+      auditLogger: (event) => auditEvents.push(event),
+    });
+
+    await app.request("/mcp", {
+      method: "POST",
+      headers: jsonHeaders({
+        Authorization: "Bearer good-token",
+        "x-mcp-app-provider": "grok",
+      }),
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "app-resource",
+        method: "resources/read",
+        params: { uri: "ui://influence/app" },
+      }),
+    });
+    await app.request("/mcp", {
+      method: "POST",
+      headers: jsonHeaders({
+        Authorization: "Bearer good-token",
+        "x-mcp-app-provider": "grok",
+      }),
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "list-games",
+        method: "tools/call",
+        params: { name: "list_games", arguments: { limit: 5 } },
+      }),
+    });
+
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      providerId: "grok",
+      appStage: "app_resource_fetch",
+      appResourceUri: "ui://influence/app",
+      method: "resources/read",
+    }));
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      providerId: "grok",
+      method: "tools/call",
+      tool: "list_games",
+      appStage: undefined,
+    }));
+  });
+
   test("rejects unsupported protocol versions before dispatch", async () => {
     const calls: string[] = [];
     const app = createTestApp({

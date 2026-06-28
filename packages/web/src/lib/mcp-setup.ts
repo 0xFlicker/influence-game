@@ -1,7 +1,7 @@
 export const DEFAULT_MCP_SERVER_NAME = "influence-game";
 export const DEFAULT_LOCAL_API_URL = "http://127.0.0.1:3000";
 
-export type McpSetupClientId = "codex" | "claude";
+export type McpSetupClientId = "codex" | "claude-code";
 
 export interface McpSetupClient {
   id: McpSetupClientId;
@@ -56,7 +56,7 @@ export function buildMcpSetupClients(
       authHint: "Use login later if the saved MCP token expires and Codex needs a refresh.",
     },
     {
-      id: "claude",
+      id: "claude-code",
       name: "Claude Code",
       summary: "Add the HTTP MCP server, then authenticate when Claude Code prompts.",
       commands: [

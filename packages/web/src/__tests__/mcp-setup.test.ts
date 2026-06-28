@@ -20,7 +20,10 @@ describe("buildMcpSetupClients", () => {
   it("builds Codex and Claude Code command snippets for the same MCP URL", () => {
     const clients = buildMcpSetupClients("https://api.influence.example/mcp");
 
-    expect(clients.map((client) => client.id)).toEqual(["codex", "claude"]);
+    expect(clients.map((client) => client.id)).toEqual([
+      "codex",
+      "claude-code",
+    ]);
     expect(clients[0]?.commands).toEqual([
       "codex mcp add influence-game --url https://api.influence.example/mcp",
     ]);
@@ -42,5 +45,7 @@ describe("buildMcpSetupClients", () => {
     expect(serialized).not.toContain("scope=mcp");
     expect(serialized).not.toContain("TOML");
     expect(serialized).not.toContain("JSON config");
+    expect(serialized).not.toContain("ChatGPT");
+    expect(serialized).not.toContain("Grok");
   });
 });

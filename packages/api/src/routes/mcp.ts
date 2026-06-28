@@ -19,6 +19,14 @@ import {
   type JsonRpcResponse,
   type ProductionGameMcpJsonRpcServer,
 } from "../game-mcp/server.js";
+import {
+  INFLUENCE_MCP_APP_RESOURCE_URI,
+} from "../game-mcp/app-resource.js";
+import {
+  parseMcpAppProviderId,
+  type McpAppAuditStage,
+  type McpAppProviderId,
+} from "../game-mcp/provider-profiles.js";
 
 const DEFAULT_MAX_POST_BYTES = 1024 * 1024;
 const SUPPORTED_PROTOCOL_VERSIONS = new Set(["2025-06-18", "2025-03-26"]);
@@ -35,6 +43,9 @@ export interface GameMcpAuditEvent {
   authProfile?: string;
   method?: string;
   tool?: string;
+  providerId?: McpAppProviderId;
+  appStage?: McpAppAuditStage;
+  appResourceUri?: string;
   denialReason?: string;
 }
 
@@ -108,6 +119,7 @@ function registerMcpResource(
       resource: auth.context.resource,
       scope: auth.context.scope,
       authProfile: auth.context.authProfile,
+      providerId: providerIdHint(c),
       denialReason: "method_not_allowed",
     });
     c.header("Allow", "POST");
@@ -151,6 +163,7 @@ function registerMcpResource(
         resource: auth.context.resource,
         scope: auth.context.scope,
         authProfile: auth.context.authProfile,
+        providerId: providerIdHint(c),
         denialReason: "parse_error",
       });
       return c.json(response, 400);
@@ -175,6 +188,7 @@ function registerMcpResource(
         resource: auth.context.resource,
         scope: auth.context.scope,
         authProfile: auth.context.authProfile,
+        providerId: providerIdHint(c),
         denialReason: "parse_error",
       });
       return c.json(response, 400);
@@ -192,6 +206,7 @@ function registerMcpResource(
         resource: auth.context.resource,
         scope: auth.context.scope,
         authProfile: auth.context.authProfile,
+        providerId: providerIdHint(c),
         denialReason: validation.reason,
       });
       return validation.status === 202
@@ -212,6 +227,9 @@ function registerMcpResource(
       authProfile: auth.context.authProfile,
       method: validation.request.method,
       tool: toolName(validation.request),
+      providerId: providerIdHint(c),
+      appStage: appStageForRequest(validation.request),
+      appResourceUri: appResourceUriForRequest(validation.request),
       denialReason: response?.error ? "json_rpc_error" : undefined,
     });
 
@@ -238,6 +256,7 @@ async function preflight(
       correlationId,
       result: "failure",
       status: 400,
+      providerId: providerIdHint(c),
       denialReason: "query_token_rejected",
     });
     return {
@@ -255,6 +274,7 @@ async function preflight(
       correlationId,
       result: "failure",
       status: 403,
+      providerId: providerIdHint(c),
       denialReason: "origin_not_allowed",
     });
     return {
@@ -272,6 +292,7 @@ async function preflight(
       correlationId,
       result: "failure",
       status: 401,
+      providerId: providerIdHint(c),
       denialReason: "missing_bearer_token",
     });
     return {
@@ -290,6 +311,7 @@ async function preflight(
       correlationId,
       result: "failure",
       status: 503,
+      providerId: providerIdHint(c),
       denialReason: "token_validation_error",
     });
     return {
@@ -307,6 +329,7 @@ async function preflight(
       correlationId,
       result: "failure",
       status: auth.status,
+      providerId: providerIdHint(c),
       denialReason: auth.reason,
     });
     return {
@@ -386,6 +409,7 @@ function fail(
     resource: auth.resource,
     scope: auth.scope,
     authProfile: auth.authProfile,
+    providerId: providerIdHint(c),
     denialReason,
   });
   return c.json({ error: denialReason }, status);
@@ -433,6 +457,23 @@ function toolName(request: JsonRpcRequest): string | undefined {
   const params = isRecord(request.params) ? request.params : {};
   const name = params.name;
   return typeof name === "string" ? name.slice(0, 160) : undefined;
+}
+
+function appStageForRequest(request: JsonRpcRequest | undefined): McpAppAuditStage | undefined {
+  if (!request) return undefined;
+  if (request.method === "resources/read" && appResourceUriForRequest(request)) return "app_resource_fetch";
+  return undefined;
+}
+
+function appResourceUriForRequest(request: JsonRpcRequest | undefined): string | undefined {
+  if (!request) return undefined;
+  if (request.method !== "resources/read") return undefined;
+  const params = isRecord(request.params) ? request.params : {};
+  return params.uri === INFLUENCE_MCP_APP_RESOURCE_URI ? INFLUENCE_MCP_APP_RESOURCE_URI : undefined;
+}
+
+function providerIdHint(c: Context): McpAppProviderId | undefined {
+  return parseMcpAppProviderId(c.req.header("x-mcp-app-provider"));
 }
 
 function idForError(id: unknown): string | number | null {
