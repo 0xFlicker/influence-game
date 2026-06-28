@@ -17,6 +17,7 @@ import type { UUID, PowerAction, GameConfig } from "@influence/engine";
 import { setupTestDB } from "./test-utils.js";
 import {
   appendDurableEventsAndPublishWatchState,
+  preflightSelectedModel,
   serializeTranscriptEntry,
 } from "../services/game-lifecycle.js";
 import {
@@ -39,6 +40,86 @@ import {
 beforeAll(() => {
   process.env.JWT_SECRET = "test-jwt-secret-lifecycle";
   process.env.ADMIN_ADDRESS = "0xadminlifecycle";
+});
+
+// ---------------------------------------------------------------------------
+// Provider preflight
+// ---------------------------------------------------------------------------
+
+describe("preflightSelectedModel", () => {
+  test("uses model listing for Katana providers", async () => {
+    const calls: string[] = [];
+
+    await preflightSelectedModel(
+      {
+        providerLabel: "Katana (IMGNAI)",
+        client: {
+          models: {
+            async list() {
+              calls.push("list");
+              return { data: [{ id: "grok-4-3" }] };
+            },
+            async retrieve() {
+              calls.push("retrieve");
+              throw new Error("retrieve should not be called for Katana");
+            },
+          },
+        },
+      },
+      "grok-4-3",
+      "katana",
+    );
+
+    expect(calls).toEqual(["list"]);
+  });
+
+  test("reports unavailable Katana models from the listed catalog", async () => {
+    await expect(
+      preflightSelectedModel(
+        {
+          providerLabel: "Katana (IMGNAI)",
+          client: {
+            models: {
+              async list() {
+                return { data: [{ id: "grok-4-3" }] };
+              },
+              async retrieve() {
+                throw new Error("retrieve should not be called for Katana");
+              },
+            },
+          },
+        },
+        "grok-missing",
+        "katana",
+      ),
+    ).rejects.toThrow("Model grok-missing is not available from Katana (IMGNAI)");
+  });
+
+  test("uses model retrieve for non-Katana providers", async () => {
+    const calls: string[] = [];
+
+    await preflightSelectedModel(
+      {
+        providerLabel: "OpenAI",
+        client: {
+          models: {
+            async list() {
+              calls.push("list");
+              return { data: [] };
+            },
+            async retrieve(modelId: string) {
+              calls.push(`retrieve:${modelId}`);
+              return { id: modelId };
+            },
+          },
+        },
+      },
+      "gpt-5-nano",
+      "openai",
+    );
+
+    expect(calls).toEqual(["retrieve:gpt-5-nano"]);
+  });
 });
 
 // ---------------------------------------------------------------------------

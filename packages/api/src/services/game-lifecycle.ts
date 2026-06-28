@@ -27,6 +27,7 @@ import type {
   Personality,
   GameConfig,
   PhaseContext,
+  ProviderProfileId,
   PrivateDecisionTrace,
   PrivateTraceSink,
   PowerAction,
@@ -623,6 +624,33 @@ function publicProviderStartupError(error: unknown): string {
   return String(error);
 }
 
+export interface ModelPreflightClient {
+  providerLabel: string;
+  client: {
+    models: {
+      list: () => Promise<{ data?: Array<{ id: string }> }>;
+      retrieve: (modelId: string) => Promise<unknown>;
+    };
+  };
+}
+
+export async function preflightSelectedModel(
+  llmConfig: ModelPreflightClient,
+  modelId: string,
+  providerProfileId: ProviderProfileId,
+): Promise<void> {
+  if (providerProfileId === "katana") {
+    const models = await llmConfig.client.models.list();
+    const modelIds = models.data?.map((model) => model.id) ?? [];
+    if (!modelIds.includes(modelId)) {
+      throw new Error(`Model ${modelId} is not available from ${llmConfig.providerLabel}`);
+    }
+    return;
+  }
+
+  await llmConfig.client.models.retrieve(modelId);
+}
+
 export async function validateGameStartReadiness(
   db: DrizzleDB,
   gameId: string,
@@ -672,7 +700,11 @@ export async function validateGameStartReadiness(
   }
 
   try {
-    await llmConfig.client.models.retrieve(resolvedModelSelection.modelId);
+    await preflightSelectedModel(
+      llmConfig,
+      resolvedModelSelection.modelId,
+      resolvedModelSelection.providerProfile.id,
+    );
   } catch (error) {
     return {
       error: `LLM provider preflight failed: ${publicProviderStartupError(error)}`,
