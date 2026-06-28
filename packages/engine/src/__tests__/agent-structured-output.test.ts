@@ -1250,6 +1250,7 @@ describe("InfluenceAgent structured output mode", () => {
     const prompt = messages.at(-1)!.content;
     expect(prompt).toContain("## Council Vote Rules");
     expect(prompt).toContain("This is not a normal Vote");
+    expect(prompt).toContain("The normal Council vote is tied");
     expect(prompt).toContain("There is no empower/expose split");
     expect(prompt).toContain("The only elimination choices are the two current Council candidates");
     expect(prompt).toContain("## Your Recent Decisions");
@@ -2061,6 +2062,35 @@ describe("InfluenceAgent structured output mode", () => {
     expect(question).toContain("you were on the Council block");
     expect(question).toContain("did not cast a Council vote");
     expect(question).not.toContain("did you vote");
+  });
+
+  it("asks empowered players about unused tiebreak leverage when Council resolves by plurality", async () => {
+    const house = new TemplateHouseInterviewer();
+
+    const question = await house.generateQuestion({
+      precedingPhase: Phase.COUNCIL,
+      round: 3,
+      agentName: "Finn",
+      alivePlayers: ["Arden", "Nyx", "Cyrus", "Mira", "Finn", "Dax"],
+      activeShieldNames: [],
+      eliminatedPlayers: ["Atlas", "Riven"],
+      lastEliminated: "Nyx",
+      empoweredName: "Finn",
+      councilCandidates: ["Nyx", "Dax"],
+      recentMessages: [],
+      councilRole: {
+        playerName: "Finn",
+        role: "empowered_no_tiebreak_needed",
+        candidateNames: ["Nyx", "Dax"],
+        eliminatedName: "Nyx",
+        survivingCandidateName: "Dax",
+        votedForName: null,
+      },
+    });
+
+    expect(question).toContain("without needing it");
+    expect(question).not.toContain("your Council choice");
+    expect(question).not.toContain("cast a Council vote");
   });
 
   it("preserves thinking and native reasoning for jury votes", async () => {

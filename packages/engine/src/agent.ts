@@ -2386,7 +2386,7 @@ Use the use_power tool to declare your final hidden action.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## Council Vote
-${isEmpowered ? "You are the EMPOWERED agent. Your vote only counts as a TIEBREAKER." : "Vote to eliminate one of the two council candidates."}
+${isEmpowered ? "The normal Council vote is tied. You are the EMPOWERED agent, so this prompt is only for the required TIEBREAKER." : "Vote to eliminate one of the two council candidates."}
 This is not a normal Vote. There is no empower/expose split here; the only choice is which current Council candidate should leave.
 
 Candidates:

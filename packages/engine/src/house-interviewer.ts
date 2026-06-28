@@ -1179,6 +1179,8 @@ CLOSE: <your brief closing remark to the player, 1 sentence>`;
         return `Council voter for surviving candidate ${role.votedForName ?? role.survivingCandidateName ?? "unknown"}.`;
       case "empowered_tiebreaker":
         return `Empowered tiebreaker-only Council choice: ${role.votedForName ?? "unknown"}.`;
+      case "empowered_no_tiebreak_needed":
+        return `Empowered player; Council resolved without needing your tiebreaker.`;
       case "non_voter":
         return `No Council ballot recorded; candidates were ${candidates}.`;
     }
@@ -1263,6 +1265,8 @@ CLOSE: <your brief closing remark to the player, 1 sentence>`;
           situationContext = `${latestEliminatedName ?? "A player"} is gone after the resolved Council, but ${agentName} voted for ${councilRole.votedForName ?? "the survivor"}. Ask why they were on the other side, whether they were protecting ${councilRole.survivingCandidateName ?? councilRole.votedForName ?? "the survivor"}, or what this reveals about their alliances.`;
         } else if (councilRole?.role === "empowered_tiebreaker") {
           situationContext = `${agentName} held empowered tiebreak leverage and named ${councilRole.votedForName ?? "a candidate"} as their tiebreaker-only Council choice. Ask what price, promise, or threat informed that leverage. Do not describe it as a normal Council ballot unless the tie required it.`;
+        } else if (councilRole?.role === "empowered_no_tiebreak_needed") {
+          situationContext = `${agentName} held empowered tiebreak leverage, but the Council resolved without needing a tiebreaker. Ask how it feels to hold unused leverage, whether the outcome matched their preference, or how others' votes changed their plan. Do not imply ${agentName} cast a Council vote or decided the elimination.`;
         } else if (latestEliminatedName) {
           situationContext = `${latestEliminatedName} is the latest player gone after the resolved Council. Ask ${agentName} what this result changes for their relationships, pressure map, or next vote. Do not imply they personally cast a Council vote unless Authoritative Round Facts says they did. Do not describe any surviving candidate as still being in a live Council vote.`;
         } else {
@@ -1632,6 +1636,9 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
         }
         if (councilRole?.role === "empowered_tiebreaker") {
           return `${agentName}, as the empowered player your Council choice was tiebreaker-only. What did ${councilRole.votedForName ?? "that candidate"} need to do to earn or avoid your tiebreaker?`;
+        }
+        if (councilRole?.role === "empowered_no_tiebreak_needed") {
+          return `${agentName}, you held the empowered tiebreaker, but the Council resolved without needing it. Did the room land where you wanted, or did the unused leverage change your read on everyone?`;
         }
         if (lastEliminated) {
           return `${agentName}, ${lastEliminated} has just been eliminated. How do you feel about this result? What's your plan going forward?`;

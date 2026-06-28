@@ -13,6 +13,7 @@ import { MockAgent } from "./mock-agent";
 
 class GoodbyeProbeAgent extends MockAgent {
   readonly lastMessageContexts: PhaseContext[] = [];
+  readonly councilVoteContexts: PhaseContext[] = [];
   readonly fixedVotes: { empowerTarget: string; exposeTarget: string };
   readonly fixedCouncilVote: string;
   readonly fixedEndgameVote?: string;
@@ -34,7 +35,8 @@ class GoodbyeProbeAgent extends MockAgent {
     return { ...this.fixedVotes, thinking: "fixed goodbye probe vote", reasoningContext: undefined };
   }
 
-  override async getCouncilVote(): Promise<{ target: string; thinking?: string; reasoningContext?: string }> {
+  override async getCouncilVote(ctx: PhaseContext): Promise<{ target: string; thinking?: string; reasoningContext?: string }> {
+    this.councilVoteContexts.push(ctx);
     return { target: this.fixedCouncilVote, thinking: "fixed goodbye probe council", reasoningContext: undefined };
   }
 
@@ -178,9 +180,54 @@ describe("goodbye message handling", () => {
     expect(goodbyeContext.eliminationContext).toEqual({
       mode: "council",
       exposedBy: ["Alice", "Bob", "Dave"],
-      councilVoters: ["Alice", "Bob"],
+      councilVoters: ["Alice"],
     });
+    expect(agents[0]!.councilVoteContexts).toHaveLength(1);
+    expect(agents[1]!.councilVoteContexts).toHaveLength(0);
+    expect(agents[2]!.councilVoteContexts).toHaveLength(0);
+    expect(agents[3]!.councilVoteContexts).toHaveLength(0);
+    const bobContext = prc.contextBuilder.buildPhaseContext(bobId, Phase.LOBBY, {});
+    expect(bobContext.recentDecisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "Council Tiebreak Not Needed",
+          detail: expect.stringContaining("You did not cast a tiebreaker"),
+        }),
+      ]),
+    );
     expect(prc.logger.transcript.at(-1)?.text).toBe("Charlie signing off.");
+  });
+
+  test("empowered council tiebreaker is requested only after normal votes tie", async () => {
+    const aliceId = createUUID();
+    const bobId = createUUID();
+    const charlieId = createUUID();
+    const daveId = createUUID();
+    const eveId = createUUID();
+
+    const agents = [
+      new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(bobId, "Bob", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: bobId, exposeTarget: daveId }, daveId),
+      new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: aliceId, exposeTarget: daveId }, charlieId),
+      new GoodbyeProbeAgent(eveId, "Eve", { empowerTarget: bobId, exposeTarget: daveId }, daveId),
+    ];
+    const prc = makePhaseRunnerContext(agents);
+    const actor = { send() {} };
+
+    await runVotePhase(prc, actor as never);
+    await runPowerPhase(prc, actor as never);
+    await runCouncilPhase(prc, actor as never);
+
+    expect(agents[0]!.councilVoteContexts).toHaveLength(1);
+    expect(agents[1]!.councilVoteContexts).toHaveLength(1);
+    expect(agents[2]!.councilVoteContexts).toHaveLength(0);
+    expect(agents[3]!.councilVoteContexts).toHaveLength(0);
+    expect(agents[4]!.councilVoteContexts).toHaveLength(1);
+
+    const resolved = prc.gameState.getCanonicalEvents().find((event) => event.type === "council.elimination_resolved");
+    expect(resolved?.payload.method).toBe("empowered_tiebreaker");
+    expect(resolved?.payload.eliminated).toBe(charlieId);
   });
 
   test("reckoning vote only requests last words from the eliminated player", async () => {

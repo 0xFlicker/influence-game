@@ -740,6 +740,16 @@ export class GameRunner {
           votedForName,
         };
       }
+      if (player.id === empoweredId && councilResolved?.payload.method === "plurality") {
+        return {
+          playerName: player.name,
+          role: "empowered_no_tiebreak_needed",
+          candidateNames,
+          eliminatedName,
+          survivingCandidateName,
+          votedForName: null,
+        };
+      }
       if (votedForId && votedForId === eliminatedId) {
         return {
           playerName: player.name,

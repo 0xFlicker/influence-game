@@ -300,6 +300,23 @@ export class ContextBuilder {
       });
     }
 
+    for (const resolved of councilResolvedByRound.values()) {
+      if (
+        resolved.payload.empoweredId !== agentId ||
+        resolved.payload.method !== "plurality" ||
+        resolved.payload.candidates.includes(agentId) ||
+        resolved.payload.tally.votes[agentId]
+      ) {
+        continue;
+      }
+      decisions.push({
+        round: resolved.round,
+        phase: Phase.COUNCIL,
+        label: "Council Tiebreak Not Needed",
+        detail: `You were empowered in Round ${resolved.round}, but the Council vote resolved by plurality. You did not cast a tiebreaker; eliminated: ${this.name(resolved.payload.eliminated)}.`,
+      });
+    }
+
     const currentCandidates = this.gameState.councilCandidates;
     if (
       currentCandidates?.includes(agentId) &&

@@ -52,7 +52,8 @@
  * Specialized `empower-revote` and `candidate-selection` records are written
  * when vote mechanics create private empowered-player choices. Shield pull-up
  * choices are bundled into the private `power-action` record when Protect
- * creates an unresolved replacement.
+ * creates an unresolved replacement. Empowered Council tiebreaker records are
+ * written only when normal Council votes tie.
  * Hidden `strategic-reflection` and `strategy-packet` records are written there
  * when `--strategic-reflections` is enabled for validation runs. The hidden
  * cadence starts after Introductions, then continues at later-round vote and
@@ -63,8 +64,9 @@
  * Prompt-continuity validation should check the current-board contract in
  * player prompts, phase-specific vote/Council/endgame rules, typed recent
  * decisions, questions-only Judgment prompts for jurors, and Council role-aware
- * diary prompts. These keep eliminated players useful as history, jury context,
- * or social evidence without turning them back into live targets.
+ * diary prompts, including empowered players whose Council tiebreak was not
+ * needed. These keep eliminated players useful as history, jury context, or
+ * social evidence without turning them back into live targets.
  *
  * `--rich-producer` enables private House Strategy Bible Packet updates,
  * packet-backed long-form House summaries, bounded Council diary sessions, and

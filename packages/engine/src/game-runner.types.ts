@@ -461,6 +461,7 @@ export type HouseCouncilRole =
   | "voted_for_eliminated"
   | "voted_for_survivor"
   | "empowered_tiebreaker"
+  | "empowered_no_tiebreak_needed"
   | "non_voter"
   | "not_applicable";
 
