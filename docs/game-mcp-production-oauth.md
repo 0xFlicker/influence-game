@@ -25,6 +25,7 @@ The public web watch websocket is a separate viewer surface, not an MCP resource
 - Dynamic public client registration: `POST /api/oauth/mcp/register`
 - Authorization endpoint: web `/oauth/mcp/authorize`
 - Token endpoint: API `/api/oauth/mcp/token`
+- Revocation endpoint: API `/api/oauth/mcp/revoke`
 - MCP App resource: `resources/read` for `ui://influence/app` under `/mcp` only
 
 Both MCP endpoints require `Authorization: Bearer <mcp-token>` on every request, reject bearer tokens in query strings, validate `Origin` when present, accept one JSON-RPC message per POST, return JSON for normal requests, and return `202 Accepted` for accepted notifications/responses.
@@ -40,7 +41,7 @@ WEB_BASE_URL=https://<web-host>
 MCP_ALLOWED_ORIGINS=https://<api-host>
 ```
 
-The authorization server metadata derives its public issuer, token endpoint, and registration endpoint from the `MCP_OAUTH_GAMES_RESOURCE_URI` origin. The browser authorization endpoint derives from `WEB_BASE_URL`.
+The authorization server metadata derives its public issuer, token endpoint, revocation endpoint, and registration endpoint from the `MCP_OAUTH_GAMES_RESOURCE_URI` origin. The browser authorization endpoint derives from `WEB_BASE_URL`.
 
 Optional settings:
 
@@ -54,6 +55,8 @@ MCP_OAUTH_ALLOW_DYNAMIC_HTTPS_REDIRECTS=false
 Dynamic client registration is enabled for public MCP clients. A registered client may store a supported scope set such as `games mcp`, because some MCP clients register every scope advertised by the authorization server. If the client omits scope, registration defaults to `games`.
 
 Authorization still issues exactly one grant scope. The requested `resource` selects the profile: `/mcp` grants `games`, and `/mcp/producer` grants `mcp`. The request is rejected if the registered/requested scope set includes unsupported scopes or does not include the selected resource profile's scope. Authorization codes and access tokens persist only `games` or `mcp`, never a mixed scope set.
+
+Refresh tokens are supported only for the user-facing `/mcp` games profile. A games authorization-code exchange issues a refresh token for the static Influence client and for dynamic clients that registered the `refresh_token` grant. Producer `/mcp/producer` exchanges do not issue refresh tokens. Refresh tokens are opaque, stored only as hashes, expire on a 30-day sliding window, rotate on every successful refresh, and revoke the whole token family plus related access tokens if a replaced token is reused. `POST /api/oauth/mcp/revoke` accepts access or refresh tokens; unknown tokens return success, and refresh-token revocation revokes the family.
 
 Private trace tools require the same private content storage env used by API durable runs:
 
@@ -151,7 +154,7 @@ Provider expectations:
 | Codex | Tool client | Known Streamable HTTP MCP/OAuth compatibility row; does not prove iframe app support. |
 | Claude Code | Tool client | Known Streamable HTTP MCP/OAuth compatibility row; does not prove iframe app support. |
 
-For manual notes, use the same plain-language checkpoints: discovery, OAuth start, callback/token exchange, app resource fetch, iframe boot, and first `list_games` call. If a host warns that refresh tokens are required, capture the exact warning text and server correlation ID, then plan refresh-token support as a follow-up only if provider evidence proves it is required.
+For manual notes, use the same plain-language checkpoints: discovery, OAuth start, callback/token exchange, token refresh when exercised, app resource fetch, iframe boot, and first `list_games` call. If a host still warns about refresh tokens, capture the exact warning text and server correlation ID so the next debugging pass can separate metadata, registration, and refresh-grant behavior.
 
 ## Operational Checks
 
@@ -159,20 +162,21 @@ Before calling the slice ready on staging:
 
 1. `GET https://<api-host>/.well-known/oauth-protected-resource` returns `resource: https://<api-host>/mcp` and `scopes_supported: ["games"]`.
 2. `GET https://<api-host>/.well-known/oauth-protected-resource/mcp/producer` returns `resource: https://<api-host>/mcp/producer` and `scopes_supported: ["mcp"]`.
-3. `GET https://<api-host>/.well-known/oauth-authorization-server` returns authorization/token/registration endpoints, `scopes_supported: ["games", "mcp"]`, and `code_challenge_methods_supported: ["S256"]`.
+3. `GET https://<api-host>/.well-known/oauth-authorization-server` returns authorization/token/revocation/registration endpoints, `grant_types_supported: ["authorization_code", "refresh_token"]`, `scopes_supported: ["games", "mcp"]`, and `code_challenge_methods_supported: ["S256"]`.
 4. Unauthenticated `POST /mcp` returns a `401` challenge for `scope=games`; unauthenticated `POST /mcp/producer` returns a `401` challenge for `scope=mcp`.
 5. Wrong resource, wrong scope, expired, revoked, or app-session tokens fail before any read model runs.
 6. A valid `games` token can initialize, list only accessible games, read an accessible projection, read revealed round facts, filter player-visible events, list/read authorized cognitive artifacts, and cannot discover or call trace tools.
 7. A valid producer `mcp` token can initialize `/mcp/producer`, list producer tools, list/read split cognitive artifacts, and read/search private trace content when storage is configured.
-8. Resource-selected OAuth events and MCP request events include correlation ID, method/tool, user/client/resource, issued scope, auth profile, result, status, provider hint when supplied, app stage when derivable, redirect URI family when present, and denial reason. Dynamic client registration audit records the requested scope set but has no selected auth profile until authorization chooses a resource. Audits never include raw tokens, auth headers, authorization codes, PKCE verifiers, raw prompts, raw responses, reasoning bodies, private trace content, or storage credentials.
-9. Manual staging or production install attempts for ChatGPT, Claude, and Grok have notes with date, provider, last visible checkpoint, host-visible error, screenshot if useful, and server correlation ID when available.
+8. A valid games refresh token can refresh once, returns a new access token and rotated refresh token, and the replaced token cannot be reused without revoking the family.
+9. Resource-selected OAuth events and MCP request events include correlation ID, method/tool, user/client/resource, issued scope, auth profile, grant type when present, result, status, provider hint when supplied, app stage when derivable, redirect URI family when present, and denial reason. Dynamic client registration audit records the requested scope set but has no selected auth profile until authorization chooses a resource. Audits never include raw tokens, auth headers, authorization codes, refresh tokens, PKCE verifiers, raw prompts, raw responses, reasoning bodies, private trace content, or storage credentials.
+10. Manual staging or production install attempts for ChatGPT, Claude, and Grok have notes with date, provider, last visible checkpoint, host-visible error, screenshot if useful, and server correlation ID when available.
 
 ## Out Of Scope
 
 - User-facing private trace representation, trace-derived summaries, or trace-backed fallback reads.
 - Polished cognitive artifact UX; this slice exposes raw authorized split artifacts and minimal API/client types only.
 - App-side rate limiting. Put rate limiting behind a real gateway in a later durable deploy hardening pass.
-- Refresh-token issuance, rotation, reuse detection, and revocation until provider evidence proves it is required.
+- Producer refresh tokens; `/mcp/producer` remains authorization-code plus short-lived access token only.
 - Confidential-client management, client secrets, and a general third-party OAuth app platform.
 - Mutation tools or game lifecycle controls.
 - Public ChatGPT app submission, broad tester rollout, polished MCP App UX, and a full admin UI for provider install results.

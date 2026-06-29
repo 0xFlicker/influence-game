@@ -148,7 +148,7 @@ The privileged deployed MCP resource at `/mcp/producer` for maintainer/developer
 
 ## Game MCP OAuth token producer
 
-The app/API-side OAuth surface that turns an existing logged-in app session into a short-lived MCP bearer token for the `game-mcp` audience. It issues user-facing `games` tokens for `/mcp` without the `mcp` role, and producer `mcp` tokens for `/mcp/producer` only when the subject currently has the `mcp` role. It is not a normal app session token or a general third-party OAuth app platform.
+The app/API-side OAuth surface that turns an existing logged-in app session into an MCP bearer token for the `game-mcp` audience. It issues user-facing `games` access tokens for `/mcp` without the `mcp` role, with games-only refresh-token rotation for app installs that need continuity. It issues producer `mcp` access tokens for `/mcp/producer` only when the subject currently has the `mcp` role and does not issue producer refresh tokens. It is not a normal app session token or a general third-party OAuth app platform.
 
 ## Game MCP OAuth bridge
 

@@ -22,12 +22,14 @@ import {
   getMcpOAuthProfileResourceUri,
   getMcpOAuthProfiles,
   getMcpOAuthRegistrationEndpoint,
+  getMcpOAuthRevocationEndpoint,
   getMcpOAuthTokenEndpoint,
   introspectMcpAccessToken,
   MCP_OAUTH_CLIENT_ID,
   profileForMcpResourceUri,
   profileForMcpScope,
   registerMcpOAuthClient,
+  revokeMcpOAuthToken,
   type McpAuthProfile,
   type McpOAuthProfileName,
   type McpOAuthAuditMetadata,
@@ -43,6 +45,7 @@ export type McpOAuthAuditEventName =
   | "mcp.oauth.register"
   | "mcp.oauth.authorize"
   | "mcp.oauth.token"
+  | "mcp.oauth.revoke"
   | "mcp.oauth.introspect";
 
 export interface McpOAuthAuditEvent extends McpOAuthAuditMetadata {
@@ -53,6 +56,7 @@ export interface McpOAuthAuditEvent extends McpOAuthAuditMetadata {
   decision?: string;
   providerId?: McpAppProviderId;
   appStage?: McpAppAuditStage;
+  grantType?: "authorization_code" | "refresh_token";
   redirectUriFamily?: "loopback" | "localhost" | "https" | "custom" | "unknown";
   denialReason?: string;
   active?: boolean;
@@ -147,11 +151,13 @@ export function createMcpOAuthRoutes(
         status: 400,
         providerId: providerIdHint(c),
         appStage: "callback_token_exchange",
+        grantType: undefined,
         denialReason: "invalid_request",
       });
       return c.json({ error: "invalid_request", error_description: "Invalid request body" }, 400);
     }
 
+    const grantType = tokenGrantType(body.grant_type);
     const result = await exchangeMcpOAuthCode(db, body);
     emitAudit(auditLogger, {
       event: "mcp.oauth.token",
@@ -162,9 +168,43 @@ export function createMcpOAuthRoutes(
       resource: result.audit?.resource ?? safeAuditString(body.resource),
       scope: result.audit?.scope ?? safeAuditString(result.body.scope),
       authProfile: result.audit?.authProfile ?? auditAuthProfileForScope(result.body.scope),
+      grantType: result.audit?.grantType ?? grantType,
       providerId: providerIdHint(c),
-      appStage: "callback_token_exchange",
+      appStage: grantType === "refresh_token" ? "token_refresh" : "callback_token_exchange",
       redirectUriFamily: redirectUriFamily(body.redirect_uri),
+      result: result.status === 200 ? "success" : "failure",
+      status: result.status,
+      denialReason: result.status === 200 ? undefined : bodyErrorCode(result.body),
+    });
+    return c.json(result.body, result.status);
+  });
+
+  app.post("/api/oauth/mcp/revoke", async (c) => {
+    const correlationId = getCorrelationId(c);
+    const body = await parseOAuthBody(c, "POST /api/oauth/mcp/revoke");
+    if (!body) {
+      emitAudit(auditLogger, {
+        event: "mcp.oauth.revoke",
+        correlationId,
+        result: "failure",
+        status: 400,
+        providerId: providerIdHint(c),
+        denialReason: "invalid_request",
+      });
+      return c.json({ error: "invalid_request", error_description: "Invalid request body" }, 400);
+    }
+
+    const result = await revokeMcpOAuthToken(db, body);
+    emitAudit(auditLogger, {
+      event: "mcp.oauth.revoke",
+      correlationId,
+      userId: result.audit?.userId,
+      walletAddress: result.audit?.walletAddress,
+      clientId: result.audit?.clientId ?? safeAuditString(body.client_id),
+      resource: result.audit?.resource,
+      scope: result.audit?.scope,
+      authProfile: result.audit?.authProfile,
+      providerId: providerIdHint(c),
       result: result.status === 200 ? "success" : "failure",
       status: result.status,
       denialReason: result.status === 200 ? undefined : bodyErrorCode(result.body),
@@ -268,9 +308,10 @@ export function createMcpOAuthRoutes(
       issuer: getMcpOAuthAuthorizationServerIssuer(),
       authorization_endpoint: getMcpOAuthAuthorizationEndpoint(),
       token_endpoint: getMcpOAuthTokenEndpoint(),
+      revocation_endpoint: getMcpOAuthRevocationEndpoint(),
       registration_endpoint: getMcpOAuthRegistrationEndpoint(),
       response_types_supported: ["code"],
-      grant_types_supported: ["authorization_code"],
+      grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
       scopes_supported: getMcpOAuthProfiles().map((profile) => profile.scope),
@@ -320,6 +361,13 @@ function safeAuditString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed.slice(0, 160) : undefined;
+}
+
+function tokenGrantType(value: unknown): "authorization_code" | "refresh_token" | undefined {
+  const grantType = safeAuditString(value);
+  return grantType === "authorization_code" || grantType === "refresh_token"
+    ? grantType
+    : undefined;
 }
 
 function auditAuthProfileForScope(value: unknown): McpAuthProfile | undefined {

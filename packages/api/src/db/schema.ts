@@ -695,6 +695,8 @@ export const mcpOauthAccessTokens = pgTable("mcp_oauth_access_tokens", {
   scope: text("scope").notNull(),
   audience: text("audience").notNull(),
   purpose: text("purpose").notNull(),
+  refreshTokenId: text("refresh_token_id"),
+  refreshTokenFamilyId: text("refresh_token_family_id"),
   expiresAt: text("expires_at").notNull(),
   revokedAt: text("revoked_at"),
   lastUsedAt: text("last_used_at"),
@@ -705,10 +707,47 @@ export const mcpOauthAccessTokens = pgTable("mcp_oauth_access_tokens", {
   uniqueIndex("mcp_oauth_access_tokens_token_hash_unique").on(table.tokenHash),
   index("mcp_oauth_access_tokens_user_id_idx").on(table.userId),
   index("mcp_oauth_access_tokens_resource_uri_idx").on(table.resourceUri),
+  index("mcp_oauth_access_tokens_refresh_token_family_id_idx").on(table.refreshTokenFamilyId),
   index("mcp_oauth_access_tokens_expires_at_idx").on(table.expiresAt),
   check("mcp_oauth_access_tokens_scope_check", sql`${table.scope} IN ('games', 'mcp')`),
   check("mcp_oauth_access_tokens_audience_check", sql`${table.audience} = 'game-mcp'`),
   check("mcp_oauth_access_tokens_purpose_check", sql`${table.purpose} = 'mcp_access'`),
+]);
+
+// ---------------------------------------------------------------------------
+// MCP OAuth — Refresh Tokens
+// ---------------------------------------------------------------------------
+
+export const mcpOauthRefreshTokens = pgTable("mcp_oauth_refresh_tokens", {
+  id: text("id").primaryKey(), // UUID
+  tokenHash: text("token_hash").notNull().unique(), // sha256:<hex>; raw token is never stored
+  tokenFamilyId: text("token_family_id").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  walletAddress: text("wallet_address"),
+  clientId: text("client_id").notNull(),
+  resourceUri: text("resource_uri").notNull(),
+  scope: text("scope").notNull(),
+  audience: text("audience").notNull(),
+  purpose: text("purpose").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  revokedAt: text("revoked_at"),
+  replacedAt: text("replaced_at"),
+  reusedAt: text("reused_at"),
+  lastUsedAt: text("last_used_at"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("mcp_oauth_refresh_tokens_token_hash_unique").on(table.tokenHash),
+  index("mcp_oauth_refresh_tokens_token_family_id_idx").on(table.tokenFamilyId),
+  index("mcp_oauth_refresh_tokens_user_id_idx").on(table.userId),
+  index("mcp_oauth_refresh_tokens_resource_uri_idx").on(table.resourceUri),
+  index("mcp_oauth_refresh_tokens_expires_at_idx").on(table.expiresAt),
+  check("mcp_oauth_refresh_tokens_scope_check", sql`${table.scope} IN ('games', 'mcp')`),
+  check("mcp_oauth_refresh_tokens_audience_check", sql`${table.audience} = 'game-mcp'`),
+  check("mcp_oauth_refresh_tokens_purpose_check", sql`${table.purpose} = 'mcp_access'`),
 ]);
 
 // ---------------------------------------------------------------------------

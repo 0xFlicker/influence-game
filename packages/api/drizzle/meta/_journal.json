@@ -134,6 +134,13 @@
       "when": 1782345600000,
       "tag": "0018_add_summary_slug_column",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1782432000000,
+      "tag": "0019_mcp_oauth_refresh_tokens",
+      "breakpoints": true
     }
   ]
 }

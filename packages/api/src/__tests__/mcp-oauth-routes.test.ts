@@ -16,6 +16,7 @@ import {
   MCP_OAUTH_SCOPE,
   getMcpOAuthProducerResourceUri,
   getMcpOAuthResourceUri,
+  hashOpaqueSecret,
   pkceS256,
 } from "../services/mcp-oauth.js";
 import { setupTestDB } from "./test-utils.js";
@@ -88,8 +89,10 @@ describe("MCP OAuth routes", () => {
       issuer: "http://127.0.0.1:3000",
       authorization_endpoint: "http://localhost:3001/oauth/mcp/authorize",
       token_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/token",
+      revocation_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/revoke",
       registration_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/register",
       scopes_supported: ["games", "mcp"],
+      grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
       client_id: MCP_OAUTH_CLIENT_ID,
@@ -114,6 +117,7 @@ describe("MCP OAuth routes", () => {
         issuer: "https://influence.example",
         authorization_endpoint: "https://influence.example/oauth/mcp/authorize",
         token_endpoint: "https://influence.example/api/oauth/mcp/token",
+        revocation_endpoint: "https://influence.example/api/oauth/mcp/revoke",
         registration_endpoint: "https://influence.example/api/oauth/mcp/register",
       });
 
@@ -154,6 +158,7 @@ describe("MCP OAuth routes", () => {
       event: "mcp.oauth.token",
       providerId: "chatgpt",
       appStage: "callback_token_exchange",
+      grantType: "authorization_code",
       redirectUriFamily: "loopback",
       result: "failure",
     }));
@@ -224,7 +229,7 @@ describe("MCP OAuth routes", () => {
     expect(String(registrationJson.client_id).startsWith("influence-game-mcp-client-")).toBe(true);
     expect(registrationJson).toMatchObject({
       redirect_uris: [DYNAMIC_REDIRECT_URI],
-      grant_types: ["authorization_code"],
+      grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       scope: "games mcp",
       token_endpoint_auth_method: "none",
@@ -296,6 +301,7 @@ describe("MCP OAuth routes", () => {
       scope: "games",
       resource: RESOURCE_URI,
     });
+    expect(typeof tokenJson.refresh_token).toBe("string");
 
     const introspection = await introspect(String(tokenJson.access_token));
     expect(await jsonObject(introspection)).toMatchObject({
@@ -323,6 +329,154 @@ describe("MCP OAuth routes", () => {
       scope: "games mcp",
       authProfile: "games_subject",
       decision: "approve",
+      result: "success",
+      status: 200,
+    }));
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      event: "mcp.oauth.token",
+      clientId: dynamicClientId,
+      resource: RESOURCE_URI,
+      scope: "games",
+      authProfile: "games_subject",
+      grantType: "authorization_code",
+      result: "success",
+      status: 200,
+    }));
+  });
+
+  test("rotates games refresh tokens and revokes the family on reuse", async () => {
+    const { token: sessionToken } = await createUserSession(db, NON_MCP_ADDRESS);
+    const code = await authorizeCode(sessionToken, "refresh-rotation", "refresh-rotation");
+    const firstExchange = await exchangeCode(code, "refresh-rotation");
+    expect(firstExchange.status).toBe(200);
+    const firstJson = await jsonObject(firstExchange);
+    const firstAccessToken = String(firstJson.access_token);
+    const firstRefreshToken = String(firstJson.refresh_token);
+    expect(firstRefreshToken).toBeTruthy();
+
+    const refresh = await refreshAccess(firstRefreshToken, {
+      providerId: "grok",
+      correlationId: "refresh-correlation",
+    });
+    expect(refresh.status).toBe(200);
+    const refreshJson = await jsonObject(refresh);
+    const secondAccessToken = String(refreshJson.access_token);
+    const secondRefreshToken = String(refreshJson.refresh_token);
+    expect(secondAccessToken).toBeTruthy();
+    expect(secondRefreshToken).toBeTruthy();
+    expect(secondRefreshToken).not.toBe(firstRefreshToken);
+
+    const secondIntrospection = await introspect(secondAccessToken);
+    expect(await jsonObject(secondIntrospection)).toMatchObject({
+      active: true,
+      resource: RESOURCE_URI,
+      scope: "games",
+    });
+
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      event: "mcp.oauth.token",
+      correlationId: "refresh-correlation",
+      providerId: "grok",
+      appStage: "token_refresh",
+      grantType: "refresh_token",
+      result: "success",
+      status: 200,
+    }));
+    expect(JSON.stringify(auditEvents)).not.toContain(firstRefreshToken);
+    expect(JSON.stringify(auditEvents)).not.toContain(secondRefreshToken);
+
+    const reuse = await refreshAccess(firstRefreshToken);
+    expect(reuse.status).toBe(400);
+    expect(await jsonObject(reuse)).toMatchObject({
+      error: "invalid_grant",
+      error_description: "Refresh token has already been used",
+    });
+
+    expect(await jsonObject(await introspect(firstAccessToken))).toEqual({ active: false });
+    expect(await jsonObject(await introspect(secondAccessToken))).toEqual({ active: false });
+  });
+
+  test("rejects refresh-token client, resource, scope, expired, and revoked mismatches", async () => {
+    const { token: sessionToken } = await createUserSession(db, NON_MCP_ADDRESS);
+    const code = await authorizeCode(sessionToken, "refresh-mismatch", "refresh-mismatch");
+    const exchanged = await exchangeCode(code, "refresh-mismatch");
+    expect(exchanged.status).toBe(200);
+    const refreshToken = String((await jsonObject(exchanged)).refresh_token);
+
+    const wrongClient = await refreshAccess(refreshToken, { clientId: "other-client" });
+    expect(wrongClient.status).toBe(400);
+    expect(await jsonObject(wrongClient)).toMatchObject({
+      error: "invalid_grant",
+      error_description: "Refresh token does not match this token request",
+    });
+
+    const wrongResource = await refreshAccess(refreshToken, { resource: PRODUCER_RESOURCE_URI });
+    expect(wrongResource.status).toBe(400);
+    expect(await jsonObject(wrongResource)).toMatchObject({
+      error: "invalid_grant",
+      error_description: "Refresh token does not match this token request",
+    });
+
+    const wrongScope = await refreshAccess(refreshToken, { scope: MCP_OAUTH_SCOPE });
+    expect(wrongScope.status).toBe(400);
+    expect(await jsonObject(wrongScope)).toMatchObject({
+      error: "invalid_grant",
+      error_description: "Refresh token does not match this token request",
+    });
+
+    await db
+      .update(schema.mcpOauthRefreshTokens)
+      .set({ expiresAt: "2000-01-01T00:00:00.000Z" })
+      .where(eq(schema.mcpOauthRefreshTokens.tokenHash, hashOpaqueSecret(refreshToken)));
+
+    const expired = await refreshAccess(refreshToken);
+    expect(expired.status).toBe(400);
+    expect(await jsonObject(expired)).toMatchObject({
+      error: "invalid_grant",
+      error_description: "Refresh token has expired",
+    });
+
+    await db
+      .update(schema.mcpOauthRefreshTokens)
+      .set({ expiresAt: "2099-01-01T00:00:00.000Z", revokedAt: "2026-06-28T00:00:00.000Z" })
+      .where(eq(schema.mcpOauthRefreshTokens.tokenHash, hashOpaqueSecret(refreshToken)));
+
+    const revoked = await refreshAccess(refreshToken);
+    expect(revoked.status).toBe(400);
+    expect(await jsonObject(revoked)).toMatchObject({
+      error: "invalid_grant",
+      error_description: "Refresh token has been revoked",
+    });
+  });
+
+  test("revokes access tokens, refresh-token families, and unknown tokens safely", async () => {
+    const { token: sessionToken } = await createUserSession(db, NON_MCP_ADDRESS);
+
+    const accessCode = await authorizeCode(sessionToken, "revoke-access", "revoke-access");
+    const accessExchange = await exchangeCode(accessCode, "revoke-access");
+    const accessToken = String((await jsonObject(accessExchange)).access_token);
+
+    const revokeAccess = await revokeToken(accessToken, "access_token");
+    expect(revokeAccess.status).toBe(200);
+    expect(await jsonObject(revokeAccess)).toEqual({});
+    expect(await jsonObject(await introspect(accessToken))).toEqual({ active: false });
+
+    const familyCode = await authorizeCode(sessionToken, "revoke-family", "revoke-family");
+    const familyExchange = await exchangeCode(familyCode, "revoke-family");
+    const familyJson = await jsonObject(familyExchange);
+    const familyAccessToken = String(familyJson.access_token);
+    const familyRefreshToken = String(familyJson.refresh_token);
+
+    const revokeRefresh = await revokeToken(familyRefreshToken, "refresh_token");
+    expect(revokeRefresh.status).toBe(200);
+    expect(await jsonObject(revokeRefresh)).toEqual({});
+    expect(await jsonObject(await introspect(familyAccessToken))).toEqual({ active: false });
+
+    const unknown = await revokeToken("unknown-token", "refresh_token");
+    expect(unknown.status).toBe(200);
+    expect(await jsonObject(unknown)).toEqual({});
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      event: "mcp.oauth.revoke",
       result: "success",
       status: 200,
     }));
@@ -449,6 +603,7 @@ describe("MCP OAuth routes", () => {
       resource: PRODUCER_RESOURCE_URI,
     });
     expect(typeof tokenJson.access_token).toBe("string");
+    expect(tokenJson).not.toHaveProperty("refresh_token");
 
     const introspection = await introspect(tokenJson.access_token as string);
     expect(introspection.status).toBe(200);
@@ -794,6 +949,54 @@ describe("MCP OAuth routes", () => {
         code,
         code_verifier: codeVerifier,
       }),
+    });
+  }
+
+  async function refreshAccess(
+    refreshToken: string,
+    overrides?: {
+      clientId?: string;
+      correlationId?: string;
+      providerId?: string;
+      resource?: string;
+      scope?: string;
+    },
+  ): Promise<Response> {
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: overrides?.clientId ?? MCP_OAUTH_CLIENT_ID,
+      refresh_token: refreshToken,
+    });
+    if (overrides?.resource !== undefined) {
+      body.set("resource", overrides.resource);
+    }
+    if (overrides?.scope !== undefined) {
+      body.set("scope", overrides.scope);
+    }
+
+    return app.request("/api/oauth/mcp/token", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        ...(overrides?.correlationId ? { "x-correlation-id": overrides.correlationId } : {}),
+        ...(overrides?.providerId ? { "x-mcp-app-provider": overrides.providerId } : {}),
+      },
+      body: body.toString(),
+    });
+  }
+
+  async function revokeToken(
+    token: string,
+    tokenTypeHint: "access_token" | "refresh_token",
+  ): Promise<Response> {
+    return app.request("/api/oauth/mcp/revoke", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        token,
+        token_type_hint: tokenTypeHint,
+        client_id: MCP_OAUTH_CLIENT_ID,
+      }).toString(),
     });
   }
 

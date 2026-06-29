@@ -17,6 +17,7 @@ export const MCP_OAUTH_CLIENT_ID =
 export const MCP_OAUTH_DYNAMIC_CLIENT_ID_PREFIX = "influence-game-mcp-client-";
 export const MCP_OAUTH_CODE_TTL_SECONDS = 5 * 60;
 export const MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 60 * 60;
+export const MCP_OAUTH_REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 const DEFAULT_LOOPBACK_REDIRECT_PATH = "/oauth/callback";
 
@@ -76,10 +77,18 @@ export interface McpOAuthAuthorizeInput {
 export interface McpOAuthTokenInput {
   grant_type?: unknown;
   code?: unknown;
+  refresh_token?: unknown;
   redirect_uri?: unknown;
   resource?: unknown;
+  scope?: unknown;
   client_id?: unknown;
   code_verifier?: unknown;
+}
+
+export interface McpOAuthRevocationInput {
+  token?: unknown;
+  token_type_hint?: unknown;
+  client_id?: unknown;
 }
 
 export interface McpOAuthClientRegistrationInput {
@@ -122,7 +131,7 @@ interface ValidAuthorizeRequest {
   codeChallengeMethod: "S256";
 }
 
-interface ValidTokenRequest {
+interface ValidAuthorizationCodeTokenRequest {
   grantType: "authorization_code";
   code: string;
   redirectUri: string;
@@ -131,6 +140,16 @@ interface ValidTokenRequest {
   clientId: string;
   codeVerifier: string;
 }
+
+interface ValidRefreshTokenRequest {
+  grantType: "refresh_token";
+  refreshToken: string;
+  clientId: string;
+  resourceUri?: string;
+  scope?: McpOAuthScope;
+}
+
+type ValidTokenRequest = ValidAuthorizationCodeTokenRequest | ValidRefreshTokenRequest;
 
 interface OAuthError extends Record<string, unknown> {
   error: string;
@@ -144,6 +163,7 @@ export interface McpOAuthAuditMetadata {
   resource?: string;
   scope?: string;
   authProfile?: McpAuthProfile;
+  grantType?: "authorization_code" | "refresh_token";
 }
 
 export type ServiceResponse<TBody> = {
@@ -235,6 +255,10 @@ export function getMcpOAuthTokenEndpoint(): string {
 
 export function getMcpOAuthRegistrationEndpoint(): string {
   return new URL("/api/oauth/mcp/register", getMcpOAuthPublicApiOrigin()).toString();
+}
+
+export function getMcpOAuthRevocationEndpoint(): string {
+  return new URL("/api/oauth/mcp/revoke", getMcpOAuthPublicApiOrigin()).toString();
 }
 
 export function getMcpOAuthAuthorizationServerIssuer(): string {
@@ -436,6 +460,10 @@ export async function exchangeMcpOAuthCode(
       body: parsed.error,
     };
   }
+  if (parsed.request.grantType === "refresh_token") {
+    return refreshMcpOAuthAccessToken(db, parsed.request, now);
+  }
+  const codeRequest = parsed.request;
 
   const codeHash = hashOpaqueSecret(parsed.request.code);
   const codeRow = (await db
@@ -504,9 +532,18 @@ export async function exchangeMcpOAuthCode(
     });
   }
 
+  const shouldIssueRefreshToken =
+    codeRequest.profile.scope === MCP_OAUTH_GAMES_SCOPE &&
+    await clientAllowsMcpRefreshTokens(db, codeRow.clientId);
   const rawToken = generateOpaqueSecret();
+  const rawRefreshToken = shouldIssueRefreshToken ? generateOpaqueSecret() : undefined;
+  const refreshTokenId = rawRefreshToken ? randomUUID() : undefined;
+  const refreshTokenFamilyId = rawRefreshToken ? randomUUID() : undefined;
   const expiresAt = new Date(
     now.getTime() + MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS * 1000,
+  ).toISOString();
+  const refreshExpiresAt = new Date(
+    now.getTime() + MCP_OAUTH_REFRESH_TOKEN_TTL_SECONDS * 1000,
   ).toISOString();
   const nowIso = now.toISOString();
 
@@ -524,6 +561,23 @@ export async function exchangeMcpOAuthCode(
       return false;
     }
 
+    if (rawRefreshToken && refreshTokenId && refreshTokenFamilyId) {
+      await tx.insert(schema.mcpOauthRefreshTokens).values({
+        id: refreshTokenId,
+        tokenHash: hashOpaqueSecret(rawRefreshToken),
+        tokenFamilyId: refreshTokenFamilyId,
+        userId: user.id,
+        walletAddress: user.walletAddress,
+        clientId: codeRow.clientId,
+        resourceUri: codeRow.resourceUri,
+        scope: codeRequest.profile.scope,
+        audience: MCP_OAUTH_AUDIENCE,
+        purpose: MCP_OAUTH_PURPOSE,
+        expiresAt: refreshExpiresAt,
+        createdAt: nowIso,
+      });
+    }
+
     await tx.insert(schema.mcpOauthAccessTokens).values({
       id: randomUUID(),
       tokenHash: hashOpaqueSecret(rawToken),
@@ -531,9 +585,11 @@ export async function exchangeMcpOAuthCode(
       walletAddress: user.walletAddress,
       clientId: codeRow.clientId,
       resourceUri: codeRow.resourceUri,
-      scope: parsed.request.profile.scope,
+      scope: codeRequest.profile.scope,
       audience: MCP_OAUTH_AUDIENCE,
       purpose: MCP_OAUTH_PURPOSE,
+      refreshTokenId,
+      refreshTokenFamilyId,
       expiresAt,
     });
 
@@ -550,19 +606,244 @@ export async function exchangeMcpOAuthCode(
       access_token: rawToken,
       token_type: "Bearer",
       expires_in: MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS,
-      scope: parsed.request.profile.scope,
+      scope: codeRequest.profile.scope,
       audience: MCP_OAUTH_AUDIENCE,
       purpose: MCP_OAUTH_PURPOSE,
       resource: codeRow.resourceUri,
+      ...(rawRefreshToken ? { refresh_token: rawRefreshToken } : {}),
     },
     audit: {
       userId: user.id,
       walletAddress: user.walletAddress ?? undefined,
       clientId: codeRow.clientId,
       resource: codeRow.resourceUri,
-      scope: parsed.request.profile.scope,
-      authProfile: parsed.request.profile.authProfile,
+      scope: codeRequest.profile.scope,
+      authProfile: codeRequest.profile.authProfile,
+      grantType: "authorization_code",
     },
+  };
+}
+
+async function refreshMcpOAuthAccessToken(
+  db: DrizzleDB,
+  request: ValidRefreshTokenRequest,
+  now: Date,
+): Promise<ServiceResponse<Record<string, unknown>>> {
+  const tokenHash = hashOpaqueSecret(request.refreshToken);
+  const tokenRow = (await db
+    .select()
+    .from(schema.mcpOauthRefreshTokens)
+    .where(eq(schema.mcpOauthRefreshTokens.tokenHash, tokenHash)))[0];
+
+  if (!tokenRow) {
+    return invalidGrant("Refresh token is invalid", { grantType: "refresh_token" });
+  }
+
+  const profile = profileForMcpScope(tokenRow.scope);
+  const audit: McpOAuthAuditMetadata = {
+    userId: tokenRow.userId,
+    walletAddress: tokenRow.walletAddress ?? undefined,
+    clientId: tokenRow.clientId,
+    resource: tokenRow.resourceUri,
+    scope: tokenRow.scope,
+    authProfile: profile?.authProfile,
+    grantType: "refresh_token",
+  };
+
+  if (
+    tokenRow.clientId !== request.clientId ||
+    (request.resourceUri && tokenRow.resourceUri !== request.resourceUri) ||
+    (request.scope && tokenRow.scope !== request.scope)
+  ) {
+    return invalidGrant("Refresh token does not match this token request", audit);
+  }
+
+  if (!profile || profile.scope !== MCP_OAUTH_GAMES_SCOPE) {
+    return invalidGrant("Refresh token is not valid for games access", audit);
+  }
+  if (tokenRow.revokedAt) {
+    return invalidGrant("Refresh token has been revoked", audit);
+  }
+  if (tokenRow.replacedAt) {
+    await markMcpRefreshTokenReuse(db, tokenRow.id, tokenRow.tokenFamilyId, now);
+    return invalidGrant("Refresh token has already been used", audit);
+  }
+  if (new Date(tokenRow.expiresAt).getTime() <= now.getTime()) {
+    return invalidGrant("Refresh token has expired", audit);
+  }
+
+  const user = (await db
+    .select()
+    .from(schema.users)
+    .where(eq(schema.users.id, tokenRow.userId)))[0];
+  if (!user) {
+    return invalidGrant("Authorization subject is no longer active", audit);
+  }
+
+  const rawAccessToken = generateOpaqueSecret();
+  const rawRefreshToken = generateOpaqueSecret();
+  const refreshTokenId = randomUUID();
+  const nowIso = now.toISOString();
+  const accessExpiresAt = new Date(
+    now.getTime() + MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS * 1000,
+  ).toISOString();
+  const refreshExpiresAt = new Date(
+    now.getTime() + MCP_OAUTH_REFRESH_TOKEN_TTL_SECONDS * 1000,
+  ).toISOString();
+
+  const rotated = await db.transaction(async (tx) => {
+    const updated = await tx
+      .update(schema.mcpOauthRefreshTokens)
+      .set({ replacedAt: nowIso, lastUsedAt: nowIso })
+      .where(and(
+        eq(schema.mcpOauthRefreshTokens.id, tokenRow.id),
+        isNull(schema.mcpOauthRefreshTokens.replacedAt),
+        isNull(schema.mcpOauthRefreshTokens.revokedAt),
+      ))
+      .returning({ id: schema.mcpOauthRefreshTokens.id });
+
+    if (updated.length === 0) {
+      await tx
+        .update(schema.mcpOauthRefreshTokens)
+        .set({ reusedAt: nowIso, revokedAt: nowIso })
+        .where(eq(schema.mcpOauthRefreshTokens.id, tokenRow.id));
+      await tx
+        .update(schema.mcpOauthRefreshTokens)
+        .set({ revokedAt: nowIso })
+        .where(and(
+          eq(schema.mcpOauthRefreshTokens.tokenFamilyId, tokenRow.tokenFamilyId),
+          isNull(schema.mcpOauthRefreshTokens.revokedAt),
+        ));
+      await tx
+        .update(schema.mcpOauthAccessTokens)
+        .set({ revokedAt: nowIso })
+        .where(and(
+          eq(schema.mcpOauthAccessTokens.refreshTokenFamilyId, tokenRow.tokenFamilyId),
+          isNull(schema.mcpOauthAccessTokens.revokedAt),
+        ));
+      return false;
+    }
+
+    await tx.insert(schema.mcpOauthRefreshTokens).values({
+      id: refreshTokenId,
+      tokenHash: hashOpaqueSecret(rawRefreshToken),
+      tokenFamilyId: tokenRow.tokenFamilyId,
+      userId: user.id,
+      walletAddress: user.walletAddress,
+      clientId: tokenRow.clientId,
+      resourceUri: tokenRow.resourceUri,
+      scope: MCP_OAUTH_GAMES_SCOPE,
+      audience: MCP_OAUTH_AUDIENCE,
+      purpose: MCP_OAUTH_PURPOSE,
+      expiresAt: refreshExpiresAt,
+      createdAt: nowIso,
+    });
+
+    await tx.insert(schema.mcpOauthAccessTokens).values({
+      id: randomUUID(),
+      tokenHash: hashOpaqueSecret(rawAccessToken),
+      userId: user.id,
+      walletAddress: user.walletAddress,
+      clientId: tokenRow.clientId,
+      resourceUri: tokenRow.resourceUri,
+      scope: MCP_OAUTH_GAMES_SCOPE,
+      audience: MCP_OAUTH_AUDIENCE,
+      purpose: MCP_OAUTH_PURPOSE,
+      refreshTokenId,
+      refreshTokenFamilyId: tokenRow.tokenFamilyId,
+      expiresAt: accessExpiresAt,
+    });
+
+    return true;
+  });
+
+  if (!rotated) {
+    return invalidGrant("Refresh token has already been used", audit);
+  }
+
+  return {
+    status: 200,
+    body: {
+      access_token: rawAccessToken,
+      refresh_token: rawRefreshToken,
+      token_type: "Bearer",
+      expires_in: MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS,
+      scope: MCP_OAUTH_GAMES_SCOPE,
+      audience: MCP_OAUTH_AUDIENCE,
+      purpose: MCP_OAUTH_PURPOSE,
+      resource: tokenRow.resourceUri,
+    },
+    audit,
+  };
+}
+
+export async function revokeMcpOAuthToken(
+  db: DrizzleDB,
+  input: McpOAuthRevocationInput,
+  now = new Date(),
+): Promise<ServiceResponse<Record<string, unknown>>> {
+  const token = requiredString(input.token);
+  if (!token) {
+    return {
+      status: 400,
+      body: {
+        error: "invalid_request",
+        error_description: "token is required",
+      },
+    };
+  }
+
+  const tokenHash = hashOpaqueSecret(token);
+  const nowIso = now.toISOString();
+  const refreshToken = (await db
+    .select()
+    .from(schema.mcpOauthRefreshTokens)
+    .where(eq(schema.mcpOauthRefreshTokens.tokenHash, tokenHash)))[0];
+
+  if (refreshToken) {
+    await revokeMcpRefreshTokenFamily(db, refreshToken.tokenFamilyId, nowIso);
+    const profile = profileForMcpScope(refreshToken.scope);
+    return {
+      status: 200,
+      body: {},
+      audit: {
+        userId: refreshToken.userId,
+        walletAddress: refreshToken.walletAddress ?? undefined,
+        clientId: refreshToken.clientId,
+        resource: refreshToken.resourceUri,
+        scope: refreshToken.scope,
+        authProfile: profile?.authProfile,
+      },
+    };
+  }
+
+  const accessToken = (await db
+    .select()
+    .from(schema.mcpOauthAccessTokens)
+    .where(eq(schema.mcpOauthAccessTokens.tokenHash, tokenHash)))[0];
+  if (accessToken) {
+    await db
+      .update(schema.mcpOauthAccessTokens)
+      .set({ revokedAt: nowIso })
+      .where(eq(schema.mcpOauthAccessTokens.id, accessToken.id));
+    const profile = profileForMcpScope(accessToken.scope);
+    return {
+      status: 200,
+      body: {},
+      audit: {
+        userId: accessToken.userId,
+        walletAddress: accessToken.walletAddress ?? undefined,
+        clientId: accessToken.clientId,
+        resource: accessToken.resourceUri,
+        scope: accessToken.scope,
+        authProfile: profile?.authProfile,
+      },
+    };
+  }
+
+  return {
+    status: 200,
+    body: {},
   };
 }
 
@@ -616,6 +897,56 @@ export async function introspectMcpAccessToken(
     exp: Math.floor(new Date(tokenRow.expiresAt).getTime() / 1000),
     purpose: tokenRow.purpose,
   };
+}
+
+async function clientAllowsMcpRefreshTokens(
+  db: DrizzleDB,
+  clientId: string,
+): Promise<boolean> {
+  if (clientId === MCP_OAUTH_CLIENT_ID) {
+    return true;
+  }
+
+  const client = (await db
+    .select({ grantTypes: schema.mcpOauthClients.grantTypes })
+    .from(schema.mcpOauthClients)
+    .where(eq(schema.mcpOauthClients.clientId, clientId)))[0];
+  return client?.grantTypes.includes("refresh_token") ?? false;
+}
+
+async function markMcpRefreshTokenReuse(
+  db: DrizzleDB,
+  refreshTokenId: string,
+  tokenFamilyId: string,
+  now: Date,
+): Promise<void> {
+  const nowIso = now.toISOString();
+  await db
+    .update(schema.mcpOauthRefreshTokens)
+    .set({ reusedAt: nowIso, revokedAt: nowIso })
+    .where(eq(schema.mcpOauthRefreshTokens.id, refreshTokenId));
+  await revokeMcpRefreshTokenFamily(db, tokenFamilyId, nowIso);
+}
+
+async function revokeMcpRefreshTokenFamily(
+  db: DrizzleDB,
+  tokenFamilyId: string,
+  nowIso: string,
+): Promise<void> {
+  await db
+    .update(schema.mcpOauthRefreshTokens)
+    .set({ revokedAt: nowIso })
+    .where(and(
+      eq(schema.mcpOauthRefreshTokens.tokenFamilyId, tokenFamilyId),
+      isNull(schema.mcpOauthRefreshTokens.revokedAt),
+    ));
+  await db
+    .update(schema.mcpOauthAccessTokens)
+    .set({ revokedAt: nowIso })
+    .where(and(
+      eq(schema.mcpOauthAccessTokens.refreshTokenFamilyId, tokenFamilyId),
+      isNull(schema.mcpOauthAccessTokens.revokedAt),
+    ));
 }
 
 export function buildOAuthRedirect(
@@ -728,12 +1059,13 @@ function validateAuthorizeInput(input: McpOAuthAuthorizeInput):
 function validateTokenInput(input: McpOAuthTokenInput):
   | { ok: true; request: ValidTokenRequest }
   | { ok: false; error: OAuthError } {
-  if (requiredString(input.grant_type) !== "authorization_code") {
+  const grantType = requiredString(input.grant_type);
+  if (grantType !== "authorization_code" && grantType !== "refresh_token") {
     return {
       ok: false,
       error: {
         error: "unsupported_grant_type",
-        error_description: "grant_type must be authorization_code",
+        error_description: "grant_type must be authorization_code or refresh_token",
       },
     };
   }
@@ -745,6 +1077,55 @@ function validateTokenInput(input: McpOAuthTokenInput):
       error: {
         error: "invalid_client",
         error_description: "client_id is required",
+      },
+    };
+  }
+
+  if (grantType === "refresh_token") {
+    const refreshToken = requiredString(input.refresh_token);
+    if (!refreshToken) {
+      return {
+        ok: false,
+        error: {
+          error: "invalid_request",
+          error_description: "refresh_token is required",
+        },
+      };
+    }
+
+    const resourceUri = requiredString(input.resource);
+    const profile = resourceUri ? profileForMcpResourceUri(resourceUri) : null;
+    if (resourceUri && !profile) {
+      return {
+        ok: false,
+        error: {
+          error: "invalid_target",
+          error_description: "resource must match a canonical MCP resource",
+        },
+      };
+    }
+
+    const requestedScopes = input.scope === undefined
+      ? undefined
+      : parseMcpOAuthScopeSet(input.scope);
+    if (input.scope !== undefined && (!requestedScopes || requestedScopes.size !== 1)) {
+      return {
+        ok: false,
+        error: {
+          error: "invalid_scope",
+          error_description: "scope must match exactly one MCP scope",
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      request: {
+        grantType: "refresh_token",
+        refreshToken,
+        clientId,
+        resourceUri: profile ? getMcpOAuthProfileResourceUri(profile) : undefined,
+        scope: requestedScopes ? Array.from(requestedScopes)[0] : undefined,
       },
     };
   }
@@ -991,7 +1372,9 @@ function validateClientRegistrationInput(input: McpOAuthClientRegistrationInput)
       "grant_types must include authorization_code and may include refresh_token",
     );
   }
-  const resolvedGrantTypes = ["authorization_code"];
+  const resolvedGrantTypes = requestedGrantTypes.includes("refresh_token")
+    ? ["authorization_code", "refresh_token"]
+    : ["authorization_code"];
 
   const responseTypes = optionalStringArray(input.response_types);
   if (responseTypes === null) {

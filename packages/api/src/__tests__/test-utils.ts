@@ -33,6 +33,7 @@ export async function setupTestDB(): Promise<DrizzleDB> {
 // All Influence table names (from schema) — truncate only these, not unrelated tables.
 const INFLUENCE_TABLES = [
   "mcp_oauth_access_tokens",
+  "mcp_oauth_refresh_tokens",
   "mcp_oauth_authorization_codes",
   "mcp_oauth_clients",
   "game_cognitive_artifact_reads",

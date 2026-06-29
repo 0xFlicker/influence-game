@@ -9,6 +9,7 @@ export type McpAppAuditStage =
   | "discovery"
   | "oauth_start"
   | "callback_token_exchange"
+  | "token_refresh"
   | "app_resource_fetch";
 
 export const MCP_APP_PROVIDER_IDS: McpAppProviderId[] = [
