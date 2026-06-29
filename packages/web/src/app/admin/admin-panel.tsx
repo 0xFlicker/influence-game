@@ -280,7 +280,7 @@ function StatusBadge({ status, errorInfo }: { status: GameSummary["status"]; err
     in_progress: "live",
     completed: "done",
     cancelled: "void",
-    suspended: "needs inspection",
+    suspended: "failed",
   };
   return (
     <span
@@ -487,11 +487,11 @@ export function AdminPanel() {
         )}
       </section>
 
-      {/* Needs inspection */}
+      {/* Failed games */}
       {suspendedGames.length > 0 && (
         <section className="mb-8">
           <h2 className="text-xs font-semibold text-amber-300/80 uppercase tracking-wider mb-3">
-            Needs Inspection ({suspendedGames.length})
+            Failed Games ({suspendedGames.length})
           </h2>
           <div className="border border-amber-900/40 rounded-xl overflow-hidden">
             <table className="w-full">

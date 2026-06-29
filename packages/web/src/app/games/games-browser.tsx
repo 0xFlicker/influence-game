@@ -220,7 +220,7 @@ function GameCard({
                 <span className="text-emerald-400/70">Finished</span>
               )}
               {game.status === "suspended" && (
-                <span className="text-amber-300/80">Needs inspection</span>
+                <span className="text-amber-300/80">Failed</span>
               )}
               {game.finalists && isLive && (
                 <span>Finalists: {game.finalists.join(", ")}</span>
@@ -353,7 +353,7 @@ function StatusBadge({ status }: { status: GameStatus }) {
     in_progress: "Live",
     completed: "Done",
     cancelled: "Void",
-    suspended: "Needs inspection",
+    suspended: "Failed",
   };
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${styles[status]}`}>
@@ -459,7 +459,7 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
     { value: "all", label: "All" },
     { value: "waiting", label: "Open" },
     { value: "in_progress", label: "Live" },
-    { value: "suspended", label: "Needs inspection" },
+    { value: "suspended", label: "Failed" },
     { value: "completed", label: "Done" },
   ];
 

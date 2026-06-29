@@ -60,7 +60,7 @@ import {
 } from "@influence/engine";
 import type { Personality } from "@influence/engine";
 
-const PUBLIC_SUSPENDED_ERROR_INFO = "Game suspended because the run could not safely continue.";
+const PUBLIC_SUSPENDED_ERROR_INFO = "The game failed and cannot be resumed.";
 
 function publicErrorInfo(status: GameStatus, config: Record<string, unknown>): string | undefined {
   if (status === "suspended") {

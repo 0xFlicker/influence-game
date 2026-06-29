@@ -52,7 +52,7 @@ function StatusBadge({ status }: { status: GameStatus }) {
     in_progress: "Live",
     completed: "Done",
     cancelled: "Void",
-    suspended: "Needs inspection",
+    suspended: "Failed",
   };
   return (
     <span

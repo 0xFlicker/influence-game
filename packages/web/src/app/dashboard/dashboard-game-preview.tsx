@@ -19,7 +19,7 @@ function gameHref(game: GameSummary): string {
 function statusLabel(game: GameSummary): string {
   if (game.status === "in_progress") return "Live";
   if (game.status === "waiting") return "Open";
-  if (game.status === "suspended") return "Needs inspection";
+  if (game.status === "suspended") return "Failed";
   if (game.status === "completed") return "Done";
   return "Void";
 }

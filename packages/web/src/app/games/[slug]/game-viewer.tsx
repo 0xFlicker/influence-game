@@ -648,11 +648,11 @@ export function GameViewer({
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center px-4">
         <div className="text-xs px-2 py-1 rounded-full border border-amber-900/60 bg-amber-900/30 text-amber-300 font-medium">
-          Needs inspection
+          Failed
         </div>
-        <h2 className="text-xl font-semibold text-white">Game suspended</h2>
+        <h2 className="text-xl font-semibold text-white">Game failed</h2>
         <p className="text-white/50 text-sm max-w-md">
-          This game could not safely continue. Replay is unavailable until an operator inspects the run.
+          This game failed and cannot be resumed.
         </p>
         {game.errorInfo && (
           <p className="text-amber-200/60 text-xs max-w-md">{game.errorInfo}</p>

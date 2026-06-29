@@ -138,7 +138,8 @@ if (orphanedGames.length > 0) {
   }
 }
 
-if (process.env.INFLUENCE_API_STARTUP_RECOVERY === "true") {
+const startupRecoveryDisabled = process.env.INFLUENCE_API_STARTUP_RECOVERY?.toLowerCase() === "false";
+if (!startupRecoveryDisabled) {
   const recovery = await recoverGamesOnStartup(db);
   if (recovery.attempted > 0) {
     console.info(

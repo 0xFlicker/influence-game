@@ -107,7 +107,7 @@ function startOwnerHeartbeat(
           status: "suspended",
           terminal: true,
           reasonCode: "owner_heartbeat_failed",
-          message: "Game suspended because the durable owner heartbeat failed.",
+          message: "The game failed and cannot be resumed.",
         });
       });
   }, OWNER_HEARTBEAT_MS);
@@ -994,7 +994,7 @@ async function runGameAsync(
     }
 
   } catch (err) {
-    // Game failed — owner-backed runs suspend for inspection instead of pretending to cancel/complete.
+    // Game failed — owner-backed runs fail closed instead of pretending to cancel/complete.
     const errorMessage = err instanceof Error ? err.message : String(err);
     console.error(`[game-lifecycle] Game ${gameId} failed:`, errorMessage);
 
@@ -1050,8 +1050,8 @@ async function runGameAsync(
       return;
     }
 
-    // Notify live viewers that the game cannot safely continue.
-    broadcastRaw(gameId, { type: "error", message: "Game suspended because the run could not safely continue." });
+    // Notify live viewers that the game cannot resume.
+    broadcastRaw(gameId, { type: "error", message: "The game failed and cannot be resumed." });
 
     try {
       // Read current config and append errorInfo
@@ -1078,7 +1078,7 @@ async function runGameAsync(
           status: "suspended",
           terminal: true,
           reasonCode: "runner_failed",
-          message: "Game suspended because the run could not safely continue.",
+          message: "The game failed and cannot be resumed.",
         });
       } else {
         const fallbackConfig = { ...updatedConfig, viewerMode: "replay" };

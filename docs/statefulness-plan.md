@@ -70,7 +70,7 @@ This is now partially crash-recoverable at implemented completed phase boundarie
 3. **Forensic checkpoint/evidence rows** (`game-checkpoints.ts`, `game-evidence.ts`) — Checkpoint capsules and private evidence manifests provide debug boundaries without making raw evidence public or claiming hydration.
 4. **Durable truth read model** (`game-event-read-model.ts`, `game-projection-read-model.ts`, `game-durable-run.ts`) — Admin-only inspection can explain event-log integrity, replay status, board projection summary, checkpoint readiness, and redacted evidence counts from Postgres.
 5. **Memory cleanup** (`game-lifecycle.ts`) — Normal completed/cancelled exits can clear `PgMemoryStore`; suspended runs avoid eager cleanup intended for safe terminal states.
-6. **Phase-boundary startup recovery** (`game-recovery.ts`, `game-recovery-support.ts`, `game-lifecycle.ts`) — When enabled, the API process scans suspended games, validates a supported checkpoint, claims a fresh owner, hydrates `GameRunner`, and continues the same game.
+6. **Phase-boundary startup recovery** (`game-recovery.ts`, `game-recovery-support.ts`, `game-lifecycle.ts`) — On startup, the API process scans suspended games by default, validates a supported checkpoint, claims a fresh owner, hydrates `GameRunner`, and continues the same game. Set `INFLUENCE_API_STARTUP_RECOVERY=false` only when recovery needs to be explicitly disabled.
 
 These are partial crash-recovery mechanisms for supported phase boundaries plus fail-closed mitigation for everything else.
 

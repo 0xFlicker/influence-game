@@ -31,7 +31,7 @@ function StatusBadge({ status }: { status: AdminGameSummary["status"] }) {
     in_progress: "live",
     completed: "✓ done",
     cancelled: "✗ void",
-    suspended: "needs inspection",
+    suspended: "failed",
   };
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full ${styles[status]}`}>
@@ -247,7 +247,7 @@ export function GameHistoryBrowser() {
             { value: "completed", label: "Done" },
             { value: "in_progress", label: "Live" },
             { value: "waiting", label: "Waiting" },
-            { value: "suspended", label: "Needs inspection" },
+            { value: "suspended", label: "Failed" },
             { value: "cancelled", label: "Void" },
           ]}
         />

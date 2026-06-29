@@ -1,8 +1,11 @@
 import {
+  buildMingleInboxReplayFromTranscript,
+  GameState,
   PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES,
   type CanonicalGameEvent,
   type GameRunnerOptions,
   type GameRunnerResumeActorCoordinate,
+  type MingleInboxReplay,
   type RuntimeSnapshotV1,
   type TokenCostCursor,
   type TranscriptEntry,
@@ -46,10 +49,33 @@ function readTokenCostCursor(value: unknown): TokenCostCursor | null {
   return value as unknown as TokenCostCursor;
 }
 
-function accumulatorRegistryIsSafe(runtimeSnapshot: RuntimeSnapshotV1): boolean {
+function hasBlockedMingleInbox(runtimeSnapshot: RuntimeSnapshotV1): boolean {
+  return runtimeSnapshot.accumulatorRegistry.entries.some((entry) =>
+    entry.id === "mingleInbox" && entry.status === "blocked"
+  );
+}
+
+function validateNonReplayableAccumulatorRegistry(runtimeSnapshot: RuntimeSnapshotV1): string | null {
   const registry = runtimeSnapshot.accumulatorRegistry;
-  if (!registry || registry.version !== 1 || !Array.isArray(registry.entries)) return false;
-  return registry.entries.every((entry) => entry.status === "empty" || entry.status === "drained");
+  if (!registry || registry.version !== 1 || !Array.isArray(registry.entries)) return "unsafe_accumulator_registry";
+
+  for (const entry of registry.entries) {
+    if (entry.status === "empty" || entry.status === "drained") continue;
+    if (entry.id === "mingleInbox" && entry.status === "blocked") continue;
+    return "unsafe_accumulator_registry";
+  }
+
+  return null;
+}
+
+function validateMingleInboxReplay(
+  runtimeSnapshot: RuntimeSnapshotV1,
+  mingleInboxReplay: MingleInboxReplay,
+): string | null {
+  if (!hasBlockedMingleInbox(runtimeSnapshot)) return null;
+  return mingleInboxReplay.entries.length > 0 && mingleInboxReplay.unresolvedRecipientNames.length === 0
+    ? null
+    : "unsafe_accumulator_registry";
 }
 
 function latestEvent<TType extends CanonicalGameEvent["type"]>(
@@ -117,9 +143,8 @@ export function evaluateSupportedRecovery(params: {
   if (!isSupportedActorCoordinate(actorCoordinate)) {
     return { ok: false, reason: `unsupported_actor_coordinate:${actorCoordinate}` };
   }
-  if (!accumulatorRegistryIsSafe(runtimeSnapshot)) {
-    return { ok: false, reason: "unsafe_accumulator_registry" };
-  }
+  const nonReplayableAccumulatorReason = validateNonReplayableAccumulatorRegistry(runtimeSnapshot);
+  if (nonReplayableAccumulatorReason) return { ok: false, reason: nonReplayableAccumulatorReason };
 
   const transcriptReplay = readTranscriptReplay(isRecord(snapshot) ? snapshot.transcriptReplay : null);
   if (!transcriptReplay) return { ok: false, reason: "missing_transcript_replay" };
@@ -135,6 +160,14 @@ export function evaluateSupportedRecovery(params: {
   }
 
   const canonicalEvents = params.persistedEvents.events.map((event) => event.envelope);
+  const gameState = GameState.fromCanonicalEvents(canonicalEvents);
+  const mingleInboxReplay = buildMingleInboxReplayFromTranscript({
+    transcriptReplay,
+    players: gameState.getAllPlayers().map((player) => ({ id: player.id, name: player.name })),
+  });
+  const accumulatorReason = validateMingleInboxReplay(runtimeSnapshot, mingleInboxReplay);
+  if (accumulatorReason) return { ok: false, reason: accumulatorReason };
+
   const prerequisiteReason = validateActorCoordinatePrerequisites(actorCoordinate, canonicalEvents);
   if (prerequisiteReason) return { ok: false, reason: prerequisiteReason };
 
@@ -150,6 +183,7 @@ export function evaluateSupportedRecovery(params: {
       lastEventSequence: params.checkpoint.lastEventSequence,
       transcriptReplay,
       tokenCostCursor,
+      mingleInboxReplay: hasBlockedMingleInbox(runtimeSnapshot) ? mingleInboxReplay : null,
       houseContinuityCapsule: isRecord(snapshot) && isRecord(snapshot.houseContinuityCapsule)
         ? snapshot.houseContinuityCapsule as unknown as SupportedRecoveryResumeInput["houseContinuityCapsule"]
         : null,

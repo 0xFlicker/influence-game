@@ -79,6 +79,7 @@ export interface GameRunnerResumeOptions {
   transcriptReplay: readonly TranscriptEntry[];
   tokenCostCursor?: TokenCostCursor | null;
   houseContinuityCapsule?: HouseContinuityCapsule | null;
+  mingleInboxReplay?: MingleInboxReplay | null;
 }
 
 export type GameCheckpointKind = "initial" | "phase_boundary" | "terminal";
@@ -147,6 +148,16 @@ export interface AccumulatorEntryV1 {
   id: string;
   status: AccumulatorEntryStatusV1;
   proof?: AccumulatorProofV1;
+}
+
+export interface MingleInboxReplay {
+  version: 1;
+  sourceRound: number | null;
+  entries: Array<{
+    recipientId: UUID;
+    messages: Array<{ from: string; text: string }>;
+  }>;
+  unresolvedRecipientNames: string[];
 }
 
 /** Closed v1 registry for phase-boundary runner accumulators. */

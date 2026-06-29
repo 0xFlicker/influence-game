@@ -56,6 +56,13 @@ const recoveryConfig: GameConfig & Record<string, unknown> = {
   },
 };
 
+const recoveryConfigWithMingle: GameConfig & Record<string, unknown> = {
+  ...recoveryConfig,
+  maxRounds: 2,
+  minPlayers: 6,
+  maxPlayers: 6,
+};
+
 function mockResponse(message: string): AgentResponse {
   return { thinking: "startup recovery mock", message };
 }
@@ -163,13 +170,15 @@ class RecoverySmokeAgent implements IAgent {
   removeFromMemory(_playerName: string): void {}
 }
 
-async function insertRecoveryPlayers(db: DrizzleDB, gameId: string): Promise<RecoverySmokeAgent[]> {
+async function insertRecoveryPlayers(db: DrizzleDB, gameId: string, count = 4): Promise<RecoverySmokeAgent[]> {
   const players = [
     { id: "atlas", name: "Atlas" },
     { id: "echo", name: "Echo" },
     { id: "mira", name: "Mira" },
     { id: "nyx", name: "Nyx" },
-  ];
+    { id: "rune", name: "Rune" },
+    { id: "sol", name: "Sol" },
+  ].slice(0, count);
 
   await db.insert(schema.gamePlayers).values(players.map((player) => ({
     id: player.id,
@@ -196,24 +205,30 @@ async function waitForCompletedGame(db: DrizzleDB, gameId: string) {
 async function interruptGameAtBoundary(
   db: DrizzleDB,
   actorCoordinate: GameRunnerResumeActorCoordinate,
+  options: {
+    config?: GameConfig & Record<string, unknown>;
+    playerCount?: number;
+    requireBlockedMingleInbox?: boolean;
+  } = {},
 ): Promise<{
   gameId: string;
   ownerEpoch: string;
   interruptedAtSequence: number;
 }> {
+  const config = options.config ?? recoveryConfig;
   const gameId = await insertGame(db, {
-    id: `startup-recovery-${actorCoordinate}`,
+    id: `startup-recovery-${actorCoordinate}-${options.playerCount ?? 4}`,
     status: "in_progress",
-    config: recoveryConfig,
+    config,
   });
   const ownerEpoch = await insertOwner(db, gameId);
-  const agents = await insertRecoveryPlayers(db, gameId);
+  const agents = await insertRecoveryPlayers(db, gameId, options.playerCount);
   const tokenTracker = new TokenTracker();
   tokenTracker.record("startup-recovery-fixture", 12, 4);
 
   let interruptedAtSequence = 0;
   let runner: GameRunner | null = null;
-  runner = new GameRunner(agents, recoveryConfig, new TemplateHouseInterviewer(), {
+  runner = new GameRunner(agents, config, new TemplateHouseInterviewer(), {
     gameId,
     tokenTracker,
     durableEventSink: (events) => appendGameEvents(db, { gameId, ownerEpoch, events }),
@@ -226,6 +241,10 @@ async function interruptGameAtBoundary(
         checkpoint.runtimeSnapshot?.actorWitness.actorCoordinate === actorCoordinate &&
         checkpoint.lastEventSequence > 0
       ) {
+        const hasBlockedMingleInbox = checkpoint.runtimeSnapshot.accumulatorRegistry.entries.some((entry) =>
+          entry.id === "mingleInbox" && entry.status === "blocked"
+        );
+        if (options.requireBlockedMingleInbox && !hasBlockedMingleInbox) return;
         interruptedAtSequence = checkpoint.lastEventSequence;
         runner?.abort();
       }
@@ -248,8 +267,9 @@ async function assertRecoveredGameCompleted(params: {
   gameId: string;
   originalOwnerEpoch: string;
   interruptedAtSequence: number;
+  expectedIntroductionCount?: number;
 }): Promise<void> {
-  const { db, gameId, originalOwnerEpoch, interruptedAtSequence } = params;
+  const { db, gameId, originalOwnerEpoch, interruptedAtSequence, expectedIntroductionCount = 4 } = params;
   const completed = await waitForCompletedGame(db, gameId);
   expect(completed.status).toBe("completed");
 
@@ -282,7 +302,7 @@ async function assertRecoveredGameCompleted(params: {
     .select()
     .from(schema.transcripts)
     .where(eq(schema.transcripts.gameId, gameId));
-  expect(transcripts.filter((row) => row.phase === "INTRODUCTION" && row.text.startsWith("Hi, I'm "))).toHaveLength(4);
+  expect(transcripts.filter((row) => row.phase === "INTRODUCTION" && row.text.startsWith("Hi, I'm "))).toHaveLength(expectedIntroductionCount);
   expect(transcripts.some((row) => row.phase === "LOBBY")).toBeTrue();
 }
 
@@ -344,6 +364,40 @@ describe("game startup recovery", () => {
     }, 30000);
   }
 
+  test("startup recovery resumes from a boundary with reconstructable Mingle inbox messages", async () => {
+    const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, "power", {
+      config: recoveryConfigWithMingle,
+      playerCount: 6,
+      requireBlockedMingleInbox: true,
+    });
+
+    const candidate = await getSupportedRecovery(db, gameId);
+    expect(candidate.ok).toBeTrue();
+    if (!candidate.ok) throw new Error(`expected recovery support, got ${candidate.reason}`);
+    expect(candidate.resumeFrom.mingleInboxReplay?.entries.length).toBeGreaterThan(0);
+    expect(candidate.resumeFrom.mingleInboxReplay?.unresolvedRecipientNames).toEqual([]);
+
+    const suspendedInspection = await getDurableRunInspection(db, gameId);
+    expect(suspendedInspection.ok).toBeTrue();
+    if (!suspendedInspection.ok) throw new Error("durable inspection failed");
+    const supportedBoundary = suspendedInspection.response.checkpoints.entries.find((entry) =>
+      entry.lastEventSequence === interruptedAtSequence &&
+      entry.checkpointKind === "phase_boundary"
+    );
+    expect(supportedBoundary?.resumeAvailable).toBeTrue();
+
+    const recovery = await recoverGamesOnStartup(db);
+    expect(recovery).toEqual({ attempted: 1, recovered: 1, skipped: [] });
+
+    await assertRecoveredGameCompleted({
+      db,
+      gameId,
+      originalOwnerEpoch: ownerEpoch,
+      interruptedAtSequence,
+      expectedIntroductionCount: 6,
+    });
+  }, 60000);
+
   test("startup recovery fails closed for unsupported actor coordinates even with complete checkpoint evidence", async () => {
     const gameId = await insertGame(db, {
       id: "startup-recovery-unsupported-coordinate",
@@ -404,7 +458,7 @@ describe("game startup recovery", () => {
       actorCoordinate: "vote",
     });
     if (!checkpoint.runtimeSnapshot) throw new Error("expected runtime snapshot");
-    const blockedEntry = checkpoint.runtimeSnapshot.accumulatorRegistry.entries[0];
+    const blockedEntry = checkpoint.runtimeSnapshot.accumulatorRegistry.entries.find((entry) => entry.id === "currentAccusations");
     if (!blockedEntry) throw new Error("expected accumulator entry");
     blockedEntry.status = "blocked";
     blockedEntry.proof = {
