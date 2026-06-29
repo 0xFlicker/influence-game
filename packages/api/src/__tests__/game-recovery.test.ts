@@ -8,6 +8,7 @@ import {
   type AgentResponse,
   type GameConfig,
   type IAgent,
+  type GameRunnerResumeActorCoordinate,
   type MingleIntentAction,
   type PhaseContext,
   type PowerAction,
@@ -17,13 +18,20 @@ import {
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { appendGameEvents } from "../services/game-events.js";
+import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
 import { writeGameCheckpoint } from "../services/game-checkpoints.js";
 import { getDurableRunInspection } from "../services/game-durable-run.js";
 import { abortAllGames, recoverGamesOnStartup } from "../services/game-lifecycle.js";
 import { markGameSuspended } from "../services/game-ownership.js";
+import { getSupportedRecovery } from "../services/game-recovery.js";
 import { setupTestDB } from "./test-utils.js";
-import { insertGame, insertOwner } from "./durable-run-test-utils.js";
+import {
+  createCheckpointCapsule,
+  createCanonicalEventFixture,
+  enrichCapsuleForV1Candidate,
+  insertGame,
+  insertOwner,
+} from "./durable-run-test-utils.js";
 
 const savedMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
 
@@ -185,6 +193,99 @@ async function waitForCompletedGame(db: DrizzleDB, gameId: string) {
   throw new Error(`Timed out waiting for recovered game ${gameId} to complete`);
 }
 
+async function interruptGameAtBoundary(
+  db: DrizzleDB,
+  actorCoordinate: GameRunnerResumeActorCoordinate,
+): Promise<{
+  gameId: string;
+  ownerEpoch: string;
+  interruptedAtSequence: number;
+}> {
+  const gameId = await insertGame(db, {
+    id: `startup-recovery-${actorCoordinate}`,
+    status: "in_progress",
+    config: recoveryConfig,
+  });
+  const ownerEpoch = await insertOwner(db, gameId);
+  const agents = await insertRecoveryPlayers(db, gameId);
+  const tokenTracker = new TokenTracker();
+  tokenTracker.record("startup-recovery-fixture", 12, 4);
+
+  let interruptedAtSequence = 0;
+  let runner: GameRunner | null = null;
+  runner = new GameRunner(agents, recoveryConfig, new TemplateHouseInterviewer(), {
+    gameId,
+    tokenTracker,
+    durableEventSink: (events) => appendGameEvents(db, { gameId, ownerEpoch, events }),
+    durableCheckpointSink: async (checkpoint) => {
+      const result = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
+      expect(result.ok).toBeTrue();
+      if (
+        interruptedAtSequence === 0 &&
+        checkpoint.checkpointKind === "phase_boundary" &&
+        checkpoint.runtimeSnapshot?.actorWitness.actorCoordinate === actorCoordinate &&
+        checkpoint.lastEventSequence > 0
+      ) {
+        interruptedAtSequence = checkpoint.lastEventSequence;
+        runner?.abort();
+      }
+    },
+  });
+
+  await expect(runner.run()).rejects.toThrow("Game run aborted");
+  expect(interruptedAtSequence).toBeGreaterThan(0);
+
+  await markGameSuspended(db, gameId, "test_process_interruption", {
+    actorCoordinate,
+    interruptedAtSequence,
+  });
+
+  return { gameId, ownerEpoch, interruptedAtSequence };
+}
+
+async function assertRecoveredGameCompleted(params: {
+  db: DrizzleDB;
+  gameId: string;
+  originalOwnerEpoch: string;
+  interruptedAtSequence: number;
+}): Promise<void> {
+  const { db, gameId, originalOwnerEpoch, interruptedAtSequence } = params;
+  const completed = await waitForCompletedGame(db, gameId);
+  expect(completed.status).toBe("completed");
+
+  const eventRows = await db
+    .select()
+    .from(schema.gameEvents)
+    .where(eq(schema.gameEvents.gameId, gameId))
+    .orderBy(asc(schema.gameEvents.sequence));
+  expect(eventRows.length).toBeGreaterThan(interruptedAtSequence);
+  expect(eventRows.map((row) => row.sequence)).toEqual(eventRows.map((_, index) => index + 1));
+  expect(eventRows.filter((row) => row.eventType === "game.roster_initialized")).toHaveLength(1);
+  expect(eventRows.slice(0, interruptedAtSequence).every((row) => row.ownerEpoch === originalOwnerEpoch)).toBeTrue();
+
+  const recoveryOwnerEpochs = new Set(
+    eventRows
+      .filter((row) => row.sequence > interruptedAtSequence)
+      .map((row) => row.ownerEpoch),
+  );
+  expect(recoveryOwnerEpochs.size).toBe(1);
+  expect(recoveryOwnerEpochs.has(originalOwnerEpoch)).toBeFalse();
+
+  const results = await db
+    .select()
+    .from(schema.gameResults)
+    .where(eq(schema.gameResults.gameId, gameId));
+  expect(results).toHaveLength(1);
+  expect(results[0]!.roundsPlayed).toBeGreaterThan(0);
+
+  const transcripts = await db
+    .select()
+    .from(schema.transcripts)
+    .where(eq(schema.transcripts.gameId, gameId));
+  expect(transcripts.filter((row) => row.phase === "INTRODUCTION" && row.text.startsWith("Hi, I'm "))).toHaveLength(4);
+  expect(transcripts.some((row) => row.phase === "LOBBY")).toBeTrue();
+}
+
 describe("game startup recovery", () => {
   let db: DrizzleDB;
 
@@ -210,88 +311,132 @@ describe("game startup recovery", () => {
     await abortAllGames();
   });
 
-  test("startup recovery resumes the same suspended game from a supported lobby boundary and reaches results", async () => {
+  const supportedRecoveryCoordinates = [
+    "lobby",
+    "vote",
+    "mingle",
+    "power",
+    "reveal",
+  ] satisfies GameRunnerResumeActorCoordinate[];
+
+  for (const actorCoordinate of supportedRecoveryCoordinates) {
+    test(`startup recovery resumes the same suspended game from a supported ${actorCoordinate} boundary and reaches results`, async () => {
+      const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, actorCoordinate);
+
+      const suspendedInspection = await getDurableRunInspection(db, gameId);
+      expect(suspendedInspection.ok).toBeTrue();
+      if (!suspendedInspection.ok) throw new Error("durable inspection failed");
+      const supportedBoundary = suspendedInspection.response.checkpoints.entries.find((entry) =>
+        entry.lastEventSequence === interruptedAtSequence &&
+        entry.checkpointKind === "phase_boundary"
+      );
+      expect(supportedBoundary?.resumeAvailable).toBeTrue();
+
+      const recovery = await recoverGamesOnStartup(db);
+      expect(recovery).toEqual({ attempted: 1, recovered: 1, skipped: [] });
+
+      await assertRecoveredGameCompleted({
+        db,
+        gameId,
+        originalOwnerEpoch: ownerEpoch,
+        interruptedAtSequence,
+      });
+    }, 30000);
+  }
+
+  test("startup recovery fails closed for unsupported actor coordinates even with complete checkpoint evidence", async () => {
     const gameId = await insertGame(db, {
-      id: "startup-recovery-smoke",
-      status: "in_progress",
+      id: "startup-recovery-unsupported-coordinate",
+      status: "suspended",
       config: recoveryConfig,
     });
     const ownerEpoch = await insertOwner(db, gameId);
-    const agents = await insertRecoveryPlayers(db, gameId);
-    const tokenTracker = new TokenTracker();
-    tokenTracker.record("startup-recovery-fixture", 12, 4);
+    const events = createCanonicalEventFixture(gameId);
+    await appendGameEvents(db, { gameId, ownerEpoch, events });
 
-    let interruptedAtSequence = 0;
-    let runner: GameRunner | null = null;
-    runner = new GameRunner(agents, recoveryConfig, new TemplateHouseInterviewer(), {
+    const checkpoint = enrichCapsuleForV1Candidate(createCheckpointCapsule(events), {
+      ownerEpoch,
+      eventHeadHash: hashCanonicalEvent(events[events.length - 1]!),
+      actorCoordinate: "tribunal_lobby",
+    });
+    const checkpointResult = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
+    expect(checkpointResult.ok).toBeTrue();
+
+    const candidate = await getSupportedRecovery(db, gameId);
+    expect(candidate).toMatchObject({
+      ok: false,
       gameId,
-      tokenTracker,
-      durableEventSink: (events) => appendGameEvents(db, { gameId, ownerEpoch, events }),
-      durableCheckpointSink: async (checkpoint) => {
-        const result = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
-        expect(result.ok).toBeTrue();
-        if (
-          checkpoint.checkpointKind === "phase_boundary" &&
-          checkpoint.runtimeSnapshot?.actorWitness.actorCoordinate === "lobby" &&
-          checkpoint.lastEventSequence > 0
-        ) {
-          interruptedAtSequence = checkpoint.lastEventSequence;
-          runner?.abort();
-        }
-      },
+      reason: "unsupported_actor_coordinate:tribunal_lobby",
     });
 
-    await expect(runner.run()).rejects.toThrow("Game run aborted");
-    expect(interruptedAtSequence).toBeGreaterThan(0);
-
-    await markGameSuspended(db, gameId, "test_process_interruption", { interruptedAtSequence });
-
-    const suspendedInspection = await getDurableRunInspection(db, gameId);
-    expect(suspendedInspection.ok).toBeTrue();
-    if (!suspendedInspection.ok) throw new Error("durable inspection failed");
-    const supportedBoundary = suspendedInspection.response.checkpoints.entries.find((entry) =>
-      entry.lastEventSequence === interruptedAtSequence &&
-      entry.checkpointKind === "phase_boundary"
-    );
-    expect(supportedBoundary?.resumeAvailable).toBeTrue();
+    const inspection = await getDurableRunInspection(db, gameId);
+    expect(inspection.ok).toBeTrue();
+    if (!inspection.ok) throw new Error("durable inspection failed");
+    expect(inspection.response.checkpoints.entries[0]?.resumeAvailable).toBeFalse();
 
     const recovery = await recoverGamesOnStartup(db);
-    expect(recovery).toEqual({ attempted: 1, recovered: 1, skipped: [] });
-
-    const completed = await waitForCompletedGame(db, gameId);
-    expect(completed.status).toBe("completed");
+    expect(recovery).toEqual({
+      attempted: 1,
+      recovered: 0,
+      skipped: [{ gameId, reason: "unsupported_actor_coordinate:tribunal_lobby" }],
+    });
 
     const eventRows = await db
       .select()
       .from(schema.gameEvents)
-      .where(eq(schema.gameEvents.gameId, gameId))
-      .orderBy(asc(schema.gameEvents.sequence));
-    expect(eventRows.length).toBeGreaterThan(interruptedAtSequence);
-    expect(eventRows.map((row) => row.sequence)).toEqual(eventRows.map((_, index) => index + 1));
-    expect(eventRows.filter((row) => row.eventType === "game.roster_initialized")).toHaveLength(1);
-    expect(eventRows.slice(0, interruptedAtSequence).every((row) => row.ownerEpoch === ownerEpoch)).toBeTrue();
+      .where(eq(schema.gameEvents.gameId, gameId));
+    expect(eventRows).toHaveLength(events.length);
+  });
 
-    const recoveryOwnerEpochs = new Set(
-      eventRows
-        .filter((row) => row.sequence > interruptedAtSequence)
-        .map((row) => row.ownerEpoch),
-    );
-    expect(recoveryOwnerEpochs.size).toBe(1);
-    expect(recoveryOwnerEpochs.has(ownerEpoch)).toBeFalse();
-    expect(eventRows.some((row) => row.sequence > interruptedAtSequence && row.eventType === "round.started")).toBeTrue();
+  test("startup recovery fails closed for blocked accumulator checkpoints", async () => {
+    const gameId = await insertGame(db, {
+      id: "startup-recovery-blocked-accumulator",
+      status: "suspended",
+      config: recoveryConfig,
+    });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const events = createCanonicalEventFixture(gameId);
+    await appendGameEvents(db, { gameId, ownerEpoch, events });
 
-    const results = await db
+    const checkpoint = enrichCapsuleForV1Candidate(createCheckpointCapsule(events), {
+      ownerEpoch,
+      eventHeadHash: hashCanonicalEvent(events[events.length - 1]!),
+      actorCoordinate: "vote",
+    });
+    if (!checkpoint.runtimeSnapshot) throw new Error("expected runtime snapshot");
+    const blockedEntry = checkpoint.runtimeSnapshot.accumulatorRegistry.entries[0];
+    if (!blockedEntry) throw new Error("expected accumulator entry");
+    blockedEntry.status = "blocked";
+    blockedEntry.proof = {
+      kind: "not_applicable_at_boundary",
+      detail: "fixture blocked accumulator",
+    };
+    const checkpointResult = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
+    expect(checkpointResult.ok).toBeTrue();
+
+    const candidate = await getSupportedRecovery(db, gameId);
+    expect(candidate).toMatchObject({
+      ok: false,
+      gameId,
+      reason: "unsafe_accumulator_registry",
+    });
+
+    const inspection = await getDurableRunInspection(db, gameId);
+    expect(inspection.ok).toBeTrue();
+    if (!inspection.ok) throw new Error("durable inspection failed");
+    expect(inspection.response.checkpoints.entries[0]?.resumeAvailable).toBeFalse();
+
+    const recovery = await recoverGamesOnStartup(db);
+    expect(recovery).toEqual({
+      attempted: 1,
+      recovered: 0,
+      skipped: [{ gameId, reason: "unsafe_accumulator_registry" }],
+    });
+
+    const eventRows = await db
       .select()
-      .from(schema.gameResults)
-      .where(eq(schema.gameResults.gameId, gameId));
-    expect(results).toHaveLength(1);
-    expect(results[0]!.roundsPlayed).toBeGreaterThan(0);
-
-    const transcripts = await db
-      .select()
-      .from(schema.transcripts)
-      .where(eq(schema.transcripts.gameId, gameId));
-    expect(transcripts.filter((row) => row.phase === "INTRODUCTION" && row.text.startsWith("Hi, I'm "))).toHaveLength(4);
-    expect(transcripts.some((row) => row.phase === "LOBBY")).toBeTrue();
-  }, 30000);
+      .from(schema.gameEvents)
+      .where(eq(schema.gameEvents.gameId, gameId));
+    expect(eventRows).toHaveLength(events.length);
+  });
 });

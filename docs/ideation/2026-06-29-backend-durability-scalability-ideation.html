@@ -434,7 +434,7 @@
         </div>
         <div class="meta-card">
           <span class="meta-label">Focus</span>
-          <span class="meta-value">one-boundary restart recovery to completion</span>
+          <span class="meta-value">normal-round phase-boundary restart recovery</span>
         </div>
       </div>
       <div class="stats-strip" aria-label="Ideation counts">
@@ -463,6 +463,7 @@
         <li><a href="#grounding-context">Grounding Context</a></li>
         <li><a href="#topic-axes">Topic Axes</a></li>
         <li><a href="#ranked-ideas">Ranked Ideas</a></li>
+        <li><a href="#implementation-recut">Implementation Recut</a></li>
         <li><a href="#rejection-summary">Rejection Summary</a></li>
         <li><a href="#sources-references">Sources &amp; References</a></li>
       </ul>
@@ -471,8 +472,8 @@
     <section id="grounding-context">
       <h2>Grounding Context</h2>
       <div class="section-prose">
-        <p>Influence already has the inspection substrate: owner epochs, canonical API events, event-boundary checkpoints, Runtime Snapshot v1, hydration passports, evidence manifests, and durable watch summaries. That substrate has not yet changed the game outcome after process loss. The docs and tests still encode the hard boundary: a real checkpoint can earn <code>hydration_candidate</code>, while <code>resumeAvailable</code> remains false and active execution is not crash-safe.</p>
-        <p>The live failure mode is process-local execution. <code>GameRunner</code> still owns the phase actor, game state, agents, diary room, token tracker, House context, Mingle inbox, elimination order, and accusations in memory. <code>game-lifecycle.ts</code> still tracks active games in a process-local <code>activeGames</code> map. Startup cleanup still marks old active owners as <code>startup_orphaned</code> instead of continuing them.</p>
+        <p>Influence already has the inspection substrate: owner epochs, canonical API events, event-boundary checkpoints, Runtime Snapshot v1, hydration passports, evidence manifests, and durable watch summaries. At the start of this pass, that substrate had not yet changed the game outcome after process loss: a real checkpoint could earn <code>hydration_candidate</code>, while <code>resumeAvailable</code> remained false and active execution was not crash-safe.</p>
+        <p>The live failure mode is process-local execution. <code>GameRunner</code> still owns the phase actor, game state, agents, diary room, token tracker, House context, Mingle inbox, elimination order, and accusations in memory. <code>game-lifecycle.ts</code> still tracks active games in a process-local <code>activeGames</code> map, but supported suspended runs can now be claimed by startup recovery instead of remaining only inspectable.</p>
         <p>The useful seam is narrower than full crash-safe sessions but more valuable than another readiness label: the runner already writes phase-boundary checkpoints after durable event flush, and an existing DB-backed test already aborts after such a checkpoint. The next slice should make that class of interruption continue, not merely explain why it cannot.</p>
       </div>
       <div class="callout">
@@ -517,7 +518,7 @@
         <li><a href="#idea-1">Idea 1. One-Boundary Resume To Completion</a></li>
         <li><a href="#idea-2">Idea 2. Supported Boundary Whitelist</a></li>
         <li><a href="#idea-3">Idea 3. Minimal Runner Hydrator</a></li>
-        <li><a href="#idea-4">Idea 4. Explicit Orphan Recovery Command</a></li>
+        <li><a href="#idea-4">Idea 4. Startup Recovery Coordinator</a></li>
         <li><a href="#idea-5">Idea 5. Kill/Restart Smoke Harness</a></li>
         <li><a href="#idea-6">Idea 6. Resume Watch And Results Continuity</a></li>
         <li><a href="#idea-7">Idea 7. Deploy Drain Plus Resume</a></li>
@@ -630,7 +631,7 @@
       </article>
 
       <article class="idea-card" id="idea-4">
-        <h3><span class="rank">Idea 4.</span> Explicit Orphan Recovery Command</h3>
+        <h3><span class="rank">Idea 4.</span> Startup Recovery Coordinator</h3>
         <dl class="idea-meta">
           <div><dt>Axis</dt><dd>Ownership and recovery operation</dd></div>
           <div><dt>Confidence</dt><dd>80%</dd></div>
@@ -638,7 +639,7 @@
         </dl>
         <div class="field">
           <h4>Description</h4>
-          <p>Create an operator-only recovery path that finds an eligible suspended or startup-orphaned game, validates its latest supported checkpoint, claims a fresh owner epoch, and starts the hydrated runner. Make v1 explicit and intentional rather than automatic startup behavior.</p>
+          <p>Create a configured API-startup recovery coordinator that finds eligible suspended or startup-orphaned games, validates the latest supported checkpoint, claims a fresh owner epoch, and starts the hydrated runner. Keep operator/admin controls as a later backstop, not the primary v1 recovery path.</p>
         </div>
         <div class="field">
           <h4>Basis</h4>
@@ -646,11 +647,11 @@
         </div>
         <div class="field">
           <h4>Rationale</h4>
-          <p>An explicit command gives the team a real recovery operation without making every API boot risky. It also gives the first implementation a manual handle for debugging when the recovered runner fails after claiming ownership.</p>
+          <p>This fits the current deployment reality: the API process is the only worker today, and it can safely recover eligible games on startup when configured. The behavior improves the game without asking an admin to babysit interrupted sessions.</p>
         </div>
         <div class="field">
           <h4>Downsides</h4>
-          <p>Manual recovery is less magical than auto-resume. That is the right trade for v1: a surprising startup resume path could make failures harder to inspect and could resume games before the team trusts the hydrator.</p>
+          <p>Startup recovery needs strict support predicates and bounded failure semantics. If the checkpoint is unsupported or hydration fails, the game should remain suspended and inspectable.</p>
         </div>
       </article>
 
@@ -713,7 +714,7 @@
         </dl>
         <div class="field">
           <h4>Description</h4>
-          <p>Once one-boundary resume works manually, use the same mechanism for planned restarts: stop an active game at the next supported boundary, exit the process, then recover after deploy. This makes deployment safer without claiming arbitrary crash or spot recovery.</p>
+          <p>Once phase-boundary startup recovery is trustworthy, use the same mechanism for planned restarts: stop an active game at the next supported boundary, exit the process, then recover after deploy. This makes deployment safer without claiming arbitrary crash or spot recovery.</p>
         </div>
         <div class="field">
           <h4>Basis</h4>
@@ -726,6 +727,89 @@
         <div class="field">
           <h4>Downsides</h4>
           <p>It depends on the first manual recovery path being trustworthy. If built too early, it becomes graceful shutdown theater rather than restart durability.</p>
+        </div>
+      </article>
+    </section>
+
+    <section id="implementation-recut">
+      <h2>Implementation Recut</h2>
+      <div class="section-prose">
+        <p>The one-boundary slice proved the startup recovery seam but left the product impact too narrow: a game only resumes if interruption happens after Introduction and before Round 1 starts. The next useful implementation slice should remove that artificial wall and support persisted normal-round phase boundaries wherever the checkpoint evidence says the runner is between phase effects.</p>
+        <p>The strongest implementation direction is not a new proof label. It is a generic phase-boundary resume contract for persisted actor coordinates, a selector that accepts the latest event-head checkpoint only when it is implemented-safe, API startup recovery acting as today&apos;s worker, and a DB-backed interruption matrix proving the same game completes after several real phase stops.</p>
+      </div>
+
+      <article class="idea-card" id="idea-8">
+        <h3><span class="rank">Idea 8.</span> Normal-Round Boundary Resume Matrix</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Supported boundary scope</dd></div>
+          <div><dt>Confidence</dt><dd>82%</dd></div>
+          <div><dt>Complexity</dt><dd>High</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Generalize the supported recovery target from one lobby checkpoint to persisted normal-round phase boundaries: pre-round <code>lobby</code>, then <code>vote</code>, <code>mingle</code>, <code>power</code>, and <code>reveal</code>. Recovery should accept the latest checkpoint only when it is at the event head and implemented-safe, hydrate to that actor coordinate, append post-restart events, and complete the same game.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> before this pass, <code>game-recovery.ts</code> and <code>game-durable-run.ts</code> rejected any checkpoint whose actor coordinate was not <code>lobby</code> and any event log containing <code>round.started</code>. <code>GameRunner</code> writes Runtime Snapshot v1 and transcript replay for every phase-boundary checkpoint.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>This is the first slice that matches the likely failure distribution. A process interruption usually lands somewhere inside a round, so normal-round boundary resume changes real deploy and restart risk instead of only protecting the first few seconds of a game.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>Normal phases carry more phase-machine context than the intro boundary. The slice should fail closed for endgame and accumulator-heavy boundaries until those states have specific hydration support.</p>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-9">
+        <h3><span class="rank">Idea 9.</span> Actor Coordinate Hydration Contract</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Runner reconstruction</dd></div>
+          <div><dt>Confidence</dt><dd>78%</dd></div>
+          <div><dt>Complexity</dt><dd>High</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Replace <code>post_intro_pre_lobby</code> with a versioned <code>phase_boundary</code> resume input that carries the target actor coordinate, canonical event prefix, transcript replay, token cursor, and House continuity. The runner should hydrate the phase actor deterministically to that coordinate before entering the existing phase loop.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> <code>GameState.fromCanonicalEvents()</code>, <code>TranscriptLogger.seed()</code>, <code>TokenTracker.loadCursor()</code>, and House continuity already exist. The missing piece is phase actor restoration beyond the one hard-coded two-transition path in <code>runGameLoop()</code>.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>The product value is unlocked by an engine contract, not by API-side optimism. Once the runner can resume from a coordinate, the recovery selector can widen without lying.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>Hydration must avoid replaying phase side effects. The phase actor can be advanced with machine events derived from canonical truth, but the game phase runners must not re-run work that already emitted canonical events.</p>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-10">
+        <h3><span class="rank">Idea 10.</span> Startup Reconciler As Today&apos;s Worker</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Ownership and recovery operation</dd></div>
+          <div><dt>Confidence</dt><dd>84%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Keep recovery automatic on API startup when configured. The single API process can scan suspended/startup-orphaned games, claim a fresh owner for the latest implemented-safe event-head checkpoint, and run the recovered game itself. Future worker fleets can reuse this service after the single-container path is trustworthy.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> current deployments have an API process and a web process, and the previous slice already added a startup recovery gate. Owner epochs and append-time owner checks already fence stale writers in the durable path.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>An admin-gated resume flow does not fit the product goal. If the API can recover safely under today&apos;s deployment constraints, it should do so without making an operator babysit interrupted games.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>Startup recovery should cap attempts and leave failed games inspectable. V1 does not need multi-worker leases or spot-fleet coordination, but it must not spin forever on a bad checkpoint.</p>
         </div>
       </article>
     </section>
@@ -788,8 +872,8 @@
           </tr>
           <tr>
             <td>10</td>
-            <td>Startup Auto-Recover In V1</td>
-            <td>Too surprising before manual recovery is trusted. Explicit recovery gives better debugging and safer rollout.</td>
+            <td>Unbounded Startup Auto-Recover</td>
+            <td>Automatic startup recovery is useful only behind strict support predicates and bounded failure behavior; a broad best-effort scan would hide unsafe checkpoints.</td>
           </tr>
           <tr>
             <td>11</td>
@@ -800,6 +884,21 @@
             <td>12</td>
             <td>Manual DB Surgery Runbook</td>
             <td>Helpful support material, but it does not make the backend more durable or the game continue.</td>
+          </tr>
+          <tr>
+            <td>13</td>
+            <td>Endgame Boundary Coverage In The Same Slice</td>
+            <td>Valuable later, but the current accumulator and accusation state shapes make it a riskier first expansion than normal-round phase boundaries.</td>
+          </tr>
+          <tr>
+            <td>14</td>
+            <td>Backfill Old Interrupted Games First</td>
+            <td>May help support work, but it does not improve future process interruption behavior unless generic recovery lands first.</td>
+          </tr>
+          <tr>
+            <td>15</td>
+            <td>Serverless Workflow Rewrite</td>
+            <td>Could be a later deployment target, but it replaces the hosting layer before the current runner can resume from its own durable checkpoints.</td>
           </tr>
         </tbody>
       </table>
@@ -840,7 +939,7 @@
     </section>
 
     <footer class="composition-signal">
-      Composed 2026-06-29T01:21:00Z by ce-ideate from the updated user prompt: recut backend durability ideation toward one-boundary restart recovery that completes a game, not more proof-only readiness work.
+      Composed 2026-06-29T01:21:00Z by ce-ideate, updated for generic persisted phase-boundary startup recovery that completes games from multiple real checkpoints rather than adding proof-only readiness work.
     </footer>
   </main>
 </body>

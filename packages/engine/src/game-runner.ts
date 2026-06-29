@@ -24,7 +24,7 @@ import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 
 // Re-export types from the extracted module for backward compatibility
 export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseCouncilRole, HouseCouncilRoleFact, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TokenCostCursor, TranscriptEntry, TranscriptWatermarkV1 } from "./game-runner.types";
-import type { AccumulatorEntryV1, BoundaryCertificate, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCouncilRoleFact, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, TranscriptEntry } from "./game-runner.types";
+import type { AccumulatorEntryV1, BoundaryCertificate, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameRunnerResumeActorCoordinate, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCouncilRoleFact, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, TranscriptEntry } from "./game-runner.types";
 import type { TokenTracker } from "./token-tracker";
 import {
   accumulatorProof,
@@ -508,14 +508,8 @@ export class GameRunner {
       });
     });
 
-    if (this.resumeFrom?.kind === "post_intro_pre_lobby") {
-      actor.send({ type: "PHASE_COMPLETE" });
-      await new Promise((r) => setTimeout(r, 0));
-      actor.send({
-        type: "UPDATE_ALIVE_PLAYERS",
-        aliveIds: this.gameState.getAlivePlayers().map((player) => player.id),
-      });
-      actor.send({ type: "PHASE_COMPLETE" });
+    if (this.resumeFrom?.kind === "phase_boundary") {
+      await this.hydratePhaseActorForResume(actor, this.resumeFrom.actorCoordinate);
     } else {
       // Advance past INIT
       actor.send({ type: "PHASE_COMPLETE" });
@@ -620,6 +614,114 @@ export class GameRunner {
     if (!this._aborted) {
       await completionPromise;
     }
+  }
+
+  private async tickPhaseActor(): Promise<void> {
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  private assertResumeActorState(actor: PhaseActor, expected: GameRunnerResumeActorCoordinate): void {
+    const actual = String(actor.getSnapshot().value);
+    if (actual !== expected) {
+      throw new Error(`Phase-boundary resume expected actor coordinate "${expected}" but hydrated "${actual}"`);
+    }
+  }
+
+  private latestCanonicalEvent<TType extends CanonicalGameEvent["type"]>(
+    type: TType,
+  ): Extract<CanonicalGameEvent, { type: TType }> | null {
+    const events = this.resumeFrom?.canonicalEvents ?? [];
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      const event = events[i];
+      if (event?.type === type) {
+        return event as Extract<CanonicalGameEvent, { type: TType }>;
+      }
+    }
+    return null;
+  }
+
+  private hasCanonicalEvent(type: CanonicalGameEvent["type"]): boolean {
+    return Boolean(this.resumeFrom?.canonicalEvents.some((event) => event.type === type));
+  }
+
+  private resumeEmpoweredId(): UUID {
+    const setEvent = this.latestCanonicalEvent("vote.empowered_set");
+    if (setEvent) return setEvent.payload.empowered;
+
+    const tallyEvent = this.latestCanonicalEvent("vote.empower_tally_resolved");
+    if (tallyEvent?.payload.tied === null) return tallyEvent.payload.empowered;
+
+    throw new Error("Phase-boundary resume missing resolved empowered player");
+  }
+
+  private resumeCandidateResolution(): {
+    candidates: [UUID, UUID] | null;
+    autoEliminated: UUID | null;
+  } {
+    const event = this.latestCanonicalEvent("power.candidates_resolved");
+    if (!event) {
+      throw new Error("Phase-boundary resume missing power candidate resolution");
+    }
+    return {
+      candidates: event.payload.candidates ? [...event.payload.candidates] : null,
+      autoEliminated: event.payload.autoEliminated,
+    };
+  }
+
+  private async hydratePhaseActorForResume(
+    actor: PhaseActor,
+    target: GameRunnerResumeActorCoordinate,
+  ): Promise<void> {
+    actor.send({ type: "PHASE_COMPLETE" });
+    await this.tickPhaseActor();
+    actor.send({
+      type: "UPDATE_ALIVE_PLAYERS",
+      aliveIds: this.gameState.getAlivePlayers().map((player) => player.id),
+    });
+    actor.send({ type: "PHASE_COMPLETE" });
+    await this.tickPhaseActor();
+    if (target === "lobby") {
+      this.assertResumeActorState(actor, target);
+      return;
+    }
+
+    if (!this.hasCanonicalEvent("round.started")) {
+      throw new Error(`Phase-boundary resume to "${target}" missing round.started event`);
+    }
+    actor.send({ type: "PHASE_COMPLETE" });
+    await this.tickPhaseActor();
+    if (target === "vote") {
+      this.assertResumeActorState(actor, target);
+      return;
+    }
+
+    const empoweredId = this.resumeEmpoweredId();
+    actor.send({ type: "VOTES_TALLIED", empoweredId });
+    actor.send({ type: "PHASE_COMPLETE" });
+    await this.tickPhaseActor();
+    if (target === "mingle") {
+      this.assertResumeActorState(actor, target);
+      return;
+    }
+
+    if (!this.hasCanonicalEvent("mingle.rooms_allocated")) {
+      throw new Error(`Phase-boundary resume to "${target}" missing mingle.rooms_allocated event`);
+    }
+    actor.send({ type: "PHASE_COMPLETE" });
+    await this.tickPhaseActor();
+    if (target === "power") {
+      this.assertResumeActorState(actor, target);
+      return;
+    }
+
+    const { candidates, autoEliminated } = this.resumeCandidateResolution();
+    if (autoEliminated) {
+      throw new Error("Phase-boundary resume cannot hydrate reveal after auto-eliminate power action");
+    }
+    actor.send({ type: "CANDIDATES_DETERMINED", candidates, autoEliminated });
+    actor.send({ type: "PHASE_COMPLETE" });
+    await this.tickPhaseActor();
+    this.assertResumeActorState(actor, target);
   }
 
   private houseRoundSummariesEnabled(): boolean {

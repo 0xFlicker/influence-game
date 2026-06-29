@@ -134,8 +134,8 @@ export {
   requiredPhaseBoundaryAccumulatorIds,
   sealBoundaryIdentity,
 } from "./runtime-snapshot";
-export { PHASE_BOUNDARY_ACCUMULATOR_IDS } from "./game-runner.types";
-export type { AccumulatorEntryV1, AccumulatorEntryStatusV1, AccumulatorProofV1, PhaseBoundaryAccumulatorId } from "./game-runner.types";
+export { PHASE_BOUNDARY_ACCUMULATOR_IDS, PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES } from "./game-runner.types";
+export type { AccumulatorEntryV1, AccumulatorEntryStatusV1, AccumulatorProofV1, GameRunnerResumeActorCoordinate, PhaseBoundaryAccumulatorId } from "./game-runner.types";
 
 // Agent
 export { InfluenceAgent, createAgentCast } from "./agent";
