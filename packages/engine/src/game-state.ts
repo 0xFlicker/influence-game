@@ -146,6 +146,53 @@ export class GameState {
     }, { phase: Phase.INIT, visibility: "system" });
   }
 
+  static fromCanonicalEvents(events: readonly CanonicalGameEvent[], options: Pick<GameStateOptions, "now"> = {}): GameState {
+    const projection = replayCanonicalEvents(events);
+    const players = projection.playerOrder.map((id) => {
+      const player = projection.players[id];
+      if (!player) throw new Error(`Canonical projection missing player ${id}`);
+      return { id: player.id, name: player.name };
+    });
+    const state = new GameState(players, { gameId: projection.gameId, ...options });
+    state.canonicalEvents.replaceAll(events);
+    state._players = new Map(
+      projection.playerOrder.map((id) => {
+        const player = projection.players[id]!;
+        return [id, { ...player }];
+      }),
+    );
+    state._round = projection.round;
+    state._roundResults = projection.roundResults.map((result) => ({ ...result }));
+    state._currentVoteTally = {
+      empowerVotes: { ...projection.currentVoteTally.empowerVotes },
+      exposeVotes: { ...projection.currentVoteTally.exposeVotes },
+    };
+    state._currentCouncilTally = { votes: { ...projection.currentCouncilTally.votes } };
+    state._empoweredId = projection.empoweredId;
+    state._initialCandidateResolution = null;
+    state._councilCandidates = projection.councilCandidates ? [...projection.councilCandidates] : null;
+    state._powerAction = projection.powerAction ? { ...projection.powerAction } : null;
+    state._roomAllocations = new Map(
+      Object.entries(projection.roomAllocations).map(([round, allocation]) => [
+        Number(round),
+        {
+          rooms: allocation.rooms.map((room) => ({ ...room, playerIds: [...room.playerIds] })),
+          excluded: [...allocation.excluded],
+          lastSessionExcluded: [...allocation.lastSessionExcluded],
+        },
+      ]),
+    );
+    state._jury = projection.jury.map((juror) => ({ ...juror }));
+    state._endgameStage = projection.endgameStage;
+    state._cumulativeEmpowerVotes = new Map(
+      Object.entries(projection.cumulativeEmpowerVotes).map(([id, count]) => [id, count]),
+    );
+    state._endgameEliminationTally = { votes: { ...projection.endgameEliminationTally.votes } };
+    state._juryVoteTally = { votes: { ...projection.juryVoteTally.votes } };
+    state._lastEmpoweredFromRegularRounds = projection.lastEmpoweredFromRegularRounds;
+    return state;
+  }
+
   private appendCanonicalEvent<
     TType extends CanonicalGameEventType,
     TPayload extends Record<string, unknown>,

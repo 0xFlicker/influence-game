@@ -24,7 +24,7 @@ import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 
 // Re-export types from the extracted module for backward compatibility
 export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseCouncilRole, HouseCouncilRoleFact, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TokenCostCursor, TranscriptEntry, TranscriptWatermarkV1 } from "./game-runner.types";
-import type { AccumulatorEntryV1, BoundaryCertificate, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCouncilRoleFact, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, TranscriptEntry } from "./game-runner.types";
+import type { AccumulatorEntryV1, BoundaryCertificate, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCouncilRoleFact, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, TranscriptEntry } from "./game-runner.types";
 import type { TokenTracker } from "./token-tracker";
 import {
   accumulatorProof,
@@ -71,6 +71,7 @@ export class GameRunner {
   private readonly durableCheckpointSink?: GameRunnerOptions["durableCheckpointSink"];
   private readonly beforeAcceptedCommit?: GameRunnerOptions["beforeAcceptedCommit"];
   private readonly tokenTracker?: TokenTracker;
+  private readonly resumeFrom?: GameRunnerOptions["resumeFrom"];
   private flushedCanonicalSequence = 0;
   private readonly writtenCheckpointKeys = new Set<string>();
   private houseStrategyBible: HouseStrategyBiblePacket | null = null;
@@ -97,16 +98,41 @@ export class GameRunner {
     this.totalPlayerCount = agents.length;
     this.agents = new Map(agents.map((a) => [a.id, a]));
     const gameStateOptions = options.gameId ? { gameId: options.gameId } : {};
-    this.gameState = new GameState(agents.map((a) => ({ id: a.id, name: a.name })), gameStateOptions);
+    this.resumeFrom = options.resumeFrom;
+    this.gameState = options.resumeFrom
+      ? GameState.fromCanonicalEvents(options.resumeFrom.canonicalEvents)
+      : new GameState(agents.map((a) => ({ id: a.id, name: a.name })), gameStateOptions);
     this.machine = createPhaseMachine();
     this.houseInterviewer = houseInterviewer ?? new TemplateHouseInterviewer();
     this.durableEventSink = options.durableEventSink;
     this.durableCheckpointSink = options.durableCheckpointSink;
     this.beforeAcceptedCommit = options.beforeAcceptedCommit;
     this.tokenTracker = options.tokenTracker;
+    if (this.resumeFrom) {
+      this.flushedCanonicalSequence = this.resumeFrom.lastEventSequence;
+      this.writtenCheckpointKeys.add(`initial:${this.flushedCanonicalSequence}`);
+      this.writtenCheckpointKeys.add(`phase_boundary:${this.flushedCanonicalSequence}`);
+      if (this.resumeFrom.houseContinuityCapsule) {
+        this.houseStrategyBible = {
+          ...this.resumeFrom.houseContinuityCapsule,
+          coveredWindow: {
+            fromRound: this.resumeFrom.houseContinuityCapsule.updatedAtRound,
+            toRound: this.resumeFrom.houseContinuityCapsule.updatedAtRound,
+            fromPhase: this.resumeFrom.houseContinuityCapsule.updatedAtPhase,
+            toPhase: this.resumeFrom.houseContinuityCapsule.updatedAtPhase,
+          },
+        };
+      }
+      if (this.resumeFrom.tokenCostCursor) {
+        this.tokenTracker?.loadCursor(this.resumeFrom.tokenCostCursor);
+      }
+    }
 
     // Initialize extracted modules
     this.logger = new TranscriptLogger(this.gameState);
+    if (this.resumeFrom) {
+      this.logger.seed(this.resumeFrom.transcriptReplay);
+    }
     this.contextBuilder = new ContextBuilder(
       this.gameState,
       this.logger,
@@ -327,6 +353,18 @@ export class GameRunner {
     });
   }
 
+  private buildTranscriptReplay(): NonNullable<GameCheckpointCapsule["transcriptReplay"]> {
+    return {
+      version: 1,
+      entries: this.logger.transcript.map((entry) => {
+        const safeEntry = { ...entry };
+        delete safeEntry.thinking;
+        delete safeEntry.reasoningContext;
+        return structuredClone(safeEntry) as TranscriptEntry;
+      }),
+    };
+  }
+
   private async writeCheckpoint(
     kind: GameCheckpointKind,
     phase?: Phase,
@@ -447,6 +485,7 @@ export class GameRunner {
       boundaryCertificate,
       playerContinuityCapsules,
       houseContinuityCapsule,
+      transcriptReplay: hasRuntimeSnapshot ? this.buildTranscriptReplay() : null,
       runtimeSnapshot,
       transcriptCursor,
       tokenCostCursor: tokenCursor,
@@ -469,8 +508,18 @@ export class GameRunner {
       });
     });
 
-    // Advance past INIT
-    actor.send({ type: "PHASE_COMPLETE" });
+    if (this.resumeFrom?.kind === "post_intro_pre_lobby") {
+      actor.send({ type: "PHASE_COMPLETE" });
+      await new Promise((r) => setTimeout(r, 0));
+      actor.send({
+        type: "UPDATE_ALIVE_PLAYERS",
+        aliveIds: this.gameState.getAlivePlayers().map((player) => player.id),
+      });
+      actor.send({ type: "PHASE_COMPLETE" });
+    } else {
+      // Advance past INIT
+      actor.send({ type: "PHASE_COMPLETE" });
+    }
     await new Promise((r) => setTimeout(r, 0));
 
     const prc = this.buildPhaseRunnerContext();

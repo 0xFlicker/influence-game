@@ -209,6 +209,7 @@ export async function writeGameCheckpoint(
             runtimeSnapshot,
             playerContinuityCapsules: params.checkpoint.playerContinuityCapsules ?? [],
             houseContinuityCapsule: params.checkpoint.houseContinuityCapsule ?? null,
+            transcriptReplay: params.checkpoint.transcriptReplay ?? null,
             expectedActivePlayerIds: params.checkpoint.state.alivePlayerCount > 0
               ? Object.values(params.checkpoint.projection.players)
                   .filter((player) => player.status !== "eliminated")

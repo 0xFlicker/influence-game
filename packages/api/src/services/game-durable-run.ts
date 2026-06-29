@@ -93,8 +93,8 @@ export interface DurableCheckpointSummary {
   createdAt: string;
   /** Validator-derived hydration passport (richer readiness model; candidate != resume). */
   passport: HydrationPassport;
-  /** Explicit: production resume is not implemented for candidate checkpoints. */
-  resumeAvailable: false;
+  /** True only when the implemented startup recovery path supports this checkpoint. */
+  resumeAvailable: boolean;
 }
 
 export interface DurableEvidenceSummary {
@@ -352,6 +352,55 @@ function ownerIsExpiredAtInspection(owner: DurableRunOwnerRow): boolean {
   return Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now();
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function actorCoordinate(snapshot: unknown): string | null {
+  if (!isRecord(snapshot)) return null;
+  const runtimeSnapshot = snapshot.runtimeSnapshot;
+  if (!isRecord(runtimeSnapshot)) return null;
+  const actorWitness = runtimeSnapshot.actorWitness;
+  if (!isRecord(actorWitness) || typeof actorWitness.actorCoordinate !== "string") return null;
+  return actorWitness.actorCoordinate;
+}
+
+function transcriptReplayEntryCount(snapshot: unknown): number | null {
+  if (!isRecord(snapshot)) return null;
+  const replay = snapshot.transcriptReplay;
+  if (!isRecord(replay) || replay.version !== 1 || !Array.isArray(replay.entries)) return null;
+  return replay.entries.length;
+}
+
+function checkpointHasImplementedResumeSupport(params: {
+  gameStatus: GameStatus;
+  checkpoint: {
+    lastEventSequence: number;
+    checkpointKind: string;
+    snapshot: unknown;
+    tokenCostCursor: unknown;
+  };
+  persistedEvents: Awaited<ReturnType<typeof getPersistedGameEvents>>;
+}): boolean {
+  if (params.gameStatus !== "suspended") return false;
+  if (params.checkpoint.checkpointKind !== "phase_boundary") return false;
+  if (actorCoordinate(params.checkpoint.snapshot) !== "lobby") return false;
+  if (!params.checkpoint.tokenCostCursor) return false;
+  if (params.persistedEvents.status !== "complete") return false;
+  if (params.persistedEvents.lastTrustedSequence !== params.checkpoint.lastEventSequence) return false;
+  if (params.persistedEvents.events.some((event) => event.envelope.type === "round.started")) return false;
+
+  const count = transcriptReplayEntryCount(params.checkpoint.snapshot);
+  if (count == null) return false;
+  const snapshot = params.checkpoint.snapshot;
+  if (!isRecord(snapshot)) return false;
+  const runtimeSnapshot = snapshot.runtimeSnapshot;
+  if (!isRecord(runtimeSnapshot)) return false;
+  const transcriptWatermark = runtimeSnapshot.transcriptWatermark;
+  if (!isRecord(transcriptWatermark) || typeof transcriptWatermark.entryCount !== "number") return false;
+  return count === transcriptWatermark.entryCount;
+}
+
 function summarizeOwnerAtInspection(
   owner: DurableRunOwnerRow | null,
 ): {
@@ -494,7 +543,11 @@ export async function getDurableRunInspection(
         tokenCostCursorPresent: checkpoint.tokenCostCursor !== null,
         createdAt: checkpoint.createdAt,
         passport: passportResult.passport,
-        resumeAvailable: false,
+        resumeAvailable: checkpointHasImplementedResumeSupport({
+          gameStatus: game.status,
+          checkpoint,
+          persistedEvents,
+        }),
       };
     });
 

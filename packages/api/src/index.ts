@@ -25,6 +25,7 @@ import { createCognitiveArtifactRoutes } from "./routes/cognitive-artifacts.js";
 import { createWatchIntelligenceRoutes } from "./routes/watch-intelligence.js";
 import { getStorageStatus } from "./lib/storage.js";
 import { getGameWatchState } from "./services/game-watch-state.js";
+import { recoverGamesOnStartup } from "./services/game-lifecycle.js";
 import {
   setServer,
   handleOpen,
@@ -134,6 +135,18 @@ if (orphanedGames.length > 0) {
         .where(eq(schema.games.id, game.id));
     });
     console.warn(`[startup] Suspended orphaned game ${game.id} (started ${Math.round(ageMs / 1000)}s ago)`);
+  }
+}
+
+if (process.env.INFLUENCE_API_STARTUP_RECOVERY === "true") {
+  const recovery = await recoverGamesOnStartup(db);
+  if (recovery.attempted > 0) {
+    console.info(
+      `[startup] Recovery attempted ${recovery.attempted} suspended game(s); recovered ${recovery.recovered}; skipped ${recovery.skipped.length}`,
+    );
+    for (const skipped of recovery.skipped) {
+      console.warn(`[startup] Recovery skipped ${skipped.gameId}: ${skipped.reason}`);
+    }
   }
 }
 

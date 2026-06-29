@@ -185,6 +185,13 @@ export class TokenTracker {
       this.perSource.set(source, existing);
     }
   }
+
+  loadCursor(cursor: TokenCostCursor): void {
+    this.perSource.clear();
+    for (const [source, usage] of Object.entries(cursor.perSource)) {
+      this.perSource.set(source, { ...EMPTY_USAGE, ...usage });
+    }
+  }
 }
 
 /** Serializable token/cost cursor for checkpoint hydration passports (U4). */
@@ -208,6 +215,7 @@ export interface TokenCostCursor {
 
 export interface TokenTracker {
   toCursor(): TokenCostCursor;
+  loadCursor(cursor: TokenCostCursor): void;
 }
 
 TokenTracker.prototype.toCursor = function (this: TokenTracker): TokenCostCursor {

@@ -47,6 +47,8 @@ export interface GameStateSnapshot {
 export interface GameRunnerOptions {
   /** Optional external run identity, used by API-backed games before the first canonical event. */
   gameId?: UUID;
+  /** Narrow v1 runtime resume input for the supported post-Introduction boundary. */
+  resumeFrom?: GameRunnerResumeOptions;
   /** Optional producer/debug sink for private model-call traces. */
   privateTraceSink?: PrivateTraceSink;
   /** Awaited durability boundary for API-backed canonical event persistence. */
@@ -57,6 +59,15 @@ export interface GameRunnerOptions {
   beforeAcceptedCommit?: () => Promise<void> | void;
   /** Optional token tracker for checkpoint cursor evidence (API-backed games). */
   tokenTracker?: TokenTracker;
+}
+
+export interface GameRunnerResumeOptions {
+  kind: "post_intro_pre_lobby";
+  canonicalEvents: readonly CanonicalGameEvent[];
+  lastEventSequence: number;
+  transcriptReplay: readonly TranscriptEntry[];
+  tokenCostCursor?: TokenCostCursor | null;
+  houseContinuityCapsule?: HouseContinuityCapsule | null;
 }
 
 export type GameCheckpointKind = "initial" | "phase_boundary" | "terminal";
@@ -224,6 +235,10 @@ export interface GameCheckpointCapsule {
   boundaryCertificate?: BoundaryCertificate | null;
   playerContinuityCapsules?: PlayerContinuityCapsule[];
   houseContinuityCapsule?: HouseContinuityCapsule | null;
+  transcriptReplay?: {
+    version: 1;
+    entries: TranscriptEntry[];
+  } | null;
   /** Phase-boundary runtime evidence for hydration passport validation (v1). */
   runtimeSnapshot?: RuntimeSnapshotV1 | null;
   transcriptCursor: {
