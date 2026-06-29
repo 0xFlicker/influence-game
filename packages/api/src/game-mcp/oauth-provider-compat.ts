@@ -33,6 +33,10 @@ export const MCP_OAUTH_PROVIDER_REDIRECT_URIS: McpOAuthProviderRedirectRule[] = 
     providerId: "claude",
     redirectUri: "https://claude.ai/api/mcp/auth_callback",
   },
+  {
+    providerId: "grok",
+    redirectUri: "https://grok.com/connectors-oauth-exchange-code/",
+  },
 ];
 
 export function providerRedirectRuleForUri(

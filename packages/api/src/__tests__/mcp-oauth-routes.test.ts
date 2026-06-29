@@ -27,6 +27,7 @@ const REDIRECT_URI = "http://127.0.0.1:34789/oauth/callback";
 const DYNAMIC_REDIRECT_URI = "http://127.0.0.1:49281/codex/callback";
 const CLAUDE_REDIRECT_URI = "https://claude.ai/api/mcp/auth_callback";
 const CHATGPT_REDIRECT_URI = "https://chatgpt.com/connector/oauth/_syG1DzKsjXV";
+const GROK_REDIRECT_URI = "https://grok.com/connectors-oauth-exchange-code/";
 const RESOURCE_URI = "http://127.0.0.1:3000/mcp";
 const PRODUCER_RESOURCE_URI = "http://127.0.0.1:3000/mcp/producer";
 const DEPLOYED_RESOURCE_URI = "https://influence.example/mcp";
@@ -424,6 +425,45 @@ describe("MCP OAuth routes", () => {
       matchSource: "provider_config",
     });
     expect(JSON.stringify(auditEvents)).not.toContain(CHATGPT_REDIRECT_URI);
+  });
+
+  test("accepts code-owned Grok OAuth callback during dynamic registration", async () => {
+    const registration = await app.request("/api/oauth/mcp/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "Grok connector",
+        redirect_uris: [GROK_REDIRECT_URI],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        scope: MCP_OAUTH_GAMES_SCOPE,
+        token_endpoint_auth_method: "none",
+      }),
+    });
+
+    expect(registration.status).toBe(201);
+    expect(await jsonObject(registration)).toMatchObject({
+      redirect_uris: [GROK_REDIRECT_URI],
+      grant_types: ["authorization_code", "refresh_token"],
+    });
+    const audit = auditEvents.at(-1);
+    expect(audit).toMatchObject({
+      event: "mcp.oauth.register",
+      result: "success",
+      status: 201,
+      registrationRedirectUriCount: 1,
+      registrationGrantTypes: ["authorization_code", "refresh_token"],
+      registrationResponseTypes: ["code"],
+    });
+    expect(audit?.registrationRedirectUris?.[0]).toMatchObject({
+      protocol: "https",
+      host: "grok.com",
+      path: "/connectors-oauth-exchange-code/",
+      hasQuery: false,
+      providerId: "grok",
+      matchSource: "provider_config",
+    });
+    expect(JSON.stringify(auditEvents)).not.toContain(GROK_REDIRECT_URI);
   });
 
   test("audits rejected hosted redirect URIs without logging the full callback", async () => {

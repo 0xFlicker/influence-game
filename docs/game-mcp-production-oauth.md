@@ -59,8 +59,10 @@ DCR audit diagnostics to capture unknown provider callbacks safely. The legacy
 escape hatch for non-provider callbacks.
 
 Current code-owned provider callbacks include ChatGPT's hosted connector
-callback at `https://chatgpt.com/connector/oauth/_syG1DzKsjXV` and Claude's
-hosted connector callback at `https://claude.ai/api/mcp/auth_callback`.
+callback at `https://chatgpt.com/connector/oauth/_syG1DzKsjXV`, Claude's
+hosted connector callback at `https://claude.ai/api/mcp/auth_callback`, and
+Grok's hosted connector callback at
+`https://grok.com/connectors-oauth-exchange-code/`.
 
 Dynamic client registration is enabled for public MCP clients. A registered client may store a supported scope set such as `games mcp`, because some MCP clients register every scope advertised by the authorization server. If the client omits scope, registration defaults to `games`.
 
