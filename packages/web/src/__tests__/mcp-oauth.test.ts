@@ -43,12 +43,35 @@ describe("parseMcpOAuthSearchParams", () => {
     if (result.ok) return;
     expect(result.missing).toEqual([
       "redirect_uri",
-      "resource",
       "scope",
       "state",
       "code_challenge",
       "code_challenge_method",
     ]);
+  });
+
+  it("accepts Grok authorization requests that omit resource", () => {
+    const result = parseMcpOAuthSearchParams(new URLSearchParams({
+      response_type: "code",
+      client_id: "influence-game-mcp-client-e441f9a7-12ce-4362-9891-ceda274ffe17",
+      redirect_uri: "https://grok.com/connectors-oauth-exchange-code/",
+      scope: MCP_OAUTH_SCOPE,
+      state: "state-123",
+      code_challenge: "challenge-123",
+      code_challenge_method: "S256",
+    }));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.request).toEqual({
+      response_type: "code",
+      client_id: "influence-game-mcp-client-e441f9a7-12ce-4362-9891-ceda274ffe17",
+      redirect_uri: "https://grok.com/connectors-oauth-exchange-code/",
+      scope: MCP_OAUTH_SCOPE,
+      state: "state-123",
+      code_challenge: "challenge-123",
+      code_challenge_method: "S256",
+    });
   });
 
   it("rejects non-S256 requests before contacting the API", () => {

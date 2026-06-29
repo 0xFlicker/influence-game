@@ -789,7 +789,7 @@ export interface McpOAuthAuthorizeRequest {
   response_type: "code";
   client_id: string;
   redirect_uri: string;
-  resource: string;
+  resource?: string;
   scope: string;
   state: string;
   code_challenge: string;

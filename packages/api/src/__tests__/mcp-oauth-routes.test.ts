@@ -466,6 +466,101 @@ describe("MCP OAuth routes", () => {
     expect(JSON.stringify(auditEvents)).not.toContain(GROK_REDIRECT_URI);
   });
 
+  test("authorizes Grok when it omits resource and keeps issued tokens resource-bound", async () => {
+    const registration = await app.request("/api/oauth/mcp/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "Grok connector",
+        redirect_uris: [GROK_REDIRECT_URI],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        scope: MCP_OAUTH_GAMES_SCOPE,
+        token_endpoint_auth_method: "none",
+      }),
+    });
+    expect(registration.status).toBe(201);
+    const dynamicClientId = String((await jsonObject(registration)).client_id);
+    const { token: sessionToken } = await createUserSession(db, NON_MCP_ADDRESS);
+    const codeVerifier = "grok-no-resource-verifier";
+    const authorizationRequest = {
+      response_type: "code",
+      client_id: dynamicClientId,
+      redirect_uri: GROK_REDIRECT_URI,
+      scope: MCP_OAUTH_GAMES_SCOPE,
+      state: "grok-no-resource-state",
+      code_challenge: pkceS256(codeVerifier),
+      code_challenge_method: "S256",
+    };
+
+    const preview = await app.request("/api/oauth/mcp/authorize", {
+      method: "POST",
+      headers: jsonAuthHeaders(sessionToken),
+      body: JSON.stringify({ ...authorizationRequest, decision: "inspect" }),
+    });
+
+    expect(preview.status).toBe(200);
+    expect(await jsonObject(preview)).toMatchObject({
+      clientId: dynamicClientId,
+      redirectUri: GROK_REDIRECT_URI,
+      resource: RESOURCE_URI,
+      scope: MCP_OAUTH_GAMES_SCOPE,
+      authProfile: "games_subject",
+    });
+
+    const authorize = await app.request("/api/oauth/mcp/authorize", {
+      method: "POST",
+      headers: jsonAuthHeaders(sessionToken),
+      body: JSON.stringify({ ...authorizationRequest, decision: "approve" }),
+    });
+
+    expect(authorize.status).toBe(200);
+    const redirect = new URL(String((await jsonObject(authorize)).redirectTo));
+    expect(redirect.origin + redirect.pathname).toBe(GROK_REDIRECT_URI);
+    const code = redirect.searchParams.get("code");
+    expect(code).toBeTruthy();
+
+    const token = await app.request("/api/oauth/mcp/token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: dynamicClientId,
+        redirect_uri: GROK_REDIRECT_URI,
+        code: code!,
+        code_verifier: codeVerifier,
+      }).toString(),
+    });
+
+    expect(token.status).toBe(200);
+    const tokenJson = await jsonObject(token);
+    expect(tokenJson).toMatchObject({
+      token_type: "Bearer",
+      scope: MCP_OAUTH_GAMES_SCOPE,
+      resource: RESOURCE_URI,
+    });
+    expect(typeof tokenJson.refresh_token).toBe("string");
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      event: "mcp.oauth.authorize",
+      clientId: dynamicClientId,
+      resource: RESOURCE_URI,
+      scope: MCP_OAUTH_GAMES_SCOPE,
+      authProfile: "games_subject",
+      result: "success",
+      status: 200,
+    }));
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      event: "mcp.oauth.token",
+      clientId: dynamicClientId,
+      resource: RESOURCE_URI,
+      scope: MCP_OAUTH_GAMES_SCOPE,
+      authProfile: "games_subject",
+      grantType: "authorization_code",
+      result: "success",
+      status: 200,
+    }));
+  });
+
   test("audits rejected hosted redirect URIs without logging the full callback", async () => {
     const chatGptRedirectUri = "https://chatgpt.com/mcp/oauth/callback";
     const registration = await app.request("/api/oauth/mcp/register", {
@@ -917,6 +1012,20 @@ describe("MCP OAuth routes", () => {
     });
     expect(plainChallenge.status).toBe(400);
     expect((await jsonObject(plainChallenge)).error).toBe("invalid_request");
+
+    const ambiguousResource = await app.request("/api/oauth/mcp/authorize", {
+      method: "POST",
+      headers: jsonAuthHeaders(sessionToken),
+      body: JSON.stringify({
+        ...authorizeBody({ decision: "approve", scope: "games mcp" }),
+        resource: undefined,
+      }),
+    });
+    expect(ambiguousResource.status).toBe(400);
+    expect(await jsonObject(ambiguousResource)).toMatchObject({
+      error: "invalid_target",
+      error_description: "resource must match the requested MCP scope",
+    });
 
     const wrongResource = await app.request("/api/oauth/mcp/authorize", {
       method: "POST",

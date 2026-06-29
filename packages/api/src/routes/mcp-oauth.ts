@@ -128,12 +128,13 @@ export function createMcpOAuthRoutes(
     emitAudit(auditLogger, {
       event: "mcp.oauth.authorize",
       correlationId,
-      userId: c.get("user").id,
-      walletAddress: c.get("user").walletAddress ?? undefined,
-      clientId: safeAuditString(body.client_id),
-      resource: safeAuditString(body.resource),
+      userId: result.audit?.userId ?? c.get("user").id,
+      walletAddress: result.audit?.walletAddress ?? c.get("user").walletAddress ?? undefined,
+      clientId: result.audit?.clientId ?? safeAuditString(body.client_id),
+      resource: result.audit?.resource ?? safeAuditString(body.resource),
       scope: safeAuditString(body.scope),
-      authProfile: auditAuthProfileForRequest(body.scope, body.resource),
+      authProfile: result.audit?.authProfile ??
+        auditAuthProfileForRequest(body.scope, result.audit?.resource ?? body.resource),
       decision,
       providerId: providerIdHint(c),
       appStage: "oauth_start",

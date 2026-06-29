@@ -141,8 +141,8 @@ interface ValidAuthorizationCodeTokenRequest {
   grantType: "authorization_code";
   code: string;
   redirectUri: string;
-  resourceUri: string;
-  profile: McpOAuthResourceProfile;
+  resourceUri?: string;
+  profile?: McpOAuthResourceProfile;
   clientId: string;
   codeVerifier: string;
 }
@@ -326,6 +326,7 @@ export async function authorizeMcpOAuth(
           state: parsed.request.state,
         }),
       },
+      audit: authorizationAudit(user, parsed.request),
     };
   }
 
@@ -339,6 +340,7 @@ export async function authorizeMcpOAuth(
           state: parsed.request.state,
         }),
       },
+      audit: authorizationAudit(user, parsed.request),
     };
   }
 
@@ -355,6 +357,7 @@ export async function authorizeMcpOAuth(
           state: parsed.request.state,
         }),
       },
+      audit: authorizationAudit(user, parsed.request),
     };
   }
 
@@ -371,6 +374,7 @@ export async function authorizeMcpOAuth(
         expiresIn: MCP_OAUTH_CODE_TTL_SECONDS,
         walletAddress: user.walletAddress,
       },
+      audit: authorizationAudit(user, parsed.request),
     };
   }
 
@@ -402,6 +406,7 @@ export async function authorizeMcpOAuth(
       }),
       expiresIn: MCP_OAUTH_CODE_TTL_SECONDS,
     },
+    audit: authorizationAudit(user, parsed.request),
   };
 }
 
@@ -495,8 +500,6 @@ export async function exchangeMcpOAuthCode(
   if (parsed.request.grantType === "refresh_token") {
     return refreshMcpOAuthAccessToken(db, parsed.request, now);
   }
-  const codeRequest = parsed.request;
-
   const codeHash = hashOpaqueSecret(parsed.request.code);
   const codeRow = (await db
     .select()
@@ -515,17 +518,27 @@ export async function exchangeMcpOAuthCode(
   if (
     codeRow.clientId !== parsed.request.clientId ||
     codeRow.redirectUri !== parsed.request.redirectUri ||
-    codeRow.resourceUri !== parsed.request.resourceUri ||
-    codeRow.scope !== parsed.request.profile.scope ||
+    (parsed.request.resourceUri && codeRow.resourceUri !== parsed.request.resourceUri) ||
     codeRow.codeChallengeMethod !== "S256"
   ) {
+    const mismatchProfile = parsed.request.profile ?? profileForMcpResourceUri(codeRow.resourceUri);
     return invalidGrant("Authorization code does not match this token request", {
       userId: codeRow.userId,
       walletAddress: codeRow.walletAddress ?? undefined,
       clientId: codeRow.clientId,
       resource: codeRow.resourceUri,
       scope: codeRow.scope,
-      authProfile: parsed.request.profile.authProfile,
+      authProfile: mismatchProfile?.authProfile,
+    });
+  }
+  const codeProfile = profileForMcpResourceUri(codeRow.resourceUri);
+  if (!codeProfile || codeRow.scope !== codeProfile.scope) {
+    return invalidGrant("Authorization code resource is no longer valid", {
+      userId: codeRow.userId,
+      walletAddress: codeRow.walletAddress ?? undefined,
+      clientId: codeRow.clientId,
+      resource: codeRow.resourceUri,
+      scope: codeRow.scope,
     });
   }
   if (pkceS256(parsed.request.codeVerifier) !== codeRow.codeChallenge) {
@@ -535,7 +548,7 @@ export async function exchangeMcpOAuthCode(
       clientId: codeRow.clientId,
       resource: codeRow.resourceUri,
       scope: codeRow.scope,
-      authProfile: parsed.request.profile.authProfile,
+      authProfile: codeProfile.authProfile,
     });
   }
 
@@ -550,22 +563,22 @@ export async function exchangeMcpOAuthCode(
       clientId: codeRow.clientId,
       resource: codeRow.resourceUri,
       scope: codeRow.scope,
-      authProfile: parsed.request.profile.authProfile,
+      authProfile: codeProfile.authProfile,
     });
   }
-  if (parsed.request.profile.requiresMcpRole && !(await hasCurrentMcpRole(db, user))) {
+  if (codeProfile.requiresMcpRole && !(await hasCurrentMcpRole(db, user))) {
     return invalidGrant("MCP role is no longer active for this user", {
       userId: codeRow.userId,
       walletAddress: codeRow.walletAddress ?? undefined,
       clientId: codeRow.clientId,
       resource: codeRow.resourceUri,
       scope: codeRow.scope,
-      authProfile: parsed.request.profile.authProfile,
+      authProfile: codeProfile.authProfile,
     });
   }
 
   const shouldIssueRefreshToken =
-    codeRequest.profile.scope === MCP_OAUTH_GAMES_SCOPE &&
+    codeProfile.scope === MCP_OAUTH_GAMES_SCOPE &&
     await clientAllowsMcpRefreshTokens(db, codeRow.clientId);
   const rawToken = generateOpaqueSecret();
   const rawRefreshToken = shouldIssueRefreshToken ? generateOpaqueSecret() : undefined;
@@ -602,7 +615,7 @@ export async function exchangeMcpOAuthCode(
         walletAddress: user.walletAddress,
         clientId: codeRow.clientId,
         resourceUri: codeRow.resourceUri,
-        scope: codeRequest.profile.scope,
+        scope: codeProfile.scope,
         audience: MCP_OAUTH_AUDIENCE,
         purpose: MCP_OAUTH_PURPOSE,
         expiresAt: refreshExpiresAt,
@@ -617,7 +630,7 @@ export async function exchangeMcpOAuthCode(
       walletAddress: user.walletAddress,
       clientId: codeRow.clientId,
       resourceUri: codeRow.resourceUri,
-      scope: codeRequest.profile.scope,
+      scope: codeProfile.scope,
       audience: MCP_OAUTH_AUDIENCE,
       purpose: MCP_OAUTH_PURPOSE,
       refreshTokenId,
@@ -638,7 +651,7 @@ export async function exchangeMcpOAuthCode(
       access_token: rawToken,
       token_type: "Bearer",
       expires_in: MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS,
-      scope: codeRequest.profile.scope,
+      scope: codeProfile.scope,
       audience: MCP_OAUTH_AUDIENCE,
       purpose: MCP_OAUTH_PURPOSE,
       resource: codeRow.resourceUri,
@@ -649,8 +662,8 @@ export async function exchangeMcpOAuthCode(
       walletAddress: user.walletAddress ?? undefined,
       clientId: codeRow.clientId,
       resource: codeRow.resourceUri,
-      scope: codeRequest.profile.scope,
-      authProfile: codeRequest.profile.authProfile,
+      scope: codeProfile.scope,
+      authProfile: codeProfile.authProfile,
       grantType: "authorization_code",
     },
   };
@@ -1037,8 +1050,8 @@ function validateAuthorizeInput(input: McpOAuthAuthorizeInput):
     );
   }
   const resourceUri = requiredString(input.resource);
-  const resourceProfile = resourceUri ? profileForMcpResourceUri(resourceUri) : null;
-  if (!resourceUri || !resourceProfile || !requestedScopes.has(resourceProfile.scope)) {
+  const resourceProfile = resourceProfileForAuthorizeRequest(resourceUri, requestedScopes);
+  if (!resourceProfile || !requestedScopes.has(resourceProfile.scope)) {
     return validationError(
       "invalid_target",
       "resource must match the requested MCP scope",
@@ -1085,6 +1098,30 @@ function validateAuthorizeInput(input: McpOAuthAuthorizeInput):
       codeChallenge,
       codeChallengeMethod: "S256",
     },
+  };
+}
+
+function resourceProfileForAuthorizeRequest(
+  resourceUri: string | null,
+  requestedScopes: Set<McpOAuthScope>,
+): McpOAuthResourceProfile | null {
+  if (resourceUri) return profileForMcpResourceUri(resourceUri);
+  if (requestedScopes.size !== 1) return null;
+  const [scope] = Array.from(requestedScopes);
+  return scope ? profileForMcpScope(scope) : null;
+}
+
+function authorizationAudit(
+  user: AuthUser,
+  request: ValidAuthorizeRequest,
+): McpOAuthAuditMetadata {
+  return {
+    userId: user.id,
+    walletAddress: user.walletAddress ?? undefined,
+    clientId: request.clientId,
+    resource: request.resourceUri,
+    scope: request.scope,
+    authProfile: request.profile.authProfile,
   };
 }
 
@@ -1175,7 +1212,7 @@ function validateTokenInput(input: McpOAuthTokenInput):
 
   const resourceUri = requiredString(input.resource);
   const profile = resourceUri ? profileForMcpResourceUri(resourceUri) : null;
-  if (!resourceUri || !profile) {
+  if (resourceUri && !profile) {
     return {
       ok: false,
       error: {
@@ -1203,8 +1240,10 @@ function validateTokenInput(input: McpOAuthTokenInput):
       grantType: "authorization_code",
       code,
       redirectUri,
-      resourceUri: getMcpOAuthProfileResourceUri(profile),
-      profile,
+      ...(profile ? {
+        resourceUri: getMcpOAuthProfileResourceUri(profile),
+        profile,
+      } : {}),
       clientId,
       codeVerifier,
     },

@@ -7,7 +7,7 @@ export interface McpOAuthAuthorizeRequest {
   response_type: "code";
   client_id: string;
   redirect_uri: string;
-  resource: string;
+  resource?: string;
   scope: string;
   state: string;
   code_challenge: string;
@@ -24,7 +24,6 @@ const REQUIRED_QUERY_PARAMS = [
   "response_type",
   "client_id",
   "redirect_uri",
-  "resource",
   "scope",
   "state",
   "code_challenge",
@@ -34,6 +33,7 @@ const REQUIRED_QUERY_PARAMS = [
 export function parseMcpOAuthSearchParams(
   params: URLSearchParams,
 ): McpOAuthParseResult {
+  const resource = params.get("resource")?.trim();
   const values = Object.fromEntries(
     REQUIRED_QUERY_PARAMS.map((key) => [key, params.get(key)?.trim() ?? ""]),
   ) as Record<(typeof REQUIRED_QUERY_PARAMS)[number], string>;
@@ -69,7 +69,7 @@ export function parseMcpOAuthSearchParams(
       response_type: "code",
       client_id: values.client_id,
       redirect_uri: values.redirect_uri,
-      resource: values.resource,
+      ...(resource ? { resource } : {}),
       scope: values.scope,
       state: values.state,
       code_challenge: values.code_challenge,

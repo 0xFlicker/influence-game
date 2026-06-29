@@ -218,6 +218,7 @@ export function McpOAuthAuthorizeClient() {
 
 function isProducerAuthorizationRequest(request: McpOAuthAuthorizeRequest): boolean {
   if (!request.scope.split(/\s+/).includes("mcp")) return false;
+  if (!request.resource) return !request.scope.split(/\s+/).includes("games");
   try {
     return new URL(request.resource).pathname === "/mcp/producer";
   } catch {
