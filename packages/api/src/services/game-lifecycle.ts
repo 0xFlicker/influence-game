@@ -26,6 +26,7 @@ import type {
   MingleIntentAction,
   Personality,
   GameConfig,
+  GameRunnerOptions,
   PhaseContext,
   ProviderProfileId,
   PrivateDecisionTrace,
@@ -49,12 +50,17 @@ import { getGameWatchState, type GameWatchState } from "./game-watch-state.js";
 import { tryRefreshGameWatchStateSummary } from "./game-watch-state-summary.js";
 import { writeGameCheckpoint } from "./game-checkpoints.js";
 import {
+  acquireRecoveryGameRunOwner,
   assertOwnerActive,
   markGameSuspended,
   renewGameRunOwner,
 } from "./game-ownership.js";
 import { writePrivateDecisionTrace } from "./private-trace-writer.js";
 import { writeCognitiveArtifactsForTrace } from "./cognitive-artifact-writer.js";
+import {
+  findStartupRecoverableGameIds,
+  getSupportedRecovery,
+} from "./game-recovery.js";
 
 // ---------------------------------------------------------------------------
 // Active game tracking
@@ -718,6 +724,7 @@ export async function startGame(
   db: DrizzleDB,
   gameId: string,
   ownerEpoch?: string,
+  options: { resumeFrom?: GameRunnerOptions["resumeFrom"] } = {},
 ): Promise<{ error?: string }> {
   // Prevent double-start
   if (activeGames.has(gameId)) {
@@ -846,6 +853,7 @@ export async function startGame(
   // Create runner
   const runner = new GameRunner(agents, engineConfig, houseInterviewer, {
     gameId,
+    ...(options.resumeFrom && { resumeFrom: options.resumeFrom }),
     ...(privateTraceSink && { privateTraceSink }),
     tokenTracker,
     ...(ownerEpoch && {
@@ -885,6 +893,67 @@ export async function startGame(
   });
 
   return {};
+}
+
+export async function recoverGame(
+  db: DrizzleDB,
+  gameId: string,
+): Promise<{ error?: string; recovered?: boolean; skippedReason?: string }> {
+  if (activeGames.has(gameId)) {
+    return { error: "Game is already running" };
+  }
+
+  const candidate = await getSupportedRecovery(db, gameId);
+  if (!candidate.ok) {
+    return { skippedReason: candidate.reason };
+  }
+
+  const owner = await acquireRecoveryGameRunOwner(db, gameId, candidate.resumeFrom.lastEventSequence);
+  if (!owner.ok) {
+    return { error: owner.error };
+  }
+
+  let startupError: string | undefined;
+  try {
+    const result = await startGame(db, gameId, owner.claim.ownerEpoch, {
+      resumeFrom: candidate.resumeFrom,
+    });
+    startupError = result.error;
+  } catch (error) {
+    startupError = error instanceof Error ? error.message : String(error);
+  }
+
+  if (startupError) {
+    await markGameSuspended(db, gameId, "recovery_startup_failed", { message: startupError });
+    await tryRefreshGameWatchStateSummary(db, gameId, "recovery_startup_failed");
+    return { error: startupError };
+  }
+
+  await tryRefreshGameWatchStateSummary(db, gameId, "recovery_started");
+  return { recovered: true };
+}
+
+export async function recoverGamesOnStartup(
+  db: DrizzleDB,
+): Promise<{ attempted: number; recovered: number; skipped: Array<{ gameId: string; reason: string }> }> {
+  const gameIds = await findStartupRecoverableGameIds(db);
+  const skipped: Array<{ gameId: string; reason: string }> = [];
+  let recovered = 0;
+
+  for (const gameId of gameIds) {
+    const result = await recoverGame(db, gameId);
+    if (result.recovered) {
+      recovered += 1;
+      continue;
+    }
+    skipped.push({ gameId, reason: result.error ?? result.skippedReason ?? "unknown" });
+  }
+
+  return {
+    attempted: gameIds.length,
+    recovered,
+    skipped,
+  };
 }
 
 // ---------------------------------------------------------------------------

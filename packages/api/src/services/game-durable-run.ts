@@ -26,6 +26,7 @@ import {
   deriveHydrationPassport,
   type HydrationPassport,
 } from "./checkpoint-hydration-passport.js";
+import { checkpointHasImplementedResumeSupport } from "./game-recovery-support.js";
 
 type DurableRunReadDB = Pick<DrizzleDB, "select">;
 
@@ -93,8 +94,8 @@ export interface DurableCheckpointSummary {
   createdAt: string;
   /** Validator-derived hydration passport (richer readiness model; candidate != resume). */
   passport: HydrationPassport;
-  /** Explicit: production resume is not implemented for candidate checkpoints. */
-  resumeAvailable: false;
+  /** True only when the implemented startup recovery path supports this checkpoint. */
+  resumeAvailable: boolean;
 }
 
 export interface DurableEvidenceSummary {
@@ -494,7 +495,11 @@ export async function getDurableRunInspection(
         tokenCostCursorPresent: checkpoint.tokenCostCursor !== null,
         createdAt: checkpoint.createdAt,
         passport: passportResult.passport,
-        resumeAvailable: false,
+        resumeAvailable: checkpointHasImplementedResumeSupport({
+          gameStatus: game.status,
+          checkpoint,
+          persistedEvents,
+        }),
       };
     });
 

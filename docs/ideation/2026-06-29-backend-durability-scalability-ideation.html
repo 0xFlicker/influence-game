@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Backend Durability and Scalability</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --paper: #ffffff;
+      --ink: #17212b;
+      --muted: #5d6978;
+      --line: #d7dde7;
+      --teal: #087c78;
+      --teal-soft: #dff4f1;
+      --blue: #3858d6;
+      --blue-soft: #e8edff;
+      --coral: #a74444;
+      --coral-soft: #fae7e4;
+      --gold: #82601d;
+      --gold-soft: #f7ecd2;
+      --green: #4f7736;
+      --green-soft: #e9f3df;
+      --shadow: 0 14px 36px rgba(23, 33, 43, 0.08);
+      --radius: 8px;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-size: 15px;
+      line-height: 1.58;
+    }
+
+    a {
+      color: var(--blue);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+      background: #eef1f6;
+      border: 1px solid #dce2ea;
+      border-radius: 5px;
+      padding: 0.08rem 0.28rem;
+    }
+
+    .page {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 40px 22px 64px;
+    }
+
+    header {
+      margin-bottom: 28px;
+    }
+
+    .eyebrow {
+      color: var(--teal);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin: 0 0 10px;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 15ch;
+      font-size: clamp(2.25rem, 5.8vw, 3.9rem);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      max-width: 72ch;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 1.04rem;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .meta-card,
+    .stat-card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .meta-label,
+    .stat-label {
+      display: block;
+      color: var(--muted);
+      font-size: 0.74rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .meta-value,
+    .stat-value {
+      display: block;
+      margin-top: 4px;
+      font-weight: 740;
+    }
+
+    nav {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      margin: 28px 0;
+      padding: 14px 16px;
+    }
+
+    nav h2 {
+      margin: 0 0 8px;
+      font-size: 1rem;
+    }
+
+    nav ul,
+    .jump-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    nav a,
+    .jump-list a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 5px 10px;
+      background: #fbfcff;
+      color: var(--ink);
+      font-size: 0.88rem;
+      text-decoration: none;
+    }
+
+    section {
+      margin-top: 34px;
+    }
+
+    section > h2 {
+      margin: 0 0 12px;
+      font-size: 1.48rem;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    .section-prose {
+      max-width: 74ch;
+    }
+
+    .section-prose p {
+      margin: 0 0 12px;
+    }
+
+    .stats-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin: 22px 0 0;
+    }
+
+    .stat-card:nth-child(1) {
+      background: var(--teal-soft);
+      border-color: #b7deda;
+    }
+
+    .stat-card:nth-child(2) {
+      background: var(--blue-soft);
+      border-color: #cbd5ff;
+    }
+
+    .stat-card:nth-child(3) {
+      background: var(--gold-soft);
+      border-color: #e6d2a6;
+    }
+
+    .stat-card:nth-child(4) {
+      background: var(--green-soft);
+      border-color: #cadfbd;
+    }
+
+    .axis-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .axis-card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+    }
+
+    .axis-card h3 {
+      margin: 0 0 6px;
+      font-size: 1rem;
+      line-height: 1.25;
+    }
+
+    .axis-card p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .idea-card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      margin-top: 18px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .idea-card h3 {
+      margin: 0;
+      font-size: 1.22rem;
+      line-height: 1.24;
+      letter-spacing: 0;
+    }
+
+    .rank {
+      color: var(--teal);
+      font-weight: 850;
+    }
+
+    .idea-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0 14px;
+    }
+
+    .idea-meta div {
+      display: inline-flex;
+      gap: 6px;
+      align-items: baseline;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fbfcff;
+      padding: 4px 9px;
+      font-size: 0.86rem;
+    }
+
+    .idea-meta dt {
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .idea-meta dd {
+      margin: 0;
+      font-weight: 680;
+    }
+
+    .field {
+      margin-top: 12px;
+    }
+
+    .field h4 {
+      margin: 0 0 4px;
+      color: var(--muted);
+      font-size: 0.79rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .field p {
+      margin: 0;
+      max-width: 76ch;
+    }
+
+    .callout {
+      border: 1px solid #cbd5ff;
+      border-radius: var(--radius);
+      background: var(--blue-soft);
+      margin: 18px 0;
+      padding: 14px;
+    }
+
+    .callout h3 {
+      margin: 0 0 6px;
+      font-size: 1rem;
+    }
+
+    .callout p {
+      margin: 0;
+      color: #24315f;
+    }
+
+    .diagram {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      margin: 16px 0 2px;
+      overflow: hidden;
+      background: #fbfcff;
+    }
+
+    .diagram svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: table;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eef1f6;
+      color: #2a3542;
+      font-size: 0.78rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .sources {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .source-card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+    }
+
+    .source-card h3 {
+      margin: 0 0 8px;
+      font-size: 1rem;
+    }
+
+    .source-card ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .source-card li {
+      margin: 6px 0;
+    }
+
+    footer {
+      margin-top: 42px;
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    @media (max-width: 780px) {
+      .page {
+        padding-inline: 16px;
+      }
+
+      h1 {
+        max-width: none;
+        font-size: 2.35rem;
+      }
+
+      .meta-grid,
+      .stats-strip,
+      .axis-grid,
+      .sources {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">Compound Engineering ideation</p>
+      <h1>Ideation: Backend Durability and Scalability</h1>
+      <p class="subtitle">Updated around a higher impact bar: the next backend durability slice should make one real API-backed game survive one supported process restart boundary and reach completed results. Proof-only readiness work is now below the bar unless it directly ships that behavior.</p>
+      <div class="meta-grid" aria-label="Document metadata">
+        <div class="meta-card">
+          <span class="meta-label">Date</span>
+          <span class="meta-value">2026-06-29</span>
+        </div>
+        <div class="meta-card">
+          <span class="meta-label">Topic</span>
+          <span class="meta-value">backend-durability-scalability</span>
+        </div>
+        <div class="meta-card">
+          <span class="meta-label">Mode</span>
+          <span class="meta-value">repo-grounded</span>
+        </div>
+        <div class="meta-card">
+          <span class="meta-label">Focus</span>
+          <span class="meta-value">normal-round phase-boundary restart recovery</span>
+        </div>
+      </div>
+      <div class="stats-strip" aria-label="Ideation counts">
+        <div class="stat-card">
+          <span class="stat-label">Ranked ideas</span>
+          <span class="stat-value">7</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Raw candidates</span>
+          <span class="stat-value">26</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Cut ideas</span>
+          <span class="stat-value">12 families</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Impact bar</span>
+          <span class="stat-value">same game completes after restart</span>
+        </div>
+      </div>
+    </header>
+
+    <nav aria-label="Document sections">
+      <h2>Contents</h2>
+      <ul>
+        <li><a href="#grounding-context">Grounding Context</a></li>
+        <li><a href="#topic-axes">Topic Axes</a></li>
+        <li><a href="#ranked-ideas">Ranked Ideas</a></li>
+        <li><a href="#implementation-recut">Implementation Recut</a></li>
+        <li><a href="#rejection-summary">Rejection Summary</a></li>
+        <li><a href="#sources-references">Sources &amp; References</a></li>
+      </ul>
+    </nav>
+
+    <section id="grounding-context">
+      <h2>Grounding Context</h2>
+      <div class="section-prose">
+        <p>Influence already has the inspection substrate: owner epochs, canonical API events, event-boundary checkpoints, Runtime Snapshot v1, hydration passports, evidence manifests, and durable watch summaries. At the start of this pass, that substrate had not yet changed the game outcome after process loss: a real checkpoint could earn <code>hydration_candidate</code>, while <code>resumeAvailable</code> remained false and active execution was not crash-safe.</p>
+        <p>The live failure mode is process-local execution. <code>GameRunner</code> still owns the phase actor, game state, agents, diary room, token tracker, House context, Mingle inbox, elimination order, and accusations in memory. <code>game-lifecycle.ts</code> still tracks active games in a process-local <code>activeGames</code> map, but supported suspended runs can now be claimed by startup recovery instead of remaining only inspectable.</p>
+        <p>The useful seam is narrower than full crash-safe sessions but more valuable than another readiness label: the runner already writes phase-boundary checkpoints after durable event flush, and an existing DB-backed test already aborts after such a checkpoint. The next slice should make that class of interruption continue, not merely explain why it cannot.</p>
+      </div>
+      <div class="callout">
+        <h3>Impact bar</h3>
+        <p>A candidate survives only if its output can be judged by game behavior: same game ID, same durable event stream, fresh process/owner, post-restart events, watch continuity, and completed results. Proof artifacts can exist only as support for that outcome.</p>
+      </div>
+    </section>
+
+    <section id="topic-axes">
+      <h2>Topic Axes</h2>
+      <div class="axis-grid">
+        <article class="axis-card">
+          <h3>Resume Outcome</h3>
+          <p>What visible game result changes after the slice: a game continues and completes, rather than becoming an inspectable failure.</p>
+        </article>
+        <article class="axis-card">
+          <h3>Supported Boundary Scope</h3>
+          <p>Which exact checkpoint class v1 is allowed to resume from, and which classes remain deliberately unsupported.</p>
+        </article>
+        <article class="axis-card">
+          <h3>Runner Reconstruction</h3>
+          <p>The minimal engine state that must be loaded to continue execution, not just validate a checkpoint.</p>
+        </article>
+        <article class="axis-card">
+          <h3>Ownership And Recovery Operation</h3>
+          <p>How a fresh process claims an interrupted game without letting a stale owner commit.</p>
+        </article>
+        <article class="axis-card">
+          <h3>Verification By Interruption</h3>
+          <p>The kill/restart path that proves the behavior changed under the failure mode that matters.</p>
+        </article>
+        <article class="axis-card">
+          <h3>Deployment Usefulness</h3>
+          <p>How the same mechanism reduces deploy and restart risk before full serverless or spot execution exists.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="ranked-ideas">
+      <h2>Ranked Ideas</h2>
+      <ul class="jump-list" aria-label="Ranked idea links">
+        <li><a href="#idea-1">Idea 1. One-Boundary Resume To Completion</a></li>
+        <li><a href="#idea-2">Idea 2. Supported Boundary Whitelist</a></li>
+        <li><a href="#idea-3">Idea 3. Minimal Runner Hydrator</a></li>
+        <li><a href="#idea-4">Idea 4. Startup Recovery Coordinator</a></li>
+        <li><a href="#idea-5">Idea 5. Kill/Restart Smoke Harness</a></li>
+        <li><a href="#idea-6">Idea 6. Resume Watch And Results Continuity</a></li>
+        <li><a href="#idea-7">Idea 7. Deploy Drain Plus Resume</a></li>
+      </ul>
+
+      <article class="idea-card" id="idea-1">
+        <h3><span class="rank">Idea 1.</span> One-Boundary Resume To Completion</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Resume outcome</dd></div>
+          <div><dt>Confidence</dt><dd>86%</dd></div>
+          <div><dt>Complexity</dt><dd>High</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Ship one executable restart boundary: start an owner-backed API game, let it reach one whitelisted phase-boundary checkpoint, interrupt the process, recover the same game under a fresh owner, append new canonical events, and reach normal completed results. The deliverable is not a new checkpoint verdict; it is one class of interrupted game no longer dying.</p>
+        </div>
+        <div class="diagram" aria-label="One-boundary resume flow">
+          <svg viewBox="0 0 820 250" role="img" aria-labelledby="resume-flow-title resume-flow-desc">
+            <title id="resume-flow-title">One-boundary resume flow</title>
+            <desc id="resume-flow-desc">A live game reaches a durable checkpoint, the process dies, a recovery command claims a new owner, and the same game completes.</desc>
+            <rect x="28" y="44" width="128" height="64" rx="8" fill="#e8edff" stroke="#b9c5ff"></rect>
+            <text x="92" y="70" text-anchor="middle" font-size="13" font-weight="700" fill="#17212b">Live game</text>
+            <text x="92" y="90" text-anchor="middle" font-size="12" fill="#39445a">owner A</text>
+            <rect x="198" y="34" width="160" height="84" rx="8" fill="#dff4f1" stroke="#abd8d2"></rect>
+            <text x="278" y="62" text-anchor="middle" font-size="13" font-weight="700" fill="#17212b">Supported boundary</text>
+            <text x="278" y="82" text-anchor="middle" font-size="12" fill="#294f4c">events + checkpoint</text>
+            <text x="278" y="100" text-anchor="middle" font-size="12" fill="#294f4c">no pending effects</text>
+            <rect x="400" y="44" width="128" height="64" rx="8" fill="#fae7e4" stroke="#e2b3ab"></rect>
+            <text x="464" y="70" text-anchor="middle" font-size="13" font-weight="700" fill="#17212b">Process dies</text>
+            <text x="464" y="90" text-anchor="middle" font-size="12" fill="#6c3834">runner gone</text>
+            <rect x="570" y="34" width="218" height="84" rx="8" fill="#f7ecd2" stroke="#dbc489"></rect>
+            <text x="679" y="62" text-anchor="middle" font-size="13" font-weight="700" fill="#17212b">Recovery command</text>
+            <text x="679" y="82" text-anchor="middle" font-size="12" fill="#5d481e">claim owner B</text>
+            <text x="679" y="100" text-anchor="middle" font-size="12" fill="#5d481e">hydrate and continue</text>
+            <rect x="266" y="164" width="288" height="56" rx="8" fill="#e9f3df" stroke="#bed8aa"></rect>
+            <text x="410" y="188" text-anchor="middle" font-size="13" font-weight="700" fill="#17212b">Same game ID completes</text>
+            <text x="410" y="207" text-anchor="middle" font-size="12" fill="#36572d">post-restart events + results</text>
+            <path d="M156 76 L190 76" stroke="#6a7482" stroke-width="2"></path>
+            <path d="M190 76 L182 71 M190 76 L182 81" stroke="#6a7482" stroke-width="2"></path>
+            <path d="M358 76 L392 76" stroke="#6a7482" stroke-width="2"></path>
+            <path d="M392 76 L384 71 M392 76 L384 81" stroke="#6a7482" stroke-width="2"></path>
+            <path d="M528 76 L562 76" stroke="#6a7482" stroke-width="2"></path>
+            <path d="M562 76 L554 71 M562 76 L554 81" stroke="#6a7482" stroke-width="2"></path>
+            <path d="M679 118 C679 168 594 192 562 192" fill="none" stroke="#6a7482" stroke-width="2"></path>
+            <path d="M562 192 L570 187 M562 192 L570 197" stroke="#6a7482" stroke-width="2"></path>
+          </svg>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> <code>AGENTS.md</code> says a server reset can corrupt active games; <code>docs/statefulness-plan.md</code> says no resume exists; <code>GameRunner</code> already writes phase-boundary checkpoints after durable event flush; the passport test already aborts after a real candidate checkpoint and asserts <code>resumeAvailable</code> is false.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>This is the first slice that changes the game outcome. It turns weeks of readiness scaffolding into an observable durability improvement: one interruption class no longer kills the run. It also forces every supporting piece to be judged by whether the game continues.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>It is high blast-radius for a first resume slice. The scope must stay deliberately narrow: one boundary, one recovery path, one real kill/restart acceptance test, and no claims about mid-phase model calls or arbitrary phase recovery.</p>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-2">
+        <h3><span class="rank">Idea 2.</span> Supported Boundary Whitelist</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Supported boundary scope</dd></div>
+          <div><dt>Confidence</dt><dd>84%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Define the v1 resume surface as a small whitelist, not a general promise. A checkpoint is executable only when its kind, phase actor coordinate, event head, owner epoch, accumulator state, and no-pending-effects evidence match a supported boundary class. Everything else remains non-resumable.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> Existing checkpoint storage already binds game ID, owner epoch, checkpoint kind, event sequence, event head hash, and projection hash. The runner already records actor witness and accumulator registry evidence at phase-boundary checkpoints.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>The whitelist is what keeps the impact slice small enough to ship. It lets the team say "this exact boundary resumes" instead of reopening the proof rosebush around every phase and every in-flight model effect.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>The first version will cover only a fraction of interruptions. That is acceptable only if the covered class genuinely resumes to completion and the unsupported classes fail closed without new terminology churn.</p>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-3">
+        <h3><span class="rank">Idea 3.</span> Minimal Runner Hydrator</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Runner reconstruction</dd></div>
+          <div><dt>Confidence</dt><dd>78%</dd></div>
+          <div><dt>Complexity</dt><dd>High</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Add the smallest executable hydration path for the supported boundary. It should reconstruct enough <code>GameRunner</code> state to continue: accepted game state/projection, phase actor coordinate, agent/House continuity where required, token cursor, and written checkpoint/event cursors. It should not attempt generic mid-phase recovery.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> <code>GameRunner</code> owns many long-lived private fields, while the checkpoint payload already persists runtime snapshot, transcript cursor, token cursor, continuity capsules, event boundary, and projection evidence. The missing piece is not another field label; it is code that loads a valid boundary and runs forward.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>This is the core technical move behind the outcome. Without an executable hydrator, all recovery commands and readiness gates still terminate in "cannot resume." The implementation should be boring and bounded, not elegant.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>This may expose that one "quiet" boundary still needs more runner state than expected. If so, the slice should reduce the supported boundary or persist one missing runtime input only when it is required for the game to continue.</p>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-4">
+        <h3><span class="rank">Idea 4.</span> Startup Recovery Coordinator</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Ownership and recovery operation</dd></div>
+          <div><dt>Confidence</dt><dd>80%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Create a configured API-startup recovery coordinator that finds eligible suspended or startup-orphaned games, validates the latest supported checkpoint, claims a fresh owner epoch, and starts the hydrated runner. Keep operator/admin controls as a later backstop, not the primary v1 recovery path.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> startup cleanup currently marks old active owners as <code>startup_orphaned</code>; ownership code already issues owner epochs and active checks; event append code already locks the owner row and rejects stale or non-contiguous commits.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>This fits the current deployment reality: the API process is the only worker today, and it can safely recover eligible games on startup when configured. The behavior improves the game without asking an admin to babysit interrupted sessions.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>Startup recovery needs strict support predicates and bounded failure semantics. If the checkpoint is unsupported or hydration fails, the game should remain suspended and inspectable.</p>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-5">
+        <h3><span class="rank">Idea 5.</span> Kill/Restart Smoke Harness</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Verification by interruption</dd></div>
+          <div><dt>Confidence</dt><dd>88%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Replace "checkpoint proves candidate" as the headline test with a restart smoke: create an API-backed game, interrupt after the supported checkpoint, start a fresh process or recovery harness, recover the same game, and assert post-restart canonical events plus completed results.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> the existing checkpoint passport test already drives a real <code>GameRunner</code> to a candidate phase-boundary checkpoint, aborts it, and verifies that resume remains unavailable. That is almost the failing test for the new behavior.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>This is how the team avoids sliding back into proof-only work. A slice is not done because a validator passes. It is done when the kill/restart scenario that previously stranded the game now completes it.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>The harness can become expensive or flaky if it depends on live model calls. The first test should use deterministic agents and the real DB path; later smoke coverage can graduate to fuller model-backed games.</p>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-6">
+        <h3><span class="rank">Idea 6.</span> Resume Watch And Results Continuity</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Resume outcome</dd></div>
+          <div><dt>Confidence</dt><dd>76%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Make the acceptance test include the surfaces the game actually uses: after recovery, the watch state advances past the pre-restart prefix, completed results exist for the same game, and no second game/run identity appears to players. This is not a separate UI feature; it is the product-facing proof that resume worked.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> lifecycle completion already persists completed results and refreshes watch summaries; watch summaries are durable projections rather than only process-local WebSocket state. Resume should use those surfaces as outcome checks.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>A backend-only resume that appends events but leaves the viewer or results confused is not game durability. This idea keeps the implementation accountable to what the user and friends will actually experience.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>It adds acceptance scope. Keep it to verification of existing watch/results behavior, not redesigning the viewer or inventing new recovery labels.</p>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-7">
+        <h3><span class="rank">Idea 7.</span> Deploy Drain Plus Resume</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Deployment usefulness</dd></div>
+          <div><dt>Confidence</dt><dd>72%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Once phase-boundary startup recovery is trustworthy, use the same mechanism for planned restarts: stop an active game at the next supported boundary, exit the process, then recover after deploy. This makes deployment safer without claiming arbitrary crash or spot recovery.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> <code>GameRunner.abort()</code> already signals a stop at the next phase boundary, and <code>activeGames</code> is process-local. Planned deploys are the most controllable restart class, so they are the first operational place the resume path should pay off.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>This gives immediate operational value after the core slice lands: active games no longer force a choice between waiting indefinitely and risking corruption during deploys.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>It depends on the first manual recovery path being trustworthy. If built too early, it becomes graceful shutdown theater rather than restart durability.</p>
+        </div>
+      </article>
+    </section>
+
+    <section id="implementation-recut">
+      <h2>Implementation Recut</h2>
+      <div class="section-prose">
+        <p>The one-boundary slice proved the startup recovery seam but left the product impact too narrow: a game only resumes if interruption happens after Introduction and before Round 1 starts. The next useful implementation slice should remove that artificial wall and support persisted normal-round phase boundaries wherever the checkpoint evidence says the runner is between phase effects.</p>
+        <p>The strongest implementation direction is not a new proof label. It is a generic phase-boundary resume contract for persisted actor coordinates, a selector that accepts the latest event-head checkpoint only when it is implemented-safe, API startup recovery acting as today&apos;s worker, and a DB-backed interruption matrix proving the same game completes after several real phase stops.</p>
+      </div>
+
+      <article class="idea-card" id="idea-8">
+        <h3><span class="rank">Idea 8.</span> Normal-Round Boundary Resume Matrix</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Supported boundary scope</dd></div>
+          <div><dt>Confidence</dt><dd>82%</dd></div>
+          <div><dt>Complexity</dt><dd>High</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Generalize the supported recovery target from one lobby checkpoint to persisted normal-round phase boundaries: pre-round <code>lobby</code>, then <code>vote</code>, <code>mingle</code>, <code>power</code>, and <code>reveal</code>. Recovery should accept the latest checkpoint only when it is at the event head and implemented-safe, hydrate to that actor coordinate, append post-restart events, and complete the same game.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> before this pass, <code>game-recovery.ts</code> and <code>game-durable-run.ts</code> rejected any checkpoint whose actor coordinate was not <code>lobby</code> and any event log containing <code>round.started</code>. <code>GameRunner</code> writes Runtime Snapshot v1 and transcript replay for every phase-boundary checkpoint.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>This is the first slice that matches the likely failure distribution. A process interruption usually lands somewhere inside a round, so normal-round boundary resume changes real deploy and restart risk instead of only protecting the first few seconds of a game.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>Normal phases carry more phase-machine context than the intro boundary. The slice should fail closed for endgame and accumulator-heavy boundaries until those states have specific hydration support.</p>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-9">
+        <h3><span class="rank">Idea 9.</span> Actor Coordinate Hydration Contract</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Runner reconstruction</dd></div>
+          <div><dt>Confidence</dt><dd>78%</dd></div>
+          <div><dt>Complexity</dt><dd>High</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Replace <code>post_intro_pre_lobby</code> with a versioned <code>phase_boundary</code> resume input that carries the target actor coordinate, canonical event prefix, transcript replay, token cursor, and House continuity. The runner should hydrate the phase actor deterministically to that coordinate before entering the existing phase loop.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> <code>GameState.fromCanonicalEvents()</code>, <code>TranscriptLogger.seed()</code>, <code>TokenTracker.loadCursor()</code>, and House continuity already exist. The missing piece is phase actor restoration beyond the one hard-coded two-transition path in <code>runGameLoop()</code>.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>The product value is unlocked by an engine contract, not by API-side optimism. Once the runner can resume from a coordinate, the recovery selector can widen without lying.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>Hydration must avoid replaying phase side effects. The phase actor can be advanced with machine events derived from canonical truth, but the game phase runners must not re-run work that already emitted canonical events.</p>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-10">
+        <h3><span class="rank">Idea 10.</span> Startup Reconciler As Today&apos;s Worker</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Ownership and recovery operation</dd></div>
+          <div><dt>Confidence</dt><dd>84%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Keep recovery automatic on API startup when configured. The single API process can scan suspended/startup-orphaned games, claim a fresh owner for the latest implemented-safe event-head checkpoint, and run the recovered game itself. Future worker fleets can reuse this service after the single-container path is trustworthy.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> current deployments have an API process and a web process, and the previous slice already added a startup recovery gate. Owner epochs and append-time owner checks already fence stale writers in the durable path.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>An admin-gated resume flow does not fit the product goal. If the API can recover safely under today&apos;s deployment constraints, it should do so without making an operator babysit interrupted games.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>Startup recovery should cap attempts and leave failed games inspectable. V1 does not need multi-worker leases or spot-fleet coordination, but it must not spin forever on a bad checkpoint.</p>
+        </div>
+      </article>
+    </section>
+
+    <section id="rejection-summary">
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Idea</th>
+            <th>Reason Rejected</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>Terminal Redrive First Slice</td>
+            <td>Repairs a narrow terminal-materialization gap, but does not solve the more likely interruption point: mid-run process loss before the game is over.</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>More Hydration Passport Stamps</td>
+            <td>Below the new bar. The repo already has candidate/readiness machinery; more proof without continuation is not game impact.</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>Resume Proof Ladder As A Standalone Slice</td>
+            <td>Useful vocabulary has become wheel-spinning unless attached to a working restart-and-complete path.</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>Phase-Step Kernel First</td>
+            <td>Potentially right long-term, but too abstract before one current checkpoint can resume a game.</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>Full Workflow Platform Migration</td>
+            <td>Too expensive and likely to defer the real question: can this game continue from this repo's existing durable boundary?</td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td>Redis Pub/Sub Or Horizontal Scaling First</td>
+            <td>Improves process topology and freshness, but a fresh worker still cannot continue execution.</td>
+          </tr>
+          <tr>
+            <td>7</td>
+            <td>Generic Serverless Function Port</td>
+            <td>Changes hosting shape without durable execution semantics. It can make state loss more frequent rather than less.</td>
+          </tr>
+          <tr>
+            <td>8</td>
+            <td>Full Arbitrary Mid-Phase Resume</td>
+            <td>Too broad for the next slice and likely to tangle with in-flight model calls, partial accumulators, and duplicate effects.</td>
+          </tr>
+          <tr>
+            <td>9</td>
+            <td>Retry Current Phase From Start</td>
+            <td>Tempting shortcut, but unsafe for social facts and model effects unless every phase action is already idempotent.</td>
+          </tr>
+          <tr>
+            <td>10</td>
+            <td>Unbounded Startup Auto-Recover</td>
+            <td>Automatic startup recovery is useful only behind strict support predicates and bounded failure behavior; a broad best-effort scan would hide unsafe checkpoints.</td>
+          </tr>
+          <tr>
+            <td>11</td>
+            <td>Mock-Only Resume Demo</td>
+            <td>Useful during development but not sufficient. The accepted output must be an API-backed game path with durable DB state.</td>
+          </tr>
+          <tr>
+            <td>12</td>
+            <td>Manual DB Surgery Runbook</td>
+            <td>Helpful support material, but it does not make the backend more durable or the game continue.</td>
+          </tr>
+          <tr>
+            <td>13</td>
+            <td>Endgame Boundary Coverage In The Same Slice</td>
+            <td>Valuable later, but the current accumulator and accusation state shapes make it a riskier first expansion than normal-round phase boundaries.</td>
+          </tr>
+          <tr>
+            <td>14</td>
+            <td>Backfill Old Interrupted Games First</td>
+            <td>May help support work, but it does not improve future process interruption behavior unless generic recovery lands first.</td>
+          </tr>
+          <tr>
+            <td>15</td>
+            <td>Serverless Workflow Rewrite</td>
+            <td>Could be a later deployment target, but it replaces the hosting layer before the current runner can resume from its own durable checkpoints.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sources-references">
+      <h2>Sources &amp; References</h2>
+      <div class="sources">
+        <article class="source-card">
+          <h3>Repo references</h3>
+          <ul>
+            <li><a href="https://github.com/0xFlicker/influence-game/blob/main/AGENTS.md">AGENTS.md</a></li>
+            <li><a href="https://github.com/0xFlicker/influence-game/blob/main/README.md">README.md</a></li>
+            <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/statefulness-plan.md">docs/statefulness-plan.md</a></li>
+            <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/refactor-queue.md">docs/refactor-queue.md</a></li>
+            <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-runner.ts">packages/engine/src/game-runner.ts</a></li>
+            <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-runner.types.ts">packages/engine/src/game-runner.types.ts</a></li>
+            <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-lifecycle.ts">packages/api/src/services/game-lifecycle.ts</a></li>
+            <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-ownership.ts">packages/api/src/services/game-ownership.ts</a></li>
+            <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-events.ts">packages/api/src/services/game-events.ts</a></li>
+            <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-checkpoints.ts">packages/api/src/services/game-checkpoints.ts</a></li>
+            <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-durable-run.ts">packages/api/src/services/game-durable-run.ts</a></li>
+            <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/__tests__/checkpoint-hydration-passport.test.ts">packages/api/src/__tests__/checkpoint-hydration-passport.test.ts</a></li>
+          </ul>
+        </article>
+        <article class="source-card">
+          <h3>External grounding</h3>
+          <ul>
+            <li><a href="https://docs.temporal.io/workflows">Temporal Workflow documentation</a></li>
+            <li><a href="https://learn.microsoft.com/en-us/azure/durable-task/common/durable-task-orchestrations">Azure Durable Task durable orchestrations</a></li>
+            <li><a href="https://docs.aws.amazon.com/step-functions/latest/dg/welcome.html">AWS Step Functions overview</a></li>
+            <li><a href="https://docs.dbos.dev/typescript/tutorials/workflow-tutorial">DBOS TypeScript workflow tutorial</a></li>
+            <li><a href="https://docs.restate.dev/">Restate documentation</a></li>
+            <li><a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-instance-termination-notices.html">AWS Spot Instance interruption notices</a></li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <footer class="composition-signal">
+      Composed 2026-06-29T01:21:00Z by ce-ideate, updated for generic persisted phase-boundary startup recovery that completes games from multiple real checkpoints rather than adding proof-only readiness work.
+    </footer>
+  </main>
+</body>
+</html>

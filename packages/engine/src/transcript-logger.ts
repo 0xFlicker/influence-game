@@ -19,6 +19,25 @@ export class TranscriptLogger {
 
   constructor(private readonly gameState: GameState) {}
 
+  seed(entries: readonly TranscriptEntry[]): void {
+    this.transcript.length = 0;
+    this.publicMessages.length = 0;
+    for (const entry of entries) {
+      const seededEntry: TranscriptEntry = { ...entry };
+      this.transcript.push(seededEntry);
+      if (seededEntry.scope === "public") {
+        this.publicMessages.push({
+          from: seededEntry.from,
+          text: seededEntry.text,
+          phase: seededEntry.phase,
+          round: seededEntry.round,
+          ...(seededEntry.anonymous && { anonymous: true }),
+          ...(seededEntry.displayOrder != null && { displayOrder: seededEntry.displayOrder }),
+        });
+      }
+    }
+  }
+
   setStreamListener(listener: (event: GameStreamEvent) => void): void {
     this._streamListener = listener;
   }

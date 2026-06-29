@@ -74,6 +74,76 @@ export async function acquireGameRunOwner(
   }
 }
 
+export async function acquireRecoveryGameRunOwner(
+  db: DrizzleDB,
+  gameId: string,
+  checkpointEventSequence: number,
+  options: { processId?: string; leaseMs?: number } = {},
+): Promise<GameOwnerClaimResult> {
+  const now = new Date();
+  const ownerEpoch = randomUUID();
+  const ownerId = randomUUID();
+
+  try {
+    const claim = await db.transaction(async (tx) => {
+      const game = (await tx
+        .select({ status: schema.games.status })
+        .from(schema.games)
+        .where(eq(schema.games.id, gameId)))[0];
+
+      if (!game) {
+        return { ok: false as const, error: "Game not found", statusCode: 404 as const };
+      }
+      if (game.status !== "suspended") {
+        return {
+          ok: false as const,
+          error: "Game can only be recovered from suspended status",
+          statusCode: game.status === "in_progress" ? 409 as const : 400 as const,
+        };
+      }
+
+      const activeOwner = (await tx
+        .select({ ownerEpoch: schema.gameRunOwners.ownerEpoch })
+        .from(schema.gameRunOwners)
+        .where(and(
+          eq(schema.gameRunOwners.gameId, gameId),
+          eq(schema.gameRunOwners.status, "active"),
+        ))
+        .limit(1))[0];
+      if (activeOwner) {
+        return { ok: false as const, error: "Game already has an active owner", statusCode: 409 as const };
+      }
+
+      await tx.update(schema.games)
+        .set({
+          status: "in_progress",
+          startedAt: now.toISOString(),
+          endedAt: null,
+        })
+        .where(and(eq(schema.games.id, gameId), eq(schema.games.status, "suspended")));
+
+      await tx.insert(schema.gameRunOwners)
+        .values({
+          id: ownerId,
+          gameId,
+          ownerEpoch,
+          processId: options.processId ?? process.pid.toString(),
+          expiresAt: ownerExpiresAt(now, options.leaseMs),
+          lastPersistedEventSequence: checkpointEventSequence,
+        });
+
+      return { ok: true as const, claim: { ownerEpoch } };
+    });
+    return claim;
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Failed to acquire recovery owner",
+      statusCode: 409,
+    };
+  }
+}
+
 export async function markOwnerStartupFailed(
   db: DrizzleDB,
   gameId: string,

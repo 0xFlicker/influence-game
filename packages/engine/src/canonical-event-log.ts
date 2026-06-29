@@ -79,6 +79,24 @@ export class CanonicalEventLog {
     return this.events.map(cloneCanonicalEvent);
   }
 
+  replaceAll(events: readonly CanonicalGameEvent[]): void {
+    this.events.length = 0;
+    let expectedSequence = 1;
+    let gameId: string | null = null;
+    for (const event of events) {
+      assertCanonicalGameEvent(event);
+      if (event.sequence !== expectedSequence) {
+        throw new Error(`Cannot hydrate non-contiguous canonical event log; expected ${expectedSequence} but got ${event.sequence}`);
+      }
+      gameId ??= event.gameId;
+      if (event.gameId !== gameId) {
+        throw new Error(`Cannot hydrate canonical events from multiple games (${gameId}, ${event.gameId})`);
+      }
+      this.events.push(cloneCanonicalEvent(event));
+      expectedSequence += 1;
+    }
+  }
+
   subscribe(
     listener: CanonicalEventListener,
     options: CanonicalEventSubscriptionOptions = {},

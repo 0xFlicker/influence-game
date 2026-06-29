@@ -182,6 +182,10 @@ A v1 checkpoint payload that proves hydration readiness at a completed phase bou
 
 A validator-derived readiness record for a checkpoint capsule. It reports stamp-level status for event/projection truth, boundary safety, Runtime Snapshot evidence, transcript and token cursors, agent continuity, House continuity, privacy boundaries, and the overall verdict such as forensic-only, blocked, or `hydration_candidate`. A hydration passport is not a resume action.
 
+## Phase-boundary startup resume
+
+The supported API recovery behavior for interrupted live games at implemented completed phase boundaries. A suspended game whose newest phase-boundary checkpoint is at the durable event head and has a supported actor coordinate can be claimed by a fresh owner on API startup, hydrated into a new runner from canonical events plus checkpoint payload, append post-restart canonical events, and complete under the same game ID. Current support covers the original pre-round lobby boundary and persisted normal-round coordinates through reveal; it is not a promise of mid-phase recovery, in-flight LLM recovery, endgame boundary recovery, arbitrary old-game repair, or automatic serverless orchestration.
+
 ## Boundary certificate
 
 The hydration-passport stamp that proves a checkpoint was taken at a safe boundary. It verifies that canonical events through that boundary are durably accepted, no pre-boundary LLM call or effect can still commit after the checkpoint, and non-repeatable phase entry or exit effects will not be skipped or duplicated.

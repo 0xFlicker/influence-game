@@ -13,14 +13,14 @@ Every running game holds its entire state in process memory with no mid-game per
 
 The engine now emits canonical accepted-domain events for simulator runs and writes them to `game-N-events.jsonl`. API-backed games also have a first durable game-run kernel: the API game ID is bound into engine events at construction, canonical events are written to Postgres under an owner epoch, and suspended/checkpoint/evidence metadata gives operators something inspectable after failure. The admin durable-run inspection read model can now validate the persisted event log, replay the trusted prefix into the canonical projection, and summarize checkpoint/evidence readiness.
 
-This is still not crash-safe resume. API games do not yet implement runner reconstruction from XState snapshots, in-flight phase accumulators, full runner/agent continuity state, or token/cost/runtime cursor data. Checkpoint capsules are evidence boundaries keyed to event sequence; the hydration passport derives whether a row is a future hydration candidate.
+This is now partially crash-recoverable at implemented completed phase boundaries, not generally crash-safe. API startup recovery can claim and continue a suspended game when the newest phase-boundary checkpoint is at the durable event head and has a supported actor coordinate plus complete resume inputs. Mid-phase interruptions, in-flight model calls, endgame boundaries, full XState snapshot restoration, arbitrary old-game repair, and multi-worker recovery remain unsupported.
 
 ### Current Risks
 
 | Scenario | Impact |
 |----------|--------|
-| **Process crash mid-game** | The live runner dies. Persisted canonical events/checkpoints/evidence manifests remain inspectable, and old orphaned `in_progress` runs become `suspended`. No resume. |
-| **Deploy while games active** | Identical to crash unless a later graceful drain/resume layer lands. Durable event history may exist; execution cannot continue from it yet. |
+| **Process crash mid-game** | The live runner dies. Persisted canonical events/checkpoints/evidence manifests remain inspectable. If the newest event-head checkpoint is a supported completed phase boundary, startup recovery can resume the same game; otherwise the run remains `suspended`. |
+| **Deploy while games active** | Same as crash for unplanned termination. Supported phase-boundary recovery reduces risk, but graceful drain/resume and multi-worker coordination remain future work. |
 | **Horizontal scaling** | Accepted commits are owner-epoch guarded, but each live run still needs one sequential owner. `activeGames` and WebSocket pub/sub remain process-local caches. |
 
 ---
@@ -65,22 +65,25 @@ This is still not crash-safe resume. API games do not yet implement runner recon
 
 ### Existing Recovery Mechanisms
 
-1. **Orphaned game classification** (`index.ts`) — On startup, old `in_progress` games are marked `suspended` for inspection because resume is not implemented.
+1. **Orphaned game classification** (`index.ts`) — On startup, old `in_progress` games are marked `suspended` for inspection and possible configured recovery.
 2. **Durable event append** (`game-events.ts`) — API canonical events are appended in sequence under the active owner epoch and suspend on owner/identity/sequence/hash failure.
 3. **Forensic checkpoint/evidence rows** (`game-checkpoints.ts`, `game-evidence.ts`) — Checkpoint capsules and private evidence manifests provide debug boundaries without making raw evidence public or claiming hydration.
 4. **Durable truth read model** (`game-event-read-model.ts`, `game-projection-read-model.ts`, `game-durable-run.ts`) — Admin-only inspection can explain event-log integrity, replay status, board projection summary, checkpoint readiness, and redacted evidence counts from Postgres.
 5. **Memory cleanup** (`game-lifecycle.ts`) — Normal completed/cancelled exits can clear `PgMemoryStore`; suspended runs avoid eager cleanup intended for safe terminal states.
+6. **Phase-boundary startup recovery** (`game-recovery.ts`, `game-recovery-support.ts`, `game-lifecycle.ts`) — When enabled, the API process scans suspended games, validates a supported checkpoint, claims a fresh owner, hydrates `GameRunner`, and continues the same game.
 
-These are crash-mitigation (cleanup), not crash-recovery (resume).
+These are partial crash-recovery mechanisms for supported phase boundaries plus fail-closed mitigation for everything else.
 
-Note (as of 2026-06-14 Runtime Snapshot v1): durable checkpoints now carry a validator-derived `hydration passport` (forensic_only / blocked / hydration_candidate) backed by a versioned Runtime Snapshot payload (boundary receipt, actor witness, accumulator registry, transcript watermark, token cursor, and structured continuity capsules). A real phase-boundary checkpoint written through the durable API path can reach `hydration_candidate` when every v1 stamp passes, including a complete manifest, sealed token/transcript boundary evidence, expected active-player continuity coverage, and drained or proven-empty accumulators. Bare captured accumulator labels, malformed snapshot subobjects, boundaryless cursors, and contradictory manifests fail closed. Durable-run inspection exposes `resumeAvailable: false` so operators do not mistake candidacy for production resume. Runtime resume (`GameRunner.fromCheckpoint`) remains out of scope. Active execution is not crash-safe.
+Note (as of 2026-06-14 Runtime Snapshot v1): durable checkpoints now carry a validator-derived `hydration passport` (forensic_only / blocked / hydration_candidate) backed by a versioned Runtime Snapshot payload (boundary receipt, actor witness, accumulator registry, transcript watermark, token cursor, and structured continuity capsules). A real phase-boundary checkpoint written through the durable API path can reach `hydration_candidate` when every v1 stamp passes, including a complete manifest, sealed token/transcript boundary evidence, expected active-player continuity coverage, and drained or proven-empty accumulators. Bare captured accumulator labels, malformed snapshot subobjects, boundaryless cursors, and contradictory manifests fail closed. At that point, runtime resume remained out of scope and durable-run inspection kept `resumeAvailable: false`.
+
+Note (as of 2026-06-29 phase-boundary startup resume): `resumeAvailable` is no longer a proof-only flag. It is true only for implemented recovery support: suspended games whose phase-boundary checkpoint is at the event head, has safe Runtime Snapshot v1 evidence, has transcript replay and token cursor payloads, and targets a supported actor coordinate. Current runner hydration supports the original pre-round lobby checkpoint plus persisted normal-round coordinates `vote`, `mingle`, `power`, and `reveal`; unsupported endgame or blocked-accumulator checkpoints remain suspended and inspectable.
 
 
 ---
 
 ## Future Remediation Plan
 
-The current durable kernel slice stores API canonical events, owner epochs, checkpoint evidence capsules, and inspection metadata. It does **not** implement safe resume. The steps below are the remaining work required before suspended games can be hydrated and continued.
+The current durable kernel slice stores API canonical events, owner epochs, checkpoint evidence capsules, inspection metadata, and a first supported startup resume path. The steps below are the remaining work required before suspended games can be hydrated from arbitrary safe boundaries and coordinated across deployment topologies.
 
 ### Phase 1: Resume Safety (single instance)
 
