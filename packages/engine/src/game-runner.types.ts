@@ -67,6 +67,7 @@ export const PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES = [
   "mingle",
   "power",
   "reveal",
+  "reckoning_lobby",
 ] as const;
 
 export type GameRunnerResumeActorCoordinate = (typeof PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES)[number];

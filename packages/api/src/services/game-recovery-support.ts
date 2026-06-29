@@ -98,6 +98,7 @@ function hasResolvedEmpowered(canonicalEvents: readonly CanonicalGameEvent[]): b
 function validateActorCoordinatePrerequisites(
   actorCoordinate: GameRunnerResumeActorCoordinate,
   canonicalEvents: readonly CanonicalGameEvent[],
+  gameState: GameState,
 ): string | null {
   const hasRoundStarted = canonicalEvents.some((event) => event.type === "round.started");
   if (actorCoordinate === "lobby") {
@@ -116,7 +117,21 @@ function validateActorCoordinatePrerequisites(
 
   const candidateResolution = latestEvent(canonicalEvents, "power.candidates_resolved");
   if (!candidateResolution) return `${actorCoordinate}_missing_candidate_resolution`;
-  if (candidateResolution.payload.autoEliminated) return `${actorCoordinate}_auto_eliminate_unsupported`;
+  if (actorCoordinate === "reveal") {
+    return candidateResolution.payload.autoEliminated ? `${actorCoordinate}_auto_eliminate_unsupported` : null;
+  }
+  if (actorCoordinate === "reckoning_lobby") {
+    if (!canonicalEvents.some((event) => event.type === "player.eliminated")) {
+      return "reckoning_lobby_missing_elimination";
+    }
+    if (gameState.getAlivePlayers().length !== 4) {
+      return "reckoning_lobby_requires_four_alive";
+    }
+    if (gameState.endgameStage !== null) {
+      return "reckoning_lobby_requires_pre_endgame_state";
+    }
+    return null;
+  }
   return null;
 }
 
@@ -168,7 +183,7 @@ export function evaluateSupportedRecovery(params: {
   const accumulatorReason = validateMingleInboxReplay(runtimeSnapshot, mingleInboxReplay);
   if (accumulatorReason) return { ok: false, reason: accumulatorReason };
 
-  const prerequisiteReason = validateActorCoordinatePrerequisites(actorCoordinate, canonicalEvents);
+  const prerequisiteReason = validateActorCoordinatePrerequisites(actorCoordinate, canonicalEvents, gameState);
   if (prerequisiteReason) return { ok: false, reason: prerequisiteReason };
 
   const tokenCostCursor = readTokenCostCursor(params.checkpoint.tokenCostCursor);

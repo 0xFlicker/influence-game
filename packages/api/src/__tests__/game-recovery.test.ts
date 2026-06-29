@@ -63,6 +63,13 @@ const recoveryConfigWithMingle: GameConfig & Record<string, unknown> = {
   maxPlayers: 6,
 };
 
+const recoveryConfigWithEndgame: GameConfig & Record<string, unknown> = {
+  ...recoveryConfig,
+  maxRounds: 10,
+  minPlayers: 6,
+  maxPlayers: 6,
+};
+
 function mockResponse(message: string): AgentResponse {
   return { thinking: "startup recovery mock", message };
 }
@@ -376,6 +383,33 @@ describe("game startup recovery", () => {
     if (!candidate.ok) throw new Error(`expected recovery support, got ${candidate.reason}`);
     expect(candidate.resumeFrom.mingleInboxReplay?.entries.length).toBeGreaterThan(0);
     expect(candidate.resumeFrom.mingleInboxReplay?.unresolvedRecipientNames).toEqual([]);
+
+    const suspendedInspection = await getDurableRunInspection(db, gameId);
+    expect(suspendedInspection.ok).toBeTrue();
+    if (!suspendedInspection.ok) throw new Error("durable inspection failed");
+    const supportedBoundary = suspendedInspection.response.checkpoints.entries.find((entry) =>
+      entry.lastEventSequence === interruptedAtSequence &&
+      entry.checkpointKind === "phase_boundary"
+    );
+    expect(supportedBoundary?.resumeAvailable).toBeTrue();
+
+    const recovery = await recoverGamesOnStartup(db);
+    expect(recovery).toEqual({ attempted: 1, recovered: 1, skipped: [] });
+
+    await assertRecoveredGameCompleted({
+      db,
+      gameId,
+      originalOwnerEpoch: ownerEpoch,
+      interruptedAtSequence,
+      expectedIntroductionCount: 6,
+    });
+  }, 60000);
+
+  test("startup recovery resumes from the first endgame reckoning lobby boundary", async () => {
+    const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, "reckoning_lobby", {
+      config: recoveryConfigWithEndgame,
+      playerCount: 6,
+    });
 
     const suspendedInspection = await getDurableRunInspection(db, gameId);
     expect(suspendedInspection.ok).toBeTrue();

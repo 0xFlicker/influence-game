@@ -718,11 +718,33 @@ export class GameRunner {
 
     const { candidates, autoEliminated } = this.resumeCandidateResolution();
     if (autoEliminated) {
+      if (target === "reckoning_lobby") {
+        actor.send({ type: "UPDATE_ALIVE_PLAYERS", aliveIds: this.gameState.getAlivePlayers().map((player) => player.id) });
+        actor.send({ type: "PHASE_COMPLETE" });
+        await this.tickPhaseActor();
+        this.assertResumeActorState(actor, target);
+        return;
+      }
       throw new Error("Phase-boundary resume cannot hydrate reveal after auto-eliminate power action");
     }
     actor.send({ type: "CANDIDATES_DETERMINED", candidates, autoEliminated });
     actor.send({ type: "PHASE_COMPLETE" });
     await this.tickPhaseActor();
+    if (target === "reveal") {
+      this.assertResumeActorState(actor, target);
+      return;
+    }
+
+    if (target === "reckoning_lobby") {
+      actor.send({ type: "PHASE_COMPLETE" });
+      await this.tickPhaseActor();
+      actor.send({ type: "UPDATE_ALIVE_PLAYERS", aliveIds: this.gameState.getAlivePlayers().map((player) => player.id) });
+      actor.send({ type: "PHASE_COMPLETE" });
+      await this.tickPhaseActor();
+      this.assertResumeActorState(actor, target);
+      return;
+    }
+
     this.assertResumeActorState(actor, target);
   }
 

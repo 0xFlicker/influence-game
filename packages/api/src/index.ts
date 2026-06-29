@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { and, eq, or } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { createDB, schema } from "./db/index.js";
 import { runMigrations } from "./db/migrate.js";
 import { seedRBAC } from "./db/rbac-seed.js";
@@ -26,6 +26,7 @@ import { createWatchIntelligenceRoutes } from "./routes/watch-intelligence.js";
 import { getStorageStatus } from "./lib/storage.js";
 import { getGameWatchState } from "./services/game-watch-state.js";
 import { recoverGamesOnStartup } from "./services/game-lifecycle.js";
+import { suspendOrphanedInProgressGamesOnStartup } from "./services/startup-orphaned-games.js";
 import {
   setServer,
   handleOpen,
@@ -93,49 +94,15 @@ const db = createDB(databaseUrl);
 await seedRBAC(db);
 
 // ---------------------------------------------------------------------------
-// Startup cleanup — mark orphaned in_progress games as needing inspection
+// Startup cleanup — this API process is also the worker in current deployments.
+// Any pre-existing in_progress row has no in-memory runner here, so fail it
+// closed and let configured recovery decide whether it can continue.
 // ---------------------------------------------------------------------------
 
-const orphanedGames = await db
-  .select({ id: schema.games.id, startedAt: schema.games.startedAt })
-  .from(schema.games)
-  .where(eq(schema.games.status, "in_progress"));
-
-if (orphanedGames.length > 0) {
-  const now = new Date();
-  const GRACE_PERIOD_MS = 10 * 60 * 1000; // 10 minutes
-
-  for (const game of orphanedGames) {
-    const startedAt = game.startedAt ? new Date(game.startedAt).getTime() : 0;
-    const ageMs = now.getTime() - startedAt;
-
-    if (ageMs < GRACE_PERIOD_MS) {
-      console.warn(
-        `[startup] Skipping recent in_progress game ${game.id} (started ${Math.round(ageMs / 1000)}s ago — may still be finishing)`,
-      );
-      continue;
-    }
-
-    await db.transaction(async (tx) => {
-      await tx.update(schema.gameRunOwners)
-        .set({
-          status: "expired",
-          closedAt: now.toISOString(),
-          kernelHealth: "suspended",
-          failureReason: "startup_orphaned",
-          failureDetails: { startedAt: game.startedAt, ageMs },
-        })
-        .where(and(
-          eq(schema.gameRunOwners.gameId, game.id),
-          eq(schema.gameRunOwners.status, "active"),
-        ));
-
-      await tx.update(schema.games)
-        .set({ status: "suspended" as const, endedAt: now.toISOString() })
-        .where(eq(schema.games.id, game.id));
-    });
-    console.warn(`[startup] Suspended orphaned game ${game.id} (started ${Math.round(ageMs / 1000)}s ago)`);
-  }
+const startupOrphans = await suspendOrphanedInProgressGamesOnStartup(db);
+for (const orphan of startupOrphans.suspended) {
+  const age = orphan.ageMs === null ? "unknown age" : `started ${Math.round(orphan.ageMs / 1000)}s ago`;
+  console.warn(`[startup] Suspended orphaned game ${orphan.gameId} (${age})`);
 }
 
 const startupRecoveryDisabled = process.env.INFLUENCE_API_STARTUP_RECOVERY?.toLowerCase() === "false";

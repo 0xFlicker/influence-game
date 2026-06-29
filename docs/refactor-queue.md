@@ -38,27 +38,17 @@ Status legend:
 - Validation path: run a local API-backed game through the harness; verify normal durable game data, watch/replay URL, private traces/cognitive artifacts where configured, and Games MCP/read-model output.
 - Suggested slice: add `simulate:api` or equivalent local run harness that creates and runs real API games and prints watch/MCP/debug pointers. Keep standalone JSONL simulation as legacy until parity is proven.
 
-### R2. Phase-boundary resume proof
+### R2. Remaining phase-boundary resume coverage
 
 - Status: `ready`
 - Consolidates: plans C1, brainstorms B2.
 - Sources: `docs/plans/2026-06-13-002-feat-durable-game-run-kernel-plan.md:95-102`, `docs/plans/2026-06-14-002-feat-checkpoint-hydration-passport-plan.md:495-503`, `docs/plans/2026-06-14-003-feat-phase-boundary-runtime-snapshot-plan.md:277-285`, `docs/brainstorms/2026-06-11-canonical-game-event-spine-requirements.md:18-28`, `docs/brainstorms/2026-06-14-checkpoint-hydration-passport-requirements.md:220-241`, `docs/brainstorms/2026-06-14-phase-boundary-runtime-snapshot-requirements.md:220-274`
-- Signal: durable events and watch state are inspectable, but active game execution is still not crash-safe. The useful target is a narrow phase-boundary resume proof, not a broad "crash honesty" project.
-- Concrete seam: `GameRunner`, durable checkpoints, runtime snapshot/passport validators, phase-boundary checkpoint payloads, game lifecycle.
-- Validation path: kill/restart smoke around a safe phase boundary, checkpoint fixture hydration tests, and durable inspection proving the resumed path starts from persisted state.
-- Suggested slice: prove one happy-path phase-boundary checkpoint can be resumed in dev/test. Exclude mid-phase, in-flight model call, and arbitrary effect recovery.
+- Signal: startup recovery now works for the original pre-round lobby checkpoint, persisted normal-round coordinates through `reveal`, and `reckoning_lobby`. The remaining product risk is narrower: unsupported endgame boundaries can still fail closed even though the same game can now survive common restart points.
+- Concrete seam: `GameRunner.hydratePhaseActorForResume`, `PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES`, `game-recovery-support.ts`, checkpoint accumulator registry, and DB-backed recovery tests.
+- Validation path: extend the recovery matrix with kill/restart tests for each newly supported coordinate; assert same game ID, contiguous post-restart events, completed results, and matching `resumeAvailable`.
+- Suggested slice: add `reckoning_plea` / `reckoning_vote`, then `tribunal_lobby` / `tribunal_accusation`, then Judgment coordinates. Keep `tribunal_defense` blocked until `_currentAccusations` is persisted or reconstructed; audit `tribunal_vote` accumulator state before enabling it.
 
-### R3. Transcript and token cursor sealing for resume
-
-- Status: `ready`
-- Consolidates: plans C2, part of brainstorms B2.
-- Sources: `docs/plans/2026-06-14-003-feat-phase-boundary-runtime-snapshot-plan.md:271-284`, `docs/plans/2026-06-14-002-feat-checkpoint-hydration-passport-plan.md:497-503`, `docs/brainstorms/2026-06-14-phase-boundary-runtime-snapshot-requirements.md:231-237`
-- Signal: honest checkpoint hydration needs durable cursor evidence. Without token cursor and transcript boundary evidence, a checkpoint can look complete while still being unsafe to continue.
-- Concrete seam: token tracker, transcript persistence/boundary watermark, runtime snapshot payload, hydration passport validator.
-- Validation path: passport tests where missing cursor evidence blocks resumability; fixture tests proving cursor evidence survives checkpoint serialization.
-- Suggested slice: seal and validate cursor evidence at phase boundaries. Do not implement full resume in this slice.
-
-### R4. Games MCP revealed-facts expansion
+### R3. Games MCP revealed-facts expansion
 
 - Status: `ready`
 - Consolidates: plans C6, brainstorms B6.
@@ -68,7 +58,7 @@ Status legend:
 - Validation path: MCP tests for allowed facts, denied private trace/tool discovery, and wrong-subject access.
 - Suggested slice: add endgame/jury revealed facts. Do not expose raw events or private source pointers.
 
-### R5. Private trace retention and purge workflow
+### R4. Private trace retention and purge workflow
 
 - Status: `ready`
 - Consolidates: plans C8, brainstorms B7.
@@ -78,7 +68,7 @@ Status legend:
 - Validation path: purge/redaction tests, expired object behavior, bounded read/search behavior after purge, and non-dereferenceable private content.
 - Suggested slice: implement an explicit purge/redaction workflow for private trace content. Avoid broad storage redesign.
 
-### R6. Public upload presigner type cleanup
+### R5. Public upload presigner type cleanup
 
 - Status: `ready`
 - Consolidates: ideation comment/TODO scan.
@@ -92,13 +82,13 @@ Status legend:
 
 ### D1. Owner reclaim and restart orchestration
 
-- Status: `blocked`
+- Status: `future`
 - Consolidates: plans C3, part of brainstorms B2.
 - Sources: `docs/plans/2026-06-14-003-feat-phase-boundary-runtime-snapshot-plan.md:277-285`, `docs/plans/2026-06-13-002-feat-durable-game-run-kernel-plan.md:474-482`
-- Signal: after restart, a process eventually needs to reacquire interrupted work and decide whether continuation is allowed.
+- Signal: single-process startup recovery now reacquires interrupted work and decides whether continuation is allowed. Remaining orchestration work is about graceful shutdown, lease freshness, multi-worker coordination, and spot/serverless worker fleets.
 - Concrete seam: game owner rows, heartbeat/lease handling, startup orphan logic, durable-run inspection, lifecycle start/continue code.
-- Validation path: owner-expiry tests, startup orphan tests, and restart-orchestrator tests.
-- Blocker: needs R2/R3 or equivalent hydration target first. Owner reclaim alone is not valuable without a safe continuation boundary.
+- Validation path: graceful shutdown tests, owner-expiry tests, multi-worker claim contention tests, and restart-orchestrator tests.
+- Promotion trigger: multiple API/worker processes become real, or deploy/restart behavior needs graceful drain semantics beyond the current startup recovery path.
 
 ### D2. Strategy Thread and House packet checkpoint continuity
 
@@ -108,7 +98,7 @@ Status legend:
 - Signal: strategy packets and House packets are important continuity artifacts, but they are not public transcript, canonical board truth, or standalone resume authority.
 - Concrete seam: agent strategy packet state, House interviewer packet state, continuity capsules, checkpoint serialization.
 - Validation path: prompt continuity tests before/after checkpoint hydration, simulation artifacts, and private trace checks.
-- Blocker: depends on R2/R3 defining what checkpoint hydration actually needs.
+- Blocker: depends on R2 and W3 defining what checkpoint hydration actually needs beyond the currently supported resume inputs.
 
 ## Future / Watchlist
 
@@ -164,6 +154,7 @@ Status legend:
 ## Closed / Removed
 
 - Public websocket transcript boundary hardening: already landed on local `origin/main` via `1bc1277a` / PR #37. This branch needs to merge or rebase main, not queue new work.
+- Transcript and token cursor sealing for supported resume: landed for checkpoint resume support. Remaining transcript durability work is tracked as W3 incremental transcript persistence, not as a standalone proof slice.
 - Cognitive artifact policy module: already implemented as `packages/api/src/services/cognitive-artifact-policy.ts` with writer/read-model/API/MCP tests.
 - Production Game MCP raw trace ranged reads: already implemented with ranged private-storage reads, `maxBytes` response caps, truncation metadata, tests, and docs.
 - Historical Whisper compatibility/backfill cleanup: not a coherent current ask.
@@ -181,10 +172,9 @@ Status legend:
 ## Current Priority Order
 
 1. R1 API-backed local run harness
-2. R2 Phase-boundary resume proof
-3. R3 Transcript and token cursor sealing
-4. R4 Games MCP revealed-facts expansion
-5. R5 Private trace retention and purge workflow
-6. R6 Public upload presigner type cleanup
+2. R2 Remaining phase-boundary resume coverage
+3. R3 Games MCP revealed-facts expansion
+4. R4 Private trace retention and purge workflow
+5. R5 Public upload presigner type cleanup
 
-`Crash-Honesty Extraction` does not survive as a standalone backlog item. Its useful content is captured by R2, R3, and later D1.
+`Crash-Honesty Extraction` does not survive as a standalone backlog item. Its useful content is captured by R2, W3, and later D1.
