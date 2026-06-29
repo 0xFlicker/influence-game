@@ -26,10 +26,23 @@ describe("MCP App provider audit hints", () => {
   });
 
   test("keeps hosted OAuth callbacks in code-owned provider config", () => {
+    const chatGptCallback = "https://chatgpt.com/connector/oauth/_syG1DzKsjXV";
     const claudeCallback = "https://claude.ai/api/mcp/auth_callback";
+    expect(providerRedirectRuleForUri(chatGptCallback)).toEqual({
+      providerId: "chatgpt",
+      redirectUri: chatGptCallback,
+    });
     expect(providerRedirectRuleForUri(claudeCallback)).toEqual({
       providerId: "claude",
       redirectUri: claudeCallback,
+    });
+    expect(createRedirectAuditDetail(chatGptCallback, "provider_config")).toMatchObject({
+      protocol: "https",
+      host: "chatgpt.com",
+      path: "/connector/oauth/_syG1DzKsjXV",
+      hasQuery: false,
+      providerId: "chatgpt",
+      matchSource: "provider_config",
     });
     expect(createRedirectAuditDetail(
       "https://chatgpt.com/mcp/oauth/callback",

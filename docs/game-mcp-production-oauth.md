@@ -58,6 +58,10 @@ DCR audit diagnostics to capture unknown provider callbacks safely. The legacy
 `MCP_OAUTH_ALLOWED_REDIRECT_URIS` exact allowlist remains supported only as an
 escape hatch for non-provider callbacks.
 
+Current code-owned provider callbacks include ChatGPT's hosted connector
+callback at `https://chatgpt.com/connector/oauth/_syG1DzKsjXV` and Claude's
+hosted connector callback at `https://claude.ai/api/mcp/auth_callback`.
+
 Dynamic client registration is enabled for public MCP clients. A registered client may store a supported scope set such as `games mcp`, because some MCP clients register every scope advertised by the authorization server. If the client omits scope, registration defaults to `games`.
 
 Authorization still issues exactly one grant scope. The requested `resource` selects the profile: `/mcp` grants `games`, and `/mcp/producer` grants `mcp`. The request is rejected if the registered/requested scope set includes unsupported scopes or does not include the selected resource profile's scope. Authorization codes and access tokens persist only `games` or `mcp`, never a mixed scope set.
