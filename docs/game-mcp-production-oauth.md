@@ -46,11 +46,17 @@ The authorization server metadata derives its public issuer, token endpoint, rev
 Optional settings:
 
 ```bash
-MCP_OAUTH_ALLOWED_REDIRECT_URIS=https://<client-callback>
 MCP_OAUTH_LOOPBACK_REDIRECT_PATH=/oauth/callback
 # Optional; unset behaves as false.
 MCP_OAUTH_ALLOW_DYNAMIC_HTTPS_REDIRECTS=false
 ```
+
+Provider-owned hosted callbacks for ChatGPT, Claude, Grok, and similar MCP App
+hosts are deployment-invariant and should live in code, not per-environment env
+vars. Add exact supported callbacks to the provider compatibility config and use
+DCR audit diagnostics to capture unknown provider callbacks safely. The legacy
+`MCP_OAUTH_ALLOWED_REDIRECT_URIS` exact allowlist remains supported only as an
+escape hatch for non-provider callbacks.
 
 Dynamic client registration is enabled for public MCP clients. A registered client may store a supported scope set such as `games mcp`, because some MCP clients register every scope advertised by the authorization server. If the client omits scope, registration defaults to `games`.
 

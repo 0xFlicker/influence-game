@@ -15,6 +15,7 @@ import {
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import {
   authorizeMcpOAuth,
+  describeMcpOAuthClientRegistrationForAudit,
   exchangeMcpOAuthCode,
   getMcpOAuthAuthorizationEndpoint,
   getMcpOAuthAuthorizationServerIssuer,
@@ -33,6 +34,7 @@ import {
   type McpAuthProfile,
   type McpOAuthProfileName,
   type McpOAuthAuditMetadata,
+  type McpOAuthRegistrationAuditMetadata,
   secretsEqual,
 } from "../services/mcp-oauth.js";
 import {
@@ -48,7 +50,8 @@ export type McpOAuthAuditEventName =
   | "mcp.oauth.revoke"
   | "mcp.oauth.introspect";
 
-export interface McpOAuthAuditEvent extends McpOAuthAuditMetadata {
+export interface McpOAuthAuditEvent
+  extends McpOAuthAuditMetadata, McpOAuthRegistrationAuditMetadata {
   event: McpOAuthAuditEventName;
   correlationId: string;
   result: "success" | "failure";
@@ -85,6 +88,7 @@ export function createMcpOAuthRoutes(
       return c.json({ error: "invalid_request", error_description: "Invalid request body" }, 400);
     }
 
+    const registrationAudit = describeMcpOAuthClientRegistrationForAudit(body);
     const result = await registerMcpOAuthClient(db, body);
     emitAudit(auditLogger, {
       event: "mcp.oauth.register",
@@ -96,6 +100,7 @@ export function createMcpOAuthRoutes(
       providerId: providerIdHint(c),
       appStage: "discovery",
       denialReason: result.status === 201 ? undefined : bodyErrorCode(result.body),
+      ...registrationAudit,
     });
     return c.json(result.body, result.status);
   });

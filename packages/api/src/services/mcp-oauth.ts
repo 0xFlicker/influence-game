@@ -4,6 +4,12 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { getPermissionsForAddress } from "../db/rbac.js";
 import type { AuthUser } from "../middleware/auth.js";
+import {
+  createRedirectAuditDetail,
+  providerRedirectRuleForUri,
+  type McpOAuthRedirectAuditDetail,
+  type McpOAuthRedirectMatchSource,
+} from "../game-mcp/oauth-provider-compat.js";
 
 export const MCP_OAUTH_SCOPE = "mcp";
 export const MCP_OAUTH_GAMES_SCOPE = "games";
@@ -164,6 +170,13 @@ export interface McpOAuthAuditMetadata {
   scope?: string;
   authProfile?: McpAuthProfile;
   grantType?: "authorization_code" | "refresh_token";
+}
+
+export interface McpOAuthRegistrationAuditMetadata {
+  registrationRedirectUriCount?: number;
+  registrationRedirectUris?: McpOAuthRedirectAuditDetail[];
+  registrationGrantTypes?: string[];
+  registrationResponseTypes?: string[];
 }
 
 export type ServiceResponse<TBody> = {
@@ -445,6 +458,25 @@ export async function registerMcpOAuthClient(
       clientId,
       scope: parsed.registration.scope,
     },
+  };
+}
+
+export function describeMcpOAuthClientRegistrationForAudit(
+  input: McpOAuthClientRegistrationInput,
+): McpOAuthRegistrationAuditMetadata {
+  const redirectUris = requiredStringArray(input.redirect_uris);
+  const grantTypes = optionalStringArray(input.grant_types);
+  const responseTypes = optionalStringArray(input.response_types);
+
+  return {
+    registrationRedirectUriCount: redirectUris?.length,
+    registrationRedirectUris: redirectUris
+      ?.slice(0, 5)
+      .map((redirectUri) =>
+        createRedirectAuditDetail(redirectUri, registeredRedirectMatchSource(redirectUri))
+      ),
+    ...(grantTypes ? { registrationGrantTypes: grantTypes } : {}),
+    ...(responseTypes ? { registrationResponseTypes: responseTypes } : {}),
   };
 }
 
@@ -1348,7 +1380,7 @@ function validateClientRegistrationInput(input: McpOAuthClientRegistrationInput)
   if (!redirectUris.every(isAllowedRegisteredRedirectUri)) {
     return clientRegistrationError(
       "invalid_redirect_uri",
-      "redirect_uris must be loopback http(s) URIs or configured https URIs",
+      "redirect_uris must be loopback http(s) URIs or supported provider https URIs",
     );
   }
 
@@ -1448,6 +1480,9 @@ function isAllowedRedirectUri(redirectUri: string): boolean {
   if (configured.includes(redirectUri)) {
     return url.protocol === "https:";
   }
+  if (providerRedirectRuleForUri(redirectUri)) {
+    return url.protocol === "https:";
+  }
 
   const isLoopbackHost =
     url.hostname === "localhost" ||
@@ -1471,8 +1506,30 @@ function isAllowedRegisteredRedirectUri(redirectUri: string): boolean {
   if (!isValidRedirectUrl(url)) return false;
   if (isLoopbackUrl(url)) return url.protocol === "http:" || url.protocol === "https:";
   if (url.protocol !== "https:") return false;
-  return allowedRedirectUris().includes(redirectUri) ||
+  return providerRedirectRuleForUri(redirectUri) !== undefined ||
+    allowedRedirectUris().includes(redirectUri) ||
     process.env.MCP_OAUTH_ALLOW_DYNAMIC_HTTPS_REDIRECTS === "true";
+}
+
+function registeredRedirectMatchSource(redirectUri: string): McpOAuthRedirectMatchSource {
+  let url: URL;
+  try {
+    url = new URL(redirectUri);
+  } catch {
+    return "invalid_syntax";
+  }
+
+  if (!isValidRedirectUrl(url)) return "invalid_syntax";
+  if (isLoopbackUrl(url) && (url.protocol === "http:" || url.protocol === "https:")) {
+    return "loopback";
+  }
+  if (url.protocol !== "https:") return "rejected";
+  if (providerRedirectRuleForUri(redirectUri)) return "provider_config";
+  if (allowedRedirectUris().includes(redirectUri)) return "legacy_env";
+  if (process.env.MCP_OAUTH_ALLOW_DYNAMIC_HTTPS_REDIRECTS === "true") {
+    return "dynamic_https";
+  }
+  return "rejected";
 }
 
 function isValidRedirectUriSyntax(redirectUri: string): boolean {

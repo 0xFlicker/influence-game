@@ -25,6 +25,7 @@ const MCP_ADDRESS = "0xmcp000000000000000000000000000000000011";
 const NON_MCP_ADDRESS = "0xnomcp000000000000000000000000000000001";
 const REDIRECT_URI = "http://127.0.0.1:34789/oauth/callback";
 const DYNAMIC_REDIRECT_URI = "http://127.0.0.1:49281/codex/callback";
+const CLAUDE_REDIRECT_URI = "https://claude.ai/api/mcp/auth_callback";
 const RESOURCE_URI = "http://127.0.0.1:3000/mcp";
 const PRODUCER_RESOURCE_URI = "http://127.0.0.1:3000/mcp/producer";
 const DEPLOYED_RESOURCE_URI = "https://influence.example/mcp";
@@ -342,6 +343,88 @@ describe("MCP OAuth routes", () => {
       result: "success",
       status: 200,
     }));
+  });
+
+  test("accepts code-owned Claude OAuth callback for dynamic and static clients", async () => {
+    const registration = await app.request("/api/oauth/mcp/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "Claude hosted connector",
+        redirect_uris: [CLAUDE_REDIRECT_URI],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        scope: MCP_OAUTH_GAMES_SCOPE,
+        token_endpoint_auth_method: "none",
+      }),
+    });
+    expect(registration.status).toBe(201);
+    const dynamicClientId = String((await jsonObject(registration)).client_id);
+
+    const { token: sessionToken } = await createUserSession(db, NON_MCP_ADDRESS);
+    const dynamicCode = await authorizeCode(sessionToken, "claude-dynamic", "claude-dynamic", {
+      clientId: dynamicClientId,
+      redirectUri: CLAUDE_REDIRECT_URI,
+    });
+    const dynamicToken = await exchangeCode(dynamicCode, "claude-dynamic", {
+      clientId: dynamicClientId,
+      redirectUri: CLAUDE_REDIRECT_URI,
+    });
+    expect(dynamicToken.status).toBe(200);
+    expect(await jsonObject(dynamicToken)).toMatchObject({
+      token_type: "Bearer",
+      scope: "games",
+      resource: RESOURCE_URI,
+    });
+
+    const staticCode = await authorizeCode(sessionToken, "claude-static", "claude-static", {
+      redirectUri: CLAUDE_REDIRECT_URI,
+    });
+    const staticToken = await exchangeCode(staticCode, "claude-static", {
+      redirectUri: CLAUDE_REDIRECT_URI,
+    });
+    expect(staticToken.status).toBe(200);
+  });
+
+  test("audits rejected hosted redirect URIs without logging the full callback", async () => {
+    const chatGptRedirectUri = "https://chatgpt.com/mcp/oauth/callback";
+    const registration = await app.request("/api/oauth/mcp/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "ChatGPT connector probe",
+        redirect_uris: [chatGptRedirectUri],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        scope: MCP_OAUTH_GAMES_SCOPE,
+        token_endpoint_auth_method: "none",
+      }),
+    });
+
+    expect(registration.status).toBe(400);
+    expect(await jsonObject(registration)).toMatchObject({
+      error: "invalid_redirect_uri",
+    });
+    const audit = auditEvents.at(-1);
+    expect(audit).toMatchObject({
+      event: "mcp.oauth.register",
+      result: "failure",
+      status: 400,
+      denialReason: "invalid_redirect_uri",
+      registrationRedirectUriCount: 1,
+      registrationGrantTypes: ["authorization_code", "refresh_token"],
+      registrationResponseTypes: ["code"],
+    });
+    expect(audit?.registrationRedirectUris?.[0]).toMatchObject({
+      protocol: "https",
+      host: "chatgpt.com",
+      path: "/mcp/oauth/callback",
+      hasQuery: false,
+      providerId: "chatgpt",
+      matchSource: "rejected",
+    });
+    expect(audit?.registrationRedirectUris?.[0]?.uriHash).toMatch(/^sha256:/);
+    expect(JSON.stringify(auditEvents)).not.toContain(chatGptRedirectUri);
   });
 
   test("rotates games refresh tokens and revokes the family on reuse", async () => {
@@ -914,7 +997,12 @@ describe("MCP OAuth routes", () => {
     sessionToken: string,
     codeVerifier: string,
     state: string,
-    overrides?: { scope?: string; resource?: string },
+    overrides?: {
+      clientId?: string;
+      redirectUri?: string;
+      scope?: string;
+      resource?: string;
+    },
   ): Promise<string> {
     const authorize = await app.request("/api/oauth/mcp/authorize", {
       method: "POST",
@@ -936,15 +1024,19 @@ describe("MCP OAuth routes", () => {
   async function exchangeCode(
     code: string,
     codeVerifier: string,
-    overrides?: { resource?: string },
+    overrides?: {
+      clientId?: string;
+      redirectUri?: string;
+      resource?: string;
+    },
   ): Promise<Response> {
     return app.request("/api/oauth/mcp/token", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         grant_type: "authorization_code",
-        client_id: MCP_OAUTH_CLIENT_ID,
-        redirect_uri: REDIRECT_URI,
+        client_id: overrides?.clientId ?? MCP_OAUTH_CLIENT_ID,
+        redirect_uri: overrides?.redirectUri ?? REDIRECT_URI,
         resource: overrides?.resource ?? RESOURCE_URI,
         code,
         code_verifier: codeVerifier,
