@@ -44,9 +44,16 @@ export function GetMcpSetupContent({
           <div className="mt-7 max-w-3xl space-y-3 text-sm leading-6 sm:text-base sm:leading-7">
             <p className="influence-copy">
               The MCP endpoint is{" "}
-              <code className="rounded border border-border-active/45 bg-black/30 px-1.5 py-0.5 font-mono text-sm text-text-primary">
-                {mcpUrl}
-              </code>
+              <span className="inline-flex max-w-full flex-wrap items-center gap-2 align-middle">
+                <code className="max-w-full overflow-x-auto rounded border border-border-active/45 bg-black/30 px-1.5 py-0.5 font-mono text-sm text-text-primary">
+                  {mcpUrl}
+                </code>
+                <CopyCommandButton
+                  command={mcpUrl}
+                  title="Copy MCP endpoint"
+                  className="rounded border border-border-active/45 bg-surface-raised/50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-secondary transition-colors hover:border-border-active hover:text-text-primary"
+                />
+              </span>
               . Authorization happens in your browser when the client starts OAuth.
             </p>
             {authenticated ? (

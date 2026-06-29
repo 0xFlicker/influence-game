@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { renderToString } from "react-dom/server";
 import type { GameDetail, GameWatchState, TranscriptEntry } from "../lib/api";
 import {
@@ -8,6 +10,11 @@ import {
   MatchWatchShell,
 } from "../app/games/[slug]/components/match-watch-shell";
 import { buildReplayScenes } from "../app/games/[slug]/components/spectacle-viewer";
+
+const matchWatchShellSource = readFileSync(
+  join(import.meta.dir, "../app/games/[slug]/components/match-watch-shell.tsx"),
+  "utf8",
+);
 
 function game(): GameDetail {
   return {
@@ -144,6 +151,15 @@ describe("MatchWatchShell", () => {
     expect(html).not.toContain("Public Thinking");
     expect(html).not.toContain("Public Strategy");
     expect(html).not.toContain("Public Receipts");
+  });
+
+  it("makes long thinking cards expandable from the inspector", () => {
+    expect(matchWatchShellSource).toContain("COMPACT_THINKING_TEXT_LIMIT");
+    expect(matchWatchShellSource).toContain("expandableCards");
+    expect(matchWatchShellSource).toContain("shouldClamp = expandable");
+    expect(matchWatchShellSource).toContain("aria-expanded={expanded}");
+    expect(matchWatchShellSource).toContain("Show full");
+    expect(matchWatchShellSource).toContain("Show less");
   });
 
   it("builds newest-first diary archive entries with paired House questions", () => {

@@ -59,6 +59,8 @@ describe("/get-mcp setup page", () => {
   it("keeps setup metadata in prose instead of extra cards", () => {
     expect(combinedSource).toContain("The MCP endpoint is");
     expect(combinedSource).toContain("Authorization happens in your browser");
+    expect(combinedSource).toContain("Copy MCP endpoint");
+    expect(combinedSource).toContain("command={mcpUrl}");
     expect(combinedSource).toContain("Sign in");
     expect(combinedSource).toContain("max-w-3xl space-y-3");
     expect(combinedSource).not.toContain("<aside");

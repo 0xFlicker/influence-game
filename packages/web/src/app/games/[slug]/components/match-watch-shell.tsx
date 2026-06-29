@@ -508,6 +508,7 @@ function TheaterChip({ children }: { children: ReactNode }) {
 }
 
 type InspectorTab = "overview" | "thinking" | "strategy" | "diary";
+const COMPACT_THINKING_TEXT_LIMIT = 260;
 
 function InspectorPanel({
   model,
@@ -538,7 +539,12 @@ function InspectorPanel({
           <InspectorSection title="Audience Lens" section={intelligence.overview} />
         ) : null}
         {activeTab === "thinking" ? (
-          <InspectorSection title="Thinking" meta={sectionMeta(intelligence)} section={intelligence.thinking} />
+          <InspectorSection
+            title="Thinking"
+            meta={sectionMeta(intelligence)}
+            section={intelligence.thinking}
+            expandableCards
+          />
         ) : null}
         {activeTab === "strategy" ? (
           <InspectorSection title="Strategy" meta={sectionMeta(intelligence)} section={intelligence.strategy} />
@@ -607,10 +613,12 @@ function InspectorSection({
   title,
   meta,
   section,
+  expandableCards = false,
 }: {
   title: string;
   meta?: string;
   section: MatchWatchIntelligenceSectionModel;
+  expandableCards?: boolean;
 }) {
   return (
     <section className="rounded-md border border-white/10 bg-white/[0.02] p-3">
@@ -627,7 +635,11 @@ function InspectorSection({
       {section.cards.length > 0 ? (
         <div className="space-y-3">
           {section.cards.map((card) => (
-            <IntelligenceCard key={card.id} card={card} />
+            <IntelligenceCard
+              key={card.id}
+              card={card}
+              expandable={expandableCards}
+            />
           ))}
         </div>
       ) : (
@@ -639,9 +651,16 @@ function InspectorSection({
 
 function IntelligenceCard({
   card,
+  expandable,
 }: {
   card: MatchWatchIntelligenceSectionModel["cards"][number];
+  expandable?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const canExpand = expandable && card.body.length > COMPACT_THINKING_TEXT_LIMIT;
+  const shouldClamp = expandable ? canExpand && !expanded : true;
+  const bodyClassName = shouldClamp ? "line-clamp-5" : "";
+
   return (
     <div className="border-t border-white/5 pt-3 first:border-t-0 first:pt-0">
       <div className="mb-1 flex items-center justify-between gap-3">
@@ -650,7 +669,20 @@ function IntelligenceCard({
           {card.meta}
         </span>
       </div>
-      <p className="line-clamp-5 text-[10px] leading-5 text-white/65">{card.body}</p>
+      <p className={`${bodyClassName} whitespace-pre-wrap text-[10px] leading-5 text-white/65`}>
+        {card.body}
+      </p>
+      {canExpand ? (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+          className="mt-2 rounded border border-white/10 bg-white/[0.03] px-2 py-1 text-[8px] font-semibold uppercase tracking-[0.12em] text-white/45 transition-colors hover:border-white/20 hover:text-white/70"
+          title={expanded ? "Collapse thinking" : "Expand thinking"}
+        >
+          {expanded ? "Show less" : "Show full"}
+        </button>
+      ) : null}
     </div>
   );
 }
