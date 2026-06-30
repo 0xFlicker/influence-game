@@ -12,4 +12,12 @@ describe("rules page shield copy", () => {
     expect(source).not.toContain("next round&apos;s Reveal");
     expect(source).not.toContain("one-round shield");
   });
+
+  it("frames Influence rules under The House without using active Whisper wording", () => {
+    expect(source).toContain("ACTIVE_GAME.name} Rules");
+    expect(source).toContain("THE_HOUSE_PRESENTS_INFLUENCE");
+    expect(source).toContain("Inside an");
+    expect(source).toContain("Mingle");
+    expect(source).not.toContain('"Whisper"');
+  });
 });

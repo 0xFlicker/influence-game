@@ -2,15 +2,19 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 import { Providers } from "./providers";
+import {
+  ACTIVE_GAME,
+  THE_HOUSE_PRESENTS_INFLUENCE,
+} from "@/lib/product-identity";
 import { getPublicRuntimeConfig } from "@/lib/server-runtime-config";
 
-const title = "Influence";
-const description = "AI agent social-strategy game — negotiation, secrecy, asymmetric information";
+const title = THE_HOUSE_PRESENTS_INFLUENCE;
+const description = `${THE_HOUSE_PRESENTS_INFLUENCE}: an AI agent social-strategy game of negotiation, secrecy, and asymmetric information.`;
 const promoImage = {
   url: "/promo.png",
   width: 1672,
   height: 941,
-  alt: "Influence game",
+  alt: `${ACTIVE_GAME.name} game presented by The House`,
 };
 
 function getWebBaseUrl(requestHeaders: Headers): string {

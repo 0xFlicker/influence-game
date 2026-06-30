@@ -10,6 +10,7 @@ import {
   type ModelTier,
   type PersonaKey,
 } from "@/lib/api";
+import { ACTIVE_GAME, HOUSE_VENUE } from "@/lib/product-identity";
 
 // ---------------------------------------------------------------------------
 // Persona definitions (matches engine PERSONALITY_PROMPTS)
@@ -240,6 +241,24 @@ export function CreateGameForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+      {/* Game */}
+      <SectionCard title="Game">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-white text-lg font-semibold">
+              {ACTIVE_GAME.name}
+            </p>
+            <p className="text-sm text-white/50 mt-1">
+              Selected ruleset for {HOUSE_VENUE.name}. Other games are not
+              selectable in this pass.
+            </p>
+          </div>
+          <span className="w-fit rounded-sm border border-emerald-500/35 bg-emerald-500/20 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200">
+            Selected
+          </span>
+        </div>
+      </SectionCard>
+
       {/* Players */}
       <SectionCard title="Players">
         <RadioGroup
@@ -446,7 +465,7 @@ export function CreateGameForm() {
             disabled={submitting}
             className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
           >
-            {submitting ? "Creating…" : "Create Game"}
+            {submitting ? "Creating…" : `Create ${ACTIVE_GAME.name} Game`}
           </button>
         </div>
       </div>

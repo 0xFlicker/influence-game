@@ -15,6 +15,10 @@ import {
   type SavedAgent,
 } from "@/lib/api";
 import {
+  ACTIVE_GAME,
+  HOUSE_VENUE,
+} from "@/lib/product-identity";
+import {
   buildDashboardMissionControl,
   type DashboardPrimaryAction,
 } from "./dashboard-mission-control";
@@ -30,12 +34,12 @@ export function McpSetupCard({ hasHistory }: { hasHistory: boolean }) {
         <div>
           <p className="influence-section-title">Games MCP</p>
           <h2 className="mt-2 text-lg font-semibold text-text-primary">
-            Connect your Influence games to Codex or Claude Code
+            Connect {HOUSE_VENUE.name} to your {ACTIVE_GAME.name} games
           </h2>
           <p className="influence-copy mt-2 max-w-2xl text-sm leading-6">
             {hasHistory
-              ? "Use your game history from an AI coding client without granting maintainer access or internal inspection."
-              : "Join or complete a game, then let an AI coding client read the games tied to your account."}
+              ? "Use your Influence history from an AI coding client without granting maintainer access or internal inspection."
+              : "Join or complete an Influence game, then let an AI coding client read the games tied to your account."}
           </p>
         </div>
         <Link

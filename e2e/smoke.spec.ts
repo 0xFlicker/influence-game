@@ -4,7 +4,7 @@ test.describe("Smoke Tests", () => {
   test("homepage loads", async ({ page }) => {
     const response = await page.goto("/");
     expect(response?.status()).toBe(200);
-    await expect(page).toHaveTitle(/influence/i);
+    await expect(page).toHaveTitle(/the house.*influence/i);
   });
 
   test("API health check", async ({ request }) => {

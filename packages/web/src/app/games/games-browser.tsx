@@ -18,6 +18,7 @@ import {
   type TrackType,
 } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
+import { ACTIVE_GAME } from "@/lib/product-identity";
 
 function phaseLabel(phase: string): string {
   const labels: Record<string, string> = {
@@ -178,6 +179,9 @@ function GameCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 mb-2 flex-wrap">
               <span className="text-text-primary font-semibold">Game #{game.gameNumber}</span>
+              <span className="text-xs px-2 py-0.5 rounded-sm bg-emerald-500/20 text-emerald-200 border border-emerald-500/35 font-semibold">
+                {ACTIVE_GAME.badgeLabel}
+              </span>
               <StatusBadge status={game.status} />
               {game.trackType === "free" && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-900/40 text-emerald-400 border border-emerald-900/60 font-medium">
@@ -444,7 +448,7 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
       if (filters.track !== "all" && (g.trackType ?? "custom") !== filters.track) return false;
       if (searchQuery) {
         const modelLabel = formatGameModelLabel(g.modelSelection, g.modelTier, g.modelLabel);
-        const haystack = `Game #${g.gameNumber} ${g.winner ?? ""} ${g.winnerPersona ?? ""} ${modelLabel} ${g.modelTier} ${g.trackType ?? ""}`.toLowerCase();
+        const haystack = `Game #${g.gameNumber} ${ACTIVE_GAME.name} ${g.winner ?? ""} ${g.winnerPersona ?? ""} ${modelLabel} ${g.modelTier} ${g.trackType ?? ""}`.toLowerCase();
         if (!haystack.includes(searchQuery)) return false;
       }
       return true;

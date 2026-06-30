@@ -11,13 +11,13 @@ describe("dashboard MCP setup card", () => {
   it("adds a contextual dashboard bridge to the setup page", () => {
     expect(source).toContain("McpSetupCard");
     expect(source).toContain('href="/get-mcp"');
-    expect(source).toContain("Connect your Influence games to Codex or Claude Code");
+    expect(source).toContain("Connect {HOUSE_VENUE.name} to your {ACTIVE_GAME.name} games");
     expect(source).toContain("control.stats.gamesPlayed > 0");
   });
 
   it("has useful copy for players with and without history", () => {
-    expect(source).toContain("Use your game history from an AI coding client");
-    expect(source).toContain("Join or complete a game");
+    expect(source).toContain("Use your Influence history from an AI coding client");
+    expect(source).toContain("Join or complete an Influence game");
     expect(source).toContain("games tied to your account");
   });
 

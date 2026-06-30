@@ -9,6 +9,10 @@ import {
   getMcpResourceUrl,
   type McpSetupClient,
 } from "@/lib/mcp-setup";
+import {
+  ACTIVE_GAME,
+  HOUSE_VENUE,
+} from "@/lib/product-identity";
 import { CopyCommandButton } from "./copy-command-button";
 
 interface GetMcpSetupContentProps {
@@ -34,11 +38,12 @@ export function GetMcpSetupContent({
         <div className="min-w-0">
           <p className="influence-section-title">Games MCP</p>
           <h1 className="mt-4 max-w-3xl text-3xl font-semibold tracking-tight text-text-primary sm:text-4xl lg:text-5xl">
-            Connect your Influence games to Codex or Claude Code
+            Connect {HOUSE_VENUE.name} to your {ACTIVE_GAME.name} games
           </h1>
           <p className="influence-copy mt-5 max-w-2xl text-base leading-7 sm:text-lg sm:leading-8">
             Add the player-facing MCP endpoint once, approve access in the browser,
-            and let your AI coding client read the Influence games tied to your account.
+            and let Codex or Claude Code inspect your {ACTIVE_GAME.name} games,
+            owned agents, rules, and supported pre-match queues.
           </p>
 
           <div className="mt-7 max-w-3xl space-y-3 text-sm leading-6 sm:text-base sm:leading-7">

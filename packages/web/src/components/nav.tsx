@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useE2EAuth } from "@/app/providers";
+import { HOUSE_VENUE } from "@/lib/product-identity";
 
 function HamburgerIcon() {
   return (
@@ -41,7 +42,7 @@ export function Nav() {
       </Link>
 
       <Link href="/games/free" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
-        Free Games
+        Influence Queue
       </Link>
 
       <Link href="/rules" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
@@ -98,7 +99,7 @@ export function Nav() {
     <nav className="border-b border-border-active/60 bg-surface-overlay/30 px-6 py-4 backdrop-blur-sm">
       <div className="flex items-center justify-between">
         <Link href="/" className="text-lg font-bold tracking-tight text-text-primary">
-          Influence
+          {HOUSE_VENUE.name}
         </Link>
 
         {/* Desktop nav */}
