@@ -205,9 +205,20 @@ export function secretsEqual(actual: string, expected: string): boolean {
 }
 
 export function getMcpOAuthResourceUri(): string {
-  const configured = requiredString(process.env.MCP_OAUTH_RESOURCE_URI);
-  return normalizeResourceUri(configured ?? DEFAULT_MCP_OAUTH_RESOURCE_URI) ??
-    DEFAULT_MCP_OAUTH_RESOURCE_URI;
+  const configured = configuredMcpOAuthResourceUri();
+  if (!configured.value) {
+    if (isProductionRuntime()) {
+      throw new Error("MCP_OAUTH_RESOURCE_URI is not configured");
+    }
+    return DEFAULT_MCP_OAUTH_RESOURCE_URI;
+  }
+
+  const normalized = normalizeResourceUri(configured.value);
+  if (!normalized) {
+    throw new Error(`${configured.envName} must be an http(s) URL without a fragment`);
+  }
+  assertProductionPublicUrl(new URL(normalized), configured.envName);
+  return normalized;
 }
 
 export function isCanonicalMcpResourceUri(resourceUri: string): boolean {
@@ -221,7 +232,8 @@ export function getMcpOAuthAuthorizationEndpoint(): string {
   if (!webBase) {
     throw new Error("WEB_BASE_URL is not configured");
   }
-  return new URL("/oauth/mcp/authorize", webBase).toString();
+  const normalizedWebBase = normalizeWebBaseUrl(webBase);
+  return new URL("/oauth/mcp/authorize", normalizedWebBase).toString();
 }
 
 export function getMcpOAuthTokenEndpoint(): string {
@@ -1673,6 +1685,53 @@ function optionalHttpsUri(value: unknown): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function configuredMcpOAuthResourceUri():
+  | { value: string; envName: "MCP_OAUTH_RESOURCE_URI" | "MCP_OAUTH_GAMES_RESOURCE_URI" }
+  | { value: null; envName: "MCP_OAUTH_RESOURCE_URI" } {
+  const resourceUri = requiredString(process.env.MCP_OAUTH_RESOURCE_URI);
+  if (resourceUri) {
+    return { value: resourceUri, envName: "MCP_OAUTH_RESOURCE_URI" };
+  }
+
+  const legacyGamesResourceUri = requiredString(process.env.MCP_OAUTH_GAMES_RESOURCE_URI);
+  if (legacyGamesResourceUri) {
+    return { value: legacyGamesResourceUri, envName: "MCP_OAUTH_GAMES_RESOURCE_URI" };
+  }
+
+  return { value: null, envName: "MCP_OAUTH_RESOURCE_URI" };
+}
+
+function normalizeWebBaseUrl(value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("WEB_BASE_URL must be an http(s) URL");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("WEB_BASE_URL must be an http(s) URL");
+  }
+  if (url.hash) {
+    throw new Error("WEB_BASE_URL must not include a fragment");
+  }
+  assertProductionPublicUrl(url, "WEB_BASE_URL");
+  return url.toString();
+}
+
+function assertProductionPublicUrl(url: URL, envName: string): void {
+  if (!isProductionRuntime()) return;
+  if (isLoopbackUrl(url)) {
+    throw new Error(`${envName} must not use a loopback URL in production`);
+  }
+  if (url.protocol !== "https:") {
+    throw new Error(`${envName} must use HTTPS in production`);
+  }
+}
+
+function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV === "production";
 }
 
 function normalizeResourceUri(value: string): string | null {

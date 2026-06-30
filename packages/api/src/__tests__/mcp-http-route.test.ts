@@ -45,6 +45,27 @@ describe("/mcp Streamable HTTP route", () => {
     expect(response.headers.get("www-authenticate")).toContain("scope=\"agents:read games:read\"");
   });
 
+  test("derives the OAuth bearer challenge from the canonical MCP resource origin", async () => {
+    const previousResource = process.env.MCP_OAUTH_RESOURCE_URI;
+    process.env.MCP_OAUTH_RESOURCE_URI = "https://influence-staging.example/mcp";
+
+    try {
+      const app = createTestApp();
+      const response = await app.request("http://internal-caddy/mcp", {
+        method: "POST",
+        headers: jsonHeaders(),
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+      });
+
+      expect(response.status).toBe(401);
+      expect(response.headers.get("www-authenticate")).toContain(
+        'resource_metadata="https://influence-staging.example/.well-known/oauth-protected-resource/mcp"',
+      );
+    } finally {
+      restoreOptionalEnv("MCP_OAUTH_RESOURCE_URI", previousResource);
+    }
+  });
+
   test("does not register /mcp/producer as an active resource", async () => {
     const app = createTestApp();
     const response = await app.request("/mcp/producer", {
@@ -506,6 +527,14 @@ function jsonHeaders(extra: Record<string, string> = {}): Record<string, string>
     accept: "application/json, text/event-stream",
     ...extra,
   };
+}
+
+function restoreOptionalEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+    return;
+  }
+  process.env[name] = value;
 }
 
 function createDbBackedTestApp(

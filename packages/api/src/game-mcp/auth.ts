@@ -28,12 +28,10 @@ export type GameMcpAuthResult =
   | { ok: true; context: GameMcpAuthContext }
   | { ok: false; status: 401 | 403; reason: string };
 
-export function bearerChallenge(
-  requestOrigin: string,
-): string {
+export function bearerChallenge(): string {
   const metadataUrl = new URL(
     MCP_OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
-    requestOrigin,
+    getMcpOAuthResourceUri(),
   ).toString();
   return [
     'Bearer realm="influence-game-mcp"',

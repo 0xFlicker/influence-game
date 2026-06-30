@@ -289,10 +289,6 @@ function ConsentDetails({
       <dl className="grid gap-3 rounded-lg border border-[rgb(var(--border-active)/0.5)] bg-[rgb(var(--surface-raised)/0.42)] p-4 text-sm sm:grid-cols-2">
         <Detail label="Signed in as" value={displayName ?? walletAddress ?? "Current user"} />
         <Detail label="Wallet" value={walletAddress ?? "No wallet"} />
-        <Detail label="Client" value={preview.clientId} />
-        <Detail label="Selected scopes" value={selectedScopeText || "None selected"} />
-        <Detail label="Resource" value={preview.resource} wide />
-        <Detail label="Redirect" value={preview.redirectUri} wide />
       </dl>
 
       <div className="space-y-4">
@@ -324,6 +320,18 @@ function ConsentDetails({
           />
         )}
       </div>
+
+      <details className="rounded-md border border-[rgb(var(--border-active)/0.35)] bg-[rgb(var(--surface-raised)/0.18)] p-3 text-xs">
+        <summary className="cursor-pointer select-none text-xs font-medium uppercase tracking-[0.12em] text-[rgb(var(--text-muted))]">
+          Debug details
+        </summary>
+        <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+          <Detail label="Client" value={preview.clientId} />
+          <Detail label="Selected scopes" value={selectedScopeText || "None selected"} />
+          <Detail label="Resource" value={preview.resource} wide />
+          <Detail label="Redirect" value={preview.redirectUri} wide />
+        </dl>
+      </details>
 
       <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
         <button

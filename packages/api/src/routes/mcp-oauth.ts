@@ -311,15 +311,15 @@ export function createMcpOAuthRoutes(
   });
 
   app.get("/.well-known/oauth-protected-resource", (c) => {
-    return c.json(buildProtectedResourceMetadata());
+    return oauthMetadataResponse(c, buildProtectedResourceMetadata);
   });
 
   app.get(MCP_OAUTH_PROTECTED_RESOURCE_METADATA_PATH, (c) => {
-    return c.json(buildProtectedResourceMetadata());
+    return oauthMetadataResponse(c, buildProtectedResourceMetadata);
   });
 
   app.get("/.well-known/oauth-authorization-server", (c) => {
-    return c.json({
+    return oauthMetadataResponse(c, () => ({
       issuer: getMcpOAuthAuthorizationServerIssuer(),
       authorization_endpoint: getMcpOAuthAuthorizationEndpoint(),
       token_endpoint: getMcpOAuthTokenEndpoint(),
@@ -331,7 +331,7 @@ export function createMcpOAuthRoutes(
       token_endpoint_auth_methods_supported: ["none"],
       scopes_supported: MCP_OAUTH_SCOPE_VALUES,
       client_id: MCP_OAUTH_CLIENT_ID,
-    });
+    }));
   });
 
   return app;
@@ -369,6 +369,23 @@ function buildProtectedResourceMetadata(): Record<string, unknown> {
     bearer_methods_supported: ["header"],
     resource_name: MCP_OAUTH_RESOURCE_NAME,
   };
+}
+
+function oauthMetadataResponse(
+  c: Context,
+  build: () => Record<string, unknown>,
+): Response {
+  try {
+    return c.json(build());
+  } catch (error) {
+    const errorDescription = error instanceof Error
+      ? error.message
+      : "MCP OAuth metadata is not configured";
+    return c.json({
+      error: "server_error",
+      error_description: errorDescription,
+    }, 503);
+  }
 }
 
 function safeAuditString(value: unknown): string | undefined {

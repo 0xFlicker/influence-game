@@ -46,6 +46,10 @@ MCP_ALLOWED_ORIGINS=https://<api-host>
 
 The authorization server metadata derives its public issuer, token endpoint, revocation endpoint, and registration endpoint from `MCP_OAUTH_RESOURCE_URI`. The browser authorization endpoint derives from `WEB_BASE_URL`.
 
+In local development, the API may fall back to `http://127.0.0.1:3000/mcp` for the MCP resource. In `NODE_ENV=production`, `MCP_OAUTH_RESOURCE_URI` and `WEB_BASE_URL` are required, must be HTTPS, and must not use loopback hosts. A deployed API should fail discovery with a server configuration error rather than publishing localhost OAuth metadata.
+
+`MCP_OAUTH_GAMES_RESOURCE_URI` was part of the older split-resource plan. The current deployed `/mcp` OAuth path uses the single canonical `MCP_OAUTH_RESOURCE_URI`; keep staging and production secrets on that name. The API still accepts `MCP_OAUTH_GAMES_RESOURCE_URI` as a migration input when `MCP_OAUTH_RESOURCE_URI` is absent, but it should not be treated as the active documented setting.
+
 Optional settings:
 
 ```bash

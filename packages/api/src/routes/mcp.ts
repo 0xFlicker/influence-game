@@ -268,10 +268,9 @@ async function preflight(
     };
   }
 
-  const requestOrigin = new URL(c.req.url).origin;
   const token = extractBearerToken(c.req.header("Authorization"));
   if (!token) {
-    c.header("WWW-Authenticate", bearerChallenge(requestOrigin));
+    c.header("WWW-Authenticate", bearerChallenge());
     emitAudit(auditLogger, {
       event: "mcp.http.request",
       correlationId,
@@ -290,7 +289,7 @@ async function preflight(
   try {
     auth = await tokenValidator(token);
   } catch {
-    c.header("WWW-Authenticate", bearerChallenge(requestOrigin));
+    c.header("WWW-Authenticate", bearerChallenge());
     emitAudit(auditLogger, {
       event: "mcp.http.request",
       correlationId,
@@ -308,7 +307,7 @@ async function preflight(
     };
   }
   if (!auth.ok) {
-    c.header("WWW-Authenticate", bearerChallenge(requestOrigin));
+    c.header("WWW-Authenticate", bearerChallenge());
     emitAudit(auditLogger, {
       event: "mcp.http.request",
       correlationId,

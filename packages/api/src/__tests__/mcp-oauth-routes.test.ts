@@ -130,6 +130,96 @@ describe("MCP OAuth routes", () => {
     }
   });
 
+  test("fails fast instead of publishing local OAuth resource metadata in production", async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousResource = process.env.MCP_OAUTH_RESOURCE_URI;
+    const previousLegacyGamesResource = process.env.MCP_OAUTH_GAMES_RESOURCE_URI;
+    const previousWebBase = process.env.WEB_BASE_URL;
+
+    process.env.NODE_ENV = "production";
+    delete process.env.MCP_OAUTH_RESOURCE_URI;
+    delete process.env.MCP_OAUTH_GAMES_RESOURCE_URI;
+    process.env.WEB_BASE_URL = "https://influence-staging.example";
+
+    try {
+      const protectedResource = await app.request(
+        "http://internal-caddy/.well-known/oauth-protected-resource/mcp",
+      );
+      expect(protectedResource.status).toBe(503);
+      expect(await jsonObject(protectedResource)).toMatchObject({
+        error: "server_error",
+        error_description: "MCP_OAUTH_RESOURCE_URI is not configured",
+      });
+
+      const authorizationServer = await app.request(
+        "http://internal-caddy/.well-known/oauth-authorization-server",
+      );
+      expect(authorizationServer.status).toBe(503);
+      expect(await jsonObject(authorizationServer)).toMatchObject({
+        error: "server_error",
+        error_description: "MCP_OAUTH_RESOURCE_URI is not configured",
+      });
+    } finally {
+      restoreOptionalEnv("NODE_ENV", previousNodeEnv);
+      restoreOptionalEnv("MCP_OAUTH_RESOURCE_URI", previousResource);
+      restoreOptionalEnv("MCP_OAUTH_GAMES_RESOURCE_URI", previousLegacyGamesResource);
+      restoreOptionalEnv("WEB_BASE_URL", previousWebBase);
+    }
+  });
+
+  test("accepts the legacy games resource URI as a migration input", async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousResource = process.env.MCP_OAUTH_RESOURCE_URI;
+    const previousLegacyGamesResource = process.env.MCP_OAUTH_GAMES_RESOURCE_URI;
+    const previousWebBase = process.env.WEB_BASE_URL;
+
+    process.env.NODE_ENV = "production";
+    delete process.env.MCP_OAUTH_RESOURCE_URI;
+    process.env.MCP_OAUTH_GAMES_RESOURCE_URI = DEPLOYED_RESOURCE_URI;
+    process.env.WEB_BASE_URL = "https://influence.example";
+
+    try {
+      const protectedResource = await app.request(
+        "http://internal-caddy/.well-known/oauth-protected-resource/mcp",
+      );
+      expect(protectedResource.status).toBe(200);
+      expect(await jsonObject(protectedResource)).toMatchObject({
+        resource: DEPLOYED_RESOURCE_URI,
+        authorization_servers: ["https://influence.example"],
+      });
+    } finally {
+      restoreOptionalEnv("NODE_ENV", previousNodeEnv);
+      restoreOptionalEnv("MCP_OAUTH_RESOURCE_URI", previousResource);
+      restoreOptionalEnv("MCP_OAUTH_GAMES_RESOURCE_URI", previousLegacyGamesResource);
+      restoreOptionalEnv("WEB_BASE_URL", previousWebBase);
+    }
+  });
+
+  test("fails fast instead of publishing a loopback authorization endpoint in production", async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousResource = process.env.MCP_OAUTH_RESOURCE_URI;
+    const previousWebBase = process.env.WEB_BASE_URL;
+
+    process.env.NODE_ENV = "production";
+    process.env.MCP_OAUTH_RESOURCE_URI = DEPLOYED_RESOURCE_URI;
+    process.env.WEB_BASE_URL = "http://localhost:3001";
+
+    try {
+      const authorizationServer = await app.request(
+        "http://internal-caddy/.well-known/oauth-authorization-server",
+      );
+      expect(authorizationServer.status).toBe(503);
+      expect(await jsonObject(authorizationServer)).toMatchObject({
+        error: "server_error",
+        error_description: "WEB_BASE_URL must not use a loopback URL in production",
+      });
+    } finally {
+      restoreOptionalEnv("NODE_ENV", previousNodeEnv);
+      restoreOptionalEnv("MCP_OAUTH_RESOURCE_URI", previousResource);
+      restoreOptionalEnv("WEB_BASE_URL", previousWebBase);
+    }
+  });
+
   test("audits MCP App provider and token-exchange redirect family", async () => {
     const token = await app.request("/api/oauth/mcp/token", {
       method: "POST",
@@ -1363,6 +1453,14 @@ async function jsonObject(response: Response): Promise<Record<string, unknown>> 
     throw new Error("Expected response body to be a JSON object");
   }
   return value as Record<string, unknown>;
+}
+
+function restoreOptionalEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+    return;
+  }
+  process.env[name] = value;
 }
 
 async function assignRole(
