@@ -36,7 +36,7 @@ The product bug was the gap between "this checkpoint looks hydrateable" and "sta
 
 - Proof-only artifacts were not enough. Hydration passports, runtime snapshots, and boundary receipts made checkpoints inspectable, but they did not create a fresh owner or run the game forward.
 - An admin-gated recovery button was the wrong primary acceptance path. In the current deployment shape, the API process is also the worker, so the useful behavior is "recover when able" during startup.
-- Jumping straight to arbitrary `GameRunner.fromCheckpoint()` recovery was too broad. Mid-phase model calls, partial accumulators, and later endgame state still require more durable state than this slice persists.
+- Jumping straight to arbitrary `GameRunner.fromCheckpoint()` recovery was too broad. Mid-phase model calls and partial accumulators still require more durable state than this slice persists.
 - A grace window for recent `in_progress` games was fake safety. On startup, the new API process has no live runner regardless of age, so old `in_progress` rows are suspended first.
 - Treating transcript prose or private evidence as game truth would have made recovery easier to fake and harder to trust. Accepted canonical events remain the authority.
 
@@ -115,15 +115,18 @@ The acceptance proof exercises the product seam. It is DB-backed and API-lifecyc
 
 - Keep `resumeAvailable` tied to the implemented recovery selector, not to `hydration_candidate`. A passport verdict is evidence readiness; implemented resume support is a runtime contract.
 - Add a DB-backed recovery matrix test before enabling any new actor coordinate. The test must interrupt at that boundary, run startup recovery, assert contiguous post-restart events under a new owner, and reach normal completed results.
+- Include actor coordinate in phase-boundary checkpoint identity. Several endgame phases are transcript-only, so multiple distinct actor boundaries can share one canonical event head.
 - Keep unsupported boundaries suspended with diagnostic evidence. Do not repair by replaying transcript text, skipping phase effects, or synthesizing terminal results.
+- After staged endgame boundary coverage, the next required durability TODO is Accusation Capsule V1 or an equivalent full accumulator slice for `_currentAccusations`. `tribunal_defense` must stay unsupported until that structured accumulator input exists.
 - Preserve startup orphaning semantics in the single-API-process deployment. On a fresh process, old `in_progress` means no local runner exists here.
 - Keep recovery owner claim separate from normal waiting-game start. Recovery has different invariants: suspended source state, checkpoint event head, no active owner, and `lastPersistedEventSequence` seeded to the boundary.
-- Treat current support as phase-boundary startup resume only. Mid-phase interruption, in-flight model call recovery, later endgame coordinates, arbitrary historical repair, and multi-worker or spot-fleet coordination are still unsupported.
+- Treat current support as phase-boundary startup resume only. Mid-phase interruption, in-flight model call recovery, `tribunal_defense`, arbitrary historical repair, and multi-worker or spot-fleet coordination are still unsupported.
 
 ## Related Issues
 
 - `docs/statefulness-plan.md` is the current operating map for durable game state, supported recovery, known gaps, and next slices.
 - `docs/plans/2026-06-29-002-feat-generic-phase-boundary-recovery-plan.md` is the generic phase-boundary recovery plan that expanded the supported boundary set.
+- `docs/plans/2026-06-30-002-feat-endgame-phase-boundary-recovery-plan.md` is the implementation-ready plan for staged endgame boundary expansion and the Accusation Capsule V1 follow-up.
 - `docs/plans/2026-06-29-001-feat-one-boundary-resume-to-completion-plan.md` is the predecessor plan that set the right acceptance bar: same-game resume to completed results, not another proof artifact.
 - `docs/refactor-queue.md` tracks the remaining phase-boundary coverage and future multi-worker orchestration work.
 - `CONCEPTS.md` defines the recovery vocabulary: canonical game event, durable game-run kernel, checkpoint capsule, hydration passport, phase-boundary startup resume, and owner epoch.

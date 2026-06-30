@@ -65,6 +65,15 @@ export type WriteGameCheckpointResult =
   | { ok: true }
   | { ok: false; error: string };
 
+function checkpointActorCoordinate(checkpoint: GameCheckpointCapsule): string {
+  const actorCoordinate = checkpoint.runtimeSnapshot?.actorWitness?.actorCoordinate;
+  return checkpoint.checkpointKind === "phase_boundary" &&
+    typeof actorCoordinate === "string" &&
+    actorCoordinate.length > 0
+    ? actorCoordinate
+    : "none";
+}
+
 async function markCheckpointDegraded(
   db: DrizzleDB,
   gameId: string,
@@ -137,6 +146,7 @@ export async function writeGameCheckpoint(
       }
 
       const projectionHash = sha256StableJson(params.checkpoint.projection);
+      const actorCoordinate = checkpointActorCoordinate(params.checkpoint);
 
       const existing = (await tx
         .select({
@@ -148,6 +158,7 @@ export async function writeGameCheckpoint(
           eq(schema.gameCheckpoints.gameId, params.gameId),
           eq(schema.gameCheckpoints.lastEventSequence, params.checkpoint.lastEventSequence),
           eq(schema.gameCheckpoints.checkpointKind, params.checkpoint.checkpointKind),
+          eq(schema.gameCheckpoints.actorCoordinate, actorCoordinate),
         )))[0];
       if (existing) {
         if (existing.projectionHash !== projectionHash) {
@@ -225,6 +236,7 @@ export async function writeGameCheckpoint(
           ownerEpoch: params.ownerEpoch,
           lastEventSequence: params.checkpoint.lastEventSequence,
           checkpointKind: params.checkpoint.checkpointKind,
+          actorCoordinate,
           phase: params.checkpoint.phase,
           round: params.checkpoint.round,
           eventHeadHash: eventHead.eventHash,

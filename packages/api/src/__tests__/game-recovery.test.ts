@@ -34,6 +34,7 @@ import {
 } from "./durable-run-test-utils.js";
 
 const savedMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
+type RuntimeActorCoordinate = GameRunnerResumeActorCoordinate | "tribunal_defense";
 
 const recoveryConfig: GameConfig & Record<string, unknown> = {
   ...DEFAULT_CONFIG,
@@ -211,7 +212,7 @@ async function waitForCompletedGame(db: DrizzleDB, gameId: string) {
 
 async function interruptGameAtBoundary(
   db: DrizzleDB,
-  actorCoordinate: GameRunnerResumeActorCoordinate,
+  actorCoordinate: RuntimeActorCoordinate,
   options: {
     config?: GameConfig & Record<string, unknown>;
     playerCount?: number;
@@ -267,6 +268,22 @@ async function interruptGameAtBoundary(
   });
 
   return { gameId, ownerEpoch, interruptedAtSequence };
+}
+
+type DurableInspectionResponse = Awaited<ReturnType<typeof getDurableRunInspection>>;
+
+function findCheckpointBoundary(
+  inspection: Extract<DurableInspectionResponse, { ok: true }>,
+  params: {
+    lastEventSequence: number;
+    actorCoordinate: string;
+  },
+) {
+  return inspection.response.checkpoints.entries.find((entry) =>
+    entry.lastEventSequence === params.lastEventSequence &&
+    entry.checkpointKind === "phase_boundary" &&
+    entry.actorCoordinate === params.actorCoordinate
+  );
 }
 
 async function assertRecoveredGameCompleted(params: {
@@ -338,26 +355,47 @@ describe("game startup recovery", () => {
     await abortAllGames();
   });
 
-  const supportedRecoveryCoordinates = [
-    "lobby",
-    "vote",
-    "mingle",
-    "power",
-    "reveal",
-  ] satisfies GameRunnerResumeActorCoordinate[];
+  const supportedRecoveryCases = [
+    { actorCoordinate: "lobby", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
+    { actorCoordinate: "vote", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
+    { actorCoordinate: "mingle", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
+    { actorCoordinate: "power", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
+    { actorCoordinate: "reveal", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
+    { actorCoordinate: "reckoning_lobby", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
+    { actorCoordinate: "reckoning_plea", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
+    { actorCoordinate: "reckoning_vote", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
+    { actorCoordinate: "tribunal_lobby", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
+    { actorCoordinate: "tribunal_accusation", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
+    { actorCoordinate: "tribunal_vote", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
+    { actorCoordinate: "judgment_opening", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
+    { actorCoordinate: "judgment_jury_questions", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
+    { actorCoordinate: "judgment_closing", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
+    { actorCoordinate: "judgment_jury_vote", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
+  ] satisfies Array<{
+    actorCoordinate: GameRunnerResumeActorCoordinate;
+    config: GameConfig & Record<string, unknown>;
+    playerCount: number;
+    expectedIntroductionCount: number;
+    timeoutMs: number;
+  }>;
 
-  for (const actorCoordinate of supportedRecoveryCoordinates) {
+  for (const { actorCoordinate, config, playerCount, expectedIntroductionCount, timeoutMs } of supportedRecoveryCases) {
     test(`startup recovery resumes the same suspended game from a supported ${actorCoordinate} boundary and reaches results`, async () => {
-      const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, actorCoordinate);
+      const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, actorCoordinate, {
+        config,
+        playerCount,
+      });
 
       const suspendedInspection = await getDurableRunInspection(db, gameId);
       expect(suspendedInspection.ok).toBeTrue();
       if (!suspendedInspection.ok) throw new Error("durable inspection failed");
-      const supportedBoundary = suspendedInspection.response.checkpoints.entries.find((entry) =>
-        entry.lastEventSequence === interruptedAtSequence &&
-        entry.checkpointKind === "phase_boundary"
-      );
+      const supportedBoundary = findCheckpointBoundary(suspendedInspection, { lastEventSequence: interruptedAtSequence, actorCoordinate });
       expect(supportedBoundary?.resumeAvailable).toBeTrue();
+
+      const candidate = await getSupportedRecovery(db, gameId);
+      expect(candidate.ok).toBeTrue();
+      if (!candidate.ok) throw new Error(`expected recovery support, got ${candidate.reason}`);
+      expect(candidate.resumeFrom.actorCoordinate).toBe(actorCoordinate);
 
       const recovery = await recoverGamesOnStartup(db);
       expect(recovery).toEqual({ attempted: 1, recovered: 1, skipped: [] });
@@ -367,8 +405,9 @@ describe("game startup recovery", () => {
         gameId,
         originalOwnerEpoch: ownerEpoch,
         interruptedAtSequence,
+        expectedIntroductionCount,
       });
-    }, 30000);
+    }, timeoutMs);
   }
 
   test("startup recovery resumes from a boundary with reconstructable Mingle inbox messages", async () => {
@@ -387,10 +426,10 @@ describe("game startup recovery", () => {
     const suspendedInspection = await getDurableRunInspection(db, gameId);
     expect(suspendedInspection.ok).toBeTrue();
     if (!suspendedInspection.ok) throw new Error("durable inspection failed");
-    const supportedBoundary = suspendedInspection.response.checkpoints.entries.find((entry) =>
-      entry.lastEventSequence === interruptedAtSequence &&
-      entry.checkpointKind === "phase_boundary"
-    );
+    const supportedBoundary = findCheckpointBoundary(suspendedInspection, {
+      lastEventSequence: interruptedAtSequence,
+      actorCoordinate: "power",
+    });
     expect(supportedBoundary?.resumeAvailable).toBeTrue();
 
     const recovery = await recoverGamesOnStartup(db);
@@ -405,8 +444,8 @@ describe("game startup recovery", () => {
     });
   }, 60000);
 
-  test("startup recovery resumes from the first endgame reckoning lobby boundary", async () => {
-    const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, "reckoning_lobby", {
+  test("startup recovery fails closed at tribunal defense until accusation accumulator support exists", async () => {
+    const { gameId, interruptedAtSequence } = await interruptGameAtBoundary(db, "tribunal_defense", {
       config: recoveryConfigWithEndgame,
       playerCount: 6,
     });
@@ -414,22 +453,25 @@ describe("game startup recovery", () => {
     const suspendedInspection = await getDurableRunInspection(db, gameId);
     expect(suspendedInspection.ok).toBeTrue();
     if (!suspendedInspection.ok) throw new Error("durable inspection failed");
-    const supportedBoundary = suspendedInspection.response.checkpoints.entries.find((entry) =>
-      entry.lastEventSequence === interruptedAtSequence &&
-      entry.checkpointKind === "phase_boundary"
-    );
-    expect(supportedBoundary?.resumeAvailable).toBeTrue();
+    const defenseBoundary = findCheckpointBoundary(suspendedInspection, {
+      lastEventSequence: interruptedAtSequence,
+      actorCoordinate: "tribunal_defense",
+    });
+    expect(defenseBoundary?.resumeAvailable).toBeFalse();
 
     const recovery = await recoverGamesOnStartup(db);
-    expect(recovery).toEqual({ attempted: 1, recovered: 1, skipped: [] });
-
-    await assertRecoveredGameCompleted({
-      db,
-      gameId,
-      originalOwnerEpoch: ownerEpoch,
-      interruptedAtSequence,
-      expectedIntroductionCount: 6,
+    expect(recovery).toEqual({
+      attempted: 1,
+      recovered: 0,
+      skipped: [{ gameId, reason: "unsupported_actor_coordinate:tribunal_defense" }],
     });
+
+    const eventRows = await db
+      .select()
+      .from(schema.gameEvents)
+      .where(eq(schema.gameEvents.gameId, gameId))
+      .orderBy(asc(schema.gameEvents.sequence));
+    expect(eventRows.map((row) => row.sequence).at(-1)).toBe(interruptedAtSequence);
   }, 60000);
 
   test("startup recovery fails closed for unsupported actor coordinates even with complete checkpoint evidence", async () => {
@@ -445,7 +487,7 @@ describe("game startup recovery", () => {
     const checkpoint = enrichCapsuleForV1Candidate(createCheckpointCapsule(events), {
       ownerEpoch,
       eventHeadHash: hashCanonicalEvent(events[events.length - 1]!),
-      actorCoordinate: "tribunal_lobby",
+      actorCoordinate: "tribunal_defense",
     });
     const checkpointResult = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
     expect(checkpointResult.ok).toBeTrue();
@@ -454,7 +496,7 @@ describe("game startup recovery", () => {
     expect(candidate).toMatchObject({
       ok: false,
       gameId,
-      reason: "unsupported_actor_coordinate:tribunal_lobby",
+      reason: "unsupported_actor_coordinate:tribunal_defense",
     });
 
     const inspection = await getDurableRunInspection(db, gameId);
@@ -466,7 +508,7 @@ describe("game startup recovery", () => {
     expect(recovery).toEqual({
       attempted: 1,
       recovered: 0,
-      skipped: [{ gameId, reason: "unsupported_actor_coordinate:tribunal_lobby" }],
+      skipped: [{ gameId, reason: "unsupported_actor_coordinate:tribunal_defense" }],
     });
 
     const eventRows = await db
@@ -489,7 +531,7 @@ describe("game startup recovery", () => {
     const checkpoint = enrichCapsuleForV1Candidate(createCheckpointCapsule(events), {
       ownerEpoch,
       eventHeadHash: hashCanonicalEvent(events[events.length - 1]!),
-      actorCoordinate: "vote",
+      actorCoordinate: "tribunal_accusation",
     });
     if (!checkpoint.runtimeSnapshot) throw new Error("expected runtime snapshot");
     const blockedEntry = checkpoint.runtimeSnapshot.accumulatorRegistry.entries.find((entry) => entry.id === "currentAccusations");

@@ -418,7 +418,7 @@
     <header>
       <p class="eyebrow">Compound Engineering ideation</p>
       <h1>Ideation: Backend Durability and Scalability</h1>
-      <p class="subtitle">Updated around a higher impact bar: the next backend durability slice should make one real API-backed game survive one supported process restart boundary and reach completed results. Proof-only readiness work is now below the bar unless it directly ships that behavior.</p>
+      <p class="subtitle">Updated around a higher impact bar: durable resume work should make one real API-backed game survive a supported process restart boundary and reach completed results. The June 30 continuation narrows the next expansion to endgame phase-boundary coverage, while keeping accumulator-heavy states fail-closed until the missing runtime input is real.</p>
       <div class="meta-grid" aria-label="Document metadata">
         <div class="meta-card">
           <span class="meta-label">Date</span>
@@ -434,21 +434,21 @@
         </div>
         <div class="meta-card">
           <span class="meta-label">Focus</span>
-          <span class="meta-value">normal-round phase-boundary restart recovery</span>
+          <span class="meta-value">endgame phase-boundary restart recovery</span>
         </div>
       </div>
       <div class="stats-strip" aria-label="Ideation counts">
         <div class="stat-card">
           <span class="stat-label">Ranked ideas</span>
-          <span class="stat-value">7</span>
+          <span class="stat-value">17 total, 7 new</span>
         </div>
         <div class="stat-card">
           <span class="stat-label">Raw candidates</span>
-          <span class="stat-value">26</span>
+          <span class="stat-value">38 total, 12 new</span>
         </div>
         <div class="stat-card">
           <span class="stat-label">Cut ideas</span>
-          <span class="stat-value">12 families</span>
+          <span class="stat-value">20 families</span>
         </div>
         <div class="stat-card">
           <span class="stat-label">Impact bar</span>
@@ -464,6 +464,7 @@
         <li><a href="#topic-axes">Topic Axes</a></li>
         <li><a href="#ranked-ideas">Ranked Ideas</a></li>
         <li><a href="#implementation-recut">Implementation Recut</a></li>
+        <li><a href="#endgame-resume-expansion">Endgame Resume Expansion</a></li>
         <li><a href="#rejection-summary">Rejection Summary</a></li>
         <li><a href="#sources-references">Sources &amp; References</a></li>
       </ul>
@@ -814,6 +815,205 @@
       </article>
     </section>
 
+    <section id="endgame-resume-expansion">
+      <h2>Endgame Resume Expansion</h2>
+      <div class="section-prose">
+        <p>The generic normal-round recut has now landed far enough that the next product question is no longer "can startup recovery work at all?" It can. The sharper question is which later phase-boundary coordinates can be added without turning <code>resumeAvailable</code> back into wishful thinking with a nicer jacket.</p>
+        <p>The current support set is <code>lobby</code>, <code>vote</code>, <code>mingle</code>, <code>power</code>, <code>reveal</code>, and <code>reckoning_lobby</code>. The low-risk endgame states mostly need explicit phase-actor hydration, prerequisite checks, and DB-backed same-game completion tests. <code>tribunal_defense</code> is different: it needs the runner's <code>_currentAccusations</code> map, which is still an in-memory accumulator rather than canonical state.</p>
+      </div>
+
+      <div class="callout">
+        <h3>Continuation filter</h3>
+        <p>Enable only coordinates that can resume from the latest event-head checkpoint and complete the same game under startup recovery. Anything that needs <code>_currentAccusations</code> must first persist or reconstruct that accumulator through a typed runtime contract.</p>
+        <p>After the staged endgame coordinate expansion, <strong>Accusation Capsule V1 is the next necessary TODO</strong>: <code>tribunal_defense</code> stays blocked until <code>_currentAccusations</code> has structured durable support.</p>
+      </div>
+
+      <ul class="jump-list" aria-label="Endgame resume idea links">
+        <li><a href="#idea-11">Idea 11. Reckoning Pair Resume Tranche</a></li>
+        <li><a href="#idea-12">Idea 12. Tribunal Entry Resume Tranche</a></li>
+        <li><a href="#idea-13">Idea 13. Judgment Finale Resume Tranche</a></li>
+        <li><a href="#idea-14">Idea 14. Accusation Capsule V1</a></li>
+        <li><a href="#idea-15">Idea 15. Post-Defense Accusation Drain</a></li>
+        <li><a href="#idea-16">Idea 16. Endgame Hydrator Ladder</a></li>
+        <li><a href="#idea-17">Idea 17. Coordinate Recovery Matrix Generator</a></li>
+      </ul>
+
+      <article class="idea-card" id="idea-11">
+        <h3><span class="rank">Idea 11.</span> Reckoning Pair Resume Tranche</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Cheap endgame coordinates</dd></div>
+          <div><dt>Confidence</dt><dd>86%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Add <code>reckoning_plea</code> and <code>reckoning_vote</code> as the next supported phase-boundary coordinates after <code>reckoning_lobby</code>. The slice should add explicit phase actor hydration steps, endgame-stage and alive-count prerequisites, and DB-backed interruption/recovery tests for both coordinates.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> <code>docs/statefulness-plan.md</code> marks <code>reckoning_plea</code> / <code>reckoning_vote</code> as likely small because canonical <code>GameState</code> already carries alive players and endgame state after <code>reckoning_lobby</code>. <code>packages/engine/src/game-runner.ts</code> already dispatches both phase runners in the main loop.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>This is the cleanest next real expansion. It adds meaningful late-game restart coverage without introducing a new accumulator persistence problem.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>The value is bounded to the four-player endgame transition. It still leaves Tribunal, Judgment, mid-phase interruption, and historical repair unsupported.</p>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-12">
+        <h3><span class="rank">Idea 12.</span> Tribunal Entry Resume Tranche</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Cheap endgame coordinates</dd></div>
+          <div><dt>Confidence</dt><dd>80%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Add <code>tribunal_lobby</code> and <code>tribunal_accusation</code> as a second low-risk tranche, gated on three alive players, the correct endgame stage, and an empty <code>currentAccusations</code> accumulator at the boundary. Keep <code>tribunal_defense</code> out of the tranche.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> <code>docs/statefulness-plan.md</code> says <code>tribunal_lobby</code> / <code>tribunal_accusation</code> should be similar to <code>reckoning_lobby</code> if accumulators are empty. The runner already has separate branches for <code>tribunal_lobby</code> and <code>tribunal_accusation</code>.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>This expands into the three-player endgame while preserving the important boundary: entering the accusation phase is cheap, resuming defense after accusations is not.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>It depends on the checkpoint accumulator registry proving <code>currentAccusations</code> is empty. If a boundary lands after accusation collection, this tranche must reject rather than guess.</p>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-13">
+        <h3><span class="rank">Idea 13.</span> Judgment Finale Resume Tranche</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Cheap endgame coordinates</dd></div>
+          <div><dt>Confidence</dt><dd>74%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Add <code>judgment_opening</code>, <code>judgment_jury_questions</code>, <code>judgment_closing</code>, and <code>judgment_jury_vote</code> as a finale tranche after the earlier endgame slices. Each coordinate should assert finalist/jury prerequisites and complete through the normal jury-result path.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> <code>docs/statefulness-plan.md</code> classifies Judgment coordinates as likely small-to-medium because <code>GameState</code> and transcript replay carry most context. The runner already contains distinct Judgment phase branches.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>Judgment is where a crash hurts viewer trust the most: the story is basically complete, but the ending can still vanish. This tranche protects the finale without solving every earlier Tribunal accumulator state first.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>It is broader than the Reckoning and Tribunal-entry tranches. Jury/finalist prerequisites must be explicit so the runner does not hydrate into a finale-shaped state with missing finale facts.</p>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-14">
+        <h3><span class="rank">Idea 14.</span> Accusation Capsule V1</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Accusation accumulator durability</dd></div>
+          <div><dt>Confidence</dt><dd>78%</dd></div>
+          <div><dt>Complexity</dt><dd>High</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Persist <code>_currentAccusations</code> as a typed Runtime Snapshot accumulator capsule for the boundary between <code>tribunal_accusation</code> and <code>tribunal_defense</code>. Recovery should hydrate the map directly and enable <code>tribunal_defense</code> only when the capsule validates player IDs, accuser IDs, accusation text, and the checkpoint boundary.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> <code>docs/statefulness-plan.md</code> marks <code>tribunal_defense</code> blocked because it needs the runner's <code>_currentAccusations</code> map. <code>runTribunalAccusation</code> populates that map, and <code>runTribunalDefense</code> reads it to prompt accused players.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>This is the first real accumulator beyond Mingle inbox. Solving it as a versioned capsule creates a repeatable pattern for future accumulator-heavy boundaries without making transcript prose authoritative.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>It is more invasive than simply adding actor coordinates. The capsule needs privacy and compatibility discipline because it stores social content, even if that content is public accusation text.</p>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-15">
+        <h3><span class="rank">Idea 15.</span> Post-Defense Accusation Drain</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Accusation accumulator durability</dd></div>
+          <div><dt>Confidence</dt><dd>72%</dd></div>
+          <div><dt>Complexity</dt><dd>Low</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Audit whether <code>tribunal_vote</code> can safely ignore <code>_currentAccusations</code>, then clear or mark the accumulator drained after <code>runTribunalDefense</code> completes. If true, <code>tribunal_vote</code> can become a cheap supported boundary without persisting accusation state.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> <code>docs/statefulness-plan.md</code> says <code>tribunal_vote</code> does not need <code>_currentAccusations</code> but needs an accumulator audit. The runner calls <code>runTribunalVote</code> without passing the accusations map.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>This is a small honesty fix with outsized leverage: either it unlocks <code>tribunal_vote</code>, or it proves that the map has a hidden consumer and must stay blocked. Both outcomes are useful.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>It does not help <code>tribunal_defense</code>. Clearing too early would be a footgun if later prompts or summaries implicitly rely on the map, so the audit has to be real.</p>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-16">
+        <h3><span class="rank">Idea 16.</span> Endgame Hydrator Ladder</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Hydrator and selector correctness</dd></div>
+          <div><dt>Confidence</dt><dd>77%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Refactor <code>hydratePhaseActorForResume</code> into a declarative ladder of actor-coordinate steps before adding several endgame states. Each step should name prerequisite canonical events, alive-player expectations, endgame-stage checks, and the phase-machine events needed to reach the coordinate without re-running phase effects.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> the current hydrator manually advances through normal-round states and special-cases <code>reckoning_lobby</code>. <code>evaluateSupportedRecovery</code> separately validates prerequisites from canonical events and rebuilt <code>GameState</code>.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>Endgame support will add enough coordinates that a readable ladder becomes cheaper than another pile of bespoke branches. The point is not architecture astronautics; it is making each supported coordinate inspectable in code.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>If the immediate slice adds only the Reckoning pair, this may be premature. It earns its keep when two or more endgame tranches are added close together.</p>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-17">
+        <h3><span class="rank">Idea 17.</span> Coordinate Recovery Matrix Generator</h3>
+        <dl class="idea-meta">
+          <div><dt>Axis</dt><dd>Verification by interruption</dd></div>
+          <div><dt>Confidence</dt><dd>84%</dd></div>
+          <div><dt>Complexity</dt><dd>Medium</dd></div>
+        </dl>
+        <div class="field">
+          <h4>Description</h4>
+          <p>Generalize the DB-backed recovery matrix so every exported supported coordinate gets an interrupt, startup-recover, contiguous-event, completed-result test. Unsupported coordinates should be generated as negative cases with explicit skip reasons such as unsupported actor coordinate or unsafe accumulator registry.</p>
+        </div>
+        <div class="field">
+          <h4>Basis</h4>
+          <p><strong>direct:</strong> <code>game-recovery.test.ts</code> already matrix-tests supported normal coordinates and separately proves <code>reckoning_lobby</code>. The startup-recovery learning says every new coordinate needs this same DB-backed proof before it can advertise <code>resumeAvailable</code>.</p>
+        </div>
+        <div class="field">
+          <h4>Rationale</h4>
+          <p>This keeps the exported coordinate union, hydrator, recovery predicate, durable inspection, and acceptance proof locked together. Without it, support will drift one innocent string literal at a time. Classic clown-car engineering, best not.</p>
+        </div>
+        <div class="field">
+          <h4>Downsides</h4>
+          <p>The matrix can get slow because DB-backed recovery tests touch real persistence. Keep it focused and run the known DB suites sequentially when local Postgres lock contention appears.</p>
+        </div>
+      </article>
+    </section>
+
     <section id="rejection-summary">
       <h2>Rejection Summary</h2>
       <table>
@@ -900,6 +1100,31 @@
             <td>Serverless Workflow Rewrite</td>
             <td>Could be a later deployment target, but it replaces the hosting layer before the current runner can resume from its own durable checkpoints.</td>
           </tr>
+          <tr>
+            <td>16</td>
+            <td>Structured Accusation Reconstruction First</td>
+            <td>Interesting but weaker than a typed accumulator capsule unless structured agent-turn evidence becomes recovery-authoritative; public transcript prose stays out of game-state truth.</td>
+          </tr>
+          <tr>
+            <td>17</td>
+            <td>Restart Soak As A Separate Slice</td>
+            <td>Useful validation, but it should be folded into the coordinate recovery matrix rather than becoming another proof-only deliverable.</td>
+          </tr>
+          <tr>
+            <td>18</td>
+            <td>One-Predicate Resume Truth As A New Idea</td>
+            <td>Already the current architecture: durable inspection and startup recovery share the implemented support predicate. Preserve it as a constraint, not a fresh direction.</td>
+          </tr>
+          <tr>
+            <td>19</td>
+            <td>Historical Recovery Triage View</td>
+            <td>Useful follow-up for support and prioritization, but it does not itself expand which active games resume after a restart.</td>
+          </tr>
+          <tr>
+            <td>20</td>
+            <td>Full Endgame Resume In One Slice</td>
+            <td>Overclaims the surface. <code>tribunal_defense</code> has a real accumulator blocker, so the safe path is staged coordinate support followed immediately by Accusation Capsule V1 / full accumulator support.</td>
+          </tr>
         </tbody>
       </table>
     </section>
@@ -914,13 +1139,17 @@
             <li><a href="https://github.com/0xFlicker/influence-game/blob/main/README.md">README.md</a></li>
             <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/statefulness-plan.md">docs/statefulness-plan.md</a></li>
             <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/refactor-queue.md">docs/refactor-queue.md</a></li>
+            <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/solutions/runtime-errors/api-startup-recovery-resumes-interrupted-games.md">docs/solutions/runtime-errors/api-startup-recovery-resumes-interrupted-games.md</a></li>
             <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-runner.ts">packages/engine/src/game-runner.ts</a></li>
             <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-runner.types.ts">packages/engine/src/game-runner.types.ts</a></li>
+            <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/phases/endgame.ts">packages/engine/src/phases/endgame.ts</a></li>
             <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-lifecycle.ts">packages/api/src/services/game-lifecycle.ts</a></li>
             <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-ownership.ts">packages/api/src/services/game-ownership.ts</a></li>
             <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-events.ts">packages/api/src/services/game-events.ts</a></li>
             <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-checkpoints.ts">packages/api/src/services/game-checkpoints.ts</a></li>
             <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-durable-run.ts">packages/api/src/services/game-durable-run.ts</a></li>
+            <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-recovery-support.ts">packages/api/src/services/game-recovery-support.ts</a></li>
+            <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/__tests__/game-recovery.test.ts">packages/api/src/__tests__/game-recovery.test.ts</a></li>
             <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/__tests__/checkpoint-hydration-passport.test.ts">packages/api/src/__tests__/checkpoint-hydration-passport.test.ts</a></li>
           </ul>
         </article>
@@ -928,6 +1157,8 @@
           <h3>External grounding</h3>
           <ul>
             <li><a href="https://docs.temporal.io/workflows">Temporal Workflow documentation</a></li>
+            <li><a href="https://docs.temporal.io/workflow-definition">Temporal Workflow definition and determinism documentation</a></li>
+            <li><a href="https://stately.ai/docs/persistence">XState persistence documentation</a></li>
             <li><a href="https://learn.microsoft.com/en-us/azure/durable-task/common/durable-task-orchestrations">Azure Durable Task durable orchestrations</a></li>
             <li><a href="https://docs.aws.amazon.com/step-functions/latest/dg/welcome.html">AWS Step Functions overview</a></li>
             <li><a href="https://docs.dbos.dev/typescript/tutorials/workflow-tutorial">DBOS TypeScript workflow tutorial</a></li>
@@ -939,7 +1170,7 @@
     </section>
 
     <footer class="composition-signal">
-      Composed 2026-06-29T01:21:00Z by ce-ideate, updated for generic persisted phase-boundary startup recovery that completes games from multiple real checkpoints rather than adding proof-only readiness work.
+      Composed 2026-06-29T01:21:00Z by ce-ideate, updated 2026-06-30T00:00:00Z for endgame phase-boundary startup recovery expansion and accumulator-safe resume coverage.
     </footer>
   </main>
 </body>

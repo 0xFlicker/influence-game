@@ -95,6 +95,32 @@ function hasResolvedEmpowered(canonicalEvents: readonly CanonicalGameEvent[]): b
   return tally?.payload.tied === null;
 }
 
+function requireAliveCount(
+  actorCoordinate: GameRunnerResumeActorCoordinate,
+  gameState: GameState,
+  expected: number,
+): string | null {
+  const actual = gameState.getAlivePlayers().length;
+  return actual === expected ? null : `${actorCoordinate}_requires_${expected}_alive`;
+}
+
+function requireEndgameStage(
+  actorCoordinate: GameRunnerResumeActorCoordinate,
+  gameState: GameState,
+  expected: "reckoning" | "tribunal" | "judgment" | null,
+): string | null {
+  return gameState.endgameStage === expected
+    ? null
+    : `${actorCoordinate}_requires_${expected ?? "pre_endgame"}_state`;
+}
+
+function requireJury(
+  actorCoordinate: GameRunnerResumeActorCoordinate,
+  gameState: GameState,
+): string | null {
+  return gameState.jury.length > 0 ? null : `${actorCoordinate}_missing_jury`;
+}
+
 function validateActorCoordinatePrerequisites(
   actorCoordinate: GameRunnerResumeActorCoordinate,
   canonicalEvents: readonly CanonicalGameEvent[],
@@ -124,13 +150,35 @@ function validateActorCoordinatePrerequisites(
     if (!canonicalEvents.some((event) => event.type === "player.eliminated")) {
       return "reckoning_lobby_missing_elimination";
     }
-    if (gameState.getAlivePlayers().length !== 4) {
-      return "reckoning_lobby_requires_four_alive";
-    }
-    if (gameState.endgameStage !== null) {
-      return "reckoning_lobby_requires_pre_endgame_state";
-    }
-    return null;
+    const aliveCountError = requireAliveCount(actorCoordinate, gameState, 4);
+    if (aliveCountError) return "reckoning_lobby_requires_four_alive";
+    return requireEndgameStage(actorCoordinate, gameState, null);
+  }
+  if (actorCoordinate === "reckoning_plea" || actorCoordinate === "reckoning_vote") {
+    return requireAliveCount(actorCoordinate, gameState, 4) ??
+      requireEndgameStage(actorCoordinate, gameState, "reckoning");
+  }
+  if (actorCoordinate === "tribunal_lobby") {
+    return requireAliveCount(actorCoordinate, gameState, 3) ??
+      requireEndgameStage(actorCoordinate, gameState, "reckoning");
+  }
+  if (actorCoordinate === "tribunal_accusation" || actorCoordinate === "tribunal_vote") {
+    return requireAliveCount(actorCoordinate, gameState, 3) ??
+      requireEndgameStage(actorCoordinate, gameState, "tribunal");
+  }
+  if (actorCoordinate === "judgment_opening") {
+    return requireAliveCount(actorCoordinate, gameState, 2) ??
+      requireEndgameStage(actorCoordinate, gameState, "tribunal") ??
+      requireJury(actorCoordinate, gameState);
+  }
+  if (
+    actorCoordinate === "judgment_jury_questions" ||
+    actorCoordinate === "judgment_closing" ||
+    actorCoordinate === "judgment_jury_vote"
+  ) {
+    return requireAliveCount(actorCoordinate, gameState, 2) ??
+      requireEndgameStage(actorCoordinate, gameState, "judgment") ??
+      requireJury(actorCoordinate, gameState);
   }
   return null;
 }

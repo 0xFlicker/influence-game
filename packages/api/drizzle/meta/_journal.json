@@ -141,6 +141,13 @@
       "when": 1782432000000,
       "tag": "0019_mcp_oauth_refresh_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1782518400000,
+      "tag": "0020_checkpoint_actor_coordinate",
+      "breakpoints": true
     }
   ]
 }

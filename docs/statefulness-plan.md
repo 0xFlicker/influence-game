@@ -13,7 +13,7 @@ Historically, every running game held its entire execution state in process memo
 
 The engine now emits canonical accepted-domain events for simulator runs and writes them to `game-N-events.jsonl`. API-backed games also have a first durable game-run kernel: the API game ID is bound into engine events at construction, canonical events are written to Postgres under an owner epoch, and suspended/checkpoint/evidence metadata gives operators something inspectable after failure. The admin durable-run inspection read model can now validate the persisted event log, replay the trusted prefix into the canonical projection, and summarize checkpoint/evidence readiness.
 
-This is now partially crash-recoverable at implemented completed phase boundaries, not generally crash-safe. On startup, the API process treats any pre-existing `in_progress` game as orphaned because the replacement process has no in-memory runner for it, marks it `suspended`, then configured startup recovery can claim and continue the same game when the newest phase-boundary checkpoint is at the durable event head and has a supported actor coordinate plus complete resume inputs. Mid-phase interruptions, in-flight model calls, later endgame boundaries, full XState snapshot restoration, arbitrary old-game repair, and multi-worker recovery remain unsupported.
+This is now partially crash-recoverable at implemented completed phase boundaries, not generally crash-safe. On startup, the API process treats any pre-existing `in_progress` game as orphaned because the replacement process has no in-memory runner for it, marks it `suspended`, then configured startup recovery can claim and continue the same game when the newest phase-boundary checkpoint is at the durable event head and has a supported actor coordinate plus complete resume inputs. Mid-phase interruptions, in-flight model calls, `tribunal_defense`, full XState snapshot restoration, arbitrary old-game repair, and multi-worker recovery remain unsupported.
 
 ### Current Risks
 
@@ -78,14 +78,17 @@ Note (as of 2026-06-14 Runtime Snapshot v1): durable checkpoints now carry a val
 
 Note (as of 2026-06-29 phase-boundary startup resume): `resumeAvailable` is no longer a proof-only flag. It is true only for implemented recovery support: suspended games whose phase-boundary checkpoint is at the event head, has safe Runtime Snapshot v1 evidence, has transcript replay and token cursor payloads, and targets a supported actor coordinate. Current runner hydration supports the original pre-round lobby checkpoint, persisted normal-round coordinates `vote`, `mingle`, `power`, and `reveal`, plus the first endgame entry coordinate `reckoning_lobby`; later endgame coordinates and blocked accumulators remain suspended and inspectable.
 
-### Current Resume Status (2026-06-29)
+Note (as of 2026-06-30 endgame expansion): startup recovery now supports staged endgame phase-boundary coordinates: `reckoning_plea`, `reckoning_vote`, `tribunal_lobby`, `tribunal_accusation`, `tribunal_vote`, and Judgment finale coordinates. Phase-boundary checkpoint identity now includes the actor coordinate so transcript-only phases can persist distinct checkpoints at the same durable event head. The next necessary TODO is the full accumulator slice: Accusation Capsule V1, or an equivalent structured `_currentAccusations` persistence/reconstruction contract, so `tribunal_defense` can resume without treating transcript prose as game truth.
+
+### Current Resume Status (2026-06-30)
 
 **Working now**
 
 - Startup recovery is enabled by default. Set `INFLUENCE_API_STARTUP_RECOVERY=false` only to explicitly disable it.
 - On API startup, pre-existing `in_progress` rows are immediately treated as orphaned and marked `suspended`; there is no "recent game may still be finishing" grace window in the single-API-process deployment.
 - Recovery can claim a fresh owner epoch, hydrate the runner from persisted canonical events plus checkpoint resume inputs, append contiguous post-restart canonical events, and finish through the normal completed-results path.
-- Supported actor coordinates: `lobby`, `vote`, `mingle`, `power`, `reveal`, and `reckoning_lobby`.
+- Supported actor coordinates: `lobby`, `vote`, `mingle`, `power`, `reveal`, `reckoning_lobby`, `reckoning_plea`, `reckoning_vote`, `tribunal_lobby`, `tribunal_accusation`, `tribunal_vote`, `judgment_opening`, `judgment_jury_questions`, `judgment_closing`, and `judgment_jury_vote`.
+- Phase-boundary checkpoints store `actor_coordinate` so multiple transcript-only boundaries at the same event sequence can be ordered and recovered honestly.
 - Live local proof: `punk-khaki-bolt` recovered from round-2 `vote`, later recovered again from `reckoning_lobby`, appended canonical events through sequence 64 under fresh owners, closed the final owner healthy, wrote one completed result, and ended with Sage as winner.
 
 **Known gaps**
@@ -93,17 +96,13 @@ Note (as of 2026-06-29 phase-boundary startup resume): `resumeAvailable` is no l
 | Boundary / Area | Status | Notes |
 |---|---|---|
 | Mid-phase interruption | unsupported | In-flight model calls and partially collected phase effects are still lost. The system resumes only from completed phase-boundary checkpoints. |
-| `reckoning_plea`, `reckoning_vote` | likely small | Needs phase-actor hydration steps plus DB-backed recovery matrix coverage. Canonical `GameState` already carries the alive players and endgame state required after `reckoning_lobby` runs. |
-| `tribunal_lobby`, `tribunal_accusation` | likely small | Similar to `reckoning_lobby`: phase-machine hydration and prerequisite checks should be enough if accumulators are empty at the boundary. |
-| `tribunal_defense` | blocked | Requires the runner's `_currentAccusations` map. That map is currently an in-memory accumulator, not canonical game state. Recovery must persist it in the checkpoint or reconstruct it from structured evidence before this boundary can be enabled. |
-| `tribunal_vote` | needs accumulator audit | Voting does not need `_currentAccusations`, but support should verify the accumulator is empty/drained after defense or clear/persist it intentionally before claiming the boundary is safe. |
-| `judgment_opening`, `judgment_jury_questions`, `judgment_closing`, `judgment_jury_vote` | likely small-to-medium | GameState and transcript replay carry most required context. Each coordinate still needs explicit hydrator support, prerequisite checks, and same-game completion tests. |
+| `tribunal_defense` | blocked - next necessary accumulator TODO | Requires the runner's `_currentAccusations` map. That map is currently an in-memory accumulator, not canonical game state. Recovery must persist it in the checkpoint or reconstruct it from structured evidence before this boundary can be enabled. This is the Accusation Capsule V1 follow-up and should be treated as the next durability task after staged endgame boundary coverage. |
 | Historical suspended games | opportunistic only | Old games can resume only if their latest event-head checkpoint has the implemented resume inputs. Missing transcript replay, missing token cursor, unsupported actor coordinates, or unsafe accumulators remain fail-closed. |
 | Multi-worker / spot fleet | unsupported | Owner epochs fence durable writes, but startup recovery is still modeled around the current single API process acting as the worker. Real worker fleets need separate coordination and lease semantics. |
 
-**Next practical slice**
+**Next necessary TODO**
 
-Add the low-risk endgame coordinates one group at a time, starting with `reckoning_plea` / `reckoning_vote` and then `tribunal_lobby` / `tribunal_accusation`. Do not enable `tribunal_defense` until `_currentAccusations` has a durable checkpoint representation or a tested replay reconstruction path.
+Full accumulator support is now the next resume slice. Do not enable `tribunal_defense` until `_currentAccusations` has a durable checkpoint representation or a tested structured replay reconstruction path. This should be planned as Accusation Capsule V1, not as another actor-coordinate-only resume patch.
 
 
 ---
@@ -255,8 +254,8 @@ With Redis Pub/Sub from 2.1, this is already solved.
 ## Migration Path
 
 ```
-Phase 1.1  Broaden safe phase-boundary resume coverage
-Phase 1.2  Persist/reconstruct accumulator-heavy boundary inputs
+Phase 1.1  Broaden safe phase-boundary resume coverage, including staged endgame coordinates
+Phase 1.2  Accusation Capsule V1 / full accumulator support for tribunal_defense and future accumulator-heavy boundaries
 Phase 1.3  Graceful shutdown hook       ← Uses existing startup recovery path
 Phase 1.4  Incremental transcripts      ← Independent hardening
 
@@ -267,7 +266,7 @@ Phase 2.3  Sticky sessions / catch-up   ← Solved by 2.1
 
 **Recommended order**: 1.1 → 1.2 → 1.3 → 1.4 → 2.2 → 2.1
 
-Phase 1 makes single-instance deploys safe. Phase 2 enables horizontal scaling. Phase 1 is the immediate priority.
+Phase 1 makes single-instance deploys safe. Phase 1.2 is the next required durability step after staged endgame resume because accumulator-heavy boundaries cannot be made honest with actor-coordinate support alone. Phase 2 enables horizontal scaling.
 
 ---
 

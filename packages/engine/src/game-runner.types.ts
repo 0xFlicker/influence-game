@@ -68,6 +68,15 @@ export const PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES = [
   "power",
   "reveal",
   "reckoning_lobby",
+  "reckoning_plea",
+  "reckoning_vote",
+  "tribunal_lobby",
+  "tribunal_accusation",
+  "tribunal_vote",
+  "judgment_opening",
+  "judgment_jury_questions",
+  "judgment_closing",
+  "judgment_jury_vote",
 ] as const;
 
 export type GameRunnerResumeActorCoordinate = (typeof PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES)[number];

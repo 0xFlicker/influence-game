@@ -377,7 +377,9 @@ export class GameRunner {
     const canonicalEvents = this.gameState.getCanonicalEvents();
     const lastEvent = canonicalEvents.findLast((event) => event.sequence <= this.flushedCanonicalSequence);
     const checkpointPhase = phase ?? lastEvent?.phase ?? Phase.INIT;
-    const checkpointKey = `${kind}:${this.flushedCanonicalSequence}`;
+    const actorSnapshot = phaseActor?.getSnapshot();
+    const actorCoordinate = actorSnapshot ? String(actorSnapshot.value) : "none";
+    const checkpointKey = `${kind}:${this.flushedCanonicalSequence}:${actorCoordinate}`;
     if (this.writtenCheckpointKeys.has(checkpointKey)) return;
 
     const projection = this.getDomainProjection();
@@ -416,7 +418,9 @@ export class GameRunner {
 
     let runtimeSnapshot: RuntimeSnapshotV1 | null = null;
     if (hasRuntimeSnapshot) {
-      const actorSnapshot = phaseActor.getSnapshot();
+      if (!actorSnapshot) {
+        throw new Error("Phase-boundary checkpoint missing phase actor snapshot");
+      }
       const boundary = createEngineBoundaryPlaceholder({
         boundarySequence: this.flushedCanonicalSequence,
         checkpointKind: kind,
@@ -578,6 +582,7 @@ export class GameRunner {
         await runTribunalAccusation(prc, actor, this._currentAccusations);
       } else if (state === "tribunal_defense") {
         await runTribunalDefense(prc, actor, this._currentAccusations);
+        this._currentAccusations.clear();
       } else if (state === "tribunal_vote") {
         await runTribunalVote(prc, actor);
 
@@ -620,6 +625,18 @@ export class GameRunner {
 
   private async tickPhaseActor(): Promise<void> {
     await new Promise((r) => setTimeout(r, 0));
+  }
+
+  private async completeResumePhase(actor: PhaseActor): Promise<void> {
+    actor.send({ type: "PHASE_COMPLETE" });
+    await this.tickPhaseActor();
+  }
+
+  private updateResumeAlivePlayers(actor: PhaseActor): void {
+    actor.send({
+      type: "UPDATE_ALIVE_PLAYERS",
+      aliveIds: this.gameState.getAlivePlayers().map((player) => player.id),
+    });
   }
 
   private assertResumeActorState(actor: PhaseActor, expected: GameRunnerResumeActorCoordinate): void {
@@ -674,14 +691,9 @@ export class GameRunner {
     actor: PhaseActor,
     target: GameRunnerResumeActorCoordinate,
   ): Promise<void> {
-    actor.send({ type: "PHASE_COMPLETE" });
-    await this.tickPhaseActor();
-    actor.send({
-      type: "UPDATE_ALIVE_PLAYERS",
-      aliveIds: this.gameState.getAlivePlayers().map((player) => player.id),
-    });
-    actor.send({ type: "PHASE_COMPLETE" });
-    await this.tickPhaseActor();
+    await this.completeResumePhase(actor);
+    this.updateResumeAlivePlayers(actor);
+    await this.completeResumePhase(actor);
     if (target === "lobby") {
       this.assertResumeActorState(actor, target);
       return;
@@ -690,8 +702,7 @@ export class GameRunner {
     if (!this.hasCanonicalEvent("round.started")) {
       throw new Error(`Phase-boundary resume to "${target}" missing round.started event`);
     }
-    actor.send({ type: "PHASE_COMPLETE" });
-    await this.tickPhaseActor();
+    await this.completeResumePhase(actor);
     if (target === "vote") {
       this.assertResumeActorState(actor, target);
       return;
@@ -699,8 +710,7 @@ export class GameRunner {
 
     const empoweredId = this.resumeEmpoweredId();
     actor.send({ type: "VOTES_TALLIED", empoweredId });
-    actor.send({ type: "PHASE_COMPLETE" });
-    await this.tickPhaseActor();
+    await this.completeResumePhase(actor);
     if (target === "mingle") {
       this.assertResumeActorState(actor, target);
       return;
@@ -709,38 +719,80 @@ export class GameRunner {
     if (!this.hasCanonicalEvent("mingle.rooms_allocated")) {
       throw new Error(`Phase-boundary resume to "${target}" missing mingle.rooms_allocated event`);
     }
-    actor.send({ type: "PHASE_COMPLETE" });
-    await this.tickPhaseActor();
+    await this.completeResumePhase(actor);
     if (target === "power") {
       this.assertResumeActorState(actor, target);
       return;
     }
 
     const { candidates, autoEliminated } = this.resumeCandidateResolution();
-    if (autoEliminated) {
-      if (target === "reckoning_lobby") {
-        actor.send({ type: "UPDATE_ALIVE_PLAYERS", aliveIds: this.gameState.getAlivePlayers().map((player) => player.id) });
-        actor.send({ type: "PHASE_COMPLETE" });
-        await this.tickPhaseActor();
-        this.assertResumeActorState(actor, target);
-        return;
-      }
-      throw new Error("Phase-boundary resume cannot hydrate reveal after auto-eliminate power action");
-    }
     actor.send({ type: "CANDIDATES_DETERMINED", candidates, autoEliminated });
-    actor.send({ type: "PHASE_COMPLETE" });
-    await this.tickPhaseActor();
+    await this.completeResumePhase(actor);
     if (target === "reveal") {
+      if (autoEliminated) {
+        throw new Error("Phase-boundary resume cannot hydrate reveal after auto-eliminate power action");
+      }
       this.assertResumeActorState(actor, target);
       return;
     }
 
-    if (target === "reckoning_lobby") {
-      actor.send({ type: "PHASE_COMPLETE" });
-      await this.tickPhaseActor();
-      actor.send({ type: "UPDATE_ALIVE_PLAYERS", aliveIds: this.gameState.getAlivePlayers().map((player) => player.id) });
-      actor.send({ type: "PHASE_COMPLETE" });
-      await this.tickPhaseActor();
+    if (!autoEliminated) {
+      await this.completeResumePhase(actor);
+    }
+    this.updateResumeAlivePlayers(actor);
+    await this.completeResumePhase(actor);
+
+    if (
+      target === "reckoning_lobby" ||
+      target === "tribunal_lobby" ||
+      target === "judgment_opening"
+    ) {
+      this.assertResumeActorState(actor, target);
+      return;
+    }
+
+    if (target === "reckoning_plea" || target === "reckoning_vote") {
+      this.assertResumeActorState(actor, "reckoning_lobby");
+      await this.completeResumePhase(actor);
+      if (target === "reckoning_plea") {
+        this.assertResumeActorState(actor, target);
+        return;
+      }
+      await this.completeResumePhase(actor);
+      this.assertResumeActorState(actor, target);
+      return;
+    }
+
+    if (target === "tribunal_accusation" || target === "tribunal_vote") {
+      this.assertResumeActorState(actor, "tribunal_lobby");
+      await this.completeResumePhase(actor);
+      if (target === "tribunal_accusation") {
+        this.assertResumeActorState(actor, target);
+        return;
+      }
+      await this.completeResumePhase(actor);
+      await this.completeResumePhase(actor);
+      this.assertResumeActorState(actor, target);
+      return;
+    }
+
+    if (
+      target === "judgment_jury_questions" ||
+      target === "judgment_closing" ||
+      target === "judgment_jury_vote"
+    ) {
+      this.assertResumeActorState(actor, "judgment_opening");
+      await this.completeResumePhase(actor);
+      if (target === "judgment_jury_questions") {
+        this.assertResumeActorState(actor, target);
+        return;
+      }
+      await this.completeResumePhase(actor);
+      if (target === "judgment_closing") {
+        this.assertResumeActorState(actor, target);
+        return;
+      }
+      await this.completeResumePhase(actor);
       this.assertResumeActorState(actor, target);
       return;
     }

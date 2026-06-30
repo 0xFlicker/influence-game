@@ -363,6 +363,7 @@ export const gameCheckpoints = pgTable("game_checkpoints", {
     .references(() => gameRunOwners.ownerEpoch),
   lastEventSequence: integer("last_event_sequence").notNull(),
   checkpointKind: text("checkpoint_kind").notNull().default("phase_boundary"),
+  actorCoordinate: text("actor_coordinate").notNull().default("none"),
   phase: text("phase"),
   round: integer("round"),
   eventHeadHash: text("event_head_hash").notNull(),
@@ -378,6 +379,7 @@ export const gameCheckpoints = pgTable("game_checkpoints", {
     table.gameId,
     table.lastEventSequence,
     table.checkpointKind,
+    table.actorCoordinate,
   ),
   index("game_checkpoints_game_id_idx").on(table.gameId),
   foreignKey({

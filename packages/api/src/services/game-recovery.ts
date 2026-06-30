@@ -50,6 +50,7 @@ export async function getSupportedRecovery(
       ownerEpoch: schema.gameCheckpoints.ownerEpoch,
       lastEventSequence: schema.gameCheckpoints.lastEventSequence,
       checkpointKind: schema.gameCheckpoints.checkpointKind,
+      actorCoordinate: schema.gameCheckpoints.actorCoordinate,
       snapshot: schema.gameCheckpoints.snapshot,
       tokenCostCursor: schema.gameCheckpoints.tokenCostCursor,
     })

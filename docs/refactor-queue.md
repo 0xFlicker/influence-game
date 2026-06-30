@@ -40,13 +40,13 @@ Status legend:
 
 ### R2. Remaining phase-boundary resume coverage
 
-- Status: `ready`
+- Status: `completed in current branch`
 - Consolidates: plans C1, brainstorms B2.
 - Sources: `docs/plans/2026-06-13-002-feat-durable-game-run-kernel-plan.md:95-102`, `docs/plans/2026-06-14-002-feat-checkpoint-hydration-passport-plan.md:495-503`, `docs/plans/2026-06-14-003-feat-phase-boundary-runtime-snapshot-plan.md:277-285`, `docs/brainstorms/2026-06-11-canonical-game-event-spine-requirements.md:18-28`, `docs/brainstorms/2026-06-14-checkpoint-hydration-passport-requirements.md:220-241`, `docs/brainstorms/2026-06-14-phase-boundary-runtime-snapshot-requirements.md:220-274`
-- Signal: startup recovery now works for the original pre-round lobby checkpoint, persisted normal-round coordinates through `reveal`, and `reckoning_lobby`. The remaining product risk is narrower: unsupported endgame boundaries can still fail closed even though the same game can now survive common restart points.
+- Signal: startup recovery now works for the original pre-round lobby checkpoint, persisted normal-round coordinates through `reveal`, `reckoning_lobby`, staged late-game coordinates through `tribunal_vote`, and Judgment finale coordinates. The remaining product risk is narrower: `tribunal_defense` still fails closed because it needs a structured accusation accumulator.
 - Concrete seam: `GameRunner.hydratePhaseActorForResume`, `PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES`, `game-recovery-support.ts`, checkpoint accumulator registry, and DB-backed recovery tests.
 - Validation path: extend the recovery matrix with kill/restart tests for each newly supported coordinate; assert same game ID, contiguous post-restart events, completed results, and matching `resumeAvailable`.
-- Suggested slice: add `reckoning_plea` / `reckoning_vote`, then `tribunal_lobby` / `tribunal_accusation`, then Judgment coordinates. Keep `tribunal_defense` blocked until `_currentAccusations` is persisted or reconstructed; audit `tribunal_vote` accumulator state before enabling it.
+- Result: `reckoning_plea`, `reckoning_vote`, `tribunal_lobby`, `tribunal_accusation`, `tribunal_vote`, `judgment_opening`, `judgment_jury_questions`, `judgment_closing`, and `judgment_jury_vote` are covered by DB-backed same-game recovery tests. `tribunal_defense` remains blocked and D0 Accusation Capsule V1 is now the next necessary durability TODO.
 
 ### R3. Games MCP revealed-facts expansion
 
@@ -79,6 +79,17 @@ Status legend:
 - Suggested slice: introduce a small typed presigner helper or correct the AWS client/command type seam. Do not change storage behavior.
 
 ## Blocked Backlog
+
+### D0. Accusation Capsule V1 / full accumulator resume slice
+
+- Status: `ready - next necessary durability TODO`
+- Consolidates: plans C1 follow-up, ideation accumulator work.
+- Sources: `docs/plans/2026-06-30-002-feat-endgame-phase-boundary-recovery-plan.md`, `docs/statefulness-plan.md`, `docs/ideation/2026-06-29-backend-durability-scalability-ideation.html:916-961`
+- Signal: `tribunal_defense` is the first endgame resume boundary that needs more than canonical `GameState`, transcript replay, and phase-actor hydration. It depends on `_currentAccusations`, a runner-owned accumulator populated during `tribunal_accusation` and consumed by defense prompts.
+- Concrete seam: checkpoint accumulator registry, Runtime Snapshot accumulator payload shape, `GameRunner` resume hydration for `_currentAccusations`, `runTribunalAccusation`, `runTribunalDefense`, recovery support gating, and DB-backed recovery tests.
+- Validation path: interrupt after accusation collection, recover through `tribunal_defense`, assert accusation prompts use the persisted or reconstructed structured accusation map, complete the same game, and keep transcript prose/private trace text non-authoritative.
+- Blocker cleared by R2: staged endgame boundary coverage has isolated the remaining unsupported surface to the accusation accumulator contract.
+- Required follow-up: do this next. Do not spend another resume slice on broader topology, historical repair, or manual recovery UX before this is solved unless production operations create a larger fire.
 
 ### D1. Owner reclaim and restart orchestration
 
@@ -172,7 +183,7 @@ Status legend:
 ## Current Priority Order
 
 1. R1 API-backed local run harness
-2. R2 Remaining phase-boundary resume coverage
+2. D0 Accusation Capsule V1 / full accumulator resume slice
 3. R3 Games MCP revealed-facts expansion
 4. R4 Private trace retention and purge workflow
 5. R5 Public upload presigner type cleanup

@@ -85,6 +85,7 @@ export interface DurableRunProjectionSummary {
 export interface DurableCheckpointSummary {
   lastEventSequence: number;
   checkpointKind: string;
+  actorCoordinate: string;
   phase: string | null;
   round: number | null;
   eventHeadHash: string;
@@ -429,6 +430,7 @@ export async function getDurableRunInspection(
       .select({
         lastEventSequence: schema.gameCheckpoints.lastEventSequence,
         checkpointKind: schema.gameCheckpoints.checkpointKind,
+        actorCoordinate: schema.gameCheckpoints.actorCoordinate,
         ownerEpoch: schema.gameCheckpoints.ownerEpoch,
         phase: schema.gameCheckpoints.phase,
         round: schema.gameCheckpoints.round,
@@ -487,6 +489,7 @@ export async function getDurableRunInspection(
       return {
         lastEventSequence: checkpoint.lastEventSequence,
         checkpointKind: checkpoint.checkpointKind,
+        actorCoordinate: checkpoint.actorCoordinate,
         phase: checkpoint.phase,
         round: checkpoint.round,
         eventHeadHash: checkpoint.eventHeadHash,
