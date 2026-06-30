@@ -24,31 +24,11 @@ import {
   type AuthEnv,
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
-import { normalizeUploadedAvatarUrl } from "../lib/storage.js";
 import {
   formatUserSelectableAgentArchetypeKeys,
   isUserSelectableAgentArchetype,
 } from "../services/agent-archetypes.js";
-
-type ParsedAvatarUrl =
-  | { ok: true; value: string | null | undefined }
-  | { ok: false; error: string };
-
-function parseAvatarUrl(value: unknown, publicBaseUrl: string): ParsedAvatarUrl {
-  if (value === undefined) return { ok: true, value: undefined };
-  if (value === null) return { ok: true, value: null };
-  if (typeof value !== "string") {
-    return { ok: false, error: "avatarUrl must be a string or null" };
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) return { ok: true, value: null };
-
-  return {
-    ok: true,
-    value: normalizeUploadedAvatarUrl(trimmed, publicBaseUrl),
-  };
-}
+import { normalizeAgentAvatarUrlInput } from "../services/agent-profile-management.js";
 
 // ---------------------------------------------------------------------------
 // Factory — creates a Hono sub-app with injected DB
@@ -182,7 +162,7 @@ Respond with JSON only:
       return c.json({ error: `Invalid personaKey. Must be one of: ${formatUserSelectableAgentArchetypeKeys()}` }, 400);
     }
 
-    const parsedAvatarUrl = parseAvatarUrl(avatarUrl, new URL(c.req.url).origin);
+    const parsedAvatarUrl = normalizeAgentAvatarUrlInput(avatarUrl, new URL(c.req.url).origin);
     if (!parsedAvatarUrl.ok) {
       return c.json({ error: parsedAvatarUrl.error }, 400);
     }
@@ -288,7 +268,7 @@ Respond with JSON only:
       return c.json({ error: `Invalid personaKey. Must be one of: ${formatUserSelectableAgentArchetypeKeys()}` }, 400);
     }
 
-    const parsedAvatarUrl = parseAvatarUrl(avatarUrl, new URL(c.req.url).origin);
+    const parsedAvatarUrl = normalizeAgentAvatarUrlInput(avatarUrl, new URL(c.req.url).origin);
     if (!parsedAvatarUrl.ok) {
       return c.json({ error: parsedAvatarUrl.error }, 400);
     }
