@@ -61,6 +61,7 @@ import {
   findStartupRecoverableGameIds,
   getSupportedRecovery,
 } from "./game-recovery.js";
+import { isUserSelectableAgentArchetype } from "./agent-archetypes.js";
 
 // ---------------------------------------------------------------------------
 // Active game tracking
@@ -219,18 +220,8 @@ async function publishCurrentWatchState(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Valid personality keys
-// ---------------------------------------------------------------------------
-
-const VALID_PERSONALITIES = new Set<string>([
-  "honest", "strategic", "deceptive", "paranoid", "social",
-  "aggressive", "loyalist", "observer", "diplomat", "wildcard",
-  "contrarian", "provocateur", "martyr",
-]);
-
 function resolvePersonality(key: string | null | undefined): Personality {
-  if (key && VALID_PERSONALITIES.has(key)) {
+  if (isUserSelectableAgentArchetype(key)) {
     return key as Personality;
   }
   return "strategic";

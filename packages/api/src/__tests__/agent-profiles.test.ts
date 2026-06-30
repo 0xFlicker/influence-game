@@ -183,6 +183,11 @@ describe("Agent Profile API", () => {
         jsonReq({ name: "Atlas", personality: "Test", personaKey: "invalid" }, tokenA),
       );
       expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toContain("contrarian");
+      expect(body.error).toContain("provocateur");
+      expect(body.error).toContain("martyr");
+      expect(body.error).not.toContain("broker");
     });
 
     test("creates profile with minimal fields", async () => {

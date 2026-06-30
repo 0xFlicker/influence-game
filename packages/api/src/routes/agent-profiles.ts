@@ -25,13 +25,10 @@ import {
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { normalizeUploadedAvatarUrl } from "../lib/storage.js";
-
-// Valid personality archetype keys
-const VALID_PERSONA_KEYS = new Set([
-  "honest", "strategic", "deceptive", "paranoid", "social",
-  "aggressive", "loyalist", "observer", "diplomat", "wildcard",
-  "contrarian", "provocateur", "martyr",
-]);
+import {
+  formatUserSelectableAgentArchetypeKeys,
+  isUserSelectableAgentArchetype,
+} from "../services/agent-archetypes.js";
 
 type ParsedAvatarUrl =
   | { ok: true; value: string | null | undefined }
@@ -109,7 +106,7 @@ Respond with JSON only:
   "backstory": "A 2-4 sentence rich backstory — their background, what shaped them, what they care about. This should inform how they speak and relate to others.",
   "personality": "A 2-3 sentence personality description — their vibe, communication style, social tendencies. This drives how the AI agent behaves in conversations.",
   "strategyStyle": "A 1-2 sentence strategic approach — how they play the game, form alliances, handle conflict.",
-  "personaKey": "One of: honest, strategic, deceptive, paranoid, social, aggressive, loyalist, observer, diplomat, wildcard — the closest archetype match."
+  "personaKey": "One of: ${formatUserSelectableAgentArchetypeKeys()} — the closest archetype match."
 }`;
 
     const userParts: string[] = [];
@@ -148,7 +145,7 @@ Respond with JSON only:
 
       // Validate personaKey
       const validatedPersonaKey =
-        generated.personaKey && VALID_PERSONA_KEYS.has(generated.personaKey)
+        isUserSelectableAgentArchetype(generated.personaKey)
           ? generated.personaKey
           : "strategic";
 
@@ -181,8 +178,8 @@ Respond with JSON only:
       return c.json({ error: "name and personality are required" }, 400);
     }
 
-    if (personaKey && !VALID_PERSONA_KEYS.has(personaKey)) {
-      return c.json({ error: `Invalid personaKey. Must be one of: ${[...VALID_PERSONA_KEYS].join(", ")}` }, 400);
+    if (personaKey && !isUserSelectableAgentArchetype(personaKey)) {
+      return c.json({ error: `Invalid personaKey. Must be one of: ${formatUserSelectableAgentArchetypeKeys()}` }, 400);
     }
 
     const parsedAvatarUrl = parseAvatarUrl(avatarUrl, new URL(c.req.url).origin);
@@ -287,8 +284,8 @@ Respond with JSON only:
 
     const { name, backstory, personality, strategyStyle, personaKey, avatarUrl } = body;
 
-    if (personaKey !== undefined && personaKey !== null && !VALID_PERSONA_KEYS.has(personaKey)) {
-      return c.json({ error: `Invalid personaKey. Must be one of: ${[...VALID_PERSONA_KEYS].join(", ")}` }, 400);
+    if (personaKey !== undefined && personaKey !== null && !isUserSelectableAgentArchetype(personaKey)) {
+      return c.json({ error: `Invalid personaKey. Must be one of: ${formatUserSelectableAgentArchetypeKeys()}` }, 400);
     }
 
     const parsedAvatarUrl = parseAvatarUrl(avatarUrl, new URL(c.req.url).origin);
