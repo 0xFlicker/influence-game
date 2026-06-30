@@ -27,7 +27,10 @@ const MCP_OAUTH_SCOPE = "producer";
 const REDIRECT_URI = "http://127.0.0.1:34789/oauth/callback";
 const DYNAMIC_REDIRECT_URI = "http://127.0.0.1:49281/codex/callback";
 const CLAUDE_REDIRECT_URI = "https://claude.ai/api/mcp/auth_callback";
-const CHATGPT_REDIRECT_URI = "https://chatgpt.com/connector/oauth/_syG1DzKsjXV";
+const CHATGPT_REDIRECT_URIS = [
+  "https://chatgpt.com/connector/oauth/_syG1DzKsjXV",
+  "https://chatgpt.com/connector/oauth/SvtDqU1r6I17",
+] as const;
 const GROK_REDIRECT_URI = "https://grok.com/connectors-oauth-exchange-code/";
 const RESOURCE_URI = "http://127.0.0.1:3000/mcp";
 const PRODUCER_RESOURCE_URI = RESOURCE_URI;
@@ -474,43 +477,45 @@ describe("MCP OAuth routes", () => {
     expect(staticToken.status).toBe(200);
   });
 
-  test("accepts code-owned ChatGPT OAuth callback during dynamic registration", async () => {
-    const registration = await app.request("/api/oauth/mcp/register", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        client_name: "ChatGPT connector",
-        redirect_uris: [CHATGPT_REDIRECT_URI],
-        grant_types: ["authorization_code", "refresh_token"],
-        response_types: ["code"],
-        scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
-        token_endpoint_auth_method: "none",
-      }),
-    });
+  test("accepts code-owned ChatGPT OAuth callbacks during dynamic registration", async () => {
+    for (const chatGptRedirectUri of CHATGPT_REDIRECT_URIS) {
+      const registration = await app.request("/api/oauth/mcp/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          client_name: "ChatGPT connector",
+          redirect_uris: [chatGptRedirectUri],
+          grant_types: ["authorization_code", "refresh_token"],
+          response_types: ["code"],
+          scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
+          token_endpoint_auth_method: "none",
+        }),
+      });
 
-    expect(registration.status).toBe(201);
-    expect(await jsonObject(registration)).toMatchObject({
-      redirect_uris: [CHATGPT_REDIRECT_URI],
-      grant_types: ["authorization_code", "refresh_token"],
-    });
-    const audit = auditEvents.at(-1);
-    expect(audit).toMatchObject({
-      event: "mcp.oauth.register",
-      result: "success",
-      status: 201,
-      registrationRedirectUriCount: 1,
-      registrationGrantTypes: ["authorization_code", "refresh_token"],
-      registrationResponseTypes: ["code"],
-    });
-    expect(audit?.registrationRedirectUris?.[0]).toMatchObject({
-      protocol: "https",
-      host: "chatgpt.com",
-      path: "/connector/oauth/_syG1DzKsjXV",
-      hasQuery: false,
-      providerId: "chatgpt",
-      matchSource: "provider_config",
-    });
-    expect(JSON.stringify(auditEvents)).not.toContain(CHATGPT_REDIRECT_URI);
+      expect(registration.status).toBe(201);
+      expect(await jsonObject(registration)).toMatchObject({
+        redirect_uris: [chatGptRedirectUri],
+        grant_types: ["authorization_code", "refresh_token"],
+      });
+      const audit = auditEvents.at(-1);
+      expect(audit).toMatchObject({
+        event: "mcp.oauth.register",
+        result: "success",
+        status: 201,
+        registrationRedirectUriCount: 1,
+        registrationGrantTypes: ["authorization_code", "refresh_token"],
+        registrationResponseTypes: ["code"],
+      });
+      expect(audit?.registrationRedirectUris?.[0]).toMatchObject({
+        protocol: "https",
+        host: "chatgpt.com",
+        path: new URL(chatGptRedirectUri).pathname,
+        hasQuery: false,
+        providerId: "chatgpt",
+        matchSource: "provider_config",
+      });
+      expect(JSON.stringify(auditEvents)).not.toContain(chatGptRedirectUri);
+    }
   });
 
   test("accepts code-owned Grok OAuth callback during dynamic registration", async () => {
@@ -1035,6 +1040,37 @@ describe("MCP OAuth routes", () => {
     const redirect = new URL(String(body.redirectTo));
     expect(redirect.searchParams.get("error")).toBe("access_denied");
     expect(redirect.searchParams.get("state")).toBe("test-state");
+  });
+
+  test("accepts equivalent loopback resource aliases for local authorization", async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousResource = process.env.MCP_OAUTH_RESOURCE_URI;
+    const previousWebBase = process.env.WEB_BASE_URL;
+    const { token: sessionToken } = await createUserSession(db, MCP_ADDRESS);
+
+    process.env.NODE_ENV = "development";
+    process.env.MCP_OAUTH_RESOURCE_URI = "http://localhost:3000/mcp";
+    process.env.WEB_BASE_URL = "http://localhost:3001";
+
+    try {
+      const authorize = await app.request("/api/oauth/mcp/authorize", {
+        method: "POST",
+        headers: jsonAuthHeaders(sessionToken),
+        body: JSON.stringify(authorizeBody({
+          resource: "http://127.0.0.1:3000/mcp",
+          decision: "inspect",
+        })),
+      });
+
+      expect(authorize.status).toBe(200);
+      expect(await jsonObject(authorize)).toMatchObject({
+        resource: "http://localhost:3000/mcp",
+      });
+    } finally {
+      restoreOptionalEnv("NODE_ENV", previousNodeEnv);
+      restoreOptionalEnv("MCP_OAUTH_RESOURCE_URI", previousResource);
+      restoreOptionalEnv("WEB_BASE_URL", previousWebBase);
+    }
   });
 
   test("rejects invalid authorization inputs without issuing a code", async () => {

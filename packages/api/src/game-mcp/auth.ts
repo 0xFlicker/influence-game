@@ -2,6 +2,7 @@ import type { DrizzleDB } from "../db/index.js";
 import {
   getMcpOAuthResourceUri,
   introspectMcpAccessToken,
+  isCanonicalMcpResourceUri,
   MCP_OAUTH_AUDIENCE,
   MCP_OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
   MCP_OAUTH_PURPOSE,
@@ -63,7 +64,8 @@ export async function validateGameMcpBearerToken(
   if (
     introspection.aud !== MCP_OAUTH_AUDIENCE ||
     introspection.purpose !== MCP_OAUTH_PURPOSE ||
-    introspection.resource !== getMcpOAuthResourceUri() ||
+    !introspection.resource ||
+    !isCanonicalMcpResourceUri(introspection.resource) ||
     !introspection.client_id ||
     !introspection.sub ||
     !introspection.exp

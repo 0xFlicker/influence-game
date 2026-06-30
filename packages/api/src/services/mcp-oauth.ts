@@ -223,7 +223,8 @@ export function getMcpOAuthResourceUri(): string {
 
 export function isCanonicalMcpResourceUri(resourceUri: string): boolean {
   const normalized = normalizeResourceUri(resourceUri);
-  return normalized === getMcpOAuthResourceUri();
+  if (!normalized) return false;
+  return mcpResourceUrisMatch(normalized, getMcpOAuthResourceUri());
 }
 
 export function getMcpOAuthAuthorizationEndpoint(): string {
@@ -1638,6 +1639,24 @@ function isLoopbackUrl(url: URL): boolean {
     url.hostname === "::1" ||
     url.hostname === "[::1]"
   );
+}
+
+function mcpResourceUrisMatch(candidate: string, canonical: string): boolean {
+  if (candidate === canonical) return true;
+  if (isProductionRuntime()) return false;
+
+  try {
+    const candidateUrl = new URL(candidate);
+    const canonicalUrl = new URL(canonical);
+    return isLoopbackUrl(candidateUrl) &&
+      isLoopbackUrl(canonicalUrl) &&
+      candidateUrl.protocol === canonicalUrl.protocol &&
+      candidateUrl.port === canonicalUrl.port &&
+      candidateUrl.pathname === canonicalUrl.pathname &&
+      candidateUrl.search === canonicalUrl.search;
+  } catch {
+    return false;
+  }
 }
 
 function allowedRedirectUris(): string[] {

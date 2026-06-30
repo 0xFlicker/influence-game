@@ -26,13 +26,27 @@ describe("MCP App provider audit hints", () => {
   });
 
   test("keeps hosted OAuth callbacks in code-owned provider config", () => {
-    const chatGptCallback = "https://chatgpt.com/connector/oauth/_syG1DzKsjXV";
+    const chatGptCallbacks = [
+      "https://chatgpt.com/connector/oauth/_syG1DzKsjXV",
+      "https://chatgpt.com/connector/oauth/SvtDqU1r6I17",
+    ];
     const claudeCallback = "https://claude.ai/api/mcp/auth_callback";
     const grokCallback = "https://grok.com/connectors-oauth-exchange-code/";
-    expect(providerRedirectRuleForUri(chatGptCallback)).toEqual({
-      providerId: "chatgpt",
-      redirectUri: chatGptCallback,
-    });
+    for (const chatGptCallback of chatGptCallbacks) {
+      expect(providerRedirectRuleForUri(chatGptCallback)).toEqual({
+        providerId: "chatgpt",
+        redirectUri: chatGptCallback,
+      });
+      expect(createRedirectAuditDetail(chatGptCallback, "provider_config"))
+        .toMatchObject({
+          protocol: "https",
+          host: "chatgpt.com",
+          path: new URL(chatGptCallback).pathname,
+          hasQuery: false,
+          providerId: "chatgpt",
+          matchSource: "provider_config",
+        });
+    }
     expect(providerRedirectRuleForUri(claudeCallback)).toEqual({
       providerId: "claude",
       redirectUri: claudeCallback,
@@ -40,14 +54,6 @@ describe("MCP App provider audit hints", () => {
     expect(providerRedirectRuleForUri(grokCallback)).toEqual({
       providerId: "grok",
       redirectUri: grokCallback,
-    });
-    expect(createRedirectAuditDetail(chatGptCallback, "provider_config")).toMatchObject({
-      protocol: "https",
-      host: "chatgpt.com",
-      path: "/connector/oauth/_syG1DzKsjXV",
-      hasQuery: false,
-      providerId: "chatgpt",
-      matchSource: "provider_config",
     });
     expect(createRedirectAuditDetail(grokCallback, "provider_config")).toMatchObject({
       protocol: "https",

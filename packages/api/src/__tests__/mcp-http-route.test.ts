@@ -392,6 +392,32 @@ describe("/mcp Streamable HTTP route", () => {
       expect(tokenRow?.lastUsedAt).toBeTruthy();
     });
 
+    test("accepts active local tokens bound to an equivalent loopback resource alias", async () => {
+      const previousNodeEnv = process.env.NODE_ENV;
+      const previousResource = process.env.MCP_OAUTH_RESOURCE_URI;
+      process.env.NODE_ENV = "development";
+      process.env.MCP_OAUTH_RESOURCE_URI = "http://localhost:3000/mcp";
+
+      try {
+        const issued = await issueMcpAccessToken(db, {
+          walletAddress: "0xmcphttp00000000000000000000000000000008",
+          resourceUri: "http://127.0.0.1:3000/mcp",
+        });
+        const app = createDbBackedTestApp(db);
+
+        const response = await app.request("/mcp", {
+          method: "POST",
+          headers: jsonHeaders({ Authorization: `Bearer ${issued.accessToken}` }),
+          body: JSON.stringify({ jsonrpc: "2.0", id: "init", method: "initialize" }),
+        });
+
+        expect(response.status).toBe(200);
+      } finally {
+        restoreOptionalEnv("NODE_ENV", previousNodeEnv);
+        restoreOptionalEnv("MCP_OAUTH_RESOURCE_URI", previousResource);
+      }
+    });
+
     test("rejects inactive DB token states before dispatch", async () => {
       const revoked = await issueMcpAccessToken(db, {
         walletAddress: "0xmcphttp00000000000000000000000000000002",

@@ -46,7 +46,7 @@ MCP_ALLOWED_ORIGINS=https://<api-host>
 
 The authorization server metadata derives its public issuer, token endpoint, revocation endpoint, and registration endpoint from `MCP_OAUTH_RESOURCE_URI`. The browser authorization endpoint derives from `WEB_BASE_URL`.
 
-In local development, the API may fall back to `http://127.0.0.1:3000/mcp` for the MCP resource. In `NODE_ENV=production`, `MCP_OAUTH_RESOURCE_URI` and `WEB_BASE_URL` are required, must be HTTPS, and must not use loopback hosts. A deployed API should fail discovery with a server configuration error rather than publishing localhost OAuth metadata.
+In local development, the API may fall back to `http://127.0.0.1:3000/mcp` for the MCP resource. Local OAuth resource checks treat equivalent loopback hosts (`localhost`, `127.0.0.1`, and `::1`) as the same resource when the protocol, port, path, and query match, so local clients can use either `localhost` or `127.0.0.1` without tripping resource binding. In `NODE_ENV=production`, `MCP_OAUTH_RESOURCE_URI` and `WEB_BASE_URL` are required, must be HTTPS, and must not use loopback hosts. A deployed API should fail discovery with a server configuration error rather than publishing localhost OAuth metadata.
 
 `MCP_OAUTH_GAMES_RESOURCE_URI` was part of the older split-resource plan. The current deployed `/mcp` OAuth path uses the single canonical `MCP_OAUTH_RESOURCE_URI`; keep staging and production secrets on that name. The API still accepts `MCP_OAUTH_GAMES_RESOURCE_URI` as a migration input when `MCP_OAUTH_RESOURCE_URI` is absent, but it should not be treated as the active documented setting.
 
@@ -58,9 +58,9 @@ MCP_OAUTH_LOOPBACK_REDIRECT_PATH=/oauth/callback
 MCP_OAUTH_ALLOW_DYNAMIC_HTTPS_REDIRECTS=false
 ```
 
-Provider-owned hosted callbacks for ChatGPT, Claude, Grok, and similar MCP App hosts are deployment-invariant and should live in code, not per-environment env vars. Add exact supported callbacks to the provider compatibility config and use dynamic-client-registration audit diagnostics to capture unknown provider callbacks safely. The legacy `MCP_OAUTH_ALLOWED_REDIRECT_URIS` exact allowlist remains supported only as an escape hatch for non-provider callbacks.
+Provider-owned hosted callbacks for ChatGPT, Claude, Grok, and similar MCP App hosts are deployment-invariant and should live in code, not per-environment env vars. Add exact supported callbacks to the provider compatibility config and use dynamic-client-registration audit diagnostics to capture unknown provider callbacks safely. Domain or connector migrations can produce a new provider-hosted callback slug; add the exact observed URI from the DCR audit rather than broadening trust to the provider host. The legacy `MCP_OAUTH_ALLOWED_REDIRECT_URIS` exact allowlist remains supported only as an escape hatch for non-provider callbacks.
 
-Current code-owned provider callbacks include ChatGPT's hosted connector callback at `https://chatgpt.com/connector/oauth/_syG1DzKsjXV`, Claude's hosted connector callback at `https://claude.ai/api/mcp/auth_callback`, and Grok's hosted connector callback at `https://grok.com/connectors-oauth-exchange-code/`.
+Current code-owned provider callbacks include ChatGPT's observed hosted connector callbacks at `https://chatgpt.com/connector/oauth/_syG1DzKsjXV` and `https://chatgpt.com/connector/oauth/SvtDqU1r6I17`, Claude's hosted connector callback at `https://claude.ai/api/mcp/auth_callback`, and Grok's hosted connector callback at `https://grok.com/connectors-oauth-exchange-code/`.
 
 Private trace tools require the same private content storage env used by API durable runs:
 

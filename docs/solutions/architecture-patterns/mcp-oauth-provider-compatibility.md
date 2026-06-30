@@ -36,6 +36,10 @@ export const MCP_OAUTH_PROVIDER_REDIRECT_URIS = [
     redirectUri: "https://chatgpt.com/connector/oauth/_syG1DzKsjXV",
   },
   {
+    providerId: "chatgpt",
+    redirectUri: "https://chatgpt.com/connector/oauth/SvtDqU1r6I17",
+  },
+  {
     providerId: "claude",
     redirectUri: "https://claude.ai/api/mcp/auth_callback",
   },
@@ -84,7 +88,7 @@ export function createRedirectAuditDetail(
 
 Treat `providerIdForRedirectUrl` as an audit classifier, not an allowlist. It may classify `chatgpt.com`, `claude.ai`, or `grok.com` hosts so logs are useful, but that does not make every path on that host safe. Do not accept generic provider callbacks such as `https://*.provider.com/*` or "anything on chatgpt.com" just because the provider ID is recognizable.
 
-Keep provider-owned hosted callbacks in checked-in code-owned provider config. They are deployment-invariant compatibility facts, not per-environment settings. `MCP_OAUTH_ALLOWED_REDIRECT_URIS` remains only a legacy exact escape hatch for non-provider callbacks, and broad dynamic HTTPS redirects should stay disabled outside deliberate diagnostics.
+Keep provider-owned hosted callbacks in checked-in code-owned provider config. They are deployment-invariant compatibility facts, not per-environment settings. Domain or connector migrations can still cause a provider to issue a new hosted callback slug; add that exact observed URI from DCR audit output. `MCP_OAUTH_ALLOWED_REDIRECT_URIS` remains only a legacy exact escape hatch for non-provider callbacks, and broad dynamic HTTPS redirects should stay disabled outside deliberate diagnostics.
 
 Preserve loopback handling separately for local and tool-first clients:
 

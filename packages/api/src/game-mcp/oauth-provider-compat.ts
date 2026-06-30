@@ -30,6 +30,10 @@ export const MCP_OAUTH_PROVIDER_REDIRECT_URIS: McpOAuthProviderRedirectRule[] = 
     redirectUri: "https://chatgpt.com/connector/oauth/_syG1DzKsjXV",
   },
   {
+    providerId: "chatgpt",
+    redirectUri: "https://chatgpt.com/connector/oauth/SvtDqU1r6I17",
+  },
+  {
     providerId: "claude",
     redirectUri: "https://claude.ai/api/mcp/auth_callback",
   },
