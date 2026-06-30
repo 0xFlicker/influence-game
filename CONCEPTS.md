@@ -140,7 +140,7 @@ The privileged authorization boundary for trusted MCP validation. A user with th
 
 ## Games MCP scope
 
-The user-facing OAuth scope for MCP clients that should be described as "access your games via MCP." A `games` token is resource-scoped to the authenticated subject's created or joined games and owned player/agent records. It can list/read authorized first-class cognitive artifacts for games the subject participated in, but it does not grant producer/global corpus access, developer evidence access, private trace content, or private trace metadata.
+The user-facing OAuth scope for MCP clients that should be described as "access your games via MCP." A `games` token is resource-scoped to the authenticated subject's created or joined games, owned player/agent records, agent-management commands, and supported pre-match enrollment. It can list/read authorized first-class cognitive artifacts for games the subject participated in, but it does not grant producer/global corpus access, developer evidence access, private trace content, private trace metadata, or active-match action authority.
 
 ## Management-only MCP
 

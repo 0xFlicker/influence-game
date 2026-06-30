@@ -4,7 +4,7 @@ This is the deployed HTTP Game MCP OAuth surface for Codex/Claude/ChatGPT-style 
 
 There are two MCP resource profiles:
 
-- User-facing Game MCP: `/mcp` + OAuth `scope=games`. Described to users as "access your games via MCP." This token is constrained to the authenticated subject's created or joined games and owned player/agent records.
+- User-facing Game MCP: `/mcp` + OAuth `scope=games`. Described to users as "access your games via MCP." This token is constrained to the authenticated subject's created or joined games, owned player/agent records, agent-management commands, and supported pre-match enrollment.
 - Producer MCP: `/mcp/producer` + OAuth `scope=mcp` + current `mcp` role. This preserves the privileged developer/global boundary and keeps developer evidence/private trace tooling.
 
 Do not reinterpret `scope=mcp` as user-scoped. Do not expose private trace content or trace metadata through `scope=games`; trace remains producer-only. User-facing reasoning/thinking/strategy access uses first-class cognitive artifact rows captured for new games, never reads or reconstructs from producer private traces.
@@ -83,8 +83,18 @@ LINODE_PRIVATE_CONTENT_BUCKET=...
 
 ## Tools
 
-User-facing Game MCP exposes read-only user tools:
+User-facing Game MCP exposes read tools plus a small set of pre-match management mutations. It is an agent-management surface, not a live gameplay surface. Under `scope=games`, the server derives ownership from the bearer token and DB rows; tool arguments never select another user.
 
+Read-only rules, roster, queue, and game-inspection tools:
+
+- `get_rules`: read MCP-safe Influence rules, win conditions, phases, free-game basics, archetypes, rating provenance, and beginner strategy.
+- `search_rules`: search the structured rules catalog by topic or keyword.
+- `list_archetypes`: list valid user-selectable archetype keys for `create_agent` and `update_agent`. `broker` is not user-selectable in this surface.
+- `list_agents`: list the subject's owned agents with prompt, public biography, avatar, stats, account-level free-track ELO provenance, queue state, and active enrollment.
+- `get_agent`: read one owned agent by `agentId`.
+- `search_agents`: search only the subject's owned agents by name, archetype, biography, personality prompt, or strategy style.
+- `get_queue_status`: inspect supported pre-match queue status. v1 supports `queueType: "daily-free"`.
+- `list_open_games`: list joinable waiting custom games with slots and ruleset metadata.
 - `list_games`: games the subject created or joined, with event-log/projection status.
 - `read_projection`: replay persisted canonical events into the projection summary for one accessible game.
 - `read_round_facts`: read sanitized revealed vote, power, Council, and player-status facts for one accessible game round. Facts come from persisted canonical events/projections only; decision logs, cognitive artifacts, private traces, and raw producer event envelopes are not used as fallback sources.
@@ -92,6 +102,15 @@ User-facing Game MCP exposes read-only user tools:
 - `player_timeline`: player-visible canonical event timeline for a player ID or name in an accessible game.
 - `list_cognitive_artifacts`: list authorized split cognitive artifact metadata for one game the subject participated in.
 - `read_cognitive_artifact`: read one authorized split cognitive artifact payload. Under `scope=games`, callers provide the game, artifact ID, artifact type, and actor player ID so authorization can run before row-existence checks. Reasoning is owner-only; thinking and strategy are participant-visible.
+
+User-facing mutation tools:
+
+- `create_agent`: create one owned reusable agent profile from `displayName`, `archetype`, `personalityPrompt`, optional `publicBiography`, optional `strategyStyle`, and optional `avatarUrl`.
+- `update_agent`: update mutable fields on one owned agent. Immutable IDs and ownership fields are rejected; responses intentionally do not train users around rating-reset behavior.
+- `join_queue`: enroll one owned agent in a supported pre-match queue. v1 supports `queueType: "daily-free"` and `queueType: "open-game"` with `gameIdOrSlug`. Daily-free joins are idempotent for the same user and same agent; joining with a different queued agent returns an explicit conflict.
+- `leave_queue`: leave `queueType: "daily-free"` idempotently. Calling it when absent is a friendly success state.
+
+`join_queue` is not a live-match action. Open-game joins are limited to waiting, non-hidden, non-full custom games. Daily-free enrollment writes `free_game_queue`; open-game enrollment writes a waiting `game_players` row. Both paths reject unsupported queue types and agents that are already in a waiting or in-progress enrollment.
 
 Producer MCP exposes the same read-only game and cognitive artifact tools with producer visibility plus producer-only tools:
 
@@ -102,7 +121,9 @@ Producer MCP exposes the same read-only game and cognitive artifact tools with p
 
 `read_round_facts` reports per-section availability so clients can tell resolved facts from `not_yet_resolved`, `not_yet_flushed`, or `unavailable` canonical facts. Artifacts may arrive before canonical events flush at a durable boundary; the facts tool reports that state instead of reconstructing gameplay from artifacts.
 
-`scope=games` cannot discover or invoke producer trace tools and cannot request producer event visibility. Cognitive artifact reads under `scope=games` authorize before returning no-capture or row-existence information. Old games and pre-capture games return `not_captured_for_game` only after the caller is authorized for that game/actor context. `scope=mcp` on `/mcp/producer` preserves the existing global developer access contract and may read split cognitive artifacts directly without using raw trace content as a substitute.
+`scope=games` cannot discover or invoke producer trace tools, cannot request producer event visibility, and cannot perform active-match actions such as voting, empower/expose, Council decisions, Mingle/lobby messages, diary-room actions, ready checks, timers, phase controls, moderator actions, or power actions. Cognitive artifact reads under `scope=games` authorize before returning no-capture or row-existence information. Old games and pre-capture games return `not_captured_for_game` only after the caller is authorized for that game/actor context. `scope=mcp` on `/mcp/producer` preserves the existing global developer access contract and may read split cognitive artifacts directly without using raw trace content as a substitute.
+
+Management failures return stable JSON-RPC error data where possible, such as `unsupported_queue_type`, `invalid_archetype`, `agent_not_found`, `agent_already_queued`, `agent_already_in_active_game`, `queue_full`, `game_not_joinable`, and immutable/unsupported field errors. Error data must not include raw prompts from other users, tokens, provider metadata, or private trace pointers.
 
 `list_games` is the first app-backed tool. Under `scope=games`, its descriptor includes the OAuth security scheme plus the app UI resource metadata that points to `ui://influence/app`. Producer tools and `/mcp/producer` descriptors do not advertise app UI entry points.
 
@@ -116,7 +137,7 @@ Player-facing setup lives at `/get-mcp`. Send players there for the current envi
 
 Do not send players directly to `/mcp`; it is the Streamable HTTP MCP resource endpoint, not a human setup page.
 
-The protected-resource metadata for `/mcp` advertises `scopes_supported: ["games"]`. Ready means a fresh client can initialize, complete OAuth in the browser, store/use a `games` token, call `list_games`, and call at least one accessible game-specific tool such as `read_projection` or `filter_events`.
+The protected-resource metadata for `/mcp` advertises `scopes_supported: ["games"]`. Ready means a fresh client can initialize, complete OAuth in the browser, store/use a `games` token, call `list_games`, inspect rules/archetypes/owned agents, and call at least one accessible game-specific tool such as `read_projection` or `filter_events`.
 
 ### Producer MCP
 
@@ -177,7 +198,7 @@ Before calling the slice ready on staging:
 3. `GET https://<api-host>/.well-known/oauth-authorization-server` returns authorization/token/revocation/registration endpoints, `grant_types_supported: ["authorization_code", "refresh_token"]`, `scopes_supported: ["games", "mcp"]`, and `code_challenge_methods_supported: ["S256"]`.
 4. Unauthenticated `POST /mcp` returns a `401` challenge for `scope=games`; unauthenticated `POST /mcp/producer` returns a `401` challenge for `scope=mcp`.
 5. Wrong resource, wrong scope, expired, revoked, or app-session tokens fail before any read model runs.
-6. A valid `games` token can initialize, list only accessible games, read an accessible projection, read revealed round facts, filter player-visible events, list/read authorized cognitive artifacts, and cannot discover or call trace tools.
+6. A valid `games` token can initialize, list only accessible games, read an accessible projection, read revealed round facts, filter player-visible events, list/read authorized cognitive artifacts, inspect rules/archetypes/owned agents, create/update an owned agent, inspect daily-free queue state, join/leave daily-free idempotently, list joinable open games, and cannot discover or call trace tools or active-match action tools.
 7. A valid producer `mcp` token can initialize `/mcp/producer`, list producer tools, list/read split cognitive artifacts, and read/search private trace content when storage is configured.
 8. A valid games refresh token can refresh once, returns a new access token and rotated refresh token, and the replaced token cannot be reused without revoking the family.
 9. Resource-selected OAuth events and MCP request events include correlation ID, method/tool, user/client/resource, issued scope, auth profile, grant type when present, result, status, provider hint when supplied, app stage when derivable, redirect URI family when present, and denial reason. Dynamic client registration audit records the requested scope set but has no selected auth profile until authorization chooses a resource. Audits never include raw tokens, auth headers, authorization codes, refresh tokens, PKCE verifiers, raw prompts, raw responses, reasoning bodies, private trace content, or storage credentials.
@@ -190,7 +211,8 @@ Before calling the slice ready on staging:
 - App-side rate limiting. Put rate limiting behind a real gateway in a later durable deploy hardening pass.
 - Producer refresh tokens; `/mcp/producer` remains authorization-code plus short-lived access token only.
 - Confidential-client management, client secrets, and a general third-party OAuth app platform.
-- Mutation tools or game lifecycle controls.
+- Active-match mutation tools, game lifecycle controls, or moderator controls through the user-facing MCP.
+- Ranked queues, tournament queues, party queues, invitation-code queues, spectator flows, avatar generation/upload, and true per-agent ELO.
 - Public ChatGPT app submission, broad tester rollout, polished MCP App UX, and a full admin UI for provider install results.
 
 ## References
