@@ -178,7 +178,7 @@ An API-side inspection model that reads persisted durable kernel rows, validates
 
 ## Checkpoint capsule
 
-A persisted phase-boundary diagnostic artifact keyed to the latest canonical event sequence it covers. Durable-kernel capsules store replay/projection data, transcript cursors, Runtime Snapshot evidence, and private continuity references; the hydration passport derives whether a checkpoint is a future hydration candidate. Future resume work must add runner reconstruction before any checkpoint can become a safe resume boundary.
+A persisted phase-boundary diagnostic artifact keyed to the latest canonical event sequence it covers. Durable-kernel capsules store replay/projection data, transcript cursors, Runtime Snapshot evidence, and private continuity references; the hydration passport derives whether a checkpoint has enough evidence for recovery consideration. A checkpoint becomes a safe resume boundary only when runner reconstruction exists for that exact actor coordinate.
 
 ## Phase-Boundary Runtime Snapshot
 
@@ -190,7 +190,7 @@ A validator-derived readiness record for a checkpoint capsule. It reports stamp-
 
 ## Phase-boundary startup resume
 
-The supported API recovery behavior for interrupted live games at implemented completed phase boundaries. A suspended game whose newest phase-boundary checkpoint is at the durable event head and has a supported actor coordinate can be claimed by a fresh owner on API startup, hydrated into a new runner from canonical events plus checkpoint payload, append post-restart canonical events, and complete under the same game ID. Current support covers the original pre-round lobby boundary and persisted normal-round coordinates through reveal; it is not a promise of mid-phase recovery, in-flight LLM recovery, endgame boundary recovery, arbitrary old-game repair, or automatic serverless orchestration.
+The supported API recovery behavior for interrupted live games at implemented completed phase boundaries. A suspended game whose newest phase-boundary checkpoint is at the durable event head and has a supported actor coordinate can be claimed by a fresh owner on API startup, hydrated into a new runner from canonical events plus checkpoint payload, append post-restart canonical events, and complete under the same game ID. Current support covers the original pre-round lobby boundary, persisted normal-round coordinates through reveal, and the first supported endgame-entry coordinate; it is not a promise of mid-phase recovery, in-flight LLM recovery, later endgame boundary recovery, arbitrary old-game repair, or automatic serverless orchestration.
 
 ## Boundary certificate
 
@@ -202,7 +202,7 @@ The checkpoint packing list that names which runtime subsystems are represented 
 
 ## Continuity capsule
 
-Structured private runtime state needed for future resume to preserve strategic behavior. Agent continuity capsules are scoped per player and carry subjective strategy/memory state; the House continuity capsule is scoped per game and carries privileged producer context. Raw prompts, hidden reasoning, and private evidence can link to a capsule but are not themselves continuity state.
+Structured private runtime state used by supported resume paths or future resume work to preserve strategic behavior. Agent continuity capsules are scoped per player and carry subjective strategy/memory state; the House continuity capsule is scoped per game and carries privileged producer context. Raw prompts, hidden reasoning, and private evidence can link to a capsule but are not themselves continuity state.
 
 ## Owner epoch
 
