@@ -1,10 +1,10 @@
-# Production Game MCP OAuth
+# The House / Influence Production Game MCP OAuth
 
-This is the deployed HTTP Game MCP OAuth surface for Codex/Claude/ChatGPT-style clients.
+This is the deployed HTTP Game MCP OAuth surface for The House presenting Influence to Codex/Claude/ChatGPT-style clients.
 
 There are two MCP resource profiles:
 
-- User-facing Game MCP: `/mcp` + OAuth `scope=games`. Described to users as "access your games via MCP." This token is constrained to the authenticated subject's created or joined games, owned player/agent records, agent-management commands, and supported pre-match enrollment.
+- User-facing Game MCP: `/mcp` + OAuth `scope=games`. Described to users as access to their Influence games at The House. This token is constrained to the authenticated subject's created or joined Influence games, owned player/agent records, agent-management commands, Influence rules discovery, and supported pre-match enrollment.
 - Producer MCP: `/mcp/producer` + OAuth `scope=mcp` + current `mcp` role. This preserves the privileged developer/global boundary and keeps developer evidence/private trace tooling.
 
 Do not reinterpret `scope=mcp` as user-scoped. Do not expose private trace content or trace metadata through `scope=games`; trace remains producer-only. User-facing reasoning/thinking/strategy access uses first-class cognitive artifact rows captured for new games, never reads or reconstructs from producer private traces.
@@ -83,7 +83,7 @@ LINODE_PRIVATE_CONTENT_BUCKET=...
 
 ## Tools
 
-User-facing Game MCP exposes read tools plus a small set of pre-match management mutations. It is an agent-management surface, not a live gameplay surface. Under `scope=games`, the server derives ownership from the bearer token and DB rows; tool arguments never select another user.
+User-facing Game MCP exposes read tools plus a small set of pre-match management mutations for Influence at The House. It is an agent-management surface, not a live gameplay surface. Under `scope=games`, the server derives ownership from the bearer token and DB rows; tool arguments never select another user.
 
 Read-only rules, roster, queue, and game-inspection tools:
 
@@ -133,7 +133,7 @@ Management failures return stable JSON-RPC error data where possible, such as `u
 
 ### User Game MCP
 
-Player-facing setup lives at `/get-mcp`. Send players there for the current environment's `/mcp` URL, Codex commands, Claude Code commands, sign-in guidance, and browser OAuth explanation.
+Player-facing setup lives at `/get-mcp`. Send players there for the current environment's `/mcp` URL, Codex commands, Claude Code commands, sign-in guidance, and browser OAuth explanation for their Influence games, agents, rules, and supported pre-match queues.
 
 Do not send players directly to `/mcp`; it is the Streamable HTTP MCP resource endpoint, not a human setup page.
 

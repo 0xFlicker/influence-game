@@ -17,6 +17,7 @@ import {
 } from "@/lib/api";
 import { useE2EAuth } from "@/app/providers";
 import { PERSONAS } from "@/lib/personas";
+import { ACTIVE_GAME } from "@/lib/product-identity";
 import { AgentAvatar } from "@/components/agent-avatar";
 
 // ---------------------------------------------------------------------------
@@ -82,7 +83,7 @@ function CountdownTimer() {
   return (
     <div className="text-center">
       <p className="influence-section-title mb-2">
-        Next game in
+        Next {ACTIVE_GAME.name} game in
       </p>
       <p className="text-4xl font-mono font-bold text-text-primary tracking-wider">
         {formatCountdown(remaining)}
@@ -125,7 +126,7 @@ function QueueSection({
     return (
       <div className="influence-panel rounded-xl p-6 text-center">
         <p className="influence-copy text-sm mb-3">
-          Sign in to queue your agent for tonight&apos;s free game.
+          Sign in to queue your agent for tonight&apos;s {ACTIVE_GAME.name} game.
         </p>
         <button
           onClick={login}
@@ -143,7 +144,7 @@ function QueueSection({
         <div className="flex items-center justify-between">
           <div>
             <p className="text-phase text-sm font-medium mb-1">
-              You&apos;re in the queue
+              You&apos;re in the {ACTIVE_GAME.queueLabel}
             </p>
             <p className="text-text-primary text-lg font-semibold">
               {queueStatus.userEntry!.agentName}
@@ -169,7 +170,7 @@ function QueueSection({
       <div className="influence-panel-dashed rounded-xl p-6 text-center">
         <p className="influence-copy-muted text-sm mb-2">No agents yet</p>
         <p className="influence-copy-muted text-xs mb-3">
-          Create an agent to join the free game queue.
+          Create an agent to join the {ACTIVE_GAME.queueLabel}.
         </p>
         <Link
           href="/dashboard/agents"
@@ -184,7 +185,7 @@ function QueueSection({
   return (
     <div className="influence-panel rounded-xl p-6">
       <p className="influence-section-title mb-3">
-        Select an agent to queue
+        Select an agent for the {ACTIVE_GAME.queueLabel}
       </p>
       <div className="grid gap-2 mb-4">
         {agents.map((agent) => {
@@ -225,7 +226,7 @@ function QueueSection({
         disabled={!selectedAgentId || actionLoading}
         className="influence-button-primary w-full px-6 py-3 rounded-lg text-sm font-medium"
       >
-        {actionLoading ? "Joining..." : "Join Queue"}
+        {actionLoading ? "Joining..." : `Join ${ACTIVE_GAME.name} Queue`}
       </button>
       {actionError && (
         <p className="text-red-400 text-xs mt-3">{actionError}</p>
@@ -252,7 +253,7 @@ function TodayGameSection({
   return (
     <section>
       <h2 className="influence-section-title mb-3">
-        Today&apos;s Game
+        Today&apos;s {ACTIVE_GAME.name} Game
       </h2>
       <div className="influence-panel rounded-xl p-5">
         <div className="flex items-center justify-between">
@@ -296,7 +297,8 @@ function Leaderboard({
   if (entries.length === 0) {
     return (
       <div className="influence-empty-state rounded-xl p-8 text-center text-sm">
-        No ratings yet. Play some free games to appear on the leaderboard.
+        No ratings yet. Play some {ACTIVE_GAME.name} free games to appear on
+        the leaderboard.
       </div>
     );
   }
@@ -481,7 +483,7 @@ export function FreeGameContent() {
                   {queueStatus.queuedCount}
                 </span>{" "}
                 player{queueStatus.queuedCount !== 1 ? "s" : ""} queued for
-                tonight&apos;s game
+                tonight&apos;s {ACTIVE_GAME.name} game
               </>
             ) : queueError ? (
               <span className="text-red-400">{queueError}</span>
@@ -498,7 +500,7 @@ export function FreeGameContent() {
       {/* Queue Join/Leave */}
       <section>
         <h2 className="influence-section-title mb-3">
-          Queue
+          {ACTIVE_GAME.name} Queue
         </h2>
         {agentsError && (
           <div className="rounded-lg p-3 mb-3 text-center border border-yellow-400/30 bg-yellow-400/10">
@@ -523,7 +525,7 @@ export function FreeGameContent() {
       {/* Leaderboard */}
       <section>
         <h2 className="influence-section-title mb-3">
-          Free Track Leaderboard
+          {ACTIVE_GAME.name} Free Track Leaderboard
         </h2>
         {leaderboardError && !leaderboardLoading ? (
           <div className="rounded-xl p-8 text-center border border-red-400/30 bg-red-400/10">

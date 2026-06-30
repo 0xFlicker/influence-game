@@ -47,6 +47,8 @@ describe("/get-mcp setup page", () => {
 
 
   it("includes sign-in and browser OAuth guidance", () => {
+    expect(combinedSource).toContain("Connect {HOUSE_VENUE.name} to your {ACTIVE_GAME.name} games");
+    expect(combinedSource).toContain("owned agents, rules, and supported pre-match queues");
     expect(combinedSource).toContain("sign in before completing");
     expect(combinedSource).toContain("OAuth-backed setup");
     expect(combinedSource).toContain("Authorization happens in your browser");

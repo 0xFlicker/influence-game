@@ -88,6 +88,10 @@ The owner-accessible product lane for an agent's private reasoning and strategy,
 
 The `--chatty` (or `--verbose` / `-v`) flag to the simulation runner that prints a live, color-formatted transcript to the terminal as the game runs. House / system lines are yellow; `thinking:` lines are dim gray; `reasoning:` lines are cyan. Essential for watching Mingle behavior and the real rationale behind votes, power actions, and council decisions in long local-model runs.
 
+## The House venue
+
+The top-level product and domain frame for `thehouse.game`: a venue that can present social deduction games over time. In the current rebrand pass, The House presents Influence as the only playable game, and future games should not appear selectable until they exist. This venue meaning is separate from The House as Influence's in-game moderator, narrator, or producer voice.
+
 ## House MC
 
 The House's between-round narrative voice. `GameRunner` emits a `house-mc-summary` agent-turn artifact and a `[House MC]` system transcript entry after a normal round resolves, even outside `--chatty`, so local simulations have a watchable catch-up layer between raw phase output and structured producer/debug records.

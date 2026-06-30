@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: The House Presents Influence</title>
+  <style>
+    :root {
+      --void: #09090f;
+      --surface: #12131c;
+      --surface-raised: #191b28;
+      --panel: #202332;
+      --line: #34384c;
+      --line-strong: #5d6584;
+      --text: #f3f4f8;
+      --muted: #aeb4c5;
+      --soft: #d7dbea;
+      --phase: #8aa7ff;
+      --accent: #9df2c8;
+      --warn: #ffd487;
+      --danger: #ff9aa8;
+      --ink: #0b1020;
+      color-scheme: dark;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 12% 0%, rgba(138, 167, 255, 0.2), transparent 32rem),
+        linear-gradient(180deg, #0b0c14 0%, var(--void) 42%, #06060a 100%);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.58;
+    }
+
+    a { color: #b8c7ff; }
+    a:hover { color: #e2e8ff; }
+
+    .page {
+      width: min(100% - 32px, 1040px);
+      margin: 0 auto;
+      padding: 44px 0 60px;
+    }
+
+    header {
+      border: 1px solid var(--line);
+      background: rgba(18, 19, 28, 0.82);
+      border-radius: 18px;
+      padding: 30px;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+    }
+
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--accent);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3 {
+      color: var(--text);
+      line-height: 1.12;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 14ch;
+      font-size: clamp(2.35rem, 5vw, 4.8rem);
+      font-weight: 300;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      margin: 42px 0 16px;
+      font-size: 1.55rem;
+      font-weight: 760;
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 760;
+    }
+
+    p {
+      max-width: 76ch;
+      margin: 0 0 14px;
+      color: var(--soft);
+    }
+
+    code {
+      border: 1px solid rgba(138, 167, 255, 0.22);
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.28);
+      padding: 0.1em 0.35em;
+      color: #eef2ff;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 24px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(32, 35, 50, 0.72);
+      color: var(--muted);
+      padding: 4px 11px;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(18, 19, 28, 0.78);
+      padding: 18px;
+    }
+
+    .panel strong,
+    .idea-card strong {
+      color: inherit;
+    }
+
+    .axis-list {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .axis-list li {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(32, 35, 50, 0.58);
+      padding: 12px 14px;
+      color: var(--soft);
+    }
+
+    .idea-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 8px 0 20px;
+    }
+
+    .idea-nav a {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(32, 35, 50, 0.62);
+      color: var(--soft);
+      padding: 7px 11px;
+      text-decoration: none;
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+
+    .idea-card {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: linear-gradient(180deg, rgba(25, 27, 40, 0.94), rgba(14, 15, 24, 0.96));
+      padding: 20px;
+      margin: 16px 0;
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.22);
+    }
+
+    .idea-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .idea-title {
+      display: flex;
+      gap: 10px;
+      align-items: baseline;
+    }
+
+    .idea-id {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 34px;
+      min-height: 30px;
+      border-radius: 999px;
+      background: rgba(138, 167, 255, 0.18);
+      color: #d9e2ff;
+      border: 1px solid rgba(138, 167, 255, 0.36);
+      font-size: 0.82rem;
+      font-weight: 900;
+    }
+
+    .score-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .score {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 0.76rem;
+      font-weight: 800;
+    }
+
+    .score.conf { background: rgba(157, 242, 200, 0.12); color: #bff9dc; border: 1px solid rgba(157, 242, 200, 0.28); }
+    .score.cx { background: rgba(255, 212, 135, 0.12); color: #ffe2aa; border: 1px solid rgba(255, 212, 135, 0.28); }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    dl { margin: 0; }
+    dt {
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    dd {
+      margin: 5px 0 0;
+      color: var(--soft);
+    }
+
+    .diagram {
+      margin: 18px 0;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(7, 8, 14, 0.72);
+      overflow: hidden;
+    }
+
+    svg { display: block; width: 100%; height: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      background: rgba(18, 19, 28, 0.86);
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+      color: var(--soft);
+      font-size: 0.92rem;
+    }
+
+    th {
+      background: rgba(32, 35, 50, 0.72);
+      color: var(--text);
+      font-size: 0.76rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    .references ul {
+      margin: 0;
+      padding-left: 1.2rem;
+      color: var(--soft);
+    }
+
+    .composition-signal {
+      margin-top: 42px;
+      border-top: 1px solid var(--line);
+      padding-top: 18px;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">Ideation</p>
+      <h1>The House Presents Influence</h1>
+      <p style="margin-top: 18px;">Ranked directions for repositioning <code>thehouse.game</code> as the venue while keeping Influence as the first and only available game in this pass.</p>
+      <div class="meta" aria-label="Document metadata">
+        <span class="chip">Date: <time datetime="2026-06-30">2026-06-30</time></span>
+        <span class="chip">Topic: the-house-influence-rebrand</span>
+        <span class="chip">Mode: repo-grounded</span>
+        <span class="chip">Output: html</span>
+      </div>
+    </header>
+
+    <section id="grounding-context">
+      <h2>Grounding Context</h2>
+      <div class="summary-grid">
+        <div class="panel">
+          <h3>Codebase Context</h3>
+          <p>Influence is a Bun and TypeScript monorepo with engine, API, and Next.js web packages. The homepage is currently just <code>Nav</code> plus <code>HomepageHero</code>, so visitor-facing rebrand copy can land without a sweeping page rebuild.</p>
+        </div>
+        <div class="panel">
+          <h3>Product Context</h3>
+          <p>The strategy doc frames Influence as an agent-development and spectator loop for crypto-native AI/game tinkerers. The user asked for the top-level mental model: The House -> all games -> Influence.</p>
+        </div>
+        <div class="panel">
+          <h3>Current Friction</h3>
+          <p>Root metadata, nav, game cards, creation, and queue surfaces still behave as if the only brand is Influence. That is fine for the old domain, but unclear when a visitor lands on <code>thehouse.game</code>.</p>
+        </div>
+        <div class="panel">
+          <h3>MCP Boundary</h3>
+          <p>The user-facing MCP split is already strong: <code>/mcp</code> with <code>scope=games</code> supports rules, owned agents, supported queues, and game inspection; <code>/mcp/producer</code> remains producer-only.</p>
+        </div>
+      </div>
+
+      <p><strong>Past learnings:</strong> production MCP role/resource split docs warn that <code>scope=mcp</code> must not be reinterpreted as player access. Agent-management/queue planning also says queue and rule vocabulary should be LLM-legible, server-owned, and honest about current support.</p>
+      <p><strong>External context:</strong> platform examples support the same direction: Jackbox keeps a top-level brand with individual game titles; Board Game Arena separates platform navigation from game pages; Blood on the Clocktower separates rule/how-to/storyteller resources; Among Us keeps the game hook crisp while rules live elsewhere.</p>
+    </section>
+
+    <section id="topic-axes">
+      <h2>Topic Axes</h2>
+      <ul class="axis-list">
+        <li><strong>Domain and home framing.</strong> How a visitor understands The House and Influence in the first viewport, nav, and metadata.</li>
+        <li><strong>Games list identity and discovery.</strong> How lists, cards, filters, and empty states identify Influence as the current game.</li>
+        <li><strong>Create and queue entry.</strong> How game creation and the free queue communicate that the selected/entered game is Influence.</li>
+        <li><strong>Rules and docs IA.</strong> How Influence rules sit under The House without confusing the in-game House moderator role.</li>
+        <li><strong>MCP and agent-management consolidation.</strong> How agent, queue, and MCP setup information forms one coherent pre-match story.</li>
+      </ul>
+    </section>
+
+    <section id="ranked-ideas">
+      <h2>Ranked Ideas</h2>
+      <nav class="idea-nav" aria-label="Ranked idea links">
+        <a href="#idea-1">1. Venue Pass</a>
+        <a href="#idea-2">2. Games List</a>
+        <a href="#idea-3">3. Create + Queue</a>
+        <a href="#idea-4">4. Rulebook</a>
+        <a href="#idea-5">5. Agent Gateway</a>
+        <a href="#idea-6">6. Identity Constant</a>
+        <a href="#idea-7">7. No Empty Shelves</a>
+      </nav>
+
+      <article class="idea-card" id="idea-1">
+        <div class="idea-head">
+          <div class="idea-title"><span class="idea-id">1</span><h3>The House Venue Pass</h3></div>
+          <div class="score-row"><span class="score conf">Confidence 92%</span><span class="score cx">Complexity Medium</span></div>
+        </div>
+        <p>A coherent first implementation pass: update root metadata, nav/hero copy, CTA labels, games-list labels, creation copy, free-queue copy, and rules framing around "The House presents Influence". Keep internals and routes stable so this is a visitor-facing mental-model pass, not a codebase rename.</p>
+        <div class="diagram" aria-label="The House to Influence mental model">
+          <svg viewBox="0 0 900 260" role="img">
+            <rect width="900" height="260" fill="#07080e"/>
+            <g font-family="Inter, system-ui, sans-serif" text-anchor="middle">
+              <rect x="330" y="26" width="240" height="54" rx="14" fill="#1c2236" stroke="#8aa7ff"/>
+              <text x="450" y="59" fill="#f3f4f8" font-size="22" font-weight="800">The House</text>
+              <path d="M450 88 L450 121" stroke="#8aa7ff" stroke-width="3"/>
+              <polygon points="450,135 438,116 462,116" fill="#8aa7ff"/>
+              <rect x="290" y="138" width="320" height="52" rx="14" fill="#161b2a" stroke="#5d6584"/>
+              <text x="450" y="170" fill="#d7dbea" font-size="19" font-weight="750">All games</text>
+              <path d="M450 198 L450 218" stroke="#9df2c8" stroke-width="3"/>
+              <polygon points="450,236 438,216 462,216" fill="#9df2c8"/>
+              <rect x="340" y="210" width="220" height="40" rx="12" fill="#143023" stroke="#9df2c8"/>
+              <text x="450" y="236" fill="#d9ffe9" font-size="18" font-weight="800">Influence</text>
+              <text x="145" y="57" fill="#aeb4c5" font-size="14">Home, nav, metadata</text>
+              <text x="748" y="166" fill="#aeb4c5" font-size="14">Lists, create, queue</text>
+              <text x="145" y="229" fill="#aeb4c5" font-size="14">Rules and MCP docs</text>
+            </g>
+          </svg>
+        </div>
+        <div class="field-grid">
+          <dl><dt>Axis</dt><dd>Domain and home framing</dd></dl>
+          <dl><dt>Basis</dt><dd><strong>direct:</strong> root page is only <code>Nav</code> plus <code>HomepageHero</code>; metadata and nav say only "Influence"; the user asked for tangible first-pass changes without a sweeping homepage.</dd></dl>
+          <dl><dt>Rationale</dt><dd>This resolves the domain confusion immediately while preserving Influence as the actual product.</dd></dl>
+          <dl><dt>Downsides</dt><dd>Touches several text surfaces and tests; needs a tight scope checklist to avoid accidental platform work.</dd></dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-2">
+        <div class="idea-head">
+          <div class="idea-title"><span class="idea-id">2</span><h3>Influence-Stamped Games List</h3></div>
+          <div class="score-row"><span class="score conf">Confidence 88%</span><span class="score cx">Complexity Low</span></div>
+        </div>
+        <p>Retitle or frame <code>/games</code> as "All games" and label every current row/card as Influence. Search, empty states, counts, and filters should understand "Influence" as the only available game title.</p>
+        <div class="field-grid">
+          <dl><dt>Axis</dt><dd>Games list identity and discovery</dd></dl>
+          <dl><dt>Basis</dt><dd><strong>direct:</strong> current cards show <code>Game #</code>, status, free badge, and phase, but no game identity; the search haystack omits "Influence".</dd></dl>
+          <dl><dt>Rationale</dt><dd>This makes the "all games -> Influence" hierarchy real at the exact moment viewers browse games.</dd></dl>
+          <dl><dt>Downsides</dt><dd>A one-game "All games" page can feel overbuilt unless the copy stays restrained and avoids empty future-game shelves.</dd></dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-3">
+        <div class="idea-head">
+          <div class="idea-title"><span class="idea-id">3</span><h3>Influence-Selected Create And Queue Entry</h3></div>
+          <div class="score-row"><span class="score conf">Confidence 87%</span><span class="score cx">Complexity Medium</span></div>
+        </div>
+        <p>Add a read-only "Game: Influence" ruleset card on game creation, then rename free-queue UI and display copy to "Influence Daily Queue" / "Join Influence Queue". Keep wire values such as <code>daily-free</code> and <code>open-game</code> unchanged.</p>
+        <div class="field-grid">
+          <dl><dt>Axis</dt><dd>Create and queue entry</dd></dl>
+          <dl><dt>Basis</dt><dd><strong>direct:</strong> creation starts at player/model parameters with no game selection; free queue copy says generic "Join Queue" and service labels say "Daily Free".</dd></dl>
+          <dl><dt>Rationale</dt><dd>Players and agent owners should know they are creating or entering Influence, not a generic game slot.</dd></dl>
+          <dl><dt>Downsides</dt><dd>Service display-label changes may affect tests or MCP snapshots; compatibility values should remain stable.</dd></dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-4">
+        <div class="idea-head">
+          <div class="idea-title"><span class="idea-id">4</span><h3>Influence Rulebook Under The House</h3></div>
+          <div class="score-row"><span class="score conf">Confidence 84%</span><span class="score cx">Complexity Medium</span></div>
+        </div>
+        <p>Reframe <code>/rules</code> as a rulebook area under The House with a single active Influence section. Clarify that The House is the venue brand and, inside Influence, the moderator role; fix obvious stale rules wording while there.</p>
+        <div class="field-grid">
+          <dl><dt>Axis</dt><dd>Rules and docs IA</dd></dl>
+          <dl><dt>Basis</dt><dd><strong>direct:</strong> rules already define The House as moderator and contain deeply Influence-specific phases; markdown rules still contain legacy "Whisper" wording.</dd></dl>
+          <dl><dt>Rationale</dt><dd>This prevents the brand container from colliding with game-role terminology while grouping Influence rules as one game under the venue.</dd></dl>
+          <dl><dt>Downsides</dt><dd>A full structured-rules refactor is attractive but should remain separate from this first pass.</dd></dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-5">
+        <div class="idea-head">
+          <div class="idea-title"><span class="idea-id">5</span><h3>House Agent Gateway</h3></div>
+          <div class="score-row"><span class="score conf">Confidence 81%</span><span class="score cx">Complexity Medium</span></div>
+        </div>
+        <p>Consolidate user-facing MCP, agent, and queue copy around one story: The House lets your agents enter Influence and lets AI tools manage pre-match prep. Keep <code>/mcp</code> as <code>scope=games</code>, keep <code>/mcp/producer</code> internal, and update <code>/get-mcp</code>, the dashboard card, and docs headings without changing protocol names.</p>
+        <div class="field-grid">
+          <dl><dt>Axis</dt><dd>MCP and agent-management consolidation</dd></dl>
+          <dl><dt>Basis</dt><dd><strong>direct:</strong> production MCP docs and server instructions already expose rules, owned agents, supported queues, and games under <code>scope=games</code>, with no active-match actions.</dd></dl>
+          <dl><dt>Rationale</dt><dd>The rebrand can turn a set of technically correct surfaces into one understandable product lane for agent owners.</dd></dl>
+          <dl><dt>Downsides</dt><dd>Copy must avoid making "The House MCP" sound like a new protocol or non-Influence data source.</dd></dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-6">
+        <div class="idea-head">
+          <div class="idea-title"><span class="idea-id">6</span><h3>Presentation-Layer Game Identity Constant</h3></div>
+          <div class="score-row"><span class="score conf">Confidence 76%</span><span class="score cx">Complexity Low</span></div>
+        </div>
+        <p>Introduce a tiny presentation-level identity object for the current game: <code>id: "influence"</code>, title "Influence", venue "The House". Thread it through UI copy/search/tests instead of scattering strings, without adding a DB ruleset table.</p>
+        <div class="field-grid">
+          <dl><dt>Axis</dt><dd>Games list identity and discovery</dd></dl>
+          <dl><dt>Basis</dt><dd><strong>reasoned:</strong> UI needs game identity now, but persistent multi-game architecture and per-game agent strategy are explicitly out of scope.</dd></dl>
+          <dl><dt>Rationale</dt><dd>This buys consistency and future readability without paying for a real multi-game model before there is a second game.</dd></dl>
+          <dl><dt>Downsides</dt><dd>Could become faux architecture if it grows beyond display copy.</dd></dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-7">
+        <div class="idea-head">
+          <div class="idea-title"><span class="idea-id">7</span><h3>No Empty Shelves Principle</h3></div>
+          <div class="score-row"><span class="score conf">Confidence 90%</span><span class="score cx">Complexity Low</span></div>
+        </div>
+        <p>Use this as the rebrand guardrail: make room for future games through hierarchy and naming, not disabled Werewolf/Mafia/Salem tiles, fake roadmap cards, dead links, or schema migrations. The visitor should see what works today.</p>
+        <div class="field-grid">
+          <dl><dt>Axis</dt><dd>Domain and home framing</dd></dl>
+          <dl><dt>Basis</dt><dd><strong>direct:</strong> the user explicitly scoped future social deduction games to "making space" and excluded actually adding other games.</dd></dl>
+          <dl><dt>Rationale</dt><dd>This keeps the pass honest: the new brand becomes a venue, not theater around unavailable products.</dd></dl>
+          <dl><dt>Downsides</dt><dd>It is a principle more than a feature, so it should ride alongside implementation rather than stand alone.</dd></dl>
+        </div>
+      </article>
+    </section>
+
+    <section id="rejection-summary">
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead><tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>Nav lockup, metadata first, House-to-Influence CTA pair</td><td>Folded into the broader Venue Pass.</td></tr>
+          <tr><td>2</td><td>Rules source drift cleanup / generated rules hub</td><td>Valuable but too large for this first-pass rebrand.</td></tr>
+          <tr><td>3</td><td>Disabled future-game selector or roadmap tiles</td><td>Scope overrun; future-game space should not become empty product shelves.</td></tr>
+          <tr><td>4</td><td>Route alias or URL-level nesting</td><td>Accepted as a constraint to avoid, not a standalone product idea.</td></tr>
+          <tr><td>5</td><td>Product vocabulary registry / House product map</td><td>Useful follow-up docs, but less tangible than visitor-facing surfaces.</td></tr>
+          <tr><td>6</td><td>Game identity in MCP rules</td><td>Good follow-on implementation detail; not the first-pass centerpiece.</td></tr>
+          <tr><td>7</td><td>All Games IA tests</td><td>Verification tactic, not an ideation survivor.</td></tr>
+          <tr><td>8</td><td>Breadcrumb pattern for future nesting</td><td>Lower-value and likely premature without route-level game nesting.</td></tr>
+          <tr><td>9</td><td>Crew/Impostor one-sentence hook</td><td>Copy polish; below ambition floor as a standalone direction.</td></tr>
+          <tr><td>10</td><td>Lobby placard pattern</td><td>Nice tone, but weaker than explicit game and queue naming.</td></tr>
+          <tr><td>11</td><td>Do not rename internals / do not use "House Game"</td><td>Retained as guardrails inside stronger ideas.</td></tr>
+          <tr><td>12</td><td>Queue copy should say enter, not play</td><td>Folded into Influence-Selected Create And Queue Entry.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="references" id="sources">
+      <h2>Sources And References</h2>
+      <ul>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/STRATEGY.md">STRATEGY.md</a> - product strategy and target user framing.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/web/src/components/home/homepage-hero.tsx">HomepageHero</a> - current root hero, CTAs, and live game/free-queue status pulls.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/web/src/app/games/games-browser.tsx">GamesBrowser</a> - games list cards, filters, and search behavior.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/web/src/app/games/free/free-game-content.tsx">FreeGameContent</a> - current free queue wording and agent selection flow.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/web/src/app/rules/page.tsx">Rules page</a> - current Influence rules surface and House moderator language.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/game-mcp-production-oauth.md">Production Game MCP OAuth</a> - user-facing <code>/mcp</code> and producer <code>/mcp/producer</code> boundary.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/solutions/architecture-patterns/production-mcp-role-resource-split.md">Production MCP Role Resource Split</a> - durable learning for scope and tool boundaries.</li>
+        <li><a href="https://www.jackboxgames.com/games/">Jackbox Games</a> - platform brand with individual game catalog pattern.</li>
+        <li><a href="https://en.boardgamearena.com/gamelist">Board Game Arena game list</a> - platform navigation and game catalog pattern.</li>
+        <li><a href="https://bloodontheclocktower.com/">Blood on the Clocktower</a> - complex social-deduction resource IA.</li>
+        <li><a href="https://www.innersloth.com/games/among-us/">Among Us official page</a> - concise game hook with richer rules elsewhere.</li>
+      </ul>
+    </section>
+
+    <footer class="composition-signal">
+      Composed 2026-06-30 by ce-ideate from the user prompt about rebranding Influence under <code>thehouse.game</code>.
+    </footer>
+  </main>
+</body>
+</html>

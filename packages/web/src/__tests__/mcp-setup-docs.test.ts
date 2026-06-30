@@ -16,6 +16,7 @@ describe("MCP setup docs alignment", () => {
   it("points player-facing setup to /get-mcp", () => {
     expect(docs).toContain("Player-facing setup lives at `/get-mcp`");
     expect(docs).toContain("Do not send players directly to `/mcp`");
+    expect(docs).toContain("Influence games, agents, rules, and supported pre-match queues");
   });
 
   it("keeps producer setup in internal docs and out of the player page", () => {

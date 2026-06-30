@@ -211,10 +211,10 @@ describe("dashboard mission-control overview", () => {
   });
 
   it("renders the Games MCP setup card destination and history-aware copy", () => {
-    const html = renderToString(<McpSetupCard hasHistory />);
+    const html = withoutReactTextMarkers(renderToString(<McpSetupCard hasHistory />));
 
     expect(html).toContain('data-testid="dashboard-mcp-setup-card"');
-    expect(html).toContain("Connect your Influence games to Codex or Claude Code");
+    expect(html).toContain("Connect The House to your Influence games");
     expect(html).toContain('href="/get-mcp"');
     expect(html).toContain("without granting maintainer access");
   });

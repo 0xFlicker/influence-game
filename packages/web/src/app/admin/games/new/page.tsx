@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { Nav } from "@/components/nav";
 import { AdminGate } from "@/components/admin-gate";
+import { ACTIVE_GAME, HOUSE_VENUE } from "@/lib/product-identity";
 import { CreateGameForm } from "./create-game-form";
 
 export const metadata = {
-  title: "New Game — Influence Admin",
+  title: `Create ${ACTIVE_GAME.name} Game - ${HOUSE_VENUE.name} Admin`,
 };
 
 export default function NewGamePage() {
@@ -21,7 +22,9 @@ export default function NewGamePage() {
               ← Dashboard
             </Link>
             <span className="text-white/20">/</span>
-            <h1 className="text-2xl font-bold text-white">Create New Game</h1>
+            <h1 className="text-2xl font-bold text-white">
+              Create {ACTIVE_GAME.name} Game
+            </h1>
           </div>
           <CreateGameForm />
         </AdminGate>
