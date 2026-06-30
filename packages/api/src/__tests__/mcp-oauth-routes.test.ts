@@ -518,6 +518,98 @@ describe("MCP OAuth routes", () => {
     }
   });
 
+  test("registers provider-hosted clients without explicit scope for action-level authorization", async () => {
+    const registration = await app.request("/api/oauth/mcp/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "ChatGPT connector",
+        redirect_uris: [CHATGPT_REDIRECT_URIS[1]],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+      }),
+    });
+
+    expect(registration.status).toBe(201);
+    const registrationJson = await jsonObject(registration);
+    expect(registrationJson).toMatchObject({
+      redirect_uris: [CHATGPT_REDIRECT_URIS[1]],
+      scope: MCP_OAUTH_ALL_SCOPE,
+    });
+    const dynamicClientId = String(registrationJson.client_id);
+    const { token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "producer");
+
+    const preview = await app.request("/api/oauth/mcp/authorize", {
+      method: "POST",
+      headers: jsonAuthHeaders(sessionToken),
+      body: JSON.stringify(authorizeBody({
+        clientId: dynamicClientId,
+        redirectUri: CHATGPT_REDIRECT_URIS[1],
+        codeVerifier: "provider-action-scopes",
+        scope: MCP_OAUTH_ALL_SCOPE,
+        decision: "inspect",
+      })),
+    });
+
+    expect(preview.status).toBe(200);
+    expect(await jsonObject(preview)).toMatchObject({
+      clientId: dynamicClientId,
+      redirectUri: CHATGPT_REDIRECT_URIS[1],
+      scope: MCP_OAUTH_FULL_USER_SCOPE,
+      selectedScopes: MCP_OAUTH_FULL_USER_SCOPE.split(" "),
+      blockedScopes: [],
+      hasProducerRole: true,
+    });
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      event: "mcp.oauth.register",
+      clientId: dynamicClientId,
+      scope: MCP_OAUTH_ALL_SCOPE,
+      result: "success",
+    }));
+  });
+
+  test("keeps omitted scope read-only for generic dynamic clients", async () => {
+    const registration = await app.request("/api/oauth/mcp/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "Generic MCP client",
+        redirect_uris: [DYNAMIC_REDIRECT_URI],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+      }),
+    });
+
+    expect(registration.status).toBe(201);
+    const registrationJson = await jsonObject(registration);
+    expect(registrationJson).toMatchObject({
+      redirect_uris: [DYNAMIC_REDIRECT_URI],
+      scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
+    });
+    const dynamicClientId = String(registrationJson.client_id);
+    const { token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "producer");
+
+    const preview = await app.request("/api/oauth/mcp/authorize", {
+      method: "POST",
+      headers: jsonAuthHeaders(sessionToken),
+      body: JSON.stringify(authorizeBody({
+        clientId: dynamicClientId,
+        redirectUri: DYNAMIC_REDIRECT_URI,
+        codeVerifier: "generic-default-scope",
+        scope: MCP_OAUTH_ALL_SCOPE,
+        decision: "inspect",
+      })),
+    });
+
+    expect(preview.status).toBe(400);
+    expect(await jsonObject(preview)).toMatchObject({
+      error: "invalid_scope",
+      error_description: "scope is not registered for this client",
+    });
+  });
+
   test("accepts code-owned Grok OAuth callback during dynamic registration", async () => {
     const registration = await app.request("/api/oauth/mcp/register", {
       method: "POST",

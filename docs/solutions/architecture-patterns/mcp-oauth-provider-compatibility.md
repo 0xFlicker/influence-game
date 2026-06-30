@@ -103,6 +103,8 @@ provider-hosted app redirect:
 
 When a provider omits optional OAuth `resource`, tolerate omission only because `/mcp` is the single canonical resource. Do not loosen scope validation. Requested and selected scopes must still be a supported non-empty set, `agents:write` must include `agents:read`, and `producer` must be grantable only by current producer-role users.
 
+When a provider-hosted dynamic client omits registration `scope`, register the full supported scope envelope for that exact provider callback. ChatGPT can request action-level OAuth scopes later, and a narrow generic default can otherwise reject the request before the consent screen has a chance to narrow it. Keep the grant defaults safe: non-producer scopes remain selected by default, while `producer` is only available to current producer-role users and must be explicitly selected.
+
 Refresh tokens are non-producer only. Provider clients may register `refresh_token`, and the authorization server may advertise `authorization_code` plus `refresh_token`, but issuance stays limited to grants that do not include `producer`.
 
 ## Why This Matters

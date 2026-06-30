@@ -1510,7 +1510,7 @@ function validateClientRegistrationInput(input: McpOAuthClientRegistrationInput)
   }
 
   const requestedScope = input.scope === undefined
-    ? normalizeMcpOAuthScopeSet(MCP_OAUTH_DEFAULT_SCOPES)
+    ? defaultRegisteredScopeForRedirectUris(redirectUris)
     : parseMcpOAuthRegistrationScope(input.scope);
   if (!requestedScope) {
     return clientRegistrationError(
@@ -1549,6 +1549,15 @@ function clientRegistrationError(
   errorDescription: string,
 ): { ok: false; error: string; errorDescription: string } {
   return { ok: false, error, errorDescription };
+}
+
+function defaultRegisteredScopeForRedirectUris(redirectUris: readonly string[]): string {
+  const hasProviderHostedRedirect = redirectUris.some((redirectUri) =>
+    providerRedirectRuleForUri(redirectUri)
+  );
+  return normalizeMcpOAuthScopeSet(
+    hasProviderHostedRedirect ? MCP_OAUTH_SCOPE_VALUES : MCP_OAUTH_DEFAULT_SCOPES,
+  );
 }
 
 function isAllowedRedirectUri(redirectUri: string): boolean {

@@ -75,7 +75,7 @@ LINODE_PRIVATE_CONTENT_BUCKET=...
 
 ## OAuth Behavior
 
-Dynamic client registration is enabled for public MCP clients. Registered clients may store any supported non-empty scope set. If the client omits scope, registration defaults to `agents:read games:read`.
+Dynamic client registration is enabled for public MCP clients. Registered clients may store any supported non-empty scope set. If a generic loopback client omits scope, registration defaults to `agents:read games:read`. If a code-owned provider-hosted client omits scope, registration stores the full supported scope envelope so provider action-level OAuth requests can reach the consent screen; the consent preview still defaults to the safe non-producer scopes and keeps `producer` explicitly role-gated.
 
 Authorization requests must ask for one or more supported scopes. The browser consent screen previews the requested scopes, hides scopes the current user cannot grant, and submits the exact selected scope set as `selected_scope`.
 
