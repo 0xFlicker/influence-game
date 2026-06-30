@@ -12,9 +12,6 @@ import {
 } from "../routes/mcp-oauth.js";
 import {
   MCP_OAUTH_CLIENT_ID,
-  MCP_OAUTH_GAMES_SCOPE,
-  MCP_OAUTH_SCOPE,
-  getMcpOAuthProducerResourceUri,
   getMcpOAuthResourceUri,
   hashOpaqueSecret,
   pkceS256,
@@ -23,23 +20,25 @@ import { setupTestDB } from "./test-utils.js";
 
 const MCP_ADDRESS = "0xmcp000000000000000000000000000000000011";
 const NON_MCP_ADDRESS = "0xnomcp000000000000000000000000000000001";
+const MCP_OAUTH_DEFAULT_READ_SCOPE = "agents:read games:read";
+const MCP_OAUTH_FULL_USER_SCOPE = "agents:read agents:write games:read";
+const MCP_OAUTH_ALL_SCOPE = "agents:read agents:write games:read producer";
+const MCP_OAUTH_SCOPE = "producer";
 const REDIRECT_URI = "http://127.0.0.1:34789/oauth/callback";
 const DYNAMIC_REDIRECT_URI = "http://127.0.0.1:49281/codex/callback";
 const CLAUDE_REDIRECT_URI = "https://claude.ai/api/mcp/auth_callback";
 const CHATGPT_REDIRECT_URI = "https://chatgpt.com/connector/oauth/_syG1DzKsjXV";
 const GROK_REDIRECT_URI = "https://grok.com/connectors-oauth-exchange-code/";
 const RESOURCE_URI = "http://127.0.0.1:3000/mcp";
-const PRODUCER_RESOURCE_URI = "http://127.0.0.1:3000/mcp/producer";
+const PRODUCER_RESOURCE_URI = RESOURCE_URI;
 const DEPLOYED_RESOURCE_URI = "https://influence.example/mcp";
-const DEPLOYED_PRODUCER_RESOURCE_URI = "https://influence.example/mcp/producer";
 const INTROSPECTION_SECRET = "test-introspection-secret";
 
 beforeAll(() => {
   process.env.JWT_SECRET = "test-jwt-secret-mcp-oauth";
   process.env.ADMIN_ADDRESS = "0xadmin000000000000000000000000000000000001";
   process.env.INFLUENCE_MCP_INTROSPECTION_SECRET = INTROSPECTION_SECRET;
-  process.env.MCP_OAUTH_GAMES_RESOURCE_URI = RESOURCE_URI;
-  process.env.MCP_OAUTH_PRODUCER_RESOURCE_URI = PRODUCER_RESOURCE_URI;
+  process.env.MCP_OAUTH_RESOURCE_URI = RESOURCE_URI;
   process.env.WEB_BASE_URL = "http://localhost:3001";
 });
 
@@ -64,27 +63,22 @@ describe("MCP OAuth routes", () => {
     expect(await jsonObject(protectedResource)).toMatchObject({
       resource: RESOURCE_URI,
       authorization_servers: ["http://127.0.0.1:3000"],
-      scopes_supported: ["games"],
+      scopes_supported: ["agents:read", "agents:write", "games:read", "producer"],
       bearer_methods_supported: ["header"],
-      resource_name: "Influence Games MCP",
+      resource_name: "Influence MCP",
     });
 
     const protectedResourceForPath = await app.request("/.well-known/oauth-protected-resource/mcp");
     expect(protectedResourceForPath.status).toBe(200);
     expect(await jsonObject(protectedResourceForPath)).toMatchObject({
       resource: RESOURCE_URI,
-      scopes_supported: ["games"],
+      scopes_supported: ["agents:read", "agents:write", "games:read", "producer"],
     });
 
     const producerProtectedResource = await app.request(
       "/.well-known/oauth-protected-resource/mcp/producer",
     );
-    expect(producerProtectedResource.status).toBe(200);
-    expect(await jsonObject(producerProtectedResource)).toMatchObject({
-      resource: PRODUCER_RESOURCE_URI,
-      scopes_supported: ["mcp"],
-      resource_name: "Influence Producer MCP",
-    });
+    expect(producerProtectedResource.status).toBe(404);
 
     const authorizationServer = await app.request("/.well-known/oauth-authorization-server");
     expect(authorizationServer.status).toBe(200);
@@ -94,7 +88,7 @@ describe("MCP OAuth routes", () => {
       token_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/token",
       revocation_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/revoke",
       registration_endpoint: "http://127.0.0.1:3000/api/oauth/mcp/register",
-      scopes_supported: ["games", "mcp"],
+      scopes_supported: ["agents:read", "agents:write", "games:read", "producer"],
       grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
@@ -103,12 +97,10 @@ describe("MCP OAuth routes", () => {
   });
 
   test("derives public API OAuth metadata from the games resource origin", async () => {
-    const previousGamesResource = process.env.MCP_OAUTH_GAMES_RESOURCE_URI;
-    const previousProducerResource = process.env.MCP_OAUTH_PRODUCER_RESOURCE_URI;
+    const previousResource = process.env.MCP_OAUTH_RESOURCE_URI;
     const previousWebBase = process.env.WEB_BASE_URL;
 
-    process.env.MCP_OAUTH_GAMES_RESOURCE_URI = DEPLOYED_RESOURCE_URI;
-    process.env.MCP_OAUTH_PRODUCER_RESOURCE_URI = DEPLOYED_PRODUCER_RESOURCE_URI;
+    process.env.MCP_OAUTH_RESOURCE_URI = DEPLOYED_RESOURCE_URI;
     process.env.WEB_BASE_URL = "https://influence.example";
 
     try {
@@ -133,8 +125,7 @@ describe("MCP OAuth routes", () => {
         authorization_servers: ["https://influence.example"],
       });
     } finally {
-      process.env.MCP_OAUTH_GAMES_RESOURCE_URI = previousGamesResource;
-      process.env.MCP_OAUTH_PRODUCER_RESOURCE_URI = previousProducerResource;
+      process.env.MCP_OAUTH_RESOURCE_URI = previousResource;
       process.env.WEB_BASE_URL = previousWebBase;
     }
   });
@@ -222,7 +213,7 @@ describe("MCP OAuth routes", () => {
         redirect_uris: [DYNAMIC_REDIRECT_URI],
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
-        scope: "games mcp",
+        scope: MCP_OAUTH_ALL_SCOPE,
         token_endpoint_auth_method: "none",
       }),
     });
@@ -234,7 +225,7 @@ describe("MCP OAuth routes", () => {
       redirect_uris: [DYNAMIC_REDIRECT_URI],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
-      scope: "games mcp",
+      scope: MCP_OAUTH_ALL_SCOPE,
       token_endpoint_auth_method: "none",
     });
 
@@ -249,7 +240,7 @@ describe("MCP OAuth routes", () => {
         clientId: dynamicClientId,
         redirectUri: DYNAMIC_REDIRECT_URI,
         codeVerifier,
-        scope: "games mcp",
+        scope: MCP_OAUTH_ALL_SCOPE,
         decision: "inspect",
       })),
     });
@@ -259,9 +250,11 @@ describe("MCP OAuth routes", () => {
       clientId: dynamicClientId,
       redirectUri: DYNAMIC_REDIRECT_URI,
       resource: RESOURCE_URI,
-      scope: MCP_OAUTH_GAMES_SCOPE,
-      authProfile: "games_subject",
-      hasMcpRole: false,
+      scope: MCP_OAUTH_FULL_USER_SCOPE,
+      selectedScopes: MCP_OAUTH_FULL_USER_SCOPE.split(" "),
+      blockedScopes: [expect.objectContaining({ scope: "producer" })],
+      authProfile: "subject",
+      hasProducerRole: false,
     });
 
     const authorize = await app.request("/api/oauth/mcp/authorize", {
@@ -271,7 +264,8 @@ describe("MCP OAuth routes", () => {
         clientId: dynamicClientId,
         redirectUri: DYNAMIC_REDIRECT_URI,
         codeVerifier,
-        scope: "games mcp",
+        scope: MCP_OAUTH_ALL_SCOPE,
+        selectedScope: MCP_OAUTH_FULL_USER_SCOPE,
         state: "dynamic-state",
         decision: "approve",
       })),
@@ -301,7 +295,7 @@ describe("MCP OAuth routes", () => {
     const tokenJson = await jsonObject(token);
     expect(tokenJson).toMatchObject({
       token_type: "Bearer",
-      scope: "games",
+      scope: MCP_OAUTH_FULL_USER_SCOPE,
       resource: RESOURCE_URI,
     });
     expect(typeof tokenJson.refresh_token).toBe("string");
@@ -311,7 +305,7 @@ describe("MCP OAuth routes", () => {
       active: true,
       client_id: dynamicClientId,
       resource: RESOURCE_URI,
-      scope: "games",
+      scope: MCP_OAUTH_FULL_USER_SCOPE,
     });
 
     const registrationAudit = auditEvents.find((event) =>
@@ -320,7 +314,7 @@ describe("MCP OAuth routes", () => {
     expect(registrationAudit).toEqual(expect.objectContaining({
       event: "mcp.oauth.register",
       clientId: dynamicClientId,
-      scope: "games mcp",
+      scope: MCP_OAUTH_ALL_SCOPE,
       result: "success",
       status: 201,
     }));
@@ -329,8 +323,10 @@ describe("MCP OAuth routes", () => {
       event: "mcp.oauth.authorize",
       clientId: dynamicClientId,
       resource: RESOURCE_URI,
-      scope: "games mcp",
-      authProfile: "games_subject",
+      scope: MCP_OAUTH_FULL_USER_SCOPE,
+      requestedScope: MCP_OAUTH_ALL_SCOPE,
+      selectedScope: MCP_OAUTH_FULL_USER_SCOPE,
+      authProfile: "subject",
       decision: "approve",
       result: "success",
       status: 200,
@@ -339,8 +335,8 @@ describe("MCP OAuth routes", () => {
       event: "mcp.oauth.token",
       clientId: dynamicClientId,
       resource: RESOURCE_URI,
-      scope: "games",
-      authProfile: "games_subject",
+      scope: MCP_OAUTH_FULL_USER_SCOPE,
+      authProfile: "subject",
       grantType: "authorization_code",
       result: "success",
       status: 200,
@@ -356,7 +352,7 @@ describe("MCP OAuth routes", () => {
         redirect_uris: [CLAUDE_REDIRECT_URI],
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
-        scope: MCP_OAUTH_GAMES_SCOPE,
+        scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
         token_endpoint_auth_method: "none",
       }),
     });
@@ -375,7 +371,7 @@ describe("MCP OAuth routes", () => {
     expect(dynamicToken.status).toBe(200);
     expect(await jsonObject(dynamicToken)).toMatchObject({
       token_type: "Bearer",
-      scope: "games",
+      scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
       resource: RESOURCE_URI,
     });
 
@@ -397,7 +393,7 @@ describe("MCP OAuth routes", () => {
         redirect_uris: [CHATGPT_REDIRECT_URI],
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
-        scope: MCP_OAUTH_GAMES_SCOPE,
+        scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
         token_endpoint_auth_method: "none",
       }),
     });
@@ -436,7 +432,7 @@ describe("MCP OAuth routes", () => {
         redirect_uris: [GROK_REDIRECT_URI],
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
-        scope: MCP_OAUTH_GAMES_SCOPE,
+        scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
         token_endpoint_auth_method: "none",
       }),
     });
@@ -475,7 +471,7 @@ describe("MCP OAuth routes", () => {
         redirect_uris: [GROK_REDIRECT_URI],
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
-        scope: MCP_OAUTH_GAMES_SCOPE,
+        scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
         token_endpoint_auth_method: "none",
       }),
     });
@@ -487,7 +483,7 @@ describe("MCP OAuth routes", () => {
       response_type: "code",
       client_id: dynamicClientId,
       redirect_uri: GROK_REDIRECT_URI,
-      scope: MCP_OAUTH_GAMES_SCOPE,
+      scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
       state: "grok-no-resource-state",
       code_challenge: pkceS256(codeVerifier),
       code_challenge_method: "S256",
@@ -504,14 +500,18 @@ describe("MCP OAuth routes", () => {
       clientId: dynamicClientId,
       redirectUri: GROK_REDIRECT_URI,
       resource: RESOURCE_URI,
-      scope: MCP_OAUTH_GAMES_SCOPE,
-      authProfile: "games_subject",
+      scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
+      authProfile: "subject",
     });
 
     const authorize = await app.request("/api/oauth/mcp/authorize", {
       method: "POST",
       headers: jsonAuthHeaders(sessionToken),
-      body: JSON.stringify({ ...authorizationRequest, decision: "approve" }),
+      body: JSON.stringify({
+        ...authorizationRequest,
+        decision: "approve",
+        selected_scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
+      }),
     });
 
     expect(authorize.status).toBe(200);
@@ -536,7 +536,7 @@ describe("MCP OAuth routes", () => {
     const tokenJson = await jsonObject(token);
     expect(tokenJson).toMatchObject({
       token_type: "Bearer",
-      scope: MCP_OAUTH_GAMES_SCOPE,
+      scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
       resource: RESOURCE_URI,
     });
     expect(typeof tokenJson.refresh_token).toBe("string");
@@ -544,8 +544,8 @@ describe("MCP OAuth routes", () => {
       event: "mcp.oauth.authorize",
       clientId: dynamicClientId,
       resource: RESOURCE_URI,
-      scope: MCP_OAUTH_GAMES_SCOPE,
-      authProfile: "games_subject",
+      scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
+      authProfile: "subject",
       result: "success",
       status: 200,
     }));
@@ -553,8 +553,8 @@ describe("MCP OAuth routes", () => {
       event: "mcp.oauth.token",
       clientId: dynamicClientId,
       resource: RESOURCE_URI,
-      scope: MCP_OAUTH_GAMES_SCOPE,
-      authProfile: "games_subject",
+      scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
+      authProfile: "subject",
       grantType: "authorization_code",
       result: "success",
       status: 200,
@@ -571,7 +571,7 @@ describe("MCP OAuth routes", () => {
         redirect_uris: [chatGptRedirectUri],
         grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
-        scope: MCP_OAUTH_GAMES_SCOPE,
+        scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
         token_endpoint_auth_method: "none",
       }),
     });
@@ -628,7 +628,7 @@ describe("MCP OAuth routes", () => {
     expect(await jsonObject(secondIntrospection)).toMatchObject({
       active: true,
       resource: RESOURCE_URI,
-      scope: "games",
+      scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
     });
 
     expect(auditEvents).toContainEqual(expect.objectContaining({
@@ -668,11 +668,11 @@ describe("MCP OAuth routes", () => {
       error_description: "Refresh token does not match this token request",
     });
 
-    const wrongResource = await refreshAccess(refreshToken, { resource: PRODUCER_RESOURCE_URI });
+    const wrongResource = await refreshAccess(refreshToken, { resource: "https://example.com/mcp" });
     expect(wrongResource.status).toBe(400);
     expect(await jsonObject(wrongResource)).toMatchObject({
-      error: "invalid_grant",
-      error_description: "Refresh token does not match this token request",
+      error: "invalid_target",
+      error_description: "resource must match the canonical MCP resource",
     });
 
     const wrongScope = await refreshAccess(refreshToken, { scope: MCP_OAUTH_SCOPE });
@@ -749,13 +749,13 @@ describe("MCP OAuth routes", () => {
         redirect_uris: [DYNAMIC_REDIRECT_URI],
         grant_types: ["authorization_code"],
         response_types: ["code"],
-        scope: MCP_OAUTH_GAMES_SCOPE,
+        scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
         token_endpoint_auth_method: "none",
       }),
     });
     expect(registration.status).toBe(201);
     const dynamicClientId = String((await jsonObject(registration)).client_id);
-    const { token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "mcp");
+    const { token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "producer");
 
     const producerAuthorize = await app.request("/api/oauth/mcp/authorize", {
       method: "POST",
@@ -779,7 +779,7 @@ describe("MCP OAuth routes", () => {
       clientId: dynamicClientId,
       resource: PRODUCER_RESOURCE_URI,
       scope: MCP_OAUTH_SCOPE,
-      authProfile: "producer_mcp",
+      authProfile: "producer",
       result: "failure",
       status: 400,
       denialReason: "invalid_scope",
@@ -788,8 +788,8 @@ describe("MCP OAuth routes", () => {
     expect(rows).toHaveLength(0);
   });
 
-  test("issues and introspects a global producer mcp token for users with the mcp role", async () => {
-    const { userId, token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "mcp");
+  test("issues and introspects a global producer mcp token for users with the producer role", async () => {
+    const { userId, token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "producer");
     const codeVerifier = "local-helper-verifier";
     const state = "state-happy-path";
 
@@ -809,9 +809,12 @@ describe("MCP OAuth routes", () => {
     expect(await preview.json()).toMatchObject({
       clientId: MCP_OAUTH_CLIENT_ID,
       resource: PRODUCER_RESOURCE_URI,
-      scope: MCP_OAUTH_SCOPE,
-      authProfile: "producer_mcp",
-      hasMcpRole: true,
+      scope: "",
+      authProfile: "subject",
+      defaultSelectedScopes: [],
+      selectedScopes: [],
+      grantableScopes: [expect.objectContaining({ scope: MCP_OAUTH_SCOPE })],
+      hasProducerRole: true,
       walletAddress: MCP_ADDRESS,
     });
 
@@ -855,7 +858,7 @@ describe("MCP OAuth routes", () => {
     expect(tokenJson).toMatchObject({
       token_type: "Bearer",
       expires_in: 3600,
-      scope: "mcp",
+      scope: MCP_OAUTH_SCOPE,
       audience: "game-mcp",
       purpose: "mcp_access",
       resource: PRODUCER_RESOURCE_URI,
@@ -870,7 +873,7 @@ describe("MCP OAuth routes", () => {
       iss: "influence-game-mcp",
       aud: "game-mcp",
       resource: PRODUCER_RESOURCE_URI,
-      scope: "mcp",
+      scope: MCP_OAUTH_SCOPE,
       token_type: "Bearer",
       purpose: "mcp_access",
     });
@@ -886,8 +889,8 @@ describe("MCP OAuth routes", () => {
       walletAddress: MCP_ADDRESS,
       clientId: MCP_OAUTH_CLIENT_ID,
       resource: PRODUCER_RESOURCE_URI,
-      scope: "mcp",
-      authProfile: "producer_mcp",
+      scope: MCP_OAUTH_SCOPE,
+      authProfile: "producer",
       decision: "approve",
       result: "success",
       status: 200,
@@ -898,8 +901,8 @@ describe("MCP OAuth routes", () => {
       walletAddress: MCP_ADDRESS,
       clientId: MCP_OAUTH_CLIENT_ID,
       resource: PRODUCER_RESOURCE_URI,
-      scope: "mcp",
-      authProfile: "producer_mcp",
+      scope: MCP_OAUTH_SCOPE,
+      authProfile: "producer",
       result: "success",
       status: 200,
     }));
@@ -908,8 +911,8 @@ describe("MCP OAuth routes", () => {
       userId,
       clientId: MCP_OAUTH_CLIENT_ID,
       resource: PRODUCER_RESOURCE_URI,
-      scope: "mcp",
-      authProfile: "producer_mcp",
+      scope: MCP_OAUTH_SCOPE,
+      authProfile: "producer",
       result: "success",
       active: true,
       status: 200,
@@ -923,7 +926,7 @@ describe("MCP OAuth routes", () => {
     expect(serializedAudit).not.toContain("Authorization");
   });
 
-  test("refuses producer authorization for users without the mcp role", async () => {
+  test("refuses producer authorization for users without the producer role", async () => {
     const { token: sessionToken } = await createUserSession(db, NON_MCP_ADDRESS);
 
     const authorize = await app.request("/api/oauth/mcp/authorize", {
@@ -945,14 +948,14 @@ describe("MCP OAuth routes", () => {
   });
 
   test("rejects invalid authorization inputs without issuing a code", async () => {
-    const { token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "mcp");
+    const { token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "producer");
 
     const invalidScope = await app.request("/api/oauth/mcp/authorize", {
       method: "POST",
       headers: jsonAuthHeaders(sessionToken),
       body: JSON.stringify({
         ...authorizeBody({ decision: "approve" }),
-        scope: "mcp profile",
+        scope: "producer profile",
       }),
     });
     expect(invalidScope.status).toBe(400);
@@ -964,7 +967,7 @@ describe("MCP OAuth routes", () => {
     expect(auditEvents).toContainEqual(expect.objectContaining({
       event: "mcp.oauth.authorize",
       clientId: MCP_OAUTH_CLIENT_ID,
-      scope: "mcp profile",
+      scope: "producer profile",
       result: "failure",
       status: 400,
       denialReason: "invalid_scope",
@@ -979,13 +982,13 @@ describe("MCP OAuth routes", () => {
           redirectUri: "https://example.com/oauth/callback",
           decision: "approve",
         }),
-        scope: "mcp profile",
+        scope: "producer profile",
       }),
     });
     expect(unsafeRedirectError.status).toBe(400);
     expect(await jsonObject(unsafeRedirectError)).toEqual({
       error: "invalid_scope",
-      error_description: "scope must include only games and/or mcp",
+      error_description: "scope must include one or more supported MCP scopes",
     });
 
     const invalidRedirect = await app.request("/api/oauth/mcp/authorize", {
@@ -1013,18 +1016,17 @@ describe("MCP OAuth routes", () => {
     expect(plainChallenge.status).toBe(400);
     expect((await jsonObject(plainChallenge)).error).toBe("invalid_request");
 
-    const ambiguousResource = await app.request("/api/oauth/mcp/authorize", {
+    const dependencyScope = await app.request("/api/oauth/mcp/authorize", {
       method: "POST",
       headers: jsonAuthHeaders(sessionToken),
       body: JSON.stringify({
-        ...authorizeBody({ decision: "approve", scope: "games mcp" }),
-        resource: undefined,
+        ...authorizeBody({ decision: "approve", scope: "agents:write" }),
       }),
     });
-    expect(ambiguousResource.status).toBe(400);
-    expect(await jsonObject(ambiguousResource)).toMatchObject({
-      error: "invalid_target",
-      error_description: "resource must match the requested MCP scope",
+    expect(dependencyScope.status).toBe(400);
+    expect(await jsonObject(dependencyScope)).toMatchObject({
+      error: "invalid_scope",
+      error_description: "agents:write requires agents:read",
     });
 
     const wrongResource = await app.request("/api/oauth/mcp/authorize", {
@@ -1038,7 +1040,7 @@ describe("MCP OAuth routes", () => {
     expect(wrongResource.status).toBe(400);
     expect(await jsonObject(wrongResource)).toMatchObject({
       error: "invalid_target",
-      error_description: "resource must match the requested MCP scope",
+      error_description: "resource must match the canonical MCP resource",
     });
 
     const rows = await db.select().from(schema.mcpOauthAuthorizationCodes);
@@ -1051,7 +1053,7 @@ describe("MCP OAuth routes", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         redirect_uris: ["http://example.com/oauth/callback"],
-        scope: "mcp",
+        scope: MCP_OAUTH_SCOPE,
       }),
     });
     expect(externalHttp.status).toBe(400);
@@ -1064,7 +1066,7 @@ describe("MCP OAuth routes", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         redirect_uris: [DYNAMIC_REDIRECT_URI],
-        scope: "mcp profile",
+        scope: "producer profile",
       }),
     });
     expect(wrongScope.status).toBe(400);
@@ -1077,7 +1079,7 @@ describe("MCP OAuth routes", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         redirect_uris: [DYNAMIC_REDIRECT_URI],
-        scope: "mcp",
+        scope: MCP_OAUTH_SCOPE,
         token_endpoint_auth_method: "client_secret_basic",
       }),
     });
@@ -1088,7 +1090,7 @@ describe("MCP OAuth routes", () => {
   });
 
   test("enforces PKCE, single-use codes, and active role at token exchange", async () => {
-    const { token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "mcp");
+    const { token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "producer");
 
     const mismatchCode = await authorizeCode(sessionToken, "right-verifier", "pkce-mismatch", {
       scope: MCP_OAUTH_SCOPE,
@@ -1144,19 +1146,19 @@ describe("MCP OAuth routes", () => {
       scope: MCP_OAUTH_SCOPE,
       resource: PRODUCER_RESOURCE_URI,
     });
-    await revokeRole(db, MCP_ADDRESS, "mcp");
+    await revokeRole(db, MCP_ADDRESS, "producer");
     const revokedExchange = await exchangeCode(revokedRoleCode, "role-active", {
       resource: PRODUCER_RESOURCE_URI,
     });
     expect(revokedExchange.status).toBe(400);
     expect(await jsonObject(revokedExchange)).toMatchObject({
       error: "invalid_grant",
-      error_description: "MCP role is no longer active for this user",
+      error_description: "Producer role is no longer active for this user",
     });
   });
 
-  test("introspection requires its own secret and reflects current mcp role", async () => {
-    const { token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "mcp");
+  test("introspection requires its own secret and reflects current producer role", async () => {
+    const { token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "producer");
     const code = await authorizeCode(sessionToken, "introspection", "introspection", {
       scope: MCP_OAUTH_SCOPE,
       resource: PRODUCER_RESOURCE_URI,
@@ -1176,7 +1178,7 @@ describe("MCP OAuth routes", () => {
     });
     expect(missingSecret.status).toBe(401);
 
-    await revokeRole(db, MCP_ADDRESS, "mcp");
+    await revokeRole(db, MCP_ADDRESS, "producer");
     const inactive = await introspect(accessToken);
     expect(inactive.status).toBe(200);
     expect(await inactive.json()).toEqual({ active: false });
@@ -1300,10 +1302,13 @@ function authorizeBody(overrides?: {
   redirectUri?: string;
   resource?: string;
   scope?: string;
+  selectedScope?: string;
   state?: string;
 }) {
   const codeVerifier = overrides?.codeVerifier ?? "test-verifier";
-  const scope = overrides?.scope ?? MCP_OAUTH_GAMES_SCOPE;
+  const scope = overrides?.scope ?? MCP_OAUTH_DEFAULT_READ_SCOPE;
+  const decision = overrides?.decision ?? "inspect";
+  const selectedScope = overrides?.selectedScope ?? defaultSelectedScope(scope);
   return {
     response_type: "code",
     client_id: overrides?.clientId ?? MCP_OAUTH_CLIENT_ID,
@@ -1312,13 +1317,15 @@ function authorizeBody(overrides?: {
     state: overrides?.state ?? "test-state",
     code_challenge: pkceS256(codeVerifier),
     code_challenge_method: "S256",
-    resource: overrides?.resource ?? (
-      scope === MCP_OAUTH_SCOPE
-        ? getMcpOAuthProducerResourceUri()
-        : getMcpOAuthResourceUri()
-    ),
-    decision: overrides?.decision ?? "inspect",
+    resource: overrides?.resource ?? getMcpOAuthResourceUri(),
+    ...(decision === "approve" ? { selected_scope: selectedScope } : {}),
+    decision,
   };
+}
+
+function defaultSelectedScope(scope: string): string {
+  if (scope === MCP_OAUTH_ALL_SCOPE) return MCP_OAUTH_FULL_USER_SCOPE;
+  return scope;
 }
 
 function jsonAuthHeaders(sessionToken: string): Record<string, string> {

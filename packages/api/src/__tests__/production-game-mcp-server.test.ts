@@ -20,17 +20,19 @@ const GAMES_AUTH: GameMcpAuthContext = {
   userId: "user-1",
   clientId: "client-1",
   resource: "http://127.0.0.1:3000/mcp",
-  scope: "games",
-  authProfile: "games_subject",
+  scope: "agents:read agents:write games:read",
+  scopes: ["agents:read", "agents:write", "games:read"],
+  authProfile: "subject",
   expiresAt: 1_800_000_000,
 };
 
 const PRODUCER_AUTH: GameMcpAuthContext = {
   userId: "producer-1",
   clientId: "client-1",
-  resource: "http://127.0.0.1:3000/mcp/producer",
-  scope: "mcp",
-  authProfile: "producer_mcp",
+  resource: "http://127.0.0.1:3000/mcp",
+  scope: "producer",
+  scopes: ["producer"],
+  authProfile: "producer",
   expiresAt: 1_800_000_000,
 };
 
@@ -58,7 +60,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "read_trace_content",
       "search_reasoning_traces",
     ]);
-    expect(JSON.stringify(tools)).toContain("\"scopes\":[\"mcp\"]");
+    expect(JSON.stringify(tools)).toContain("\"scopes\":[\"producer\"]");
     expect(JSON.stringify(tools)).not.toContain("start_game");
     expect(JSON.stringify(tools)).not.toContain("create_agent");
     expect(JSON.stringify(tools)).not.toContain("join_queue");
@@ -98,9 +100,10 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "join_queue",
       "leave_queue",
     ]);
-    expect(JSON.stringify(tools)).toContain("\"scopes\":[\"games\"]");
+    expect(JSON.stringify(tools)).toContain("\"scopes\":[\"games:read\"]");
+    expect(JSON.stringify(tools)).toContain("\"scopes\":[\"agents:read\",\"agents:write\"]");
     expect(JSON.stringify(tools)).not.toContain("read_trace_content");
-    expect(JSON.stringify(tools)).not.toContain("\"scopes\":[\"mcp\"]");
+    expect(JSON.stringify(tools)).not.toContain("\"scopes\":[\"producer\"]");
     expect(JSON.stringify(tools)).not.toContain("\"vote\"");
     expect(JSON.stringify(tools)).not.toContain("mingle_message");
     expect(JSON.stringify(tools)).not.toContain("ready_check");
@@ -146,7 +149,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(listGames._meta["openai/outputTemplate"]).toBe(INFLUENCE_MCP_APP_RESOURCE_URI);
     expect(listGames._meta["openai/widgetAccessible"]).toBe(true);
     expect(listGames._meta.securitySchemes).toEqual(listGames.securitySchemes);
-    expect(JSON.stringify(listGames)).toContain("\"scopes\":[\"games\"]");
+    expect(JSON.stringify(listGames)).toContain("\"scopes\":[\"games:read\"]");
   });
 
   test("does not advertise producer tools as MCP App entry points", async () => {
@@ -537,7 +540,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     }, PRODUCER_AUTH);
 
     expect(response?.error?.message).toBe(
-      "Unknown or mutation-shaped tool is not supported: start_game",
+      "Unknown or unauthorized MCP tool is not supported for granted scopes: start_game",
     );
   });
 
@@ -551,7 +554,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     }, GAMES_AUTH);
 
     expect(response?.error?.message).toBe(
-      "Unknown or producer-only tool is not supported for scope=games: read_trace_content",
+      "Missing required MCP scope: producer",
     );
   });
 
@@ -566,7 +569,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       }, GAMES_AUTH);
 
       expect(response?.error?.message).toBe(
-        `Unknown or producer-only tool is not supported for scope=games: ${name}`,
+        `Unknown or unauthorized MCP tool is not supported for granted scopes: ${name}`,
       );
     }
   });

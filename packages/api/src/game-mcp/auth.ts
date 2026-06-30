@@ -1,22 +1,25 @@
 import type { DrizzleDB } from "../db/index.js";
 import {
-  getMcpOAuthProfile,
-  getMcpOAuthProfileResourceUri,
-  getMcpOAuthProfiles,
   getMcpOAuthResourceUri,
   introspectMcpAccessToken,
   MCP_OAUTH_AUDIENCE,
+  MCP_OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
   MCP_OAUTH_PURPOSE,
   type McpAuthProfile,
-  type McpOAuthProfileName,
-  type McpOAuthScope,
 } from "../services/mcp-oauth.js";
+import {
+  mcpOAuthScopeSetHasProducer,
+  mcpOAuthScopesToArray,
+  parseAndValidateMcpOAuthScopes,
+  type McpOAuthScope,
+} from "../services/mcp-scope-policy.js";
 
 export interface GameMcpAuthContext {
   userId: string;
   clientId: string;
   resource: string;
-  scope: McpOAuthScope;
+  scope: string;
+  scopes: McpOAuthScope[];
   authProfile: McpAuthProfile;
   expiresAt: number;
 }
@@ -27,17 +30,15 @@ export type GameMcpAuthResult =
 
 export function bearerChallenge(
   requestOrigin: string,
-  profileName: McpOAuthProfileName = "games",
 ): string {
-  const profile = getMcpOAuthProfile(profileName);
   const metadataUrl = new URL(
-    profile.protectedResourceMetadataPath,
+    MCP_OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
     requestOrigin,
   ).toString();
   return [
     'Bearer realm="influence-game-mcp"',
     `resource_metadata="${metadataUrl}"`,
-    `scope="${profile.scope}"`,
+    'scope="agents:read games:read"',
   ].join(", ");
 }
 
@@ -50,19 +51,21 @@ export function extractBearerToken(header: string | undefined): string | null {
 export async function validateGameMcpBearerToken(
   db: DrizzleDB,
   token: string,
-  expectedProfileName: McpOAuthProfileName = "games",
 ): Promise<GameMcpAuthResult> {
-  const expectedProfile = getMcpOAuthProfile(expectedProfileName);
   const introspection = await introspectMcpAccessToken(db, token);
   if (!introspection.active) {
     return { ok: false, status: 401, reason: "inactive_token" };
   }
 
+  const parsedScopes = parseAndValidateMcpOAuthScopes(introspection.scope);
+  if (!parsedScopes.ok) {
+    return { ok: false, status: 401, reason: "invalid_token_claims" };
+  }
+
   if (
     introspection.aud !== MCP_OAUTH_AUDIENCE ||
     introspection.purpose !== MCP_OAUTH_PURPOSE ||
-    introspection.scope !== expectedProfile.scope ||
-    introspection.resource !== getMcpOAuthProfileResourceUri(expectedProfile) ||
+    introspection.resource !== getMcpOAuthResourceUri() ||
     !introspection.client_id ||
     !introspection.sub ||
     !introspection.exp
@@ -76,8 +79,9 @@ export async function validateGameMcpBearerToken(
       userId: introspection.sub,
       clientId: introspection.client_id,
       resource: introspection.resource,
-      scope: expectedProfile.scope,
-      authProfile: expectedProfile.authProfile,
+      scope: parsedScopes.scope,
+      scopes: mcpOAuthScopesToArray(parsedScopes.scopes),
+      authProfile: mcpOAuthScopeSetHasProducer(parsedScopes.scopes) ? "producer" : "subject",
       expiresAt: introspection.exp,
     },
   };
@@ -91,9 +95,6 @@ export function originIsAllowed(origin: string | undefined): boolean {
       .map((value) => value.trim())
       .filter(Boolean),
   );
-  for (const profile of getMcpOAuthProfiles()) {
-    allowed.add(new URL(getMcpOAuthProfileResourceUri(profile)).origin);
-  }
   allowed.add(new URL(getMcpOAuthResourceUri()).origin);
   return allowed.has(origin);
 }

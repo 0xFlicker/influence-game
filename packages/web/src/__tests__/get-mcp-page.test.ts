@@ -25,7 +25,7 @@ describe("/get-mcp setup page", () => {
       "codex mcp add influence-game --url https://api.influence.example/mcp",
     );
     expect(refreshCommands).toContain(
-      "codex mcp login influence-game --scopes games",
+      'codex mcp login influence-game --scopes "agents:read games:read"',
     );
     expect(commands).toContain(
       "claude mcp add --transport http influence-game https://api.influence.example/mcp",

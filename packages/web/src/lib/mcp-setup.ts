@@ -51,7 +51,7 @@ export function buildMcpSetupClients(
         `codex mcp add ${serverName} --url ${mcpUrl}`,
       ],
       refreshCommands: [
-        `codex mcp login ${serverName} --scopes games`,
+        `codex mcp login ${serverName} --scopes "agents:read games:read"`,
       ],
       authHint: "Use login later if the saved MCP token expires and Codex needs a refresh.",
     },

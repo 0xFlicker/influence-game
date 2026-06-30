@@ -1,7 +1,12 @@
 export const MCP_OAUTH_CLIENT_ID = "influence-game-mcp-local";
-export const MCP_OAUTH_GAMES_SCOPE = "games";
-export const MCP_OAUTH_PRODUCER_SCOPE = "mcp";
-export const MCP_OAUTH_SCOPE = MCP_OAUTH_GAMES_SCOPE;
+export const MCP_OAUTH_SCOPES = [
+  "agents:read",
+  "agents:write",
+  "games:read",
+  "producer",
+] as const;
+export const MCP_OAUTH_DEFAULT_SCOPE = "agents:read games:read";
+export const MCP_OAUTH_SCOPE = MCP_OAUTH_DEFAULT_SCOPE;
 
 export interface McpOAuthAuthorizeRequest {
   response_type: "code";
@@ -81,6 +86,11 @@ export function parseMcpOAuthSearchParams(
 export function buildMcpOAuthAuthorizeBody(
   request: McpOAuthAuthorizeRequest,
   decision: McpOAuthDecision,
-): McpOAuthAuthorizeRequest & { decision: McpOAuthDecision } {
-  return { ...request, decision };
+  selectedScopes?: string[],
+): McpOAuthAuthorizeRequest & { decision: McpOAuthDecision; selected_scope?: string } {
+  return {
+    ...request,
+    decision,
+    ...(selectedScopes ? { selected_scope: selectedScopes.join(" ") } : {}),
+  };
 }

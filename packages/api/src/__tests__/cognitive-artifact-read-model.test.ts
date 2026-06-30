@@ -8,7 +8,7 @@ import { setupTestDB } from "./test-utils.js";
 
 const PRODUCER_ACCESS = {
   userId: "producer-user",
-  authProfile: "producer_mcp" as const,
+  authProfile: "producer" as const,
 };
 
 describe("CognitiveArtifactReadModel", () => {
@@ -62,7 +62,7 @@ describe("CognitiveArtifactReadModel", () => {
 
     const participantAccess = {
       userId: participantUserId,
-      authProfile: "games_subject" as const,
+      authProfile: "subject" as const,
     };
     const participantList = await readModel.listArtifacts({ gameIdOrSlug: gameId }, participantAccess);
     expect(participantList.ok).toBe(true);
@@ -106,7 +106,7 @@ describe("CognitiveArtifactReadModel", () => {
       actorPlayerId: ownerPlayerId,
     }, {
       userId: ownerUserId,
-      authProfile: "games_subject" as const,
+      authProfile: "subject" as const,
     });
     expect(ownerReasoning.ok).toBe(true);
     if (!ownerReasoning.ok) throw new Error(ownerReasoning.error);
@@ -137,7 +137,7 @@ describe("CognitiveArtifactReadModel", () => {
       actorPlayerId: randomUUID(),
     }, {
       userId: creatorUserId,
-      authProfile: "games_subject" as const,
+      authProfile: "subject" as const,
     });
 
     expect(result).toMatchObject({ ok: false, status: "denied" });
@@ -164,7 +164,7 @@ describe("CognitiveArtifactReadModel", () => {
       actorPlayerId: playerId,
     }, {
       userId,
-      authProfile: "games_subject" as const,
+      authProfile: "subject" as const,
     });
 
     expect(result).toMatchObject({ ok: false, status: "not_captured_for_game" });
@@ -201,7 +201,7 @@ describe("CognitiveArtifactReadModel", () => {
       actorPlayerId: playerId,
     }, {
       userId,
-      authProfile: "games_subject" as const,
+      authProfile: "subject" as const,
     });
     expect(userResult).toMatchObject({ ok: false, status: "capture_degraded" });
     expect(userResult.ok ? undefined : userResult.diagnostics).toBeUndefined();

@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 export const MCP_OAUTH_CLIENT_ID =
   process.env.MCP_OAUTH_CLIENT_ID ?? "influence-game-mcp-local";
-export const MCP_OAUTH_SCOPE = "mcp";
+export const MCP_OAUTH_SCOPE = "producer";
 export const MCP_OAUTH_ISSUER = "influence-game-mcp";
 export const MCP_OAUTH_AUTHORIZE_PATH = "/oauth/mcp/authorize";
 export const MCP_OAUTH_CALLBACK_PATH = "/oauth/callback";
@@ -137,7 +137,7 @@ export async function exchangeAuthorizationCode(
     typeof parsed.access_token !== "string" ||
     parsed.token_type !== "Bearer" ||
     typeof parsed.expires_in !== "number" ||
-    parsed.scope !== MCP_OAUTH_SCOPE ||
+    !parsed.scope?.split(/\s+/).includes(MCP_OAUTH_SCOPE) ||
     parsed.audience !== MCP_OAUTH_AUDIENCE ||
     parsed.resource !== options.resourceUri
   ) {

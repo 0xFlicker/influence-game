@@ -138,13 +138,13 @@ The default web watch surface for live in-progress games and completed replays. 
 
 The public-by-URL postgame review surface for completed games. Its authoritative facts come from persisted canonical game events replayed into projections, then rolled up per round into revealed facts, elimination order, vote history, endgame eliminations, jury votes, and final placement. Older completed games may degrade to the terminal `game_results` row when no canonical event log is available. Cognitive artifact snippets may add public agent context, but raw payloads, private traces, source pointers, and producer reasoning are not result truth.
 
-## MCP role / MCP scope
+## MCP scopes
 
-The privileged authorization boundary for trusted MCP validation. A user with the `mcp` role may authorize the OAuth `mcp` scope, and a token with that scope grants global access to the producer MCP surfaces wired behind that scope. It is not user-scoped and should not be reused for ordinary player game-history access.
+The OAuth scopes for the deployed `/mcp` resource are `agents:read`, `agents:write`, `games:read`, and `producer`. `agents:write` requires `agents:read`. `producer` is privileged developer access and is meaningful only when the logged-in subject currently has the `producer` role.
 
-## Games MCP scope
+## Games MCP read scope
 
-The user-facing OAuth scope for MCP clients that should be described as "access your games via MCP." A `games` token is resource-scoped to the authenticated subject's created or joined games, owned player/agent records, agent-management commands, and supported pre-match enrollment. It can list/read authorized first-class cognitive artifacts for games the subject participated in, but it does not grant producer/global corpus access, developer evidence access, private trace content, private trace metadata, or active-match action authority.
+The user-facing `games:read` OAuth scope for MCP clients that should be described as "read your Influence games." A token with `games:read` can inspect accessible games, visible events, projections, timelines, rules, and authorized first-class cognitive artifacts. It does not grant producer/global corpus access, developer evidence access, private trace content, private trace metadata, owned-agent writes, or active-match action authority.
 
 ## Management-only MCP
 
@@ -152,23 +152,23 @@ The user-facing product boundary for MCP clients that may help a player prepare 
 
 ## Producer MCP
 
-The privileged deployed MCP resource at `/mcp/producer` for maintainer/developer inspection. Producer MCP keeps the existing `mcp` role / `scope=mcp` global access contract and carries producer evidence/private trace tooling.
+The privileged developer/debug capability on `/mcp`. Producer MCP requires OAuth scope `producer` plus the current `producer` role and carries producer evidence/private trace tooling.
 
 ## Game MCP OAuth token producer
 
-The app/API-side OAuth surface that turns an existing logged-in app session into an MCP bearer token for the `game-mcp` audience. It issues user-facing `games` access tokens for `/mcp` without the `mcp` role, with games-only refresh-token rotation for app installs that need continuity. It issues producer `mcp` access tokens for `/mcp/producer` only when the subject currently has the `mcp` role and does not issue producer refresh tokens. It is not a normal app session token or a general third-party OAuth app platform.
+The app/API-side OAuth surface that turns an existing logged-in app session into an MCP bearer token for the `game-mcp` audience. It issues selected scope sets for `/mcp`, hides ungrantable `producer` access from non-producer users, and lets users remove optional scopes before approval. Refresh tokens are issued only for grants that do not include `producer`. It is not a normal app session token or a general third-party OAuth app platform.
 
 ## Game MCP OAuth bridge
 
-A local developer bridge that validates a token with `scope=mcp` before delegating to the existing stdio Game MCP behavior. The bridge proves the OAuth authorization-code plus PKCE loop for trusted MCP validation without packaging a production HTTP MCP endpoint.
+A local developer bridge that validates a producer-capable token before delegating to the existing stdio Game MCP behavior. The bridge proves the OAuth authorization-code plus PKCE loop for trusted MCP validation without packaging a production HTTP MCP endpoint.
 
 ## Production Game MCP
 
-A deployed Streamable HTTP MCP resource server for trusted validation against API-backed Influence game data. `/mcp` is the user-facing `scope=games` resource constrained by subject claims, while `/mcp/producer` is the privileged `scope=mcp` resource for global producer inspection and private trace tooling.
+A deployed Streamable HTTP MCP resource server for trusted validation against API-backed Influence game data. `/mcp` is the single deployed resource; scopes split owned-agent reads, owned-agent writes, accessible game reads, and producer inspection/private trace tooling.
 
 ## Influence MCP App
 
-The host-rendered app layer above Production Game MCP for end-user AI app surfaces such as ChatGPT, Claude, and Grok. An Influence MCP App proves app discovery, OAuth authorization, app-resource or iframe boot, and at least one real `scope=games` read before it tries to become a polished game browser. It is not a new producer scope, a replacement for `/mcp` and `/mcp/producer`, a general third-party OAuth app platform, or evidence that producer private traces are user-visible.
+The host-rendered app layer above Production Game MCP for end-user AI app surfaces such as ChatGPT, Claude, and Grok. An Influence MCP App proves app discovery, OAuth authorization, app-resource or iframe boot, and at least one real `games:read` call before it tries to become a polished game browser. It is not a general third-party OAuth app platform or evidence that producer private traces are user-visible.
 
 Provider-packaged MCP Apps can have host-owned OAuth callbacks and host-specific request quirks that differ from tool-first loopback clients. Influence treats those quirks as exact provider compatibility facts captured through code-owned configuration, redacted dynamic-client-registration diagnostics, and targeted tests, not as generic trust in an entire provider domain or as per-deployment redirect configuration.
 

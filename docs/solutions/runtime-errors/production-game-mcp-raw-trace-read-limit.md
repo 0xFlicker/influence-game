@@ -20,7 +20,7 @@ related_components: [durable-runs, private-content-storage, trace-mcp]
 
 ## Problem
 
-Production Game MCP exposes explicit private trace tools behind the global `scope=mcp` developer gate. The initial raw trace read guard was sized like a small API payload, so `read_trace_content` could authorize and locate trace manifests but still fail before returning any useful raw trace content.
+Production Game MCP exposes explicit private trace tools behind the `producer` developer gate. The initial raw trace read guard was sized like a small API payload, so `read_trace_content` could authorize and locate trace manifests but still fail before returning any useful raw trace content.
 
 The fix is to treat raw trace content as a ranged object-storage read and bounded tool response, not as an incoming `/mcp` request body and not as an all-or-nothing object-size gate.
 
@@ -109,7 +109,7 @@ The `/mcp` POST body limit prevents a client from sending oversized JSON-RPC req
 
 `read_trace_content` is different: the client asks for one explicitly selected private evidence manifest, and the server returns raw JSON/JSONL producer evidence. Those artifacts are naturally larger than JSON-RPC arguments. Keeping a content bound is still correct, but the bound should be enforced with ranged storage reads and truncation metadata rather than by rejecting normal trace objects.
 
-The split also preserves the current authorization boundary: `scope=mcp` plus a valid resource-bound OAuth token grants global developer access to the wired MCP tools. The fix changes response sizing only; it does not add per-game, per-user, or private-trace authorization.
+The fix also preserves the current authorization boundary: the `producer` scope plus the current `producer` role grants developer access to the wired producer MCP tools. The fix changes response sizing only; it does not add per-game, per-user, or private-trace authorization.
 
 ## Prevention
 

@@ -4,7 +4,7 @@ import type {
 } from "../db/schema.js";
 import type { GamesMcpClaims } from "../game-mcp/claims.js";
 
-export type CognitiveArtifactAuthProfile = "games_subject" | "producer_mcp" | "admin_api";
+export type CognitiveArtifactAuthProfile = "subject" | "producer" | "admin_api";
 
 export interface CognitiveArtifactAccessor {
   userId?: string;
@@ -26,7 +26,7 @@ export interface CognitiveArtifactPolicyContext {
 export function hasProducerCognitiveArtifactAccess(accessor: CognitiveArtifactAccessor): boolean {
   const roles = new Set(accessor.roles ?? []);
   const permissions = new Set(accessor.permissions ?? []);
-  return accessor.authProfile === "producer_mcp" ||
+  return accessor.authProfile === "producer" ||
     accessor.authProfile === "admin_api" ||
     roles.has("sysop") ||
     roles.has("producer") ||
@@ -51,7 +51,7 @@ export function canReadCognitiveArtifact(
   context: CognitiveArtifactPolicyContext,
 ): boolean {
   if (hasProducerCognitiveArtifactAccess(accessor)) return true;
-  if (accessor.authProfile !== "games_subject") return false;
+  if (accessor.authProfile !== "subject") return false;
   const claims = accessor.claims;
   if (!claims?.joinedGameIds.has(context.gameId)) return false;
   if (
@@ -72,6 +72,6 @@ export function canListCognitiveArtifactsForGame(
   gameId: string,
 ): boolean {
   if (hasProducerCognitiveArtifactAccess(accessor)) return true;
-  return accessor.authProfile === "games_subject" &&
+  return accessor.authProfile === "subject" &&
     Boolean(accessor.claims?.joinedGameIds.has(gameId));
 }

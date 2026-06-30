@@ -797,14 +797,32 @@ export interface McpOAuthAuthorizeRequest {
 }
 
 export type McpOAuthDecision = "inspect" | "approve" | "deny" | "cancel";
+export type McpOAuthScope = "agents:read" | "agents:write" | "games:read" | "producer";
+
+export interface McpOAuthScopePreview {
+  scope: McpOAuthScope;
+  label: string;
+  description: string;
+  group: "agents" | "games" | "developer";
+  requiredScopes: McpOAuthScope[];
+}
+
+export interface McpOAuthBlockedScopePreview extends McpOAuthScopePreview {
+  reason: string;
+}
 
 export interface McpOAuthAuthorizePreview {
   clientId: string;
   redirectUri: string;
   resource: string;
   scope: string;
-  authProfile?: "games_subject" | "producer_mcp";
-  hasMcpRole: boolean;
+  requestedScopes: McpOAuthScopePreview[];
+  grantableScopes: McpOAuthScopePreview[];
+  blockedScopes: McpOAuthBlockedScopePreview[];
+  defaultSelectedScopes: McpOAuthScope[];
+  selectedScopes: McpOAuthScope[];
+  authProfile?: "subject" | "producer";
+  hasProducerRole: boolean;
   expiresIn: number;
   walletAddress: string | null;
 }
@@ -821,10 +839,15 @@ export type McpOAuthAuthorizeResponse =
 export async function authorizeMcpOAuth(
   request: McpOAuthAuthorizeRequest,
   decision: McpOAuthDecision,
+  selectedScopes?: string[],
 ): Promise<McpOAuthAuthorizeResponse> {
   return apiFetch("/api/oauth/mcp/authorize", {
     method: "POST",
-    body: JSON.stringify({ ...request, decision }),
+    body: JSON.stringify({
+      ...request,
+      decision,
+      ...(selectedScopes ? { selected_scope: selectedScopes.join(" ") } : {}),
+    }),
   });
 }
 

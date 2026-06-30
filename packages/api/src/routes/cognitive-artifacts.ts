@@ -51,7 +51,7 @@ function accessorFromContext(c: Context<AuthEnv>): CognitiveArtifactAccessor {
   const permissions = c.get("userPermissions") ?? [];
   const subjectAccessor: CognitiveArtifactAccessor = {
     userId: user.id,
-    authProfile: "games_subject",
+    authProfile: "subject",
     roles,
     permissions,
   };

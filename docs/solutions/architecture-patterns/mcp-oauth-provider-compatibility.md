@@ -9,10 +9,10 @@ severity: high
 applies_when:
   - "adding hosted MCP App providers that use provider-owned OAuth callbacks"
   - "debugging dynamic client registration, authorization, token exchange, or refresh-token failures from ChatGPT, Claude, Grok, or similar providers"
-  - "handling provider OAuth requests that omit optional Resource Indicators while preserving unambiguous scope/resource binding"
+  - "handling provider OAuth requests that omit optional Resource Indicators while preserving canonical resource binding"
   - "separating provider-packaged MCP Apps from tool-first loopback clients"
-  - "documenting production /mcp games versus /mcp/producer mcp boundaries for provider installs"
-tags: [mcp, oauth, mcp-apps, provider-compatibility, dynamic-client-registration, provider-callbacks, scope-games, audit-logs]
+  - "documenting production /mcp scope boundaries for provider installs"
+tags: [mcp, oauth, mcp-apps, provider-compatibility, dynamic-client-registration, provider-callbacks, mcp-scopes, audit-logs]
 related_components: [documentation, tooling, testing_framework, service_object]
 ---
 
@@ -20,11 +20,12 @@ related_components: [documentation, tooling, testing_framework, service_object]
 
 ## Context
 
-Recent Influence MCP OAuth work found a sharp compatibility split between tool-first MCP clients and provider-packaged MCP Apps.
+Influence MCP OAuth has two compatibility lanes:
 
-Tool-first clients such as Codex and Claude Code mostly exercise Streamable HTTP MCP plus browser OAuth. They can use loopback redirects, protected-resource metadata, authorization-server metadata, and resource-bound tokens without proving anything about a provider's hosted app runtime.
+- Tool-first clients such as Codex and Claude Code exercise Streamable HTTP MCP plus browser OAuth. They usually use loopback redirects, protected-resource metadata, authorization-server metadata, and resource-bound tokens.
+- Provider-packaged MCP Apps such as ChatGPT, Claude custom connectors, and Grok connectors often use provider-owned hosted callbacks through dynamic client registration.
 
-Provider-packaged clients behave differently. Claude custom connectors, ChatGPT connectors / Apps SDK, and Grok connectors register provider-owned hosted callbacks through dynamic client registration. Production attempts failed at `mcp.oauth.register` with `invalid_redirect_uri` until each exact hosted callback was observed and added to checked-in provider compatibility config. Session-history evidence reinforced the same lesson: the useful failure line was the DCR audit event, while ordinary unauthenticated MCP requests were just challenge traffic. (session history)
+Production attempts failed at `mcp.oauth.register` with `invalid_redirect_uri` until each exact hosted callback was observed and added to checked-in provider compatibility config. The useful failure line was the DCR audit event; ordinary unauthenticated MCP requests were just challenge traffic. (session history)
 
 The currently supported observed hosted callbacks live in code-owned config:
 
@@ -45,18 +46,21 @@ export const MCP_OAUTH_PROVIDER_REDIRECT_URIS = [
 ];
 ```
 
-This compatibility lane sits beside the production resource split:
+Provider compatibility sits on top of the current single MCP resource:
 
 ```text
-/mcp           -> scope=games, user-facing app/tool access
-/mcp/producer  -> scope=mcp, current mcp role, producer/global access
+/mcp
+  agents:read  -> owned agent reads
+  agents:write -> owned agent writes and supported pre-match enrollment
+  games:read   -> accessible game reads
+  producer     -> producer/debug access, current producer role required
 ```
 
-`/mcp` is the provider App target. `/mcp/producer` remains the privileged developer surface and should not inherit provider-App convenience changes unless a later production test proves a provider needs them.
+Provider App convenience should target user-facing scopes first. The `producer` scope remains privileged and must not become a default provider-app grant.
 
 ## Guidance
 
-Diagnose provider callback failures from DCR audit events, not normal MCP discovery noise. A `missing_bearer_token` event on `/mcp` or `/mcp/producer` is the expected unauthenticated challenge path that teaches clients where OAuth metadata lives. The provider callback problem shows up earlier as `mcp.oauth.register` with `denialReason: "invalid_redirect_uri"`.
+Diagnose provider callback failures from DCR audit events, not normal MCP discovery noise. A `missing_bearer_token` event on `/mcp` is the expected unauthenticated challenge path that teaches clients where OAuth metadata lives. The provider callback problem shows up earlier as `mcp.oauth.register` with `denialReason: "invalid_redirect_uri"`.
 
 Keep DCR diagnostics safe. Log redacted URI structure and correlation data, never raw callback URLs, tokens, authorization codes, refresh tokens, PKCE verifiers, authorization headers, or OAuth secrets:
 
@@ -78,42 +82,7 @@ export function createRedirectAuditDetail(
 }
 ```
 
-The audit payload should be enough to add the next exact callback without leaking the full URL:
-
-```json
-{
-  "event": "mcp.oauth.register",
-  "result": "failure",
-  "status": 400,
-  "denialReason": "invalid_redirect_uri",
-  "registrationRedirectUris": [
-    {
-      "protocol": "https",
-      "host": "chatgpt.com",
-      "path": "/mcp/oauth/callback",
-      "hasQuery": false,
-      "providerId": "chatgpt",
-      "matchSource": "rejected",
-      "uriHash": "sha256:..."
-    }
-  ]
-}
-```
-
-Treat `providerIdForRedirectUrl` as an audit classifier, not an allowlist. It may classify `chatgpt.com`, `claude.ai`, or `grok.com` hosts so logs are useful, but that does not make every path on that host safe. Do not accept generic provider callbacks such as `https://*.provider.com/*` or "anything on chatgpt.com" just because the provider ID is recognizable. The authorization decision must stay exact-match:
-
-```ts
-function isAllowedRegisteredRedirectUri(redirectUri: string): boolean {
-  const url = new URL(redirectUri);
-  if (!isValidRedirectUrl(url)) return false;
-  if (isLoopbackUrl(url)) return url.protocol === "http:" || url.protocol === "https:";
-  if (url.protocol !== "https:") return false;
-
-  return providerRedirectRuleForUri(redirectUri) !== undefined ||
-    allowedRedirectUris().includes(redirectUri) ||
-    process.env.MCP_OAUTH_ALLOW_DYNAMIC_HTTPS_REDIRECTS === "true";
-}
-```
+Treat `providerIdForRedirectUrl` as an audit classifier, not an allowlist. It may classify `chatgpt.com`, `claude.ai`, or `grok.com` hosts so logs are useful, but that does not make every path on that host safe. Do not accept generic provider callbacks such as `https://*.provider.com/*` or "anything on chatgpt.com" just because the provider ID is recognizable.
 
 Keep provider-owned hosted callbacks in checked-in code-owned provider config. They are deployment-invariant compatibility facts, not per-environment settings. `MCP_OAUTH_ALLOWED_REDIRECT_URIS` remains only a legacy exact escape hatch for non-provider callbacks, and broad dynamic HTTPS redirects should stay disabled outside deliberate diagnostics.
 
@@ -128,41 +97,19 @@ provider-hosted app redirect:
   exact checked-in https callback only
 ```
 
-When a provider omits optional OAuth `resource`, add tolerance only at the tested boundary and keep scope/resource constraints intact. Grok was observed omitting `resource`, so the compatible behavior is: infer a canonical resource only when the request has exactly one supported scope; reject mixed `games mcp` requests without `resource`; and let token exchange omit `resource` only because the authorization code is already bound to a canonical resource.
+When a provider omits optional OAuth `resource`, tolerate omission only because `/mcp` is the single canonical resource. Do not loosen scope validation. Requested and selected scopes must still be a supported non-empty set, `agents:write` must include `agents:read`, and `producer` must be grantable only by current producer-role users.
 
-```ts
-function resourceProfileForAuthorizeRequest(
-  resourceUri: string | null,
-  requestedScopes: Set<McpOAuthScope>,
-) {
-  if (resourceUri) return profileForMcpResourceUri(resourceUri);
-  if (requestedScopes.size !== 1) return null;
-  const [scope] = Array.from(requestedScopes);
-  return scope ? profileForMcpScope(scope) : null;
-}
-```
-
-Refresh tokens are games-only. Provider clients may register `refresh_token`, and the authorization server may advertise `authorization_code` plus `refresh_token`, but issuance stays bound to the user-facing `/mcp` profile. Producer `/mcp/producer` stays authorization-code plus short-lived access-token only.
-
-```ts
-const shouldIssueRefreshToken =
-  codeProfile.scope === MCP_OAUTH_GAMES_SCOPE &&
-  await clientAllowsMcpRefreshTokens(db, codeRow.clientId);
-
-if (!profile || profile.scope !== MCP_OAUTH_GAMES_SCOPE) {
-  return invalidGrant("Refresh token is not valid for games access", audit);
-}
-```
+Refresh tokens are non-producer only. Provider clients may register `refresh_token`, and the authorization server may advertise `authorization_code` plus `refresh_token`, but issuance stays limited to grants that do not include `producer`.
 
 ## Why This Matters
 
-Provider App OAuth failures are easy to misread. The visible host UI may only say "OAuth failed", while the server also logs routine unauthenticated MCP probes. If the investigation follows `missing_bearer_token` challenge noise, the fix drifts toward metadata or bearer-token handling even though the real failure is DCR rejecting a hosted callback. The `mcp.oauth.register` event is the signal.
+Provider App OAuth failures are easy to misread. The visible host UI may only say "OAuth failed", while the server also logs routine unauthenticated MCP probes. If the investigation follows challenge noise, the fix drifts toward metadata or bearer-token handling even though the real failure is DCR rejecting a hosted callback.
 
 Exact callback config protects both compatibility and trust. Provider-owned callbacks are stable enough to live in code, but broad host wildcards would let untested paths on a major provider domain become valid OAuth redirects. That turns a provider hint into an authorization rule.
 
 Separating local loopback, legacy exact env allowlists, exact provider config, and optional dynamic HTTPS diagnostics keeps each compatibility lane understandable. Future agents can add one observed provider callback, test it, and ship without weakening local tool clients or production OAuth boundaries.
 
-The `/mcp` and `/mcp/producer` split also keeps provider convenience from leaking into producer power. Hosted MCP Apps should get `scope=games` access to user-facing game, agent-management, and supported pre-match tools. Producer trace inspection, private evidence, and global reads remain under `scope=mcp` plus the current `mcp` role.
+The single-resource scope model keeps provider convenience from leaking into producer power. Hosted MCP Apps can request broad app scopes, but normal users will not be shown `producer`, and producer-role users still have to explicitly select it.
 
 ## When to Apply
 
@@ -170,7 +117,7 @@ Apply this guidance when a production MCP App or connector fails during dynamic 
 
 Use it when adding provider compatibility for Claude, ChatGPT, Grok, or another provider-packaged MCP App host. Wait for the exact observed callback from production logs or provider docs, add that exact string to code-owned config, and cover both acceptance and rejection of nearby unapproved callbacks.
 
-Use it when a provider omits optional OAuth parameters. Tolerate omissions only after observed provider behavior proves they are necessary, and express the tolerance in terms of existing canonical scope/resource state rather than loosening the contract globally.
+Use it when a provider omits optional OAuth parameters. Tolerate omissions only after observed provider behavior proves they are necessary, and express the tolerance in terms of existing canonical resource and scope state rather than loosening the contract globally.
 
 Use it when debugging OAuth logs. First separate:
 
@@ -185,7 +132,7 @@ mcp.oauth.authorize or mcp.oauth.token failure
   authorization request, resource/scope, PKCE, code, or token-exchange problem
 ```
 
-Do not apply it as a reason to accept generic provider domains, move provider callbacks into deployment env vars, issue producer refresh tokens, reinterpret `scope=mcp` as user-scoped, or let provider App `/mcp` behavior bleed into `/mcp/producer`.
+Do not apply it as a reason to accept generic provider domains, move provider callbacks into deployment env vars, issue producer refresh tokens, reinterpret `producer` as user-scoped, or auto-grant write scopes without explicit consent.
 
 ## Examples
 
@@ -201,7 +148,7 @@ test("accepts code-owned ChatGPT OAuth callback during dynamic registration", as
       redirect_uris: ["https://chatgpt.com/connector/oauth/_syG1DzKsjXV"],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
-      scope: MCP_OAUTH_GAMES_SCOPE,
+      scope: "agents:read games:read",
       token_endpoint_auth_method: "none",
     }),
   });
@@ -228,7 +175,7 @@ test("audits rejected hosted redirect URIs without logging the full callback", a
     redirect_uris: [redirectUri],
     grant_types: ["authorization_code", "refresh_token"],
     response_types: ["code"],
-    scope: MCP_OAUTH_GAMES_SCOPE,
+    scope: "agents:read games:read",
   });
 
   expect(registration.status).toBe(400);
@@ -245,24 +192,24 @@ test("audits rejected hosted redirect URIs without logging the full callback", a
 });
 ```
 
-Resource-omission coverage should prove the omission is still resource-bound:
+Scope-selection coverage should prove broad app requests become explicit user consent:
 
 ```ts
-const authorizationRequest = {
+const preview = await authorize({
   response_type: "code",
   client_id: dynamicClientId,
   redirect_uri: "https://grok.com/connectors-oauth-exchange-code/",
-  scope: MCP_OAUTH_GAMES_SCOPE,
+  scope: "agents:read agents:write games:read producer",
   state: "grok-no-resource-state",
   code_challenge: pkceS256(codeVerifier),
   code_challenge_method: "S256",
-};
+  decision: "inspect",
+});
 
-const preview = await authorize({ ...authorizationRequest, decision: "inspect" });
 expect(await jsonObject(preview)).toMatchObject({
   resource: RESOURCE_URI,
-  scope: MCP_OAUTH_GAMES_SCOPE,
-  authProfile: "games_subject",
+  defaultSelectedScopes: ["agents:read", "agents:write", "games:read"],
+  blockedScopes: [expect.objectContaining({ scope: "producer" })],
 });
 ```
 
@@ -272,8 +219,8 @@ Producer refresh-token coverage should keep the negative assertion:
 const tokenJson = await jsonObject(producerTokenExchange);
 expect(tokenJson).toMatchObject({
   token_type: "Bearer",
-  scope: "mcp",
-  resource: PRODUCER_RESOURCE_URI,
+  scope: "producer",
+  resource: RESOURCE_URI,
 });
 expect(tokenJson).not.toHaveProperty("refresh_token");
 ```
@@ -292,12 +239,12 @@ Operational checklist for the next provider:
 
 ## Related
 
-- `docs/game-mcp-production-oauth.md` is the canonical production OAuth, provider callback, refresh-token, and `/mcp` vs `/mcp/producer` resource split doc.
-- `docs/solutions/architecture-patterns/production-mcp-role-resource-split.md` documents the broader production boundary: `/mcp` is `scope=games`; `/mcp/producer` is `scope=mcp` plus the current `mcp` role.
+- `docs/game-mcp-production-oauth.md` is the canonical production OAuth, provider callback, refresh-token, and MCP scope contract.
+- `docs/solutions/architecture-patterns/production-mcp-role-resource-split.md` documents the broader production MCP scope boundary.
 - `docs/solutions/runtime-errors/production-game-mcp-raw-trace-read-limit.md` covers adjacent producer trace response sizing, not provider OAuth compatibility.
 - `packages/api/src/game-mcp/oauth-provider-compat.ts` owns exact provider-hosted callback config, provider host classification for audit, and redirect URI hashing.
 - `packages/api/src/services/mcp-oauth.ts` owns DCR validation, loopback/provider/legacy redirect separation, resource omission tolerance, authorization-code exchange, refresh-token issuance, and refresh-token constraints.
 - `packages/api/src/routes/mcp-oauth.ts` emits `mcp.oauth.register`, authorize, token, revoke, and introspection audit events with provider hints and redacted registration diagnostics.
 - `packages/api/src/routes/mcp.ts` emits expected MCP resource challenge failures such as `missing_bearer_token`; do not confuse those with DCR callback rejection.
-- `packages/api/src/__tests__/mcp-oauth-routes.test.ts` covers exact Claude, ChatGPT, and Grok hosted callbacks, redacted rejected-callback audits, Grok resource omission, games refresh tokens, and producer no-refresh behavior.
+- `packages/api/src/__tests__/mcp-oauth-routes.test.ts` covers exact Claude, ChatGPT, and Grok hosted callbacks, redacted rejected-callback audits, Grok resource omission, refresh tokens, producer no-refresh behavior, and editable consent behavior.
 - `packages/api/src/__tests__/mcp-provider-profiles.test.ts` covers bounded provider IDs, exact provider callback config, redacted audit detail shape, and nearby rejected provider-hosted callbacks.
