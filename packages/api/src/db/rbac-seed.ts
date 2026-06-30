@@ -58,8 +58,8 @@ const ROLES = [
     ],
   },
   {
-    name: "mcp",
-    description: "Can authorize global MCP access through OAuth",
+    name: "producer",
+    description: "Can authorize producer MCP access through OAuth",
     isSystem: 1,
     permissions: [],
   },

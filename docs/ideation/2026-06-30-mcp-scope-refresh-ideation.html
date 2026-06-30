@@ -1,0 +1,1104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: MCP Scope Refresh</title>
+  <style>
+    :root {
+      --bg: #f5f7fa;
+      --paper: #ffffff;
+      --ink: #16202a;
+      --muted: #5d6876;
+      --line: #d8dee8;
+      --line-strong: #bec8d6;
+      --teal: #0c7775;
+      --teal-soft: #e0f3f1;
+      --blue: #3457c7;
+      --blue-soft: #e8edff;
+      --coral: #a54840;
+      --coral-soft: #f9e8e5;
+      --gold: #74571c;
+      --gold-soft: #f6ecd1;
+      --green: #4b763f;
+      --green-soft: #e7f1df;
+      --violet: #5d4fa5;
+      --violet-soft: #eeebff;
+      --shadow: 0 18px 40px rgba(22, 32, 42, 0.08);
+      --radius: 8px;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-size: 15px;
+      line-height: 1.58;
+    }
+
+    a {
+      color: var(--blue);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+      background: #eef2f7;
+      border: 1px solid #dce3ed;
+      border-radius: 5px;
+      padding: 0.08rem 0.28rem;
+    }
+
+    .page {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 42px 22px 64px;
+    }
+
+    header {
+      margin-bottom: 28px;
+    }
+
+    .eyebrow,
+    .card-label,
+    .meta-label,
+    .stat-label,
+    .table-label {
+      color: var(--teal);
+      display: block;
+      font-size: 0.74rem;
+      font-weight: 800;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 13ch;
+      font-size: clamp(2.25rem, 5.8vw, 4.15rem);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 1.52rem;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0 0 10px;
+      font-size: 1.12rem;
+      letter-spacing: 0;
+    }
+
+    p,
+    li {
+      max-width: 78ch;
+    }
+
+    .subtitle {
+      max-width: 76ch;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 1.04rem;
+    }
+
+    .meta-grid,
+    .stat-grid,
+    .axis-grid,
+    .context-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .meta-grid {
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      margin-top: 22px;
+    }
+
+    .stat-grid {
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      margin: 18px 0 0;
+    }
+
+    .axis-grid,
+    .context-grid {
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      margin-top: 14px;
+    }
+
+    .meta-card,
+    .stat-card,
+    nav,
+    section,
+    .idea-card,
+    .callout,
+    .source-card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .meta-card,
+    .stat-card {
+      padding: 12px 14px;
+    }
+
+    .meta-value,
+    .stat-value {
+      display: block;
+      margin-top: 4px;
+      font-weight: 740;
+    }
+
+    .stat-value {
+      font-size: 1.45rem;
+      line-height: 1.1;
+    }
+
+    nav {
+      margin: 28px 0;
+      padding: 16px;
+    }
+
+    nav h2 {
+      margin: 0 0 10px;
+      font-size: 1rem;
+    }
+
+    nav ul,
+    .jump-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    nav a,
+    .jump-list a {
+      align-items: center;
+      background: #eef2f7;
+      border: 1px solid #dce3ed;
+      border-radius: 999px;
+      color: var(--ink);
+      display: inline-flex;
+      font-size: 0.88rem;
+      font-weight: 700;
+      min-height: 34px;
+      padding: 6px 11px;
+      text-decoration: none;
+    }
+
+    nav a:hover,
+    .jump-list a:hover {
+      background: var(--blue-soft);
+      border-color: #bfccff;
+    }
+
+    section {
+      margin-top: 18px;
+      padding: 24px;
+    }
+
+    section > p:first-of-type {
+      margin-top: 0;
+    }
+
+    .section-note {
+      color: var(--muted);
+      margin: 0 0 16px;
+    }
+
+    .callout {
+      box-shadow: none;
+      padding: 15px 16px;
+    }
+
+    .callout p {
+      margin: 8px 0 0;
+    }
+
+    .callout.teal {
+      background: var(--teal-soft);
+      border-color: #b9dfdc;
+    }
+
+    .callout.blue {
+      background: var(--blue-soft);
+      border-color: #c4cffc;
+    }
+
+    .callout.coral {
+      background: var(--coral-soft);
+      border-color: #e6c2bd;
+    }
+
+    .callout.gold {
+      background: var(--gold-soft);
+      border-color: #e0cd9b;
+    }
+
+    .callout.green {
+      background: var(--green-soft);
+      border-color: #c6ddb8;
+    }
+
+    .callout.violet {
+      background: var(--violet-soft);
+      border-color: #d4cdfb;
+    }
+
+    .table-wrap {
+      margin-top: 14px;
+      overflow-x: auto;
+    }
+
+    table {
+      border-collapse: collapse;
+      min-width: 680px;
+      width: 100%;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 11px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .idea-list {
+      display: grid;
+      gap: 14px;
+      margin-top: 16px;
+    }
+
+    .idea-card {
+      padding: 18px;
+    }
+
+    .idea-heading {
+      align-items: flex-start;
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+    }
+
+    .idea-heading h3 {
+      margin-bottom: 4px;
+    }
+
+    .rank {
+      align-items: center;
+      background: var(--ink);
+      border-radius: 999px;
+      color: #fff;
+      display: inline-flex;
+      flex: 0 0 auto;
+      font-size: 0.78rem;
+      font-weight: 800;
+      height: 34px;
+      justify-content: center;
+      min-width: 44px;
+      padding: 0 10px;
+    }
+
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin: 10px 0 0;
+    }
+
+    .chip {
+      background: #f0f3f7;
+      border: 1px solid #d9e1ec;
+      border-radius: 999px;
+      color: #263342;
+      display: inline-flex;
+      font-size: 0.78rem;
+      font-weight: 700;
+      line-height: 1.25;
+      padding: 5px 9px;
+    }
+
+    .chip.high {
+      background: var(--green-soft);
+      border-color: #c4dbb9;
+      color: #355a2d;
+    }
+
+    .chip.medium {
+      background: var(--gold-soft);
+      border-color: #dfca96;
+      color: #5c4314;
+    }
+
+    dl {
+      display: grid;
+      gap: 8px 14px;
+      grid-template-columns: minmax(110px, 0.35fr) 1fr;
+      margin: 14px 0;
+    }
+
+    dt {
+      color: var(--muted);
+      font-size: 0.74rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    dd {
+      margin: 0;
+    }
+
+    details {
+      border-top: 1px solid var(--line);
+      margin-top: 12px;
+      padding-top: 10px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 800;
+    }
+
+    details p,
+    details ul {
+      margin-bottom: 0;
+    }
+
+    .diagram {
+      background: #fbfcfe;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      margin: 16px 0;
+      overflow: hidden;
+      padding: 12px;
+    }
+
+    .diagram svg {
+      display: block;
+      height: auto;
+      width: 100%;
+    }
+
+    .diagram-caption {
+      color: var(--muted);
+      font-size: 0.88rem;
+      margin: 10px 0 0;
+    }
+
+    .source-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      margin-top: 14px;
+    }
+
+    .source-card {
+      box-shadow: none;
+      padding: 14px;
+    }
+
+    .source-card ul {
+      margin: 8px 0 0;
+      padding-left: 18px;
+    }
+
+    .footer {
+      color: var(--muted);
+      font-size: 0.86rem;
+      margin-top: 22px;
+      text-align: center;
+    }
+
+    @media (max-width: 720px) {
+      .page {
+        padding: 28px 14px 44px;
+      }
+
+      section {
+        padding: 18px;
+      }
+
+      .idea-heading {
+        display: block;
+      }
+
+      .rank {
+        margin-bottom: 10px;
+      }
+
+      dl {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">Compound Engineering Ideation</p>
+      <h1>Scope Refresh Ideation</h1>
+      <p class="subtitle">
+        Repo-grounded ideas for replacing the old <code>games</code> / <code>mcp</code> split with
+        <code>agents:read</code>, <code>agents:write</code>, <code>games:read</code>, and <code>producer</code>,
+        while collapsing the MCP surface to one endpoint and making consent editable.
+      </p>
+
+      <div class="meta-grid" aria-label="Document metadata">
+        <div class="meta-card">
+          <span class="meta-label">Date</span>
+          <span class="meta-value">2026-06-30</span>
+        </div>
+        <div class="meta-card">
+          <span class="meta-label">Run</span>
+          <span class="meta-value">ce-ideate e2ab246e</span>
+        </div>
+        <div class="meta-card">
+          <span class="meta-label">Mode</span>
+          <span class="meta-value">Fresh ideation</span>
+        </div>
+        <div class="meta-card">
+          <span class="meta-label">Backwards compatibility</span>
+          <span class="meta-value">Out of scope</span>
+        </div>
+      </div>
+
+      <div class="stat-grid" aria-label="Ideation statistics">
+        <div class="stat-card">
+          <span class="stat-label">Raw candidates</span>
+          <span class="stat-value">34</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Survivors</span>
+          <span class="stat-value">7</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Topic axes</span>
+          <span class="stat-value">5</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Target endpoint</span>
+          <span class="stat-value">1</span>
+        </div>
+      </div>
+    </header>
+
+    <nav aria-label="Sections">
+      <h2>Contents</h2>
+      <ul>
+        <li><a href="#grounding-context">Grounding Context</a></li>
+        <li><a href="#topic-axes">Topic Axes</a></li>
+        <li><a href="#ranked-ideas">Ranked Ideas</a></li>
+        <li><a href="#rejection-summary">Rejection Summary</a></li>
+        <li><a href="#sources">Sources</a></li>
+      </ul>
+    </nav>
+
+    <section id="grounding-context" aria-labelledby="grounding-heading">
+      <p class="eyebrow">What the code says today</p>
+      <h2 id="grounding-heading">Grounding Context</h2>
+      <p>
+        The current implementation expresses authorization through two MCP resource profiles:
+        <code>/mcp</code> with <code>scope=games</code> for player-facing access, and
+        <code>/mcp/producer</code> with <code>scope=mcp</code> plus the producer role for admin/developer tools.
+        That split leaks into OAuth metadata, consent copy, MCP tool descriptors, dispatch checks, database
+        constraints, setup instructions, README text, and concepts docs.
+      </p>
+
+      <div class="context-grid">
+        <article class="callout teal">
+          <span class="card-label">Current resource model</span>
+          <p>
+            <code>packages/api/src/services/mcp-oauth.ts</code> maps profiles to endpoint paths and issues
+            one exact profile scope. Resource path is carrying capability meaning.
+          </p>
+        </article>
+        <article class="callout blue">
+          <span class="card-label">Current consent model</span>
+          <p>
+            <code>authorize-client.tsx</code> previews one grant and submits approve, deny, or cancel for the
+            original request. Users cannot trim write-like access today.
+          </p>
+        </article>
+        <article class="callout gold">
+          <span class="card-label">Current tool model</span>
+          <p>
+            Agent read, agent write, game read, queue enrollment, and producer trace tools are split by
+            profile buckets rather than granular required scopes.
+          </p>
+        </article>
+        <article class="callout coral">
+          <span class="card-label">Current storage model</span>
+          <p>
+            Client, authorization-code, access-token, and refresh-token rows constrain scopes to old names.
+            Multi-scope grants need real set semantics, not string folklore.
+          </p>
+        </article>
+      </div>
+
+      <div class="table-wrap" aria-label="Scope refresh target mapping">
+        <table>
+          <thead>
+            <tr>
+              <th>Old surface</th>
+              <th>Problem</th>
+              <th>Refresh target</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>/mcp</code> + <code>games</code></td>
+              <td>Reads games, reads agents, writes agents, and queue mutations are advertised as one generic game permission.</td>
+              <td>Use one <code>/mcp</code> resource and explicit <code>games:read</code>, <code>agents:read</code>, and <code>agents:write</code> scopes.</td>
+            </tr>
+            <tr>
+              <td><code>/mcp/producer</code> + <code>mcp</code></td>
+              <td>Admin access is encoded as a second endpoint and an opaque scope name.</td>
+              <td>Delete the producer endpoint and use <code>producer</code> as a role-gated capability on the canonical endpoint.</td>
+            </tr>
+            <tr>
+              <td>All-or-nothing consent</td>
+              <td>AI apps may ask broadly, but users cannot reduce grants before approving.</td>
+              <td>Render an editable permission sheet with default-selected grantable scopes and selectable write scopes.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="diagram" aria-label="Endpoint collapse diagram">
+        <svg viewBox="0 0 900 270" role="img" aria-labelledby="endpoint-diagram-title endpoint-diagram-desc">
+          <title id="endpoint-diagram-title">Endpoint collapse from two paths to one canonical resource</title>
+          <desc id="endpoint-diagram-desc">
+            The old model has separate MCP paths for player and producer access. The target model has one
+            MCP path with a token carrying explicit scopes, while producer remains gated by role.
+          </desc>
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#5d6876"></path>
+            </marker>
+          </defs>
+          <rect x="24" y="28" width="330" height="86" rx="8" fill="#e0f3f1" stroke="#9ccfcc"></rect>
+          <text x="44" y="62" font-size="16" font-weight="700" fill="#16202a">Today: /mcp</text>
+          <text x="44" y="88" font-size="14" fill="#425060">scope=games for player tools</text>
+          <rect x="24" y="142" width="330" height="86" rx="8" fill="#f9e8e5" stroke="#dfb4ae"></rect>
+          <text x="44" y="176" font-size="16" font-weight="700" fill="#16202a">Today: /mcp/producer</text>
+          <text x="44" y="202" font-size="14" fill="#425060">scope=mcp plus producer role</text>
+          <line x1="380" y1="128" x2="510" y2="128" stroke="#5d6876" stroke-width="3" marker-end="url(#arrow)"></line>
+          <text x="403" y="112" font-size="13" fill="#5d6876">collapse path semantics</text>
+          <rect x="546" y="62" width="330" height="132" rx="8" fill="#e8edff" stroke="#bcc9f8"></rect>
+          <text x="568" y="96" font-size="17" font-weight="700" fill="#16202a">Target: /mcp</text>
+          <text x="568" y="124" font-size="14" fill="#425060">token scopes: agents:read, agents:write,</text>
+          <text x="568" y="148" font-size="14" fill="#425060">games:read, producer</text>
+          <text x="568" y="172" font-size="14" fill="#425060">producer only grantable with producer role</text>
+        </svg>
+        <p class="diagram-caption">
+          Prose is authoritative: endpoint collapse removes URL-shaped authorization semantics; tokens carry the capability set.
+        </p>
+      </div>
+    </section>
+
+    <section id="topic-axes" aria-labelledby="axes-heading">
+      <p class="eyebrow">Exploration coverage</p>
+      <h2 id="axes-heading">Topic Axes</h2>
+      <p class="section-note">
+        These five axes kept the ideation from only solving the route rename while missing the consent, provider, and enforcement consequences.
+      </p>
+      <div class="axis-grid">
+        <article class="callout teal">
+          <span class="card-label">Axis 1</span>
+          <p><strong>Scope and resource model.</strong> What the canonical endpoint, scope set, producer capability, and token lifetime rules should become.</p>
+        </article>
+        <article class="callout blue">
+          <span class="card-label">Axis 2</span>
+          <p><strong>OAuth consent and user agency.</strong> How a user sees, edits, blocks, and approves the scopes an AI app requested.</p>
+        </article>
+        <article class="callout green">
+          <span class="card-label">Axis 3</span>
+          <p><strong>Tool inventory and enforcement.</strong> Which MCP tools require read, write, game, or producer access, and where denial happens.</p>
+        </article>
+        <article class="callout gold">
+          <span class="card-label">Axis 4</span>
+          <p><strong>Provider/client compatibility.</strong> How broad AI app requests, dynamic registration, metadata, and omitted resource indicators behave.</p>
+        </article>
+        <article class="callout violet">
+          <span class="card-label">Axis 5</span>
+          <p><strong>Documentation and setup coherence.</strong> How setup screens, README, concepts, tests, and examples stop advertising stale nouns.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="ranked-ideas" aria-labelledby="ideas-heading">
+      <p class="eyebrow">Shortlist</p>
+      <h2 id="ideas-heading">Ranked Ideas</h2>
+      <p class="section-note">
+        The ranked set intentionally favors ideas that compose into one cutover. The best implementation path is not seven unrelated features;
+        it is a scope contract, a registry, an editable consent UI, and a validation matrix that keep each other honest.
+      </p>
+      <ul class="jump-list" aria-label="Ranked idea links">
+        <li><a href="#i1">I1. Single Endpoint</a></li>
+        <li><a href="#i2">I2. Scope Matrix</a></li>
+        <li><a href="#i3">I3. Editable Consent</a></li>
+        <li><a href="#i4">I4. Tool Split</a></li>
+        <li><a href="#i5">I5. Token Storage</a></li>
+        <li><a href="#i6">I6. Broad Ask</a></li>
+        <li><a href="#i7">I7. Noun Purge</a></li>
+      </ul>
+
+      <div class="idea-list">
+        <article class="idea-card" id="i1">
+          <div class="idea-heading">
+            <div>
+              <h3>I1. Single Endpoint Scope-Set Contract</h3>
+              <p class="section-note">
+                Replace the two-profile resource split with one canonical <code>/mcp</code> resource.
+              </p>
+            </div>
+            <span class="rank">Rank 1</span>
+          </div>
+          <div class="chip-row">
+            <span class="chip high">Confidence: High</span>
+            <span class="chip medium">Complexity: Medium</span>
+            <span class="chip">Axis: Scope and resource model</span>
+          </div>
+          <dl>
+            <dt>Description</dt>
+            <dd>
+              Authorization issues a normalized set of granted scopes from <code>agents:read</code>,
+              <code>agents:write</code>, <code>games:read</code>, and <code>producer</code>. The
+              <code>producer</code> scope is grantable only when the logged-in user currently has the producer role.
+            </dd>
+            <dt>Why it matters</dt>
+            <dd>
+              This is the actual model refresh. It removes URL-shaped authorization semantics and makes the token say what the client can do.
+            </dd>
+          </dl>
+          <details>
+            <summary>Evidence and tradeoffs</summary>
+            <p>
+              Direct evidence: <code>packages/api/src/services/mcp-oauth.ts</code> currently maps auth profiles to
+              endpoint paths, and the user explicitly requested a single endpoint with no backwards compatibility.
+            </p>
+            <p>
+              Tradeoff: schema, metadata, route registration, docs, tests, and client setup need to move together.
+              Existing producer clients pointed at <code>/mcp/producer</code> intentionally break.
+            </p>
+          </details>
+        </article>
+
+        <article class="idea-card" id="i2">
+          <div class="idea-heading">
+            <div>
+              <h3>I2. Registry-Driven Scope Matrix</h3>
+              <p class="section-note">
+                Make one typed registry define scopes, copy, role gates, dependencies, refresh policy, and tool requirements.
+              </p>
+            </div>
+            <span class="rank">Rank 2</span>
+          </div>
+          <div class="chip-row">
+            <span class="chip high">Confidence: High</span>
+            <span class="chip medium">Complexity: Medium</span>
+            <span class="chip">Axis: Tool inventory and enforcement</span>
+          </div>
+          <dl>
+            <dt>Description</dt>
+            <dd>
+              Add a typed scope registry and generate protected-resource metadata, consent rows, descriptor security
+              schemes, dispatch gates, docs/test fixtures, and audit labels from that registry.
+            </dd>
+            <dt>Why it matters</dt>
+            <dd>
+              Granular scopes only work if metadata, consent, tool discovery, and enforcement share one source of truth.
+            </dd>
+          </dl>
+          <details>
+            <summary>Evidence and tradeoffs</summary>
+            <p>
+              Direct evidence: <code>packages/api/src/game-mcp/server.ts</code> currently builds descriptors and tool buckets
+              from one profile-level scope. Agent reads and writes sit under the same old <code>games</code> scope.
+            </p>
+            <p>
+              Tradeoff: this adds a small abstraction early. It buys back clarity by preventing scope string drift across server,
+              web, docs, and tests.
+            </p>
+          </details>
+        </article>
+
+        <article class="idea-card" id="i3">
+          <div class="idea-heading">
+            <div>
+              <h3>I3. Editable Consent Permission Sheet</h3>
+              <p class="section-note">
+                Let the user approve a selected subset instead of rubber-stamping the app's requested wishlist.
+              </p>
+            </div>
+            <span class="rank">Rank 3</span>
+          </div>
+          <div class="chip-row">
+            <span class="chip high">Confidence: High</span>
+            <span class="chip medium">Complexity: Medium</span>
+            <span class="chip">Axis: OAuth consent and user agency</span>
+          </div>
+          <dl>
+            <dt>Description</dt>
+            <dd>
+              Change inspect preview to return requested, grantable, default-selected, blocked, and dependency-linked scopes.
+              Render checkboxes grouped as Agents, Games, and Developer. Normal users do not see grantable producer controls,
+              and users can uncheck write access before approving.
+            </dd>
+            <dt>Why it matters</dt>
+            <dd>
+              AI apps can ask for everything, but normal users grant only the meaningful subset they are comfortable delegating.
+            </dd>
+          </dl>
+          <div class="diagram" aria-label="Editable consent flow diagram">
+            <svg viewBox="0 0 900 250" role="img" aria-labelledby="consent-diagram-title consent-diagram-desc">
+              <title id="consent-diagram-title">Editable consent flow</title>
+              <desc id="consent-diagram-desc">
+                The app can ask broadly. The server filters by user role, registration, and dependencies. The user edits the
+                selected grant set. The token receives only the selected scopes.
+              </desc>
+              <defs>
+                <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#5d6876"></path>
+                </marker>
+              </defs>
+              <rect x="24" y="70" width="160" height="96" rx="8" fill="#e8edff" stroke="#bcc9f8"></rect>
+              <text x="44" y="104" font-size="15" font-weight="700" fill="#16202a">App request</text>
+              <text x="44" y="130" font-size="13" fill="#425060">asks for all</text>
+              <text x="44" y="150" font-size="13" fill="#425060">supported scopes</text>
+              <line x1="202" y1="118" x2="284" y2="118" stroke="#5d6876" stroke-width="3" marker-end="url(#arrow2)"></line>
+              <rect x="304" y="54" width="190" height="128" rx="8" fill="#e0f3f1" stroke="#9ccfcc"></rect>
+              <text x="326" y="88" font-size="15" font-weight="700" fill="#16202a">Preview filter</text>
+              <text x="326" y="114" font-size="13" fill="#425060">role, registration,</text>
+              <text x="326" y="134" font-size="13" fill="#425060">dependencies, defaults</text>
+              <text x="326" y="154" font-size="13" fill="#425060">blocked reasons</text>
+              <line x1="512" y1="118" x2="594" y2="118" stroke="#5d6876" stroke-width="3" marker-end="url(#arrow2)"></line>
+              <rect x="614" y="54" width="260" height="128" rx="8" fill="#f6ecd1" stroke="#dfca96"></rect>
+              <text x="636" y="88" font-size="15" font-weight="700" fill="#16202a">User-selected grant</text>
+              <text x="636" y="114" font-size="13" fill="#425060">read scopes can stay checked</text>
+              <text x="636" y="134" font-size="13" fill="#425060">write scopes can be unchecked</text>
+              <text x="636" y="154" font-size="13" fill="#425060">producer only if role allows</text>
+            </svg>
+            <p class="diagram-caption">
+              Prose is authoritative: approval submits the selected scope set, and the API rejects empty or dependency-invalid selections safely.
+            </p>
+          </div>
+          <details>
+            <summary>Evidence and tradeoffs</summary>
+            <p>
+              Direct evidence: the current authorize client submits approve, deny, or cancel for the original request and renders one raw
+              scope row. Editable consent needs API support, not only frontend checkboxes.
+            </p>
+            <p>
+              Tradeoff: the redirect-safe error path becomes more important because a user can now approve a subset that invalidates dependencies.
+            </p>
+          </details>
+        </article>
+
+        <article class="idea-card" id="i4">
+          <div class="idea-heading">
+            <div>
+              <h3>I4. Honest Agent/Game Tool Split</h3>
+              <p class="section-note">
+                Make MCP tool availability match the delegated permission, especially for agent writes.
+              </p>
+            </div>
+            <span class="rank">Rank 4</span>
+          </div>
+          <div class="chip-row">
+            <span class="chip high">Confidence: High</span>
+            <span class="chip medium">Complexity: Medium</span>
+            <span class="chip">Axis: Tool inventory and enforcement</span>
+          </div>
+          <dl>
+            <dt>Description</dt>
+            <dd>
+              Map <code>list_agents</code>, <code>get_agent</code>, <code>search_agents</code>, and archetype reads to
+              <code>agents:read</code>. Map <code>create_agent</code> and <code>update_agent</code> to
+              <code>agents:write</code> with an <code>agents:read</code> dependency. Map game projection, event,
+              facts, and cognitive reads to <code>games:read</code>. Producer trace/global tools require <code>producer</code>.
+            </dd>
+            <dt>Why it matters</dt>
+            <dd>
+              This is where the new scopes become product permissions instead of pretty OAuth wallpaper.
+            </dd>
+          </dl>
+          <details>
+            <summary>Evidence and tradeoffs</summary>
+            <p>
+              Direct evidence: the current server routes list, search, get, create, and update agent tools in one non-producer bucket.
+              Docs currently list agent management under <code>scope=games</code>.
+            </p>
+            <p>
+              Tradeoff: queue tools need an explicit decision. Treat <code>join_queue</code> and <code>leave_queue</code> as
+              <code>agents:write</code> pre-match enrollment, or hide/defer them until a future write scope exists. Do not leave
+              state mutation under <code>games:read</code>.
+            </p>
+          </details>
+        </article>
+
+        <article class="idea-card" id="i5">
+          <div class="idea-heading">
+            <div>
+              <h3>I5. Multi-Scope Token Storage and Refresh Policy</h3>
+              <p class="section-note">
+                Store normalized granted scopes as a set while still emitting OAuth's space-delimited scope string.
+              </p>
+            </div>
+            <span class="rank">Rank 5</span>
+          </div>
+          <div class="chip-row">
+            <span class="chip medium">Confidence: Medium</span>
+            <span class="chip">Complexity: Large</span>
+            <span class="chip">Axis: Scope and resource model</span>
+          </div>
+          <dl>
+            <dt>Description</dt>
+            <dd>
+              Store normalized granted scopes on clients, authorization codes, access tokens, and refresh tokens. Refresh tokens are issued
+              only for non-producer grants; any grant containing <code>producer</code> stays short-lived and browser-authorized.
+            </dd>
+            <dt>Why it matters</dt>
+            <dd>
+              The storage layer has to understand sets, dependencies, and refresh eligibility. Otherwise multi-scope authorization turns into
+              fragile string parsing.
+            </dd>
+          </dl>
+          <details>
+            <summary>Evidence and tradeoffs</summary>
+            <p>
+              Direct evidence: <code>packages/api/src/db/schema.ts</code> constrains current client, code, access-token, and refresh-token
+              scopes to the old vocabulary.
+            </p>
+            <p>
+              Tradeoff: this is the highest-migration item. Since backwards compatibility is explicitly out of scope, it can be a clean
+              constraint replacement instead of a bridge.
+            </p>
+          </details>
+        </article>
+
+        <article class="idea-card" id="i6">
+          <div class="idea-heading">
+            <div>
+              <h3>I6. Broad Ask, Narrow Grant Provider Compatibility</h3>
+              <p class="section-note">
+                Let provider-packaged AI apps request broadly while the authorization flow grants narrowly.
+              </p>
+            </div>
+            <span class="rank">Rank 6</span>
+          </div>
+          <div class="chip-row">
+            <span class="chip medium">Confidence: Medium</span>
+            <span class="chip">Complexity: Small</span>
+            <span class="chip">Axis: Provider/client compatibility</span>
+          </div>
+          <dl>
+            <dt>Description</dt>
+            <dd>
+              Advertise all supported scopes in authorization-server metadata and allow dynamic clients to register broad supported sets.
+              Consent filters by user and selection. <code>tools/list</code> reflects only granted scopes. With one <code>/mcp</code>
+              resource, omitted <code>resource</code> resolves to the canonical resource.
+            </dd>
+            <dt>Why it matters</dt>
+            <dd>
+              This keeps provider-packaged AI apps working when they ask for everything, without giving everything.
+            </dd>
+          </dl>
+          <details>
+            <summary>Evidence and tradeoffs</summary>
+            <p>
+              Direct evidence: current docs already tolerate broad client registration because some clients register every advertised scope.
+              External OAuth and MCP guidance expects supported scopes and resource metadata to be discoverable while server-side authorization
+              still decides what the token actually receives.
+            </p>
+            <p>
+              Tradeoff: public metadata can mention <code>producer</code>, but the consent layer must make clear that producer is not grantable
+              for normal accounts.
+            </p>
+          </details>
+        </article>
+
+        <article class="idea-card" id="i7">
+          <div class="idea-heading">
+            <div>
+              <h3>I7. No-Compatibility Noun Purge and Validation Matrix</h3>
+              <p class="section-note">
+                Move constants, docs, setup, tests, and concepts together so the old names do not keep teaching the old model.
+              </p>
+            </div>
+            <span class="rank">Rank 7</span>
+          </div>
+          <div class="chip-row">
+            <span class="chip high">Confidence: High</span>
+            <span class="chip medium">Complexity: Medium</span>
+            <span class="chip">Axis: Documentation and setup coherence</span>
+          </div>
+          <dl>
+            <dt>Description</dt>
+            <dd>
+              Replace old scope names and endpoint messaging across constants, migrations, setup commands, consent copy, server instructions,
+              docs, concepts, and tests. Add a table-driven scope matrix for metadata, preview, issuance, tool discovery, allowed and denied
+              calls, refresh behavior, producer role revocation, and audit fields.
+            </dd>
+            <dt>Why it matters</dt>
+            <dd>
+              Scope refreshes fail when code changes but docs and tests keep advertising the old contract.
+            </dd>
+          </dl>
+          <details>
+            <summary>Evidence and tradeoffs</summary>
+            <p>
+              Direct evidence: README, <code>docs/game-mcp-production-oauth.md</code>, <code>CONCEPTS.md</code>, <code>/get-mcp</code>,
+              and existing tests still advertise <code>games</code>, <code>mcp</code>, and <code>/mcp/producer</code>.
+            </p>
+            <p>
+              Tradeoff: this is boring work, which is why it matters. Auth bugs adore stale docs.
+            </p>
+          </details>
+        </article>
+      </div>
+    </section>
+
+    <section id="rejection-summary" aria-labelledby="rejection-heading">
+      <p class="eyebrow">What did not stand alone</p>
+      <h2 id="rejection-heading">Rejection Summary</h2>
+      <p class="section-note">
+        Rejected here means "merged into stronger composite ideas," not "bad." The useful pieces were preserved inside the ranked survivors.
+      </p>
+
+      <div class="table-wrap" aria-label="Rejected and merged raw ideas">
+        <table>
+          <thead>
+            <tr>
+              <th>Raw idea numbers</th>
+              <th>Disposition</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1, 4, 7, 17, 18, 19, 29, 30</td>
+              <td>Merged into I1</td>
+              <td>All express the same endpoint-collapse and role-filtered producer contract.</td>
+            </tr>
+            <tr>
+              <td>2, 13, 14, 15, 25, 31</td>
+              <td>Merged into I2 or I7</td>
+              <td>Registry, descriptor, enforcement, and regression-test discipline are strongest as one scope matrix.</td>
+            </tr>
+            <tr>
+              <td>3, 20, 24, 26</td>
+              <td>Merged into I3</td>
+              <td>Editable consent, permission-sheet semantics, and producer safety copy are one user-facing surface.</td>
+            </tr>
+            <tr>
+              <td>5, 10, 11, 12, 22, 33</td>
+              <td>Merged into I4 or I7</td>
+              <td>Agent read/write honesty, queue mutation policy, setup bundles, and app bootstrap are tool-inventory consequences.</td>
+            </tr>
+            <tr>
+              <td>6, 8, 9, 21, 28</td>
+              <td>Merged into I6</td>
+              <td>Provider compatibility is the broad-request, narrow-grant story plus canonical resource resolution.</td>
+            </tr>
+            <tr>
+              <td>16, 23, 27, 34</td>
+              <td>Merged into I5 or I7</td>
+              <td>Storage, type names, schema cleanup, and noun purge belong in the cutover plan.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <article class="callout blue" style="margin-top: 16px;">
+        <span class="card-label">Verification note</span>
+        <p>
+          No topic axis was left without a survivor. Basis verification was done in-thread from repo evidence and official protocol references;
+          no separate verifier subagent was available in this harness.
+        </p>
+      </article>
+    </section>
+
+    <section id="sources" aria-labelledby="sources-heading">
+      <p class="eyebrow">Traceability</p>
+      <h2 id="sources-heading">Sources</h2>
+      <p class="section-note">
+        These were the main local and external inputs used to ground the idea set.
+      </p>
+      <div class="source-grid">
+        <article class="source-card">
+          <span class="card-label">Local code</span>
+          <ul>
+            <li><code>packages/api/src/services/mcp-oauth.ts</code></li>
+            <li><code>packages/api/src/routes/mcp.ts</code></li>
+            <li><code>packages/api/src/routes/mcp-oauth.ts</code></li>
+            <li><code>packages/api/src/game-mcp/auth.ts</code></li>
+            <li><code>packages/api/src/game-mcp/server.ts</code></li>
+            <li><code>packages/api/src/db/schema.ts</code></li>
+            <li><code>packages/web/src/app/oauth/mcp/authorize/authorize-client.tsx</code></li>
+            <li><code>packages/web/src/lib/mcp-oauth.ts</code></li>
+            <li><code>packages/web/src/lib/mcp-setup.ts</code></li>
+          </ul>
+        </article>
+        <article class="source-card">
+          <span class="card-label">Local docs</span>
+          <ul>
+            <li><code>README.md</code></li>
+            <li><code>CONCEPTS.md</code></li>
+            <li><code>STRATEGY.md</code></li>
+            <li><code>docs/game-mcp-production-oauth.md</code></li>
+            <li><code>docs/solutions/architecture-patterns/production-mcp-role-resource-split.md</code></li>
+            <li><code>docs/solutions/architecture-patterns/mcp-oauth-provider-compatibility.md</code></li>
+          </ul>
+        </article>
+        <article class="source-card">
+          <span class="card-label">External protocol references</span>
+          <ul>
+            <li><a href="https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization">Model Context Protocol Authorization</a></li>
+            <li><a href="https://datatracker.ietf.org/doc/html/rfc8707">OAuth 2.0 Resource Indicators, RFC 8707</a></li>
+            <li><a href="https://developers.openai.com/apps-sdk/build/auth">OpenAI Apps SDK Authentication</a></li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <p class="footer">
+      Composed 2026-06-30T09:55:08-0600 from ce-ideate run e2ab246e. Scratch evidence lives under
+      <code>/tmp/compound-engineering/ce-ideate/e2ab246e</code>.
+    </p>
+  </main>
+</body>
+</html>

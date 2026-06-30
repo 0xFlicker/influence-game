@@ -19,10 +19,10 @@ describe("MCP setup docs alignment", () => {
     expect(docs).toContain("Influence games, agents, rules, and supported pre-match queues");
   });
 
-  it("keeps producer setup in internal docs and out of the player page", () => {
-    expect(docs).toContain("influence-game-producer");
-    expect(docs).toContain("/mcp/producer");
-    expect(setupPage).not.toContain("influence-game-producer");
+  it("keeps producer scope in internal docs and out of the player page", () => {
+    expect(docs).toContain("scope `producer`");
+    expect(docs).toContain("requires the logged-in subject to currently hold the `producer` role");
+    expect(setupPage).not.toContain("scope `producer`");
     expect(setupPage).not.toContain("/mcp/producer");
     expect(setupPage).not.toContain("scope=mcp");
   });

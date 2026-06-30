@@ -1,8 +1,8 @@
 /**
  * MCP OAuth routes.
  *
- * These routes produce opaque bearer tokens for Game MCP access.
- * `scope=games` is user-facing; `scope=mcp` is the producer/global boundary.
+ * These routes produce opaque bearer tokens for Influence MCP access.
+ * `/mcp` is the only protected resource; OAuth scopes carry capability.
  */
 
 import { randomUUID } from "node:crypto";
@@ -19,24 +19,26 @@ import {
   exchangeMcpOAuthCode,
   getMcpOAuthAuthorizationEndpoint,
   getMcpOAuthAuthorizationServerIssuer,
-  getMcpOAuthProfile,
-  getMcpOAuthProfileResourceUri,
-  getMcpOAuthProfiles,
+  getMcpOAuthResourceUri,
   getMcpOAuthRegistrationEndpoint,
   getMcpOAuthRevocationEndpoint,
   getMcpOAuthTokenEndpoint,
   introspectMcpAccessToken,
   MCP_OAUTH_CLIENT_ID,
-  profileForMcpResourceUri,
-  profileForMcpScope,
+  MCP_OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
+  MCP_OAUTH_RESOURCE_NAME,
   registerMcpOAuthClient,
   revokeMcpOAuthToken,
   type McpAuthProfile,
-  type McpOAuthProfileName,
   type McpOAuthAuditMetadata,
   type McpOAuthRegistrationAuditMetadata,
   secretsEqual,
 } from "../services/mcp-oauth.js";
+import {
+  MCP_OAUTH_SCOPE_VALUES,
+  mcpOAuthScopeSetHasProducer,
+  parseMcpOAuthScopeSet,
+} from "../services/mcp-scope-policy.js";
 import {
   parseMcpAppProviderId,
   type McpAppAuditStage,
@@ -94,7 +96,10 @@ export function createMcpOAuthRoutes(
       event: "mcp.oauth.register",
       correlationId,
       clientId: result.audit?.clientId,
-      scope: result.audit?.scope ?? safeAuditString(result.body.scope),
+      scope: result.audit?.scope ??
+        safeAuditString(result.body.scope) ??
+        safeAuditString(body.scope) ??
+        safeAuditString(body.selected_scope),
       result: result.status === 201 ? "success" : "failure",
       status: result.status,
       providerId: providerIdHint(c),
@@ -132,9 +137,15 @@ export function createMcpOAuthRoutes(
       walletAddress: result.audit?.walletAddress ?? c.get("user").walletAddress ?? undefined,
       clientId: result.audit?.clientId ?? safeAuditString(body.client_id),
       resource: result.audit?.resource ?? safeAuditString(body.resource),
-      scope: safeAuditString(body.scope),
+      scope: result.audit?.scope ??
+        safeAuditString(result.body.scope) ??
+        safeAuditString(body.scope) ??
+        safeAuditString(body.selected_scope),
+      requestedScope: result.audit?.requestedScope ?? safeAuditString(body.scope),
+      selectedScope: result.audit?.selectedScope ?? safeAuditString(body.selected_scope),
+      blockedScope: result.audit?.blockedScope,
       authProfile: result.audit?.authProfile ??
-        auditAuthProfileForRequest(body.scope, result.audit?.resource ?? body.resource),
+        auditAuthProfileForScope(result.body.scope ?? body.selected_scope ?? body.scope),
       decision,
       providerId: providerIdHint(c),
       appStage: "oauth_start",
@@ -300,14 +311,12 @@ export function createMcpOAuthRoutes(
   });
 
   app.get("/.well-known/oauth-protected-resource", (c) => {
-    return c.json(buildProtectedResourceMetadata("games"));
+    return c.json(buildProtectedResourceMetadata());
   });
 
-  for (const profile of getMcpOAuthProfiles()) {
-    app.get(profile.protectedResourceMetadataPath, (c) => {
-      return c.json(buildProtectedResourceMetadata(profile.name));
-    });
-  }
+  app.get(MCP_OAUTH_PROTECTED_RESOURCE_METADATA_PATH, (c) => {
+    return c.json(buildProtectedResourceMetadata());
+  });
 
   app.get("/.well-known/oauth-authorization-server", (c) => {
     return c.json({
@@ -320,7 +329,7 @@ export function createMcpOAuthRoutes(
       grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
-      scopes_supported: getMcpOAuthProfiles().map((profile) => profile.scope),
+      scopes_supported: MCP_OAUTH_SCOPE_VALUES,
       client_id: MCP_OAUTH_CLIENT_ID,
     });
   });
@@ -352,14 +361,13 @@ function getCorrelationId(c: Context): string {
     randomUUID();
 }
 
-function buildProtectedResourceMetadata(profileName: McpOAuthProfileName): Record<string, unknown> {
-  const profile = getMcpOAuthProfile(profileName);
+function buildProtectedResourceMetadata(): Record<string, unknown> {
   return {
-    resource: getMcpOAuthProfileResourceUri(profile),
+    resource: getMcpOAuthResourceUri(),
     authorization_servers: [getMcpOAuthAuthorizationServerIssuer()],
-    scopes_supported: [profile.scope],
+    scopes_supported: MCP_OAUTH_SCOPE_VALUES,
     bearer_methods_supported: ["header"],
-    resource_name: profile.resourceName,
+    resource_name: MCP_OAUTH_RESOURCE_NAME,
   };
 }
 
@@ -378,21 +386,9 @@ function tokenGrantType(value: unknown): "authorization_code" | "refresh_token" 
 
 function auditAuthProfileForScope(value: unknown): McpAuthProfile | undefined {
   const scope = safeAuditString(value);
-  return scope ? profileForMcpScope(scope)?.authProfile : undefined;
-}
-
-function auditAuthProfileForRequest(
-  scopeValue: unknown,
-  resourceValue: unknown,
-): McpAuthProfile | undefined {
-  const scope = safeAuditString(scopeValue);
-  const resource = safeAuditString(resourceValue);
-  if (!scope || !resource) return auditAuthProfileForScope(scopeValue);
-  const profile = profileForMcpResourceUri(resource);
-  if (!profile) return auditAuthProfileForScope(scopeValue);
-  return scope.split(/\s+/).includes(profile.scope)
-    ? profile.authProfile
-    : auditAuthProfileForScope(scopeValue);
+  const parsed = scope ? parseMcpOAuthScopeSet(scope) : null;
+  if (!parsed) return undefined;
+  return mcpOAuthScopeSetHasProducer(parsed) ? "producer" : "subject";
 }
 
 function bodyErrorCode(body: Record<string, unknown>): string | undefined {

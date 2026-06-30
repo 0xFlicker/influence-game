@@ -10,6 +10,8 @@ import {
   authorizeMcpOAuth,
   type McpOAuthAuthorizePreview,
   type McpOAuthDecision,
+  type McpOAuthScope,
+  type McpOAuthScopePreview,
 } from "@/lib/api";
 import {
   parseMcpOAuthSearchParams,
@@ -115,6 +117,7 @@ export function McpOAuthAuthorizeClient() {
   const submitDecision = useCallback(async (
     request: McpOAuthAuthorizeRequest,
     decision: Exclude<McpOAuthDecision, "inspect">,
+    selectedScopes?: McpOAuthScope[],
   ) => {
     setSubmitting(decision);
     setFlow({
@@ -123,7 +126,7 @@ export function McpOAuthAuthorizeClient() {
     });
 
     try {
-      const result = await authorizeMcpOAuth(request, decision);
+      const result = await authorizeMcpOAuth(request, decision, selectedScopes);
       if (!("redirectTo" in result)) {
         setFlow({
           kind: "error",
@@ -207,7 +210,8 @@ export function McpOAuthAuthorizeClient() {
               displayName={user?.displayName}
               walletAddress={user?.walletAddress}
               submitting={submitting}
-              onDecision={(decision) => submitDecision(parsed.request, decision)}
+              onDecision={(decision, selectedScopes) =>
+                submitDecision(parsed.request, decision, selectedScopes)}
             />
           )}
         </div>
@@ -217,10 +221,10 @@ export function McpOAuthAuthorizeClient() {
 }
 
 function isProducerAuthorizationRequest(request: McpOAuthAuthorizeRequest): boolean {
-  if (!request.scope.split(/\s+/).includes("mcp")) return false;
-  if (!request.resource) return !request.scope.split(/\s+/).includes("games");
+  if (!request.scope.split(/\s+/).includes("producer")) return false;
+  if (!request.resource) return true;
   try {
-    return new URL(request.resource).pathname === "/mcp/producer";
+    return new URL(request.resource).pathname === "/mcp";
   } catch {
     return false;
   }
@@ -237,15 +241,48 @@ function ConsentDetails({
   displayName?: string | null;
   walletAddress?: string | null;
   submitting: McpOAuthDecision | null;
-  onDecision: (decision: Exclude<McpOAuthDecision, "inspect">) => void;
+  onDecision: (
+    decision: Exclude<McpOAuthDecision, "inspect">,
+    selectedScopes?: McpOAuthScope[],
+  ) => void;
 }) {
-  const isProducerGrant = preview.scope === "mcp" || preview.authProfile === "producer_mcp";
-  const grant = isProducerGrant
-    ? "Global read-only producer MCP access, including developer evidence and private reasoning tools"
-    : "Access your Influence games via MCP: games you created or joined and your player/agent records";
-  const copy = isProducerGrant
-    ? "Approving grants bearer access to the deployed producer MCP surface for this environment. This is trusted maintainer access to wired inspection tools, not a per-game or per-player grant."
-    : "Approving grants bearer access to your game history on this environment. Private trace content and producer inspection tools are not included.";
+  const [selectedScopes, setSelectedScopes] = useState<McpOAuthScope[]>(
+    preview.selectedScopes.length > 0
+      ? preview.selectedScopes
+      : preview.defaultSelectedScopes,
+  );
+  const selectedSet = useMemo(() => new Set(selectedScopes), [selectedScopes]);
+  const selectedScopeText = selectedScopes.join(" ");
+  const grantableGroups = useMemo(() => ({
+    agents: preview.grantableScopes.filter((scope) => scope.group === "agents"),
+    games: preview.grantableScopes.filter((scope) => scope.group === "games"),
+    developer: preview.grantableScopes.filter((scope) => scope.group === "developer"),
+  }), [preview.grantableScopes]);
+
+  const toggleScope = useCallback((scope: McpOAuthScope, checked: boolean) => {
+    setSelectedScopes((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(scope);
+        const definition = preview.grantableScopes.find((entry) => entry.scope === scope);
+        for (const requiredScope of definition?.requiredScopes ?? []) {
+          next.add(requiredScope);
+        }
+      } else {
+        next.delete(scope);
+        for (const entry of preview.grantableScopes) {
+          if (entry.requiredScopes.includes(scope)) {
+            next.delete(entry.scope);
+          }
+        }
+      }
+      return preview.grantableScopes
+        .map((entry) => entry.scope)
+        .filter((entry) => next.has(entry));
+    });
+  }, [preview.grantableScopes]);
+
+  const canApprove = selectedScopes.length > 0 && submitting === null;
 
   return (
     <div className="space-y-6">
@@ -253,13 +290,40 @@ function ConsentDetails({
         <Detail label="Signed in as" value={displayName ?? walletAddress ?? "Current user"} />
         <Detail label="Wallet" value={walletAddress ?? "No wallet"} />
         <Detail label="Client" value={preview.clientId} />
-        <Detail label="Scope" value={preview.scope} />
+        <Detail label="Selected scopes" value={selectedScopeText || "None selected"} />
         <Detail label="Resource" value={preview.resource} wide />
         <Detail label="Redirect" value={preview.redirectUri} wide />
-        <Detail label="Grant" value={grant} wide />
       </dl>
 
-      <p className="influence-copy text-sm">{copy}</p>
+      <div className="space-y-4">
+        {grantableGroups.agents.length > 0 && (
+          <ScopeGroup
+            title="Agents"
+            scopes={grantableGroups.agents}
+            selectedSet={selectedSet}
+            disabled={submitting !== null}
+            onToggle={toggleScope}
+          />
+        )}
+        {grantableGroups.games.length > 0 && (
+          <ScopeGroup
+            title="Games"
+            scopes={grantableGroups.games}
+            selectedSet={selectedSet}
+            disabled={submitting !== null}
+            onToggle={toggleScope}
+          />
+        )}
+        {grantableGroups.developer.length > 0 && (
+          <ScopeGroup
+            title="Developer access"
+            scopes={grantableGroups.developer}
+            selectedSet={selectedSet}
+            disabled={submitting !== null}
+            onToggle={toggleScope}
+          />
+        )}
+      </div>
 
       <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
         <button
@@ -280,14 +344,60 @@ function ConsentDetails({
         </button>
         <button
           type="button"
-          onClick={() => onDecision("approve")}
-          disabled={submitting !== null}
+          onClick={() => onDecision("approve", selectedScopes)}
+          disabled={!canApprove}
           className="influence-button-primary rounded-lg px-5 py-2 text-sm font-medium"
         >
           Approve
         </button>
       </div>
     </div>
+  );
+}
+
+function ScopeGroup({
+  title,
+  scopes,
+  selectedSet,
+  disabled,
+  onToggle,
+}: {
+  title: string;
+  scopes: McpOAuthScopePreview[];
+  selectedSet: Set<McpOAuthScope>;
+  disabled: boolean;
+  onToggle: (scope: McpOAuthScope, checked: boolean) => void;
+}) {
+  return (
+    <section className="rounded-lg border border-[rgb(var(--border-active)/0.45)] bg-[rgb(var(--surface-raised)/0.28)] p-4">
+      <h2 className="text-sm font-semibold text-[rgb(var(--text-primary))]">
+        {title}
+      </h2>
+      <div className="mt-3 space-y-3">
+        {scopes.map((scope) => (
+          <label
+            key={scope.scope}
+            className="grid cursor-pointer grid-cols-[auto_1fr] gap-3 rounded-md p-2 transition hover:bg-[rgb(var(--surface-raised)/0.4)]"
+          >
+            <input
+              type="checkbox"
+              checked={selectedSet.has(scope.scope)}
+              disabled={disabled}
+              onChange={(event) => onToggle(scope.scope, event.target.checked)}
+              className="mt-1 h-4 w-4 accent-[rgb(var(--accent-rgb))]"
+            />
+            <span>
+              <span className="block text-sm font-medium text-[rgb(var(--text-primary))]">
+                {scope.label}
+              </span>
+              <span className="mt-1 block text-sm leading-5 text-[rgb(var(--text-secondary))]">
+                {scope.description}
+              </span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </section>
   );
 }
 

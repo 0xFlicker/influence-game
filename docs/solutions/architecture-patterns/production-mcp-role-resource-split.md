@@ -1,5 +1,5 @@
 ---
-title: Production MCP Role Resource Split
+title: Production MCP Scope Boundary
 date: 2026-06-30
 category: architecture-patterns
 module: api Production Game MCP
@@ -10,49 +10,57 @@ applies_when:
   - "exposing production MCP tools to both player-facing clients and privileged producer/debug clients"
   - "adding user-facing MCP mutations that must stay limited to pre-match management"
   - "granting game inspection access without leaking producer private traces or global developer visibility"
-  - "supporting MCP App/provider installs that need scope=games app reads"
-tags: [production-game-mcp, oauth, scope-games, scope-mcp, producer-mcp, agent-management, cognitive-artifacts, queue-enrollment]
+  - "supporting MCP App/provider installs that need scoped app reads"
+tags: [production-game-mcp, oauth, mcp-scopes, producer-mcp, agent-management, cognitive-artifacts, queue-enrollment]
 related_components: [service_object, assistant, documentation, tooling, testing_framework]
 ---
 
-# Production MCP Role Resource Split
+# Production MCP Scope Boundary
 
 ## Context
 
-Influence's production MCP surface now has to serve two different jobs without letting them blur together:
+Influence's production MCP surface now has to serve several jobs on one resource without letting them blur together:
 
-- `/mcp` is the user-facing resource. It authorizes OAuth `scope=games`, is constrained to the authenticated subject, and is described as "access your games via MCP."
-- `/mcp/producer` is the producer/debug resource. It authorizes OAuth `scope=mcp`, requires the current `mcp` role, and preserves global producer inspection plus private trace tooling.
+- `/mcp` is the only deployed HTTP MCP resource.
+- `agents:read` reads owned agents, queue state, archetypes, and agent records.
+- `agents:write` creates/updates owned agents and enrolls supported pre-match queues; it requires `agents:read`.
+- `games:read` reads accessible games, visible events, projections, timelines, rules, and authorized cognitive artifacts.
+- `producer` enables producer/debug visibility and private trace tools; it requires the current `producer` role.
 
 The user-facing resource expanded from game inspection into a management-only surface: rules discovery, structured archetype vocabulary, owned-agent list/detail/search, owned-agent create/update, daily-free queue status/join/leave, open-game list/join, authorized cognitive artifacts, projections, events, timelines, and revealed round facts. It deliberately does not expose voting, empower/expose, Council decisions, Mingle/lobby/diary messages, ready checks, timers, phase controls, moderator controls, or power actions.
 
-Session history showed the shape this replaced: early MCP work started as a privileged `scope=mcp` validation lane, then the `games` scope emerged as the correct user-facing lane. Treating `scope=mcp` as the future player scope was the recurring footgun; keeping producer access privileged and adding a separate subject-scoped `/mcp` resource made the boundary legible. (session history)
+Session history showed the shape this replaced: early MCP work started as a privileged validation lane, then a separate games-only resource emerged. The current design keeps the legible parts and removes the path split: producer access is a scope that is meaningful only for producer-role users, and the consent screen lets users drop write scopes before approval. (session history)
 
 ## Guidance
 
-Keep the resource split precise:
+Keep the scope boundary precise:
 
 ```text
 POST /mcp
-  scope: games
-  access: authenticated subject's games, owned agents, supported pre-match enrollment
-
-POST /mcp/producer
-  scope: mcp
-  access: global producer reads, current mcp role required, private trace tools
+  agents:read  -> owned agents, queue state, archetypes
+  agents:write -> owned-agent mutations and supported pre-match enrollment
+  games:read   -> accessible games, visible events, projections, artifacts
+  producer     -> global producer reads, current producer role required, private trace tools
 ```
 
-Build the user-facing tool catalog as an allowlist. Shared game-inspection reads can appear on both resources, but user management tools belong only on `/mcp`; producer evidence tools belong only on `/mcp/producer`. Under `scope=games`, unknown or producer-only tool names should fail before a read model runs.
+Build the tool catalog as an allowlist. Descriptor generation should list only tools allowed by the granted scopes, and tool calls must re-check scope requirements before read models or mutations run. Unknown, missing-scope, or producer-only tool names should fail before a read model runs.
 
-The current user-facing `/mcp` inventory is:
+The current game-read inventory requires `games:read` or `producer`:
 
 - Game reads: `list_games`, `read_projection`, `read_round_facts`, `filter_events`, `player_timeline`.
 - Cognitive artifacts: `list_cognitive_artifacts`, `read_cognitive_artifact`, with user authorization before row-existence or no-capture details leak.
 - Rules and vocabulary: `get_rules`, `search_rules`, `list_archetypes`.
-- Agent management: `list_agents`, `get_agent`, `search_agents`, `create_agent`, `update_agent`.
-- Pre-match enrollment: `get_queue_status`, `list_open_games`, `join_queue`, `leave_queue`.
+- Open games: `list_open_games`.
 
-The current producer `/mcp/producer` inventory keeps producer-only evidence access:
+The agent-read inventory requires `agents:read`:
+
+- `list_agents`, `get_agent`, `search_agents`, `get_queue_status`.
+
+The agent-management inventory requires both `agents:read` and `agents:write`:
+
+- `create_agent`, `update_agent`, `join_queue`, `leave_queue`.
+
+The producer inventory requires `producer`:
 
 - Shared game reads and cognitive artifact reads with producer visibility.
 - `inspect_durable_run`, `list_trace_manifests`, `read_trace_content`, `search_reasoning_traces`.
@@ -78,9 +86,9 @@ Keep responses LLM-legible. Management reads should include queue state, active 
 
 ## Why This Matters
 
-MCP clients infer behavior from tool names, descriptions, schemas, annotations, and returned payloads. If the user-facing resource advertises a live-match-shaped tool, a provider may try to use it. If a mutation is marked read-only, a host may treat it as safe exploration. If trace tools are discoverable under `scope=games`, private producer evidence becomes one prompt away from accidental exposure.
+MCP clients infer behavior from tool names, descriptions, schemas, annotations, and returned payloads. If the user-facing grant advertises a live-match-shaped tool, a provider may try to use it. If a mutation is marked read-only, a host may treat it as safe exploration. If trace tools are discoverable without `producer`, private producer evidence becomes one prompt away from accidental exposure.
 
-The two-profile resource model lets Influence expose useful end-user capability without weakening producer debugging. Players can create or tune agents and enter supported pre-match flows from AI apps, while raw trace metadata/content, global corpus inspection, and producer visibility stay behind `/mcp/producer` and the current `mcp` role.
+The scoped single-resource model lets Influence expose useful end-user capability without weakening producer debugging. Players can create or tune agents and enter supported pre-match flows from AI apps, while raw trace metadata/content, global corpus inspection, and producer visibility stay behind the `producer` scope plus the current `producer` role.
 
 Provider compatibility also depends on exact resource boundaries. Session history showed provider-packaged MCP apps are sensitive to externally visible metadata, callback URLs, and challenge shapes; fixes should come from live metadata and route checks, not guessed URL patterns or extra deployment knobs. (session history)
 
@@ -88,9 +96,9 @@ Provider compatibility also depends on exact resource boundaries. Session histor
 
 Apply this pattern whenever adding or changing production MCP tools, OAuth resource metadata, MCP App entry points, game-inspection reads, cognitive artifact access, agent profile management, pre-match enrollment, or queue types.
 
-Use the same boundary when designing ranked, tournament, party, invite-code, spectator, or avatar flows: user-facing `/mcp` may prepare or inspect subject-owned state; active match participation and producer evidence stay elsewhere unless there is a deliberate product decision and a new security review.
+Use the same boundary when designing ranked, tournament, party, invite-code, spectator, or avatar flows: MCP may prepare or inspect subject-owned state; active match participation and producer evidence require deliberate product decisions and a new security review.
 
-Also apply it when updating docs. `docs/game-mcp-production-oauth.md`, `CONCEPTS.md`, README/DEVELOPMENT validation notes, and tool descriptions must agree on the exact split: `scope=games` is subject-scoped; `scope=mcp` is producer/global; `/mcp/producer` uses the current `mcp` role.
+Also apply it when updating docs. `docs/game-mcp-production-oauth.md`, `CONCEPTS.md`, README/DEVELOPMENT validation notes, and tool descriptions must agree on the exact scope map: `agents:read`, `agents:write`, `games:read`, and `producer`.
 
 Do not apply this as justification to expose gameplay actions through MCP. If a tool casts votes, sends Mingle/lobby/diary messages, controls timers/phases, invokes powers, makes Council decisions, or moderates a live game, it is outside the user-facing MCP contract.
 
@@ -103,7 +111,7 @@ tool({
   name: "join_queue",
   description:
     "Enroll one owned agent into a supported pre-match queue. " +
-    "Do not use for active-match participation. Requires scope=games. " +
+    "Do not use for active-match participation. Requires agents:read and agents:write. " +
     "Side effect: inserts a queue entry or waiting game player row.",
   properties: {
     queueType: { type: "string", enum: ["daily-free", "open-game"] },
@@ -153,8 +161,8 @@ ranked/tournament/party/invite:
 Boundary checklist for a new MCP tool:
 
 ```text
-1. Which resource owns it: /mcp, /mcp/producer, or both?
-2. Which scope should appear in descriptor security schemes?
+1. Which scope owns it: agents:read, agents:write, games:read, producer, or a combination?
+2. Which scopes should appear in descriptor security schemes?
 3. Does it mutate state? If yes, readOnlyHint must be false.
 4. Does it act inside an active match? If yes, it does not belong on /mcp.
 5. Does it expose private trace metadata/content? If yes, producer only.
@@ -165,11 +173,11 @@ Boundary checklist for a new MCP tool:
 
 Readiness checks for this surface should cover:
 
-- Tool inventory for `/mcp` and `/mcp/producer`.
+- Scope-filtered tool inventory for `/mcp`.
 - OAuth security schemes and scopes in tool descriptors.
 - Correct `readOnlyHint` annotations for reads and mutations.
-- Producer trace tools not discoverable or callable with `scope=games`.
-- Active-match-shaped names rejected under `scope=games`.
+- Producer trace tools not discoverable or callable without `producer`.
+- Active-match-shaped names rejected without depending on the read model.
 - `list_archetypes` and create/update schemas exclude non-user-selectable archetypes.
 - Owned-agent list/search/update cannot cross users or leak another user's prompt.
 - Agent summaries label account-level rating provenance.
@@ -181,12 +189,12 @@ Use Bun for validation. If a DB-backed test or local API read reports `ECONNREFU
 
 ## Related
 
-- `docs/game-mcp-production-oauth.md` is the canonical production MCP OAuth and resource-profile contract.
-- `packages/api/src/game-mcp/server.ts` owns JSON-RPC routing, tool descriptors, read/write annotations, and the user/producer inventory split.
+- `docs/game-mcp-production-oauth.md` is the canonical production MCP OAuth and scope contract.
+- `packages/api/src/game-mcp/server.ts` owns JSON-RPC routing, tool descriptors, read/write annotations, and scope-filtered inventory.
 - `packages/api/src/game-mcp/rules.ts` and `packages/api/src/services/agent-archetypes.ts` keep rules/archetype vocabulary structured and aligned with validation.
 - `packages/api/src/services/agent-profile-management.ts` owns subject-scoped agent reads/mutations, rating provenance, immutable-field rejection, and rich agent serialization.
 - `packages/api/src/services/queue-enrollment.ts` owns daily-free/open-game enrollment semantics and unsupported queue errors.
 - `packages/api/src/__tests__/production-game-mcp-server.test.ts`, `agent-profile-management.test.ts`, `queue-enrollment.test.ts`, `game-mcp-rules.test.ts`, and `agent-archetypes.test.ts` are the focused regression suite.
-- `CONCEPTS.md` defines MCP role/scope, Games MCP scope, Management-only MCP, Producer MCP, Production Game MCP, cognitive artifacts, and private trace terms.
+- `CONCEPTS.md` defines MCP scopes, Management-only MCP, Producer MCP, Production Game MCP, cognitive artifacts, and private trace terms.
 - `docs/solutions/runtime-errors/production-game-mcp-raw-trace-read-limit.md` covers producer trace response sizing. It is adjacent, not a substitute for this management-surface boundary.
 - `docs/solutions/architecture-patterns/agent-strategy-observability-spine.md` covers the broader separation between player-visible state, canonical events, and producer/debug evidence.

@@ -148,6 +148,13 @@
       "when": 1782518400000,
       "tag": "0020_checkpoint_actor_coordinate",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1782864000000,
+      "tag": "0021_mcp_scope_refresh",
+      "breakpoints": true
     }
   ]
 }

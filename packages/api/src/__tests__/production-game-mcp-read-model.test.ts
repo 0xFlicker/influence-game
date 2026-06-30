@@ -24,7 +24,7 @@ import {
 
 const PRODUCER_ACCESS = {
   userId: "producer-reviewer",
-  authProfile: "producer_mcp" as const,
+  authProfile: "producer" as const,
 };
 
 class FakePrivateTraceStorage implements PrivateTraceStorageAdapter {
@@ -232,7 +232,7 @@ describe("ProductionGameMcpReadModel", () => {
     const readModel = new ProductionGameMcpReadModel(db);
     const gamesAccess = {
       userId,
-      authProfile: "games_subject" as const,
+      authProfile: "subject" as const,
     };
     const games = await readModel.listGames(gamesAccess, 20);
     const gameIds = games.canonicalGameFacts.games.map((game) => game.id);
@@ -264,10 +264,10 @@ describe("ProductionGameMcpReadModel", () => {
     });
 
     await expect(readModel.readProjection(unrelatedGameId, gamesAccess)).rejects.toThrow(
-      /^Game is not accessible for scope=games$/,
+      /^Game is not accessible for MCP scope: games:read$/,
     );
     await expect(readModel.readProjection("missing-game", gamesAccess)).rejects.toThrow(
-      /^Game is not accessible for scope=games$/,
+      /^Game is not accessible for MCP scope: games:read$/,
     );
   });
 
@@ -309,7 +309,7 @@ describe("ProductionGameMcpReadModel", () => {
     const readModel = new ProductionGameMcpReadModel(db);
     const gamesAccess = {
       userId,
-      authProfile: "games_subject" as const,
+      authProfile: "subject" as const,
     };
 
     const createdFacts = await readModel.readRoundFacts({
@@ -343,10 +343,10 @@ describe("ProductionGameMcpReadModel", () => {
     expect(producerFacts.canonicalGameFacts.roundFacts.standardVote.status).toBe("available");
 
     await expect(readModel.readRoundFacts({ gameIdOrSlug: unrelatedGameId }, gamesAccess)).rejects.toThrow(
-      /^Game is not accessible for scope=games$/,
+      /^Game is not accessible for MCP scope: games:read$/,
     );
     await expect(readModel.readRoundFacts({ gameIdOrSlug: "missing-game" }, gamesAccess)).rejects.toThrow(
-      /^Game is not accessible for scope=games$/,
+      /^Game is not accessible for MCP scope: games:read$/,
     );
   });
 
@@ -365,8 +365,8 @@ describe("ProductionGameMcpReadModel", () => {
       visibilityMode: "producer",
     }, {
       userId,
-      authProfile: "games_subject" as const,
-    })).rejects.toThrow("producer visibility is not available for scope=games");
+      authProfile: "subject" as const,
+    })).rejects.toThrow("producer visibility requires MCP scope: producer");
   });
 
   test("reads and searches private trace evidence through DB manifests and storage", async () => {

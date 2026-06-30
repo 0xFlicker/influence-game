@@ -32,7 +32,7 @@ const MAX_GAME_LIMIT = 100;
 const DEFAULT_TRACE_CONTENT_BYTES = 8 * 1024 * 1024;
 const MAX_TRACE_CONTENT_BYTES = 64 * 1024 * 1024;
 const DEVELOPER_EVIDENCE_NOTE =
-  "Private reasoning tools are available as explicit tool calls behind the same global scope=mcp gate.";
+  "Private reasoning tools are available as explicit tool calls behind the producer MCP scope.";
 
 export type ProductionGameMcpAccess = Pick<GameMcpAuthContext, "authProfile" | "userId">;
 
@@ -252,7 +252,7 @@ export class ProductionGameMcpReadModel {
     const game = await this.requireGame(options.gameIdOrSlug, access);
     const eventRead = await getPersistedGameEvents(this.db, game.id);
     if (isGamesSubjectAccess(access) && options.visibilityMode === "producer") {
-      throw new Error("producer visibility is not available for scope=games");
+      throw new Error("producer visibility requires MCP scope: producer");
     }
     const visibilityMode = options.visibilityMode ?? (
       isGamesSubjectAccess(access) ? "player" : "producer"
@@ -428,10 +428,10 @@ export class ProductionGameMcpReadModel {
   ): Promise<ProductionGameMcpGameIdentity> {
     const game = await this.resolveGame(gameIdOrSlug);
     if (isGamesSubjectAccess(access)) {
-      if (!game) throw new Error("Game is not accessible for scope=games");
+      if (!game) throw new Error("Game is not accessible for MCP scope: games:read");
       const claims = await resolveGamesMcpClaims(this.db, access.userId);
       if (!claims.gameIds.has(game.id)) {
-        throw new Error("Game is not accessible for scope=games");
+        throw new Error("Game is not accessible for MCP scope: games:read");
       }
     } else if (!game) {
       throw new Error(`Unknown game: ${gameIdOrSlug}`);
@@ -512,12 +512,12 @@ function clamp(value: number, min: number, max: number): number {
 function isGamesSubjectAccess(
   access: ProductionGameMcpAccess,
 ): access is ProductionGameMcpAccess {
-  return access.authProfile === "games_subject";
+  return access.authProfile === "subject";
 }
 
 function requireProducerAccess(access: ProductionGameMcpAccess): void {
-  if (access.authProfile !== "producer_mcp") {
-    throw new Error("Producer-only MCP evidence is not available for scope=games");
+  if (access.authProfile !== "producer") {
+    throw new Error("Producer-only MCP evidence requires MCP scope: producer");
   }
 }
 

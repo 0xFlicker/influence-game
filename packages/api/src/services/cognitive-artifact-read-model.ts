@@ -183,7 +183,7 @@ export class CognitiveArtifactReadModel {
     }
 
     if (
-      access.authProfile === "games_subject" &&
+      access.authProfile === "subject" &&
       (!params.artifactType || !params.actorPlayerId)
     ) {
       await this.audit({
@@ -204,7 +204,7 @@ export class CognitiveArtifactReadModel {
     }
 
     if (
-      access.authProfile === "games_subject" &&
+      access.authProfile === "subject" &&
       params.artifactType &&
       params.actorPlayerId
     ) {
@@ -254,7 +254,7 @@ export class CognitiveArtifactReadModel {
       eq(schema.gameCognitiveArtifacts.id, params.artifactId),
       eq(schema.gameCognitiveArtifacts.gameId, game.id),
     ];
-    if (access.authProfile === "games_subject") {
+    if (access.authProfile === "subject") {
       rowConditions.push(eq(schema.gameCognitiveArtifacts.artifactType, params.artifactType!));
       rowConditions.push(eq(schema.gameCognitiveArtifacts.actorPlayerId, params.actorPlayerId!));
     }
@@ -356,7 +356,7 @@ export class CognitiveArtifactReadModel {
   }
 
   private async withClaims(accessor: CognitiveArtifactAccessor): Promise<CognitiveArtifactAccessor> {
-    if (accessor.authProfile !== "games_subject" || accessor.claims || !accessor.userId) {
+    if (accessor.authProfile !== "subject" || accessor.claims || !accessor.userId) {
       return accessor;
     }
     return {

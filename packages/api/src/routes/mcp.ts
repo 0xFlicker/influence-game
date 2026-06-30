@@ -9,10 +9,7 @@ import {
   type GameMcpAuthContext,
   type GameMcpAuthResult,
 } from "../game-mcp/auth.js";
-import {
-  getMcpOAuthProfile,
-  type McpOAuthProfileName,
-} from "../services/mcp-oauth.js";
+import { getMcpOAuthResourceUri } from "../services/mcp-oauth.js";
 import {
   createProductionGameMcpServer,
   type JsonRpcRequest,
@@ -52,7 +49,6 @@ export interface GameMcpAuditEvent {
 export type GameMcpAuditLogger = (event: GameMcpAuditEvent) => void;
 export type GameMcpTokenValidator = (
   token: string,
-  expectedProfile: McpOAuthProfileName,
 ) => Promise<GameMcpAuthResult>;
 
 export interface CreateMcpRoutesOptions {
@@ -69,22 +65,13 @@ export function createMcpRoutes(
   const app = new Hono();
   const server = options.server ?? createProductionGameMcpServer(db);
   const auditLogger = options.auditLogger ?? defaultAuditLogger;
-  const tokenValidator = options.tokenValidator ?? ((token, expectedProfile) =>
-    validateGameMcpBearerToken(db, token, expectedProfile)
+  const tokenValidator = options.tokenValidator ?? ((token) =>
+    validateGameMcpBearerToken(db, token)
   );
   const maxPostBytes = options.maxPostBytes ?? DEFAULT_MAX_POST_BYTES;
 
   registerMcpResource(app, {
-    path: getMcpOAuthProfile("games").resourcePath,
-    expectedProfile: "games",
-    server,
-    auditLogger,
-    tokenValidator,
-    maxPostBytes,
-  });
-  registerMcpResource(app, {
-    path: getMcpOAuthProfile("producer").resourcePath,
-    expectedProfile: "producer",
+    path: new URL(getMcpOAuthResourceUri()).pathname,
     server,
     auditLogger,
     tokenValidator,
@@ -98,7 +85,6 @@ function registerMcpResource(
   app: Hono,
   params: {
     path: string;
-    expectedProfile: McpOAuthProfileName;
     server: ProductionGameMcpJsonRpcServer;
     auditLogger: GameMcpAuditLogger;
     tokenValidator: GameMcpTokenValidator;
@@ -106,7 +92,7 @@ function registerMcpResource(
   },
 ): void {
   app.get(params.path, async (c) => {
-    const auth = await preflight(c, params.expectedProfile, params.auditLogger, params.tokenValidator);
+    const auth = await preflight(c, params.auditLogger, params.tokenValidator);
     if (!auth.ok) return auth.response;
 
     emitAudit(params.auditLogger, {
@@ -128,7 +114,7 @@ function registerMcpResource(
 
   app.post(params.path, async (c) => {
     const correlationId = getCorrelationId(c);
-    const auth = await preflight(c, params.expectedProfile, params.auditLogger, params.tokenValidator);
+    const auth = await preflight(c, params.auditLogger, params.tokenValidator);
     if (!auth.ok) return auth.response;
 
     const contentLength = Number(c.req.header("content-length") ?? "0");
@@ -240,7 +226,6 @@ function registerMcpResource(
 
 async function preflight(
   c: Context,
-  expectedProfile: McpOAuthProfileName,
   auditLogger: GameMcpAuditLogger,
   tokenValidator: GameMcpTokenValidator,
 ): Promise<
@@ -286,7 +271,7 @@ async function preflight(
   const requestOrigin = new URL(c.req.url).origin;
   const token = extractBearerToken(c.req.header("Authorization"));
   if (!token) {
-    c.header("WWW-Authenticate", bearerChallenge(requestOrigin, expectedProfile));
+    c.header("WWW-Authenticate", bearerChallenge(requestOrigin));
     emitAudit(auditLogger, {
       event: "mcp.http.request",
       correlationId,
@@ -303,9 +288,9 @@ async function preflight(
 
   let auth: GameMcpAuthResult;
   try {
-    auth = await tokenValidator(token, expectedProfile);
+    auth = await tokenValidator(token);
   } catch {
-    c.header("WWW-Authenticate", bearerChallenge(requestOrigin, expectedProfile));
+    c.header("WWW-Authenticate", bearerChallenge(requestOrigin));
     emitAudit(auditLogger, {
       event: "mcp.http.request",
       correlationId,
@@ -323,7 +308,7 @@ async function preflight(
     };
   }
   if (!auth.ok) {
-    c.header("WWW-Authenticate", bearerChallenge(requestOrigin, expectedProfile));
+    c.header("WWW-Authenticate", bearerChallenge(requestOrigin));
     emitAudit(auditLogger, {
       event: "mcp.http.request",
       correlationId,
