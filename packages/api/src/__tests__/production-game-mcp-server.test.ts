@@ -8,11 +8,13 @@ import {
   createInfluenceMcpAppResourceContent,
 } from "../game-mcp/app-resource.js";
 import type { DrizzleDB } from "../db/index.js";
+import { schema } from "../db/index.js";
 import {
   ProductionGameMcpReadModel,
 } from "../game-mcp/read-model.js";
 import type { PrivateTraceReadModel } from "../services/private-trace-read-model.js";
 import type { GameMcpAuthContext } from "../game-mcp/auth.js";
+import { setupTestDB } from "./test-utils.js";
 
 const GAMES_AUTH: GameMcpAuthContext = {
   userId: "user-1",
@@ -58,6 +60,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     ]);
     expect(JSON.stringify(tools)).toContain("\"scopes\":[\"mcp\"]");
     expect(JSON.stringify(tools)).not.toContain("start_game");
+    expect(JSON.stringify(tools)).not.toContain("create_agent");
+    expect(JSON.stringify(tools)).not.toContain("join_queue");
     const searchTool = tools.find((tool) => (tool as { name: string }).name === "search_reasoning_traces");
     expect(JSON.stringify(searchTool)).not.toContain("maxBytesPerObject");
     expect(JSON.stringify(searchTool)).toContain("maxBytes");
@@ -81,10 +85,48 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "player_timeline",
       "list_cognitive_artifacts",
       "read_cognitive_artifact",
+      "get_rules",
+      "search_rules",
+      "list_archetypes",
+      "list_agents",
+      "get_agent",
+      "search_agents",
+      "get_queue_status",
+      "list_open_games",
+      "create_agent",
+      "update_agent",
+      "join_queue",
+      "leave_queue",
     ]);
     expect(JSON.stringify(tools)).toContain("\"scopes\":[\"games\"]");
     expect(JSON.stringify(tools)).not.toContain("read_trace_content");
     expect(JSON.stringify(tools)).not.toContain("\"scopes\":[\"mcp\"]");
+    expect(JSON.stringify(tools)).not.toContain("\"vote\"");
+    expect(JSON.stringify(tools)).not.toContain("mingle_message");
+    expect(JSON.stringify(tools)).not.toContain("ready_check");
+  });
+
+  test("marks user-facing management reads and mutations accurately", async () => {
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+    }, GAMES_AUTH);
+
+    expect(response?.error).toBeUndefined();
+    const tools = ((response?.result as { tools: Array<{ name: string; annotations: { readOnlyHint: boolean }; inputSchema: unknown; description: string }> }).tools);
+    const byName = new Map(tools.map((tool) => [tool.name, tool]));
+
+    expect(byName.get("list_archetypes")?.annotations.readOnlyHint).toBe(true);
+    expect(byName.get("list_agents")?.annotations.readOnlyHint).toBe(true);
+    expect(byName.get("create_agent")?.annotations.readOnlyHint).toBe(false);
+    expect(byName.get("update_agent")?.annotations.readOnlyHint).toBe(false);
+    expect(byName.get("join_queue")?.annotations.readOnlyHint).toBe(false);
+    expect(byName.get("leave_queue")?.annotations.readOnlyHint).toBe(false);
+    expect(JSON.stringify(byName.get("create_agent")?.inputSchema)).toContain("diplomat");
+    expect(JSON.stringify(byName.get("create_agent")?.inputSchema)).not.toContain("broker");
+    expect(byName.get("join_queue")?.description).toContain("Side effect");
   });
 
   test("advertises list_games as the user-facing MCP App entry point", async () => {
@@ -257,6 +299,110 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(text).toContain("\"ok\": true");
   });
 
+  test("routes list_archetypes without producer or database access", async () => {
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: "archetypes",
+      method: "tools/call",
+      params: { name: "list_archetypes", arguments: { includeStrategyHints: true } },
+    }, GAMES_AUTH);
+
+    expect(response?.error).toBeUndefined();
+    const text = ((response?.result as { content: Array<{ text: string }> }).content[0]?.text);
+    expect(text).toContain("\"key\": \"diplomat\"");
+    expect(text).toContain("\"strategyHint\"");
+    expect(text).not.toContain("\"key\": \"broker\"");
+  });
+
+  test("routes management calls through the authenticated user only", async () => {
+    const db = await setupTestDB();
+    await db.insert(schema.users).values([
+      {
+        id: GAMES_AUTH.userId,
+        email: "games-user@test.example",
+        displayName: "Games User",
+        rating: 1377,
+        peakRating: 1401,
+      },
+      {
+        id: "other-user",
+        email: "other-user@test.example",
+        displayName: "Other User",
+      },
+    ]);
+    await db.insert(schema.agentProfiles).values([
+      {
+        id: "owned-agent",
+        userId: GAMES_AUTH.userId,
+        name: "Owned Agent",
+        personality: "Visible owner prompt",
+        personaKey: "diplomat",
+        createdAt: "2026-06-30T00:00:00.000Z",
+        updatedAt: "2026-06-30T00:00:00.000Z",
+      },
+      {
+        id: "other-agent",
+        userId: "other-user",
+        name: "Other Agent",
+        personality: "Hidden other prompt",
+        personaKey: "provocateur",
+        createdAt: "2026-06-30T00:00:00.000Z",
+        updatedAt: "2026-06-30T00:00:00.000Z",
+      },
+    ]);
+    const server = createProductionGameMcpServer(db);
+
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: "agents",
+      method: "tools/call",
+      params: { name: "list_agents", arguments: {} },
+    }, GAMES_AUTH);
+
+    expect(response?.error).toBeUndefined();
+    const text = ((response?.result as { content: Array<{ text: string }> }).content[0]?.text);
+    expect(text).toContain("Owned Agent");
+    expect(text).toContain("Visible owner prompt");
+    expect(text).toContain("\"currentElo\": 1377");
+    expect(text).not.toContain("Other Agent");
+    expect(text).not.toContain("Hidden other prompt");
+  });
+
+  test("returns structured domain error data for management failures", async () => {
+    const db = await setupTestDB();
+    await db.insert(schema.users).values({
+      id: GAMES_AUTH.userId,
+      email: "games-user@test.example",
+      displayName: "Games User",
+    });
+    const server = createProductionGameMcpServer(db);
+
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: "bad-agent",
+      method: "tools/call",
+      params: {
+        name: "create_agent",
+        arguments: {
+          displayName: "Broker Maybe",
+          archetype: "broker",
+          personalityPrompt: "Not currently user-selectable.",
+        },
+      },
+    }, GAMES_AUTH);
+
+    expect(response?.result).toBeUndefined();
+    expect(response?.error?.message).toContain("Invalid archetype");
+    expect(response?.error?.data).toMatchObject({
+      code: "invalid_archetype",
+      statusCode: 400,
+      details: {
+        supportedArchetypes: expect.arrayContaining(["diplomat", "martyr"]),
+      },
+    });
+  });
+
   test("forwards read_round_facts arguments to the production read model", async () => {
     const calls: unknown[] = [];
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
@@ -407,6 +553,22 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(response?.error?.message).toBe(
       "Unknown or producer-only tool is not supported for scope=games: read_trace_content",
     );
+  });
+
+  test("rejects active-match-shaped user tool calls", async () => {
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
+    for (const name of ["vote", "mingle_message", "ready_check", "start_game"]) {
+      const response = await server.handle({
+        jsonrpc: "2.0",
+        id: name,
+        method: "tools/call",
+        params: { name, arguments: { gameIdOrSlug: "game-1" } },
+      }, GAMES_AUTH);
+
+      expect(response?.error?.message).toBe(
+        `Unknown or producer-only tool is not supported for scope=games: ${name}`,
+      );
+    }
   });
 
   test("forwards supported trace search maxBytes and ignores legacy scan caps", async () => {
