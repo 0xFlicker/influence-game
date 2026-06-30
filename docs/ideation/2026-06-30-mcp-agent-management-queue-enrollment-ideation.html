@@ -1,0 +1,890 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: MCP Agent Management and Queue Enrollment</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --paper: #ffffff;
+      --ink: #17212b;
+      --muted: #5d6978;
+      --line: #d7dde7;
+      --teal: #087c78;
+      --teal-soft: #dff4f1;
+      --blue: #3858d6;
+      --blue-soft: #e8edff;
+      --coral: #9f433d;
+      --coral-soft: #fae7e4;
+      --gold: #7b5a1d;
+      --gold-soft: #f7ecd2;
+      --green: #4f7736;
+      --green-soft: #e9f3df;
+      --violet: #5d4fa5;
+      --violet-soft: #eeebff;
+      --shadow: 0 14px 36px rgba(23, 33, 43, 0.08);
+      --radius: 8px;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-size: 15px;
+      line-height: 1.58;
+    }
+
+    a {
+      color: var(--blue);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+      background: #eef1f6;
+      border: 1px solid #dce2ea;
+      border-radius: 5px;
+      padding: 0.08rem 0.28rem;
+    }
+
+    .page {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 40px 22px 64px;
+    }
+
+    header {
+      margin-bottom: 28px;
+    }
+
+    .eyebrow {
+      color: var(--teal);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin: 0 0 10px;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 15ch;
+      font-size: clamp(2.25rem, 5.8vw, 3.9rem);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 1.48rem;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0 0 10px;
+      font-size: 1.14rem;
+      letter-spacing: 0;
+    }
+
+    p,
+    li {
+      max-width: 76ch;
+    }
+
+    .subtitle {
+      max-width: 74ch;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 1.04rem;
+    }
+
+    .meta-grid,
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .meta-card,
+    .stat-card,
+    .callout,
+    .idea-card,
+    .source-card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .meta-card,
+    .stat-card {
+      padding: 12px 14px;
+    }
+
+    .meta-label,
+    .stat-label,
+    .card-label {
+      display: block;
+      color: var(--muted);
+      font-size: 0.74rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .meta-value,
+    .stat-value {
+      display: block;
+      margin-top: 4px;
+      font-weight: 740;
+    }
+
+    nav {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      margin: 28px 0;
+      padding: 14px 16px;
+    }
+
+    nav h2 {
+      margin: 0 0 8px;
+      font-size: 1rem;
+    }
+
+    nav ul,
+    .jump-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    nav a,
+    .jump-list a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 5px 10px;
+      background: #fbfcff;
+      color: var(--ink);
+      font-size: 0.88rem;
+      text-decoration: none;
+    }
+
+    section {
+      margin-top: 34px;
+    }
+
+    .section-prose {
+      max-width: 74ch;
+    }
+
+    .section-prose p {
+      margin: 0 0 12px;
+    }
+
+    .callout {
+      margin: 16px 0;
+      padding: 16px 18px;
+      background: var(--teal-soft);
+      border-color: #b9d9d5;
+    }
+
+    .callout.warning {
+      background: var(--gold-soft);
+      border-color: #e0c98d;
+    }
+
+    .callout.danger {
+      background: var(--coral-soft);
+      border-color: #e3b4ad;
+    }
+
+    .callout.violet {
+      background: var(--violet-soft);
+      border-color: #cbc5f5;
+    }
+
+    .axis-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+      list-style: none;
+      margin: 14px 0 0;
+      padding: 0;
+    }
+
+    .axis-list li {
+      max-width: none;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px 15px;
+    }
+
+    .idea-card {
+      margin: 18px 0;
+      padding: 18px;
+    }
+
+    .idea-head {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .idea-title {
+      display: flex;
+      gap: 10px;
+      align-items: baseline;
+      max-width: 72ch;
+    }
+
+    .idea-id,
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      padding: 3px 9px;
+      font-size: 0.8rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .idea-id {
+      background: var(--blue-soft);
+      color: #223b9c;
+      border-color: #bdc8f9;
+    }
+
+    .pill {
+      background: #f5f7fb;
+      color: var(--muted);
+      border-color: var(--line);
+    }
+
+    .pill.high {
+      background: var(--green-soft);
+      color: #385b25;
+      border-color: #c9dfb5;
+    }
+
+    .pill.medium {
+      background: var(--gold-soft);
+      color: #684b18;
+      border-color: #e0c98d;
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    dl {
+      margin: 0;
+    }
+
+    dt {
+      color: var(--muted);
+      font-size: 0.74rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    dd {
+      margin: 4px 0 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin: 12px 0 20px;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+      font-size: 0.92rem;
+    }
+
+    th {
+      background: #eef2f7;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .diagram {
+      background: #fbfcff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+      margin: 16px 0;
+      overflow-x: auto;
+    }
+
+    .diagram svg {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
+
+    .source-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .source-card {
+      padding: 14px 15px;
+    }
+
+    .source-card p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 0.93rem;
+    }
+
+    footer {
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      margin-top: 44px;
+      padding-top: 18px;
+      font-size: 0.88rem;
+    }
+
+    @media (max-width: 640px) {
+      .page {
+        padding: 28px 16px 48px;
+      }
+
+      .idea-title {
+        flex-direction: column;
+        gap: 6px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">Ideation artifact</p>
+      <h1>MCP Agent Management and Queue Enrollment</h1>
+      <p class="subtitle">
+        A ranked set of product and backend directions for expanding the Influence production MCP from read-only game inspection into safe agent management: rules discovery, roster inspection, agent creation and updates, and pre-match queue enrollment. The line stays bright: no active-match participation through MCP.
+      </p>
+      <div class="meta-grid" aria-label="Metadata">
+        <div class="meta-card">
+          <span class="meta-label">Date</span>
+          <span class="meta-value"><time datetime="2026-06-30">2026-06-30</time></span>
+        </div>
+        <div class="meta-card">
+          <span class="meta-label">Topic</span>
+          <span class="meta-value">mcp-agent-management-queue-enrollment</span>
+        </div>
+        <div class="meta-card">
+          <span class="meta-label">Focus</span>
+          <span class="meta-value">Production MCP app experience for agent preparation and queue enrollment</span>
+        </div>
+        <div class="meta-card">
+          <span class="meta-label">Mode</span>
+          <span class="meta-value">repo-grounded</span>
+        </div>
+      </div>
+      <div class="stat-grid" aria-label="Summary statistics">
+        <div class="stat-card">
+          <span class="stat-label">Ranked Ideas</span>
+          <span class="stat-value">7 survivors</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Topic Axes</span>
+          <span class="stat-value">5 surfaces</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Ideas Cut</span>
+          <span class="stat-value">10 rejected</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Top Pick</span>
+          <span class="stat-value">Management-only tool contract</span>
+        </div>
+      </div>
+    </header>
+
+    <nav aria-label="Document navigation">
+      <h2>Contents</h2>
+      <ul>
+        <li><a href="#grounding-context">Grounding Context</a></li>
+        <li><a href="#topic-axes">Topic Axes</a></li>
+        <li><a href="#ranked-ideas">Ranked Ideas</a></li>
+        <li><a href="#rejection-summary">Rejection Summary</a></li>
+        <li><a href="#sources-and-references">Sources &amp; References</a></li>
+      </ul>
+    </nav>
+
+    <section id="grounding-context" aria-labelledby="grounding-context-heading">
+      <h2 id="grounding-context-heading">Grounding Context</h2>
+      <div class="section-prose">
+        <p>
+          The current production MCP is a manually-routed JSON-RPC server with two profiles: user-facing <code>/mcp</code> on <code>scope=games</code>, and producer <code>/mcp/producer</code> on <code>scope=mcp</code>. User tools are presently read-only and game-inspection-oriented; producer trace tools are kept behind the producer profile. That split is the right skeleton for the new surface, but the user profile now needs carefully bounded mutations.
+        </p>
+        <p>
+          Reusable seams already exist. Bearer validation checks OAuth audience, purpose, scope, resource, client, subject, and expiry before building a <code>GameMcpAuthContext</code>. User claims already resolve created games, joined games, player IDs, and owned agent profile IDs. REST routes already implement agent profile create/list/get/update, free queue status/join/leave, and waiting-game join flows with ownership checks.
+        </p>
+        <p>
+          The biggest mismatch is semantic, not mechanical. The desired conversation asks "which agent has the highest ELO?", while current free-game rating updates write account-level <code>users.rating</code> and only increment agent profile games/wins. The old <code>free_track_ratings</code> table still exists, but account-level ELO is the live path. The MCP should not promise agent-level ELO until the backend either derives it honestly or restores an agent-level rating source.
+        </p>
+      </div>
+
+      <div class="callout warning">
+        <span class="card-label">Boundary</span>
+        <p>
+          MCP consumers may help a user understand rules, inspect and tune their own agents, and enroll an agent before a match starts. They must not vote, empower, expose, send lobby or mingle messages, act as council, perform ready checks, manipulate timers, moderate, or take any action inside an active match.
+        </p>
+      </div>
+
+      <div class="diagram" aria-label="Management-only MCP boundary diagram">
+        <svg viewBox="0 0 900 320" role="img" aria-labelledby="diagram-title diagram-desc">
+          <title id="diagram-title">Management-only MCP boundary</title>
+          <desc id="diagram-desc">A high-level flow showing MCP providers calling the user MCP resource, which may reach rules, roster, agent commands, and pre-match enrollment services, while active match actions are blocked.</desc>
+          <defs>
+            <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+              <path d="M0,0 L8,4.5 L0,9 Z" fill="#3858d6"></path>
+            </marker>
+          </defs>
+          <rect x="28" y="54" width="150" height="76" rx="8" fill="#e8edff" stroke="#bdc8f9"></rect>
+          <text x="103" y="86" text-anchor="middle" font-size="15" font-weight="700" fill="#17212b">MCP providers</text>
+          <text x="103" y="108" text-anchor="middle" font-size="12" fill="#5d6978">ChatGPT, Claude</text>
+
+          <line x1="182" y1="92" x2="262" y2="92" stroke="#3858d6" stroke-width="3" marker-end="url(#arrow)"></line>
+
+          <rect x="268" y="42" width="170" height="100" rx="8" fill="#dff4f1" stroke="#b9d9d5"></rect>
+          <text x="353" y="78" text-anchor="middle" font-size="15" font-weight="700" fill="#17212b">/mcp scope=games</text>
+          <text x="353" y="101" text-anchor="middle" font-size="12" fill="#355f5b">authenticated user</text>
+          <text x="353" y="120" text-anchor="middle" font-size="12" fill="#355f5b">own agents only</text>
+
+          <line x1="442" y1="92" x2="522" y2="92" stroke="#3858d6" stroke-width="3" marker-end="url(#arrow)"></line>
+
+          <rect x="528" y="28" width="170" height="128" rx="8" fill="#ffffff" stroke="#d7dde7"></rect>
+          <text x="613" y="62" text-anchor="middle" font-size="15" font-weight="700" fill="#17212b">Management services</text>
+          <text x="613" y="88" text-anchor="middle" font-size="12" fill="#5d6978">rules, roster</text>
+          <text x="613" y="108" text-anchor="middle" font-size="12" fill="#5d6978">agent commands</text>
+          <text x="613" y="128" text-anchor="middle" font-size="12" fill="#5d6978">queue enrollment</text>
+
+          <line x1="702" y1="92" x2="782" y2="92" stroke="#3858d6" stroke-width="3" marker-end="url(#arrow)"></line>
+
+          <rect x="788" y="42" width="84" height="100" rx="8" fill="#f5f7fb" stroke="#d7dde7"></rect>
+          <text x="830" y="78" text-anchor="middle" font-size="14" font-weight="700" fill="#17212b">DB</text>
+          <text x="830" y="101" text-anchor="middle" font-size="12" fill="#5d6978">server-side</text>
+          <text x="830" y="120" text-anchor="middle" font-size="12" fill="#5d6978">authz</text>
+
+          <rect x="268" y="205" width="430" height="66" rx="8" fill="#fae7e4" stroke="#e3b4ad"></rect>
+          <text x="483" y="233" text-anchor="middle" font-size="15" font-weight="700" fill="#7d302b">Blocked from MCP</text>
+          <text x="483" y="255" text-anchor="middle" font-size="12" fill="#7d302b">active-match actions: vote, mingle, council, timers, moderator controls</text>
+
+          <line x1="438" y1="150" x2="438" y2="200" stroke="#9f433d" stroke-width="3"></line>
+          <line x1="426" y1="188" x2="450" y2="212" stroke="#9f433d" stroke-width="4"></line>
+          <line x1="450" y1="188" x2="426" y2="212" stroke="#9f433d" stroke-width="4"></line>
+        </svg>
+      </div>
+    </section>
+
+    <section id="topic-axes" aria-labelledby="topic-axes-heading">
+      <h2 id="topic-axes-heading">Topic Axes</h2>
+      <ul class="axis-list">
+        <li><strong>Rules discovery and strategy education.</strong> MCP consumers need enough rules and strategy context to answer "how does Influence work?" without touching active matches.</li>
+        <li><strong>Roster and performance read model.</strong> Agent lists, search, current queue status, games, wins, and rating semantics must be returned in one rich response.</li>
+        <li><strong>Agent mutation services.</strong> Create and update should be coarse-grained tools over server-side validation, not field-by-field orchestration.</li>
+        <li><strong>Queue and open-game enrollment.</strong> Daily-free comes first, but the API shape should support open games, ranked queues, tournaments, parties, and invite codes later.</li>
+        <li><strong>MCP guardrails, auth, and ergonomics.</strong> Tool descriptors, annotations, error wording, and tests must keep the surface management-only and LLM-legible.</li>
+      </ul>
+    </section>
+
+    <section id="ranked-ideas" aria-labelledby="ranked-ideas-heading">
+      <h2 id="ranked-ideas-heading">Ranked Ideas</h2>
+      <ul class="jump-list" aria-label="Ranked ideas jump list">
+        <li><a href="#i1">I1. Management-only MCP tool contract</a></li>
+        <li><a href="#i2">I2. Roster read model with honest ratings</a></li>
+        <li><a href="#i3">I3. Idempotent queue enrollment service</a></li>
+        <li><a href="#i4">I4. Shared agent profile command service</a></li>
+        <li><a href="#i5">I5. Rules catalog and search source</a></li>
+        <li><a href="#i6">I6. Open-game enrollment adapter</a></li>
+        <li><a href="#i7">I7. Descriptor and forbidden-action tests</a></li>
+      </ul>
+
+      <article class="idea-card" id="i1">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I1.</span>
+            <h3>Management-only MCP tool contract</h3>
+          </div>
+          <div>
+            <span class="pill high">Confidence 92%</span>
+            <span class="pill medium">Complexity Medium</span>
+          </div>
+        </div>
+        <p>
+          Define the user-facing MCP as an explicit agent-management resource instead of a game-control resource. The first-class tool set should be <code>get_rules</code>, <code>search_rules</code>, <code>list_agents</code>, <code>get_agent</code>, <code>search_agents</code>, <code>create_agent</code>, <code>update_agent</code>, <code>get_queue_status</code>, <code>join_queue</code>, <code>leave_queue</code>, <code>list_open_games</code>, and <code>join_open_game</code>. Every description should say when to call it, when not to call it, required permissions, and side effects.
+        </p>
+        <div class="field-grid">
+          <dl>
+            <dt>Axis</dt>
+            <dd>MCP guardrails, auth, and ergonomics</dd>
+          </dl>
+          <dl>
+            <dt>Basis</dt>
+            <dd><strong>direct:</strong> The current server advertises user MCP as read-only and <code>scope=games</code>-scoped at <code>packages/api/src/game-mcp/server.ts:95</code>, lists only read tools at <code>packages/api/src/game-mcp/server.ts:144</code>, and rejects mutation-shaped tools at <code>packages/api/src/game-mcp/server.ts:198</code>.</dd>
+          </dl>
+          <dl>
+            <dt>Rationale</dt>
+            <dd>This is the highest-leverage choice because it makes the safety boundary legible to every provider before individual services are implemented.</dd>
+          </dl>
+          <dl>
+            <dt>Downsides</dt>
+            <dd>Requires touching descriptors, docs, tests, and server routing at once; a thin implementation that skips descriptions would invite provider misuse.</dd>
+          </dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="i2">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I2.</span>
+            <h3>Roster read model with honest rating semantics</h3>
+          </div>
+          <div>
+            <span class="pill high">Confidence 88%</span>
+            <span class="pill medium">Complexity Medium</span>
+          </div>
+        </div>
+        <p>
+          Build one agent-summary read model that can power <code>list_agents</code>, <code>get_agent</code>, and <code>search_agents</code>. Each summary should include identity, archetype, biography, prompt excerpt or owner-visible prompt, avatar, cosmetics, games played, wins, current queue membership, active-game exclusion state, and rating fields with explicit provenance. If rating remains account-level, return <code>accountElo</code> and omit or null <code>agentElo</code> rather than inventing "highest ELO agent."
+        </p>
+        <div class="field-grid">
+          <dl>
+            <dt>Axis</dt>
+            <dd>Roster and performance read model</dd>
+          </dl>
+          <dl>
+            <dt>Basis</dt>
+            <dd><strong>direct:</strong> Agent profiles store <code>games_played</code> and <code>games_won</code> at <code>packages/api/src/db/schema.ts:83</code>, lifecycle completion increments those profile stats at <code>packages/api/src/services/game-lifecycle.ts:466</code>, but the live free-game ELO update writes <code>users.rating</code> at <code>packages/api/src/services/game-lifecycle.ts:537</code>.</dd>
+          </dl>
+          <dl>
+            <dt>Rationale</dt>
+            <dd>The desired UX depends on ChatGPT being able to compare agents without a follow-up call. Honest rating provenance prevents the tool from laundering stale schema into product truth.</dd>
+          </dl>
+          <dl>
+            <dt>Downsides</dt>
+            <dd>Requires a product decision: expose account ELO in agent cards now, derive agent-relative performance, or wire a real per-agent rating path before claiming agent ELO.</dd>
+          </dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="i3">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I3.</span>
+            <h3>Idempotent queue enrollment service</h3>
+          </div>
+          <div>
+            <span class="pill high">Confidence 90%</span>
+            <span class="pill medium">Complexity Medium</span>
+          </div>
+        </div>
+        <p>
+          Introduce a <code>QueueManagementService</code> behind MCP and REST-shaped adapters. The public MCP tools should be <code>get_queue_status({ queueType })</code>, <code>join_queue({ queueType, agentId })</code>, and <code>leave_queue({ queueType, agentId? })</code>. Support <code>daily-free</code> first, reject unsupported queue types clearly, and make repeat joins/leaves friendly: same-agent join returns the existing enrollment; leave with no entry returns a successful "not queued" response.
+        </p>
+        <div class="field-grid">
+          <dl>
+            <dt>Axis</dt>
+            <dd>Queue and open-game enrollment</dd>
+          </dl>
+          <dl>
+            <dt>Basis</dt>
+            <dd><strong>direct:</strong> <code>free_game_queue</code> already enforces one row per user at <code>packages/api/src/db/schema.ts:757</code>, and the current REST join/leave endpoints are non-idempotent with <code>409</code> and <code>404</code> responses at <code>packages/api/src/routes/free-queue.ts:158</code> and <code>packages/api/src/routes/free-queue.ts:189</code>.</dd>
+          </dl>
+          <dl>
+            <dt>Rationale</dt>
+            <dd>LLMs retry. Queue tools should behave as safely repeatable commands, especially when provider clients may replay calls after network or UX interruptions.</dd>
+          </dl>
+          <dl>
+            <dt>Downsides</dt>
+            <dd>The MCP wrapper can soften errors without changing REST, but a shared service is cleaner and avoids drift between app and MCP behavior.</dd>
+          </dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="i4">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I4.</span>
+            <h3>Shared agent profile command service</h3>
+          </div>
+          <div>
+            <span class="pill high">Confidence 84%</span>
+            <span class="pill medium">Complexity Medium</span>
+          </div>
+        </div>
+        <p>
+          Extract agent create/update validation and persistence into an <code>AgentProfileCommandService</code> that both REST routes and MCP tools call. MCP names should be human-facing: <code>displayName</code>, <code>archetype</code>, <code>personalityPrompt</code>, <code>publicBiography</code>, <code>avatarUrl</code>, and optional <code>cosmetics</code>. Internally map those to existing <code>name</code>, <code>personaKey</code>, <code>personality</code>, <code>backstory</code>, <code>avatarUrl</code>, and future cosmetic storage.
+        </p>
+        <div class="field-grid">
+          <dl>
+            <dt>Axis</dt>
+            <dd>Agent mutation services</dd>
+          </dl>
+          <dl>
+            <dt>Basis</dt>
+            <dd><strong>direct:</strong> The REST route already validates archetype keys at <code>packages/api/src/routes/agent-profiles.ts:29</code>, creates owned profiles at <code>packages/api/src/routes/agent-profiles.ts:172</code>, and updates only profiles matching both ID and current user at <code>packages/api/src/routes/agent-profiles.ts:269</code>.</dd>
+          </dl>
+          <dl>
+            <dt>Rationale</dt>
+            <dd>This keeps validation server-side and prevents the MCP implementation from becoming a parallel route with subtly different ownership, avatar, or archetype behavior.</dd>
+          </dl>
+          <dl>
+            <dt>Downsides</dt>
+            <dd>The current update route contains a stats reset path for personality changes; the MCP docs and responses should not advertise that because the product direction is to remove it.</dd>
+          </dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="i5">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I5.</span>
+            <h3>Rules catalog and search source of truth</h3>
+          </div>
+          <div>
+            <span class="pill medium">Confidence 78%</span>
+            <span class="pill">Complexity Low</span>
+          </div>
+        </div>
+        <p>
+          Promote rules content into an importable rules catalog that can feed the website and MCP responses. <code>get_rules</code> should return a compact full-game explanation plus strategy notes; <code>search_rules</code> should return matching sections with enough surrounding context to answer "how does this work?" without pulling in active-match state.
+        </p>
+        <div class="field-grid">
+          <dl>
+            <dt>Axis</dt>
+            <dd>Rules discovery and strategy education</dd>
+          </dl>
+          <dl>
+            <dt>Basis</dt>
+            <dd><strong>direct:</strong> <code>docs/rules-page-content.md:1</code> has the core rules, phases, and win condition, but <code>docs/rules-page-content.md:124</code> says "ten archetypes" while the server currently accepts thirteen keys at <code>packages/api/src/routes/agent-profiles.ts:29</code>.</dd>
+          </dl>
+          <dl>
+            <dt>Rationale</dt>
+            <dd>Rules discovery is the safest high-value MCP surface: it teaches gameplay without authorizing gameplay. Making the content shared also fixes stale docs before external clients amplify them.</dd>
+          </dl>
+          <dl>
+            <dt>Downsides</dt>
+            <dd>Rules content touches product copy; it needs a small editorial pass, especially around ELO wording and archetype count, before becoming API-grade.</dd>
+          </dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="i6">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I6.</span>
+            <h3>Open-game enrollment as a waiting-only queue adapter</h3>
+          </div>
+          <div>
+            <span class="pill medium">Confidence 72%</span>
+            <span class="pill medium">Complexity Medium</span>
+          </div>
+        </div>
+        <p>
+          Treat open games as another enrollment target, but only when the backend exposes a waiting game with available slots. <code>list_open_games</code> should filter to joinable public or user-accessible waiting games and return player count, slots remaining, ruleset, queue type, and estimated start when known. <code>join_open_game({ gameIdOrSlug, agentId })</code> should reject active games and reuse server-side profile ownership checks.
+        </p>
+        <div class="field-grid">
+          <dl>
+            <dt>Axis</dt>
+            <dd>Queue and open-game enrollment</dd>
+          </dl>
+          <dl>
+            <dt>Basis</dt>
+            <dd><strong>direct:</strong> The REST game list already returns status, player count, track type, and timing fields at <code>packages/api/src/routes/games.ts:222</code>, and the join route rejects non-waiting games at <code>packages/api/src/routes/games.ts:366</code>, full games at <code>packages/api/src/routes/games.ts:375</code>, and profiles not owned by the caller at <code>packages/api/src/routes/games.ts:407</code>.</dd>
+          </dl>
+          <dl>
+            <dt>Rationale</dt>
+            <dd>Open-game join is useful if it remains pre-match enrollment. Framing it as a queue adapter keeps the future path open for ranked, tournament, invite, and party enrollment without teaching MCP clients match-control verbs.</dd>
+          </dl>
+          <dl>
+            <dt>Downsides</dt>
+            <dd>Open-game privacy and slug lookup need a careful pass; the current join path resolves by ID, while user-facing conversation may naturally mention slugs.</dd>
+          </dl>
+        </div>
+      </article>
+
+      <article class="idea-card" id="i7">
+        <div class="idea-head">
+          <div class="idea-title">
+            <span class="idea-id">I7.</span>
+            <h3>Descriptor and forbidden-action tests</h3>
+          </div>
+          <div>
+            <span class="pill high">Confidence 86%</span>
+            <span class="pill">Complexity Low</span>
+          </div>
+        </div>
+        <p>
+          Refactor the tool descriptor helper so read tools, idempotent mutations, and destructive mutations can declare accurate annotations and side-effect language. Add tests that enumerate user-facing MCP tools and fail if forbidden active-match verbs appear, if a mutation is marked read-only, if a tool lacks an OAuth security scheme, or if user tools are accidentally exposed under the producer-only assumptions.
+        </p>
+        <div class="field-grid">
+          <dl>
+            <dt>Axis</dt>
+            <dd>MCP guardrails, auth, and ergonomics</dd>
+          </dl>
+          <dl>
+            <dt>Basis</dt>
+            <dd><strong>direct:</strong> The current <code>tool()</code> helper hardcodes <code>annotations.readOnlyHint: true</code> for every descriptor at <code>packages/api/src/game-mcp/server.ts:368</code>. <strong>external:</strong> the MCP tools spec exposes tool descriptors through <code>tools/list</code> and annotations through the schema, so descriptors are part of the client contract.</dd>
+          </dl>
+          <dl>
+            <dt>Rationale</dt>
+            <dd>Mutation safety is not only runtime authorization; provider clients inspect descriptors before choosing tools. The descriptors should tell the truth.</dd>
+          </dl>
+          <dl>
+            <dt>Downsides</dt>
+            <dd>Tests must avoid becoming brittle snapshots of every word. Assert required semantics and forbidden surfaces; leave room for description copy to improve.</dd>
+          </dl>
+        </div>
+      </article>
+    </section>
+
+    <section id="rejection-summary" aria-labelledby="rejection-summary-heading">
+      <h2 id="rejection-summary-heading">Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">#</th>
+            <th scope="col">Idea</th>
+            <th scope="col">Reason Rejected</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>Expose vote, empower, expose, council, mingle, lobby, diary-room, timer, ready-check, or moderator MCP tools</td>
+            <td>Subject boundary violation. These are active-match actions and must remain inside the Influence client.</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>Mirror existing REST routes one-for-one as MCP tools</td>
+            <td>Too granular and too leaky. The LLM should call coarse commands, not orchestrate REST-shaped workflow fragments and status codes.</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>Use <code>scope=mcp</code> for agent management because mutations feel privileged</td>
+            <td>Breaks the documented profile split. User management belongs on <code>/mcp</code> with <code>scope=games</code>; producer scope is for developer/global evidence.</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>Expose another player's draft agents, prompts, queue state, or matchmaking internals for recommendation quality</td>
+            <td>Security and trust failure. The authenticated user can inspect and mutate only their own agents and safe public/open-game metadata.</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>Name the queue tools <code>join_daily_queue</code> and <code>leave_daily_queue</code></td>
+            <td>Too narrow. <code>queueType</code> keeps daily-free, open-game, ranked, tournament, invite, and party queues from requiring a future redesign.</td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td>Report per-agent ELO from <code>free_track_ratings</code> immediately</td>
+            <td>Basis mismatch. The table exists, but current free-game ELO updates write account-level user ratings; agent-level ELO needs a product/backend decision first.</td>
+          </tr>
+          <tr>
+            <td>7</td>
+            <td>Build a full MCP App UI before adding tools</td>
+            <td>Interesting but lower leverage. The desired experience is conversational tool use; rich app UI can follow once the tool contract is stable.</td>
+          </tr>
+          <tr>
+            <td>8</td>
+            <td>Accept <code>userId</code> or ownership hints from MCP arguments</td>
+            <td>Security footgun. Ownership must be derived from the bearer token and database, never from client-provided identity fields.</td>
+          </tr>
+          <tr>
+            <td>9</td>
+            <td>Allow <code>join_open_game</code> to target active, running, or completed games</td>
+            <td>Scope overrun. Joining is pre-match enrollment only; active matches are outside MCP.</td>
+          </tr>
+          <tr>
+            <td>10</td>
+            <td>Highlight the current update-time ELO reset in MCP responses</td>
+            <td>Product drift. The reset is planned for removal, so MCP should not train providers or users around it.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sources-and-references" aria-labelledby="sources-and-references-heading">
+      <h2 id="sources-and-references-heading">Sources &amp; References</h2>
+      <div class="source-grid">
+        <article class="source-card">
+          <span class="card-label">MCP server</span>
+          <p><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/game-mcp/server.ts">packages/api/src/game-mcp/server.ts</a></p>
+        </article>
+        <article class="source-card">
+          <span class="card-label">MCP auth and profiles</span>
+          <p><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/game-mcp-production-oauth.md">docs/game-mcp-production-oauth.md</a>, <a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/game-mcp/auth.ts">auth.ts</a>, <a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/game-mcp/claims.ts">claims.ts</a></p>
+        </article>
+        <article class="source-card">
+          <span class="card-label">Agent routes and schema</span>
+          <p><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/routes/agent-profiles.ts">packages/api/src/routes/agent-profiles.ts</a>, <a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/db/schema.ts">schema.ts</a></p>
+        </article>
+        <article class="source-card">
+          <span class="card-label">Queue and open games</span>
+          <p><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/routes/free-queue.ts">packages/api/src/routes/free-queue.ts</a>, <a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/routes/games.ts">games.ts</a></p>
+        </article>
+        <article class="source-card">
+          <span class="card-label">Rules and strategy</span>
+          <p><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/rules-page-content.md">docs/rules-page-content.md</a>, <a href="https://github.com/0xFlicker/influence-game/blob/main/STRATEGY.md">STRATEGY.md</a></p>
+        </article>
+        <article class="source-card">
+          <span class="card-label">External protocol context</span>
+          <p><a href="https://modelcontextprotocol.io/specification/2025-06-18/server/tools">Model Context Protocol tools specification</a>, <a href="https://modelcontextprotocol.io/specification/2025-06-18/schema">MCP schema</a>, <a href="https://developers.openai.com/apps-sdk/build/auth/">OpenAI Apps SDK auth guidance</a></p>
+        </article>
+      </div>
+    </section>
+
+    <footer class="composition-signal">
+      Composed 2026-06-30T00:00Z by ce-ideate from the MCP Expansion Prompt: Agent Management &amp; Queue Enrollment.
+    </footer>
+  </main>
+</body>
+</html>

@@ -142,6 +142,10 @@ The privileged authorization boundary for trusted MCP validation. A user with th
 
 The user-facing OAuth scope for MCP clients that should be described as "access your games via MCP." A `games` token is resource-scoped to the authenticated subject's created or joined games and owned player/agent records. It can list/read authorized first-class cognitive artifacts for games the subject participated in, but it does not grant producer/global corpus access, developer evidence access, private trace content, or private trace metadata.
 
+## Management-only MCP
+
+The user-facing product boundary for MCP clients that may help a player prepare agents and enroll them before a match starts, but may not participate inside an active match. Management-only MCP can expose rules discovery, owned-agent roster reads, agent create/update, and pre-match queue enrollment; it must not expose voting, empower/expose, council, Mingle, lobby, diary-room, ready-check, timer, phase, moderator, or other active-match actions.
+
 ## Producer MCP
 
 The privileged deployed MCP resource at `/mcp/producer` for maintainer/developer inspection. Producer MCP keeps the existing `mcp` role / `scope=mcp` global access contract and carries producer evidence/private trace tooling.
