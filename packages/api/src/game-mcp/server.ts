@@ -3,8 +3,11 @@ import type { GameMcpAuthContext } from "./auth.js";
 import type { McpOAuthScope } from "../services/mcp-scope-policy.js";
 import {
   ProductionGameMcpReadModel,
+  type ProductionGameMcpAgentGamesOptions,
   type ProductionGameMcpEventFilter,
   type ProductionGameMcpPlayerTimelineOptions,
+  type ProductionGameMcpPlayerGameSummaryOptions,
+  type ProductionGameMcpPostgameOptions,
   type ProductionGameMcpRoundFactsOptions,
 } from "./read-model.js";
 import type { CanonicalEventQueryMode } from "@influence/engine";
@@ -171,6 +174,26 @@ export class ProductionGameMcpJsonRpcServer {
         requireAnyScope(auth, ["games:read", "producer"]);
         return content(await this.readModel.listGames(auth, optionalNumber(args, "limit")));
       }
+      if (name === "list_agent_games") {
+        requireAnyScope(auth, ["games:read", "producer"]);
+        return content(await this.readModel.listAgentGames(agentGamesArgs(args), auth));
+      }
+      if (name === "read_game_brief") {
+        requireAnyScope(auth, ["games:read", "producer"]);
+        return content(await this.readModel.readGameBrief(postgameArgs(args), auth));
+      }
+      if (name === "read_jury_breakdown") {
+        requireAnyScope(auth, ["games:read", "producer"]);
+        return content(await this.readModel.readJuryBreakdown(postgameArgs(args), auth));
+      }
+      if (name === "read_player_game_summary") {
+        requireAnyScope(auth, ["games:read", "producer"]);
+        return content(await this.readModel.readPlayerGameSummary(playerGameSummaryArgs(args), auth));
+      }
+      if (name === "read_game_turning_points") {
+        requireAnyScope(auth, ["games:read", "producer"]);
+        return content(await this.readModel.readGameTurningPoints(postgameArgs(args), auth));
+      }
       if (name === "read_projection") {
         requireAnyScope(auth, ["games:read", "producer"]);
         return content(await this.readModel.readProjection(requiredString(args, "gameIdOrSlug"), auth));
@@ -271,6 +294,10 @@ export class ProductionGameMcpJsonRpcServer {
         requireScopes(auth, ["producer"]);
         return content(await this.readModel.inspectDurableRun(requiredString(args, "gameIdOrSlug"), auth));
       }
+      if (name === "read_producer_game_analysis") {
+        requireScopes(auth, ["producer"]);
+        return content(await this.readModel.readProducerGameAnalysis(postgameArgs(args), auth));
+      }
       if (name === "list_trace_manifests") {
         requireScopes(auth, ["producer"]);
         return content(await this.readModel.listTraceManifests(
@@ -360,6 +387,71 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
       scopes: gameReadScopes,
       readOnlyHint: true,
       appMeta: includeProducerTools ? undefined : createInfluenceMcpAppToolMeta(),
+    }),
+    tool({
+      name: "list_agent_games",
+      description: "List completed games played by one owned or visible Influence agent, including placement, winner, finalists, jury vote count, and rating-delta availability.",
+      properties: {
+        agentId: { type: "string" },
+        agentName: { type: "string" },
+        limit: { type: "number" },
+      },
+      scopes: gameReadScopes,
+      readOnlyHint: true,
+      outputSchema: postgameOutputSchema("agentGames"),
+    }),
+    tool({
+      name: "read_game_brief",
+      description: "Read a compact postgame brief for one completed game: winner, finalists, final vote, boot order, round summaries, dominant voting blocs, major eliminations, turning points, and diagnostics.",
+      properties: {
+        gameIdOrSlug: { type: "string" },
+        detailLevel: { type: "string", enum: ["brief", "standard", "full"] },
+        includeEvidence: { type: "boolean" },
+      },
+      required: ["gameIdOrSlug"],
+      scopes: gameReadScopes,
+      readOnlyHint: true,
+      outputSchema: postgameOutputSchema("gameBrief"),
+    }),
+    tool({
+      name: "read_jury_breakdown",
+      description: "Read finalist vote counts and per-juror final votes for one completed game, with deterministic relationship flags where derivable.",
+      properties: {
+        gameIdOrSlug: { type: "string" },
+        detailLevel: { type: "string", enum: ["brief", "standard", "full"] },
+        includeEvidence: { type: "boolean" },
+      },
+      required: ["gameIdOrSlug"],
+      scopes: gameReadScopes,
+      readOnlyHint: true,
+      outputSchema: postgameOutputSchema("juryBreakdown"),
+    }),
+    tool({
+      name: "read_player_game_summary",
+      description: "Read one player's compact full-game arc: placement, votes cast and received by round, majority alignment, risk moments, endgame facts, jury facts, and readable summary.",
+      properties: {
+        gameIdOrSlug: { type: "string" },
+        player: { type: "string" },
+        detailLevel: { type: "string", enum: ["brief", "standard", "full"] },
+        includeEvidence: { type: "boolean" },
+      },
+      required: ["gameIdOrSlug", "player"],
+      scopes: gameReadScopes,
+      readOnlyHint: true,
+      outputSchema: postgameOutputSchema("playerSummary"),
+    }),
+    tool({
+      name: "read_game_turning_points",
+      description: "Read deterministic turning points for one completed game, with type enums, players involved, evidence refs when requested, confidence, and generated-safe descriptions.",
+      properties: {
+        gameIdOrSlug: { type: "string" },
+        detailLevel: { type: "string", enum: ["brief", "standard", "full"] },
+        includeEvidence: { type: "boolean" },
+      },
+      required: ["gameIdOrSlug"],
+      scopes: gameReadScopes,
+      readOnlyHint: true,
+      outputSchema: postgameOutputSchema("turningPoints"),
     }),
     tool({
       name: "read_projection",
@@ -484,6 +576,19 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
       required: ["gameIdOrSlug"],
       scopes: ["producer"],
       readOnlyHint: true,
+    }),
+    tool({
+      name: "read_producer_game_analysis",
+      description: "Read producer-only postgame analysis with derived voting blocs, strategic-grade signals, private artifact indexes, trace-manifest indexes, and tuning diagnostics.",
+      properties: {
+        gameIdOrSlug: { type: "string" },
+        detailLevel: { type: "string", enum: ["brief", "standard", "full"] },
+        includeEvidence: { type: "boolean" },
+      },
+      required: ["gameIdOrSlug"],
+      scopes: ["producer"],
+      readOnlyHint: true,
+      outputSchema: postgameOutputSchema("producerAnalysis"),
     }),
     tool({
       name: "list_trace_manifests",
@@ -679,6 +784,7 @@ function tool(input: {
   scopes: readonly McpOAuthScope[];
   readOnlyHint: boolean;
   appMeta?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
 }): unknown {
   const securityScheme = oauthSecurityScheme(input.scopes);
   return {
@@ -689,6 +795,7 @@ function tool(input: {
       properties: input.properties,
       ...(input.required && { required: input.required }),
     },
+    ...(input.outputSchema && { outputSchema: input.outputSchema }),
     securitySchemes: [securityScheme],
     annotations: {
       readOnlyHint: input.readOnlyHint,
@@ -700,8 +807,71 @@ function tool(input: {
   };
 }
 
-function content(value: unknown): { content: Array<{ type: "text"; text: string }> } {
+function postgameOutputSchema(kind: string): Record<string, unknown> {
+  const gameSchema = {
+    type: "object",
+    properties: {
+      id: { type: "string" },
+      slug: { type: "string" },
+      status: { type: "string" },
+      trackType: { type: "string" },
+      playerCount: { type: "number" },
+      roundCount: { type: "number" },
+    },
+    additionalProperties: true,
+  };
+  const diagnosticSchema = {
+    type: "object",
+    properties: {
+      code: { type: "string" },
+      severity: { type: "string" },
+      message: { type: "string" },
+    },
+    additionalProperties: true,
+  };
+  const baseProperties: Record<string, unknown> = {
+    schemaVersion: { type: "number" },
+    ok: { type: "boolean" },
+    game: gameSchema,
+    diagnostics: { type: "array", items: diagnosticSchema },
+    status: { type: "string" },
+    error: { type: "string" },
+  };
+  const kindProperties: Record<string, Record<string, unknown>> = {
+    agentGames: {
+      agent: { type: "object", additionalProperties: true },
+      games: { type: "array", items: { type: "object", additionalProperties: true } },
+    },
+    gameBrief: {
+      postgame: { type: "object", additionalProperties: true },
+    },
+    juryBreakdown: {
+      jury: { type: "object", additionalProperties: true },
+    },
+    playerSummary: {
+      player: { type: "object", additionalProperties: true },
+    },
+    turningPoints: {
+      turningPoints: { type: "array", items: { type: "object", additionalProperties: true } },
+    },
+    producerAnalysis: {
+      producerAnalysis: { type: "object", additionalProperties: true },
+      developerEvidence: { type: "object", additionalProperties: true },
+    },
+  };
   return {
+    type: "object",
+    properties: {
+      ...baseProperties,
+      ...(kindProperties[kind] ?? {}),
+    },
+    additionalProperties: true,
+  };
+}
+
+function content(value: unknown): { structuredContent: unknown; content: Array<{ type: "text"; text: string }> } {
+  return {
+    structuredContent: value,
     content: [
       {
         type: "text",
@@ -811,6 +981,41 @@ function roundFactsArgs(args: Record<string, unknown>): ProductionGameMcpRoundFa
   return {
     gameIdOrSlug: requiredString(args, "gameIdOrSlug"),
     round: optionalNumber(args, "round"),
+  };
+}
+
+function optionalDetailLevel(args: Record<string, unknown>) {
+  const value = optionalString(args, "detailLevel");
+  return value === "brief" || value === "standard" || value === "full"
+    ? value
+    : undefined;
+}
+
+function postgameArgs(args: Record<string, unknown>): ProductionGameMcpPostgameOptions {
+  return {
+    gameIdOrSlug: requiredString(args, "gameIdOrSlug"),
+    detailLevel: optionalDetailLevel(args),
+    includeEvidence: optionalBoolean(args, "includeEvidence"),
+  };
+}
+
+function agentGamesArgs(args: Record<string, unknown>): ProductionGameMcpAgentGamesOptions {
+  const agentId = optionalString(args, "agentId");
+  const agentName = optionalString(args, "agentName");
+  if (!agentId && !agentName) {
+    throw new Error("agentId or agentName is required");
+  }
+  return {
+    agentId,
+    agentName,
+    limit: optionalNumber(args, "limit"),
+  };
+}
+
+function playerGameSummaryArgs(args: Record<string, unknown>): ProductionGameMcpPlayerGameSummaryOptions {
+  return {
+    ...postgameArgs(args),
+    player: requiredString(args, "player"),
   };
 }
 

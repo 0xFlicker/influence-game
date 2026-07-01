@@ -138,6 +138,14 @@ The default web watch surface for live in-progress games and completed replays. 
 
 The public-by-URL postgame review surface for completed games. Its authoritative facts come from persisted canonical game events replayed into projections, then rolled up per round into revealed facts, elimination order, vote history, endgame eliminations, jury votes, and final placement. Older completed games may degrade to the terminal `game_results` row when no canonical event log is available. Cognitive artifact snippets may add public agent context, but raw payloads, private traces, source pointers, and producer reasoning are not result truth.
 
+## Postgame analysis projection
+
+A compact LLM-facing read model for completed-game analysis. It composes completed-results facts, revealed round facts, player rows, jury ledger, vote-pattern hints, diagnostics, and optional producer evidence into token-efficient MCP/API payloads. Its player-safe form is rebuilt from canonical facts and must not include raw events, source pointers, private traces, prompts, private reasoning, or hidden strategy artifacts.
+
+## Compact round summary
+
+The round-level row inside the postgame analysis projection. It summarizes the empowered player, vote outcome, expose pressure, power action, Council candidates, eliminated player, majority-alignment signal, risk moments, and diagnostics for one round without returning raw event envelopes.
+
 ## MCP scopes
 
 The OAuth scopes for the deployed `/mcp` resource are `agents:read`, `agents:write`, `games:read`, and `producer`. `agents:write` requires `agents:read`. `producer` is privileged developer access and is meaningful only when the logged-in subject currently has the `producer` role.

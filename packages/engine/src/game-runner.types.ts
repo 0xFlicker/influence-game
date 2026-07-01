@@ -728,6 +728,9 @@ export interface PowerLobbyExposure {
 
 export interface AgentCallOptions {
   signal?: AbortSignal;
+  traceAction?: string;
+  decisionAction?: string;
+  decisionLabel?: string;
 }
 
 export interface StrategicReflectionOptions {

@@ -14,7 +14,7 @@
  *   GET    /api/games/:id/replay-watch-frames — structured replay watch states
  */
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { eq, inArray, asc, or, and, isNull } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
@@ -40,6 +40,14 @@ import {
   getGameWatchReplayFrames,
 } from "../services/game-watch-state.js";
 import { getCompletedGameResults } from "../services/completed-game-results.js";
+import {
+  buildPostgameDominantVotingBlocs,
+  getPostgameAnalysis,
+  getPostgameJuryBreakdown,
+  getPostgamePlayerSummary,
+  getPostgameTurningPoints,
+  type PostgameReadStatus,
+} from "../services/postgame-analysis.js";
 import {
   buildFallbackGameWatchStateSummary,
   getGameWatchStateSummaryReadsByGameIds,
@@ -911,6 +919,85 @@ export function createGameRoutes(db: DrizzleDB) {
   });
 
   // -------------------------------------------------------------------------
+  // GET /api/games/:id/postgame/brief — compact postgame analysis
+  // -------------------------------------------------------------------------
+
+  app.get("/api/games/:id/postgame/brief", async (c) => {
+    const idOrSlug = c.req.param("id");
+    const detailLevel = parsePostgameDetailLevel(c.req.query("detailLevel"));
+    const result = await getPostgameAnalysis(db, idOrSlug, {
+      detailLevel,
+      includeEvidence: c.req.query("includeEvidence") === "true",
+    });
+
+    if (!result.ok) return postgameErrorResponse(c, result);
+
+    return c.json({
+      schemaVersion: 1,
+      ok: true,
+      game: result.game,
+      postgame: {
+        schemaVersion: 1,
+        source: result.analysis.source,
+        availability: result.analysis.availability,
+        summary: result.analysis.summary,
+        dominantVotingBlocs: buildPostgameDominantVotingBlocs(result.analysis),
+        roundSummaries: result.analysis.roundSummaries,
+        jury: {
+          status: result.analysis.jury.status,
+          finalists: result.analysis.jury.finalists,
+          winner: result.analysis.jury.winner,
+          finalVote: result.analysis.jury.finalVote,
+          narrativeHints: result.analysis.jury.narrativeHints,
+          nonWinnerSupporters: result.analysis.jury.nonWinnerSupporters,
+        },
+        turningPoints: result.analysis.turningPoints,
+        diagnostics: result.analysis.diagnostics,
+        ...(detailLevel === "full" ? { playerSummaries: result.analysis.playerSummaries } : {}),
+      },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/games/:id/postgame/jury — purpose-built jury breakdown
+  // -------------------------------------------------------------------------
+
+  app.get("/api/games/:id/postgame/jury", async (c) => {
+    const result = await getPostgameJuryBreakdown(db, c.req.param("id"), {
+      detailLevel: parsePostgameDetailLevel(c.req.query("detailLevel")),
+      includeEvidence: c.req.query("includeEvidence") === "true",
+    });
+    if (!result.ok) return postgameErrorResponse(c, result);
+    return c.json(result);
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/games/:id/postgame/players/:player/summary — one-player arc
+  // -------------------------------------------------------------------------
+
+  app.get("/api/games/:id/postgame/players/:player/summary", async (c) => {
+    const result = await getPostgamePlayerSummary(db, c.req.param("id"), c.req.param("player"), {
+      detailLevel: parsePostgameDetailLevel(c.req.query("detailLevel")),
+      includeEvidence: c.req.query("includeEvidence") === "true",
+    });
+    if (!result.ok) return postgameErrorResponse(c, result);
+    return c.json(result);
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/games/:id/postgame/turning-points — deterministic turning points
+  // -------------------------------------------------------------------------
+
+  app.get("/api/games/:id/postgame/turning-points", async (c) => {
+    const result = await getPostgameTurningPoints(db, c.req.param("id"), {
+      detailLevel: parsePostgameDetailLevel(c.req.query("detailLevel")),
+      includeEvidence: c.req.query("includeEvidence") === "true",
+    });
+    if (!result.ok) return postgameErrorResponse(c, result);
+    return c.json(result);
+  });
+
+  // -------------------------------------------------------------------------
   // GET /api/games/:id/transcript — full transcript export
   // -------------------------------------------------------------------------
 
@@ -1016,4 +1103,24 @@ export function createGameRoutes(db: DrizzleDB) {
   });
 
   return app;
+}
+
+function parsePostgameDetailLevel(value: string | undefined): "brief" | "standard" | "full" | undefined {
+  return value === "brief" || value === "standard" || value === "full"
+    ? value
+    : undefined;
+}
+
+function postgameErrorResponse(
+  c: Context<AuthEnv>,
+  result: { status: PostgameReadStatus; error: string },
+) {
+  if (
+    result.status === "not_found" ||
+    result.status === "player_not_found" ||
+    result.status === "agent_not_found"
+  ) {
+    return c.json({ error: result.error, status: result.status }, 404);
+  }
+  return c.json({ error: result.error, status: result.status }, 409);
 }

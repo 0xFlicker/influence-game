@@ -416,19 +416,25 @@ export async function runTribunalVote(
     }),
   );
 
-  // Tribunal: jury can break ties
+  // Tribunal: jury only weighs in when the live vote is actually tied.
   let juryTiebreakerVotes: Record<UUID, UUID> | undefined;
-  const tribunalJury = contextBuilder.getActiveJury();
+  const tribunalTieCandidates = gameState.getTribunalEliminationTieCandidates();
+  const tribunalJury = tribunalTieCandidates.length > 1 ? contextBuilder.getActiveJury() : [];
   if (tribunalJury.length > 0) {
     juryTiebreakerVotes = {};
     for (const juror of tribunalJury) {
       const jurorAgent = agents.get(juror.playerId);
       if (jurorAgent) {
-        const phaseCtx = contextBuilder.buildPhaseContext(juror.playerId, Phase.VOTE);
+        const phaseCtx = contextBuilder.buildPhaseContext(juror.playerId, Phase.VOTE, undefined, true);
         const vote = await withEndgameVoteTimeout(
           ctx,
           `${juror.playerName} tribunal jury tiebreaker vote`,
-          (signal) => jurorAgent.getEndgameEliminationVote(phaseCtx, { signal }),
+          (signal) => jurorAgent.getEndgameEliminationVote(phaseCtx, {
+            signal,
+            traceAction: "tribunal-jury-tiebreaker-vote",
+            decisionAction: "tribunal-jury-tiebreaker-vote",
+            decisionLabel: "Tribunal Jury Tiebreaker Vote",
+          }),
           () => fallbackEliminationDecision(ctx, juror.playerId),
         );
         juryTiebreakerVotes[juror.playerId] = vote.target;

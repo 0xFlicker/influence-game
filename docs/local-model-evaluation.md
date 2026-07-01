@@ -122,6 +122,8 @@ The server is read-only and scans the simulation corpus on demand. It addresses 
 
 When validating the OAuth-gated path, keep the same corpus but launch the token bridge instead of the direct server. Assign the signed-in wallet the `producer` role, set `INFLUENCE_MCP_INTROSPECTION_SECRET` for both API and bridge, run `bun run mcp:game:login` from `packages/engine`, then run `bun run mcp:game:oauth -- docs/simulations`. The helper saves the one-hour token to `~/.influence-game/mcp-token.json`; set `INFLUENCE_MCP_TOKEN_FILE` if a connected MCP client needs a different path. The bridge uses a producer-capable OAuth token for trusted local validation.
 
+For completed API-backed games, prefer the compact postgame read surfaces before reaching for raw events or private traces. The Production Game MCP exposes `read_game_brief`, `read_jury_breakdown`, `read_player_game_summary`, `read_game_turning_points`, `list_agent_games`, and producer-only `read_producer_game_analysis`; REST mirrors the game-scoped reads at `/api/games/:id/postgame/brief`, `/postgame/jury`, `/postgame/players/:player/summary`, and `/postgame/turning-points`. These DTOs are derived from persisted canonical events and completed result rows, so they are suitable for quick LLM analysis of who won, how the jury split, what each player did, and which vote blocs or turning points mattered.
+
 For local API durable-run inspection, run the Trace MCP from the API package:
 
 ```bash

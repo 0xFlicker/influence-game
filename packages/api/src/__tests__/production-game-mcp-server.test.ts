@@ -49,6 +49,11 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const tools = ((response?.result as { tools: unknown[] }).tools);
     expect(tools.map((tool) => (tool as { name: string }).name)).toEqual([
       "list_games",
+      "list_agent_games",
+      "read_game_brief",
+      "read_jury_breakdown",
+      "read_player_game_summary",
+      "read_game_turning_points",
       "read_projection",
       "read_round_facts",
       "filter_events",
@@ -56,6 +61,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "list_cognitive_artifacts",
       "read_cognitive_artifact",
       "inspect_durable_run",
+      "read_producer_game_analysis",
       "list_trace_manifests",
       "read_trace_content",
       "search_reasoning_traces",
@@ -67,6 +73,9 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const searchTool = tools.find((tool) => (tool as { name: string }).name === "search_reasoning_traces");
     expect(JSON.stringify(searchTool)).not.toContain("maxBytesPerObject");
     expect(JSON.stringify(searchTool)).toContain("maxBytes");
+    const briefTool = tools.find((tool) => (tool as { name: string }).name === "read_game_brief");
+    expect(JSON.stringify(briefTool)).toContain("outputSchema");
+    expect(JSON.stringify(briefTool)).toContain("postgame");
   });
 
   test("advertises only user-facing tools for games-scope auth", async () => {
@@ -81,6 +90,11 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const tools = ((response?.result as { tools: unknown[] }).tools);
     expect(tools.map((tool) => (tool as { name: string }).name)).toEqual([
       "list_games",
+      "list_agent_games",
+      "read_game_brief",
+      "read_jury_breakdown",
+      "read_player_game_summary",
+      "read_game_turning_points",
       "read_projection",
       "read_round_facts",
       "filter_events",
@@ -298,8 +312,44 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(response?.id).toBe("call-1");
     expect(response?.error).toBeUndefined();
     expect(calls).toEqual(["listGames"]);
-    const text = ((response?.result as { content: Array<{ text: string }> }).content[0]?.text);
+    const result = response?.result as { structuredContent: unknown; content: Array<{ text: string }> };
+    expect(result.structuredContent).toEqual({ ok: true });
+    const text = result.content[0]?.text;
     expect(text).toContain("\"ok\": true");
+  });
+
+  test("routes postgame tool calls with compact arguments", async () => {
+    const calls: unknown[] = [];
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
+      readGameBrief: async (args: unknown) => {
+        calls.push(args);
+        return { schemaVersion: 1, ok: true, postgame: { summary: { winner: { name: "Lilith Voss" } } } };
+      },
+    }));
+
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: "brief",
+      method: "tools/call",
+      params: {
+        name: "read_game_brief",
+        arguments: {
+          gameIdOrSlug: "edge-smoke-dusk",
+          detailLevel: "standard",
+          includeEvidence: false,
+        },
+      },
+    }, GAMES_AUTH);
+
+    expect(response?.error).toBeUndefined();
+    expect(calls).toEqual([{
+      gameIdOrSlug: "edge-smoke-dusk",
+      detailLevel: "standard",
+      includeEvidence: false,
+    }]);
+    const result = response?.result as { structuredContent: { ok: boolean }; content: Array<{ text: string }> };
+    expect(result.structuredContent.ok).toBe(true);
+    expect(result.content[0]?.text).toContain("Lilith Voss");
   });
 
   test("routes list_archetypes without producer or database access", async () => {
@@ -712,11 +762,17 @@ function fakeReadModel(
 ): ProductionGameMcpReadModel {
   return {
     listGames: async () => ({ games: [] }),
+    listAgentGames: async () => ({ schemaVersion: 1, ok: true, agent: { name: "Agent" }, games: [], diagnostics: [] }),
+    readGameBrief: async () => ({ schemaVersion: 1, ok: true, postgame: null }),
+    readJuryBreakdown: async () => ({ schemaVersion: 1, ok: true, jury: null }),
+    readPlayerGameSummary: async () => ({ schemaVersion: 1, ok: true, player: null }),
+    readGameTurningPoints: async () => ({ schemaVersion: 1, ok: true, turningPoints: [] }),
     readProjection: async () => ({ projection: null }),
     readRoundFacts: async () => ({ roundFacts: null }),
     filterEvents: async () => ({ events: [] }),
     playerTimeline: async () => ({ events: [] }),
     inspectDurableRun: async () => ({ durableRun: null }),
+    readProducerGameAnalysis: async () => ({ schemaVersion: 1, ok: true, producerAnalysis: null }),
     listTraceManifests: async () => ({ manifests: [] }),
     readTraceContent: async () => ({ content: "" }),
     searchReasoningTraces: async () => ({ matches: [] }),

@@ -6,7 +6,7 @@ import { GameState, createUUID } from "../game-state";
 import type { AgentResponse, PhaseContext, TargetDecision } from "../game-runner.types";
 import { TranscriptLogger } from "../transcript-logger";
 import { Phase } from "../types";
-import { runCouncilPhase, runPowerPhase, runReckoningVote, runVotePhase } from "../phases";
+import { runCouncilPhase, runPowerPhase, runReckoningVote, runTribunalVote, runVotePhase } from "../phases";
 import type { PhaseRunnerContext } from "../phases";
 import { TemplateHouseInterviewer } from "../house-interviewer";
 import { MockAgent } from "./mock-agent";
@@ -14,6 +14,7 @@ import { MockAgent } from "./mock-agent";
 class GoodbyeProbeAgent extends MockAgent {
   readonly lastMessageContexts: PhaseContext[] = [];
   readonly councilVoteContexts: PhaseContext[] = [];
+  readonly endgameVoteContexts: PhaseContext[] = [];
   readonly fixedVotes: { empowerTarget: string; exposeTarget: string };
   readonly fixedCouncilVote: string;
   readonly fixedEndgameVote?: string;
@@ -40,7 +41,8 @@ class GoodbyeProbeAgent extends MockAgent {
     return { target: this.fixedCouncilVote, thinking: "fixed goodbye probe council", reasoningContext: undefined };
   }
 
-  override async getEndgameEliminationVote(): Promise<TargetDecision> {
+  override async getEndgameEliminationVote(ctx: PhaseContext): Promise<TargetDecision> {
+    this.endgameVoteContexts.push(ctx);
     return {
       target: this.fixedEndgameVote ?? this.fixedCouncilVote,
       thinking: "fixed goodbye probe endgame vote",
@@ -228,6 +230,77 @@ describe("goodbye message handling", () => {
     const resolved = prc.gameState.getCanonicalEvents().find((event) => event.type === "council.elimination_resolved");
     expect(resolved?.payload.method).toBe("empowered_tiebreaker");
     expect(resolved?.payload.eliminated).toBe(charlieId);
+  });
+
+  test("tribunal juror tiebreaker is skipped when live vote resolves", async () => {
+    const aliceId = createUUID();
+    const bobId = createUUID();
+    const charlieId = createUUID();
+    const daxId = createUUID();
+    const eveId = createUUID();
+
+    const agents = [
+      new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, bobId, bobId),
+      new GoodbyeProbeAgent(bobId, "Bob", { empowerTarget: aliceId, exposeTarget: charlieId }, aliceId, aliceId),
+      new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: aliceId, exposeTarget: bobId }, bobId, bobId),
+      new GoodbyeProbeAgent(daxId, "Dax", { empowerTarget: aliceId, exposeTarget: bobId }, aliceId, aliceId),
+      new GoodbyeProbeAgent(eveId, "Eve", { empowerTarget: aliceId, exposeTarget: bobId }, aliceId, aliceId),
+    ];
+    const prc = makePhaseRunnerContext(agents);
+    prc.gameState.eliminatePlayer(daxId);
+    prc.gameState.eliminatePlayer(eveId);
+    prc.gameState.setEndgameStage("tribunal");
+
+    await runTribunalVote(prc, { send() {} } as never);
+
+    expect(agents[0]!.endgameVoteContexts).toHaveLength(1);
+    expect(agents[1]!.endgameVoteContexts).toHaveLength(1);
+    expect(agents[2]!.endgameVoteContexts).toHaveLength(1);
+    expect(agents[3]!.endgameVoteContexts).toHaveLength(0);
+    expect(agents[4]!.endgameVoteContexts).toHaveLength(0);
+
+    const resolved = prc.gameState.getCanonicalEvents().findLast((event) => event.type === "endgame.elimination_resolved");
+    expect(resolved?.payload.method).toBe("plurality");
+    expect(resolved?.payload.eliminated).toBe(bobId);
+  });
+
+  test("tribunal juror tiebreaker uses eliminated juror context only on live tie", async () => {
+    const aliceId = createUUID();
+    const bobId = createUUID();
+    const charlieId = createUUID();
+    const daxId = createUUID();
+    const eveId = createUUID();
+
+    const agents = [
+      new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, bobId, bobId),
+      new GoodbyeProbeAgent(bobId, "Bob", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId, charlieId),
+      new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: aliceId, exposeTarget: bobId }, aliceId, aliceId),
+      new GoodbyeProbeAgent(daxId, "Dax", { empowerTarget: aliceId, exposeTarget: bobId }, aliceId, aliceId),
+      new GoodbyeProbeAgent(eveId, "Eve", { empowerTarget: aliceId, exposeTarget: bobId }, aliceId, aliceId),
+    ];
+    const prc = makePhaseRunnerContext(agents);
+    prc.gameState.eliminatePlayer(daxId);
+    prc.gameState.eliminatePlayer(eveId);
+    prc.gameState.setEndgameStage("tribunal");
+
+    await runTribunalVote(prc, { send() {} } as never);
+
+    expect(agents[0]!.endgameVoteContexts).toHaveLength(1);
+    expect(agents[1]!.endgameVoteContexts).toHaveLength(1);
+    expect(agents[2]!.endgameVoteContexts).toHaveLength(1);
+    expect(agents[3]!.endgameVoteContexts).toHaveLength(1);
+    expect(agents[4]!.endgameVoteContexts).toHaveLength(1);
+    expect(agents[3]!.endgameVoteContexts[0]?.isEliminated).toBe(true);
+    expect(agents[4]!.endgameVoteContexts[0]?.isEliminated).toBe(true);
+    expect(agents[3]!.endgameVoteContexts[0]?.alivePlayers.map((player) => player.name)).toEqual([
+      "Alice",
+      "Bob",
+      "Charlie",
+    ]);
+
+    const resolved = prc.gameState.getCanonicalEvents().findLast((event) => event.type === "endgame.elimination_resolved");
+    expect(resolved?.payload.method).toBe("jury_tiebreaker");
+    expect(resolved?.payload.eliminated).toBe(aliceId);
   });
 
   test("reckoning vote only requests last words from the eliminated player", async () => {

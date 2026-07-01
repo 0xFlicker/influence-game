@@ -864,6 +864,21 @@ export class GameState {
     this._endgameEliminationTally.votes[voterId] = target;
   }
 
+  getTribunalEliminationTieCandidates(): UUID[] {
+    const alive = this.getAlivePlayerIds();
+    const counts: Record<UUID, number> = {};
+    for (const id of alive) counts[id] = 0;
+
+    for (const [, target] of Object.entries(this._endgameEliminationTally.votes)) {
+      if (target in counts) counts[target] = (counts[target] ?? 0) + 1;
+    }
+
+    const maxVotes = Math.max(...Object.values(counts), 0);
+    if (maxVotes === 0) return [];
+    const tied = alive.filter((id) => counts[id] === maxVotes);
+    return tied.length > 1 ? tied : [];
+  }
+
   /**
    * Tally endgame elimination votes (simple plurality).
    * Tie -> broken by lastEmpoweredFromRegularRounds (they choose).

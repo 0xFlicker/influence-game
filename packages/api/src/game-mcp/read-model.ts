@@ -5,6 +5,10 @@ import {
   type CanonicalEventQueryMode,
   type CanonicalGameEvent,
   type CanonicalGameEventType,
+  type PostgameAnalysisDetailLevel,
+  type PostgameAnalysisProjection,
+  type PostgamePlayerGameSummary,
+  type PostgameRoundSummary,
   type RevealedRoundFactsRead,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
@@ -22,6 +26,14 @@ import {
   type ListCognitiveArtifactsParams,
   type ReadCognitiveArtifactParams,
 } from "../services/cognitive-artifact-read-model.js";
+import {
+  buildPostgameDominantVotingBlocs,
+  getPostgameAnalysis,
+  getPostgameJuryBreakdown,
+  getPostgamePlayerSummary,
+  getPostgameTurningPoints,
+  listPostgameAgentGames,
+} from "../services/postgame-analysis.js";
 import type { GameMcpAuthContext } from "./auth.js";
 import { resolveGamesMcpClaims } from "./claims.js";
 
@@ -80,6 +92,25 @@ export interface ProductionGameMcpRoundFactsOptions {
   gameIdOrSlug: string;
   round?: number;
 }
+
+export interface ProductionGameMcpPostgameOptions {
+  gameIdOrSlug: string;
+  detailLevel?: PostgameAnalysisDetailLevel;
+  includeEvidence?: boolean;
+}
+
+export interface ProductionGameMcpAgentGamesOptions {
+  agentId?: string;
+  agentName?: string;
+  limit?: number;
+}
+
+export interface ProductionGameMcpPlayerGameSummaryOptions extends ProductionGameMcpPostgameOptions {
+  player: string;
+}
+
+type PostgameAnalysisOk = Extract<Awaited<ReturnType<typeof getPostgameAnalysis>>, { ok: true }>;
+type PostgameAnalysisError = Exclude<Awaited<ReturnType<typeof getPostgameAnalysis>>, { ok: true }>;
 
 export class ProductionGameMcpReadModel {
   constructor(
@@ -318,6 +349,114 @@ export class ProductionGameMcpReadModel {
     };
   }
 
+  async listAgentGames(
+    options: ProductionGameMcpAgentGamesOptions,
+    access: ProductionGameMcpAccess,
+  ): Promise<Awaited<ReturnType<typeof listPostgameAgentGames>>> {
+    const visibleGameIds = await this.accessibleGameIds(access);
+    return listPostgameAgentGames(this.db, {
+      agentId: options.agentId,
+      agentName: options.agentName,
+      limit: options.limit,
+      visibleGameIds,
+    });
+  }
+
+  async readGameBrief(
+    options: ProductionGameMcpPostgameOptions,
+    access: ProductionGameMcpAccess,
+  ): Promise<{
+    schemaVersion: 1;
+    ok: true;
+    game: PostgameAnalysisOk["game"];
+    postgame: ReturnType<typeof compactPostgameBrief>;
+  } | PostgameAnalysisError> {
+    const game = await this.requireGame(options.gameIdOrSlug, access);
+    const result = await getPostgameAnalysis(this.db, game.id, {
+      detailLevel: options.detailLevel,
+      includeEvidence: options.includeEvidence,
+    });
+    if (!result.ok) return result;
+    return {
+      schemaVersion: 1,
+      ok: true,
+      game: result.game,
+      postgame: compactPostgameBrief(result.analysis, options.detailLevel ?? "standard"),
+    };
+  }
+
+  async readJuryBreakdown(
+    options: ProductionGameMcpPostgameOptions,
+    access: ProductionGameMcpAccess,
+  ): Promise<Awaited<ReturnType<typeof getPostgameJuryBreakdown>>> {
+    const game = await this.requireGame(options.gameIdOrSlug, access);
+    return getPostgameJuryBreakdown(this.db, game.id, {
+      detailLevel: options.detailLevel,
+      includeEvidence: options.includeEvidence,
+    });
+  }
+
+  async readPlayerGameSummary(
+    options: ProductionGameMcpPlayerGameSummaryOptions,
+    access: ProductionGameMcpAccess,
+  ): Promise<Awaited<ReturnType<typeof getPostgamePlayerSummary>>> {
+    const game = await this.requireGame(options.gameIdOrSlug, access);
+    return getPostgamePlayerSummary(this.db, game.id, options.player, {
+      detailLevel: options.detailLevel,
+      includeEvidence: options.includeEvidence,
+    });
+  }
+
+  async readGameTurningPoints(
+    options: ProductionGameMcpPostgameOptions,
+    access: ProductionGameMcpAccess,
+  ): Promise<Awaited<ReturnType<typeof getPostgameTurningPoints>>> {
+    const game = await this.requireGame(options.gameIdOrSlug, access);
+    return getPostgameTurningPoints(this.db, game.id, {
+      detailLevel: options.detailLevel,
+      includeEvidence: options.includeEvidence,
+    });
+  }
+
+  async readProducerGameAnalysis(
+    options: ProductionGameMcpPostgameOptions,
+    access: ProductionGameMcpAccess,
+  ): Promise<{
+    schemaVersion: 1;
+    ok: true;
+    game: PostgameAnalysisOk["game"];
+    producerAnalysis: ReturnType<typeof buildProducerPostgameAnalysis>;
+    developerEvidence: {
+      cognitiveArtifacts: unknown;
+      traceManifests: unknown;
+    };
+  } | PostgameAnalysisError> {
+    requireProducerAccess(access);
+    const game = await this.requireGame(options.gameIdOrSlug, access);
+    const result = await getPostgameAnalysis(this.db, game.id, {
+      detailLevel: options.detailLevel ?? "full",
+      includeEvidence: options.includeEvidence ?? true,
+    });
+    if (!result.ok) return result;
+    const [cognitiveArtifacts, traceManifests] = await Promise.all([
+      this.cognitiveArtifacts.listArtifacts({
+        gameIdOrSlug: game.id,
+        limit: 50,
+      }, access),
+      this.privateTrace.listManifests(game.id, 50),
+    ]);
+    return {
+      schemaVersion: 1,
+      ok: true,
+      game: result.game,
+      producerAnalysis: buildProducerPostgameAnalysis(result.analysis),
+      developerEvidence: {
+        cognitiveArtifacts,
+        traceManifests,
+      },
+    };
+  }
+
   async inspectDurableRun(gameIdOrSlug: string, access: ProductionGameMcpAccess): Promise<{
     schemaVersion: 1;
     developerEvidence: {
@@ -444,6 +583,132 @@ export class ProductionGameMcpReadModel {
     const claims = await resolveGamesMcpClaims(this.db, access.userId);
     return Array.from(claims.gameIds);
   }
+}
+
+function compactPostgameBrief(
+  analysis: PostgameAnalysisProjection,
+  detailLevel: PostgameAnalysisDetailLevel,
+) {
+  return {
+    schemaVersion: 1 as const,
+    source: analysis.source,
+    availability: analysis.availability,
+    summary: analysis.summary,
+    dominantVotingBlocs: buildPostgameDominantVotingBlocs(analysis),
+    roundSummaries: analysis.roundSummaries.map((round) => compactRoundSummary(round, detailLevel)),
+    jury: {
+      status: analysis.jury.status,
+      finalists: analysis.jury.finalists,
+      winner: analysis.jury.winner,
+      finalVote: analysis.jury.finalVote,
+      narrativeHints: analysis.jury.narrativeHints,
+      nonWinnerSupporters: analysis.jury.nonWinnerSupporters,
+      ...(analysis.jury.evidence ? { evidence: analysis.jury.evidence } : {}),
+    },
+    turningPoints: analysis.turningPoints,
+    diagnostics: analysis.diagnostics,
+    ...(detailLevel === "full" ? { playerSummaries: analysis.playerSummaries } : {}),
+  };
+}
+
+function compactRoundSummary(
+  round: PostgameRoundSummary,
+  detailLevel: PostgameAnalysisDetailLevel,
+) {
+  return {
+    round: round.round,
+    phase: round.phase,
+    empowered: round.empowered,
+    empowerVoteCounts: round.empowerVoteCounts,
+    exposeLeaders: round.exposeLeaders,
+    powerAction: round.powerAction,
+    shieldGranted: round.shieldGranted,
+    councilCandidates: round.councilCandidates,
+    eliminated: round.eliminated,
+    majorityCohort: detailLevel === "brief"
+      ? {
+          basis: round.majorityCohort.basis,
+          target: round.majorityCohort.target,
+          votes: round.majorityCohort.votes,
+          confidence: round.majorityCohort.confidence,
+        }
+      : round.majorityCohort,
+    keyRiskMoments: round.keyRiskMoments,
+    diagnostics: round.diagnostics,
+    ...(round.evidence ? { evidence: round.evidence } : {}),
+  };
+}
+
+function buildProducerPostgameAnalysis(analysis: PostgameAnalysisProjection) {
+  return {
+    inferredAlliances: buildPostgameDominantVotingBlocs(analysis),
+    actualPrivateStrategyPivots: {
+      status: "available_via_developerEvidence",
+      note: "Use developerEvidence.cognitiveArtifacts or read_cognitive_artifact for explicit private strategy artifacts.",
+    },
+    publicPrivateDiscrepancy: {
+      status: "requires_artifact_read",
+      note: "This v0 report does not infer discrepancies without reading explicit private artifacts.",
+    },
+    betrayalMoments: analysis.turningPoints.filter((point) => point.type === "alliance_member_cut"),
+    threatManagementAnalysis: {
+      majorEliminations: analysis.summary.majorEliminations,
+      threatRemovedTurningPoints: analysis.turningPoints.filter((point) => point.type === "threat_removed"),
+    },
+    juryManagementAnalysis: {
+      finalVote: analysis.summary.finalVote,
+      narrativeHints: analysis.jury.narrativeHints,
+      nonWinnerSupporters: analysis.jury.nonWinnerSupporters,
+    },
+    playerByPlayerStrategicGrades: analysis.playerSummaries.map(strategicGradeForPlayer),
+    modelAgentBehaviorObservations: {
+      status: "derived_from_postgame_projection",
+      diagnostics: analysis.diagnostics,
+    },
+    debuggingNotes: analysis.diagnostics,
+  };
+}
+
+function strategicGradeForPlayer(player: PostgamePlayerGameSummary): {
+  player: { id: string; name: string };
+  placement: number | null;
+  score: number;
+  grade: "A" | "B" | "C" | "D";
+  method: "deterministic_v0_score";
+  signals: {
+    majorityAlignedRounds: number;
+    majorityAlignmentRate: number;
+    timesNominated: number;
+    juryVotesReceived: number;
+    won: boolean;
+  };
+} {
+  const alignmentRounds = player.majorityAlignmentByRound.filter((round) => round.aligned !== null);
+  const majorityAlignedRounds = alignmentRounds.filter((round) => round.aligned === true).length;
+  const majorityAlignmentRate = alignmentRounds.length > 0
+    ? majorityAlignedRounds / alignmentRounds.length
+    : 0;
+  const finalistBonus = player.status === "finalist" ? 18 : 0;
+  const winBonus = player.won ? 30 : 0;
+  const juryBonus = Math.min(player.jury.votesReceived * 4, 24);
+  const riskPenalty = Math.min(player.timesNominated.length * 3, 15);
+  const score = Math.max(0, Math.min(100, Math.round(
+    45 + (majorityAlignmentRate * 20) + finalistBonus + winBonus + juryBonus - riskPenalty,
+  )));
+  return {
+    player: player.player,
+    placement: player.placement,
+    score,
+    grade: score >= 85 ? "A" : score >= 70 ? "B" : score >= 55 ? "C" : "D",
+    method: "deterministic_v0_score",
+    signals: {
+      majorityAlignedRounds,
+      majorityAlignmentRate,
+      timesNominated: player.timesNominated.length,
+      juryVotesReceived: player.jury.votesReceived,
+      won: player.won,
+    },
+  };
 }
 
 function gameIdentity(row: {

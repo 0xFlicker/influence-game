@@ -2511,6 +2511,9 @@ Keep it to 2-3 sentences. Make it compelling.`;
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
     const stage = ctx.endgameStage ?? "reckoning";
     const stageName = stage === "reckoning" ? "THE RECKONING" : "THE TRIBUNAL";
+    const traceAction = options?.traceAction ?? "elimination-vote";
+    const decisionAction = options?.decisionAction ?? traceAction;
+    const decisionLabel = options?.decisionLabel ?? "Endgame Elimination Vote";
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
@@ -2526,9 +2529,9 @@ Who should be eliminated? Consider everything that has happened in the game.
 Use the elimination_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; eliminate: string; decisionLog?: unknown; reasoningContext?: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, this.traceOptions(ctx, { action: "elimination-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal }));
+      const result = await this.callTool<{ thinking?: string; eliminate: string; decisionLog?: unknown; reasoningContext?: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, this.traceOptions(ctx, { action: traceAction, reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal }));
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, "elimination-vote", "Endgame Elimination Vote", metadata);
+      this.recordStrategicDecision(ctx, decisionAction, decisionLabel, metadata);
       const target = findByName(others, result.eliminate);
       if (target) return { target: target.id, thinking: result.thinking, reasoningContext: result.reasoningContext, ...metadata };
       const fallback = others[Math.floor(Math.random() * others.length)];

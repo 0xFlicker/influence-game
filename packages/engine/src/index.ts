@@ -57,6 +57,24 @@ export type {
   CompletedGameResultsTerminalFallback,
   CompletedGameResultsVotePattern,
 } from "./completed-game-results";
+export { buildPostgameAnalysisProjection } from "./postgame-analysis";
+export type {
+  BuildPostgameAnalysisOptions,
+  PostgameAnalysisDetailLevel,
+  PostgameAnalysisDiagnostic,
+  PostgameAnalysisEvidenceRef,
+  PostgameAnalysisProjection,
+  PostgameFinalVote,
+  PostgameJuryBreakdown,
+  PostgameJuryVoteEntry,
+  PostgamePlayerGameSummary,
+  PostgamePlayerMajorityAlignment,
+  PostgamePlayerVoteByRound,
+  PostgameRoundSummary,
+  PostgameTurningPoint,
+  PostgameTurningPointType,
+  PostgameVoteCount,
+} from "./postgame-analysis";
 export { buildPostVotePressureProjection } from "./post-vote-pressure";
 export type {
   PostVotePressurePlayer,
@@ -107,6 +125,12 @@ export type {
   JsonRpcRequest,
   JsonRpcResponse,
 } from "./game-mcp";
+export {
+  EDGE_SMOKE_DUSK_EXPECTED,
+  EDGE_SMOKE_DUSK_GAME_ID,
+  EDGE_SMOKE_DUSK_PLAYERS,
+  createEdgeSmokeDuskEvents,
+} from "./fixtures/edge-smoke-dusk";
 
 // Event bus
 export { GameEventBus } from "./event-bus";

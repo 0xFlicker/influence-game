@@ -94,6 +94,11 @@ Shared rules and game-read tools:
 - `list_archetypes`: list valid user-selectable archetype keys for `create_agent` and `update_agent`. `broker` is not user-selectable in this surface.
 - `list_open_games`: list joinable waiting custom games with slots and ruleset metadata.
 - `list_games`: games accessible to the subject, or global producer-visible games when granted `producer`.
+- `list_agent_games`: completed games played by one owned or visible agent, including placement, survival/win state, winner, finalists, jury vote count when available, and `rating_delta_unavailable` diagnostics until per-game rating deltas exist.
+- `read_game_brief`: compact postgame brief for one completed game: winner, finalists, final vote, boot order, round count, player count, compact round summaries, dominant empowered players, exposed players, derived voting blocs, major eliminations, endgame sequence, turning points, and diagnostics.
+- `read_jury_breakdown`: purpose-built finalist/jury surface with vote counts, per-juror votes, juror elimination rounds, deterministic relationship flags, and narrative hints.
+- `read_player_game_summary`: one player's full-game arc with placement, votes cast and received by round, Council votes, powers/shields, majority alignment, nomination/risk moments, endgame facts, jury facts, and a compact readable summary.
+- `read_game_turning_points`: deterministic turning points using typed enums such as `power_shift`, `majority_consolidation`, `alliance_member_cut`, `threat_removed`, `jury_split`, `endgame_pivot`, and `near_miss`.
 - `read_projection`: replay persisted canonical events into the projection summary for one accessible game.
 - `read_round_facts`: read sanitized revealed vote, power, Council, and player-status facts for one accessible game round. Facts come from persisted canonical events/projections only; decision logs, cognitive artifacts, private traces, and raw producer event envelopes are not fallback sources.
 - `filter_events`: filter player-visible canonical events in an accessible game by type, phase, actor, sequence, and limit.
@@ -118,9 +123,12 @@ Agent management tools requiring both `agents:read` and `agents:write`:
 Producer-only tools requiring `producer`:
 
 - `inspect_durable_run`: durable-run inspection summary and evidence counts.
+- `read_producer_game_analysis`: producer-only postgame analysis with derived voting blocs, deterministic strategic-grade signals, private cognitive-artifact indexes, private trace-manifest indexes, and tuning diagnostics. It does not replace explicit raw trace reads.
 - `list_trace_manifests`: private trace metadata for one game.
 - `read_trace_content`: explicit raw private trace read by manifest ID.
 - `search_reasoning_traces`: bounded private reasoning search previews inside one game.
+
+The postgame tools are denormalized read surfaces over the canonical event log and completed-game result rows. They do not replace canonical events as source of truth and should not reconstruct missing facts from transcripts, thinking, reasoning, private traces, or prose summaries. Tool descriptors for the postgame tools include `outputSchema`, and tool calls return both `structuredContent` and JSON text content so ChatGPT/Claude/Grok-style clients can reason over stable fields without scraping raw logs.
 
 `join_queue` is not a live-match action. Open-game joins are limited to waiting, non-hidden, non-full custom games. Daily-free enrollment writes `free_game_queue`; open-game enrollment writes a waiting `game_players` row. Both paths reject unsupported queue types and agents that are already in a waiting or in-progress enrollment.
 
@@ -189,9 +197,9 @@ Before calling the slice ready on staging:
 4. `POST /mcp/producer` is not registered.
 5. Unauthenticated `POST /mcp` returns a `401` challenge for the single `/mcp` protected-resource metadata path.
 6. Wrong resource, wrong scope, expired, revoked, or app-session tokens fail before any read model runs.
-7. A valid `agents:read games:read` token can initialize, list accessible games, read an accessible projection, read revealed round facts, filter player-visible events, list/read authorized cognitive artifacts, inspect rules/archetypes/owned agents, and cannot discover or call trace tools or active-match action tools.
+7. A valid `agents:read games:read` token can initialize, list accessible games, list visible agent games, read an accessible completed-game brief/jury/player/turning-point postgame surface, read an accessible projection, read revealed round facts, filter player-visible events, list/read authorized cognitive artifacts, inspect rules/archetypes/owned agents, and cannot discover or call trace tools or active-match action tools.
 8. A valid `agents:read agents:write games:read` token can also create/update owned agents and join/leave supported pre-match queues.
-9. A valid `producer` token issued to a current producer-role user can list producer tools, list/read split cognitive artifacts with producer visibility, and read/search private trace content when storage is configured.
+9. A valid `producer` token issued to a current producer-role user can list producer tools, read producer postgame analysis, list/read split cognitive artifacts with producer visibility, and read/search private trace content when storage is configured.
 10. A valid non-producer refresh token can refresh once, returns a new access token and rotated refresh token, and the replaced token cannot be reused without revoking the family.
 11. Resource-selected OAuth events and MCP request events include correlation ID, method/tool, user/client/resource, issued scope, auth profile, grant type when present, result, status, provider hint when supplied, app stage when derivable, redirect URI family when present, and denial reason. Audits never include raw tokens, auth headers, authorization codes, refresh tokens, PKCE verifiers, raw prompts, raw responses, reasoning bodies, private trace content, or storage credentials.
 12. Manual staging or production install attempts for ChatGPT, Claude, and Grok have notes with date, provider, last visible checkpoint, host-visible error, screenshot if useful, and server correlation ID when available.

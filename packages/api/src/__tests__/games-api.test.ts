@@ -889,6 +889,50 @@ describe("Game REST API", () => {
       expect(body.results.rounds).toEqual([]);
     });
 
+    test("returns compact postgame REST surfaces without raw event payloads", async () => {
+      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      await insertFixturePlayers(db, id);
+      const ownerEpoch = await insertOwner(db, id);
+      const events = createResolvedRoundCanonicalEventFixture(id);
+      await appendGameEvents(db, { gameId: id, ownerEpoch, events });
+      await insertResult(db, id, { winnerId: "mira", roundsPlayed: 1 });
+      await markGameCompleted(db, id);
+
+      const briefRes = await app.request(`/api/games/${id}/postgame/brief`);
+      expect(briefRes.status).toBe(200);
+      const brief = (await briefRes.json()) as {
+        ok: true;
+        postgame: {
+          summary: { winner: { id: string; name: string } | null };
+          dominantVotingBlocs: unknown[];
+          roundSummaries: unknown[];
+        };
+      };
+      expect(brief.ok).toBe(true);
+      expect(brief.postgame.summary.winner).toEqual({ id: "mira", name: "Mira" });
+      expect(Array.isArray(brief.postgame.dominantVotingBlocs)).toBe(true);
+      expect(brief.postgame.roundSummaries).toHaveLength(1);
+      expect(JSON.stringify(brief)).not.toContain("sourcePointers");
+      expect(JSON.stringify(brief)).not.toContain("payloadVersion");
+
+      const playerRes = await app.request(`/api/games/${id}/postgame/players/mira/summary`);
+      expect(playerRes.status).toBe(200);
+      const player = (await playerRes.json()) as { ok: true; player: { won: boolean } };
+      expect(player.ok).toBe(true);
+      expect(player.player.won).toBe(true);
+
+      const juryRes = await app.request(`/api/games/${id}/postgame/jury`);
+      expect(juryRes.status).toBe(200);
+      const jury = (await juryRes.json()) as { ok: true; jury: { status: string } };
+      expect(jury.jury.status).toBe("unavailable");
+
+      const turningPointsRes = await app.request(`/api/games/${id}/postgame/turning-points`);
+      expect(turningPointsRes.status).toBe(200);
+      const turningPoints = (await turningPointsRes.json()) as { ok: true; turningPoints: unknown[] };
+      expect(turningPoints.ok).toBe(true);
+      expect(Array.isArray(turningPoints.turningPoints)).toBe(true);
+    });
+
     test("rejects non-completed games as non-entry results", async () => {
       const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
       await insertFixturePlayers(db, id);

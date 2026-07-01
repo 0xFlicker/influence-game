@@ -15,6 +15,20 @@ function cloneCanonicalEvent(event: CanonicalGameEvent): CanonicalGameEvent {
   return structuredClone(event) as CanonicalGameEvent;
 }
 
+function jsonSafe(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => entry === undefined ? null : jsonSafe(entry));
+  }
+  if (value === null || typeof value !== "object") return value;
+
+  const record = value as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.entries(record)
+      .filter(([, entry]) => entry !== undefined)
+      .map(([key, entry]) => [key, jsonSafe(entry)]),
+  );
+}
+
 export interface CanonicalEventDraft<
   TType extends CanonicalGameEventType = CanonicalGameEventType,
   TPayload extends Record<string, unknown> = Record<string, unknown>,
@@ -57,7 +71,7 @@ export class CanonicalEventLog {
       visibility: draft.visibility ?? "producer",
       payloadVersion: 1,
       sourcePointers: draft.sourcePointers ?? [],
-      payload: draft.payload,
+      payload: jsonSafe(draft.payload) as TPayload,
     };
 
     assertCanonicalGameEvent(event);

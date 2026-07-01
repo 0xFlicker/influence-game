@@ -1,0 +1,793 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Postgame MCP/API Surfaces</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f3ec;
+      --panel: #fffdf8;
+      --panel-2: #f1eadf;
+      --ink: #191713;
+      --muted: #665e52;
+      --line: #d9cfc0;
+      --accent: #245a72;
+      --accent-2: #6a4b8a;
+      --good: #1f6a45;
+      --warn: #8a5a12;
+      --bad: #904044;
+      --code: #26211b;
+      --code-bg: #ece4d6;
+      --shadow: 0 16px 40px rgba(36, 28, 16, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0)),
+        var(--bg);
+      color: var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+      font-size: 15px;
+    }
+    .page {
+      width: min(1120px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 36px 0 48px;
+    }
+    header {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 28px;
+      box-shadow: var(--shadow);
+    }
+    h1, h2, h3, h4 {
+      line-height: 1.18;
+      margin: 0;
+      letter-spacing: 0;
+    }
+    h1 {
+      font-size: clamp(30px, 5vw, 54px);
+      max-width: 13ch;
+    }
+    h2 {
+      font-size: 24px;
+      margin-top: 44px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    h3 { font-size: 18px; margin-top: 22px; }
+    h4 { font-size: 15px; margin-top: 18px; }
+    p, li { max-width: 78ch; }
+    a { color: var(--accent); }
+    code {
+      color: var(--code);
+      background: var(--code-bg);
+      padding: 0.1rem 0.28rem;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+    pre {
+      overflow-x: auto;
+      background: #211c16;
+      color: #f8efe0;
+      border-radius: 8px;
+      padding: 16px;
+      border: 1px solid #3c3024;
+      font-size: 13px;
+      line-height: 1.45;
+      max-width: 100%;
+    }
+    pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+      border-radius: 0;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 22px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--muted);
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 22px;
+    }
+    .metric, .idea, .note, .axis, .tool-card {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .metric strong {
+      display: block;
+      color: var(--ink);
+      font-size: 20px;
+      line-height: 1.1;
+    }
+    .metric span { color: var(--muted); font-size: 13px; }
+    nav {
+      margin-top: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    nav a {
+      text-decoration: none;
+      border: 1px solid var(--line);
+      background: #fff7e9;
+      border-radius: 6px;
+      padding: 7px 10px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .lead {
+      margin-top: 18px;
+      font-size: 17px;
+      color: #312b22;
+    }
+    .callout {
+      border-left: 4px solid var(--accent);
+      background: #eaf3f5;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin: 18px 0;
+      color: #1c3a47;
+    }
+    .warning {
+      border-left-color: var(--warn);
+      background: #fbf0d7;
+      color: #5a3b0f;
+    }
+    .success {
+      border-left-color: var(--good);
+      background: #e7f3ea;
+      color: #214933;
+    }
+    .axes {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .axis b {
+      display: block;
+      margin-bottom: 6px;
+    }
+    .ideas-nav {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 16px 0 22px;
+      max-width: 100%;
+    }
+    .ideas-nav a {
+      text-decoration: none;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--accent);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-weight: 700;
+    }
+    .idea {
+      margin: 18px 0;
+      box-shadow: 0 8px 24px rgba(36, 28, 16, 0.05);
+    }
+    .idea-title {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+    .idea-title h3 { margin-top: 0; }
+    .score {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+      min-width: 190px;
+    }
+    .score .pill { background: #eef6f0; color: var(--good); border-color: #b9d9c4; }
+    .score .complexity { background: #f2e9f7; color: var(--accent-2); border-color: #d9c5e6; }
+    dl {
+      display: grid;
+      grid-template-columns: 128px minmax(0, 1fr);
+      gap: 8px 14px;
+      margin: 14px 0 0;
+    }
+    dt {
+      font-weight: 800;
+      color: #4b4338;
+    }
+    dd { margin: 0; color: #2c271f; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 14px 0;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      display: table;
+    }
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      background: #ede4d4;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #51483d;
+    }
+    tr:last-child td { border-bottom: 0; }
+    .tool-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .tool-card h4 { margin-top: 0; }
+    .tool-card ul { margin: 8px 0 0; padding-left: 18px; }
+    .diagram {
+      margin: 18px 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fffbf3;
+      padding: 16px;
+    }
+    .diagram svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .ref-list li { margin-bottom: 8px; }
+    footer {
+      margin-top: 42px;
+      color: var(--muted);
+      font-size: 12px;
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+    }
+    @media (max-width: 820px) {
+      .summary-grid, .axes, .tool-grid, .ideas-nav {
+        grid-template-columns: 1fr;
+      }
+      .idea-title {
+        display: block;
+      }
+      .score {
+        justify-content: flex-start;
+        margin-top: 10px;
+        min-width: 0;
+      }
+      dl {
+        grid-template-columns: 1fr;
+      }
+      table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="pill">Ideation Artifact</p>
+      <h1>Postgame MCP/API Surfaces</h1>
+      <p class="lead">
+        A focused v0 proposal for LLM-native read surfaces that let ChatGPT, Claude, Grok, and The House analyze completed Influence games without rebuilding the story from raw canonical-event Lego bricks.
+      </p>
+      <div class="meta">
+        <span class="pill">Date: <time datetime="2026-07-01">2026-07-01</time></span>
+        <span class="pill">Topic: postgame-mcp-api-surfaces</span>
+        <span class="pill">Mode: repo-grounded</span>
+        <span class="pill">Focus: LLM-native postgame reads</span>
+      </div>
+      <div class="summary-grid">
+        <div class="metric"><strong>7</strong><span>ranked survivor ideas</span></div>
+        <div class="metric"><strong>16</strong><span>raw candidates considered</span></div>
+        <div class="metric"><strong>6</strong><span>topic axes covered</span></div>
+      </div>
+      <nav aria-label="Document sections">
+        <a href="#grounding-context">Grounding</a>
+        <a href="#topic-axes">Axes</a>
+        <a href="#ranked-ideas">Ranked Ideas</a>
+        <a href="#v0-catalog">V0 Catalog</a>
+        <a href="#acceptance">Acceptance Mapping</a>
+        <a href="#rejection-summary">Rejected Ideas</a>
+      </nav>
+    </header>
+
+    <section id="grounding-context">
+      <h2>Grounding Context</h2>
+      <div class="callout success">
+        <strong>Recommendation:</strong> add denormalized read-model DTOs on top of the canonical event stream and completed-results projection. Do not replace canonical events, do not make transcripts authoritative, and do not make private reasoning player-visible by accident.
+      </div>
+      <p>
+        The repo already has the core truth substrate this v0 needs. `packages/engine/src/completed-game-results.ts` builds a canonical-event-first completed-results read with winner, finalists, elimination order, per-round revealed facts, endgame eliminations, jury vote counts, jury ledger, player placements, vote patterns, and diagnostics. `packages/engine/src/revealed-round-facts.ts` already turns per-round canonical events into sanitized vote, power, Council, and player-status facts.
+      </p>
+      <p>
+        The production MCP surface in `packages/api/src/game-mcp/server.ts` already exposes scoped game inspection tools: `list_games`, `read_projection`, `read_round_facts`, `filter_events`, `player_timeline`, cognitive artifact reads, and producer-only trace/durable-run tools. That scope split is healthy. `games:read` is sanitized and subject/access controlled; `producer` exposes private trace evidence. The postgame gap is that current game reads are still too close to facts and events. An LLM can get the pieces, but still has to assemble the chessboard with oven mitts.
+      </p>
+      <p>
+        The completed-results product requirements in `docs/brainstorms/2026-06-26-completed-game-results-review-requirements.md` make two constraints especially relevant: canonical facts come first, and vote grouping is allowed only as legibility, not as definitive alliance truth. This proposal carries that into MCP: player-safe tools can say "these players voted together in these rounds" and "bloc evidence confidence: medium"; they should not say "confirmed secret alliance" unless producer-only evidence supports it.
+      </p>
+      <p>
+        External protocol guidance points the same direction. MCP tools are model-invoked functions with input schemas and optional output schemas, tool results can return `structuredContent`, and servers must enforce access controls and sanitize outputs. MCP resources are useful for app-driven context, but these postgame answers are better as tools because the model needs to ask specific questions. OpenAI Apps SDK guidance also favors explicit read-only annotations and structured outputs. In short: structured, read-only, compact, scoped. Very boring. Very correct.
+      </p>
+      <div class="callout warning">
+        <strong>Fixture note:</strong> `edge-smoke-dusk`, `Lilith Voss`, `Shadowtech`, and `Kestrel` were not found as checked-in fixture names. Acceptance should add a deterministic fixture or DB snapshot named `edge-smoke-dusk`; relying on a live row would make tests theatrical in the bad way.
+      </div>
+    </section>
+
+    <section id="topic-axes">
+      <h2>Topic Axes</h2>
+      <div class="axes">
+        <div class="axis"><b>1. Agent game discovery</b>Find the games an owned or visible agent played, with outcome facts in the listing.</div>
+        <div class="axis"><b>2. Whole-game postgame brief</b>Answer "what happened?" in one compact call.</div>
+        <div class="axis"><b>3. Jury and vote accountability</b>Make final votes and juror context citation-safe.</div>
+        <div class="axis"><b>4. Player-level game arcs</b>Explain one player's path without raw event reconstruction.</div>
+        <div class="axis"><b>5. Turning points and bloc evidence</b>Surface deterministic moments and vote-cohort control without overclaiming alliances.</div>
+        <div class="axis"><b>6. Producer-only strategy overlay</b>Use private trace and reasoning artifacts only behind the producer gate.</div>
+      </div>
+    </section>
+
+    <section id="ranked-ideas">
+      <h2>Ranked Ideas</h2>
+      <div class="ideas-nav" aria-label="Ranked idea jump list">
+        <a href="#idea-1">1. Shared Postgame Analysis Projection</a>
+        <a href="#idea-2">2. Agent Game Ledger</a>
+        <a href="#idea-3">3. One-Call Game Brief</a>
+        <a href="#idea-4">4. Jury Breakdown</a>
+        <a href="#idea-5">5. Player Game Summary</a>
+        <a href="#idea-6">6. Turning Points and Vote-Bloc Evidence</a>
+        <a href="#idea-7">7. Producer Game Analysis</a>
+      </div>
+
+      <article class="idea" id="idea-1">
+        <div class="idea-title">
+          <h3>I1. Shared Postgame Analysis Projection</h3>
+          <div class="score"><span class="pill">Confidence 92%</span><span class="pill complexity">Complexity Medium</span></div>
+        </div>
+        <p>
+          Build one shared `buildPostgameAnalysisProjection(...)` helper that takes trusted canonical events, persisted projection status, completed-results output, optional agent/profile rows, and optional producer evidence facets, then emits compact DTO-ready facts. Every v0 MCP tool and API endpoint should read from this helper instead of each tool re-deriving boot order, vote counts, placement, risk, and jury facts. This is the spine. Without it, the tools will slowly become six tiny truth engines, which is how software starts doing interpretive dance in production.
+        </p>
+        <div class="diagram" aria-label="Postgame projection flow">
+          <svg viewBox="0 0 960 240" role="img">
+            <defs>
+              <style>
+                .box{fill:#fffdf8;stroke:#cdbfae;stroke-width:2;rx:8}
+                .core{fill:#eaf3f5;stroke:#245a72;stroke-width:2;rx:8}
+                .prod{fill:#f2e9f7;stroke:#6a4b8a;stroke-width:2;rx:8}
+                .txt{font:700 18px system-ui,sans-serif;fill:#191713}
+                .sub{font:500 13px system-ui,sans-serif;fill:#665e52}
+                .arr{stroke:#7d7163;stroke-width:2;marker-end:url(#arrow)}
+              </style>
+              <marker id="arrow" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L0,6 L8,3 z" fill="#7d7163"></path>
+              </marker>
+            </defs>
+            <rect class="box" x="24" y="48" width="180" height="70"></rect>
+            <text class="txt" x="44" y="78">Canonical events</text>
+            <text class="sub" x="44" y="100">source of truth</text>
+            <rect class="box" x="24" y="138" width="180" height="70"></rect>
+            <text class="txt" x="44" y="168">Completed results</text>
+            <text class="sub" x="44" y="190">existing rollup</text>
+            <line class="arr" x1="204" y1="83" x2="330" y2="108"></line>
+            <line class="arr" x1="204" y1="173" x2="330" y2="132"></line>
+            <rect class="core" x="330" y="76" width="280" height="96"></rect>
+            <text class="txt" x="354" y="112">Postgame analysis projection</text>
+            <text class="sub" x="354" y="136">compact derived facts + diagnostics</text>
+            <line class="arr" x1="610" y1="124" x2="734" y2="70"></line>
+            <line class="arr" x1="610" y1="124" x2="734" y2="124"></line>
+            <line class="arr" x1="610" y1="124" x2="734" y2="178"></line>
+            <rect class="box" x="734" y="36" width="198" height="58"></rect>
+            <text class="txt" x="754" y="66">Brief / jury</text>
+            <rect class="box" x="734" y="96" width="198" height="58"></rect>
+            <text class="txt" x="754" y="126">Player summary</text>
+            <rect class="prod" x="734" y="156" width="198" height="58"></rect>
+            <text class="txt" x="754" y="186">Producer overlay</text>
+          </svg>
+        </div>
+        <dl>
+          <dt>Axis</dt><dd>Whole-game postgame brief</dd>
+          <dt>Basis</dt><dd><code>direct:</code> `buildCompletedGameResults` already rolls canonical events into public postgame facts; `ProductionGameMcpReadModel` already wraps game reads for MCP. The missing move is a shared postgame projection specialized for LLM payloads.</dd>
+          <dt>Rationale</dt><dd>The user's target calls need overlapping facts: player refs, placements, vote ledgers, majority alignment, jury votes, exposure pressure, and diagnostics. A shared helper keeps those facts consistent and keeps token-efficient DTOs cheap to add.</dd>
+          <dt>Downsides</dt><dd>Requires careful naming and tests so this does not become a second projection model. The helper must remain rebuildable from canonical facts and must not hide degradation.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-2">
+        <div class="idea-title">
+          <h3>I2. Agent Game Ledger</h3>
+          <div class="score"><span class="pill">Confidence 88%</span><span class="pill complexity">Complexity Medium</span></div>
+        </div>
+        <p>
+          Add `list_agent_games(agentId | agentName, limit?, cursor?, detailLevel?)` as the agent-centric entry point. Current MCP `list_games` is game-centric, which is fine for browsing but awkward for "what has Lilith Voss played?" The ledger should resolve an owned/visible agent, return completed and optionally active games, and include outcome facts directly in each row.
+        </p>
+        <dl>
+          <dt>Axis</dt><dd>Agent game discovery</dd>
+          <dt>Basis</dt><dd><code>direct:</code> STRATEGY emphasizes repeat joiners, agent improvement after games, and AI app compatibility. The current MCP surface has `list_agents` and `list_games`, but no joined, outcome-rich agent history.</dd>
+          <dt>Rationale</dt><dd>This is the cheapest way for an LLM to answer "Which games has this agent played?" and then choose one game to analyze.</dd>
+          <dt>Downsides</dt><dd>Agent-name resolution can be ambiguous. v0 should return `resolutionCandidates` when names collide instead of guessing.</dd>
+        </dl>
+        <pre><code>{
+  "schemaVersion": 1,
+  "agent": { "id": "agent_lilith", "name": "Lilith Voss", "visibility": "owned" },
+  "games": [{
+    "gameId": "game_...",
+    "slug": "edge-smoke-dusk",
+    "status": "completed",
+    "trackType": "daily-free",
+    "startedAt": "2026-06-30T...",
+    "endedAt": "2026-06-30T...",
+    "placement": 1,
+    "survivedToEnd": true,
+    "won": true,
+    "eliminatedRound": null,
+    "winnerName": "Lilith Voss",
+    "finalistNames": ["Lilith Voss", "Kestrel"],
+    "juryVoteCount": { "forAgent": 4, "againstAgent": 3 },
+    "ratingDelta": null
+  }],
+  "pagination": { "nextCursor": null },
+  "diagnostics": []
+}</code></pre>
+      </article>
+
+      <article class="idea" id="idea-3">
+        <div class="idea-title">
+          <h3>I3. One-Call Game Brief</h3>
+          <div class="score"><span class="pill">Confidence 91%</span><span class="pill complexity">Complexity Medium</span></div>
+        </div>
+        <p>
+          Add `read_game_brief(gameIdOrSlug, detailLevel?, includeEvidence?)` as the primary "Analyze this game" tool. In standard detail, it should fit comfortably in one tool result while carrying enough structure for an LLM to cite winner, final vote, boot order, dominant empowered players, most exposed players, unanimous or near-unanimous votes, major eliminations, endgame sequence, and confidence diagnostics.
+        </p>
+        <dl>
+          <dt>Axis</dt><dd>Whole-game postgame brief</dd>
+          <dt>Basis</dt><dd><code>direct:</code> the user asked for ChatGPT to answer "Analyze edge-smoke-dusk" in one or two calls, and existing completed-results DTOs already contain the underlying winner, round, vote, elimination, and jury facts.</dd>
+          <dt>Rationale</dt><dd>This should be the top-level answer surface. Most users will not know whether they need projection, round facts, player timeline, or jury tools; `read_game_brief` should make that choice unnecessary for normal postgame analysis.</dd>
+          <dt>Downsides</dt><dd>It will be tempting to turn this into a generated recap. Do not. Keep summaries short, deterministic, and labeled when confidence is partial.</dd>
+        </dl>
+        <pre><code>{
+  "schemaVersion": 1,
+  "game": { "id": "game_...", "slug": "edge-smoke-dusk", "status": "completed" },
+  "summary": {
+    "winner": { "id": "p_lilith", "name": "Lilith Voss" },
+    "finalists": [{ "id": "p_lilith", "name": "Lilith Voss" }, { "id": "p_kestrel", "name": "Kestrel" }],
+    "finalVote": { "label": "4-3", "winnerVotes": 4, "runnerUpVotes": 3 },
+    "roundCount": 7,
+    "playerCount": 9,
+    "bootOrder": ["..."]
+  },
+  "highlights": {
+    "dominantEmpoweredPlayers": [{ "player": { "name": "Shadowtech" }, "rounds": [1, 2], "count": 2 }],
+    "mostExposedPlayers": [],
+    "nearUnanimousVotes": [],
+    "majorEliminations": [],
+    "notableEndgameSequence": [],
+    "voteBlocEvidence": [{
+      "label": "Lilith-leaning early juror bloc",
+      "confidence": "medium",
+      "basis": "jurors eliminated before the endgame supplied Lilith's winning votes"
+    }]
+  },
+  "diagnostics": [{ "code": "derived_vote_bloc_not_confirmed_alliance", "severity": "info" }]
+}</code></pre>
+      </article>
+
+      <article class="idea" id="idea-4">
+        <div class="idea-title">
+          <h3>I4. Jury Breakdown</h3>
+          <div class="score"><span class="pill">Confidence 90%</span><span class="pill complexity">Complexity Low</span></div>
+        </div>
+        <p>
+          Add `read_jury_breakdown(gameIdOrSlug, includeEvidence?)`. This tool is intentionally narrow. It should answer "how did the jury vote break down?" with finalists, winner, vote counts, every juror's vote, eliminated round, and derivable relationship flags such as "voted for finalist who eliminated them" or "voted against prior vote partner." The flags must be derivation-labeled, not social clairvoyance.
+        </p>
+        <dl>
+          <dt>Axis</dt><dd>Jury and vote accountability</dd>
+          <dt>Basis</dt><dd><code>direct:</code> `CompletedGameResultsJury` already has finalists, ledger, vote counts, winner, and method. The missing data is juror placement/context and a small narrative-hint layer.</dd>
+          <dt>Rationale</dt><dd>Jury votes are the highest-value postgame detail. They are also easy for LLMs to botch if they have to infer from raw events.</dd>
+          <dt>Downsides</dt><dd>Relationship flags need conservative semantics. Prefer `unknown` over a dramatic but thin label.</dd>
+        </dl>
+        <pre><code>{
+  "schemaVersion": 1,
+  "winner": { "name": "Lilith Voss" },
+  "finalists": [{ "name": "Lilith Voss" }, { "name": "Kestrel" }],
+  "voteCount": [{ "finalist": { "name": "Lilith Voss" }, "votes": 4 }, { "finalist": { "name": "Kestrel" }, "votes": 3 }],
+  "jurors": [{
+    "juror": { "name": "Shadowtech" },
+    "eliminatedRound": 5,
+    "votedFor": { "name": "Kestrel" },
+    "relationshipToVote": {
+      "votedForAlly": "unknown",
+      "votedForBetrayer": "unknown",
+      "votedForFinalistWhoEliminatedThem": "no"
+    }
+  }],
+  "narrativeHints": [
+    "Early eliminated jurors supplied Lilith's winning votes.",
+    "Shadowtech and Nova did not vote for Lilith."
+  ],
+  "diagnostics": []
+}</code></pre>
+      </article>
+
+      <article class="idea" id="idea-5">
+        <div class="idea-title">
+          <h3>I5. Player Game Summary</h3>
+          <div class="score"><span class="pill">Confidence 89%</span><span class="pill complexity">Complexity Medium</span></div>
+        </div>
+        <p>
+          Add `read_player_game_summary(gameIdOrSlug, player, detailLevel?, includeEvidence?)`. This should replace "call `player_timeline`, then rebuild a personality arc yourself" for normal postgame questions. It should return votes cast by round, votes received by round, empower/expose pressure, Council votes cast and received, powers used, shields received, majority alignment, nomination/at-risk moments, endgame/jury facts, and a compact `readableSummary`.
+        </p>
+        <dl>
+          <dt>Axis</dt><dd>Player-level game arcs</dd>
+          <dt>Basis</dt><dd><code>direct:</code> the current `player_timeline` returns canonical events mentioning a player. That is a search result, not a game arc. Completed-results model code already computes votes cast, votes received, tags, and placement-like facts for web cards.</dd>
+          <dt>Rationale</dt><dd>This directly answers "Why did this player win or lose?" and "What did a specific player do across the game?" with deterministic math before any narrative color.</dd>
+          <dt>Downsides</dt><dd>Majority alignment is derived, not canonical. It needs explicit definitions per vote type: aligned with empower winner, aligned with Council elimination, aligned with endgame elimination, aligned with final jury winner.</dd>
+        </dl>
+        <pre><code>{
+  "schemaVersion": 1,
+  "player": { "id": "p_lilith", "name": "Lilith Voss" },
+  "outcome": { "placement": 1, "status": "winner", "eliminatedRound": null, "won": true },
+  "voting": {
+    "votesCastByRound": [],
+    "empowerVotesReceivedByRound": [],
+    "exposeVotesReceivedByRound": [],
+    "councilVotesCast": [],
+    "councilVotesReceived": [],
+    "alignmentWithMajorityByRound": [{ "round": 1, "aligned": true, "basis": "council_elimination_target" }]
+  },
+  "risk": { "timesNominated": 0, "atRiskRounds": [] },
+  "powers": { "used": [], "shieldsReceived": [] },
+  "endgameAndJury": { "finalist": true, "juryVotesReceived": 4 },
+  "readableSummary": "Lilith won by reaching the final and collecting a 4-3 jury majority; her voting record was usually aligned with the round's deciding outcome.",
+  "diagnostics": []
+}</code></pre>
+      </article>
+
+      <article class="idea" id="idea-6">
+        <div class="idea-title">
+          <h3>I6. Turning Points and Vote-Bloc Evidence</h3>
+          <div class="score"><span class="pill">Confidence 84%</span><span class="pill complexity">Complexity Medium</span></div>
+        </div>
+        <p>
+          Add `read_game_turning_points(gameIdOrSlug, detailLevel?, includeEvidence?)` with the enum set from the prompt: `power_shift`, `majority_consolidation`, `alliance_member_cut`, `threat_removed`, `jury_split`, `endgame_pivot`, and `near_miss`. The v0 should use deterministic signals: repeated empowerment, a player suddenly receiving pressure, a close Council vote, a finalist cutting a prior vote partner, endgame eliminations, or a split final jury. It should also include vote-bloc evidence, but label it as derived vote cohesion rather than confirmed alliance membership.
+        </p>
+        <dl>
+          <dt>Axis</dt><dd>Turning points and bloc evidence</dd>
+          <dt>Basis</dt><dd><code>reasoned:</code> "Major turning point" is not a single canonical event type. It is a thresholded derivation over vote deltas, power concentration, eliminations, risk, and final-jury consequences. That derivation can be deterministic if it exposes its evidence.</dd>
+          <dt>Rationale</dt><dd>This is the right place to answer "what alliance or voting bloc controlled the game?" without inventing secret social contracts. The tool can report who voted together, when their cohesion mattered, and when it broke.</dd>
+          <dt>Downsides</dt><dd>The scoring rules need tests and conservative labels. Weak heuristics here would be worse than no endpoint because LLMs will launder them into certainty.</dd>
+        </dl>
+        <pre><code>{
+  "schemaVersion": 1,
+  "turningPoints": [{
+    "round": 2,
+    "type": "power_shift",
+    "playersInvolved": [{ "name": "Shadowtech" }],
+    "description": "Shadowtech was empowered again early, concentrating power before the midgame.",
+    "evidence": [{ "kind": "empower_tally", "round": 2, "sequence": 42 }],
+    "confidence": "high"
+  }],
+  "voteBlocEvidence": [{
+    "rounds": [1, 2, 3],
+    "players": [{ "name": "Lilith Voss" }, { "name": "..." }],
+    "cohesion": 0.72,
+    "controlledOutcomes": ["round_3_council"],
+    "label": "derived_vote_cohort",
+    "confidence": "medium"
+  }],
+  "diagnostics": []
+}</code></pre>
+      </article>
+
+      <article class="idea" id="idea-7">
+        <div class="idea-title">
+          <h3>I7. Producer Game Analysis</h3>
+          <div class="score"><span class="pill">Confidence 82%</span><span class="pill complexity">Complexity High</span></div>
+        </div>
+        <p>
+          Add producer-only `read_producer_game_analysis(gameIdOrSlug, detailLevel?, includeEvidence?, maxBytes?)`. This is the one place v0 can use reasoning, thinking, strategy artifacts, private trace facets, vote graphs, trust graphs, House strategy packets, and discrepancy analysis. It should still start from canonical facts and then attach private interpretation. Producer analysis is not a shortcut around the scoreboard.
+        </p>
+        <dl>
+          <dt>Axis</dt><dd>Producer-only strategy overlay</dd>
+          <dt>Basis</dt><dd><code>direct:</code> the repo already has `producer` scope, private trace manifest/content/search tools, cognitive artifact access, and docs that distinguish producer private trace data from player-visible facts.</dd>
+          <dt>Rationale</dt><dd>Prompt and engine tuning need richer analysis than players should see: strategy pivots, betrayal moments, public/private mismatches, jury-management mistakes, and model behavior observations.</dd>
+          <dt>Downsides</dt><dd>High blast radius if it leaks into `games:read`. Tool inventory tests and response redaction tests are non-negotiable.</dd>
+        </dl>
+        <pre><code>{
+  "schemaVersion": 1,
+  "visibility": "producer",
+  "canonicalAnchor": { "winner": { "name": "Lilith Voss" }, "finalVote": "4-3" },
+  "producerAnalysis": {
+    "inferredAlliances": [],
+    "actualPrivateStrategyPivots": [],
+    "publicPrivateDiscrepancies": [],
+    "betrayalMoments": [],
+    "threatManagement": [],
+    "juryManagement": [],
+    "playerStrategicGrades": [],
+    "modelBehaviorObservations": [],
+    "debuggingNotes": []
+  },
+  "privateEvidenceDiagnostics": []
+}</code></pre>
+      </article>
+    </section>
+
+    <section id="v0-catalog">
+      <h2>Recommended V0 Catalog</h2>
+      <p>
+        Implement these as MCP tools first, backed by shared API/read-model methods. Add REST parity where the web UI or external clients need it, but keep the DTO contract shared.
+      </p>
+      <div class="tool-grid">
+        <div class="tool-card">
+          <h4>`list_agent_games`</h4>
+          <ul>
+            <li><strong>Scope:</strong> `agents:read` plus game visibility, or `producer`.</li>
+            <li><strong>Inputs:</strong> `agentId | agentName`, `limit`, `cursor`, `detailLevel`.</li>
+            <li><strong>Returns:</strong> compact game rows with outcome, placement, final vote, finalists, jury vote count, rating delta when available.</li>
+            <li><strong>API:</strong> `GET /api/agents/:agentId/games?limit=&cursor=&detailLevel=` for authenticated agent owners.</li>
+          </ul>
+        </div>
+        <div class="tool-card">
+          <h4>`read_game_brief`</h4>
+          <ul>
+            <li><strong>Scope:</strong> `games:read` for accessible games, `producer` for global read.</li>
+            <li><strong>Inputs:</strong> `gameIdOrSlug`, `detailLevel`, `includeEvidence`.</li>
+            <li><strong>Returns:</strong> winner, finalists, final vote, boot order, round/player counts, dominant empowered players, exposed players, major eliminations, endgame sequence, diagnostics.</li>
+            <li><strong>API:</strong> `GET /api/games/:idOrSlug/postgame/brief` or fold into `GET /api/games/:idOrSlug/results?view=brief` for public-by-URL completed results.</li>
+          </ul>
+        </div>
+        <div class="tool-card">
+          <h4>`read_jury_breakdown`</h4>
+          <ul>
+            <li><strong>Scope:</strong> `games:read` or `producer`.</li>
+            <li><strong>Inputs:</strong> `gameIdOrSlug`, `includeEvidence`.</li>
+            <li><strong>Returns:</strong> finalists, winner, vote counts, per-juror vote, eliminated round, derivable relationship flags, narrative hints.</li>
+            <li><strong>API:</strong> `GET /api/games/:idOrSlug/postgame/jury`.</li>
+          </ul>
+        </div>
+        <div class="tool-card">
+          <h4>`read_player_game_summary`</h4>
+          <ul>
+            <li><strong>Scope:</strong> `games:read` or `producer`.</li>
+            <li><strong>Inputs:</strong> `gameIdOrSlug`, `player`, `detailLevel`, `includeEvidence`.</li>
+            <li><strong>Returns:</strong> placement, status, vote ledger summaries, votes received, majority alignment, risk moments, powers, endgame/jury facts, readable summary.</li>
+            <li><strong>API:</strong> `GET /api/games/:idOrSlug/postgame/players/:playerId/summary`.</li>
+          </ul>
+        </div>
+        <div class="tool-card">
+          <h4>`read_game_turning_points`</h4>
+          <ul>
+            <li><strong>Scope:</strong> `games:read` or `producer`.</li>
+            <li><strong>Inputs:</strong> `gameIdOrSlug`, `detailLevel`, `includeEvidence`.</li>
+            <li><strong>Returns:</strong> enum-typed turning points, players involved, evidence fields, short generated-safe descriptions, vote-bloc evidence with confidence.</li>
+            <li><strong>API:</strong> `GET /api/games/:idOrSlug/postgame/turning-points`.</li>
+          </ul>
+        </div>
+        <div class="tool-card">
+          <h4>`read_producer_game_analysis`</h4>
+          <ul>
+            <li><strong>Scope:</strong> `producer` only.</li>
+            <li><strong>Inputs:</strong> `gameIdOrSlug`, `detailLevel`, `includeEvidence`, `maxBytes`.</li>
+            <li><strong>Returns:</strong> private strategy pivots, public/private discrepancies, betrayal moments, threat/jury management, grades, model behavior observations, debugging notes.</li>
+            <li><strong>API:</strong> `GET /api/producer/games/:idOrSlug/postgame/analysis` with producer auth.</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3>Shared DTO Rules</h3>
+      <table>
+        <thead><tr><th>Rule</th><th>V0 Contract</th></tr></thead>
+        <tbody>
+          <tr><td>Schema</td><td>Every payload includes `schemaVersion: 1` and stable player/game IDs plus display names.</td></tr>
+          <tr><td>Detail level</td><td>`brief` omits per-round arrays where possible; `standard` is default; `full` adds bounded supporting arrays but still avoids raw logs.</td></tr>
+          <tr><td>Evidence</td><td>`includeEvidence=false` by default. When true, include compact event pointers: `{ kind, round, sequence, eventType }`, not raw envelopes.</td></tr>
+          <tr><td>Diagnostics</td><td>Always include unavailable/partial facts as diagnostics with codes, severity, and messages. Missing facts are not vibes invitations.</td></tr>
+          <tr><td>Player-safe boundary</td><td>No source pointers, raw payload envelopes, private trace metadata, `thinking`, `reasoningContext`, storage keys, or producer-only artifacts.</td></tr>
+          <tr><td>Producer boundary</td><td>Producer tool may include private evidence summaries and references, but still anchors claims to canonical outcomes first.</td></tr>
+          <tr><td>MCP output</td><td>Return `structuredContent` plus a compact JSON `content[0].text` compatibility copy; add output schemas for core DTOs.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="acceptance">
+      <h2>Acceptance Mapping</h2>
+      <p>
+        The target scenario is `edge-smoke-dusk`. Because that slug is not currently checked in, v0 should add a deterministic fixture such as `createEdgeSmokeDuskPostgameFixture()` and seed a DB-backed test game with that slug. The test should prove the LLM does not need `filter_events` or raw logs for normal analysis.
+      </p>
+      <table>
+        <thead><tr><th>Acceptance fact</th><th>Tool that should answer it</th><th>Expected assertion</th></tr></thead>
+        <tbody>
+          <tr><td>Lilith Voss has completed games</td><td>`list_agent_games(agentName: "Lilith Voss")`</td><td>Includes `edge-smoke-dusk`, `status: completed`, `won: true`, `placement: 1`.</td></tr>
+          <tr><td>Lilith won</td><td>`read_game_brief`</td><td>`summary.winner.name === "Lilith Voss"`.</td></tr>
+          <tr><td>Final vote was 4-3 over Kestrel</td><td>`read_game_brief` and `read_jury_breakdown`</td><td>Finalists include Lilith and Kestrel; vote counts are 4 and 3.</td></tr>
+          <tr><td>Shadowtech was repeatedly empowered early</td><td>`read_game_brief`</td><td>`dominantEmpoweredPlayers` includes Shadowtech with early rounds and count greater than 1.</td></tr>
+          <tr><td>Boot order</td><td>`read_game_brief`</td><td>`bootOrder` is complete and ordered by elimination sequence.</td></tr>
+          <tr><td>Jury breakdown</td><td>`read_jury_breakdown`</td><td>Per-juror votes include the three non-Lilith votes and four Lilith votes.</td></tr>
+          <tr><td>Lilith majority-aligned voting pattern</td><td>`read_player_game_summary(player: "Lilith Voss")`</td><td>`alignmentWithMajorityByRound` shows mostly aligned outcomes with definitions attached.</td></tr>
+          <tr><td>Shadowtech/Kestrel/Nova did not vote for Lilith</td><td>`read_jury_breakdown` and `read_player_game_summary`</td><td>Jury and vote records identify non-Lilith votes without requiring raw event search.</td></tr>
+          <tr><td>Early eliminated players supplied Lilith's winning votes</td><td>`read_jury_breakdown`</td><td>`narrativeHints` or derived juror cohorts report early jurors favoring Lilith with evidence pointers when requested.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Focused Test Set</h3>
+      <ul>
+        <li>Add engine-level tests for `buildPostgameAnalysisProjection` using the `edge-smoke-dusk` fixture.</li>
+        <li>Add DB-backed `ProductionGameMcpReadModel` tests for all five player-safe tools and the producer-only tool gate.</li>
+        <li>Add MCP server inventory tests: `games:read` lists player-safe postgame tools only; `producer` includes `read_producer_game_analysis`; active-match tools remain absent.</li>
+        <li>Add redaction tests that stringify player-safe results and assert absence of `sourcePointers`, `payloadVersion`, `privateReasoning`, `thinking`, `reasoningContext`, `storageKey`, and raw provider fields.</li>
+        <li>Add a tool-call sequence test showing "Analyze edge-smoke-dusk" is answerable with `read_game_brief` plus at most one drilldown call.</li>
+      </ul>
+    </section>
+
+    <section id="rejection-summary">
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead><tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>Separate `read_game_vote_blocs`</td><td>Fold into brief and turning-points as confidence-labeled vote-cohort evidence. A standalone alliance oracle overclaims v0 truth.</td></tr>
+          <tr><td>2</td><td>Raw event export with LLM hints</td><td>Already exists in lower-level form and contradicts the goal of avoiding raw event-log reconstruction.</td></tr>
+          <tr><td>3</td><td>Prose narrative recap endpoint</td><td>Too speculative and hard to cite. Keep generated-safe descriptions short and evidence-backed.</td></tr>
+          <tr><td>4</td><td>Public reasoning snippet overlay</td><td>Interesting, but v0 should not blur player-safe facts with cognitive artifacts until artifact policy is explicitly designed for postgame summaries.</td></tr>
+          <tr><td>5</td><td>REST parity routes as the main idea</td><td>Useful implementation detail, but the product value is the DTO/read-model contract. Routes should mirror it rather than define it.</td></tr>
+          <tr><td>6</td><td>Materialized postgame summary table</td><td>Premature persistence. Start with read-time projections and add caching/materialization only if latency or repeated calls justify it.</td></tr>
+          <tr><td>7</td><td>Dedicated `explain_win_loss` tool</td><td>Duplicates `read_player_game_summary` and `read_game_brief`; make win/loss explanation a field, not another tool.</td></tr>
+          <tr><td>8</td><td>Prompt-only tool description rewrite</td><td>Necessary supporting work, but not sufficient to answer the target questions without new DTOs.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="sources">
+      <h2>Sources and References</h2>
+      <ul class="ref-list">
+        <li><code>packages/engine/src/completed-game-results.ts</code> - current canonical-event-first completed-results builder.</li>
+        <li><code>packages/engine/src/revealed-round-facts.ts</code> - current sanitized per-round revealed facts builder.</li>
+        <li><code>packages/api/src/game-mcp/server.ts</code> and <code>packages/api/src/game-mcp/read-model.ts</code> - production MCP tool inventory, scope checks, and read-model seams.</li>
+        <li><code>docs/brainstorms/2026-06-26-completed-game-results-review-requirements.md</code> - canonical facts first, vote grouping, public-by-URL completed results constraints.</li>
+        <li><code>docs/solutions/architecture-patterns/production-mcp-role-resource-split.md</code> - current production MCP scope boundary.</li>
+        <li><code>docs/solutions/architecture-patterns/agent-strategy-observability-spine.md</code> - separation between canonical facts, player-visible transcript, and producer/debug artifacts.</li>
+        <li><a href="https://modelcontextprotocol.io/specification/2025-06-18/server/tools">MCP Tools specification</a> - structured tool results, output schema, annotations, and safety considerations.</li>
+        <li><a href="https://modelcontextprotocol.io/specification/2025-06-18/server/resources">MCP Resources specification</a> - resources as application-driven context.</li>
+        <li><a href="https://developers.openai.com/apps-sdk/reference">OpenAI Apps SDK reference</a> - read-only annotations, output schemas, and structured content guidance.</li>
+      </ul>
+    </section>
+
+    <footer class="composition-signal">
+      Composed 2026-07-01T00:00Z by ce-ideate from the user prompt requesting LLM-native MCP/API postgame analysis surfaces.
+    </footer>
+  </main>
+</body>
+</html>

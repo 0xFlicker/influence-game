@@ -74,7 +74,10 @@ export const games = pgTable("games", {
   createdAt: text("created_at")
     .notNull()
     .default(sql`now()::text`),
-});
+}, (table) => [
+  index("games_created_by_id_idx").on(table.createdById),
+  index("games_status_ended_at_idx").on(table.status, table.endedAt),
+]);
 
 // ---------------------------------------------------------------------------
 // Agent Profiles (saved, reusable player agent identities)
@@ -99,7 +102,10 @@ export const agentProfiles = pgTable("agent_profiles", {
   updatedAt: text("updated_at")
     .notNull()
     .default(sql`now()::text`),
-});
+}, (table) => [
+  index("agent_profiles_user_id_idx").on(table.userId),
+  index("agent_profiles_name_idx").on(table.name),
+]);
 
 // ---------------------------------------------------------------------------
 // Game Players
@@ -117,7 +123,11 @@ export const gamePlayers = pgTable("game_players", {
   joinedAt: text("joined_at")
     .notNull()
     .default(sql`now()::text`),
-});
+}, (table) => [
+  index("game_players_game_id_idx").on(table.gameId),
+  index("game_players_user_id_idx").on(table.userId),
+  index("game_players_agent_profile_id_idx").on(table.agentProfileId),
+]);
 
 // ---------------------------------------------------------------------------
 // Transcripts

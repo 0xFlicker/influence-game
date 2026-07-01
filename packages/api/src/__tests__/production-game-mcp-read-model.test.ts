@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
+import {
+  EDGE_SMOKE_DUSK_EXPECTED,
+  EDGE_SMOKE_DUSK_GAME_ID,
+  EDGE_SMOKE_DUSK_PLAYERS,
+  createEdgeSmokeDuskEvents,
+} from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { ProductionGameMcpReadModel } from "../game-mcp/read-model.js";
@@ -140,6 +146,99 @@ describe("ProductionGameMcpReadModel", () => {
     expect(timeline.canonicalGameFacts.events.length).toBeGreaterThan(0);
     expect(timeline.canonicalGameFacts.events[0]?.matchSources?.length).toBeGreaterThan(0);
     expect(timeline.diagnostics).toEqual([]);
+  });
+
+  test("reads LLM-native postgame surfaces for edge-smoke-dusk", async () => {
+    await insertEdgeSmokeDuskFixture(db);
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const brief = await readModel.readGameBrief({
+      gameIdOrSlug: EDGE_SMOKE_DUSK_EXPECTED.slug,
+    }, PRODUCER_ACCESS);
+
+    expect(brief.ok).toBe(true);
+    if (!brief.ok) return;
+    expect(brief.postgame.summary.winner).toEqual({
+      id: EDGE_SMOKE_DUSK_EXPECTED.winnerId,
+      name: EDGE_SMOKE_DUSK_EXPECTED.winnerName,
+    });
+    expect(brief.postgame.summary.finalVote).toMatchObject({
+      totalVotes: 7,
+      margin: 1,
+      runnerUp: { id: EDGE_SMOKE_DUSK_EXPECTED.runnerUpId },
+    });
+    expect(brief.postgame.summary.dominantEmpoweredPlayers[0]).toEqual({
+      player: EDGE_SMOKE_DUSK_PLAYERS.shadowtech,
+      votes: 3,
+    });
+    expect(brief.postgame.summary.bootOrder.map((entry) => entry.player.id)).toEqual(
+      [...EDGE_SMOKE_DUSK_EXPECTED.bootOrder],
+    );
+    expect(brief.postgame.summary.bootOrder.at(-1)).toMatchObject({
+      player: EDGE_SMOKE_DUSK_PLAYERS.kestrel,
+      source: "jury",
+      juryMember: false,
+    });
+    expect(brief.postgame.roundSummaries).toHaveLength(EDGE_SMOKE_DUSK_EXPECTED.roundsPlayed);
+    const endgameDiagnostics = brief.postgame.roundSummaries
+      .filter((round) => round.round >= 6)
+      .flatMap((round) => round.diagnostics.map((diagnostic) => diagnostic.code));
+    expect(endgameDiagnostics).not.toContain("standard_vote_not_yet_resolved");
+    expect(endgameDiagnostics).not.toContain("power_not_yet_resolved");
+    expect(endgameDiagnostics).not.toContain("council_not_yet_resolved");
+    expect(brief.postgame.dominantVotingBlocs.length).toBeGreaterThan(0);
+    expect(JSON.stringify(brief)).not.toContain("sourcePointers");
+    expect(JSON.stringify(brief)).not.toContain("payloadVersion");
+
+    const jury = await readModel.readJuryBreakdown({
+      gameIdOrSlug: EDGE_SMOKE_DUSK_GAME_ID,
+    }, PRODUCER_ACCESS);
+    expect(jury.ok).toBe(true);
+    if (!jury.ok) return;
+    const juryVotes = new Map(jury.jury.perJurorVotes.map((vote) => [vote.juror.id, vote.finalist.id]));
+    expect(juryVotes.get(EDGE_SMOKE_DUSK_PLAYERS.shadowtech.id)).toBe(EDGE_SMOKE_DUSK_EXPECTED.runnerUpId);
+    expect(juryVotes.get(EDGE_SMOKE_DUSK_PLAYERS.nova.id)).toBe(EDGE_SMOKE_DUSK_EXPECTED.runnerUpId);
+    for (const jurorId of EDGE_SMOKE_DUSK_EXPECTED.lilithJuryVotes) {
+      expect(juryVotes.get(jurorId)).toBe(EDGE_SMOKE_DUSK_EXPECTED.winnerId);
+    }
+
+    const player = await readModel.readPlayerGameSummary({
+      gameIdOrSlug: EDGE_SMOKE_DUSK_GAME_ID,
+      player: "Lilith Voss",
+    }, PRODUCER_ACCESS);
+    expect(player.ok).toBe(true);
+    if (!player.ok) return;
+    expect(player.player.won).toBe(true);
+    expect(player.player.majorityAlignmentByRound.filter((round) => round.aligned === true)).toHaveLength(5);
+
+    const turningPoints = await readModel.readGameTurningPoints({
+      gameIdOrSlug: EDGE_SMOKE_DUSK_GAME_ID,
+    }, PRODUCER_ACCESS);
+    expect(turningPoints.ok).toBe(true);
+    if (!turningPoints.ok) return;
+    expect(turningPoints.turningPoints.some((point) => point.type === "jury_split")).toBe(true);
+
+    const agentGames = await readModel.listAgentGames({
+      agentName: "Lilith Voss",
+    }, PRODUCER_ACCESS);
+    expect(agentGames.ok).toBe(true);
+    if (!agentGames.ok) return;
+    expect(agentGames.games[0]).toMatchObject({
+      gameId: EDGE_SMOKE_DUSK_GAME_ID,
+      won: true,
+      juryVoteCount: 7,
+    });
+
+    const producer = await readModel.readProducerGameAnalysis({
+      gameIdOrSlug: EDGE_SMOKE_DUSK_GAME_ID,
+    }, PRODUCER_ACCESS);
+    expect(producer.ok).toBe(true);
+    if (!producer.ok) return;
+    expect(producer.producerAnalysis.playerByPlayerStrategicGrades.some((grade) =>
+      grade.player.id === EDGE_SMOKE_DUSK_EXPECTED.winnerId &&
+      grade.grade === "A"
+    )).toBe(true);
+    expect(producer.developerEvidence).toHaveProperty("cognitiveArtifacts");
   });
 
   test("returns persisted invalid-log diagnostics through event filters and timelines", async () => {
@@ -453,6 +552,63 @@ describe("ProductionGameMcpReadModel", () => {
     });
   });
 });
+
+async function insertEdgeSmokeDuskFixture(db: DrizzleDB): Promise<void> {
+  const userId = "user-lilith";
+  const agentProfileId = "agent-lilith";
+  await db.insert(schema.users).values({
+    id: userId,
+    email: "lilith@test.example",
+    displayName: "Lilith Owner",
+  });
+  await db.insert(schema.agentProfiles).values({
+    id: agentProfileId,
+    userId,
+    name: EDGE_SMOKE_DUSK_PLAYERS.lilith.name,
+    personality: "Precise and socially patient.",
+    personaKey: "strategic",
+  });
+  const gameId = await insertGame(db, {
+    id: EDGE_SMOKE_DUSK_GAME_ID,
+    slug: EDGE_SMOKE_DUSK_EXPECTED.slug,
+    status: "completed",
+    config: {
+      maxRounds: EDGE_SMOKE_DUSK_EXPECTED.roundsPlayed,
+      modelTier: "budget",
+      visibility: "public",
+      viewerMode: "speedrun",
+    },
+  });
+  await db.update(schema.games)
+    .set({ endedAt: "2026-07-01T00:00:00.000Z" })
+    .where(eq(schema.games.id, gameId));
+  await db.insert(schema.gamePlayers).values(Object.values(EDGE_SMOKE_DUSK_PLAYERS).map((player) => ({
+    id: player.id,
+    gameId,
+    userId: player.id === EDGE_SMOKE_DUSK_PLAYERS.lilith.id ? userId : null,
+    agentProfileId: player.id === EDGE_SMOKE_DUSK_PLAYERS.lilith.id ? agentProfileId : null,
+    persona: JSON.stringify({
+      name: player.name,
+      personality: `${player.name} fixture persona`,
+      personaKey: "strategic",
+    }),
+    agentConfig: JSON.stringify({ model: "test-model", temperature: 0 }),
+  })));
+  await db.insert(schema.gameResults).values({
+    id: randomUUID(),
+    gameId,
+    winnerId: EDGE_SMOKE_DUSK_EXPECTED.winnerId,
+    roundsPlayed: EDGE_SMOKE_DUSK_EXPECTED.roundsPlayed,
+    tokenUsage: JSON.stringify({ promptTokens: 0, completionTokens: 0, totalTokens: 0, estimatedCost: 0 }),
+    finishedAt: "2026-07-01T00:00:00.000Z",
+  });
+  const ownerEpoch = await insertOwner(db, gameId);
+  await appendGameEvents(db, {
+    gameId,
+    ownerEpoch,
+    events: createEdgeSmokeDuskEvents(gameId),
+  });
+}
 
 async function insertPrivateTraceManifest(
   db: DrizzleDB,
