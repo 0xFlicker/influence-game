@@ -186,7 +186,7 @@ describe("ProductionGameMcpReadModel", () => {
     expect(endgameDiagnostics).not.toContain("standard_vote_not_yet_resolved");
     expect(endgameDiagnostics).not.toContain("power_not_yet_resolved");
     expect(endgameDiagnostics).not.toContain("council_not_yet_resolved");
-    expect(brief.postgame.dominantVotingBlocs.length).toBeGreaterThan(0);
+    expect(brief.postgame.derivedVoteCohorts.length).toBeGreaterThan(0);
     expect(JSON.stringify(brief)).not.toContain("sourcePointers");
     expect(JSON.stringify(brief)).not.toContain("payloadVersion");
 
@@ -226,7 +226,8 @@ describe("ProductionGameMcpReadModel", () => {
     expect(agentGames.games[0]).toMatchObject({
       gameId: EDGE_SMOKE_DUSK_GAME_ID,
       won: true,
-      juryVoteCount: 7,
+      finalJuryVoteTotal: 7,
+      juryVotesReceived: 4,
     });
 
     const producer = await readModel.readProducerGameAnalysis({

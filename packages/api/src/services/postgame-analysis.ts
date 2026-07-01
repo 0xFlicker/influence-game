@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import {
   buildCompletedGameResults,
   buildPostgameAnalysisProjection,
@@ -6,6 +6,7 @@ import {
   type PostgameAnalysisProjection,
   type PostgameJuryBreakdown,
   type PostgamePlayerGameSummary,
+  type PostgameRoundSummary,
   type PostgameTurningPoint,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
@@ -24,7 +25,8 @@ export type PostgameReadStatus =
   | "not_completed"
   | "unavailable"
   | "player_not_found"
-  | "agent_not_found";
+  | "agent_not_found"
+  | "agent_ambiguous";
 
 export interface PostgameGameReadOptions {
   detailLevel?: PostgameAnalysisDetailLevel;
@@ -115,7 +117,8 @@ export type PostgameAgentGameRow = {
   eliminatedRound: number | null;
   winnerName?: string;
   finalistNames: string[];
-  juryVoteCount?: number;
+  finalJuryVoteTotal?: number;
+  juryVotesReceived?: number;
   ratingDelta?: number | null;
   diagnostics: Array<{ code: string; severity: "info" | "warning" | "error"; message: string }>;
 };
@@ -133,15 +136,24 @@ export type PostgameAgentGamesResult =
     }
   | {
       ok: false;
-      status: "agent_not_found";
+      status: "agent_not_found" | "agent_ambiguous";
       error: string;
+      resolutionCandidates?: Array<{
+        id: string;
+        name: string;
+        gameCount: number;
+        latestGameId: string;
+        latestSlug?: string;
+      }>;
     };
 
-export type PostgameDominantVotingBloc = {
+export type PostgameDerivedVoteCohort = {
+  basis: "derived_vote_cohesion";
   players: Array<{ id: string; name: string }>;
   roundsControlled: number[];
   targets: Array<{ round: number; target: { id: string; name: string } | null; basis: string }>;
   confidence: "high" | "medium" | "low";
+  note: string;
 };
 
 type GameRow = Pick<
@@ -151,7 +163,10 @@ type GameRow = Pick<
 type PlayerRow = Pick<
   typeof schema.gamePlayers.$inferSelect,
   "id" | "gameId" | "userId" | "agentProfileId" | "persona"
-> & { agentProfileName: string | null };
+> & {
+  agentProfileName: string | null;
+  gameSlug: string | null;
+};
 type ResultRow = Pick<typeof schema.gameResults.$inferSelect, "winnerId" | "roundsPlayed">;
 
 export async function getPostgameAnalysis(
@@ -232,21 +247,7 @@ export async function listPostgameAgentGames(
   input: ListAgentGamesInput,
 ): Promise<PostgameAgentGamesResult> {
   const limit = clamp(input.limit ?? DEFAULT_AGENT_GAME_LIMIT, 1, MAX_AGENT_GAME_LIMIT);
-  const candidates = await loadAgentGameCandidates(db, input.visibleGameIds);
-  const normalizedName = input.agentName ? normalize(input.agentName) : null;
-  const matches = candidates
-    .filter((row) => {
-      if (input.agentId && row.id !== input.agentId && row.agentProfileId !== input.agentId) {
-        return false;
-      }
-      if (normalizedName) {
-        const persona = parsePersona(row.persona);
-        const rowNames = [persona.name, row.agentProfileName].filter((name): name is string => Boolean(name));
-        return rowNames.some((name) => normalize(name) === normalizedName);
-      }
-      return true;
-    })
-    .slice(0, limit);
+  const matches = await loadAgentGameCandidates(db, { ...input, limit });
 
   if (matches.length === 0) {
     return {
@@ -255,8 +256,21 @@ export async function listPostgameAgentGames(
       error: "No completed games were found for that agent.",
     };
   }
+  const resolutionCandidates = agentResolutionCandidates(matches);
+  if (!input.agentId && resolutionCandidates.length > 1) {
+    return {
+      ok: false,
+      status: "agent_ambiguous",
+      error: "Multiple visible agents matched that name. Call again with agentId.",
+      resolutionCandidates,
+    };
+  }
 
-  const diagnostics: Array<{ code: string; severity: "info" | "warning" | "error"; message: string }> = [];
+  const diagnostics: Array<{ code: string; severity: "info" | "warning" | "error"; message: string }> = [{
+    code: "rating_delta_unavailable",
+    severity: "info",
+    message: "Per-game rating deltas are not persisted yet.",
+  }];
   const games: PostgameAgentGameRow[] = [];
   for (const row of matches) {
     const analysis = await getPostgameAnalysis(db, row.gameId);
@@ -271,6 +285,7 @@ export async function listPostgameAgentGames(
     const player = analysis.analysis.playerSummaries.find((entry) => entry.player.id === row.id);
     if (!player) continue;
     const finalVote = analysis.analysis.summary.finalVote;
+    const juryVotesReceived = finalVote.voteCounts.find((entry) => entry.player.id === row.id)?.votes;
     games.push({
       gameId: analysis.game.id,
       ...(analysis.game.slug && { slug: analysis.game.slug }),
@@ -284,16 +299,9 @@ export async function listPostgameAgentGames(
       eliminatedRound: player.eliminatedRound,
       ...(analysis.analysis.summary.winner?.name && { winnerName: analysis.analysis.summary.winner.name }),
       finalistNames: analysis.analysis.summary.finalists.map((finalist) => finalist.name),
-      ...(finalVote.status === "available" && { juryVoteCount: finalVote.totalVotes }),
-      ratingDelta: null,
-      diagnostics: [
-        ...analysis.analysis.diagnostics,
-        {
-          code: "rating_delta_unavailable",
-          severity: "info",
-          message: "Per-game rating deltas are not persisted yet.",
-        },
-      ],
+      ...(finalVote.status === "available" && { finalJuryVoteTotal: finalVote.totalVotes }),
+      ...(juryVotesReceived !== undefined && { juryVotesReceived }),
+      diagnostics: analysis.analysis.diagnostics,
     });
   }
 
@@ -311,7 +319,61 @@ export async function listPostgameAgentGames(
   };
 }
 
-export function buildPostgameDominantVotingBlocs(analysis: PostgameAnalysisProjection): PostgameDominantVotingBloc[] {
+export function buildCompactPostgameBrief(
+  analysis: PostgameAnalysisProjection,
+  detailLevel: PostgameAnalysisDetailLevel,
+) {
+  return {
+    schemaVersion: 1 as const,
+    source: analysis.source,
+    availability: analysis.availability,
+    summary: analysis.summary,
+    derivedVoteCohorts: buildPostgameDerivedVoteCohorts(analysis),
+    roundSummaries: analysis.roundSummaries.map((round) => buildCompactPostgameRoundSummary(round, detailLevel)),
+    jury: {
+      status: analysis.jury.status,
+      finalists: analysis.jury.finalists,
+      winner: analysis.jury.winner,
+      finalVote: analysis.jury.finalVote,
+      narrativeHints: analysis.jury.narrativeHints,
+      nonWinnerSupporters: analysis.jury.nonWinnerSupporters,
+      ...(analysis.jury.evidence ? { evidence: analysis.jury.evidence } : {}),
+    },
+    turningPoints: analysis.turningPoints,
+    diagnostics: analysis.diagnostics,
+    ...(detailLevel === "full" ? { playerSummaries: analysis.playerSummaries } : {}),
+  };
+}
+
+export function buildCompactPostgameRoundSummary(
+  round: PostgameRoundSummary,
+  detailLevel: PostgameAnalysisDetailLevel,
+) {
+  return {
+    round: round.round,
+    phase: round.phase,
+    empowered: round.empowered,
+    empowerVoteCounts: round.empowerVoteCounts,
+    exposeLeaders: round.exposeLeaders,
+    powerAction: round.powerAction,
+    shieldGranted: round.shieldGranted,
+    councilCandidates: round.councilCandidates,
+    eliminated: round.eliminated,
+    majorityCohort: detailLevel === "brief"
+      ? {
+          basis: round.majorityCohort.basis,
+          target: round.majorityCohort.target,
+          votes: round.majorityCohort.votes,
+          confidence: round.majorityCohort.confidence,
+        }
+      : round.majorityCohort,
+    keyRiskMoments: round.keyRiskMoments,
+    diagnostics: round.diagnostics,
+    ...(round.evidence ? { evidence: round.evidence } : {}),
+  };
+}
+
+export function buildPostgameDerivedVoteCohorts(analysis: PostgameAnalysisProjection): PostgameDerivedVoteCohort[] {
   const blocs = new Map<string, {
     players: Array<{ id: string; name: string }>;
     roundsControlled: number[];
@@ -350,6 +412,7 @@ export function buildPostgameDominantVotingBlocs(analysis: PostgameAnalysisProje
     )
     .slice(0, 5)
     .map((bloc) => ({
+      basis: "derived_vote_cohesion" as const,
       players: bloc.players,
       roundsControlled: bloc.roundsControlled,
       targets: bloc.targets,
@@ -358,6 +421,7 @@ export function buildPostgameDominantVotingBlocs(analysis: PostgameAnalysisProje
         : bloc.highConfidenceRounds > 0
           ? "medium"
           : "low",
+      note: "Derived from repeated shared vote outcomes; this is not confirmed alliance membership.",
     }));
 }
 
@@ -469,13 +533,42 @@ async function loadTerminalResult(db: PostgameDB, gameId: string): Promise<Resul
 
 async function loadAgentGameCandidates(
   db: PostgameDB,
-  visibleGameIds: readonly string[] | null | undefined,
+  input: ListAgentGamesInput & { limit: number },
 ): Promise<PlayerRow[]> {
+  const visibleGameIds = input.visibleGameIds;
   if (visibleGameIds && visibleGameIds.length === 0) return [];
   const conditions = [
     eq(schema.games.status, "completed"),
     ...(visibleGameIds ? [inArray(schema.games.id, [...visibleGameIds])] : []),
   ];
+  if (input.agentId) {
+    conditions.push(or(
+      eq(schema.gamePlayers.id, input.agentId),
+      eq(schema.gamePlayers.agentProfileId, input.agentId),
+    )!);
+  } else if (input.agentName) {
+    conditions.push(eq(schema.agentProfiles.name, input.agentName.trim()));
+  }
+
+  const rows = await db
+    .select({
+      id: schema.gamePlayers.id,
+      gameId: schema.gamePlayers.gameId,
+      userId: schema.gamePlayers.userId,
+      agentProfileId: schema.gamePlayers.agentProfileId,
+      persona: schema.gamePlayers.persona,
+      agentProfileName: schema.agentProfiles.name,
+      gameSlug: schema.games.slug,
+    })
+    .from(schema.gamePlayers)
+    .innerJoin(schema.games, eq(schema.gamePlayers.gameId, schema.games.id))
+    .leftJoin(schema.agentProfiles, eq(schema.gamePlayers.agentProfileId, schema.agentProfiles.id))
+    .where(and(...conditions))
+    .orderBy(desc(schema.games.endedAt), desc(schema.games.createdAt))
+    .limit(input.limit);
+
+  if (rows.length > 0 || !input.agentName || input.agentId) return rows;
+
   return db
     .select({
       id: schema.gamePlayers.id,
@@ -484,12 +577,55 @@ async function loadAgentGameCandidates(
       agentProfileId: schema.gamePlayers.agentProfileId,
       persona: schema.gamePlayers.persona,
       agentProfileName: schema.agentProfiles.name,
+      gameSlug: schema.games.slug,
     })
     .from(schema.gamePlayers)
     .innerJoin(schema.games, eq(schema.gamePlayers.gameId, schema.games.id))
     .leftJoin(schema.agentProfiles, eq(schema.gamePlayers.agentProfileId, schema.agentProfiles.id))
-    .where(and(...conditions))
-    .orderBy(desc(schema.games.endedAt), desc(schema.games.createdAt));
+    .where(and(
+      eq(schema.games.status, "completed"),
+      ...(visibleGameIds ? [inArray(schema.games.id, [...visibleGameIds])] : []),
+      sql`lower((${schema.gamePlayers.persona})::jsonb ->> 'name') = ${normalize(input.agentName)}`,
+    ))
+    .orderBy(desc(schema.games.endedAt), desc(schema.games.createdAt))
+    .limit(input.limit);
+}
+
+function agentResolutionCandidates(rows: readonly PlayerRow[]): Array<{
+  id: string;
+  name: string;
+  gameCount: number;
+  latestGameId: string;
+  latestSlug?: string;
+}> {
+  const candidates = new Map<string, {
+    id: string;
+    name: string;
+    gameIds: Set<string>;
+    latestGameId: string;
+    latestSlug?: string;
+  }>();
+  for (const row of rows) {
+    const persona = parsePersona(row.persona);
+    const id = row.agentProfileId ?? row.id;
+    const name = row.agentProfileName ?? persona.name ?? id;
+    const current = candidates.get(id) ?? {
+      id,
+      name,
+      gameIds: new Set<string>(),
+      latestGameId: row.gameId,
+      ...(row.gameSlug && { latestSlug: row.gameSlug }),
+    };
+    current.gameIds.add(row.gameId);
+    candidates.set(id, current);
+  }
+  return Array.from(candidates.values()).map((candidate) => ({
+    id: candidate.id,
+    name: candidate.name,
+    gameCount: candidate.gameIds.size,
+    latestGameId: candidate.latestGameId,
+    ...(candidate.latestSlug && { latestSlug: candidate.latestSlug }),
+  }));
 }
 
 function playerNameMap(players: ReadonlyArray<Pick<PlayerRow, "id" | "persona">>): Map<string, string> {

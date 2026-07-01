@@ -75,7 +75,35 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(JSON.stringify(searchTool)).toContain("maxBytes");
     const briefTool = tools.find((tool) => (tool as { name: string }).name === "read_game_brief");
     expect(JSON.stringify(briefTool)).toContain("outputSchema");
+    expect(JSON.stringify(briefTool)).toContain("finalVote");
+    expect(JSON.stringify(briefTool)).toContain("roundSummaries");
+    expect(JSON.stringify(briefTool)).toContain("derivedVoteCohorts");
     expect(JSON.stringify(briefTool)).toContain("postgame");
+    const listAgentGamesTool = tools.find((tool) => (tool as { name: string }).name === "list_agent_games") as {
+      inputSchema: { oneOf?: unknown };
+      outputSchema: unknown;
+    };
+    expect(listAgentGamesTool.inputSchema.oneOf).toEqual([
+      { required: ["agentId"] },
+      { required: ["agentName"] },
+    ]);
+    expect(JSON.stringify(listAgentGamesTool.outputSchema)).toContain("finalJuryVoteTotal");
+    const juryTool = tools.find((tool) => (tool as { name: string }).name === "read_jury_breakdown") as {
+      inputSchema: { properties: Record<string, unknown> };
+      outputSchema: unknown;
+    };
+    expect(juryTool.inputSchema.properties).not.toHaveProperty("detailLevel");
+    expect(JSON.stringify(juryTool.outputSchema)).toContain("perJurorVotes");
+    const playerSummaryTool = tools.find((tool) => (tool as { name: string }).name === "read_player_game_summary") as {
+      inputSchema: { properties: Record<string, unknown> };
+      outputSchema: unknown;
+    };
+    expect(playerSummaryTool.inputSchema.properties).not.toHaveProperty("detailLevel");
+    expect(JSON.stringify(playerSummaryTool.outputSchema)).toContain("majorityAlignmentByRound");
+    const turningPointsTool = tools.find((tool) => (tool as { name: string }).name === "read_game_turning_points") as {
+      inputSchema: { properties: Record<string, unknown> };
+    };
+    expect(turningPointsTool.inputSchema.properties).not.toHaveProperty("detailLevel");
   });
 
   test("advertises only user-facing tools for games-scope auth", async () => {
@@ -350,6 +378,42 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const result = response?.result as { structuredContent: { ok: boolean }; content: Array<{ text: string }> };
     expect(result.structuredContent.ok).toBe(true);
     expect(result.content[0]?.text).toContain("Lilith Voss");
+    expect(result.content[0]?.text).not.toContain("\"postgame\"");
+    expect(result.content[0]?.text).not.toContain("\"summary\"");
+  });
+
+  test("rejects unsupported or invalid postgame detailLevel arguments", async () => {
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
+
+    const invalidBrief = await server.handle({
+      jsonrpc: "2.0",
+      id: "invalid-brief",
+      method: "tools/call",
+      params: {
+        name: "read_game_brief",
+        arguments: {
+          gameIdOrSlug: "edge-smoke-dusk",
+          detailLevel: "verbose",
+        },
+      },
+    }, GAMES_AUTH);
+    expect(invalidBrief?.error?.message).toBe("detailLevel must be one of: brief, standard, full");
+
+    const unsupportedJury = await server.handle({
+      jsonrpc: "2.0",
+      id: "unsupported-jury",
+      method: "tools/call",
+      params: {
+        name: "read_jury_breakdown",
+        arguments: {
+          gameIdOrSlug: "edge-smoke-dusk",
+          detailLevel: "brief",
+        },
+      },
+    }, GAMES_AUTH);
+    expect(unsupportedJury?.error?.message).toBe(
+      "detailLevel is only supported by read_game_brief and read_producer_game_analysis",
+    );
   });
 
   test("routes list_archetypes without producer or database access", async () => {

@@ -77,6 +77,7 @@ export const games = pgTable("games", {
 }, (table) => [
   index("games_created_by_id_idx").on(table.createdById),
   index("games_status_ended_at_idx").on(table.status, table.endedAt),
+  index("games_status_ended_created_idx").on(table.status, table.endedAt, table.createdAt),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -105,6 +106,7 @@ export const agentProfiles = pgTable("agent_profiles", {
 }, (table) => [
   index("agent_profiles_user_id_idx").on(table.userId),
   index("agent_profiles_name_idx").on(table.name),
+  index("agent_profiles_name_id_idx").on(table.name, table.id),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -127,6 +129,8 @@ export const gamePlayers = pgTable("game_players", {
   index("game_players_game_id_idx").on(table.gameId),
   index("game_players_user_id_idx").on(table.userId),
   index("game_players_agent_profile_id_idx").on(table.agentProfileId),
+  index("game_players_agent_profile_game_id_idx").on(table.agentProfileId, table.gameId),
+  index("game_players_user_game_id_idx").on(table.userId, table.gameId),
 ]);
 
 // ---------------------------------------------------------------------------

@@ -8,7 +8,6 @@ import {
   type PostgameAnalysisDetailLevel,
   type PostgameAnalysisProjection,
   type PostgamePlayerGameSummary,
-  type PostgameRoundSummary,
   type RevealedRoundFactsRead,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
@@ -27,7 +26,8 @@ import {
   type ReadCognitiveArtifactParams,
 } from "../services/cognitive-artifact-read-model.js";
 import {
-  buildPostgameDominantVotingBlocs,
+  buildCompactPostgameBrief,
+  buildPostgameDerivedVoteCohorts,
   getPostgameAnalysis,
   getPostgameJuryBreakdown,
   getPostgamePlayerSummary,
@@ -369,7 +369,7 @@ export class ProductionGameMcpReadModel {
     schemaVersion: 1;
     ok: true;
     game: PostgameAnalysisOk["game"];
-    postgame: ReturnType<typeof compactPostgameBrief>;
+    postgame: ReturnType<typeof buildCompactPostgameBrief>;
   } | PostgameAnalysisError> {
     const game = await this.requireGame(options.gameIdOrSlug, access);
     const result = await getPostgameAnalysis(this.db, game.id, {
@@ -381,7 +381,7 @@ export class ProductionGameMcpReadModel {
       schemaVersion: 1,
       ok: true,
       game: result.game,
-      postgame: compactPostgameBrief(result.analysis, options.detailLevel ?? "standard"),
+      postgame: buildCompactPostgameBrief(result.analysis, options.detailLevel ?? "standard"),
     };
   }
 
@@ -585,63 +585,13 @@ export class ProductionGameMcpReadModel {
   }
 }
 
-function compactPostgameBrief(
-  analysis: PostgameAnalysisProjection,
-  detailLevel: PostgameAnalysisDetailLevel,
-) {
-  return {
-    schemaVersion: 1 as const,
-    source: analysis.source,
-    availability: analysis.availability,
-    summary: analysis.summary,
-    dominantVotingBlocs: buildPostgameDominantVotingBlocs(analysis),
-    roundSummaries: analysis.roundSummaries.map((round) => compactRoundSummary(round, detailLevel)),
-    jury: {
-      status: analysis.jury.status,
-      finalists: analysis.jury.finalists,
-      winner: analysis.jury.winner,
-      finalVote: analysis.jury.finalVote,
-      narrativeHints: analysis.jury.narrativeHints,
-      nonWinnerSupporters: analysis.jury.nonWinnerSupporters,
-      ...(analysis.jury.evidence ? { evidence: analysis.jury.evidence } : {}),
-    },
-    turningPoints: analysis.turningPoints,
-    diagnostics: analysis.diagnostics,
-    ...(detailLevel === "full" ? { playerSummaries: analysis.playerSummaries } : {}),
-  };
-}
-
-function compactRoundSummary(
-  round: PostgameRoundSummary,
-  detailLevel: PostgameAnalysisDetailLevel,
-) {
-  return {
-    round: round.round,
-    phase: round.phase,
-    empowered: round.empowered,
-    empowerVoteCounts: round.empowerVoteCounts,
-    exposeLeaders: round.exposeLeaders,
-    powerAction: round.powerAction,
-    shieldGranted: round.shieldGranted,
-    councilCandidates: round.councilCandidates,
-    eliminated: round.eliminated,
-    majorityCohort: detailLevel === "brief"
-      ? {
-          basis: round.majorityCohort.basis,
-          target: round.majorityCohort.target,
-          votes: round.majorityCohort.votes,
-          confidence: round.majorityCohort.confidence,
-        }
-      : round.majorityCohort,
-    keyRiskMoments: round.keyRiskMoments,
-    diagnostics: round.diagnostics,
-    ...(round.evidence ? { evidence: round.evidence } : {}),
-  };
-}
-
 function buildProducerPostgameAnalysis(analysis: PostgameAnalysisProjection) {
   return {
-    inferredAlliances: buildPostgameDominantVotingBlocs(analysis),
+    derivedVoteCohorts: buildPostgameDerivedVoteCohorts(analysis),
+    inferredAlliances: {
+      status: "not_inferred_from_public_facts",
+      note: "Use derivedVoteCohorts for deterministic shared-vote groups; confirmed alliance inference requires private producer evidence.",
+    },
     actualPrivateStrategyPivots: {
       status: "available_via_developerEvidence",
       note: "Use developerEvidence.cognitiveArtifacts or read_cognitive_artifact for explicit private strategy artifacts.",

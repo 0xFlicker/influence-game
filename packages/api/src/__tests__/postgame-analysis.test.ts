@@ -117,12 +117,59 @@ describe("postgame analysis service", () => {
       eliminatedRound: null,
       winnerName: EDGE_SMOKE_DUSK_EXPECTED.winnerName,
       finalistNames: [EDGE_SMOKE_DUSK_EXPECTED.winnerName, EDGE_SMOKE_DUSK_EXPECTED.runnerUpName],
-      juryVoteCount: 7,
-      ratingDelta: null,
+      finalJuryVoteTotal: 7,
+      juryVotesReceived: 4,
     });
-    expect(result.games[0]?.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
       "rating_delta_unavailable",
     );
+  });
+
+  test("returns disambiguation candidates when an agent name matches multiple visible agents", async () => {
+    await insertEdgeSmokeDusk(db);
+    const duplicateAgentId = "agent-lilith-duplicate";
+    const duplicatePlayerId = "player-lilith-duplicate";
+    const duplicateGameId = "game-lilith-duplicate";
+    await db.insert(schema.agentProfiles).values({
+      id: duplicateAgentId,
+      userId: "user-lilith",
+      name: "Lilith Voss",
+      personality: "Another visible agent with the same display name.",
+      personaKey: "strategic",
+    });
+    await db.insert(schema.games).values({
+      id: duplicateGameId,
+      slug: "duplicate-lilith-game",
+      status: "completed",
+      trackType: "custom",
+      config: JSON.stringify({ maxRounds: 1 }),
+      endedAt: "2026-07-01T01:00:00.000Z",
+    });
+    await db.insert(schema.gamePlayers).values({
+      id: duplicatePlayerId,
+      gameId: duplicateGameId,
+      userId: "user-lilith",
+      agentProfileId: duplicateAgentId,
+      persona: JSON.stringify({
+        name: "Lilith Voss",
+        personality: "Duplicate fixture persona",
+        personaKey: "strategic",
+      }),
+      agentConfig: JSON.stringify({ model: "test-model", temperature: 0 }),
+    });
+
+    const result = await listPostgameAgentGames(db, {
+      agentName: "Lilith Voss",
+      visibleGameIds: [EDGE_SMOKE_DUSK_GAME_ID, duplicateGameId],
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe("agent_ambiguous");
+    expect(result.resolutionCandidates?.map((candidate) => candidate.id).sort()).toEqual([
+      "agent-lilith",
+      duplicateAgentId,
+    ].sort());
   });
 });
 

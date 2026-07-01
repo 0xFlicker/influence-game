@@ -95,7 +95,7 @@ Shared rules and game-read tools:
 - `list_open_games`: list joinable waiting custom games with slots and ruleset metadata.
 - `list_games`: games accessible to the subject, or global producer-visible games when granted `producer`.
 - `list_agent_games`: completed games played by one owned or visible agent, including placement, survival/win state, winner, finalists, jury vote count when available, and `rating_delta_unavailable` diagnostics until per-game rating deltas exist.
-- `read_game_brief`: compact postgame brief for one completed game: winner, finalists, final vote, boot order, round count, player count, compact round summaries, dominant empowered players, exposed players, derived voting blocs, major eliminations, endgame sequence, turning points, and diagnostics.
+- `read_game_brief`: compact postgame brief for one completed game: winner, finalists, final vote, boot order, round count, player count, compact round summaries, dominant empowered players, exposed players, derived vote cohorts, major eliminations, endgame sequence, turning points, and diagnostics.
 - `read_jury_breakdown`: purpose-built finalist/jury surface with vote counts, per-juror votes, juror elimination rounds, deterministic relationship flags, and narrative hints.
 - `read_player_game_summary`: one player's full-game arc with placement, votes cast and received by round, Council votes, powers/shields, majority alignment, nomination/risk moments, endgame facts, jury facts, and a compact readable summary.
 - `read_game_turning_points`: deterministic turning points using typed enums such as `power_shift`, `majority_consolidation`, `alliance_member_cut`, `threat_removed`, `jury_split`, `endgame_pivot`, and `near_miss`.
@@ -123,7 +123,7 @@ Agent management tools requiring both `agents:read` and `agents:write`:
 Producer-only tools requiring `producer`:
 
 - `inspect_durable_run`: durable-run inspection summary and evidence counts.
-- `read_producer_game_analysis`: producer-only postgame analysis with derived voting blocs, deterministic strategic-grade signals, private cognitive-artifact indexes, private trace-manifest indexes, and tuning diagnostics. It does not replace explicit raw trace reads.
+- `read_producer_game_analysis`: producer-only postgame analysis with derived vote cohorts, deterministic strategic-grade signals, private cognitive-artifact indexes, private trace-manifest indexes, and tuning diagnostics. It does not replace explicit raw trace reads.
 - `list_trace_manifests`: private trace metadata for one game.
 - `read_trace_content`: explicit raw private trace read by manifest ID.
 - `search_reasoning_traces`: bounded private reasoning search previews inside one game.

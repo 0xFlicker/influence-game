@@ -41,7 +41,7 @@ import {
 } from "../services/game-watch-state.js";
 import { getCompletedGameResults } from "../services/completed-game-results.js";
 import {
-  buildPostgameDominantVotingBlocs,
+  buildCompactPostgameBrief,
   getPostgameAnalysis,
   getPostgameJuryBreakdown,
   getPostgamePlayerSummary,
@@ -924,7 +924,11 @@ export function createGameRoutes(db: DrizzleDB) {
 
   app.get("/api/games/:id/postgame/brief", async (c) => {
     const idOrSlug = c.req.param("id");
-    const detailLevel = parsePostgameDetailLevel(c.req.query("detailLevel"));
+    const detailLevelValue = c.req.query("detailLevel");
+    const detailLevel = parsePostgameDetailLevel(detailLevelValue);
+    if (detailLevelValue !== undefined && detailLevel === undefined) {
+      return invalidPostgameDetailLevelResponse(c);
+    }
     const result = await getPostgameAnalysis(db, idOrSlug, {
       detailLevel,
       includeEvidence: c.req.query("includeEvidence") === "true",
@@ -936,25 +940,7 @@ export function createGameRoutes(db: DrizzleDB) {
       schemaVersion: 1,
       ok: true,
       game: result.game,
-      postgame: {
-        schemaVersion: 1,
-        source: result.analysis.source,
-        availability: result.analysis.availability,
-        summary: result.analysis.summary,
-        dominantVotingBlocs: buildPostgameDominantVotingBlocs(result.analysis),
-        roundSummaries: result.analysis.roundSummaries,
-        jury: {
-          status: result.analysis.jury.status,
-          finalists: result.analysis.jury.finalists,
-          winner: result.analysis.jury.winner,
-          finalVote: result.analysis.jury.finalVote,
-          narrativeHints: result.analysis.jury.narrativeHints,
-          nonWinnerSupporters: result.analysis.jury.nonWinnerSupporters,
-        },
-        turningPoints: result.analysis.turningPoints,
-        diagnostics: result.analysis.diagnostics,
-        ...(detailLevel === "full" ? { playerSummaries: result.analysis.playerSummaries } : {}),
-      },
+      postgame: buildCompactPostgameBrief(result.analysis, detailLevel ?? "standard"),
     });
   });
 
@@ -963,8 +949,9 @@ export function createGameRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.get("/api/games/:id/postgame/jury", async (c) => {
+    const unsupportedDetailLevel = unsupportedPostgameDetailLevelResponse(c);
+    if (unsupportedDetailLevel) return unsupportedDetailLevel;
     const result = await getPostgameJuryBreakdown(db, c.req.param("id"), {
-      detailLevel: parsePostgameDetailLevel(c.req.query("detailLevel")),
       includeEvidence: c.req.query("includeEvidence") === "true",
     });
     if (!result.ok) return postgameErrorResponse(c, result);
@@ -976,8 +963,9 @@ export function createGameRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.get("/api/games/:id/postgame/players/:player/summary", async (c) => {
+    const unsupportedDetailLevel = unsupportedPostgameDetailLevelResponse(c);
+    if (unsupportedDetailLevel) return unsupportedDetailLevel;
     const result = await getPostgamePlayerSummary(db, c.req.param("id"), c.req.param("player"), {
-      detailLevel: parsePostgameDetailLevel(c.req.query("detailLevel")),
       includeEvidence: c.req.query("includeEvidence") === "true",
     });
     if (!result.ok) return postgameErrorResponse(c, result);
@@ -989,8 +977,9 @@ export function createGameRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.get("/api/games/:id/postgame/turning-points", async (c) => {
+    const unsupportedDetailLevel = unsupportedPostgameDetailLevelResponse(c);
+    if (unsupportedDetailLevel) return unsupportedDetailLevel;
     const result = await getPostgameTurningPoints(db, c.req.param("id"), {
-      detailLevel: parsePostgameDetailLevel(c.req.query("detailLevel")),
       includeEvidence: c.req.query("includeEvidence") === "true",
     });
     if (!result.ok) return postgameErrorResponse(c, result);
@@ -1109,6 +1098,22 @@ function parsePostgameDetailLevel(value: string | undefined): "brief" | "standar
   return value === "brief" || value === "standard" || value === "full"
     ? value
     : undefined;
+}
+
+function invalidPostgameDetailLevelResponse(c: Context<AuthEnv>) {
+  return c.json({
+    error: "detailLevel must be one of: brief, standard, full.",
+    status: "invalid_detail_level",
+  }, 400);
+}
+
+function unsupportedPostgameDetailLevelResponse(c: Context<AuthEnv>) {
+  return c.req.query("detailLevel") === undefined
+    ? null
+    : c.json({
+        error: "detailLevel is only supported by the postgame brief endpoint.",
+        status: "unsupported_detail_level",
+      }, 400);
 }
 
 function postgameErrorResponse(

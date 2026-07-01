@@ -33,7 +33,7 @@ The core deliverable is a shared postgame analysis projection that returns compa
 
 Influence already has the important truth substrate: canonical events, projections, completed game results, revealed round facts, MCP game reads, and a producer-only trace lane.
 The gap is packaging.
-Current tools can tell an LLM the facts, but normal postgame questions still force the model to call multiple low-level tools and reconstruct winner logic, boot order, jury votes, vote blocs, and player arcs itself.
+Current tools can tell an LLM the facts, but normal postgame questions still force the model to call multiple low-level tools and reconstruct winner logic, boot order, jury votes, derived vote cohorts, and player arcs itself.
 That produces long tool sessions, higher token use, and more chances for confident but wrong analysis.
 
 The v0 should make "Analyze `edge-smoke-dusk`" feel boring in the best way: one brief call for the spine, one drilldown call when the user asks for jury or player detail, and no raw log reconstruction unless explicitly requested.
@@ -74,18 +74,18 @@ flowchart TB
 - R1. The v0 must preserve canonical game events and canonical projections as the source of truth and must not introduce a competing outcome authority.
 - R2. The shared postgame analysis projection must derive game brief, compact round summaries, jury facts, player arcs, turning points, and diagnostics from canonical events, completed-results facts, revealed round facts, game/player rows, and authorized producer evidence only where allowed.
 - R3. Every public payload must include `schemaVersion`, stable IDs, display names, source/availability diagnostics, and enough confidence metadata for an LLM to cite facts without guessing. For MCP tools, the same DTO shape must be declared as an `outputSchema` matching the returned `structuredContent`.
-- R4. Public payloads must stay compact by default, with `detailLevel: "brief" | "standard" | "full"` where useful and `includeEvidence=true` required before returning event references or evidence pointers. MCP tool results should return typed `structuredContent` plus a compact JSON/text compatibility copy only when the host or current MCP client path still needs it.
+- R4. Public payloads must stay compact by default, with `detailLevel: "brief" | "standard" | "full"` only where it changes payload shape and `includeEvidence=true` required before returning event references or evidence pointers. MCP postgame tool results should return typed `structuredContent` plus a short text summary, not a duplicate pretty-printed JSON payload.
 - R5. No player-safe tool may return giant raw logs, raw canonical envelopes, source pointers, private trace metadata, prompts, raw provider responses, private reasoning, or hidden strategy artifacts by default.
 - R6. Diagnostics must distinguish unavailable facts, degraded facts, and partially derived facts without exposing producer internals to player-safe callers.
 
 **MCP/API Surfaces**
 
-- R7. `list_agent_games(agentId | agentName, limit?, cursor?, detailLevel?)` must return games for one owned or visible agent with game id, slug, status, track type, timestamps, placement, survival/win flags, eliminated round, winner name, finalists, jury vote count when applicable, and rating delta when available.
+- R7. `list_agent_games(agentId | agentName, limit?, cursor?)` must return games for one owned or visible agent with game id, slug, status, track type, timestamps, placement, survival/win flags, eliminated round, winner name, finalists, final jury vote total, agent jury votes received when applicable, and rating delta when available.
 - R8. `read_game_brief(gameIdOrSlug, detailLevel?, includeEvidence?)` must return the compact one-call postgame brief: metadata, winner, finalists, final vote, boot order, round/player counts, dominant empowered players, most exposed players, unanimous or near-unanimous votes, major eliminations, notable endgame sequence, compact round summaries, and diagnostics.
 - R9. `read_jury_breakdown(gameIdOrSlug, includeEvidence?)` must return finalists, winner, vote counts, per-juror votes, juror eliminated round, derivable ally/betrayer/eliminated-by-finalist flags, and concise narrative hints that stay grounded in vote facts.
-- R10. `read_player_game_summary(gameIdOrSlug, player, detailLevel?, includeEvidence?)` must return one player's placement, status, elimination round, win flag, votes cast by round, empower/expose votes received by round, Council votes cast/received, powers used, shields received, majority alignment, nomination/at-risk moments, endgame/jury facts, and a compact readable summary.
-- R11. `read_game_turning_points(gameIdOrSlug, detailLevel?, includeEvidence?)` must return deterministic turning points with round, enum type, players involved, evidence fields, diagnostics, and a short generated-safe description.
-- R12. `read_producer_game_analysis(gameIdOrSlug, detailLevel?, includeEvidence?, maxBytes?)` must require producer access and may include inferred alliances, private strategy pivots, public/private discrepancies, betrayal moments, threat-management analysis, jury-management analysis, strategic grades, model behavior observations, and debugging notes.
+- R10. `read_player_game_summary(gameIdOrSlug, player, includeEvidence?)` must return one player's placement, status, elimination round, win flag, votes cast by round, empower/expose votes received by round, Council votes cast/received, powers used, shields received, majority alignment, nomination/at-risk moments, endgame/jury facts, and a compact readable summary.
+- R11. `read_game_turning_points(gameIdOrSlug, includeEvidence?)` must return deterministic turning points with round, enum type, players involved, evidence fields, diagnostics, and a short generated-safe description.
+- R12. `read_producer_game_analysis(gameIdOrSlug, detailLevel?, includeEvidence?, maxBytes?)` must require producer access and may include derived vote cohorts, private strategy pivots, public/private discrepancies, betrayal moments, threat-management analysis, jury-management analysis, strategic grades, model behavior observations, and debugging notes. Confirmed alliance inference must be labeled separately from deterministic vote cohesion.
 - R13. API parity should exist for the same reads where product or testing needs it, with player-safe endpoints separated from producer routes by auth and URL shape.
 
 **Compact Round Summaries**
@@ -266,7 +266,7 @@ The shared API read model should load:
 - Every player reference uses `{ id, name }`.
 - Every game reference includes stable `gameId` plus `slug` when available.
 - Every partially unavailable fact has a diagnostic with a stable code, severity, and player-safe message.
-- `detailLevel` controls optional sections and collection sizes; it must not change the meaning of core fields.
+- `detailLevel` controls optional sections and collection sizes only on tools/routes where it is advertised; it must not change the meaning of core fields.
 - `includeEvidence=true` returns compact evidence references such as `{ eventType, round, sequence, playerIds }`, not raw event envelopes.
 - Producer-only DTOs may include private reasoning summaries and artifact references, but must keep raw content behind explicit capped producer reads unless the producer tool asks for it.
 

@@ -904,16 +904,21 @@ describe("Game REST API", () => {
         ok: true;
         postgame: {
           summary: { winner: { id: string; name: string } | null };
-          dominantVotingBlocs: unknown[];
+          derivedVoteCohorts: unknown[];
           roundSummaries: unknown[];
         };
       };
       expect(brief.ok).toBe(true);
       expect(brief.postgame.summary.winner).toEqual({ id: "mira", name: "Mira" });
-      expect(Array.isArray(brief.postgame.dominantVotingBlocs)).toBe(true);
+      expect(Array.isArray(brief.postgame.derivedVoteCohorts)).toBe(true);
       expect(brief.postgame.roundSummaries).toHaveLength(1);
       expect(JSON.stringify(brief)).not.toContain("sourcePointers");
       expect(JSON.stringify(brief)).not.toContain("payloadVersion");
+
+      const invalidDetailRes = await app.request(`/api/games/${id}/postgame/brief?detailLevel=verbose`);
+      expect(invalidDetailRes.status).toBe(400);
+      const unsupportedDetailRes = await app.request(`/api/games/${id}/postgame/jury?detailLevel=brief`);
+      expect(unsupportedDetailRes.status).toBe(400);
 
       const playerRes = await app.request(`/api/games/${id}/postgame/players/mira/summary`);
       expect(playerRes.status).toBe(200);

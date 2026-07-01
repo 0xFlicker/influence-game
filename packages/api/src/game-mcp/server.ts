@@ -176,23 +176,23 @@ export class ProductionGameMcpJsonRpcServer {
       }
       if (name === "list_agent_games") {
         requireAnyScope(auth, ["games:read", "producer"]);
-        return content(await this.readModel.listAgentGames(agentGamesArgs(args), auth));
+        return postgameContent(await this.readModel.listAgentGames(agentGamesArgs(args), auth));
       }
       if (name === "read_game_brief") {
         requireAnyScope(auth, ["games:read", "producer"]);
-        return content(await this.readModel.readGameBrief(postgameArgs(args), auth));
+        return postgameContent(await this.readModel.readGameBrief(postgameArgs(args), auth));
       }
       if (name === "read_jury_breakdown") {
         requireAnyScope(auth, ["games:read", "producer"]);
-        return content(await this.readModel.readJuryBreakdown(postgameArgs(args), auth));
+        return postgameContent(await this.readModel.readJuryBreakdown(postgameArgs(args, { allowDetailLevel: false }), auth));
       }
       if (name === "read_player_game_summary") {
         requireAnyScope(auth, ["games:read", "producer"]);
-        return content(await this.readModel.readPlayerGameSummary(playerGameSummaryArgs(args), auth));
+        return postgameContent(await this.readModel.readPlayerGameSummary(playerGameSummaryArgs(args), auth));
       }
       if (name === "read_game_turning_points") {
         requireAnyScope(auth, ["games:read", "producer"]);
-        return content(await this.readModel.readGameTurningPoints(postgameArgs(args), auth));
+        return postgameContent(await this.readModel.readGameTurningPoints(postgameArgs(args, { allowDetailLevel: false }), auth));
       }
       if (name === "read_projection") {
         requireAnyScope(auth, ["games:read", "producer"]);
@@ -296,7 +296,7 @@ export class ProductionGameMcpJsonRpcServer {
       }
       if (name === "read_producer_game_analysis") {
         requireScopes(auth, ["producer"]);
-        return content(await this.readModel.readProducerGameAnalysis(postgameArgs(args), auth));
+        return postgameContent(await this.readModel.readProducerGameAnalysis(postgameArgs(args), auth));
       }
       if (name === "list_trace_manifests") {
         requireScopes(auth, ["producer"]);
@@ -390,11 +390,18 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     }),
     tool({
       name: "list_agent_games",
-      description: "List completed games played by one owned or visible Influence agent, including placement, winner, finalists, jury vote count, and rating-delta availability.",
-      properties: {
-        agentId: { type: "string" },
-        agentName: { type: "string" },
-        limit: { type: "number" },
+      description: "List completed games played by one owned or visible Influence agent. Requires agentId or agentName.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          agentId: { type: "string" },
+          agentName: { type: "string" },
+          limit: { type: "number" },
+        },
+        oneOf: [
+          { required: ["agentId"] },
+          { required: ["agentName"] },
+        ],
       },
       scopes: gameReadScopes,
       readOnlyHint: true,
@@ -402,7 +409,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     }),
     tool({
       name: "read_game_brief",
-      description: "Read a compact postgame brief for one completed game: winner, finalists, final vote, boot order, round summaries, dominant voting blocs, major eliminations, turning points, and diagnostics.",
+      description: "Read a compact postgame brief for one completed game: winner, finalists, final vote, boot order, round summaries, derived vote cohorts, major eliminations, turning points, and diagnostics.",
       properties: {
         gameIdOrSlug: { type: "string" },
         detailLevel: { type: "string", enum: ["brief", "standard", "full"] },
@@ -418,7 +425,6 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
       description: "Read finalist vote counts and per-juror final votes for one completed game, with deterministic relationship flags where derivable.",
       properties: {
         gameIdOrSlug: { type: "string" },
-        detailLevel: { type: "string", enum: ["brief", "standard", "full"] },
         includeEvidence: { type: "boolean" },
       },
       required: ["gameIdOrSlug"],
@@ -432,7 +438,6 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
       properties: {
         gameIdOrSlug: { type: "string" },
         player: { type: "string" },
-        detailLevel: { type: "string", enum: ["brief", "standard", "full"] },
         includeEvidence: { type: "boolean" },
       },
       required: ["gameIdOrSlug", "player"],
@@ -445,7 +450,6 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
       description: "Read deterministic turning points for one completed game, with type enums, players involved, evidence refs when requested, confidence, and generated-safe descriptions.",
       properties: {
         gameIdOrSlug: { type: "string" },
-        detailLevel: { type: "string", enum: ["brief", "standard", "full"] },
         includeEvidence: { type: "boolean" },
       },
       required: ["gameIdOrSlug"],
@@ -579,7 +583,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     }),
     tool({
       name: "read_producer_game_analysis",
-      description: "Read producer-only postgame analysis with derived voting blocs, strategic-grade signals, private artifact indexes, trace-manifest indexes, and tuning diagnostics.",
+      description: "Read producer-only postgame analysis with derived vote cohorts, strategic-grade signals, private artifact indexes, trace-manifest indexes, and tuning diagnostics.",
       properties: {
         gameIdOrSlug: { type: "string" },
         detailLevel: { type: "string", enum: ["brief", "standard", "full"] },
@@ -779,7 +783,8 @@ function userAgentWriteTools(): unknown[] {
 function tool(input: {
   name: string;
   description: string;
-  properties: Record<string, unknown>;
+  properties?: Record<string, unknown>;
+  inputSchema?: Record<string, unknown>;
   required?: string[];
   scopes: readonly McpOAuthScope[];
   readOnlyHint: boolean;
@@ -790,9 +795,9 @@ function tool(input: {
   return {
     name: input.name,
     description: input.description,
-    inputSchema: {
+    inputSchema: input.inputSchema ?? {
       type: "object",
-      properties: input.properties,
+      properties: input.properties ?? {},
       ...(input.required && { required: input.required }),
     },
     ...(input.outputSchema && { outputSchema: input.outputSchema }),
@@ -808,8 +813,41 @@ function tool(input: {
 }
 
 function postgameOutputSchema(kind: string): Record<string, unknown> {
+  const playerRefSchema = {
+    type: "object",
+    required: ["id", "name"],
+    properties: {
+      id: { type: "string" },
+      name: { type: "string" },
+    },
+    additionalProperties: true,
+  };
+  const voteCountSchema = {
+    type: "object",
+    required: ["player", "votes"],
+    properties: {
+      player: playerRefSchema,
+      votes: { type: "number" },
+    },
+    additionalProperties: true,
+  };
+  const finalVoteSchema = {
+    type: "object",
+    required: ["status", "winner", "runnerUp", "voteCounts", "totalVotes", "margin", "method"],
+    properties: {
+      status: { type: "string", enum: ["available", "unavailable"] },
+      winner: nullableSchema(playerRefSchema),
+      runnerUp: nullableSchema(playerRefSchema),
+      voteCounts: { type: "array", items: voteCountSchema },
+      totalVotes: { type: "number" },
+      margin: nullableSchema({ type: "number" }),
+      method: nullableSchema({ type: "string" }),
+    },
+    additionalProperties: true,
+  };
   const gameSchema = {
     type: "object",
+    required: ["id", "status", "trackType", "playerCount", "roundCount"],
     properties: {
       id: { type: "string" },
       slug: { type: "string" },
@@ -822,51 +860,352 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
   };
   const diagnosticSchema = {
     type: "object",
+    required: ["code", "severity", "message"],
     properties: {
       code: { type: "string" },
-      severity: { type: "string" },
+      severity: { type: "string", enum: ["info", "warning", "error"] },
       message: { type: "string" },
+    },
+    additionalProperties: true,
+  };
+  const diagnosticsSchema = { type: "array", items: diagnosticSchema };
+  const roundSummarySchema = {
+    type: "object",
+    required: ["round", "empowered", "empowerVoteCounts", "exposeLeaders", "eliminated", "majorityCohort"],
+    properties: {
+      round: { type: "number" },
+      phase: nullableSchema({ type: "string" }),
+      empowered: nullableSchema(playerRefSchema),
+      empowerVoteCounts: { type: "array", items: voteCountSchema },
+      exposeLeaders: { type: "array", items: voteCountSchema },
+      eliminated: nullableSchema(playerRefSchema),
+      majorityCohort: {
+        type: "object",
+        required: ["basis", "target", "votes", "confidence"],
+        properties: {
+          basis: { type: "string" },
+          alignedPlayers: { type: "array", items: playerRefSchema },
+          target: nullableSchema(playerRefSchema),
+          votes: { type: "number" },
+          confidence: { type: "string", enum: ["high", "medium", "low"] },
+        },
+        additionalProperties: true,
+      },
+      diagnostics: diagnosticsSchema,
+    },
+    additionalProperties: true,
+  };
+  const juryVoteSchema = {
+    type: "object",
+    required: ["juror", "finalist", "jurorEliminatedRound", "relationshipFlags"],
+    properties: {
+      juror: playerRefSchema,
+      finalist: playerRefSchema,
+      jurorEliminatedRound: nullableSchema({ type: "number" }),
+      votedForMatchingVotePattern: nullableSchema({ type: "boolean" }),
+      votedForFinalistWhoVotedToEliminateThem: nullableSchema({ type: "boolean" }),
+      relationshipFlags: { type: "array", items: { type: "string" } },
+    },
+    additionalProperties: true,
+  };
+  const jurySchema = {
+    type: "object",
+    required: ["status", "finalists", "winner", "finalVote", "perJurorVotes"],
+    properties: {
+      status: { type: "string" },
+      finalists: { type: "array", items: playerRefSchema },
+      winner: nullableSchema(playerRefSchema),
+      finalVote: finalVoteSchema,
+      perJurorVotes: { type: "array", items: juryVoteSchema },
+      narrativeHints: { type: "array", items: { type: "string" } },
+      nonWinnerSupporters: { type: "array", items: playerRefSchema },
+    },
+    additionalProperties: true,
+  };
+  const playerSummarySchema = {
+    type: "object",
+    required: [
+      "player",
+      "placement",
+      "status",
+      "eliminatedRound",
+      "won",
+      "votesCastByRound",
+      "majorityAlignmentByRound",
+      "endgame",
+      "jury",
+      "readableSummary",
+    ],
+    properties: {
+      player: playerRefSchema,
+      placement: nullableSchema({ type: "number" }),
+      status: { type: "string", enum: ["winner", "finalist", "eliminated", "unknown"] },
+      eliminatedRound: nullableSchema({ type: "number" }),
+      won: { type: "boolean" },
+      votesCastByRound: { type: "array", items: { type: "object", additionalProperties: true } },
+      empowerVotesReceivedByRound: { type: "array", items: { type: "object", additionalProperties: true } },
+      exposeVotesReceivedByRound: { type: "array", items: { type: "object", additionalProperties: true } },
+      councilVotesCast: { type: "array", items: { type: "object", additionalProperties: true } },
+      councilVotesReceived: { type: "array", items: { type: "object", additionalProperties: true } },
+      majorityAlignmentByRound: { type: "array", items: { type: "object", additionalProperties: true } },
+      endgame: { type: "object", additionalProperties: true },
+      jury: { type: "object", additionalProperties: true },
+      readableSummary: { type: "string" },
+      diagnostics: diagnosticsSchema,
+    },
+    additionalProperties: true,
+  };
+  const turningPointSchema = {
+    type: "object",
+    required: ["round", "type", "players", "confidence", "description", "evidence"],
+    properties: {
+      round: { type: "number" },
+      type: {
+        type: "string",
+        enum: [
+          "power_shift",
+          "majority_consolidation",
+          "alliance_member_cut",
+          "threat_removed",
+          "jury_split",
+          "endgame_pivot",
+          "near_miss",
+        ],
+      },
+      players: { type: "array", items: playerRefSchema },
+      confidence: { type: "string", enum: ["high", "medium", "low"] },
+      description: { type: "string" },
+      evidence: { type: "object", additionalProperties: true },
+    },
+    additionalProperties: true,
+  };
+  const agentGameRowSchema = {
+    type: "object",
+    required: [
+      "gameId",
+      "status",
+      "trackType",
+      "placement",
+      "survivedToEnd",
+      "won",
+      "eliminatedRound",
+      "finalistNames",
+      "diagnostics",
+    ],
+    properties: {
+      gameId: { type: "string" },
+      slug: { type: "string" },
+      status: { type: "string" },
+      trackType: { type: "string" },
+      startedAt: { type: "string" },
+      endedAt: { type: "string" },
+      placement: nullableSchema({ type: "number" }),
+      survivedToEnd: { type: "boolean" },
+      won: { type: "boolean" },
+      eliminatedRound: nullableSchema({ type: "number" }),
+      winnerName: { type: "string" },
+      finalistNames: { type: "array", items: { type: "string" } },
+      finalJuryVoteTotal: { type: "number" },
+      juryVotesReceived: { type: "number" },
+      ratingDelta: { type: "number" },
+      diagnostics: diagnosticsSchema,
     },
     additionalProperties: true,
   };
   const baseProperties: Record<string, unknown> = {
     schemaVersion: { type: "number" },
-    ok: { type: "boolean" },
+    ok: { type: "boolean", enum: [true] },
     game: gameSchema,
-    diagnostics: { type: "array", items: diagnosticSchema },
-    status: { type: "string" },
-    error: { type: "string" },
+    diagnostics: diagnosticsSchema,
   };
-  const kindProperties: Record<string, Record<string, unknown>> = {
-    agentGames: {
-      agent: { type: "object", additionalProperties: true },
-      games: { type: "array", items: { type: "object", additionalProperties: true } },
-    },
-    gameBrief: {
-      postgame: { type: "object", additionalProperties: true },
-    },
-    juryBreakdown: {
-      jury: { type: "object", additionalProperties: true },
-    },
-    playerSummary: {
-      player: { type: "object", additionalProperties: true },
-    },
-    turningPoints: {
-      turningPoints: { type: "array", items: { type: "object", additionalProperties: true } },
-    },
-    producerAnalysis: {
-      producerAnalysis: { type: "object", additionalProperties: true },
-      developerEvidence: { type: "object", additionalProperties: true },
-    },
-  };
-  return {
+  const errorSchema = {
     type: "object",
+    required: ["ok", "status", "error"],
     properties: {
-      ...baseProperties,
-      ...(kindProperties[kind] ?? {}),
+      ok: { type: "boolean", enum: [false] },
+      status: { type: "string" },
+      error: { type: "string" },
+      resolutionCandidates: {
+        type: "array",
+        items: { type: "object", additionalProperties: true },
+      },
     },
     additionalProperties: true,
   };
+  const summarySchema = {
+    type: "object",
+    required: ["winner", "finalists", "finalVote", "bootOrder", "roundCount", "playerCount"],
+    properties: {
+      winner: nullableSchema(playerRefSchema),
+      finalists: { type: "array", items: playerRefSchema },
+      finalVote: finalVoteSchema,
+      bootOrder: { type: "array", items: { type: "object", additionalProperties: true } },
+      roundCount: { type: "number" },
+      playerCount: { type: "number" },
+      dominantEmpoweredPlayers: { type: "array", items: voteCountSchema },
+      mostExposedPlayers: { type: "array", items: voteCountSchema },
+      unanimousOrNearUnanimousVotes: { type: "array", items: { type: "object", additionalProperties: true } },
+      majorEliminations: { type: "array", items: { type: "object", additionalProperties: true } },
+      notableEndgameSequence: { type: "array", items: { type: "object", additionalProperties: true } },
+    },
+    additionalProperties: true,
+  };
+  const kindSchemas: Record<string, { required: string[]; properties: Record<string, unknown> }> = {
+    agentGames: {
+      required: ["schemaVersion", "ok", "agent", "games", "diagnostics"],
+      properties: {
+        agent: {
+          type: "object",
+          required: ["name"],
+          properties: {
+            id: { type: "string" },
+            name: { type: "string" },
+          },
+          additionalProperties: true,
+        },
+        games: { type: "array", items: agentGameRowSchema },
+      },
+    },
+    gameBrief: {
+      required: ["schemaVersion", "ok", "game", "postgame"],
+      properties: {
+        postgame: {
+          type: "object",
+          required: ["schemaVersion", "source", "availability", "summary", "derivedVoteCohorts", "roundSummaries", "jury", "turningPoints", "diagnostics"],
+          properties: {
+            schemaVersion: { type: "number" },
+            source: { type: "string" },
+            availability: { type: "object", additionalProperties: true },
+            summary: summarySchema,
+            derivedVoteCohorts: { type: "array", items: { type: "object", additionalProperties: true } },
+            roundSummaries: { type: "array", items: roundSummarySchema },
+            jury: {
+              type: "object",
+              required: ["status", "finalists", "winner", "finalVote"],
+              properties: {
+                status: { type: "string" },
+                finalists: { type: "array", items: playerRefSchema },
+                winner: nullableSchema(playerRefSchema),
+                finalVote: finalVoteSchema,
+                narrativeHints: { type: "array", items: { type: "string" } },
+                nonWinnerSupporters: { type: "array", items: playerRefSchema },
+              },
+              additionalProperties: true,
+            },
+            turningPoints: { type: "array", items: turningPointSchema },
+            diagnostics: diagnosticsSchema,
+          },
+          additionalProperties: true,
+        },
+      },
+    },
+    juryBreakdown: {
+      required: ["schemaVersion", "ok", "game", "jury"],
+      properties: { jury: jurySchema },
+    },
+    playerSummary: {
+      required: ["schemaVersion", "ok", "game", "player"],
+      properties: { player: playerSummarySchema },
+    },
+    turningPoints: {
+      required: ["schemaVersion", "ok", "game", "turningPoints", "diagnostics"],
+      properties: {
+        turningPoints: { type: "array", items: turningPointSchema },
+      },
+    },
+    producerAnalysis: {
+      required: ["schemaVersion", "ok", "game", "producerAnalysis", "developerEvidence"],
+      properties: {
+        producerAnalysis: {
+          type: "object",
+          required: ["derivedVoteCohorts", "inferredAlliances", "juryManagementAnalysis", "playerByPlayerStrategicGrades"],
+          properties: {
+            derivedVoteCohorts: { type: "array", items: { type: "object", additionalProperties: true } },
+            inferredAlliances: { type: "object", additionalProperties: true },
+            juryManagementAnalysis: { type: "object", additionalProperties: true },
+            playerByPlayerStrategicGrades: { type: "array", items: { type: "object", additionalProperties: true } },
+          },
+          additionalProperties: true,
+        },
+        developerEvidence: { type: "object", additionalProperties: true },
+      },
+    },
+  };
+  const kindSchema = kindSchemas[kind] ?? { required: ["schemaVersion", "ok"], properties: {} };
+  return {
+    oneOf: [
+      {
+        type: "object",
+        required: kindSchema.required,
+        properties: {
+          ...baseProperties,
+          ...kindSchema.properties,
+        },
+        additionalProperties: true,
+      },
+      errorSchema,
+    ],
+  };
+}
+
+function nullableSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  return {
+    anyOf: [
+      schema,
+      { type: "null" },
+    ],
+  };
+}
+
+function postgameContent(value: unknown): { structuredContent: unknown; content: Array<{ type: "text"; text: string }> } {
+  return {
+    structuredContent: value,
+    content: [
+      {
+        type: "text",
+        text: summarizePostgameContent(value),
+      },
+    ],
+  };
+}
+
+function summarizePostgameContent(value: unknown): string {
+  const root = asRecord(value);
+  if (root.ok === false) {
+    return `Postgame read failed: ${String(root.error ?? root.status ?? "unknown error")}`;
+  }
+  if (Array.isArray(root.games)) {
+    const agent = asRecord(root.agent);
+    return `Returned ${root.games.length} completed game(s) for ${String(agent.name ?? "the requested agent")}. See structuredContent.games for placements and final-vote fields.`;
+  }
+  const postgame = asRecord(root.postgame);
+  if (Object.keys(postgame).length > 0) {
+    const summary = asRecord(postgame.summary);
+    const winner = asRecord(summary.winner);
+    const finalVote = asRecord(summary.finalVote);
+    const voteText = typeof finalVote.totalVotes === "number"
+      ? ` Final jury vote total: ${finalVote.totalVotes}.`
+      : "";
+    return `Returned postgame brief for ${winner.name ? `winner ${String(winner.name)}` : "the completed game"}.${voteText} See structuredContent.postgame for round summaries, derived vote cohorts, jury facts, and turning points.`;
+  }
+  const jury = asRecord(root.jury);
+  if (Object.keys(jury).length > 0) {
+    const winner = asRecord(jury.winner);
+    const perJurorVotes = Array.isArray(jury.perJurorVotes) ? jury.perJurorVotes.length : 0;
+    return `Returned jury breakdown${winner.name ? ` for winner ${String(winner.name)}` : ""} with ${perJurorVotes} juror vote(s). See structuredContent.jury.perJurorVotes.`;
+  }
+  const player = asRecord(root.player);
+  if (Object.keys(player).length > 0) {
+    const playerRef = asRecord(player.player);
+    return `Returned player game summary for ${String(playerRef.name ?? "the requested player")}. See structuredContent.player for votes, majority alignment, risk, endgame, and jury facts.`;
+  }
+  if (Array.isArray(root.turningPoints)) {
+    return `Returned ${root.turningPoints.length} deterministic turning point(s). See structuredContent.turningPoints for typed evidence.`;
+  }
+  if (root.producerAnalysis) {
+    return "Returned producer-only postgame analysis. See structuredContent.producerAnalysis and structuredContent.developerEvidence.";
+  }
+  return "Returned structured postgame result. See structuredContent for fields.";
 }
 
 function content(value: unknown): { structuredContent: unknown; content: Array<{ type: "text"; text: string }> } {
@@ -986,15 +1325,21 @@ function roundFactsArgs(args: Record<string, unknown>): ProductionGameMcpRoundFa
 
 function optionalDetailLevel(args: Record<string, unknown>) {
   const value = optionalString(args, "detailLevel");
-  return value === "brief" || value === "standard" || value === "full"
-    ? value
-    : undefined;
+  if (!value) return undefined;
+  if (value === "brief" || value === "standard" || value === "full") return value;
+  throw new Error("detailLevel must be one of: brief, standard, full");
 }
 
-function postgameArgs(args: Record<string, unknown>): ProductionGameMcpPostgameOptions {
+function postgameArgs(
+  args: Record<string, unknown>,
+  options: { allowDetailLevel?: boolean } = {},
+): ProductionGameMcpPostgameOptions {
+  if (options.allowDetailLevel === false && args.detailLevel !== undefined) {
+    throw new Error("detailLevel is only supported by read_game_brief and read_producer_game_analysis");
+  }
   return {
     gameIdOrSlug: requiredString(args, "gameIdOrSlug"),
-    detailLevel: optionalDetailLevel(args),
+    detailLevel: options.allowDetailLevel === false ? undefined : optionalDetailLevel(args),
     includeEvidence: optionalBoolean(args, "includeEvidence"),
   };
 }
@@ -1014,7 +1359,7 @@ function agentGamesArgs(args: Record<string, unknown>): ProductionGameMcpAgentGa
 
 function playerGameSummaryArgs(args: Record<string, unknown>): ProductionGameMcpPlayerGameSummaryOptions {
   return {
-    ...postgameArgs(args),
+    ...postgameArgs(args, { allowDetailLevel: false }),
     player: requiredString(args, "player"),
   };
 }

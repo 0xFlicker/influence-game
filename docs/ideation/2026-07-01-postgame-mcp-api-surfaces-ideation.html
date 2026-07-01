@@ -432,7 +432,7 @@
           <div class="score"><span class="pill">Confidence 88%</span><span class="pill complexity">Complexity Medium</span></div>
         </div>
         <p>
-          Add `list_agent_games(agentId | agentName, limit?, cursor?, detailLevel?)` as the agent-centric entry point. Current MCP `list_games` is game-centric, which is fine for browsing but awkward for "what has Lilith Voss played?" The ledger should resolve an owned/visible agent, return completed and optionally active games, and include outcome facts directly in each row.
+          Add `list_agent_games(agentId | agentName, limit?, cursor?)` as the agent-centric entry point. Current MCP `list_games` is game-centric, which is fine for browsing but awkward for "what has Lilith Voss played?" The ledger should resolve an owned/visible agent, return completed and optionally active games, and include outcome facts directly in each row.
         </p>
         <dl>
           <dt>Axis</dt><dd>Agent game discovery</dd>
@@ -456,7 +456,8 @@
     "eliminatedRound": null,
     "winnerName": "Lilith Voss",
     "finalistNames": ["Lilith Voss", "Kestrel"],
-    "juryVoteCount": { "forAgent": 4, "againstAgent": 3 },
+    "finalJuryVoteTotal": 7,
+    "juryVotesReceived": 4,
     "ratingDelta": null
   }],
   "pagination": { "nextCursor": null },
@@ -548,7 +549,7 @@
           <div class="score"><span class="pill">Confidence 89%</span><span class="pill complexity">Complexity Medium</span></div>
         </div>
         <p>
-          Add `read_player_game_summary(gameIdOrSlug, player, detailLevel?, includeEvidence?)`. This should replace "call `player_timeline`, then rebuild a personality arc yourself" for normal postgame questions. It should return votes cast by round, votes received by round, empower/expose pressure, Council votes cast and received, powers used, shields received, majority alignment, nomination/at-risk moments, endgame/jury facts, and a compact `readableSummary`.
+          Add `read_player_game_summary(gameIdOrSlug, player, includeEvidence?)`. This should replace "call `player_timeline`, then rebuild a personality arc yourself" for normal postgame questions. It should return votes cast by round, votes received by round, empower/expose pressure, Council votes cast and received, powers used, shields received, majority alignment, nomination/at-risk moments, endgame/jury facts, and a compact `readableSummary`.
         </p>
         <dl>
           <dt>Axis</dt><dd>Player-level game arcs</dd>
@@ -582,7 +583,7 @@
           <div class="score"><span class="pill">Confidence 84%</span><span class="pill complexity">Complexity Medium</span></div>
         </div>
         <p>
-          Add `read_game_turning_points(gameIdOrSlug, detailLevel?, includeEvidence?)` with the enum set from the prompt: `power_shift`, `majority_consolidation`, `alliance_member_cut`, `threat_removed`, `jury_split`, `endgame_pivot`, and `near_miss`. The v0 should use deterministic signals: repeated empowerment, a player suddenly receiving pressure, a close Council vote, a finalist cutting a prior vote partner, endgame eliminations, or a split final jury. It should also include vote-bloc evidence, but label it as derived vote cohesion rather than confirmed alliance membership.
+          Add `read_game_turning_points(gameIdOrSlug, includeEvidence?)` with the enum set from the prompt: `power_shift`, `majority_consolidation`, `alliance_member_cut`, `threat_removed`, `jury_split`, `endgame_pivot`, and `near_miss`. The v0 should use deterministic signals: repeated empowerment, a player suddenly receiving pressure, a close Council vote, a finalist cutting a prior vote partner, endgame eliminations, or a split final jury. It should also include vote-cohort evidence, but label it as derived vote cohesion rather than confirmed alliance membership.
         </p>
         <dl>
           <dt>Axis</dt><dd>Turning points and bloc evidence</dd>
@@ -631,7 +632,8 @@
   "visibility": "producer",
   "canonicalAnchor": { "winner": { "name": "Lilith Voss" }, "finalVote": "4-3" },
   "producerAnalysis": {
-    "inferredAlliances": [],
+    "derivedVoteCohorts": [],
+    "inferredAlliances": { "status": "requires_private_evidence" },
     "actualPrivateStrategyPivots": [],
     "publicPrivateDiscrepancies": [],
     "betrayalMoments": [],
@@ -656,9 +658,9 @@
           <h4>`list_agent_games`</h4>
           <ul>
             <li><strong>Scope:</strong> `agents:read` plus game visibility, or `producer`.</li>
-            <li><strong>Inputs:</strong> `agentId | agentName`, `limit`, `cursor`, `detailLevel`.</li>
-            <li><strong>Returns:</strong> compact game rows with outcome, placement, final vote, finalists, jury vote count, rating delta when available.</li>
-            <li><strong>API:</strong> `GET /api/agents/:agentId/games?limit=&cursor=&detailLevel=` for authenticated agent owners.</li>
+            <li><strong>Inputs:</strong> `agentId | agentName`, `limit`, `cursor`.</li>
+            <li><strong>Returns:</strong> compact game rows with outcome, placement, final vote, finalists, final jury total, agent jury votes received when applicable, rating delta when available.</li>
+            <li><strong>API:</strong> `GET /api/agents/:agentId/games?limit=&cursor=` for authenticated agent owners.</li>
           </ul>
         </div>
         <div class="tool-card">
@@ -683,7 +685,7 @@
           <h4>`read_player_game_summary`</h4>
           <ul>
             <li><strong>Scope:</strong> `games:read` or `producer`.</li>
-            <li><strong>Inputs:</strong> `gameIdOrSlug`, `player`, `detailLevel`, `includeEvidence`.</li>
+            <li><strong>Inputs:</strong> `gameIdOrSlug`, `player`, `includeEvidence`.</li>
             <li><strong>Returns:</strong> placement, status, vote ledger summaries, votes received, majority alignment, risk moments, powers, endgame/jury facts, readable summary.</li>
             <li><strong>API:</strong> `GET /api/games/:idOrSlug/postgame/players/:playerId/summary`.</li>
           </ul>
@@ -692,8 +694,8 @@
           <h4>`read_game_turning_points`</h4>
           <ul>
             <li><strong>Scope:</strong> `games:read` or `producer`.</li>
-            <li><strong>Inputs:</strong> `gameIdOrSlug`, `detailLevel`, `includeEvidence`.</li>
-            <li><strong>Returns:</strong> enum-typed turning points, players involved, evidence fields, short generated-safe descriptions, vote-bloc evidence with confidence.</li>
+            <li><strong>Inputs:</strong> `gameIdOrSlug`, `includeEvidence`.</li>
+            <li><strong>Returns:</strong> enum-typed turning points, players involved, evidence fields, short generated-safe descriptions, vote-cohort evidence with confidence.</li>
             <li><strong>API:</strong> `GET /api/games/:idOrSlug/postgame/turning-points`.</li>
           </ul>
         </div>
@@ -718,7 +720,7 @@
           <tr><td>Diagnostics</td><td>Always include unavailable/partial facts as diagnostics with codes, severity, and messages. Missing facts are not vibes invitations.</td></tr>
           <tr><td>Player-safe boundary</td><td>No source pointers, raw payload envelopes, private trace metadata, `thinking`, `reasoningContext`, storage keys, or producer-only artifacts.</td></tr>
           <tr><td>Producer boundary</td><td>Producer tool may include private evidence summaries and references, but still anchors claims to canonical outcomes first.</td></tr>
-          <tr><td>MCP output</td><td>Return `structuredContent` plus a compact JSON `content[0].text` compatibility copy; add output schemas for core DTOs.</td></tr>
+          <tr><td>MCP output</td><td>Return typed `structuredContent` plus a short `content[0].text` summary; add output schemas for core DTOs.</td></tr>
         </tbody>
       </table>
     </section>
