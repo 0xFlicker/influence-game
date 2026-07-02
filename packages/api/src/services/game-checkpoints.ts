@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import type { CheckpointBoundaryIdentityV1, GameCheckpointCapsule, RuntimeSnapshotV1 } from "@influence/engine";
+import type { AccumulatorEntryV1, CheckpointBoundaryIdentityV1, GameCheckpointCapsule, RuntimeSnapshotV1 } from "@influence/engine";
 import { sealBoundaryIdentity } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -24,6 +24,22 @@ function sealRuntimeSnapshot(
     eventHeadHash: sealed.eventHeadHash,
     projectionHash: sealed.projectionHash,
   });
+  const entries = runtimeSnapshot.accumulatorRegistry.entries.map((entry): AccumulatorEntryV1 => {
+    if (entry.id !== "currentAccusations" || !entry.payload || entry.payload.version !== 1) {
+      return entry;
+    }
+    return {
+      ...entry,
+      payload: {
+        ...entry.payload,
+        boundary: sealBoundaryIdentity(entry.payload.boundary, {
+          ownerEpoch: sealed.ownerEpoch,
+          eventHeadHash: sealed.eventHeadHash,
+          projectionHash: sealed.projectionHash,
+        }),
+      },
+    };
+  });
 
   return {
     ...runtimeSnapshot,
@@ -32,6 +48,7 @@ function sealRuntimeSnapshot(
     accumulatorRegistry: {
       ...runtimeSnapshot.accumulatorRegistry,
       boundary,
+      entries,
     },
     transcriptWatermark: { ...runtimeSnapshot.transcriptWatermark, boundary },
   };

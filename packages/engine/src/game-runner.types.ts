@@ -72,6 +72,7 @@ export const PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES = [
   "reckoning_vote",
   "tribunal_lobby",
   "tribunal_accusation",
+  "tribunal_defense",
   "tribunal_vote",
   "judgment_opening",
   "judgment_jury_questions",
@@ -90,6 +91,7 @@ export interface GameRunnerResumeOptions {
   tokenCostCursor?: TokenCostCursor | null;
   houseContinuityCapsule?: HouseContinuityCapsule | null;
   mingleInboxReplay?: MingleInboxReplay | null;
+  currentAccusations?: CurrentAccusationsAccumulatorV1 | null;
 }
 
 export type GameCheckpointKind = "initial" | "phase_boundary" | "terminal";
@@ -140,6 +142,7 @@ export interface CheckpointBoundaryIdentityV1 {
 export type AccumulatorEntryStatusV1 =
   | "empty"
   | "drained"
+  | "captured"
   | "blocked"
   | "malformed"
   | "not_v1_hydratable";
@@ -147,6 +150,7 @@ export type AccumulatorEntryStatusV1 =
 export type AccumulatorProofKindV1 =
   | "empty_at_boundary"
   | "drained_at_boundary"
+  | "captured_at_boundary"
   | "not_applicable_at_boundary";
 
 export interface AccumulatorProofV1 {
@@ -158,6 +162,7 @@ export interface AccumulatorEntryV1 {
   id: string;
   status: AccumulatorEntryStatusV1;
   proof?: AccumulatorProofV1;
+  payload?: CurrentAccusationsAccumulatorV1;
 }
 
 export interface MingleInboxReplay {
@@ -168,6 +173,20 @@ export interface MingleInboxReplay {
     messages: Array<{ from: string; text: string }>;
   }>;
   unresolvedRecipientNames: string[];
+}
+
+export interface CurrentAccusationRecordV1 {
+  targetId: UUID;
+  targetName: string;
+  accuserId: UUID;
+  accuserName: string;
+  accusation: string;
+}
+
+export interface CurrentAccusationsAccumulatorV1 {
+  version: 1;
+  boundary: CheckpointBoundaryIdentityV1;
+  items: CurrentAccusationRecordV1[];
 }
 
 /** Closed v1 registry for phase-boundary runner accumulators. */

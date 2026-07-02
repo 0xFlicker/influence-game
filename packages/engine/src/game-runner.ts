@@ -24,12 +24,13 @@ import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 import { hydrateMingleInboxFromReplay } from "./mingle-inbox-replay";
 
 // Re-export types from the extracted module for backward compatibility
-export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseCouncilRole, HouseCouncilRoleFact, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TokenCostCursor, TranscriptEntry, TranscriptWatermarkV1 } from "./game-runner.types";
-import type { AccumulatorEntryV1, BoundaryCertificate, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameRunnerResumeActorCoordinate, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCouncilRoleFact, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, TranscriptEntry } from "./game-runner.types";
+export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseCouncilRole, HouseCouncilRoleFact, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TokenCostCursor, TranscriptEntry, TranscriptWatermarkV1 } from "./game-runner.types";
+import type { AccumulatorEntryV1, BoundaryCertificate, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameRunnerResumeActorCoordinate, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCouncilRoleFact, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, TranscriptEntry } from "./game-runner.types";
 import type { TokenTracker } from "./token-tracker";
 import {
   accumulatorProof,
   buildActorWitness,
+  buildCurrentAccusationsAccumulator,
   buildPhaseAccumulatorRegistry,
   buildRuntimeSnapshotV1,
   buildTranscriptWatermark,
@@ -126,6 +127,9 @@ export class GameRunner {
       }
       if (this.resumeFrom.tokenCostCursor) {
         this.tokenTracker?.loadCursor(this.resumeFrom.tokenCostCursor);
+      }
+      if (this.resumeFrom.currentAccusations) {
+        this.hydrateCurrentAccusations(this.resumeFrom.currentAccusations);
       }
     }
 
@@ -330,7 +334,46 @@ export class GameRunner {
     }
   }
 
-  private buildPhaseBoundaryAccumulators(): AccumulatorEntryV1[] {
+  private hydrateCurrentAccusations(capsule: CurrentAccusationsAccumulatorV1): void {
+    if (capsule.version !== 1) {
+      throw new Error("Phase-boundary resume currentAccusations capsule has unsupported version");
+    }
+    if (capsule.boundary.boundarySequence !== this.resumeFrom?.lastEventSequence) {
+      throw new Error("Phase-boundary resume currentAccusations boundary does not match resume event head");
+    }
+    const alivePlayerIds = new Set(this.gameState.getAlivePlayers().map((player) => player.id));
+    this._currentAccusations.clear();
+    for (const item of capsule.items) {
+      if (!alivePlayerIds.has(item.targetId) || !alivePlayerIds.has(item.accuserId)) {
+        throw new Error("Phase-boundary resume currentAccusations references a non-active player");
+      }
+      if (item.accusation.trim().length === 0) {
+        throw new Error("Phase-boundary resume currentAccusations contains an empty accusation");
+      }
+      this._currentAccusations.set(item.targetId, {
+        accuserId: item.accuserId,
+        accuserName: item.accuserName,
+        text: item.accusation,
+      });
+    }
+  }
+
+  private buildCurrentAccusationsPayload(
+    boundary: CheckpointBoundaryIdentityV1,
+  ): CurrentAccusationsAccumulatorV1 {
+    const items: CurrentAccusationRecordV1[] = [...this._currentAccusations.entries()]
+      .map(([targetId, accusation]) => ({
+        targetId,
+        targetName: this.gameState.getPlayerName(targetId),
+        accuserId: accusation.accuserId,
+        accuserName: accusation.accuserName,
+        accusation: accusation.text,
+      }))
+      .sort((left, right) => left.targetId.localeCompare(right.targetId));
+    return buildCurrentAccusationsAccumulator({ boundary, items });
+  }
+
+  private buildPhaseBoundaryAccumulators(boundary: CheckpointBoundaryIdentityV1): AccumulatorEntryV1[] {
     const mingleInboxSize = [...this.mingleInbox.values()].reduce((sum, inbox) => sum + inbox.length, 0);
     const streamBufferDrained = this.logger.isStreamBufferEmpty();
     const accusationsSize = this._currentAccusations.size;
@@ -348,7 +391,12 @@ export class GameRunner {
         case "currentAccusations":
           return accusationsSize === 0
             ? { id, status: "empty" as const, proof: accumulatorProof("empty_at_boundary", "no active accusations at boundary") }
-            : { id, status: "blocked" as const };
+            : {
+                id,
+                status: "captured" as const,
+                proof: accumulatorProof("captured_at_boundary", "structured current accusations captured for tribunal defense"),
+                payload: this.buildCurrentAccusationsPayload(boundary),
+              };
         default:
           return { id, status: "malformed" as const };
       }
@@ -438,7 +486,7 @@ export class GameRunner {
       });
       const accumulatorRegistry = buildPhaseAccumulatorRegistry({
         boundary,
-        entries: this.buildPhaseBoundaryAccumulators(),
+        entries: this.buildPhaseBoundaryAccumulators(boundary),
       });
       const transcriptWatermark = buildTranscriptWatermark({
         boundary,
@@ -763,7 +811,7 @@ export class GameRunner {
       return;
     }
 
-    if (target === "tribunal_accusation" || target === "tribunal_vote") {
+    if (target === "tribunal_accusation" || target === "tribunal_defense" || target === "tribunal_vote") {
       this.assertResumeActorState(actor, "tribunal_lobby");
       await this.completeResumePhase(actor);
       if (target === "tribunal_accusation") {
@@ -771,6 +819,10 @@ export class GameRunner {
         return;
       }
       await this.completeResumePhase(actor);
+      if (target === "tribunal_defense") {
+        this.assertResumeActorState(actor, target);
+        return;
+      }
       await this.completeResumePhase(actor);
       this.assertResumeActorState(actor, target);
       return;

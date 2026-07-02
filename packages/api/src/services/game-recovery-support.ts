@@ -3,6 +3,7 @@ import {
   GameState,
   PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES,
   type CanonicalGameEvent,
+  type CurrentAccusationsAccumulatorV1,
   type GameRunnerOptions,
   type GameRunnerResumeActorCoordinate,
   type MingleInboxReplay,
@@ -20,6 +21,10 @@ export type SupportedRecoveryEvaluation =
   | { ok: false; reason: string };
 
 type PersistedEventsResult = Awaited<ReturnType<typeof getPersistedGameEvents>>;
+
+type AccumulatorRecoveryValidation =
+  | { ok: true; currentAccusations: CurrentAccusationsAccumulatorV1 | null }
+  | { ok: false; reason: string };
 
 const SUPPORTED_ACTOR_COORDINATES = new Set<string>(PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES);
 
@@ -55,27 +60,89 @@ function hasBlockedMingleInbox(runtimeSnapshot: RuntimeSnapshotV1): boolean {
   );
 }
 
-function validateNonReplayableAccumulatorRegistry(runtimeSnapshot: RuntimeSnapshotV1): string | null {
-  const registry = runtimeSnapshot.accumulatorRegistry;
-  if (!registry || registry.version !== 1 || !Array.isArray(registry.entries)) return "unsafe_accumulator_registry";
+function sameBoundaryIdentity(
+  left: RuntimeSnapshotV1["boundary"],
+  right: RuntimeSnapshotV1["boundary"],
+): boolean {
+  return left.version === right.version &&
+    left.ownerEpoch === right.ownerEpoch &&
+    left.boundarySequence === right.boundarySequence &&
+    left.eventHeadHash === right.eventHeadHash &&
+    left.projectionHash === right.projectionHash &&
+    left.checkpointKind === right.checkpointKind &&
+    left.phase === right.phase &&
+    left.round === right.round;
+}
 
+function validateCurrentAccusationsPayload(
+  payload: unknown,
+  runtimeSnapshot: RuntimeSnapshotV1,
+  gameState: GameState,
+): CurrentAccusationsAccumulatorV1 | null {
+  if (!isRecord(payload) || payload.version !== 1 || !isRecord(payload.boundary) || !Array.isArray(payload.items)) {
+    return null;
+  }
+  const candidate = payload as unknown as CurrentAccusationsAccumulatorV1;
+  if (!sameBoundaryIdentity(candidate.boundary, runtimeSnapshot.boundary)) return null;
+
+  const activePlayerIds = new Set(gameState.getAlivePlayers().map((player) => player.id));
+  const seenTargets = new Set<string>();
+  for (const item of candidate.items) {
+    if (!item ||
+        typeof item.targetId !== "string" ||
+        typeof item.targetName !== "string" ||
+        typeof item.accuserId !== "string" ||
+        typeof item.accuserName !== "string" ||
+        typeof item.accusation !== "string") {
+      return null;
+    }
+    if (!activePlayerIds.has(item.targetId) || !activePlayerIds.has(item.accuserId)) return null;
+    if (item.targetName !== gameState.getPlayerName(item.targetId)) return null;
+    if (item.accuserName !== gameState.getPlayerName(item.accuserId)) return null;
+    if (item.accusation.trim().length === 0) return null;
+    if (seenTargets.has(item.targetId)) return null;
+    seenTargets.add(item.targetId);
+  }
+  return candidate.items.length > 0 ? candidate : null;
+}
+
+function validateAccumulatorRegistryForRecovery(params: {
+  runtimeSnapshot: RuntimeSnapshotV1;
+  gameState: GameState;
+  mingleInboxReplay: MingleInboxReplay;
+}): AccumulatorRecoveryValidation {
+  const { runtimeSnapshot, gameState, mingleInboxReplay } = params;
+  const registry = runtimeSnapshot.accumulatorRegistry;
+  if (!registry || registry.version !== 1 || !Array.isArray(registry.entries)) {
+    return { ok: false, reason: "unsafe_accumulator_registry" };
+  }
+
+  let currentAccusations: CurrentAccusationsAccumulatorV1 | null = null;
+  const actorCoordinate = runtimeSnapshot.actorWitness.actorCoordinate;
   for (const entry of registry.entries) {
     if (entry.status === "empty" || entry.status === "drained") continue;
     if (entry.id === "mingleInbox" && entry.status === "blocked") continue;
-    return "unsafe_accumulator_registry";
+    if (entry.id === "currentAccusations" && entry.status === "captured") {
+      if (actorCoordinate !== "tribunal_defense") {
+        return { ok: false, reason: "unsafe_accumulator_registry" };
+      }
+      currentAccusations = validateCurrentAccusationsPayload(entry.payload, runtimeSnapshot, gameState);
+      if (!currentAccusations) return { ok: false, reason: "unsafe_accumulator_registry" };
+      continue;
+    }
+    return { ok: false, reason: "unsafe_accumulator_registry" };
   }
 
-  return null;
-}
+  if (hasBlockedMingleInbox(runtimeSnapshot) &&
+      (mingleInboxReplay.entries.length === 0 || mingleInboxReplay.unresolvedRecipientNames.length > 0)) {
+    return { ok: false, reason: "unsafe_accumulator_registry" };
+  }
 
-function validateMingleInboxReplay(
-  runtimeSnapshot: RuntimeSnapshotV1,
-  mingleInboxReplay: MingleInboxReplay,
-): string | null {
-  if (!hasBlockedMingleInbox(runtimeSnapshot)) return null;
-  return mingleInboxReplay.entries.length > 0 && mingleInboxReplay.unresolvedRecipientNames.length === 0
-    ? null
-    : "unsafe_accumulator_registry";
+  if (actorCoordinate === "tribunal_defense" && !currentAccusations) {
+    return { ok: false, reason: "unsafe_accumulator_registry" };
+  }
+
+  return { ok: true, currentAccusations };
 }
 
 function latestEvent<TType extends CanonicalGameEvent["type"]>(
@@ -162,7 +229,7 @@ function validateActorCoordinatePrerequisites(
     return requireAliveCount(actorCoordinate, gameState, 3) ??
       requireEndgameStage(actorCoordinate, gameState, "reckoning");
   }
-  if (actorCoordinate === "tribunal_accusation" || actorCoordinate === "tribunal_vote") {
+  if (actorCoordinate === "tribunal_accusation" || actorCoordinate === "tribunal_defense" || actorCoordinate === "tribunal_vote") {
     return requireAliveCount(actorCoordinate, gameState, 3) ??
       requireEndgameStage(actorCoordinate, gameState, "tribunal");
   }
@@ -206,9 +273,6 @@ export function evaluateSupportedRecovery(params: {
   if (!isSupportedActorCoordinate(actorCoordinate)) {
     return { ok: false, reason: `unsupported_actor_coordinate:${actorCoordinate}` };
   }
-  const nonReplayableAccumulatorReason = validateNonReplayableAccumulatorRegistry(runtimeSnapshot);
-  if (nonReplayableAccumulatorReason) return { ok: false, reason: nonReplayableAccumulatorReason };
-
   const transcriptReplay = readTranscriptReplay(isRecord(snapshot) ? snapshot.transcriptReplay : null);
   if (!transcriptReplay) return { ok: false, reason: "missing_transcript_replay" };
   if (transcriptReplay.length !== runtimeSnapshot.transcriptWatermark.entryCount) {
@@ -228,8 +292,12 @@ export function evaluateSupportedRecovery(params: {
     transcriptReplay,
     players: gameState.getAllPlayers().map((player) => ({ id: player.id, name: player.name })),
   });
-  const accumulatorReason = validateMingleInboxReplay(runtimeSnapshot, mingleInboxReplay);
-  if (accumulatorReason) return { ok: false, reason: accumulatorReason };
+  const accumulatorResult = validateAccumulatorRegistryForRecovery({
+    runtimeSnapshot,
+    gameState,
+    mingleInboxReplay,
+  });
+  if (!accumulatorResult.ok) return { ok: false, reason: accumulatorResult.reason };
 
   const prerequisiteReason = validateActorCoordinatePrerequisites(actorCoordinate, canonicalEvents, gameState);
   if (prerequisiteReason) return { ok: false, reason: prerequisiteReason };
@@ -247,6 +315,7 @@ export function evaluateSupportedRecovery(params: {
       transcriptReplay,
       tokenCostCursor,
       mingleInboxReplay: hasBlockedMingleInbox(runtimeSnapshot) ? mingleInboxReplay : null,
+      currentAccusations: accumulatorResult.currentAccusations,
       houseContinuityCapsule: isRecord(snapshot) && isRecord(snapshot.houseContinuityCapsule)
         ? snapshot.houseContinuityCapsule as unknown as SupportedRecoveryResumeInput["houseContinuityCapsule"]
         : null,

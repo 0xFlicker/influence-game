@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import {
   DEFAULT_CONFIG,
   GameRunner,
@@ -34,7 +34,7 @@ import {
 } from "./durable-run-test-utils.js";
 
 const savedMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
-type RuntimeActorCoordinate = GameRunnerResumeActorCoordinate | "tribunal_defense";
+type RuntimeActorCoordinate = GameRunnerResumeActorCoordinate | "council";
 
 const recoveryConfig: GameConfig & Record<string, unknown> = {
   ...DEFAULT_CONFIG,
@@ -149,7 +149,9 @@ class RecoverySmokeAgent implements IAgent {
     const target = ctx.alivePlayers.find((player) => player.id !== this.id);
     return { targetId: target?.id ?? this.id, text: "accusation", thinking: "startup recovery accusation" };
   }
-  async getDefense(): Promise<AgentResponse> { return mockResponse("defense"); }
+  async getDefense(_ctx: PhaseContext, accusationText?: string, accuserName?: string): Promise<AgentResponse> {
+    return mockResponse(`defense against ${accuserName ?? "unknown"}: ${accusationText ?? "unknown accusation"}`);
+  }
   async getOpeningStatement(): Promise<AgentResponse> { return mockResponse("opening"); }
   async getJuryQuestion(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<{ targetFinalistId: UUID; question: string; thinking?: string }> {
     return { targetFinalistId: finalistIds[0], question: "why?", thinking: "startup recovery jury question" };
@@ -217,6 +219,7 @@ async function interruptGameAtBoundary(
     config?: GameConfig & Record<string, unknown>;
     playerCount?: number;
     requireBlockedMingleInbox?: boolean;
+    writeUnsupportedNewerCheckpoint?: string;
   } = {},
 ): Promise<{
   gameId: string;
@@ -254,6 +257,23 @@ async function interruptGameAtBoundary(
         );
         if (options.requireBlockedMingleInbox && !hasBlockedMingleInbox) return;
         interruptedAtSequence = checkpoint.lastEventSequence;
+        if (options.writeUnsupportedNewerCheckpoint) {
+          const unsupportedCheckpoint = structuredClone(checkpoint);
+          if (!unsupportedCheckpoint.runtimeSnapshot) {
+            throw new Error("expected runtime snapshot for unsupported checkpoint fixture");
+          }
+          unsupportedCheckpoint.runtimeSnapshot.actorWitness.actorCoordinate = options.writeUnsupportedNewerCheckpoint;
+          const unsupportedResult = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint: unsupportedCheckpoint });
+          expect(unsupportedResult.ok).toBeTrue();
+          await db.update(schema.gameCheckpoints)
+            .set({ createdAt: "2099-01-01T00:00:00.000Z" })
+            .where(and(
+              eq(schema.gameCheckpoints.gameId, gameId),
+              eq(schema.gameCheckpoints.lastEventSequence, checkpoint.lastEventSequence),
+              eq(schema.gameCheckpoints.checkpointKind, "phase_boundary"),
+              eq(schema.gameCheckpoints.actorCoordinate, options.writeUnsupportedNewerCheckpoint),
+            ));
+        }
         runner?.abort();
       }
     },
@@ -366,6 +386,7 @@ describe("game startup recovery", () => {
     { actorCoordinate: "reckoning_vote", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "tribunal_lobby", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "tribunal_accusation", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
+    { actorCoordinate: "tribunal_defense", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "tribunal_vote", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "judgment_opening", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "judgment_jury_questions", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
@@ -396,6 +417,9 @@ describe("game startup recovery", () => {
       expect(candidate.ok).toBeTrue();
       if (!candidate.ok) throw new Error(`expected recovery support, got ${candidate.reason}`);
       expect(candidate.resumeFrom.actorCoordinate).toBe(actorCoordinate);
+      if (actorCoordinate === "tribunal_defense") {
+        expect(candidate.resumeFrom.currentAccusations?.items.length).toBeGreaterThan(0);
+      }
 
       const recovery = await recoverGamesOnStartup(db);
       expect(recovery).toEqual({ attempted: 1, recovered: 1, skipped: [] });
@@ -407,6 +431,18 @@ describe("game startup recovery", () => {
         interruptedAtSequence,
         expectedIntroductionCount,
       });
+
+      if (actorCoordinate === "tribunal_defense") {
+        const transcripts = await db
+          .select()
+          .from(schema.transcripts)
+          .where(eq(schema.transcripts.gameId, gameId));
+        expect(transcripts.some((row) =>
+          row.phase === "DEFENSE" &&
+          row.text.includes("defense against") &&
+          row.text.includes("accusation")
+        )).toBeTrue();
+      }
     }, timeoutMs);
   }
 
@@ -444,34 +480,42 @@ describe("game startup recovery", () => {
     });
   }, 60000);
 
-  test("startup recovery fails closed at tribunal defense until accusation accumulator support exists", async () => {
-    const { gameId, interruptedAtSequence } = await interruptGameAtBoundary(db, "tribunal_defense", {
+  test("startup recovery skips a newer unsupported same-head checkpoint and uses the newest resume-capable boundary", async () => {
+    const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, "reveal", {
       config: recoveryConfigWithEndgame,
       playerCount: 6,
+      writeUnsupportedNewerCheckpoint: "council",
     });
 
     const suspendedInspection = await getDurableRunInspection(db, gameId);
     expect(suspendedInspection.ok).toBeTrue();
     if (!suspendedInspection.ok) throw new Error("durable inspection failed");
-    const defenseBoundary = findCheckpointBoundary(suspendedInspection, {
+    const supportedBoundary = findCheckpointBoundary(suspendedInspection, {
       lastEventSequence: interruptedAtSequence,
-      actorCoordinate: "tribunal_defense",
+      actorCoordinate: "reveal",
     });
-    expect(defenseBoundary?.resumeAvailable).toBeFalse();
+    const unsupportedBoundary = findCheckpointBoundary(suspendedInspection, {
+      lastEventSequence: interruptedAtSequence,
+      actorCoordinate: "council",
+    });
+    expect(supportedBoundary?.resumeAvailable).toBeTrue();
+    expect(unsupportedBoundary?.resumeAvailable).toBeFalse();
+
+    const candidate = await getSupportedRecovery(db, gameId);
+    expect(candidate.ok).toBeTrue();
+    if (!candidate.ok) throw new Error(`expected recovery support, got ${candidate.reason}`);
+    expect(candidate.resumeFrom.actorCoordinate).toBe("reveal");
 
     const recovery = await recoverGamesOnStartup(db);
-    expect(recovery).toEqual({
-      attempted: 1,
-      recovered: 0,
-      skipped: [{ gameId, reason: "unsupported_actor_coordinate:tribunal_defense" }],
-    });
+    expect(recovery).toEqual({ attempted: 1, recovered: 1, skipped: [] });
 
-    const eventRows = await db
-      .select()
-      .from(schema.gameEvents)
-      .where(eq(schema.gameEvents.gameId, gameId))
-      .orderBy(asc(schema.gameEvents.sequence));
-    expect(eventRows.map((row) => row.sequence).at(-1)).toBe(interruptedAtSequence);
+    await assertRecoveredGameCompleted({
+      db,
+      gameId,
+      originalOwnerEpoch: ownerEpoch,
+      interruptedAtSequence,
+      expectedIntroductionCount: 6,
+    });
   }, 60000);
 
   test("startup recovery fails closed for unsupported actor coordinates even with complete checkpoint evidence", async () => {
@@ -487,7 +531,7 @@ describe("game startup recovery", () => {
     const checkpoint = enrichCapsuleForV1Candidate(createCheckpointCapsule(events), {
       ownerEpoch,
       eventHeadHash: hashCanonicalEvent(events[events.length - 1]!),
-      actorCoordinate: "tribunal_defense",
+      actorCoordinate: "council",
     });
     const checkpointResult = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
     expect(checkpointResult.ok).toBeTrue();
@@ -496,7 +540,7 @@ describe("game startup recovery", () => {
     expect(candidate).toMatchObject({
       ok: false,
       gameId,
-      reason: "unsupported_actor_coordinate:tribunal_defense",
+      reason: "unsupported_actor_coordinate:council",
     });
 
     const inspection = await getDurableRunInspection(db, gameId);
@@ -508,7 +552,7 @@ describe("game startup recovery", () => {
     expect(recovery).toEqual({
       attempted: 1,
       recovered: 0,
-      skipped: [{ gameId, reason: "unsupported_actor_coordinate:tribunal_defense" }],
+      skipped: [{ gameId, reason: "unsupported_actor_coordinate:council" }],
     });
 
     const eventRows = await db
@@ -533,6 +577,7 @@ describe("game startup recovery", () => {
       eventHeadHash: hashCanonicalEvent(events[events.length - 1]!),
       actorCoordinate: "tribunal_accusation",
     });
+    checkpoint.transcriptReplay = { version: 1, entries: [] };
     if (!checkpoint.runtimeSnapshot) throw new Error("expected runtime snapshot");
     const blockedEntry = checkpoint.runtimeSnapshot.accumulatorRegistry.entries.find((entry) => entry.id === "currentAccusations");
     if (!blockedEntry) throw new Error("expected accumulator entry");

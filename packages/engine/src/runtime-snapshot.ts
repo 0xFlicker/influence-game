@@ -7,6 +7,8 @@ import type {
   AccumulatorProofV1,
   ActorWitnessV1,
   CheckpointBoundaryIdentityV1,
+  CurrentAccusationRecordV1,
+  CurrentAccusationsAccumulatorV1,
   GameCheckpointKind,
   PhaseAccumulatorRegistryV1,
   RuntimeSnapshotV1,
@@ -83,6 +85,17 @@ export function buildPhaseAccumulatorRegistry(params: {
     boundaryClass: "phase_boundary",
     boundary: params.boundary,
     entries: params.entries,
+  };
+}
+
+export function buildCurrentAccusationsAccumulator(params: {
+  boundary: CheckpointBoundaryIdentityV1;
+  items: CurrentAccusationRecordV1[];
+}): CurrentAccusationsAccumulatorV1 {
+  return {
+    version: 1,
+    boundary: params.boundary,
+    items: params.items,
   };
 }
 

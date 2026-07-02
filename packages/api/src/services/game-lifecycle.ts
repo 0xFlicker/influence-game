@@ -305,7 +305,9 @@ class ApiTestMockAgent implements IAgent {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
     return { targetId: others[0]?.id ?? this.id, text: "accusation" };
   }
-  async getDefense() { return mockResponse("defense"); }
+  async getDefense(_ctx: PhaseContext, accusationText?: string, accuserName?: string) {
+    return mockResponse(`defense against ${accuserName ?? "unknown"}: ${accusationText ?? "unknown accusation"}`);
+  }
   async getOpeningStatement() { return mockResponse("opening"); }
   async getJuryQuestion(_ctx: PhaseContext, finalistIds: [UUID, UUID]) {
     return { targetFinalistId: finalistIds[0], question: "why?" };

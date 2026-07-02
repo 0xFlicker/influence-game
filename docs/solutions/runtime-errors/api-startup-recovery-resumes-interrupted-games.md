@@ -117,18 +117,19 @@ The acceptance proof exercises the product seam. It is DB-backed and API-lifecyc
 - Add a DB-backed recovery matrix test before enabling any new actor coordinate. The test must interrupt at that boundary, run startup recovery, assert contiguous post-restart events under a new owner, and reach normal completed results.
 - Include actor coordinate in phase-boundary checkpoint identity. Several endgame phases are transcript-only, so multiple distinct actor boundaries can share one canonical event head.
 - Keep unsupported boundaries suspended with diagnostic evidence. Do not repair by replaying transcript text, skipping phase effects, or synthesizing terminal results.
-- After staged endgame boundary coverage, the next required durability TODO is Accusation Capsule V1 or an equivalent full accumulator slice for `_currentAccusations`. `tribunal_defense` must stay unsupported until that structured accumulator input exists.
+- Accusation Capsule V1 is now the pattern for accumulator-heavy phase-boundary resume: persist structured runtime state, seal it to the checkpoint boundary, validate IDs/names/content, and hydrate runner-local maps from that payload. Do not reconstruct accumulator truth from transcript prose or private trace text.
+- When a durability TODO lands, update `docs/statefulness-plan.md`, `docs/refactor-queue.md`, and any touched plan or solution note in the same branch so the queue points at the next real risk.
 - Preserve startup orphaning semantics in the single-API-process deployment. On a fresh process, old `in_progress` means no local runner exists here.
 - Keep recovery owner claim separate from normal waiting-game start. Recovery has different invariants: suspended source state, checkpoint event head, no active owner, and `lastPersistedEventSequence` seeded to the boundary.
-- Treat current support as phase-boundary startup resume only. Mid-phase interruption, in-flight model call recovery, `tribunal_defense`, arbitrary historical repair, and multi-worker or spot-fleet coordination are still unsupported.
+- Treat current support as phase-boundary startup resume only. Mid-phase interruption, in-flight model call recovery, arbitrary historical repair, and multi-worker or spot-fleet coordination are still unsupported.
 
 ## Related Issues
 
 - `docs/statefulness-plan.md` is the current operating map for durable game state, supported recovery, known gaps, and next slices.
 - `docs/plans/2026-06-29-002-feat-generic-phase-boundary-recovery-plan.md` is the generic phase-boundary recovery plan that expanded the supported boundary set.
-- `docs/plans/2026-06-30-002-feat-endgame-phase-boundary-recovery-plan.md` is the implementation-ready plan for staged endgame boundary expansion and the Accusation Capsule V1 follow-up.
+- `docs/plans/2026-06-30-002-feat-endgame-phase-boundary-recovery-plan.md` is the historical implementation-ready plan for staged endgame boundary expansion; Accusation Capsule V1 later retired its follow-up TODO.
 - `docs/plans/2026-06-29-001-feat-one-boundary-resume-to-completion-plan.md` is the predecessor plan that set the right acceptance bar: same-game resume to completed results, not another proof artifact.
-- `docs/refactor-queue.md` tracks the remaining phase-boundary coverage and future multi-worker orchestration work.
+- `docs/refactor-queue.md` tracks the remaining refactor backlog and future multi-worker orchestration work.
 - `CONCEPTS.md` defines the recovery vocabulary: canonical game event, durable game-run kernel, checkpoint capsule, hydration passport, phase-boundary startup resume, and owner epoch.
 - `packages/api/src/__tests__/game-recovery.test.ts` is the focused DB-backed same-game recovery suite.
 - `packages/api/src/__tests__/startup-orphaned-games.test.ts` protects startup orphan classification semantics.

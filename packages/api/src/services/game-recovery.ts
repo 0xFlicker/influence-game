@@ -45,7 +45,7 @@ export async function getSupportedRecovery(
     return { ok: false, gameId, reason: `unsupported_game_status:${game.status}` };
   }
 
-  const checkpoint = (await db
+  const checkpoints = await db
     .select({
       ownerEpoch: schema.gameCheckpoints.ownerEpoch,
       lastEventSequence: schema.gameCheckpoints.lastEventSequence,
@@ -59,28 +59,36 @@ export async function getSupportedRecovery(
       eq(schema.gameCheckpoints.gameId, gameId),
       eq(schema.gameCheckpoints.checkpointKind, "phase_boundary"),
     ))
-    .orderBy(desc(schema.gameCheckpoints.lastEventSequence), desc(schema.gameCheckpoints.createdAt))
-    .limit(1))[0];
+    .orderBy(desc(schema.gameCheckpoints.lastEventSequence), desc(schema.gameCheckpoints.createdAt));
 
-  if (!checkpoint) {
+  if (checkpoints.length === 0) {
     return { ok: false, gameId, reason: "missing_checkpoint" };
-  }
-  if (checkpoint.checkpointKind !== "phase_boundary") {
-    return { ok: false, gameId, reason: `unsupported_checkpoint_kind:${checkpoint.checkpointKind}` };
   }
 
   const persisted = await getPersistedGameEvents(db, gameId);
-  const evaluated = evaluateSupportedRecovery({
-    gameStatus: game.status,
-    checkpoint,
-    persistedEvents: persisted,
-  });
-  if (!evaluated.ok) return { ok: false, gameId, reason: evaluated.reason };
+  let firstFailureReason: string | null = null;
+  for (const checkpoint of checkpoints) {
+    if (checkpoint.checkpointKind !== "phase_boundary") {
+      firstFailureReason ??= `unsupported_checkpoint_kind:${checkpoint.checkpointKind}`;
+      continue;
+    }
+    const evaluated = evaluateSupportedRecovery({
+      gameStatus: game.status,
+      checkpoint,
+      persistedEvents: persisted,
+    });
+    if (!evaluated.ok) {
+      firstFailureReason ??= evaluated.reason;
+      continue;
+    }
 
-  return {
-    ok: true,
-    gameId,
-    checkpointOwnerEpoch: checkpoint.ownerEpoch,
-    resumeFrom: evaluated.resumeFrom,
-  };
+    return {
+      ok: true,
+      gameId,
+      checkpointOwnerEpoch: checkpoint.ownerEpoch,
+      resumeFrom: evaluated.resumeFrom,
+    };
+  }
+
+  return { ok: false, gameId, reason: firstFailureReason ?? "missing_supported_checkpoint" };
 }

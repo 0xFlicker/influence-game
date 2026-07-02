@@ -365,7 +365,7 @@ describe("checkpoint hydration passport validator", () => {
     expect(accumStamp?.status).toBe("failed");
   });
 
-  test("captured accumulator status is not accepted in v1", () => {
+  test("captured accumulator status is rejected outside currentAccusations", () => {
     const base = createCheckpointCapsule(createCanonicalEventFixture("accum-captured"));
     const ownerEpoch = "owner-accum-captured";
     const eventHeadHash = "sha256:accum-captured";
@@ -377,7 +377,16 @@ describe("checkpoint hydration passport validator", () => {
         ...runtimeSnapshot.accumulatorRegistry,
         entries: runtimeSnapshot.accumulatorRegistry.entries.map((entry) =>
           entry.id === "mingleInbox"
-            ? { id: entry.id, status: "captured" }
+            ? {
+                id: entry.id,
+                status: "captured",
+                proof: { kind: "captured_at_boundary" },
+                payload: {
+                  version: 1,
+                  boundary: runtimeSnapshot.boundary,
+                  items: [],
+                },
+              }
             : entry,
         ),
       },
@@ -399,7 +408,161 @@ describe("checkpoint hydration passport validator", () => {
       tokenCostCursor: positive.tokenCostCursor,
     }));
 
-    expect(stampStatus(res, "accumulatorRegistry")).toBe("malformed");
+    expect(stampStatus(res, "accumulatorRegistry")).toBe("failed");
+    expect(res.passport.verdict).not.toBe("hydration_candidate");
+  });
+
+  test("currentAccusations captured accumulator passes with structured boundary-bound payload", () => {
+    const base = createCheckpointCapsule(createCanonicalEventFixture("accum-current-accusations"));
+    const ownerEpoch = "owner-accum-current-accusations";
+    const eventHeadHash = "sha256:accum-current-accusations";
+    const positive = enrichCapsuleForV1Candidate(base, { ownerEpoch, eventHeadHash, actorCoordinate: "tribunal_defense" });
+    const runtimeSnapshot = positive.runtimeSnapshot!;
+    const capturedRuntimeSnapshot = {
+      ...runtimeSnapshot,
+      accumulatorRegistry: {
+        ...runtimeSnapshot.accumulatorRegistry,
+        entries: runtimeSnapshot.accumulatorRegistry.entries.map((entry) =>
+          entry.id === "currentAccusations"
+            ? {
+                id: entry.id,
+                status: "captured",
+                proof: { kind: "captured_at_boundary" },
+                payload: {
+                  version: 1,
+                  boundary: runtimeSnapshot.boundary,
+                  items: [{
+                    targetId: "atlas",
+                    targetName: "Atlas",
+                    accuserId: "echo",
+                    accuserName: "Echo",
+                    accusation: "Atlas controlled the vote.",
+                  }],
+                },
+              }
+            : entry,
+        ),
+      },
+    };
+
+    const res = deriveHydrationPassport(deriveInput(base, {
+      ownerEpoch,
+      eventHeadHash,
+      snapshot: {
+        runtimeSnapshot: capturedRuntimeSnapshot,
+        boundaryCertificate: positive.boundaryCertificate,
+        projectionSummary: base.projectionSummary,
+        state: base.state,
+        playerContinuityCapsules: positive.playerContinuityCapsules,
+        houseContinuityCapsule: positive.houseContinuityCapsule,
+        expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
+      },
+      transcriptCursor: positive.transcriptCursor,
+      tokenCostCursor: positive.tokenCostCursor,
+    }));
+
+    expect(stampStatus(res, "accumulatorRegistry")).toBe("passed");
+    expect(stampStatus(res, "privacy")).toBe("passed");
+    expect(res.passport.verdict).toBe("hydration_candidate");
+  });
+
+  test("currentAccusations captured accumulator is rejected outside tribunal defense", () => {
+    const base = createCheckpointCapsule(createCanonicalEventFixture("accum-current-accusations-wrong-coordinate"));
+    const ownerEpoch = "owner-accum-current-accusations-wrong-coordinate";
+    const eventHeadHash = "sha256:accum-current-accusations-wrong-coordinate";
+    const positive = enrichCapsuleForV1Candidate(base, { ownerEpoch, eventHeadHash });
+    const runtimeSnapshot = positive.runtimeSnapshot!;
+    const capturedRuntimeSnapshot = {
+      ...runtimeSnapshot,
+      accumulatorRegistry: {
+        ...runtimeSnapshot.accumulatorRegistry,
+        entries: runtimeSnapshot.accumulatorRegistry.entries.map((entry) =>
+          entry.id === "currentAccusations"
+            ? {
+                id: entry.id,
+                status: "captured",
+                proof: { kind: "captured_at_boundary" },
+                payload: {
+                  version: 1,
+                  boundary: runtimeSnapshot.boundary,
+                  items: [{
+                    targetId: "atlas",
+                    targetName: "Atlas",
+                    accuserId: "echo",
+                    accuserName: "Echo",
+                    accusation: "Atlas controlled the vote.",
+                  }],
+                },
+              }
+            : entry,
+        ),
+      },
+    };
+
+    const res = deriveHydrationPassport(deriveInput(base, {
+      ownerEpoch,
+      eventHeadHash,
+      snapshot: {
+        runtimeSnapshot: capturedRuntimeSnapshot,
+        boundaryCertificate: positive.boundaryCertificate,
+        projectionSummary: base.projectionSummary,
+        state: base.state,
+        playerContinuityCapsules: positive.playerContinuityCapsules,
+        houseContinuityCapsule: positive.houseContinuityCapsule,
+        expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
+      },
+      transcriptCursor: positive.transcriptCursor,
+      tokenCostCursor: positive.tokenCostCursor,
+    }));
+
+    expect(stampStatus(res, "accumulatorRegistry")).toBe("failed");
+    expect(res.passport.verdict).not.toBe("hydration_candidate");
+  });
+
+  test("currentAccusations captured accumulator rejects empty payload items", () => {
+    const base = createCheckpointCapsule(createCanonicalEventFixture("accum-current-accusations-empty"));
+    const ownerEpoch = "owner-accum-current-accusations-empty";
+    const eventHeadHash = "sha256:accum-current-accusations-empty";
+    const positive = enrichCapsuleForV1Candidate(base, { ownerEpoch, eventHeadHash, actorCoordinate: "tribunal_defense" });
+    const runtimeSnapshot = positive.runtimeSnapshot!;
+    const capturedRuntimeSnapshot = {
+      ...runtimeSnapshot,
+      accumulatorRegistry: {
+        ...runtimeSnapshot.accumulatorRegistry,
+        entries: runtimeSnapshot.accumulatorRegistry.entries.map((entry) =>
+          entry.id === "currentAccusations"
+            ? {
+                id: entry.id,
+                status: "captured",
+                proof: { kind: "captured_at_boundary" },
+                payload: {
+                  version: 1,
+                  boundary: runtimeSnapshot.boundary,
+                  items: [],
+                },
+              }
+            : entry,
+        ),
+      },
+    };
+
+    const res = deriveHydrationPassport(deriveInput(base, {
+      ownerEpoch,
+      eventHeadHash,
+      snapshot: {
+        runtimeSnapshot: capturedRuntimeSnapshot,
+        boundaryCertificate: positive.boundaryCertificate,
+        projectionSummary: base.projectionSummary,
+        state: base.state,
+        playerContinuityCapsules: positive.playerContinuityCapsules,
+        houseContinuityCapsule: positive.houseContinuityCapsule,
+        expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
+      },
+      transcriptCursor: positive.transcriptCursor,
+      tokenCostCursor: positive.tokenCostCursor,
+    }));
+
+    expect(stampStatus(res, "accumulatorRegistry")).toBe("failed");
     expect(res.passport.verdict).not.toBe("hydration_candidate");
   });
 

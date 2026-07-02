@@ -19,7 +19,8 @@
     "mcp:trace": "bun run src/trace-mcp/server.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1018.0",
+    "@aws-sdk/client-s3": "3.1078.0",
+    "@aws-sdk/s3-request-presigner": "3.1078.0",
     "@influence/engine": "workspace:*",
     "@privy-io/server-auth": "^1.32.5",
     "drizzle-orm": "^0.45.1",

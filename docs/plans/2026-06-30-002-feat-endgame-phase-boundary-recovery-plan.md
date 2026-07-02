@@ -15,11 +15,11 @@ execution: code
 
 | Field | Value |
 |---|---|
-| Objective | Expand startup recovery from `reckoning_lobby` into staged endgame phase-boundary coordinates without claiming support for accumulator-heavy defense state. |
+| Objective | Expand startup recovery from `reckoning_lobby` into staged endgame phase-boundary coordinates without claiming support for accumulator-heavy defense state. Accusation Capsule V1 later retired that defense-state TODO. |
 | Product authority | The resiliency track in `STRATEGY.md`, current support and gaps in `docs/statefulness-plan.md`, and the endgame continuation ideas in `docs/ideation/2026-06-29-backend-durability-scalability-ideation.html`. |
 | Execution profile | Backend engine/API code work with DB-backed same-game recovery tests. |
-| Stop conditions | Stop and ask before enabling `tribunal_defense`, reconstructing `_currentAccusations` from transcript prose, changing public recovery UX, or widening recovery beyond completed phase-boundary startup resume. |
-| Tail ownership | After staged endgame coverage lands, Accusation Capsule V1 / full accumulator support becomes the next durability task for `tribunal_defense`. |
+| Stop conditions | For the original staged slice: stop and ask before enabling `tribunal_defense`, reconstructing `_currentAccusations` from transcript prose, changing public recovery UX, or widening recovery beyond completed phase-boundary startup resume. |
+| Tail ownership | Completed after this plan: Accusation Capsule V1 added structured `_currentAccusations` support for `tribunal_defense`. Durable TODO docs must be updated when work like this lands. |
 
 ---
 
@@ -29,7 +29,7 @@ execution: code
 
 Implement staged endgame resume coverage by extending the existing actor-coordinate recovery contract, endgame phase hydration, shared support predicate, and DB-backed recovery matrix.
 The plan covers Reckoning pair, Tribunal entry, Judgment finale, and `tribunal_vote` only behind a proven post-defense accusation drain.
-`tribunal_defense` remains fail-closed until Accusation Capsule V1 or equivalent full accumulator support exists.
+This original staged plan kept `tribunal_defense` fail-closed until Accusation Capsule V1 or equivalent full accumulator support existed. That follow-up has since landed through a structured `currentAccusations` accumulator payload sealed to the checkpoint boundary.
 
 ### Problem Frame
 
@@ -46,7 +46,7 @@ Resuming that boundary without a typed accumulator contract would turn transcrip
 
 - **Stage the endgame surface by accumulator risk.** Add coordinates that can be recovered from canonical game state plus checkpoint evidence before touching `tribunal_defense`.
 - **Treat `tribunal_vote` as conditional, not assumed.** It enters the supported set only if implementation proves the accusation map is drained, cleared, or irrelevant after defense.
-- **Make the accumulator slice the next named TODO.** Accusation Capsule V1 is deferred from this staged expansion, but it is not optional cleanup; it is the required follow-up to unlock `tribunal_defense` and future accumulator-heavy boundaries.
+- **Retire accumulator TODOs when they land.** Accusation Capsule V1 was deferred from this staged expansion, then implemented as the structured follow-up to unlock `tribunal_defense`. The durable docs/refactor queue must move completed slices out of "next TODO" status in the same branch.
 - **Keep one executable truth predicate.** Durable inspection and startup recovery must agree on supported coordinates, accumulator safety, actor prerequisites, and event-head freshness.
 - **Verify by interruption, not by inspection alone.** Every newly advertised coordinate needs the same DB-backed proof: interrupt, startup-recover, append contiguous events, and complete the same game.
 
@@ -70,7 +70,7 @@ flowchart TB
   E --> F["hydrate phase actor to endgame coordinate"]
   F --> G["continue same game"]
   G --> H["write normal completed results"]
-  C --> I["Accusation Capsule V1 remains next TODO for tribunal_defense"]
+  C --> I["unsupported boundary stays suspended until it has a structured contract"]
 ```
 
 ### Requirements
@@ -85,10 +85,10 @@ flowchart TB
 
 **Fail-closed accumulator boundary**
 
-- R6. `tribunal_defense` must remain unsupported in this staged expansion.
+- R6. In this staged expansion, exclude `tribunal_defense` until Accusation Capsule V1 or equivalent structured accumulator support exists. Current code now supports it through Accusation Capsule V1.
 - R7. Any checkpoint that needs `_currentAccusations` must fail closed unless the value is persisted or reconstructed through a structured runtime contract.
 - R8. Transcript prose, private trace text, and public dialogue must not become the authority for rebuilding accusation-map state.
-- R9. The docs must identify Accusation Capsule V1, or an equivalent full accumulator slice, as the next necessary durability TODO after this staged endgame expansion.
+- R9. The docs must identify Accusation Capsule V1, or an equivalent full accumulator slice, as the required follow-up after this staged endgame expansion, then retire that TODO when the follow-up lands.
 
 **Recovery operation**
 
@@ -107,7 +107,7 @@ flowchart TB
 **Verification**
 
 - R18. DB-backed recovery tests must cover every newly supported endgame coordinate with interrupt, startup recovery, contiguous post-restart events, unchanged game ID, and completed results.
-- R19. Negative tests must cover `tribunal_defense`, unsafe `currentAccusations`, unsupported coordinates, stale event heads, missing transcript replay, and missing token cursor payloads.
+- R19. Negative tests for the staged slice must cover `tribunal_defense`, unsafe `currentAccusations`, unsupported coordinates, stale event heads, missing transcript replay, and missing token cursor payloads. After Accusation Capsule V1, the `tribunal_defense` case moves to the positive recovery matrix and unsafe accumulator coverage remains negative.
 - R20. `tribunal_vote` tests must prove either safe accumulator drain or continued fail-closed behavior.
 - R21. Documentation updates must make the staged slice and the required follow-up accumulator slice visible from `docs/statefulness-plan.md` and the refactor queue.
 
@@ -117,14 +117,14 @@ flowchart TB
 - AE2. **Covers R3, R6-R8, R13-R14, R19.** Given a game is suspended at `tribunal_accusation` with a blocked `currentAccusations` entry, when inspection and startup recovery evaluate it, then `resumeAvailable` is false and no recovery owner appends events.
 - AE3. **Covers R5, R20.** Given a game is suspended at `tribunal_vote`, when the implementation cannot prove the accusation map is drained or irrelevant, then the coordinate remains unsupported.
 - AE4. **Covers R4, R15-R18.** Given a game is suspended at a Judgment finale boundary with valid finalist and jury prerequisites, when startup recovery runs, then the same game finishes through the normal jury-result path.
-- AE5. **Covers R6-R9, R19, R21.** Given a planner reads the docs after this brainstorm, when they look for the next durability task, then Accusation Capsule V1 is named as the required follow-up to unlock `tribunal_defense`.
+- AE5. **Covers R6-R9, R19, R21.** Given a planner reads the docs after this brainstorm, when they look for durability work, then Accusation Capsule V1 is named as the required follow-up until it lands, and completed TODO breadcrumbs are updated afterward.
 
 ### Success Criteria
 
 - The recovery matrix proves same-game completion from each newly advertised endgame coordinate.
 - Durable inspection and startup recovery agree on `resumeAvailable` for every supported and unsupported coordinate in the matrix.
-- `tribunal_defense` remains fail-closed with an explicit diagnostic reason until `_currentAccusations` has a structured persisted or reconstructed form.
-- The statefulness plan and refactor queue both name the full accumulator slice as the next necessary TODO, not as a vague future idea.
+- `tribunal_defense` remains fail-closed with an explicit diagnostic reason until `_currentAccusations` has a structured persisted or reconstructed form. Current code now satisfies this through Accusation Capsule V1.
+- The statefulness plan and refactor queue both name the full accumulator slice as the follow-up while it is open, then remove it from the active queue when implemented.
 
 ### Scope Boundaries
 
@@ -132,7 +132,7 @@ flowchart TB
 
 - Reckoning pair support, Tribunal entry support, Judgment finale support, conditional `tribunal_vote` support, actor-coordinate prerequisites, endgame phase-actor hydration, shared recovery predicate alignment, DB-backed recovery matrix expansion, and docs that point to the accumulator follow-up.
 
-#### Deferred to Follow-Up Work
+#### Completed Follow-Up Work
 
 - Accusation Capsule V1 or equivalent full accumulator work for `_currentAccusations`, `tribunal_defense`, and the repeatable pattern for future accumulator-heavy boundaries.
 - Any implementation that serializes accusation payloads into Runtime Snapshot v1 must be planned separately so privacy, validation, compatibility, and recovery authority are reviewed directly.
@@ -144,7 +144,7 @@ flowchart TB
 ### Dependencies / Assumptions
 
 - Existing startup recovery support through `reckoning_lobby` remains the baseline.
-- Canonical `GameState` plus transcript replay can supply the social context for Reckoning and Judgment, but not the missing `tribunal_defense` accusation map.
+- Canonical `GameState` plus transcript replay can supply the social context for Reckoning and Judgment, but accumulator-heavy boundaries such as `tribunal_defense` need a structured runtime contract. Accusation Capsule V1 supplies that contract for `_currentAccusations`.
 - The accumulator registry remains authoritative for safe, drained, blocked, or unsafe runner-local state.
 - Planning may split the staged endgame support into multiple PRs as long as no coordinate advertises `resumeAvailable` before it has executable support and DB-backed proof.
 
@@ -184,7 +184,7 @@ Requirements, acceptance examples, success criteria, and scope boundaries remain
 - KTD2. **Endgame hydration is a ladder over phase-machine coordinates.** Extend `hydratePhaseActorForResume` into readable coordinate steps that advance the actor with machine events derived from canonical events and rebuilt `GameState`, never by re-running completed phase runners.
 - KTD3. **Prerequisites live beside the shared support predicate.** `evaluateSupportedRecovery` should reject each endgame coordinate when alive counts, endgame stage, finalist/jury state, event head, transcript replay, token cursor, or accumulator safety are missing.
 - KTD4. **`tribunal_vote` is unlocked by drain proof.** Clear or mark `_currentAccusations` drained only after `runTribunalDefense` finishes, then let the existing accumulator registry prove the `tribunal_vote` boundary is safe.
-- KTD5. **`tribunal_defense` stays a negative case.** Support must reject `tribunal_defense` until Accusation Capsule V1 or equivalent structured accumulator reconstruction exists.
+- KTD5. **`tribunal_defense` stays a negative case until the accumulator contract lands.** Support must reject `tribunal_defense` until Accusation Capsule V1 or equivalent structured accumulator reconstruction exists. Current code now supports it through Accusation Capsule V1.
 - KTD6. **Recovery tests are the release gate.** Inspection-only proof is not enough; every new coordinate needs the existing interrupt, suspend, startup recovery, contiguous events, and completed-results assertion path.
 
 ### High-Level Technical Design
@@ -209,12 +209,14 @@ flowchart TB
   D --> E["tribunal_lobby"]
   E --> F["tribunal_accusation"]
   F --> G{"currentAccusations needed?"}
-  G -->|yes| H["tribunal_defense remains unsupported"]
-  G -->|no, after defense drain| I["tribunal_vote"]
-  I --> J["judgment_opening"]
-  J --> K["judgment_jury_questions"]
-  K --> L["judgment_closing"]
-  L --> M["judgment_jury_vote"]
+  G -->|yes, before Accusation Capsule V1| H["tribunal_defense gated"]
+  G -->|yes, with Accusation Capsule V1| I["tribunal_defense"]
+  G -->|no, after defense drain| J["tribunal_vote"]
+  I --> J
+  J --> K["judgment_opening"]
+  K --> L["judgment_jury_questions"]
+  L --> M["judgment_closing"]
+  M --> N["judgment_jury_vote"]
 ```
 
 ### Sequencing
@@ -245,9 +247,9 @@ flowchart TB
 
 - **Engine:** The phase actor hydration contract and accumulator registry determine what the runner can honestly resume.
 - **API recovery:** Startup recovery, durable inspection, and owner-backed continuation must stay aligned on one support predicate.
-- **Data durability:** No schema change is planned for staged coverage because accumulator payload persistence is deferred to Accusation Capsule V1.
+- **Data durability:** No schema change is planned for staged coverage because accumulator payload persistence was deferred to Accusation Capsule V1. The follow-up now persists the structured accusation payload in Runtime Snapshot accumulator evidence.
 - **Operations:** Restart recovery remains single-process startup recovery; no multi-worker lease or deploy-drain semantics change in this plan.
-- **Documentation:** `docs/statefulness-plan.md` and `docs/refactor-queue.md` must clearly show staged coverage and the accumulator follow-up.
+- **Documentation:** `docs/statefulness-plan.md` and `docs/refactor-queue.md` must clearly show staged coverage, accumulator follow-up status, and any durable TODOs retired by implementation.
 
 ---
 
@@ -255,16 +257,16 @@ flowchart TB
 
 ### U1. Extend The Supported Coordinate Contract
 
-- **Goal:** Add the staged endgame actor coordinates that are already accumulator-safe to the exported resume-coordinate union while leaving `tribunal_defense` out and keeping `tribunal_vote` gated by U4.
+- **Goal:** Add the staged endgame actor coordinates that are already accumulator-safe to the exported resume-coordinate union. The original staged slice left `tribunal_defense` out; Accusation Capsule V1 later added it with structured accumulator support.
 - **Requirements:** R1-R6, R14, R21.
 - **Dependencies:** None.
 - **Files:** `packages/engine/src/game-runner.types.ts`, `packages/engine/src/index.ts`, `packages/api/src/services/game-recovery-support.ts`, `packages/api/src/__tests__/game-recovery.test.ts`.
-- **Approach:** Extend `PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES` with `reckoning_plea`, `reckoning_vote`, `tribunal_lobby`, `tribunal_accusation`, `judgment_opening`, `judgment_jury_questions`, `judgment_closing`, and `judgment_jury_vote`. Keep `tribunal_defense` absent, and add `tribunal_vote` only through U4 once the accusation-drain proof exists, so existing unsupported-coordinate handling remains the first guardrail.
+- **Approach:** For the original staged slice, extend `PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES` with `reckoning_plea`, `reckoning_vote`, `tribunal_lobby`, `tribunal_accusation`, `judgment_opening`, `judgment_jury_questions`, `judgment_closing`, and `judgment_jury_vote`. Keep `tribunal_defense` absent until Accusation Capsule V1 exists, and add `tribunal_vote` only through U4 once the accusation-drain proof exists, so unsupported-coordinate handling remains the first guardrail.
 - **Patterns to follow:** Current coordinate export from `packages/engine/src/game-runner.types.ts` and API support-set construction in `packages/api/src/services/game-recovery-support.ts`.
 - **Test scenarios:**
-  - Supported-coordinate type coverage accepts the new staged endgame coordinate list and still rejects `tribunal_defense`.
+  - Supported-coordinate type coverage accepts the new staged endgame coordinate list and rejects `tribunal_defense` before Accusation Capsule V1.
   - `tribunal_vote` remains rejected until U4 proves the post-defense accumulator drain.
-  - The existing unsupported-coordinate test is retargeted or extended so `tribunal_defense` remains rejected with an unsupported actor coordinate reason.
+  - The existing unsupported-coordinate test is retargeted or extended so the staged slice keeps an unsupported actor coordinate negative case. After Accusation Capsule V1, that negative fixture should use another unsupported coordinate.
   - Durable inspection reports `resumeAvailable: false` for a checkpoint whose actor coordinate is not in the exported union.
 - **Verification:** The coordinate union, API support set, and negative test expectations agree.
 
@@ -311,7 +313,7 @@ flowchart TB
 - **Test scenarios:**
   - Covers AE3. A `tribunal_vote` checkpoint with `currentAccusations` still blocked remains unsupported.
   - Covers AE3. After defense completes and the accumulator is cleared, a `tribunal_vote` checkpoint reports `resumeAvailable: true`.
-  - `tribunal_defense` remains unsupported even though `tribunal_vote` can become supported.
+  - Before Accusation Capsule V1, `tribunal_defense` is excluded even though `tribunal_vote` can become supported. After Accusation Capsule V1, `tribunal_defense` moves to the positive recovery matrix.
   - Clearing accusations does not remove public defense transcript entries or structured defense agent-turn evidence.
 - **Verification:** `tribunal_vote` support is tied to accumulator proof, not to a hard-coded exception.
 
@@ -321,7 +323,7 @@ flowchart TB
 - **Requirements:** R18-R20, AE1-AE4.
 - **Dependencies:** U1-U4.
 - **Files:** `packages/api/src/__tests__/game-recovery.test.ts`, `packages/api/src/__tests__/durable-run-test-utils.ts`, `packages/api/src/services/game-lifecycle.ts`.
-- **Approach:** Extend the existing supported-coordinate matrix and the `reckoning_lobby` endgame test into a generated endgame matrix. Each positive case should interrupt at the target boundary, mark the game suspended, assert inspection support, run startup recovery, and assert one completed result under a fresh owner. Negative cases should cover `tribunal_defense`, blocked `currentAccusations`, unsupported actor coordinates, stale event heads, missing transcript replay, and missing token cursor payloads.
+- **Approach:** Extend the existing supported-coordinate matrix and the `reckoning_lobby` endgame test into a generated endgame matrix. Each positive case should interrupt at the target boundary, mark the game suspended, assert inspection support, run startup recovery, and assert one completed result under a fresh owner. Negative cases should cover blocked `currentAccusations`, unsupported actor coordinates, stale event heads, missing transcript replay, and missing token cursor payloads; before Accusation Capsule V1, `tribunal_defense` was also a negative case.
 - **Patterns to follow:** `interruptGameAtBoundary`, `assertRecoveredGameCompleted`, and existing fail-closed tests in `packages/api/src/__tests__/game-recovery.test.ts`.
 - **Test scenarios:**
   - Covers AE1. `reckoning_plea` and `reckoning_vote` recover to completed results.
@@ -333,14 +335,14 @@ flowchart TB
 
 ### U6. Update Durable Resume Documentation
 
-- **Goal:** Keep operational docs aligned with the implemented support set and the still-blocked accumulator work.
+- **Goal:** Keep operational docs aligned with the implemented support set and retire completed accumulator work from durable TODO lists.
 - **Requirements:** R9, R21, AE5.
 - **Dependencies:** U1-U5.
 - **Files:** `docs/statefulness-plan.md`, `docs/refactor-queue.md`, `docs/solutions/runtime-errors/api-startup-recovery-resumes-interrupted-games.md`, `docs/ideation/2026-06-29-backend-durability-scalability-ideation.html`, `CONCEPTS.md`.
-- **Approach:** Update the supported actor-coordinate list, known gaps, and priority ordering after implementation. Preserve the loud Accusation Capsule V1 follow-up and add a `CONCEPTS.md` entry only if implementation introduces a new domain term beyond existing accumulator/runtime snapshot vocabulary.
+- **Approach:** Update the supported actor-coordinate list, known gaps, and priority ordering after implementation. Preserve the Accusation Capsule V1 follow-up while it is open, then retire it from the active queue when implemented. Add a `CONCEPTS.md` entry only if implementation introduces a new domain term beyond existing accumulator/runtime snapshot vocabulary.
 - **Patterns to follow:** Current 2026-06-29 and 2026-06-30 statefulness notes, plus the solution learning's prevention checklist.
 - **Test scenarios:** Test expectation: none -- this unit is documentation-only.
-- **Verification:** Docs name every supported endgame coordinate, state that `tribunal_defense` remains blocked, and point to Accusation Capsule V1 as the next necessary durability task.
+- **Verification:** Docs name every supported endgame coordinate, state the current `tribunal_defense` status accurately, and do not leave completed Accusation Capsule V1 work listed as the next necessary durability task.
 
 ---
 
@@ -360,11 +362,11 @@ If a sandboxed run reports connection refusal, rerun with the proper local DB ac
 
 ## Definition of Done
 
-- `PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES` includes the staged endgame coordinates and excludes `tribunal_defense`.
+- `PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES` includes the staged endgame coordinates. Before Accusation Capsule V1 it excludes `tribunal_defense`; after Accusation Capsule V1 it includes `tribunal_defense` with structured accumulator validation.
 - `GameRunner` hydrates each supported endgame coordinate without re-running completed phase effects.
 - `evaluateSupportedRecovery`, `checkpointHasImplementedResumeSupport`, durable inspection, and startup recovery agree on support truth.
 - `tribunal_vote` is supported only when the accusation accumulator is proven empty or drained after defense.
-- `tribunal_defense` and unsafe `currentAccusations` checkpoints remain fail-closed without appending events.
+- Unsafe `currentAccusations` checkpoints remain fail-closed without appending events. `tribunal_defense` remains fail-closed only until Accusation Capsule V1 exists.
 - DB-backed recovery tests prove same-game completion, contiguous event sequences, one fresh recovery owner, and one completed result for every supported coordinate.
-- `docs/statefulness-plan.md`, `docs/refactor-queue.md`, and the startup-recovery solution note match the implemented support set and keep Accusation Capsule V1 as the next durability task.
+- `docs/statefulness-plan.md`, `docs/refactor-queue.md`, and the startup-recovery solution note match the implemented support set and retire completed Accusation Capsule V1 work from the active durability queue.
 - Abandoned implementation experiments and temporary test scaffolding are removed from the final diff.

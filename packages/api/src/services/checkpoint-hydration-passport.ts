@@ -103,6 +103,7 @@ const TOKEN_USAGE_KEYS = [
 const ACCUMULATOR_STATUSES = new Set([
   "empty",
   "drained",
+  "captured",
   "blocked",
   "malformed",
   "not_v1_hydratable",
@@ -111,6 +112,7 @@ const ACCUMULATOR_STATUSES = new Set([
 const ACCUMULATOR_PROOF_KINDS = new Set([
   "empty_at_boundary",
   "drained_at_boundary",
+  "captured_at_boundary",
   "not_applicable_at_boundary",
 ]);
 
@@ -244,7 +246,7 @@ function validateActorWitness(
 }
 
 function accumulatorStatusNeedsProof(status: string): boolean {
-  return status === "empty" || status === "drained" || status === "not_v1_hydratable";
+  return status === "empty" || status === "drained" || status === "captured" || status === "not_v1_hydratable";
 }
 
 function expectedAccumulatorProofKind(status: string): string | null {
@@ -253,6 +255,8 @@ function expectedAccumulatorProofKind(status: string): string | null {
       return "empty_at_boundary";
     case "drained":
       return "drained_at_boundary";
+    case "captured":
+      return "captured_at_boundary";
     case "not_v1_hydratable":
       return "not_applicable_at_boundary";
     default:
@@ -260,9 +264,62 @@ function expectedAccumulatorProofKind(status: string): string | null {
   }
 }
 
+function validateCurrentAccusationsAccumulator(
+  payload: unknown,
+  input: DerivePassportInput,
+  expectedPlayerIds: readonly string[] | null,
+): { status: PassportStampStatus; reason?: string } {
+  if (!isRecord(payload) || payload.version !== 1) {
+    return { status: "malformed", reason: "currentAccusations payload is not a valid v1 object" };
+  }
+  const boundary = parseBoundaryIdentity(payload.boundary);
+  if (!boundary) {
+    return { status: "malformed", reason: "currentAccusations payload boundary identity is malformed" };
+  }
+  if (!boundaryMatchesRow(boundary, input)) {
+    return { status: "failed", reason: "currentAccusations payload boundary identity does not match checkpoint row" };
+  }
+  if (!expectedPlayerIds) {
+    return { status: "failed", reason: "currentAccusations payload cannot validate active player ids" };
+  }
+  const activeIds = new Set(expectedPlayerIds);
+  if (!Array.isArray(payload.items)) {
+    return { status: "malformed", reason: "currentAccusations payload items are malformed" };
+  }
+  if (payload.items.length === 0) {
+    return { status: "failed", reason: "currentAccusations payload captured no accusation items" };
+  }
+  const seenTargets = new Set<string>();
+  for (const item of payload.items) {
+    if (!isRecord(item) ||
+        typeof item.targetId !== "string" ||
+        typeof item.targetName !== "string" ||
+        typeof item.accuserId !== "string" ||
+        typeof item.accuserName !== "string" ||
+        typeof item.accusation !== "string") {
+      return { status: "malformed", reason: "currentAccusations payload item is malformed" };
+    }
+    if (!activeIds.has(item.targetId) || !activeIds.has(item.accuserId)) {
+      return { status: "failed", reason: "currentAccusations payload references a non-active player" };
+    }
+    if (item.targetName.trim().length === 0 ||
+        item.accuserName.trim().length === 0 ||
+        item.accusation.trim().length === 0) {
+      return { status: "failed", reason: "currentAccusations payload contains empty player names or accusation content" };
+    }
+    if (seenTargets.has(item.targetId)) {
+      return { status: "failed", reason: "currentAccusations payload contains duplicate target ids" };
+    }
+    seenTargets.add(item.targetId);
+  }
+  return { status: "passed" };
+}
+
 function validateAccumulatorRegistry(
   registry: unknown,
   input: DerivePassportInput,
+  expectedPlayerIds: readonly string[] | null,
+  actorCoordinate: string | null,
 ): { status: PassportStampStatus; reason?: string } {
   if (registry == null) {
     return { status: "missing", reason: "accumulator registry absent" };
@@ -315,6 +372,17 @@ function validateAccumulatorRegistry(
     const expectedProofKind = expectedAccumulatorProofKind(entry.status);
     if (expectedProofKind && isRecord(entry.proof) && entry.proof.kind !== expectedProofKind) {
       return { status: "failed", reason: `accumulator ${entry.id} status ${entry.status} has mismatched proof kind` };
+    }
+    if (entry.status === "captured") {
+      if (entry.id !== "currentAccusations") {
+        return { status: "failed", reason: `accumulator ${entry.id} cannot use captured status` };
+      }
+      if (actorCoordinate !== "tribunal_defense") {
+        return { status: "failed", reason: "currentAccusations captured payload is only valid at tribunal_defense" };
+      }
+      const payloadResult = validateCurrentAccusationsAccumulator(entry.payload, input, expectedPlayerIds);
+      if (payloadResult.status !== "passed") return payloadResult;
+      continue;
     }
     if (entry.status === "blocked" || entry.status === "malformed") {
       return { status: "failed", reason: `accumulator ${entry.id} is ${entry.status}` };
@@ -532,8 +600,16 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
     expectedPlayers.status === "passed" ? expectedPlayers.ids : null,
   );
   addStamp("actorWitness", actorResult.status, actorResult.reason);
+  const actorCoordinate = isRecord(runtimeSnapshot?.actorWitness) && typeof runtimeSnapshot.actorWitness.actorCoordinate === "string"
+    ? runtimeSnapshot.actorWitness.actorCoordinate
+    : null;
 
-  const accumulatorResult = validateAccumulatorRegistry(runtimeSnapshot?.accumulatorRegistry, input);
+  const accumulatorResult = validateAccumulatorRegistry(
+    runtimeSnapshot?.accumulatorRegistry,
+    input,
+    expectedPlayers.status === "passed" ? expectedPlayers.ids : null,
+    actorCoordinate,
+  );
   addStamp("accumulatorRegistry", accumulatorResult.status, accumulatorResult.reason);
 
   const transcriptResult = validateTranscriptWatermark(
