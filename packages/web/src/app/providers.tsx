@@ -1,6 +1,14 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   RuntimeConfigProvider,
   useRuntimeConfig,
@@ -53,6 +61,14 @@ const E2EAuthContext = createContext<E2EAuthState>({
 
 export function useE2EAuth(): E2EAuthState {
   return useContext(E2EAuthContext);
+}
+
+function subscribeToE2EMode(): () => void {
+  return () => {};
+}
+
+function useIsE2EMode(): boolean {
+  return useSyncExternalStore(subscribeToE2EMode, isE2EMode, () => false);
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +139,7 @@ function AuthSync({ children }: { children: React.ReactNode }) {
     });
   }, [authenticated, getAccessToken, e2e.isE2E]);
 
-  const submitInvite = async (inviteCode: string) => {
+  const submitInvite = useCallback(async (inviteCode: string) => {
     if (!pendingPrivyToken) return;
     setSubmitting(true);
     setInviteError(null);
@@ -146,7 +162,7 @@ function AuthSync({ children }: { children: React.ReactNode }) {
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [pendingPrivyToken]);
 
   useEffect(() => {
     if (e2e.isE2E) return;
@@ -164,7 +180,7 @@ function AuthSync({ children }: { children: React.ReactNode }) {
     submitInvite,
     inviteError,
     submitting,
-  }), [needsInvite, inviteError, submitting, pendingPrivyToken]);
+  }), [needsInvite, submitInvite, inviteError, submitting]);
 
   return (
     <InviteContext.Provider value={inviteState}>
@@ -197,11 +213,7 @@ export function Providers({
 
 function InnerProviders({ children }: { children: React.ReactNode }) {
   const runtimeConfig = useRuntimeConfig();
-  const [e2e, setE2e] = useState(false);
-
-  useEffect(() => {
-    setE2e(isE2EMode());
-  }, []);
+  const e2e = useIsE2EMode();
 
   const privyAppId = e2e
     ? E2E_PRIVY_APP_ID

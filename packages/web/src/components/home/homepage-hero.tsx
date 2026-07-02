@@ -152,11 +152,13 @@ export function HomepageHero() {
 
         setDailyStat(stats.dailyStat);
         setOpenStats(stats.openStats);
+        setActiveOpenIndex(0);
       })
       .catch(() => {
         if (!cancelled) {
           setDailyStat(null);
           setOpenStats([]);
+          setActiveOpenIndex(0);
         }
       });
 
@@ -164,10 +166,6 @@ export function HomepageHero() {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    setActiveOpenIndex(0);
-  }, [openStats.length]);
 
   useEffect(() => {
     if (openStats.length <= 1 || openRotationPaused) return;
