@@ -2,33 +2,23 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   listAgents,
-  createAgent,
-  updateAgent,
   deleteAgent,
   requestAgentAvatarGeneration,
   getAgentAvatarGenerations,
   getAuthToken,
   type SavedAgent,
-  type CreateAgentParams,
   type AvatarCompletion,
 } from "@/lib/api";
-import { AgentForm } from "./agent-form";
 import { AgentList } from "./agent-list";
 import { isAvatarCompletionPending } from "./avatar-completion";
 
-type View = "list" | "create" | "edit";
-
-interface AgentsContentProps {
-  initialView?: "create";
-}
-
-export function AgentsContent({ initialView }: AgentsContentProps) {
+export function AgentsContent() {
+  const router = useRouter();
   const [agents, setAgents] = useState<SavedAgent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<View>(initialView ?? "list");
-  const [editTarget, setEditTarget] = useState<SavedAgent | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<SavedAgent | null>(null);
   const [avatarCompletions, setAvatarCompletions] = useState<Record<string, AvatarCompletion>>({});
   const [avatarGenerationBusy, setAvatarGenerationBusy] = useState<Record<string, boolean>>({});
@@ -116,20 +106,6 @@ export function AgentsContent({ initialView }: AgentsContentProps) {
     };
   }, [avatarCompletions, fetchAgents]);
 
-  async function handleCreate(params: CreateAgentParams) {
-    await createAgent(params);
-    setView("list");
-    fetchAgents();
-  }
-
-  async function handleUpdate(params: CreateAgentParams) {
-    if (!editTarget) return;
-    await updateAgent(editTarget.id, params);
-    setEditTarget(null);
-    setView("list");
-    fetchAgents();
-  }
-
   async function handleDelete(agent: SavedAgent) {
     setError(null);
     try {
@@ -174,14 +150,12 @@ export function AgentsContent({ initialView }: AgentsContentProps) {
             Create and manage your saved agents. Use them to quickly join games.
           </p>
         </div>
-        {view === "list" && (
-          <button
-            onClick={() => setView("create")}
-            className="influence-button-primary text-sm px-4 py-2 rounded-lg font-medium"
-          >
-            + New Agent
-          </button>
-        )}
+        <Link
+          href="/dashboard/agents/create"
+          className="influence-button-primary text-sm px-4 py-2 rounded-lg font-medium"
+        >
+          + New Agent
+        </Link>
       </div>
 
       {/* Error */}
@@ -191,65 +165,29 @@ export function AgentsContent({ initialView }: AgentsContentProps) {
         </p>
       )}
 
-      {/* Create form */}
-      {view === "create" && (
-        <div className="influence-panel rounded-xl p-6">
-          <h2 className="text-lg font-semibold text-text-primary mb-4">Create Agent</h2>
-          <AgentForm
-            onSubmit={handleCreate}
-            onCancel={() => setView("list")}
-            submitLabel="Create Agent"
-          />
+      {loading ? (
+        <div className="influence-empty-state rounded-xl p-8 text-center text-sm">
+          Loading...
         </div>
-      )}
-
-      {/* Edit form */}
-      {view === "edit" && editTarget && (
-        <div className="influence-panel rounded-xl p-6">
-          <h2 className="text-lg font-semibold text-text-primary mb-4">Edit Agent</h2>
-          <AgentForm
-            initial={editTarget}
-            onSubmit={handleUpdate}
-            onCancel={() => {
-              setEditTarget(null);
-              setView("list");
-            }}
-            submitLabel="Save Changes"
-          />
+      ) : fetchError ? (
+        <div className="rounded-xl p-8 text-center border border-red-400/30 bg-red-400/10">
+          <p className="text-red-400 text-sm">{fetchError}</p>
+          <button
+            onClick={fetchAgents}
+            className="mt-3 text-xs influence-copy hover:text-text-primary underline transition-colors"
+          >
+            Retry
+          </button>
         </div>
-      )}
-
-      {/* List view */}
-      {view === "list" && (
-        <>
-          {loading ? (
-            <div className="influence-empty-state rounded-xl p-8 text-center text-sm">
-              Loading...
-            </div>
-          ) : fetchError ? (
-            <div className="rounded-xl p-8 text-center border border-red-400/30 bg-red-400/10">
-              <p className="text-red-400 text-sm">{fetchError}</p>
-              <button
-                onClick={fetchAgents}
-                className="mt-3 text-xs influence-copy hover:text-text-primary underline transition-colors"
-              >
-                Retry
-              </button>
-            </div>
-          ) : (
-            <AgentList
-              agents={agents}
-              avatarCompletions={avatarCompletions}
-              avatarGenerationBusy={avatarGenerationBusy}
-              onGenerateAvatar={handleGenerateAvatar}
-              onEdit={(agent) => {
-                setEditTarget(agent);
-                setView("edit");
-              }}
-              onDelete={(agent) => setDeleteConfirm(agent)}
-            />
-          )}
-        </>
+      ) : (
+        <AgentList
+          agents={agents}
+          avatarCompletions={avatarCompletions}
+          avatarGenerationBusy={avatarGenerationBusy}
+          onGenerateAvatar={handleGenerateAvatar}
+          onEdit={(agent) => router.push(`/dashboard/agents/${agent.id}/edit`)}
+          onDelete={(agent) => setDeleteConfirm(agent)}
+        />
       )}
 
       {/* Delete confirmation modal */}

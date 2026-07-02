@@ -237,7 +237,7 @@ describe("dashboard mission-control overview", () => {
     });
 
     expect(html).toContain("Create your first agent");
-    expect(html).toContain('href="/dashboard/agents?view=create"');
+    expect(html).toContain('href="/dashboard/agents/create"');
     expect(html).toContain("No saved agents yet");
   });
 

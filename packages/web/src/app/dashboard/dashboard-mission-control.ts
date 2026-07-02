@@ -164,7 +164,7 @@ function choosePrimaryAction(input: {
       kind: "create-agent",
       label: "Create your first agent",
       description: "Build a competitor before joining games.",
-      href: "/dashboard/agents?view=create",
+      href: "/dashboard/agents/create",
     };
   }
 

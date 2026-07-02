@@ -1030,6 +1030,10 @@ export async function listAgents(): Promise<SavedAgent[]> {
   return apiFetch("/api/agent-profiles");
 }
 
+export async function getAgent(id: string): Promise<SavedAgent> {
+  return apiFetch(`/api/agent-profiles/${id}`);
+}
+
 export async function createAgent(
   params: CreateAgentParams,
 ): Promise<SavedAgent> {

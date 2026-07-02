@@ -85,7 +85,7 @@ export function DashboardAgentBench({ agents, loading, error }: DashboardAgentBe
           <p className="influence-copy-muted mt-1 text-xs">Saved competitors</p>
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          <Link href="/dashboard/agents?view=create" className="influence-link text-xs">
+          <Link href="/dashboard/agents/create" className="influence-link text-xs">
             Create
           </Link>
           <Link href="/dashboard/agents" className="influence-link text-xs">
@@ -104,7 +104,7 @@ export function DashboardAgentBench({ agents, loading, error }: DashboardAgentBe
         <div className="influence-panel-dashed rounded-lg p-6 text-center">
           <p className="influence-copy text-sm">No saved agents yet</p>
           <p className="influence-copy-muted mt-1 text-xs">Create a competitor before joining games.</p>
-          <Link href="/dashboard/agents?view=create" className="influence-button-primary mt-4 inline-flex rounded-lg px-4 py-2 text-xs font-medium">
+          <Link href="/dashboard/agents/create" className="influence-button-primary mt-4 inline-flex rounded-lg px-4 py-2 text-xs font-medium">
             Create an agent
           </Link>
         </div>

@@ -107,7 +107,7 @@ describe("buildDashboardMissionControl", () => {
     });
 
     expect(control.primaryAction.kind).toBe("create-agent");
-    expect(control.primaryAction.href).toBe("/dashboard/agents?view=create");
+    expect(control.primaryAction.href).toBe("/dashboard/agents/create");
     expect(control.agentPreview).toEqual([]);
   });
 
