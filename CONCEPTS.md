@@ -140,11 +140,27 @@ The public-by-URL postgame review surface for completed games. Its authoritative
 
 ## Postgame analysis projection
 
-A compact LLM-facing read model for completed-game analysis. It composes completed-results facts, revealed round facts, player rows, jury ledger, vote-pattern hints, diagnostics, and optional producer evidence into token-efficient MCP/API payloads. Its player-safe form is rebuilt from canonical facts and must not include raw events, source pointers, private traces, prompts, private reasoning, or hidden strategy artifacts.
+A compact LLM-facing read model for completed-game analysis. It composes completed-results facts, revealed round facts, player rows, jury ledger, vote-pattern hints, diagnostics, and optional producer evidence into token-efficient MCP/API payloads. Its player-safe form is rebuilt from canonical facts and must not include raw events, source pointers, private traces, prompts, private reasoning, or hidden strategy artifacts. V2 postgame payloads start with a deterministic `executiveSummary` of at most five derived text facts, then expose round summaries, highlighted eliminations, derived vote cohorts, game momentum, jury narrative, player summaries, turning points, and diagnostics. Every derived object carries derivation confidence; confidence describes the derivation, not the canonical fact.
+
+## Highlighted elimination
+
+A deterministic postgame elimination highlight selected by documented rules: first elimination, final pre-jury elimination, first jury member, endgame elimination, winner's final opponent, top empowered player, or top exposed player. `highlightedEliminations` replaces the ambiguous `majorEliminations` name; old payloads may keep `majorEliminations` as a temporary compatibility alias. A highlighted elimination is not a strategic claim about why the player was targeted.
+
+## Derived vote cohort
+
+A public postgame signal built from repeated shared majority-vote outcomes. Current v2 cohorts start from repeated visible majority-vote pairings, then consolidate them into the largest public shared-vote groups for the same observed rounds. They expose `size`, first/last observed round, `sharedVotes`, `cohesionScore`, confidence, and the explicit note that this is not confirmed alliance membership. Cohorts never imply hidden knowledge, private coordination, or producer-only alliance hypotheses.
+
+## Game momentum segment
+
+A sparse postgame flow marker derived from objective visible indicators such as repeated empowerment, repeated majority-vote pairing, and the final jury result. Momentum segments explain where visible control or outcome state changed; they are not strategy speculation.
+
+## Player overall game shape
+
+A conservative deterministic label on a postgame player summary, such as `power player`, `social survivor`, `under the radar`, `swing voter`, `consensus target`, or `jury favorite`. Each label is threshold-based from visible counts such as empowered rounds, risk moments, expose/Council votes received, nominations, majority alignment, and jury votes. If same-confidence labels collide, the value is `null` with a diagnostic instead of choosing a story.
 
 ## Compact round summary
 
-The round-level row inside the postgame analysis projection. It summarizes the empowered player, vote outcome, expose pressure, power action, Council candidates, eliminated player, majority-alignment signal, risk moments, and diagnostics for one round without returning raw event envelopes.
+The round-level row inside the postgame analysis projection. It summarizes the headline, empowered player, vote outcome, expose pressure, power action, Council candidates, eliminated player, majority-alignment signal, risk moments, and diagnostics for one round without returning raw event envelopes. The headline is a short deterministic sentence from round facts, not narrator prose.
 
 ## MCP scopes
 

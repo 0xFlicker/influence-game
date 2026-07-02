@@ -304,24 +304,26 @@
       <p class="pill">Ideation Artifact</p>
       <h1>Postgame MCP/API Surfaces</h1>
       <p class="lead">
-        A focused v0 proposal for LLM-native read surfaces that let ChatGPT, Claude, Grok, and The House analyze completed Influence games without rebuilding the story from raw canonical-event Lego bricks.
+        A focused v0 proposal for LLM-native read surfaces that let ChatGPT, Claude, Grok, and The House analyze completed Influence games without rebuilding the story from raw canonical-event Lego bricks. Updated with a v0.2 polish pass that makes the existing payloads read like deterministic analyst notebooks instead of tidy database dumps.
       </p>
       <div class="meta">
         <span class="pill">Date: <time datetime="2026-07-01">2026-07-01</time></span>
+        <span class="pill">Updated: <time datetime="2026-07-01">2026-07-01</time></span>
         <span class="pill">Topic: postgame-mcp-api-surfaces</span>
         <span class="pill">Mode: repo-grounded</span>
-        <span class="pill">Focus: LLM-native postgame reads</span>
+        <span class="pill">Focus: LLM-native postgame reads + v0.2 polish</span>
       </div>
       <div class="summary-grid">
-        <div class="metric"><strong>7</strong><span>ranked survivor ideas</span></div>
-        <div class="metric"><strong>16</strong><span>raw candidates considered</span></div>
-        <div class="metric"><strong>6</strong><span>topic axes covered</span></div>
+        <div class="metric"><strong>14</strong><span>ranked survivor ideas across v0 and v0.2</span></div>
+        <div class="metric"><strong>34</strong><span>raw candidates considered</span></div>
+        <div class="metric"><strong>6</strong><span>original axes plus polish overlay</span></div>
       </div>
       <nav aria-label="Document sections">
         <a href="#grounding-context">Grounding</a>
         <a href="#topic-axes">Axes</a>
         <a href="#ranked-ideas">Ranked Ideas</a>
         <a href="#v0-catalog">V0 Catalog</a>
+        <a href="#v02-polish">V0.2 Polish</a>
         <a href="#acceptance">Acceptance Mapping</a>
         <a href="#rejection-summary">Rejected Ideas</a>
       </nav>
@@ -725,6 +727,201 @@
       </table>
     </section>
 
+    <section id="v02-polish">
+      <h2>V0.2 Polish Continuation</h2>
+      <div class="callout success">
+        <strong>Top recommendation:</strong> make `read_game_brief` start with a deterministic `executiveSummary`, then carry the same analyst-notebook shape through jury, player, turning-point, and producer reads. The payload should give the model the story spine first, then the facts that prove it.
+      </div>
+      <p>
+        The implementation has already landed the important structural move: `packages/engine/src/postgame-analysis.ts` builds a canonical-event-derived projection, `packages/api/src/services/postgame-analysis.ts` compacts it for API/MCP reads, and `packages/api/src/game-mcp/server.ts` advertises output schemas. The v0.2 problem is not missing data. It is that the strongest facts are still distributed like rows in a report, so the LLM has to decide which facts matter before it can explain the game.
+      </p>
+      <p>
+        External protocol guidance still supports this direction. MCP structured results belong in `structuredContent`, `outputSchema` describes what clients and models should expect, and read-only annotations help hosts frame these calls. OpenAI Apps SDK guidance also says `structuredContent` and `content` are the transcript-visible fields, while component-only `_meta` stays hidden from the model. That makes field order, top-level naming, and compact deterministic summaries load-bearing product design, not garnish.
+      </p>
+
+      <h3>V0.2 Axes</h3>
+      <div class="axes">
+        <div class="axis"><b>1. Analyst notebook orientation</b>Put the most explanatory deterministic facts first.</div>
+        <div class="axis"><b>2. Derivation contract</b>Expose method and confidence anywhere the payload interprets facts.</div>
+        <div class="axis"><b>3. Readable language</b>Use short sports-recap sentence templates, not database labels or essay voice.</div>
+        <div class="axis"><b>4. Cohorts, jury, and eliminations</b>Make the highest-value social facts clear without claiming hidden knowledge.</div>
+        <div class="axis"><b>5. Flow and player shape</b>Expose momentum and player classifications from objective thresholds.</div>
+      </div>
+
+      <div class="ideas-nav" aria-label="V0.2 polish idea jump list">
+        <a href="#v02-idea-1">1. First-Read Analyst Notebook</a>
+        <a href="#v02-idea-2">2. Heuristic Registry</a>
+        <a href="#v02-idea-3">3. Recap Language</a>
+        <a href="#v02-idea-4">4. Highlighted Eliminations</a>
+        <a href="#v02-idea-5">5. Cohort Evidence Cards</a>
+        <a href="#v02-idea-6">6. Jury Storyline</a>
+        <a href="#v02-idea-7">7. Flow Classifiers</a>
+      </div>
+
+      <article class="idea" id="v02-idea-1">
+        <div class="idea-title">
+          <h3>V2.1. First-Read Analyst Notebook Contract</h3>
+          <div class="score"><span class="pill">Confidence 96%</span><span class="pill complexity">Complexity Medium</span></div>
+        </div>
+        <p>
+          Add `executiveSummary` as the first field inside each major postgame payload: `read_game_brief`, `read_jury_breakdown`, `read_player_game_summary`, `read_game_turning_points`, and producer analysis. The field is a maximum of five deterministic bullets, in stable order: outcome, control/power pattern, decisive elimination, jury split, then one highest-confidence anomaly such as a near miss or under-pressure finalist. This is the first thing an LLM reads, so it should be the scoreboard, not the appendix.
+        </p>
+        <dl>
+          <dt>Axis</dt><dd>Analyst notebook orientation</dd>
+          <dt>Basis</dt><dd><code>direct:</code> the current compact brief starts with schema/source/availability and nests the explanatory facts under `summary`, `roundSummaries`, `jury`, and `turningPoints`; the v0.2 request explicitly requires an executive summary first.</dd>
+          <dt>Rationale</dt><dd>A model that reads only the first object fields should already know who won, who controlled visible power, where the game changed, and how close the jury was. The rest of the payload becomes citation support instead of raw assembly material.</dd>
+          <dt>Downsides</dt><dd>Ordering is a convention, not a JSON Schema guarantee. Keep the builder insertion order stable, and test serialized output enough that accidental reordering is caught.</dd>
+        </dl>
+        <pre><code>{
+  "executiveSummary": [
+    "Lilith Voss defeated Kestrel Vale 4-3.",
+    "Shadowtech controlled power for three consecutive resolved rounds.",
+    "Shadowtech was eliminated during the Tribunal.",
+    "Early jurors favored Lilith Voss.",
+    "Final margin: one vote."
+  ],
+  "summary": { "...": "supporting facts" }
+}</code></pre>
+      </article>
+
+      <article class="idea" id="v02-idea-2">
+        <div class="idea-title">
+          <h3>V2.2. Heuristic Registry and Confidence Envelope</h3>
+          <div class="score"><span class="pill">Confidence 94%</span><span class="pill complexity">Complexity Medium</span></div>
+        </div>
+        <p>
+          Create a small derivation registry for the postgame projection: every derived object gets `confidence`, `derivationMethod`, and, where useful, a compact `criteria` object. Facts remain canonical; confidence describes the derivation. This should cover executive summary bullets, round headlines, highlighted eliminations, cohorts, jury narrative, momentum segments, player shape, and turning points.
+        </p>
+        <dl>
+          <dt>Axis</dt><dd>Derivation contract</dd>
+          <dt>Basis</dt><dd><code>direct:</code> current confidence appears on majority cohorts and turning points, but not every derived object; the user explicitly asked for confidence everywhere and documented heuristics.</dd>
+          <dt>Rationale</dt><dd>This prevents the payload from laundering deterministic but thresholded reads into raw facts. It also gives future replay UI and producer dashboards a single vocabulary for explaining why a label appeared.</dd>
+          <dt>Downsides</dt><dd>More fields can become noise if every object repeats long prose. Use short enum-like method names and put full rules in docs/JSDoc.</dd>
+        </dl>
+        <pre><code>{
+  "headline": "Shadowtech controls power again.",
+  "confidence": "high",
+  "derivationMethod": "repeat_empowerment_streak",
+  "criteria": { "consecutiveRounds": 3 }
+}</code></pre>
+      </article>
+
+      <article class="idea" id="v02-idea-3">
+        <div class="idea-title">
+          <h3>V2.3. Deterministic Recap Language and Round Headlines</h3>
+          <div class="score"><span class="pill">Confidence 91%</span><span class="pill complexity">Complexity Low</span></div>
+        </div>
+        <p>
+          Replace awkward derived descriptions with a tiny template library and add a one-sentence `headline` to each round summary. Templates should be concise, factual, and non-editorial: "controlled power for three consecutive rounds," "survived the Council vote," "was cut in the endgame," "final margin: one vote." Round headlines should follow a deterministic precedence order so the same facts always produce the same sentence.
+        </p>
+        <dl>
+          <dt>Axis</dt><dd>Readable language</dd>
+          <dt>Basis</dt><dd><code>direct:</code> `buildTurningPoints` currently emits phrases like "held repeated empowerment across 3 rounds"; the request calls out that wording directly.</dd>
+          <dt>Rationale</dt><dd>This is the cheapest way to make payloads feel like a tournament analyst wrote them while staying fully derived from canonical facts.</dd>
+          <dt>Downsides</dt><dd>Snapshots can get brittle. Test the precedence and a few exemplar strings, not every possible sentence permutation.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="v02-idea-4">
+        <div class="idea-title">
+          <h3>V2.4. `highlightedEliminations` With Reason Codes</h3>
+          <div class="score"><span class="pill">Confidence 90%</span><span class="pill complexity">Complexity Low</span></div>
+        </div>
+        <p>
+          Rename `majorEliminations` to `highlightedEliminations` and attach deterministic `highlightReasons`. The current rule is deterministic but hidden: an elimination is included when it was endgame, involved a top empowered player, or involved a top exposed player. V0.2 should make the algorithm legible and expand it to the product examples: first elimination, final pre-jury elimination, first jury member, endgame eliminations, and winner's final opponent.
+        </p>
+        <dl>
+          <dt>Axis</dt><dd>Cohorts, jury, and eliminations</dd>
+          <dt>Basis</dt><dd><code>direct:</code> `majorEliminations(...)` currently filters by `entry.source === "endgame"` or top-two power/exposure IDs, but the field name does not reveal that selection rule.</dd>
+          <dt>Rationale</dt><dd>Reason codes make this field auditable and useful for UI chips, Discord recaps, and LLM explanations. "Highlighted" is also more honest than "major" when the rule is deterministic selection, not dramatic judgment.</dd>
+          <dt>Downsides</dt><dd>Renaming may break immediate callers. Either bump schema version or provide a temporary deprecated alias with a diagnostic.</dd>
+        </dl>
+        <pre><code>{
+  "highlightedEliminations": [{
+    "player": { "name": "Shadowtech" },
+    "round": 6,
+    "source": "endgame",
+    "highlightReasons": ["endgame_elimination", "top_empowered"],
+    "confidence": "high"
+  }]
+}</code></pre>
+      </article>
+
+      <article class="idea" id="v02-idea-5">
+        <div class="idea-title">
+          <h3>V2.5. Cohort Evidence Cards</h3>
+          <div class="score"><span class="pill">Confidence 88%</span><span class="pill complexity">Complexity Medium</span></div>
+        </div>
+        <p>
+          Keep `derivedVoteCohorts`, but make each cohort a compact evidence card with `size`, `firstObservedRound`, `lastObservedRound`, `sharedVotes`, and `cohesionScore`. The required note remains explicit: this is not confirmed alliance membership. The score should be deterministic, such as shared controlled rounds divided by eligible observed voting rounds, with the exact denominator documented.
+        </p>
+        <dl>
+          <dt>Axis</dt><dd>Cohorts, jury, and eliminations</dd>
+          <dt>Basis</dt><dd><code>direct:</code> `PostgameDerivedVoteCohort` currently has `players`, `roundsControlled`, `targets`, `confidence`, and a note, but not the requested size/window/shared-vote/score fields.</dd>
+          <dt>Rationale</dt><dd>This gives LLMs and future replay UI enough structure to explain visible vote cohesion without sliding into hidden alliance claims.</dd>
+          <dt>Downsides</dt><dd>Cohesion scores can look more scientific than they are. Pair the numeric score with method, confidence, and the not-alliance field every time.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="v02-idea-6">
+        <div class="idea-title">
+          <h3>V2.6. Jury Storyline Contract</h3>
+          <div class="score"><span class="pill">Confidence 89%</span><span class="pill complexity">Complexity Low</span></div>
+        </div>
+        <p>
+          Rename `nonWinnerSupporters` to `runnerUpSupporters`, add `winnerSupporters`, and turn `narrativeHints` into or supplement it with `juryNarrative`. The narrative should be deterministic bullets: early juror lean, late juror lean, notable runner-up supporters, and final margin. Early/late must be computed from juror elimination order, not inferred social closeness.
+        </p>
+        <dl>
+          <dt>Axis</dt><dd>Cohorts, jury, and eliminations</dd>
+          <dt>Basis</dt><dd><code>direct:</code> current `juryNarrativeHints(...)` already computes early/late leaning and one-vote margin, while the current public field name is `nonWinnerSupporters`.</dd>
+          <dt>Rationale</dt><dd>Jury split is one of the highest-value recap facts. Symmetric supporter arrays and deterministic bullets make it obvious who supplied the winner's majority and who backed the runner-up.</dd>
+          <dt>Downsides</dt><dd>If more than two finalists ever become possible, `runnerUpSupporters` needs a finalist-keyed map or a documented two-finalist assumption.</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="v02-idea-7">
+        <div class="idea-title">
+          <h3>V2.7. Flow Classifiers: `gameMomentum` and `overallGameShape`</h3>
+          <div class="score"><span class="pill">Confidence 84%</span><span class="pill complexity">Complexity Medium</span></div>
+        </div>
+        <p>
+          Add `gameMomentum` to the game brief and `overallGameShape` to player summaries. Momentum should be a small sequence of leader segments, not a round-by-round duplicate, derived from objective indicators such as empowerment streaks, majority cohort control, survival into endgame, and final-jury trajectory. Player shape should use documented thresholds for `power player`, `social survivor`, `under the radar`, `swing voter`, `consensus target`, and `jury favorite`.
+        </p>
+        <dl>
+          <dt>Axis</dt><dd>Flow and player shape</dd>
+          <dt>Basis</dt><dd><code>direct:</code> current payloads expose the underlying signals but not the requested `gameMomentum` or `overallGameShape` fields.</dd>
+          <dt>Rationale</dt><dd>These labels answer "who controlled the game?" and "why did the winner win?" without forcing the model to invent motive or social contracts.</dd>
+          <dt>Downsides</dt><dd>Threshold collisions are likely. Return multiple labels only when rules deliberately allow it, or use deterministic tie-breakers and `confidence: "medium"`.</dd>
+        </dl>
+      </article>
+
+      <h3>V0.2 Guardrails</h3>
+      <table>
+        <thead><tr><th>Guardrail</th><th>Contract</th></tr></thead>
+        <tbody>
+          <tr><td>Brief-first proof</td><td>A golden `edge-smoke-dusk` test must assert that `read_game_brief` alone exposes outcome, control, momentum, winner path, and jury split.</td></tr>
+          <tr><td>Schema fidelity</td><td>MCP `outputSchema` must declare the new fields explicitly, especially for derived objects that clients will render.</td></tr>
+          <tr><td>Compatibility</td><td>Renamed fields should either bump `schemaVersion` or carry temporary aliases with deprecation diagnostics.</td></tr>
+          <tr><td>No hidden knowledge</td><td>Public payloads must keep saying derived vote cohesion is not confirmed alliance membership.</td></tr>
+          <tr><td>Producer anchoring</td><td>`read_producer_game_analysis` should start with the same public deterministic summary before private overlays.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>V0.2 Rejection Summary</h3>
+      <table>
+        <thead><tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>New standalone momentum/cohort/jury tools</td><td>Fragments the one-call `read_game_brief` goal.</td></tr>
+          <tr><td>2</td><td>Generated long-form recap</td><td>Violates the deterministic, no-speculation constraint.</td></tr>
+          <tr><td>3</td><td>Private trace narrative in public brief</td><td>Crosses the `games:read` boundary.</td></tr>
+          <tr><td>4</td><td>Prompt-only copy rewrite</td><td>Does not fix schemas, field order, or testability.</td></tr>
+          <tr><td>5</td><td>Materialized analyst notebook table</td><td>Premature persistence for a read-time projection.</td></tr>
+          <tr><td>6</td><td>Hidden social graph inference</td><td>Overclaims confirmed alliance membership.</td></tr>
+          <tr><td>7</td><td>Rename only, no reason codes</td><td>Improves taste but leaves the algorithm unclear.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
     <section id="acceptance">
       <h2>Acceptance Mapping</h2>
       <p>
@@ -775,6 +972,8 @@
     <section id="sources">
       <h2>Sources and References</h2>
       <ul class="ref-list">
+        <li><code>packages/engine/src/postgame-analysis.ts</code> - current canonical-event-derived postgame analysis projection, turning points, jury hints, player summaries, and current `majorEliminations` rule.</li>
+        <li><code>packages/api/src/services/postgame-analysis.ts</code> - compact postgame brief builder, derived vote cohort DTO, and REST/MCP service shape.</li>
         <li><code>packages/engine/src/completed-game-results.ts</code> - current canonical-event-first completed-results builder.</li>
         <li><code>packages/engine/src/revealed-round-facts.ts</code> - current sanitized per-round revealed facts builder.</li>
         <li><code>packages/api/src/game-mcp/server.ts</code> and <code>packages/api/src/game-mcp/read-model.ts</code> - production MCP tool inventory, scope checks, and read-model seams.</li>
@@ -788,7 +987,7 @@
     </section>
 
     <footer class="composition-signal">
-      Composed 2026-07-01T00:00Z by ce-ideate from the user prompt requesting LLM-native MCP/API postgame analysis surfaces.
+      Composed 2026-07-01T00:00Z by ce-ideate from the user prompt requesting LLM-native MCP/API postgame analysis surfaces; updated 2026-07-01T21:07Z with the v0.2 analyst-notebook polish continuation.
     </footer>
   </main>
 </body>

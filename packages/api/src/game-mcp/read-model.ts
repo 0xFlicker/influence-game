@@ -587,6 +587,8 @@ export class ProductionGameMcpReadModel {
 
 function buildProducerPostgameAnalysis(analysis: PostgameAnalysisProjection) {
   return {
+    executiveSummary: analysis.executiveSummary,
+    gameMomentum: analysis.gameMomentum,
     derivedVoteCohorts: buildPostgameDerivedVoteCohorts(analysis),
     inferredAlliances: {
       status: "not_inferred_from_public_facts",
@@ -602,11 +604,15 @@ function buildProducerPostgameAnalysis(analysis: PostgameAnalysisProjection) {
     },
     betrayalMoments: analysis.turningPoints.filter((point) => point.type === "alliance_member_cut"),
     threatManagementAnalysis: {
+      highlightedEliminations: analysis.summary.highlightedEliminations,
       majorEliminations: analysis.summary.majorEliminations,
       threatRemovedTurningPoints: analysis.turningPoints.filter((point) => point.type === "threat_removed"),
     },
     juryManagementAnalysis: {
       finalVote: analysis.summary.finalVote,
+      juryNarrative: analysis.jury.juryNarrative,
+      winnerSupporters: analysis.jury.winnerSupporters,
+      runnerUpSupporters: analysis.jury.runnerUpSupporters,
       narrativeHints: analysis.jury.narrativeHints,
       nonWinnerSupporters: analysis.jury.nonWinnerSupporters,
     },

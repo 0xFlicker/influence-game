@@ -5,6 +5,7 @@ import {
   type PostgameAnalysisDetailLevel,
   type PostgameAnalysisProjection,
   type PostgameJuryBreakdown,
+  type PostgameDerivedVoteCohort,
   type PostgamePlayerGameSummary,
   type PostgameRoundSummary,
   type PostgameTurningPoint,
@@ -146,15 +147,6 @@ export type PostgameAgentGamesResult =
         latestSlug?: string;
       }>;
     };
-
-export type PostgameDerivedVoteCohort = {
-  basis: "derived_vote_cohesion";
-  players: Array<{ id: string; name: string }>;
-  roundsControlled: number[];
-  targets: Array<{ round: number; target: { id: string; name: string } | null; basis: string }>;
-  confidence: "high" | "medium" | "low";
-  note: string;
-};
 
 type GameRow = Pick<
   typeof schema.games.$inferSelect,
@@ -323,24 +315,34 @@ export function buildCompactPostgameBrief(
   analysis: PostgameAnalysisProjection,
   detailLevel: PostgameAnalysisDetailLevel,
 ) {
+  const compatibilityDiagnostics = [{
+    code: "postgame_v1_aliases_present",
+    severity: "info" as const,
+    message: "Deprecated aliases majorEliminations and nonWinnerSupporters are present for temporary v1 compatibility.",
+  }];
   return {
-    schemaVersion: 1 as const,
+    schemaVersion: 2 as const,
     source: analysis.source,
     availability: analysis.availability,
+    executiveSummary: analysis.executiveSummary,
     summary: analysis.summary,
-    derivedVoteCohorts: buildPostgameDerivedVoteCohorts(analysis),
+    derivedVoteCohorts: analysis.derivedVoteCohorts,
+    gameMomentum: analysis.gameMomentum,
     roundSummaries: analysis.roundSummaries.map((round) => buildCompactPostgameRoundSummary(round, detailLevel)),
     jury: {
       status: analysis.jury.status,
       finalists: analysis.jury.finalists,
       winner: analysis.jury.winner,
       finalVote: analysis.jury.finalVote,
+      juryNarrative: analysis.jury.juryNarrative,
+      winnerSupporters: analysis.jury.winnerSupporters,
+      runnerUpSupporters: analysis.jury.runnerUpSupporters,
       narrativeHints: analysis.jury.narrativeHints,
       nonWinnerSupporters: analysis.jury.nonWinnerSupporters,
       ...(analysis.jury.evidence ? { evidence: analysis.jury.evidence } : {}),
     },
     turningPoints: analysis.turningPoints,
-    diagnostics: analysis.diagnostics,
+    diagnostics: [...analysis.diagnostics, ...compatibilityDiagnostics],
     ...(detailLevel === "full" ? { playerSummaries: analysis.playerSummaries } : {}),
   };
 }
@@ -352,6 +354,7 @@ export function buildCompactPostgameRoundSummary(
   return {
     round: round.round,
     phase: round.phase,
+    headline: round.headline,
     empowered: round.empowered,
     empowerVoteCounts: round.empowerVoteCounts,
     exposeLeaders: round.exposeLeaders,
@@ -374,55 +377,7 @@ export function buildCompactPostgameRoundSummary(
 }
 
 export function buildPostgameDerivedVoteCohorts(analysis: PostgameAnalysisProjection): PostgameDerivedVoteCohort[] {
-  const blocs = new Map<string, {
-    players: Array<{ id: string; name: string }>;
-    roundsControlled: number[];
-    targets: Array<{ round: number; target: { id: string; name: string } | null; basis: string }>;
-    highConfidenceRounds: number;
-  }>();
-
-  for (const round of analysis.roundSummaries) {
-    const cohort = round.majorityCohort;
-    if (cohort.basis === "unavailable" || cohort.alignedPlayers.length === 0) continue;
-    const players = [...cohort.alignedPlayers].sort((left, right) => left.name.localeCompare(right.name));
-    const key = players.map((player) => player.id).join("|");
-    const current = blocs.get(key) ?? {
-      players,
-      roundsControlled: [],
-      targets: [],
-      highConfidenceRounds: 0,
-    };
-    current.roundsControlled.push(round.round);
-    current.targets.push({
-      round: round.round,
-      target: cohort.target,
-      basis: cohort.basis,
-    });
-    if (cohort.confidence === "high") current.highConfidenceRounds += 1;
-    blocs.set(key, current);
-  }
-
-  return Array.from(blocs.values())
-    .sort((left, right) =>
-      right.roundsControlled.length - left.roundsControlled.length ||
-      right.highConfidenceRounds - left.highConfidenceRounds ||
-      left.players.map((player) => player.name).join(",").localeCompare(
-        right.players.map((player) => player.name).join(","),
-      )
-    )
-    .slice(0, 5)
-    .map((bloc) => ({
-      basis: "derived_vote_cohesion" as const,
-      players: bloc.players,
-      roundsControlled: bloc.roundsControlled,
-      targets: bloc.targets,
-      confidence: bloc.highConfidenceRounds === bloc.roundsControlled.length
-        ? "high"
-        : bloc.highConfidenceRounds > 0
-          ? "medium"
-          : "low",
-      note: "Derived from repeated shared vote outcomes; this is not confirmed alliance membership.",
-    }));
+  return analysis.derivedVoteCohorts;
 }
 
 async function loadPostgameAnalysis(

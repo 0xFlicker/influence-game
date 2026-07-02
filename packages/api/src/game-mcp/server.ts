@@ -409,7 +409,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     }),
     tool({
       name: "read_game_brief",
-      description: "Read a compact postgame brief for one completed game: winner, finalists, final vote, boot order, round summaries, derived vote cohorts, major eliminations, turning points, and diagnostics.",
+      description: "Read a compact postgame brief for one completed game: executive summary, winner, finalists, final vote, boot order, round summaries, derived vote cohorts, highlighted eliminations, momentum, turning points, and diagnostics.",
       properties: {
         gameIdOrSlug: { type: "string" },
         detailLevel: { type: "string", enum: ["brief", "standard", "full"] },
@@ -869,12 +869,23 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
     additionalProperties: true,
   };
   const diagnosticsSchema = { type: "array", items: diagnosticSchema };
+  const derivedTextSchema = {
+    type: "object",
+    required: ["text", "confidence", "derivationMethod"],
+    properties: {
+      text: { type: "string" },
+      confidence: { type: "string", enum: ["high", "medium", "low"] },
+      derivationMethod: { type: "string" },
+    },
+    additionalProperties: true,
+  };
   const roundSummarySchema = {
     type: "object",
-    required: ["round", "empowered", "empowerVoteCounts", "exposeLeaders", "eliminated", "majorityCohort"],
+    required: ["round", "headline", "empowered", "empowerVoteCounts", "exposeLeaders", "eliminated", "majorityCohort"],
     properties: {
       round: { type: "number" },
       phase: nullableSchema({ type: "string" }),
+      headline: nullableSchema(derivedTextSchema),
       empowered: nullableSchema(playerRefSchema),
       empowerVoteCounts: { type: "array", items: voteCountSchema },
       exposeLeaders: { type: "array", items: voteCountSchema },
@@ -888,6 +899,7 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
           target: nullableSchema(playerRefSchema),
           votes: { type: "number" },
           confidence: { type: "string", enum: ["high", "medium", "low"] },
+          derivationMethod: { type: "string" },
         },
         additionalProperties: true,
       },
@@ -910,13 +922,16 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
   };
   const jurySchema = {
     type: "object",
-    required: ["status", "finalists", "winner", "finalVote", "perJurorVotes"],
+    required: ["status", "finalists", "winner", "finalVote", "perJurorVotes", "juryNarrative", "winnerSupporters", "runnerUpSupporters"],
     properties: {
       status: { type: "string" },
       finalists: { type: "array", items: playerRefSchema },
       winner: nullableSchema(playerRefSchema),
       finalVote: finalVoteSchema,
       perJurorVotes: { type: "array", items: juryVoteSchema },
+      juryNarrative: { type: "array", items: derivedTextSchema },
+      winnerSupporters: { type: "array", items: playerRefSchema },
+      runnerUpSupporters: { type: "array", items: playerRefSchema },
       narrativeHints: { type: "array", items: { type: "string" } },
       nonWinnerSupporters: { type: "array", items: playerRefSchema },
     },
@@ -934,6 +949,7 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
       "majorityAlignmentByRound",
       "endgame",
       "jury",
+      "overallGameShape",
       "readableSummary",
     ],
     properties: {
@@ -950,6 +966,7 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
       majorityAlignmentByRound: { type: "array", items: { type: "object", additionalProperties: true } },
       endgame: { type: "object", additionalProperties: true },
       jury: { type: "object", additionalProperties: true },
+      overallGameShape: { type: "object", additionalProperties: true },
       readableSummary: { type: "string" },
       diagnostics: diagnosticsSchema,
     },
@@ -957,7 +974,7 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
   };
   const turningPointSchema = {
     type: "object",
-    required: ["round", "type", "players", "confidence", "description", "evidence"],
+    required: ["round", "type", "players", "confidence", "description", "derivationMethod", "criteria", "evidence"],
     properties: {
       round: { type: "number" },
       type: {
@@ -975,6 +992,8 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
       players: { type: "array", items: playerRefSchema },
       confidence: { type: "string", enum: ["high", "medium", "low"] },
       description: { type: "string" },
+      derivationMethod: { type: "string" },
+      criteria: { type: "object", additionalProperties: true },
       evidence: { type: "object", additionalProperties: true },
     },
     additionalProperties: true,
@@ -1045,6 +1064,7 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
       dominantEmpoweredPlayers: { type: "array", items: voteCountSchema },
       mostExposedPlayers: { type: "array", items: voteCountSchema },
       unanimousOrNearUnanimousVotes: { type: "array", items: { type: "object", additionalProperties: true } },
+      highlightedEliminations: { type: "array", items: { type: "object", additionalProperties: true } },
       majorEliminations: { type: "array", items: { type: "object", additionalProperties: true } },
       notableEndgameSequence: { type: "array", items: { type: "object", additionalProperties: true } },
     },
@@ -1071,22 +1091,27 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
       properties: {
         postgame: {
           type: "object",
-          required: ["schemaVersion", "source", "availability", "summary", "derivedVoteCohorts", "roundSummaries", "jury", "turningPoints", "diagnostics"],
+          required: ["schemaVersion", "source", "availability", "executiveSummary", "summary", "derivedVoteCohorts", "gameMomentum", "roundSummaries", "jury", "turningPoints", "diagnostics"],
           properties: {
             schemaVersion: { type: "number" },
             source: { type: "string" },
             availability: { type: "object", additionalProperties: true },
+            executiveSummary: { type: "array", items: derivedTextSchema, maxItems: 5 },
             summary: summarySchema,
             derivedVoteCohorts: { type: "array", items: { type: "object", additionalProperties: true } },
+            gameMomentum: { type: "array", items: { type: "object", additionalProperties: true } },
             roundSummaries: { type: "array", items: roundSummarySchema },
             jury: {
               type: "object",
-              required: ["status", "finalists", "winner", "finalVote"],
+              required: ["status", "finalists", "winner", "finalVote", "juryNarrative", "winnerSupporters", "runnerUpSupporters"],
               properties: {
                 status: { type: "string" },
                 finalists: { type: "array", items: playerRefSchema },
                 winner: nullableSchema(playerRefSchema),
                 finalVote: finalVoteSchema,
+                juryNarrative: { type: "array", items: derivedTextSchema },
+                winnerSupporters: { type: "array", items: playerRefSchema },
+                runnerUpSupporters: { type: "array", items: playerRefSchema },
                 narrativeHints: { type: "array", items: { type: "string" } },
                 nonWinnerSupporters: { type: "array", items: playerRefSchema },
               },
@@ -1118,8 +1143,10 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
       properties: {
         producerAnalysis: {
           type: "object",
-          required: ["derivedVoteCohorts", "inferredAlliances", "juryManagementAnalysis", "playerByPlayerStrategicGrades"],
+          required: ["executiveSummary", "gameMomentum", "derivedVoteCohorts", "inferredAlliances", "juryManagementAnalysis", "playerByPlayerStrategicGrades"],
           properties: {
+            executiveSummary: { type: "array", items: derivedTextSchema, maxItems: 5 },
+            gameMomentum: { type: "array", items: { type: "object", additionalProperties: true } },
             derivedVoteCohorts: { type: "array", items: { type: "object", additionalProperties: true } },
             inferredAlliances: { type: "object", additionalProperties: true },
             juryManagementAnalysis: { type: "object", additionalProperties: true },
@@ -1183,10 +1210,18 @@ function summarizePostgameContent(value: unknown): string {
     const summary = asRecord(postgame.summary);
     const winner = asRecord(summary.winner);
     const finalVote = asRecord(summary.finalVote);
+    const executiveSummary = Array.isArray(postgame.executiveSummary)
+      ? postgame.executiveSummary
+        .map((entry) => asRecord(entry).text)
+        .filter((text): text is string => typeof text === "string")
+      : [];
     const voteText = typeof finalVote.totalVotes === "number"
       ? ` Final jury vote total: ${finalVote.totalVotes}.`
       : "";
-    return `Returned postgame brief for ${winner.name ? `winner ${String(winner.name)}` : "the completed game"}.${voteText} See structuredContent.postgame for round summaries, derived vote cohorts, jury facts, and turning points.`;
+    const executiveText = executiveSummary.length > 0
+      ? ` Executive summary: ${executiveSummary.join(" ")}`
+      : "";
+    return `Returned postgame brief for ${winner.name ? `winner ${String(winner.name)}` : "the completed game"}.${voteText}${executiveText} See structuredContent.postgame for round summaries, derived vote cohorts, momentum, jury facts, and turning points.`;
   }
   const jury = asRecord(root.jury);
   if (Object.keys(jury).length > 0) {
@@ -1203,7 +1238,7 @@ function summarizePostgameContent(value: unknown): string {
     return `Returned ${root.turningPoints.length} deterministic turning point(s). See structuredContent.turningPoints for typed evidence.`;
   }
   if (root.producerAnalysis) {
-    return "Returned producer-only postgame analysis. See structuredContent.producerAnalysis and structuredContent.developerEvidence.";
+    return "Returned producer-only postgame analysis with public executive summary, momentum, and private evidence indexes. See structuredContent.producerAnalysis and structuredContent.developerEvidence.";
   }
   return "Returned structured postgame result. See structuredContent for fields.";
 }

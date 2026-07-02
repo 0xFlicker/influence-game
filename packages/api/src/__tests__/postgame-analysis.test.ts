@@ -45,6 +45,10 @@ describe("postgame analysis service", () => {
       id: EDGE_SMOKE_DUSK_EXPECTED.winnerId,
       name: EDGE_SMOKE_DUSK_EXPECTED.winnerName,
     });
+    expect(result.analysis.schemaVersion).toBe(2);
+    expect(result.analysis.executiveSummary[0]?.text).toBe(
+      "Shadowtech controlled power for 3 consecutive rounds.",
+    );
     expect(result.analysis.summary.finalVote).toMatchObject({
       totalVotes: 7,
       margin: 1,
@@ -58,6 +62,22 @@ describe("postgame analysis service", () => {
       player: EDGE_SMOKE_DUSK_PLAYERS.shadowtech,
       votes: 3,
     });
+    expect(result.analysis.summary.highlightedEliminations.some((entry) =>
+      entry.player.id === EDGE_SMOKE_DUSK_PLAYERS.shadowtech.id &&
+      entry.highlightReasons.includes("top_empowered_player")
+    )).toBe(true);
+    expect(result.analysis.derivedVoteCohorts[0]).toMatchObject({
+      size: 3,
+      firstObservedRound: 1,
+      lastObservedRound: 5,
+      confidence: "high",
+      derivationMethod: "shared_vote_outcomes",
+    });
+    expect(result.analysis.gameMomentum.some((segment) =>
+      segment.leader.kind === "player" &&
+      segment.leader.player.id === EDGE_SMOKE_DUSK_PLAYERS.shadowtech.id &&
+      segment.indicators.includes("empowerment")
+    )).toBe(true);
     expect(JSON.stringify(result)).not.toContain("sourcePointers");
     expect(JSON.stringify(result)).not.toContain("payloadVersion");
   });
@@ -74,12 +94,22 @@ describe("postgame analysis service", () => {
     for (const jurorId of EDGE_SMOKE_DUSK_EXPECTED.lilithJuryVotes) {
       expect(votes.get(jurorId)).toBe(EDGE_SMOKE_DUSK_EXPECTED.winnerId);
     }
+    expect(jury.jury.winnerSupporters.map((player) => player.id).sort()).toEqual(
+      [...EDGE_SMOKE_DUSK_EXPECTED.lilithJuryVotes].sort(),
+    );
+    expect(jury.jury.runnerUpSupporters.map((player) => player.id).sort()).toEqual([
+      EDGE_SMOKE_DUSK_PLAYERS.shadowtech.id,
+      EDGE_SMOKE_DUSK_PLAYERS.nova.id,
+      EDGE_SMOKE_DUSK_PLAYERS.ember.id,
+    ].sort());
+    expect(jury.jury.juryNarrative.map((line) => line.text)).toContain("Final margin: one vote.");
 
     const player = await getPostgamePlayerSummary(db, EDGE_SMOKE_DUSK_GAME_ID, "Lilith Voss");
     expect(player.ok).toBe(true);
     if (!player.ok) return;
     expect(player.player.won).toBe(true);
     expect(player.player.placement).toBe(1);
+    expect(player.player.overallGameShape.value).toBe("under the radar");
     expect(player.player.majorityAlignmentByRound.filter((round) => round.aligned === true)).toHaveLength(5);
 
     const turningPoints = await getPostgameTurningPoints(db, EDGE_SMOKE_DUSK_GAME_ID, {

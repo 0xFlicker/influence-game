@@ -15,6 +15,14 @@ import type { PowerActionType, UUID } from "./types";
 
 export type PostgameAnalysisDetailLevel = "brief" | "standard" | "full";
 
+export type PostgameDerivationConfidence = "high" | "medium" | "low";
+
+export interface PostgameDerivedText {
+  text: string;
+  confidence: PostgameDerivationConfidence;
+  derivationMethod: string;
+}
+
 export type PostgameTurningPointType =
   | "power_shift"
   | "majority_consolidation"
@@ -57,6 +65,7 @@ export type PostgameBootOrderEntry = CompletedGameResultsElimination;
 export interface PostgameRoundSummary {
   round: number;
   phase: string | null;
+  headline: PostgameDerivedText | null;
   empowered: RevealedPlayerRef | null;
   empowerVoteCounts: PostgameVoteCount[];
   exposeLeaders: PostgameVoteCount[];
@@ -72,7 +81,8 @@ export interface PostgameRoundSummary {
     alignedPlayers: RevealedPlayerRef[];
     target: RevealedPlayerRef | null;
     votes: number;
-    confidence: "high" | "medium" | "low";
+    confidence: PostgameDerivationConfidence;
+    derivationMethod: string;
   };
   keyRiskMoments: Array<{
     type: "candidate" | "exposure_leader" | "eliminated" | "survived_council";
@@ -99,7 +109,16 @@ export interface PostgameJuryBreakdown {
   winner: RevealedPlayerRef | null;
   finalVote: PostgameFinalVote;
   perJurorVotes: PostgameJuryVoteEntry[];
+  juryNarrative: PostgameDerivedText[];
+  winnerSupporters: RevealedPlayerRef[];
+  runnerUpSupporters: RevealedPlayerRef[];
+  /**
+   * @deprecated Use juryNarrative. Kept as a temporary compatibility alias.
+   */
   narrativeHints: string[];
+  /**
+   * @deprecated Use runnerUpSupporters. Kept as a temporary compatibility alias.
+   */
   nonWinnerSupporters: RevealedPlayerRef[];
   evidence?: PostgameAnalysisEvidenceRef[];
 }
@@ -117,6 +136,22 @@ export interface PostgamePlayerMajorityAlignment {
   councilAligned: boolean | null;
   aligned: boolean | null;
   basis: Array<"empower" | "council">;
+}
+
+export type PostgamePlayerShapeValue =
+  | "power player"
+  | "social survivor"
+  | "under the radar"
+  | "swing voter"
+  | "consensus target"
+  | "jury favorite";
+
+export interface PostgamePlayerShape {
+  value: PostgamePlayerShapeValue | null;
+  confidence: PostgameDerivationConfidence;
+  derivationMethod: string;
+  supportingSignals: string[];
+  diagnostics: PostgameAnalysisDiagnostic[];
 }
 
 export interface PostgamePlayerGameSummary {
@@ -148,6 +183,7 @@ export interface PostgamePlayerGameSummary {
     votesReceived: number;
     wonFinalVote: boolean;
   };
+  overallGameShape: PostgamePlayerShape;
   readableSummary: string;
   diagnostics: PostgameAnalysisDiagnostic[];
   evidence?: PostgameAnalysisEvidenceRef[];
@@ -157,18 +193,71 @@ export interface PostgameTurningPoint {
   round: number;
   type: PostgameTurningPointType;
   players: RevealedPlayerRef[];
-  confidence: "high" | "medium" | "low";
+  confidence: PostgameDerivationConfidence;
   description: string;
+  derivationMethod: string;
+  criteria: Record<string, unknown>;
   evidence: {
     factRefs: string[];
     eventRefs?: PostgameAnalysisEvidenceRef[];
   };
 }
 
+export type PostgameHighlightedEliminationReason =
+  | "first_elimination"
+  | "final_pre_jury_elimination"
+  | "first_jury_member"
+  | "endgame_elimination"
+  | "winner_final_opponent"
+  | "top_empowered_player"
+  | "top_exposed_player";
+
+export interface PostgameHighlightedElimination extends CompletedGameResultsElimination {
+  highlightReasons: PostgameHighlightedEliminationReason[];
+  confidence: PostgameDerivationConfidence;
+  derivationMethod: "highlighted_elimination_rules";
+}
+
+export interface PostgameDerivedVoteCohort {
+  basis: "derived_vote_cohesion";
+  players: RevealedPlayerRef[];
+  size: number;
+  firstObservedRound: number;
+  lastObservedRound: number;
+  roundsControlled: number[];
+  sharedVotes: Array<{
+    round: number;
+    target: RevealedPlayerRef | null;
+    basis: "council_vote" | "empower_vote";
+  }>;
+  /**
+   * @deprecated Use sharedVotes. Kept as a temporary compatibility alias.
+   */
+  targets: Array<{ round: number; target: RevealedPlayerRef | null; basis: string }>;
+  cohesionScore: number;
+  confidence: PostgameDerivationConfidence;
+  derivationMethod: "shared_vote_outcomes";
+  note: string;
+}
+
+export interface PostgameMomentumSegment {
+  round: number;
+  firstObservedRound: number;
+  lastObservedRound: number;
+  leader:
+    | { kind: "player"; player: RevealedPlayerRef }
+    | { kind: "cohort"; players: RevealedPlayerRef[] };
+  indicators: Array<"empowerment" | "majority_vote" | "endgame_progression" | "jury_result">;
+  confidence: PostgameDerivationConfidence;
+  derivationMethod: string;
+  criteria: Record<string, unknown>;
+}
+
 export interface PostgameAnalysisProjection {
-  schemaVersion: 1;
+  schemaVersion: 2;
   source: CompletedGameResultsRead["source"];
   availability: CompletedGameResultsRead["availability"];
+  executiveSummary: PostgameDerivedText[];
   summary: {
     winner: RevealedPlayerRef | null;
     finalists: RevealedPlayerRef[];
@@ -186,7 +275,11 @@ export interface PostgameAnalysisProjection {
       totalVotes: number;
       unanimous: boolean;
     }>;
-    majorEliminations: CompletedGameResultsElimination[];
+    highlightedEliminations: PostgameHighlightedElimination[];
+    /**
+     * @deprecated Use highlightedEliminations. Kept as a temporary compatibility alias.
+     */
+    majorEliminations: PostgameHighlightedElimination[];
     notableEndgameSequence: Array<{
       round: number;
       stage: string | null;
@@ -194,6 +287,8 @@ export interface PostgameAnalysisProjection {
       method: string;
     }>;
   };
+  derivedVoteCohorts: PostgameDerivedVoteCohort[];
+  gameMomentum: PostgameMomentumSegment[];
   roundSummaries: PostgameRoundSummary[];
   jury: PostgameJuryBreakdown;
   playerSummaries: PostgamePlayerGameSummary[];
@@ -214,9 +309,10 @@ export function buildPostgameAnalysisProjection(
   const includeEvidence = options.includeEvidence === true;
   const diagnostics = completed.availability.diagnostics.map((diagnostic) => ({ ...diagnostic }));
   const eventRefs = new EventReferenceIndex(options.events ?? []);
-  const roundSummaries = completed.rounds.map((round) =>
+  const baseRoundSummaries = completed.rounds.map((round) =>
     buildRoundSummary(round, includeEvidence ? eventRefs : null)
   );
+  const roundSummaries = addRoundHeadlines(baseRoundSummaries);
   const finalVote = buildFinalVote(completed.jury);
   const jury = buildJuryBreakdown(completed, finalVote, includeEvidence ? eventRefs : null);
   const bootOrder = buildPostgameBootOrder(completed);
@@ -224,6 +320,22 @@ export function buildPostgameAnalysisProjection(
     roundSummaries.flatMap((round) => round.empowered ? [round.empowered] : []),
   ));
   const mostExposedPlayers = topCounts(sumExposed(roundSummaries));
+  const highlightedEliminations = buildHighlightedEliminations({
+    bootOrder,
+    finalVote,
+    dominantEmpoweredPlayers,
+    mostExposedPlayers,
+  });
+  const derivedVoteCohorts = buildDerivedVoteCohorts({
+    completed,
+    roundSummaries,
+  });
+  const gameMomentum = buildGameMomentum({
+    completed,
+    roundSummaries,
+    derivedVoteCohorts,
+    finalVote,
+  });
   const playerSummaries = completed.players.map((player) =>
     buildPlayerSummary({
       player,
@@ -239,11 +351,19 @@ export function buildPostgameAnalysisProjection(
     finalVote,
     eventRefs: includeEvidence ? eventRefs : null,
   });
+  const executiveSummary = buildExecutiveSummary({
+    completed,
+    roundSummaries,
+    finalVote,
+    highlightedEliminations,
+    gameMomentum,
+  });
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     source: completed.source,
     availability: completed.availability,
+    executiveSummary,
     summary: {
       winner: completed.summary.winner,
       finalists: completed.summary.finalists,
@@ -254,7 +374,8 @@ export function buildPostgameAnalysisProjection(
       dominantEmpoweredPlayers,
       mostExposedPlayers,
       unanimousOrNearUnanimousVotes: findUnanimousOrNearUnanimousVotes(completed, finalVote),
-      majorEliminations: majorEliminations(completed, dominantEmpoweredPlayers, mostExposedPlayers),
+      highlightedEliminations,
+      majorEliminations: highlightedEliminations,
       notableEndgameSequence: completed.rounds.flatMap((round) =>
         round.endgameEliminations.map((entry) => ({
           round: entry.round,
@@ -264,6 +385,8 @@ export function buildPostgameAnalysisProjection(
         }))
       ),
     },
+    derivedVoteCohorts,
+    gameMomentum,
     roundSummaries,
     jury,
     playerSummaries,
@@ -321,6 +444,7 @@ function buildRoundSummary(
   return {
     round: round.round,
     phase: facts.phase,
+    headline: null,
     empowered: standard.empowered,
     empowerVoteCounts: standard.empowerTally,
     exposeLeaders,
@@ -339,6 +463,65 @@ function buildRoundSummary(
     diagnostics: postgameRoundDiagnostics(round),
     ...(evidence && evidence.length > 0 ? { evidence } : {}),
   };
+}
+
+function addRoundHeadlines(roundSummaries: readonly PostgameRoundSummary[]): PostgameRoundSummary[] {
+  return roundSummaries.map((round, index) => ({
+    ...round,
+    headline: roundHeadline(round, roundSummaries[index - 1] ?? null),
+  }));
+}
+
+function roundHeadline(
+  round: PostgameRoundSummary,
+  previousRound: PostgameRoundSummary | null,
+): PostgameDerivedText | null {
+  if (round.eliminated) {
+    return {
+      text: `${round.eliminated.name} is eliminated.`,
+      confidence: "high",
+      derivationMethod: "round_elimination",
+    };
+  }
+  const enteredEndgame = round.phase && NON_STANDARD_POSTGAME_PHASES.has(round.phase) &&
+    !(previousRound?.phase && NON_STANDARD_POSTGAME_PHASES.has(previousRound.phase));
+  if (enteredEndgame) {
+    return {
+      text: "Endgame begins.",
+      confidence: "high",
+      derivationMethod: "first_non_standard_postgame_phase",
+    };
+  }
+  if (round.empowered && previousRound?.empowered?.id === round.empowered.id) {
+    return {
+      text: `${round.empowered.name} controls power again.`,
+      confidence: "high",
+      derivationMethod: "consecutive_empowerment",
+    };
+  }
+  const survivor = round.keyRiskMoments.find((moment) => moment.type === "survived_council");
+  if (survivor) {
+    return {
+      text: `${survivor.player.name} survives the Council vote.`,
+      confidence: "medium",
+      derivationMethod: "survived_council_slate",
+    };
+  }
+  if (round.shieldGranted) {
+    return {
+      text: `${round.shieldGranted.name} receives a shield.`,
+      confidence: "high",
+      derivationMethod: "shield_granted",
+    };
+  }
+  if (round.majorityCohort.target && round.majorityCohort.basis !== "unavailable") {
+    return {
+      text: `The vote centers on ${round.majorityCohort.target.name}.`,
+      confidence: round.majorityCohort.confidence,
+      derivationMethod: "visible_majority_vote_target",
+    };
+  }
+  return null;
 }
 
 function buildPostgameBootOrder(completed: CompletedGameResultsRead): PostgameBootOrderEntry[] {
@@ -394,6 +577,7 @@ function buildRoundMajorityCohort(
         target: eliminated,
         votes: aligned.length,
         confidence: confidenceForShare(aligned.length, councilLedger.length),
+        derivationMethod: "majority_vote_target_match",
       };
     }
   }
@@ -408,6 +592,7 @@ function buildRoundMajorityCohort(
       target: empowered,
       votes: aligned.length,
       confidence: confidenceForShare(aligned.length, standardLedger.length),
+      derivationMethod: "majority_vote_target_match",
     };
   }
 
@@ -417,6 +602,7 @@ function buildRoundMajorityCohort(
     target: null,
     votes: 0,
     confidence: "low",
+    derivationMethod: "unavailable_vote_target",
   };
 }
 
@@ -485,11 +671,24 @@ function buildJuryBreakdown(
   });
 
   const winnerId = finalVote.winner?.id;
-  const nonWinnerSupporters = winnerId
+  const winnerSupporters = winnerId
     ? perJurorVotes
-      .filter((entry) => entry.finalist.id !== winnerId)
+      .filter((entry) => entry.finalist.id === winnerId)
       .map((entry) => entry.juror)
     : [];
+  const runnerUpId = finalVote.runnerUp?.id;
+  const runnerUpSupporters = runnerUpId
+    ? perJurorVotes
+      .filter((entry) => entry.finalist.id === runnerUpId)
+      .map((entry) => entry.juror)
+    : winnerId
+      ? perJurorVotes
+        .filter((entry) => entry.finalist.id !== winnerId)
+        .map((entry) => entry.juror)
+      : [];
+  const juryNarrative = buildJuryNarrative(perJurorVotes, finalVote, finalistVoteCounts);
+  const nonWinnerSupporters = runnerUpSupporters;
+  const narrativeHints = juryNarrative.map((line) => line.text);
   const evidence = eventRefs?.forRound(null, ["jury.winner_determined"], completed.jury.finalists);
 
   return {
@@ -498,10 +697,60 @@ function buildJuryBreakdown(
     winner: completed.jury.winner,
     finalVote,
     perJurorVotes,
-    narrativeHints: juryNarrativeHints(perJurorVotes, finalVote, finalistVoteCounts),
+    juryNarrative,
+    winnerSupporters,
+    runnerUpSupporters,
+    narrativeHints,
     nonWinnerSupporters,
     ...(evidence && evidence.length > 0 ? { evidence } : {}),
   };
+}
+
+function buildJuryNarrative(
+  perJurorVotes: readonly PostgameJuryVoteEntry[],
+  finalVote: PostgameFinalVote,
+  finalistVoteCounts: Map<string, number>,
+): PostgameDerivedText[] {
+  if (!finalVote.winner || !finalVote.runnerUp || perJurorVotes.length === 0) return [];
+  const sorted = [...perJurorVotes].sort((left, right) =>
+    (left.jurorEliminatedRound ?? Number.MAX_SAFE_INTEGER) -
+    (right.jurorEliminatedRound ?? Number.MAX_SAFE_INTEGER) ||
+    left.juror.name.localeCompare(right.juror.name)
+  );
+  const midpoint = Math.ceil(sorted.length / 2);
+  const early = sorted.slice(0, midpoint);
+  const late = sorted.slice(midpoint);
+  const lines: PostgameDerivedText[] = [];
+  const earlyWinnerVotes = early.filter((entry) => entry.finalist.id === finalVote.winner?.id).length;
+  const lateRunnerUpVotes = late.filter((entry) => entry.finalist.id === finalVote.runnerUp?.id).length;
+  if (early.length > 0 && earlyWinnerVotes > early.length / 2) {
+    lines.push({
+      text: `Early jurors favored ${finalVote.winner.name}.`,
+      confidence: "high",
+      derivationMethod: "jury_vote_elimination_order_split",
+    });
+  }
+  if (late.length > 0 && lateRunnerUpVotes >= late.length / 2) {
+    lines.push({
+      text: `Later jurors favored ${finalVote.runnerUp.name}.`,
+      confidence: "high",
+      derivationMethod: "jury_vote_elimination_order_split",
+    });
+  }
+  const maxVotes = Math.max(...Array.from(finalistVoteCounts.values()), 0);
+  const minVotes = Math.min(...Array.from(finalistVoteCounts.values()), maxVotes);
+  if (maxVotes > 0 && maxVotes - minVotes > 0) {
+    lines.push({
+      text: `Final margin: ${marginText(maxVotes - minVotes)}.`,
+      confidence: "high",
+      derivationMethod: "final_jury_vote_margin",
+    });
+  }
+  return lines;
+}
+
+function marginText(margin: number): string {
+  return margin === 1 ? "one vote" : `${margin} votes`;
 }
 
 function buildPlayerSummary(input: {
@@ -609,6 +858,22 @@ function buildPlayerSummary(input: {
     "jury.vote_cast",
     "jury.winner_determined",
   ]);
+  const overallGameShape = buildOverallGameShape({
+    player,
+    roundSummaries,
+    finalVote,
+    empowerVotesReceivedByRound,
+    exposeVotesReceivedByRound,
+    councilVotesReceived,
+    majorityAlignmentByRound,
+    timesNominated,
+    atRiskMoments,
+    finalist,
+  });
+  const diagnostics = [
+    ...completed.availability.diagnostics.map((diagnostic) => ({ ...diagnostic })),
+    ...overallGameShape.diagnostics,
+  ];
 
   return {
     player,
@@ -639,10 +904,439 @@ function buildPlayerSummary(input: {
       votesReceived: finalVotesReceived,
       wonFinalVote: finalVote.winner?.id === player.id,
     },
+    overallGameShape,
     readableSummary: readablePlayerSummary(player, majorityAlignmentByRound, finalVote, eliminated),
-    diagnostics: completed.availability.diagnostics.map((diagnostic) => ({ ...diagnostic })),
+    diagnostics,
     ...(evidence && evidence.length > 0 ? { evidence } : {}),
   };
+}
+
+function buildOverallGameShape(input: {
+  player: { id: UUID; name: string; status: "winner" | "finalist" | "eliminated" | "unknown" };
+  roundSummaries: readonly PostgameRoundSummary[];
+  finalVote: PostgameFinalVote;
+  empowerVotesReceivedByRound: ReadonlyArray<{ round: number; votes: number }>;
+  exposeVotesReceivedByRound: ReadonlyArray<{ round: number; votes: number }>;
+  councilVotesReceived: ReadonlyArray<{ round: number; votes: number }>;
+  majorityAlignmentByRound: readonly PostgamePlayerMajorityAlignment[];
+  timesNominated: ReadonlyArray<{ round: number; candidates: RevealedPlayerRef[]; eliminated: boolean }>;
+  atRiskMoments: ReadonlyArray<PostgamePlayerGameSummary["atRiskMoments"][number]>;
+  finalist: boolean;
+}): PostgamePlayerShape {
+  const candidates: Array<{
+    value: PostgamePlayerShapeValue;
+    confidence: PostgameDerivationConfidence;
+    signals: string[];
+  }> = [];
+  const totalResolvedRounds = input.roundSummaries.filter((round) => round.majorityCohort.basis !== "unavailable").length;
+  const empoweredRounds = input.roundSummaries.filter((round) => round.empowered?.id === input.player.id).length;
+  const exposureVotes = input.exposeVotesReceivedByRound.reduce((sum, entry) => sum + entry.votes, 0);
+  const councilVotes = input.councilVotesReceived.reduce((sum, entry) => sum + entry.votes, 0);
+  const alignedRounds = input.majorityAlignmentByRound.filter((round) => round.aligned !== null);
+  const majorityAligned = alignedRounds.filter((round) => round.aligned === true).length;
+  const majorityNotAligned = alignedRounds.filter((round) => round.aligned === false).length;
+  const powerShare = totalResolvedRounds > 0 ? empoweredRounds / totalResolvedRounds : 0;
+  const isPowerPlayer = empoweredRounds >= 3 || powerShare >= 0.35;
+  if (isPowerPlayer) {
+    candidates.push({
+      value: "power player",
+      confidence: empoweredRounds >= 3 ? "high" : "medium",
+      signals: [`empowered_rounds:${empoweredRounds}`, `resolved_round_share:${roundToTwo(powerShare)}`],
+    });
+  }
+  if (input.finalist && input.atRiskMoments.length >= 2 && !isPowerPlayer) {
+    candidates.push({
+      value: "social survivor",
+      confidence: input.atRiskMoments.length >= 3 ? "high" : "medium",
+      signals: [`at_risk_moments:${input.atRiskMoments.length}`, "finalist:true"],
+    });
+  }
+  if (input.finalist && exposureVotes <= 1 && councilVotes <= 1 && input.timesNominated.length === 0) {
+    candidates.push({
+      value: "under the radar",
+      confidence: "high",
+      signals: [
+        `expose_votes_received:${exposureVotes}`,
+        `council_votes_received:${councilVotes}`,
+        "nominations:0",
+      ],
+    });
+  }
+  if (majorityAligned >= 2 && majorityNotAligned >= 2) {
+    candidates.push({
+      value: "swing voter",
+      confidence: majorityAligned >= 3 && majorityNotAligned >= 3 ? "high" : "medium",
+      signals: [`majority_aligned_rounds:${majorityAligned}`, `non_aligned_rounds:${majorityNotAligned}`],
+    });
+  }
+  if (
+    input.timesNominated.length >= 2 ||
+    input.exposeVotesReceivedByRound.filter((entry) => entry.votes > 0).length >= 2 ||
+    input.councilVotesReceived.filter((entry) => entry.votes >= 2).length >= 1
+  ) {
+    candidates.push({
+      value: "consensus target",
+      confidence: input.timesNominated.length >= 2 ? "high" : "medium",
+      signals: [
+        `nominations:${input.timesNominated.length}`,
+        `expose_vote_rounds:${input.exposeVotesReceivedByRound.filter((entry) => entry.votes > 0).length}`,
+      ],
+    });
+  }
+  const playerJuryVotes = input.finalVote.voteCounts.find((entry) => entry.player.id === input.player.id)?.votes ?? 0;
+  const maxJuryVotes = Math.max(...input.finalVote.voteCounts.map((entry) => entry.votes), 0);
+  if (input.finalist && playerJuryVotes > 0 && playerJuryVotes === maxJuryVotes) {
+    candidates.push({
+      value: "jury favorite",
+      confidence: (input.finalVote.margin ?? 0) >= 2 ? "high" : "medium",
+      signals: [`jury_votes:${playerJuryVotes}`, `final_margin:${input.finalVote.margin ?? "unknown"}`],
+    });
+  }
+
+  if (candidates.length === 0) {
+    return {
+      value: null,
+      confidence: "low",
+      derivationMethod: "measurable_shape_thresholds",
+      supportingSignals: [],
+      diagnostics: [{
+        code: "player_shape_threshold_not_met",
+        severity: "info",
+        message: `No overall game-shape threshold was met for ${input.player.name}.`,
+      }],
+    };
+  }
+
+  const ranked = [...candidates].sort((left, right) =>
+    confidenceRank(right.confidence) - confidenceRank(left.confidence) ||
+    left.value.localeCompare(right.value)
+  );
+  const bestRank = confidenceRank(ranked[0]!.confidence);
+  const tied = ranked.filter((candidate) => confidenceRank(candidate.confidence) === bestRank);
+  if (tied.length > 1) {
+    return {
+      value: null,
+      confidence: ranked[0]!.confidence,
+      derivationMethod: "measurable_shape_thresholds",
+      supportingSignals: tied.flatMap((candidate) => candidate.signals),
+      diagnostics: [{
+        code: "player_shape_ambiguous",
+        severity: "info",
+        message: `${input.player.name} matched multiple same-confidence game-shape thresholds.`,
+      }],
+    };
+  }
+
+  const best = ranked[0]!;
+  return {
+    value: best.value,
+    confidence: best.confidence,
+    derivationMethod: "measurable_shape_thresholds",
+    supportingSignals: best.signals,
+    diagnostics: [],
+  };
+}
+
+function confidenceRank(confidence: PostgameDerivationConfidence): number {
+  switch (confidence) {
+    case "high":
+      return 3;
+    case "medium":
+      return 2;
+    case "low":
+      return 1;
+  }
+}
+
+function roundToTwo(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function buildDerivedVoteCohorts(input: {
+  completed: CompletedGameResultsRead;
+  roundSummaries: readonly PostgameRoundSummary[];
+}): PostgameDerivedVoteCohort[] {
+  const eliminatedRounds = eliminatedRoundMap(input.completed.eliminationOrder);
+  const blocs = new Map<string, VoteCohortBuilder>();
+
+  for (const round of input.roundSummaries) {
+    const cohort = round.majorityCohort;
+    if (cohort.basis === "unavailable" || cohort.alignedPlayers.length < 2) continue;
+    for (const players of playerPairs(cohort.alignedPlayers)) {
+      const key = players.map((player) => player.id).join("|");
+      const current = blocs.get(key) ?? {
+        players,
+        roundsControlled: [],
+        sharedVotes: [],
+        highConfidenceRounds: 0,
+      };
+      current.roundsControlled.push(round.round);
+      current.sharedVotes.push({
+        round: round.round,
+        target: cohort.target,
+        basis: cohort.basis,
+      });
+      if (cohort.confidence === "high") current.highConfidenceRounds += 1;
+      blocs.set(key, current);
+    }
+  }
+
+  return Array.from(consolidateVoteCohortBuilders(blocs, input.roundSummaries).values())
+    .filter((bloc) => bloc.roundsControlled.length >= 2)
+    .map((bloc) => {
+      const firstObservedRound = Math.min(...bloc.roundsControlled);
+      const lastObservedRound = Math.max(...bloc.roundsControlled);
+      const eligibleRounds = input.roundSummaries.filter((round) =>
+        round.round >= firstObservedRound &&
+        round.round <= lastObservedRound &&
+        round.majorityCohort.basis !== "unavailable" &&
+        bloc.players.every((player) => {
+          const eliminatedRound = eliminatedRounds.get(player.id);
+          return eliminatedRound === undefined || round.round <= eliminatedRound;
+        })
+      );
+      const cohesionScore = eligibleRounds.length > 0
+        ? roundToTwo(bloc.roundsControlled.length / eligibleRounds.length)
+        : 0;
+      return {
+        basis: "derived_vote_cohesion" as const,
+        players: bloc.players,
+        size: bloc.players.length,
+        firstObservedRound,
+        lastObservedRound,
+        roundsControlled: bloc.roundsControlled,
+        sharedVotes: bloc.sharedVotes,
+        targets: bloc.sharedVotes,
+        cohesionScore,
+        confidence: cohortConfidence(bloc.roundsControlled.length, cohesionScore),
+        derivationMethod: "shared_vote_outcomes" as const,
+        note: "Derived from repeated shared vote outcomes; this is not confirmed alliance membership.",
+      };
+    })
+    .sort((left, right) =>
+      confidenceRank(right.confidence) - confidenceRank(left.confidence) ||
+      right.roundsControlled.length - left.roundsControlled.length ||
+      right.cohesionScore - left.cohesionScore ||
+      left.players.map((player) => player.name).join(",").localeCompare(
+        right.players.map((player) => player.name).join(","),
+      )
+    )
+    .slice(0, 8);
+}
+
+type VoteCohortBuilder = {
+  players: RevealedPlayerRef[];
+  roundsControlled: number[];
+  sharedVotes: PostgameDerivedVoteCohort["sharedVotes"];
+  highConfidenceRounds: number;
+};
+
+function consolidateVoteCohortBuilders(
+  blocs: ReadonlyMap<string, VoteCohortBuilder>,
+  roundSummaries: readonly PostgameRoundSummary[],
+): Map<string, VoteCohortBuilder> {
+  const consolidated = new Map<string, VoteCohortBuilder>();
+  for (const bloc of blocs.values()) {
+    const players = playersSharedAcrossRounds(roundSummaries, bloc.roundsControlled);
+    if (players.length < 2) continue;
+    const key = `${players.map((player) => player.id).join("|")}::${bloc.roundsControlled.join(",")}`;
+    const existing = consolidated.get(key);
+    if (existing) {
+      existing.highConfidenceRounds = Math.max(existing.highConfidenceRounds, bloc.highConfidenceRounds);
+      continue;
+    }
+    consolidated.set(key, {
+      ...bloc,
+      players,
+    });
+  }
+  return consolidated;
+}
+
+function playersSharedAcrossRounds(
+  roundSummaries: readonly PostgameRoundSummary[],
+  rounds: readonly number[],
+): RevealedPlayerRef[] {
+  const summaries = rounds
+    .map((roundNumber) => roundSummaries.find((round) => round.round === roundNumber))
+    .filter((round): round is PostgameRoundSummary => Boolean(round));
+  if (summaries.length === 0) return [];
+  const sharedIds = new Set(summaries[0]!.majorityCohort.alignedPlayers.map((player) => player.id));
+  const playerRefs = new Map(summaries[0]!.majorityCohort.alignedPlayers.map((player) => [player.id, player]));
+  for (const summary of summaries.slice(1)) {
+    const roundIds = new Set(summary.majorityCohort.alignedPlayers.map((player) => player.id));
+    for (const playerId of [...sharedIds]) {
+      if (!roundIds.has(playerId)) sharedIds.delete(playerId);
+    }
+    for (const player of summary.majorityCohort.alignedPlayers) {
+      if (sharedIds.has(player.id) && !playerRefs.has(player.id)) playerRefs.set(player.id, player);
+    }
+  }
+  return [...sharedIds]
+    .flatMap((playerId) => {
+      const player = playerRefs.get(playerId);
+      return player ? [player] : [];
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function cohortConfidence(sharedRounds: number, cohesionScore: number): PostgameDerivationConfidence {
+  if (sharedRounds >= 3 && cohesionScore >= 0.75) return "high";
+  if (sharedRounds >= 2 && cohesionScore >= 0.5) return "medium";
+  return "low";
+}
+
+function playerPairs(players: readonly RevealedPlayerRef[]): RevealedPlayerRef[][] {
+  const sorted = [...players].sort((left, right) => left.name.localeCompare(right.name));
+  const pairs: RevealedPlayerRef[][] = [];
+  for (let leftIndex = 0; leftIndex < sorted.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < sorted.length; rightIndex += 1) {
+      pairs.push([sorted[leftIndex]!, sorted[rightIndex]!]);
+    }
+  }
+  return pairs;
+}
+
+function buildGameMomentum(input: {
+  completed: CompletedGameResultsRead;
+  roundSummaries: readonly PostgameRoundSummary[];
+  derivedVoteCohorts: readonly PostgameDerivedVoteCohort[];
+  finalVote: PostgameFinalVote;
+}): PostgameMomentumSegment[] {
+  const segments: PostgameMomentumSegment[] = [];
+  const empoweredCounts = new Map<string, { player: RevealedPlayerRef; rounds: number[] }>();
+  for (const round of input.roundSummaries) {
+    if (!round.empowered) continue;
+    const current = empoweredCounts.get(round.empowered.id) ?? { player: round.empowered, rounds: [] };
+    current.rounds.push(round.round);
+    empoweredCounts.set(round.empowered.id, current);
+  }
+  for (const entry of empoweredCounts.values()) {
+    const longestStreak = longestConsecutiveStreak(entry.rounds);
+    if (entry.rounds.length < 3 && longestStreak < 2) continue;
+    segments.push({
+      round: entry.rounds[0]!,
+      firstObservedRound: entry.rounds[0]!,
+      lastObservedRound: entry.rounds.at(-1)!,
+      leader: { kind: "player", player: entry.player },
+      indicators: ["empowerment"],
+      confidence: entry.rounds.length >= 3 || longestStreak >= 3 ? "high" : "medium",
+      derivationMethod: "repeated_empowerment_momentum",
+      criteria: {
+        empoweredRounds: entry.rounds,
+        totalEmpoweredRounds: entry.rounds.length,
+        longestConsecutiveStreak: longestStreak,
+      },
+    });
+  }
+
+  for (const cohort of input.derivedVoteCohorts.filter((entry) => entry.confidence !== "low").slice(0, 1)) {
+    segments.push({
+      round: cohort.firstObservedRound,
+      firstObservedRound: cohort.firstObservedRound,
+      lastObservedRound: cohort.lastObservedRound,
+      leader: { kind: "cohort", players: cohort.players },
+      indicators: ["majority_vote"],
+      confidence: cohort.confidence,
+      derivationMethod: "repeated_majority_vote_momentum",
+      criteria: {
+        cohesionScore: cohort.cohesionScore,
+        sharedRounds: cohort.roundsControlled.length,
+      },
+    });
+  }
+
+  if (input.finalVote.status === "available" && input.finalVote.winner) {
+    segments.push({
+      round: input.completed.summary.roundsPlayed,
+      firstObservedRound: input.completed.summary.roundsPlayed,
+      lastObservedRound: input.completed.summary.roundsPlayed,
+      leader: { kind: "player", player: input.finalVote.winner },
+      indicators: ["jury_result"],
+      confidence: "high",
+      derivationMethod: "final_jury_result",
+      criteria: {
+        voteScore: formatFinalVoteScore(input.finalVote),
+        margin: input.finalVote.margin,
+      },
+    });
+  }
+
+  return dedupeMomentumSegments(segments)
+    .sort((left, right) =>
+      left.round - right.round ||
+      momentumIndicatorPriority(left) - momentumIndicatorPriority(right) ||
+      confidenceRank(right.confidence) - confidenceRank(left.confidence) ||
+      momentumLeaderName(left).localeCompare(momentumLeaderName(right))
+    )
+    .slice(0, 8);
+}
+
+function buildExecutiveSummary(input: {
+  completed: CompletedGameResultsRead;
+  roundSummaries: readonly PostgameRoundSummary[];
+  finalVote: PostgameFinalVote;
+  highlightedEliminations: readonly PostgameHighlightedElimination[];
+  gameMomentum: readonly PostgameMomentumSegment[];
+}): PostgameDerivedText[] {
+  const lines: PostgameDerivedText[] = [];
+  const controlSegment = input.gameMomentum.find((segment) => segment.indicators.includes("empowerment"));
+  if (controlSegment?.leader.kind === "player") {
+    const empoweredRounds = controlSegment.criteria.empoweredRounds;
+    const total = Array.isArray(empoweredRounds) ? empoweredRounds.length : null;
+    const streak = typeof controlSegment.criteria.longestConsecutiveStreak === "number"
+      ? controlSegment.criteria.longestConsecutiveStreak
+      : null;
+    if (total !== null) {
+      lines.push({
+        text: streak !== null && streak >= 3
+          ? `${controlSegment.leader.player.name} controlled power for ${streak} consecutive rounds.`
+          : `${controlSegment.leader.player.name} controlled power in ${total} rounds.`,
+        confidence: controlSegment.confidence,
+        derivationMethod: "executive_summary_repeated_empowerment",
+      });
+    }
+  }
+
+  const lowExposureWinner = input.finalVote.winner
+    ? exposeVoteTotal(input.completed, input.finalVote.winner.id)
+    : null;
+  if (input.finalVote.winner && lowExposureWinner !== null && lowExposureWinner <= 1) {
+    lines.push({
+      text: `${input.finalVote.winner.name} received ${lowExposureWinner === 1 ? "one expose vote" : "no expose votes"} all game.`,
+      confidence: "high",
+      derivationMethod: "executive_summary_expose_vote_total",
+    });
+  }
+
+  const highlightedEndgame = input.highlightedEliminations.find((entry) =>
+    entry.highlightReasons.includes("endgame_elimination")
+  );
+  if (highlightedEndgame) {
+    lines.push({
+      text: `${highlightedEndgame.player.name} was eliminated during the endgame.`,
+      confidence: highlightedEndgame.confidence,
+      derivationMethod: "executive_summary_highlighted_elimination",
+    });
+  }
+
+  if (input.finalVote.status === "available" && input.finalVote.winner && input.finalVote.runnerUp) {
+    lines.push({
+      text: `${input.finalVote.winner.name} defeated ${input.finalVote.runnerUp.name} ${formatFinalVoteScore(input.finalVote)}.`,
+      confidence: "high",
+      derivationMethod: "executive_summary_final_vote",
+    });
+  }
+
+  if (input.finalVote.margin !== null && input.finalVote.margin > 0) {
+    lines.push({
+      text: `Final margin: ${marginText(input.finalVote.margin)}.`,
+      confidence: "high",
+      derivationMethod: "executive_summary_final_margin",
+    });
+  }
+
+  return dedupeDerivedText(lines).slice(0, 5);
 }
 
 function buildTurningPoints(input: {
@@ -664,7 +1358,12 @@ function buildTurningPoints(input: {
         type: "majority_consolidation",
         players: [round.empowered],
         confidence: "high",
-        description: `${round.empowered.name} was empowered repeatedly in the early game.`,
+        description: `${round.empowered.name} controlled power in the early game.`,
+        derivationMethod: "early_repeated_empowerment",
+        criteria: {
+          empoweredRounds: current.rounds,
+          threshold: "two empowered rounds by round 3",
+        },
         evidence: {
           factRefs: current.rounds.map((roundNumber) => `round:${roundNumber}:empowered:${round.empowered?.id}`),
           ...(input.eventRefs ? { eventRefs: input.eventRefs.forRound(round.round, ["vote.empower_tally_resolved"], [round.empowered]) } : {}),
@@ -676,12 +1375,21 @@ function buildTurningPoints(input: {
   const dominant = [...empoweredCounts.values()]
     .sort((left, right) => right.rounds.length - left.rounds.length)[0];
   if (dominant && dominant.rounds.length >= 3) {
+    const longestStreak = longestConsecutiveStreak(dominant.rounds);
     points.push({
       round: dominant.rounds.at(-1) ?? dominant.rounds[0]!,
       type: "power_shift",
       players: [dominant.player],
       confidence: "medium",
-      description: `${dominant.player.name} held repeated empowerment across ${dominant.rounds.length} rounds.`,
+      description: longestStreak >= 3
+        ? `${dominant.player.name} controlled power for ${longestStreak} consecutive rounds.`
+        : `${dominant.player.name} controlled power in ${dominant.rounds.length} rounds.`,
+      derivationMethod: "repeated_empowerment_count",
+      criteria: {
+        empoweredRounds: dominant.rounds,
+        totalEmpoweredRounds: dominant.rounds.length,
+        longestConsecutiveStreak: longestStreak,
+      },
       evidence: {
         factRefs: dominant.rounds.map((round) => `round:${round}:empowered:${dominant.player.id}`),
       },
@@ -694,7 +1402,14 @@ function buildTurningPoints(input: {
       type: elimination.source === "endgame" ? "endgame_pivot" : "threat_removed",
       players: [elimination.player],
       confidence: elimination.source === "endgame" ? "high" : "medium",
-      description: `${elimination.player.name} was removed by ${elimination.source} vote.`,
+      description: elimination.source === "endgame"
+        ? `${elimination.player.name} was eliminated during the endgame.`
+        : `${elimination.player.name} was eliminated by ${elimination.source} vote.`,
+      derivationMethod: "highlighted_elimination",
+      criteria: {
+        source: elimination.source,
+        round: elimination.round,
+      },
       evidence: {
         factRefs: [`round:${elimination.round}:eliminated:${elimination.player.id}`],
         ...(input.eventRefs
@@ -710,7 +1425,12 @@ function buildTurningPoints(input: {
       type: "jury_split",
       players: input.completed.summary.finalists,
       confidence: "high",
-      description: `The jury split ${formatFinalVote(input.finalVote)}, leaving a one-vote final margin.`,
+      description: `The jury vote was ${formatFinalVoteScore(input.finalVote)}, a one-vote final margin.`,
+      derivationMethod: "final_jury_vote_margin",
+      criteria: {
+        margin: input.finalVote.margin,
+        totalVotes: input.finalVote.totalVotes,
+      },
       evidence: {
         factRefs: ["jury:final_vote"],
         ...(input.eventRefs ? { eventRefs: input.eventRefs.forRound(null, ["jury.winner_determined"], input.completed.summary.finalists) } : {}),
@@ -726,7 +1446,12 @@ function buildTurningPoints(input: {
         type: "near_miss",
         players: [moment.player],
         confidence: "medium",
-        description: `${moment.player.name} survived the Council slate in round ${round.round}.`,
+        description: `${moment.player.name} survived the Council vote in round ${round.round}.`,
+        derivationMethod: "survived_council_slate",
+        criteria: {
+          round: round.round,
+          candidateCount: round.councilCandidates.length,
+        },
         evidence: {
           factRefs: [`round:${round.round}:survived_council:${moment.player.id}`],
           ...(input.eventRefs ? { eventRefs: input.eventRefs.forRound(round.round, ["power.candidates_resolved", "council.elimination_resolved"], [moment.player]) } : {}),
@@ -787,18 +1512,85 @@ function findUnanimousOrNearUnanimousVotes(
   return votes;
 }
 
-function majorEliminations(
-  completed: CompletedGameResultsRead,
-  dominantEmpoweredPlayers: readonly PostgameVoteCount[],
-  mostExposedPlayers: readonly PostgameVoteCount[],
-): CompletedGameResultsElimination[] {
-  const powerPlayerIds = new Set(dominantEmpoweredPlayers.slice(0, 2).map((entry) => entry.player.id));
-  const exposedPlayerIds = new Set(mostExposedPlayers.slice(0, 2).map((entry) => entry.player.id));
-  return completed.eliminationOrder.filter((entry) =>
-    entry.source === "endgame" ||
-    powerPlayerIds.has(entry.player.id) ||
-    exposedPlayerIds.has(entry.player.id)
+const HIGHLIGHTED_ELIMINATION_REASON_PRIORITY: PostgameHighlightedEliminationReason[] = [
+  "first_elimination",
+  "final_pre_jury_elimination",
+  "first_jury_member",
+  "endgame_elimination",
+  "winner_final_opponent",
+  "top_empowered_player",
+  "top_exposed_player",
+];
+
+function buildHighlightedEliminations(input: {
+  bootOrder: readonly PostgameBootOrderEntry[];
+  finalVote: PostgameFinalVote;
+  dominantEmpoweredPlayers: readonly PostgameVoteCount[];
+  mostExposedPlayers: readonly PostgameVoteCount[];
+}): PostgameHighlightedElimination[] {
+  const reasonsByPlayerId = new Map<string, Set<PostgameHighlightedEliminationReason>>();
+  const addReason = (entry: PostgameBootOrderEntry | undefined, reason: PostgameHighlightedEliminationReason) => {
+    if (!entry) return;
+    const current = reasonsByPlayerId.get(entry.player.id) ?? new Set<PostgameHighlightedEliminationReason>();
+    current.add(reason);
+    reasonsByPlayerId.set(entry.player.id, current);
+  };
+
+  addReason(input.bootOrder[0], "first_elimination");
+  addReason(
+    [...input.bootOrder].reverse().find((entry) => !entry.juryMember && entry.source !== "jury"),
+    "final_pre_jury_elimination",
   );
+  addReason(input.bootOrder.find((entry) => entry.juryMember), "first_jury_member");
+  for (const entry of input.bootOrder) {
+    if (entry.source === "endgame") addReason(entry, "endgame_elimination");
+    if (input.finalVote.runnerUp && entry.player.id === input.finalVote.runnerUp.id) {
+      addReason(entry, "winner_final_opponent");
+    }
+  }
+  const powerPlayerIds = new Set(input.dominantEmpoweredPlayers.slice(0, 2).map((entry) => entry.player.id));
+  const exposedPlayerIds = new Set(input.mostExposedPlayers.slice(0, 2).map((entry) => entry.player.id));
+  for (const entry of input.bootOrder) {
+    if (powerPlayerIds.has(entry.player.id)) addReason(entry, "top_empowered_player");
+    if (exposedPlayerIds.has(entry.player.id)) addReason(entry, "top_exposed_player");
+  }
+
+  return input.bootOrder
+    .flatMap((entry): PostgameHighlightedElimination[] => {
+      const reasons = reasonsByPlayerId.get(entry.player.id);
+      if (!reasons || reasons.size === 0) return [];
+      const highlightReasons = [...reasons].sort(reasonPriority);
+      return [{
+        ...entry,
+        highlightReasons,
+        confidence: highlightedEliminationConfidence(highlightReasons),
+        derivationMethod: "highlighted_elimination_rules",
+      }];
+    })
+    .sort((left, right) =>
+      left.round - right.round ||
+      reasonPriority(left.highlightReasons[0]!) - reasonPriority(right.highlightReasons[0]!) ||
+      left.player.name.localeCompare(right.player.name)
+    );
+}
+
+function reasonPriority(reason: PostgameHighlightedEliminationReason): number {
+  return HIGHLIGHTED_ELIMINATION_REASON_PRIORITY.indexOf(reason);
+}
+
+function highlightedEliminationConfidence(
+  reasons: readonly PostgameHighlightedEliminationReason[],
+): PostgameDerivationConfidence {
+  if (reasons.some((reason) =>
+    reason === "first_elimination" ||
+    reason === "final_pre_jury_elimination" ||
+    reason === "first_jury_member" ||
+    reason === "endgame_elimination" ||
+    reason === "winner_final_opponent"
+  )) {
+    return "high";
+  }
+  return "medium";
 }
 
 function sumExposed(roundSummaries: readonly PostgameRoundSummary[]): Map<string, { player: RevealedPlayerRef; votes: number }> {
@@ -907,33 +1699,6 @@ function didPlayerVoteToEliminate(
   return sawRelevantElimination ? false : null;
 }
 
-function juryNarrativeHints(
-  perJurorVotes: readonly PostgameJuryVoteEntry[],
-  finalVote: PostgameFinalVote,
-  finalistVoteCounts: Map<string, number>,
-): string[] {
-  if (!finalVote.winner || !finalVote.runnerUp || perJurorVotes.length === 0) return [];
-  const sorted = [...perJurorVotes].sort((left, right) =>
-    (left.jurorEliminatedRound ?? Number.MAX_SAFE_INTEGER) -
-    (right.jurorEliminatedRound ?? Number.MAX_SAFE_INTEGER)
-  );
-  const midpoint = Math.ceil(sorted.length / 2);
-  const early = sorted.slice(0, midpoint);
-  const late = sorted.slice(midpoint);
-  const hints = [];
-  const earlyWinnerVotes = early.filter((entry) => entry.finalist.id === finalVote.winner?.id).length;
-  const lateRunnerUpVotes = late.filter((entry) => entry.finalist.id === finalVote.runnerUp?.id).length;
-  if (earlyWinnerVotes > early.length / 2 && late.length > 0 && lateRunnerUpVotes >= late.length / 2) {
-    hints.push(`Early jurors favored ${finalVote.winner.name}; later jurors leaned toward ${finalVote.runnerUp.name}.`);
-  }
-  const maxVotes = Math.max(...Array.from(finalistVoteCounts.values()), 0);
-  const minVotes = Math.min(...Array.from(finalistVoteCounts.values()), maxVotes);
-  if (maxVotes - minVotes === 1) {
-    hints.push(`The final jury vote was decided by one vote.`);
-  }
-  return hints;
-}
-
 function alignmentForPlayer(
   roundSummary: PostgameRoundSummary | undefined,
   playerId: UUID,
@@ -995,8 +1760,48 @@ function formatFinalVote(finalVote: PostgameFinalVote): string {
   return `${winnerVotes}-${runnerUpVotes} over ${finalVote.runnerUp.name}`;
 }
 
+function formatFinalVoteScore(finalVote: PostgameFinalVote): string {
+  const winnerVotes = finalVote.winner
+    ? finalVote.voteCounts.find((entry) => entry.player.id === finalVote.winner?.id)?.votes
+    : null;
+  const runnerUpVotes = finalVote.runnerUp
+    ? finalVote.voteCounts.find((entry) => entry.player.id === finalVote.runnerUp?.id)?.votes
+    : null;
+  if (!finalVote.winner || !finalVote.runnerUp || winnerVotes === null || runnerUpVotes === null) {
+    return "jury vote unavailable";
+  }
+  return `${winnerVotes}-${runnerUpVotes}`;
+}
+
 function isNearUnanimous(votes: number, total: number): boolean {
   return total > 0 && (votes === total || votes === total - 1);
+}
+
+function longestConsecutiveStreak(rounds: readonly number[]): number {
+  if (rounds.length === 0) return 0;
+  const sorted = [...rounds].sort((left, right) => left - right);
+  let longest = 1;
+  let current = 1;
+  for (let index = 1; index < sorted.length; index += 1) {
+    if (sorted[index] === sorted[index - 1]! + 1) {
+      current += 1;
+      longest = Math.max(longest, current);
+    } else {
+      current = 1;
+    }
+  }
+  return longest;
+}
+
+function dedupeDerivedText(lines: readonly PostgameDerivedText[]): PostgameDerivedText[] {
+  const seen = new Set<string>();
+  const result = [];
+  for (const line of lines) {
+    if (seen.has(line.text)) continue;
+    seen.add(line.text);
+    result.push(line);
+  }
+  return result;
 }
 
 function dedupeTurningPoints(points: readonly PostgameTurningPoint[]): PostgameTurningPoint[] {
@@ -1009,6 +1814,39 @@ function dedupeTurningPoints(points: readonly PostgameTurningPoint[]): PostgameT
     result.push(point);
   }
   return result;
+}
+
+function dedupeMomentumSegments(segments: readonly PostgameMomentumSegment[]): PostgameMomentumSegment[] {
+  const seen = new Set<string>();
+  const result = [];
+  for (const segment of segments) {
+    const key = `${segment.round}:${segment.indicators.join(",")}:${momentumLeaderName(segment)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(segment);
+  }
+  return result;
+}
+
+function momentumLeaderName(segment: PostgameMomentumSegment): string {
+  return segment.leader.kind === "player"
+    ? segment.leader.player.name
+    : segment.leader.players.map((player) => player.name).join(",");
+}
+
+function momentumIndicatorPriority(segment: PostgameMomentumSegment): number {
+  if (segment.indicators.includes("empowerment")) return 0;
+  if (segment.indicators.includes("majority_vote")) return 1;
+  if (segment.indicators.includes("endgame_progression")) return 2;
+  if (segment.indicators.includes("jury_result")) return 3;
+  return 4;
+}
+
+function exposeVoteTotal(completed: CompletedGameResultsRead, playerId: UUID): number {
+  return completed.rounds.reduce((sum, round) =>
+    sum + (round.canonicalFacts.roundFacts.power.exposureScores.find((entry) =>
+      entry.player.id === playerId
+    )?.votes ?? 0), 0);
 }
 
 class EventReferenceIndex {
@@ -1057,10 +1895,16 @@ function playersForEvent(
 function inputSummaryMajorEliminations(input: {
   completed: CompletedGameResultsRead;
   roundSummaries: readonly PostgameRoundSummary[];
-}): CompletedGameResultsElimination[] {
+  finalVote: PostgameFinalVote;
+}): PostgameHighlightedElimination[] {
   const dominantEmpoweredPlayers = topCounts(countPlayers(
     input.roundSummaries.flatMap((round) => round.empowered ? [round.empowered] : []),
   ));
   const mostExposedPlayers = topCounts(sumExposed(input.roundSummaries));
-  return majorEliminations(input.completed, dominantEmpoweredPlayers, mostExposedPlayers);
+  return buildHighlightedEliminations({
+    bootOrder: buildPostgameBootOrder(input.completed),
+    finalVote: input.finalVote,
+    dominantEmpoweredPlayers,
+    mostExposedPlayers,
+  });
 }

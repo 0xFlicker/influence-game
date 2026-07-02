@@ -76,6 +76,9 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const briefTool = tools.find((tool) => (tool as { name: string }).name === "read_game_brief");
     expect(JSON.stringify(briefTool)).toContain("outputSchema");
     expect(JSON.stringify(briefTool)).toContain("finalVote");
+    expect(JSON.stringify(briefTool)).toContain("executiveSummary");
+    expect(JSON.stringify(briefTool)).toContain("highlightedEliminations");
+    expect(JSON.stringify(briefTool)).toContain("gameMomentum");
     expect(JSON.stringify(briefTool)).toContain("roundSummaries");
     expect(JSON.stringify(briefTool)).toContain("derivedVoteCohorts");
     expect(JSON.stringify(briefTool)).toContain("postgame");
@@ -94,12 +97,14 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     };
     expect(juryTool.inputSchema.properties).not.toHaveProperty("detailLevel");
     expect(JSON.stringify(juryTool.outputSchema)).toContain("perJurorVotes");
+    expect(JSON.stringify(juryTool.outputSchema)).toContain("runnerUpSupporters");
     const playerSummaryTool = tools.find((tool) => (tool as { name: string }).name === "read_player_game_summary") as {
       inputSchema: { properties: Record<string, unknown> };
       outputSchema: unknown;
     };
     expect(playerSummaryTool.inputSchema.properties).not.toHaveProperty("detailLevel");
     expect(JSON.stringify(playerSummaryTool.outputSchema)).toContain("majorityAlignmentByRound");
+    expect(JSON.stringify(playerSummaryTool.outputSchema)).toContain("overallGameShape");
     const turningPointsTool = tools.find((tool) => (tool as { name: string }).name === "read_game_turning_points") as {
       inputSchema: { properties: Record<string, unknown> };
     };
@@ -351,7 +356,14 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
       readGameBrief: async (args: unknown) => {
         calls.push(args);
-        return { schemaVersion: 1, ok: true, postgame: { summary: { winner: { name: "Lilith Voss" } } } };
+        return {
+          schemaVersion: 1,
+          ok: true,
+          postgame: {
+            executiveSummary: [{ text: "Lilith Voss defeated Kestrel 4-3." }],
+            summary: { winner: { name: "Lilith Voss" } },
+          },
+        };
       },
     }));
 
@@ -378,6 +390,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const result = response?.result as { structuredContent: { ok: boolean }; content: Array<{ text: string }> };
     expect(result.structuredContent.ok).toBe(true);
     expect(result.content[0]?.text).toContain("Lilith Voss");
+    expect(result.content[0]?.text).toContain("Lilith Voss defeated Kestrel 4-3.");
     expect(result.content[0]?.text).not.toContain("\"postgame\"");
     expect(result.content[0]?.text).not.toContain("\"summary\"");
   });

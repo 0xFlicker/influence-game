@@ -903,14 +903,24 @@ describe("Game REST API", () => {
       const brief = (await briefRes.json()) as {
         ok: true;
         postgame: {
-          summary: { winner: { id: string; name: string } | null };
+          schemaVersion: number;
+          executiveSummary: unknown[];
+          summary: {
+            winner: { id: string; name: string } | null;
+            highlightedEliminations: unknown[];
+          };
           derivedVoteCohorts: unknown[];
+          gameMomentum: unknown[];
           roundSummaries: unknown[];
         };
       };
       expect(brief.ok).toBe(true);
+      expect(brief.postgame.schemaVersion).toBe(2);
+      expect(brief.postgame.executiveSummary.length).toBeLessThanOrEqual(5);
       expect(brief.postgame.summary.winner).toEqual({ id: "mira", name: "Mira" });
+      expect(Array.isArray(brief.postgame.summary.highlightedEliminations)).toBe(true);
       expect(Array.isArray(brief.postgame.derivedVoteCohorts)).toBe(true);
+      expect(Array.isArray(brief.postgame.gameMomentum)).toBe(true);
       expect(brief.postgame.roundSummaries).toHaveLength(1);
       expect(JSON.stringify(brief)).not.toContain("sourcePointers");
       expect(JSON.stringify(brief)).not.toContain("payloadVersion");

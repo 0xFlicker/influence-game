@@ -162,6 +162,10 @@ describe("ProductionGameMcpReadModel", () => {
       id: EDGE_SMOKE_DUSK_EXPECTED.winnerId,
       name: EDGE_SMOKE_DUSK_EXPECTED.winnerName,
     });
+    expect(brief.postgame.schemaVersion).toBe(2);
+    expect(brief.postgame.executiveSummary[0]?.text).toBe(
+      "Shadowtech controlled power for 3 consecutive rounds.",
+    );
     expect(brief.postgame.summary.finalVote).toMatchObject({
       totalVotes: 7,
       margin: 1,
@@ -180,6 +184,11 @@ describe("ProductionGameMcpReadModel", () => {
       juryMember: false,
     });
     expect(brief.postgame.roundSummaries).toHaveLength(EDGE_SMOKE_DUSK_EXPECTED.roundsPlayed);
+    expect(brief.postgame.roundSummaries[0]).toMatchObject({
+      headline: {
+        text: "Ash Calder is eliminated.",
+      },
+    });
     const endgameDiagnostics = brief.postgame.roundSummaries
       .filter((round) => round.round >= 6)
       .flatMap((round) => round.diagnostics.map((diagnostic) => diagnostic.code));
@@ -187,6 +196,16 @@ describe("ProductionGameMcpReadModel", () => {
     expect(endgameDiagnostics).not.toContain("power_not_yet_resolved");
     expect(endgameDiagnostics).not.toContain("council_not_yet_resolved");
     expect(brief.postgame.derivedVoteCohorts.length).toBeGreaterThan(0);
+    expect(brief.postgame.derivedVoteCohorts[0]).toMatchObject({
+      size: 3,
+      sharedVotes: expect.any(Array),
+      cohesionScore: 1,
+    });
+    expect(brief.postgame.gameMomentum.some((segment) =>
+      segment.leader.kind === "player" &&
+      segment.leader.player.id === EDGE_SMOKE_DUSK_PLAYERS.shadowtech.id &&
+      segment.indicators.includes("empowerment")
+    )).toBe(true);
     expect(JSON.stringify(brief)).not.toContain("sourcePointers");
     expect(JSON.stringify(brief)).not.toContain("payloadVersion");
 
@@ -201,6 +220,12 @@ describe("ProductionGameMcpReadModel", () => {
     for (const jurorId of EDGE_SMOKE_DUSK_EXPECTED.lilithJuryVotes) {
       expect(juryVotes.get(jurorId)).toBe(EDGE_SMOKE_DUSK_EXPECTED.winnerId);
     }
+    expect(jury.jury.juryNarrative.map((line) => line.text)).toContain("Final margin: one vote.");
+    expect(jury.jury.runnerUpSupporters.map((player) => player.id).sort()).toEqual([
+      EDGE_SMOKE_DUSK_PLAYERS.shadowtech.id,
+      EDGE_SMOKE_DUSK_PLAYERS.nova.id,
+      EDGE_SMOKE_DUSK_PLAYERS.ember.id,
+    ].sort());
 
     const player = await readModel.readPlayerGameSummary({
       gameIdOrSlug: EDGE_SMOKE_DUSK_GAME_ID,
@@ -209,6 +234,7 @@ describe("ProductionGameMcpReadModel", () => {
     expect(player.ok).toBe(true);
     if (!player.ok) return;
     expect(player.player.won).toBe(true);
+    expect(player.player.overallGameShape.value).toBe("under the radar");
     expect(player.player.majorityAlignmentByRound.filter((round) => round.aligned === true)).toHaveLength(5);
 
     const turningPoints = await readModel.readGameTurningPoints({
