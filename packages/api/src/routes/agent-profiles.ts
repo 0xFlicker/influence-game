@@ -29,6 +29,13 @@ import {
   isUserSelectableAgentArchetype,
 } from "../services/agent-archetypes.js";
 import { normalizeAgentAvatarUrlInput } from "../services/agent-profile-management.js";
+import {
+  completeAvatarGenerationRequest,
+  latestAvatarCompletion,
+  latestAvatarCompletionsByAgentProfileId,
+  recordAvatarChange,
+  requestAvatarCompletion,
+} from "../services/avatar-generation.js";
 
 // ---------------------------------------------------------------------------
 // Factory — creates a Hono sub-app with injected DB
@@ -187,12 +194,116 @@ Respond with JSON only:
         updatedAt: now,
       });
 
+    if (parsedAvatarUrl.value) {
+      await recordAvatarChange(db, {
+        userId: user.id,
+        agentProfileId: id,
+        source: "web_upload",
+        status: "completed",
+        previousAvatarUrl: null,
+        newAvatarUrl: parsedAvatarUrl.value,
+      });
+    }
+
     const profile = (await db
       .select()
       .from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, id)))[0]!;
 
     return c.json(profile, 201);
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/agent-profiles/:id/avatar/generate — request generated PFP
+  // -------------------------------------------------------------------------
+
+  app.post("/api/agent-profiles/:id/avatar/generate", requireAuth(db), async (c) => {
+    const user = c.get("user");
+    const profileId = c.req.param("id");
+    const publicBaseUrl = new URL(c.req.url).origin;
+
+    const existing = (await db
+      .select()
+      .from(schema.agentProfiles)
+      .where(
+        and(
+          eq(schema.agentProfiles.id, profileId),
+          eq(schema.agentProfiles.userId, user.id),
+        ),
+      ))[0];
+
+    if (!existing) {
+      return c.json({ error: "Agent profile not found" }, 404);
+    }
+
+    const completion = await requestAvatarCompletion(db, {
+      userId: user.id,
+      agentProfileId: profileId,
+      triggerSource: "web_user_prompt",
+      publicBaseUrl,
+      userRoles: c.get("userRoles") ?? [],
+    });
+
+    if (completion.status === "accepted" && completion.generationRequestId) {
+      void completeAvatarGenerationRequest(db, completion.generationRequestId, {
+        publicBaseUrl,
+      }).catch((error) => {
+        console.warn("[agent-profiles] Background avatar generation failed:", error);
+      });
+    }
+
+    return c.json({ avatarCompletion: completion }, completion.status === "accepted" ? 202 : 200);
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/agent-profiles/:id/avatar/generation — read generated PFP status
+  // -------------------------------------------------------------------------
+
+  app.get("/api/agent-profiles/:id/avatar/generation", requireAuth(db), async (c) => {
+    const user = c.get("user");
+    const profileId = c.req.param("id");
+
+    const existing = (await db
+      .select()
+      .from(schema.agentProfiles)
+      .where(
+        and(
+          eq(schema.agentProfiles.id, profileId),
+          eq(schema.agentProfiles.userId, user.id),
+        ),
+      ))[0];
+
+    if (!existing) {
+      return c.json({ error: "Agent profile not found" }, 404);
+    }
+
+    const completion = await latestAvatarCompletion(db, user.id, profileId);
+    return c.json({
+      avatarUrl: existing.avatarUrl,
+      avatarCompletion: completion ?? {
+        status: existing.avatarUrl ? "already_provided" : "skipped",
+        avatarUrl: existing.avatarUrl,
+        reason: existing.avatarUrl ? "Agent already has an avatar." : "No avatar generation has been requested.",
+      },
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/agent-profiles/avatar-generations — batch-read generated PFP status
+  // -------------------------------------------------------------------------
+
+  app.get("/api/agent-profiles/avatar-generations", requireAuth(db), async (c) => {
+    const user = c.get("user");
+    const ids = (c.req.query("ids") ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean)
+      .slice(0, 50);
+
+    const completions = await latestAvatarCompletionsByAgentProfileId(db, user.id, ids);
+    return c.json({
+      avatarCompletions: Object.fromEntries(completions),
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -207,7 +318,16 @@ Respond with JSON only:
       .from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.userId, user.id));
 
-    return c.json(profiles);
+    const completions = await latestAvatarCompletionsByAgentProfileId(
+      db,
+      user.id,
+      profiles.map((profile) => profile.id),
+    );
+
+    return c.json(profiles.map((profile) => ({
+      ...profile,
+      avatarCompletion: completions.get(profile.id),
+    })));
   });
 
   // -------------------------------------------------------------------------
@@ -301,6 +421,17 @@ Respond with JSON only:
     await db.update(schema.agentProfiles)
       .set(updates)
       .where(eq(schema.agentProfiles.id, profileId));
+
+    if (avatarUrl !== undefined && updates.avatarUrl !== existing.avatarUrl) {
+      await recordAvatarChange(db, {
+        userId: user.id,
+        agentProfileId: profileId,
+        source: "web_manual_update",
+        status: "completed",
+        previousAvatarUrl: existing.avatarUrl,
+        newAvatarUrl: updates.avatarUrl as string | null,
+      });
+    }
 
     const updated = (await db
       .select()

@@ -40,7 +40,7 @@ export function DashboardGamePreview({
   const showError = Boolean(error) && !hasGames;
 
   return (
-    <section className="influence-panel rounded-xl p-5" data-testid="dashboard-game-preview">
+    <section className="influence-panel min-w-0 rounded-xl p-5" data-testid="dashboard-game-preview">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h2 className="influence-section-title">Games</h2>

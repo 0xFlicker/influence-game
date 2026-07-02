@@ -975,6 +975,7 @@ export interface SavedAgent {
   gamesWon: number;
   createdAt: string;
   updatedAt: string;
+  avatarCompletion?: AvatarCompletion;
 }
 
 export interface CreateAgentParams {
@@ -987,6 +988,16 @@ export interface CreateAgentParams {
 }
 
 export type UpdateAgentParams = Partial<CreateAgentParams>;
+
+export interface AvatarCompletion {
+  status: "already_provided" | "accepted" | "queued" | "processing" | "completed" | "skipped" | "failed";
+  generationRequestId?: string;
+  avatarUrl?: string | null;
+  failureCode?: string;
+  failureStage?: "provider_submit" | "provider_poll" | "asset_select" | "asset_download" | "avatar_store" | "profile_update";
+  retryable?: boolean;
+  reason?: string;
+}
 
 export interface GeneratePersonalityParams {
   traits?: string;
@@ -1040,6 +1051,28 @@ export async function updateAgent(
 
 export async function deleteAgent(id: string): Promise<void> {
   await apiFetch(`/api/agent-profiles/${id}`, { method: "DELETE" });
+}
+
+export async function requestAgentAvatarGeneration(
+  id: string,
+): Promise<{ avatarCompletion: AvatarCompletion }> {
+  return apiFetch(`/api/agent-profiles/${id}/avatar/generate`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export async function getAgentAvatarGeneration(
+  id: string,
+): Promise<{ avatarUrl: string | null; avatarCompletion: AvatarCompletion }> {
+  return apiFetch(`/api/agent-profiles/${id}/avatar/generation`);
+}
+
+export async function getAgentAvatarGenerations(
+  ids: string[],
+): Promise<{ avatarCompletions: Record<string, AvatarCompletion> }> {
+  const params = new URLSearchParams({ ids: ids.join(",") });
+  return apiFetch(`/api/agent-profiles/avatar-generations?${params}`);
 }
 
 export async function generatePersonality(

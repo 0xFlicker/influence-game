@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Ideation: Automatic Avatar PFP Generation</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #11130f;
+      --panel: #191d16;
+      --panel-2: #20251d;
+      --text: #f4f1e8;
+      --muted: #bbb5a3;
+      --line: #3a4230;
+      --accent: #d6ff70;
+      --accent-2: #78dcca;
+      --warn: #ffbd66;
+      --bad: #ff7b7b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      width: min(940px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 40px 0 56px;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 20px;
+      margin-bottom: 28px;
+    }
+    h1, h2, h3 { line-height: 1.15; margin: 0; }
+    h1 { font-size: 32px; letter-spacing: 0; }
+    h2 { font-size: 21px; margin-top: 34px; margin-bottom: 12px; color: var(--accent); }
+    h3 { font-size: 17px; margin-bottom: 8px; }
+    p { max-width: 74ch; margin: 0 0 12px; }
+    a { color: var(--accent-2); }
+    code {
+      background: #0c0e0a;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: 1px 5px;
+      color: #f6ffd7;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 9px;
+      background: #151812;
+    }
+    .summary, .idea, .rejections {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .summary strong { color: var(--accent); }
+    .axes {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .axis {
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      color: var(--muted);
+    }
+    .jump-list {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .jump-list a {
+      display: block;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 8px 10px;
+      background: #151812;
+      text-decoration: none;
+    }
+    .idea {
+      margin: 14px 0;
+    }
+    .idea-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+    .rank {
+      color: var(--accent);
+      font-weight: 800;
+      margin-right: 6px;
+    }
+    .score {
+      white-space: nowrap;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .field {
+      margin-top: 8px;
+    }
+    .field b {
+      color: #fff6c8;
+    }
+    .diagram {
+      margin: 14px 0 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #10130d;
+      padding: 12px;
+      overflow-x: auto;
+    }
+    svg text {
+      fill: var(--text);
+      font: 13px ui-sans-serif, system-ui, sans-serif;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 9px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { color: var(--accent); }
+    footer {
+      margin-top: 36px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Ideation: Automatic Avatar PFP Generation</h1>
+    <div class="meta">
+      <span class="pill">Date: <time datetime="2026-07-02">2026-07-02</time></span>
+      <span class="pill">Topic: automatic-avatar-pfp-generation</span>
+      <span class="pill">Mode: repo-grounded</span>
+      <span class="pill">Focus: Katana image generation for The House agent PFPs</span>
+    </div>
+  </header>
+
+  <section class="summary">
+    <p><strong>Recommendation:</strong> ship PFP generation as an idempotent, async, budget-accounted server-side enhancement to agent creation. Start with one generated image per new agent when the user leaves the form without an avatar and confirms, plus automatic generation for MCP-created agents that omit <code>avatarUrl</code>.</p>
+    <p>The non-negotiable storage rule: Katana URLs are acquisition URLs only. Download the completed <code>original_data_url</code>, validate/resize if needed, write it through Influence profile-picture storage, and persist only the resulting durable Influence URL.</p>
+    <p>The non-negotiable cost rule: do not model this as a cute UX toggle. Model it as paid provider spend with a ledger from day one. At roughly $0.015 per image, the unit cost is tiny until automation finds the button. Then it becomes confetti with an invoice.</p>
+  </section>
+
+  <h2>Grounding Context</h2>
+  <p>The existing agent service already normalizes supplied avatar URLs before insert/update, so the generated path should feed the same durable field instead of inventing a second cosmetic store. The MCP create/update tools already accept <code>avatarUrl</code> for owned agents, so automatic generation can hang off the same management service rather than being only a web-only feature.</p>
+  <p>Profile-picture storage already has the right separation: local development can write local files; hosted deployments use S3-compatible object storage; upload URLs are temporary, while public URLs are the durable field. The README documents the same split-origin local behavior and Doppler-held Katana credentials.</p>
+  <p>External abuse context matters because this introduces a server-funded paid action. OWASP classifies automated <a href="https://owasp.org/www-project-automated-threats-to-web-applications/">account creation</a> and <a href="https://owasp.org/www-project-automated-threats-to-web-applications/">cost-inflation fraud</a> as distinct automated threats. OWASP's authentication guidance treats CAPTCHA as defense-in-depth, not prevention. Cloudflare Turnstile is useful later because it can run less intrusive challenges without requiring Cloudflare CDN, but it should not be the core accounting primitive.</p>
+
+  <h2>Topic Axes</h2>
+  <div class="axes">
+    <div class="axis"><b>Generation trigger</b><br>When the system asks, auto-generates, or stays quiet.</div>
+    <div class="axis"><b>Storage and durability</b><br>How generated media becomes a stable avatar URL.</div>
+    <div class="axis"><b>Cost and abuse control</b><br>Budgeting, idempotency, rate limiting, and observability.</div>
+    <div class="axis"><b>MCP behavior</b><br>How remote agent creation gets good defaults without surprising users.</div>
+    <div class="axis"><b>Future paid tiers</b><br>How today's free default becomes a quota/product surface later.</div>
+  </div>
+
+  <h2>Ranked Ideas</h2>
+  <nav class="jump-list" aria-label="Ranked ideas">
+    <a href="#idea-1">1. Budgeted Avatar Generation Pipeline</a>
+    <a href="#idea-2">2. Exit-Intent PFP Prompt, Not Form-Blocking Wizardry</a>
+    <a href="#idea-3">3. MCP Auto-PFP With Explicit Result Metadata</a>
+    <a href="#idea-4">4. Spend Ledger Before CAPTCHA</a>
+    <a href="#idea-5">5. Persona-Aware Prompt Compiler</a>
+    <a href="#idea-6">6. One-Shot Free Now, Regenerate Later</a>
+    <a href="#idea-7">7. Avatar Change Ledger Toward a Moderation Queue</a>
+  </nav>
+
+  <article class="idea" id="idea-1">
+    <div class="idea-header">
+      <h3><span class="rank">1.</span>Budgeted Avatar Generation Pipeline</h3>
+      <div class="score">Conf 92% · Cx M</div>
+    </div>
+    <p class="field"><b>Description:</b> Add a backend service that takes an agent profile, builds a Katana <code>gen</code> request, polls it, downloads the completed image, writes the bytes into the existing profile-picture storage backend, and patches <code>agent_profiles.avatar_url</code>. The operation should be async and idempotent per <code>agentId + generationKind</code>, so retries do not buy ten portraits for one agent because a request timed out or a browser tab got dramatic.</p>
+    <p class="field"><b>Axis:</b> Storage and durability</p>
+    <p class="field"><b>Basis:</b> direct: <code>createOwnedAgent</code> already stores <code>avatarUrl</code> after normalization, and update does the same for mutable profiles; storage already exposes public durable URLs separately from temporary upload URLs. See <code>packages/api/src/services/agent-profile-management.ts:260</code> and <code>packages/api/src/lib/storage.ts:115</code>.</p>
+    <p class="field"><b>Rationale:</b> This keeps generated PFPs inside the same rendering contract as uploaded PFPs, which avoids a parallel "AI image URL" path and prevents Katana asset links from becoming product state.</p>
+    <p class="field"><b>Downsides:</b> Requires a small job-state model or DB table if we want true idempotency and user-visible progress instead of a synchronous route.</p>
+  </article>
+
+  <article class="idea" id="idea-2">
+    <div class="idea-header">
+      <h3><span class="rank">2.</span>Exit-Intent PFP Prompt, Not Form-Blocking Wizardry</h3>
+      <div class="score">Conf 86% · Cx S</div>
+    </div>
+    <p class="field"><b>Description:</b> When a user creates or edits an agent and leaves the avatar empty, show one focused prompt after save or on close: "Generate a portrait for this agent?" If yes, start the backend job and return them to the agent list with a generating state. Do not block profile creation on image generation, because Katana's image endpoint is polled and can legitimately take a while.</p>
+    <p class="field"><b>Axis:</b> Generation trigger</p>
+    <p class="field"><b>Basis:</b> direct: the current form has a distinct <code>avatarUrl</code> state and submits successfully with it undefined; personality generation is already optional. See <code>packages/web/src/app/dashboard/agents/agent-form.tsx:27</code> and <code>packages/web/src/app/dashboard/agents/agent-form.tsx:79</code>.</p>
+    <p class="field"><b>Rationale:</b> This preserves the current fast "make an agent" flow while nudging visual completeness. The prompt appears only when useful, not as another setup chore.</p>
+    <p class="field"><b>Downsides:</b> Needs a small pending/generating UI state. Without that, users will wonder whether the button did anything, which is how support tickets are born.</p>
+    <div class="diagram">
+      <svg width="760" height="110" viewBox="0 0 760 110" role="img" aria-label="Avatar prompt flow">
+        <rect x="8" y="25" width="130" height="50" rx="8" fill="#20251d" stroke="#3a4230"/>
+        <text x="73" y="47" text-anchor="middle">Save agent</text>
+        <text x="73" y="64" text-anchor="middle">no avatar</text>
+        <path d="M145 50 H225" stroke="#d6ff70" stroke-width="2"/>
+        <polygon points="225,50 216,45 216,55" fill="#d6ff70"/>
+        <rect x="232" y="25" width="150" height="50" rx="8" fill="#20251d" stroke="#3a4230"/>
+        <text x="307" y="47" text-anchor="middle">Ask once</text>
+        <text x="307" y="64" text-anchor="middle">generate PFP?</text>
+        <path d="M389 50 H470" stroke="#d6ff70" stroke-width="2"/>
+        <polygon points="470,50 461,45 461,55" fill="#d6ff70"/>
+        <rect x="477" y="25" width="130" height="50" rx="8" fill="#20251d" stroke="#3a4230"/>
+        <text x="542" y="47" text-anchor="middle">Async job</text>
+        <text x="542" y="64" text-anchor="middle">store result</text>
+        <path d="M614 50 H690" stroke="#d6ff70" stroke-width="2"/>
+        <polygon points="690,50 681,45 681,55" fill="#d6ff70"/>
+        <rect x="697" y="25" width="55" height="50" rx="8" fill="#20251d" stroke="#3a4230"/>
+        <text x="724" y="55" text-anchor="middle">Done</text>
+      </svg>
+    </div>
+  </article>
+
+  <article class="idea" id="idea-3">
+    <div class="idea-header">
+      <h3><span class="rank">3.</span>MCP Auto-PFP With Explicit Result Metadata</h3>
+      <div class="score">Conf 84% · Cx M</div>
+    </div>
+    <p class="field"><b>Description:</b> For MCP <code>create_agent</code>, if the caller omits <code>avatarUrl</code>, automatically enqueue one PFP generation and include <code>avatarGeneration</code> metadata in the tool result: <code>status</code>, <code>reason</code>, and optionally <code>budgetRemaining</code>. Do not require the MCP client to call a second tool just to make the new agent look alive.</p>
+    <p class="field"><b>Axis:</b> MCP behavior</p>
+    <p class="field"><b>Basis:</b> direct: the MCP create tool already accepts <code>avatarUrl</code> but does not require it, and calls into the same <code>createOwnedAgent</code> service. See <code>packages/api/src/game-mcp/server.ts:729</code> and <code>packages/api/src/game-mcp/server.ts:274</code>.</p>
+    <p class="field"><b>Rationale:</b> MCP-created agents are likely to be authored by remote LLMs or assistant flows; expecting them to manage image generation and storage is needless plumbing. The product should make the good default easy while returning honest metadata when generation is skipped or rate-limited.</p>
+    <p class="field"><b>Downsides:</b> Automatic spend on MCP writes raises abuse pressure because it moves the cost trigger behind an API-like tool. This idea depends on the spend ledger in idea 4.</p>
+  </article>
+
+  <article class="idea" id="idea-4">
+    <div class="idea-header">
+      <h3><span class="rank">4.</span>Spend Ledger Before CAPTCHA</h3>
+      <div class="score">Conf 90% · Cx M</div>
+    </div>
+    <p class="field"><b>Description:</b> Introduce a generic account spend ledger with entries for provider, operation, estimated cost, actual cost, status, and idempotency key. Give new accounts a tiny free budget for first-agent niceties, then enforce per-account and per-IP/provider windows before calling Katana. CAPTCHA or Turnstile can come later as adaptive friction when the ledger says spend risk is weird.</p>
+    <p class="field"><b>Axis:</b> Cost and abuse control</p>
+    <p class="field"><b>Basis:</b> external: OWASP identifies automated account creation and cost-inflation fraud as separate web automation threats; OWASP also frames CAPTCHA as defense-in-depth rather than prevention. Cloudflare Turnstile can reduce friction by adapting challenges to visitor risk, but it is still a gate, not accounting.</p>
+    <p class="field"><b>Rationale:</b> The first durable primitive should answer "who spent how much, for what, and was it allowed?" That primitive will also support future paid tiers, comped generations, OpenAI personality generation controls, and any future media generation.</p>
+    <p class="field"><b>Downsides:</b> It is more infrastructure than a one-off counter. Worth it, because one-off counters become the haunted basement of every freemium app.</p>
+  </article>
+
+  <article class="idea" id="idea-5">
+    <div class="idea-header">
+      <h3><span class="rank">5.</span>Persona-Aware Prompt Compiler</h3>
+      <div class="score">Conf 78% · Cx S</div>
+    </div>
+    <p class="field"><b>Description:</b> Generate a portrait prompt from the agent's name, archetype, public biography, personality, and strategy style, with strict house style constraints: square portrait, readable at small size, no text/logo/watermark, consistent game-art direction. Store the prompt and Katana request ID only in admin/debug metadata, not in public profile payloads.</p>
+    <p class="field"><b>Axis:</b> Generation trigger</p>
+    <p class="field"><b>Basis:</b> direct: agent profile data already captures name, biography/backstory, personality, strategy style, and persona key. See <code>packages/api/src/db/schema.ts:97</code> and <code>packages/api/src/services/agent-profile-management.ts:285</code>.</p>
+    <p class="field"><b>Rationale:</b> One-shot generation will only feel good if the first prompt is strong. Prompt compilation is cheap compared with user-visible bad portraits and avoids asking the user for art-direction work they did not sign up for.</p>
+    <p class="field"><b>Downsides:</b> Needs careful prompt hygiene so user-authored personality text cannot smuggle instructions like "include this text" into the image request. Mildly cursed, but tractable.</p>
+  </article>
+
+  <article class="idea" id="idea-6">
+    <div class="idea-header">
+      <h3><span class="rank">6.</span>One-Shot Free Now, Regenerate Later</h3>
+      <div class="score">Conf 74% · Cx M</div>
+    </div>
+    <p class="field"><b>Description:</b> For v1, give each agent at most one free automatic generated PFP. If the result is bad, the user can upload their own image; regeneration stays disabled or producer-only until paid tiers exist. Later, make regenerate a budgeted action with clear cost copy and maybe a "use this one" review loop.</p>
+    <p class="field"><b>Axis:</b> Future paid tiers</p>
+    <p class="field"><b>Basis:</b> reasoned: the current stated goal is to eat the roughly $0.015 cost for now, but repeated image retries are the obvious way a tiny unit cost stops being tiny. One-shot gives visual polish without opening a slot machine.</p>
+    <p class="field"><b>Rationale:</b> This gets the product benefit now and leaves a natural paid-tier affordance later. It also keeps the first implementation out of gallery/retry/review complexity.</p>
+    <p class="field"><b>Downsides:</b> Some users will dislike the first image. That is acceptable for a default PFP, not acceptable for a paid/custom portrait product.</p>
+  </article>
+
+  <article class="idea" id="idea-7">
+    <div class="idea-header">
+      <h3><span class="rank">7.</span>Avatar Change Ledger Toward a Moderation Queue</h3>
+      <div class="score">Conf 68% · Cx M</div>
+    </div>
+    <p class="field"><b>Description:</b> Record every avatar change, not just generated-avatar jobs: user upload, Katana generation, MCP-created default, manual replacement, failed generation, and removal. Each event should capture user, agent, previous avatar URL/storage key, new avatar URL/storage key, source, actor, status, cost metadata when present, and enough provider/debug context to investigate without exposing raw prompts publicly. The future shape is a moderation review queue where producers can approve, reject, rollback to a prior avatar, ban a specific avatar asset/hash, or escalate to account-level action; that review queue is explicitly not the first implementation slice.</p>
+    <p class="field"><b>Axis:</b> Cost and abuse control</p>
+    <p class="field"><b>Basis:</b> direct: the app already has admin surfaces and producer/debug patterns for trace metadata, while public payloads avoid raw provider details. Agent avatars can already change through web profile updates and MCP <code>update_agent</code>, and generated PFPs would add another mutation path; moderation needs the shared mutation history, not a Katana-only inbox.</p>
+    <p class="field"><b>Rationale:</b> Avatar changes are user-visible identity changes. Once the app funds or accepts images, the operator needs a clean answer to "who changed this, what was there before, can we undo it, and should this asset/user be blocked?" Designing the ledger now keeps the eventual moderation queue from becoming a panic-built side table full of vibes and regret.</p>
+    <p class="field"><b>Downsides:</b> Easy to overbuild. For the PFP generation slice, capture the ledger fields and perhaps a read-only admin table; defer workflow actions like review assignment, rollback buttons, avatar-hash bans, and account sanctions to a dedicated moderation slice.</p>
+  </article>
+
+  <h2>Rejection Summary</h2>
+  <div class="rejections">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>Generate synchronously during agent save</td><td>Bad UX and brittle runtime behavior; image generation is polled and can take long enough to make a save route feel broken.</td></tr>
+        <tr><td>2</td><td>Persist Katana asset URLs directly</td><td>Violates the durable-avatar contract and recreates the signed/external URL footgun in a new hat.</td></tr>
+        <tr><td>3</td><td>Require CAPTCHA before every avatar generation</td><td>Too much friction for the current audience; CAPTCHA is useful adaptive friction, not the spend-control source of truth.</td></tr>
+        <tr><td>4</td><td>Expose image generation as a public MCP tool</td><td>Scope overrun. The product need is automatic PFP completion on agent creation, not a general remote image-generation API.</td></tr>
+        <tr><td>5</td><td>Generate multiple candidates by default</td><td>Nice eventually, but triples/quintuples spend immediately and pushes the feature into paid-tier territory.</td></tr>
+        <tr><td>6</td><td>Use generated PFPs only for web-created agents</td><td>Misses the stronger default for MCP-created agents, where remote clients are least likely to provide a durable avatar URL.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Sources</h2>
+  <p>Repo evidence: <code>packages/api/src/services/agent-profile-management.ts</code>, <code>packages/api/src/lib/storage.ts</code>, <code>packages/api/src/game-mcp/server.ts</code>, <code>packages/web/src/app/dashboard/agents/agent-form.tsx</code>, <code>README.md</code>.</p>
+  <p>External context: <a href="https://owasp.org/www-project-automated-threats-to-web-applications/">OWASP Automated Threats to Web Applications</a>, <a href="https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html">OWASP Authentication Cheat Sheet</a>, <a href="https://developers.cloudflare.com/turnstile/">Cloudflare Turnstile docs</a>.</p>
+
+  <footer>Composed 2026-07-02T00:00:00-06:00 by ce-ideate from the Codex prompt about Katana automatic avatar PFP generation for The House.</footer>
+</main>
+</body>
+</html>

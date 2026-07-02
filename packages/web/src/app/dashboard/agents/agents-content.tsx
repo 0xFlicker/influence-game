@@ -7,12 +7,16 @@ import {
   createAgent,
   updateAgent,
   deleteAgent,
+  requestAgentAvatarGeneration,
+  getAgentAvatarGenerations,
   getAuthToken,
   type SavedAgent,
   type CreateAgentParams,
+  type AvatarCompletion,
 } from "@/lib/api";
 import { AgentForm } from "./agent-form";
 import { AgentList } from "./agent-list";
+import { isAvatarCompletionPending } from "./avatar-completion";
 
 type View = "list" | "create" | "edit";
 
@@ -26,6 +30,8 @@ export function AgentsContent({ initialView }: AgentsContentProps) {
   const [view, setView] = useState<View>(initialView ?? "list");
   const [editTarget, setEditTarget] = useState<SavedAgent | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<SavedAgent | null>(null);
+  const [avatarCompletions, setAvatarCompletions] = useState<Record<string, AvatarCompletion>>({});
+  const [avatarGenerationBusy, setAvatarGenerationBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -47,6 +53,68 @@ export function AgentsContent({ initialView }: AgentsContentProps) {
     window.addEventListener("auth:session-ready", fetchAgents);
     return () => window.removeEventListener("auth:session-ready", fetchAgents);
   }, [fetchAgents]);
+
+  useEffect(() => {
+    const visibleAgentIds = new Set(agents.map((agent) => agent.id));
+    setAvatarCompletions((current) => {
+      const next = { ...current };
+      let changed = false;
+
+      for (const id of Object.keys(next)) {
+        if (!visibleAgentIds.has(id)) {
+          delete next[id];
+          changed = true;
+        }
+      }
+
+      for (const agent of agents) {
+        if (agent.avatarUrl) {
+          if (next[agent.id]) {
+            delete next[agent.id];
+            changed = true;
+          }
+          continue;
+        }
+        if (!agent.avatarCompletion?.generationRequestId) continue;
+        if (!isSameAvatarCompletion(next[agent.id], agent.avatarCompletion)) {
+          next[agent.id] = agent.avatarCompletion;
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [agents]);
+
+  useEffect(() => {
+    const activeIds = Object.entries(avatarCompletions)
+      .filter(([, completion]) => isAvatarCompletionPending(completion))
+      .map(([id]) => id);
+    if (activeIds.length === 0) return;
+
+    let cancelled = false;
+    const interval = window.setInterval(() => {
+      void getAgentAvatarGenerations(activeIds)
+        .then((result) => {
+          if (cancelled) return;
+          setAvatarCompletions((current) => ({
+            ...current,
+            ...result.avatarCompletions,
+          }));
+          if (Object.values(result.avatarCompletions).some((completion) => completion.status === "completed")) {
+            fetchAgents();
+          }
+        })
+        .catch((err) => {
+          console.warn("[AgentsContent] Failed to poll avatar generation:", err);
+        });
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [avatarCompletions, fetchAgents]);
 
   async function handleCreate(params: CreateAgentParams) {
     await createAgent(params);
@@ -70,6 +138,23 @@ export function AgentsContent({ initialView }: AgentsContentProps) {
       fetchAgents();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete agent.");
+    }
+  }
+
+  async function handleGenerateAvatar(agent: SavedAgent) {
+    setAvatarGenerationBusy((current) => ({ ...current, [agent.id]: true }));
+    setError(null);
+    try {
+      const result = await requestAgentAvatarGeneration(agent.id);
+      setAvatarCompletions((current) => ({
+        ...current,
+        [agent.id]: result.avatarCompletion,
+      }));
+      fetchAgents();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to request avatar generation.");
+    } finally {
+      setAvatarGenerationBusy((current) => ({ ...current, [agent.id]: false }));
     }
   }
 
@@ -154,6 +239,9 @@ export function AgentsContent({ initialView }: AgentsContentProps) {
           ) : (
             <AgentList
               agents={agents}
+              avatarCompletions={avatarCompletions}
+              avatarGenerationBusy={avatarGenerationBusy}
+              onGenerateAvatar={handleGenerateAvatar}
               onEdit={(agent) => {
                 setEditTarget(agent);
                 setView("edit");
@@ -200,4 +288,14 @@ export function AgentsContent({ initialView }: AgentsContentProps) {
       )}
     </div>
   );
+}
+
+function isSameAvatarCompletion(a: AvatarCompletion | undefined, b: AvatarCompletion): boolean {
+  return a?.status === b.status
+    && a.generationRequestId === b.generationRequestId
+    && a.avatarUrl === b.avatarUrl
+    && a.failureCode === b.failureCode
+    && a.failureStage === b.failureStage
+    && a.retryable === b.retryable
+    && a.reason === b.reason;
 }

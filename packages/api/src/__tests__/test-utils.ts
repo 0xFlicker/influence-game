@@ -46,6 +46,8 @@ const INFLUENCE_TABLES = [
   "game_run_owners",
   "free_track_ratings",
   "free_game_queue",
+  "avatar_change_events",
+  "avatar_generation_requests",
   "agent_memories",
   "transcripts",
   "game_results",

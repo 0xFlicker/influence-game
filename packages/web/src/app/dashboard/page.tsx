@@ -10,7 +10,7 @@ export default function DashboardPage() {
   return (
     <div className="influence-page min-h-screen flex flex-col">
       <Nav />
-      <main className="flex-1 px-6 py-10 max-w-6xl mx-auto w-full">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:py-10">
         <AuthGate>
           <DashboardContent />
         </AuthGate>

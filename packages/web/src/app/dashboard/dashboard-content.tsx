@@ -29,8 +29,8 @@ import { MissionControlOverview } from "./mission-control-overview";
 
 export function McpSetupCard({ hasHistory }: { hasHistory: boolean }) {
   return (
-    <section className="influence-panel rounded-xl p-5 sm:p-6" data-testid="dashboard-mcp-setup-card">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <section className="influence-panel rounded-xl p-4 sm:p-5 lg:p-6" data-testid="dashboard-mcp-setup-card">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="influence-section-title">Games MCP</p>
           <h2 className="mt-2 text-lg font-semibold text-text-primary">
@@ -44,7 +44,7 @@ export function McpSetupCard({ hasHistory }: { hasHistory: boolean }) {
         </div>
         <Link
           href="/get-mcp"
-          className="influence-button-secondary shrink-0 rounded-lg px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.18em]"
+          className="influence-button-secondary rounded-lg px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.18em] md:shrink-0"
         >
           Connect MCP
         </Link>
@@ -223,7 +223,7 @@ export function DashboardContent() {
           onJoinPrimary={handlePrimaryAction}
         />
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
+        <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
           <DashboardGamePreview
             games={control.gamePreview}
             queueSummary={control.queueSummary}
@@ -232,7 +232,7 @@ export function DashboardContent() {
             onJoin={handleJoinClick}
           />
 
-          <div className="space-y-5">
+          <div className="min-w-0 space-y-5">
             <DashboardRecentResult
               result={control.latestResult}
               loading={historyLoading}

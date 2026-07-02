@@ -33,7 +33,7 @@ export function DashboardRecentResult({ result, loading, error }: DashboardRecen
   const showError = Boolean(error) && !result;
 
   return (
-    <section className="influence-panel rounded-xl p-5" data-testid="dashboard-recent-result">
+    <section className="influence-panel min-w-0 rounded-xl p-5" data-testid="dashboard-recent-result">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h2 className="influence-section-title">Recent Result</h2>
@@ -78,7 +78,7 @@ export function DashboardAgentBench({ agents, loading, error }: DashboardAgentBe
   const showError = Boolean(error) && !hasAgents;
 
   return (
-    <section className="influence-panel rounded-xl p-5" data-testid="dashboard-agent-bench">
+    <section className="influence-panel min-w-0 rounded-xl p-5" data-testid="dashboard-agent-bench">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h2 className="influence-section-title">Agent Bench</h2>

@@ -13,7 +13,7 @@
  */
 
 import { Hono } from "hono";
-import { eq, sql, isNull, and, or, asc, like } from "drizzle-orm";
+import { eq, sql, isNull, and, or, asc, like, desc } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { getPermissionsForAddress } from "../db/rbac.js";
@@ -275,6 +275,75 @@ export function createAdminRoutes(db: DrizzleDB) {
       .innerJoin(schema.users, sql`${schema.agentProfiles.userId} = ${schema.users.id}`);
 
     return c.json(profiles);
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/admin/avatar-generations — list generated-avatar attempts
+  // -------------------------------------------------------------------------
+
+  app.get("/api/admin/avatar-generations", requireAdminRead, async (c) => {
+    const limit = clampAdminLimit(Number(c.req.query("limit") ?? 50));
+    const rows = await db
+      .select({
+        id: schema.avatarGenerationRequests.id,
+        userId: schema.avatarGenerationRequests.userId,
+        agentProfileId: schema.avatarGenerationRequests.agentProfileId,
+        agentName: schema.agentProfiles.name,
+        purpose: schema.avatarGenerationRequests.purpose,
+        status: schema.avatarGenerationRequests.status,
+        triggerSource: schema.avatarGenerationRequests.triggerSource,
+        provider: schema.avatarGenerationRequests.provider,
+        model: schema.avatarGenerationRequests.model,
+        providerRequestId: schema.avatarGenerationRequests.providerRequestId,
+        estimatedCostMicrousd: schema.avatarGenerationRequests.estimatedCostMicrousd,
+        failureCode: schema.avatarGenerationRequests.failureCode,
+        failureMessage: schema.avatarGenerationRequests.failureMessage,
+        safeMetadata: schema.avatarGenerationRequests.safeMetadata,
+        createdAt: schema.avatarGenerationRequests.createdAt,
+        updatedAt: schema.avatarGenerationRequests.updatedAt,
+        completedAt: schema.avatarGenerationRequests.completedAt,
+      })
+      .from(schema.avatarGenerationRequests)
+      .leftJoin(schema.agentProfiles, eq(schema.avatarGenerationRequests.agentProfileId, schema.agentProfiles.id))
+      .orderBy(desc(schema.avatarGenerationRequests.createdAt))
+      .limit(limit);
+
+    return c.json(rows.map((row) => ({
+      ...row,
+      safeMetadata: redactAvatarAdminMetadata(row.safeMetadata),
+    })));
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/admin/avatar-changes — list avatar mutation history
+  // -------------------------------------------------------------------------
+
+  app.get("/api/admin/avatar-changes", requireAdminRead, async (c) => {
+    const limit = clampAdminLimit(Number(c.req.query("limit") ?? 50));
+    const rows = await db
+      .select({
+        id: schema.avatarChangeEvents.id,
+        userId: schema.avatarChangeEvents.userId,
+        agentProfileId: schema.avatarChangeEvents.agentProfileId,
+        agentName: schema.agentProfiles.name,
+        generationRequestId: schema.avatarChangeEvents.generationRequestId,
+        source: schema.avatarChangeEvents.source,
+        status: schema.avatarChangeEvents.status,
+        actorUserId: schema.avatarChangeEvents.actorUserId,
+        previousAvatarUrl: schema.avatarChangeEvents.previousAvatarUrl,
+        newAvatarUrl: schema.avatarChangeEvents.newAvatarUrl,
+        safeMetadata: schema.avatarChangeEvents.safeMetadata,
+        createdAt: schema.avatarChangeEvents.createdAt,
+      })
+      .from(schema.avatarChangeEvents)
+      .leftJoin(schema.agentProfiles, eq(schema.avatarChangeEvents.agentProfileId, schema.agentProfiles.id))
+      .orderBy(desc(schema.avatarChangeEvents.createdAt))
+      .limit(limit);
+
+    return c.json(rows.map((row) => ({
+      ...row,
+      safeMetadata: redactAvatarAdminMetadata(row.safeMetadata),
+    })));
   });
 
   // -------------------------------------------------------------------------
@@ -1012,4 +1081,28 @@ export function createAdminRoutes(db: DrizzleDB) {
   });
 
   return app;
+}
+
+function clampAdminLimit(value: number): number {
+  if (!Number.isFinite(value)) return 50;
+  return Math.max(1, Math.min(Math.floor(value), 200));
+}
+
+function redactAvatarAdminMetadata(value: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!value) return null;
+  const redacted: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    const normalized = key.toLowerCase().replaceAll("_", "");
+    if (
+      normalized.includes("prompt")
+      || normalized.includes("secret")
+      || normalized.includes("token")
+      || normalized.includes("originaldataurl")
+      || normalized.includes("providerasseturl")
+    ) {
+      continue;
+    }
+    redacted[key] = entry;
+  }
+  return redacted;
 }

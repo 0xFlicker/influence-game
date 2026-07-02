@@ -85,15 +85,19 @@ function renderDashboardSurface(input: {
         errors={[]}
         onJoinPrimary={() => undefined}
       />
-      <DashboardGamePreview
-        games={control.gamePreview}
-        queueSummary={control.queueSummary}
-        loading={false}
-        error={null}
-        onJoin={() => undefined}
-      />
-      <DashboardRecentResult result={control.latestResult} loading={false} error={null} />
-      <DashboardAgentBench agents={control.agentPreview} loading={false} error={null} />
+      <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
+        <DashboardGamePreview
+          games={control.gamePreview}
+          queueSummary={control.queueSummary}
+          loading={false}
+          error={null}
+          onJoin={() => undefined}
+        />
+        <div className="min-w-0 space-y-5">
+          <DashboardRecentResult result={control.latestResult} loading={false} error={null} />
+          <DashboardAgentBench agents={control.agentPreview} loading={false} error={null} />
+        </div>
+      </div>
     </>,
   );
 }
@@ -130,6 +134,33 @@ describe("dashboard mission-control overview", () => {
     expect(html.indexOf('data-testid="dashboard-mcp-setup-card"')).toBeLessThan(
       html.indexOf('data-testid="mission-control-overview"'),
     );
+  });
+
+  it("keeps dashboard overview modules stacked until tablet width", () => {
+    const overviewHtml = renderDashboardSurface({
+      agents: [agent()],
+      games: [game()],
+      history: [result()],
+    });
+    const mcpHtml = renderToString(<McpSetupCard hasHistory />);
+
+    expect(overviewHtml).toContain("md:grid-cols-2");
+    expect(overviewHtml).not.toContain("sm:grid-cols-2");
+    expect(mcpHtml).toContain("md:flex-row");
+    expect(mcpHtml).not.toContain("sm:flex-row");
+  });
+
+  it("lets dashboard preview cards shrink inside the mobile grid", () => {
+    const html = renderDashboardSurface({
+      agents: [agent()],
+      games: [game()],
+      history: [result()],
+    });
+
+    expect(html).toContain("grid min-w-0 gap-5");
+    expect(html).toContain('data-testid="dashboard-game-preview"');
+    expect(html).toContain("influence-panel min-w-0 rounded-xl");
+    expect(html).toContain("min-w-0 space-y-5");
   });
 
   it("offers replay without unsupported analysis or improvement copy", () => {

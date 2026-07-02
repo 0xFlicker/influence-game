@@ -8,6 +8,7 @@ import {
   generatePresignedUpload,
   getStorageBackend,
   normalizeUploadedAvatarUrl,
+  storePublicAvatarImage,
 } from "../lib/storage.js";
 import { createUploadRoutes } from "../routes/upload.js";
 import { assertPrivateContentStoragePointer } from "../services/game-evidence.js";
@@ -98,6 +99,24 @@ describe("local filesystem upload storage", () => {
     expect(upload.publicUrl).toBe(
       "http://127.0.0.1:3000/api/uploads/local?key=pfp%2Fuser-1%2Favatar.png",
     );
+  });
+
+  test("stores generated public avatar images through local storage", async () => {
+    const stored = await storePublicAvatarImage(
+      "pfp/generated/user-1/agent-1/avatar.png",
+      "image/png",
+      new Uint8Array([9, 8, 7]).buffer,
+      "http://127.0.0.1:3000",
+    );
+
+    expect(stored.publicUrl).toBe(
+      "http://127.0.0.1:3000/api/uploads/local?key=pfp%2Fgenerated%2Fuser-1%2Fagent-1%2Favatar.png",
+    );
+
+    const get = await app.request(stored.publicUrl);
+    expect(get.status).toBe(200);
+    expect(get.headers.get("Content-Type")).toBe("image/png");
+    expect(Array.from(new Uint8Array(await get.arrayBuffer()))).toEqual([9, 8, 7]);
   });
 
   test("normalizes local upload PUT URLs to stable read URLs", () => {

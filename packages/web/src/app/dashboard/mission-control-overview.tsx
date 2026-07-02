@@ -59,7 +59,7 @@ export function MissionControlOverview({
   const stats = control.stats;
 
   return (
-    <section className="influence-panel rounded-xl p-5 sm:p-6" data-testid="mission-control-overview">
+    <section className="influence-panel rounded-xl p-4 sm:p-5 lg:p-6" data-testid="mission-control-overview">
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <p className="influence-section-title mb-2">Mission Control</p>
@@ -81,7 +81,7 @@ export function MissionControlOverview({
         </div>
       </div>
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <div className="influence-panel-muted rounded-lg p-4">
           <p className="text-2xl font-bold text-text-primary">{stats.agentCount}</p>
           <p className="influence-copy-muted text-xs">Saved agents</p>

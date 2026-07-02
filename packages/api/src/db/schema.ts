@@ -109,6 +109,89 @@ export const agentProfiles = pgTable("agent_profiles", {
   index("agent_profiles_name_id_idx").on(table.name, table.id),
 ]);
 
+export type AvatarGenerationPurpose = "agent_profile_completion";
+export type AvatarGenerationStatus = "queued" | "processing" | "completed" | "skipped" | "failed";
+export type AvatarGenerationTriggerSource =
+  | "web_user_prompt"
+  | "mcp_create_default";
+
+export const avatarGenerationRequests = pgTable("avatar_generation_requests", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  agentProfileId: text("agent_profile_id")
+    .notNull(),
+  purpose: text("purpose").notNull().$type<AvatarGenerationPurpose>(),
+  status: text("status").notNull().$type<AvatarGenerationStatus>(),
+  triggerSource: text("trigger_source").notNull().$type<AvatarGenerationTriggerSource>(),
+  provider: text("provider").notNull().default("katana"),
+  model: text("model").notNull().default("gen"),
+  providerRequestId: text("provider_request_id"),
+  promptHash: text("prompt_hash"),
+  estimatedCostMicrousd: integer("estimated_cost_microusd"),
+  failureCode: text("failure_code"),
+  failureMessage: text("failure_message"),
+  safeMetadata: jsonb("safe_metadata").$type<Record<string, unknown>>(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`now()::text`),
+  completedAt: text("completed_at"),
+}, (table) => [
+  index("avatar_generation_requests_user_idx").on(table.userId, table.createdAt),
+  index("avatar_generation_requests_agent_idx").on(table.agentProfileId, table.createdAt),
+  index("avatar_generation_requests_status_idx").on(table.status, table.updatedAt),
+  uniqueIndex("avatar_generation_requests_completion_active_unique")
+    .on(table.userId, table.agentProfileId, table.purpose)
+    .where(sql`${table.status} IN ('queued', 'processing', 'completed')`),
+  check("avatar_generation_requests_purpose_check", sql`${table.purpose} IN ('agent_profile_completion')`),
+  check("avatar_generation_requests_status_check", sql`${table.status} IN ('queued', 'processing', 'completed', 'skipped', 'failed')`),
+  check("avatar_generation_requests_trigger_source_check", sql`${table.triggerSource} IN ('web_user_prompt', 'mcp_create_default')`),
+]);
+
+export type AvatarChangeSource =
+  | "web_upload"
+  | "web_generated_completion"
+  | "web_manual_update"
+  | "mcp_create_default"
+  | "mcp_provided_avatar"
+  | "mcp_update"
+  | "backend_generated_completion"
+  | "generation_skipped"
+  | "generation_failed"
+  | "producer_action";
+
+export type AvatarChangeStatus = "completed" | "skipped" | "failed";
+
+export const avatarChangeEvents = pgTable("avatar_change_events", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  agentProfileId: text("agent_profile_id")
+    .notNull(),
+  generationRequestId: text("generation_request_id")
+    .references(() => avatarGenerationRequests.id),
+  source: text("source").notNull().$type<AvatarChangeSource>(),
+  status: text("status").notNull().$type<AvatarChangeStatus>(),
+  actorUserId: text("actor_user_id").references(() => users.id),
+  previousAvatarUrl: text("previous_avatar_url"),
+  newAvatarUrl: text("new_avatar_url"),
+  safeMetadata: jsonb("safe_metadata").$type<Record<string, unknown>>(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  index("avatar_change_events_user_idx").on(table.userId, table.createdAt),
+  index("avatar_change_events_agent_idx").on(table.agentProfileId, table.createdAt),
+  index("avatar_change_events_source_idx").on(table.source, table.createdAt),
+  check("avatar_change_events_source_check", sql`${table.source} IN ('web_upload', 'web_generated_completion', 'web_manual_update', 'mcp_create_default', 'mcp_provided_avatar', 'mcp_update', 'backend_generated_completion', 'generation_skipped', 'generation_failed', 'producer_action')`),
+  check("avatar_change_events_status_check", sql`${table.status} IN ('completed', 'skipped', 'failed')`),
+]);
+
 // ---------------------------------------------------------------------------
 // Game Players
 // ---------------------------------------------------------------------------

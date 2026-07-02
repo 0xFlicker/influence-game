@@ -273,7 +273,11 @@ export class ProductionGameMcpJsonRpcServer {
       if (name === "create_agent") {
         requireScopes(auth, ["agents:read", "agents:write"]);
         const db = this.requireManagementDb();
-        return content(await createOwnedAgent(db, mcpManagementContext(auth), args));
+        return content(await createOwnedAgent(db, {
+          ...mcpManagementContext(auth),
+          avatarCompletion: { triggerSource: "mcp_create_default" },
+          avatarChangeSource: "mcp_provided_avatar",
+        }, args));
       }
       if (name === "update_agent") {
         requireScopes(auth, ["agents:read", "agents:write"]);

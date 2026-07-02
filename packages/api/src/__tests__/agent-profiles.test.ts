@@ -14,6 +14,7 @@ import { createSessionToken } from "../middleware/auth.js";
 import { randomUUID } from "crypto";
 import { setupTestDB } from "./test-utils.js";
 import { createLlmClientFromEnv } from "@influence/engine";
+import { eq } from "drizzle-orm";
 
 // ---------------------------------------------------------------------------
 // Set required env vars for auth
@@ -201,6 +202,71 @@ describe("Agent Profile API", () => {
       expect(body.strategyStyle).toBeNull();
       expect(body.personaKey).toBeNull();
     });
+
+    test("records avatar change history when creating with an avatar", async () => {
+      const res = await app.request(
+        "/api/agent-profiles",
+        jsonReq({
+          name: "Atlas Avatar",
+          personality: "Strategic",
+          avatarUrl: "/api/uploads/local?key=pfp%2Fuser-a%2Fatlas.png",
+        }, tokenA),
+      );
+
+      expect(res.status).toBe(201);
+      const body = await res.json() as { id: string; avatarUrl: string };
+      expect(body.avatarUrl).toContain("/api/uploads/local?key=pfp%2Fuser-a%2Fatlas.png");
+
+      const changes = await db.select().from(schema.avatarChangeEvents);
+      expect(changes).toHaveLength(1);
+      expect(changes[0]!).toMatchObject({
+        agentProfileId: body.id,
+        source: "web_upload",
+        status: "completed",
+        previousAvatarUrl: null,
+        newAvatarUrl: body.avatarUrl,
+      });
+    });
+
+    test("requests generated avatar completion for an owned avatarless profile", async () => {
+      delete process.env.API_KAT_IMGNAI_KEY;
+      delete process.env.API_KAT_IMGNAI_SECRET;
+      const createRes = await app.request(
+        "/api/agent-profiles",
+        jsonReq({ name: "No Avatar", personality: "Strategic" }, tokenA),
+      );
+      const { id } = await createRes.json() as { id: string };
+
+      const res = await app.request(
+        `/api/agent-profiles/${id}/avatar/generate`,
+        jsonReq({}, tokenA),
+      );
+
+      expect(res.status).toBe(200);
+      const body = await res.json() as { avatarCompletion: { status: string; reason: string } };
+      expect(body.avatarCompletion.status).toBe("skipped");
+      expect(body.avatarCompletion.reason).toContain("not configured");
+
+      const statusRes = await app.request(`/api/agent-profiles/${id}/avatar/generation`, authGet(tokenA));
+      expect(statusRes.status).toBe(200);
+      const statusBody = await statusRes.json() as { avatarCompletion: { status: string } };
+      expect(statusBody.avatarCompletion.status).toBe("skipped");
+    });
+
+    test("does not let another user request avatar generation", async () => {
+      const createRes = await app.request(
+        "/api/agent-profiles",
+        jsonReq({ name: "Private Avatar", personality: "Hidden" }, tokenA),
+      );
+      const { id } = await createRes.json() as { id: string };
+
+      const res = await app.request(
+        `/api/agent-profiles/${id}/avatar/generate`,
+        jsonReq({}, tokenB),
+      );
+
+      expect(res.status).toBe(404);
+    });
   });
 
   // =========================================================================
@@ -237,6 +303,51 @@ describe("Agent Profile API", () => {
       const bodyB = await resB.json() as Array<{ name: string }>;
       expect(bodyB).toHaveLength(1);
       expect(bodyB[0]!.name).toBe("B1");
+    });
+
+    test("includes latest avatar completion only for profiles with a generation request", async () => {
+      delete process.env.API_KAT_IMGNAI_KEY;
+      delete process.env.API_KAT_IMGNAI_SECRET;
+      const withRequestRes = await app.request(
+        "/api/agent-profiles",
+        jsonReq({ name: "Requested Avatar", personality: "Strategic" }, tokenA),
+      );
+      const withoutRequestRes = await app.request(
+        "/api/agent-profiles",
+        jsonReq({ name: "No Request", personality: "Quiet" }, tokenA),
+      );
+      const { id: withRequestId } = await withRequestRes.json() as { id: string };
+      const { id: withoutRequestId } = await withoutRequestRes.json() as { id: string };
+
+      await app.request(
+        `/api/agent-profiles/${withRequestId}/avatar/generate`,
+        jsonReq({}, tokenA),
+      );
+
+      const res = await app.request("/api/agent-profiles", authGet(tokenA));
+      expect(res.status).toBe(200);
+      const body = await res.json() as Array<{
+        id: string;
+        avatarCompletion?: { status: string; reason?: string; generationRequestId?: string };
+      }>;
+      const requested = body.find((agent) => agent.id === withRequestId);
+      const noRequest = body.find((agent) => agent.id === withoutRequestId);
+
+      expect(requested?.avatarCompletion?.status).toBe("skipped");
+      expect(requested?.avatarCompletion?.reason).toContain("not configured");
+      expect(requested?.avatarCompletion?.generationRequestId).toBeTruthy();
+      expect(noRequest?.avatarCompletion).toBeUndefined();
+
+      const statusRes = await app.request(
+        `/api/agent-profiles/avatar-generations?ids=${withRequestId},${withoutRequestId}`,
+        authGet(tokenA),
+      );
+      expect(statusRes.status).toBe(200);
+      const statusBody = await statusRes.json() as {
+        avatarCompletions: Record<string, { status: string; reason?: string }>;
+      };
+      expect(statusBody.avatarCompletions[withRequestId]?.status).toBe("skipped");
+      expect(statusBody.avatarCompletions[withoutRequestId]).toBeUndefined();
     });
   });
 
@@ -296,6 +407,33 @@ describe("Agent Profile API", () => {
       expect(body.name).toBe("Atlas v2");
       expect(body.backstory).toBe("New backstory");
       expect(body.statsReset).toBe(false);
+    });
+
+    test("records avatar replacement history", async () => {
+      const createRes = await app.request(
+        "/api/agent-profiles",
+        jsonReq({
+          name: "Atlas",
+          personality: "Strategic",
+          avatarUrl: "https://cdn.example/old.png",
+        }, tokenA),
+      );
+      const { id } = await createRes.json() as { id: string };
+
+      const res = await app.request(
+        `/api/agent-profiles/${id}`,
+        jsonReq({ avatarUrl: "https://cdn.example/new.png" }, tokenA, "PATCH"),
+      );
+
+      expect(res.status).toBe(200);
+      const changes = await db
+        .select()
+        .from(schema.avatarChangeEvents);
+      expect(changes.map((change) => change.source)).toEqual(["web_upload", "web_manual_update"]);
+      expect(changes[1]!).toMatchObject({
+        previousAvatarUrl: "https://cdn.example/old.png",
+        newAvatarUrl: "https://cdn.example/new.png",
+      });
     });
 
     test("resets stats when personality changes and games have been played", async () => {
@@ -369,6 +507,30 @@ describe("Agent Profile API", () => {
       // Verify deleted
       const profiles = await db.select().from(schema.agentProfiles);
       expect(profiles).toHaveLength(0);
+    });
+
+    test("deletes a profile without deleting avatar audit history", async () => {
+      const createRes = await app.request(
+        "/api/agent-profiles",
+        jsonReq({
+          name: "Atlas",
+          personality: "Strategic",
+          avatarUrl: "https://cdn.example/avatar.png",
+        }, tokenA),
+      );
+      const { id } = await createRes.json() as { id: string };
+      expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(1);
+
+      const res = await app.request(`/api/agent-profiles/${id}`, authDelete(tokenA));
+      expect(res.status).toBe(200);
+
+      const profiles = await db.select().from(schema.agentProfiles)
+        .where(eq(schema.agentProfiles.id, id));
+      expect(profiles).toHaveLength(0);
+      const history = await db.select().from(schema.avatarChangeEvents)
+        .where(eq(schema.avatarChangeEvents.agentProfileId, id));
+      expect(history).toHaveLength(1);
+      expect(history[0]!.newAvatarUrl).toBe("https://cdn.example/avatar.png");
     });
 
     test("returns 404 when deleting another user's profile", async () => {

@@ -2,7 +2,14 @@ import { randomUUID } from "crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import type { AvatarChangeSource, AvatarGenerationTriggerSource } from "../db/schema.js";
 import { normalizeUploadedAvatarUrl } from "../lib/storage.js";
+import {
+  completeAvatarGenerationRequest,
+  recordAvatarChange,
+  requestAvatarCompletion,
+  type AvatarCompletionRead,
+} from "./avatar-generation.js";
 import {
   formatUserSelectableAgentArchetypeKeys,
   getUserSelectableAgentArchetype,
@@ -77,6 +84,11 @@ export type ParsedAgentAvatarUrl =
 export interface AgentProfileManagementContext {
   userId: string;
   publicBaseUrl?: string;
+  avatarCompletion?: {
+    triggerSource: AvatarGenerationTriggerSource;
+    processImmediately?: boolean;
+  };
+  avatarChangeSource?: AvatarChangeSource;
 }
 
 export interface ListOwnedAgentsInput extends AgentProfileManagementContext {
@@ -153,6 +165,7 @@ export interface AgentRead {
 
 export interface AgentCommandRead extends AgentRead {
   message: string;
+  avatarCompletion?: AvatarCompletionRead;
 }
 
 type AgentProfileRow = typeof schema.agentProfiles.$inferSelect;
@@ -297,9 +310,29 @@ export async function createOwnedAgent(
     updatedAt: now,
   });
 
+  if (avatarUrl.value) {
+    await recordAvatarChange(db, {
+      userId: context.userId,
+      agentProfileId: id,
+      source: context.avatarChangeSource ?? "mcp_provided_avatar",
+      status: "completed",
+      previousAvatarUrl: null,
+      newAvatarUrl: avatarUrl.value,
+    });
+  }
+
+  const avatarCompletion = avatarUrl.value
+    ? {
+        status: "already_provided" as const,
+        avatarUrl: avatarUrl.value,
+        reason: "Agent already has an avatar.",
+      }
+    : await maybeRequestAvatarCompletion(db, context, id);
+
   return {
     ...(await getOwnedAgent(db, { userId: context.userId, agentId: id })),
     message: "Agent created.",
+    ...(avatarCompletion && { avatarCompletion }),
   };
 }
 
@@ -357,10 +390,48 @@ export async function updateOwnedAgent(
       eq(schema.agentProfiles.userId, context.userId),
     ));
 
+  if (input.avatarUrl !== undefined && updates.avatarUrl !== existing.avatarUrl) {
+    await recordAvatarChange(db, {
+      userId: context.userId,
+      agentProfileId: agentId,
+      source: context.avatarChangeSource ?? "mcp_update",
+      status: "completed",
+      previousAvatarUrl: existing.avatarUrl,
+      newAvatarUrl: updates.avatarUrl as string | null,
+    });
+  }
+
   return {
     ...(await getOwnedAgent(db, { userId: context.userId, agentId })),
     message: "Agent updated.",
   };
+}
+
+async function maybeRequestAvatarCompletion(
+  db: DrizzleDB,
+  context: AgentProfileManagementContext,
+  agentProfileId: string,
+): Promise<AvatarCompletionRead | undefined> {
+  if (!context.avatarCompletion) return undefined;
+
+  const read = await requestAvatarCompletion(db, {
+    userId: context.userId,
+    agentProfileId,
+    triggerSource: context.avatarCompletion.triggerSource,
+    publicBaseUrl: context.publicBaseUrl,
+  }, {
+    processImmediately: context.avatarCompletion.processImmediately,
+  });
+
+  if (read.status === "accepted" && !context.avatarCompletion.processImmediately && read.generationRequestId) {
+    void completeAvatarGenerationRequest(db, read.generationRequestId, {
+      publicBaseUrl: context.publicBaseUrl,
+    }).catch((error) => {
+      console.warn("[avatar-generation] Background avatar completion failed:", error);
+    });
+  }
+
+  return read;
 }
 
 async function requireOwnedAgentProfile(

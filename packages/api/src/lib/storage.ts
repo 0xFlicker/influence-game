@@ -105,6 +105,13 @@ export interface PresignedUploadResult {
   publicUrl: string;
 }
 
+export interface StoredPublicAvatarResult {
+  /** The object key in the public avatar storage backend. */
+  key: string;
+  /** Stable public URL to the stored avatar image. */
+  publicUrl: string;
+}
+
 /**
  * Generate a presigned PUT URL for browser-direct upload.
  *
@@ -146,6 +153,43 @@ export async function generatePresignedUpload(
   return { uploadUrl, key, publicUrl };
 }
 
+export async function storePublicAvatarImage(
+  key: string,
+  contentType: string,
+  body: ArrayBuffer,
+  publicBaseUrl?: string,
+): Promise<StoredPublicAvatarResult> {
+  validatePublicAvatarImage(key, contentType, body);
+
+  const backend = getStorageBackend();
+  if (backend === "disabled") {
+    throw new Error("Object storage is not configured");
+  }
+
+  if (backend === "local") {
+    await writeLocalUpload(key, contentType, body);
+    return {
+      key,
+      publicUrl: absolutizeApiUrl(getLocalPublicUploadPath(key), publicBaseUrl),
+    };
+  }
+
+  const client = getS3Client();
+  const bucket = getBucket();
+  await client.send(new PutObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    Body: Buffer.from(body),
+    ContentType: contentType,
+    ACL: "public-read",
+  }));
+
+  return {
+    key,
+    publicUrl: publicS3UrlForKey(key),
+  };
+}
+
 function generateLocalUpload(
   key: string,
   contentType: string,
@@ -171,6 +215,26 @@ function generateLocalUpload(
     publicUrl: absolutizeApiUrl(publicPath, publicBaseUrl),
     key,
   };
+}
+
+function validatePublicAvatarImage(
+  key: string,
+  contentType: string,
+  body: ArrayBuffer,
+): void {
+  validateLocalKey(key);
+  if (!["image/png", "image/jpeg", "image/webp"].includes(contentType)) {
+    throw new LocalUploadError(400, "Unsupported image content type");
+  }
+  if (body.byteLength > LOCAL_UPLOAD_MAX_BYTES) {
+    throw new LocalUploadError(413, "File must be under 2 MB");
+  }
+}
+
+function publicS3UrlForKey(key: string): string {
+  const endpoint = process.env.LINODE_OBJ_ENDPOINT!;
+  const endpointHost = new URL(endpoint).host;
+  return `https://${getBucket()}.${endpointHost}/${key}`;
 }
 
 /**

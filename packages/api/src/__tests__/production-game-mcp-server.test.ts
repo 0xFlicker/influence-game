@@ -154,6 +154,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(JSON.stringify(tools)).not.toContain("\"vote\"");
     expect(JSON.stringify(tools)).not.toContain("mingle_message");
     expect(JSON.stringify(tools)).not.toContain("ready_check");
+    expect(JSON.stringify(tools)).not.toContain("generate_image");
+    expect(JSON.stringify(tools)).not.toContain("image_generation");
   });
 
   test("marks user-facing management reads and mutations accurately", async () => {
@@ -531,6 +533,80 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         supportedArchetypes: expect.arrayContaining(["diplomat", "martyr"]),
       },
     });
+  });
+
+  test("reports MCP avatar completion status without exposing a standalone image tool", async () => {
+    delete process.env.API_KAT_IMGNAI_KEY;
+    delete process.env.API_KAT_IMGNAI_SECRET;
+    const db = await setupTestDB();
+    await db.insert(schema.users).values({
+      id: GAMES_AUTH.userId,
+      email: "games-user@test.example",
+      displayName: "Games User",
+    });
+    const server = createProductionGameMcpServer(db);
+
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: "create-agent",
+      method: "tools/call",
+      params: {
+        name: "create_agent",
+        arguments: {
+          displayName: "Avatarless MCP",
+          archetype: "diplomat",
+          publicBiography: null,
+          strategyStyle: null,
+          personalityPrompt: "Watches the room before choosing a side.",
+        },
+      },
+    }, GAMES_AUTH);
+
+    expect(response?.error).toBeUndefined();
+    const structured = (response?.result as { structuredContent: { avatarCompletion?: { status: string; reason: string } } }).structuredContent;
+    expect(structured.avatarCompletion).toMatchObject({
+      status: "skipped",
+    });
+    expect(structured.avatarCompletion?.reason).toContain("not configured");
+    const text = (response?.result as { content: Array<{ text: string }> }).content[0]?.text;
+    expect(text).toContain("avatarCompletion");
+    expect(text).not.toContain("prompt");
+  });
+
+  test("keeps MCP explicit avatar ahead of automatic completion", async () => {
+    const db = await setupTestDB();
+    await db.insert(schema.users).values({
+      id: GAMES_AUTH.userId,
+      email: "games-user@test.example",
+      displayName: "Games User",
+    });
+    const server = createProductionGameMcpServer(db);
+
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: "create-agent-avatar",
+      method: "tools/call",
+      params: {
+        name: "create_agent",
+        arguments: {
+          displayName: "Avatar MCP",
+          archetype: "diplomat",
+          publicBiography: null,
+          strategyStyle: null,
+          personalityPrompt: "Already has a portrait.",
+          avatarUrl: "https://cdn.example/avatar.png",
+        },
+      },
+    }, GAMES_AUTH);
+
+    expect(response?.error).toBeUndefined();
+    const structured = (response?.result as { structuredContent: { agent: { avatarUrl: string }; avatarCompletion?: { status: string } } }).structuredContent;
+    expect(structured.agent.avatarUrl).toBe("https://cdn.example/avatar.png");
+    expect(structured.avatarCompletion?.status).toBe("already_provided");
+    expect(await db.select().from(schema.avatarGenerationRequests)).toEqual([]);
+    const changes = await db.select().from(schema.avatarChangeEvents);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]!.source).toBe("mcp_provided_avatar");
   });
 
   test("forwards read_round_facts arguments to the production read model", async () => {

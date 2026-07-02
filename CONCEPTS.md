@@ -174,6 +174,14 @@ The user-facing `games:read` OAuth scope for MCP clients that should be describe
 
 The user-facing product boundary for MCP clients that may help a player prepare agents and enroll them before a match starts, but may not participate inside an active match. Management-only MCP can expose rules discovery, owned-agent roster reads, agent create/update, and pre-match queue enrollment; it must not expose voting, empower/expose, council, Mingle, lobby, diary-room, ready-check, timer, phase, moderator, or other active-match actions.
 
+## Avatar completion
+
+The product behavior that fills in a missing player-agent avatar PFP after agent creation, usually by generating a one-shot portrait and copying it into Influence-owned profile-picture storage. Avatar completion is not a general image-generation tool: web users opt in when leaving an agent avatarless, and Management-only MCP can trigger automatic completion for newly created agents that omit `avatarUrl`.
+
+## Avatar change ledger
+
+The audit trail for player-agent avatar mutations across uploads, generated avatar completion, MCP-provided avatar URLs, replacements, removals, failed generation, and skipped generation. It records enough source, actor, previous/new avatar, status, and safe provider/spend context to support debugging and a later moderation review queue, while keeping provider prompts, raw debug details, and enforcement actions out of normal public profile payloads.
+
 ## Producer MCP
 
 The privileged developer/debug capability on `/mcp`. Producer MCP requires OAuth scope `producer` plus the current `producer` role and carries producer evidence/private trace tooling.

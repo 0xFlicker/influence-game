@@ -199,6 +199,9 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `INFLUENCE_LLM_API_KEY` | No | `lm-studio` when `INFLUENCE_LLM_BASE_URL` is set | API key for the OpenAI-compatible endpoint |
 | `API_KAT_IMGNAI_KEY` | Required for Katana profile | -- | Katana / IMGNAI router API key, used only for explicit Katana model selections |
 | `API_KAT_IMGNAI_SECRET` | Required for Katana profile | -- | Katana / IMGNAI router API secret |
+| `INFLUENCE_AVATAR_GENERATION_FREE_QUOTA` | No | `25` | Per-account sponsored generated-avatar completion quota before Katana calls are skipped |
+| `INFLUENCE_AVATAR_GENERATION_DAILY_LIMIT` | No | `5` | Per-account 24-hour generated-avatar completion throttle before Katana calls are skipped |
+| `INFLUENCE_AVATAR_GENERATION_ASSET_HOSTS` | No | `imgnai.com` | Comma-separated HTTPS host allowlist for downloading completed Katana avatar assets before copying them into Influence storage |
 | `INFLUENCE_LLM_PREFLIGHT` | No | enabled | API game start validates selected provider/model metadata before claiming the run; set `off` only for incompatible local providers |
 | `INFLUENCE_LLM_PREFLIGHT_TIMEOUT_MS` | No | `10000` | Timeout for API start provider/model preflight |
 | `INFLUENCE_LLM_TOOL_CHOICE_MODE` | No | `required` for local base URLs, otherwise `named` | Structured decision-call mode: `named`, `required`, `auto`, or `json_schema` |

@@ -93,18 +93,18 @@ describe("gamer role seed", () => {
   });
 });
 
-describe("mcp role seed", () => {
+describe("producer role seed", () => {
   test("resolves as a role marker without app permissions", async () => {
     const db = await setupDB();
-    await createUser(db, "0xmcp000000000000000000000000000000000001", "MCP");
-    await assignRole(db, "0xmcp000000000000000000000000000000000001", "mcp");
+    await createUser(db, "0xproducer0000000000000000000000000000001", "Producer");
+    await assignRole(db, "0xproducer0000000000000000000000000000001", "producer");
 
     const resolved = await getPermissionsForAddress(
       db,
-      "0xmcp000000000000000000000000000000000001",
+      "0xproducer0000000000000000000000000000001",
     );
 
-    expect(resolved.roles).toEqual(["mcp"]);
+    expect(resolved.roles).toEqual(["producer"]);
     expect(resolved.permissions).toEqual([]);
     expect(resolved.permissions).not.toContain("manage_roles");
     expect(resolved.permissions).not.toContain("view_admin");
@@ -184,6 +184,86 @@ describe("admin route RBAC", () => {
 
   test("does not grant gamer access to admin read routes", async () => {
     const res = await app.request("/api/admin/games", {
+      headers: { Authorization: `Bearer ${gamerToken}` },
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  test("allows admin users to inspect avatar generation and change history without raw prompts", async () => {
+    const ownerId = await createUser(db, "0xavatar0000000000000000000000000000000001", "Avatar Owner");
+    await db.insert(schema.agentProfiles).values({
+      id: "admin-avatar-agent",
+      userId: ownerId,
+      name: "Avatar Agent",
+      personality: "A watchable player.",
+      personaKey: "diplomat",
+      createdAt: "2026-07-02T00:00:00.000Z",
+      updatedAt: "2026-07-02T00:00:00.000Z",
+    });
+    await db.insert(schema.avatarGenerationRequests).values({
+      id: "admin-avatar-generation",
+      userId: ownerId,
+      agentProfileId: "admin-avatar-agent",
+      purpose: "agent_profile_completion",
+      status: "failed",
+      triggerSource: "web_user_prompt",
+      provider: "katana",
+      model: "gen",
+      providerRequestId: "katana-request",
+      estimatedCostMicrousd: 15600,
+      failureCode: "provider_failed",
+      failureMessage: "Provider failed safely",
+      safeMetadata: {
+        promptHash: "safe-hash",
+        prompt: "raw prompt should not leak",
+        providerAssetUrl: "https://provider.example/avatar.png",
+        width: 1024,
+      },
+      createdAt: "2026-07-02T00:00:00.000Z",
+      updatedAt: "2026-07-02T00:00:01.000Z",
+      completedAt: "2026-07-02T00:00:01.000Z",
+    });
+    await db.insert(schema.avatarChangeEvents).values({
+      id: "admin-avatar-change",
+      userId: ownerId,
+      agentProfileId: "admin-avatar-agent",
+      generationRequestId: "admin-avatar-generation",
+      source: "generation_failed",
+      status: "failed",
+      actorUserId: ownerId,
+      previousAvatarUrl: null,
+      newAvatarUrl: null,
+      safeMetadata: {
+        reason: "provider_failed",
+        secretToken: "do-not-leak",
+      },
+      createdAt: "2026-07-02T00:00:01.000Z",
+    });
+
+    const generationsRes = await app.request("/api/admin/avatar-generations", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(generationsRes.status).toBe(200);
+    const generations = await generationsRes.json() as Array<{ safeMetadata: Record<string, unknown>; failureCode: string }>;
+    expect(generations).toHaveLength(1);
+    expect(generations[0]!.failureCode).toBe("provider_failed");
+    expect(JSON.stringify(generations)).not.toContain("raw prompt");
+    expect(JSON.stringify(generations)).not.toContain("provider.example");
+    expect(generations[0]!.safeMetadata.width).toBe(1024);
+
+    const changesRes = await app.request("/api/admin/avatar-changes", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(changesRes.status).toBe(200);
+    const changes = await changesRes.json() as Array<{ safeMetadata: Record<string, unknown>; source: string }>;
+    expect(changes).toHaveLength(1);
+    expect(changes[0]!.source).toBe("generation_failed");
+    expect(JSON.stringify(changes)).not.toContain("do-not-leak");
+  });
+
+  test("denies gamer access to avatar diagnostics", async () => {
+    const res = await app.request("/api/admin/avatar-generations", {
       headers: { Authorization: `Bearer ${gamerToken}` },
     });
 
