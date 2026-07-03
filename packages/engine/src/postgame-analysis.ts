@@ -1,4 +1,5 @@
 import type { CanonicalGameEvent, CanonicalGameEventType } from "./canonical-events";
+import type { AllianceHuddleOutcome, AllianceProposalLineage, AllianceRecord } from "./types";
 import type {
   CompletedGameResultsElimination,
   CompletedGameResultsJury,
@@ -89,8 +90,53 @@ export interface PostgameRoundSummary {
     player: RevealedPlayerRef;
     note: string;
   }>;
+  allianceActivity: PostgameRoundAllianceActivity;
   diagnostics: PostgameAnalysisDiagnostic[];
   evidence?: PostgameAnalysisEvidenceRef[];
+}
+
+export interface PostgameAllianceOutcomeSummary {
+  id: string;
+  allianceId: string;
+  round: number;
+  window: string;
+  plan: string;
+  confidence: string;
+  posture: string;
+  leakOrBetrayalClaims: string[];
+}
+
+export interface PostgameRoundAllianceActivity {
+  proposalCount: number;
+  activatedCount: number;
+  closedCount: number;
+  archivedCount: number;
+  huddleCount: number;
+  topAllianceNames: string[];
+  latestOutcome: PostgameAllianceOutcomeSummary | null;
+}
+
+export interface PostgameAllianceSummaryEntry {
+  id: string;
+  name: string;
+  status: string;
+  memberNames: string[];
+  purpose: string;
+  timebox: string | null;
+  createdRound: number;
+  updatedRound: number;
+  huddleOutcomeCount: number;
+  latestOutcome: PostgameAllianceOutcomeSummary | null;
+}
+
+export interface PostgameAllianceSummary {
+  proposalCount: number;
+  activeAllianceCount: number;
+  archivedAllianceCount: number;
+  closedAllianceCount: number;
+  huddleCount: number;
+  topNamedAlliances: PostgameAllianceSummaryEntry[];
+  roundActivity: Array<{ round: number } & PostgameRoundAllianceActivity>;
 }
 
 export interface PostgameJuryVoteEntry {
@@ -183,10 +229,41 @@ export interface PostgamePlayerGameSummary {
     votesReceived: number;
     wonFinalVote: boolean;
   };
+  allianceArc: PostgamePlayerAllianceArc;
   overallGameShape: PostgamePlayerShape;
   readableSummary: string;
   diagnostics: PostgameAnalysisDiagnostic[];
   evidence?: PostgameAnalysisEvidenceRef[];
+}
+
+export interface PostgamePlayerAllianceArc {
+  joinedAlliances: Array<{
+    id: string;
+    name: string;
+    status: string;
+    memberNames: string[];
+    createdRound: number;
+    updatedRound: number;
+  }>;
+  involvedProposals: Array<{
+    lineageId: string;
+    allianceId: string;
+    name: string;
+    status: string;
+    proposedRound: number;
+    resolvedRound: number | null;
+    proposer: RevealedPlayerRef;
+    memberNames: string[];
+    yourResponse: string | null;
+  }>;
+  huddlesAttended: number;
+  latestPlans: PostgameAllianceOutcomeSummary[];
+  betrayalOrLeakClaims: Array<{
+    allianceId: string;
+    allianceName: string;
+    round: number;
+    claim: string;
+  }>;
 }
 
 export interface PostgameTurningPoint {
@@ -289,6 +366,7 @@ export interface PostgameAnalysisProjection {
   };
   derivedVoteCohorts: PostgameDerivedVoteCohort[];
   gameMomentum: PostgameMomentumSegment[];
+  allianceSummary: PostgameAllianceSummary;
   roundSummaries: PostgameRoundSummary[];
   jury: PostgameJuryBreakdown;
   playerSummaries: PostgamePlayerGameSummary[];
@@ -309,8 +387,10 @@ export function buildPostgameAnalysisProjection(
   const includeEvidence = options.includeEvidence === true;
   const diagnostics = completed.availability.diagnostics.map((diagnostic) => ({ ...diagnostic }));
   const eventRefs = new EventReferenceIndex(options.events ?? []);
+  const playerRefs = new Map(completed.players.map((player) => [player.id, { id: player.id, name: player.name }]));
+  const allianceIndex = buildPostgameAllianceIndex(options.events ?? [], playerRefs);
   const baseRoundSummaries = completed.rounds.map((round) =>
-    buildRoundSummary(round, includeEvidence ? eventRefs : null)
+    buildRoundSummary(round, allianceIndex.roundActivity.get(round.round) ?? emptyRoundAllianceActivity(), includeEvidence ? eventRefs : null)
   );
   const roundSummaries = addRoundHeadlines(baseRoundSummaries);
   const finalVote = buildFinalVote(completed.jury);
@@ -342,6 +422,7 @@ export function buildPostgameAnalysisProjection(
       completed,
       roundSummaries,
       finalVote,
+      allianceArc: buildPlayerAllianceArc(player, allianceIndex),
       eventRefs: includeEvidence ? eventRefs : null,
     })
   );
@@ -349,6 +430,7 @@ export function buildPostgameAnalysisProjection(
     completed,
     roundSummaries,
     finalVote,
+    allianceIndex,
     eventRefs: includeEvidence ? eventRefs : null,
   });
   const executiveSummary = buildExecutiveSummary({
@@ -387,6 +469,7 @@ export function buildPostgameAnalysisProjection(
     },
     derivedVoteCohorts,
     gameMomentum,
+    allianceSummary: allianceIndex.summary,
     roundSummaries,
     jury,
     playerSummaries,
@@ -397,6 +480,7 @@ export function buildPostgameAnalysisProjection(
 
 function buildRoundSummary(
   round: CompletedGameResultsRound,
+  allianceActivity: PostgameRoundAllianceActivity,
   eventRefs: EventReferenceIndex | null,
 ): PostgameRoundSummary {
   const facts = round.canonicalFacts.roundFacts;
@@ -460,6 +544,7 @@ function buildRoundSummary(
         note: riskNote(type, player),
       }))
     ),
+    allianceActivity,
     diagnostics: postgameRoundDiagnostics(round),
     ...(evidence && evidence.length > 0 ? { evidence } : {}),
   };
@@ -758,9 +843,10 @@ function buildPlayerSummary(input: {
   completed: CompletedGameResultsRead;
   roundSummaries: readonly PostgameRoundSummary[];
   finalVote: PostgameFinalVote;
+  allianceArc: PostgamePlayerAllianceArc;
   eventRefs: EventReferenceIndex | null;
 }): PostgamePlayerGameSummary {
-  const { player, completed, roundSummaries, finalVote, eventRefs } = input;
+  const { player, completed, roundSummaries, finalVote, allianceArc, eventRefs } = input;
   const eliminated = completed.eliminationOrder.find((entry) => entry.player.id === player.id);
   const votesCastByRound: PostgamePlayerVoteByRound[] = [];
   const empowerVotesReceivedByRound: Array<{ round: number; votes: number }> = [];
@@ -904,6 +990,7 @@ function buildPlayerSummary(input: {
       votesReceived: finalVotesReceived,
       wonFinalVote: finalVote.winner?.id === player.id,
     },
+    allianceArc,
     overallGameShape,
     readableSummary: readablePlayerSummary(player, majorityAlignmentByRound, finalVote, eliminated),
     diagnostics,
@@ -1343,6 +1430,7 @@ function buildTurningPoints(input: {
   completed: CompletedGameResultsRead;
   roundSummaries: readonly PostgameRoundSummary[];
   finalVote: PostgameFinalVote;
+  allianceIndex: PostgameAllianceIndex;
   eventRefs: EventReferenceIndex | null;
 }): PostgameTurningPoint[] {
   const points: PostgameTurningPoint[] = [];
@@ -1419,6 +1507,8 @@ function buildTurningPoints(input: {
     });
   }
 
+  points.push(...buildAllianceMemberCutTurningPoints(input.completed, input.allianceIndex, input.eventRefs));
+
   if (input.finalVote.status === "available" && input.finalVote.margin !== null && input.finalVote.margin <= 1) {
     points.push({
       round: input.completed.summary.roundsPlayed,
@@ -1461,6 +1551,400 @@ function buildTurningPoints(input: {
   }
 
   return dedupeTurningPoints(points).slice(0, 12);
+}
+
+interface PostgameAllianceIndex {
+  playerRefs: ReadonlyMap<string, RevealedPlayerRef>;
+  lineages: AllianceProposalLineage[];
+  alliances: PostgameAllianceIndexedRecord[];
+  outcomesByAllianceId: Map<string, PostgameAllianceOutcomeSummary[]>;
+  huddleSessions: Array<{ allianceId: string; round: number; window: string; pass: number; speakerIds: string[] }>;
+  roundActivity: Map<number, PostgameRoundAllianceActivity>;
+  summary: PostgameAllianceSummary;
+}
+
+interface PostgameAllianceIndexedRecord {
+  id: string;
+  name: string;
+  memberIds: string[];
+  memberNames: string[];
+  purpose: string;
+  timebox: string | null;
+  status: string;
+  createdRound: number;
+  updatedRound: number;
+}
+
+function buildPostgameAllianceIndex(
+  events: readonly CanonicalGameEvent[],
+  playerRefs: ReadonlyMap<string, RevealedPlayerRef>,
+): PostgameAllianceIndex {
+  const lineagesById = new Map<string, AllianceProposalLineage>();
+  const alliancesById = new Map<string, PostgameAllianceIndexedRecord>();
+  const outcomesByAllianceId = new Map<string, PostgameAllianceOutcomeSummary[]>();
+  const huddleSessions: PostgameAllianceIndex["huddleSessions"] = [];
+  const roundActivity = new Map<number, PostgameRoundAllianceActivity>();
+
+  for (const event of events) {
+    const activity = ensureRoundAllianceActivity(roundActivity, event.round);
+    switch (event.type) {
+      case "alliance.proposal_submitted": {
+        lineagesById.set(event.payload.lineage.id, event.payload.lineage);
+        activity.proposalCount += 1;
+        const version = currentPostgameAllianceVersion(event.payload.lineage);
+        if (version) addRoundAllianceName(activity, version.terms.name);
+        break;
+      }
+      case "alliance.response_recorded":
+      case "alliance.counter_submitted":
+      case "alliance.proposal_expired": {
+        lineagesById.set(event.payload.lineage.id, event.payload.lineage);
+        const version = currentPostgameAllianceVersion(event.payload.lineage);
+        if (version) addRoundAllianceName(activity, version.terms.name);
+        break;
+      }
+      case "alliance.activated":
+      case "alliance.amendment_resolved": {
+        lineagesById.set(event.payload.lineage.id, event.payload.lineage);
+        alliancesById.set(event.payload.alliance.id, indexedAllianceRecord(event.payload.alliance, playerRefs));
+        activity.activatedCount += 1;
+        addRoundAllianceName(activity, event.payload.alliance.name);
+        break;
+      }
+      case "alliance.closed": {
+        alliancesById.set(event.payload.alliance.id, indexedAllianceRecord(event.payload.alliance, playerRefs));
+        activity.closedCount += 1;
+        addRoundAllianceName(activity, event.payload.alliance.name);
+        break;
+      }
+      case "alliance.archived": {
+        alliancesById.set(event.payload.alliance.id, indexedAllianceRecord(event.payload.alliance, playerRefs));
+        activity.archivedCount += 1;
+        addRoundAllianceName(activity, event.payload.alliance.name);
+        break;
+      }
+      case "alliance.huddle_completed": {
+        huddleSessions.push({
+          allianceId: event.payload.session.allianceId,
+          round: event.payload.session.round,
+          window: event.payload.session.window,
+          pass: event.payload.session.pass,
+          speakerIds: [...event.payload.session.speakerIds],
+        });
+        activity.huddleCount += 1;
+        const alliance = alliancesById.get(event.payload.session.allianceId);
+        if (alliance) addRoundAllianceName(activity, alliance.name);
+        break;
+      }
+      case "alliance.huddle_outcome_recorded": {
+        if (event.payload.alliance) {
+          alliancesById.set(event.payload.alliance.id, indexedAllianceRecord(event.payload.alliance, playerRefs));
+          addRoundAllianceName(activity, event.payload.alliance.name);
+        }
+        const outcome = compactPostgameOutcome(event.payload.outcome);
+        const outcomes = outcomesByAllianceId.get(outcomeAllianceId(event.payload.outcome)) ?? [];
+        outcomesByAllianceId.set(outcomeAllianceId(event.payload.outcome), [...outcomes, outcome]);
+        activity.latestOutcome = latestPostgameOutcome([
+          ...(activity.latestOutcome ? [activity.latestOutcome] : []),
+          outcome,
+        ]) ?? null;
+        break;
+      }
+      case "alliance.huddle_scheduled":
+      case "alliance.huddle_skipped":
+        break;
+      default:
+        break;
+    }
+  }
+
+  const alliances = Array.from(alliancesById.values()).sort((left, right) =>
+    left.createdRound - right.createdRound || left.name.localeCompare(right.name)
+  );
+  const summary = buildAllianceSummary({
+    proposalCount: lineagesById.size,
+    alliances,
+    outcomesByAllianceId,
+    huddleSessions,
+    roundActivity,
+  });
+
+  return {
+    playerRefs,
+    lineages: Array.from(lineagesById.values()),
+    alliances,
+    outcomesByAllianceId,
+    huddleSessions,
+    roundActivity,
+    summary,
+  };
+}
+
+function buildAllianceSummary(input: {
+  proposalCount: number;
+  alliances: readonly PostgameAllianceIndexedRecord[];
+  outcomesByAllianceId: ReadonlyMap<string, PostgameAllianceOutcomeSummary[]>;
+  huddleSessions: readonly PostgameAllianceIndex["huddleSessions"][number][];
+  roundActivity: ReadonlyMap<number, PostgameRoundAllianceActivity>;
+}): PostgameAllianceSummary {
+  const topNamedAlliances = input.alliances
+    .map((alliance) => allianceSummaryEntry(alliance, input.outcomesByAllianceId.get(alliance.id) ?? []))
+    .sort((left, right) =>
+      right.huddleOutcomeCount - left.huddleOutcomeCount ||
+      right.updatedRound - left.updatedRound ||
+      left.name.localeCompare(right.name)
+    )
+    .slice(0, 8);
+  return {
+    proposalCount: input.proposalCount,
+    activeAllianceCount: input.alliances.filter((alliance) => alliance.status === "active").length,
+    archivedAllianceCount: input.alliances.filter((alliance) => alliance.status === "archived").length,
+    closedAllianceCount: input.alliances.filter((alliance) => alliance.status === "closed").length,
+    huddleCount: input.huddleSessions.length,
+    topNamedAlliances,
+    roundActivity: Array.from(input.roundActivity.entries())
+      .map(([round, activity]) => ({ round, ...activity }))
+      .sort((left, right) => left.round - right.round),
+  };
+}
+
+function allianceSummaryEntry(
+  alliance: PostgameAllianceIndexedRecord,
+  outcomes: readonly PostgameAllianceOutcomeSummary[],
+): PostgameAllianceSummaryEntry {
+  return {
+    id: alliance.id,
+    name: alliance.name,
+    status: alliance.status,
+    memberNames: [...alliance.memberNames],
+    purpose: alliance.purpose,
+    timebox: alliance.timebox,
+    createdRound: alliance.createdRound,
+    updatedRound: alliance.updatedRound,
+    huddleOutcomeCount: outcomes.length,
+    latestOutcome: latestPostgameOutcome(outcomes) ?? null,
+  };
+}
+
+function buildPlayerAllianceArc(
+  player: RevealedPlayerRef,
+  allianceIndex: PostgameAllianceIndex,
+): PostgamePlayerAllianceArc {
+  const joinedAlliances = allianceIndex.alliances
+    .filter((alliance) => alliance.memberIds.includes(player.id))
+    .map((alliance) => ({
+      id: alliance.id,
+      name: alliance.name,
+      status: alliance.status,
+      memberNames: [...alliance.memberNames],
+      createdRound: alliance.createdRound,
+      updatedRound: alliance.updatedRound,
+    }));
+  const involvedProposals = allianceIndex.lineages
+    .filter((lineage) => playerParticipatedInAllianceLineage(lineage, player.id))
+    .flatMap((lineage) => {
+      const version = currentPostgameAllianceVersion(lineage);
+      if (!version) return [];
+      const responses = lineage.responsesByVersion[lineage.currentVersionId] ?? {};
+      return [{
+        lineageId: lineage.id,
+        allianceId: lineage.allianceId,
+        name: version.terms.name,
+        status: lineage.status,
+        proposedRound: lineage.createdRound,
+        resolvedRound: lineage.resolvedRound,
+        proposer: playerRefForId(version.proposerId, allianceIndex.playerRefs),
+        memberNames: version.terms.memberIds.map((id) => playerRefForId(id, allianceIndex.playerRefs).name),
+        yourResponse: responses[player.id] ?? null,
+      }];
+    });
+  const memberAllianceIds = new Set(joinedAlliances.map((alliance) => alliance.id));
+  const outcomes = Array.from(memberAllianceIds)
+    .flatMap((allianceId) => allianceIndex.outcomesByAllianceId.get(allianceId) ?? [])
+    .sort((left, right) => right.round - left.round || right.id.localeCompare(left.id));
+  return {
+    joinedAlliances,
+    involvedProposals,
+    huddlesAttended: allianceIndex.huddleSessions.filter((session) => session.speakerIds.includes(player.id)).length,
+    latestPlans: outcomes.slice(0, 3),
+    betrayalOrLeakClaims: outcomes.flatMap((outcome) => {
+      const alliance = allianceIndex.alliances.find((entry) => entry.id === outcome.allianceId);
+      return outcome.leakOrBetrayalClaims.map((claim) => ({
+        allianceId: alliance?.id ?? "",
+        allianceName: alliance?.name ?? "Unknown alliance",
+        round: outcome.round,
+        claim,
+      }));
+    }).slice(0, 6),
+  };
+}
+
+function buildAllianceMemberCutTurningPoints(
+  completed: CompletedGameResultsRead,
+  allianceIndex: PostgameAllianceIndex,
+  eventRefs: EventReferenceIndex | null,
+): PostgameTurningPoint[] {
+  const points: PostgameTurningPoint[] = [];
+  for (const elimination of completed.eliminationOrder) {
+    if (elimination.source === "jury") continue;
+    const voters = votersWhoCutPlayer(completed.rounds, elimination.player.id, elimination.round);
+    const alliedVoters = voters.flatMap((voter) => {
+      const sharedAlliances = allianceIndex.alliances.filter((alliance) =>
+        alliance.createdRound <= elimination.round &&
+        alliance.memberIds.includes(elimination.player.id) &&
+        alliance.memberIds.includes(voter.id)
+      );
+      return sharedAlliances.length > 0 ? [{ voter, sharedAlliances }] : [];
+    });
+    if (alliedVoters.length === 0) continue;
+    const alliances = uniqueBy(
+      alliedVoters.flatMap((entry) => entry.sharedAlliances),
+      (alliance) => alliance.id,
+    );
+    const players = uniqueBy([elimination.player, ...alliedVoters.map((entry) => entry.voter)], (player) => player.id);
+    points.push({
+      round: elimination.round,
+      type: "alliance_member_cut",
+      players,
+      confidence: "high",
+      description: `${alliedVoters.map((entry) => entry.voter.name).join(", ")} helped eliminate alliance member ${elimination.player.name} after sharing ${alliances.map((alliance) => alliance.name).join(", ")}.`,
+      derivationMethod: "named_alliance_member_voted_to_eliminate",
+      criteria: {
+        eliminatedPlayerId: elimination.player.id,
+        alliedVoterIds: alliedVoters.map((entry) => entry.voter.id),
+        allianceIds: alliances.map((alliance) => alliance.id),
+      },
+      evidence: {
+        factRefs: [
+          `round:${elimination.round}:eliminated:${elimination.player.id}`,
+          ...alliances.map((alliance) => `alliance:${alliance.id}`),
+        ],
+        ...(eventRefs
+          ? { eventRefs: eventRefs.forRound(elimination.round, ["council.vote_cast", "endgame.elimination_vote_cast"], players) }
+          : {}),
+      },
+    });
+  }
+  return points;
+}
+
+function votersWhoCutPlayer(
+  rounds: readonly CompletedGameResultsRound[],
+  eliminatedId: string,
+  eliminationRound: number,
+): RevealedPlayerRef[] {
+  const round = rounds.find((entry) => entry.round === eliminationRound);
+  if (!round) return [];
+  const councilVoters = round.canonicalFacts.roundFacts.council.ledger
+    .filter((entry) => entry.target.id === eliminatedId)
+    .map((entry) => entry.voter);
+  const endgameVoters = round.endgameEliminations
+    .filter((entry) => entry.eliminated.id === eliminatedId)
+    .flatMap((entry) => entry.ledger.filter((vote) => vote.target.id === eliminatedId).map((vote) => vote.voter));
+  return uniqueBy([...councilVoters, ...endgameVoters], (player) => player.id);
+}
+
+function ensureRoundAllianceActivity(
+  roundActivity: Map<number, PostgameRoundAllianceActivity>,
+  round: number,
+): PostgameRoundAllianceActivity {
+  const existing = roundActivity.get(round);
+  if (existing) return existing;
+  const created = emptyRoundAllianceActivity();
+  roundActivity.set(round, created);
+  return created;
+}
+
+function emptyRoundAllianceActivity(): PostgameRoundAllianceActivity {
+  return {
+    proposalCount: 0,
+    activatedCount: 0,
+    closedCount: 0,
+    archivedCount: 0,
+    huddleCount: 0,
+    topAllianceNames: [],
+    latestOutcome: null,
+  };
+}
+
+function addRoundAllianceName(activity: PostgameRoundAllianceActivity, name: string): void {
+  if (activity.topAllianceNames.includes(name)) return;
+  activity.topAllianceNames = [...activity.topAllianceNames, name].slice(0, 5);
+}
+
+function indexedAllianceRecord(
+  alliance: AllianceRecord,
+  playerRefs: ReadonlyMap<string, RevealedPlayerRef>,
+): PostgameAllianceIndexedRecord {
+  return {
+    id: alliance.id,
+    name: alliance.name,
+    memberIds: [...alliance.memberIds],
+    memberNames: alliance.memberIds.map((id) => playerRefs.get(id)?.name ?? id),
+    purpose: alliance.purpose,
+    timebox: alliance.timebox,
+    status: alliance.status,
+    createdRound: alliance.createdRound,
+    updatedRound: alliance.updatedRound,
+  };
+}
+
+function compactPostgameOutcome(outcome: AllianceHuddleOutcome): PostgameAllianceOutcomeSummary {
+  return {
+    id: outcome.id,
+    allianceId: outcome.allianceId,
+    round: outcome.round,
+    window: outcome.window,
+    plan: outcome.plan,
+    confidence: outcome.confidence,
+    posture: outcome.posture,
+    leakOrBetrayalClaims: [...outcome.leakOrBetrayalClaims],
+  };
+}
+
+function outcomeAllianceId(outcome: AllianceHuddleOutcome): string {
+  return outcome.allianceId;
+}
+
+function latestPostgameOutcome(
+  outcomes: readonly PostgameAllianceOutcomeSummary[],
+): PostgameAllianceOutcomeSummary | undefined {
+  return [...outcomes].sort((left, right) =>
+    right.round - left.round ||
+    right.id.localeCompare(left.id)
+  )[0];
+}
+
+function currentPostgameAllianceVersion(lineage: AllianceProposalLineage) {
+  return lineage.versions.find((version) => version.versionId === lineage.currentVersionId) ?? lineage.versions.at(-1) ?? null;
+}
+
+function playerParticipatedInAllianceLineage(
+  lineage: AllianceProposalLineage,
+  playerId: string,
+): boolean {
+  for (const version of lineage.versions) {
+    if (version.proposerId === playerId) return true;
+    if (version.terms.memberIds.includes(playerId)) return true;
+    if ((version.requiredConsentMemberIds ?? version.terms.memberIds).includes(playerId)) return true;
+  }
+  return Object.values(lineage.responsesByVersion).some((responses) => playerId in responses);
+}
+
+function uniqueBy<T>(items: readonly T[], keyForItem: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const item of items) {
+    const key = keyForItem(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
+}
+
+function playerRefForId(id: string, playerRefs: ReadonlyMap<string, RevealedPlayerRef>): RevealedPlayerRef {
+  return playerRefs.get(id) ?? { id, name: id };
 }
 
 function findUnanimousOrNearUnanimousVotes(

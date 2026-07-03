@@ -102,6 +102,7 @@ export interface ProductionGameMcpAgentAlliancesOptions {
   player?: string;
   playerId?: string;
   agentId?: string;
+  detailLevel?: "compact" | "full";
 }
 
 export interface ProductionGameMcpPostgameOptions {
@@ -141,11 +142,26 @@ interface AgentAllianceTermsRead {
 interface AgentAllianceProposalRead {
   lineageId: string;
   allianceId: string;
+  name: string;
   status: string;
   proposedRound: number;
   resolvedRound?: number;
+  memberNames: string[];
   currentVersionId: string;
   currentTerms: AgentAllianceTermsRead;
+  proposer: { id: string; name: string };
+  yourResponse: string | null;
+  finalResult: string;
+}
+
+interface AgentAllianceCompactProposalRead {
+  lineageId: string;
+  allianceId: string;
+  name: string;
+  status: string;
+  proposedRound: number;
+  resolvedRound?: number;
+  memberNames: string[];
   proposer: { id: string; name: string };
   yourResponse: string | null;
   finalResult: string;
@@ -164,12 +180,35 @@ interface AgentAllianceOutcomeRead {
   leakOrBetrayalClaims: string[];
 }
 
+interface AgentAllianceCompactOutcomeRead {
+  id: string;
+  round: number;
+  window: string;
+  plan: string;
+  confidence: string;
+  posture: string;
+  leakOrBetrayalClaims: string[];
+}
+
 interface AgentAllianceRecordRead extends AgentAllianceTermsRead {
   id: string;
   status: string;
   createdRound: number;
   updatedRound: number;
   huddleOutcomes: AgentAllianceOutcomeRead[];
+}
+
+interface AgentAllianceCompactRecordRead {
+  id: string;
+  name: string;
+  status: string;
+  memberNames: string[];
+  purpose: string;
+  timebox: string | null;
+  createdRound: number;
+  updatedRound: number;
+  huddleOutcomeCount: number;
+  latestOutcome?: AgentAllianceCompactOutcomeRead;
 }
 
 interface AgentAllianceHuddleRead {
@@ -183,22 +222,57 @@ interface AgentAllianceHuddleRead {
   outcome?: AgentAllianceOutcomeRead;
 }
 
+interface AgentAllianceCompactHuddleRead {
+  allianceId: string;
+  allianceName: string;
+  round: number;
+  window: string;
+  pass: number;
+  speakers: Array<{ id: string; name: string }>;
+  messageCount: number;
+  outcomeSummary?: AgentAllianceCompactOutcomeRead;
+}
+
+interface AgentAllianceFactsSummaryRead {
+  proposalCount: number;
+  activeAllianceCount: number;
+  closedAllianceCount: number;
+  archivedAllianceCount: number;
+  huddleCount: number;
+  latestHuddleRound: number | null;
+}
+
+interface AgentAllianceFullFactsRead {
+  summary: AgentAllianceFactsSummaryRead;
+  proposals: AgentAllianceProposalRead[];
+  alliances: AgentAllianceRecordRead[];
+  huddles: AgentAllianceHuddleRead[];
+}
+
+interface AgentAllianceCompactFactsRead {
+  summary: AgentAllianceFactsSummaryRead;
+  proposals: AgentAllianceCompactProposalRead[];
+  alliances: AgentAllianceCompactRecordRead[];
+  huddles: AgentAllianceCompactHuddleRead[];
+}
+
 type ProductionGameMcpAgentAlliancesRead = {
   schemaVersion: 1;
   game: ProductionGameMcpGameIdentity;
   player?: AgentAlliancePlayerRead;
   selectablePlayers?: AgentAlliancePlayerRead[];
-  allianceFacts?: {
-    proposals: AgentAllianceProposalRead[];
-    alliances: AgentAllianceRecordRead[];
-    huddles: AgentAllianceHuddleRead[];
-  };
+  detailLevel?: "compact" | "full";
+  allianceFacts?: AgentAllianceFullFactsRead | AgentAllianceCompactFactsRead;
   availability: {
     status: "available" | "agent_ambiguous" | "agent_not_authorized" | "agent_not_found";
     eventLogStatus?: string;
     transcriptStatus?: "available" | "not_available";
     diagnostics: Array<{ code: string; severity: "info" | "warning"; message: string }>;
   };
+};
+
+type ProductionGameMcpAllianceContextRead = AgentAllianceCompactFactsRead & {
+  player: AgentAlliancePlayerRead;
 };
 
 export class ProductionGameMcpReadModel {
@@ -384,30 +458,33 @@ export class ProductionGameMcpReadModel {
       };
     }
 
+    const detailLevel = options.detailLevel ?? "compact";
     const eventRead = await getPersistedGameEvents(this.db, game.id);
-    const facts = buildAgentAllianceFacts({
+    const fullFacts = buildAgentAllianceFacts({
       events: eventRead.events.map((row) => row.envelope),
       player: selected.player,
       playerNames,
       transcriptRows: await this.loadHuddleTranscriptRows(game.id),
     });
+    const facts = detailLevel === "full" ? fullFacts : compactAgentAllianceFacts(fullFacts);
 
     return {
       schemaVersion: 1,
       game,
       player: playerRead(selected.player, playerNames),
+      detailLevel,
       allianceFacts: facts,
       availability: {
         status: "available",
         eventLogStatus: eventRead.status,
-        transcriptStatus: facts.huddles.some((huddle) => huddle.messages.length > 0) ? "available" : "not_available",
+        transcriptStatus: fullFacts.huddles.some((huddle) => huddle.messages.length > 0) ? "available" : "not_available",
         diagnostics: [
           ...eventRead.diagnostics.map((diagnostic) => ({
             code: "event_log_diagnostic",
             severity: "warning" as const,
             message: JSON.stringify(diagnostic),
           })),
-          ...(facts.huddles.length > 0 && facts.huddles.every((huddle) => huddle.messages.length === 0)
+          ...(fullFacts.huddles.length > 0 && fullFacts.huddles.every((huddle) => huddle.messages.length === 0)
             ? [{
               code: "missing_huddle_chat",
               severity: "info" as const,
@@ -426,10 +503,13 @@ export class ProductionGameMcpReadModel {
       eventLogStatus: string;
       validPrefixLength: number;
       events: ProductionGameEventResult[];
+      allianceContext?: ProductionGameMcpAllianceContextRead;
     };
     diagnostics: unknown[];
   }> {
     const game = await this.requireGame(options.gameIdOrSlug, access);
+    const players = await this.loadGamePlayers(game.id);
+    const playerNames = playerNameMap(players);
     const eventRead = await getPersistedGameEvents(this.db, game.id);
     if (isGamesSubjectAccess(access) && options.visibilityMode === "producer") {
       throw new Error("producer visibility requires MCP scope: producer");
@@ -440,6 +520,16 @@ export class ProductionGameMcpReadModel {
     const eventType = normalizeEventType(options.eventType);
     const limit = clamp(options.limit ?? DEFAULT_EVENT_LIMIT, 1, MAX_EVENT_LIMIT);
     const actor = options.actor?.trim();
+    const allianceContext = actor
+      ? await this.compactAllianceContextForActor({
+          game,
+          players,
+          playerNames,
+          events: eventRead.events.map((row) => row.envelope),
+          actor,
+          access,
+        })
+      : undefined;
 
     const events: ProductionGameEventResult[] = [];
     for (const row of eventRead.events) {
@@ -463,6 +553,7 @@ export class ProductionGameMcpReadModel {
         eventLogStatus: eventRead.status,
         validPrefixLength: eventRead.validPrefixLength,
         events,
+        ...(allianceContext && { allianceContext }),
       },
       diagnostics: eventRead.diagnostics,
     };
@@ -476,6 +567,7 @@ export class ProductionGameMcpReadModel {
       eventLogStatus: string;
       validPrefixLength: number;
       events: ProductionGameEventResult[];
+      allianceTimeline?: ProductionGameMcpAllianceContextRead;
     };
     diagnostics: unknown[];
   }> {
@@ -493,6 +585,9 @@ export class ProductionGameMcpReadModel {
         eventLogStatus: filtered.canonicalGameFacts.eventLogStatus,
         validPrefixLength: filtered.canonicalGameFacts.validPrefixLength,
         events: filtered.canonicalGameFacts.events,
+        ...(filtered.canonicalGameFacts.allianceContext && {
+          allianceTimeline: filtered.canonicalGameFacts.allianceContext,
+        }),
       },
       diagnostics: filtered.diagnostics,
     };
@@ -765,6 +860,32 @@ export class ProductionGameMcpReadModel {
       ))
       .orderBy(asc(schema.transcripts.timestamp), asc(schema.transcripts.id));
   }
+
+  private async compactAllianceContextForActor(params: {
+    game: ProductionGameMcpGameIdentity;
+    players: readonly GamePlayerRow[];
+    playerNames: Map<string, string>;
+    events: readonly CanonicalGameEvent[];
+    actor: string;
+    access: ProductionGameMcpAccess;
+  }): Promise<ProductionGameMcpAllianceContextRead | undefined> {
+    const selectablePlayers = await this.selectableAlliancePlayers(params.game.id, params.players, params.access);
+    const exactPlayerId = params.players.some((player) => player.id === params.actor);
+    const selected = selectAlliancePlayer(params.players, selectablePlayers, exactPlayerId
+      ? { gameIdOrSlug: params.game.id, playerId: params.actor }
+      : { gameIdOrSlug: params.game.id, player: params.actor });
+    if (selected.status !== "available") return undefined;
+    const fullFacts = buildAgentAllianceFacts({
+      events: params.events,
+      player: selected.player,
+      playerNames: params.playerNames,
+      transcriptRows: await this.loadHuddleTranscriptRows(params.game.id),
+    });
+    return {
+      player: playerRead(selected.player, params.playerNames),
+      ...compactAgentAllianceFacts(fullFacts),
+    };
+  }
 }
 
 function selectAlliancePlayer(
@@ -846,11 +967,7 @@ function buildAgentAllianceFacts(params: {
   player: GamePlayerRow;
   playerNames: Map<string, string>;
   transcriptRows: ReadonlyArray<typeof schema.transcripts.$inferSelect>;
-}): {
-  proposals: AgentAllianceProposalRead[];
-  alliances: AgentAllianceRecordRead[];
-  huddles: AgentAllianceHuddleRead[];
-} {
+}): AgentAllianceFullFactsRead {
   const proposalByLineageId = new Map<string, AgentAllianceProposalRead>();
   const allianceById = new Map<string, AgentAllianceRecordRead>();
   const outcomeBySessionId = new Map<string, AgentAllianceOutcomeRead>();
@@ -872,30 +989,18 @@ function buildAgentAllianceFacts(params: {
       case "alliance.proposal_expired": {
         const lineage = event.payload.lineage;
         if (!agentParticipatedInLineage(lineage, params.player.id)) break;
-        const currentVersion = currentAllianceVersion(lineage);
-        if (!currentVersion) break;
-        const responses = lineage.responsesByVersion[lineage.currentVersionId] ?? {};
-        proposalByLineageId.set(lineage.id, {
-          lineageId: lineage.id,
-          allianceId: lineage.allianceId,
-          status: lineage.status,
-          proposedRound: lineage.createdRound,
-          ...(lineage.resolvedRound !== null && { resolvedRound: lineage.resolvedRound }),
-          currentVersionId: lineage.currentVersionId,
-          currentTerms: termsRead(currentVersion.terms, params.playerNames),
-          proposer: {
-            id: currentVersion.proposerId,
-            name: nameForPlayer(params.playerNames, currentVersion.proposerId),
-          },
-          yourResponse: responses[params.player.id] ?? null,
-          finalResult: lineage.status,
-        });
+        const proposal = proposalReadFromLineage(lineage, params.player.id, params.playerNames);
+        if (proposal) proposalByLineageId.set(lineage.id, proposal);
         break;
       }
       case "alliance.activated":
       case "alliance.amendment_resolved":
       case "alliance.closed":
       case "alliance.archived": {
+        if ("lineage" in event.payload && agentParticipatedInLineage(event.payload.lineage, params.player.id)) {
+          const proposal = proposalReadFromLineage(event.payload.lineage, params.player.id, params.playerNames);
+          if (proposal) proposalByLineageId.set(event.payload.lineage.id, proposal);
+        }
         const alliance = event.payload.alliance;
         if (alliance.memberIds.includes(params.player.id)) {
           allianceById.set(alliance.id, allianceRead(alliance, params.playerNames, []));
@@ -952,7 +1057,7 @@ function buildAgentAllianceFacts(params: {
       };
     });
 
-  return {
+  const facts = {
     proposals: Array.from(proposalByLineageId.values()),
     alliances: Array.from(allianceById.values()).map((alliance) => ({
       ...alliance,
@@ -961,6 +1066,118 @@ function buildAgentAllianceFacts(params: {
         .map((huddle) => huddle.outcome!),
     })),
     huddles,
+  };
+  return {
+    summary: allianceFactsSummary(facts),
+    ...facts,
+  };
+}
+
+function proposalReadFromLineage(
+  lineage: AllianceProposalLineage,
+  selectedPlayerId: string,
+  playerNames: Map<string, string>,
+): AgentAllianceProposalRead | null {
+  const currentVersion = currentAllianceVersion(lineage);
+  if (!currentVersion) return null;
+  const responses = lineage.responsesByVersion[lineage.currentVersionId] ?? {};
+  return {
+    lineageId: lineage.id,
+    allianceId: lineage.allianceId,
+    name: currentVersion.terms.name,
+    status: lineage.status,
+    proposedRound: lineage.createdRound,
+    ...(lineage.resolvedRound !== null && { resolvedRound: lineage.resolvedRound }),
+    memberNames: currentVersion.terms.memberIds.map((id) => nameForPlayer(playerNames, id)),
+    currentVersionId: lineage.currentVersionId,
+    currentTerms: termsRead(currentVersion.terms, playerNames),
+    proposer: {
+      id: currentVersion.proposerId,
+      name: nameForPlayer(playerNames, currentVersion.proposerId),
+    },
+    yourResponse: responses[selectedPlayerId] ?? null,
+    finalResult: lineage.status,
+  };
+}
+
+function compactAgentAllianceFacts(facts: AgentAllianceFullFactsRead): AgentAllianceCompactFactsRead {
+  return {
+    summary: facts.summary,
+    proposals: facts.proposals.map((proposal) => ({
+      lineageId: proposal.lineageId,
+      allianceId: proposal.allianceId,
+      name: proposal.currentTerms.name,
+      status: proposal.status,
+      proposedRound: proposal.proposedRound,
+      ...(proposal.resolvedRound !== undefined && { resolvedRound: proposal.resolvedRound }),
+      memberNames: proposal.currentTerms.memberNames,
+      proposer: proposal.proposer,
+      yourResponse: proposal.yourResponse,
+      finalResult: proposal.finalResult,
+    })),
+    alliances: facts.alliances.map((alliance) => {
+      const latestOutcome = latestOutcomeForAlliance(alliance.huddleOutcomes);
+      return {
+        id: alliance.id,
+        status: alliance.status,
+        name: alliance.name,
+        memberNames: [...alliance.memberNames],
+        purpose: alliance.purpose,
+        timebox: alliance.timebox,
+        createdRound: alliance.createdRound,
+        updatedRound: alliance.updatedRound,
+        huddleOutcomeCount: alliance.huddleOutcomes.length,
+        ...(latestOutcome && { latestOutcome: compactOutcome(latestOutcome) }),
+      };
+    }),
+    huddles: facts.huddles.map((huddle) => ({
+      allianceId: huddle.allianceId,
+      allianceName: huddle.allianceName,
+      round: huddle.round,
+      window: huddle.window,
+      pass: huddle.pass,
+      speakers: huddle.speakers,
+      messageCount: huddle.messages.length,
+      ...(huddle.outcome && { outcomeSummary: compactOutcome(huddle.outcome) }),
+    })),
+  };
+}
+
+function allianceFactsSummary(facts: {
+  proposals: readonly AgentAllianceProposalRead[];
+  alliances: readonly AgentAllianceRecordRead[];
+  huddles: readonly AgentAllianceHuddleRead[];
+}): AgentAllianceFactsSummaryRead {
+  return {
+    proposalCount: facts.proposals.length,
+    activeAllianceCount: facts.alliances.filter((alliance) => alliance.status === "active").length,
+    closedAllianceCount: facts.alliances.filter((alliance) => alliance.status === "closed").length,
+    archivedAllianceCount: facts.alliances.filter((alliance) => alliance.status === "archived").length,
+    huddleCount: facts.huddles.length,
+    latestHuddleRound: facts.huddles.length > 0
+      ? Math.max(...facts.huddles.map((huddle) => huddle.round))
+      : null,
+  };
+}
+
+function latestOutcomeForAlliance(
+  outcomes: readonly AgentAllianceOutcomeRead[],
+): AgentAllianceOutcomeRead | undefined {
+  return [...outcomes].sort((left, right) =>
+    right.round - left.round ||
+    right.id.localeCompare(left.id)
+  )[0];
+}
+
+function compactOutcome(outcome: AgentAllianceOutcomeRead): AgentAllianceCompactOutcomeRead {
+  return {
+    id: outcome.id,
+    round: outcome.round,
+    window: outcome.window,
+    plan: outcome.plan,
+    confidence: outcome.confidence,
+    posture: outcome.posture,
+    leakOrBetrayalClaims: [...outcome.leakOrBetrayalClaims],
   };
 }
 

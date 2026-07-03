@@ -2,9 +2,14 @@ import { describe, expect, it } from "bun:test";
 import {
   buildCompletedGameResults,
   buildPostgameAnalysisProjection,
+  type AllianceHuddleOutcome,
+  type AllianceProposalLineage,
+  type AllianceRecord,
+  type CanonicalGameEvent,
   EDGE_SMOKE_DUSK_EXPECTED,
   EDGE_SMOKE_DUSK_PLAYERS,
   createEdgeSmokeDuskEvents,
+  Phase,
 } from "../index";
 
 describe("buildPostgameAnalysisProjection", () => {
@@ -184,4 +189,189 @@ describe("buildPostgameAnalysisProjection", () => {
     expect(projection.turningPoints.some((point) => point.type === "jury_split")).toBe(true);
     expect(projection.turningPoints.some((point) => point.evidence.eventRefs?.length)).toBe(true);
   });
+
+  it("threads compact named-alliance arcs into postgame summaries", () => {
+    const baseEvents = createEdgeSmokeDuskEvents();
+    const completed = buildCompletedGameResults({
+      events: baseEvents,
+      terminalResult: {
+        winnerId: EDGE_SMOKE_DUSK_EXPECTED.winnerId,
+        winnerName: EDGE_SMOKE_DUSK_EXPECTED.winnerName,
+        roundsPlayed: EDGE_SMOKE_DUSK_EXPECTED.roundsPlayed,
+      },
+    });
+    const firstElimination = completed.eliminationOrder[0]!;
+    const firstRound = completed.rounds.find((round) => round.round === firstElimination.round)!;
+    const cuttingVoter = firstRound.canonicalFacts.roundFacts.council.ledger.find((entry) =>
+      entry.target.id === firstElimination.player.id
+    )!.voter;
+    const events = addNamedAllianceOverlay(baseEvents, firstElimination.player, cuttingVoter);
+
+    const projection = buildPostgameAnalysisProjection({
+      completedResults: completed,
+      events,
+    });
+
+    expect(projection.allianceSummary).toMatchObject({
+      proposalCount: 1,
+      activeAllianceCount: 1,
+      huddleCount: 1,
+    });
+    expect(projection.allianceSummary.topNamedAlliances[0]).toMatchObject({
+      name: "Smoke Vote Pair",
+      memberNames: [firstElimination.player.name, cuttingVoter.name],
+      huddleOutcomeCount: 1,
+      latestOutcome: {
+        plan: "Vote together, then deny there was a pact.",
+      },
+    });
+    expect(projection.roundSummaries.find((round) => round.round === 1)?.allianceActivity).toMatchObject({
+      proposalCount: 1,
+      activatedCount: 1,
+      huddleCount: 1,
+      topAllianceNames: ["Smoke Vote Pair"],
+    });
+    const eliminatedSummary = projection.playerSummaries.find((entry) =>
+      entry.player.id === firstElimination.player.id
+    );
+    expect(eliminatedSummary?.allianceArc.joinedAlliances[0]).toMatchObject({
+      name: "Smoke Vote Pair",
+      memberNames: [firstElimination.player.name, cuttingVoter.name],
+    });
+    expect(eliminatedSummary?.allianceArc.involvedProposals[0]).toMatchObject({
+      name: "Smoke Vote Pair",
+      proposer: cuttingVoter,
+      yourResponse: "accepted",
+    });
+    expect(eliminatedSummary?.allianceArc.huddlesAttended).toBe(1);
+    expect(projection.turningPoints.find((point) => point.type === "alliance_member_cut")).toMatchObject({
+      round: firstElimination.round,
+      players: [firstElimination.player, cuttingVoter],
+      criteria: {
+        eliminatedPlayerId: firstElimination.player.id,
+        alliedVoterIds: [cuttingVoter.id],
+        allianceIds: ["alliance-smoke-vote"],
+      },
+    });
+  });
 });
+
+function addNamedAllianceOverlay(
+  baseEvents: readonly CanonicalGameEvent[],
+  eliminated: { id: string; name: string },
+  cuttingVoter: { id: string; name: string },
+): CanonicalGameEvent[] {
+  const sequenceStart = Math.max(...baseEvents.map((event) => event.sequence)) + 1;
+  const gameId = baseEvents[0]!.gameId;
+  const timestamp = "2026-06-14T00:00:00.000Z";
+  const lineage: AllianceProposalLineage = {
+    id: "lineage-smoke-vote",
+    allianceId: "alliance-smoke-vote",
+    status: "activated",
+    currentVersionId: "version-smoke-vote",
+    versions: [{
+      versionId: "version-smoke-vote",
+      proposerId: cuttingVoter.id,
+      terms: {
+        name: "Smoke Vote Pair",
+        memberIds: [eliminated.id, cuttingVoter.id],
+        purpose: "Hide the first vote behind a fake split.",
+        timebox: "round_1",
+      },
+      requiredConsentMemberIds: [eliminated.id, cuttingVoter.id],
+      counterIndex: 0,
+      createdRound: 1,
+      createdAt: timestamp,
+    }],
+    responsesByVersion: {
+      "version-smoke-vote": {
+        [eliminated.id]: "accepted",
+        [cuttingVoter.id]: "accepted",
+      },
+    },
+    createdRound: 1,
+    createdAt: timestamp,
+    resolvedRound: 1,
+    resolvedAt: timestamp,
+  };
+  const alliance: AllianceRecord = {
+    id: "alliance-smoke-vote",
+    name: "Smoke Vote Pair",
+    memberIds: [eliminated.id, cuttingVoter.id],
+    purpose: "Hide the first vote behind a fake split.",
+    timebox: "round_1",
+    status: "active",
+    createdRound: 1,
+    createdAt: timestamp,
+    updatedRound: 1,
+    updatedAt: timestamp,
+    lineageIds: [lineage.id],
+    huddleOutcomeIds: ["outcome-smoke-vote"],
+  };
+  const outcome: AllianceHuddleOutcome = {
+    id: "outcome-smoke-vote",
+    sessionId: "session-smoke-vote",
+    allianceId: alliance.id,
+    window: "pre_vote",
+    round: 1,
+    ask: "Coordinate the first vote.",
+    plan: "Vote together, then deny there was a pact.",
+    promises: ["Keep the pair quiet."],
+    dissent: [],
+    confidence: "medium",
+    posture: "concealed",
+    leakOrBetrayalClaims: [`${cuttingVoter.name} may leak the pair.`],
+    createdAt: timestamp,
+  };
+  const eventBase = {
+    gameId,
+    round: 1,
+    timestamp,
+    source: "engine" as const,
+    visibility: "producer" as const,
+    payloadVersion: 1 as const,
+    sourcePointers: [],
+  };
+  return [
+    ...baseEvents,
+    {
+      ...eventBase,
+      sequence: sequenceStart,
+      phase: Phase.MINGLE_I,
+      type: "alliance.proposal_submitted",
+      payload: { lineage },
+    },
+    {
+      ...eventBase,
+      sequence: sequenceStart + 1,
+      phase: Phase.MINGLE_I,
+      type: "alliance.activated",
+      payload: { lineage, alliance },
+    },
+    {
+      ...eventBase,
+      sequence: sequenceStart + 2,
+      phase: Phase.PRE_VOTE_HUDDLE,
+      type: "alliance.huddle_completed",
+      payload: {
+        session: {
+          id: "session-smoke-vote",
+          scheduleId: "schedule-smoke-vote",
+          allianceId: alliance.id,
+          window: "pre_vote",
+          round: 1,
+          pass: 1,
+          speakerIds: [eliminated.id, cuttingVoter.id],
+          completedAt: timestamp,
+        },
+      },
+    },
+    {
+      ...eventBase,
+      sequence: sequenceStart + 3,
+      phase: Phase.PRE_VOTE_HUDDLE,
+      type: "alliance.huddle_outcome_recorded",
+      payload: { outcome, alliance },
+    },
+  ];
+}

@@ -78,6 +78,18 @@ describe("postgame analysis service", () => {
       segment.leader.player.id === EDGE_SMOKE_DUSK_PLAYERS.shadowtech.id &&
       segment.indicators.includes("empowerment")
     )).toBe(true);
+    expect(result.analysis.allianceSummary).toMatchObject({
+      proposalCount: 0,
+      activeAllianceCount: 0,
+      archivedAllianceCount: 0,
+      closedAllianceCount: 0,
+      huddleCount: 0,
+    });
+    expect(result.analysis.roundSummaries[0]?.allianceActivity).toMatchObject({
+      proposalCount: 0,
+      huddleCount: 0,
+      topAllianceNames: [],
+    });
     expect(JSON.stringify(result)).not.toContain("sourcePointers");
     expect(JSON.stringify(result)).not.toContain("payloadVersion");
   });
@@ -111,6 +123,13 @@ describe("postgame analysis service", () => {
     expect(player.player.placement).toBe(1);
     expect(player.player.overallGameShape.value).toBe("under the radar");
     expect(player.player.majorityAlignmentByRound.filter((round) => round.aligned === true)).toHaveLength(5);
+    expect(player.player.allianceArc).toMatchObject({
+      joinedAlliances: [],
+      involvedProposals: [],
+      huddlesAttended: 0,
+      latestPlans: [],
+      betrayalOrLeakClaims: [],
+    });
 
     const turningPoints = await getPostgameTurningPoints(db, EDGE_SMOKE_DUSK_GAME_ID, {
       includeEvidence: true,

@@ -328,6 +328,7 @@ export function buildCompactPostgameBrief(
     summary: analysis.summary,
     derivedVoteCohorts: analysis.derivedVoteCohorts,
     gameMomentum: analysis.gameMomentum,
+    allianceSummary: analysis.allianceSummary,
     roundSummaries: analysis.roundSummaries.map((round) => buildCompactPostgameRoundSummary(round, detailLevel)),
     jury: {
       status: analysis.jury.status,
@@ -371,6 +372,7 @@ export function buildCompactPostgameRoundSummary(
         }
       : round.majorityCohort,
     keyRiskMoments: round.keyRiskMoments,
+    allianceActivity: round.allianceActivity,
     diagnostics: round.diagnostics,
     ...(round.evidence ? { evidence: round.evidence } : {}),
   };
@@ -427,9 +429,7 @@ async function loadPostgameAnalysis(
 
   const analysis = buildPostgameAnalysisProjection({
     completedResults,
-    events: options.includeEvidence
-      ? persistedEvents.events.map((event) => event.envelope)
-      : undefined,
+    events: persistedEvents.events.map((event) => event.envelope),
     includeEvidence: options.includeEvidence,
   });
 

@@ -704,18 +704,46 @@ describe("ProductionGameMcpReadModel", () => {
     });
 
     expect(result.availability.status).toBe("available");
+    expect(result.detailLevel).toBe("compact");
     expect(result.player).toMatchObject({ id: alice, name: "Alice" });
-    expect(result.allianceFacts?.proposals.map((proposal) => proposal.currentTerms.name).sort()).toEqual([
+    expect(result.allianceFacts?.summary).toMatchObject({
+      proposalCount: 2,
+      activeAllianceCount: 1,
+      huddleCount: 1,
+      latestHuddleRound: 1,
+    });
+    expect(result.allianceFacts?.proposals.map((proposal) => proposal.name).sort()).toEqual([
       "Back Row Pair",
       "Smoke Test Pair",
     ]);
-    expect(result.allianceFacts?.proposals.find((proposal) => proposal.currentTerms.name === "Smoke Test Pair")).toMatchObject({
+    expect(result.allianceFacts?.proposals.find((proposal) => proposal.name === "Smoke Test Pair")).toMatchObject({
       status: "expired",
       yourResponse: "trial",
+    });
+    expect(result.allianceFacts?.proposals.find((proposal) => proposal.name === "Back Row Pair")).toMatchObject({
+      status: "activated",
+      resolvedRound: 1,
+      finalResult: "activated",
     });
     expect(result.allianceFacts?.alliances.map((alliance) => alliance.name)).toEqual(["Back Row Pair"]);
     expect(result.allianceFacts?.huddles).toHaveLength(1);
     expect(result.allianceFacts?.huddles[0]).toMatchObject({
+      allianceName: "Back Row Pair",
+      messageCount: 1,
+      outcomeSummary: {
+        plan: "Alice and Bob agree to test Cara as the first vote.",
+      },
+    });
+    expect(JSON.stringify(result.allianceFacts?.huddles[0])).not.toContain("messages");
+    expect(JSON.stringify(result.allianceFacts?.huddles[0])).not.toContain("thinking");
+
+    const fullResult = await readModel.readAgentAlliances({ gameIdOrSlug: "agent-alliances", detailLevel: "full" }, {
+      userId,
+      authProfile: "subject",
+    });
+
+    expect(fullResult.detailLevel).toBe("full");
+    expect(fullResult.allianceFacts?.huddles[0]).toMatchObject({
       allianceName: "Back Row Pair",
       messages: [{
         text: "Bob, I can vote Cara if you hold the line.",
@@ -747,8 +775,26 @@ describe("ProductionGameMcpReadModel", () => {
     expect(serialized).not.toContain("Off Camera Pair");
     expect(serialized).not.toContain("Alice never sees this");
     expect(serialized).not.toContain("Alice is outside this plan");
+    expect(serialized).not.toContain("Bob, I can vote Cara if you hold the line.");
+    expect(serialized).not.toContain("I need Bob to feel this was his idea.");
     expect(serialized).not.toContain("sourcePointers");
     expect(serialized).not.toContain("reasoning");
+
+    const filtered = await readModel.filterEvents({ gameIdOrSlug: "agent-alliances", actor: "Alice" }, {
+      userId,
+      authProfile: "subject",
+    });
+    expect(filtered.canonicalGameFacts.allianceContext?.summary.proposalCount).toBe(2);
+    expect(JSON.stringify(filtered.canonicalGameFacts.allianceContext)).not.toContain("messages");
+
+    const timeline = await readModel.playerTimeline({ gameIdOrSlug: "agent-alliances", player: "Alice" }, {
+      userId,
+      authProfile: "subject",
+    });
+    expect(timeline.canonicalGameFacts.allianceTimeline?.alliances[0]).toMatchObject({
+      name: "Back Row Pair",
+      huddleOutcomeCount: 1,
+    });
   });
 
   test("requires an explicit agent selector when a user owns multiple players in a game", async () => {

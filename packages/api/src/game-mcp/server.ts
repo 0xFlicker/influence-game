@@ -499,6 +499,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
         player: { type: "string" },
         playerId: { type: "string" },
         agentId: { type: "string" },
+        detailLevel: { type: "string", enum: ["compact", "full"] },
       },
       required: ["gameIdOrSlug"],
       scopes: gameReadScopes,
@@ -1388,7 +1389,15 @@ function agentAlliancesArgs(args: Record<string, unknown>): ProductionGameMcpAge
     player: optionalString(args, "player"),
     playerId: optionalString(args, "playerId"),
     agentId: optionalString(args, "agentId"),
+    detailLevel: optionalAllianceDetailLevel(args),
   };
+}
+
+function optionalAllianceDetailLevel(args: Record<string, unknown>) {
+  const value = optionalString(args, "detailLevel");
+  if (!value) return undefined;
+  if (value === "compact" || value === "full") return value;
+  throw new Error("detailLevel must be one of: compact, full");
 }
 
 function optionalDetailLevel(args: Record<string, unknown>) {

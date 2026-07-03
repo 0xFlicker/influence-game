@@ -98,6 +98,10 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(agentAlliancesTool.inputSchema.properties).toHaveProperty("player");
     expect(agentAlliancesTool.inputSchema.properties).toHaveProperty("playerId");
     expect(agentAlliancesTool.inputSchema.properties).toHaveProperty("agentId");
+    expect(agentAlliancesTool.inputSchema.properties.detailLevel).toEqual({
+      type: "string",
+      enum: ["compact", "full"],
+    });
     const juryTool = tools.find((tool) => (tool as { name: string }).name === "read_jury_breakdown") as {
       inputSchema: { properties: Record<string, unknown> };
       outputSchema: unknown;
@@ -404,6 +408,39 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(result.content[0]?.text).toContain("Lilith Voss defeated Kestrel 4-3.");
     expect(result.content[0]?.text).not.toContain("\"postgame\"");
     expect(result.content[0]?.text).not.toContain("\"summary\"");
+  });
+
+  test("forwards read_agent_alliances detailLevel", async () => {
+    const calls: unknown[] = [];
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
+      readAgentAlliances: async (args: unknown) => {
+        calls.push(args);
+        return { schemaVersion: 1, allianceFacts: null };
+      },
+    }));
+
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: "agent-alliances-full",
+      method: "tools/call",
+      params: {
+        name: "read_agent_alliances",
+        arguments: {
+          gameIdOrSlug: "game-1",
+          player: "Ada",
+          detailLevel: "full",
+        },
+      },
+    }, GAMES_AUTH);
+
+    expect(response?.error).toBeUndefined();
+    expect(calls).toEqual([{
+      gameIdOrSlug: "game-1",
+      player: "Ada",
+      playerId: undefined,
+      agentId: undefined,
+      detailLevel: "full",
+    }]);
   });
 
   test("rejects unsupported or invalid postgame detailLevel arguments", async () => {
