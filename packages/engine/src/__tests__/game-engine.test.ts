@@ -514,7 +514,9 @@ describe("Mingle Rooms (current open-room phase)", () => {
 
     await runner.run();
 
-    const ledger = agents[0]!.seenLedgers[0]!;
+    const ledger = agents[0]!.seenLedgers.find((entries) =>
+      entries.some((entry) => entry.revoteEmpowerTargetName !== undefined),
+    )!;
     const gammaLedger = ledger.find((entry) => entry.voterName === "Gamma");
     const deltaLedger = ledger.find((entry) => entry.voterName === "Delta");
     const echoLedger = ledger.find((entry) => entry.voterName === "Echo");
@@ -839,7 +841,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const result = await runner.run();
 
     const allocations = result.transcript.filter(
-      (entry) => entry.round === 1 && entry.scope === "system" && entry.roomMetadata,
+      (entry) => entry.round === 1 && entry.phase === Phase.MINGLE_I && entry.scope === "system" && entry.roomMetadata,
     );
     expect(allocations).toHaveLength(2);
 
@@ -861,7 +863,13 @@ describe("Mingle Rooms (current open-room phase)", () => {
     });
     const removedMingleDebugKeys = ["strategy" + "Signal", "movement" + "Purpose"];
     expect(removedMingleDebugKeys.every((key) => alphaMove && !(key in alphaMove))).toBe(true);
-    const alphaTurn = events.find((event) => event.type === "agent_turn" && event.action === "mingle-turn" && event.actor.name === "Alpha");
+    const alphaTurn = events.find(
+      (event) =>
+        event.type === "agent_turn" &&
+        event.phase === Phase.MINGLE_I &&
+        event.action === "mingle-turn" &&
+        event.actor.name === "Alpha",
+    );
     expect(alphaTurn).toBeDefined();
     if (alphaTurn?.type === "agent_turn") {
       expect(alphaTurn.response).toMatchObject({
@@ -873,7 +881,12 @@ describe("Mingle Rooms (current open-room phase)", () => {
     }
 
     const movedRoomMsg = result.transcript.find(
-      (entry) => entry.round === 1 && entry.scope === "mingle" && entry.from === "Alpha" && entry.text.includes("crossed over"),
+      (entry) =>
+        entry.round === 1 &&
+        entry.phase === Phase.MINGLE_I &&
+        entry.scope === "mingle" &&
+        entry.from === "Alpha" &&
+        entry.text.includes("crossed over"),
     );
     expect(movedRoomMsg?.roomId).toBe(secondRooms[1]!.roomId);
     expect(movedRoomMsg?.to).toEqual(["Gamma", "Delta", "Echo"]);
@@ -902,7 +915,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const result = await runner.run();
 
     const allocations = result.transcript.filter(
-      (entry) => entry.round === 1 && entry.scope === "system" && entry.roomMetadata,
+      (entry) => entry.round === 1 && entry.phase === Phase.POST_VOTE_MINGLE && entry.scope === "system" && entry.roomMetadata,
     );
     expect(allocations.map((entry) => entry.roomMetadata?.rooms[0]?.beat)).toEqual([1, 2, 3]);
     expect(allocations.map((entry) => entry.text.split(":")[0])).toEqual(["Turn 1", "Turn 2", "Turn 3"]);
