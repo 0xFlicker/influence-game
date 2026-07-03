@@ -124,6 +124,10 @@ A player-confirmed, non-binding consent artifact that a set of players explicitl
 
 The gameplay-level record of a named alliance's official facts: current members, agreed terms, status, huddle outcomes, and failed or closed proposal history relevant to its members. The alliance record is a rules term, not a storage, API, prompt, or UI prescription.
 
+## Alliance facts projection
+
+A member-scoped read model that summarizes the proposal history, alliance records, huddles, and huddle outcomes a selected player or agent is authorized to know. Compact forms omit raw huddle messages and hidden thinking so they can appear in broader summaries; full forms belong in dedicated alliance reads for inspection.
+
 ## Alliance sidecar
 
 A possible product or interface surface for inspecting alliance records and huddle history in a member-safe or producer-safe way. The sidecar is not the v1 gameplay rules authority and should not imply always-on alliance chat by default.
