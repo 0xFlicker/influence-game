@@ -108,6 +108,44 @@ describe("MatchWatchShell", () => {
     expect(html).toContain('title="Exit"');
   });
 
+  it("renders Mingle I replay room metadata as a room map instead of a single transcript card", () => {
+    const html = renderToString(
+      <MatchWatchShell
+        game={{ ...game(), currentPhase: "MINGLE_I" }}
+        messages={[
+          entry({
+            id: 1,
+            phase: "MINGLE_I",
+            fromPlayerId: null,
+            fromPlayerName: null,
+            scope: "system",
+            toPlayerIds: null,
+            roomId: undefined,
+            text: "Turn 1: Room 1: Atlas, Lyra",
+            roomMetadata: {
+              rooms: [
+                { roomId: 1, round: 1, beat: 1, playerIds: ["p1", "p2"] },
+              ],
+              excluded: [],
+            },
+          }),
+          entry({
+            id: 2,
+            phase: "MINGLE_I",
+            text: "Lyra, can I count on you before votes?",
+          }),
+        ]}
+        live={false}
+        connStatus="replay"
+      />,
+    );
+
+    expect(html).toContain("MINGLE MAP");
+    expect(html).toContain("Mingle Feed");
+    expect(html).toContain("Room");
+    expect(html).not.toContain("Click or press");
+  });
+
   it("renders live shell state from durable watch state without replay copy", () => {
     const durableWatchState: GameWatchState = {
       ...watchState(),

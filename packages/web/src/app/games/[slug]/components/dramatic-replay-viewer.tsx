@@ -43,7 +43,7 @@ import type { MatchWatchPlaybackState } from "./match-watch-model";
 import type { WatchConnStatus } from "./types";
 
 function isRoomReplayPhase(phase: string): boolean {
-  return phase === "MINGLE" || phase === "POST_VOTE_MINGLE";
+  return phase === "MINGLE_I" || phase === "MINGLE" || phase === "POST_VOTE_MINGLE";
 }
 
 export function DramaticReplayViewer({
