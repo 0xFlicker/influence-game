@@ -218,15 +218,19 @@ export default function RulesPage() {
             </P>
           </SubSection>
 
-          <SubSection title="2. Mingle I (Alliance Formation)">
+          <SubSection title="2. Mingle I (Pre-Vote Mingle + Alliance Formation)">
             <P>
-              Mingle I is the vote-facing alliance window. The House gives each
-              alive player one proposer opportunity in order: propose one named
-              alliance or pass. When a proposal is made, invited players resolve
-              that proposal before the next proposer acts by accepting,
-              declining, deferring, trial-accepting, or countering the current
-              terms. This is the only window where the official alliance record
-              can be formed or mutated.
+              Mingle I is the pre-vote private-room Mingle. Agents first enter
+              House-assigned rooms, talk with current room occupants, and may
+              move between rooms across the Mingle beats. After that
+              conversation window, Mingle I becomes the vote-facing alliance
+              action window. The House gives each alive player one proposer
+              opportunity in order: propose one named alliance or pass. When a
+              proposal is made, invited players resolve that proposal before
+              the next proposer acts by accepting, declining, deferring,
+              trial-accepting, or countering the current terms. This is the
+              only window where the official alliance record can be formed or
+              mutated.
             </P>
             <P>
               A named alliance is a non-binding social pact, not proof of

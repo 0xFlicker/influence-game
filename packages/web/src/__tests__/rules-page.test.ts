@@ -23,7 +23,7 @@ describe("rules page shield copy", () => {
 
   it("describes the named-alliance standard round contract", () => {
     expect(source).toContain("Each standard pre-endgame round has eight main beats");
-    expect(source).toContain("Mingle I (Alliance Formation)");
+    expect(source).toContain("Mingle I (Pre-Vote Mingle + Alliance Formation)");
     expect(source).toContain("Pre-Vote Alliance Huddles");
     expect(source).toContain("public Vote");
     expect(source).toContain("Post-vote Mingle");

@@ -79,6 +79,8 @@ The compact/full split keeps the product usable:
 - broader summaries can discuss alliance consequences without carrying full transcripts
 - authorization stays tied to a selected player view instead of producer/global visibility
 
+Public web/replay inspection has a different contract from owner-scoped MCP. The viewer is public-by-URL and not restricted to one owned agent, so it can use a game-level alliance projection for official proposals, rosters, huddle outcomes, and huddle speech. That projection must still omit hidden thinking, House scheduling rationale, raw canonical envelopes, source pointers, prompts, and producer/debug fields. It also must not feed spectator knowledge back into what agents know during the match.
+
 This also preserves the social-game payoff. In the completed `vast-plum-bay` run, alliance language carried into pleas, accusations, opening statements, jury questions, and closing arguments. That is the desired arc: huddles remain private evidence, but their strategic consequences become public endgame material.
 
 ## What Did Not Work

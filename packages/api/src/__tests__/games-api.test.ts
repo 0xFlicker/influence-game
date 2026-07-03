@@ -18,7 +18,7 @@ import { abortAllGames } from "../services/game-lifecycle.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
 import { refreshGameWatchStateSummary } from "../services/game-watch-state-summary.js";
 import { setServer } from "../services/ws-manager.js";
-import { Phase, type CanonicalGameEvent } from "@influence/engine";
+import { GameState, Phase, type CanonicalGameEvent } from "@influence/engine";
 import {
   createCanonicalEventFixture,
   createResolvedRoundCanonicalEventFixture,
@@ -1559,6 +1559,274 @@ describe("Game REST API", () => {
       const res = await app.request(`/api/games/${id}/transcript`);
       const body = (await res.json()) as Array<{ roomMetadata?: typeof roomMetadata }>;
       expect(body[0]!.roomMetadata).toEqual(roomMetadata);
+    });
+  });
+
+  // =========================================================================
+  // GET /api/games/:id/alliances
+  // =========================================================================
+
+  describe("GET /api/games/:id/alliances", () => {
+    test("returns public game-level alliance facts and huddle speech without thinking", async () => {
+      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      await insertFixturePlayers(db, id);
+      await markGameInProgress(db, id);
+
+      const state = new GameState([
+        { id: "atlas", name: "Atlas" },
+        { id: "echo", name: "Echo" },
+        { id: "mira", name: "Mira" },
+        { id: "nyx", name: "Nyx" },
+      ], { gameId: id, now: () => 1_700_000_000_000 });
+      state.startRound();
+      const lateVoters = state.recordAllianceProposal({
+        lineageId: "lineage-late-voters",
+        allianceId: "alliance-late-voters",
+        versionId: "version-late-voters",
+        proposerId: "atlas",
+        name: "The Late Voters",
+        memberIds: ["atlas", "echo"],
+        purpose: "Hold votes until the first signal is clear.",
+        timebox: "Round 1",
+      }, { phase: Phase.MINGLE_I });
+      state.recordAllianceResponse({
+        lineageId: "lineage-late-voters",
+        versionId: lateVoters.versionId,
+        playerId: "echo",
+        response: "accepted",
+      }, { phase: Phase.MINGLE_I });
+      const smokeTest = state.recordAllianceProposal({
+        lineageId: "lineage-smoke-test",
+        allianceId: "alliance-smoke-test",
+        versionId: "version-smoke-test",
+        proposerId: "mira",
+        name: "The Smoke Test",
+        memberIds: ["mira", "atlas", "echo"],
+        purpose: "Compare reads without promising a vote.",
+        timebox: "One vote",
+      }, { phase: Phase.MINGLE_I });
+      state.recordAllianceResponse({
+        lineageId: "lineage-smoke-test",
+        versionId: smokeTest.versionId,
+        playerId: "atlas",
+        response: "trial",
+      }, { phase: Phase.MINGLE_I });
+      state.expireAllianceProposal("lineage-smoke-test", { phase: Phase.MINGLE_I });
+      state.recordAllianceHuddleCompleted({
+        id: "session-late-voters",
+        scheduleId: "schedule-late-voters",
+        allianceId: "alliance-late-voters",
+        window: "pre_vote",
+        round: 1,
+        pass: 1,
+        speakerIds: ["atlas", "echo"],
+        completedAt: "2026-07-03T00:00:00.000Z",
+      });
+      state.recordAllianceHuddleOutcome({
+        id: "outcome-late-voters",
+        sessionId: "session-late-voters",
+        allianceId: "alliance-late-voters",
+        window: "pre_vote",
+        round: 1,
+        ask: "Hold together on the first vote.",
+        plan: "Atlas and Echo agree to wait for Mira to expose herself before moving.",
+        promises: ["Atlas warns Echo before changing target."],
+        dissent: [],
+        confidence: "high",
+        posture: "coordinating",
+        leakOrBetrayalClaims: [],
+        createdAt: "2026-07-03T00:00:05.000Z",
+      });
+      const ownerEpoch = await insertOwner(db, id);
+      await appendGameEvents(db, { gameId: id, ownerEpoch, events: state.getCanonicalEvents() });
+
+      await db.insert(schema.transcripts).values([
+        {
+          gameId: id,
+          round: 1,
+          phase: Phase.PRE_VOTE_HUDDLE,
+          fromPlayerId: "atlas",
+          scope: "huddle",
+          toPlayerIds: JSON.stringify(["echo"]),
+          text: "Echo, wait for Mira to commit before we move.",
+          thinking: "HUDDLE_THINKING_SENTINEL",
+          timestamp: 100,
+        },
+      ]);
+
+      const res = await app.request(`/api/games/${id}/alliances`);
+      expect(res.status).toBe(200);
+
+      const body = (await res.json()) as {
+        ok: true;
+        players: Array<{ id: string; name: string }>;
+        allianceFacts: {
+          summary: { proposalCount: number; activeAllianceCount: number; huddleCount: number; latestHuddleRound: number | null };
+          proposals: Array<{ name: string; status: string; responses: Array<{ player: { name: string }; response: string }> }>;
+          alliances: Array<{ name: string; memberNames: string[]; huddleOutcomeCount: number; latestOutcome?: { plan: string } }>;
+          huddles: Array<{ allianceName: string; messages: Array<{ text: string; thinking?: string }>; outcome?: { plan: string } }>;
+        };
+        availability: { status: string; transcriptStatus: string };
+      };
+      expect(body.players.map((player) => player.name).sort()).toEqual(["Atlas", "Echo", "Mira", "Nyx"]);
+      expect(body.availability.status).toBe("available");
+      expect(body.availability.transcriptStatus).toBe("available");
+      expect(body.allianceFacts.summary).toMatchObject({
+        proposalCount: 2,
+        activeAllianceCount: 1,
+        huddleCount: 1,
+        latestHuddleRound: 1,
+      });
+      expect(body.allianceFacts.proposals.map((proposal) => proposal.name).sort()).toEqual([
+        "The Late Voters",
+        "The Smoke Test",
+      ]);
+      expect(body.allianceFacts.proposals.find((proposal) => proposal.name === "The Smoke Test")).toMatchObject({
+        status: "expired",
+      });
+      expect(body.allianceFacts.proposals.find((proposal) => proposal.name === "The Late Voters")?.responses.map((entry) => ({
+        playerName: entry.player.name,
+        response: entry.response,
+      }))).toEqual([
+        { playerName: "Atlas", response: "accepted" },
+        { playerName: "Echo", response: "accepted" },
+      ]);
+      expect(body.allianceFacts.alliances[0]).toMatchObject({
+        name: "The Late Voters",
+        memberNames: ["Atlas", "Echo"],
+        huddleOutcomeCount: 1,
+        latestOutcome: {
+          plan: "Atlas and Echo agree to wait for Mira to expose herself before moving.",
+        },
+      });
+      expect(body.allianceFacts.huddles[0]).toMatchObject({
+        allianceName: "The Late Voters",
+        messages: [{
+          text: "Echo, wait for Mira to commit before we move.",
+        }],
+        outcome: {
+          plan: "Atlas and Echo agree to wait for Mira to expose herself before moving.",
+        },
+      });
+      expect(JSON.stringify(body)).not.toContain("HUDDLE_THINKING_SENTINEL");
+      expect(JSON.stringify(body)).not.toContain("sourcePointers");
+      expect(JSON.stringify(body)).not.toContain("rationale");
+      expect(JSON.stringify(body)).not.toContain("provider");
+    });
+
+    test("keeps generic transcript huddle filtering while exposing huddle speech through alliances", async () => {
+      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      await insertFixturePlayers(db, id);
+      await markGameInProgress(db, id);
+
+      const state = new GameState([
+        { id: "atlas", name: "Atlas" },
+        { id: "echo", name: "Echo" },
+        { id: "mira", name: "Mira" },
+        { id: "nyx", name: "Nyx" },
+      ], { gameId: id, now: () => 1_700_000_000_000 });
+      state.startRound();
+      const proposal = state.recordAllianceProposal({
+        lineageId: "lineage-alibi-pair",
+        allianceId: "alliance-alibi-pair",
+        versionId: "version-alibi-pair",
+        proposerId: "atlas",
+        name: "The Alibi Pair",
+        memberIds: ["atlas", "echo"],
+        purpose: "Give each other plausible cover after Vote.",
+        timebox: "Round 1",
+      }, { phase: Phase.MINGLE_I });
+      state.recordAllianceResponse({
+        lineageId: "lineage-alibi-pair",
+        versionId: proposal.versionId,
+        playerId: "echo",
+        response: "accepted",
+      }, { phase: Phase.MINGLE_I });
+      state.recordAllianceHuddleCompleted({
+        id: "session-alibi-pair",
+        scheduleId: "schedule-alibi-pair",
+        allianceId: "alliance-alibi-pair",
+        window: "pre_vote",
+        round: 1,
+        pass: 1,
+        speakerIds: ["atlas", "echo"],
+        completedAt: "2026-07-03T00:00:00.000Z",
+      });
+      const ownerEpoch = await insertOwner(db, id);
+      await appendGameEvents(db, { gameId: id, ownerEpoch, events: state.getCanonicalEvents() });
+      await db.insert(schema.transcripts).values([
+        {
+          gameId: id,
+          round: 1,
+          phase: Phase.PRE_VOTE_HUDDLE,
+          fromPlayerId: "atlas",
+          scope: "huddle",
+          toPlayerIds: JSON.stringify(["echo"]),
+          text: "ALLIANCE_HUDDLE_PUBLIC_READ_SENTINEL",
+          thinking: "ALLIANCE_HUDDLE_THINKING_SENTINEL",
+          timestamp: 100,
+        },
+        {
+          gameId: id,
+          round: 1,
+          phase: Phase.LOBBY,
+          fromPlayerId: "atlas",
+          scope: "public",
+          text: "PUBLIC_TRANSCRIPT_SENTINEL",
+          timestamp: 50,
+        },
+      ]);
+      await markGameCompleted(db, id);
+
+      const alliancesRes = await app.request(`/api/games/${id}/alliances`);
+      expect(alliancesRes.status).toBe(200);
+      const alliancesBody = await alliancesRes.json();
+      expect(JSON.stringify(alliancesBody)).toContain("ALLIANCE_HUDDLE_PUBLIC_READ_SENTINEL");
+      expect(JSON.stringify(alliancesBody)).not.toContain("ALLIANCE_HUDDLE_THINKING_SENTINEL");
+
+      const transcriptRes = await app.request(`/api/games/${id}/transcript`);
+      expect(transcriptRes.status).toBe(200);
+      const transcriptBody = await transcriptRes.json();
+      expect(JSON.stringify(transcriptBody)).toContain("PUBLIC_TRANSCRIPT_SENTINEL");
+      expect(JSON.stringify(transcriptBody)).not.toContain("ALLIANCE_HUDDLE_PUBLIC_READ_SENTINEL");
+      expect(JSON.stringify(transcriptBody)).not.toContain("ALLIANCE_HUDDLE_THINKING_SENTINEL");
+    });
+
+    test("returns empty alliance facts for games without alliance events", async () => {
+      const { id } = await createTestGame(app, adminToken);
+
+      const res = await app.request(`/api/games/${id}/alliances`);
+      expect(res.status).toBe(200);
+
+      const body = (await res.json()) as {
+        allianceFacts: {
+          summary: {
+            proposalCount: number;
+            activeAllianceCount: number;
+            closedAllianceCount: number;
+            archivedAllianceCount: number;
+            huddleCount: number;
+            latestHuddleRound: number | null;
+          };
+          proposals: unknown[];
+          alliances: unknown[];
+          huddles: unknown[];
+        };
+        availability: { status: string; transcriptStatus: string };
+      };
+      expect(body.availability.status).toBe("available");
+      expect(body.availability.transcriptStatus).toBe("not_available");
+      expect(body.allianceFacts.summary).toEqual({
+        proposalCount: 0,
+        activeAllianceCount: 0,
+        closedAllianceCount: 0,
+        archivedAllianceCount: 0,
+        huddleCount: 0,
+        latestHuddleRound: null,
+      });
+      expect(body.allianceFacts.proposals).toEqual([]);
+      expect(body.allianceFacts.alliances).toEqual([]);
+      expect(body.allianceFacts.huddles).toEqual([]);
     });
   });
 

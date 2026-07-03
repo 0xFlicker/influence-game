@@ -6,11 +6,11 @@ Shared domain vocabulary for this project — entities, named processes, and sta
 
 The canonical record of everything that happened in a game for viewers, replays, and analysis. Every entry carries `round`, `phase`, `from`, `scope`, `text`, plus optional `thinking` (the agent's or House's internal note, hidden from players) and `reasoningContext` (raw native model output such as `reasoning_content` from local servers, or a clearly labeled provider-generated reasoning summary such as `OpenAI reasoning summary (auto): ...`). Current Mingle entries should use current Mingle phase/scope vocabulary; older records may still contain legacy Whisper values. Public player text never contains hidden reasoning.
 
-Public websocket `message` events expose a selected `PublicWsTranscriptEntry` subset for live watchers rather than copying the full internal entry. Viewer-safe `thinking`, public room metadata (`rooms` and `excluded` only), anonymous rumor metadata (`anonymous` and `displayOrder`), sender, scope, text, phase, round, recipients, and timestamps may cross that boundary; `reasoningContext`, room allocation diagnostics, private trace pointers, raw prompts/responses, storage keys, source pointers, and decision logs may not. Entries with `scope: "huddle"` are hidden alliance-room evidence and are not published to public websocket watchers or public transcript export by default.
+Public websocket `message` events expose a selected `PublicWsTranscriptEntry` subset for live watchers rather than copying the full internal entry. Viewer-safe `thinking`, public room metadata (`rooms` and `excluded` only), anonymous rumor metadata (`anonymous` and `displayOrder`), sender, scope, text, phase, round, recipients, and timestamps may cross that boundary; `reasoningContext`, room allocation diagnostics, private trace pointers, raw prompts/responses, storage keys, source pointers, and decision logs may not. Entries with `scope: "huddle"` are hidden alliance-room evidence and are not published to generic public websocket watchers or public transcript export by default. The public web/replay alliance projection is a separate audience surface that may show huddle speech while omitting thinking and producer/debug internals.
 
 ## Mingle I
 
-The vote-facing named-alliance formation window in a normal pre-endgame round. Players may propose, accept, decline, counter, defer, or agree to trial alliances here; official alliance records cannot be formed or mutated outside this window in v1.
+The pre-vote Mingle window in a normal pre-endgame round. It starts with private-room conversation and movement, then closes with the official named-alliance action window. Players may propose, accept, decline, counter, defer, or agree to trial alliances during that action window; official alliance records cannot be formed or mutated outside Mingle I in v1.
 
 ## Mingle
 
@@ -138,7 +138,7 @@ A House-scheduled coordination scene for an active named alliance before a vote,
 
 ## Alliance huddle outcome
 
-The compact official memory artifact produced after a scheduled alliance huddle. It records ask, plan, promises, dissent, confidence, posture, and leak or betrayal claims where present. It carries alliance context forward for members, while the raw huddle transcript remains hidden producer/debug evidence unless future rules create a reveal path.
+The compact official memory artifact produced after a scheduled alliance huddle. It records ask, plan, promises, dissent, confidence, posture, and leak or betrayal claims where present. It carries alliance context forward for members. Raw huddle transcript remains outside generic public transcript/watch-intelligence surfaces, but the public web/replay alliance projection may show huddle speech as audience evidence without exposing hidden thinking or producer/debug internals.
 
 ## Universal alliance
 

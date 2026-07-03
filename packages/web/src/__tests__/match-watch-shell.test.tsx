@@ -90,6 +90,7 @@ describe("MatchWatchShell", () => {
     expect(html).toContain("Audience Lens");
     expect(html).toContain("Thinking");
     expect(html).toContain("Strategy");
+    expect(html).toContain("Alliance");
     expect(html).toContain("Diary");
     expect(html).not.toContain("Receipts");
     expect(textHtml).toContain("Atlas is alive in round 1.");
@@ -145,6 +146,7 @@ describe("MatchWatchShell", () => {
     expect(html).toContain("Mingle is live.");
     expect(html).toContain("Thinking");
     expect(html).toContain("Strategy");
+    expect(html).toContain("Alliance");
     expect(html).toContain("Diary");
     expect(html).not.toContain("Receipts");
     expect(html).not.toContain("Relationship Field");

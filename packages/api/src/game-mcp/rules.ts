@@ -60,7 +60,7 @@ const RULE_SECTIONS: GameMcpRulesSection[] = [
     id: "standard-round",
     title: "Standard Round Phases",
     tags: ["round", "lobby", "mingle", "mingle-i", "huddle", "vote", "power", "reveal", "council"],
-    body: "Each standard pre-endgame round moves through Lobby, Mingle I, pre-vote alliance huddles, public Vote, post-vote Mingle, Power / Reveal, pre-Council alliance huddles, and Council. Mingle I is the official named-alliance action window, huddles are scarce House-scheduled active-alliance coordination scenes, Vote receipts are public, and post-vote Mingle remains the private-room fallout phase.",
+    body: "Each standard pre-endgame round moves through Lobby, Mingle I, pre-vote alliance huddles, public Vote, post-vote Mingle, Power / Reveal, pre-Council alliance huddles, and Council. Mingle I starts as the pre-vote private-room Mingle and then closes with the official named-alliance action window. Huddles are scarce House-scheduled active-alliance coordination scenes, Vote receipts are public, and post-vote Mingle remains the private-room fallout phase.",
   },
   {
     id: "named-alliances",

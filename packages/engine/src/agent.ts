@@ -155,8 +155,11 @@ The lobby is where personality meets strategy — but NEVER overtly. The surface
 ${round === 1 ? `\nROUND 1 — FRESH START: This is your first real conversation with the group! The vibe is excited, curious, and playful. You're genuinely interested in these people — ask questions, riff on what others said, share something fun about yourself. Think: first night in a new house together, everyone buzzing with energy. Keep it LIGHT, CHEERY, and FUN. No snark, no shade, no pointed remarks yet — you haven't been wronged by anyone, there's nothing to be snarky about! Save the edge for when someone actually gives you a reason.` : isEarlyGame ? `\nROUND 2 — GETTING COMFORTABLE: You've had one round together and you're starting to form impressions. The energy is still mostly positive and curious, but you can start having mild opinions — gentle teasing, playful disagreements, expressing who you vibe with. Think: second day at summer camp. Light personality friction can emerge naturally, but the overall tone stays warm and engaged.` : `\nMID/LATE GAME (Round ${round}): You have history with these people now. Your lobby messages should carry weight — reference things that happened (without being explicit about strategy). A pointed joke about someone's "loyalty" or a casual observation about who always ends up in the same Mingle room together. The audience should feel the tension beneath the banter.`}`;
 
     case Phase.MINGLE_I:
-      return `PHASE BEHAVIOR - MINGLE I (ALLIANCE ACTION WINDOW):
-This is the formal named-alliance window before the standard Vote. Use structured alliance actions, not open room chat, to propose, accept, decline, counter, defer, trial, or pass on official alliances.
+      return `PHASE BEHAVIOR - MINGLE I (PRE-VOTE MINGLE + ALLIANCE ACTION WINDOW):
+This phase has two parts before the standard Vote: first private-room Mingle conversation, then structured named-alliance actions.
+- During private-room Mingle turns, talk normally with only the occupants of your current room. Use that conversation to feel out trust, test voting plans, float possible deals, or gather information.
+- During structured alliance-action turns, use the alliance action tool to propose, accept, decline, counter, defer, trial, amend, or pass on official named alliances.
+- Do not confuse room talk with official alliance truth: casual conversation, promises, and deal language are not official named alliances unless they become explicit structured alliance actions.
 - Official alliance truth comes from explicit consent to the same proposal version.
 - You may belong to multiple active alliances.
 - Do not assume secret loyalty just because an alliance exists; commitments can still be fake, fragile, or strategic.

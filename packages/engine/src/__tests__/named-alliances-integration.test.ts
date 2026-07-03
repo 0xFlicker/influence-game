@@ -77,9 +77,21 @@ describe("named alliance complete-round integration", () => {
     expect(transcriptPhases.has(Phase.COUNCIL)).toBe(true);
 
     const canonicalTypes = runner.getCanonicalEvents().map((event) => event.type);
+    expect(
+      runner.getCanonicalEvents().some((event) => event.type === "mingle.rooms_allocated" && event.phase === Phase.MINGLE_I),
+    ).toBe(true);
     expect(canonicalTypes).toContain("alliance.proposal_submitted");
     expect(canonicalTypes).toContain("alliance.activated");
     expect(canonicalTypes.filter((type) => type === "alliance.huddle_outcome_recorded").length).toBeGreaterThanOrEqual(2);
+
+    const mingleIRoomSpeechIndex = events.findIndex(
+      (event) => event.type === "transcript_entry" && event.entry.phase === Phase.MINGLE_I && event.entry.scope === "mingle",
+    );
+    const mingleIAllianceActionIndex = events.findIndex(
+      (event) => event.type === "agent_turn" && event.phase === Phase.MINGLE_I && event.action === "alliance-action",
+    );
+    expect(mingleIRoomSpeechIndex).toBeGreaterThanOrEqual(0);
+    expect(mingleIAllianceActionIndex).toBeGreaterThan(mingleIRoomSpeechIndex);
 
     const huddleOutcomes = events.filter(
       (event): event is Extract<GameStreamEvent, { type: "agent_turn" }> =>

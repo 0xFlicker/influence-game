@@ -562,7 +562,7 @@ async function runMingleTurn(
   roomCount: number,
   mingleIntents: ReadonlyMap<UUID, MingleIntentAction | null>,
   totalBeats: number,
-  phase: Phase.MINGLE | Phase.POST_VOTE_MINGLE,
+  phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE,
 ): Promise<MingleTurnActionRecord[]> {
   const { agents, logger, contextBuilder, gameState } = ctx;
   const collectedTurns: CollectedMingleTurn[] = [];
@@ -696,14 +696,19 @@ async function runMingleTurn(
 export async function runMinglePhase(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
-  options: { phase?: Phase.MINGLE | Phase.POST_VOTE_MINGLE } = {},
+  options: { phase?: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE; completePhase?: boolean } = {},
 ): Promise<void> {
   const { gameState, agents, logger, contextBuilder, config } = ctx;
   const phase = options.phase ?? Phase.MINGLE;
+  const completePhase = options.completePhase ?? true;
 
   logger.emitPhaseChange(phase);
   logger.logSystem(
-    phase === Phase.POST_VOTE_MINGLE ? "=== POST-VOTE MINGLE PHASE ===" : "=== MINGLE PHASE ===",
+    phase === Phase.POST_VOTE_MINGLE
+      ? "=== POST-VOTE MINGLE PHASE ==="
+      : phase === Phase.MINGLE_I
+        ? "=== MINGLE I: PRIVATE ROOMS ==="
+        : "=== MINGLE PHASE ===",
     phase,
   );
   const alivePlayers = gameState.getAlivePlayers();
@@ -721,8 +726,10 @@ export async function runMinglePhase(
     logger.logSystem("Open rooms are skipped with fewer than five players alive.", phase);
     await assertCanAcceptCommit(ctx);
     gameState.recordRoomAllocations([], [], [], phase);
-    actor.send({ type: "PHASE_COMPLETE" });
-    await new Promise((r) => setTimeout(r, 0));
+    if (completePhase) {
+      actor.send({ type: "PHASE_COMPLETE" });
+      await new Promise((r) => setTimeout(r, 0));
+    }
     return;
   }
 
@@ -853,6 +860,8 @@ export async function runMinglePhase(
   await assertCanAcceptCommit(ctx);
   gameState.recordRoomAllocations(allRooms, [], [], phase);
 
-  actor.send({ type: "PHASE_COMPLETE" });
-  await new Promise((r) => setTimeout(r, 0));
+  if (completePhase) {
+    actor.send({ type: "PHASE_COMPLETE" });
+    await new Promise((r) => setTimeout(r, 0));
+  }
 }

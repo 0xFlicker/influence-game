@@ -749,6 +749,121 @@ export async function getCompletedGameResults(gameIdOrSlug: string): Promise<Com
   return apiFetch(`/api/games/${gameIdOrSlug}/results`);
 }
 
+export interface PublicAlliancePlayerRead {
+  id: string;
+  name: string;
+  agentProfileId?: string;
+}
+
+export interface PublicAllianceTermsRead {
+  name: string;
+  memberIds: string[];
+  memberNames: string[];
+  purpose: string;
+  timebox: string | null;
+}
+
+export interface PublicAllianceProposalRead {
+  lineageId: string;
+  allianceId: string;
+  name: string;
+  status: string;
+  proposedRound: number;
+  proposedPhase?: PhaseKey | null;
+  resolvedRound?: number;
+  resolvedPhase?: PhaseKey | null;
+  memberNames: string[];
+  currentVersionId: string;
+  currentTerms: PublicAllianceTermsRead;
+  proposer: { id: string; name: string };
+  responses: Array<{ player: { id: string; name: string }; response: string }>;
+  finalResult: string;
+}
+
+export interface PublicAllianceOutcomeRead {
+  id: string;
+  round: number;
+  window: string;
+  ask: string;
+  plan: string;
+  promises: string[];
+  dissent: string[];
+  confidence: string;
+  posture: string;
+  leakOrBetrayalClaims: string[];
+}
+
+export interface PublicAllianceConsequenceRead {
+  type: "alliance_member_cut";
+  round: number;
+  description: string;
+  confidence: string;
+  playerNames: string[];
+}
+
+export interface PublicAllianceRecordRead extends PublicAllianceTermsRead {
+  id: string;
+  status: string;
+  createdRound: number;
+  createdPhase?: PhaseKey | null;
+  updatedRound: number;
+  updatedPhase?: PhaseKey | null;
+  huddleOutcomeCount: number;
+  latestOutcome?: PublicAllianceOutcomeRead;
+  consequences: PublicAllianceConsequenceRead[];
+}
+
+export interface PublicAllianceHuddleRead {
+  allianceId: string;
+  allianceName: string;
+  round: number;
+  phase?: PhaseKey | null;
+  window: string;
+  pass: number;
+  speakers: Array<{ id: string; name: string }>;
+  messages: Array<{ from: { id?: string; name: string }; text: string; timestamp: number }>;
+  outcome?: PublicAllianceOutcomeRead;
+}
+
+export interface PublicAllianceFactsRead {
+  summary: {
+    proposalCount: number;
+    activeAllianceCount: number;
+    closedAllianceCount: number;
+    archivedAllianceCount: number;
+    huddleCount: number;
+    latestHuddleRound: number | null;
+  };
+  proposals: PublicAllianceProposalRead[];
+  alliances: PublicAllianceRecordRead[];
+  huddles: PublicAllianceHuddleRead[];
+}
+
+export interface PublicGameAlliancesResponse {
+  ok: true;
+  schemaVersion: 1;
+  game: {
+    id: string;
+    slug?: string;
+    status: GameStatus;
+    createdAt: string;
+    startedAt?: string;
+    endedAt?: string;
+  };
+  players: PublicAlliancePlayerRead[];
+  allianceFacts: PublicAllianceFactsRead;
+  availability: {
+    status: "available";
+    eventLogStatus: string;
+    transcriptStatus: "available" | "not_available";
+    diagnostics: Array<{ code: string; severity: "info" | "warning"; message: string }>;
+  };
+}
+
+export async function getGameAlliances(gameIdOrSlug: string): Promise<PublicGameAlliancesResponse> {
+  return apiFetch(`/api/games/${gameIdOrSlug}/alliances`);
+}
+
 // ---------------------------------------------------------------------------
 // Auth API calls
 // ---------------------------------------------------------------------------

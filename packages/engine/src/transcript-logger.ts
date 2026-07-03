@@ -133,7 +133,7 @@ export class TranscriptLogger {
     roomId?: number,
     thinking?: string,
     reasoningContext?: string,
-    phase: Phase.MINGLE | Phase.POST_VOTE_MINGLE = Phase.MINGLE,
+    phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE = Phase.MINGLE,
   ): void {
     const fromName = this.gameState.getPlayerName(fromId);
     const toNames = toIds.map((id) => this.gameState.getPlayerName(id));
@@ -183,7 +183,7 @@ export class TranscriptLogger {
     rooms: RoomAllocation[],
     excludedNames: string[],
     diagnostics?: MingleSessionDiagnostics,
-    phase: Phase.MINGLE | Phase.POST_VOTE_MINGLE = Phase.MINGLE,
+    phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE = Phase.MINGLE,
   ): TranscriptEntry {
     const entry: TranscriptEntry = {
       round: this.gameState.round,

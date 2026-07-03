@@ -1,15 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { startTransition, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   getCompletedGameResults,
+  getGameAlliances,
   type CompletedGameResultsResponse,
   type GameDetail,
+  type PublicGameAlliancesResponse,
 } from "@/lib/api";
+import { buildCompletedAllianceArcsModel, type AllianceFactsLoadState } from "./match-watch-alliance-model";
 import { buildCompletedResultsReviewModel } from "./completed-results-model";
 import { CompletedResultsVoteMatrix } from "./completed-results-vote-matrix";
 import { CompletedResultsAgentCard } from "./completed-results-agent-card";
+import { CompletedResultsAllianceArcs } from "./completed-results-alliance-arcs";
 
 type ResultsLoadState =
   | { gameId: string; status: "loading" }
@@ -27,6 +31,9 @@ export function CompletedResultsReview({
     gameId,
     status: "loading",
   });
+  const [allianceFacts, setAllianceFacts] = useState<PublicGameAlliancesResponse | null>(null);
+  const [allianceLoadState, setAllianceLoadState] = useState<AllianceFactsLoadState>("idle");
+  const [allianceError, setAllianceError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,6 +48,31 @@ export function CompletedResultsReview({
             status: "error",
             error: err instanceof Error ? err.message : "Failed to load results.",
           });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [gameId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    startTransition(() => {
+      setAllianceLoadState("loading");
+      setAllianceError(null);
+    });
+    getGameAlliances(gameId)
+      .then((result) => {
+        if (!cancelled) {
+          setAllianceFacts(result);
+          setAllianceLoadState("ready");
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setAllianceFacts(null);
+          setAllianceLoadState("error");
+          setAllianceError(err instanceof Error ? err.message : "Failed to load alliance arcs.");
         }
       });
     return () => {
@@ -68,6 +100,11 @@ export function CompletedResultsReview({
 
   const { payload } = currentState;
   const model = buildCompletedResultsReviewModel(payload.results);
+  const allianceArcs = buildCompletedAllianceArcsModel({
+    loadState: allianceLoadState,
+    facts: allianceFacts,
+    error: allianceError,
+  });
   const { overview, timeline, voteMatrix, agentCards } = model;
   const playerById = new Map(game.players.map((player) => [player.id, player]));
 
@@ -118,6 +155,8 @@ export function CompletedResultsReview({
           </div>
         )}
       </section>
+
+      <CompletedResultsAllianceArcs model={allianceArcs} />
 
       <section className="space-y-3">
         <h3 className="text-sm font-semibold text-white/85">Vote History</h3>

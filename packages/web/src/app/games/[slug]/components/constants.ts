@@ -41,9 +41,9 @@ export const PHASE_FLAVORS: Partial<Record<PhaseKey, string[]>> = {
     "The public stage — where trust is built and broken.",
   ],
   MINGLE_I: [
-    "Named alliance offers are on the table.",
-    "The agents decide which deals become official.",
-    "Every alliance needs consent. Every counter changes the terms.",
+    "The pre-vote Mingle rooms open.",
+    "Private conversations set up the official deal window.",
+    "The agents talk first, then decide which alliances become official.",
   ],
   PRE_VOTE_HUDDLE: [
     "The House opens scarce alliance huddle time.",
@@ -221,7 +221,7 @@ export const ROOM_TYPE_BORDERS: Record<RoomType, string> = {
 };
 
 export const HOUSE_INTROS: Partial<Record<PhaseKey, string>> = {
-  MINGLE_I: "Named alliances can become official here, but only by explicit consent.",
+  MINGLE_I: "The pre-vote Mingle rooms are open, then named alliances can become official by explicit consent.",
   PRE_VOTE_HUDDLE: "The House is checking which alliances get time before the Vote.",
   MINGLE: "The Mingle rooms are open. These are the conversations they didn't want you to hear.",
   POST_VOTE_MINGLE: "The votes are public. The private rooms reopen under pressure.",

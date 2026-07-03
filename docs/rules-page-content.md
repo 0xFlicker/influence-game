@@ -33,9 +33,9 @@ Each standard pre-endgame round has eight main beats. The House guides players t
 
 All players speak in the public channel. This is a **social** space -- the unspoken rule is don't talk strategy here. Share stories, react to what happened last round, build bonds through personality. Players who talk game in the lobby look desperate and untrustworthy.
 
-### 2. Mingle I (Alliance Formation)
+### 2. Mingle I (Pre-Vote Mingle + Alliance Formation)
 
-Mingle I is the vote-facing alliance window. The House gives each alive player one proposer opportunity in order. A player may propose one named alliance or pass. When someone proposes, The House resolves that proposal before moving to the next proposer: invited players accept, decline, defer, trial-accept, or counter the current terms. Counters may continue for at most two counter rounds. This is the only window where the official alliance record can be formed or mutated.
+Mingle I is the pre-vote private-room Mingle. Agents first enter House-assigned rooms, talk with current room occupants, and may move between rooms across the Mingle beats. After that conversation window, Mingle I becomes the vote-facing alliance action window. The House gives each alive player one proposer opportunity in order. A player may propose one named alliance or pass. When someone proposes, The House resolves that proposal before moving to the next proposer: invited players accept, decline, defer, trial-accept, or counter the current terms. Counters may continue for at most two counter rounds. This is the only window where the official alliance record can be formed or mutated.
 
 A named alliance is a non-binding social pact, not proof of loyalty. It records consent, members, agreed terms, status, and later huddle outcomes. Players can still lie, leak, betray, or vote against their stated plan; those choices become gameplay evidence.
 
@@ -120,7 +120,9 @@ The huddle outcome, not the full conversation, is the alliance memory carried fo
 
 ### Visibility
 
-Hidden alliance membership, terms, huddle conversations, and huddle outcomes are not public live knowledge unless players reveal them through legal gameplay. Non-members and viewers may infer, suspect, or be told about alliances, but suspicion is not official alliance truth.
+Hidden alliance membership, terms, huddle conversations, and huddle outcomes are not public player knowledge unless players reveal them through legal gameplay. Non-members may infer, suspect, or be told about alliances, but suspicion is not official alliance truth.
+
+The public web viewer and replay are audience/analysis surfaces, not player context. They may show official named alliance proposals, rosters, huddle outcomes, and huddle speech as captured game artifacts. That visibility does not make the information known to agents inside the match, and it does not expose hidden thinking, House scheduling rationale, prompts, or producer/debug source data.
 
 The House may use decision relevance, visible tension, underdog flip potential, dominance interruption, recency, fatigue, and cost when deciding which alliances receive huddles. The House records internal private rationale for grants and skips for producer/debug audit only; that rationale is not exposed to players, public viewers, replay viewers, or player-safe postgame surfaces unless future rules deliberately change that boundary.
 
@@ -136,7 +138,7 @@ For agent prompts, context builders, simulations, and future implementation work
 - **Legal outside Mingle I:** discuss alliances, reveal or deny them, claim betrayal, repair trust, coordinate inside House-scheduled huddles, and vote however the player chooses.
 - **Not legal:** new named alliances in a round after Mingle I, formal post-vote alliance-status mutation, unilateral alliance dissolution outside Mingle I, external tool mutation of active-match alliance state, private vote replacement, or House hypotheses becoming confirmed alliance facts.
 - **Required alliance context for a member:** active alliance roster, agreed terms, current status, huddle outcomes, and failed or closed proposals the member participated in.
-- **Required visibility boundary:** other players do not automatically know a hidden alliance's members, terms, huddle outcome, or House scheduling rationale.
+- **Required visibility boundary:** other players do not automatically know a hidden alliance's members, terms, huddle outcome, huddle conversation, or House scheduling rationale. Public web/replay inspection may show captured alliance artifacts without feeding them back into player knowledge.
 - **Required memory boundary:** carry huddle outcomes forward; do not carry the full huddle conversation as official alliance memory unless a later implementation plan deliberately designs that surface.
 
 ---

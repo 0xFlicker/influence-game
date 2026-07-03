@@ -10,6 +10,7 @@
  *   POST   /api/games/:id/stop  — stop / cancel a running game
  *   PATCH  /api/games/:id/hide — admin soft-delete (hide from public lists)
  *   PATCH  /api/games/:id/unhide — admin restore hidden game
+ *   GET    /api/games/:id/alliances — public named-alliance facts
  *   GET    /api/games/:id/transcript — full transcript export
  *   GET    /api/games/:id/replay-watch-frames — structured replay watch states
  */
@@ -40,6 +41,7 @@ import {
   getGameWatchReplayFrames,
 } from "../services/game-watch-state.js";
 import { getCompletedGameResults } from "../services/completed-game-results.js";
+import { getPublicGameAlliances } from "../services/public-alliance-read-model.js";
 import {
   buildCompactPostgameBrief,
   getPostgameAnalysis,
@@ -913,6 +915,21 @@ export function createGameRoutes(db: DrizzleDB) {
         return c.json({ error: result.error }, 404);
       }
       return c.json({ error: result.error, status: result.status }, 409);
+    }
+
+    return c.json(result);
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/games/:id/alliances — public named-alliance facts
+  // -------------------------------------------------------------------------
+
+  app.get("/api/games/:id/alliances", async (c) => {
+    const idOrSlug = c.req.param("id");
+    const result = await getPublicGameAlliances(db, idOrSlug);
+
+    if (!result.ok) {
+      return c.json({ error: result.error }, 404);
     }
 
     return c.json(result);

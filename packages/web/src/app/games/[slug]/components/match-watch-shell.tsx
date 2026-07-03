@@ -5,9 +5,11 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { AgentAvatar } from "@/components/agent-avatar";
 import {
+  getGameAlliances,
   getPublicWatchIntelligence,
   type GameDetail,
   type GameWatchReplayFrame,
+  type PublicGameAlliancesResponse,
   type PublicWatchIntelligenceResult,
   type TranscriptEntry,
 } from "@/lib/api";
@@ -19,6 +21,11 @@ import {
   type MatchWatchIntelligenceModel,
   type MatchWatchIntelligenceSectionModel,
 } from "./match-watch-intelligence-model";
+import {
+  buildMatchWatchAlliancePanelModel,
+  type AllianceFactsLoadState,
+} from "./match-watch-alliance-model";
+import { MatchWatchAlliancePanel } from "./match-watch-alliance-panel";
 import {
   applyStructuredPostVotePressureSummaries,
   buildMatchWatchModel,
@@ -48,6 +55,9 @@ export function MatchWatchShell({
   const [intelligence, setIntelligence] = useState<PublicWatchIntelligenceResult | null>(null);
   const [intelligenceLoadState, setIntelligenceLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [intelligenceError, setIntelligenceError] = useState<string | null>(null);
+  const [allianceFacts, setAllianceFacts] = useState<PublicGameAlliancesResponse | null>(null);
+  const [allianceLoadState, setAllianceLoadState] = useState<AllianceFactsLoadState>("idle");
+  const [allianceError, setAllianceError] = useState<string | null>(null);
   const displayMessages = useMemo(
     () =>
       applyStructuredPostVotePressureSummaries({
@@ -91,6 +101,18 @@ export function MatchWatchShell({
         error: intelligenceError,
       }),
     [model, intelligence, visibleMessages, intelligenceLoadState, intelligenceError],
+  );
+  const allianceModel = useMemo(
+    () =>
+      buildMatchWatchAlliancePanelModel({
+        model,
+        allianceState: {
+          loadState: allianceLoadState,
+          facts: allianceFacts,
+          error: allianceError,
+        },
+      }),
+    [model, allianceFacts, allianceLoadState, allianceError],
   );
   const replayAtFinalResults = !live && Boolean(playbackState) && isReplayAtFinalResults(messages, playbackState?.visibleMessages);
   const gamePath = game.slug ?? game.id;
@@ -142,6 +164,30 @@ export function MatchWatchShell({
     };
   }, [game.id, game.slug, model.selectedPlayerId, model.round, model.phase]);
 
+  useEffect(() => {
+    let cancelled = false;
+    startTransition(() => {
+      setAllianceLoadState("loading");
+      setAllianceError(null);
+    });
+    void getGameAlliances(game.slug ?? game.id)
+      .then((result) => {
+        if (cancelled) return;
+        setAllianceFacts(result);
+        setAllianceLoadState("ready");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAllianceFacts(null);
+        setAllianceLoadState("error");
+        setAllianceError("Alliance facts are not available for this game.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [game.id, game.slug]);
+
   return (
     <main
       className="fixed inset-0 z-30 flex min-h-0 flex-col overflow-hidden influence-shell"
@@ -164,7 +210,7 @@ export function MatchWatchShell({
           model={model}
           onPlaybackStateChange={handlePlaybackStateChange}
         />
-        <InspectorPanel model={model} intelligence={intelligenceModel} messages={inspectorMessages} />
+        <InspectorPanel model={model} intelligence={intelligenceModel} allianceModel={allianceModel} messages={inspectorMessages} />
       </div>
 
       <ReplayDock model={model} gamePath={gamePath} showResultsCta={replayAtFinalResults} />
@@ -507,16 +553,18 @@ function TheaterChip({ children }: { children: ReactNode }) {
   );
 }
 
-type InspectorTab = "overview" | "thinking" | "strategy" | "diary";
+type InspectorTab = "overview" | "thinking" | "strategy" | "alliance" | "diary";
 const COMPACT_THINKING_TEXT_LIMIT = 260;
 
 function InspectorPanel({
   model,
   intelligence,
+  allianceModel,
   messages,
 }: {
   model: MatchWatchModel;
   intelligence: MatchWatchIntelligenceModel;
+  allianceModel: ReturnType<typeof buildMatchWatchAlliancePanelModel>;
   messages: TranscriptEntry[];
 }) {
   const selected = model.selectedPlayer;
@@ -527,10 +575,11 @@ function InspectorPanel({
     <aside className="hidden min-h-0 flex-col overflow-hidden rounded-lg border border-white/10 bg-black/45 shadow-panel backdrop-blur-glass xl:flex">
       {selected ? <InspectorHero card={selected} /> : null}
 
-      <div className="grid h-11 shrink-0 grid-cols-4 gap-1 border-b border-white/10 px-2 py-1.5" role="tablist" aria-label="Inspector sections">
+      <div className="grid h-11 shrink-0 grid-cols-5 gap-1 border-b border-white/10 px-2 py-1.5" role="tablist" aria-label="Inspector sections">
         <InspectorLabel active={activeTab === "overview"} onClick={() => setActiveTab("overview")}>Overview</InspectorLabel>
         <InspectorLabel active={activeTab === "thinking"} onClick={() => setActiveTab("thinking")}>Thinking</InspectorLabel>
         <InspectorLabel active={activeTab === "strategy"} onClick={() => setActiveTab("strategy")}>Strategy</InspectorLabel>
+        <InspectorLabel active={activeTab === "alliance"} onClick={() => setActiveTab("alliance")}>Alliance</InspectorLabel>
         <InspectorLabel active={activeTab === "diary"} onClick={() => setActiveTab("diary")}>Diary</InspectorLabel>
       </div>
 
@@ -548,6 +597,9 @@ function InspectorPanel({
         ) : null}
         {activeTab === "strategy" ? (
           <InspectorSection title="Strategy" meta={sectionMeta(intelligence)} section={intelligence.strategy} />
+        ) : null}
+        {activeTab === "alliance" ? (
+          <MatchWatchAlliancePanel allianceModel={allianceModel} />
         ) : null}
         {activeTab === "diary" ? (
           <InspectorDiary entries={diaryEntries} />

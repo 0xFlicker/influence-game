@@ -638,6 +638,7 @@ export class GameRunner {
       } else if (state === "lobby") {
         await runLobbyPhase(prc, actor);
       } else if (state === "mingle_i") {
+        await runMinglePhase(prc, actor, { phase: Phase.MINGLE_I, completePhase: false });
         await runMingleIAlliancePhase(prc, actor);
       } else if (state === "pre_vote_huddle") {
         await runAllianceHuddleWindow(prc, actor, Phase.PRE_VOTE_HUDDLE);

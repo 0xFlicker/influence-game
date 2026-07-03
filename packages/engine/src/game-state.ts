@@ -671,7 +671,7 @@ export class GameState {
     rooms: RoomAllocation[],
     excluded: UUID[],
     lastSessionExcluded = excluded,
-    phase: Phase.MINGLE | Phase.POST_VOTE_MINGLE = Phase.MINGLE,
+    phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE = Phase.MINGLE,
   ): void {
     this.appendCanonicalEvent("mingle.rooms_allocated", {
       round: this._round,
