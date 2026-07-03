@@ -10,7 +10,7 @@ import { PERSONAS } from "../lib/personas";
 describe("AgentAvatar", () => {
   it("uses personaKey for generated persona display text", () => {
     expect(resolveAgentAvatarUrl(null, "Zara is exuberant and unpredictable.", "Zara Quinn", "observer")).toBe(
-      "/avatars/personas/observer.svg",
+      "/avatars/personas/observer.png",
     );
   });
 
@@ -68,10 +68,10 @@ describe("AgentAvatar", () => {
     expect(html).not.toContain("Zara is exuberant and unpredictable.");
   });
 
-  it("has an SVG asset for every exposed persona key", () => {
+  it("has a generated PNG asset for every exposed persona key", () => {
     for (const persona of PERSONAS) {
       expect(
-        existsSync(join(import.meta.dir, "../../public/avatars/personas", `${persona.key}.svg`)),
+        existsSync(join(import.meta.dir, "../../public/avatars/personas", `${persona.key}.png`)),
       ).toBe(true);
     }
   });

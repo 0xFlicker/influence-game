@@ -93,7 +93,7 @@ export function resolveAgentAvatarUrl(
     normalizePersonaKey(personaKey) ??
     normalizePersonaKey(persona) ??
     fallbackPersonaKey(name);
-  return `/avatars/personas/${key}.svg`;
+  return `/avatars/personas/${key}.png`;
 }
 
 function getPersonaBadge(persona: string, personaKey?: string | null): { icon: string; title: string } | null {
