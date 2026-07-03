@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import {
+  GameState,
+  Phase,
+  type CanonicalGameEvent,
   EDGE_SMOKE_DUSK_EXPECTED,
   EDGE_SMOKE_DUSK_GAME_ID,
   EDGE_SMOKE_DUSK_PLAYERS,
@@ -23,6 +26,7 @@ import { setupTestDB } from "./test-utils.js";
 import {
   createCanonicalEventFixture,
   createResolvedRoundCanonicalEventFixture,
+  fixedClock,
   insertCanonicalEventRows,
   insertGame,
   insertOwner,
@@ -484,15 +488,307 @@ describe("ProductionGameMcpReadModel", () => {
     });
     const gameId = await insertGame(db, { slug: "visibility-scope" });
     await insertGamePlayer(db, { gameId, userId });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const events = createCanonicalEventFixture(gameId);
+    const allianceEvent: CanonicalGameEvent = {
+      sequence: events.length + 1,
+      gameId,
+      round: 1,
+      phase: Phase.PRE_VOTE_HUDDLE,
+      type: "alliance.huddle_outcome_recorded",
+      timestamp: "2026-06-11T00:00:10.000Z",
+      source: "engine",
+      visibility: "producer",
+      payloadVersion: 1,
+      sourcePointers: [],
+      payload: {
+        outcome: {
+          id: "outcome-glass",
+          sessionId: "session-glass",
+          allianceId: "alliance-glass",
+          window: "pre_vote",
+          round: 1,
+          ask: "Align before the public Vote.",
+          plan: "Glass Table agrees to keep the plan hidden.",
+          promises: [],
+          dissent: [],
+          confidence: "medium",
+          posture: "coordinating",
+          leakOrBetrayalClaims: [],
+          createdAt: "2026-06-11T00:00:10.000Z",
+        },
+      },
+    };
+    await appendGameEvents(db, { gameId, ownerEpoch, events: [...events, allianceEvent] });
 
     const readModel = new ProductionGameMcpReadModel(db);
+    const gamesAccess = {
+      userId,
+      authProfile: "subject" as const,
+    };
     await expect(readModel.filterEvents({
       gameIdOrSlug: gameId,
       visibilityMode: "producer",
-    }, {
+    }, gamesAccess)).rejects.toThrow("producer visibility requires MCP scope: producer");
+
+    const playerSafeEvents = await readModel.filterEvents({
+      gameIdOrSlug: gameId,
+      eventType: "alliance.huddle_outcome_recorded",
+    }, gamesAccess);
+    expect(playerSafeEvents.canonicalGameFacts.events).toEqual([]);
+
+    const producerEvents = await readModel.filterEvents({
+      gameIdOrSlug: gameId,
+      eventType: "alliance.huddle_outcome_recorded",
+    }, PRODUCER_ACCESS);
+    expect(producerEvents.canonicalGameFacts.events).toHaveLength(1);
+    expect(JSON.stringify(playerSafeEvents)).not.toContain("Glass Table");
+  });
+
+  test("reads owner-scoped named alliance facts without leaking non-member huddles", async () => {
+    const userId = randomUUID();
+    await db.insert(schema.users).values({
+      id: userId,
+      walletAddress: "0xallianceowner000000000000000000000000001",
+    });
+    const gameId = await insertGame(db, {
+      slug: "agent-alliances",
+      status: "in_progress",
+    });
+    const alice = await insertGamePlayer(db, { gameId, userId, name: "Alice" });
+    const bob = await insertGamePlayer(db, { gameId, name: "Bob" });
+    const cara = await insertGamePlayer(db, { gameId, name: "Cara" });
+    const dax = await insertGamePlayer(db, { gameId, name: "Dax" });
+
+    const state = new GameState([
+      { id: alice, name: "Alice" },
+      { id: bob, name: "Bob" },
+      { id: cara, name: "Cara" },
+      { id: dax, name: "Dax" },
+    ], { gameId, now: fixedClock() });
+    state.startRound();
+    const ab = state.recordAllianceProposal({
+      lineageId: "lineage-ab",
+      allianceId: "alliance-ab",
+      versionId: "version-ab",
+      proposerId: alice,
+      name: "Back Row Pair",
+      memberIds: [alice, bob],
+      purpose: "Vote together before the first ballot.",
+      timebox: "Until first ballot",
+    }, { phase: Phase.MINGLE_I });
+    state.recordAllianceResponse({
+      lineageId: "lineage-ab",
+      versionId: ab.versionId,
+      playerId: bob,
+      response: "accepted",
+    }, { phase: Phase.MINGLE_I });
+
+    const ac = state.recordAllianceProposal({
+      lineageId: "lineage-ac",
+      allianceId: "alliance-ac",
+      versionId: "version-ac",
+      proposerId: cara,
+      name: "Smoke Test Pair",
+      memberIds: [cara, alice, bob],
+      purpose: "Compare reads without promising a vote.",
+      timebox: "One round",
+    }, { phase: Phase.MINGLE_I });
+    state.recordAllianceResponse({
+      lineageId: "lineage-ac",
+      versionId: ac.versionId,
+      playerId: alice,
+      response: "trial",
+    }, { phase: Phase.MINGLE_I });
+    state.expireAllianceProposal("lineage-ac", { phase: Phase.MINGLE_I });
+
+    const cd = state.recordAllianceProposal({
+      lineageId: "lineage-cd",
+      allianceId: "alliance-cd",
+      versionId: "version-cd",
+      proposerId: cara,
+      name: "Off Camera Pair",
+      memberIds: [cara, dax],
+      purpose: "Hide from Alice.",
+      timebox: "One round",
+    }, { phase: Phase.MINGLE_I });
+    state.recordAllianceResponse({
+      lineageId: "lineage-cd",
+      versionId: cd.versionId,
+      playerId: dax,
+      response: "accepted",
+    }, { phase: Phase.MINGLE_I });
+
+    state.recordAllianceHuddleCompleted({
+      id: "session-ab",
+      scheduleId: "schedule-ab",
+      allianceId: "alliance-ab",
+      window: "pre_vote",
+      round: 1,
+      pass: 1,
+      speakerIds: [alice, bob],
+      completedAt: "2026-06-14T00:01:00.000Z",
+    });
+    state.recordAllianceHuddleOutcome({
+      id: "outcome-ab",
+      sessionId: "session-ab",
+      allianceId: "alliance-ab",
+      window: "pre_vote",
+      round: 1,
+      ask: "Vote with Bob.",
+      plan: "Alice and Bob agree to test Cara as the first vote.",
+      promises: ["Alice backs Bob publicly."],
+      dissent: [],
+      confidence: "high",
+      posture: "coordinating",
+      leakOrBetrayalClaims: [],
+      createdAt: "2026-06-14T00:01:05.000Z",
+    });
+    state.recordAllianceHuddleCompleted({
+      id: "session-cd",
+      scheduleId: "schedule-cd",
+      allianceId: "alliance-cd",
+      window: "pre_vote",
+      round: 1,
+      pass: 1,
+      speakerIds: [cara, dax],
+      completedAt: "2026-06-14T00:01:10.000Z",
+    });
+    state.recordAllianceHuddleOutcome({
+      id: "outcome-cd",
+      sessionId: "session-cd",
+      allianceId: "alliance-cd",
+      window: "pre_vote",
+      round: 1,
+      ask: "Keep Alice out.",
+      plan: "Cara and Dax target Alice quietly.",
+      promises: ["Do not tell Alice."],
+      dissent: [],
+      confidence: "medium",
+      posture: "coordinating",
+      leakOrBetrayalClaims: [],
+      createdAt: "2026-06-14T00:01:15.000Z",
+    });
+
+    const ownerEpoch = await insertOwner(db, gameId);
+    await appendGameEvents(db, { gameId, ownerEpoch, events: state.getCanonicalEvents() });
+    await db.insert(schema.transcripts).values([
+      {
+        gameId,
+        round: 1,
+        phase: Phase.PRE_VOTE_HUDDLE,
+        fromPlayerId: alice,
+        scope: "huddle",
+        toPlayerIds: JSON.stringify([bob]),
+        text: "Bob, I can vote Cara if you hold the line.",
+        thinking: "I need Bob to feel this was his idea.",
+        timestamp: 1,
+      },
+      {
+        gameId,
+        round: 1,
+        phase: Phase.PRE_VOTE_HUDDLE,
+        fromPlayerId: cara,
+        scope: "huddle",
+        toPlayerIds: JSON.stringify([dax]),
+        text: "Dax, Alice never sees this.",
+        thinking: "Alice is outside this plan.",
+        timestamp: 2,
+      },
+    ]);
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const result = await readModel.readAgentAlliances({ gameIdOrSlug: "agent-alliances" }, {
       userId,
-      authProfile: "subject" as const,
-    })).rejects.toThrow("producer visibility requires MCP scope: producer");
+      authProfile: "subject",
+    });
+
+    expect(result.availability.status).toBe("available");
+    expect(result.player).toMatchObject({ id: alice, name: "Alice" });
+    expect(result.allianceFacts?.proposals.map((proposal) => proposal.currentTerms.name).sort()).toEqual([
+      "Back Row Pair",
+      "Smoke Test Pair",
+    ]);
+    expect(result.allianceFacts?.proposals.find((proposal) => proposal.currentTerms.name === "Smoke Test Pair")).toMatchObject({
+      status: "expired",
+      yourResponse: "trial",
+    });
+    expect(result.allianceFacts?.alliances.map((alliance) => alliance.name)).toEqual(["Back Row Pair"]);
+    expect(result.allianceFacts?.huddles).toHaveLength(1);
+    expect(result.allianceFacts?.huddles[0]).toMatchObject({
+      allianceName: "Back Row Pair",
+      messages: [{
+        text: "Bob, I can vote Cara if you hold the line.",
+        thinking: "I need Bob to feel this was his idea.",
+      }],
+      outcome: {
+        plan: "Alice and Bob agree to test Cara as the first vote.",
+      },
+    });
+
+    const selectedByName = await readModel.readAgentAlliances({ gameIdOrSlug: "agent-alliances", player: "aLiCe" }, {
+      userId,
+      authProfile: "subject",
+    });
+
+    expect(selectedByName.availability.status).toBe("available");
+    expect(selectedByName.player).toMatchObject({ id: alice, name: "Alice" });
+
+    const unauthorizedByName = await readModel.readAgentAlliances({ gameIdOrSlug: "agent-alliances", player: "Bob" }, {
+      userId,
+      authProfile: "subject",
+    });
+
+    expect(unauthorizedByName.availability.status).toBe("agent_not_authorized");
+    expect(unauthorizedByName.allianceFacts).toBeUndefined();
+    expect(unauthorizedByName.availability.diagnostics[0]?.message).toContain("not authorized");
+
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("Off Camera Pair");
+    expect(serialized).not.toContain("Alice never sees this");
+    expect(serialized).not.toContain("Alice is outside this plan");
+    expect(serialized).not.toContain("sourcePointers");
+    expect(serialized).not.toContain("reasoning");
+  });
+
+  test("requires an explicit agent selector when a user owns multiple players in a game", async () => {
+    const userId = randomUUID();
+    await db.insert(schema.users).values({
+      id: userId,
+      walletAddress: "0xallianceowner000000000000000000000000002",
+    });
+    const gameId = await insertGame(db, { slug: "agent-alliances-ambiguous" });
+    const first = await insertGamePlayer(db, { gameId, userId, name: "First" });
+    const second = await insertGamePlayer(db, { gameId, userId, name: "Second" });
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const result = await readModel.readAgentAlliances({ gameIdOrSlug: gameId }, {
+      userId,
+      authProfile: "subject",
+    });
+
+    expect(result.availability.status).toBe("agent_ambiguous");
+    expect(result.selectablePlayers?.map((player) => player.id).sort()).toEqual([first, second].sort());
+  });
+
+  test("requires an explicit selector when player name matches multiple visible players", async () => {
+    const userId = randomUUID();
+    await db.insert(schema.users).values({
+      id: userId,
+      walletAddress: "0xallianceowner000000000000000000000000003",
+    });
+    const gameId = await insertGame(db, { slug: "agent-alliances-duplicate-name" });
+    const first = await insertGamePlayer(db, { gameId, userId, name: "Echo" });
+    const second = await insertGamePlayer(db, { gameId, userId, name: "echo" });
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const result = await readModel.readAgentAlliances({ gameIdOrSlug: gameId, player: "ECHO" }, {
+      userId,
+      authProfile: "subject",
+    });
+
+    expect(result.availability.status).toBe("agent_ambiguous");
+    expect(result.selectablePlayers?.map((player) => player.id).sort()).toEqual([first, second].sort());
   });
 
   test("reads and searches private trace evidence through DB manifests and storage", async () => {
@@ -697,6 +993,7 @@ async function insertGamePlayer(
     gameId: string;
     userId?: string;
     agentProfileId?: string;
+    name?: string;
   },
 ): Promise<string> {
   const playerId = randomUUID();
@@ -705,7 +1002,7 @@ async function insertGamePlayer(
     gameId: params.gameId,
     userId: params.userId,
     agentProfileId: params.agentProfileId,
-    persona: JSON.stringify({ name: "Test Player", personality: "careful" }),
+    persona: JSON.stringify({ name: params.name ?? "Test Player", personality: "careful" }),
     agentConfig: JSON.stringify({ model: "test-model", temperature: 0 }),
   });
   return playerId;

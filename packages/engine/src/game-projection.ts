@@ -1,5 +1,10 @@
 import type { CanonicalGameEvent } from "./canonical-events";
 import type {
+  AllianceHuddleOutcome,
+  AllianceHuddleScheduleRecord,
+  AllianceHuddleSessionRecord,
+  AllianceProposalLineage,
+  AllianceRecord,
   CouncilVoteTally,
   EndgameEliminationTally,
   EndgameStage,
@@ -50,6 +55,13 @@ export interface CanonicalGameProjection {
   } | null;
   powerAction: PowerAction | null;
   roomAllocations: Record<number, ProjectedRoomAllocation>;
+  allianceOrder: UUID[];
+  alliances: Record<UUID, AllianceRecord>;
+  allianceProposalLineageOrder: UUID[];
+  allianceProposalLineages: Record<UUID, AllianceProposalLineage>;
+  allianceHuddleSchedules: AllianceHuddleScheduleRecord[];
+  allianceHuddleSessions: Record<UUID, AllianceHuddleSessionRecord>;
+  allianceHuddleOutcomes: Record<UUID, AllianceHuddleOutcome>;
   jury: JuryMember[];
   endgameStage: EndgameStage | null;
   cumulativeEmpowerVotes: Record<UUID, number>;
@@ -79,6 +91,13 @@ export function createEmptyProjection(gameId: UUID): CanonicalGameProjection {
     candidateResolution: null,
     powerAction: null,
     roomAllocations: {},
+    allianceOrder: [],
+    alliances: {},
+    allianceProposalLineageOrder: [],
+    allianceProposalLineages: {},
+    allianceHuddleSchedules: [],
+    allianceHuddleSessions: {},
+    allianceHuddleOutcomes: {},
     jury: [],
     endgameStage: null,
     cumulativeEmpowerVotes: {},
@@ -111,6 +130,40 @@ function cloneEndgameTally(tally: EndgameEliminationTally): EndgameEliminationTa
 
 function cloneJuryTally(tally: JuryVoteTally): JuryVoteTally {
   return { votes: { ...tally.votes } };
+}
+
+function cloneAllianceRecord(alliance: AllianceRecord): AllianceRecord {
+  return structuredClone(alliance) as AllianceRecord;
+}
+
+function cloneAllianceProposalLineage(lineage: AllianceProposalLineage): AllianceProposalLineage {
+  return structuredClone(lineage) as AllianceProposalLineage;
+}
+
+function cloneAllianceHuddleSchedule(schedule: AllianceHuddleScheduleRecord): AllianceHuddleScheduleRecord {
+  return structuredClone(schedule) as AllianceHuddleScheduleRecord;
+}
+
+function cloneAllianceHuddleSession(session: AllianceHuddleSessionRecord): AllianceHuddleSessionRecord {
+  return structuredClone(session) as AllianceHuddleSessionRecord;
+}
+
+function cloneAllianceHuddleOutcome(outcome: AllianceHuddleOutcome): AllianceHuddleOutcome {
+  return structuredClone(outcome) as AllianceHuddleOutcome;
+}
+
+function upsertAllianceProjection(projection: CanonicalGameProjection, alliance: AllianceRecord): void {
+  if (!projection.alliances[alliance.id]) {
+    projection.allianceOrder.push(alliance.id);
+  }
+  projection.alliances[alliance.id] = cloneAllianceRecord(alliance);
+}
+
+function upsertAllianceLineageProjection(projection: CanonicalGameProjection, lineage: AllianceProposalLineage): void {
+  if (!projection.allianceProposalLineages[lineage.id]) {
+    projection.allianceProposalLineageOrder.push(lineage.id);
+  }
+  projection.allianceProposalLineages[lineage.id] = cloneAllianceProposalLineage(lineage);
 }
 
 function applyRoundReset(projection: CanonicalGameProjection, round: number): void {
@@ -215,6 +268,43 @@ export function applyCanonicalEvent(
       if (event.payload.shieldGranted) {
         const player = projection.players[event.payload.shieldGranted];
         if (player) projection.players[event.payload.shieldGranted] = { ...player, shielded: true };
+      }
+      break;
+    }
+    case "alliance.proposal_submitted":
+    case "alliance.counter_submitted":
+    case "alliance.proposal_expired": {
+      upsertAllianceLineageProjection(projection, event.payload.lineage);
+      break;
+    }
+    case "alliance.response_recorded": {
+      upsertAllianceLineageProjection(projection, event.payload.lineage);
+      break;
+    }
+    case "alliance.activated":
+    case "alliance.amendment_resolved": {
+      upsertAllianceLineageProjection(projection, event.payload.lineage);
+      upsertAllianceProjection(projection, event.payload.alliance);
+      break;
+    }
+    case "alliance.closed":
+    case "alliance.archived": {
+      upsertAllianceProjection(projection, event.payload.alliance);
+      break;
+    }
+    case "alliance.huddle_scheduled":
+    case "alliance.huddle_skipped": {
+      projection.allianceHuddleSchedules.push(cloneAllianceHuddleSchedule(event.payload.schedule));
+      break;
+    }
+    case "alliance.huddle_completed": {
+      projection.allianceHuddleSessions[event.payload.session.id] = cloneAllianceHuddleSession(event.payload.session);
+      break;
+    }
+    case "alliance.huddle_outcome_recorded": {
+      projection.allianceHuddleOutcomes[event.payload.outcome.id] = cloneAllianceHuddleOutcome(event.payload.outcome);
+      if (event.payload.alliance) {
+        upsertAllianceProjection(projection, event.payload.alliance);
       }
       break;
     }

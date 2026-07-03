@@ -24,7 +24,7 @@ import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 import { hydrateMingleInboxFromReplay } from "./mingle-inbox-replay";
 
 // Re-export types from the extracted module for backward compatibility
-export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseCouncilRole, HouseCouncilRoleFact, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TokenCostCursor, TranscriptEntry, TranscriptWatermarkV1 } from "./game-runner.types";
+export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, AllianceAction, AllianceActionBase, AllianceActionKind, AllianceCounterAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, AlliancePassAction, AllianceProposalAction, AllianceProposalResponseAction, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseCouncilRole, HouseCouncilRoleFact, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerAllianceContext, PlayerAllianceContextAlliance, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PlayerContinuityCapsule, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TokenCostCursor, TranscriptEntry, TranscriptWatermarkV1 } from "./game-runner.types";
 import type { AccumulatorEntryV1, BoundaryCertificate, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameRunnerResumeActorCoordinate, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCouncilRoleFact, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, TranscriptEntry } from "./game-runner.types";
 import type { TokenTracker } from "./token-tracker";
 import {
@@ -46,6 +46,7 @@ import type { PhaseRunnerContext, PhaseActor } from "./phases";
 import {
   runIntroductionPhase,
   runLobbyPhase, runReckoningLobby, runTribunalLobby,
+  runMingleIAlliancePhase, runAllianceHuddleWindow,
   runMinglePhase,
   runVotePhase, runReckoningVote, runTribunalVote,
   runPowerPhase,
@@ -415,6 +416,49 @@ export class GameRunner {
     };
   }
 
+  private phaseForActorCoordinate(coordinate: string): Phase | undefined {
+    switch (coordinate) {
+      case "lobby":
+      case "reckoning_lobby":
+      case "tribunal_lobby":
+        return Phase.LOBBY;
+      case "mingle_i":
+        return Phase.MINGLE_I;
+      case "pre_vote_huddle":
+        return Phase.PRE_VOTE_HUDDLE;
+      case "vote":
+      case "reckoning_vote":
+      case "tribunal_vote":
+        return Phase.VOTE;
+      case "post_vote_mingle":
+        return Phase.POST_VOTE_MINGLE;
+      case "power":
+        return Phase.POWER;
+      case "reveal":
+        return Phase.REVEAL;
+      case "pre_council_huddle":
+        return Phase.PRE_COUNCIL_HUDDLE;
+      case "council":
+        return Phase.COUNCIL;
+      case "reckoning_plea":
+        return Phase.PLEA;
+      case "tribunal_accusation":
+        return Phase.ACCUSATION;
+      case "tribunal_defense":
+        return Phase.DEFENSE;
+      case "judgment_opening":
+        return Phase.OPENING_STATEMENTS;
+      case "judgment_jury_questions":
+        return Phase.JURY_QUESTIONS;
+      case "judgment_closing":
+        return Phase.CLOSING_ARGUMENTS;
+      case "judgment_jury_vote":
+        return Phase.JURY_VOTE;
+      default:
+        return undefined;
+    }
+  }
+
   private async writeCheckpoint(
     kind: GameCheckpointKind,
     phase?: Phase,
@@ -593,8 +637,10 @@ export class GameRunner {
         await this.diaryRoom.runDiaryRoom(Phase.INTRODUCTION);
       } else if (state === "lobby") {
         await runLobbyPhase(prc, actor);
-      } else if (state === "mingle") {
-        await runMinglePhase(prc, actor);
+      } else if (state === "mingle_i") {
+        await runMingleIAlliancePhase(prc, actor);
+      } else if (state === "pre_vote_huddle") {
+        await runAllianceHuddleWindow(prc, actor, Phase.PRE_VOTE_HUDDLE);
       } else if (state === "vote") {
         if (this.gameState.round > 1) {
           await this.diaryRoom.runStrategicReflections(Phase.VOTE, { timing: "pre_vote" });
@@ -603,6 +649,8 @@ export class GameRunner {
         if (this.gameState.round > 1) {
           await this.diaryRoom.runStrategicReflections(Phase.VOTE);
         }
+      } else if (state === "post_vote_mingle") {
+        await runMinglePhase(prc, actor, { phase: Phase.POST_VOTE_MINGLE });
       } else if (state === "power") {
         await runPowerPhase(prc, actor);
         if (!this.gameState.councilCandidates) {
@@ -610,6 +658,8 @@ export class GameRunner {
         }
       } else if (state === "reveal") {
         await runRevealPhase(prc, actor);
+      } else if (state === "pre_council_huddle") {
+        await runAllianceHuddleWindow(prc, actor, Phase.PRE_COUNCIL_HUDDLE);
       } else if (state === "council") {
         await runCouncilPhase(prc, actor);
         await this.emitHouseRoundInterstitial(Phase.COUNCIL);
@@ -661,7 +711,9 @@ export class GameRunner {
       await this.flushDurableEvents({
         continueBuffering: true,
         checkpointKind: "phase_boundary",
-        phase: this.gameState.getCanonicalEvents().at(-1)?.phase ?? Phase.INIT,
+        phase: this.phaseForActorCoordinate(String(actor.getSnapshot().value))
+          ?? this.gameState.getCanonicalEvents().at(-1)?.phase
+          ?? Phase.INIT,
         phaseActor: actor,
       });
     }
@@ -751,6 +803,18 @@ export class GameRunner {
       throw new Error(`Phase-boundary resume to "${target}" missing round.started event`);
     }
     await this.completeResumePhase(actor);
+    if (target === "mingle_i") {
+      this.assertResumeActorState(actor, target);
+      return;
+    }
+
+    await this.completeResumePhase(actor);
+    if (target === "pre_vote_huddle") {
+      this.assertResumeActorState(actor, target);
+      return;
+    }
+
+    await this.completeResumePhase(actor);
     if (target === "vote") {
       this.assertResumeActorState(actor, target);
       return;
@@ -759,7 +823,7 @@ export class GameRunner {
     const empoweredId = this.resumeEmpoweredId();
     actor.send({ type: "VOTES_TALLIED", empoweredId });
     await this.completeResumePhase(actor);
-    if (target === "mingle") {
+    if (target === "post_vote_mingle") {
       this.assertResumeActorState(actor, target);
       return;
     }
@@ -786,6 +850,15 @@ export class GameRunner {
 
     if (!autoEliminated) {
       await this.completeResumePhase(actor);
+      if (target === "pre_council_huddle") {
+        this.assertResumeActorState(actor, target);
+        return;
+      }
+      await this.completeResumePhase(actor);
+      if (target === "council") {
+        this.assertResumeActorState(actor, target);
+        return;
+      }
     }
     this.updateResumeAlivePlayers(actor);
     await this.completeResumePhase(actor);

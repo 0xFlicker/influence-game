@@ -1,0 +1,840 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Named Alliances</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8f5;
+      --panel: #ffffff;
+      --panel-2: #eef3ef;
+      --ink: #171a1f;
+      --muted: #5c6570;
+      --line: #d8dee3;
+      --accent: #1b6f77;
+      --accent-soft: #e6f3f4;
+      --accent-text: #174e55;
+      --plum: #7b4a8f;
+      --plum-soft: #f2ebf6;
+      --green: #2f6d4c;
+      --green-soft: #e8f4ed;
+      --amber: #8a5b14;
+      --amber-soft: #fbf0dc;
+      --red: #9b3d47;
+      --red-soft: #fae9eb;
+      --blue: #255f99;
+      --blue-soft: #e8f0fa;
+      --code-bg: #edf0f2;
+      --shadow: 0 14px 38px rgba(21, 30, 36, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main {
+      width: min(1080px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 40px 0 56px;
+    }
+
+    header {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 28px;
+      box-shadow: var(--shadow);
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      line-height: 1.16;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      font-size: 40px;
+      max-width: 16ch;
+    }
+
+    h2 {
+      font-size: 23px;
+      margin-top: 42px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h3 { font-size: 18px; }
+
+    p, li { max-width: 78ch; }
+
+    a { color: var(--accent); }
+
+    code {
+      background: var(--code-bg);
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      color: #20252b;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+      padding: 1px 5px;
+    }
+
+    .eyebrow {
+      color: var(--accent-text);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0;
+      margin: 0 0 8px;
+      text-transform: uppercase;
+    }
+
+    .lead {
+      color: #2f3740;
+      font-size: 17px;
+      margin: 16px 0 0;
+      max-width: 72ch;
+    }
+
+    .meta, .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .meta { margin-top: 20px; }
+
+    .pill {
+      align-items: center;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      display: inline-flex;
+      font-size: 12px;
+      font-weight: 700;
+      gap: 6px;
+      padding: 5px 10px;
+    }
+
+    .pill.high { background: var(--green-soft); border-color: #bfdec9; color: var(--green); }
+    .pill.med { background: var(--amber-soft); border-color: #efd09a; color: var(--amber); }
+    .pill.cx { background: var(--plum-soft); border-color: #dfc9e8; color: var(--plum); }
+
+    .stats {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-top: 22px;
+    }
+
+    .stat, .callout, .axis, .idea, .source-note {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 21px;
+      line-height: 1.1;
+    }
+
+    .stat span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    nav.top-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 22px;
+    }
+
+    nav.top-nav a, .jump-list a {
+      background: var(--accent-soft);
+      border: 1px solid #bfdde0;
+      border-radius: 6px;
+      color: var(--accent-text);
+      font-size: 13px;
+      font-weight: 750;
+      padding: 8px 10px;
+      text-decoration: none;
+    }
+
+    .callout {
+      background: var(--accent-soft);
+      border-color: #bfdde0;
+      color: var(--accent-text);
+      margin: 18px 0;
+    }
+
+    .callout strong { color: inherit; }
+
+    .warning {
+      background: var(--amber-soft);
+      border-color: #efd09a;
+      color: var(--amber);
+    }
+
+    .axes {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      margin-top: 16px;
+    }
+
+    .axis {
+      background: #fbfcfb;
+    }
+
+    .axis b {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .jump-list {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin: 18px 0 24px;
+    }
+
+    .idea {
+      box-shadow: 0 8px 26px rgba(21, 30, 36, 0.05);
+      margin: 18px 0;
+    }
+
+    .idea-header {
+      align-items: flex-start;
+      display: flex;
+      gap: 14px;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .idea-header h3 {
+      display: flex;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .rank {
+      color: var(--accent);
+      font-weight: 850;
+      white-space: nowrap;
+    }
+
+    dl {
+      display: grid;
+      gap: 9px 14px;
+      grid-template-columns: 118px minmax(0, 1fr);
+      margin: 14px 0 0;
+    }
+
+    dt {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    dd { margin: 0; }
+
+    .diagram {
+      background: #fbfcfb;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      margin: 16px 0 4px;
+      overflow-x: auto;
+      padding: 12px;
+    }
+
+    .diagram svg {
+      display: block;
+      min-width: 720px;
+      width: 100%;
+    }
+
+    .diagram text {
+      fill: var(--ink);
+      font: 12px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .diagram .small { fill: var(--muted); font-size: 11px; }
+
+    figcaption {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 8px;
+    }
+
+    table {
+      border-collapse: collapse;
+      font-size: 14px;
+      margin-top: 16px;
+      width: 100%;
+    }
+
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--accent-text);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .source-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin-top: 16px;
+    }
+
+    .source-note {
+      background: #fbfcfb;
+    }
+
+    .source-note h3 {
+      color: var(--accent-text);
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+
+    footer {
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 38px;
+      padding-top: 16px;
+    }
+
+    @media (max-width: 860px) {
+      main { width: min(100vw - 24px, 720px); padding-top: 24px; }
+      header { padding: 20px; }
+      h1 { font-size: 31px; max-width: none; }
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .axes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .jump-list, .source-grid { grid-template-columns: 1fr; }
+      .idea-header { display: block; }
+      .chips { margin-top: 10px; }
+      dl { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 520px) {
+      .stats, .axes { grid-template-columns: 1fr; }
+      .meta .pill { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <p class="eyebrow">ce-ideate artifact</p>
+    <h1>Ideation: Named Alliances</h1>
+    <p class="lead">
+      Best direction: make alliances explicit consent artifacts first, then let The House schedule scarce sidecar-native huddles before Vote and Council. Acceptance records a social commitment; huddle time is producer-gated screen time, not an always-on private chat entitlement.
+    </p>
+    <div class="meta" aria-label="metadata">
+      <span class="pill">Date: <time datetime="2026-07-02">2026-07-02</time></span>
+      <span class="pill">Topic: named-alliances</span>
+      <span class="pill">Mode: repo-grounded</span>
+      <span class="pill">Output: HTML</span>
+    </div>
+    <div class="stats">
+      <div class="stat"><strong>41</strong><span>raw candidates across lenses</span></div>
+      <div class="stat"><strong>7</strong><span>ranked survivors</span></div>
+      <div class="stat"><strong>5</strong><span>topic axes covered</span></div>
+      <div class="stat"><strong>10</strong><span>recommended rule changes</span></div>
+    </div>
+    <nav class="top-nav" aria-label="document sections">
+      <a href="#grounding-context">Grounding Context</a>
+      <a href="#topic-axes">Topic Axes</a>
+      <a href="#recommended-rule-changes">Recommended Rules</a>
+      <a href="#ranked-ideas">Ranked Ideas</a>
+      <a href="#rejection-summary">Rejection Summary</a>
+      <a href="#sources-references">Sources &amp; References</a>
+    </nav>
+  </header>
+
+  <section id="grounding-context">
+    <h2>Grounding Context</h2>
+    <p>
+      The codebase already has a strong private-social substrate, but it does not yet have first-class alliance truth. Current games run through <code>MINGLE</code>, while Whisper names remain compatibility residue in older types and UI components. Mingle can log private room messages with recipients, <code>roomId</code>, and room metadata, and the engine already emits private agent-turn records such as Mingle intent. What is missing is a small durable object that says: these players explicitly proposed, accepted, countered, or declined a named pact.
+    </p>
+    <p>
+      The trust boundary matters as much as the feature. Production MCP is intentionally read-only for active games, public watch surfaces should not leak hidden social truth, and producer/debug views can inspect richer evidence than players or public viewers. The useful product shape is not "show everyone the alliance graph." It is controlled private truth plus later postgame explanation.
+    </p>
+    <div class="callout">
+      <strong>Refined recommendation:</strong> proposal/response ledger plus sidecar-native alliance huddles. The full-drama loop adds Mingle I for formation, House-scheduled pre-vote huddles, the existing post-vote Mingle for fallout, and House-scheduled pre-Council huddles for damage control.
+    </div>
+  </section>
+
+  <section id="topic-axes">
+    <h2>Topic Axes</h2>
+    <div class="axes">
+      <div class="axis"><b>Lifecycle</b>Proposal, accept, decline, counter, activation, fracture, retirement.</div>
+      <div class="axis"><b>Rooms</b>Private-room/thread identity without resurrecting Whisper as an active phase.</div>
+      <div class="axis"><b>Memory</b>Durable facts, prompt capsules, summaries, and tightness evidence.</div>
+      <div class="axis"><b>Boundaries</b>Member, public, producer, API, and MCP visibility rules.</div>
+      <div class="axis"><b>Frontend</b>Sidecar/private inspector surfaces that do not swallow MatchWatch.</div>
+    </div>
+  </section>
+
+  <section id="recommended-rule-changes">
+    <h2>Recommended Rule Changes</h2>
+    <div class="callout">
+      <strong>Direct proposal:</strong> Mingle creates or mutates named alliances; the durable Alliance sidecar holds state between phases; huddle windows are scarce, House-scheduled coordination scenes before Vote and Council, not always-on chat.
+    </div>
+    <div class="callout">
+      <strong>Current scope:</strong> keep the full-drama route and current token-maxing rules for now. Do not cap how many alliances a player may join until simulations prove the need; do give every agent its full alliance roster plus failed or closed alliance context. Votes remain public until a dedicated private vote reveal phase is worth designing.
+    </div>
+
+    <article class="idea" id="huddle-1">
+      <div class="idea-header">
+        <h3><span class="rank">R1.</span> Full-Drama Round Loop</h3>
+      </div>
+      <dl>
+        <dt>Rule</dt>
+        <dd>Use <code>Lobby - Mingle I - Pre-Vote Alliance Huddles - Vote - Post-vote Mingle - Power/Reveal - Pre-Council Alliance Huddles - Council</code> as the full-drama normal-round shape. Mingle I forms or mutates alliances. Pre-vote huddles coordinate action. Post-vote Mingle preserves fallout. Pre-Council huddles negotiate reality after pressure is visible.</dd>
+        <dt>Axis</dt>
+        <dd>Round cadence, huddle placement, post-vote drama.</dd>
+        <dt>Basis</dt>
+        <dd><strong>direct:</strong> <code>phase-machine.ts:253-328</code> currently routes <code>lobby - vote - mingle - power - reveal - council</code>; <code>CONCEPTS.md:15-17</code> defines post-vote Mingle as the pressure/fallout window to preserve.</dd>
+        <dt>Rationale</dt>
+        <dd>Pre-vote coordination is a real new round-loop change, not a rename. This rule adds that coordination while keeping the existing vote-to-Council drama instead of flattening it.</dd>
+        <dt>Downside</dt>
+        <dd>This is the most expensive shape. Current token-maxing rules still apply until a dedicated alliance-huddle compression pass is designed.</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="huddle-2">
+      <div class="idea-header">
+        <h3><span class="rank">R2.</span> House-Scheduled Huddle Tickets</h3>
+      </div>
+      <dl>
+        <dt>Rule</dt>
+        <dd>The House grants each active alliance <code>0</code>, <code>1</code>, or <code>2</code> huddle rounds per decision window. Default budget: <code>max(2, floor(alivePlayers / 4))</code> huddle tickets per window, capped at <code>4</code>. Score by decision relevance, conflict/tension, underdog flip potential, dominance interruption, recency/fatigue, and estimated token cost.</dd>
+        <dt>Axis</dt>
+        <dd>Producer/showrunner gate and token budget.</dd>
+        <dt>Basis</dt>
+        <dd><strong>direct:</strong> <code>mingle.ts:762-793</code> already asks The House to assign rooms and records private House rationale; <code>CONCEPTS.md:99-105</code> describes House-owned producer strategy memory and producer briefs.</dd>
+        <dt>Rationale</dt>
+        <dd>The House should schedule attention like a showrunner, not certify loyalty. Scarce huddles save tokens and make fake/stale alliances cheap to ignore until they become dramatic.</dd>
+        <dt>Downside</dt>
+        <dd>House scheduling becomes part of gameplay. It needs producer-only reasons so weird choices are debuggable.</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="huddle-3">
+      <div class="idea-header">
+        <h3><span class="rank">R3.</span> Pass-Wise Huddle Execution</h3>
+      </div>
+      <dl>
+        <dt>Rule</dt>
+        <dd>For each decision window, run huddles pass-wise: <code>for pass 1..2</code>, each selected alliance gets one huddle round. One huddle round means every live member may speak once. Do not let one alliance finish all discussion before others get a first round.</dd>
+        <dt>Axis</dt>
+        <dd>Huddle order and conversation beats.</dd>
+        <dt>Basis</dt>
+        <dd><strong>direct:</strong> <code>mingle.ts:802-836</code> already runs beat-based room turns; this adapts that rhythm to alliance-specific rooms.</dd>
+        <dt>Rationale</dt>
+        <dd>Pass-wise execution creates actual back-and-forth while avoiding runaway order advantage. Multi-alliance agents can carry tension between rooms without one group monopolizing the window.</dd>
+        <dt>Downside</dt>
+        <dd>Internal execution order can still matter. In fiction, huddles should be framed as same-window scenes, and prompts should not grant omniscient knowledge from earlier huddles.</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="huddle-4">
+      <div class="idea-header">
+        <h3><span class="rank">R4.</span> Counter Cap and Proposal Cooldown</h3>
+      </div>
+      <dl>
+        <dt>Rule</dt>
+        <dd>Counters may rename, resize, narrow, or timebox an alliance, but each proposal lineage gets at most <code>2</code> counter rounds per formation window. Then it must resolve as accept, decline, defer, trial, or expire. Deferred proposals cannot consume huddle tickets until the next round unless House marks them urgent.</dd>
+        <dt>Axis</dt>
+        <dd>Proposal lifecycle and anti-stall rules.</dd>
+        <dt>Basis</dt>
+        <dd><strong>reasoned:</strong> alliance negotiation is valuable only if it produces a state transition; unbounded counters turn Mingle into paperwork.</dd>
+        <dt>Rationale</dt>
+        <dd>Counterplay stays strategic, but every proposal reaches a visible next state before it starts consuming huddle budget.</dd>
+        <dt>Downside</dt>
+        <dd>A hard cap may prematurely kill a fun negotiation. Trial status gives a pressure valve.</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="huddle-5">
+      <div class="idea-header">
+        <h3><span class="rank">R5.</span> Ask, Plan, Receipt</h3>
+      </div>
+      <dl>
+        <dt>Rule</dt>
+        <dd>Each huddle round produces a compact sidecar receipt: one ask, one plan, promises or protections, dissent, confidence, target/vote/Council posture, and any explicit leak or betrayal. Raw huddle transcript is evidence, not future prompt memory.</dd>
+        <dt>Axis</dt>
+        <dd>Durable memory and token control.</dd>
+        <dt>Basis</dt>
+        <dd><strong>direct:</strong> Mingle already emits private agent-turn records and transcript entries; existing strategy-memory patterns favor compact structured context over raw hidden-history replay.</dd>
+        <dt>Rationale</dt>
+        <dd>Huddles need to matter later. Receipts make them durable without dumping transcripts into every future prompt.</dd>
+        <dt>Downside</dt>
+        <dd>Receipt schemas can get too clever. Keep the first version aggressively small.</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="huddle-6">
+      <div class="idea-header">
+        <h3><span class="rank">R6.</span> Universal-Alliance Closure</h3>
+      </div>
+      <dl>
+        <dt>Rule</dt>
+        <dd>Before a round enters Mingle I ahead of a vote, any active alliance whose living membership equals all alive players is unstable and must close. The v1 behavior is to mark it closed in context before Mingle I and let agents react, re-propose smaller pacts, or pass during normal Mingle. Alliances with fewer than two alive members still auto-archive.</dd>
+        <dt>Axis</dt>
+        <dd>Universal alliance instability and endgame dissolution pressure.</dd>
+        <dt>Basis</dt>
+        <dd><strong>reasoned:</strong> an alliance of everyone alive stops being a coalition and becomes a stalled game state. Closing it before Mingle I preserves social pressure without inventing a special resolution phase yet.</dd>
+        <dt>Rationale</dt>
+        <dd>Dissolution is social pressure, not a mechanical betrayal requirement. The closed alliance remains as context and receipt evidence even after the room stops getting oxygen.</dd>
+        <dt>Downside</dt>
+        <dd>Abrupt closure may feel producer-handed. If simulations need more ceremony, promote a special universal-alliance resolution phase from future work.</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="huddle-7">
+      <div class="idea-header">
+        <h3><span class="rank">R7.</span> Producer Reasons Ledger</h3>
+      </div>
+      <dl>
+        <dt>Rule</dt>
+        <dd>Every scheduled or skipped huddle stores producer-only reasons such as <code>swing_vote_pressure</code>, <code>fracture_risk</code>, <code>power_holder_member</code>, <code>recent_betrayal</code>, <code>underdog_flip</code>, <code>dominance_interruption</code>, and <code>fatigue_penalty</code>.</dd>
+        <dt>Axis</dt>
+        <dd>House scheduling auditability.</dd>
+        <dt>Basis</dt>
+        <dd><strong>direct:</strong> House room assignment already emits private rationale in Mingle; House Strategy Bible and producer briefs are private producer/debug state.</dd>
+        <dt>Rationale</dt>
+        <dd>This is where The House shines: it curates scenes, records why, and stays out of declaring loyalty as truth.</dd>
+        <dt>Downside</dt>
+        <dd>Reason labels can leak design intent if exposed. Keep them producer/debug-only during live games.</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="huddle-8">
+      <div class="idea-header">
+        <h3><span class="rank">R8.</span> Visibility and MCP Boundary</h3>
+      </div>
+      <dl>
+        <dt>Rule</dt>
+        <dd>Alliance sidecar state is member-safe and producer-safe. Public live views may show coarse status only when intentionally revealed; they do not expose membership or huddle transcript. Votes remain public in the current rules. Production MCP can read scoped alliance summaries later, but it must not propose, accept, schedule, or dissolve active-match alliances.</dd>
+        <dt>Axis</dt>
+        <dd>Privacy, API, MCP, and public viewer boundaries.</dd>
+        <dt>Basis</dt>
+        <dd><strong>direct:</strong> <code>CONCEPTS.md:175</code> and <code>game-mcp/server.ts:106-122</code> keep active-match actions out of user-facing MCP.</dd>
+        <dt>Rationale</dt>
+        <dd>The alliance feature is only fun if hidden coordination remains hidden. Tool convenience is not worth punching a spoiler hole in the game.</dd>
+        <dt>Downside</dt>
+        <dd>More projections and tests. The alternative is production confetti with a security badge.</dd>
+      </dl>
+    </article>
+  </section>
+
+  <section id="ranked-ideas">
+    <h2>Ranked Ideas</h2>
+    <div class="jump-list" aria-label="ranked idea index">
+      <a href="#idea-1">1. Consent Artifact Ledger</a>
+      <a href="#idea-2">2. Alliance Sphere Huddle Windows</a>
+      <a href="#idea-3">3. Alliance Notebook Capsules</a>
+      <a href="#idea-4">4. Receipt-Vector Tightness</a>
+      <a href="#idea-5">5. Trust-Boundary Alliance Read Models</a>
+      <a href="#idea-6">6. House-Scheduled Alliance Sidecar</a>
+      <a href="#idea-7">7. Counteroffer Lineage and Automatic Decay</a>
+    </div>
+
+    <article class="idea" id="idea-1">
+      <div class="idea-header">
+        <h3><span class="rank">1.</span> Consent Artifact Ledger</h3>
+        <div class="chips">
+          <span class="pill high">Confidence 92%</span>
+          <span class="pill cx">Complexity Medium</span>
+        </div>
+      </div>
+      <dl>
+        <dt>Description</dt>
+        <dd>During Mingle, a player can propose a named alliance with a name, invited members, a short charter or objective, and a response deadline. Responses are explicit artifacts: <code>accept</code>, <code>decline</code>, or <code>counter</code>. Once every invited member accepts compatible terms, acceptance is the activation event and an <code>allianceId</code> exists. The fact recorded is mutual consent, not true loyalty.</dd>
+        <dt>Axis</dt>
+        <dd>Alliance lifecycle and activation.</dd>
+        <dt>Basis</dt>
+        <dd><strong>direct:</strong> <code>packages/engine/src/canonical-events.ts:41-62</code> has no alliance event types; <code>packages/engine/src/types.ts:358-378</code> has no alliance action; <code>packages/engine/src/phases/mingle.ts:731-759</code> already has a bounded private Mingle intent seam. <strong>external:</strong> Diplomacy-style non-binding commitments matter because the agreement creates social debt without enforcing behavior.</dd>
+        <dt>Rationale</dt>
+        <dd>This gives the system one small truth object that prompts, replay, API, and postgame can reference without pretending House hypotheses or vote cohorts are confirmed alliances.</dd>
+        <dt>Downsides</dt>
+        <dd>Needs new event/schema semantics and deterministic response resolution. The product copy must be blunt that accepted alliance means "we agreed," not "we are loyal."</dd>
+      </dl>
+      <figure class="diagram" aria-label="Consent artifact flow">
+        <svg viewBox="0 0 760 150" role="img">
+          <defs>
+            <marker id="arrow-i1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#1b6f77"></path>
+            </marker>
+          </defs>
+          <rect x="20" y="45" width="140" height="54" rx="8" fill="#e6f3f4" stroke="#8fc5ca"></rect>
+          <text x="90" y="67" text-anchor="middle" font-weight="700">Proposal</text>
+          <text x="90" y="84" text-anchor="middle" class="small">name + members + charter</text>
+          <line x1="170" y1="72" x2="228" y2="72" stroke="#1b6f77" stroke-width="2" marker-end="url(#arrow-i1)"></line>
+          <rect x="238" y="45" width="140" height="54" rx="8" fill="#f2ebf6" stroke="#cdaee0"></rect>
+          <text x="308" y="67" text-anchor="middle" font-weight="700">Responses</text>
+          <text x="308" y="84" text-anchor="middle" class="small">accept / decline / counter</text>
+          <line x1="388" y1="72" x2="446" y2="72" stroke="#1b6f77" stroke-width="2" marker-end="url(#arrow-i1)"></line>
+          <rect x="456" y="45" width="140" height="54" rx="8" fill="#e8f4ed" stroke="#a9d5b7"></rect>
+          <text x="526" y="67" text-anchor="middle" font-weight="700">Active alliance</text>
+          <text x="526" y="84" text-anchor="middle" class="small">mutual consent fact</text>
+          <line x1="606" y1="72" x2="664" y2="72" stroke="#1b6f77" stroke-width="2" marker-end="url(#arrow-i1)"></line>
+          <rect x="674" y="45" width="66" height="54" rx="8" fill="#fbf0dc" stroke="#e0bd7b"></rect>
+          <text x="707" y="67" text-anchor="middle" font-weight="700">Surfaces</text>
+          <text x="707" y="84" text-anchor="middle" class="small">scoped reads</text>
+        </svg>
+        <figcaption>The smallest useful shape is a proposal ledger that resolves into an active consent fact, then feeds scoped surfaces.</figcaption>
+      </figure>
+    </article>
+
+    <article class="idea" id="idea-2">
+      <div class="idea-header">
+        <h3><span class="rank">2.</span> Alliance Sphere Huddle Windows</h3>
+        <div class="chips">
+          <span class="pill med">Confidence 74%</span>
+          <span class="pill cx">Complexity High</span>
+        </div>
+      </div>
+      <dl>
+        <dt>Description</dt>
+        <dd>Accepted alliances get a durable sidecar-native sphere: private thread, notebook, receipts, and House-scheduled huddle windows. Mingle forms or mutates the alliance, but the alliance sidecar is the persistent home. Conversation opens only when The House grants pre-vote, pre-Council, activation, repair, or endgame-reckoning huddle time.</dd>
+        <dt>Axis</dt>
+        <dd>Private-room substrate and message/thread model.</dd>
+        <dt>Basis</dt>
+        <dd><strong>direct:</strong> <code>packages/engine/src/transcript-logger.ts:129-146</code> logs private Mingle messages with room context; <code>packages/api/src/db/schema.ts:223-236</code> stores transcript scope, recipients, <code>room_id</code>, and metadata; <code>mingle.ts:802-836</code> already has beat-based private room turns.</dd>
+        <dt>Rationale</dt>
+        <dd>Alliances need a place, not only a label. The product place should be the Alliance sidecar; the implementation can reuse Mingle's private-room machinery where sensible without making the concept a persistent Mingle room.</dd>
+        <dt>Downsides</dt>
+        <dd>This is a real gameplay-system expansion: huddle windows, House scheduling, receipts, and sidecar state all need explicit rules. The upside is that the rules are now crisp enough to plan.</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-3">
+      <div class="idea-header">
+        <h3><span class="rank">3.</span> Alliance Notebook Capsules</h3>
+        <div class="chips">
+          <span class="pill high">Confidence 88%</span>
+          <span class="pill cx">Complexity Medium</span>
+        </div>
+      </div>
+      <dl>
+        <dt>Description</dt>
+        <dd>Each active alliance produces compact member-specific prompt context: name, members, obligations, current ask, last strain, promise debt, and revise trigger. Full transcript history stays in producer/debug evidence. The agent sees the sharp delta, not the gossip archive.</dd>
+        <dt>Axis</dt>
+        <dd>Durable alliance facts, prompt memory, summaries, and tightness.</dd>
+        <dt>Basis</dt>
+        <dd><strong>direct:</strong> <code>packages/engine/src/context-builder.ts:361-431</code> and <code>packages/engine/src/agent.ts:3209-3371</code> already favor compact structured context and stale-fact override rules; strategic reflection artifacts are private/producer-safe rather than raw hidden reasoning replay.</dd>
+        <dt>Rationale</dt>
+        <dd>This is the leverage move: alliances only matter if agents remember them cheaply and usefully in later social decisions.</dd>
+        <dt>Downsides</dt>
+        <dd>The capsule can become stale or overconfident if it lacks "last confirmed" and revise-trigger fields. It also needs careful subject scoping.</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-4">
+      <div class="idea-header">
+        <h3><span class="rank">4.</span> Receipt-Vector Tightness</h3>
+        <div class="chips">
+          <span class="pill high">Confidence 86%</span>
+          <span class="pill cx">Complexity Medium</span>
+        </div>
+      </div>
+      <dl>
+        <dt>Description</dt>
+        <dd>Model tightness as evidence dimensions: accepted commitments, repeated room contact, promises kept or broken, contradictions, rescue attempts, recency, and member-stated confidence. Avoid one opaque magic score, and never treat shared votes alone as confirmed alliance truth.</dd>
+        <dt>Axis</dt>
+        <dd>Durable alliance facts, prompt memory, summaries, and tightness.</dd>
+        <dt>Basis</dt>
+        <dd><strong>direct:</strong> <code>packages/api/src/game-mcp/read-model.ts:588-596</code> separates derived vote cohorts from confirmed alliances; <code>packages/api/src/services/postgame-analysis.ts:314-345</code> already analyzes cohesion-like signals; <code>docs/reasoning-transcript-observability.md:178-181</code> treats private decision evidence as first-class for analysis.</dd>
+        <dt>Rationale</dt>
+        <dd>Receipts make alliance health explainable. That helps prompts, producer inspection, and postgame storytelling without smuggling fake certainty into public play.</dd>
+        <dt>Downsides</dt>
+        <dd>Evidence weights can become pseudo-science if over-polished. Prefer visible dimensions and short explanations over a single authoritative grade.</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-5">
+      <div class="idea-header">
+        <h3><span class="rank">5.</span> Trust-Boundary Alliance Read Models</h3>
+        <div class="chips">
+          <span class="pill high">Confidence 90%</span>
+          <span class="pill cx">Complexity Medium</span>
+        </div>
+      </div>
+      <dl>
+        <dt>Description</dt>
+        <dd>Derive separate member-safe, public-safe, and producer-safe projections from the same alliance facts. Members can see their own proposals, responses, active alliances, and evidence. Public live viewers see nothing private. Producers can inspect richer evidence. Production MCP stays read-only for active games.</dd>
+        <dt>Axis</dt>
+        <dd>API/MCP visibility and authorization boundaries.</dd>
+        <dt>Basis</dt>
+        <dd><strong>direct:</strong> <code>packages/api/src/services/mcp-scope-policy.ts:1-55</code> defines scoped access; <code>packages/api/src/game-mcp/server.ts:106-122</code> explicitly bans active-match actions; <code>packages/api/src/game-mcp/read-model.ts:273-303</code> resolves visibility modes.</dd>
+        <dt>Rationale</dt>
+        <dd>Alliance state is spoiler-prone by default. The architecture should make leakage difficult rather than relying on every future caller to remember what is private.</dd>
+        <dt>Downsides</dt>
+        <dd>More projections means more tests and more DTO discipline. That is still cheaper than cleaning up a hidden-state leak later.</dd>
+      </dl>
+      <figure class="diagram" aria-label="Alliance read model split">
+        <svg viewBox="0 0 760 210" role="img">
+          <defs>
+            <marker id="arrow-i5" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#255f99"></path>
+            </marker>
+          </defs>
+          <rect x="292" y="18" width="176" height="48" rx="8" fill="#e8f0fa" stroke="#9dbce0"></rect>
+          <text x="380" y="40" text-anchor="middle" font-weight="700">Alliance facts</text>
+          <text x="380" y="57" text-anchor="middle" class="small">proposals + responses + receipts</text>
+          <line x1="380" y1="72" x2="380" y2="100" stroke="#255f99" stroke-width="2"></line>
+          <line x1="95" y1="100" x2="665" y2="100" stroke="#255f99" stroke-width="2"></line>
+          <line x1="95" y1="100" x2="95" y2="125" stroke="#255f99" stroke-width="2" marker-end="url(#arrow-i5)"></line>
+          <line x1="285" y1="100" x2="285" y2="125" stroke="#255f99" stroke-width="2" marker-end="url(#arrow-i5)"></line>
+          <line x1="475" y1="100" x2="475" y2="125" stroke="#255f99" stroke-width="2" marker-end="url(#arrow-i5)"></line>
+          <line x1="665" y1="100" x2="665" y2="125" stroke="#255f99" stroke-width="2" marker-end="url(#arrow-i5)"></line>
+          <rect x="25" y="132" width="140" height="52" rx="8" fill="#e8f4ed" stroke="#a9d5b7"></rect>
+          <text x="95" y="154" text-anchor="middle" font-weight="700">Member</text>
+          <text x="95" y="171" text-anchor="middle" class="small">own state + evidence</text>
+          <rect x="215" y="132" width="140" height="52" rx="8" fill="#fbf0dc" stroke="#e0bd7b"></rect>
+          <text x="285" y="154" text-anchor="middle" font-weight="700">Public</text>
+          <text x="285" y="171" text-anchor="middle" class="small">silent or postgame-safe</text>
+          <rect x="405" y="132" width="140" height="52" rx="8" fill="#f2ebf6" stroke="#cdaee0"></rect>
+          <text x="475" y="154" text-anchor="middle" font-weight="700">Producer</text>
+          <text x="475" y="171" text-anchor="middle" class="small">richer private evidence</text>
+          <rect x="595" y="132" width="140" height="52" rx="8" fill="#fae9eb" stroke="#e2a6ad"></rect>
+          <text x="665" y="154" text-anchor="middle" font-weight="700">MCP</text>
+          <text x="665" y="171" text-anchor="middle" class="small">read-only active games</text>
+        </svg>
+        <figcaption>One fact base can produce multiple read models. The split is not presentation polish; it is the safety model.</figcaption>
+      </figure>
+    </article>
+
+    <article class="idea" id="idea-6">
+      <div class="idea-header">
+        <h3><span class="rank">6.</span> House-Scheduled Alliance Sidecar</h3>
+        <div class="chips">
+          <span class="pill med">Confidence 76%</span>
+          <span class="pill cx">Complexity Medium</span>
+        </div>
+      </div>
+      <dl>
+        <dt>Description</dt>
+        <dd>Expose pending proposals, active alliance cards, huddle schedules, notebook snippets, tensions, producer reasons, and room transcripts in a private sidecar or inspector surface. The center-stage watch theater stays about game flow, not alliance administration.</dd>
+        <dt>Axis</dt>
+        <dd>Frontend watch/private UI sidecar.</dd>
+        <dt>Basis</dt>
+        <dd><strong>direct:</strong> <code>packages/web/src/app/games/[slug]/components/match-watch-shell.tsx:145-168</code> and <code>:510-555</code> show existing side rails and inspector affordances; <code>packages/web/src/app/games/[slug]/game-viewer.tsx:870-1290</code> already separates mobile tabs and desktop stage/HUD structure.</dd>
+        <dt>Rationale</dt>
+        <dd>The UI should make alliances legible without turning MatchWatch into an admin dashboard. Sidecar placement also gives The House a visible producer/debug workspace for huddle tickets, reasons, and receipts.</dd>
+        <dt>Downsides</dt>
+        <dd>"Private sidecar" must mean actual authorization, not just a hidden tab. Public/authless viewer paths make this easy to get subtly wrong.</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-7">
+      <div class="idea-header">
+        <h3><span class="rank">7.</span> Counteroffer Lineage and Automatic Decay</h3>
+        <div class="chips">
+          <span class="pill high">Confidence 82%</span>
+          <span class="pill cx">Complexity Medium</span>
+        </div>
+      </div>
+      <dl>
+        <dt>Description</dt>
+        <dd>Counteroffers create proposal lineages instead of editing the original. A pact can rename itself, change members, narrow purpose, set a one-round trial, or fork into a smaller pact. If an active alliance goes untouched or contradiction receipts pile up, it drifts toward <code>fracturing</code> and queues a recommit-or-exit moment for the next Mingle.</dd>
+        <dt>Axis</dt>
+        <dd>Alliance lifecycle and activation.</dd>
+        <dt>Basis</dt>
+        <dd><strong>direct:</strong> <code>packages/engine/src/game-runner.types.ts:469-480</code> already contains private lifecycle vocabulary such as forming, active, fracturing, and retired; <code>packages/engine/src/house-interviewer.ts:877-897</code> tracks promises, tensions, and alliance pressure.</dd>
+        <dt>Rationale</dt>
+        <dd>Negotiation history is strategy evidence. Decay keeps alliance memory from fossilizing after eliminations, betrayals, or silence.</dd>
+        <dt>Downsides</dt>
+        <dd>This is too much for the first cut unless the proposal ledger is already solid. Decay rules must feel like social pressure, not hidden mechanical punishment.</dd>
+      </dl>
+    </article>
+  </section>
+
+  <section id="rejection-summary">
+    <h2>Rejection Summary</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Idea</th>
+          <th>Reason Rejected</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>Resurrect Whisper as an active alliance phase</td><td>Subject replacement. Current runtime is Mingle; Whisper is compatibility residue.</td></tr>
+        <tr><td>2</td><td>Always-on alliance chat outside Mingle</td><td>Scope overrun. It drains the social phase cadence and creates a second chat product.</td></tr>
+        <tr><td>3</td><td>Public live alliance names and members</td><td>Hidden-state leak. Watchers should not get private coalition coordinates during active play.</td></tr>
+        <tr><td>4</td><td>User-facing MCP propose/respond tools</td><td>Violates the active-match MCP boundary. Keep production MCP read-only for active games.</td></tr>
+        <tr><td>5</td><td>Single opaque tightness score</td><td>Fake oracle. Receipt dimensions are more honest and more debuggable.</td></tr>
+        <tr><td>6</td><td>Canonicalize House alliance hypotheses</td><td>Wrong truth tier. House analysis can inform producer views but should not become confirmed alliance fact.</td></tr>
+        <tr><td>7</td><td>Use vote cohorts as alliance truth</td><td>Overclaims inferred behavior. Shared votes can support evidence, not prove consent.</td></tr>
+        <tr><td>8</td><td>Dump raw private transcripts into prompts</td><td>Token and privacy footgun. Compact capsules fit the existing strategy-memory direction.</td></tr>
+        <tr><td>9</td><td>Mechanical betrayal penalties</td><td>Undermines social agency. Betrayal should be remembered and weaponized, not forbidden by physics.</td></tr>
+        <tr><td>10</td><td>Full relationship graph/dashboard first</td><td>Too expensive before the proposal ledger proves value. Pretty graph, premature invoice.</td></tr>
+        <tr><td>11</td><td>Every alliance automatically gets every huddle</td><td>Token blowout and spam incentive. House tickets make huddle time scarce and meaningful.</td></tr>
+        <tr><td>12</td><td>One alliance completes all discussion before the next</td><td>Order bias. Pass-wise rounds give every selected alliance one beat before second-pass refinement.</td></tr>
+        <tr><td>13</td><td>The House decides which alliances are real</td><td>Wrong authority. House schedules attention and records reasons; accepted membership is fact, loyalty is behavior.</td></tr>
+        <tr><td>14</td><td>Always-on alliance sidecar chat</td><td>Turns the game into private group chat and starves the public/social phase cadence.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sources-references">
+    <h2>Sources &amp; References</h2>
+    <div class="source-grid">
+      <div class="source-note">
+        <h3>Repo Evidence</h3>
+        <ul>
+          <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/canonical-events.ts#L41-L62">canonical event types</a> - no alliance event family today.</li>
+          <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/phase-machine.ts#L253-L328">normal round phase machine</a> - current <code>lobby - vote - mingle - power - reveal - council</code> order.</li>
+          <li><a href="https://github.com/0xFlicker/influence-game/blob/main/CONCEPTS.md#L11-L17">Mingle and Post-vote Mingle concepts</a> - active private-room phase and fallout window definition.</li>
+          <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/phases/mingle.ts#L695-L852">Mingle phase runner</a> - current private social phase seam.</li>
+          <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/transcript-logger.ts#L129-L146">Mingle transcript logging</a> - private room messages and room context.</li>
+          <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/db/schema.ts#L223-L236">transcript schema</a> - scope, recipients, room ID, and metadata.</li>
+          <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/game-mcp/server.ts#L106-L122">MCP active-match boundary</a> - read-only production MCP policy.</li>
+          <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/mcp-scope-policy.ts#L1-L55">MCP scope policy</a> - player and producer scopes.</li>
+        </ul>
+      </div>
+      <div class="source-note">
+        <h3>Prior Art</h3>
+        <ul>
+          <li><a href="https://en.wikipedia.org/wiki/Diplomacy_(game)">Diplomacy</a> - non-binding promises as strategic debt.</li>
+          <li><a href="https://ai.meta.com/research/cicero/">Meta AI CICERO</a> - LLM diplomacy/social negotiation reference point.</li>
+          <li><a href="https://en.wikipedia.org/wiki/Survivor:_Borneo">Survivor: Borneo</a> - alliance and bloc dynamics as social-elimination precedent.</li>
+          <li><a href="https://wiki.bloodontheclocktower.com/Rules_Explanation">Blood on the Clocktower rules</a> - hidden-information social deduction reference.</li>
+          <li><a href="https://en.wikipedia.org/wiki/Social_network_analysis">Social network analysis</a> - evidence-backed relationship interpretation, not magical certainty.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer class="composition-signal">
+    Composed 2026-07-02T20:57Z by ce-ideate from user prompt context.
+  </footer>
+</main>
+</body>
+</html>

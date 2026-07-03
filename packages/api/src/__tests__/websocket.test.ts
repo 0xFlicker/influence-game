@@ -201,6 +201,29 @@ describe("WebSocket Manager", () => {
     expect(parsed.entry.reasoningContext).toBeUndefined();
   });
 
+  test("broadcastGameEvent does not publish hidden alliance huddle messages", () => {
+    const { server, published } = createMockServer();
+    setServer(server);
+
+    const event: GameStreamEvent = {
+      type: "transcript_entry",
+      entry: {
+        round: 1,
+        phase: Phase.PRE_VOTE_HUDDLE,
+        timestamp: Date.now(),
+        from: "Alice",
+        scope: "huddle",
+        to: ["p2", "p3"],
+        text: "Keep the alliance vote plan private.",
+        thinking: "This should stay inside the alliance.",
+      },
+    };
+
+    broadcastGameEvent("game-private", event);
+
+    expect(published).toHaveLength(0);
+  });
+
   test("broadcastGameEvent preserves room metadata on transcript entries", () => {
     const { server, published } = createMockServer();
     setServer(server);
@@ -554,7 +577,7 @@ describe("WebSocket Manager", () => {
 
 function watchStateFixture(gameId: string, sequence: number): GameWatchState {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     gameId,
     status: "in_progress",
     source: "durable_projection",

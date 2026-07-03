@@ -42,6 +42,10 @@ import { getHouseSummaryExtraHoldMs, getJuryClosingStatementsExtraHoldMs, getJur
 import type { MatchWatchPlaybackState } from "./match-watch-model";
 import type { WatchConnStatus } from "./types";
 
+function isRoomReplayPhase(phase: string): boolean {
+  return phase === "MINGLE" || phase === "POST_VOTE_MINGLE";
+}
+
 export function DramaticReplayViewer({
   game,
   messages,
@@ -196,8 +200,8 @@ export function DramaticReplayViewer({
   // not through mingle/diary-specific paths that expect room data.
   const isThinkingOnlyScene = !!scene && scene.messages.length > 0 && scene.messages.every((m) => m.scope === "thinking");
   const isChatFeedScene = !!scene && (CHAT_FEED_PHASES.has(scene.phase) || isThinkingOnlyScene);
-  const isWhisperScene = !!scene && scene.phase === "MINGLE" && !scene.isOverview && !isThinkingOnlyScene;
-  const isOpenWhisperScene = !!scene && scene.phase === "MINGLE" && scene.messages.some((m) => (m.roomMetadata?.rooms.length ?? 0) > 0);
+  const isWhisperScene = !!scene && isRoomReplayPhase(scene.phase) && !scene.isOverview && !isThinkingOnlyScene;
+  const isOpenWhisperScene = !!scene && isRoomReplayPhase(scene.phase) && scene.messages.some((m) => (m.roomMetadata?.rooms.length ?? 0) > 0);
   const isDiaryScene = !!scene && scene.phase === "DIARY_ROOM" && !isThinkingOnlyScene;
   const isOverviewScene = !!scene && !!scene.isOverview;
   const isJuryScene = !!scene && scene.phase === "JURY_QUESTIONS" && !isThinkingOnlyScene;
@@ -236,9 +240,9 @@ export function DramaticReplayViewer({
   // For overview scenes: build full mingle stage data for rich allocation display
   const overviewStageData = useMemo(() => {
     if (!scene || !isOverviewScene) return null;
-    // Gather all entries from this round's MINGLE phase to parse allocation
+    // Gather all room-phase entries from this round to parse allocation.
     const mingleEntries = messages.filter(
-      (m) => m.phase === "MINGLE" && m.round === scene.round,
+      (m) => isRoomReplayPhase(m.phase) && m.round === scene.round,
     );
     return buildWhisperStageData(mingleEntries, players);
   }, [scene, isOverviewScene, messages, players]);
@@ -310,7 +314,7 @@ export function DramaticReplayViewer({
     const rooms: WhisperRoomStage[] = [];
     for (let i = 0; i < sceneIndex; i++) {
       const s = scenes[i]!;
-      if (s.phase === "MINGLE" && s.round === scene.round && s.whisperRoom) {
+      if (isRoomReplayPhase(s.phase) && s.round === scene.round && s.whisperRoom) {
         rooms.push({
           roomId: s.whisperRoom.roomId,
           playerIds: s.whisperRoom.playerNames,

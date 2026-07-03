@@ -198,10 +198,11 @@ function validateActorCoordinatePrerequisites(
     return hasRoundStarted ? "unsupported_lobby_after_round_started" : null;
   }
   if (!hasRoundStarted) return `${actorCoordinate}_missing_round_started`;
+  if (actorCoordinate === "mingle_i" || actorCoordinate === "pre_vote_huddle") return null;
   if (actorCoordinate === "vote") return null;
 
   if (!hasResolvedEmpowered(canonicalEvents)) return `${actorCoordinate}_missing_empowered`;
-  if (actorCoordinate === "mingle") return null;
+  if (actorCoordinate === "post_vote_mingle") return null;
 
   if (!canonicalEvents.some((event) => event.type === "mingle.rooms_allocated")) {
     return `${actorCoordinate}_missing_mingle_allocation`;
@@ -211,6 +212,9 @@ function validateActorCoordinatePrerequisites(
   const candidateResolution = latestEvent(canonicalEvents, "power.candidates_resolved");
   if (!candidateResolution) return `${actorCoordinate}_missing_candidate_resolution`;
   if (actorCoordinate === "reveal") {
+    return candidateResolution.payload.autoEliminated ? `${actorCoordinate}_auto_eliminate_unsupported` : null;
+  }
+  if (actorCoordinate === "pre_council_huddle" || actorCoordinate === "council") {
     return candidateResolution.payload.autoEliminated ? `${actorCoordinate}_auto_eliminate_unsupported` : null;
   }
   if (actorCoordinate === "reckoning_lobby") {

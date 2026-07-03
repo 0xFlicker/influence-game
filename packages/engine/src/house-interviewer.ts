@@ -12,6 +12,7 @@ import type { LlmToolChoiceMode } from "./llm-client";
 import { Phase } from "./types";
 import type { MingleIntentSummary, UUID } from "./types";
 import type { TokenTracker } from "./token-tracker";
+import type { AllianceHuddleOutcome, AllianceHuddleWindow } from "./types";
 import {
   inferModelCapabilities,
   type ModelReasoningEffort,
@@ -103,6 +104,63 @@ export interface HouseMingleAssignmentResult {
   reasoningContext?: string;
 }
 
+export interface HouseAllianceHuddleCandidate {
+  allianceId: UUID;
+  name: string;
+  memberNames: string[];
+  purpose: string;
+  timebox?: string | null;
+  priorOutcomeCount: number;
+}
+
+export interface HouseAllianceHuddleScheduleContext {
+  round: number;
+  phase: Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE;
+  window: AllianceHuddleWindow;
+  budget: number;
+  alivePlayers: string[];
+  candidates: HouseAllianceHuddleCandidate[];
+}
+
+export interface HouseAllianceHuddleScheduleItem {
+  allianceId: UUID;
+  rationale: string;
+}
+
+export interface HouseAllianceHuddleScheduleResult {
+  scheduled: HouseAllianceHuddleScheduleItem[];
+  skipped: HouseAllianceHuddleScheduleItem[];
+  rationale?: string;
+  thinking?: string;
+  reasoningContext?: string;
+}
+
+export interface HouseAllianceHuddleOutcomeContext {
+  round: number;
+  phase: Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE;
+  window: AllianceHuddleWindow;
+  alliance: {
+    id: UUID;
+    name: string;
+    memberNames: string[];
+    purpose: string;
+    timebox?: string | null;
+  };
+  transcript: Array<{ from: string; text: string }>;
+}
+
+export interface HouseAllianceHuddleOutcomeResult {
+  ask: string;
+  plan: string;
+  promises: string[];
+  dissent: string[];
+  confidence: AllianceHuddleOutcome["confidence"];
+  posture: AllianceHuddleOutcome["posture"];
+  leakOrBetrayalClaims: string[];
+  thinking?: string;
+  reasoningContext?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Interface
 // ---------------------------------------------------------------------------
@@ -115,6 +173,10 @@ export type FollowUpResult =
 export interface IHouseInterviewer {
   /** Assign initial Mingle rooms from all hidden Mingle intents. The phase validator repairs/finalizes output. */
   assignMingleRooms(context: HouseMingleAssignmentContext): Promise<HouseMingleAssignmentResult>;
+  /** Recommend scarce named-alliance huddles from active eligible alliances. The engine validates and repairs output. */
+  planAllianceHuddles(context: HouseAllianceHuddleScheduleContext): Promise<HouseAllianceHuddleScheduleResult>;
+  /** Summarize a completed named-alliance huddle into the official compact outcome memory. */
+  summarizeAllianceHuddle(context: HouseAllianceHuddleOutcomeContext): Promise<HouseAllianceHuddleOutcomeResult>;
   /** Update the private House Strategy Bible Packet from the previous packet and current producer evidence. */
   updateStrategyBible(context: HouseStrategyBibleUpdateContext): Promise<HouseStrategyBibleUpdateResult>;
   /** Generate a packet-backed concise House MC summary. */
@@ -219,6 +281,29 @@ function parseHouseMingleAssignmentRecord(parsed: Record<string, unknown>): Hous
   };
 }
 
+function normalizeHuddleScheduleItems(value: unknown): HouseAllianceHuddleScheduleItem[] {
+  return readRecordArray(value)
+    .map((record) => {
+      const allianceId = readString(record.allianceId);
+      if (!allianceId) return null;
+      return {
+        allianceId,
+        rationale: readString(record.rationale, "The House did not provide a detailed rationale."),
+      };
+    })
+    .filter((item): item is HouseAllianceHuddleScheduleItem => item !== null);
+}
+
+function parseHouseAllianceHuddleScheduleRecord(parsed: Record<string, unknown>): HouseAllianceHuddleScheduleResult {
+  return {
+    scheduled: normalizeHuddleScheduleItems(parsed.scheduled),
+    skipped: normalizeHuddleScheduleItems(parsed.skipped),
+    rationale: readNullableString(parsed.rationale) ?? undefined,
+    thinking: readNullableString(parsed.thinking) ?? undefined,
+    reasoningContext: readNullableString(parsed.reasoningContext) ?? undefined,
+  };
+}
+
 function readString(value: unknown, fallback = ""): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
@@ -237,6 +322,16 @@ function readStringArray(value: unknown): string[] {
 
 function readConfidence(value: unknown): HouseConfidence {
   return value === "high" || value === "medium" || value === "low" ? value : "low";
+}
+
+function readHuddlePosture(value: unknown): AllianceHuddleOutcome["posture"] {
+  return value === "coordinating" ||
+    value === "fracturing" ||
+    value === "performative" ||
+    value === "guarded" ||
+    value === "betrayal_watch"
+    ? value
+    : "guarded";
 }
 
 function readAllianceStatus(value: unknown): HouseAllianceHypothesis["status"] {
@@ -383,6 +478,29 @@ function parseHouseSummary(
     coveredWindow: readCoveredWindow(parsed.coveredWindow, context.coveredWindow),
     referencedAllianceNames: readStringArray(parsed.referencedAllianceNames),
     openQuestions: readStringArray(parsed.openQuestions),
+    thinking: readNullableString(parsed.thinking) ?? undefined,
+    reasoningContext: readNullableString(parsed.reasoningContext) ?? undefined,
+  };
+}
+
+function parseHouseAllianceHuddleOutcome(
+  parsed: Record<string, unknown>,
+  context: HouseAllianceHuddleOutcomeContext,
+): HouseAllianceHuddleOutcomeResult {
+  const transcriptFallback = context.transcript.length > 0
+    ? `Members discussed ${context.window === "pre_vote" ? "Vote" : "Council"} coordination.`
+    : `No explicit member messages were recorded for ${context.alliance.name}.`;
+  return {
+    ask: readString(
+      parsed.ask,
+      context.window === "pre_vote" ? "Align before the public Vote." : "Align before Council.",
+    ),
+    plan: readString(parsed.plan, transcriptFallback),
+    promises: readStringArray(parsed.promises),
+    dissent: readStringArray(parsed.dissent),
+    confidence: readConfidence(parsed.confidence),
+    posture: readHuddlePosture(parsed.posture),
+    leakOrBetrayalClaims: readStringArray(parsed.leakOrBetrayalClaims),
     thinking: readNullableString(parsed.thinking) ?? undefined,
     reasoningContext: readNullableString(parsed.reasoningContext) ?? undefined,
   };
@@ -851,6 +969,186 @@ Respond with JSON only:
         rooms: [],
         rationale: `House assignment failed; deterministic fallback will assign rooms (${message}).`,
       };
+    }
+  }
+
+  async planAllianceHuddles(context: HouseAllianceHuddleScheduleContext): Promise<HouseAllianceHuddleScheduleResult> {
+    const candidates = context.candidates
+      .map((candidate, index) => [
+        `${index + 1}. ${candidate.name} (${candidate.allianceId})`,
+        `members=${candidate.memberNames.join(", ")}`,
+        `purpose=${candidate.purpose}`,
+        `timebox=${candidate.timebox ?? "open-ended"}`,
+        `priorOutcomes=${candidate.priorOutcomeCount}`,
+      ].join("; "))
+      .join("\n");
+    const prompt = `Schedule scarce named-alliance huddles for Influence.
+
+Round: ${context.round}
+Phase: ${context.phase}
+Window: ${context.window}
+Global huddle budget: ${context.budget}
+Alive players: ${context.alivePlayers.join(", ")}
+
+Eligible active alliances:
+${candidates || "(none)"}
+
+Your job:
+- Choose which active alliances earn huddle time in this window.
+- You may schedule fewer than the budget, including zero, when the room does not need more private coordination.
+- Prefer huddles that create decision-relevant drama: vote leverage, Council danger, betrayal risk, underdog flips, dominance interruption, fresh tension, or unresolved promises.
+- Skip stale, redundant, or low-relevance alliances.
+- Use only alliance IDs listed above.
+- Do not invent alliances or expose this rationale to players.
+
+Respond with JSON only.`;
+
+    try {
+      const messages = [
+        { role: "system" as const, content: "You are The House producer scheduling scarce named-alliance huddles. Return JSON only." },
+        { role: "user" as const, content: prompt },
+      ];
+      const { parsed, response } = await this.callHouseJsonSchema({
+        action: "house-alliance-huddle-schedule",
+        source: "House/alliance-huddle-schedule",
+        round: context.round,
+        phase: context.phase,
+        messages,
+        schemaName: "house_alliance_huddle_schedule",
+        schema: {
+          type: "object",
+          properties: {
+            scheduled: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  allianceId: { type: "string" },
+                  rationale: { type: "string" },
+                },
+                required: ["allianceId", "rationale"],
+                additionalProperties: false,
+              },
+            },
+            skipped: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  allianceId: { type: "string" },
+                  rationale: { type: "string" },
+                },
+                required: ["allianceId", "rationale"],
+                additionalProperties: false,
+              },
+            },
+            rationale: { type: "string" },
+            thinking: { type: ["string", "null"] },
+          },
+          required: ["scheduled", "skipped", "rationale", "thinking"],
+          additionalProperties: false,
+        },
+        maxTokens: 1800,
+        temperature: 0.4,
+      });
+      const output = parseHouseAllianceHuddleScheduleRecord({
+        ...parsed,
+        reasoningContext: readString(parsed.reasoningContext) || LLMHouseInterviewer.extractReasoningContext(response.choices[0]?.message),
+      });
+      await this.emitPrivateDecisionTrace({
+        context: this.privateTraceContext("house-alliance-huddle-schedule", context.round, context.phase),
+        messages,
+        response,
+        output,
+      });
+      return output;
+    } catch (err) {
+      const scheduled = context.candidates.slice(0, context.budget).map((candidate) => ({
+        allianceId: candidate.allianceId,
+        rationale: `Fallback schedule: ${candidate.name} is active and within the ${context.budget}-huddle budget.`,
+      }));
+      const scheduledIds = new Set(scheduled.map((item) => item.allianceId));
+      return {
+        scheduled,
+        skipped: context.candidates
+          .filter((candidate) => !scheduledIds.has(candidate.allianceId))
+          .map((candidate) => ({
+            allianceId: candidate.allianceId,
+            rationale: `Fallback skip: the ${context.budget}-huddle budget was already spent.`,
+          })),
+        rationale: `House huddle scheduling failed; deterministic fallback applied (${err instanceof Error ? err.message : String(err)}).`,
+      };
+    }
+  }
+
+  async summarizeAllianceHuddle(context: HouseAllianceHuddleOutcomeContext): Promise<HouseAllianceHuddleOutcomeResult> {
+    const transcript = context.transcript.length > 0
+      ? context.transcript.map((entry) => `${entry.from}: "${entry.text}"`).join("\n")
+      : "(no member messages recorded)";
+    const prompt = `Summarize a completed named-alliance huddle into the official compact outcome memory.
+
+Round: ${context.round}
+Phase: ${context.phase}
+Window: ${context.window}
+Alliance: ${context.alliance.name}
+Members: ${context.alliance.memberNames.join(", ")}
+Purpose: ${context.alliance.purpose}
+Timebox: ${context.alliance.timebox ?? "open-ended"}
+
+Huddle transcript:
+${transcript}
+
+Your job:
+- Record the ask, plan, promises/protections, dissent, confidence, posture, and explicit leak or betrayal claims.
+- Do not invent loyalty or force agreement if members were guarded or silent.
+- Do not mutate the alliance terms; this outcome is tactical memory, not a new contract.
+- Keep the outcome compact and useful for future member-safe prompts.
+
+Respond with JSON only.`;
+
+    try {
+      const messages = [
+        { role: "system" as const, content: "You are The House producer summarizing named-alliance huddles. Return JSON only." },
+        { role: "user" as const, content: prompt },
+      ];
+      const { parsed, response } = await this.callHouseJsonSchema({
+        action: "house-alliance-huddle-outcome",
+        source: "House/alliance-huddle-outcome",
+        round: context.round,
+        phase: context.phase,
+        messages,
+        schemaName: "house_alliance_huddle_outcome",
+        schema: {
+          type: "object",
+          properties: {
+            ask: { type: "string" },
+            plan: { type: "string" },
+            promises: { type: "array", items: { type: "string" } },
+            dissent: { type: "array", items: { type: "string" } },
+            confidence: { type: "string", enum: ["low", "medium", "high"] },
+            posture: { type: "string", enum: ["coordinating", "fracturing", "performative", "guarded", "betrayal_watch"] },
+            leakOrBetrayalClaims: { type: "array", items: { type: "string" } },
+            thinking: { type: ["string", "null"] },
+          },
+          required: ["ask", "plan", "promises", "dissent", "confidence", "posture", "leakOrBetrayalClaims", "thinking"],
+          additionalProperties: false,
+        },
+        maxTokens: 1800,
+        temperature: 0.35,
+      });
+      const output = parseHouseAllianceHuddleOutcome({
+        ...parsed,
+        reasoningContext: readString(parsed.reasoningContext) || LLMHouseInterviewer.extractReasoningContext(response.choices[0]?.message),
+      }, context);
+      await this.emitPrivateDecisionTrace({
+        context: this.privateTraceContext("house-alliance-huddle-outcome", context.round, context.phase),
+        messages,
+        response,
+        output,
+      });
+      return output;
+    } catch {
+      return parseHouseAllianceHuddleOutcome({}, context);
     }
   }
 
@@ -1506,6 +1804,40 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
     return {
       rooms,
       rationale: "Template House assigned players by deterministic player order.",
+    };
+  }
+
+  async planAllianceHuddles(context: HouseAllianceHuddleScheduleContext): Promise<HouseAllianceHuddleScheduleResult> {
+    const scheduled = context.candidates.slice(0, context.budget).map((candidate) => ({
+      allianceId: candidate.allianceId,
+      rationale: `Template House scheduled ${candidate.name} by formation order within the ${context.budget}-huddle budget.`,
+    }));
+    const scheduledIds = new Set(scheduled.map((item) => item.allianceId));
+    return {
+      scheduled,
+      skipped: context.candidates
+        .filter((candidate) => !scheduledIds.has(candidate.allianceId))
+        .map((candidate) => ({
+          allianceId: candidate.allianceId,
+          rationale: `Template House skipped ${candidate.name} after the huddle budget was spent.`,
+        })),
+      rationale: "Template House used deterministic active-alliance order.",
+    };
+  }
+
+  async summarizeAllianceHuddle(context: HouseAllianceHuddleOutcomeContext): Promise<HouseAllianceHuddleOutcomeResult> {
+    const speakerNames = context.transcript.map((entry) => entry.from);
+    return {
+      ask: context.window === "pre_vote" ? "Align before the public Vote." : "Align before Council.",
+      plan: context.transcript.length > 0
+        ? `${context.alliance.name} heard ${speakerNames.join(", ")} coordinate around the alliance purpose.`
+        : `No explicit member messages were recorded for ${context.alliance.name}.`,
+      promises: [],
+      dissent: [],
+      confidence: context.transcript.length > 0 ? "medium" : "low",
+      posture: context.transcript.length > 0 ? "coordinating" : "guarded",
+      leakOrBetrayalClaims: [],
+      thinking: "Template House summarized the huddle deterministically.",
     };
   }
 

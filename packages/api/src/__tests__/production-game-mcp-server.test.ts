@@ -56,6 +56,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "read_game_turning_points",
       "read_projection",
       "read_round_facts",
+      "read_agent_alliances",
       "filter_events",
       "player_timeline",
       "list_cognitive_artifacts",
@@ -91,6 +92,12 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       { required: ["agentName"] },
     ]);
     expect(JSON.stringify(listAgentGamesTool.outputSchema)).toContain("finalJuryVoteTotal");
+    const agentAlliancesTool = tools.find((tool) => (tool as { name: string }).name === "read_agent_alliances") as {
+      inputSchema: { properties: Record<string, unknown> };
+    };
+    expect(agentAlliancesTool.inputSchema.properties).toHaveProperty("player");
+    expect(agentAlliancesTool.inputSchema.properties).toHaveProperty("playerId");
+    expect(agentAlliancesTool.inputSchema.properties).toHaveProperty("agentId");
     const juryTool = tools.find((tool) => (tool as { name: string }).name === "read_jury_breakdown") as {
       inputSchema: { properties: Record<string, unknown> };
       outputSchema: unknown;
@@ -130,6 +137,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "read_game_turning_points",
       "read_projection",
       "read_round_facts",
+      "read_agent_alliances",
       "filter_events",
       "player_timeline",
       "list_cognitive_artifacts",
@@ -148,6 +156,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "leave_queue",
     ]);
     expect(JSON.stringify(tools)).toContain("\"scopes\":[\"games:read\"]");
+    expect(JSON.stringify(tools)).toContain("private huddle artifacts, which remain owner-only");
     expect(JSON.stringify(tools)).toContain("\"scopes\":[\"agents:read\",\"agents:write\"]");
     expect(JSON.stringify(tools)).not.toContain("read_trace_content");
     expect(JSON.stringify(tools)).not.toContain("\"scopes\":[\"producer\"]");
@@ -646,6 +655,10 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         calls.push({ method: "readRoundFacts", access });
         return { roundFacts: null };
       },
+      readAgentAlliances: async (_args: unknown, access: unknown) => {
+        calls.push({ method: "readAgentAlliances", access });
+        return { allianceFacts: null };
+      },
       filterEvents: async (_args: unknown, access: unknown) => {
         calls.push({ method: "filterEvents", access });
         return { events: [] };
@@ -690,6 +703,12 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     }, GAMES_AUTH);
     await server.handle({
       jsonrpc: "2.0",
+      id: "agent-alliances",
+      method: "tools/call",
+      params: { name: "read_agent_alliances", arguments: { gameIdOrSlug: "game-1", player: "Ada" } },
+    }, GAMES_AUTH);
+    await server.handle({
+      jsonrpc: "2.0",
       id: "events",
       method: "tools/call",
       params: { name: "filter_events", arguments: { gameIdOrSlug: "game-1" } },
@@ -726,6 +745,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       { method: "listGames", access: GAMES_AUTH },
       { method: "readProjection", access: GAMES_AUTH },
       { method: "readRoundFacts", access: GAMES_AUTH },
+      { method: "readAgentAlliances", access: GAMES_AUTH },
       { method: "filterEvents", access: GAMES_AUTH },
       { method: "playerTimeline", access: GAMES_AUTH },
       { method: "listCognitiveArtifacts", access: GAMES_AUTH },
@@ -922,6 +942,7 @@ function fakeReadModel(
     readGameTurningPoints: async () => ({ schemaVersion: 1, ok: true, turningPoints: [] }),
     readProjection: async () => ({ projection: null }),
     readRoundFacts: async () => ({ roundFacts: null }),
+    readAgentAlliances: async () => ({ allianceFacts: null }),
     filterEvents: async () => ({ events: [] }),
     playerTimeline: async () => ({ events: [] }),
     inspectDurableRun: async () => ({ durableRun: null }),

@@ -17,6 +17,20 @@ import {
 } from "./exposure-bench";
 import { replayCanonicalEvents, type CanonicalGameProjection } from "./game-projection";
 import type {
+  AllianceArchiveReason,
+  AllianceAmendmentInput,
+  AllianceCloseReason,
+  AllianceCounterInput,
+  AllianceHuddleOutcome,
+  AllianceHuddleScheduleRecord,
+  AllianceHuddleSessionRecord,
+  AllianceProposalInput,
+  AllianceProposalLineage,
+  AllianceProposalResponse,
+  AllianceProposalVersion,
+  AllianceRecord,
+  AllianceResponseInput,
+  AllianceTerms,
   UUID,
   Player,
   VoteTally,
@@ -40,6 +54,11 @@ export interface GameStateOptions {
   now?: () => number;
 }
 
+export interface AllianceMutationOptions {
+  phase?: Phase;
+  sourcePointers?: CanonicalSourcePointer[];
+}
+
 interface AppendCanonicalEventOptions {
   phase?: Phase | null;
   round?: number;
@@ -47,6 +66,8 @@ interface AppendCanonicalEventOptions {
   visibility?: CanonicalEventVisibility;
   sourcePointers?: CanonicalSourcePointer[];
 }
+
+const ALLIANCE_COUNTER_LIMIT = 2;
 
 function serializeInitialCandidateResolution(resolution: InitialExposureBenchResolution): Record<string, unknown> {
   return {
@@ -90,6 +111,85 @@ function serializeShieldReplacementResolution(resolution: ShieldReplacementResol
   };
 }
 
+function cloneAllianceTerms(terms: AllianceTerms): AllianceTerms {
+  return {
+    name: terms.name,
+    memberIds: [...terms.memberIds],
+    purpose: terms.purpose,
+    timebox: terms.timebox,
+  };
+}
+
+function cloneAllianceProposalVersion(version: AllianceProposalVersion): AllianceProposalVersion {
+  return {
+    versionId: version.versionId,
+    proposerId: version.proposerId,
+    terms: cloneAllianceTerms(version.terms),
+    ...(version.requiredConsentMemberIds ? { requiredConsentMemberIds: [...version.requiredConsentMemberIds] } : {}),
+    counterIndex: version.counterIndex,
+    createdRound: version.createdRound,
+    createdAt: version.createdAt,
+  };
+}
+
+function cloneAllianceProposalLineage(lineage: AllianceProposalLineage): AllianceProposalLineage {
+  return {
+    id: lineage.id,
+    allianceId: lineage.allianceId,
+    status: lineage.status,
+    currentVersionId: lineage.currentVersionId,
+    versions: lineage.versions.map(cloneAllianceProposalVersion),
+    responsesByVersion: Object.fromEntries(
+      Object.entries(lineage.responsesByVersion).map(([versionId, responses]) => [
+        versionId,
+        { ...responses },
+      ]),
+    ),
+    createdRound: lineage.createdRound,
+    createdAt: lineage.createdAt,
+    resolvedRound: lineage.resolvedRound,
+    resolvedAt: lineage.resolvedAt,
+  };
+}
+
+function cloneAllianceRecord(alliance: AllianceRecord): AllianceRecord {
+  return {
+    id: alliance.id,
+    name: alliance.name,
+    memberIds: [...alliance.memberIds],
+    purpose: alliance.purpose,
+    timebox: alliance.timebox,
+    status: alliance.status,
+    createdRound: alliance.createdRound,
+    createdAt: alliance.createdAt,
+    updatedRound: alliance.updatedRound,
+    updatedAt: alliance.updatedAt,
+    lineageIds: [...alliance.lineageIds],
+    huddleOutcomeIds: [...alliance.huddleOutcomeIds],
+    ...(alliance.closedReason ? { closedReason: alliance.closedReason } : {}),
+    ...(alliance.archivedReason ? { archivedReason: alliance.archivedReason } : {}),
+  };
+}
+
+function cloneAllianceHuddleSchedule(schedule: AllianceHuddleScheduleRecord): AllianceHuddleScheduleRecord {
+  return structuredClone(schedule) as AllianceHuddleScheduleRecord;
+}
+
+function cloneAllianceHuddleSession(session: AllianceHuddleSessionRecord): AllianceHuddleSessionRecord {
+  return structuredClone(session) as AllianceHuddleSessionRecord;
+}
+
+function cloneAllianceHuddleOutcome(outcome: AllianceHuddleOutcome): AllianceHuddleOutcome {
+  return structuredClone(outcome) as AllianceHuddleOutcome;
+}
+
+function responsesForLineageVersion(
+  lineage: AllianceProposalLineage,
+  versionId: UUID,
+): Record<UUID, AllianceProposalResponse> {
+  return { ...(lineage.responsesByVersion[versionId] ?? {}) };
+}
+
 export class GameState {
   readonly gameId: UUID;
   private readonly canonicalEvents = new CanonicalEventLog();
@@ -114,6 +214,15 @@ export class GameState {
     number,
     { rooms: RoomAllocation[]; excluded: UUID[]; lastSessionExcluded: UUID[] }
   >();
+
+  // --- Named alliance state ---
+  private _allianceOrder: UUID[] = [];
+  private _alliances = new Map<UUID, AllianceRecord>();
+  private _allianceProposalLineageOrder: UUID[] = [];
+  private _allianceProposalLineages = new Map<UUID, AllianceProposalLineage>();
+  private _allianceHuddleSchedules: AllianceHuddleScheduleRecord[] = [];
+  private _allianceHuddleSessions = new Map<UUID, AllianceHuddleSessionRecord>();
+  private _allianceHuddleOutcomes = new Map<UUID, AllianceHuddleOutcome>();
 
   // --- Endgame state ---
   private _jury: JuryMember[] = [];
@@ -182,6 +291,35 @@ export class GameState {
         },
       ]),
     );
+    state._allianceOrder = [...projection.allianceOrder];
+    state._alliances = new Map(
+      projection.allianceOrder.map((id) => {
+        const alliance = projection.alliances[id];
+        if (!alliance) throw new Error(`Canonical projection missing alliance ${id}`);
+        return [id, cloneAllianceRecord(alliance)];
+      }),
+    );
+    state._allianceProposalLineageOrder = [...projection.allianceProposalLineageOrder];
+    state._allianceProposalLineages = new Map(
+      projection.allianceProposalLineageOrder.map((id) => {
+        const lineage = projection.allianceProposalLineages[id];
+        if (!lineage) throw new Error(`Canonical projection missing alliance proposal lineage ${id}`);
+        return [id, cloneAllianceProposalLineage(lineage)];
+      }),
+    );
+    state._allianceHuddleSchedules = projection.allianceHuddleSchedules.map(cloneAllianceHuddleSchedule);
+    state._allianceHuddleSessions = new Map(
+      Object.entries(projection.allianceHuddleSessions).map(([id, session]) => [
+        id,
+        cloneAllianceHuddleSession(session),
+      ]),
+    );
+    state._allianceHuddleOutcomes = new Map(
+      Object.entries(projection.allianceHuddleOutcomes).map(([id, outcome]) => [
+        id,
+        cloneAllianceHuddleOutcome(outcome),
+      ]),
+    );
     state._jury = projection.jury.map((juror) => ({ ...juror }));
     state._endgameStage = projection.endgameStage;
     state._cumulativeEmpowerVotes = new Map(
@@ -212,6 +350,185 @@ export class GameState {
       visibility: options.visibility,
       sourcePointers: options.sourcePointers,
     });
+  }
+
+  private nowIso(): string {
+    return new Date(this.now()).toISOString();
+  }
+
+  private assertAllianceMutationPhase(options: AllianceMutationOptions): Phase {
+    const phase = options.phase ?? Phase.MINGLE_I;
+    if (phase !== Phase.MINGLE_I) {
+      throw new Error("Alliance mutations are only legal during Mingle I");
+    }
+    return phase;
+  }
+
+  private setAllianceLineage(lineage: AllianceProposalLineage): void {
+    if (!this._allianceProposalLineages.has(lineage.id)) {
+      this._allianceProposalLineageOrder.push(lineage.id);
+    }
+    this._allianceProposalLineages.set(lineage.id, cloneAllianceProposalLineage(lineage));
+  }
+
+  private setAlliance(alliance: AllianceRecord): void {
+    if (!this._alliances.has(alliance.id)) {
+      this._allianceOrder.push(alliance.id);
+    }
+    this._alliances.set(alliance.id, cloneAllianceRecord(alliance));
+  }
+
+  private normalizeAllianceTerms(input: Pick<AllianceProposalInput, "proposerId" | "name" | "memberIds" | "purpose" | "timebox">): AllianceTerms {
+    const proposer = this._players.get(input.proposerId);
+    if (!proposer || proposer.status !== PlayerStatus.ALIVE) {
+      throw new Error(`Alliance proposer must be an alive player: ${input.proposerId}`);
+    }
+
+    const memberIds = Array.from(new Set(input.memberIds));
+    if (!memberIds.includes(input.proposerId)) {
+      throw new Error("Alliance proposer must be included in the member roster");
+    }
+    if (memberIds.length < 2) {
+      throw new Error("Alliance must include at least two live players");
+    }
+    for (const memberId of memberIds) {
+      const member = this._players.get(memberId);
+      if (!member || member.status !== PlayerStatus.ALIVE) {
+        throw new Error(`Alliance member must be an alive player: ${memberId}`);
+      }
+    }
+
+    const name = input.name.trim();
+    if (name.length === 0) throw new Error("Alliance name is required");
+    const purpose = input.purpose.trim();
+    if (purpose.length === 0) throw new Error("Alliance purpose is required");
+
+    return {
+      name,
+      memberIds,
+      purpose,
+      timebox: input.timebox ?? null,
+    };
+  }
+
+  private activeAllianceWithSameRoster(
+    memberIds: readonly UUID[],
+    excludeAllianceId?: UUID,
+  ): AllianceRecord | undefined {
+    const roster = new Set(memberIds);
+    return Array.from(this._alliances.values()).find((alliance) => {
+      if (alliance.status !== "active") return false;
+      if (excludeAllianceId && alliance.id === excludeAllianceId) return false;
+      if (alliance.memberIds.length !== roster.size) return false;
+      return alliance.memberIds.every((memberId) => roster.has(memberId));
+    });
+  }
+
+  private assertNoDuplicateActiveAllianceRoster(
+    memberIds: readonly UUID[],
+    excludeAllianceId?: UUID,
+  ): void {
+    const duplicate = this.activeAllianceWithSameRoster(memberIds, excludeAllianceId);
+    if (duplicate) {
+      throw new Error(`Active alliance already has the same member roster: ${duplicate.id}`);
+    }
+  }
+
+  private findAllianceVersion(
+    lineage: AllianceProposalLineage,
+    versionId: UUID,
+  ): AllianceProposalVersion | undefined {
+    return lineage.versions.find((version) => version.versionId === versionId);
+  }
+
+  private currentAllianceVersion(lineage: AllianceProposalLineage): AllianceProposalVersion {
+    const version = this.findAllianceVersion(lineage, lineage.currentVersionId);
+    if (!version) throw new Error(`Alliance proposal lineage ${lineage.id} has no current version`);
+    return version;
+  }
+
+  private allMembersAcceptedCurrentAllianceVersion(lineage: AllianceProposalLineage): boolean {
+    const version = this.currentAllianceVersion(lineage);
+    const responses = responsesForLineageVersion(lineage, version.versionId);
+    const requiredMemberIds = version.requiredConsentMemberIds ?? version.terms.memberIds;
+    return requiredMemberIds.every((memberId) => {
+      const response = responses[memberId];
+      return response === "accepted" || response === "trial";
+    });
+  }
+
+  private requiredConsentForAllianceVersion(
+    alliance: AllianceRecord | undefined,
+    terms: AllianceTerms,
+  ): UUID[] | undefined {
+    if (!alliance || alliance.status !== "active") return undefined;
+    const liveExistingMemberIds = alliance.memberIds.filter((memberId) => {
+      const player = this._players.get(memberId);
+      return player?.status === PlayerStatus.ALIVE;
+    });
+    return Array.from(new Set([...liveExistingMemberIds, ...terms.memberIds]));
+  }
+
+  private activateAllianceFromLineage(
+    lineage: AllianceProposalLineage,
+    options: Required<Pick<AllianceMutationOptions, "phase">> & Pick<AllianceMutationOptions, "sourcePointers">,
+  ): AllianceRecord {
+    const version = this.currentAllianceVersion(lineage);
+    const now = this.nowIso();
+    const activatedLineage: AllianceProposalLineage = {
+      ...cloneAllianceProposalLineage(lineage),
+      status: "activated",
+      resolvedRound: this._round,
+      resolvedAt: now,
+    };
+    const existing = this._alliances.get(lineage.allianceId);
+    const lineageIds = existing
+      ? Array.from(new Set([...existing.lineageIds, lineage.id]))
+      : [lineage.id];
+    const alliance: AllianceRecord = {
+      id: lineage.allianceId,
+      name: version.terms.name,
+      memberIds: [...version.terms.memberIds],
+      purpose: version.terms.purpose,
+      timebox: version.terms.timebox,
+      status: "active",
+      createdRound: existing?.createdRound ?? lineage.createdRound,
+      createdAt: existing?.createdAt ?? lineage.createdAt,
+      updatedRound: this._round,
+      updatedAt: now,
+      lineageIds,
+      huddleOutcomeIds: existing ? [...existing.huddleOutcomeIds] : [],
+    };
+
+    this.appendCanonicalEvent(existing ? "alliance.amendment_resolved" : "alliance.activated", {
+      lineage: activatedLineage,
+      alliance,
+    }, {
+      phase: options.phase,
+      visibility: "producer",
+      sourcePointers: options.sourcePointers,
+    });
+    this.setAllianceLineage(activatedLineage);
+    this.setAlliance(alliance);
+    return cloneAllianceRecord(alliance);
+  }
+
+  private isUniversalAlliance(alliance: AllianceRecord): boolean {
+    const aliveIds = this.getAlivePlayerIds();
+    const liveMemberIds = alliance.memberIds.filter((memberId) => {
+      const player = this._players.get(memberId);
+      return player?.status === PlayerStatus.ALIVE;
+    });
+    return aliveIds.length > 0
+      && liveMemberIds.length === aliveIds.length
+      && aliveIds.every((id) => liveMemberIds.includes(id));
+  }
+
+  private liveAllianceMemberCount(alliance: AllianceRecord): number {
+    return alliance.memberIds.filter((memberId) => {
+      const player = this._players.get(memberId);
+      return player?.status === PlayerStatus.ALIVE;
+    }).length;
   }
 
   getCanonicalEvents(): readonly CanonicalGameEvent[] {
@@ -350,14 +667,19 @@ export class GameState {
   // Room allocation tracking
   // ---------------------------------------------------------------------------
 
-  recordRoomAllocations(rooms: RoomAllocation[], excluded: UUID[], lastSessionExcluded = excluded): void {
+  recordRoomAllocations(
+    rooms: RoomAllocation[],
+    excluded: UUID[],
+    lastSessionExcluded = excluded,
+    phase: Phase.MINGLE | Phase.POST_VOTE_MINGLE = Phase.MINGLE,
+  ): void {
     this.appendCanonicalEvent("mingle.rooms_allocated", {
       round: this._round,
       rooms: rooms.map((room) => ({ ...room, playerIds: [...room.playerIds] })),
       excluded: [...excluded],
       lastSessionExcluded: [...lastSessionExcluded],
     }, {
-      phase: Phase.MINGLE,
+      phase,
       visibility: "producer",
     });
     this._roomAllocations.set(this._round, { rooms, excluded, lastSessionExcluded });
@@ -367,6 +689,378 @@ export class GameState {
     | { rooms: RoomAllocation[]; excluded: UUID[]; lastSessionExcluded: UUID[] }
     | undefined {
     return this._roomAllocations.get(round);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Named alliance tracking
+  // ---------------------------------------------------------------------------
+
+  getAlliance(id: UUID): AllianceRecord | undefined {
+    const alliance = this._alliances.get(id);
+    return alliance ? cloneAllianceRecord(alliance) : undefined;
+  }
+
+  getAllianceRecords(): AllianceRecord[] {
+    return this._allianceOrder
+      .map((id) => this._alliances.get(id))
+      .filter((alliance): alliance is AllianceRecord => Boolean(alliance))
+      .map(cloneAllianceRecord);
+  }
+
+  getAllianceProposalLineage(id: UUID): AllianceProposalLineage | undefined {
+    const lineage = this._allianceProposalLineages.get(id);
+    return lineage ? cloneAllianceProposalLineage(lineage) : undefined;
+  }
+
+  getAllianceProposalLineages(): AllianceProposalLineage[] {
+    return this._allianceProposalLineageOrder
+      .map((id) => this._allianceProposalLineages.get(id))
+      .filter((lineage): lineage is AllianceProposalLineage => Boolean(lineage))
+      .map(cloneAllianceProposalLineage);
+  }
+
+  getHuddleEligibleAlliances(): AllianceRecord[] {
+    return this.getAllianceRecords().filter((alliance) =>
+      alliance.status === "active"
+      && this.liveAllianceMemberCount(alliance) >= 2
+      && !this.isUniversalAlliance(alliance)
+    );
+  }
+
+  recordAllianceProposal(
+    input: AllianceProposalInput,
+    options: AllianceMutationOptions = {},
+  ): AllianceProposalVersion {
+    const phase = this.assertAllianceMutationPhase(options);
+    const allianceId = input.allianceId ?? createUUID();
+    const lineageId = input.lineageId ?? createUUID();
+    const versionId = input.versionId ?? createUUID();
+    if (this._allianceProposalLineages.has(lineageId)) {
+      throw new Error(`Alliance proposal lineage already exists: ${lineageId}`);
+    }
+    if (this._alliances.has(allianceId)) {
+      throw new Error(`Alliance already exists: ${allianceId}`);
+    }
+
+    const terms = this.normalizeAllianceTerms(input);
+    this.assertNoDuplicateActiveAllianceRoster(terms.memberIds);
+    const now = this.nowIso();
+    const version: AllianceProposalVersion = {
+      versionId,
+      proposerId: input.proposerId,
+      terms,
+      counterIndex: 0,
+      createdRound: this._round,
+      createdAt: now,
+    };
+    const lineage: AllianceProposalLineage = {
+      id: lineageId,
+      allianceId,
+      status: "open",
+      currentVersionId: versionId,
+      versions: [version],
+      responsesByVersion: {
+        [versionId]: { [input.proposerId]: "accepted" },
+      },
+      createdRound: this._round,
+      createdAt: now,
+      resolvedRound: null,
+      resolvedAt: null,
+    };
+
+    this.appendCanonicalEvent("alliance.proposal_submitted", { lineage }, {
+      phase,
+      visibility: "producer",
+      sourcePointers: options.sourcePointers,
+    });
+    this.setAllianceLineage(lineage);
+    return cloneAllianceProposalVersion(version);
+  }
+
+  recordAllianceAmendment(
+    input: AllianceAmendmentInput,
+    options: AllianceMutationOptions = {},
+  ): AllianceProposalVersion {
+    const phase = this.assertAllianceMutationPhase(options);
+    const alliance = this._alliances.get(input.allianceId);
+    if (!alliance || alliance.status !== "active") {
+      throw new Error(`Alliance amendment requires an active alliance: ${input.allianceId}`);
+    }
+    const lineageId = input.lineageId ?? createUUID();
+    const versionId = input.versionId ?? createUUID();
+    if (this._allianceProposalLineages.has(lineageId)) {
+      throw new Error(`Alliance amendment lineage already exists: ${lineageId}`);
+    }
+
+    const terms = this.normalizeAllianceTerms(input);
+    this.assertNoDuplicateActiveAllianceRoster(terms.memberIds, alliance.id);
+    const requiredConsentMemberIds = this.requiredConsentForAllianceVersion(alliance, terms);
+    const now = this.nowIso();
+    const version: AllianceProposalVersion = {
+      versionId,
+      proposerId: input.proposerId,
+      terms,
+      ...(requiredConsentMemberIds ? { requiredConsentMemberIds } : {}),
+      counterIndex: 0,
+      createdRound: this._round,
+      createdAt: now,
+    };
+    const lineage: AllianceProposalLineage = {
+      id: lineageId,
+      allianceId: input.allianceId,
+      status: "open",
+      currentVersionId: versionId,
+      versions: [version],
+      responsesByVersion: {
+        [versionId]: { [input.proposerId]: "accepted" },
+      },
+      createdRound: this._round,
+      createdAt: now,
+      resolvedRound: null,
+      resolvedAt: null,
+    };
+
+    this.appendCanonicalEvent("alliance.proposal_submitted", { lineage }, {
+      phase,
+      visibility: "producer",
+      sourcePointers: options.sourcePointers,
+    });
+    this.setAllianceLineage(lineage);
+    return cloneAllianceProposalVersion(version);
+  }
+
+  recordAllianceResponse(
+    input: AllianceResponseInput,
+    options: AllianceMutationOptions = {},
+  ): AllianceRecord | null {
+    const phase = this.assertAllianceMutationPhase(options);
+    const existing = this._allianceProposalLineages.get(input.lineageId);
+    if (!existing) throw new Error(`Unknown alliance proposal lineage: ${input.lineageId}`);
+    if (existing.status !== "open") return null;
+    if (input.versionId !== existing.currentVersionId) {
+      throw new Error(`Alliance response must target current proposal version ${existing.currentVersionId}`);
+    }
+    const version = this.currentAllianceVersion(existing);
+    const requiredConsentMemberIds = version.requiredConsentMemberIds ?? version.terms.memberIds;
+    if (!requiredConsentMemberIds.includes(input.playerId)) {
+      throw new Error(`Alliance response player is not invited to the current version: ${input.playerId}`);
+    }
+
+    const player = this._players.get(input.playerId);
+    if (!player || player.status !== PlayerStatus.ALIVE) {
+      throw new Error(`Alliance response player must be alive: ${input.playerId}`);
+    }
+
+    const lineage = cloneAllianceProposalLineage(existing);
+    lineage.responsesByVersion[input.versionId] = {
+      ...responsesForLineageVersion(lineage, input.versionId),
+      [input.playerId]: input.response,
+    };
+    if (input.response === "declined") {
+      lineage.status = "declined";
+      lineage.resolvedRound = this._round;
+      lineage.resolvedAt = this.nowIso();
+    }
+
+    this.appendCanonicalEvent("alliance.response_recorded", {
+      lineage,
+      playerId: input.playerId,
+      response: input.response,
+      versionId: input.versionId,
+    }, {
+      phase,
+      visibility: "producer",
+      sourcePointers: options.sourcePointers,
+    });
+    this.setAllianceLineage(lineage);
+
+    if (lineage.status === "open" && this.allMembersAcceptedCurrentAllianceVersion(lineage)) {
+      return this.activateAllianceFromLineage(lineage, { phase, sourcePointers: options.sourcePointers });
+    }
+
+    return null;
+  }
+
+  recordAllianceCounter(
+    input: AllianceCounterInput,
+    options: AllianceMutationOptions = {},
+  ): AllianceProposalVersion | null {
+    const phase = this.assertAllianceMutationPhase(options);
+    const existing = this._allianceProposalLineages.get(input.lineageId);
+    if (!existing) throw new Error(`Unknown alliance proposal lineage: ${input.lineageId}`);
+    if (existing.status !== "open") return null;
+    const currentVersion = this.currentAllianceVersion(existing);
+    const currentRequiredConsentMemberIds = currentVersion.requiredConsentMemberIds ?? currentVersion.terms.memberIds;
+    if (!currentRequiredConsentMemberIds.includes(input.proposerId)) {
+      throw new Error(`Alliance counter proposer is not invited to the current version: ${input.proposerId}`);
+    }
+    const counterCount = existing.versions.filter((version) => version.counterIndex > 0).length;
+    if (counterCount >= ALLIANCE_COUNTER_LIMIT) return null;
+
+    const terms = this.normalizeAllianceTerms(input);
+    this.assertNoDuplicateActiveAllianceRoster(terms.memberIds, existing.allianceId);
+    const versionId = input.versionId ?? createUUID();
+    if (this.findAllianceVersion(existing, versionId)) {
+      throw new Error(`Alliance proposal version already exists: ${versionId}`);
+    }
+
+    const requiredConsentMemberIds = this.requiredConsentForAllianceVersion(this._alliances.get(existing.allianceId), terms);
+    const version: AllianceProposalVersion = {
+      versionId,
+      proposerId: input.proposerId,
+      terms,
+      ...(requiredConsentMemberIds ? { requiredConsentMemberIds } : {}),
+      counterIndex: counterCount + 1,
+      createdRound: this._round,
+      createdAt: this.nowIso(),
+    };
+    const lineage = cloneAllianceProposalLineage(existing);
+    lineage.currentVersionId = versionId;
+    lineage.versions.push(version);
+    lineage.responsesByVersion[versionId] = { [input.proposerId]: "accepted" };
+
+    this.appendCanonicalEvent("alliance.counter_submitted", { lineage }, {
+      phase,
+      visibility: "producer",
+      sourcePointers: options.sourcePointers,
+    });
+    this.setAllianceLineage(lineage);
+    return cloneAllianceProposalVersion(version);
+  }
+
+  expireAllianceProposal(lineageId: UUID, options: AllianceMutationOptions = {}): AllianceProposalLineage | null {
+    const phase = this.assertAllianceMutationPhase(options);
+    const existing = this._allianceProposalLineages.get(lineageId);
+    if (!existing || existing.status !== "open") return null;
+    const lineage: AllianceProposalLineage = {
+      ...cloneAllianceProposalLineage(existing),
+      status: "expired",
+      resolvedRound: this._round,
+      resolvedAt: this.nowIso(),
+    };
+    this.appendCanonicalEvent("alliance.proposal_expired", { lineage }, {
+      phase,
+      visibility: "producer",
+      sourcePointers: options.sourcePointers,
+    });
+    this.setAllianceLineage(lineage);
+    return cloneAllianceProposalLineage(lineage);
+  }
+
+  closeUniversalAlliancesBeforeMingle(phase: Phase.MINGLE_I | Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE = Phase.MINGLE_I): UUID[] {
+    const closedIds: UUID[] = [];
+    for (const alliance of this.getAllianceRecords()) {
+      if (alliance.status !== "active" || !this.isUniversalAlliance(alliance)) continue;
+      const closed: AllianceRecord = {
+        ...alliance,
+        status: "closed",
+        updatedRound: this._round,
+        updatedAt: this.nowIso(),
+        closedReason: "universal_all_alive_before_mingle",
+      };
+      this.appendCanonicalEvent("alliance.closed", { alliance: closed }, {
+        phase,
+        visibility: "producer",
+      });
+      this.setAlliance(closed);
+      closedIds.push(closed.id);
+    }
+    return closedIds;
+  }
+
+  closeAlliance(id: UUID, reason: AllianceCloseReason, phase: Phase | null = null): AllianceRecord | null {
+    const alliance = this._alliances.get(id);
+    if (!alliance || alliance.status !== "active") return null;
+    const closed: AllianceRecord = {
+      ...cloneAllianceRecord(alliance),
+      status: "closed",
+      updatedRound: this._round,
+      updatedAt: this.nowIso(),
+      closedReason: reason,
+    };
+    this.appendCanonicalEvent("alliance.closed", { alliance: closed }, {
+      phase,
+      visibility: "producer",
+    });
+    this.setAlliance(closed);
+    return cloneAllianceRecord(closed);
+  }
+
+  archiveAlliance(id: UUID, reason: AllianceArchiveReason, phase: Phase | null = null): AllianceRecord | null {
+    const alliance = this._alliances.get(id);
+    if (!alliance || alliance.status !== "active") return null;
+    const archived: AllianceRecord = {
+      ...cloneAllianceRecord(alliance),
+      status: "archived",
+      updatedRound: this._round,
+      updatedAt: this.nowIso(),
+      archivedReason: reason,
+    };
+    this.appendCanonicalEvent("alliance.archived", { alliance: archived }, {
+      phase,
+      visibility: "producer",
+    });
+    this.setAlliance(archived);
+    return cloneAllianceRecord(archived);
+  }
+
+  refreshAllianceMembershipForAlivePlayers(): UUID[] {
+    const archivedIds: UUID[] = [];
+    for (const alliance of this.getAllianceRecords()) {
+      if (alliance.status !== "active" || this.liveAllianceMemberCount(alliance) >= 2) continue;
+      const archived = this.archiveAlliance(alliance.id, "fewer_than_two_live_members");
+      if (archived) archivedIds.push(archived.id);
+    }
+    return archivedIds;
+  }
+
+  recordAllianceHuddleSchedule(schedule: AllianceHuddleScheduleRecord): void {
+    this.appendCanonicalEvent(
+      schedule.decision === "scheduled" ? "alliance.huddle_scheduled" : "alliance.huddle_skipped",
+      { schedule: cloneAllianceHuddleSchedule(schedule) },
+      {
+        phase: schedule.window === "pre_vote" ? Phase.PRE_VOTE_HUDDLE : Phase.PRE_COUNCIL_HUDDLE,
+        visibility: "producer",
+      },
+    );
+    this._allianceHuddleSchedules.push(cloneAllianceHuddleSchedule(schedule));
+  }
+
+  recordAllianceHuddleCompleted(session: AllianceHuddleSessionRecord): void {
+    this.appendCanonicalEvent("alliance.huddle_completed", { session: cloneAllianceHuddleSession(session) }, {
+      phase: session.window === "pre_vote" ? Phase.PRE_VOTE_HUDDLE : Phase.PRE_COUNCIL_HUDDLE,
+      visibility: "producer",
+    });
+    this._allianceHuddleSessions.set(session.id, cloneAllianceHuddleSession(session));
+  }
+
+  recordAllianceHuddleOutcome(outcome: AllianceHuddleOutcome): AllianceRecord {
+    const alliance = this._alliances.get(outcome.allianceId);
+    if (!alliance) throw new Error(`Cannot record huddle outcome for unknown alliance ${outcome.allianceId}`);
+    const updatedAlliance: AllianceRecord = {
+      ...cloneAllianceRecord(alliance),
+      updatedRound: this._round,
+      updatedAt: outcome.createdAt,
+      huddleOutcomeIds: Array.from(new Set([...alliance.huddleOutcomeIds, outcome.id])),
+    };
+    this.appendCanonicalEvent("alliance.huddle_outcome_recorded", {
+      outcome: cloneAllianceHuddleOutcome(outcome),
+      alliance: updatedAlliance,
+    }, {
+      phase: outcome.window === "pre_vote" ? Phase.PRE_VOTE_HUDDLE : Phase.PRE_COUNCIL_HUDDLE,
+      visibility: "producer",
+    });
+    this._allianceHuddleOutcomes.set(outcome.id, cloneAllianceHuddleOutcome(outcome));
+    this.setAlliance(updatedAlliance);
+    return cloneAllianceRecord(updatedAlliance);
+  }
+
+  getAllianceHuddleSchedules(): AllianceHuddleScheduleRecord[] {
+    return this._allianceHuddleSchedules.map(cloneAllianceHuddleSchedule);
+  }
+
+  getAllianceHuddleOutcomes(): AllianceHuddleOutcome[] {
+    return Array.from(this._allianceHuddleOutcomes.values()).map(cloneAllianceHuddleOutcome);
   }
 
   // ---------------------------------------------------------------------------
@@ -816,6 +1510,7 @@ export class GameState {
     this._players.set(id, { ...player, status: PlayerStatus.ELIMINATED });
     // Add to jury
     this.addToJury(id, this._round);
+    this.refreshAllianceMembershipForAlivePlayers();
   }
 
   // ---------------------------------------------------------------------------

@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type OpenAI from "openai";
-import { LLMHouseInterviewer } from "../house-interviewer";
+import { LLMHouseInterviewer, type HouseAllianceHuddleOutcomeContext, type HouseAllianceHuddleScheduleContext } from "../house-interviewer";
 import type { PrivateDecisionTrace } from "../game-runner";
 import { modelCatalogEntryById } from "../model-catalog";
+import { Phase } from "../types";
 
 type StubResponse = {
   content?: string | null;
@@ -119,6 +120,81 @@ function assignmentContent(overrides: Record<string, unknown> = {}): string {
   });
 }
 
+function makeHuddleScheduleContext(): HouseAllianceHuddleScheduleContext {
+  return {
+    round: 2,
+    phase: Phase.PRE_VOTE_HUDDLE,
+    window: "pre_vote" as const,
+    budget: 2,
+    alivePlayers: ["Atlas", "Mira", "Vera"],
+    candidates: [
+      {
+        allianceId: "alliance-glass",
+        name: "Glass Table",
+        memberNames: ["Atlas", "Mira"],
+        purpose: "Coordinate the public Vote.",
+        timebox: "through council",
+        priorOutcomeCount: 0,
+      },
+      {
+        allianceId: "alliance-veil",
+        name: "Veil Signal",
+        memberNames: ["Mira", "Vera"],
+        purpose: "Compare pressure reads.",
+        timebox: null,
+        priorOutcomeCount: 1,
+      },
+    ],
+  };
+}
+
+function huddleScheduleContent(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    scheduled: [
+      { allianceId: "alliance-glass", rationale: "Fresh vote leverage and low prior huddle fatigue." },
+    ],
+    skipped: [
+      { allianceId: "alliance-veil", rationale: "Recent huddle outcome already covers this window." },
+    ],
+    rationale: "Spend scarce time where the Vote is most decision-relevant.",
+    thinking: "Glass Table has the sharper immediate choice.",
+    ...overrides,
+  });
+}
+
+function makeHuddleOutcomeContext(): HouseAllianceHuddleOutcomeContext {
+  return {
+    round: 2,
+    phase: Phase.PRE_VOTE_HUDDLE,
+    window: "pre_vote" as const,
+    alliance: {
+      id: "alliance-glass",
+      name: "Glass Table",
+      memberNames: ["Atlas", "Mira"],
+      purpose: "Coordinate the public Vote.",
+      timebox: "through council",
+    },
+    transcript: [
+      { from: "Atlas", text: "Mira, hold the empower vote on me and I will keep expose pressure on Vera." },
+      { from: "Mira", text: "I can do that if you do not undercut me after Council." },
+    ],
+  };
+}
+
+function huddleOutcomeContent(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    ask: "Atlas asked Mira to hold an empower vote on him.",
+    plan: "Atlas and Mira align on exposing Vera while preserving Council flexibility.",
+    promises: ["Atlas promised not to undercut Mira after Council."],
+    dissent: [],
+    confidence: "medium",
+    posture: "coordinating",
+    leakOrBetrayalClaims: [],
+    thinking: "The plan is concrete but still conditional.",
+    ...overrides,
+  });
+}
+
 afterEach(() => {
   if (ORIGINAL_LOCAL_STRUCTURED_MIN_TOKENS === undefined) {
     delete process.env.INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS;
@@ -130,6 +206,74 @@ afterEach(() => {
   } else {
     process.env.INFLUENCE_LLM_STRUCTURED_MIN_TOKENS = ORIGINAL_STRUCTURED_MIN_TOKENS;
   }
+});
+
+describe("LLMHouseInterviewer structured alliance huddles", () => {
+  it("requests strict JSON schema output for huddle scheduling", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const house = new LLMHouseInterviewer(
+      makeOpenAIStub(requests, [{ content: huddleScheduleContent() }]),
+      "test-model",
+    );
+
+    const result = await house.planAllianceHuddles(makeHuddleScheduleContext());
+
+    expect(result.scheduled).toEqual([
+      { allianceId: "alliance-glass", rationale: "Fresh vote leverage and low prior huddle fatigue." },
+    ]);
+    expect(result.skipped).toEqual([
+      { allianceId: "alliance-veil", rationale: "Recent huddle outcome already covers this window." },
+    ]);
+    expect(result.rationale).toBe("Spend scarce time where the Vote is most decision-relevant.");
+    expect(result.thinking).toBe("Glass Table has the sharper immediate choice.");
+    expect(requests[0]?.response_format).toMatchObject({
+      type: "json_schema",
+      json_schema: {
+        name: "house_alliance_huddle_schedule",
+        strict: true,
+      },
+    });
+  });
+
+  it("falls back to deterministic huddle scheduling after invalid output", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const house = new LLMHouseInterviewer(
+      makeOpenAIStub(requests, [{ content: "not json" }, { content: "" }]),
+      "test-model",
+    );
+
+    const result = await house.planAllianceHuddles(makeHuddleScheduleContext());
+
+    expect(result.scheduled.map((item) => item.allianceId)).toEqual(["alliance-glass", "alliance-veil"]);
+    expect(result.skipped).toEqual([]);
+    expect(result.rationale).toBe("House huddle scheduling failed; deterministic fallback applied (invalid_json).");
+  });
+
+  it("summarizes completed huddles into compact official outcomes", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const house = new LLMHouseInterviewer(
+      makeOpenAIStub(requests, [{ content: huddleOutcomeContent() }]),
+      "test-model",
+    );
+
+    const result = await house.summarizeAllianceHuddle(makeHuddleOutcomeContext());
+
+    expect(result).toMatchObject({
+      ask: "Atlas asked Mira to hold an empower vote on him.",
+      plan: "Atlas and Mira align on exposing Vera while preserving Council flexibility.",
+      promises: ["Atlas promised not to undercut Mira after Council."],
+      confidence: "medium",
+      posture: "coordinating",
+      thinking: "The plan is concrete but still conditional.",
+    });
+    expect(requests[0]?.response_format).toMatchObject({
+      type: "json_schema",
+      json_schema: {
+        name: "house_alliance_huddle_outcome",
+        strict: true,
+      },
+    });
+  });
 });
 
 describe("LLMHouseInterviewer structured Mingle assignment", () => {

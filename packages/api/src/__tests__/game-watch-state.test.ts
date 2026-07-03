@@ -36,7 +36,7 @@ describe("GameWatchState", () => {
 
     expect(state).not.toBeNull();
     expect(state).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       gameId,
       slug: "watch-live-projection",
       source: "durable_projection",

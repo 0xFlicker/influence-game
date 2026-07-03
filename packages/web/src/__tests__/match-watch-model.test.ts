@@ -43,7 +43,7 @@ function baseGame(): GameDetail {
 
 function watchState(overrides: Partial<GameWatchState> = {}): GameWatchState {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     gameId: "game-1",
     slug: "public-game",
     status: "in_progress",
@@ -365,7 +365,8 @@ describe("match watch model", () => {
     ]);
     expect(model.sourceLabel).toBe("Durable Projection");
     expect(model.phaseSegments.find((segment) => segment.key === "VOTE")?.state).toBe("current");
-    expect(model.phaseSegments.find((segment) => segment.key === "MINGLE")?.state).toBe("past");
+    expect(model.phaseSegments.find((segment) => segment.key === "MINGLE_I")?.state).toBe("past");
+    expect(model.phaseSegments.find((segment) => segment.key === "PRE_VOTE_HUDDLE")?.state).toBe("past");
   });
 
   it("builds pressure status tags for post-vote cast rows", () => {

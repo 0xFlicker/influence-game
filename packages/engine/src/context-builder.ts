@@ -6,9 +6,9 @@
 
 import type { GameState } from "./game-state";
 import type { TranscriptLogger } from "./transcript-logger";
-import type { UUID, RoomAllocation, JuryMember, MingleRoomCount } from "./types";
+import type { AllianceProposalLineage, AllianceProposalVersion, AllianceRecord, UUID, RoomAllocation, JuryMember, MingleRoomCount } from "./types";
 import { Phase } from "./types";
-import type { JudgmentQuestionHistoryEntry, MingleIntentSummary, PhaseContext, PublicTranscriptContextEntry, RecentDecisionContextEntry, RevealedVoteLedgerEntry } from "./game-runner.types";
+import type { JudgmentQuestionHistoryEntry, MingleIntentSummary, PhaseContext, PlayerAllianceContext, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PublicTranscriptContextEntry, RecentDecisionContextEntry, RevealedVoteLedgerEntry } from "./game-runner.types";
 import { computeJurySize } from "./types";
 import type { PostVotePressureProjection } from "./post-vote-pressure";
 import type { CanonicalGameEvent } from "./canonical-events";
@@ -77,12 +77,100 @@ export class ContextBuilder {
     return ids.map((id) => this.name(id)).join(", ");
   }
 
+  private allianceTermsForContext(terms: { name: string; memberIds: UUID[]; purpose: string; timebox: string | null }): PlayerAllianceContextTerms {
+    return {
+      name: terms.name,
+      memberIds: [...terms.memberIds],
+      memberNames: terms.memberIds.map((id) => this.name(id)),
+      purpose: terms.purpose,
+      timebox: terms.timebox,
+    };
+  }
+
+  private consentMemberIdsForAllianceVersion(version: AllianceProposalVersion): UUID[] {
+    return version.requiredConsentMemberIds ?? version.terms.memberIds;
+  }
+
+  private agentParticipatedInLineage(lineage: AllianceProposalLineage, agentId: UUID): boolean {
+    for (const version of lineage.versions) {
+      if (version.proposerId === agentId) return true;
+      if (version.terms.memberIds.includes(agentId)) return true;
+      if (this.consentMemberIdsForAllianceVersion(version).includes(agentId)) return true;
+    }
+    return Object.values(lineage.responsesByVersion).some((responses) => agentId in responses);
+  }
+
+  private allianceRecordVisibleToAgent(alliance: AllianceRecord, agentId: UUID): boolean {
+    if (alliance.memberIds.includes(agentId)) return true;
+    return alliance.lineageIds.some((lineageId) => {
+      const lineage = this.gameState.getAllianceProposalLineage(lineageId);
+      return lineage ? this.agentParticipatedInLineage(lineage, agentId) : false;
+    });
+  }
+
+  private buildAllianceContext(agentId: UUID): PlayerAllianceContext {
+    const huddleOutcomes = this.gameState.getDomainProjection().allianceHuddleOutcomes;
+    const activeAlliances = this.gameState.getAllianceRecords()
+      .filter((alliance) => alliance.memberIds.includes(agentId))
+      .map((alliance) => ({
+        id: alliance.id,
+        status: alliance.status,
+        ...this.allianceTermsForContext(alliance),
+        huddleOutcomes: alliance.huddleOutcomeIds
+          .map((id) => huddleOutcomes[id])
+          .filter((outcome): outcome is NonNullable<typeof outcome> => Boolean(outcome))
+          .map((outcome) => ({
+            id: outcome.id,
+            round: outcome.round,
+            ask: outcome.ask,
+            plan: outcome.plan,
+            promises: [...outcome.promises],
+            dissent: [...outcome.dissent],
+            confidence: outcome.confidence,
+            posture: outcome.posture,
+            leakOrBetrayalClaims: [...outcome.leakOrBetrayalClaims],
+          })),
+      }));
+
+    const proposals: PlayerAllianceContextProposal[] = [];
+    for (const lineage of this.gameState.getAllianceProposalLineages()) {
+      const currentVersion = lineage.versions.find((version) => version.versionId === lineage.currentVersionId);
+      if (!currentVersion || !this.agentParticipatedInLineage(lineage, agentId)) continue;
+      const responses = lineage.responsesByVersion[currentVersion.versionId] ?? {};
+      proposals.push({
+        lineageId: lineage.id,
+        allianceId: lineage.allianceId,
+        status: lineage.status,
+        currentVersionId: currentVersion.versionId,
+        currentTerms: this.allianceTermsForContext(currentVersion.terms),
+        yourResponse: responses[agentId] ?? null,
+      });
+    }
+
+    return {
+      activeAlliances,
+      openProposals: proposals.filter((proposal) => proposal.status === "open"),
+      proposalHistory: proposals.filter((proposal) => proposal.status !== "open"),
+    };
+  }
+
   private decisionPhaseOrder(phase: Phase): number {
     switch (phase) {
+      case Phase.MINGLE_I:
+        return 5;
+      case Phase.PRE_VOTE_HUDDLE:
+        return 8;
       case Phase.VOTE:
         return 10;
+      case Phase.MINGLE:
+      case Phase.POST_VOTE_MINGLE:
+        return 15;
       case Phase.POWER:
         return 20;
+      case Phase.REVEAL:
+        return 25;
+      case Phase.PRE_COUNCIL_HUDDLE:
+        return 28;
       case Phase.COUNCIL:
         return 30;
       case Phase.JURY_QUESTIONS:
@@ -140,6 +228,30 @@ export class ContextBuilder {
         return `${prefix}: Power action: ${event.payload.action.action}${event.payload.action.action === "pass" ? "" : ` -> ${this.name(event.payload.action.target)}`}.`;
       case "power.candidates_resolved":
         return `${prefix}: Power resolved candidates=${event.payload.candidates ? this.formatPlayerList(event.payload.candidates) : "none"}; shield granted=${this.name(event.payload.shieldGranted)}; auto-eliminated=${this.name(event.payload.autoEliminated)}; expose scores ${this.formatCounts(event.payload.exposeScores)}.`;
+      case "alliance.proposal_submitted":
+        return `${prefix}: Alliance proposal submitted for ${event.payload.lineage.versions[0]?.terms.name ?? event.payload.lineage.allianceId}.`;
+      case "alliance.response_recorded":
+        return `${prefix}: ${this.name(event.payload.playerId)} responded ${event.payload.response} to alliance proposal ${event.payload.lineage.versions.find((version) => version.versionId === event.payload.versionId)?.terms.name ?? event.payload.lineage.allianceId}.`;
+      case "alliance.counter_submitted":
+        return `${prefix}: Alliance counter submitted for ${event.payload.lineage.versions.find((version) => version.versionId === event.payload.lineage.currentVersionId)?.terms.name ?? event.payload.lineage.allianceId}.`;
+      case "alliance.activated":
+        return `${prefix}: Alliance activated: ${event.payload.alliance.name} with ${this.formatPlayerList(event.payload.alliance.memberIds)}.`;
+      case "alliance.amendment_resolved":
+        return `${prefix}: Alliance amended: ${event.payload.alliance.name} with ${this.formatPlayerList(event.payload.alliance.memberIds)}.`;
+      case "alliance.proposal_expired":
+        return `${prefix}: Alliance proposal expired for ${event.payload.lineage.versions.find((version) => version.versionId === event.payload.lineage.currentVersionId)?.terms.name ?? event.payload.lineage.allianceId}.`;
+      case "alliance.closed":
+        return `${prefix}: Alliance closed: ${event.payload.alliance.name}${event.payload.alliance.closedReason ? ` (${event.payload.alliance.closedReason})` : ""}.`;
+      case "alliance.archived":
+        return `${prefix}: Alliance archived: ${event.payload.alliance.name}${event.payload.alliance.archivedReason ? ` (${event.payload.alliance.archivedReason})` : ""}.`;
+      case "alliance.huddle_scheduled":
+        return `${prefix}: Alliance huddle scheduled for ${event.payload.schedule.allianceId} in ${event.payload.schedule.window}: ${event.payload.schedule.rationale}`;
+      case "alliance.huddle_skipped":
+        return `${prefix}: Alliance huddle skipped for ${event.payload.schedule.allianceId} in ${event.payload.schedule.window}: ${event.payload.schedule.rationale}`;
+      case "alliance.huddle_completed":
+        return `${prefix}: Alliance huddle completed for ${event.payload.session.allianceId} in ${event.payload.session.window}.`;
+      case "alliance.huddle_outcome_recorded":
+        return `${prefix}: Alliance huddle outcome recorded for ${event.payload.alliance?.name ?? event.payload.outcome.allianceId}: ${event.payload.outcome.plan}`;
       case "council.vote_cast":
         return `${prefix}: ${this.name(event.payload.voterId)} voted at Council to eliminate ${this.name(event.payload.target)}.`;
       case "council.elimination_resolved":
@@ -163,8 +275,38 @@ export class ContextBuilder {
     }
   }
 
-  private buildGameEventRecord(): string[] {
-    return this.gameState.getCanonicalEvents().map((event) => this.formatCanonicalEvent(event));
+  private canonicalEventVisibleToAgent(event: CanonicalGameEvent, agentId: UUID): boolean {
+    switch (event.type) {
+      case "alliance.proposal_submitted":
+      case "alliance.response_recorded":
+      case "alliance.counter_submitted":
+      case "alliance.proposal_expired":
+        return this.agentParticipatedInLineage(event.payload.lineage, agentId);
+      case "alliance.activated":
+      case "alliance.amendment_resolved":
+        return this.allianceRecordVisibleToAgent(event.payload.alliance, agentId)
+          || this.agentParticipatedInLineage(event.payload.lineage, agentId);
+      case "alliance.closed":
+      case "alliance.archived":
+        return this.allianceRecordVisibleToAgent(event.payload.alliance, agentId);
+      case "alliance.huddle_scheduled":
+      case "alliance.huddle_skipped":
+      case "alliance.huddle_completed":
+        return false;
+      case "alliance.huddle_outcome_recorded": {
+        const alliance = event.payload.alliance
+          ?? this.gameState.getAlliance(event.payload.outcome.allianceId);
+        return alliance ? this.allianceRecordVisibleToAgent(alliance, agentId) : false;
+      }
+      default:
+        return true;
+    }
+  }
+
+  private buildGameEventRecord(agentId: UUID): string[] {
+    return this.gameState.getCanonicalEvents()
+      .filter((event) => this.canonicalEventVisibleToAgent(event, agentId))
+      .map((event) => this.formatCanonicalEvent(event));
   }
 
   private buildPublicTranscriptContext(): PublicTranscriptContextEntry[] {
@@ -405,10 +547,11 @@ export class ContextBuilder {
         ? extra.postVotePressure ?? undefined
         : this.currentPostVotePressure ?? undefined,
       revealedVoteLedger: this.revealedVoteLedger.map((entry) => ({ ...entry })),
-      gameEventRecord: this.buildGameEventRecord(),
+      gameEventRecord: this.buildGameEventRecord(agentId),
       publicTranscriptContext: this.buildPublicTranscriptContext(),
       judgmentQuestionHistory: this.buildJudgmentQuestionHistory(),
       recentDecisions: this.buildRecentDecisionHistory(agentId),
+      allianceContext: this.buildAllianceContext(agentId),
       latestEliminatedPlayerName: this.latestResolvedEliminationName(),
       roomCount: roomInfo?.roomCount,
       roomCounts: roomInfo?.roomCounts ?? (this.currentRoomCounts.length > 0 ? [...this.currentRoomCounts] : undefined),

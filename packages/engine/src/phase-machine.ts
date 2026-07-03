@@ -258,16 +258,24 @@ export function createPhaseMachine() {
         ],
         exit: [{ type: "emitPhaseEnded", params: { phase: Phase.LOBBY } }],
         on: {
-          PHASE_COMPLETE: "vote",
+          PHASE_COMPLETE: "mingle_i",
           UPDATE_ALIVE_PLAYERS: { actions: ["updateAlivePlayers"] },
         },
       },
 
-      mingle: {
-        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.MINGLE } }],
-        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.MINGLE } }],
+      mingle_i: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.MINGLE_I } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.MINGLE_I } }],
         on: {
-          PHASE_COMPLETE: "power",
+          PHASE_COMPLETE: "pre_vote_huddle",
+        },
+      },
+
+      pre_vote_huddle: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.PRE_VOTE_HUDDLE } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.PRE_VOTE_HUDDLE } }],
+        on: {
+          PHASE_COMPLETE: "vote",
         },
       },
 
@@ -278,7 +286,15 @@ export function createPhaseMachine() {
           VOTES_TALLIED: {
             actions: ["setEmpowered"],
           },
-          PHASE_COMPLETE: "mingle",
+          PHASE_COMPLETE: "post_vote_mingle",
+        },
+      },
+
+      post_vote_mingle: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.POST_VOTE_MINGLE } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.POST_VOTE_MINGLE } }],
+        on: {
+          PHASE_COMPLETE: "power",
         },
       },
 
@@ -309,6 +325,14 @@ export function createPhaseMachine() {
       reveal: {
         entry: [{ type: "emitPhaseStarted", params: { phase: Phase.REVEAL } }],
         exit: [{ type: "emitPhaseEnded", params: { phase: Phase.REVEAL } }],
+        on: {
+          PHASE_COMPLETE: "pre_council_huddle",
+        },
+      },
+
+      pre_council_huddle: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.PRE_COUNCIL_HUDDLE } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.PRE_COUNCIL_HUDDLE } }],
         on: {
           PHASE_COMPLETE: "council",
         },

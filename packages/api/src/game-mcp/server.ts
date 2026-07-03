@@ -3,6 +3,7 @@ import type { GameMcpAuthContext } from "./auth.js";
 import type { McpOAuthScope } from "../services/mcp-scope-policy.js";
 import {
   ProductionGameMcpReadModel,
+  type ProductionGameMcpAgentAlliancesOptions,
   type ProductionGameMcpAgentGamesOptions,
   type ProductionGameMcpEventFilter,
   type ProductionGameMcpPlayerTimelineOptions,
@@ -201,6 +202,10 @@ export class ProductionGameMcpJsonRpcServer {
       if (name === "read_round_facts") {
         requireAnyScope(auth, ["games:read", "producer"]);
         return content(await this.readModel.readRoundFacts(roundFactsArgs(args), auth));
+      }
+      if (name === "read_agent_alliances") {
+        requireAnyScope(auth, ["games:read", "producer"]);
+        return content(await this.readModel.readAgentAlliances(agentAlliancesArgs(args), auth));
       }
       if (name === "filter_events") {
         requireAnyScope(auth, ["games:read", "producer"]);
@@ -485,6 +490,21 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
       readOnlyHint: true,
     }),
     tool({
+      name: "read_agent_alliances",
+      description: includeProducerTools
+        ? "Read one player's owner-scoped named-alliance facts: involved proposals, member alliances, huddle messages, and member-safe huddle outcomes."
+        : "Read your agent's named-alliance facts: proposals involving them, alliances they belong to, huddle messages, and member-safe huddle outcomes.",
+      properties: {
+        gameIdOrSlug: { type: "string" },
+        player: { type: "string" },
+        playerId: { type: "string" },
+        agentId: { type: "string" },
+      },
+      required: ["gameIdOrSlug"],
+      scopes: gameReadScopes,
+      readOnlyHint: true,
+    }),
+    tool({
       name: "filter_events",
       description: includeProducerTools
         ? "Filter persisted canonical events by game, type, phase, actor, sequence range, visibility mode, or limit."
@@ -543,7 +563,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
       name: "read_cognitive_artifact",
       description: includeProducerTools
         ? "Read one authorized split cognitive artifact payload, or producer diagnostics for unavailable split artifacts."
-        : "Read one authorized split cognitive artifact payload by game, artifact id, artifact type, and actor player id. Reasoning is owner-only; thinking and strategy are participant-visible.",
+        : "Read one authorized split cognitive artifact payload by game, artifact id, artifact type, and actor player id. Reasoning is owner-only; thinking and strategy are participant-visible except private huddle artifacts, which remain owner-only.",
       properties: {
         gameIdOrSlug: { type: "string" },
         artifactId: { type: "string" },
@@ -1359,6 +1379,15 @@ function roundFactsArgs(args: Record<string, unknown>): ProductionGameMcpRoundFa
   return {
     gameIdOrSlug: requiredString(args, "gameIdOrSlug"),
     round: optionalNumber(args, "round"),
+  };
+}
+
+function agentAlliancesArgs(args: Record<string, unknown>): ProductionGameMcpAgentAlliancesOptions {
+  return {
+    gameIdOrSlug: requiredString(args, "gameIdOrSlug"),
+    player: optionalString(args, "player"),
+    playerId: optionalString(args, "playerId"),
+    agentId: optionalString(args, "agentId"),
   };
 }
 

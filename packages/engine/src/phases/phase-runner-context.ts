@@ -34,6 +34,7 @@ export function agentTurnSourcePointer(
   action: string,
   round: number,
   phase: Phase,
+  turnPass?: number,
 ): CanonicalSourcePointer {
   return {
     kind: "agent_turn",
@@ -41,6 +42,7 @@ export function agentTurnSourcePointer(
     action,
     round,
     phase,
+    ...(turnPass != null ? { turnPass } : {}),
   };
 }
 

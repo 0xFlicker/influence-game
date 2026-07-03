@@ -395,6 +395,8 @@ function artifactPolicyContext(row: CognitiveArtifactRow) {
     gameId: row.gameId,
     artifactType: row.artifactType,
     actorRole: row.actorRole,
+    action: row.action,
+    phase: row.phase,
     actorPlayerId: row.actorPlayerId,
     actorUserId: row.actorUserId,
     actorAgentProfileId: row.actorAgentProfileId,

@@ -141,6 +141,76 @@ Status legend:
 - Promotion trigger: multiple API instances become a real deployment goal, or observer routing across instances becomes painful.
 - Suggested slice if promoted: Postgres advisory lock around game execution before adding Redis. Redis pub/sub only when multi-instance websocket delivery is required.
 
+### W6. Alliance huddle short-mode compression
+
+- Status: `future`
+- Consolidates: named-alliance brainstorm deferred short-mode rule.
+- Sources: `docs/ideation/2026-07-02-named-alliances-ideation.html:406-413`
+- Signal: the current named-alliance rules keep the full-drama route and rely on existing token-maxing rules. A dedicated short-mode huddle design should wait until real simulations show which huddles are expensive without adding strategy.
+- Concrete seam: alliance round cadence, House huddle scheduling, simulation token accounting, local model evaluation summaries.
+- Promotion trigger: named-alliance simulations show huddle windows dominate token spend or make large-cast games drag.
+- Suggested slice if promoted: design a compressed alliance-huddle mode that preserves post-vote fallout and cuts optional private coordination first.
+
+### W7. Alliance membership and speaking caps
+
+- Status: `future`
+- Consolidates: named-alliance brainstorm deferred membership-cap rule.
+- Sources: `docs/ideation/2026-07-02-named-alliances-ideation.html:406`, `docs/ideation/2026-07-02-named-alliances-ideation.html:447-459`
+- Signal: overlapping alliances are expected to create interesting strategy, so the current rules intentionally do not cap how many alliances a player may join. Caps should be evidence-driven, not preemptive tidiness.
+- Concrete seam: alliance roster context, House huddle scheduling, huddle-seat budgets, prompt context budgeting, simulation diagnostics for multi-alliance agents.
+- Promotion trigger: agents join too many alliances to reason coherently, repeat huddle appearances crowd out other scheduled alliances, or large overlapping alliances multiply speaking turns beyond the intended token budget.
+- Suggested slice if promoted: evaluate soft caps first, such as House fatigue penalties, per-window speaking appearance limits, huddle-seat budgets, or warning-only diagnostics before hard membership caps.
+
+### W8. Universal-alliance resolution phase
+
+- Status: `future`
+- Consolidates: named-alliance brainstorm universal-alliance alternative.
+- Sources: `docs/ideation/2026-07-02-named-alliances-ideation.html:501-513`
+- Signal: v1 closes any alliance containing all alive players before huddle eligibility and lets agents handle the fallout inside Mingle I. A special resolution phase is heavier ceremony and should earn its keep.
+- Concrete seam: alliance lifecycle rules, Mingle I setup, House huddle scheduling, closed-alliance context.
+- Promotion trigger: automatic closure feels too abrupt in simulation transcripts, or agents repeatedly fail to convert universal alliances into smaller playable coalitions.
+- Suggested slice if promoted: add a bounded universal-alliance resolution moment with a max round count, then force close, fracture, or disband before the vote-facing Mingle I starts.
+
+### W9. Alliance-aware private vote reveal
+
+- Status: `future`
+- Consolidates: named-alliance vote-visibility question.
+- Sources: `docs/ideation/2026-07-02-named-alliances-ideation.html:406`, `docs/ideation/2026-07-02-named-alliances-ideation.html:537-545`
+- Signal: current rules keep votes public. Private votes or specialized alliance vote reveal phases could add deception, but they also risk hiding the post-vote social pressure that currently powers Mingle fallout.
+- Concrete seam: vote visibility rules, post-vote Mingle context, alliance receipts, public watch/replay surfaces.
+- Promotion trigger: public vote visibility makes alliances too deterministic or makes betrayal/fallout less dramatic than expected.
+- Suggested slice if promoted: design an alliance-aware vote reveal phase that preserves public spectacle while controlling when hidden coordination becomes known.
+
+### W10. Post-vote alliance fracture and reaffirmation window
+
+- Status: `future`
+- Consolidates: named-alliance document-review finding about stale alliance status before Council.
+- Sources: `docs/plans/2026-07-02-002-feat-named-alliances-rules-plan.md`
+- Signal: v1 keeps alliance mutation inside Mingle I. Post-vote Mingle and pre-Council huddles can surface betrayal, repair, and dissent as social evidence, but they do not formally change alliance status before Council.
+- Concrete seam: post-vote Mingle, pre-Council huddle outcomes, alliance lifecycle states, huddle eligibility.
+- Promotion trigger: simulations show Council huddles repeatedly operating on stale active alliances after obvious public betrayals, making coordination less legible or less strategic.
+- Suggested slice if promoted: add a narrow existing-alliance-only consequence window where members may formally renounce, reaffirm, fracture, close, or dissolve without allowing new alliance formation.
+
+### W11. Delayed huddle outcome reveal and recap rules
+
+- Status: `future`
+- Consolidates: named-alliance document-review finding about hidden huddles lacking audience payoff.
+- Sources: `docs/plans/2026-07-02-002-feat-named-alliances-rules-plan.md`
+- Signal: v1 keeps hidden alliance membership, terms, and huddle outcomes out of public live play unless players reveal them. That protects secrecy, but viewer/replay/postgame surfaces may eventually need a delayed reveal or recap contract.
+- Concrete seam: public watch/replay surfaces, postgame summaries, huddle outcomes, producer-safe versus player-safe visibility.
+- Promotion trigger: viewers cannot understand major vote or Council moves because causal huddle outcomes remain invisible after the relevant strategic window closes.
+- Suggested slice if promoted: define when huddle outcomes become recap-eligible after vote, Council, elimination, or postgame boundaries, while preserving live-match secrecy.
+
+### W12. Structured trial-alliance expiry
+
+- Status: `future`
+- Consolidates: named-alliance implementation review finding about trial timebox enforcement.
+- Sources: `docs/rules-page-content.md`, `docs/plans/2026-07-03-001-feat-named-alliances-implementation-plan.md`
+- Signal: v1 can activate a trial alliance when all required members consent, but the timebox is still social/textual. The engine should not guess expiry from arbitrary prose.
+- Concrete seam: alliance action schema, alliance proposal version terms, phase-boundary lifecycle refresh, huddle eligibility, rules copy.
+- Promotion trigger: simulations show trial alliances persisting past their stated boundary or agents using vague timeboxes that make active status misleading.
+- Suggested slice if promoted: replace free-form trial expiry with a structured boundary enum and archive trial alliances automatically at the named phase or round boundary.
+
 ## Closed / Removed
 
 - Public websocket transcript boundary hardening: already landed on local `origin/main` via `1bc1277a` / PR #37. This branch needs to merge or rebase main, not queue new work.

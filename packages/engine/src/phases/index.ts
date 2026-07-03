@@ -5,6 +5,7 @@
 export type { PhaseRunnerContext, PhaseActor } from "./phase-runner-context";
 export { runIntroductionPhase } from "./introduction";
 export { runLobbyPhase, runReckoningLobby, runTribunalLobby, computeLobbyMessagesPerPlayer } from "./lobby";
+export { runMingleIAlliancePhase, runAllianceHuddleWindow } from "./alliances";
 export { runMinglePhase, computeRoomCount, allocateRooms } from "./mingle";
 export { runRumorPhase } from "./rumor";
 export { runVotePhase, runReckoningVote, runTribunalVote } from "./vote";

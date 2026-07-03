@@ -95,7 +95,7 @@ export interface GameWatchFinalState {
 }
 
 export interface GameWatchState {
-  schemaVersion: 2;
+  schemaVersion: 3;
   gameId: string;
   slug?: string;
   status: GameStatus;
@@ -227,7 +227,7 @@ export async function buildGameWatchState(
   const final = buildFinalState(game.status, source, winner, result);
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     gameId: game.id,
     ...(game.slug && { slug: game.slug }),
     status: game.status,
@@ -376,8 +376,10 @@ function isPressureDisplayPhase(phase: string | null): boolean {
   return (
     phase === "VOTE" ||
     phase === "MINGLE" ||
+    phase === "POST_VOTE_MINGLE" ||
     phase === "POWER" ||
     phase === "REVEAL" ||
+    phase === "PRE_COUNCIL_HUDDLE" ||
     phase === "COUNCIL"
   );
 }

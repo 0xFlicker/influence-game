@@ -18,6 +18,9 @@ import type {
 import type {
   AgentCallOptions,
   AgentResponse,
+  AllianceAction,
+  AllianceHuddlePromptContext,
+  AllianceHuddleTurnAction,
   CandidateChoiceRequest,
   CandidateSelectionDecision,
   IAgent,
@@ -151,7 +154,16 @@ The lobby is where personality meets strategy — but NEVER overtly. The surface
 - If someone was eliminated: ONE brief acknowledgment is fine (especially if they were your ally). Then MOVE ON. Do not write eulogies. Do not dwell. The game continues.
 ${round === 1 ? `\nROUND 1 — FRESH START: This is your first real conversation with the group! The vibe is excited, curious, and playful. You're genuinely interested in these people — ask questions, riff on what others said, share something fun about yourself. Think: first night in a new house together, everyone buzzing with energy. Keep it LIGHT, CHEERY, and FUN. No snark, no shade, no pointed remarks yet — you haven't been wronged by anyone, there's nothing to be snarky about! Save the edge for when someone actually gives you a reason.` : isEarlyGame ? `\nROUND 2 — GETTING COMFORTABLE: You've had one round together and you're starting to form impressions. The energy is still mostly positive and curious, but you can start having mild opinions — gentle teasing, playful disagreements, expressing who you vibe with. Think: second day at summer camp. Light personality friction can emerge naturally, but the overall tone stays warm and engaged.` : `\nMID/LATE GAME (Round ${round}): You have history with these people now. Your lobby messages should carry weight — reference things that happened (without being explicit about strategy). A pointed joke about someone's "loyalty" or a casual observation about who always ends up in the same Mingle room together. The audience should feel the tension beneath the banter.`}`;
 
+    case Phase.MINGLE_I:
+      return `PHASE BEHAVIOR - MINGLE I (ALLIANCE ACTION WINDOW):
+This is the formal named-alliance window before the standard Vote. Use structured alliance actions, not open room chat, to propose, accept, decline, counter, defer, trial, or pass on official alliances.
+- Official alliance truth comes from explicit consent to the same proposal version.
+- You may belong to multiple active alliances.
+- Do not assume secret loyalty just because an alliance exists; commitments can still be fake, fragile, or strategic.
+- Focus on who you want named in a deal, what the deal is for, and how long it should last.`;
+
     case Phase.MINGLE:
+    case Phase.POST_VOTE_MINGLE:
       return `PHASE BEHAVIOR — MINGLE (STRATEGY PHASE):
 This is the right time for game talk inside your current room. Messages here are private to the occupants of the room you are in right now (not one-to-one DMs, not public to the whole game).
 In the room you can:
@@ -441,6 +453,80 @@ const TOOL_MINGLE_INTENT: ChatCompletionTool = {
         ...STRATEGIC_DECISION_TOOL_PROPERTIES,
       },
       required: ["thinking", "seekPlayers", "avoidPlayers", "preferredRoomSize", "purpose", "provisionalTarget", "noTargetReason", "openingAsk", ...STRATEGIC_LENS_REQUIRED, ...STRATEGIC_DECISION_REQUIRED],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+};
+
+const TOOL_ALLIANCE_ACTION: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "take_alliance_action",
+    description: "Take one Mingle I named-alliance action: propose, accept, decline, counter, defer, trial, amend, or pass.",
+    parameters: {
+      type: "object",
+      properties: {
+        thinking: { type: "string", description: "Your internal reasoning for this alliance action (hidden from other players)" },
+        action: {
+          type: "string",
+          enum: ["propose", "accept", "decline", "counter", "defer", "trial", "amend", "pass"],
+          description: "The official alliance action to attempt this pass.",
+        },
+        name: {
+          type: ["string", "null"],
+          description: "Alliance name for propose/counter/amend, otherwise null.",
+        },
+        memberNames: {
+          type: "array",
+          items: { type: "string" },
+          description: "Player names for propose/counter/amend. Include yourself and all intended active members after the terms change.",
+        },
+        purpose: {
+          type: ["string", "null"],
+          description: "Alliance purpose for propose/counter/amend, otherwise null.",
+        },
+        timebox: {
+          type: ["string", "null"],
+          description: "How long the alliance should last, or null if intentionally open-ended.",
+        },
+        lineageId: {
+          type: ["string", "null"],
+          description: "Proposal lineage id for accept/decline/defer/trial/counter; active alliance id for amend; otherwise null. Use ids from alliance context only.",
+        },
+        versionId: {
+          type: ["string", "null"],
+          description: "Proposal version id for accept/decline/defer/trial, optional new version id for counter/amend, or null to target/generate automatically.",
+        },
+        ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+      },
+      required: ["thinking", "action", "name", "memberNames", "purpose", "timebox", "lineageId", "versionId", ...STRATEGIC_DECISION_REQUIRED],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+};
+
+const TOOL_ALLIANCE_HUDDLE_TURN: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "alliance_huddle_turn",
+    description: "Take one private speaking opportunity inside a House-scheduled named-alliance huddle.",
+    parameters: {
+      type: "object",
+      properties: {
+        thinking: { type: "string", description: "Your internal reasoning for this huddle message (hidden from other players)" },
+        message: {
+          type: ["string", "null"],
+          description: "Your private huddle message to alliance members, or null when passing.",
+        },
+        noReply: {
+          type: "boolean",
+          description: "Set true only when intentionally saying nothing in this huddle opportunity.",
+        },
+        ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+      },
+      required: ["thinking", "message", "noReply", ...STRATEGIC_DECISION_REQUIRED],
       additionalProperties: false,
     },
     strict: true,
@@ -797,6 +883,23 @@ function normalizePreferredRoomSize(value: unknown): MinglePreferredRoomSize {
 
 function normalizeStrategicLens(value: unknown): StrategicLens {
   return STRATEGIC_LENSES.includes(value as StrategicLens) ? value as StrategicLens : "broad_read";
+}
+
+const ALLIANCE_ACTION_KINDS = [
+  "propose",
+  "accept",
+  "decline",
+  "counter",
+  "defer",
+  "trial",
+  "amend",
+  "pass",
+] as const;
+
+function normalizeAllianceActionKind(value: unknown): AllianceAction["action"] {
+  return typeof value === "string" && ALLIANCE_ACTION_KINDS.includes(value as AllianceAction["action"])
+    ? value as AllianceAction["action"]
+    : "pass";
 }
 
 function readOptionalStrategicLens(value: unknown): StrategicLens | undefined {
@@ -1717,6 +1820,198 @@ Use the form_mingle_intent tool.`;
     } catch (err) {
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getMingleIntent error="${err instanceof Error ? err.message : err}" fallback=skipped`);
       return null;
+    }
+  }
+
+  async getAllianceAction(ctx: PhaseContext): Promise<AllianceAction> {
+    const otherPlayers = ctx.alivePlayers
+      .filter((player) => player.id !== this.id)
+      .map((player) => player.name);
+    const openPrompt = `
+## Your Task
+This is Mingle I, the official named-alliance action window before the public Vote.
+
+The House resolves one proposal at a time. You may take exactly one structured alliance action now:
+- propose: create a named alliance offer with explicit members, purpose, and optional timebox.
+- accept/decline/defer/trial: respond to an open proposal version from your alliance context.
+- counter: offer changed terms for an open proposal lineage.
+- amend: offer changed terms for one of your active alliances by using its active alliance id.
+- pass: do nothing in this opportunity.
+
+Rules:
+- Official alliance truth requires every required live member to accept or trial the same proposal version.
+- You may be in multiple alliances.
+- Do not propose an alliance of only yourself.
+- Do not use alliance chat here; this is a structured request window.
+- If you are responding to a visible open proposal, target that lineage and accept, decline, defer, trial, or counter.
+- If there is no open proposal directed at you, either propose one concrete alliance or pass.
+- Do not recreate an active alliance with the exact same member roster; use its future huddle if The House grants one.
+- Overlapping alliances are legal. Layer them when it helps: a final-two pair can sit inside a final-three voting pod, which can sit inside a final-four shield or majority bloc.
+- Do not default every proposal to you plus the same two perceived stable players. Choose 2 players for a tight promise, 3 for a voting pod, or 4 for a larger shield/majority.
+
+Alliance name rules when proposing:
+- Pick a name that is unique from visible active alliances, open proposals, and proposal history in your official alliance context.
+- Base the name on a concrete shared trait, contrast, promise, risk, strategy, or relationship among the proposed members.
+- Keep it short, interesting, engaging, and fun. It should feel like a watchable social-strategy faction, not a generic team label.
+- Avoid vague stability words as the main identity: "Calm", "Anchor", "Core", "Axis", "Circle", "Steady", "Solid", "Trust".
+- Good examples: "The Late Voters", "Mirror Knives", "The Smoke Test", "Back Row Pact", "The Alibi Pair".
+- Bad examples: "Calm Anchor Trio", "Steady Core", "Trust Circle", "Calm Axis".
+
+Available other players: ${otherPlayers.join(", ") || "none"}
+If proposing, name a concrete purpose tied to the next Vote or Council and make the roster size intentional.`;
+
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    try {
+      const result = await this.callTool<{
+        thinking?: string;
+        action?: unknown;
+        name?: unknown;
+        memberNames?: unknown;
+        purpose?: unknown;
+        timebox?: unknown;
+        lineageId?: unknown;
+        versionId?: unknown;
+        decisionLog?: unknown;
+        reasoningContext?: string;
+      }>(
+        this.buildUserPrompt(ctx) + openPrompt,
+        TOOL_ALLIANCE_ACTION,
+        220,
+        sys,
+        this.traceOptions(ctx, { action: "alliance-action", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
+      );
+      const metadata = this.strategicDecisionMetadata(result);
+      this.recordStrategicDecision(ctx, "alliance-action", "Alliance Action", metadata);
+      const action = normalizeAllianceActionKind(result.action);
+      const base = {
+        thinking: result.thinking,
+        reasoningContext: result.reasoningContext,
+        ...metadata,
+      };
+
+      if (action === "propose") {
+        const name = normalizeNullableString(result.name);
+        const purpose = normalizeNullableString(result.purpose);
+        const memberNames = normalizeStringArray(result.memberNames);
+        if (!name || !purpose || memberNames.length === 0) return { action: "pass", ...base };
+        return {
+          action,
+          name,
+          memberNames,
+          purpose,
+          timebox: normalizeNullableString(result.timebox),
+          ...base,
+        };
+      }
+
+      if (action === "accept" || action === "decline" || action === "defer" || action === "trial") {
+        const lineageId = normalizeNullableString(result.lineageId);
+        if (!lineageId) return { action: "pass", ...base };
+        return {
+          action,
+          lineageId,
+          versionId: normalizeNullableString(result.versionId),
+          ...base,
+        };
+      }
+
+      if (action === "counter" || action === "amend") {
+        const lineageId = normalizeNullableString(result.lineageId);
+        const name = normalizeNullableString(result.name);
+        const purpose = normalizeNullableString(result.purpose);
+        const memberNames = normalizeStringArray(result.memberNames);
+        if (!lineageId || !name || !purpose || memberNames.length === 0) return { action: "pass", ...base };
+        return {
+          action,
+          lineageId,
+          name,
+          memberNames,
+          purpose,
+          timebox: normalizeNullableString(result.timebox),
+          ...base,
+        };
+      }
+
+      return { action: "pass", ...base };
+    } catch (err) {
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getAllianceAction error="${err instanceof Error ? err.message : err}" fallback=pass`);
+      return {
+        action: "pass",
+        thinking: "Alliance action failed; passing.",
+        reasoningContext: err instanceof Error ? err.message : String(err),
+        decisionLog: "fallback: alliance action failed",
+      };
+    }
+  }
+
+  async getAllianceHuddleTurn(
+    ctx: PhaseContext,
+    huddle: AllianceHuddlePromptContext,
+    conversationHistory?: Array<{ from: string; text: string }>,
+  ): Promise<AllianceHuddleTurnAction> {
+    const history = conversationHistory ?? [];
+    const historyText = history.length > 0
+      ? `\n## Huddle So Far\n${history.map((entry) => `${entry.from}: "${entry.text}"`).join("\n")}\n`
+      : "";
+    const windowGoal = huddle.window === "pre_vote"
+      ? "coordinate before the public Vote"
+      : "coordinate before Council after Power / Reveal changed the pressure map";
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const prompt = this.buildUserPrompt(ctx) + `
+## Your Task - Alliance Huddle
+The House granted your named alliance one scarce huddle session.
+
+Alliance: ${huddle.allianceName}
+Members: ${huddle.memberNames.join(", ")}
+Purpose: ${huddle.purpose}
+Timebox: ${huddle.timebox ?? "open-ended"}
+Window: ${huddle.window}
+Goal: ${windowGoal}.
+${historyText}
+
+Rules:
+- This huddle is private to the listed alliance members.
+- You get exactly one speaking opportunity in this huddle session.
+- You may ask for a vote plan, protection, pressure target, apology, reaffirmation, leak, denial, or betrayal explanation.
+- You may mention dissent or uncertainty.
+- You cannot change official alliance name, roster, purpose, timebox, or status here; formal mutation only happens in Mingle I.
+- Keep it to 1-3 sentences. Be specific enough that The House can summarize the ask, plan, promises, dissent, and confidence.
+
+Use the alliance_huddle_turn tool.`;
+
+    try {
+      const result = await this.callTool<{
+        thinking?: string;
+        message?: string | null;
+        noReply?: boolean;
+        decisionLog?: unknown;
+        reasoningContext?: string;
+      }>(
+        prompt,
+        TOOL_ALLIANCE_HUDDLE_TURN,
+        280,
+        sys,
+        this.traceOptions(ctx, { action: "alliance-huddle-turn", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
+      );
+      const metadata = this.strategicDecisionMetadata(result);
+      this.recordStrategicDecision(ctx, "alliance-huddle-turn", "Alliance Huddle Turn", metadata);
+      const message = result.noReply ? null : (result.message?.trim() || null);
+      return {
+        thinking: result.thinking,
+        reasoningContext: result.reasoningContext,
+        message,
+        noReply: result.noReply || !message,
+        ...metadata,
+      };
+    } catch (err) {
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getAllianceHuddleTurn error="${err instanceof Error ? err.message : err}" fallback=no_reply`);
+      return {
+        thinking: "Alliance huddle turn failed; no reply.",
+        reasoningContext: err instanceof Error ? err.message : String(err),
+        message: null,
+        noReply: true,
+        decisionLog: "fallback: alliance huddle turn failed",
+      };
     }
   }
 
@@ -2868,7 +3163,13 @@ ${lines}`;
 
   private buildPostVotePressureSection(ctx: PhaseContext): string {
     const pressure = ctx.postVotePressure;
-    if (!pressure || (ctx.phase !== Phase.MINGLE && ctx.phase !== Phase.POWER)) return "";
+    const pressureIsVisible = ctx.phase === Phase.MINGLE
+      || ctx.phase === Phase.POST_VOTE_MINGLE
+      || ctx.phase === Phase.POWER
+      || ctx.phase === Phase.REVEAL
+      || ctx.phase === Phase.PRE_COUNCIL_HUDDLE
+      || ctx.phase === Phase.COUNCIL;
+    if (!pressure || !pressureIsVisible) return "";
 
     const selfPressure = pressure.players.find((player) => player.id === ctx.selfId);
     const statusLabels: Record<string, string> = {
@@ -2934,7 +3235,7 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
 - Protecting/shielding a current candidate removes them from Council danger. Replacement comes from the remaining exposure bench first; all-player fallback applies only when the bench cannot fill the slot.
 - This is not a normal empower/expose vote.`;
     }
-    if (ctx.phase === Phase.MINGLE && ctx.postVotePressure) {
+    if ((ctx.phase === Phase.MINGLE || ctx.phase === Phase.POST_VOTE_MINGLE) && ctx.postVotePressure) {
       return `## Post-Vote Mingle Rules
 - The standard Vote is locked and revealed. Do not cast another empower/expose ballot in Mingle.
 - Expose votes create an exposure bench. Two eligible exposed receivers lock the pair; one or zero exposed receivers, or unresolved tied tiers, let the empowered player privately resolve only the ambiguity.
@@ -2957,7 +3258,12 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
   }
 
   private buildCurrentStakesSection(ctx: PhaseContext): string {
-    const pressureIsLive = ctx.phase === Phase.MINGLE || ctx.phase === Phase.POWER;
+    const pressureIsLive = ctx.phase === Phase.MINGLE
+      || ctx.phase === Phase.POST_VOTE_MINGLE
+      || ctx.phase === Phase.POWER
+      || ctx.phase === Phase.REVEAL
+      || ctx.phase === Phase.PRE_COUNCIL_HUDDLE
+      || ctx.phase === Phase.COUNCIL;
     const pressure = pressureIsLive ? ctx.postVotePressure : undefined;
     const selfPressure = pressure?.players.find((player) => player.id === ctx.selfId);
     const statusLine = selfPressure
@@ -2985,10 +3291,14 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
     const phaseObjective: Partial<Record<Phase, string>> = {
       [Phase.INTRODUCTION]: "Introduce a human persona. Do not play strategy out loud yet.",
       [Phase.LOBBY]: "Public table talk before voting. Build cover, test reads, create reasons people might empower or expose someone.",
+      [Phase.MINGLE_I]: "Form or respond to official named-alliance proposals before the vote.",
+      [Phase.PRE_VOTE_HUDDLE]: "Coordinate inside House-scheduled active alliance huddles before the public Vote.",
       [Phase.VOTE]: "Cast one empower vote and one expose vote. Empower creates power; expose creates council danger.",
       [Phase.MINGLE]: "Private room dealmaking after the vote. Use the room to pitch, probe, trade information, redirect targets, or decide who deserves protection.",
+      [Phase.POST_VOTE_MINGLE]: "Private room dealmaking after the public vote reveal. Use receipts and pressure to repair, betray, bargain, or redirect danger.",
       [Phase.POWER]: "The empowered player resolves the round's pressure by passing, protecting/shielding, or eliminating when available.",
       [Phase.REVEAL]: "The Power outcome is becoming public. React to what changed and who is newly vulnerable.",
+      [Phase.PRE_COUNCIL_HUDDLE]: "Coordinate inside House-scheduled active alliance huddles before Council.",
       [Phase.COUNCIL]: "Council decides which candidate leaves. Survive, secure votes, justify your target, or manage jury risk.",
       [Phase.DIARY_ROOM]: "Private producer-facing reflection. Be candid about strategy, fear, deals, and what you will do next.",
     };
@@ -3094,7 +3404,7 @@ ${rounds}`;
 
   private buildMingleSocialOpportunitySection(ctx: PhaseContext, otherRoomMates: string[]): string {
     const pressure = ctx.postVotePressure;
-    if (!pressure || ctx.phase !== Phase.MINGLE) return "";
+    if (!pressure || (ctx.phase !== Phase.MINGLE && ctx.phase !== Phase.POST_VOTE_MINGLE)) return "";
 
     const selfPressure = pressure.players.find((player) => player.id === ctx.selfId);
     const empoweredInRoom = otherRoomMates.includes(pressure.empowered.name);
@@ -3248,6 +3558,29 @@ ${override}
 - Lens rationale: ${this.memory.lastReflection.strategicLensRationale ?? "none recorded"}`;
   }
 
+  private buildAllianceContextSection(ctx: PhaseContext): string {
+    const allianceContext = ctx.allianceContext;
+    if (!allianceContext) return "";
+    const active = allianceContext.activeAlliances.map((alliance) => {
+      const outcomes = alliance.huddleOutcomes.length > 0
+        ? ` outcomes=${alliance.huddleOutcomes.map((outcome) => `R${outcome.round}: ${outcome.plan}`).join(" | ")}`
+        : "";
+      return `- ${alliance.name} [${alliance.id}] status=${alliance.status}; members=${alliance.memberNames.join(", ")}; purpose=${alliance.purpose}; timebox=${alliance.timebox ?? "none"}${outcomes}`;
+    });
+    const open = allianceContext.openProposals.map((proposal) =>
+      `- lineage=${proposal.lineageId} version=${proposal.currentVersionId}; proposed ${proposal.currentTerms.name}; members=${proposal.currentTerms.memberNames.join(", ")}; purpose=${proposal.currentTerms.purpose}; yourResponse=${proposal.yourResponse ?? "none"}`,
+    );
+    const history = allianceContext.proposalHistory.map((proposal) =>
+      `- lineage=${proposal.lineageId} status=${proposal.status}; ${proposal.currentTerms.name}; members=${proposal.currentTerms.memberNames.join(", ")}; purpose=${proposal.currentTerms.purpose}; yourResponse=${proposal.yourResponse ?? "none"}`,
+    );
+    if (active.length === 0 && open.length === 0 && history.length === 0) return "";
+    return `## Your Official Alliance Context
+These are member-safe official alliance facts only for alliances/proposals you participated in. Do not infer hidden alliance facts for non-members.
+${active.length > 0 ? `Active alliances:\n${active.join("\n")}` : "Active alliances: none"}
+${open.length > 0 ? `\nOpen proposals:\n${open.join("\n")}` : "\nOpen proposals: none"}
+${history.length > 0 ? `\nProposal history:\n${history.join("\n")}` : ""}`;
+  }
+
   private buildUserPrompt(ctx: PhaseContext): string {
     const eliminated = this.allPlayers
       .filter((p) => !ctx.alivePlayers.some((ap) => ap.id === p.id))
@@ -3287,6 +3620,7 @@ ${override}
     const currentStakesSection = this.buildCurrentStakesSection(ctx);
     const postVotePressureSection = this.buildPostVotePressureSection(ctx);
     const revealedVoteLedgerSection = this.buildRevealedVoteLedgerSection(ctx);
+    const allianceContextSection = this.buildAllianceContextSection(ctx);
 
     let endgameInfo = "";
     if (ctx.endgameStage) {
@@ -3325,6 +3659,7 @@ ${endgameRulesSection}
 ${gameEventRecordSection}
 
 ${judgmentQuestionHistorySection ? `${judgmentQuestionHistorySection}\n` : ""}
+${allianceContextSection ? `${allianceContextSection}\n` : ""}
 ## Your Memory
 - Known allies: ${allies}
 - Known threats: ${threats}
@@ -3353,6 +3688,7 @@ ${gameRulesSection}
 
 ${currentStakesSection}
 
+${allianceContextSection ? `${allianceContextSection}\n` : ""}
 ## Your Memory
 - Known allies: ${allies}
 - Known threats: ${threats}

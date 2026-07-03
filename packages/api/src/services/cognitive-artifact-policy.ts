@@ -18,6 +18,8 @@ export interface CognitiveArtifactPolicyContext {
   gameId: string;
   artifactType: CognitiveArtifactType;
   actorRole: CognitiveArtifactActorRole;
+  action?: string | null;
+  phase?: string | null;
   actorPlayerId?: string | null;
   actorUserId?: string | null;
   actorAgentProfileId?: string | null;
@@ -64,7 +66,18 @@ export function canReadCognitiveArtifact(
   if (context.artifactType === "reasoning") {
     return ownsCognitiveArtifactActor(accessor, context);
   }
+  if (isAllianceHuddleArtifactContext(context)) {
+    return ownsCognitiveArtifactActor(accessor, context);
+  }
   return context.artifactType === "thinking" || context.artifactType === "strategy";
+}
+
+function isAllianceHuddleArtifactContext(context: CognitiveArtifactPolicyContext): boolean {
+  return context.action === "alliance-action" ||
+    context.action?.startsWith("alliance-huddle-") === true ||
+    context.phase === "MINGLE_I" ||
+    context.phase === "PRE_VOTE_HUDDLE" ||
+    context.phase === "PRE_COUNCIL_HUDDLE";
 }
 
 export function canListCognitiveArtifactsForGame(

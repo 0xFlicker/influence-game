@@ -14,7 +14,11 @@ export enum Phase {
   INIT = "INIT",
   INTRODUCTION = "INTRODUCTION",
   LOBBY = "LOBBY",
+  MINGLE_I = "MINGLE_I",
+  PRE_VOTE_HUDDLE = "PRE_VOTE_HUDDLE",
   MINGLE = "MINGLE",
+  POST_VOTE_MINGLE = "POST_VOTE_MINGLE",
+  PRE_COUNCIL_HUDDLE = "PRE_COUNCIL_HUDDLE",
   WHISPER = "WHISPER",
   RUMOR = "RUMOR",
   VOTE = "VOTE",
@@ -140,7 +144,7 @@ export interface PowerAction {
 // Messages passed between agents and the House
 // ---------------------------------------------------------------------------
 
-export type MessageScope = "public" | "mingle" | "whisper" | "system" | "thinking";
+export type MessageScope = "public" | "mingle" | "huddle" | "whisper" | "system" | "diary" | "thinking";
 
 export interface PublicMessage {
   type: "public";
@@ -268,6 +272,145 @@ export interface MingleSessionDiagnostics {
   assignments: MingleRoomAssignmentRecord[];
   allocatedRooms: MingleAllocatedRoomDiagnostics[];
   actions?: MingleTurnActionRecord[];
+}
+
+// ---------------------------------------------------------------------------
+// Named alliances
+// ---------------------------------------------------------------------------
+
+export type AllianceProposalResponse = "accepted" | "declined" | "deferred" | "trial";
+
+export type AllianceProposalStatus = "open" | "activated" | "declined" | "expired";
+
+export type AllianceStatus = "active" | "closed" | "archived";
+
+export type AllianceCloseReason =
+  | "universal_all_alive_before_mingle"
+  | "manual"
+  | "endgame_dissolution";
+
+export type AllianceArchiveReason = "fewer_than_two_live_members" | "manual";
+
+export interface AllianceTerms {
+  name: string;
+  memberIds: UUID[];
+  purpose: string;
+  timebox: string | null;
+}
+
+export interface AllianceProposalVersion {
+  versionId: UUID;
+  proposerId: UUID;
+  terms: AllianceTerms;
+  requiredConsentMemberIds?: UUID[];
+  counterIndex: number;
+  createdRound: number;
+  createdAt: string;
+}
+
+export interface AllianceProposalLineage {
+  id: UUID;
+  allianceId: UUID;
+  status: AllianceProposalStatus;
+  currentVersionId: UUID;
+  versions: AllianceProposalVersion[];
+  responsesByVersion: Record<UUID, Record<UUID, AllianceProposalResponse>>;
+  createdRound: number;
+  createdAt: string;
+  resolvedRound: number | null;
+  resolvedAt: string | null;
+}
+
+export interface AllianceRecord {
+  id: UUID;
+  name: string;
+  memberIds: UUID[];
+  purpose: string;
+  timebox: string | null;
+  status: AllianceStatus;
+  createdRound: number;
+  createdAt: string;
+  updatedRound: number;
+  updatedAt: string;
+  lineageIds: UUID[];
+  huddleOutcomeIds: UUID[];
+  closedReason?: AllianceCloseReason;
+  archivedReason?: AllianceArchiveReason;
+}
+
+export type AllianceHuddleWindow = "pre_vote" | "pre_council";
+
+export type AllianceHuddleScheduleDecision = "scheduled" | "skipped";
+
+export interface AllianceHuddleScheduleRecord {
+  id: UUID;
+  allianceId: UUID;
+  window: AllianceHuddleWindow;
+  round: number;
+  pass: number;
+  decision: AllianceHuddleScheduleDecision;
+  memberIds: UUID[];
+  rationale: string;
+  createdAt: string;
+}
+
+export interface AllianceHuddleSessionRecord {
+  id: UUID;
+  scheduleId: UUID;
+  allianceId: UUID;
+  window: AllianceHuddleWindow;
+  round: number;
+  pass: number;
+  speakerIds: UUID[];
+  completedAt: string;
+}
+
+export interface AllianceHuddleOutcome {
+  id: UUID;
+  sessionId: UUID;
+  allianceId: UUID;
+  window: AllianceHuddleWindow;
+  round: number;
+  ask: string;
+  plan: string;
+  promises: string[];
+  dissent: string[];
+  confidence: "low" | "medium" | "high";
+  posture: string;
+  leakOrBetrayalClaims: string[];
+  createdAt: string;
+}
+
+export interface AllianceProposalInput {
+  allianceId?: UUID;
+  lineageId?: UUID;
+  versionId?: UUID;
+  proposerId: UUID;
+  name: string;
+  memberIds: UUID[];
+  purpose: string;
+  timebox?: string | null;
+}
+
+export interface AllianceAmendmentInput extends AllianceProposalInput {
+  allianceId: UUID;
+}
+
+export interface AllianceResponseInput {
+  lineageId: UUID;
+  versionId: UUID;
+  playerId: UUID;
+  response: AllianceProposalResponse;
+}
+
+export interface AllianceCounterInput {
+  lineageId: UUID;
+  versionId?: UUID;
+  proposerId: UUID;
+  name: string;
+  memberIds: UUID[];
+  purpose: string;
+  timebox?: string | null;
 }
 
 /** @deprecated Legacy name kept only for old replay/import compatibility. */

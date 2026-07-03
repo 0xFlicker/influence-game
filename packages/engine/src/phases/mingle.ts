@@ -562,6 +562,7 @@ async function runMingleTurn(
   roomCount: number,
   mingleIntents: ReadonlyMap<UUID, MingleIntentAction | null>,
   totalBeats: number,
+  phase: Phase.MINGLE | Phase.POST_VOTE_MINGLE,
 ): Promise<MingleTurnActionRecord[]> {
   const { agents, logger, contextBuilder, gameState } = ctx;
   const collectedTurns: CollectedMingleTurn[] = [];
@@ -577,7 +578,7 @@ async function runMingleTurn(
       const fromName = gameState.getPlayerName(playerId);
       const recipientIds = room.playerIds.filter((id) => id !== playerId);
       const recipientNames = recipientIds.map((id) => gameState.getPlayerName(id));
-      const phaseCtx = contextBuilder.buildPhaseContext(playerId, Phase.MINGLE, undefined, undefined, {
+      const phaseCtx = contextBuilder.buildPhaseContext(playerId, phase, undefined, undefined, {
         roomCount,
         roomCounts,
         currentRoomId: room.roomId,
@@ -611,7 +612,7 @@ async function runMingleTurn(
 
         conversationHistory.push({ from: fromName, text: message });
         const transcriptThinking = transcriptThinkingFor(agent, resolvedAction.thinking, resolvedAction.reasoningContext);
-        logger.logMingleMessage(playerId, recipientIds, message, room.roomId, transcriptThinking.thinking, transcriptThinking.reasoningContext);
+        logger.logMingleMessage(playerId, recipientIds, message, room.roomId, transcriptThinking.thinking, transcriptThinking.reasoningContext, phase);
       }
 
       collectedTurns.push({
@@ -643,7 +644,7 @@ async function runMingleTurn(
     nextRoomByPlayerId.set(turn.playerId, movement.toRoomId);
 
     logger.emitAgentTurn({
-      phase: Phase.MINGLE,
+      phase,
       action: "mingle-turn",
       actor: { id: turn.playerId, name: turn.fromName, role: "player" },
       visibility: "private",
@@ -695,11 +696,16 @@ async function runMingleTurn(
 export async function runMinglePhase(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
+  options: { phase?: Phase.MINGLE | Phase.POST_VOTE_MINGLE } = {},
 ): Promise<void> {
   const { gameState, agents, logger, contextBuilder, config } = ctx;
+  const phase = options.phase ?? Phase.MINGLE;
 
-  logger.emitPhaseChange(Phase.MINGLE);
-  logger.logSystem("=== MINGLE PHASE ===", Phase.MINGLE);
+  logger.emitPhaseChange(phase);
+  logger.logSystem(
+    phase === Phase.POST_VOTE_MINGLE ? "=== POST-VOTE MINGLE PHASE ===" : "=== MINGLE PHASE ===",
+    phase,
+  );
   const alivePlayers = gameState.getAlivePlayers();
 
   ctx.mingleInbox.clear();
@@ -712,9 +718,9 @@ export async function runMinglePhase(
 
   const roomCount = computeRoomCount(alivePlayers.length);
   if (roomCount === 0) {
-    logger.logSystem("Open rooms are skipped with fewer than five players alive.", Phase.MINGLE);
+    logger.logSystem("Open rooms are skipped with fewer than five players alive.", phase);
     await assertCanAcceptCommit(ctx);
-    gameState.recordRoomAllocations([], []);
+    gameState.recordRoomAllocations([], [], [], phase);
     actor.send({ type: "PHASE_COMPLETE" });
     await new Promise((r) => setTimeout(r, 0));
     return;
@@ -732,7 +738,7 @@ export async function runMinglePhase(
   await Promise.all(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
-      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.MINGLE, undefined, undefined, {
+      const phaseCtx = contextBuilder.buildPhaseContext(player.id, phase, undefined, undefined, {
         roomCount,
         roomCounts: initialRoomCounts,
       });
@@ -743,7 +749,7 @@ export async function runMinglePhase(
         const intentSummary = summarizeMingleIntent(normalizedIntent.intent);
         await assertCanAcceptCommit(ctx);
         logger.emitAgentTurn({
-          phase: Phase.MINGLE,
+          phase,
           action: "mingle-intent",
           actor: { id: player.id, name: player.name, role: "player" },
           visibility: "private",
@@ -776,7 +782,7 @@ export async function runMinglePhase(
   await assertCanAcceptCommit(ctx);
   for (const assignment of initialAllocation.diagnostics.assignments) {
     logger.emitAgentTurn({
-      phase: Phase.MINGLE,
+      phase,
       action: "mingle-room-assignment",
       actor: { id: assignment.player.id, name: assignment.player.name, role: "player" },
       visibility: "private",
@@ -832,8 +838,8 @@ export async function runMinglePhase(
 
     const allocationText = `Turn ${beat}: ${beatRooms.map((room) => describeRoom(ctx, room)).join(" | ")}`;
     await assertCanAcceptCommit(ctx);
-    const allocationEntry = logger.logRoomAllocation(allocationText, beatRooms, [], beatDiagnostics);
-    const actions = await runMingleTurn(ctx, localRooms, roomCounts, roomByPlayerId, roomCount, mingleIntents, beats);
+    const allocationEntry = logger.logRoomAllocation(allocationText, beatRooms, [], beatDiagnostics, phase);
+    const actions = await runMingleTurn(ctx, localRooms, roomCounts, roomByPlayerId, roomCount, mingleIntents, beats, phase);
     if (allocationEntry.roomMetadata?.diagnostics) {
       allocationEntry.roomMetadata.diagnostics.actions = actions;
     }
@@ -845,7 +851,7 @@ export async function runMinglePhase(
     buildRoomsFromAssignments(roomByPlayerId, alivePlayers, roomCount, gameState.round, beats),
   );
   await assertCanAcceptCommit(ctx);
-  gameState.recordRoomAllocations(allRooms, []);
+  gameState.recordRoomAllocations(allRooms, [], [], phase);
 
   actor.send({ type: "PHASE_COMPLETE" });
   await new Promise((r) => setTimeout(r, 0));

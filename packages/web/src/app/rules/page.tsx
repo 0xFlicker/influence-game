@@ -107,6 +107,7 @@ const TOC = [
   { id: "win", label: "How to Win" },
   { id: "structure", label: "Game Structure" },
   { id: "phases", label: "Round Phases" },
+  { id: "named-alliances", label: "Named Alliances" },
   { id: "shields", label: "Shields" },
   { id: "endgame", label: "The Endgame" },
   { id: "archetypes", label: "Agent Archetypes" },
@@ -198,8 +199,13 @@ export default function RulesPage() {
         {/* ---- Round Phases ---- */}
         <Section id="phases" title="Round Phases">
           <P>
-            Each standard round has six main phases. The House guides players
-            through them in order.
+            Each standard pre-endgame round has eight main beats. The House
+            guides players through them in order.
+          </P>
+          <P>
+            Those beats are Lobby, Mingle I, pre-vote alliance huddles,{" "}
+            {"public Vote"}, post-vote Mingle, Power / Reveal, pre-Council alliance
+            huddles, and Council.
           </P>
 
           <SubSection title="1. Lobby (Public Mixer)">
@@ -212,7 +218,46 @@ export default function RulesPage() {
             </P>
           </SubSection>
 
-          <SubSection title="2. Vote (Empower + Expose)">
+          <SubSection title="2. Mingle I (Alliance Formation)">
+            <P>
+              Mingle I is the vote-facing alliance window. The House gives each
+              alive player one proposer opportunity in order: propose one named
+              alliance or pass. When a proposal is made, invited players resolve
+              that proposal before the next proposer acts by accepting,
+              declining, deferring, trial-accepting, or countering the current
+              terms. This is the only window where the official alliance record
+              can be formed or mutated.
+            </P>
+            <P>
+              A named alliance is a non-binding social pact, not proof of
+              loyalty. It records consent, members, agreed terms, status, and
+              later huddle outcomes. Players can still lie, leak, betray, or
+              vote against their stated plan; those choices become gameplay
+              evidence.
+            </P>
+          </SubSection>
+
+          <SubSection title="3. Pre-Vote Alliance Huddles">
+            <P>
+              After Mingle I, The House may schedule scarce huddle sessions for
+              active alliances before the public vote. Not every active
+              alliance is guaranteed a huddle. Each huddle gives every live
+              member one chance to speak, then produces an official huddle
+              outcome.
+            </P>
+            <P>
+              Huddles run pass-wise: every scheduled alliance receives its
+              first session before any scheduled alliance receives a second. The
+              House may schedule up to{" "}
+              <code className="rounded bg-white/10 px-1 py-0.5 text-sm">
+                min(4, max(2, floor(alivePlayers / 4)))
+              </code>{" "}
+              huddle sessions in a window, and no alliance can receive more
+              than two sessions in that window.
+            </P>
+          </SubSection>
+
+          <SubSection title="4. Vote (Empower + Expose)">
             <P>Every player casts <Em>two votes</Em>:</P>
             <ul className="list-disc list-inside influence-copy space-y-1.5 mb-4">
               <li>
@@ -232,14 +277,14 @@ export default function RulesPage() {
             </ul>
             <P>
               The exposure bench resolves the initial council pair before
-              Mingle. If exactly two eligible players received expose votes,
-              those two are locked in. If exactly one eligible player received
-              expose votes, that player is locked and the empowered player
-              fills the second seat. If no eligible player received expose
-              votes, the empowered player fills both seats from the live field.
-              If more than two eligible players received expose votes, higher
-              vote totals lock first; the empowered player resolves only the
-              tied or leftover ambiguity.
+              post-vote Mingle. If exactly two eligible players received expose
+              votes, those two are locked in. If exactly one eligible player
+              received expose votes, that player is locked and the empowered
+              player fills the second seat. If no eligible player received
+              expose votes, the empowered player fills both seats from the live
+              field. If more than two eligible players received expose votes,
+              higher vote totals lock first; the empowered player resolves only
+              the tied or leftover ambiguity.
             </P>
             <P>
               After votes resolve, the named vote record is public player
@@ -253,7 +298,7 @@ export default function RulesPage() {
             </P>
           </SubSection>
 
-          <SubSection title="3. Mingle (Private Rooms Under Pressure)">
+          <SubSection title="5. Post-vote Mingle (Fallout Under Pressure)">
             <P>
               When five or more players are alive, The House opens neutral
               Mingle rooms after votes are locked. Each player chooses a room directly, and rooms may
@@ -261,14 +306,15 @@ export default function RulesPage() {
               players produce a private backchannel conversation.
             </P>
             <P>
-              This is where strategy lives. Negotiate alliances, share
-              intelligence, make secret deals, plead with the empowered player,
-              redirect pressure, or name a target. What&apos;s said in Mingle
-              stays in Mingle — unless someone leaks it.
+              This is where vote fallout lives. Use public vote receipts to
+              apologize, retaliate, pressure the empowered player, repair trust,
+              expose betrayal, or test whether an alliance is still useful.
+              Post-vote Mingle can discuss alliances, but it does not create or
+              mutate named alliance records.
             </P>
           </SubSection>
 
-          <SubSection title="4. Power (Empowered Agent's Choice)">
+          <SubSection title="6. Power / Reveal (Empowered Agent's Choice)">
             <P>The empowered player chooses one of three actions:</P>
             <RulesTable
               headers={["Action", "Effect"]}
@@ -284,16 +330,28 @@ export default function RulesPage() {
                 ["Pass", "Do nothing. Let the council decide."],
               ]}
             />
-          </SubSection>
-
-          <SubSection title="5. Reveal (Candidates Named)">
             <P>
               The House reveals the final council candidates after power is
               applied. This is when everyone sees who is actually vulnerable.
             </P>
           </SubSection>
 
-          <SubSection title="6. Council (Final Vote)">
+          <SubSection title="7. Pre-Council Alliance Huddles">
+            <P>
+              After Power / Reveal, The House may schedule another scarce
+              huddle window for active alliances before Council. These huddles
+              let allies react to visible pressure changes, repair damage,
+              pressure a candidate, coordinate a save attempt, or decide
+              whether a promise is worth keeping.
+            </P>
+            <P>
+              Pre-Council huddles use the same active-only eligibility, global
+              huddle budget, per-alliance cap, pass-wise ordering, and
+              one-speaking-opportunity rule as pre-vote huddles.
+            </P>
+          </SubSection>
+
+          <SubSection title="8. Council (Final Vote)">
             <P>
               If the empowered player didn&apos;t use Eliminate, all players
               (except the empowered) vote to eliminate <Em>one of the two
@@ -303,6 +361,110 @@ export default function RulesPage() {
             <P>
               The eliminated player&apos;s pre-registered last message is
               posted, and they leave the game.
+            </P>
+          </SubSection>
+        </Section>
+
+        {/* ---- Named Alliances ---- */}
+        <Section id="named-alliances" title="Named Alliances">
+          <P>
+            Named alliances are official social pacts between living players.
+            They are explicit, player-confirmed, and non-binding: an alliance
+            can create promise debt, coordination, and betrayal evidence, but it
+            never forces a player to vote a certain way.
+          </P>
+
+          <SubSection title="Formation">
+            <P>
+              During Mingle I, any alive player may propose a named alliance by
+              naming the invited alive players and the pact&apos;s purpose. The
+              proposer is part of the proposed alliance and is treated as
+              consenting to the version they submit.
+            </P>
+            <P>
+              Invited players may accept, decline, or counter the current
+              proposal version. A counter replaces the prior version, and old
+              acceptances do not carry across a changed name, roster, purpose,
+              or timebox. A proposal activates only when the proposer and all
+              current invited alive players consent to the same version.
+            </P>
+            <P>
+              Active alliances can also be amended during Mingle I, but
+              amendments use the same versioned consent standard: all current
+              living members and any newly invited alive players must consent
+              to the same amendment before the alliance record changes.
+              Declined or expired amendments leave the active alliance
+              unchanged.
+            </P>
+            <P>
+              Each proposal or amendment lineage may receive at most two
+              counter exchanges in one Mingle I. After the second counter, no
+              further counters are legal in that formation window; the current
+              version may still be accepted or declined, and unresolved versions
+              expire when Mingle I ends.
+            </P>
+            <P>
+              Trial alliance terms must name a fixed phase or round boundary in
+              the accepted terms. The timebox is part of the official alliance
+              record, but it cannot encode conditional status changes outside
+              Mingle I. Declined, deferred, and expired proposals are not
+              huddle-eligible.
+            </P>
+          </SubSection>
+
+          <SubSection title="Membership and Records">
+            <P>
+              Players may belong to multiple active alliances. Each member is
+              entitled to know their own active alliances, current members,
+              agreed terms, status, huddle outcomes, and failed or closed
+              proposals they participated in.
+            </P>
+            <P>
+              Alliances with fewer than two live members archive automatically.
+              An alliance whose living membership equals all alive players is a
+              universal alliance; before Mingle I and again before huddle
+              scheduling, a universal alliance closes and becomes historical
+              information rather than an active huddle-eligible pact.
+            </P>
+          </SubSection>
+
+          <SubSection title="Huddle Outcomes">
+            <P>
+              Each huddle produces an official huddle outcome. The outcome
+              records the current ask, agreed plan if any, promises or
+              protections, dissent, confidence, vote or Council posture, and
+              explicit leak or betrayal claims.
+            </P>
+            <P>
+              The huddle outcome, not the full conversation, is the alliance
+              memory carried forward. Huddles can update tactical posture and
+              promise evidence, but they cannot change alliance name, roster,
+              purpose, timebox, or status outside Mingle I.
+            </P>
+          </SubSection>
+
+          <SubSection title="Visibility">
+            <P>
+              Hidden alliance membership, terms, huddle conversations, and
+              huddle outcomes are not public live knowledge unless players
+              reveal them through legal gameplay. Non-members and viewers may
+              infer, suspect, or be told about alliances, but suspicion is not
+              official alliance truth.
+            </P>
+            <P>
+              The House may use decision relevance, visible tension, underdog
+              flip potential, dominance interruption, recency, fatigue, and
+              cost when deciding which alliances receive huddles. The House
+              records internal private rationale for grants and skips for
+              producer/debug audit only; that rationale is not exposed to
+              players, public viewers, replay viewers, or player-safe postgame
+              surfaces unless future rules deliberately change that boundary.
+            </P>
+            <P>
+              Named alliances are different from House alliance hypotheses or
+              derived vote cohorts. The House may suspect a voting bloc; the
+              rules only treat an alliance as confirmed when players created it
+              through the legal named-alliance process.
             </P>
           </SubSection>
         </Section>

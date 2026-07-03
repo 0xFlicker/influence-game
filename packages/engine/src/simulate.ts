@@ -49,6 +49,13 @@
  * source/repair metadata. Player-target fields in hidden Mingle intent are
  * normalized to living, non-self players before House assignment; stale names
  * may remain only as historical context in prose fields or repair notes.
+ * Named-alliance records are inspectable through both turns and canonical
+ * events: `alliance-action` turns capture Mingle I proposal/accept/decline/
+ * counter behavior, `alliance-huddle-schedule` turns capture private House
+ * grant/skip rationale, `alliance-huddle-turn` records capture member speech,
+ * and `alliance-huddle-outcome` records capture the compact memory artifact
+ * that carries forward. Huddle transcript entries use `scope: "huddle"` and
+ * are producer/debug evidence, not public/player-safe live transcript.
  * Specialized `empower-revote` and `candidate-selection` records are written
  * when vote mechanics create private empowered-player choices. Shield pull-up
  * choices are bundled into the private `power-action` record when Protect

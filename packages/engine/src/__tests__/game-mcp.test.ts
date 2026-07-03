@@ -5,7 +5,7 @@ import { join } from "path";
 import type { CanonicalGameEvent } from "../canonical-events";
 import { GameMcpReadModel } from "../game-mcp/read-model";
 import { createGameMcpServer } from "../game-mcp/server";
-import { Phase, PlayerStatus } from "../types";
+import { Phase, PlayerStatus, type AllianceHuddleOutcome, type AllianceProposalLineage, type AllianceRecord } from "../types";
 
 let tempDirs: string[] = [];
 
@@ -195,6 +195,108 @@ describe("game MCP corpus read model", () => {
     expect(linked.event.event.type).toBe("vote.cast");
     expect(linked.turns).toHaveLength(1);
     expect(linked.turns[0]).toMatchObject({ record: { action: "vote" } });
+  });
+
+  it("surfaces named-alliance events, huddle outcomes, and member timelines", () => {
+    const corpusDir = makeTempCorpus();
+    const sessionDir = makeSession(corpusDir, "batch-alliances");
+    const alliance: AllianceRecord = {
+      id: "alliance-glass",
+      name: "Glass Table",
+      memberIds: ["atlas", "vera"],
+      purpose: "Coordinate the public Vote.",
+      timebox: "through council",
+      status: "active",
+      createdRound: 1,
+      createdAt: "2026-06-11T00:00:03.000Z",
+      updatedRound: 1,
+      updatedAt: "2026-06-11T00:00:03.000Z",
+      lineageIds: ["lineage-glass"],
+      huddleOutcomeIds: ["outcome-glass"],
+    };
+    const lineage: AllianceProposalLineage = {
+      id: "lineage-glass",
+      allianceId: "alliance-glass",
+      status: "activated",
+      currentVersionId: "version-glass",
+      versions: [{
+        versionId: "version-glass",
+        proposerId: "atlas",
+        terms: {
+          name: "Glass Table",
+          memberIds: ["atlas", "vera"],
+          purpose: "Coordinate the public Vote.",
+          timebox: "through council",
+        },
+        counterIndex: 0,
+        createdRound: 1,
+        createdAt: "2026-06-11T00:00:03.000Z",
+      }],
+      responsesByVersion: { "version-glass": { atlas: "accepted", vera: "accepted" } },
+      createdRound: 1,
+      createdAt: "2026-06-11T00:00:03.000Z",
+      resolvedRound: 1,
+      resolvedAt: "2026-06-11T00:00:03.000Z",
+    };
+    const huddleOutcome: AllianceHuddleOutcome = {
+      id: "outcome-glass",
+      sessionId: "session-glass",
+      allianceId: "alliance-glass",
+      window: "pre_vote",
+      round: 1,
+      ask: "Align before the public Vote.",
+      plan: "Glass Table agrees to hold empower pressure on Atlas and expose Vera's rival.",
+      promises: ["Atlas promises not to undercut Vera before Council."],
+      dissent: [],
+      confidence: "medium",
+      posture: "coordinating",
+      leakOrBetrayalClaims: [],
+      createdAt: "2026-06-11T00:00:04.000Z",
+    };
+    writeFileSync(
+      join(sessionDir, "game-1-events.jsonl"),
+      `${canonicalEvents([
+        event({
+          sequence: 4,
+          round: 1,
+          phase: Phase.MINGLE_I,
+          type: "alliance.activated",
+          visibility: "producer",
+          sourcePointers: [{ kind: "agent_turn", action: "alliance-action", round: 1, phase: Phase.MINGLE_I, actorId: "atlas", sequence: 2 }],
+          payload: { lineage, alliance },
+        }),
+        event({
+          sequence: 5,
+          round: 1,
+          phase: Phase.PRE_VOTE_HUDDLE,
+          type: "alliance.huddle_outcome_recorded",
+          visibility: "producer",
+          sourcePointers: [{ kind: "agent_turn", action: "alliance-huddle-outcome", round: 1, phase: Phase.PRE_VOTE_HUDDLE, sequence: 3 }],
+          payload: { outcome: huddleOutcome, alliance },
+        }),
+      ]).map((canonicalEvent) => JSON.stringify({ canonicalEvent })).join("\n")}\n`,
+    );
+    writeFileSync(
+      join(sessionDir, "game-1-turns.jsonl"),
+      [
+        { sequence: 2, action: "alliance-action", round: 1, phase: Phase.MINGLE_I, actor: { id: "atlas", name: "Atlas" }, response: { allianceId: "alliance-glass" } },
+        { sequence: 3, action: "alliance-huddle-outcome", round: 1, phase: Phase.PRE_VOTE_HUDDLE, actor: { name: "House", role: "house" }, response: { outcome: huddleOutcome } },
+      ].map((record) => JSON.stringify(record)).join("\n"),
+    );
+    const readModel = new GameMcpReadModel(corpusDir);
+
+    expect(readModel.filterEvents({ sessionId: "batch-alliances", gameNumber: 1, type: "alliance.activated" })).toHaveLength(1);
+    expect(readModel.readProjection("batch-alliances", 1).alliances["alliance-glass"]?.name).toBe("Glass Table");
+    expect(readModel.readPlayerTimeline("batch-alliances", 1, "Vera", "producer").map((entry) => entry.event.type)).toEqual(
+      expect.arrayContaining(["alliance.activated", "alliance.huddle_outcome_recorded"]),
+    );
+    expect(readModel.searchLogs({
+      query: "Glass Table agrees",
+      sessionId: "batch-alliances",
+      gameNumber: 1,
+      sources: ["events", "turns"],
+    }).map((result) => result.citation.sourceKind)).toEqual(["events", "turns"]);
+    expect(readModel.readLinkedRecords("batch-alliances", 1, 4).turns[0]?.record?.action).toBe("alliance-action");
   });
 
   it("searches Mingle intent and strategic reflection turn records for strategy validation", () => {

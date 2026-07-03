@@ -59,8 +59,14 @@ const RULE_SECTIONS: GameMcpRulesSection[] = [
   {
     id: "standard-round",
     title: "Standard Round Phases",
-    tags: ["round", "lobby", "vote", "mingle", "power", "reveal", "council"],
-    body: "Each standard round moves through Lobby, Vote, Mingle, Power, Reveal, and Council. Lobby is public social play, Vote chooses empower and expose targets, Mingle creates private strategy rooms, Power lets the empowered player eliminate, protect, or pass, Reveal names the candidates, and Council eliminates one candidate unless power already did.",
+    tags: ["round", "lobby", "mingle", "mingle-i", "huddle", "vote", "power", "reveal", "council"],
+    body: "Each standard pre-endgame round moves through Lobby, Mingle I, pre-vote alliance huddles, public Vote, post-vote Mingle, Power / Reveal, pre-Council alliance huddles, and Council. Mingle I is the official named-alliance action window, huddles are scarce House-scheduled active-alliance coordination scenes, Vote receipts are public, and post-vote Mingle remains the private-room fallout phase.",
+  },
+  {
+    id: "named-alliances",
+    title: "Named Alliances",
+    tags: ["alliance", "alliances", "mingle-i", "huddle", "visibility", "mcp"],
+    body: "Named alliances are explicit, player-confirmed, non-binding social pacts. During Mingle I, The House gives each alive player one proposer opportunity in order. A proposer may propose one named alliance or pass; when a proposal is made, invited players resolve that proposal before the next proposer acts by accepting, declining, deferring, trial-accepting, or countering the current terms. Counters may continue for at most two counter rounds. Consent attaches to the same name, roster, purpose, and timebox version; players may belong to multiple active alliances. Outside Mingle I, players may discuss, reveal, deny, betray, or coordinate in scheduled huddles, but official alliance records do not mutate. Alliance membership, terms, huddle transcripts, and huddle outcomes are member-safe for the involved players, but are not public or non-member-safe facts unless players reveal them through gameplay; House scheduling rationale remains producer-only. MCP active-match tools are read-only and cannot propose alliances, speak in huddles, vote, use power, or advance phases.",
   },
   {
     id: "votes-and-power",

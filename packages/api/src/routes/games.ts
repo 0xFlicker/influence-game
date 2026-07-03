@@ -15,7 +15,7 @@
  */
 
 import { Hono, type Context } from "hono";
-import { eq, inArray, asc, or, and, isNull } from "drizzle-orm";
+import { eq, inArray, asc, or, and, isNull, ne } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -1028,7 +1028,10 @@ export function createGameRoutes(db: DrizzleDB) {
     const rows = await db
       .select()
       .from(schema.transcripts)
-      .where(eq(schema.transcripts.gameId, gameId))
+      .where(and(
+        eq(schema.transcripts.gameId, gameId),
+        ne(schema.transcripts.scope, "huddle"),
+      ))
       .orderBy(asc(schema.transcripts.timestamp));
 
     const parseJsonOrNull = (value: string | null): Record<string, unknown> | null => {

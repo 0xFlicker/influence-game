@@ -1,7 +1,11 @@
-import { desc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
 import {
   buildRevealedRoundFacts,
   canonicalEventIsVisibleTo,
+  Phase,
+  type AllianceHuddleOutcome,
+  type AllianceProposalLineage,
+  type AllianceRecord,
   type CanonicalEventQueryMode,
   type CanonicalGameEvent,
   type CanonicalGameEventType,
@@ -93,6 +97,13 @@ export interface ProductionGameMcpRoundFactsOptions {
   round?: number;
 }
 
+export interface ProductionGameMcpAgentAlliancesOptions {
+  gameIdOrSlug: string;
+  player?: string;
+  playerId?: string;
+  agentId?: string;
+}
+
 export interface ProductionGameMcpPostgameOptions {
   gameIdOrSlug: string;
   detailLevel?: PostgameAnalysisDetailLevel;
@@ -111,6 +122,84 @@ export interface ProductionGameMcpPlayerGameSummaryOptions extends ProductionGam
 
 type PostgameAnalysisOk = Extract<Awaited<ReturnType<typeof getPostgameAnalysis>>, { ok: true }>;
 type PostgameAnalysisError = Exclude<Awaited<ReturnType<typeof getPostgameAnalysis>>, { ok: true }>;
+type GamePlayerRow = typeof schema.gamePlayers.$inferSelect;
+
+interface AgentAlliancePlayerRead {
+  id: string;
+  name: string;
+  agentProfileId?: string;
+}
+
+interface AgentAllianceTermsRead {
+  name: string;
+  memberIds: string[];
+  memberNames: string[];
+  purpose: string;
+  timebox: string | null;
+}
+
+interface AgentAllianceProposalRead {
+  lineageId: string;
+  allianceId: string;
+  status: string;
+  proposedRound: number;
+  resolvedRound?: number;
+  currentVersionId: string;
+  currentTerms: AgentAllianceTermsRead;
+  proposer: { id: string; name: string };
+  yourResponse: string | null;
+  finalResult: string;
+}
+
+interface AgentAllianceOutcomeRead {
+  id: string;
+  round: number;
+  window: string;
+  ask: string;
+  plan: string;
+  promises: string[];
+  dissent: string[];
+  confidence: string;
+  posture: string;
+  leakOrBetrayalClaims: string[];
+}
+
+interface AgentAllianceRecordRead extends AgentAllianceTermsRead {
+  id: string;
+  status: string;
+  createdRound: number;
+  updatedRound: number;
+  huddleOutcomes: AgentAllianceOutcomeRead[];
+}
+
+interface AgentAllianceHuddleRead {
+  allianceId: string;
+  allianceName: string;
+  round: number;
+  window: string;
+  pass: number;
+  speakers: Array<{ id: string; name: string }>;
+  messages: Array<{ from: { id?: string; name: string }; text: string; timestamp: number; thinking?: string }>;
+  outcome?: AgentAllianceOutcomeRead;
+}
+
+type ProductionGameMcpAgentAlliancesRead = {
+  schemaVersion: 1;
+  game: ProductionGameMcpGameIdentity;
+  player?: AgentAlliancePlayerRead;
+  selectablePlayers?: AgentAlliancePlayerRead[];
+  allianceFacts?: {
+    proposals: AgentAllianceProposalRead[];
+    alliances: AgentAllianceRecordRead[];
+    huddles: AgentAllianceHuddleRead[];
+  };
+  availability: {
+    status: "available" | "agent_ambiguous" | "agent_not_authorized" | "agent_not_found";
+    eventLogStatus?: string;
+    transcriptStatus?: "available" | "not_available";
+    diagnostics: Array<{ code: string; severity: "info" | "warning"; message: string }>;
+  };
+};
 
 export class ProductionGameMcpReadModel {
   constructor(
@@ -267,6 +356,66 @@ export class ProductionGameMcpReadModel {
         eventLogStatus: events.status,
         projectionStatus: projection.status,
       }),
+    };
+  }
+
+  async readAgentAlliances(
+    options: ProductionGameMcpAgentAlliancesOptions,
+    access: ProductionGameMcpAccess,
+  ): Promise<ProductionGameMcpAgentAlliancesRead> {
+    const game = await this.requireGame(options.gameIdOrSlug, access);
+    const players = await this.loadGamePlayers(game.id);
+    const playerNames = playerNameMap(players);
+    const selectablePlayers = await this.selectableAlliancePlayers(game.id, players, access);
+    const selected = selectAlliancePlayer(players, selectablePlayers, options);
+    if (selected.status !== "available") {
+      return {
+        schemaVersion: 1,
+        game,
+        ...(selected.selectablePlayers && { selectablePlayers: selected.selectablePlayers.map((player) => playerRead(player, playerNames)) }),
+        availability: {
+          status: selected.status,
+          diagnostics: [{
+            code: selected.status,
+            severity: "info",
+            message: selected.message,
+          }],
+        },
+      };
+    }
+
+    const eventRead = await getPersistedGameEvents(this.db, game.id);
+    const facts = buildAgentAllianceFacts({
+      events: eventRead.events.map((row) => row.envelope),
+      player: selected.player,
+      playerNames,
+      transcriptRows: await this.loadHuddleTranscriptRows(game.id),
+    });
+
+    return {
+      schemaVersion: 1,
+      game,
+      player: playerRead(selected.player, playerNames),
+      allianceFacts: facts,
+      availability: {
+        status: "available",
+        eventLogStatus: eventRead.status,
+        transcriptStatus: facts.huddles.some((huddle) => huddle.messages.length > 0) ? "available" : "not_available",
+        diagnostics: [
+          ...eventRead.diagnostics.map((diagnostic) => ({
+            code: "event_log_diagnostic",
+            severity: "warning" as const,
+            message: JSON.stringify(diagnostic),
+          })),
+          ...(facts.huddles.length > 0 && facts.huddles.every((huddle) => huddle.messages.length === 0)
+            ? [{
+              code: "missing_huddle_chat",
+              severity: "info" as const,
+              message: "Alliance huddle sessions were recorded, but no persisted huddle transcript rows were available.",
+            }]
+            : []),
+        ],
+      },
     };
   }
 
@@ -582,6 +731,385 @@ export class ProductionGameMcpReadModel {
     if (!isGamesSubjectAccess(access)) return null;
     const claims = await resolveGamesMcpClaims(this.db, access.userId);
     return Array.from(claims.gameIds);
+  }
+
+  private async loadGamePlayers(gameId: string): Promise<GamePlayerRow[]> {
+    return await this.db
+      .select()
+      .from(schema.gamePlayers)
+      .where(eq(schema.gamePlayers.gameId, gameId))
+      .orderBy(asc(schema.gamePlayers.joinedAt), asc(schema.gamePlayers.id));
+  }
+
+  private async selectableAlliancePlayers(
+    gameId: string,
+    players: readonly GamePlayerRow[],
+    access: ProductionGameMcpAccess,
+  ): Promise<GamePlayerRow[]> {
+    if (!isGamesSubjectAccess(access)) return [...players];
+    const claims = await resolveGamesMcpClaims(this.db, access.userId);
+    if (!claims.gameIds.has(gameId)) return [];
+    return players.filter((player) =>
+      claims.playerIds.has(player.id) ||
+      Boolean(player.agentProfileId && claims.agentProfileIds.has(player.agentProfileId))
+    );
+  }
+
+  private async loadHuddleTranscriptRows(gameId: string): Promise<Array<typeof schema.transcripts.$inferSelect>> {
+    return await this.db
+      .select()
+      .from(schema.transcripts)
+      .where(and(
+        eq(schema.transcripts.gameId, gameId),
+        eq(schema.transcripts.scope, "huddle"),
+      ))
+      .orderBy(asc(schema.transcripts.timestamp), asc(schema.transcripts.id));
+  }
+}
+
+function selectAlliancePlayer(
+  players: readonly GamePlayerRow[],
+  selectablePlayers: readonly GamePlayerRow[],
+  options: ProductionGameMcpAgentAlliancesOptions,
+): {
+  status: "available";
+  player: GamePlayerRow;
+} | {
+  status: "agent_ambiguous" | "agent_not_authorized" | "agent_not_found";
+  message: string;
+  selectablePlayers?: readonly GamePlayerRow[];
+} {
+  if (options.playerId) {
+    const player = selectablePlayers.find((candidate) => candidate.id === options.playerId);
+    if (player) return { status: "available", player };
+    if (players.some((candidate) => candidate.id === options.playerId)) {
+      return { status: "agent_not_authorized", message: "That player exists in this game, but this caller is not authorized to read their alliance facts." };
+    }
+    return { status: "agent_not_found", message: "No player in this game matched playerId." };
+  }
+  if (options.agentId) {
+    const matches = selectablePlayers.filter((candidate) =>
+      candidate.agentProfileId === options.agentId || candidate.id === options.agentId
+    );
+    if (matches.length === 1) return { status: "available", player: matches[0]! };
+    const allMatches = players.filter((candidate) =>
+      candidate.agentProfileId === options.agentId || candidate.id === options.agentId
+    );
+    if (allMatches.length > 0 && matches.length === 0) {
+      return { status: "agent_not_authorized", message: "That agent exists in this game, but this caller is not authorized to read their alliance facts." };
+    }
+    return {
+      status: matches.length > 1 ? "agent_ambiguous" : "agent_not_found",
+      message: matches.length > 1
+        ? "Multiple owned players matched agentId. Call again with playerId."
+        : "No player in this game matched agentId.",
+      ...(matches.length > 1 && { selectablePlayers: matches }),
+    };
+  }
+  if (options.player) {
+    const matches = selectablePlayers.filter((candidate) =>
+      playerName(candidate).trim().toLowerCase() === options.player!.trim().toLowerCase()
+    );
+    if (matches.length === 1) return { status: "available", player: matches[0]! };
+    const allMatches = players.filter((candidate) =>
+      playerName(candidate).trim().toLowerCase() === options.player!.trim().toLowerCase()
+    );
+    if (allMatches.length > 0 && matches.length === 0) {
+      return { status: "agent_not_authorized", message: "That player exists in this game, but this caller is not authorized to read their alliance facts." };
+    }
+    return {
+      status: matches.length > 1 ? "agent_ambiguous" : "agent_not_found",
+      message: matches.length > 1
+        ? "Multiple owned players matched player. Call again with playerId or agentId."
+        : "No player in this game matched player.",
+      ...(matches.length > 1 && { selectablePlayers: matches }),
+    };
+  }
+  if (selectablePlayers.length === 1) {
+    return { status: "available", player: selectablePlayers[0]! };
+  }
+  if (selectablePlayers.length > 1) {
+    return {
+      status: "agent_ambiguous",
+      message: "Multiple owned agents are in this game. Call again with playerId or agentId.",
+      selectablePlayers,
+    };
+  }
+  return {
+    status: "agent_not_found",
+    message: "No owned agent player was found for this game.",
+  };
+}
+
+function buildAgentAllianceFacts(params: {
+  events: readonly CanonicalGameEvent[];
+  player: GamePlayerRow;
+  playerNames: Map<string, string>;
+  transcriptRows: ReadonlyArray<typeof schema.transcripts.$inferSelect>;
+}): {
+  proposals: AgentAllianceProposalRead[];
+  alliances: AgentAllianceRecordRead[];
+  huddles: AgentAllianceHuddleRead[];
+} {
+  const proposalByLineageId = new Map<string, AgentAllianceProposalRead>();
+  const allianceById = new Map<string, AgentAllianceRecordRead>();
+  const outcomeBySessionId = new Map<string, AgentAllianceOutcomeRead>();
+  const outcomeByAllianceId = new Map<string, AgentAllianceOutcomeRead>();
+  const huddleSessions: Array<{
+    id: string;
+    allianceId: string;
+    round: number;
+    window: string;
+    pass: number;
+    speakerIds: string[];
+  }> = [];
+
+  for (const event of params.events) {
+    switch (event.type) {
+      case "alliance.proposal_submitted":
+      case "alliance.response_recorded":
+      case "alliance.counter_submitted":
+      case "alliance.proposal_expired": {
+        const lineage = event.payload.lineage;
+        if (!agentParticipatedInLineage(lineage, params.player.id)) break;
+        const currentVersion = currentAllianceVersion(lineage);
+        if (!currentVersion) break;
+        const responses = lineage.responsesByVersion[lineage.currentVersionId] ?? {};
+        proposalByLineageId.set(lineage.id, {
+          lineageId: lineage.id,
+          allianceId: lineage.allianceId,
+          status: lineage.status,
+          proposedRound: lineage.createdRound,
+          ...(lineage.resolvedRound !== null && { resolvedRound: lineage.resolvedRound }),
+          currentVersionId: lineage.currentVersionId,
+          currentTerms: termsRead(currentVersion.terms, params.playerNames),
+          proposer: {
+            id: currentVersion.proposerId,
+            name: nameForPlayer(params.playerNames, currentVersion.proposerId),
+          },
+          yourResponse: responses[params.player.id] ?? null,
+          finalResult: lineage.status,
+        });
+        break;
+      }
+      case "alliance.activated":
+      case "alliance.amendment_resolved":
+      case "alliance.closed":
+      case "alliance.archived": {
+        const alliance = event.payload.alliance;
+        if (alliance.memberIds.includes(params.player.id)) {
+          allianceById.set(alliance.id, allianceRead(alliance, params.playerNames, []));
+        }
+        break;
+      }
+      case "alliance.huddle_completed": {
+        const session = event.payload.session;
+        if (session.speakerIds.includes(params.player.id)) {
+          huddleSessions.push({
+            id: session.id,
+            allianceId: session.allianceId,
+            round: session.round,
+            window: session.window,
+            pass: session.pass,
+            speakerIds: [...session.speakerIds],
+          });
+        }
+        break;
+      }
+      case "alliance.huddle_outcome_recorded": {
+        const outcome = outcomeRead(event.payload.outcome);
+        outcomeBySessionId.set(event.payload.outcome.sessionId, outcome);
+        outcomeByAllianceId.set(event.payload.outcome.allianceId, outcome);
+        if (event.payload.alliance?.memberIds.includes(params.player.id)) {
+          const existing = allianceById.get(event.payload.alliance.id);
+          const outcomes = existing?.huddleOutcomes ?? [];
+          allianceById.set(event.payload.alliance.id, allianceRead(event.payload.alliance, params.playerNames, [
+            ...outcomes.filter((item) => item.id !== outcome.id),
+            outcome,
+          ]));
+        }
+        break;
+      }
+    }
+  }
+
+  const huddles = huddleSessions
+    .filter((session) => allianceById.has(session.allianceId))
+    .map((session) => {
+      const alliance = allianceById.get(session.allianceId)!;
+      const speakers = session.speakerIds.map((id) => ({ id, name: nameForPlayer(params.playerNames, id) }));
+      const messages = huddleMessagesForSession(params.transcriptRows, session, params.playerNames, params.player.id);
+      const outcome = outcomeBySessionId.get(session.id) ?? outcomeByAllianceId.get(session.allianceId);
+      return {
+        allianceId: session.allianceId,
+        allianceName: alliance.name,
+        round: session.round,
+        window: session.window,
+        pass: session.pass,
+        speakers,
+        messages,
+        ...(outcome && { outcome }),
+      };
+    });
+
+  return {
+    proposals: Array.from(proposalByLineageId.values()),
+    alliances: Array.from(allianceById.values()).map((alliance) => ({
+      ...alliance,
+      huddleOutcomes: huddles
+        .filter((huddle) => huddle.allianceId === alliance.id && huddle.outcome)
+        .map((huddle) => huddle.outcome!),
+    })),
+    huddles,
+  };
+}
+
+function huddleMessagesForSession(
+  rows: ReadonlyArray<typeof schema.transcripts.$inferSelect>,
+  session: { round: number; window: string; speakerIds: string[] },
+  playerNames: Map<string, string>,
+  selectedPlayerId: string,
+): AgentAllianceHuddleRead["messages"] {
+  const phase = session.window === "pre_vote" ? Phase.PRE_VOTE_HUDDLE : Phase.PRE_COUNCIL_HUDDLE;
+  const expectedParticipants = new Set([
+    ...session.speakerIds,
+    ...session.speakerIds.map((id) => nameForPlayer(playerNames, id)),
+  ]);
+  return rows
+    .filter((row) => row.round === session.round && row.phase === phase)
+    .filter((row) => {
+      const participants = new Set<string>();
+      if (row.fromPlayerId) participants.add(row.fromPlayerId);
+      const fromId = playerIdForName(playerNames, row.fromPlayerId ?? "");
+      if (fromId) participants.add(fromId);
+      for (const target of parseStringArray(row.toPlayerIds)) {
+        participants.add(target);
+        const targetId = playerIdForName(playerNames, target);
+        if (targetId) participants.add(targetId);
+      }
+      return session.speakerIds.every((id) =>
+        participants.has(id) || participants.has(nameForPlayer(playerNames, id))
+      ) && Array.from(participants).some((item) => expectedParticipants.has(item));
+    })
+    .map((row) => {
+      const fromId = row.fromPlayerId && playerNames.has(row.fromPlayerId)
+        ? row.fromPlayerId
+        : playerIdForName(playerNames, row.fromPlayerId ?? "");
+      return {
+        from: {
+          ...(fromId && { id: fromId }),
+          name: fromId ? nameForPlayer(playerNames, fromId) : row.fromPlayerId ?? "Unknown",
+        },
+        text: row.text,
+        timestamp: row.timestamp,
+        ...(fromId === selectedPlayerId && row.thinking && { thinking: row.thinking }),
+      };
+    });
+}
+
+function currentAllianceVersion(lineage: AllianceProposalLineage) {
+  return lineage.versions.find((version) => version.versionId === lineage.currentVersionId) ?? lineage.versions.at(-1) ?? null;
+}
+
+function agentParticipatedInLineage(
+  lineage: AllianceProposalLineage,
+  playerId: string,
+): boolean {
+  for (const version of lineage.versions) {
+    if (version.proposerId === playerId) return true;
+    if (version.terms.memberIds.includes(playerId)) return true;
+    if ((version.requiredConsentMemberIds ?? version.terms.memberIds).includes(playerId)) return true;
+  }
+  return Object.values(lineage.responsesByVersion).some((responses) => playerId in responses);
+}
+
+function termsRead(
+  terms: { name: string; memberIds: string[]; purpose: string; timebox: string | null },
+  playerNames: Map<string, string>,
+): AgentAllianceTermsRead {
+  return {
+    name: terms.name,
+    memberIds: [...terms.memberIds],
+    memberNames: terms.memberIds.map((id) => nameForPlayer(playerNames, id)),
+    purpose: terms.purpose,
+    timebox: terms.timebox,
+  };
+}
+
+function allianceRead(
+  alliance: AllianceRecord,
+  playerNames: Map<string, string>,
+  huddleOutcomes: AgentAllianceOutcomeRead[],
+): AgentAllianceRecordRead {
+  return {
+    id: alliance.id,
+    status: alliance.status,
+    ...termsRead(alliance, playerNames),
+    createdRound: alliance.createdRound,
+    updatedRound: alliance.updatedRound,
+    huddleOutcomes,
+  };
+}
+
+function outcomeRead(
+  outcome: AllianceHuddleOutcome,
+): AgentAllianceOutcomeRead {
+  return {
+    id: outcome.id,
+    round: outcome.round,
+    window: outcome.window,
+    ask: outcome.ask,
+    plan: outcome.plan,
+    promises: [...outcome.promises],
+    dissent: [...outcome.dissent],
+    confidence: outcome.confidence,
+    posture: outcome.posture,
+    leakOrBetrayalClaims: [...outcome.leakOrBetrayalClaims],
+  };
+}
+
+function playerRead(player: GamePlayerRow, playerNames: Map<string, string>): AgentAlliancePlayerRead {
+  return {
+    id: player.id,
+    name: nameForPlayer(playerNames, player.id),
+    ...(player.agentProfileId && { agentProfileId: player.agentProfileId }),
+  };
+}
+
+function playerNameMap(players: readonly GamePlayerRow[]): Map<string, string> {
+  return new Map(players.map((player) => [player.id, playerName(player)]));
+}
+
+function playerName(player: GamePlayerRow): string {
+  try {
+    const parsed = JSON.parse(player.persona) as { name?: unknown };
+    if (typeof parsed.name === "string" && parsed.name.trim().length > 0) return parsed.name;
+  } catch {
+    // Fall through to id.
+  }
+  return player.id;
+}
+
+function nameForPlayer(playerNames: Map<string, string>, id: string): string {
+  return playerNames.get(id) ?? id;
+}
+
+function playerIdForName(playerNames: Map<string, string>, name: string): string | undefined {
+  const normalized = name.trim().toLowerCase();
+  if (!normalized) return undefined;
+  for (const [id, playerNameValue] of playerNames) {
+    if (playerNameValue.trim().toLowerCase() === normalized) return id;
+  }
+  return undefined;
+}
+
+function parseStringArray(value: string | null): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
   }
 }
 

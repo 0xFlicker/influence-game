@@ -277,6 +277,25 @@ function isTrailingPartialLine(index: number, lines: string[]): boolean {
   return lines.slice(index + 1).every((line) => line.trim().length === 0);
 }
 
+function allianceLineageMentionsActor(value: unknown, actorId: UUID): boolean {
+  if (!isRecord(value)) return false;
+  const versions = value.versions;
+  if (!Array.isArray(versions)) return false;
+  return versions.some((version) => {
+    if (!isRecord(version)) return false;
+    if (version.proposerId === actorId) return true;
+    if (Array.isArray(version.requiredConsentMemberIds) && version.requiredConsentMemberIds.includes(actorId)) {
+      return true;
+    }
+    const terms = version.terms;
+    return isRecord(terms) && Array.isArray(terms.memberIds) && terms.memberIds.includes(actorId);
+  });
+}
+
+function allianceRecordMentionsActor(value: unknown, actorId: UUID): boolean {
+  return isRecord(value) && Array.isArray(value.memberIds) && value.memberIds.includes(actorId);
+}
+
 function eventMentionsActor(event: CanonicalGameEvent, actorId: UUID): boolean {
   if (event.sourcePointers.some((pointer) => pointer.actorId === actorId)) return true;
   const payload = event.payload;
@@ -318,6 +337,14 @@ function eventMentionsActor(event: CanonicalGameEvent, actorId: UUID): boolean {
   if ("players" in payload && Array.isArray(payload.players)) {
     return payload.players.some((player) => isRecord(player) && player.id === actorId);
   }
+  if ("lineage" in payload && allianceLineageMentionsActor(payload.lineage, actorId)) return true;
+  if ("alliance" in payload && allianceRecordMentionsActor(payload.alliance, actorId)) return true;
+  if ("schedule" in payload && isRecord(payload.schedule) && Array.isArray(payload.schedule.memberIds) && payload.schedule.memberIds.includes(actorId)) {
+    return true;
+  }
+  if ("session" in payload && isRecord(payload.session) && Array.isArray(payload.session.speakerIds) && payload.session.speakerIds.includes(actorId)) {
+    return true;
+  }
   if ("voteCounts" in payload && Array.isArray(payload.voteCounts)) {
     return payload.voteCounts.some((voteCount) => isRecord(voteCount) && voteCount.id === actorId);
   }
@@ -349,6 +376,12 @@ function turnRecordMatchesPointer(
   if (!pointer.action || record.action !== pointer.action || record.round !== pointer.round) return false;
   if (pointer.actorId && turnRecordActorId(record) !== pointer.actorId) return false;
   if (pointer.phase && record.phase !== pointer.phase) return false;
+  if (
+    typeof pointer.turnPass === "number"
+    && (!isRecord(record.response) || record.response.pass !== pointer.turnPass)
+  ) {
+    return false;
+  }
   return true;
 }
 

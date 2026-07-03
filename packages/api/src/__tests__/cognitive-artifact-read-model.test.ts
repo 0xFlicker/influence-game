@@ -119,6 +119,125 @@ describe("CognitiveArtifactReadModel", () => {
     expect(producerReasoning.ok).toBe(true);
   });
 
+  test("keeps alliance action and huddle cognitive artifacts owner-only for subject access", async () => {
+    const gameId = randomUUID();
+    const ownerUserId = randomUUID();
+    const participantUserId = randomUUID();
+    const ownerPlayerId = randomUUID();
+    const participantPlayerId = randomUUID();
+    const allianceActionThinkingId = randomUUID();
+    const allianceActionStrategyId = randomUUID();
+    const huddleThinkingId = randomUUID();
+    const huddleStrategyId = randomUUID();
+    const publicThinkingId = randomUUID();
+
+    await insertUsers(ownerUserId, participantUserId);
+    await insertGame(gameId, { captureVersion: 1 });
+    await insertPlayer(gameId, ownerPlayerId, ownerUserId);
+    await insertPlayer(gameId, participantPlayerId, participantUserId);
+    await insertArtifact({
+      id: allianceActionThinkingId,
+      gameId,
+      actorPlayerId: ownerPlayerId,
+      actorUserId: ownerUserId,
+      artifactType: "thinking",
+      action: "alliance-action",
+      phase: "MINGLE_I",
+      payload: { thinking: "private alliance proposal thought" },
+    });
+    await insertArtifact({
+      id: allianceActionStrategyId,
+      gameId,
+      actorPlayerId: ownerPlayerId,
+      actorUserId: ownerUserId,
+      artifactType: "strategy",
+      action: "alliance-action",
+      phase: "MINGLE_I",
+      payload: { decisionLog: "private alliance proposal strategy" },
+    });
+    await insertArtifact({
+      id: huddleThinkingId,
+      gameId,
+      actorPlayerId: ownerPlayerId,
+      actorUserId: ownerUserId,
+      artifactType: "thinking",
+      action: "alliance-huddle-turn",
+      phase: "PRE_VOTE_HUDDLE",
+      payload: { thinking: "private huddle thought" },
+    });
+    await insertArtifact({
+      id: huddleStrategyId,
+      gameId,
+      actorPlayerId: ownerPlayerId,
+      actorUserId: ownerUserId,
+      artifactType: "strategy",
+      action: "alliance-huddle-turn",
+      phase: "PRE_VOTE_HUDDLE",
+      payload: { decisionLog: "private huddle strategy" },
+    });
+    await insertArtifact({
+      id: publicThinkingId,
+      gameId,
+      actorPlayerId: ownerPlayerId,
+      actorUserId: ownerUserId,
+      artifactType: "thinking",
+      payload: { thinking: "ordinary participant-visible thought" },
+    });
+
+    const participantAccess = {
+      userId: participantUserId,
+      authProfile: "subject" as const,
+    };
+    const participantList = await readModel.listArtifacts({ gameIdOrSlug: gameId }, participantAccess);
+    expect(participantList.ok).toBe(true);
+    if (!participantList.ok) throw new Error(participantList.error);
+    expect(participantList.artifacts.map((artifact) => artifact.id)).toEqual([publicThinkingId]);
+
+    const deniedAllianceThinking = await readModel.readArtifact({
+      gameIdOrSlug: gameId,
+      artifactId: allianceActionThinkingId,
+      artifactType: "thinking",
+      actorPlayerId: ownerPlayerId,
+    }, participantAccess);
+    expect(deniedAllianceThinking).toMatchObject({ ok: false, status: "denied" });
+
+    const deniedHuddleThinking = await readModel.readArtifact({
+      gameIdOrSlug: gameId,
+      artifactId: huddleThinkingId,
+      artifactType: "thinking",
+      actorPlayerId: ownerPlayerId,
+    }, participantAccess);
+    expect(deniedHuddleThinking).toMatchObject({ ok: false, status: "denied" });
+
+    const ownerHuddleStrategy = await readModel.readArtifact({
+      gameIdOrSlug: gameId,
+      artifactId: huddleStrategyId,
+      artifactType: "strategy",
+      actorPlayerId: ownerPlayerId,
+    }, {
+      userId: ownerUserId,
+      authProfile: "subject" as const,
+    });
+    expect(ownerHuddleStrategy.ok).toBe(true);
+
+    const ownerAllianceStrategy = await readModel.readArtifact({
+      gameIdOrSlug: gameId,
+      artifactId: allianceActionStrategyId,
+      artifactType: "strategy",
+      actorPlayerId: ownerPlayerId,
+    }, {
+      userId: ownerUserId,
+      authProfile: "subject" as const,
+    });
+    expect(ownerAllianceStrategy.ok).toBe(true);
+
+    const producerHuddleThinking = await readModel.readArtifact({
+      gameIdOrSlug: gameId,
+      artifactId: huddleThinkingId,
+    }, PRODUCER_ACCESS);
+    expect(producerHuddleThinking.ok).toBe(true);
+  });
+
   test("denies created-only users before exposing old-game no-capture state", async () => {
     const gameId = randomUUID();
     const creatorUserId = randomUUID();
@@ -254,6 +373,8 @@ describe("CognitiveArtifactReadModel", () => {
     actorUserId: string;
     artifactType: "reasoning" | "thinking" | "strategy";
     payload: Record<string, unknown>;
+    action?: string;
+    phase?: string;
     visibilityStatus?: "active" | "capture_degraded";
     diagnostics?: Record<string, unknown>;
   }): Promise<void> {
@@ -264,7 +385,8 @@ describe("CognitiveArtifactReadModel", () => {
       actorRole: "player",
       actorPlayerId: params.actorPlayerId,
       actorUserId: params.actorUserId,
-      action: "vote",
+      action: params.action ?? "vote",
+      phase: params.phase,
       payloadByteLength: Buffer.byteLength(JSON.stringify(params.payload), "utf8"),
       payload: params.payload,
       visibilityStatus: params.visibilityStatus ?? "active",

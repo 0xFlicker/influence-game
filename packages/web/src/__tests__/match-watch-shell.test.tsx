@@ -319,7 +319,7 @@ describe("MatchWatchShell", () => {
 
 function watchState(): GameWatchState {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     gameId: "game-1",
     slug: "vast-violet-code",
     status: "in_progress",

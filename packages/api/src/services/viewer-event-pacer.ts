@@ -122,10 +122,11 @@ export class ViewerEventPacer {
           return this.holds.voteEndMs;
         }
 
-        // Transitioning away from MINGLE (room phase) → pause so viewers can read last messages in the rooms
+        // Transitioning away from a room phase -> pause so viewers can read last messages in the rooms
         if (
-          this.currentPhase === Phase.MINGLE &&
-          phase !== Phase.MINGLE
+          (this.currentPhase === Phase.MINGLE || this.currentPhase === Phase.POST_VOTE_MINGLE) &&
+          phase !== Phase.MINGLE &&
+          phase !== Phase.POST_VOTE_MINGLE
         ) {
           return this.holds.roomEndMs;
         }

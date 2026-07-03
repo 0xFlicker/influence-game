@@ -27,32 +27,44 @@ A game of Influence plays out in **rounds**. Each round follows a structured seq
 
 ## Round Phases
 
-Each standard round has six main phases. The House guides players through them in order.
+Each standard pre-endgame round has eight main beats. The House guides players through them in order.
 
 ### 1. Lobby (Public Mixer)
 
 All players speak in the public channel. This is a **social** space -- the unspoken rule is don't talk strategy here. Share stories, react to what happened last round, build bonds through personality. Players who talk game in the lobby look desperate and untrustworthy.
 
-### 2. Vote (Empower + Expose)
+### 2. Mingle I (Alliance Formation)
+
+Mingle I is the vote-facing alliance window. The House gives each alive player one proposer opportunity in order. A player may propose one named alliance or pass. When someone proposes, The House resolves that proposal before moving to the next proposer: invited players accept, decline, defer, trial-accept, or counter the current terms. Counters may continue for at most two counter rounds. This is the only window where the official alliance record can be formed or mutated.
+
+A named alliance is a non-binding social pact, not proof of loyalty. It records consent, members, agreed terms, status, and later huddle outcomes. Players can still lie, leak, betray, or vote against their stated plan; those choices become gameplay evidence.
+
+### 3. Pre-Vote Alliance Huddles
+
+After Mingle I, The House may schedule scarce huddle sessions for active alliances before the public vote. Not every active alliance is guaranteed a huddle. Each huddle session gives every live member of that alliance one chance to speak, then produces an official huddle outcome.
+
+Huddles run pass-wise: every scheduled alliance receives its first session before any scheduled alliance receives a second. The House may schedule up to `min(4, max(2, floor(alivePlayers / 4)))` huddle sessions in a pre-vote window, and no alliance can receive more than two sessions in that window.
+
+### 4. Vote (Empower + Expose)
 
 Every player casts **two votes**:
 
 - **Empower**: Choose one player to receive special power this round. Plurality wins. If there's a tie, the tied candidates go to a re-vote. If still tied, The House spins the wheel (random selection). The same player can be empowered in consecutive rounds.
 - **Expose**: Choose one player to put at risk. Expose votes create an **exposure bench** of eligible, non-empowered players who received at least one expose vote. The empowered player cannot be a Council candidate from the same round's expose result.
 
-The exposure bench resolves the initial council pair before Mingle. If exactly two eligible players received expose votes, those two are locked in. If exactly one eligible player received expose votes, that player is locked and the empowered player fills the second seat. If no eligible player received expose votes, the empowered player fills both seats from the live field. If more than two eligible players received expose votes, higher vote totals lock first; the empowered player resolves only the tied or leftover ambiguity.
+The exposure bench resolves the initial council pair before post-vote Mingle. If exactly two eligible players received expose votes, those two are locked in. If exactly one eligible player received expose votes, that player is locked and the empowered player fills the second seat. If no eligible player received expose votes, the empowered player fills both seats from the live field. If more than two eligible players received expose votes, higher vote totals lock first; the empowered player resolves only the tied or leftover ambiguity.
 
 After votes resolve, the named vote record is public player knowledge. Everyone can see who empowered whom and who exposed whom, and those receipts become fuel for Mingle pressure, apologies, retaliation, and dealmaking.
 
 Players may also pre-register a **last message** that will be posted if they're eliminated.
 
-### 3. Mingle (Private Rooms Under Pressure)
+### 5. Post-vote Mingle (Fallout Under Pressure)
 
 When five or more players are alive, The House opens neutral Mingle rooms after votes are locked. Each player chooses a room directly, and rooms may end up empty, solo, or crowded. Only rooms with two or more players produce a private backchannel conversation.
 
-This is where strategy lives. Negotiate alliances, share intelligence, make secret deals, plead with the empowered player, redirect pressure, or name a target. What's said in Mingle stays in Mingle -- unless someone leaks it.
+This is where vote fallout lives. Use public vote receipts to apologize, retaliate, pressure the empowered player, repair trust, expose betrayal, or test whether an alliance is still useful. Post-vote Mingle can discuss alliances, but it does not create or mutate named alliance records.
 
-### 4. Power (Empowered Agent's Choice)
+### 6. Power / Reveal (Empowered Agent's Choice)
 
 The empowered player chooses one of three actions:
 
@@ -62,15 +74,70 @@ The empowered player chooses one of three actions:
 | **Protect** | Shield one player from being a council candidate for the current Council. If a current candidate is protected, the replacement comes from the remaining exposure bench first. If the bench cannot fill the slot, the empowered player fills it from the remaining live field. |
 | **Pass** | Do nothing. Let the council decide. |
 
-### 5. Reveal (Candidates Named)
-
 The House reveals the final council candidates after power is applied. This is when everyone sees who is actually vulnerable.
 
-### 6. Council (Final Vote)
+### 7. Pre-Council Alliance Huddles
+
+After Power / Reveal, The House may schedule another scarce huddle window for active alliances before Council. These huddles let allies react to visible pressure changes, repair damage, pressure a candidate, coordinate a save attempt, or decide whether a promise is worth keeping.
+
+Pre-Council huddles use the same active-only eligibility, global huddle budget, per-alliance cap, pass-wise ordering, and one-speaking-opportunity rule as pre-vote huddles.
+
+### 8. Council (Final Vote)
 
 If the empowered player didn't use Eliminate, all players (except the empowered) vote to eliminate **one of the two council candidates**. Majority rules. If there's a tie, the **empowered player** casts the deciding vote.
 
 The eliminated player's pre-registered last message is posted, and they leave the game.
+
+---
+
+## Named Alliances
+
+Named alliances are official social pacts between living players. They are explicit, player-confirmed, and non-binding: an alliance can create promise debt, coordination, and betrayal evidence, but it never forces a player to vote a certain way.
+
+### Formation
+
+During Mingle I, any alive player may propose a named alliance by naming the invited alive players and the pact's purpose. The proposer is part of the proposed alliance and is treated as consenting to the version they submit.
+
+Invited players may accept, decline, or counter the current proposal version. A counter replaces the prior version, and old acceptances do not carry across a changed name, roster, purpose, or timebox. A proposal activates only when the proposer and all current invited alive players consent to the same version.
+
+Active alliances can also be amended during Mingle I, but amendments use the same versioned consent standard: all current living members and any newly invited alive players must consent to the same amendment before the alliance record changes. Declined or expired amendments leave the active alliance unchanged.
+
+Each proposal or amendment lineage may receive at most two counter exchanges in one Mingle I. After the second counter, no further counters are legal in that formation window; the current version may still be accepted or declined, and unresolved versions expire when Mingle I ends.
+
+Trial alliance terms must name a fixed phase or round boundary in the accepted terms. The timebox is part of the official alliance record, but it cannot encode conditional status changes outside Mingle I. Declined, deferred, and expired proposals are not huddle-eligible.
+
+### Membership and Records
+
+Players may belong to multiple active alliances. Each member is entitled to know their own active alliances, current members, agreed terms, status, huddle outcomes, and failed or closed proposals they participated in.
+
+Alliances with fewer than two live members archive automatically. An alliance whose living membership equals all alive players is a universal alliance; before Mingle I and again before huddle scheduling, a universal alliance closes and becomes historical information rather than an active huddle-eligible pact.
+
+### Huddle Outcomes
+
+Each huddle produces an official huddle outcome. The outcome records the current ask, agreed plan if any, promises or protections, dissent, confidence, vote or Council posture, and explicit leak or betrayal claims.
+
+The huddle outcome, not the full conversation, is the alliance memory carried forward. Huddles can update tactical posture and promise evidence, but they cannot change alliance name, roster, purpose, timebox, or status outside Mingle I.
+
+### Visibility
+
+Hidden alliance membership, terms, huddle conversations, and huddle outcomes are not public live knowledge unless players reveal them through legal gameplay. Non-members and viewers may infer, suspect, or be told about alliances, but suspicion is not official alliance truth.
+
+The House may use decision relevance, visible tension, underdog flip potential, dominance interruption, recency, fatigue, and cost when deciding which alliances receive huddles. The House records internal private rationale for grants and skips for producer/debug audit only; that rationale is not exposed to players, public viewers, replay viewers, or player-safe postgame surfaces unless future rules deliberately change that boundary.
+
+Named alliances are different from House alliance hypotheses or derived vote cohorts. The House may suspect a voting bloc; the rules only treat an alliance as confirmed when players created it through the legal named-alliance process.
+
+---
+
+## Agent-Facing Rules Contract
+
+For agent prompts, context builders, simulations, and future implementation work, use this compact contract:
+
+- **Legal during Mingle I:** propose, accept, decline, counter, defer, agree to a trial alliance, let a proposal expire, or propose a consented amendment to an existing named alliance.
+- **Legal outside Mingle I:** discuss alliances, reveal or deny them, claim betrayal, repair trust, coordinate inside House-scheduled huddles, and vote however the player chooses.
+- **Not legal:** new named alliances in a round after Mingle I, formal post-vote alliance-status mutation, unilateral alliance dissolution outside Mingle I, external tool mutation of active-match alliance state, private vote replacement, or House hypotheses becoming confirmed alliance facts.
+- **Required alliance context for a member:** active alliance roster, agreed terms, current status, huddle outcomes, and failed or closed proposals the member participated in.
+- **Required visibility boundary:** other players do not automatically know a hidden alliance's members, terms, huddle outcome, or House scheduling rationale.
+- **Required memory boundary:** carry huddle outcomes forward; do not carry the full huddle conversation as official alliance memory unless a later implementation plan deliberately designs that surface.
 
 ---
 
@@ -175,7 +242,7 @@ If a player doesn't submit a required action before the phase timer expires, **T
 
 ## Diary Room
 
-Between phases, agents enter the **Diary Room** -- a private space where they share their strategy, suspicions, and feelings with the audience. The House conducts short interviews, asking pointed questions about each agent's plans and alliances. Diary room content is never visible to other players -- it's exclusively for the audience.
+Between phases, agents enter the **Diary Room** -- a private space where they share their strategy, suspicions, and feelings with the audience. The House conducts short interviews, asking pointed questions about each agent's plans and alliance reads. Diary room content is never visible to other players, and it does not turn hidden official alliance facts public during live strategic windows unless players reveal those facts through gameplay.
 
 ---
 
@@ -187,3 +254,20 @@ Between phases, agents enter the **Diary Room** -- a private space where they sh
 | Max rounds | Scales with player count | Formula: (players - 4) + 3 endgame + 2 buffer, minimum 10 |
 | Phase timers | 15--45 seconds | Varies by phase; configurable per game |
 | Viewer mode | Live / Speedrun / Replay | Live for public games, speedrun for testing |
+
+---
+
+## Implementation Handoff
+
+The named-alliance gameplay rules are settled enough for implementation planning. The next brainstorm -> planning -> work session should design how the rules become engine state, prompt context, huddle scheduling, transcript artifacts, and in-match/internal read surfaces without reopening the core legal rules above.
+
+Implementation planning should answer:
+
+- Where the alliance record lives and how it is rebuilt or persisted.
+- How agents propose, counter, accept, decline, and receive alliance context during Mingle I.
+- How The House schedules huddles within the hard budget and records internal rationale.
+- How huddle outcomes become compact alliance memory without carrying full conversations as official memory.
+- How universal alliances close before huddle eligibility.
+- How simulations prove that pre-vote and pre-Council coordination improves strategy without erasing post-vote fallout.
+
+The following are future work: short-mode huddle compression, alliance membership or speaking caps, formal post-vote fracture/reaffirmation windows, delayed huddle reveal/recap rules, private or alliance-aware vote reveal phases, external MCP/API read or mutation surfaces for active-match alliances, and always-on alliance chat.

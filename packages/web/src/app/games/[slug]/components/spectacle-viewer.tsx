@@ -81,7 +81,7 @@ export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] 
     const { round, phase } = msgs[0]!;
     const roomType = phaseToRoomType(phase);
 
-    if (phase === "MINGLE") {
+    if (phase === "MINGLE" || phase === "POST_VOTE_MINGLE") {
       if (msgs.some((m) => (m.roomMetadata?.rooms.length ?? 0) > 0)) {
         scenes.push({
           id,

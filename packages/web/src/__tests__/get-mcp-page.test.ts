@@ -22,13 +22,13 @@ describe("/get-mcp setup page", () => {
     );
 
     expect(commands).toContain(
-      "codex mcp add influence-game --url https://api.influence.example/mcp",
+      "codex mcp add the-house-influence --url https://api.influence.example/mcp",
     );
     expect(refreshCommands).toContain(
-      'codex mcp login influence-game --scopes "agents:read games:read"',
+      'codex mcp login the-house-influence --scopes "agents:read games:read"',
     );
     expect(commands).toContain(
-      "claude mcp add --transport http influence-game https://api.influence.example/mcp",
+      "claude mcp add --transport http the-house-influence https://api.influence.example/mcp",
     );
   });
 

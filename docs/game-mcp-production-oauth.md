@@ -153,14 +153,14 @@ The protected-resource metadata for `/mcp` advertises all supported scopes. Read
 Codex setup:
 
 ```bash
-codex mcp add influence-game --url https://<api-host>/mcp
-codex mcp login influence-game --scopes "agents:read games:read"
+codex mcp add the-house-influence --url https://<api-host>/mcp
+codex mcp login the-house-influence --scopes "agents:read games:read"
 ```
 
 Claude Code setup:
 
 ```bash
-claude mcp add --transport http influence-game https://<api-host>/mcp
+claude mcp add --transport http the-house-influence https://<api-host>/mcp
 ```
 
 Use the client's MCP authentication flow when it reports OAuth is needed. Clients check protected resource metadata first, then authorization server metadata, can use dynamic client registration for public clients, and can override metadata discovery with `authServerMetadataUrl` if a deployment proxy blocks standard well-known paths.

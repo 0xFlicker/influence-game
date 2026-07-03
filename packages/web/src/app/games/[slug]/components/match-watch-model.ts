@@ -15,20 +15,27 @@ import type { WatchConnStatus } from "./types";
 const MATCH_WATCH_PHASES: readonly PhaseKey[] = [
   "INTRODUCTION",
   "LOBBY",
-  "MINGLE",
+  "MINGLE_I",
+  "PRE_VOTE_HUDDLE",
   "VOTE",
+  "POST_VOTE_MINGLE",
   "POWER",
   "REVEAL",
+  "PRE_COUNCIL_HUDDLE",
   "COUNCIL",
   "END",
 ];
 const MATCH_WATCH_WHISPER_PHASES: readonly PhaseKey[] = [
   "INTRODUCTION",
   "LOBBY",
+  "MINGLE_I",
+  "PRE_VOTE_HUDDLE",
   "WHISPER",
   "VOTE",
+  "POST_VOTE_MINGLE",
   "POWER",
   "REVEAL",
+  "PRE_COUNCIL_HUDDLE",
   "COUNCIL",
   "END",
 ];
@@ -36,12 +43,16 @@ const REPLAY_FRAME_PHASE_ORDER: readonly PhaseKey[] = [
   "INIT",
   "INTRODUCTION",
   "LOBBY",
+  "MINGLE_I",
+  "PRE_VOTE_HUDDLE",
+  "VOTE",
   "WHISPER",
   "MINGLE",
+  "POST_VOTE_MINGLE",
   "RUMOR",
-  "VOTE",
   "POWER",
   "REVEAL",
+  "PRE_COUNCIL_HUDDLE",
   "COUNCIL",
   "PLEA",
   "ACCUSATION",
@@ -367,7 +378,11 @@ function selectCurrentWatchPressurePlayers(
   watchState: GameWatchState | undefined,
 ): GameWatchState["players"] | null {
   if (!watchState || watchState.currentRound !== message.round) return null;
-  if (watchState.currentPhase !== "VOTE" && watchState.currentPhase !== "MINGLE") return null;
+  if (
+    watchState.currentPhase !== "VOTE" &&
+    watchState.currentPhase !== "MINGLE" &&
+    watchState.currentPhase !== "POST_VOTE_MINGLE"
+  ) return null;
   return hasPressureFacts(watchState.players) ? watchState.players : null;
 }
 
@@ -436,6 +451,8 @@ function toShellPhaseSegment(phase: PhaseKey): PhaseKey {
       return "END";
     case "RUMOR":
       return "VOTE";
+    case "MINGLE":
+      return "POST_VOTE_MINGLE";
     case "PLEA":
     case "ACCUSATION":
     case "DEFENSE":

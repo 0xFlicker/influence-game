@@ -1,4 +1,10 @@
 import type {
+  AllianceHuddleOutcome,
+  AllianceHuddleScheduleRecord,
+  AllianceHuddleSessionRecord,
+  AllianceProposalLineage,
+  AllianceProposalResponse,
+  AllianceRecord,
   CouncilVoteTally,
   EndgameEliminationTally,
   EndgameStage,
@@ -28,6 +34,7 @@ export interface CanonicalSourcePointer {
   kind: CanonicalSourcePointerKind;
   sequence?: number;
   eventSequence?: number;
+  turnPass?: number;
   gameNumber?: number;
   file?: string;
   line?: number;
@@ -50,6 +57,18 @@ export type CanonicalGameEventType =
   | "vote.empowered_set"
   | "power.action_set"
   | "power.candidates_resolved"
+  | "alliance.proposal_submitted"
+  | "alliance.response_recorded"
+  | "alliance.counter_submitted"
+  | "alliance.activated"
+  | "alliance.amendment_resolved"
+  | "alliance.proposal_expired"
+  | "alliance.closed"
+  | "alliance.archived"
+  | "alliance.huddle_scheduled"
+  | "alliance.huddle_skipped"
+  | "alliance.huddle_completed"
+  | "alliance.huddle_outcome_recorded"
   | "council.vote_cast"
   | "council.elimination_resolved"
   | "player.last_message_recorded"
@@ -73,6 +92,18 @@ const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
   "vote.empowered_set",
   "power.action_set",
   "power.candidates_resolved",
+  "alliance.proposal_submitted",
+  "alliance.response_recorded",
+  "alliance.counter_submitted",
+  "alliance.activated",
+  "alliance.amendment_resolved",
+  "alliance.proposal_expired",
+  "alliance.closed",
+  "alliance.archived",
+  "alliance.huddle_scheduled",
+  "alliance.huddle_skipped",
+  "alliance.huddle_completed",
+  "alliance.huddle_outcome_recorded",
   "council.vote_cast",
   "council.elimination_resolved",
   "player.last_message_recorded",
@@ -145,6 +176,44 @@ export type CanonicalGameEvent =
         method: "two_player" | "auto_eliminate" | "expose_scores" | "exposure_bench" | "exposure_bench_protect" | "insufficient_candidates";
         initialResolution?: Record<string, unknown>;
         shieldReplacement?: Record<string, unknown>;
+      }
+    >
+  | CanonicalEventEnvelope<"alliance.proposal_submitted", { lineage: AllianceProposalLineage }>
+  | CanonicalEventEnvelope<
+      "alliance.response_recorded",
+      {
+        lineage: AllianceProposalLineage;
+        playerId: UUID;
+        response: AllianceProposalResponse;
+        versionId: UUID;
+      }
+    >
+  | CanonicalEventEnvelope<"alliance.counter_submitted", { lineage: AllianceProposalLineage }>
+  | CanonicalEventEnvelope<
+      "alliance.activated",
+      {
+        lineage: AllianceProposalLineage;
+        alliance: AllianceRecord;
+      }
+    >
+  | CanonicalEventEnvelope<
+      "alliance.amendment_resolved",
+      {
+        lineage: AllianceProposalLineage;
+        alliance: AllianceRecord;
+      }
+    >
+  | CanonicalEventEnvelope<"alliance.proposal_expired", { lineage: AllianceProposalLineage }>
+  | CanonicalEventEnvelope<"alliance.closed", { alliance: AllianceRecord }>
+  | CanonicalEventEnvelope<"alliance.archived", { alliance: AllianceRecord }>
+  | CanonicalEventEnvelope<"alliance.huddle_scheduled", { schedule: AllianceHuddleScheduleRecord }>
+  | CanonicalEventEnvelope<"alliance.huddle_skipped", { schedule: AllianceHuddleScheduleRecord }>
+  | CanonicalEventEnvelope<"alliance.huddle_completed", { session: AllianceHuddleSessionRecord }>
+  | CanonicalEventEnvelope<
+      "alliance.huddle_outcome_recorded",
+      {
+        outcome: AllianceHuddleOutcome;
+        alliance?: AllianceRecord;
       }
     >
   | CanonicalEventEnvelope<"council.vote_cast", { voterId: UUID; target: UUID }>

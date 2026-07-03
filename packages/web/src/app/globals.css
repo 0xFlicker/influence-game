@@ -97,7 +97,11 @@
   --phase-glass-alpha: 0.07;
 }
 
-:root[data-phase="MINGLE"] {
+:root[data-phase="MINGLE"],
+:root[data-phase="MINGLE_I"],
+:root[data-phase="PRE_VOTE_HUDDLE"],
+:root[data-phase="POST_VOTE_MINGLE"],
+:root[data-phase="PRE_COUNCIL_HUDDLE"] {
   --phase-rgb: 168 85 247;
   --phase-glow-alpha: 0.08;
   --phase-glow-alpha-strong: 0.16;

@@ -204,7 +204,7 @@ export interface GameWatchFinalState {
 }
 
 export interface GameWatchState {
-  schemaVersion: 2;
+  schemaVersion: 3;
   gameId: string;
   slug?: string;
   status: GameStatus;
@@ -1096,11 +1096,15 @@ export type PhaseKey =
   | "INIT"
   | "INTRODUCTION"
   | "LOBBY"
+  | "MINGLE_I"
+  | "PRE_VOTE_HUDDLE"
   | "MINGLE" | "WHISPER"
+  | "POST_VOTE_MINGLE"
   | "RUMOR"
   | "VOTE"
   | "POWER"
   | "REVEAL"
+  | "PRE_COUNCIL_HUDDLE"
   | "COUNCIL"
   | "DIARY_ROOM"
   | "PLEA"
@@ -1127,7 +1131,7 @@ export interface GamePlayer {
   avatarUrl?: string;
 }
 
-export type TranscriptScope = "public" | "mingle" | "whisper" | "system" | "diary" | "thinking";
+export type TranscriptScope = "public" | "mingle" | "huddle" | "whisper" | "system" | "diary" | "thinking";
 
 export interface WhisperRoomPlayerRef {
   id: string;

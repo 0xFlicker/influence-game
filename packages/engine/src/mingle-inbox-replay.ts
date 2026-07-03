@@ -10,11 +10,16 @@ function nameKey(name: string): string {
   return name.trim().toLowerCase();
 }
 
+function isMingleMessagePhase(phase: Phase): boolean {
+  return phase === Phase.MINGLE || phase === Phase.POST_VOTE_MINGLE;
+}
+
 function latestMingleMessageRound(transcriptReplay: readonly TranscriptEntry[]): number | null {
   for (let index = transcriptReplay.length - 1; index >= 0; index -= 1) {
     const entry = transcriptReplay[index];
     if (
-      entry?.phase === Phase.MINGLE &&
+      entry &&
+      isMingleMessagePhase(entry.phase) &&
       entry.scope === "mingle" &&
       typeof entry.text === "string" &&
       Array.isArray(entry.to)
@@ -41,7 +46,7 @@ export function buildMingleInboxReplayFromTranscript(params: {
   for (const entry of params.transcriptReplay) {
     if (
       entry.round !== sourceRound ||
-      entry.phase !== Phase.MINGLE ||
+      !isMingleMessagePhase(entry.phase) ||
       entry.scope !== "mingle" ||
       typeof entry.text !== "string" ||
       !Array.isArray(entry.to)

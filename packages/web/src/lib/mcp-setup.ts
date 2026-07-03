@@ -1,4 +1,4 @@
-export const DEFAULT_MCP_SERVER_NAME = "influence-game";
+export const DEFAULT_MCP_SERVER_NAME = "the-house-influence";
 export const DEFAULT_LOCAL_API_URL = "http://127.0.0.1:3000";
 
 export type McpSetupClientId = "codex" | "claude-code";

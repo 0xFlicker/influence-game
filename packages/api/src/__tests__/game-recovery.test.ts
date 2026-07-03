@@ -34,7 +34,7 @@ import {
 } from "./durable-run-test-utils.js";
 
 const savedMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
-type RuntimeActorCoordinate = GameRunnerResumeActorCoordinate | "council";
+type RuntimeActorCoordinate = GameRunnerResumeActorCoordinate;
 
 const recoveryConfig: GameConfig & Record<string, unknown> = {
   ...DEFAULT_CONFIG,
@@ -377,10 +377,14 @@ describe("game startup recovery", () => {
 
   const supportedRecoveryCases = [
     { actorCoordinate: "lobby", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
+    { actorCoordinate: "mingle_i", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
+    { actorCoordinate: "pre_vote_huddle", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
     { actorCoordinate: "vote", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
-    { actorCoordinate: "mingle", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
+    { actorCoordinate: "post_vote_mingle", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
     { actorCoordinate: "power", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
     { actorCoordinate: "reveal", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
+    { actorCoordinate: "pre_council_huddle", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
+    { actorCoordinate: "council", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
     { actorCoordinate: "reckoning_lobby", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "reckoning_plea", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "reckoning_vote", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
@@ -484,7 +488,7 @@ describe("game startup recovery", () => {
     const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, "reveal", {
       config: recoveryConfigWithEndgame,
       playerCount: 6,
-      writeUnsupportedNewerCheckpoint: "council",
+      writeUnsupportedNewerCheckpoint: "mingle",
     });
 
     const suspendedInspection = await getDurableRunInspection(db, gameId);
@@ -496,7 +500,7 @@ describe("game startup recovery", () => {
     });
     const unsupportedBoundary = findCheckpointBoundary(suspendedInspection, {
       lastEventSequence: interruptedAtSequence,
-      actorCoordinate: "council",
+      actorCoordinate: "mingle",
     });
     expect(supportedBoundary?.resumeAvailable).toBeTrue();
     expect(unsupportedBoundary?.resumeAvailable).toBeFalse();
@@ -531,7 +535,7 @@ describe("game startup recovery", () => {
     const checkpoint = enrichCapsuleForV1Candidate(createCheckpointCapsule(events), {
       ownerEpoch,
       eventHeadHash: hashCanonicalEvent(events[events.length - 1]!),
-      actorCoordinate: "council",
+      actorCoordinate: "mingle",
     });
     const checkpointResult = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
     expect(checkpointResult.ok).toBeTrue();
@@ -540,7 +544,7 @@ describe("game startup recovery", () => {
     expect(candidate).toMatchObject({
       ok: false,
       gameId,
-      reason: "unsupported_actor_coordinate:council",
+      reason: "unsupported_actor_coordinate:mingle",
     });
 
     const inspection = await getDurableRunInspection(db, gameId);
@@ -552,7 +556,7 @@ describe("game startup recovery", () => {
     expect(recovery).toEqual({
       attempted: 1,
       recovered: 0,
-      skipped: [{ gameId, reason: "unsupported_actor_coordinate:council" }],
+      skipped: [{ gameId, reason: "unsupported_actor_coordinate:mingle" }],
     });
 
     const eventRows = await db

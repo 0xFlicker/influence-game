@@ -126,12 +126,20 @@ export class TranscriptLogger {
     this.emitStream({ type: "transcript_entry", entry });
   }
 
-  logMingleMessage(fromId: string, toIds: string[], text: string, roomId?: number, thinking?: string, reasoningContext?: string): void {
+  logMingleMessage(
+    fromId: string,
+    toIds: string[],
+    text: string,
+    roomId?: number,
+    thinking?: string,
+    reasoningContext?: string,
+    phase: Phase.MINGLE | Phase.POST_VOTE_MINGLE = Phase.MINGLE,
+  ): void {
     const fromName = this.gameState.getPlayerName(fromId);
     const toNames = toIds.map((id) => this.gameState.getPlayerName(id));
     const entry: TranscriptEntry = {
       round: this.gameState.round,
-      phase: Phase.MINGLE,
+      phase,
       timestamp: Date.now(),
       from: fromName,
       scope: "mingle",
@@ -145,15 +153,41 @@ export class TranscriptLogger {
     this.emitStream({ type: "transcript_entry", entry });
   }
 
+  logHuddleMessage(
+    fromId: string,
+    toIds: string[],
+    text: string,
+    phase: Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE,
+    thinking?: string,
+    reasoningContext?: string,
+  ): void {
+    const fromName = this.gameState.getPlayerName(fromId);
+    const toNames = toIds.map((id) => this.gameState.getPlayerName(id));
+    const entry: TranscriptEntry = {
+      round: this.gameState.round,
+      phase,
+      timestamp: Date.now(),
+      from: fromName,
+      scope: "huddle",
+      to: toNames,
+      text,
+      ...(thinking && { thinking }),
+      ...(reasoningContext && { reasoningContext }),
+    };
+    this.transcript.push(entry);
+    this.emitStream({ type: "transcript_entry", entry });
+  }
+
   logRoomAllocation(
     text: string,
     rooms: RoomAllocation[],
     excludedNames: string[],
     diagnostics?: MingleSessionDiagnostics,
+    phase: Phase.MINGLE | Phase.POST_VOTE_MINGLE = Phase.MINGLE,
   ): TranscriptEntry {
     const entry: TranscriptEntry = {
       round: this.gameState.round,
-      phase: Phase.MINGLE,
+      phase,
       timestamp: Date.now(),
       from: "House",
       scope: "system",

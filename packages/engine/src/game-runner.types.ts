@@ -63,10 +63,14 @@ export interface GameRunnerOptions {
 
 export const PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES = [
   "lobby",
+  "mingle_i",
+  "pre_vote_huddle",
   "vote",
-  "mingle",
+  "post_vote_mingle",
   "power",
   "reveal",
+  "pre_council_huddle",
+  "council",
   "reckoning_lobby",
   "reckoning_plea",
   "reckoning_vote",
@@ -627,6 +631,79 @@ export interface HouseProducerBrief {
   reasoningContext?: string;
 }
 
+export type AllianceActionKind =
+  | "propose"
+  | "accept"
+  | "decline"
+  | "counter"
+  | "defer"
+  | "trial"
+  | "amend"
+  | "pass";
+
+export interface AllianceActionBase {
+  action: AllianceActionKind;
+  thinking?: string;
+  reasoningContext?: string;
+  decisionLog?: string | null;
+}
+
+export interface AllianceProposalAction extends AllianceActionBase {
+  action: "propose";
+  allianceId?: UUID;
+  lineageId?: UUID;
+  versionId?: UUID;
+  name: string;
+  memberNames: string[];
+  purpose: string;
+  timebox?: string | null;
+}
+
+export interface AllianceProposalResponseAction extends AllianceActionBase {
+  action: "accept" | "decline" | "defer" | "trial";
+  lineageId: UUID;
+  versionId?: UUID | null;
+}
+
+export interface AllianceCounterAction extends AllianceActionBase {
+  action: "counter" | "amend";
+  lineageId: UUID;
+  versionId?: UUID;
+  name: string;
+  memberNames: string[];
+  purpose: string;
+  timebox?: string | null;
+}
+
+export interface AlliancePassAction extends AllianceActionBase {
+  action: "pass";
+}
+
+export type AllianceAction =
+  | AllianceProposalAction
+  | AllianceProposalResponseAction
+  | AllianceCounterAction
+  | AlliancePassAction;
+
+export interface AllianceHuddlePromptContext {
+  allianceId: UUID;
+  allianceName: string;
+  memberNames: string[];
+  purpose: string;
+  timebox?: string | null;
+  window: "pre_vote" | "pre_council";
+  scheduleId: UUID;
+  pass: number;
+}
+
+export interface AllianceHuddleTurnAction {
+  thinking?: string;
+  reasoningContext?: string;
+  message: string | null;
+  noReply?: boolean;
+  decisionLog?: string | null;
+}
+
 export interface MingleTurnAction {
   /** Agent's internal thinking (hidden from players, visible to viewers) */
   thinking?: string;
@@ -775,6 +852,10 @@ export interface IAgent {
   getWhispers(context: PhaseContext): Promise<Array<{ to: UUID[]; text: string }>>;
   /** Called before House initial Mingle room assignment to form a hidden private-room strategy intent */
   getMingleIntent?(context: PhaseContext): Promise<MingleIntentAction | null>;
+  /** Called during Mingle I to propose, respond to, counter, or pass on official named alliances. */
+  getAllianceAction?(context: PhaseContext): Promise<AllianceAction>;
+  /** Called during a House-scheduled alliance huddle for one private speaking opportunity. */
+  getAllianceHuddleTurn?(context: PhaseContext, huddle: AllianceHuddlePromptContext, conversationHistory?: Array<{ from: string; text: string }>): Promise<AllianceHuddleTurnAction>;
   /** Send a private room message to all other occupants, or null to pass */
   sendRoomMessage(context: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<AgentResponse | null>;
   /** Mingle turn action: TALK or NO_REPLY, plus optional GOTO ROOM N for the next turn */
@@ -866,6 +947,45 @@ export interface IAgent {
 // Phase context passed to agents
 // ---------------------------------------------------------------------------
 
+export interface PlayerAllianceContextTerms {
+  name: string;
+  memberIds: UUID[];
+  memberNames: string[];
+  purpose: string;
+  timebox: string | null;
+}
+
+export interface PlayerAllianceContextAlliance extends PlayerAllianceContextTerms {
+  id: UUID;
+  status: "active" | "closed" | "archived";
+  huddleOutcomes: Array<{
+    id: UUID;
+    round: number;
+    ask: string;
+    plan: string;
+    promises: string[];
+    dissent: string[];
+    confidence: "low" | "medium" | "high";
+    posture: string;
+    leakOrBetrayalClaims: string[];
+  }>;
+}
+
+export interface PlayerAllianceContextProposal {
+  lineageId: UUID;
+  allianceId: UUID;
+  status: "open" | "activated" | "declined" | "expired";
+  currentVersionId: UUID;
+  currentTerms: PlayerAllianceContextTerms;
+  yourResponse: string | null;
+}
+
+export interface PlayerAllianceContext {
+  activeAlliances: PlayerAllianceContextAlliance[];
+  openProposals: PlayerAllianceContextProposal[];
+  proposalHistory: PlayerAllianceContextProposal[];
+}
+
 export interface PhaseContext {
   gameId: UUID;
   round: number;
@@ -892,6 +1012,8 @@ export interface PhaseContext {
   judgmentQuestionHistoryMode?: "full" | "questions_only";
   /** Recent personal decisions reconstructed from canonical events and public Judgment transcript. */
   recentDecisions?: RecentDecisionContextEntry[];
+  /** Member-safe official alliance facts and proposal history for this player only. */
+  allianceContext?: PlayerAllianceContext;
   /** Most recent eliminated player name, derived from jury/elimination order when available. */
   latestEliminatedPlayerName?: string;
   // Mingle room allocation context
@@ -973,7 +1095,7 @@ export interface TranscriptEntry {
   phase: Phase;
   timestamp: number;
   from: string;
-  scope: "public" | "mingle" | "whisper" | "system" | "diary" | "thinking";
+  scope: "public" | "mingle" | "huddle" | "whisper" | "system" | "diary" | "thinking";
   to?: string[];
   text: string;
   /** Agent's internal thinking when producing this message (hidden from players, visible to viewers) */

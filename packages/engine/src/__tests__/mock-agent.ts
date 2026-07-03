@@ -3,7 +3,7 @@
  * Uses simple scripted strategies to validate game mechanics.
  */
 
-import type { AgentResponse, CandidateChoiceRequest, CandidateSelectionDecision, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, StrategicReflectionAction, StrategyPacketSummary, TargetDecision } from "../game-runner";
+import type { AgentResponse, AllianceAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, CandidateChoiceRequest, CandidateSelectionDecision, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, StrategicReflectionAction, StrategyPacketSummary, TargetDecision } from "../game-runner";
 import type { UUID } from "../types";
 
 /** Assert a value is defined — throws in tests if assumption is violated */
@@ -28,6 +28,8 @@ export class MockAgent implements IAgent {
   accusationTarget?: UUID;
   /** Optional override for jury vote target */
   juryVoteTarget?: UUID;
+  allianceActions: AllianceAction[] = [];
+  huddleTurns: AllianceHuddleTurnAction[] = [];
 
   constructor(id: UUID, name: string) {
     this.id = id;
@@ -93,6 +95,33 @@ export class MockAgent implements IAgent {
       thinking: "mock: form hidden Mingle intent",
       reasoningContext: undefined,
       decisionLog: this.decisionLog("form intent from current strategy packet"),
+    };
+  }
+
+  async getAllianceAction(_ctx: PhaseContext): Promise<AllianceAction> {
+    return this.allianceActions.shift() ?? {
+      action: "pass",
+      thinking: "mock: no alliance action queued",
+      reasoningContext: undefined,
+      decisionLog: this.decisionLog("pass alliance action"),
+    };
+  }
+
+  async getAllianceHuddleTurn(
+    _ctx: PhaseContext,
+    huddle: AllianceHuddlePromptContext,
+    conversationHistory?: Array<{ from: string; text: string }>,
+  ): Promise<AllianceHuddleTurnAction> {
+    const queued = this.huddleTurns.shift();
+    if (queued) return queued;
+    const alreadySpoke = conversationHistory?.some((entry) => entry.from === this.name) ?? false;
+    return {
+      thinking: alreadySpoke ? "mock: already spoke in this huddle" : "mock: coordinate with the alliance huddle",
+      message: alreadySpoke
+        ? null
+        : `${huddle.allianceName}: I can hold the line if we keep the plan simple.`,
+      noReply: alreadySpoke,
+      decisionLog: this.decisionLog("take alliance huddle turn"),
     };
   }
 

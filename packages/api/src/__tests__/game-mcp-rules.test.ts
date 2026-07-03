@@ -22,6 +22,22 @@ describe("game MCP rules catalog", () => {
     expect(serialized).not.toContain("top 100 agents");
   });
 
+  test("describes named-alliance cadence and read-only MCP boundaries", () => {
+    const rules = getGameMcpRules();
+    const serialized = JSON.stringify(rules).toLowerCase();
+    const standardRound = rules.rules.sections.find((section) => section.id === "standard-round");
+    const namedAlliances = rules.rules.sections.find((section) => section.id === "named-alliances");
+
+    expect(standardRound?.body).toContain("Mingle I");
+    expect(standardRound?.body).toContain("pre-vote alliance huddles");
+    expect(standardRound?.body).toContain("public Vote");
+    expect(standardRound?.body).toContain("post-vote Mingle");
+    expect(namedAlliances?.body).toContain("Consent attaches to the same name, roster, purpose, and timebox version");
+    expect(namedAlliances?.body).toContain("MCP active-match tools are read-only");
+    expect(serialized).not.toContain("whisper");
+    expect(serialized).not.toContain("each standard round moves through lobby, vote, mingle, power, reveal, and council");
+  });
+
   test("lists archetypes from the shared validation catalog", () => {
     const read = listGameMcpArchetypes({ includeStrategyHints: true });
     const keys = read.archetypes.map((archetype) => archetype.key);
@@ -43,6 +59,9 @@ describe("game MCP rules catalog", () => {
 
     const endgameMatches = searchGameMcpRules({ query: "jury" });
     expect(endgameMatches.matches.map((match) => match.id)).toContain("endgame");
+
+    const allianceMatches = searchGameMcpRules({ query: "huddle" });
+    expect(allianceMatches.matches.map((match) => match.id)).toContain("named-alliances");
 
     const emptyMatches = searchGameMcpRules({ query: "   " });
     expect(emptyMatches.matches).toEqual([]);

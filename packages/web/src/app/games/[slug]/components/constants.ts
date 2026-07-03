@@ -5,11 +5,15 @@ import type { RoomType, EndgameStage } from "./types";
 export const PHASE_TRANSITION_LABELS: Partial<Record<PhaseKey, string>> = {
   INTRODUCTION: "INTRODUCTION",
   LOBBY: "LOBBY PHASE",
+  MINGLE_I: "MINGLE I",
+  PRE_VOTE_HUDDLE: "ALLIANCE HUDDLES",
   MINGLE: "MINGLE",
+  POST_VOTE_MINGLE: "POST-VOTE MINGLE",
   RUMOR: "RUMOR PHASE",
   VOTE: "VOTE PHASE",
   POWER: "POWER PLAY",
   REVEAL: "REVEAL",
+  PRE_COUNCIL_HUDDLE: "ALLIANCE HUDDLES",
   COUNCIL: "COUNCIL VOTE",
   DIARY_ROOM: "DIARY ROOM",
   PLEA: "PLEA",
@@ -32,15 +36,30 @@ export const PHASE_FLAVORS: Partial<Record<PhaseKey, string[]>> = {
   ],
   LOBBY: [
     "The floor is open. Every word is a move.",
-    "Alliances form and fracture in the lobby. Choose your words carefully.",
+    "Trust forms and fractures in the lobby. Choose your words carefully.",
     "What is said here shapes what happens next.",
     "The public stage — where trust is built and broken.",
+  ],
+  MINGLE_I: [
+    "Named alliance offers are on the table.",
+    "The agents decide which deals become official.",
+    "Every alliance needs consent. Every counter changes the terms.",
+  ],
+  PRE_VOTE_HUDDLE: [
+    "The House opens scarce alliance huddle time.",
+    "Active alliances get one last beat before the Vote.",
+    "The deals move behind closed doors.",
   ],
   MINGLE: [
     "The Mingle rooms open. Secrets are currency.",
     "Private rooms activate. Not everything can be said out loud.",
     "Every room choice is a signal. Every absence is a tell.",
     "Agents move through the Mingle. Who can you trust?",
+  ],
+  POST_VOTE_MINGLE: [
+    "The votes are public. The private rooms are not.",
+    "Receipts are fresh. Promises are suddenly expensive.",
+    "The Mingle rooms reopen under pressure.",
   ],
   RUMOR: [
     "The whispers become rumors. Truth and lies blur.",
@@ -65,6 +84,11 @@ export const PHASE_FLAVORS: Partial<Record<PhaseKey, string[]>> = {
     "Truth and deception collide in a single moment.",
     "The moment of reckoning has arrived.",
     "Every secret comes to light. Every vote has a name.",
+  ],
+  PRE_COUNCIL_HUDDLE: [
+    "Alliance huddles reopen before Council.",
+    "The Council vote is close enough to taste.",
+    "Last-minute coordination begins.",
   ],
   COUNCIL: [
     "Two names. One elimination. Every vote counts.",
@@ -103,13 +127,17 @@ export const PHASE_LABELS: Record<PhaseKey, string> = {
   INIT: "Waiting Room",
   INTRODUCTION: "Introductions",
   LOBBY: "Public Lobby",
+  MINGLE_I: "Mingle I",
+  PRE_VOTE_HUDDLE: "Pre-Vote Huddles",
   // WHISPER is a distinct historical phase; current room movement uses MINGLE.
   WHISPER: "Whisper",
   MINGLE: "Mingle",
+  POST_VOTE_MINGLE: "Post-Vote Mingle",
   RUMOR: "Rumor Phase",
   VOTE: "Voting",
   POWER: "Power Play",
   REVEAL: "Reveal",
+  PRE_COUNCIL_HUDDLE: "Pre-Council Huddles",
   COUNCIL: "Council",
   DIARY_ROOM: "Diary Room",
   PLEA: "Plea",
@@ -156,10 +184,14 @@ export const PHASE_TO_ROOM: Partial<Record<PhaseKey, RoomType>> = {
   INTRODUCTION: "lobby",
   LOBBY: "lobby",
   RUMOR: "lobby",
+  MINGLE_I: "private_rooms",
+  PRE_VOTE_HUDDLE: "private_rooms",
   MINGLE: "private_rooms",
+  POST_VOTE_MINGLE: "private_rooms",
   VOTE: "tribunal",
   POWER: "tribunal",
   REVEAL: "tribunal",
+  PRE_COUNCIL_HUDDLE: "private_rooms",
   COUNCIL: "tribunal",
   DIARY_ROOM: "diary",
   PLEA: "endgame",
@@ -189,8 +221,12 @@ export const ROOM_TYPE_BORDERS: Record<RoomType, string> = {
 };
 
 export const HOUSE_INTROS: Partial<Record<PhaseKey, string>> = {
+  MINGLE_I: "Named alliances can become official here, but only by explicit consent.",
+  PRE_VOTE_HUDDLE: "The House is checking which alliances get time before the Vote.",
   MINGLE: "The Mingle rooms are open. These are the conversations they didn't want you to hear.",
+  POST_VOTE_MINGLE: "The votes are public. The private rooms reopen under pressure.",
   REVEAL: "The votes are in. Every operative must now face the truth.",
+  PRE_COUNCIL_HUDDLE: "The House is checking which alliances get time before Council.",
   DIARY_ROOM: "Before they move on, The House has a few questions.",
 };
 
@@ -216,7 +252,7 @@ export const POST_REVEAL_PER_CHAR_MS = 47;
 // Dramatic phases get extra timing multiplier on top of spectacle base
 export const DRAMATIC_PHASE_MULTIPLIER = 2.5;
 export const DRAMATIC_PHASES: ReadonlySet<PhaseKey> = new Set([
-  "VOTE", "POWER", "REVEAL", "COUNCIL", "JURY_VOTE",
+  "PRE_VOTE_HUDDLE", "VOTE", "POWER", "REVEAL", "PRE_COUNCIL_HUDDLE", "COUNCIL", "JURY_VOTE",
 ]);
 
 // Phases that render as a scrolling group chat feed (all messages on left).
@@ -238,7 +274,7 @@ export const DIARY_WHISPER_SCENE_END_HOLD_MS = 4000;
 
 // Phases that get an extra digestion pause at the end before transitioning
 export const PACED_PHASES: ReadonlySet<PhaseKey> = new Set([
-  "INTRODUCTION", "LOBBY", "MINGLE",
+  "INTRODUCTION", "LOBBY", "MINGLE_I", "PRE_VOTE_HUDDLE", "MINGLE", "POST_VOTE_MINGLE", "PRE_COUNCIL_HUDDLE",
 ]);
 
 // Extra pause at the end of paced phases (ms at 1x speed)

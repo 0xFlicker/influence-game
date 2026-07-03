@@ -7,7 +7,7 @@ import {
   type GameWatchState,
 } from "./game-watch-state.js";
 
-export const GAME_WATCH_STATE_SUMMARY_SCHEMA_VERSION = 2;
+export const GAME_WATCH_STATE_SUMMARY_SCHEMA_VERSION = 3;
 
 export type GameWatchStateSummary = Omit<GameWatchState, "players">;
 export type GameWatchStateSummaryStatus = "current" | "missing" | "stale";

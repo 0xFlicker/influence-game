@@ -5,8 +5,10 @@ import {
   inArray,
   isNotNull,
   isNull,
+  like,
   lte,
   ne,
+  not,
   or,
 } from "drizzle-orm";
 import {
@@ -108,12 +110,16 @@ const PUBLIC_WATCH_PHASE_ORDER = [
   "INIT",
   "INTRODUCTION",
   "LOBBY",
+  "MINGLE_I",
+  "PRE_VOTE_HUDDLE",
+  "VOTE",
   "MINGLE",
+  "POST_VOTE_MINGLE",
   "WHISPER",
   "RUMOR",
-  "VOTE",
   "POWER",
   "REVEAL",
+  "PRE_COUNCIL_HUDDLE",
   "COUNCIL",
   "DIARY_ROOM",
   "PLEA",
@@ -295,6 +301,16 @@ async function loadArtifactCards(
       eq(schema.gameCognitiveArtifacts.redactionStatus, "active"),
       inArray(schema.gameCognitiveArtifacts.artifactType, ["thinking", "strategy"] satisfies CognitiveArtifactType[]),
       inArray(schema.gameCognitiveArtifacts.actorRole, ["player", "juror"]),
+      ne(schema.gameCognitiveArtifacts.action, "alliance-action"),
+      not(like(schema.gameCognitiveArtifacts.action, "alliance-huddle-%")),
+      or(
+        isNull(schema.gameCognitiveArtifacts.phase),
+        and(
+          ne(schema.gameCognitiveArtifacts.phase, "MINGLE_I"),
+          ne(schema.gameCognitiveArtifacts.phase, "PRE_VOTE_HUDDLE"),
+          ne(schema.gameCognitiveArtifacts.phase, "PRE_COUNCIL_HUDDLE"),
+        ),
+      ),
       or(isNull(schema.gameCognitiveArtifacts.round), lte(schema.gameCognitiveArtifacts.round, params.round)),
     ))
     .orderBy(desc(schema.gameCognitiveArtifacts.eventSequence), desc(schema.gameCognitiveArtifacts.createdAt))
@@ -372,6 +388,7 @@ async function loadTranscriptThinkingCards(
       eq(schema.transcripts.fromPlayerId, params.actorPlayerId),
       isNotNull(schema.transcripts.thinking),
       ne(schema.transcripts.scope, "thinking"),
+      ne(schema.transcripts.scope, "huddle"),
       lte(schema.transcripts.round, params.round),
     ))
     .orderBy(desc(schema.transcripts.timestamp), desc(schema.transcripts.id))

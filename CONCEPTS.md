@@ -6,7 +6,11 @@ Shared domain vocabulary for this project — entities, named processes, and sta
 
 The canonical record of everything that happened in a game for viewers, replays, and analysis. Every entry carries `round`, `phase`, `from`, `scope`, `text`, plus optional `thinking` (the agent's or House's internal note, hidden from players) and `reasoningContext` (raw native model output such as `reasoning_content` from local servers, or a clearly labeled provider-generated reasoning summary such as `OpenAI reasoning summary (auto): ...`). Current Mingle entries should use current Mingle phase/scope vocabulary; older records may still contain legacy Whisper values. Public player text never contains hidden reasoning.
 
-Public websocket `message` events expose a selected `PublicWsTranscriptEntry` subset for live watchers rather than copying the full internal entry. Viewer-safe `thinking`, public room metadata (`rooms` and `excluded` only), anonymous rumor metadata (`anonymous` and `displayOrder`), sender, scope, text, phase, round, recipients, and timestamps may cross that boundary; `reasoningContext`, room allocation diagnostics, private trace pointers, raw prompts/responses, storage keys, source pointers, and decision logs may not.
+Public websocket `message` events expose a selected `PublicWsTranscriptEntry` subset for live watchers rather than copying the full internal entry. Viewer-safe `thinking`, public room metadata (`rooms` and `excluded` only), anonymous rumor metadata (`anonymous` and `displayOrder`), sender, scope, text, phase, round, recipients, and timestamps may cross that boundary; `reasoningContext`, room allocation diagnostics, private trace pointers, raw prompts/responses, storage keys, source pointers, and decision logs may not. Entries with `scope: "huddle"` are hidden alliance-room evidence and are not published to public websocket watchers or public transcript export by default.
+
+## Mingle I
+
+The vote-facing named-alliance formation window in a normal pre-endgame round. Players may propose, accept, decline, counter, defer, or agree to trial alliances here; official alliance records cannot be formed or mutated outside this window in v1.
 
 ## Mingle
 
@@ -78,7 +82,7 @@ A provider-generated summary from hosted OpenAI's Responses API reasoning summar
 
 ## Cognitive artifact
 
-A first-class product read-model record for an agent's reasoning, thinking, or strategy in new games. Cognitive artifacts are captured at decision time from structured trace inputs but are not sanitized views over producer private traces, canonical game truth, or checkpoint resume state. Reasoning artifacts may contain raw native `reasoningContext` or provider-generated summary text as `reasoningSummary`; provider debug wrappers such as `parts` and `outputItemIds` stay out of user-facing payloads. User-facing access is artifact-specific: reasoning is owner-only, thinking and strategy are available to the owner plus same-game participants, and producer/admin surfaces may read all split artifacts directly.
+A first-class product read-model record for an agent's reasoning, thinking, or strategy in new games. Cognitive artifacts are captured at decision time from structured trace inputs but are not sanitized views over producer private traces, canonical game truth, or checkpoint resume state. Reasoning artifacts may contain raw native `reasoningContext` or provider-generated summary text as `reasoningSummary`; provider debug wrappers such as `parts` and `outputItemIds` stay out of user-facing payloads. User-facing access is artifact-specific: reasoning is owner-only, ordinary thinking and strategy are available to the owner plus same-game participants, alliance-huddle thinking and strategy are subject-owner-only unless the accessor has producer/admin access, and producer/admin surfaces may read all split artifacts directly.
 
 ## Player-private reasoning lane
 
@@ -111,6 +115,30 @@ A producer/audience catch-up summary The House emits in rich simulation runs bet
 ## House alliance hypothesis
 
 A named producer-side read that a set of players may be aligned, fractured, indebted, or coordinating around a shared posture. A House alliance hypothesis should carry confidence and evidence because it is dramatic producer analysis, not canonical game truth.
+
+## Named alliance
+
+A player-confirmed, non-binding consent artifact that a set of players explicitly proposed, accepted, declined, countered, or closed during a game. A named alliance records social agreement and promise debt, not true loyalty; later votes, leaks, and betrayals are gameplay evidence rather than violations of the artifact.
+
+## Alliance record
+
+The gameplay-level record of a named alliance's official facts: current members, agreed terms, status, huddle outcomes, and failed or closed proposal history relevant to its members. The alliance record is a rules term, not a storage, API, prompt, or UI prescription.
+
+## Alliance sidecar
+
+A possible product or interface surface for inspecting alliance records and huddle history in a member-safe or producer-safe way. The sidecar is not the v1 gameplay rules authority and should not imply always-on alliance chat by default.
+
+## Alliance huddle
+
+A House-scheduled coordination scene for an active named alliance before a vote, before Council, or another explicit decision window. A huddle session gives each live member one chance to speak and produces an official huddle outcome for the alliance record.
+
+## Alliance huddle outcome
+
+The compact official memory artifact produced after a scheduled alliance huddle. It records ask, plan, promises, dissent, confidence, posture, and leak or betrayal claims where present. It carries alliance context forward for members, while the raw huddle transcript remains hidden producer/debug evidence unless future rules create a reveal path.
+
+## Universal alliance
+
+A named alliance whose living membership equals all alive players. Before a vote-facing Mingle I, a universal alliance is unstable and should close so agents can react during normal Mingle and form smaller playable coalitions.
 
 ## Canonical game event
 

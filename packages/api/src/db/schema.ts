@@ -220,7 +220,7 @@ export const gamePlayers = pgTable("game_players", {
 // Transcripts
 // ---------------------------------------------------------------------------
 
-export type TranscriptScope = "public" | "mingle" | "whisper" | "system" | "diary" | "thinking";
+export type TranscriptScope = "public" | "mingle" | "huddle" | "whisper" | "system" | "diary" | "thinking";
 
 export const transcripts = pgTable("transcripts", {
   id: serial("id").primaryKey(),

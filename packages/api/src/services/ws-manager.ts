@@ -116,6 +116,10 @@ function buildPublicTranscriptEntry(entry: TranscriptEntry): PublicWsTranscriptE
   };
 }
 
+function shouldBroadcastTranscriptEntry(entry: TranscriptEntry): boolean {
+  return entry.scope !== "huddle";
+}
+
 /** Called when a new WebSocket connection opens. */
 export function handleOpen(ws: ServerWebSocket<WsConnectionData>): void {
   const { gameId } = ws.data;
@@ -144,6 +148,7 @@ export function broadcastGameEvent(gameId: string, event: GameStreamEvent): void
     case "agent_turn":
       return;
     case "transcript_entry":
+      if (!shouldBroadcastTranscriptEntry(event.entry)) return;
       outbound = { type: "message", entry: buildPublicTranscriptEntry(event.entry) };
       break;
     case "phase_change":

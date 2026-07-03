@@ -179,7 +179,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const result = await runner.run();
 
     const allocation = result.transcript.find(
-      (entry) => entry.scope === "system" && entry.phase === Phase.MINGLE && entry.roomMetadata,
+      (entry) => entry.scope === "system" && entry.phase === Phase.POST_VOTE_MINGLE && entry.roomMetadata,
     );
     expect(allocation).toBeDefined();
     expect(allocation!.text).toContain("Turn 1:");
@@ -331,7 +331,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const allocation = result.transcript.find((entry) => entry.roomMetadata);
     expect(allocation?.roomMetadata?.rooms.map((room) => room.playerIds.length)).toEqual([3, 1, 1]);
 
-    const roomMessages = result.transcript.filter((entry) => entry.scope === "mingle" && entry.phase === Phase.MINGLE);
+    const roomMessages = result.transcript.filter((entry) => entry.scope === "mingle" && entry.phase === Phase.POST_VOTE_MINGLE);
     expect(roomMessages).toHaveLength(3);
     expect(roomMessages[0]!.to).toHaveLength(2);
   });
@@ -353,7 +353,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     );
     const result = await runner.run();
 
-    const roomMessages = result.transcript.filter((entry) => entry.scope === "mingle" && entry.phase === Phase.MINGLE);
+    const roomMessages = result.transcript.filter((entry) => entry.scope === "mingle" && entry.phase === Phase.POST_VOTE_MINGLE);
     expect(roomMessages.every((entry) => entry.from !== "Alpha")).toBe(true);
     expect(roomMessages).toHaveLength(3);
   });
@@ -1701,7 +1701,7 @@ describe("Phase machine - state transitions", () => {
     actor.stop();
   });
 
-  it("advances through full round: lobby -> vote -> mingle -> power -> reveal -> council -> checkGameOver", async () => {
+  it("advances through full round: lobby -> mingle_i -> pre_vote_huddle -> vote -> post_vote_mingle -> power -> reveal -> pre_council_huddle -> council -> checkGameOver", async () => {
     const machine = createPhaseMachine();
     // Use 6 players so endgame isn't triggered after eliminating one (5 remain)
     const playerIds = [createUUID(), createUUID(), createUUID(), createUUID(), createUUID(), createUUID()];
@@ -1717,16 +1717,19 @@ describe("Phase machine - state transitions", () => {
 
     await advance(); // init -> introduction
     await advance(); // introduction -> lobby
-    await advance(); // lobby -> vote
+    await advance(); // lobby -> mingle_i
+    await advance(); // mingle_i -> pre_vote_huddle
+    await advance(); // pre_vote_huddle -> vote
 
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
-    await advance(); // vote -> mingle
-    await advance(); // mingle -> power
+    await advance(); // vote -> post_vote_mingle
+    await advance(); // post_vote_mingle -> power
 
     actor.send({ type: "CANDIDATES_DETERMINED", candidates: [defined(playerIds[1]), defined(playerIds[2])], autoEliminated: null });
     await advance(); // power -> reveal
 
-    await advance(); // reveal -> council
+    await advance(); // reveal -> pre_council_huddle
+    await advance(); // pre_council_huddle -> council
 
     // After council, send elimination and check game over
     actor.send({ type: "PLAYER_ELIMINATED", playerId: defined(playerIds[1]) });
@@ -1759,11 +1762,13 @@ describe("Phase machine - state transitions", () => {
 
     await advance(); // init -> introduction
     await advance(); // introduction -> lobby
-    await advance(); // lobby -> vote
+    await advance(); // lobby -> mingle_i
+    await advance(); // mingle_i -> pre_vote_huddle
+    await advance(); // pre_vote_huddle -> vote
 
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
-    await advance(); // vote -> mingle
-    await advance(); // mingle -> power
+    await advance(); // vote -> post_vote_mingle
+    await advance(); // post_vote_mingle -> power
 
     // Auto-eliminate the second player
     actor.send({ type: "CANDIDATES_DETERMINED", candidates: null, autoEliminated: defined(playerIds[1]) });
@@ -1800,11 +1805,13 @@ describe("Phase machine - endgame transitions", () => {
     // Run through init -> introduction -> first round
     await advance(); // init -> introduction
     await advance(); // intro -> lobby
-    await advance(); // lobby -> vote
+    await advance(); // lobby -> mingle_i
+    await advance(); // mingle_i -> pre_vote_huddle
+    await advance(); // pre_vote_huddle -> vote
 
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
-    await advance(); // vote -> mingle
-    await advance(); // mingle -> power
+    await advance(); // vote -> post_vote_mingle
+    await advance(); // post_vote_mingle -> power
 
     // Auto-eliminate one player (5 -> 4)
     actor.send({ type: "CANDIDATES_DETERMINED", candidates: null, autoEliminated: defined(playerIds[4]) });
@@ -1837,10 +1844,12 @@ describe("Phase machine - endgame transitions", () => {
 
     // Simulate eliminating 2 players in first round (5 -> 3)
     // Go through full round
-    await advance(); // lobby -> vote
+    await advance(); // lobby -> mingle_i
+    await advance(); // mingle_i -> pre_vote_huddle
+    await advance(); // pre_vote_huddle -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
-    await advance(); // vote -> mingle
-    await advance(); // mingle -> power
+    await advance(); // vote -> post_vote_mingle
+    await advance(); // post_vote_mingle -> power
 
     // Auto-eliminate (5 -> 4) — should go to reckoning
     actor.send({ type: "CANDIDATES_DETERMINED", candidates: null, autoEliminated: defined(playerIds[4]) });
@@ -1881,15 +1890,18 @@ describe("Phase machine - endgame transitions", () => {
     // Fast-forward past intro and first round to checkGameOver with 3 alive
     await advance(); // init -> introduction
     await advance(); // intro -> lobby
-    await advance(); // lobby -> vote
+    await advance(); // lobby -> mingle_i
+    await advance(); // mingle_i -> pre_vote_huddle
+    await advance(); // pre_vote_huddle -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
-    await advance(); // vote -> mingle
-    await advance(); // mingle -> power
+    await advance(); // vote -> post_vote_mingle
+    await advance(); // post_vote_mingle -> power
 
     // Eliminate to 2 (council path)
     actor.send({ type: "CANDIDATES_DETERMINED", candidates: [defined(playerIds[1]), defined(playerIds[2])], autoEliminated: null });
     await advance(); // power -> reveal
-    await advance(); // reveal -> council
+    await advance(); // reveal -> pre_council_huddle
+    await advance(); // pre_council_huddle -> council
 
     actor.send({ type: "PLAYER_ELIMINATED", playerId: defined(playerIds[2]) });
     actor.send({ type: "UPDATE_ALIVE_PLAYERS", aliveIds: [defined(playerIds[0]), defined(playerIds[1])] });
@@ -1924,13 +1936,16 @@ describe("Phase machine - endgame transitions", () => {
     // Get to judgment
     await advance(); // init -> introduction
     await advance(); // intro -> lobby
-    await advance(); // lobby -> vote
+    await advance(); // lobby -> mingle_i
+    await advance(); // mingle_i -> pre_vote_huddle
+    await advance(); // pre_vote_huddle -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
-    await advance(); // vote -> mingle
-    await advance(); // mingle -> power
+    await advance(); // vote -> post_vote_mingle
+    await advance(); // post_vote_mingle -> power
     actor.send({ type: "CANDIDATES_DETERMINED", candidates: [defined(playerIds[1]), defined(playerIds[2])], autoEliminated: null });
     await advance(); // power -> reveal
-    await advance(); // reveal -> council
+    await advance(); // reveal -> pre_council_huddle
+    await advance(); // pre_council_huddle -> council
     actor.send({ type: "PLAYER_ELIMINATED", playerId: defined(playerIds[2]) });
     actor.send({ type: "UPDATE_ALIVE_PLAYERS", aliveIds: [defined(playerIds[0]), defined(playerIds[1])] });
     await advance(); // council -> checkGameOver -> judgment_opening
@@ -1969,15 +1984,18 @@ describe("Phase machine - endgame transitions", () => {
 
     await advance(); // init -> introduction
     await advance(); // intro -> lobby
-    await advance(); // lobby -> vote
+    await advance(); // lobby -> mingle_i
+    await advance(); // mingle_i -> pre_vote_huddle
+    await advance(); // pre_vote_huddle -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
-    await advance(); // vote -> mingle
-    await advance(); // mingle -> power
+    await advance(); // vote -> post_vote_mingle
+    await advance(); // post_vote_mingle -> power
 
     // Eliminate via council (power -> reveal -> council)
     actor.send({ type: "CANDIDATES_DETERMINED", candidates: [defined(playerIds[3]), defined(playerIds[4])], autoEliminated: null });
     await advance(); // power -> reveal
-    await advance(); // reveal -> council
+    await advance(); // reveal -> pre_council_huddle
+    await advance(); // pre_council_huddle -> council
 
     actor.send({ type: "PLAYER_ELIMINATED", playerId: defined(playerIds[4]) });
     actor.send({ type: "UPDATE_ALIVE_PLAYERS", aliveIds: playerIds.slice(0, 4) });

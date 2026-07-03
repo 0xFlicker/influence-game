@@ -939,6 +939,159 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("It is valid to leave provisionalTarget null");
   });
 
+  it("parses structured Mingle I alliance actions", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "take_alliance_action",
+        {
+          thinking: "Mira is the cleanest early partner and Vera can stay outside this first deal.",
+          action: "propose",
+          name: "Glass Table",
+          memberNames: ["Atlas", "Mira"],
+          purpose: "Coordinate the first expose vote without overcommitting publicly.",
+          timebox: "through council",
+          lineageId: null,
+          versionId: null,
+          decisionLog: "propose a small early vote pact",
+        },
+        "Hidden local reasoning for the alliance action.",
+      ),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const action = await agent.getAllianceAction(makeContext(Phase.MINGLE_I));
+
+    expect(action).toEqual({
+      action: "propose",
+      name: "Glass Table",
+      memberNames: ["Atlas", "Mira"],
+      purpose: "Coordinate the first expose vote without overcommitting publicly.",
+      timebox: "through council",
+      thinking: "Mira is the cleanest early partner and Vera can stay outside this first deal.",
+      reasoningContext: "Hidden local reasoning for the alliance action.",
+      decisionLog: "propose a small early vote pact",
+    });
+    expect(requests[0]?.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          function: expect.objectContaining({ name: "take_alliance_action" }),
+        }),
+      ]),
+    );
+  });
+
+  it("prompts Mingle I proposals toward distinctive layered alliance names", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "take_alliance_action",
+        {
+          thinking: "No good proposal yet.",
+          action: "pass",
+          name: null,
+          memberNames: [],
+          purpose: null,
+          timebox: null,
+          lineageId: null,
+          versionId: null,
+          decisionLog: "pass until a better alliance shape appears",
+        },
+      ),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getAllianceAction(makeContext(Phase.MINGLE_I));
+
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.at(-1)!.content;
+    expect(prompt).toContain("Alliance name rules when proposing");
+    expect(prompt).toContain("unique from visible active alliances, open proposals, and proposal history");
+    expect(prompt).toContain("concrete shared trait, contrast, promise, risk, strategy, or relationship");
+    expect(prompt).toContain("short, interesting, engaging, and fun");
+    expect(prompt).toContain('"Calm", "Anchor", "Core", "Axis", "Circle", "Steady", "Solid", "Trust"');
+    expect(prompt).toContain('"The Late Voters", "Mirror Knives", "The Smoke Test", "Back Row Pact", "The Alibi Pair"');
+    expect(prompt).toContain('"Calm Anchor Trio", "Steady Core", "Trust Circle", "Calm Axis"');
+    expect(prompt).toContain("a final-two pair can sit inside a final-three voting pod");
+    expect(prompt).toContain("3 for a voting pod, or 4 for a larger shield/majority");
+    expect(prompt).toContain("Overlapping alliances are legal");
+    expect(prompt).not.toContain("maximum number of alliances");
+    expect(prompt).not.toContain("alliance-count limit");
+  });
+
+  it("parses structured alliance huddle turns without mutating alliance terms", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "alliance_huddle_turn",
+        {
+          thinking: "Mira needs a clean ask before the public vote locks.",
+          message: "Mira, hold the empower vote on me and I will keep the expose pressure on Vera.",
+          noReply: false,
+          decisionLog: "ask Mira for a concrete vote alignment inside Glass Table",
+        },
+        "Hidden local reasoning for the alliance huddle.",
+      ),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const turn = await agent.getAllianceHuddleTurn(
+      makeContext(Phase.PRE_VOTE_HUDDLE),
+      {
+        allianceId: "alliance-glass",
+        allianceName: "Glass Table",
+        memberNames: ["Atlas", "Mira"],
+        purpose: "Coordinate the first expose vote.",
+        timebox: "through council",
+        window: "pre_vote",
+        scheduleId: "schedule-1",
+        pass: 1,
+      },
+      [],
+    );
+
+    expect(turn).toEqual({
+      thinking: "Mira needs a clean ask before the public vote locks.",
+      reasoningContext: "Hidden local reasoning for the alliance huddle.",
+      message: "Mira, hold the empower vote on me and I will keep the expose pressure on Vera.",
+      noReply: false,
+      decisionLog: "ask Mira for a concrete vote alignment inside Glass Table",
+    });
+    expect(requests[0]?.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          function: expect.objectContaining({ name: "alliance_huddle_turn" }),
+        }),
+      ]),
+    );
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    expect(messages.at(-1)?.content).toContain("You cannot change official alliance name, roster, purpose, timebox, or status here");
+  });
+
   it("uses hidden Mingle intent in turn prompts without requiring target naming", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(

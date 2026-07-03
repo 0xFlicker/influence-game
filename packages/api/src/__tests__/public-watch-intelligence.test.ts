@@ -128,6 +128,73 @@ describe("getPublicWatchIntelligence", () => {
     expect(serialized).not.toContain("payload");
   });
 
+  test("omits hidden alliance action and huddle cards from public intelligence", async () => {
+    const gameId = await seedGameWithPlayers(db, "watch-intelligence-huddle-hidden");
+    await insertArtifact(db, {
+      id: "alliance-action-thinking-artifact",
+      gameId,
+      actorPlayerId: "atlas",
+      artifactType: "thinking",
+      action: "alliance-action",
+      phase: "MINGLE_I",
+      payload: { thinking: "ALLIANCE_ACTION_THINKING_SENTINEL" },
+    });
+    await insertArtifact(db, {
+      id: "alliance-action-strategy-artifact",
+      gameId,
+      actorPlayerId: "atlas",
+      artifactType: "strategy",
+      action: "alliance-action",
+      phase: "MINGLE_I",
+      payload: { decisionLog: "ALLIANCE_ACTION_STRATEGY_SENTINEL" },
+    });
+    await insertArtifact(db, {
+      id: "huddle-thinking-artifact",
+      gameId,
+      actorPlayerId: "atlas",
+      artifactType: "thinking",
+      action: "alliance-huddle-turn",
+      phase: "PRE_VOTE_HUDDLE",
+      payload: { thinking: "HUDDLE_ARTIFACT_THINKING_SENTINEL" },
+    });
+    await insertArtifact(db, {
+      id: "huddle-strategy-artifact",
+      gameId,
+      actorPlayerId: "atlas",
+      artifactType: "strategy",
+      action: "alliance-huddle-turn",
+      phase: "PRE_VOTE_HUDDLE",
+      payload: { decisionLog: "HUDDLE_ARTIFACT_STRATEGY_SENTINEL" },
+    });
+    await db.insert(schema.transcripts).values({
+      gameId,
+      round: 1,
+      phase: "PRE_VOTE_HUDDLE",
+      fromPlayerId: "atlas",
+      scope: "huddle",
+      text: "HUDDLE_TRANSCRIPT_TEXT_SENTINEL",
+      thinking: "HUDDLE_TRANSCRIPT_THINKING_SENTINEL",
+      timestamp: 1_720_000_000_002,
+    });
+
+    const result = await getPublicWatchIntelligence(db, {
+      gameIdOrSlug: "watch-intelligence-huddle-hidden",
+      actorPlayerId: "atlas",
+      round: 1,
+      phase: "VOTE",
+      limit: 4,
+    });
+
+    expect(result.ok).toBe(true);
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("ALLIANCE_ACTION_THINKING_SENTINEL");
+    expect(serialized).not.toContain("ALLIANCE_ACTION_STRATEGY_SENTINEL");
+    expect(serialized).not.toContain("HUDDLE_ARTIFACT_THINKING_SENTINEL");
+    expect(serialized).not.toContain("HUDDLE_ARTIFACT_STRATEGY_SENTINEL");
+    expect(serialized).not.toContain("HUDDLE_TRANSCRIPT_TEXT_SENTINEL");
+    expect(serialized).not.toContain("HUDDLE_TRANSCRIPT_THINKING_SENTINEL");
+  });
+
   test("requires a selected player before returning cognitive cards", async () => {
     const gameId = await seedGameWithPlayers(db, "watch-intelligence-select-player");
     await insertArtifact(db, {

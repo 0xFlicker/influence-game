@@ -1433,6 +1433,46 @@ describe("Game REST API", () => {
       expect(body[1]!.thinking).toBeNull();
     });
 
+    test("omits hidden alliance huddle entries from public transcript export", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      const { playerId } = await joinTestPlayer(app, id, "Atlas", userToken);
+
+      await db.insert(schema.transcripts)
+        .values([
+          {
+            gameId: id,
+            round: 1,
+            phase: "LOBBY",
+            fromPlayerId: playerId,
+            scope: "public",
+            text: "I am public.",
+            timestamp: Date.now(),
+          },
+          {
+            gameId: id,
+            round: 1,
+            phase: "PRE_VOTE_HUDDLE",
+            fromPlayerId: playerId,
+            scope: "huddle",
+            toPlayerIds: JSON.stringify(["ally-player-id"]),
+            text: "HUDDLE_SECRET_SENTINEL",
+            thinking: "HUDDLE_THINKING_SENTINEL",
+            timestamp: Date.now() + 1000,
+          },
+        ]);
+      await markGameCompleted(db, id);
+
+      const res = await app.request(`/api/games/${id}/transcript`);
+      expect(res.status).toBe(200);
+
+      const body = (await res.json()) as Array<{ scope: string; text: string; thinking: string | null }>;
+      expect(body).toHaveLength(1);
+      expect(body[0]!.scope).toBe("public");
+      const serialized = JSON.stringify(body);
+      expect(serialized).not.toContain("HUDDLE_SECRET_SENTINEL");
+      expect(serialized).not.toContain("HUDDLE_THINKING_SENTINEL");
+    });
+
     test("transcript entries are ordered by timestamp", async () => {
       const { id } = await createTestGame(app, adminToken);
       const { playerId } = await joinTestPlayer(app, id, "Atlas", userToken);
