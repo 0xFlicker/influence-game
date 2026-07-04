@@ -30,6 +30,16 @@ export interface ModelPricing {
   cachedInputPer1M: number;
   /** Cost per 1M output tokens in USD */
   outputPer1M: number;
+  /** Optional total-token request tiers. When matched, the tier rate applies to the whole request. */
+  tiers?: ModelPricingTier[];
+}
+
+export interface ModelPricingTier {
+  minTotalTokens?: number;
+  maxTotalTokens?: number;
+  inputPer1M: number;
+  cachedInputPer1M: number;
+  outputPer1M: number;
 }
 
 export interface CostEstimate {
@@ -40,7 +50,7 @@ export interface CostEstimate {
 }
 
 // ---------------------------------------------------------------------------
-// Pricing table (published OpenAI pricing)
+// Pricing table (published provider pricing)
 // ---------------------------------------------------------------------------
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {
@@ -56,6 +66,18 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "gpt-5-mini": { inputPer1M: 0.25, cachedInputPer1M: 0.025, outputPer1M: 2.00 },
   "gpt-5": { inputPer1M: 1.25, cachedInputPer1M: 0.125, outputPer1M: 10.00 },
   "gpt-5.4-mini": { inputPer1M: 0.75, cachedInputPer1M: 0.075, outputPer1M: 4.50 },
+  // Grok 4.3 family. Katana uses hyphenated model IDs and includes router markup.
+  "grok-4-3": {
+    inputPer1M: 1.375,
+    cachedInputPer1M: 0.22,
+    outputPer1M: 2.75,
+    tiers: [
+      { maxTotalTokens: 200_000, inputPer1M: 1.375, cachedInputPer1M: 0.22, outputPer1M: 2.75 },
+      { minTotalTokens: 200_001, inputPer1M: 2.75, cachedInputPer1M: 0.44, outputPer1M: 5.50 },
+    ],
+  },
+  // xAI native APIs use the dotted ID.
+  "grok-4.3": { inputPer1M: 1.25, cachedInputPer1M: 0.20, outputPer1M: 2.50 },
 };
 
 // ---------------------------------------------------------------------------
@@ -65,9 +87,10 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
 export function estimateCost(usage: TokenUsage, pricing: ModelPricing): CostEstimate;
 export function estimateCost(usage: TokenUsage, model: string): CostEstimate;
 export function estimateCost(usage: TokenUsage, pricingOrModel: ModelPricing | string): CostEstimate {
-  const pricing = typeof pricingOrModel === "string"
+  const basePricing = typeof pricingOrModel === "string"
     ? MODEL_PRICING[pricingOrModel] ?? MODEL_PRICING["gpt-5-nano"]!
     : pricingOrModel;
+  const pricing = pricingForUsage(basePricing, usage.totalTokens);
   const model = typeof pricingOrModel === "string" ? pricingOrModel : "custom";
 
   const cached = usage.cachedTokens ?? 0;
@@ -83,6 +106,15 @@ export function estimateCost(usage: TokenUsage, pricingOrModel: ModelPricing | s
     outputCost,
     totalCost: inputCost + outputCost,
   };
+}
+
+function pricingForUsage(pricing: ModelPricing, totalTokens: number): ModelPricing {
+  const tier = pricing.tiers?.find((candidate) => {
+    const aboveMinimum = candidate.minTotalTokens === undefined || totalTokens >= candidate.minTotalTokens;
+    const belowMaximum = candidate.maxTotalTokens === undefined || totalTokens <= candidate.maxTotalTokens;
+    return aboveMinimum && belowMaximum;
+  });
+  return tier ?? pricing;
 }
 
 export function estimateCostForKnownModel(usage: TokenUsage, model: string): CostEstimate | null {

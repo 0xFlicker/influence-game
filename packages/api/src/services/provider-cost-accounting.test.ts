@@ -81,7 +81,7 @@ describe("provider cost accounting", () => {
       providerNativeUnit: "katana_credit",
       providerNativeAmount: "1.25",
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-03",
+      rateCardVersion: "2026-07-04",
     });
     expect(rows[0]!.estimatedCostMicrousd).toBeGreaterThan(0);
     expect(JSON.stringify(rows[0]!.routerBilling)).not.toContain("must redact");
@@ -92,7 +92,63 @@ describe("provider cost accounting", () => {
     expect(detail.detail.callCount).toBe(1);
     expect(detail.detail.ownerEpochBreakdowns).toHaveLength(1);
     expect(detail.detail.providerNativeTotals.katana_credit).toBe(1.25);
-    expect(detail.detail.pricing.rateCardVersions).toContain("2026-07-03");
+    expect(detail.detail.pricing.rateCardVersions).toContain("2026-07-04");
+  });
+
+  test("records Katana router USD billing as actual cost", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+
+    await recordProviderSpendForTrace(db, {
+      gameId,
+      ownerEpoch,
+      trace: createTrace({
+        model: {
+          provider: "katana",
+          providerProfileId: "katana",
+          catalogId: "katana:grok-4-3",
+          name: "grok-4-3",
+        },
+        response: {
+          raw: {
+            id: "katana-router-actual",
+            usage: {
+              prompt_tokens: 100,
+              completion_tokens: 25,
+              total_tokens: 125,
+              imgnai: {
+                credits: "17",
+                providerCostUsd: "0.0042",
+                prompt: "must redact",
+              },
+            },
+          },
+          finishReason: "stop",
+          content: "ok",
+        },
+      }),
+    });
+
+    const rows = await db.select().from(schema.gameProviderSpendEntries);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      provider: "katana",
+      modelName: "grok-4-3",
+      costSource: "router_actual",
+      actualCostMicrousd: 4200,
+      estimatedCostMicrousd: null,
+      providerNativeUnit: "katana_credit",
+      providerNativeAmount: "17",
+    });
+    expect(JSON.stringify(rows[0]!.routerBilling)).not.toContain("must redact");
+
+    const detail = await getGameCostDetail(db, gameId);
+    expect(detail.ok).toBeTrue();
+    if (!detail.ok) throw new Error("expected cost detail");
+    expect(detail.detail.state).toBe("actual");
+    expect(detail.detail.unpricedCallCount).toBe(0);
+    expect(detail.detail.actualCostMicrousd).toBe(4200);
   });
 
   test("classifies incomplete provider responses as failed spend", async () => {
@@ -258,6 +314,92 @@ describe("provider cost accounting", () => {
     expect(actorBreakdowns.Atlas?.estimatedCostMicrousd).toBeGreaterThan(0);
   });
 
+  test("backfills Grok trace manifests with Katana rate-card estimates when billing is absent", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+
+    await db.insert(schema.gameEvidenceManifests).values({
+      id: "manifest-grok-total-only-cost-test",
+      gameId,
+      ownerEpoch,
+      evidenceType: "private_decision_trace",
+      retentionClass: "debug",
+      accessScope: "producer_admin",
+      metadata: {
+        actor: { id: "orion", name: "Orion", role: "player" },
+        action: "introduction",
+        phase: "INTRODUCTION",
+        round: 0,
+        model: { provider: "katana", providerProfileId: "katana", catalogId: "katana:grok-4-3", name: "grok-4-3" },
+        modelName: "grok-4-3",
+        usage: { totalTokens: 100_000 },
+        createdAt: "2026-07-03T13:00:00.000Z",
+      },
+    });
+
+    const result = await backfillGameCostAccounting(db, gameId);
+
+    expect(result.inserted).toBe(1);
+    expect(result.diagnostics).toEqual([]);
+
+    const rows = await db.select().from(schema.gameProviderSpendEntries);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      actorName: "Orion",
+      provider: "katana",
+      modelName: "grok-4-3",
+      costSource: "static_estimate",
+      totalTokens: 100_000,
+      estimatedCostMicrousd: 137500,
+      pricingSourceId: "engine.MODEL_PRICING",
+      rateCardVersion: "2026-07-04",
+    });
+    expect(JSON.stringify(rows[0]!.diagnostics)).toContain("aggregate_usage_estimate");
+
+    const detail = await getGameCostDetail(db, gameId);
+    expect(detail.ok).toBeTrue();
+    if (!detail.ok) throw new Error("expected cost detail");
+    expect(detail.detail.unpricedCallCount).toBe(0);
+    expect(detail.detail.estimatedCostMicrousd).toBe(137500);
+  });
+
+  test("uses Katana's high-context Grok rate card for large backfilled calls", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+
+    await db.insert(schema.gameEvidenceManifests).values({
+      id: "manifest-grok-high-context-cost-test",
+      gameId,
+      ownerEpoch,
+      evidenceType: "private_decision_trace",
+      retentionClass: "debug",
+      accessScope: "producer_admin",
+      metadata: {
+        actor: { id: "orion", name: "Orion", role: "player" },
+        action: "reflection",
+        model: { provider: "katana", providerProfileId: "katana", catalogId: "katana:grok-4-3", name: "grok-4-3" },
+        modelName: "grok-4-3",
+        usage: { totalTokens: 250_000 },
+        createdAt: "2026-07-03T13:00:00.000Z",
+      },
+    });
+
+    const result = await backfillGameCostAccounting(db, gameId);
+
+    expect(result.inserted).toBe(1);
+    const rows = await db.select().from(schema.gameProviderSpendEntries);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      costSource: "static_estimate",
+      modelName: "grok-4-3",
+      totalTokens: 250_000,
+      estimatedCostMicrousd: 687500,
+      rateCardVersion: "2026-07-04",
+    });
+  });
+
   test("reprices existing zero-cost total-token-only backfill rows on rerun", async () => {
     const db = await setupTestDB();
     const gameId = await insertGame(db);
@@ -306,12 +448,231 @@ describe("provider cost accounting", () => {
     const result = await backfillGameCostAccounting(db, gameId);
 
     expect(result.inserted).toBe(0);
-    expect(result.diagnostics).toEqual(["trace_manifest:repriced_aggregate_usage_rows"]);
+    expect(result.diagnostics).toEqual([
+      "spend_entries:repriced_static_estimate_rows",
+      "spend_entries:repriced_aggregate_usage_rows",
+    ]);
 
     const rows = await db.select().from(schema.gameProviderSpendEntries);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.estimatedCostMicrousd).toBeGreaterThan(0);
-    expect(JSON.stringify(rows[0]!.diagnostics)).toContain("repriced_existing_backfill");
+    expect(rows[0]).toMatchObject({
+      pricingSourceId: "engine.MODEL_PRICING",
+      rateCardVersion: "2026-07-04",
+    });
+    expect(rows[0]!.pricedAt).not.toBe("2026-07-03T13:00:00.000Z");
+    expect(JSON.stringify(rows[0]!.diagnostics)).toContain("repriced_existing_spend_entry");
+  });
+
+  test("upgrades existing zero-cost estimate rows from Katana router billing on rerun", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+
+    await db.insert(schema.gameEvidenceManifests).values({
+      id: "manifest-existing-katana-actual",
+      gameId,
+      ownerEpoch,
+      evidenceType: "private_decision_trace",
+      retentionClass: "debug",
+      accessScope: "producer_admin",
+      metadata: {
+        actor: { id: "orion", name: "Orion", role: "player" },
+        action: "introduction",
+        model: { provider: "katana", name: "grok-4-3" },
+        modelName: "grok-4-3",
+        usage: {
+          promptTokens: 100,
+          completionTokens: 25,
+          totalTokens: 125,
+          routerBilling: { credits: "17", providerCostUsd: "0.0042" },
+        },
+      },
+    });
+    await db.insert(schema.gameProviderSpendEntries).values({
+      id: randomUUID(),
+      gameId,
+      ownerEpoch,
+      sourceKey: "manifest:manifest-existing-katana-actual",
+      captureSource: "trace_manifest_backfill",
+      costSource: "static_estimate",
+      callStatus: "unknown",
+      traceManifestId: "manifest-existing-katana-actual",
+      actorName: "Orion",
+      actorRole: "player",
+      action: "introduction",
+      provider: "katana",
+      modelName: "grok-4-3",
+      promptTokens: 100,
+      cachedTokens: 0,
+      completionTokens: 25,
+      reasoningTokens: 0,
+      totalTokens: 125,
+      estimatedCostMicrousd: 0,
+      pricingSourceId: "engine.MODEL_PRICING",
+      rateCardVersion: "2026-07-03",
+      pricedAt: "2026-07-03T13:00:00.000Z",
+      routerBilling: { credits: "17", providerCostUsd: "0.0042" },
+      diagnostics: { items: [] },
+      observedAt: "2026-07-03T13:00:00.000Z",
+    });
+
+    const result = await backfillGameCostAccounting(db, gameId);
+
+    expect(result.inserted).toBe(0);
+    expect(result.diagnostics).toEqual(["spend_entries:repriced_router_actual_rows"]);
+
+    const rows = await db.select().from(schema.gameProviderSpendEntries);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      costSource: "router_actual",
+      actualCostMicrousd: 4200,
+      estimatedCostMicrousd: null,
+      pricingSourceId: null,
+      rateCardVersion: null,
+      pricedAt: null,
+    });
+    expect(JSON.stringify(rows[0]!.diagnostics)).toContain("repriced_existing_spend_entry");
+
+    const detail = await getGameCostDetail(db, gameId);
+    expect(detail.ok).toBeTrue();
+    if (!detail.ok) throw new Error("expected cost detail");
+    expect(detail.detail.state).toBe("actual");
+    expect(detail.detail.unpricedCallCount).toBe(0);
+  });
+
+  test("reprices existing unavailable total-token-only Grok backfill rows on rerun", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+
+    await db.insert(schema.gameEvidenceManifests).values({
+      id: "manifest-existing-grok-unavailable",
+      gameId,
+      ownerEpoch,
+      evidenceType: "private_decision_trace",
+      retentionClass: "debug",
+      accessScope: "producer_admin",
+      metadata: {
+        actor: { id: "orion", name: "Orion", role: "player" },
+        action: "lobby",
+        model: { provider: "katana", name: "grok-4-3" },
+        modelName: "grok-4-3",
+        usage: { totalTokens: 100_000 },
+      },
+    });
+    await db.insert(schema.gameProviderSpendEntries).values({
+      id: randomUUID(),
+      gameId,
+      ownerEpoch,
+      sourceKey: "manifest:manifest-existing-grok-unavailable",
+      captureSource: "trace_manifest_backfill",
+      costSource: "unavailable",
+      callStatus: "unknown",
+      traceManifestId: "manifest-existing-grok-unavailable",
+      actorName: "Orion",
+      actorRole: "player",
+      action: "lobby",
+      provider: "katana",
+      modelName: "grok-4-3",
+      promptTokens: 0,
+      cachedTokens: 0,
+      completionTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 100_000,
+      diagnostics: { items: ["cost_unavailable"] },
+      observedAt: "2026-07-03T13:00:00.000Z",
+    });
+
+    const result = await backfillGameCostAccounting(db, gameId);
+
+    expect(result.inserted).toBe(0);
+    expect(result.diagnostics).toEqual([
+      "spend_entries:repriced_static_estimate_rows",
+      "spend_entries:repriced_aggregate_usage_rows",
+    ]);
+
+    const rows = await db.select().from(schema.gameProviderSpendEntries);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      costSource: "static_estimate",
+      estimatedCostMicrousd: 137500,
+      pricingSourceId: "engine.MODEL_PRICING",
+      rateCardVersion: "2026-07-04",
+    });
+    expect(JSON.stringify(rows[0]!.diagnostics)).toContain("aggregate_usage_estimate");
+    expect(JSON.stringify(rows[0]!.diagnostics)).toContain("repriced_existing_spend_entry");
+    expect(JSON.stringify(rows[0]!.diagnostics)).not.toContain("cost_unavailable");
+  });
+
+  test("reprices existing unavailable live trace rows on backfill rerun", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+
+    await db.insert(schema.gameEvidenceManifests).values({
+      id: "manifest-existing-live-grok-unavailable",
+      gameId,
+      ownerEpoch,
+      evidenceType: "private_decision_trace",
+      retentionClass: "debug",
+      accessScope: "producer_admin",
+      metadata: {
+        actor: { id: "orion", name: "Orion", role: "player" },
+        action: "lobby",
+        model: { provider: "katana", name: "grok-4-3" },
+        modelName: "grok-4-3",
+        usage: { totalTokens: 100_000 },
+      },
+    });
+    await db.insert(schema.gameProviderSpendEntries).values({
+      id: randomUUID(),
+      gameId,
+      ownerEpoch,
+      sourceKey: `live:${gameId}:${ownerEpoch}:existing-unavailable`,
+      captureSource: "live_trace",
+      costSource: "unavailable",
+      callStatus: "unknown",
+      traceManifestId: "manifest-existing-live-grok-unavailable",
+      actorName: "Orion",
+      actorRole: "player",
+      action: "lobby",
+      provider: "katana",
+      modelName: "grok-4-3",
+      promptTokens: 0,
+      cachedTokens: 0,
+      completionTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 100_000,
+      diagnostics: { items: ["cost_unavailable"] },
+      observedAt: "2026-07-03T13:00:00.000Z",
+    });
+
+    const result = await backfillGameCostAccounting(db, gameId);
+
+    expect(result.inserted).toBe(0);
+    expect(result.diagnostics).toEqual([
+      "spend_entries:repriced_static_estimate_rows",
+      "spend_entries:repriced_aggregate_usage_rows",
+    ]);
+
+    const rows = await db.select().from(schema.gameProviderSpendEntries);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      captureSource: "live_trace",
+      costSource: "static_estimate",
+      estimatedCostMicrousd: 137500,
+      pricingSourceId: "engine.MODEL_PRICING",
+      rateCardVersion: "2026-07-04",
+    });
+    expect(JSON.stringify(rows[0]!.diagnostics)).toContain("repriced_existing_spend_entry");
+    expect(JSON.stringify(rows[0]!.diagnostics)).not.toContain("cost_unavailable");
+
+    const detail = await getGameCostDetail(db, gameId);
+    expect(detail.ok).toBeTrue();
+    if (!detail.ok) throw new Error("expected cost detail");
+    expect(detail.detail.unpricedCallCount).toBe(0);
+    expect(detail.detail.estimatedCostMicrousd).toBe(137500);
   });
 
   test("uses terminal result backfill only when no call-level ledger rows exist", async () => {

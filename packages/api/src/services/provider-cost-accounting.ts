@@ -9,7 +9,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 
 const PRICING_SOURCE_ID = "engine.MODEL_PRICING";
-const RATE_CARD_VERSION = "2026-07-03";
+const RATE_CARD_VERSION = "2026-07-04";
 
 const UNSAFE_KEY_PATTERN = /prompt|messages|response|content|tool|arguments|thinking|reasoning|key|secret|token/i;
 
@@ -96,7 +96,12 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 function finiteNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed === "") return undefined;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function integerish(value: unknown): number | undefined {
@@ -224,10 +229,17 @@ function extractRouterActualMicrousd(routerBilling: Record<string, unknown> | un
   const directMicro = integerish(routerBilling.cost_microusd) ?? integerish(routerBilling.costMicrousd);
   if (directMicro !== undefined) return directMicro;
   const usd =
+    finiteNumber(routerBilling.providerCostUsd) ??
+    finiteNumber(routerBilling.provider_cost_usd) ??
     finiteNumber(routerBilling.cost_usd) ??
     finiteNumber(routerBilling.costUsd) ??
+    finiteNumber(routerBilling.total_usd) ??
+    finiteNumber(routerBilling.totalUsd) ??
+    finiteNumber(routerBilling.amount_usd) ??
+    finiteNumber(routerBilling.amountUsd) ??
     finiteNumber(routerBilling.usd) ??
-    finiteNumber(routerBilling.amount_usd);
+    finiteNumber(routerBilling.paid_usdc) ??
+    finiteNumber(routerBilling.paidUsdc);
   return usd === undefined ? undefined : Math.max(0, Math.round(usd * 1_000_000));
 }
 
@@ -563,60 +575,78 @@ export async function recordProviderSpendForTrace(
   return { inserted: inserted.length > 0, sourceKey };
 }
 
-async function repriceTotalOnlyStaticEstimateRows(
+async function repriceExistingCallLevelRows(
   tx: CostAccountingTx,
   gameId: string,
-): Promise<number> {
+): Promise<{ routerActualRows: number; staticEstimateRows: number; aggregateEstimateRows: number }> {
   const rows = await tx
     .select()
     .from(schema.gameProviderSpendEntries)
     .where(and(
       eq(schema.gameProviderSpendEntries.gameId, gameId),
-      eq(schema.gameProviderSpendEntries.captureSource, "trace_manifest_backfill"),
-      eq(schema.gameProviderSpendEntries.costSource, "static_estimate"),
+      inArray(schema.gameProviderSpendEntries.captureSource, ["live_trace", "trace_manifest_backfill"]),
+      inArray(schema.gameProviderSpendEntries.costSource, ["static_estimate", "unavailable"]),
       sql`COALESCE(${schema.gameProviderSpendEntries.actualCostMicrousd}, 0) = 0`,
       sql`COALESCE(${schema.gameProviderSpendEntries.estimatedCostMicrousd}, 0) = 0`,
-      sql`${schema.gameProviderSpendEntries.totalTokens} > 0`,
-      sql`${schema.gameProviderSpendEntries.promptTokens} = 0`,
-      sql`${schema.gameProviderSpendEntries.cachedTokens} = 0`,
-      sql`${schema.gameProviderSpendEntries.completionTokens} = 0`,
-      sql`${schema.gameProviderSpendEntries.modelName} IS NOT NULL`,
     ));
 
-  let repriced = 0;
+  let routerActualRows = 0;
+  let staticEstimateRows = 0;
+  let aggregateEstimateRows = 0;
   for (const row of rows) {
-    if (!row.modelName) continue;
-    const estimatedCostMicrousd = estimateMicrousd({
+    const usage = {
       promptTokens: row.promptTokens,
       cachedTokens: row.cachedTokens,
       completionTokens: row.completionTokens,
       reasoningTokens: row.reasoningTokens,
       totalTokens: row.totalTokens,
-    }, row.modelName);
-    if (!estimatedCostMicrousd || estimatedCostMicrousd <= 0) continue;
+    };
+    const routerBilling = asRecord(row.routerBilling);
+    const actualCostMicrousd = extractRouterActualMicrousd(routerBilling);
+    const estimatedCostMicrousd = actualCostMicrousd === undefined && row.modelName
+      ? estimateMicrousd(usage, row.modelName)
+      : undefined;
+    if (actualCostMicrousd === undefined && (!estimatedCostMicrousd || estimatedCostMicrousd <= 0)) continue;
+    const providerNative = extractProviderNative(routerBilling);
 
     const existingDiagnostics = asRecord(row.diagnostics);
     const existingItems = Array.isArray(existingDiagnostics?.items)
       ? existingDiagnostics.items.map((item) => String(item))
       : [];
+    const diagnosticItems = existingItems.filter((item) => item !== "cost_unavailable");
+    if (actualCostMicrousd === undefined && usesTotalOnlyPricingFallback(usage)) {
+      diagnosticItems.push("aggregate_usage_estimate");
+      aggregateEstimateRows += 1;
+    }
+    diagnosticItems.push("repriced_existing_spend_entry");
+    if (actualCostMicrousd !== undefined) {
+      routerActualRows += 1;
+    } else {
+      staticEstimateRows += 1;
+    }
+
+    const pricedAt = new Date().toISOString();
     await tx
       .update(schema.gameProviderSpendEntries)
       .set({
-        estimatedCostMicrousd,
-        pricingSourceId: row.pricingSourceId ?? PRICING_SOURCE_ID,
-        rateCardVersion: row.rateCardVersion ?? RATE_CARD_VERSION,
-        pricedAt: row.pricedAt ?? row.observedAt ?? new Date().toISOString(),
+        costSource: actualCostMicrousd !== undefined ? "router_actual" : "static_estimate",
+        actualCostMicrousd,
+        estimatedCostMicrousd: actualCostMicrousd !== undefined ? null : estimatedCostMicrousd,
+        providerNativeUnit: row.providerNativeUnit ?? providerNative.unit,
+        providerNativeAmount: row.providerNativeAmount ?? providerNative.amount,
+        pricingSourceId: actualCostMicrousd === undefined ? PRICING_SOURCE_ID : null,
+        rateCardVersion: actualCostMicrousd === undefined ? RATE_CARD_VERSION : null,
+        pricedAt: actualCostMicrousd === undefined ? pricedAt : null,
         diagnostics: sanitizeForAccounting({
           ...existingDiagnostics,
-          items: [...new Set([...existingItems, "aggregate_usage_estimate", "repriced_existing_backfill"])],
+          items: [...new Set(diagnosticItems)],
         }) as Record<string, unknown>,
-        updatedAt: new Date().toISOString(),
+        updatedAt: pricedAt,
       })
       .where(eq(schema.gameProviderSpendEntries.id, row.id));
-    repriced += 1;
   }
 
-  return repriced;
+  return { routerActualRows, staticEstimateRows, aggregateEstimateRows };
 }
 
 function parseTokenUsageSnapshot(value: string): Record<string, unknown> | null {
@@ -754,8 +784,10 @@ export async function backfillGameCostAccounting(
       }
     }
 
-    const repriced = await repriceTotalOnlyStaticEstimateRows(tx, gameId);
-    if (repriced > 0) diagnostics.push("trace_manifest:repriced_aggregate_usage_rows");
+    const repriced = await repriceExistingCallLevelRows(tx, gameId);
+    if (repriced.routerActualRows > 0) diagnostics.push("spend_entries:repriced_router_actual_rows");
+    if (repriced.staticEstimateRows > 0) diagnostics.push("spend_entries:repriced_static_estimate_rows");
+    if (repriced.aggregateEstimateRows > 0) diagnostics.push("spend_entries:repriced_aggregate_usage_rows");
 
     const callLevelRows = await tx
       .select({ id: schema.gameProviderSpendEntries.id })
