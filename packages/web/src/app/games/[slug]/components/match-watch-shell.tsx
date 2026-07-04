@@ -4,6 +4,7 @@ import { startTransition, useCallback, useEffect, useMemo, useState } from "reac
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { AgentAvatar } from "@/components/agent-avatar";
+import { completedGameModeHref } from "@/lib/game-links";
 import {
   getGameAlliances,
   getPublicWatchIntelligence,
@@ -312,7 +313,7 @@ function ShellHeader({
       <div className="flex min-w-0 flex-wrap items-center gap-2 lg:justify-end">
         {showResultsCta ? (
           <Link
-            href={`/games/${gamePath}?mode=results`}
+            href={completedGameModeHref(gamePath, "results")}
             className="inline-flex h-8 items-center rounded-md border border-cyan-300/25 bg-cyan-400/10 px-3 text-[10px] uppercase tracking-[0.14em] text-cyan-100/80 transition-colors hover:border-cyan-200/45 hover:bg-cyan-400/15 hover:text-cyan-50"
           >
             Full Results
@@ -908,7 +909,7 @@ function ReplayDock({
 
       {showResultsCta ? (
         <Link
-          href={`/games/${gamePath}?mode=results`}
+          href={completedGameModeHref(gamePath, "results")}
           className="justify-self-end rounded-md border border-cyan-300/25 bg-cyan-400/10 px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-cyan-100/75 transition-colors hover:bg-cyan-400/15 hover:text-cyan-50"
         >
           Full Results

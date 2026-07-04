@@ -1,17 +1,14 @@
 import { Nav } from "@/components/nav";
+import { redirect } from "next/navigation";
 import { GameViewer } from "./game-viewer";
 import {
   getGame,
-  getGameReplayWatchFrames,
-  getGameTranscript,
   type GameDetail,
-  type GameWatchReplayFrame,
-  type TranscriptEntry,
 } from "@/lib/api";
 
 interface Props {
   params: Promise<{ slug: string }>;
-  searchParams?: Promise<{ mode?: string }>;
+  searchParams?: Promise<{ mode?: string | string[] }>;
 }
 
 export async function generateMetadata({ params }: Props) {
@@ -22,30 +19,24 @@ export async function generateMetadata({ params }: Props) {
   };
 }
 
-function normalizeCompletedMode(value: string | undefined): "replay" | "results" | null {
-  return value === "replay" || value === "results" ? value : null;
-}
-
 export default async function GameViewerPage({ params, searchParams }: Props) {
   const { slug } = await params;
-  const query = searchParams ? await searchParams : {};
-  const completedMode = normalizeCompletedMode(query.mode);
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const mode = Array.isArray(resolvedSearchParams.mode)
+    ? resolvedSearchParams.mode[0]
+    : resolvedSearchParams.mode;
+
+  if (mode === "results") {
+    redirect(`/games/${encodeURIComponent(slug)}/results`);
+  }
+  if (mode === "replay") {
+    redirect(`/games/${encodeURIComponent(slug)}/replay`);
+  }
 
   let initialGame: GameDetail | undefined;
-  let initialMessages: TranscriptEntry[] | undefined;
-  let initialReplayFrames: GameWatchReplayFrame[] | undefined;
 
   try {
     initialGame = await getGame(slug);
-    if (
-      (initialGame.status === "completed" || initialGame.status === "cancelled") &&
-      completedMode === "replay"
-    ) {
-      [initialMessages, initialReplayFrames] = await Promise.all([
-        getGameTranscript(slug),
-        getGameReplayWatchFrames(slug),
-      ]);
-    }
   } catch (err) {
     console.error(`[GameViewerPage] SSR fetch failed for slug="${slug}":`, err);
     // Client-side GameViewer will retry and show loadError if API remains unavailable
@@ -64,10 +55,7 @@ export default async function GameViewerPage({ params, searchParams }: Props) {
 
         <GameViewer
           gameId={slug}
-          completedMode={completedMode}
           initialGame={initialGame}
-          initialMessages={initialMessages}
-          initialReplayFrames={initialReplayFrames}
         />
       </main>
     </div>

@@ -96,7 +96,7 @@ function AllianceCard({
   compact: boolean;
 }) {
   return (
-    <details className="group rounded-md border border-white/10 bg-black/20 px-2.5 py-2">
+    <details id={`alliance-${card.id}`} className="group rounded-md border border-white/10 bg-black/20 px-2.5 py-2">
       <summary className="grid cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
         <AllianceMemberAvatars card={card} />
         <div className="min-w-0">
@@ -151,23 +151,14 @@ function AllianceMemberAvatars({ card }: { card: MatchWatchAllianceCardModel }) 
     <div className="flex min-w-12 -space-x-2" aria-label={`${card.name} members`}>
       {card.members.map((member) => (
         <span key={`${card.id}:${member.id ?? member.name}`} className="rounded-full ring-1 ring-black/70">
-          {member.persona ? (
-            <AgentAvatar
-              avatarUrl={member.avatarUrl}
-              personaKey={member.personaKey}
-              persona={member.persona}
-              name={member.name}
-              size="6"
-              hideBadge
-            />
-          ) : (
-            <span
-              title={member.name}
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-[9px] font-semibold uppercase text-white/55"
-            >
-              {member.name.slice(0, 1)}
-            </span>
-          )}
+          <AgentAvatar
+            avatarUrl={member.avatarUrl}
+            personaKey={member.personaKey}
+            persona={member.persona ?? member.name}
+            name={member.name}
+            size="6"
+            hideBadge
+          />
         </span>
       ))}
     </div>

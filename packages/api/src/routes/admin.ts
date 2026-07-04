@@ -13,7 +13,7 @@
  * GET    /api/admin/users           — List all users with their resolved roles
  */
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { eq, sql, isNull, and, or, asc, like, desc } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -33,6 +33,10 @@ import {
   getGameCostDetail,
   getGameCostSummaryMap,
 } from "../services/provider-cost-accounting.js";
+import {
+  getPostgameHighlightsDiagnostics,
+  type PostgameHighlightsReadStatus,
+} from "../services/postgame-highlights.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
 import { randomUUID } from "crypto";
 
@@ -381,6 +385,14 @@ export function createAdminRoutes(db: DrizzleDB) {
       return c.json({ error: result.error }, result.statusCode);
     }
     return c.json(result.detail);
+  });
+
+  app.get("/api/admin/games/:idOrSlug/postgame/highlights/diagnostics", requireAdminRead, async (c) => {
+    const result = await getPostgameHighlightsDiagnostics(db, c.req.param("idOrSlug"));
+    if (!result.ok) {
+      return postgameHighlightsErrorResponse(c, result);
+    }
+    return c.json(result);
   });
 
   app.post("/api/admin/games/:idOrSlug/costs/backfill", async (c) => {
@@ -1148,6 +1160,16 @@ export function createAdminRoutes(db: DrizzleDB) {
   });
 
   return app;
+}
+
+function postgameHighlightsErrorResponse(
+  c: Context<AuthEnv>,
+  result: { status: PostgameHighlightsReadStatus; error: string },
+) {
+  if (result.status === "not_found") {
+    return c.json({ error: result.error, status: result.status }, 404);
+  }
+  return c.json({ error: result.error, status: result.status }, 409);
 }
 
 function clampAdminLimit(value: number): number {

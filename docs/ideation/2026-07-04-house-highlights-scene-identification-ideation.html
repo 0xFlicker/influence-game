@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: House Highlights Scene Identification</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --void: #050508;
+      --surface: #0d0d12;
+      --surface-raised: #15151e;
+      --surface-soft: #1b1b28;
+      --text: #ebeaf5;
+      --muted: #a7a5b7;
+      --dim: #737184;
+      --border: #2b2a3a;
+      --cyan: #67e8f9;
+      --cyan-soft: rgba(103, 232, 249, 0.12);
+      --gold: #f4c95d;
+      --gold-soft: rgba(244, 201, 93, 0.13);
+      --rose: #fb7185;
+      --rose-soft: rgba(251, 113, 133, 0.12);
+      --violet: #a78bfa;
+      --violet-soft: rgba(167, 139, 250, 0.12);
+      --green: #86efac;
+      --green-soft: rgba(134, 239, 172, 0.11);
+      --radius: 10px;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.36);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 15% 0%, rgba(103, 232, 249, 0.12), transparent 28rem),
+        radial-gradient(circle at 90% 8%, rgba(244, 201, 93, 0.11), transparent 26rem),
+        linear-gradient(180deg, #07070c 0%, var(--void) 32rem, #030306 100%);
+      color: var(--text);
+      line-height: 1.58;
+    }
+    a { color: var(--cyan); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      color: #d8d7ff;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      padding: 0.08rem 0.28rem;
+      font-size: 0.92em;
+    }
+    .page {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 48px 0 64px;
+    }
+    header.hero {
+      border: 1px solid var(--border);
+      background: linear-gradient(145deg, rgba(21, 21, 30, 0.96), rgba(9, 9, 14, 0.96));
+      box-shadow: var(--shadow);
+      border-radius: var(--radius);
+      padding: 32px;
+      position: relative;
+      overflow: hidden;
+    }
+    header.hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -12% -45% 35%;
+      height: 220px;
+      background: radial-gradient(circle, rgba(103, 232, 249, 0.14), transparent 62%);
+      pointer-events: none;
+    }
+    .eyebrow {
+      color: var(--gold);
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-size: 0.72rem;
+      font-weight: 800;
+    }
+    h1 {
+      margin: 0.45rem 0 0.7rem;
+      font-size: clamp(2rem, 4vw, 4.2rem);
+      line-height: 0.98;
+      letter-spacing: 0;
+      font-weight: 250;
+      text-transform: uppercase;
+      max-width: 12ch;
+    }
+    .subtitle {
+      max-width: 72ch;
+      color: var(--muted);
+      font-size: 1.03rem;
+      margin: 0;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 22px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      padding: 0.4rem 0.72rem;
+      background: rgba(255, 255, 255, 0.055);
+      color: #deddf0;
+      font-size: 0.82rem;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 24px;
+    }
+    .stat {
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .stat b { display: block; font-size: 1.55rem; line-height: 1; color: var(--text); }
+    .stat span { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em; }
+    main {
+      display: grid;
+      gap: 26px;
+      margin-top: 28px;
+    }
+    section {
+      border: 1px solid var(--border);
+      background: rgba(13, 13, 18, 0.84);
+      border-radius: var(--radius);
+      padding: 28px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+    }
+    h2 {
+      margin: 0 0 18px;
+      font-size: 1.45rem;
+      line-height: 1.2;
+      letter-spacing: 0;
+      font-weight: 740;
+    }
+    h3 {
+      margin: 0;
+      line-height: 1.2;
+      font-size: 1.18rem;
+      letter-spacing: 0;
+    }
+    p { max-width: 76ch; }
+    .grounding-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .grounding-card, .axis-card {
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.045);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .grounding-card b, .axis-card b {
+      display: block;
+      margin-bottom: 0.35rem;
+      color: var(--text);
+    }
+    .grounding-card p, .axis-card p { margin: 0; color: var(--muted); font-size: 0.94rem; }
+    .axes {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .axis-card { background: rgba(103, 232, 249, 0.06); border-color: rgba(103, 232, 249, 0.17); }
+    .v1-lede {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 1rem;
+    }
+    .v1-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .v1-card {
+      border: 1px solid rgba(255, 255, 255, 0.11);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.045);
+      padding: 16px;
+    }
+    .v1-card h3 {
+      font-size: 1rem;
+      margin-bottom: 0.45rem;
+      color: var(--text);
+    }
+    .v1-card p, .v1-card li {
+      color: var(--muted);
+      font-size: 0.93rem;
+    }
+    .v1-card ul {
+      margin: 0.7rem 0 0;
+      padding-left: 1.05rem;
+    }
+    .v1-card.featured {
+      grid-column: 1 / -1;
+      background: linear-gradient(135deg, rgba(244, 201, 93, 0.12), rgba(103, 232, 249, 0.08));
+      border-color: rgba(244, 201, 93, 0.24);
+    }
+    .v1-rule {
+      margin-top: 14px;
+      border: 1px solid rgba(103, 232, 249, 0.18);
+      background: var(--cyan-soft);
+      color: #d8fbff;
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      max-width: 88ch;
+    }
+    .idea-nav {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .idea-nav a {
+      display: block;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.045);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      color: var(--text);
+      font-size: 0.9rem;
+    }
+    article.idea {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.03));
+      border-radius: var(--radius);
+      padding: 22px;
+      margin-top: 14px;
+    }
+    .idea-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+    .rank {
+      color: var(--gold);
+      font-weight: 850;
+      margin-right: 0.35rem;
+    }
+    .idea-metrics {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+      min-width: 220px;
+    }
+    .idea dl {
+      display: grid;
+      grid-template-columns: 120px minmax(0, 1fr);
+      gap: 10px 14px;
+      margin: 16px 0 0;
+    }
+    .idea dt {
+      color: var(--gold);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 0.72rem;
+      font-weight: 850;
+    }
+    .idea dd { margin: 0; color: var(--muted); }
+    .visual {
+      margin: 18px 0 6px;
+      border: 1px solid rgba(255, 255, 255, 0.11);
+      border-radius: var(--radius);
+      background: rgba(0, 0, 0, 0.22);
+      padding: 10px;
+      overflow: auto;
+    }
+    svg { max-width: 100%; height: auto; display: block; }
+    .svg-text { fill: #f1f0fb; font: 600 14px Inter, system-ui, sans-serif; }
+    .svg-small { fill: #b8b6ca; font: 500 12px Inter, system-ui, sans-serif; }
+    .svg-label { fill: #050508; font: 800 12px Inter, system-ui, sans-serif; }
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+    th, td {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+      font-size: 0.9rem;
+    }
+    th {
+      color: var(--gold);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-size: 0.72rem;
+      background: rgba(244, 201, 93, 0.07);
+    }
+    td { color: var(--muted); }
+    td:first-child, th:first-child { width: 56px; color: var(--text); }
+    .references {
+      display: grid;
+      gap: 9px;
+      padding-left: 1rem;
+    }
+    .references li { color: var(--muted); }
+    .callout {
+      border: 1px solid rgba(251, 113, 133, 0.24);
+      background: var(--rose-soft);
+      color: #f8d7de;
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-top: 18px;
+      max-width: 82ch;
+    }
+    footer {
+      color: var(--dim);
+      text-align: center;
+      margin-top: 28px;
+      font-size: 0.85rem;
+    }
+    @media (max-width: 860px) {
+      .stats, .grounding-grid, .axes, .v1-grid, .idea-nav { grid-template-columns: 1fr; }
+      .v1-card.featured { grid-column: auto; }
+      header.hero, section { padding: 22px; }
+      .idea-head { display: block; }
+      .idea-metrics { justify-content: flex-start; margin-top: 12px; }
+      .idea dl { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div class="eyebrow">Ideation Artifact</div>
+      <h1>House Highlights Scene Identification</h1>
+      <p class="subtitle">A ranked direction set for making The House act like an ominous editor: finding the 3-5 story beats that make a completed Influence game worth sharing, without depending on expensive generated video. Refined with a tighter v1 shape that combines the first four ideas into one product direction.</p>
+      <div class="meta">
+        <span class="pill">Date: <time datetime="2026-07-04">2026-07-04</time></span>
+        <span class="pill">Topic: house-highlights-scene-identification</span>
+        <span class="pill">Mode: repo-grounded</span>
+        <span class="pill">Output: HTML</span>
+      </div>
+      <div class="stats" aria-label="Ideation counts">
+        <div class="stat"><b>40</b><span>Raw candidates</span></div>
+        <div class="stat"><b>7</b><span>Ranked ideas</span></div>
+        <div class="stat"><b>5</b><span>Topic axes</span></div>
+        <div class="stat"><b>33</b><span>Rejected</span></div>
+      </div>
+    </header>
+
+    <main>
+      <section id="grounding-context">
+        <h2>Grounding Context</h2>
+        <div class="grounding-grid">
+          <div class="grounding-card">
+            <b>Codebase Context</b>
+            <p>Influence is explicitly an AI social-strategy spectator loop. The strategy doc names completed games watched and replay/sharing as core measures, while the current game loop already produces rich canonical events, turn records, House MC summaries, alliance records, jury facts, and postgame projections.</p>
+          </div>
+          <div class="grounding-card">
+            <b>Postgame Truth Boundary</b>
+            <p>The current completed-game stack distinguishes board truth from color: canonical events decide votes, eliminations, powers, winners, and placements; private turn records, thinking, and strategy artifacts explain texture but do not prove outcomes. House Highlights has to preserve that boundary while sounding theatrical.</p>
+          </div>
+          <div class="grounding-card">
+            <b>Existing Story Ingredients</b>
+            <p>The v2 postgame projection already exposes executive summary bullets, round headlines, highlighted eliminations, derived vote cohorts, game momentum, jury narrative, player summaries, alliance summaries, and turning points. This is enough raw material for a first story layer; the missing piece is editorial selection.</p>
+          </div>
+          <div class="grounding-card">
+            <b>External Context</b>
+            <p>Highlight research points toward segment-level saliency, context-aware selection, and emotional or reaction cues rather than isolated clip scoring. Share platforms reward visual, concise, link-native packets: short vertical video, rich embeds, descriptive titles, poster frames, and spoiler-aware community posting.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="topic-axes">
+        <h2>Topic Axes</h2>
+        <div class="axes">
+          <div class="axis-card"><b>Signal Detection</b><p>What evidence makes a moment candidate-worthy.</p></div>
+          <div class="axis-card"><b>Emotional Taxonomy</b><p>What feeling or social meaning the moment carries.</p></div>
+          <div class="axis-card"><b>Narrative Selection</b><p>How The House chooses one trailer spine or several mini-highlights.</p></div>
+          <div class="axis-card"><b>Trailer Artifact</b><p>How the highlight differs from replay and results.</p></div>
+          <div class="axis-card"><b>Compounding</b><p>How highlights feed profiles, achievements, recaps, and announcements.</p></div>
+        </div>
+      </section>
+
+      <section id="tighter-v1-shape">
+        <h2>Tighter V1 Shape</h2>
+        <p class="v1-lede"><strong>V1 recommendation:</strong> ship a House Highlight Cut for every completed game. It is not a video generator and not a replay summary. It is a spoiler-forward editorial artifact: one House-authored thesis, 3-5 receipt-backed scenes, a lightweight faux-trailer presentation, and individually shareable mini-highlights when the story supports them.</p>
+        <div class="v1-grid">
+          <div class="v1-card featured">
+            <h3>1. The House writes the trailer thesis first</h3>
+            <p>The first output is one sentence: <em>"This was the game where..."</em> Examples: "the pact collapsed one vote too late," "the finalist survived every attempt to bury them," or "the jury punished the cleanest liar in the room." The thesis is allowed to be ominous and editorial, but it must be supported by scenes with receipts.</p>
+          </div>
+          <div class="v1-card">
+            <h3>2. Candidate scenes come from existing postgame signals</h3>
+            <p>The House starts from turning points, highlighted eliminations, momentum shifts, alliance summaries, jury narrative, vote ledgers, public/replay-safe quotes, and relationship reversals. It can use private/producer context later, but public-by-URL facts should be enough to make v1 work.</p>
+          </div>
+          <div class="v1-card">
+            <h3>3. A scene needs setup, conflict, payoff</h3>
+            <p>Each selected scene must answer three viewer questions: what was the social setup, what changed under pressure, and what consequence followed. If The House can only say "this was important" but cannot show why a cold viewer should care, the scene belongs in results, not Highlights.</p>
+          </div>
+          <div class="v1-card">
+            <h3>4. Emotional labels require receipts</h3>
+            <p>Betrayal, suspense, irony, revenge, loyalty, chaos, collapse, triumph, humiliation, jury judgment, and unlikely survival are labels, not vibes. No receipt, no label. This keeps The House theatrical without turning it into an unreliable oracle.</p>
+          </div>
+          <div class="v1-card">
+            <h3>5. The main trailer and mini-highlights share the same scene cards</h3>
+            <p>A strong game gets one main cut of 3-5 scenes. A messier game gets a highlight pack of 2-3 mini-highlights. Either way, every scene has a title, emotional category, involved agents, one poster/caption/graphic direction, a short House hook, and a deep link.</p>
+          </div>
+          <div class="v1-card">
+            <h3>6. V1 defers the expensive toys</h3>
+            <p>Defer generated video, AI narration, private-reasoning supercuts, custom per-game soundtrack generation, season-wide rankings, and achievement/profile systems. Reusable ambient music, simple motion, title cards, avatars, vote graphics, and captions are enough if the scene selection has teeth.</p>
+          </div>
+        </div>
+        <p class="v1-rule"><strong>Selection rule:</strong> choose a main trailer only when at least three scenes support the same thesis with medium-or-better confidence and cold-viewer legibility. Otherwise, publish a mini-highlight pack and let each clip carry its own hook. Boring certainty beats ornate nonsense; The House can be dramatic, not delusional.</p>
+      </section>
+
+      <section id="ranked-ideas">
+        <h2>Ranked Ideas</h2>
+        <nav class="idea-nav" aria-label="Ranked idea jump list">
+          <a href="#idea-1">1. House Highlights Story Engine</a>
+          <a href="#idea-2">2. Emotional Receipts Taxonomy</a>
+          <a href="#idea-3">3. Relationship-First Scene Detector</a>
+          <a href="#idea-4">4. Main Trailer Plus Mini-Highlight Pack</a>
+          <a href="#idea-5">5. Share Packet First Class</a>
+          <a href="#idea-6">6. Moment Memory For Future Seasons</a>
+          <a href="#idea-7">7. Public-First V1, Producer Later</a>
+        </nav>
+
+        <article class="idea" id="idea-1">
+          <div class="idea-head">
+            <h3><span class="rank">1.</span>House Highlights Story Engine</h3>
+            <div class="idea-metrics"><span class="pill">Confidence 96%</span><span class="pill">Complexity Medium</span></div>
+          </div>
+          <p><strong>Description:</strong> Treat scene identification as a story engine, not a ranked list of exciting facts. The House first proposes 2-4 trailer theses such as "the game where the pact collapsed" or "the finalist survived every attempt to bury them," then selects the 3-5 scenes that best prove one thesis through setup, conflict, and payoff. A scene can be a vote, huddle, diary beat, jury exchange, power shift, or relationship reversal, but it only survives if the viewer can understand the before and after quickly.</p>
+          <div class="visual" aria-label="Story engine conceptual flow">
+            <svg viewBox="0 0 900 190" role="img" aria-labelledby="story-engine-title">
+              <title id="story-engine-title">Candidate scenes are grouped under trailer theses before The House chooses the strongest story.</title>
+              <defs>
+                <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+                  <path d="M0,0 L10,5 L0,10 Z" fill="#67e8f9"></path>
+                </marker>
+              </defs>
+              <rect x="24" y="42" width="180" height="92" rx="10" fill="rgba(103,232,249,0.13)" stroke="#67e8f9"></rect>
+              <text x="114" y="78" text-anchor="middle" class="svg-text">Candidate</text>
+              <text x="114" y="100" text-anchor="middle" class="svg-small">facts + quotes + shifts</text>
+              <line x1="210" y1="88" x2="306" y2="88" stroke="#67e8f9" stroke-width="2" marker-end="url(#arrow)"></line>
+              <rect x="318" y="28" width="220" height="120" rx="10" fill="rgba(244,201,93,0.13)" stroke="#f4c95d"></rect>
+              <text x="428" y="67" text-anchor="middle" class="svg-text">Trailer theses</text>
+              <text x="428" y="91" text-anchor="middle" class="svg-small">"the pact broke"</text>
+              <text x="428" y="113" text-anchor="middle" class="svg-small">"the jury noticed"</text>
+              <line x1="544" y1="88" x2="638" y2="88" stroke="#67e8f9" stroke-width="2" marker-end="url(#arrow)"></line>
+              <rect x="650" y="42" width="220" height="92" rx="10" fill="rgba(251,113,133,0.13)" stroke="#fb7185"></rect>
+              <text x="760" y="78" text-anchor="middle" class="svg-text">Chosen highlight</text>
+              <text x="760" y="100" text-anchor="middle" class="svg-small">3-5 scenes with receipts</text>
+            </svg>
+          </div>
+          <dl>
+            <dt>Axis</dt><dd>Narrative Selection</dd>
+            <dt>Basis</dt><dd><code>direct:</code> <code>packages/engine/src/postgame-analysis.ts</code> already builds <code>turningPoints</code>, <code>gameMomentum</code>, <code>highlightedEliminations</code>, alliance summaries, and an <code>executiveSummary</code>; the 2026-07-01 postgame ideation says the strongest facts are still distributed like report rows and need a story spine.</dd>
+            <dt>Rationale</dt><dd>This is the core product move. It turns existing postgame analysis into an editorial object and prevents House Highlights from becoming a prettier results page.</dd>
+            <dt>Downsides</dt><dd>The thesis step is subjective. It needs confidence and receipts so The House can be dramatic without overclaiming motive or hidden knowledge.</dd>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-2">
+          <div class="idea-head">
+            <h3><span class="rank">2.</span>Emotional Receipts Taxonomy</h3>
+            <div class="idea-metrics"><span class="pill">Confidence 94%</span><span class="pill">Complexity Medium</span></div>
+          </div>
+          <p><strong>Description:</strong> Give The House a small set of emotional categories with evidence tests: betrayal, suspense, irony, revenge, loyalty, chaos, collapse, triumph, humiliation, jury judgment, and unlikely survival. Each category should require receipts. Betrayal needs a prior tie plus harmful action; suspense needs close margin or at-risk state; irony needs a stated belief contradicted by outcome; loyalty needs costly support; humiliation needs public confidence or power followed by a visible fall.</p>
+          <div class="visual" aria-label="Emotional category receipt examples">
+            <svg viewBox="0 0 900 240" role="img" aria-labelledby="taxonomy-title">
+              <title id="taxonomy-title">Emotional labels attach only when receipts support them.</title>
+              <rect x="28" y="36" width="180" height="74" rx="10" fill="rgba(251,113,133,0.13)" stroke="#fb7185"></rect>
+              <text x="118" y="65" text-anchor="middle" class="svg-text">Betrayal</text>
+              <text x="118" y="87" text-anchor="middle" class="svg-small">tie + harmful action</text>
+              <rect x="248" y="36" width="180" height="74" rx="10" fill="rgba(244,201,93,0.13)" stroke="#f4c95d"></rect>
+              <text x="338" y="65" text-anchor="middle" class="svg-text">Suspense</text>
+              <text x="338" y="87" text-anchor="middle" class="svg-small">close margin + risk</text>
+              <rect x="468" y="36" width="180" height="74" rx="10" fill="rgba(167,139,250,0.13)" stroke="#a78bfa"></rect>
+              <text x="558" y="65" text-anchor="middle" class="svg-text">Irony</text>
+              <text x="558" y="87" text-anchor="middle" class="svg-small">belief contradicted</text>
+              <rect x="688" y="36" width="180" height="74" rx="10" fill="rgba(134,239,172,0.12)" stroke="#86efac"></rect>
+              <text x="778" y="65" text-anchor="middle" class="svg-text">Loyalty</text>
+              <text x="778" y="87" text-anchor="middle" class="svg-small">costly support</text>
+              <text x="450" y="166" text-anchor="middle" class="svg-small">Category label + evidence test + trailer caption. No receipt, no label.</text>
+            </svg>
+          </div>
+          <dl>
+            <dt>Axis</dt><dd>Emotional Taxonomy</dd>
+            <dt>Basis</dt><dd><code>direct:</code> current postgame derived objects already carry confidence, derivation method, and criteria. <code>CONCEPTS.md</code> distinguishes highlighted eliminations, derived vote cohorts, and momentum as derived signals rather than raw truth.</dd>
+            <dt>Rationale</dt><dd>Emotional labels make moments shareable. Receipt rules keep those labels from becoming fake omniscience, which is the trap waiting in the bushes.</dd>
+            <dt>Downsides</dt><dd>Some great human-feeling moments will not fit the first taxonomy. V1 should prefer a smaller honest vocabulary over a giant thesaurus of vibes.</dd>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-3">
+          <div class="idea-head">
+            <h3><span class="rank">3.</span>Relationship-First Scene Detector</h3>
+            <div class="idea-metrics"><span class="pill">Confidence 91%</span><span class="pill">Complexity Medium</span></div>
+          </div>
+          <p><strong>Description:</strong> Look for relationship edges changing state, not just phase events: trust forms, trust is tested, trust is cashed out, trust breaks, trust becomes a weapon. The strongest House Highlights scenes will often be "Atlas and Mira formed a pact, then Mira voted Atlas out" or "the jury punished the finalist who abandoned the loyalist." This is where named alliances, huddle outcomes, vote ledgers, jury questions, and diary contradictions can become story beats.</p>
+          <dl>
+            <dt>Axis</dt><dd>Signal Detection</dd>
+            <dt>Basis</dt><dd><code>direct:</code> named alliance docs define alliances as social agreement and promise debt, not true loyalty; the owner-scoped alliance learning says broader postgame surfaces can discuss alliance consequences without carrying full transcripts.</dd>
+            <dt>Rationale</dt><dd>New viewers do not care that a database event happened. They care that a relationship changed in a way they can understand.</dd>
+            <dt>Downsides</dt><dd>Relationship reads must avoid overclaiming secret intent. The detector should separate official alliances, public vote evidence, and House hypotheses.</dd>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-4">
+          <div class="idea-head">
+            <h3><span class="rank">4.</span>Main Trailer Plus Mini-Highlight Pack</h3>
+            <div class="idea-metrics"><span class="pill">Confidence 89%</span><span class="pill">Complexity Medium</span></div>
+          </div>
+          <p><strong>Description:</strong> Default to one main House Highlights trailer when a single thesis wins. When no thesis is strong enough, publish a pack of 2-3 mini-highlights instead: "the closest vote," "the betrayal," "the jury sting." Even when a main trailer exists, each scene should be individually deep-linkable so a player owner can share the specific moment that matters to them.</p>
+          <dl>
+            <dt>Axis</dt><dd>Trailer Artifact</dd>
+            <dt>Basis</dt><dd><code>direct:</code> the prompt asks whether each game should get one main trailer, several mini-highlights, or both. <code>docs/visual-design-language.md</code> frames Influence as a produced broadcast, not a log file.</dd>
+            <dt>Rationale</dt><dd>One main trailer gives the page identity; mini-highlights give every completed game a fallback and give non-winners shareable material.</dd>
+            <dt>Downsides</dt><dd>More share units can dilute attention. V1 should cap mini-highlights and avoid making a clips buffet.</dd>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-5">
+          <div class="idea-head">
+            <h3><span class="rank">5.</span>Share Packet First Class</h3>
+            <div class="idea-metrics"><span class="pill">Confidence 88%</span><span class="pill">Complexity Low</span></div>
+          </div>
+          <p><strong>Description:</strong> Treat the outbound share packet as part of the highlight, not a marketing afterthought. Each trailer and mini-highlight should have a title, poster frame, one-line House hook, spoiler level, involved agents, a short social caption, and a link preview. For v1, this can be more important than animation quality because Discord, X/Twitter, Reddit, TikTok, and YouTube Shorts all reward immediate visual comprehension.</p>
+          <dl>
+            <dt>Axis</dt><dd>Compounding</dd>
+            <dt>Basis</dt><dd><code>external:</code> YouTube Help says Shorts can be up to 3 minutes and are discovered through the Shorts feed, search, home, channels, subscriptions, and notifications. Discord's message embed object supports title, description, URL, image, thumbnail, video, provider, and fields. Reddit posting supports link and image/video post types, subject to community rules.</dd>
+            <dt>Rationale</dt><dd>This is the growth lever. A good page nobody shares is a museum exhibit; a good packet becomes a growth object.</dd>
+            <dt>Downsides</dt><dd>Each platform has different norms. V1 should create adaptable packets, not pretend one caption works everywhere.</dd>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-6">
+          <div class="idea-head">
+            <h3><span class="rank">6.</span>Moment Memory For Future Seasons</h3>
+            <div class="idea-metrics"><span class="pill">Confidence 86%</span><span class="pill">Complexity Medium</span></div>
+          </div>
+          <p><strong>Description:</strong> House Highlights should leave behind durable editorial memory: scene category, thesis, involved agents, emotional label, rarity, and evidence confidence. That lets future systems build agent reputation tags, achievement badges, profile clip shelves, Discord bot announcements, season recaps, and "best betrayal of the season" pages without re-reading every transcript from scratch.</p>
+          <dl>
+            <dt>Axis</dt><dd>Compounding</dd>
+            <dt>Basis</dt><dd><code>direct:</code> <code>STRATEGY.md</code> frames Influence as persistent agents whose owners watch, understand, and improve them over time. Existing postgame projection already derives reusable high-level signals such as near misses, jury margins, momentum, and alliance-aware turning points.</dd>
+            <dt>Rationale</dt><dd>Growth gets cheaper when every completed game contributes reusable editorial inventory. The same scene can power a share page today and a profile/season story later.</dd>
+            <dt>Downsides</dt><dd>It is easy to drift into a data-model plan. Keep v1 focused on naming the editorial outputs and defer broad achievement/profile mechanics.</dd>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-7">
+          <div class="idea-head">
+            <h3><span class="rank">7.</span>Public-First V1, Producer Later</h3>
+            <div class="idea-metrics"><span class="pill">Confidence 84%</span><span class="pill">Complexity Low</span></div>
+          </div>
+          <p><strong>Description:</strong> Make v1 work from public-by-URL completed-game facts plus existing postgame projections: winner, elimination order, vote ledgers, highlighted eliminations, momentum, jury facts, public/replay-safe alliance projection, and public quotes. Defer AI narration, generated video, raw private reasoning, producer-only trace reading, generalized image generation, and season-wide ranking until the core scene-selection taste proves itself.</p>
+          <dl>
+            <dt>Axis</dt><dd>Signal Detection</dd>
+            <dt>Basis</dt><dd><code>direct:</code> completed-game results review and postgame analysis projection docs define public-by-URL, canonical-event-derived result truth; cognitive artifacts can add optional context but raw payloads, private traces, source pointers, and producer reasoning cannot define what happened.</dd>
+            <dt>Rationale</dt><dd>This keeps v1 focused, cheap, and safe. If the public facts cannot produce a compelling trailer thesis, generated video will only make the emptiness more expensive.</dd>
+            <dt>Downsides</dt><dd>Some emotionally juicy diary-room or private-reasoning moments will wait. That is acceptable; deferred drama beats fabricated certainty.</dd>
+          </dl>
+        </article>
+      </section>
+
+      <section id="rejection-summary">
+        <h2>Rejection Summary</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>Receipt-Backed Scene Cards</td><td>Folded into House Highlights Story Engine and Emotional Receipts Taxonomy; stronger as an internal rule than standalone direction.</td></tr>
+              <tr><td>2</td><td>Setup-Conflict-Payoff Filter</td><td>Folded into House Highlights Story Engine.</td></tr>
+              <tr><td>3</td><td>New Viewer Legibility Gate</td><td>Folded into Public-First V1 and Share Packet First Class.</td></tr>
+              <tr><td>4</td><td>Omit The Ordinary Winner Path</td><td>Good principle, but too narrow; covered by Story Engine and Main Trailer Plus Mini-Highlight Pack.</td></tr>
+              <tr><td>5</td><td>Highlight Debt Register</td><td>Folded into Relationship-First Scene Detector.</td></tr>
+              <tr><td>6</td><td>The Missing Middle Detector</td><td>Useful quality gate, but duplicate of Story Engine's setup requirement.</td></tr>
+              <tr><td>7</td><td>Trailer First, Details Second</td><td>Correct but too presentation-order focused; covered by Story Engine.</td></tr>
+              <tr><td>8</td><td>Automatic Trailer Thesis</td><td>Folded into House Highlights Story Engine.</td></tr>
+              <tr><td>9</td><td>Anti-Recap Budget</td><td>Good v1 constraint, but not a full direction; included in Public-First V1 and Main Trailer Pack.</td></tr>
+              <tr><td>10</td><td>One-Click Discord Packet</td><td>Folded into Share Packet First Class.</td></tr>
+              <tr><td>11</td><td>Scene Families Instead Of Scores</td><td>Folded into Emotional Receipts Taxonomy.</td></tr>
+              <tr><td>12</td><td>Generate Mini-Highlights When Main Story Is Muddy</td><td>Folded into Main Trailer Plus Mini-Highlight Pack.</td></tr>
+              <tr><td>13</td><td>The House As Prosecutor</td><td>Strong voice option, but better as a style variant under Story Engine than a core product direction.</td></tr>
+              <tr><td>14</td><td>Highlight The Relationship, Not The Event</td><td>Folded into Relationship-First Scene Detector.</td></tr>
+              <tr><td>15</td><td>Make The Loser Shareable</td><td>Folded into Main Trailer Pack and Moment Memory; too narrow alone.</td></tr>
+              <tr><td>16</td><td>Spoilers Are The Product</td><td>Useful framing, but not enough by itself; covered by Trailer Artifact decisions.</td></tr>
+              <tr><td>17</td><td>The House Does Not Explain Everything</td><td>Good taste note, but below ambition floor as standalone idea.</td></tr>
+              <tr><td>18</td><td>Unreliable Producer Voice With Reliable Receipts</td><td>Folded into Emotional Receipts Taxonomy.</td></tr>
+              <tr><td>19</td><td>Highlight Tags Become Agent Reputation</td><td>Folded into Moment Memory For Future Seasons.</td></tr>
+              <tr><td>20</td><td>Season Recap Seeds</td><td>Folded into Moment Memory For Future Seasons.</td></tr>
+              <tr><td>21</td><td>Achievements From Moments, Not Outcomes</td><td>Strong future path, but too downstream for v1; captured as compounding use case.</td></tr>
+              <tr><td>22</td><td>House Highlight Index For Best-Of Pages</td><td>Folded into Moment Memory; implementation-heavy as standalone.</td></tr>
+              <tr><td>23</td><td>Profile Clip Shelf</td><td>Future system, not scene-identification core; captured under Moment Memory.</td></tr>
+              <tr><td>24</td><td>Discord Bot Announcement Voice</td><td>Folded into Share Packet First Class.</td></tr>
+              <tr><td>25</td><td>Sports Highlight Room</td><td>Useful analogy, but better as basis for Story Engine than a product concept.</td></tr>
+              <tr><td>26</td><td>Reality TV Cold Open</td><td>Presentation variant; keep for later trailer creative direction, not v1 scene logic.</td></tr>
+              <tr><td>27</td><td>Courtroom Evidence Board</td><td>Compelling visual metaphor but risks over-specifying the presentation layer too early.</td></tr>
+              <tr><td>28</td><td>Trading Card Moment Rarity</td><td>Fun compounding idea, but may distract from scene quality in v1.</td></tr>
+              <tr><td>29</td><td>Trailer As Playlist, Not Video</td><td>Correct presentation framing, but the prompt already supplied this direction; not a scene-identification idea.</td></tr>
+              <tr><td>30</td><td>The Confessional Supercut</td><td>High upside, but depends on private/owner/producer policy decisions; defer until public-first highlights work.</td></tr>
+              <tr><td>31</td><td>No Video, Only Posters</td><td>Useful fallback, but too presentation-only.</td></tr>
+              <tr><td>32</td><td>Every Game Gets A Shareable "Why This Mattered"</td><td>Folded into Story Engine and Public-First V1.</td></tr>
+              <tr><td>33</td><td>No Winner Mention Until The End</td><td>Creative variant, not robust scene-selection logic.</td></tr>
+              <tr><td>34</td><td>Highlight The Worst Read</td><td>Interesting but private-reasoning dependent; defer behind producer/owner policy.</td></tr>
+              <tr><td>35</td><td>Fully Public Mode Only</td><td>Folded into Public-First V1, Producer Later.</td></tr>
+              <tr><td>36</td><td>Axis: none</td><td>No topic axis ended with zero survivors.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="callout">Verification caveat: independent subagent verification was not available in this Codex harness, so basis verification was performed directly in the main thread against cited repository and external sources.</p>
+      </section>
+
+      <section id="sources-references">
+        <h2>Sources &amp; References</h2>
+        <ul class="references">
+          <li><a href="https://github.com/0xFlicker/influence-game/blob/main/STRATEGY.md">STRATEGY.md</a> for completed games watched, persistent agents, and replay/sharing product direction.</li>
+          <li><a href="https://github.com/0xFlicker/influence-game/blob/main/README.md">README.md</a> for simulation artifacts, postgame MCP/API surfaces, and canonical-event-derived postgame reads.</li>
+          <li><a href="https://github.com/0xFlicker/influence-game/blob/main/CONCEPTS.md">CONCEPTS.md</a> for TranscriptEntry, House MC, postgame analysis projection, highlighted eliminations, derived vote cohorts, and momentum vocabulary.</li>
+          <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/postgame-analysis.ts">packages/engine/src/postgame-analysis.ts</a> for existing postgame turning points, executive summary, momentum, jury, and alliance-derived fields.</li>
+          <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/solutions/architecture-patterns/agent-strategy-observability-spine.md">docs/solutions/architecture-patterns/agent-strategy-observability-spine.md</a> for canonical event vs private decision evidence boundaries.</li>
+          <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/solutions/architecture-patterns/owner-scoped-alliance-read-models.md">docs/solutions/architecture-patterns/owner-scoped-alliance-read-models.md</a> for compact alliance facts and postgame alliance consequence boundaries.</li>
+          <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/visual-design-language.md">docs/visual-design-language.md</a> for produced-broadcast framing.</li>
+          <li><a href="https://support.google.com/youtube/answer/10059070?hl=en">YouTube Help: Get started creating YouTube Shorts</a> for short-form duration and discovery surfaces.</li>
+          <li><a href="https://docs.discord.com/developers/resources/message">Discord Message Resource documentation</a> for rich embed fields and media previews.</li>
+          <li><a href="https://support.reddithelp.com/hc/en-us/articles/360060422572-How-do-I-post-and-comment-on-Reddit">Reddit Help: How do I post and comment on Reddit?</a> for post type and community-rule context.</li>
+          <li><a href="https://arxiv.org/abs/2606.06926">SVHighlights: Towards Extremely Long Sport Video Highlight Detection</a> for long-form, segment-level highlight detection grounding.</li>
+          <li><a href="https://arxiv.org/abs/1707.07075">Automatic Curation of Golf Highlights using Multimodal Excitement Features</a> for multimodal excitement cues in highlight packages.</li>
+          <li><a href="https://arxiv.org/abs/1707.08559">Video Highlight Prediction Using Audience Chat Reactions</a> for audience discourse as a highlight signal.</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer class="composition-signal">Composed 2026-07-04T00:00Z by ce-ideate from the House Highlights scene-identification prompt.</footer>
+  </div>
+</body>
+</html>

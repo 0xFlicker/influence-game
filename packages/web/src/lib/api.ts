@@ -3,6 +3,8 @@
  * All API calls go through apiFetch so the base URL and auth headers are consistent.
  */
 
+import { gamePathSegment } from "./game-links";
+
 let API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:3000";
 
@@ -828,6 +830,167 @@ export interface CompletedGameResultsResponse {
 
 export async function getCompletedGameResults(gameIdOrSlug: string): Promise<CompletedGameResultsResponse> {
   return apiFetch(`/api/games/${gameIdOrSlug}/results`);
+}
+
+export type HouseHighlightsState =
+  | "main_cut"
+  | "mini_highlight_pack"
+  | "no_cut"
+  | "unsupported_ineligible";
+
+export type HouseHighlightCategory =
+  | "betrayal"
+  | "suspense"
+  | "irony"
+  | "revenge"
+  | "loyalty"
+  | "chaos"
+  | "collapse"
+  | "triumph"
+  | "humiliation"
+  | "jury_judgment"
+  | "unlikely_survival";
+
+export type HouseHighlightReceiptTier =
+  | "vote_record"
+  | "alliance_receipt"
+  | "derived_signal"
+  | "public_quote"
+  | "presentation_direction";
+
+export type HouseHighlightConfidence = "low" | "medium" | "high";
+
+export interface HouseHighlightPlayerRef {
+  id: string;
+  name: string;
+}
+
+export interface HouseHighlightEvidenceRef {
+  eventType: string;
+  round: number | null;
+  sequence: number;
+  players: HouseHighlightPlayerRef[];
+}
+
+export interface HouseHighlightReceipt {
+  id: string;
+  tier: HouseHighlightReceiptTier;
+  label: string;
+  description: string;
+  factRefs: string[];
+}
+
+export interface AdminHouseHighlightReceipt extends HouseHighlightReceipt {
+  eventRefs?: HouseHighlightEvidenceRef[];
+}
+
+export interface HouseHighlightDeepLink {
+  surface: "results" | "replay";
+  label: string;
+  round: number | null;
+  anchor: string;
+}
+
+export interface HouseHighlightSceneCard {
+  id: string;
+  title: string;
+  category: HouseHighlightCategory;
+  involvedAgents: HouseHighlightPlayerRef[];
+  houseHook: string;
+  setup: string;
+  conflict: string;
+  payoff: string;
+  receipts: HouseHighlightReceipt[];
+  deepLink: HouseHighlightDeepLink;
+  posterDirection: string;
+}
+
+export interface HouseHighlightsCut {
+  kind: "main" | "mini_pack";
+  title: string;
+  thesis: string | null;
+  shareCaption: string;
+  scenes: HouseHighlightSceneCard[];
+}
+
+export interface PublicHouseHighlightsProjection {
+  schemaVersion: 1;
+  state: HouseHighlightsState;
+  eligibility: {
+    status: "eligible" | "unsupported";
+    reason: string | null;
+    allianceReceiptCount: number;
+  };
+  thesis: string | null;
+  cut: HouseHighlightsCut | null;
+  scenes: HouseHighlightSceneCard[];
+  noCutReason: string | null;
+  fallbackLinks: HouseHighlightDeepLink[];
+}
+
+export interface HouseHighlightsResponse {
+  ok: true;
+  schemaVersion: 1;
+  game: {
+    id: string;
+    slug?: string;
+    status: GameStatus;
+    trackType: string;
+    startedAt?: string;
+    endedAt?: string;
+    playerCount: number;
+    roundCount: number;
+  };
+  highlights: PublicHouseHighlightsProjection;
+}
+
+export async function getPostgameHighlights(gameIdOrSlug: string): Promise<HouseHighlightsResponse> {
+  return apiFetch(`/api/games/${gamePathSegment(gameIdOrSlug)}/postgame/highlights`);
+}
+
+export interface AdminHouseHighlightSceneCard extends Omit<HouseHighlightSceneCard, "receipts"> {
+  confidence: HouseHighlightConfidence;
+  receipts: AdminHouseHighlightReceipt[];
+}
+
+export interface AdminHouseHighlightsCut extends Omit<HouseHighlightsCut, "scenes"> {
+  scenes: AdminHouseHighlightSceneCard[];
+}
+
+export interface HouseHighlightsCandidateDiagnostic {
+  id: string;
+  title: string;
+  category: HouseHighlightCategory;
+  source: string;
+  confidence: HouseHighlightConfidence;
+  selected: boolean;
+  score: number;
+  receiptCount: number;
+  reasons: string[];
+}
+
+export interface AdminHouseHighlightsProjection extends Omit<PublicHouseHighlightsProjection, "cut" | "scenes"> {
+  cut: AdminHouseHighlightsCut | null;
+  scenes: AdminHouseHighlightSceneCard[];
+  diagnostics: {
+    selectedSceneIds: string[];
+    selectedCandidates: HouseHighlightsCandidateDiagnostic[];
+    rejectedCandidates: HouseHighlightsCandidateDiagnostic[];
+    notes: Array<{ code: string; severity: "info" | "warning"; message: string }>;
+  };
+}
+
+export interface AdminHouseHighlightsDiagnosticsResponse {
+  ok: true;
+  schemaVersion: 1;
+  game: HouseHighlightsResponse["game"];
+  highlights: AdminHouseHighlightsProjection;
+}
+
+export async function getAdminPostgameHighlightsDiagnostics(
+  gameIdOrSlug: string,
+): Promise<AdminHouseHighlightsDiagnosticsResponse> {
+  return apiFetch(`/api/admin/games/${gamePathSegment(gameIdOrSlug)}/postgame/highlights/diagnostics`);
 }
 
 export interface PublicAlliancePlayerRead {

@@ -2,6 +2,7 @@
 
 import { startTransition, useEffect, useState } from "react";
 import Link from "next/link";
+import { completedGameModeHref, gameHighlightsHref } from "@/lib/game-links";
 import {
   getCompletedGameResults,
   getGameAlliances,
@@ -82,6 +83,15 @@ export function CompletedResultsReview({
 
   const currentState = loadState.gameId === gameId ? loadState : { gameId, status: "loading" as const };
 
+  useEffect(() => {
+    if (currentState.status !== "ready" || typeof window === "undefined") return;
+    const anchor = window.location.hash ? decodeURIComponent(window.location.hash.slice(1)) : "";
+    if (!anchor) return;
+    const target = document.getElementById(anchor);
+    if (!target) return;
+    requestAnimationFrame(() => target.scrollIntoView({ block: "start" }));
+  }, [currentState.status, gameId]);
+
   if (currentState.status === "error") {
     return (
       <div className="rounded-lg border border-red-900/40 bg-red-950/20 p-6 text-sm text-red-200/70">
@@ -104,12 +114,13 @@ export function CompletedResultsReview({
     loadState: allianceLoadState,
     facts: allianceFacts,
     error: allianceError,
-  });
+  }, game.players);
   const { overview, timeline, voteMatrix, agentCards } = model;
   const playerById = new Map(game.players.map((player) => [player.id, player]));
+  const gameSlug = game.slug ?? game.id;
 
   return (
-    <section className="space-y-6" data-testid="completed-results-review">
+    <section id="results" className="space-y-6" data-testid="completed-results-review">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-xs uppercase tracking-[0.18em] text-white/35">Final Results</div>
@@ -117,12 +128,20 @@ export function CompletedResultsReview({
             {overview.headline}
           </h2>
         </div>
-        <Link
-          href={`/games/${game.slug ?? game.id}?mode=replay`}
-          className="rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white/70 transition-colors hover:bg-white/[0.1]"
-        >
-          Watch Replay
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={gameHighlightsHref(gameSlug)}
+            className="rounded-lg border border-red-300/25 bg-red-500/10 px-3 py-2 text-sm text-red-100 transition-colors hover:bg-red-500/15"
+          >
+            House Highlights
+          </Link>
+          <Link
+            href={completedGameModeHref(gameSlug, "replay")}
+            className="rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white/70 transition-colors hover:bg-white/[0.1]"
+          >
+            Watch Replay
+          </Link>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-4">
@@ -142,7 +161,11 @@ export function CompletedResultsReview({
         {timeline.length > 0 ? (
           <ol className="grid gap-2 sm:grid-cols-2">
             {timeline.map((item, index) => (
-              <li key={`${item.playerId}:${index}`} className="rounded-lg border border-white/10 bg-white/[0.04] p-3">
+              <li
+                key={`${item.playerId}:${index}`}
+                id={timeline.findIndex((candidate) => candidate.round === item.round) === index ? `round-${item.round}` : undefined}
+                className="rounded-lg border border-white/10 bg-white/[0.04] p-3 scroll-mt-24"
+              >
                 <div className="text-xs text-white/35">Round {item.round} · {item.source}</div>
                 <div className="mt-1 text-sm text-white/80">{item.playerName} was eliminated</div>
                 <div className="mt-1 text-xs text-white/40">{item.method}</div>
@@ -164,7 +187,7 @@ export function CompletedResultsReview({
       </section>
 
       {payload.results.jury.status === "available" && (
-        <section className="space-y-3">
+        <section id="jury" className="space-y-3 scroll-mt-24">
           <h3 className="text-sm font-semibold text-white/85">Jury Vote</h3>
           <div className="grid gap-2 sm:grid-cols-2">
             {payload.results.jury.voteCounts.map((entry) => (

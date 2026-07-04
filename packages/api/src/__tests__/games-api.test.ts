@@ -946,6 +946,26 @@ describe("Game REST API", () => {
       const turningPoints = (await turningPointsRes.json()) as { ok: true; turningPoints: unknown[] };
       expect(turningPoints.ok).toBe(true);
       expect(Array.isArray(turningPoints.turningPoints)).toBe(true);
+
+      const highlightsRes = await app.request(`/api/games/${id}/postgame/highlights`);
+      expect(highlightsRes.status).toBe(200);
+      const highlights = (await highlightsRes.json()) as {
+        ok: true;
+        highlights: {
+          state: string;
+          eligibility: { status: string; reason: string | null };
+        };
+      };
+      expect(highlights.ok).toBe(true);
+      expect(highlights.highlights.state).toBe("unsupported_ineligible");
+      expect(highlights.highlights.eligibility).toMatchObject({
+        status: "unsupported",
+        reason: "missing_alliance_receipts",
+      });
+      expect("diagnostics" in highlights.highlights).toBe(false);
+      expect(JSON.stringify(highlights)).not.toContain("rejectedCandidates");
+      expect(JSON.stringify(highlights)).not.toContain("sourcePointers");
+      expect(JSON.stringify(highlights)).not.toContain("payloadVersion");
     });
 
     test("rejects non-completed games as non-entry results", async () => {

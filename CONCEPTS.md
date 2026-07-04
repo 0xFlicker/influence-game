@@ -174,6 +174,22 @@ The public-by-URL postgame review surface for completed games. Its authoritative
 
 A compact LLM-facing read model for completed-game analysis. It composes completed-results facts, revealed round facts, player rows, jury ledger, vote-pattern hints, diagnostics, and optional producer evidence into token-efficient MCP/API payloads. Its player-safe form is rebuilt from canonical facts and must not include raw events, source pointers, private traces, prompts, private reasoning, or hidden strategy artifacts. V2 postgame payloads start with a deterministic `executiveSummary` of at most five derived text facts, then expose round summaries, highlighted eliminations, derived vote cohorts, game momentum, jury narrative, player summaries, turning points, and diagnostics. Every derived object carries derivation confidence; confidence describes the derivation, not the canonical fact.
 
+## House Highlights artifact
+
+A public-by-URL, spoiler-forward postgame editorial artifact generated for every newly completed game and any supported existing game that is backfilled. It may contain a main House Cut, a mini-highlight pack, or an honest no-cut state. The artifact explains what The House found worth watching without replacing completed results or full replay.
+
+## Main House Cut
+
+The thesis-led V1 House Highlights form for alliance-bearing completed games with enough story quality. A main House Cut starts from one House-authored trailer thesis, then supports it with 3-5 receipt-backed scene cards. It is quality-gated and must not be forced for every House Highlights artifact.
+
+## Highlight scene card
+
+The reusable unit of House Highlights selection. A scene card names the moment, emotional category, involved agents, House hook, setup, conflict, payoff, receipts, confidence, deep link, and rough poster or caption direction. Main House Cuts and mini-highlight packs use the same scene-card contract.
+
+## Trailer thesis
+
+The one-sentence House claim that frames a main House Cut, usually expressible as "This was the game where...". A trailer thesis can be ominous and editorial, but it is valid only when at least three selected scene cards support it with medium-or-better confidence and cold-viewer legibility.
+
 ## Highlighted elimination
 
 A deterministic postgame elimination highlight selected by documented rules: first elimination, final pre-jury elimination, first jury member, endgame elimination, winner's final opponent, top empowered player, or top exposed player. `highlightedEliminations` replaces the ambiguous `majorEliminations` name; old payloads may keep `majorEliminations` as a temporary compatibility alias. A highlighted elimination is not a strategic claim about why the player was targeted.

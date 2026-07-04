@@ -83,6 +83,19 @@ export type {
   PostgameTurningPointType,
   PostgameVoteCount,
 } from "./postgame-analysis";
+export { buildHouseHighlightsProjection } from "./postgame-highlights";
+export type {
+  BuildHouseHighlightsOptions,
+  HouseHighlightCategory,
+  HouseHighlightDeepLink,
+  HouseHighlightReceipt,
+  HouseHighlightReceiptTier,
+  HouseHighlightsCandidateDiagnostic,
+  HouseHighlightsCut,
+  HouseHighlightsProjection,
+  HouseHighlightsState,
+  HouseHighlightSceneCard,
+} from "./postgame-highlights";
 export { buildPostVotePressureProjection } from "./post-vote-pressure";
 export type {
   PostVotePressurePlayer,

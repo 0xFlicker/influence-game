@@ -143,6 +143,7 @@ export function buildMatchWatchAlliancePanelModel({
 
 export function buildCompletedAllianceArcsModel(
   allianceState: AllianceFactsState,
+  players: readonly GamePlayer[] = [],
 ): CompletedAllianceArcsModel {
   if (allianceState.loadState === "loading" && !allianceState.facts) {
     return emptyCompleted("loading", "Loading alliance arcs...");
@@ -154,7 +155,8 @@ export function buildCompletedAllianceArcsModel(
     return emptyCompleted("empty", "No alliance facts are available for this game.");
   }
 
-  const cards = buildAllianceCards(allianceState.facts, () => true);
+  const playerById = new Map(players.map((player) => [player.id, player]));
+  const cards = buildAllianceCards(allianceState.facts, () => true, playerById);
   if (cards.length === 0) {
     return {
       ...emptyCompleted("empty", "No named alliances were recorded in this game."),

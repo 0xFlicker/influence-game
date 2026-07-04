@@ -16,7 +16,7 @@ function game(): GameDetail {
     maxRounds: 8,
     currentPhase: "MINGLE",
     players: [
-      { id: "p1", name: "Marnie", persona: "strategic", status: "alive", shielded: false },
+      { id: "p1", name: "Marnie", persona: "strategic", status: "alive", shielded: false, avatarUrl: "https://cdn.example/marnie.png" },
       { id: "p2", name: "Jace", persona: "deceptive", status: "alive", shielded: false },
       { id: "p3", name: "Echo", persona: "observer", status: "alive", shielded: false },
       { id: "p4", name: "Sol", persona: "diplomat", status: "alive", shielded: false },
@@ -436,7 +436,10 @@ describe("match watch alliance model", () => {
   });
 
   it("builds completed global alliance arcs without selected-player filtering", () => {
-    const model = buildCompletedAllianceArcsModel({ loadState: "ready", facts: alliances() });
+    const model = buildCompletedAllianceArcsModel(
+      { loadState: "ready", facts: alliances() },
+      game().players,
+    );
 
     expect(model.status).toBe("ready");
     expect(model.summary).toEqual({
@@ -446,5 +449,9 @@ describe("match watch alliance model", () => {
       latestHuddleRound: 2,
     });
     expect(model.cards.map((card) => card.name)).toEqual(["Mirror Knives", "Back Row Pact", "The Smoke Test"]);
+    expect(model.cards[0]?.members).toMatchObject([
+      { id: "p1", name: "Marnie", persona: "strategic", avatarUrl: "https://cdn.example/marnie.png" },
+      { id: "p2", name: "Jace", persona: "deceptive" },
+    ]);
   });
 });

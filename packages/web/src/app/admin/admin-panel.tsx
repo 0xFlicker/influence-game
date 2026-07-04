@@ -8,6 +8,7 @@ import { fillGame, formatGameModelLabel, hideGame, isFillAccepted, listAdminGame
 import { usePermissions } from "@/hooks/use-permissions";
 import { TruncatedAddress } from "@/components/truncated-address";
 import { AdminCostPanel, AdminCostPill } from "./admin-cost-view";
+import { AdminHighlightsDiagnosticsPanel, AdminHighlightsPill } from "./admin-highlights-diagnostics";
 
 function phaseLabel(phase: string): string {
   const labels: Record<string, string> = {
@@ -314,11 +315,13 @@ function RecentGameRow({
   canHide,
   onRefresh,
   onOpenCosts,
+  onOpenHighlights,
 }: {
   game: AdminGameSummary;
   canHide: boolean;
   onRefresh: () => void;
   onOpenCosts: () => void;
+  onOpenHighlights: () => void;
 }) {
   const router = useRouter();
   const [hiding, setHiding] = useState(false);
@@ -370,6 +373,9 @@ function RecentGameRow({
           onClick={onOpenCosts}
           ariaLabel={`Open cost details for game #${game.gameNumber}`}
         />
+      </td>
+      <td className="py-3 px-4">
+        <AdminHighlightsPill game={game} onClick={onOpenHighlights} />
       </td>
       <td className="py-3 px-4">
         {canHide && (
@@ -429,6 +435,7 @@ export function AdminPanel() {
   const [waitingGames, setWaitingGames] = useState<AdminGameSummary[]>([]);
   const [recentGames, setRecentGames] = useState<AdminGameSummary[]>([]);
   const [costGame, setCostGame] = useState<AdminGameSummary | null>(null);
+  const [highlightsGame, setHighlightsGame] = useState<AdminGameSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const fetchRequestIdRef = useRef(0);
@@ -533,10 +540,10 @@ export function AdminPanel() {
             Failed Games ({suspendedGames.length})
           </h2>
           <div className="overflow-x-auto rounded-xl border border-amber-900/40">
-            <table className="min-w-[64rem] w-full">
+            <table className="min-w-[72rem] w-full">
               <thead>
                 <tr className="border-b border-amber-900/30">
-                  {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", ""].map(
+                  {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", ""].map(
                     (h) => (
                       <th
                         key={h}
@@ -550,7 +557,7 @@ export function AdminPanel() {
               </thead>
               <tbody>
                 {suspendedGames.map((g) => (
-                  <RecentGameRow key={g.id} game={g} onRefresh={fetchGames} canHide={canHideGame} onOpenCosts={() => setCostGame(g)} />
+                  <RecentGameRow key={g.id} game={g} onRefresh={fetchGames} canHide={canHideGame} onOpenCosts={() => setCostGame(g)} onOpenHighlights={() => setHighlightsGame(g)} />
                 ))}
               </tbody>
             </table>
@@ -611,10 +618,10 @@ export function AdminPanel() {
           </div>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-white/10">
-            <table className="min-w-[64rem] w-full">
+            <table className="min-w-[72rem] w-full">
               <thead>
                 <tr className="border-b border-white/10">
-                  {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", ""].map(
+                  {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", ""].map(
                     (h) => (
                       <th
                         key={h}
@@ -628,7 +635,7 @@ export function AdminPanel() {
               </thead>
               <tbody>
                 {recentGames.slice(0, 5).map((g) => (
-                  <RecentGameRow key={g.id} game={g} canHide={canHideGame} onRefresh={fetchGames} onOpenCosts={() => setCostGame(g)} />
+                  <RecentGameRow key={g.id} game={g} canHide={canHideGame} onRefresh={fetchGames} onOpenCosts={() => setCostGame(g)} onOpenHighlights={() => setHighlightsGame(g)} />
                 ))}
               </tbody>
             </table>
@@ -637,6 +644,9 @@ export function AdminPanel() {
       </section>
       {costGame && (
         <AdminCostPanel key={costGame.id} game={costGame} onClose={() => setCostGame(null)} onBackfilled={fetchGames} />
+      )}
+      {highlightsGame && (
+        <AdminHighlightsDiagnosticsPanel key={highlightsGame.id} game={highlightsGame} onClose={() => setHighlightsGame(null)} />
       )}
     </div>
   );
