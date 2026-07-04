@@ -224,6 +224,20 @@ describe("admin route RBAC", () => {
     expect(res.status).toBe(403);
   });
 
+  test("keeps highlights diagnostics behind admin read permission", async () => {
+    const denied = await app.request("/api/admin/games/missing/postgame/highlights/diagnostics", {
+      headers: { Authorization: `Bearer ${gamerToken}` },
+    });
+    expect(denied.status).toBe(403);
+
+    const allowed = await app.request("/api/admin/games/missing/postgame/highlights/diagnostics", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(allowed.status).toBe(404);
+    const body = (await allowed.json()) as { status: string };
+    expect(body.status).toBe("not_found");
+  });
+
   test("allows admin users to inspect avatar generation and change history without raw prompts", async () => {
     const ownerId = await createUser(db, "0xavatar0000000000000000000000000000000001", "Avatar Owner");
     await db.insert(schema.agentProfiles).values({

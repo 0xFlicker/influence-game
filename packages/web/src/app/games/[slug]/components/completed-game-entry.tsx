@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { completedGameModeHref, gameHighlightsHref } from "@/lib/game-links";
 
 interface CompletedGameEntryProps {
   gameId: string;
@@ -20,13 +21,21 @@ export function CompletedGameEntry({
         Choose how to enter
       </h2>
       <p className="mt-3 max-w-lg text-sm text-white/50">
-        Watch the replay unspoiled, or open the results review when you are ready to see the outcome.
+        Open the House cut, watch the replay unspoiled, or inspect the full results.
       </p>
 
-      <div className="mt-8 grid w-full max-w-xl gap-3 sm:grid-cols-2">
+      <div className="mt-8 grid w-full max-w-3xl gap-3 sm:grid-cols-3">
+        <Link
+          href={gameHighlightsHref(gameId)}
+          className="rounded-lg border border-red-300/25 bg-red-950/25 px-5 py-4 text-left transition-colors hover:bg-red-900/30"
+        >
+          <div className="text-sm font-semibold text-red-100">House Highlights</div>
+          <div className="mt-1 text-xs text-red-100/55">Open the spoiler-forward cut.</div>
+        </Link>
+
         {hasReplay ? (
           <Link
-            href={`/games/${gameId}?mode=replay`}
+            href={completedGameModeHref(gameId, "replay")}
             className="rounded-lg border border-white/15 bg-white/[0.06] px-5 py-4 text-left transition-colors hover:bg-white/[0.1]"
           >
             <div className="text-sm font-semibold text-white">Watch Replay</div>
@@ -40,7 +49,7 @@ export function CompletedGameEntry({
         )}
 
         <Link
-          href={`/games/${gameId}?mode=results`}
+          href={completedGameModeHref(gameId, "results")}
           className="rounded-lg border border-cyan-400/30 bg-cyan-950/25 px-5 py-4 text-left transition-colors hover:bg-cyan-900/30"
         >
           <div className="text-sm font-semibold text-cyan-100">See Results</div>

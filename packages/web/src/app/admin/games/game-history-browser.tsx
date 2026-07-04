@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { formatGameModelLabel, hideGame, listAdminGames, unhideGame, type AdminGameSummary, type GameStatus, type ModelTier } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { AdminCostPanel, AdminCostPill } from "../admin-cost-view";
+import { AdminHighlightsDiagnosticsPanel, AdminHighlightsPill } from "../admin-highlights-diagnostics";
 
 // ---------------------------------------------------------------------------
 // Filter state
@@ -46,11 +47,13 @@ function GameRow({
   canHide,
   onToggleVisibility,
   onOpenCosts,
+  onOpenHighlights,
 }: {
   game: AdminGameSummary;
   canHide: boolean;
   onToggleVisibility: () => void;
   onOpenCosts: () => void;
+  onOpenHighlights: () => void;
 }) {
   const router = useRouter();
   const [toggling, setToggling] = useState(false);
@@ -115,6 +118,9 @@ function GameRow({
           onClick={onOpenCosts}
           ariaLabel={`Open cost details for game #${game.gameNumber}`}
         />
+      </td>
+      <td className="py-3 px-4">
+        <AdminHighlightsPill game={game} onClick={onOpenHighlights} />
       </td>
       <td className="py-3 px-4">
         {canHide && (
@@ -213,6 +219,7 @@ export function GameHistoryBrowser() {
 
   const [games, setGames] = useState<AdminGameSummary[]>([]);
   const [costGame, setCostGame] = useState<AdminGameSummary | null>(null);
+  const [highlightsGame, setHighlightsGame] = useState<AdminGameSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const fetchRequestIdRef = useRef(0);
@@ -344,10 +351,10 @@ export function GameHistoryBrowser() {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-white/10">
-          <table className="min-w-[64rem] w-full">
+          <table className="min-w-[72rem] w-full">
             <thead>
               <tr className="border-b border-white/10">
-                {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", ""].map((h) => (
+                {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", ""].map((h) => (
                   <th
                     key={h}
                     className="text-left py-3 px-4 text-xs text-white/30 font-medium"
@@ -365,6 +372,7 @@ export function GameHistoryBrowser() {
                   canHide={canHideGame}
                   onToggleVisibility={fetchGames}
                   onOpenCosts={() => setCostGame(g)}
+                  onOpenHighlights={() => setHighlightsGame(g)}
                 />
               ))}
             </tbody>
@@ -380,6 +388,9 @@ export function GameHistoryBrowser() {
 
       {costGame && (
         <AdminCostPanel key={costGame.id} game={costGame} onClose={() => setCostGame(null)} onBackfilled={fetchGames} />
+      )}
+      {highlightsGame && (
+        <AdminHighlightsDiagnosticsPanel key={highlightsGame.id} game={highlightsGame} onClose={() => setHighlightsGame(null)} />
       )}
     </div>
   );

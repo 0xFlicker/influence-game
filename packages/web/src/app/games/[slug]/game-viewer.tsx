@@ -17,6 +17,7 @@ import {
   type PhaseKey,
 } from "@/lib/api";
 import { audioCue } from "@/lib/audio-cues";
+import { completedGameModeHref } from "@/lib/game-links";
 import { JoinGameModal } from "@/app/dashboard/join-game-modal";
 
 import type {
@@ -174,9 +175,9 @@ export function GameViewer({
     };
   }, [game?.currentPhase]);
 
-  // Fetch game data client-side if not provided via props. On same-page query
-  // changes, Next can preserve this client component, so keep props synced and
-  // explicitly load replay transcript when switching into replay mode.
+  // Fetch game data client-side if not provided via props. Completed replay and
+  // results live on route-owned pages, so keep props synced and explicitly load
+  // replay transcript when entering replay mode.
   useEffect(() => {
     let cancelled = false;
 
@@ -706,7 +707,7 @@ export function GameViewer({
 
   if (game.status === "completed" && completedMode === "replay" && replayLoading && messages.length === 0) {
     return (
-      <div className="influence-glass rounded-panel p-12 text-center text-white/40 text-sm">
+      <div id="replay" className="influence-glass rounded-panel p-12 text-center text-white/40 text-sm scroll-mt-24">
         Loading replay...
       </div>
     );
@@ -714,7 +715,7 @@ export function GameViewer({
 
   if (game.status === "completed" && completedMode === "replay" && messages.length === 0) {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4 text-center">
+      <div id="replay" className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4 text-center scroll-mt-24">
         <div className="text-xs font-medium rounded-full border border-amber-900/60 bg-amber-950/30 px-2 py-1 text-amber-200">
           Replay unavailable
         </div>
@@ -723,7 +724,7 @@ export function GameViewer({
           This completed game does not have replay messages available right now.
         </p>
         <button
-          onClick={() => router.push(`/games/${game.slug ?? game.id}?mode=results`)}
+          onClick={() => router.push(completedGameModeHref(game.slug ?? game.id, "results"))}
           className="mt-2 rounded-lg bg-white/10 px-4 py-2 text-sm text-white/70 transition-colors hover:bg-white/15"
         >
           View results
@@ -748,14 +749,16 @@ export function GameViewer({
       ? `live:${game.id}`
       : `replay:${game.id}:${messages.length}:${messages[0]?.id ?? "start"}:${messages[messages.length - 1]?.id ?? "end"}`;
     return (
-      <MatchWatchShell
-        key={matchWatchKey}
-        game={game}
-        messages={messages}
-        replayFrames={replayFrames}
-        live={matchWatchDecision.mode === "live"}
-        connStatus={connStatus}
-      />
+      <div id={matchWatchDecision.mode === "replay" ? "replay" : undefined} className="scroll-mt-24">
+        <MatchWatchShell
+          key={matchWatchKey}
+          game={game}
+          messages={messages}
+          replayFrames={replayFrames}
+          live={matchWatchDecision.mode === "live"}
+          connStatus={connStatus}
+        />
+      </div>
     );
   }
 

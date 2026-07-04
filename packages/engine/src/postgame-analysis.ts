@@ -120,6 +120,7 @@ export interface PostgameAllianceSummaryEntry {
   id: string;
   name: string;
   status: string;
+  members: RevealedPlayerRef[];
   memberNames: string[];
   purpose: string;
   timebox: string | null;
@@ -1567,6 +1568,7 @@ interface PostgameAllianceIndexedRecord {
   id: string;
   name: string;
   memberIds: string[];
+  members: RevealedPlayerRef[];
   memberNames: string[];
   purpose: string;
   timebox: string | null;
@@ -1716,6 +1718,7 @@ function allianceSummaryEntry(
     id: alliance.id,
     name: alliance.name,
     status: alliance.status,
+    members: alliance.members.map((member) => ({ id: member.id, name: member.name })),
     memberNames: [...alliance.memberNames],
     purpose: alliance.purpose,
     timebox: alliance.timebox,
@@ -1880,6 +1883,7 @@ function indexedAllianceRecord(
     id: alliance.id,
     name: alliance.name,
     memberIds: [...alliance.memberIds],
+    members: alliance.memberIds.map((id) => playerRefForId(id, playerRefs)),
     memberNames: alliance.memberIds.map((id) => playerRefs.get(id)?.name ?? id),
     purpose: alliance.purpose,
     timebox: alliance.timebox,

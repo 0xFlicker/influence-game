@@ -50,6 +50,7 @@ import {
   getPostgameTurningPoints,
   type PostgameReadStatus,
 } from "../services/postgame-analysis.js";
+import { getPostgameHighlights } from "../services/postgame-highlights.js";
 import {
   buildFallbackGameWatchStateSummary,
   getGameWatchStateSummaryReadsByGameIds,
@@ -999,6 +1000,18 @@ export function createGameRoutes(db: DrizzleDB) {
     const result = await getPostgameTurningPoints(db, c.req.param("id"), {
       includeEvidence: c.req.query("includeEvidence") === "true",
     });
+    if (!result.ok) return postgameErrorResponse(c, result);
+    return c.json(result);
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/games/:id/postgame/highlights — public House Highlights artifact
+  // -------------------------------------------------------------------------
+
+  app.get("/api/games/:id/postgame/highlights", async (c) => {
+    const unsupportedDetailLevel = unsupportedPostgameDetailLevelResponse(c);
+    if (unsupportedDetailLevel) return unsupportedDetailLevel;
+    const result = await getPostgameHighlights(db, c.req.param("id"));
     if (!result.ok) return postgameErrorResponse(c, result);
     return c.json(result);
   });

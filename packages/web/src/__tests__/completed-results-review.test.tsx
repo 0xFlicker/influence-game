@@ -3,6 +3,7 @@ import { renderToString } from "react-dom/server";
 import { CompletedResultsVoteMatrix } from "../app/games/[slug]/components/completed-results-vote-matrix";
 import { CompletedResultsAgentCard } from "../app/games/[slug]/components/completed-results-agent-card";
 import { CompletedResultsAllianceArcs } from "../app/games/[slug]/components/completed-results-alliance-arcs";
+import { CompletedGameEntry } from "../app/games/[slug]/components/completed-game-entry";
 
 describe("completed results review components", () => {
   it("renders vote matrix cells and keeps formal alliance wording absent", () => {
@@ -119,6 +120,8 @@ describe("completed results review components", () => {
     );
 
     expect(html).toContain("Alliance Arcs");
+    expect(html).toContain("id=\"alliance-arcs\"");
+    expect(html).toContain("id=\"alliance-a1\"");
     expect(html).toContain("Public record");
     expect(html).toContain("Mirror Knives");
     expect(html).toContain("Trade cover while each tests the room.");
@@ -128,5 +131,18 @@ describe("completed results review components", () => {
     expect(html).not.toContain("Thinking");
     expect(html).not.toContain("loyal");
     expect(html).not.toContain("fake");
+  });
+
+  it("offers House Highlights alongside replay and results for completed games", () => {
+    const html = renderToString(
+      <CompletedGameEntry gameId="edge smoke/dusk" gameNumber={7} hasReplay />,
+    );
+
+    expect(html).toContain("Completed game");
+    expect(html).toContain("#7");
+    expect(html).toContain("House Highlights");
+    expect(html).toContain("/games/edge%20smoke%2Fdusk/highlights");
+    expect(html).toContain("/games/edge%20smoke%2Fdusk/replay");
+    expect(html).toContain("/games/edge%20smoke%2Fdusk/results");
   });
 });

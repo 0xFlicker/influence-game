@@ -7,7 +7,7 @@ export function CompletedResultsAllianceArcs({
   model: CompletedAllianceArcsModel;
 }) {
   return (
-    <section className="space-y-3">
+    <section id="alliance-arcs" className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-white/85">Alliance Arcs</h3>
