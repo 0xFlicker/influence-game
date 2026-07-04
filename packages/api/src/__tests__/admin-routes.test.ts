@@ -11,6 +11,8 @@ import { createAdminRoutes } from "../routes/admin.js";
 import { appendGameEvents } from "../services/game-events.js";
 import { writeGameCheckpoint } from "../services/game-checkpoints.js";
 import { createEvidenceManifest } from "../services/game-evidence.js";
+import { recordProviderSpendForTrace } from "../services/provider-cost-accounting.js";
+import { Phase, type PrivateDecisionTrace } from "@influence/engine";
 import {
   createCheckpointCapsule,
   createCanonicalEventFixture,
@@ -73,6 +75,35 @@ async function createUser(
   return userId;
 }
 
+function createCostTrace(): PrivateDecisionTrace {
+  return {
+    version: 2,
+    action: "vote",
+    actor: { id: "atlas", name: "Atlas", role: "player" },
+    phase: Phase.VOTE,
+    round: 1,
+    createdAt: "2026-07-03T12:00:00.000Z",
+    model: {
+      provider: "openai",
+      providerProfileId: "openai",
+      catalogId: "openai:gpt-5-nano",
+      name: "gpt-5-nano",
+    },
+    prompt: { messages: [{ role: "user", content: "private prompt" }] },
+    response: {
+      raw: {
+        id: "resp_admin_cost",
+        usage: {
+          prompt_tokens: 100,
+          completion_tokens: 50,
+          total_tokens: 150,
+        },
+      },
+      finishReason: "stop",
+    },
+  };
+}
+
 describe("gamer role seed", () => {
   test("resolves to create, fill, and start only", async () => {
     const db = await setupDB();
@@ -117,13 +148,15 @@ describe("admin route RBAC", () => {
   let adminToken: string;
   let gamerToken: string;
   let sysopToken: string;
+  let adminUserId: string;
+  let sysopUserId: string;
 
   beforeEach(async () => {
     db = await setupDB();
 
-    const adminUserId = await createUser(db, ADMIN_ADDRESS, "Admin");
+    adminUserId = await createUser(db, ADMIN_ADDRESS, "Admin");
     const gamerUserId = await createUser(db, GAMER_ADDRESS, "Gamer");
-    const sysopUserId = await createUser(db, SYSOP_ADDRESS, "Sysop");
+    sysopUserId = await createUser(db, SYSOP_ADDRESS, "Sysop");
 
     adminToken = await createSessionToken(adminUserId, {
       roles: ["admin"],
@@ -157,6 +190,7 @@ describe("admin route RBAC", () => {
         "stop_game",
         "fill_game",
         "view_admin",
+        "manage_cost_accounting",
         "schedule_free_game",
         "hide_game",
       ],
@@ -424,6 +458,90 @@ describe("admin route RBAC", () => {
     });
 
     expect(res.status).toBe(403);
+  });
+
+  test("allows admin read users to inspect game costs", async () => {
+    const gameId = await insertGame(db, { slug: "admin-cost-game" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    await recordProviderSpendForTrace(db, {
+      gameId,
+      ownerEpoch,
+      trace: createCostTrace(),
+    });
+
+    const listRes = await app.request("/api/admin/games", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(listRes.status).toBe(200);
+    const list = await listRes.json() as Array<{ id: string; cost?: { callCount: number; estimatedCostMicrousd: number } | null }>;
+    const row = list.find((game) => game.id === gameId);
+    expect(row?.cost?.callCount).toBe(1);
+    expect(row?.cost?.estimatedCostMicrousd).toBeGreaterThan(0);
+
+    const detailRes = await app.request("/api/admin/games/admin-cost-game/costs", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(detailRes.status).toBe(200);
+    const detail = await detailRes.json() as Record<string, unknown>;
+    expect(detail.callCount).toBe(1);
+    const serialized = JSON.stringify(detail);
+    expect(serialized).not.toContain("private prompt");
+    expect(serialized).not.toContain("traceManifestId");
+    expect(serialized).not.toContain("storageKey");
+    expect(serialized).not.toContain("sourceKey");
+  });
+
+  test("keeps cost reads admin-only and cost mutations behind manage_cost_accounting", async () => {
+    const gameId = await insertGame(db, { slug: "admin-cost-backfill" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    await db.insert(schema.gameEvidenceManifests).values({
+      id: "secret-route-manifest-id",
+      gameId,
+      ownerEpoch,
+      evidenceType: "private_decision_trace",
+      retentionClass: "debug",
+      accessScope: "producer_admin",
+      metadata: { action: "vote" },
+    });
+
+    const gamerRead = await app.request("/api/admin/games/admin-cost-backfill/costs", {
+      headers: { Authorization: `Bearer ${gamerToken}` },
+    });
+    expect(gamerRead.status).toBe(403);
+
+    const adminMissingBackfill = await app.request("/api/admin/games/missing-admin-cost-backfill/costs/backfill", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(adminMissingBackfill.status).toBe(403);
+
+    const adminBackfill = await app.request("/api/admin/games/admin-cost-backfill/costs/backfill", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(adminBackfill.status).toBe(403);
+
+    const sysopBackfill = await app.request("/api/admin/games/admin-cost-backfill/costs/backfill", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${sysopToken}` },
+    });
+    expect(sysopBackfill.status).toBe(200);
+    const body = await sysopBackfill.json() as { gameId: string; rebuilt: boolean; diagnostics: string[] };
+    expect(body.gameId).toBe(gameId);
+    expect(body.rebuilt).toBeTrue();
+    expect(body.diagnostics).toEqual(["trace_manifest:missing_usage"]);
+    expect(JSON.stringify(body)).not.toContain("secret-route-manifest-id");
+
+    const audits = await db.select().from(schema.gameCostAccountingAuditEvents);
+    const deniedAudits = audits.filter((event) => event.outcome === "denied");
+    expect(deniedAudits).toHaveLength(2);
+    expect(deniedAudits.every((event) => event.gameId === null)).toBeTrue();
+    expect(deniedAudits.every((event) => event.actorUserId === adminUserId)).toBeTrue();
+    expect(audits.some((event) => (
+      event.outcome === "succeeded" &&
+      event.gameId === gameId &&
+      event.actorUserId === sysopUserId
+    ))).toBeTrue();
   });
 
   test("returns not found for unknown durable run IDs", async () => {

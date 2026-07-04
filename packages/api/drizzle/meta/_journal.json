@@ -183,6 +183,13 @@
       "when": 1783036802000,
       "tag": "0025_avatar_ledger_profile_unpin_short_names",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1783123200000,
+      "tag": "0026_game_cost_accounting",
+      "breakpoints": true
     }
   ]
 }

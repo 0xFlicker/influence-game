@@ -576,6 +576,240 @@ export const gameEvidenceManifestReads = pgTable("game_evidence_manifest_reads",
 ]);
 
 // ---------------------------------------------------------------------------
+// Provider Cost Accounting (producer/admin operational spend metadata)
+// ---------------------------------------------------------------------------
+
+export type ProviderSpendCaptureSource =
+  | "live_trace"
+  | "trace_manifest_backfill"
+  | "terminal_result_backfill"
+  | "manual_adjustment";
+export type ProviderSpendCostSource =
+  | "provider_actual"
+  | "router_actual"
+  | "org_reconciled"
+  | "catalog_estimate"
+  | "static_estimate"
+  | "unavailable";
+export type ProviderSpendCallStatus = "succeeded" | "failed" | "unknown";
+export type GameCostRollupScope = "game" | "owner_epoch";
+export type CostReconciliationStatus = "matched" | "partial" | "unavailable";
+export type CostAccountingAuditAction = "backfill_game" | "rebuild_rollup" | "record_reconciliation";
+export type CostAccountingAuditOutcome = "succeeded" | "failed" | "denied";
+
+export const gameProviderSpendEntries = pgTable("game_provider_spend_entries", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id),
+  ownerEpoch: text("owner_epoch")
+    .references(() => gameRunOwners.ownerEpoch),
+  eventSequence: integer("event_sequence"),
+  sourceKey: text("source_key").notNull(),
+  captureSource: text("capture_source").notNull().$type<ProviderSpendCaptureSource>(),
+  costSource: text("cost_source").notNull().$type<ProviderSpendCostSource>().default("unavailable"),
+  callStatus: text("call_status").notNull().$type<ProviderSpendCallStatus>().default("unknown"),
+  callId: text("call_id"),
+  attemptOrdinal: integer("attempt_ordinal").notNull().default(1),
+  retryParentSourceKey: text("retry_parent_source_key"),
+  providerResponseId: text("provider_response_id"),
+  traceManifestId: text("trace_manifest_id")
+    .references(() => gameEvidenceManifests.id),
+  actorId: text("actor_id"),
+  actorName: text("actor_name"),
+  actorRole: text("actor_role"),
+  action: text("action"),
+  phase: text("phase"),
+  round: integer("round"),
+  provider: text("provider"),
+  providerProfileId: text("provider_profile_id"),
+  catalogId: text("catalog_id"),
+  modelName: text("model_name"),
+  apiSurface: text("api_surface"),
+  reasoningPolicy: text("reasoning_policy"),
+  requestedReasoningEffort: text("requested_reasoning_effort"),
+  promptTokens: integer("prompt_tokens").notNull().default(0),
+  cachedTokens: integer("cached_tokens").notNull().default(0),
+  completionTokens: integer("completion_tokens").notNull().default(0),
+  reasoningTokens: integer("reasoning_tokens").notNull().default(0),
+  totalTokens: integer("total_tokens").notNull().default(0),
+  actualCostMicrousd: bigint("actual_cost_microusd", { mode: "number" }),
+  estimatedCostMicrousd: bigint("estimated_cost_microusd", { mode: "number" }),
+  costCurrency: text("cost_currency").notNull().default("USD"),
+  providerNativeUnit: text("provider_native_unit"),
+  providerNativeAmount: text("provider_native_amount"),
+  pricingSourceId: text("pricing_source_id"),
+  rateCardVersion: text("rate_card_version"),
+  pricedAt: text("priced_at"),
+  latencyMs: integer("latency_ms"),
+  routerBilling: jsonb("router_billing").$type<Record<string, unknown>>(),
+  diagnostics: jsonb("diagnostics").$type<Record<string, unknown>>(),
+  safeMetadata: jsonb("safe_metadata").$type<Record<string, unknown>>(),
+  observedAt: text("observed_at")
+    .notNull()
+    .default(sql`now()::text`),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("game_provider_spend_entries_source_key_unique").on(table.sourceKey),
+  uniqueIndex("game_provider_spend_entries_trace_manifest_unique")
+    .on(table.traceManifestId)
+    .where(sql`${table.traceManifestId} IS NOT NULL`),
+  index("game_provider_spend_entries_game_id_idx").on(table.gameId, table.createdAt),
+  index("game_provider_spend_entries_owner_epoch_idx").on(table.ownerEpoch),
+  index("game_provider_spend_entries_trace_manifest_idx").on(table.traceManifestId),
+  index("game_provider_spend_entries_cost_source_idx").on(table.costSource),
+  index("game_provider_spend_entries_capture_source_idx").on(table.captureSource),
+  foreignKey({
+    name: "game_provider_spend_entries_game_owner_fk",
+    columns: [table.gameId, table.ownerEpoch],
+    foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
+  }),
+  foreignKey({
+    name: "game_provider_spend_entries_event_boundary_fk",
+    columns: [table.gameId, table.eventSequence],
+    foreignColumns: [gameEvents.gameId, gameEvents.sequence],
+  }),
+  check("game_provider_spend_entries_capture_source_check", sql`${table.captureSource} IN ('live_trace', 'trace_manifest_backfill', 'terminal_result_backfill', 'manual_adjustment')`),
+  check("game_provider_spend_entries_cost_source_check", sql`${table.costSource} IN ('provider_actual', 'router_actual', 'org_reconciled', 'catalog_estimate', 'static_estimate', 'unavailable')`),
+  check("game_provider_spend_entries_call_status_check", sql`${table.callStatus} IN ('succeeded', 'failed', 'unknown')`),
+  check("game_provider_spend_entries_attempt_check", sql`${table.attemptOrdinal} > 0`),
+  check("game_provider_spend_entries_event_sequence_check", sql`${table.eventSequence} IS NULL OR ${table.eventSequence} > 0`),
+  check("game_provider_spend_entries_round_check", sql`${table.round} IS NULL OR ${table.round} >= 0`),
+  check("game_provider_spend_entries_token_counts_check", sql`
+    ${table.promptTokens} >= 0
+    AND ${table.cachedTokens} >= 0
+    AND ${table.completionTokens} >= 0
+    AND ${table.reasoningTokens} >= 0
+    AND ${table.totalTokens} >= 0
+  `),
+  check("game_provider_spend_entries_cost_counts_check", sql`
+    (${table.actualCostMicrousd} IS NULL OR ${table.actualCostMicrousd} >= 0)
+    AND (${table.estimatedCostMicrousd} IS NULL OR ${table.estimatedCostMicrousd} >= 0)
+    AND (${table.latencyMs} IS NULL OR ${table.latencyMs} >= 0)
+  `),
+]);
+
+export const gameCostRollups = pgTable("game_cost_rollups", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id),
+  ownerEpoch: text("owner_epoch")
+    .references(() => gameRunOwners.ownerEpoch),
+  rollupScope: text("rollup_scope").notNull().$type<GameCostRollupScope>(),
+  callCount: integer("call_count").notNull().default(0),
+  failedCallCount: integer("failed_call_count").notNull().default(0),
+  unpricedCallCount: integer("unpriced_call_count").notNull().default(0),
+  promptTokens: integer("prompt_tokens").notNull().default(0),
+  cachedTokens: integer("cached_tokens").notNull().default(0),
+  completionTokens: integer("completion_tokens").notNull().default(0),
+  reasoningTokens: integer("reasoning_tokens").notNull().default(0),
+  totalTokens: integer("total_tokens").notNull().default(0),
+  actualCostMicrousd: bigint("actual_cost_microusd", { mode: "number" }).notNull().default(0),
+  estimatedCostMicrousd: bigint("estimated_cost_microusd", { mode: "number" }).notNull().default(0),
+  providerNativeTotals: jsonb("provider_native_totals").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+  breakdowns: jsonb("breakdowns").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+  costSourceCounts: jsonb("cost_source_counts").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+  captureSourceCounts: jsonb("capture_source_counts").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+  firstEntryAt: text("first_entry_at"),
+  lastEntryAt: text("last_entry_at"),
+  rebuiltAt: text("rebuilt_at")
+    .notNull()
+    .default(sql`now()::text`),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("game_cost_rollups_game_scope_unique").on(table.gameId, table.rollupScope, table.ownerEpoch),
+  uniqueIndex("game_cost_rollups_game_total_unique")
+    .on(table.gameId)
+    .where(sql`${table.rollupScope} = 'game'`),
+  index("game_cost_rollups_game_id_idx").on(table.gameId),
+  index("game_cost_rollups_owner_epoch_idx").on(table.ownerEpoch),
+  foreignKey({
+    name: "game_cost_rollups_game_owner_fk",
+    columns: [table.gameId, table.ownerEpoch],
+    foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
+  }),
+  check("game_cost_rollups_scope_check", sql`${table.rollupScope} IN ('game', 'owner_epoch')`),
+  check("game_cost_rollups_scope_owner_check", sql`
+    (${table.rollupScope} = 'game' AND ${table.ownerEpoch} IS NULL)
+    OR (${table.rollupScope} = 'owner_epoch' AND ${table.ownerEpoch} IS NOT NULL)
+  `),
+  check("game_cost_rollups_counts_check", sql`
+    ${table.callCount} >= 0
+    AND ${table.failedCallCount} >= 0
+    AND ${table.unpricedCallCount} >= 0
+    AND ${table.promptTokens} >= 0
+    AND ${table.cachedTokens} >= 0
+    AND ${table.completionTokens} >= 0
+    AND ${table.reasoningTokens} >= 0
+    AND ${table.totalTokens} >= 0
+    AND ${table.actualCostMicrousd} >= 0
+    AND ${table.estimatedCostMicrousd} >= 0
+  `),
+]);
+
+export const gameCostReconciliations = pgTable("game_cost_reconciliations", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id),
+  provider: text("provider"),
+  status: text("status").notNull().$type<CostReconciliationStatus>(),
+  reconciliationSource: text("reconciliation_source").notNull(),
+  reportHash: text("report_hash"),
+  internalActualCostMicrousd: bigint("internal_actual_cost_microusd", { mode: "number" }).notNull().default(0),
+  internalEstimatedCostMicrousd: bigint("internal_estimated_cost_microusd", { mode: "number" }).notNull().default(0),
+  providerActualCostMicrousd: bigint("provider_actual_cost_microusd", { mode: "number" }),
+  deltaMicrousd: bigint("delta_microusd", { mode: "number" }),
+  costCurrency: text("cost_currency").notNull().default("USD"),
+  normalizedDeltas: jsonb("normalized_deltas").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+  diagnostics: jsonb("diagnostics").$type<Record<string, unknown>>(),
+  createdByUserId: text("created_by_user_id").references(() => users.id),
+  reconciledAt: text("reconciled_at")
+    .notNull()
+    .default(sql`now()::text`),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  index("game_cost_reconciliations_game_id_idx").on(table.gameId, table.createdAt),
+  check("game_cost_reconciliations_status_check", sql`${table.status} IN ('matched', 'partial', 'unavailable')`),
+  check("game_cost_reconciliations_costs_check", sql`
+    ${table.internalActualCostMicrousd} >= 0
+    AND ${table.internalEstimatedCostMicrousd} >= 0
+    AND (${table.providerActualCostMicrousd} IS NULL OR ${table.providerActualCostMicrousd} >= 0)
+  `),
+]);
+
+export const gameCostAccountingAuditEvents = pgTable("game_cost_accounting_audit_events", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id")
+    .references(() => games.id),
+  actorUserId: text("actor_user_id").references(() => users.id),
+  action: text("action").notNull().$type<CostAccountingAuditAction>(),
+  outcome: text("outcome").notNull().$type<CostAccountingAuditOutcome>(),
+  safeMetadata: jsonb("safe_metadata").$type<Record<string, unknown>>(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  index("game_cost_accounting_audit_game_id_idx").on(table.gameId, table.createdAt),
+  index("game_cost_accounting_audit_actor_idx").on(table.actorUserId, table.createdAt),
+  check("game_cost_accounting_audit_action_check", sql`${table.action} IN ('backfill_game', 'rebuild_rollup', 'record_reconciliation')`),
+  check("game_cost_accounting_audit_outcome_check", sql`${table.outcome} IN ('succeeded', 'failed', 'denied')`),
+]);
+
+// ---------------------------------------------------------------------------
 // Cognitive Artifacts (user-facing split decision artifacts, new games only)
 // ---------------------------------------------------------------------------
 

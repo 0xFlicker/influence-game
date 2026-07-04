@@ -57,6 +57,7 @@ import {
 } from "./game-ownership.js";
 import { writePrivateDecisionTrace } from "./private-trace-writer.js";
 import { writeCognitiveArtifactsForTrace } from "./cognitive-artifact-writer.js";
+import { recordProviderSpendForTrace } from "./provider-cost-accounting.js";
 import {
   findStartupRecoverableGameIds,
   getSupportedRecovery,
@@ -133,6 +134,7 @@ function createPrivateTraceSink(
       gameId,
       ownerEpoch,
     };
+    let traceManifestId: string | undefined;
     try {
       const cognitiveResult = await writeCognitiveArtifactsForTrace(db, {
         gameId,
@@ -145,6 +147,11 @@ function createPrivateTraceSink(
       } else if (cognitiveResult.degradedArtifactIds.length > 0) {
         console.warn(`[game-lifecycle] Cognitive artifact capture degraded for game ${gameId}: ${cognitiveResult.degradedArtifactIds.length} oversized artifact(s)`);
       }
+    } catch (error) {
+      console.warn(`[game-lifecycle] Cognitive artifact capture failed for game ${gameId}:`, error);
+    }
+
+    try {
       const result = await writePrivateDecisionTrace(db, {
         gameId,
         ownerEpoch,
@@ -153,9 +160,24 @@ function createPrivateTraceSink(
       });
       if (!result.ok) {
         console.warn(`[game-lifecycle] Private trace degraded for game ${gameId}: ${result.error}`);
+      } else {
+        traceManifestId = result.manifestId;
       }
     } catch (error) {
       console.warn(`[game-lifecycle] Private trace sink failed for game ${gameId}:`, error);
+    }
+
+    try {
+      await recordProviderSpendForTrace(db, {
+        gameId,
+        ownerEpoch,
+        trace: enrichedTrace,
+        eventSequence: trace.boundary?.finalEventSequence,
+        ...(traceManifestId && { traceManifestId }),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[game-lifecycle] Cost accounting capture failed for game ${gameId}: ${message}`);
     }
   };
 }

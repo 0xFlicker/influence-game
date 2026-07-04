@@ -288,6 +288,18 @@ The maintainer/debug evidence lane that can include full prompt requests, raw mo
 
 The raw JSON/JSONL producer evidence addressed by a private evidence manifest, such as full prompt requests, model responses, `thinking`, `reasoningContext`, provider reasoning summaries, tool arguments, action names, actor context, phase, round, provider metadata, usage or billing metadata, and canonical event boundary. Private trace content is producer private trace data for local producer/debug inspection and must not become public transcript, canonical board truth, checkpoint resume authority, or unsanitized player-private product data.
 
+## Provider spend ledger
+
+A producer/admin operational accounting trail with one safe metadata row per captured provider call attempt in a live game run. It stores game/owner epoch, actor/action/phase/model identifiers, token usage, provider-native billing facts, normalized cost fields, pricing provenance, capture source, and cost confidence. It does not store raw prompts, raw responses, reasoning, tool arguments, storage pointers, presigned URLs, or public gameplay facts.
+
+## Game cost rollup
+
+An admin read model rebuilt from provider spend ledger rows. It summarizes cost and token totals by game and owner epoch, including unavailable/estimated/actual cost states and provider/model/action/player/House breakdowns. It is operational visibility for administrators, not player-visible result data or canonical game state.
+
+## Cost reconciliation record
+
+A producer/admin accounting comparison between ledger totals and a normalized provider or account report that can be mapped to a game. Reconciliation records store safe deltas, report hashes, confidence/status, and diagnostics, not raw provider exports or account secrets. Automated provider polling, export parsing, and request tagging are separate future work.
+
 ## Local Trace MCP
 
 A local-development producer MCP that inspects API-backed durable runs through private trace manifests and private trace content. It is not a product/admin MCP surface until MCP auth login, web/admin affordances, and releasable packaging are intentionally designed.

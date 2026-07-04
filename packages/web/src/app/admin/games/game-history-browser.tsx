@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { formatGameModelLabel, hideGame, listAdminGames, unhideGame, type AdminGameSummary, type GameStatus, type ModelTier } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
+import { AdminCostPanel, AdminCostPill } from "../admin-cost-view";
 
 // ---------------------------------------------------------------------------
 // Filter state
@@ -40,7 +41,17 @@ function StatusBadge({ status }: { status: AdminGameSummary["status"] }) {
   );
 }
 
-function GameRow({ game, canHide, onToggleVisibility }: { game: AdminGameSummary; canHide: boolean; onToggleVisibility: () => void }) {
+function GameRow({
+  game,
+  canHide,
+  onToggleVisibility,
+  onOpenCosts,
+}: {
+  game: AdminGameSummary;
+  canHide: boolean;
+  onToggleVisibility: () => void;
+  onOpenCosts: () => void;
+}) {
   const router = useRouter();
   const [toggling, setToggling] = useState(false);
   const [confirmHide, setConfirmHide] = useState(false);
@@ -97,6 +108,13 @@ function GameRow({ game, canHide, onToggleVisibility }: { game: AdminGameSummary
       <td className="py-3 px-4 text-white/40 text-xs">{date}</td>
       <td className="py-3 px-4">
         <StatusBadge status={game.status} />
+      </td>
+      <td className="py-3 px-4">
+        <AdminCostPill
+          summary={game.cost}
+          onClick={onOpenCosts}
+          ariaLabel={`Open cost details for game #${game.gameNumber}`}
+        />
       </td>
       <td className="py-3 px-4">
         {canHide && (
@@ -194,19 +212,27 @@ export function GameHistoryBrowser() {
   const [search, setSearch] = useState("");
 
   const [games, setGames] = useState<AdminGameSummary[]>([]);
+  const [costGame, setCostGame] = useState<AdminGameSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const fetchRequestIdRef = useRef(0);
 
   const fetchGames = useCallback(() => {
+    const fetchRequestId = fetchRequestIdRef.current + 1;
+    fetchRequestIdRef.current = fetchRequestId;
     listAdminGames()
       .then((data) => {
+        if (fetchRequestIdRef.current !== fetchRequestId) return;
         setGames(data);
         setError(null);
       })
       .catch((err) => {
+        if (fetchRequestIdRef.current !== fetchRequestId) return;
         setError(err instanceof Error ? err.message : "Failed to load games.");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (fetchRequestIdRef.current === fetchRequestId) setLoading(false);
+      });
   }, []);
 
   useEffect(() => {
@@ -317,11 +343,11 @@ export function GameHistoryBrowser() {
           No games match the current filters.
         </div>
       ) : (
-        <div className="border border-white/10 rounded-xl overflow-hidden">
-          <table className="w-full">
+        <div className="overflow-x-auto rounded-xl border border-white/10">
+          <table className="min-w-[64rem] w-full">
             <thead>
               <tr className="border-b border-white/10">
-                {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", ""].map((h) => (
+                {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", ""].map((h) => (
                   <th
                     key={h}
                     className="text-left py-3 px-4 text-xs text-white/30 font-medium"
@@ -333,7 +359,13 @@ export function GameHistoryBrowser() {
             </thead>
             <tbody>
               {filtered.map((g) => (
-                <GameRow key={g.id} game={g} canHide={canHideGame} onToggleVisibility={fetchGames} />
+                <GameRow
+                  key={g.id}
+                  game={g}
+                  canHide={canHideGame}
+                  onToggleVisibility={fetchGames}
+                  onOpenCosts={() => setCostGame(g)}
+                />
               ))}
             </tbody>
           </table>
@@ -344,6 +376,10 @@ export function GameHistoryBrowser() {
         <p className="text-xs text-white/20 mt-3 text-right">
           {filtered.length} of {games.length} game{games.length !== 1 ? "s" : ""}
         </p>
+      )}
+
+      {costGame && (
+        <AdminCostPanel key={costGame.id} game={costGame} onClose={() => setCostGame(null)} onBackfilled={fetchGames} />
       )}
     </div>
   );

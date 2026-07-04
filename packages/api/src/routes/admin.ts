@@ -2,7 +2,8 @@
  * Admin routes for RBAC management.
  *
  * Role-management endpoints require `manage_roles`.
- * Other admin surfaces require `view_admin` (or `manage_roles`).
+ * Read-only admin surfaces require `view_admin` (or `manage_roles`).
+ * Cost-accounting mutations require `manage_cost_accounting` (or `manage_roles`).
  *
  * GET    /api/admin/roles           — List all roles with their permissions
  * GET    /api/admin/permissions     — List all permissions
@@ -27,6 +28,11 @@ import { generateInviteCode } from "../lib/invite-codes.js";
 import { getRedactedKernelHealthByGameId } from "../services/game-kernel-health.js";
 import { getDurableRunInspection } from "../services/game-durable-run.js";
 import { tryRefreshGameWatchStateSummary } from "../services/game-watch-state-summary.js";
+import {
+  backfillGameCostAccounting,
+  getGameCostDetail,
+  getGameCostSummaryMap,
+} from "../services/provider-cost-accounting.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
 import { randomUUID } from "crypto";
 
@@ -39,6 +45,17 @@ export function createAdminRoutes(db: DrizzleDB) {
 
   const requireAdminRead = requirePermission("view_admin", "manage_roles");
   const requireRoleManagement = requirePermission("manage_roles");
+  const canManageCostAccounting = (permissions: string[]) => (
+    permissions.includes("manage_cost_accounting") || permissions.includes("manage_roles")
+  );
+
+  async function findAdminGameId(idOrSlug: string): Promise<string | null> {
+    const game = (await db
+      .select({ id: schema.games.id })
+      .from(schema.games)
+      .where(sql`${schema.games.id} = ${idOrSlug} OR ${schema.games.slug} = ${idOrSlug}`))[0];
+    return game?.id ?? null;
+  }
 
   // All admin routes require authentication. Permissions are applied per-route.
   app.use("/api/admin/*", requireAuth(db));
@@ -358,9 +375,58 @@ export function createAdminRoutes(db: DrizzleDB) {
     return c.json(result.response);
   });
 
+  app.get("/api/admin/games/:idOrSlug/costs", requireAdminRead, async (c) => {
+    const result = await getGameCostDetail(db, c.req.param("idOrSlug"));
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.statusCode);
+    }
+    return c.json(result.detail);
+  });
+
+  app.post("/api/admin/games/:idOrSlug/costs/backfill", async (c) => {
+    const userPermissions = c.get("userPermissions") ?? [];
+    const user = c.get("user");
+
+    if (!canManageCostAccounting(userPermissions)) {
+      await db.insert(schema.gameCostAccountingAuditEvents).values({
+        id: randomUUID(),
+        actorUserId: user.id,
+        action: "backfill_game",
+        outcome: "denied",
+        safeMetadata: { reason: "insufficient_permissions" },
+      });
+      return c.json({ error: "Insufficient permissions" }, 403);
+    }
+
+    const gameId = await findAdminGameId(c.req.param("idOrSlug"));
+    if (!gameId) {
+      return c.json({ error: "Game not found" }, 404);
+    }
+
+    try {
+      const result = await backfillGameCostAccounting(db, gameId, {
+        actorUserId: user.id,
+      });
+      return c.json(result);
+    } catch (error) {
+      await db.insert(schema.gameCostAccountingAuditEvents).values({
+        id: randomUUID(),
+        gameId,
+        actorUserId: user.id,
+        action: "backfill_game",
+        outcome: "failed",
+        safeMetadata: {
+          error: error instanceof Error ? error.name : "UnknownError",
+        },
+      });
+      throw error;
+    }
+  });
+
   app.get("/api/admin/games", requireAdminRead, async (c) => {
     const rows = await db.select().from(schema.games);
     const kernelHealthByGameId = await getRedactedKernelHealthByGameId(db, rows.map((game) => game.id));
+    const costSummaryByGameId = await getGameCostSummaryMap(db, rows.map((game) => game.id));
 
     const summaries = await Promise.all(rows.map(async (game) => {
       const config = JSON.parse(game.config);
@@ -408,6 +474,7 @@ export function createAdminRoutes(db: DrizzleDB) {
         hidden: !!game.hiddenAt,
         hiddenAt: game.hiddenAt ?? undefined,
         kernelHealth: kernelHealthByGameId.get(game.id),
+        cost: costSummaryByGameId.get(game.id) ?? null,
       };
     }));
 

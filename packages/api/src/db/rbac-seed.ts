@@ -22,6 +22,7 @@ const PERMISSIONS = [
   { name: "stop_game", description: "Stop or cancel running games" },
   { name: "fill_game", description: "Fill AI player slots" },
   { name: "view_admin", description: "Access the admin panel" },
+  { name: "manage_cost_accounting", description: "Backfill, rebuild, and reconcile admin game cost accounting" },
   { name: "schedule_free_game", description: "Trigger daily free game draw and start" },
   { name: "hide_game", description: "Hide/unhide games from public lists" },
 ] as const;

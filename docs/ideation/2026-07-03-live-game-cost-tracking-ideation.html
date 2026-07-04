@@ -1,0 +1,793 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Live Game Cost Tracking</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f4ee;
+      --surface: #fffdf8;
+      --surface-2: #f0ece4;
+      --ink: #1f2424;
+      --muted: #626b68;
+      --line: #d8d0c3;
+      --accent: #176e73;
+      --accent-soft: #dceeee;
+      --accent-text: #0d4f53;
+      --warn: #9a5b16;
+      --warn-soft: #f8ead5;
+      --risk: #8d3d35;
+      --risk-soft: #f4dfdc;
+      --good: #276344;
+      --good-soft: #e0efe5;
+      --shadow: 0 16px 40px rgba(31, 36, 36, 0.08);
+      --radius: 8px;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.55;
+      font-size: 15px;
+    }
+
+    a {
+      color: var(--accent-text);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.92em;
+      background: rgba(23, 110, 115, 0.09);
+      padding: 0.1rem 0.25rem;
+      border-radius: 4px;
+    }
+
+    strong {
+      color: inherit;
+    }
+
+    .page {
+      width: min(1120px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 44px 0 56px;
+    }
+
+    header {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      border-radius: var(--radius);
+      padding: 28px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid rgba(23, 110, 115, 0.2);
+      background: var(--accent-soft);
+      color: var(--accent-text);
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 0.77rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      margin: 16px 0 10px;
+      max-width: 840px;
+      font-size: clamp(2rem, 4vw, 3.2rem);
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 1.35rem;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 1.08rem;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    p {
+      margin: 0 0 12px;
+      max-width: 76ch;
+    }
+
+    .metadata {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .metadata div,
+    .stat,
+    .axis,
+    .callout,
+    .idea,
+    .source-block {
+      border: 1px solid var(--line);
+      background: var(--surface);
+      border-radius: var(--radius);
+    }
+
+    .metadata div {
+      padding: 10px 12px;
+      min-width: 0;
+    }
+
+    .metadata dt,
+    .idea dt,
+    .source-block dt {
+      color: var(--muted);
+      font-size: 0.74rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0;
+      margin: 0 0 4px;
+    }
+
+    .metadata dd,
+    .idea dd,
+    .source-block dd {
+      margin: 0;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin: 20px 0 0;
+    }
+
+    .stat {
+      padding: 14px;
+      background: #fbf8f0;
+    }
+
+    .stat b {
+      display: block;
+      font-size: 1.35rem;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+
+    .stat span {
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+
+    section {
+      margin-top: 34px;
+    }
+
+    .section-lede {
+      color: var(--muted);
+      margin-bottom: 18px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .axes {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .axis {
+      padding: 14px;
+      background: #fbf8f0;
+    }
+
+    .axis b {
+      display: block;
+      margin-bottom: 5px;
+    }
+
+    .axis span {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .callout {
+      padding: 16px;
+      background: var(--warn-soft);
+      color: #4e3417;
+      border-color: #e3c492;
+    }
+
+    .callout .eyebrow {
+      background: #fff5e6;
+      border-color: #e1bc80;
+      color: var(--warn);
+      margin-bottom: 10px;
+    }
+
+    .idea-nav {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 8px;
+      margin: 12px 0 18px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .idea-nav a {
+      display: block;
+      min-height: 54px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 8px 10px;
+      text-decoration: none;
+      color: var(--ink);
+      font-size: 0.86rem;
+    }
+
+    .idea-nav b {
+      display: block;
+      color: var(--accent-text);
+    }
+
+    .idea-stack {
+      display: grid;
+      gap: 16px;
+    }
+
+    .idea {
+      padding: 18px;
+      box-shadow: 0 8px 28px rgba(31, 36, 36, 0.05);
+    }
+
+    .idea-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .idea-title {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .rank {
+      flex: 0 0 auto;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      min-width: 34px;
+      height: 34px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent-text);
+      font-weight: 800;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: flex-end;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      border-radius: 999px;
+      border: 1px solid rgba(23, 110, 115, 0.22);
+      background: var(--accent-soft);
+      color: var(--accent-text);
+      padding: 3px 9px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .chip.good {
+      background: var(--good-soft);
+      color: var(--good);
+      border-color: rgba(39, 99, 68, 0.25);
+    }
+
+    .chip.warn {
+      background: var(--warn-soft);
+      color: var(--warn);
+      border-color: rgba(154, 91, 22, 0.25);
+    }
+
+    .fields {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .field {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fbf8f0;
+      padding: 12px;
+    }
+
+    .field.wide {
+      grid-column: 1 / -1;
+    }
+
+    .diagram-wrap {
+      border: 1px solid var(--line);
+      background: #fbf8f0;
+      border-radius: var(--radius);
+      padding: 14px;
+      overflow-x: auto;
+      margin: 12px 0;
+    }
+
+    svg text {
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: table;
+    }
+
+    th,
+    td {
+      text-align: left;
+      vertical-align: top;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    th {
+      background: var(--surface-2);
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .sources {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .source-block {
+      padding: 14px;
+    }
+
+    footer {
+      margin-top: 34px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      padding-top: 16px;
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 900px) {
+      .metadata,
+      .stats,
+      .axes,
+      .idea-nav,
+      .fields,
+      .sources,
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+
+      .idea-header {
+        display: block;
+      }
+
+      .chips {
+        justify-content: flex-start;
+        margin-top: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <span class="eyebrow">Ideation Artifact</span>
+      <h1>Ideation: Live Game Cost Tracking</h1>
+      <p>Precise cost tracking for live Influence game runs should become an operational accounting spine, not a refreshed estimate in the create-game form. The current code already sees provider usage and router billing at the call boundary; the missing work is durable capture, normalized cost confidence, and administrator visibility.</p>
+      <dl class="metadata">
+        <div>
+          <dt>Date</dt>
+          <dd><time datetime="2026-07-03">2026-07-03</time></dd>
+        </div>
+        <div>
+          <dt>Topic</dt>
+          <dd>live-game-cost-tracking</dd>
+        </div>
+        <div>
+          <dt>Focus</dt>
+          <dd>Precise live-run costs and admin visibility</dd>
+        </div>
+        <div>
+          <dt>Mode</dt>
+          <dd>repo-grounded</dd>
+        </div>
+      </dl>
+      <div class="stats" aria-label="Ideation counts">
+        <div class="stat"><b>42</b><span>raw candidates considered</span></div>
+        <div class="stat"><b>7</b><span>ranked survivor ideas</span></div>
+        <div class="stat"><b>5</b><span>topic axes covered</span></div>
+        <div class="stat"><b>1</b><span>recommended first slice</span></div>
+      </div>
+    </header>
+
+    <section id="grounding-context">
+      <h2>Grounding Context</h2>
+      <div class="grid-2">
+        <div>
+          <p>The older cost path is estimate-first. `docs/cost-analysis.md` is explicitly a historical March 2026 snapshot, while the web helper still computes informational create-time estimates from fixed tier costs and player-count scaling. The admin create form then displays that estimate beside a model list where Katana has no estimate at all.</p>
+          <p>The more important fact: model-call usage is already observable. `InfluenceAgent` and `LLMHouseInterviewer` both extract OpenAI-shaped usage fields and `usage.imgnai` router billing. API-backed private traces also preserve usage and router billing metadata at the producer/admin boundary.</p>
+          <p>The durable-run layer already treats token state as part of recovery readiness. `TokenTracker` can serialize a checkpoint cursor, checkpoints persist `token_cost_cursor`, and supported recovery requires it. But terminal `game_results.token_usage` is written only when `persistCompletedGame` runs, so active, suspended, and failed runs do not have a reliable admin cost source.</p>
+        </div>
+        <aside class="callout">
+          <span class="eyebrow">Recommendation</span>
+          <p>Start with the accounting spine: per-call ledger, live rollup, and provider confidence normalization. Build the admin console on top of those rows. Pretty charts over stale estimates are still stale estimates, just wearing nicer shoes.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="topic-axes">
+      <h2>Topic Axes</h2>
+      <div class="axes">
+        <div class="axis"><b>Provider Call Capture</b><span>Where provider usage, billing, retries, and trace links enter the system.</span></div>
+        <div class="axis"><b>Durable Persistence</b><span>How costs survive active, resumed, suspended, cancelled, and completed runs.</span></div>
+        <div class="axis"><b>Pricing Confidence</b><span>How actual provider billing, reconciled costs, estimates, and unavailable data are labelled.</span></div>
+        <div class="axis"><b>Admin Visibility</b><span>How administrators inspect total spend, hotspots, failures, and trends.</span></div>
+        <div class="axis"><b>Tokenmax Loop</b><span>How precise accounting enables budgets, experiments, and quality-per-dollar optimization.</span></div>
+      </div>
+    </section>
+
+    <section id="ranked-ideas">
+      <h2>Ranked Ideas</h2>
+      <p class="section-lede">Seven survivors passed the grounding and scope check. The first three are the foundation; the rest compound value once those numbers are trustworthy.</p>
+      <ul class="idea-nav" aria-label="Ranked idea navigation">
+        <li><a href="#idea-1"><b>Idea 1.</b> Model-Call Ledger</a></li>
+        <li><a href="#idea-2"><b>Idea 2.</b> Durable Rollup</a></li>
+        <li><a href="#idea-3"><b>Idea 3.</b> Confidence Ladder</a></li>
+        <li><a href="#idea-4"><b>Idea 4.</b> Admin Console</a></li>
+        <li><a href="#idea-5"><b>Idea 5.</b> Reconciliation</a></li>
+        <li><a href="#idea-6"><b>Idea 6.</b> Budgets and Alerts</a></li>
+        <li><a href="#idea-7"><b>Idea 7.</b> Tokenmax ROI</a></li>
+      </ul>
+
+      <div class="diagram-wrap" role="img" aria-label="Cost accounting spine from provider response to admin console">
+        <svg width="1030" height="260" viewBox="0 0 1030 260" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L0,6 L9,3 z" fill="#176e73" />
+            </marker>
+          </defs>
+          <rect x="20" y="55" width="160" height="68" rx="8" fill="#dceeee" stroke="#78aeb2" />
+          <text x="100" y="83" text-anchor="middle" font-size="14" font-weight="700" fill="#0d4f53">Provider response</text>
+          <text x="100" y="104" text-anchor="middle" font-size="12" fill="#356366">usage + billing</text>
+
+          <line x1="180" y1="89" x2="235" y2="89" stroke="#176e73" stroke-width="2" marker-end="url(#arrow)" />
+
+          <rect x="240" y="55" width="170" height="68" rx="8" fill="#fffdf8" stroke="#d8d0c3" />
+          <text x="325" y="82" text-anchor="middle" font-size="14" font-weight="700" fill="#1f2424">Usage envelope</text>
+          <text x="325" y="104" text-anchor="middle" font-size="12" fill="#626b68">normalized fields</text>
+
+          <line x1="410" y1="89" x2="465" y2="89" stroke="#176e73" stroke-width="2" marker-end="url(#arrow)" />
+
+          <rect x="470" y="55" width="165" height="68" rx="8" fill="#dceeee" stroke="#78aeb2" />
+          <text x="552" y="82" text-anchor="middle" font-size="14" font-weight="700" fill="#0d4f53">Ledger entry</text>
+          <text x="552" y="104" text-anchor="middle" font-size="12" fill="#356366">one row per call</text>
+
+          <line x1="635" y1="89" x2="690" y2="89" stroke="#176e73" stroke-width="2" marker-end="url(#arrow)" />
+
+          <rect x="695" y="55" width="160" height="68" rx="8" fill="#fffdf8" stroke="#d8d0c3" />
+          <text x="775" y="82" text-anchor="middle" font-size="14" font-weight="700" fill="#1f2424">Live rollup</text>
+          <text x="775" y="104" text-anchor="middle" font-size="12" fill="#626b68">game totals</text>
+
+          <line x1="855" y1="89" x2="910" y2="89" stroke="#176e73" stroke-width="2" marker-end="url(#arrow)" />
+
+          <rect x="915" y="55" width="95" height="68" rx="8" fill="#e0efe5" stroke="#8cb99a" />
+          <text x="962" y="82" text-anchor="middle" font-size="14" font-weight="700" fill="#276344">Admin</text>
+          <text x="962" y="104" text-anchor="middle" font-size="12" fill="#3d6b4e">visibility</text>
+
+          <line x1="552" y1="123" x2="552" y2="165" stroke="#9a5b16" stroke-width="2" marker-end="url(#arrow)" />
+          <rect x="430" y="170" width="245" height="54" rx="8" fill="#f8ead5" stroke="#e1bc80" />
+          <text x="552" y="193" text-anchor="middle" font-size="13" font-weight="700" fill="#9a5b16">Private trace link</text>
+          <text x="552" y="212" text-anchor="middle" font-size="12" fill="#6a481d">for authorized forensic drilldown</text>
+
+          <line x1="775" y1="123" x2="775" y2="165" stroke="#9a5b16" stroke-width="2" marker-end="url(#arrow)" />
+          <rect x="700" y="170" width="150" height="54" rx="8" fill="#f8ead5" stroke="#e1bc80" />
+          <text x="775" y="193" text-anchor="middle" font-size="13" font-weight="700" fill="#9a5b16">Checkpoint</text>
+          <text x="775" y="212" text-anchor="middle" font-size="12" fill="#6a481d">resume-safe cursor</text>
+        </svg>
+      </div>
+
+      <div class="idea-stack">
+        <article class="idea" id="idea-1">
+          <div class="idea-header">
+            <div class="idea-title">
+              <span class="rank">1</span>
+              <div>
+                <h3>Idea 1. Model-Call Cost Ledger</h3>
+                <p>Introduce a compact operational ledger, likely `game_model_call_costs` or `game_provider_spend_entries`, with one row per provider call attempt. Insert it from a new cost sink at the same boundary that currently feeds `TokenTracker` and private traces.</p>
+              </div>
+            </div>
+            <div class="chips">
+              <span class="chip">Axis: Provider Call Capture</span>
+              <span class="chip good">Confidence 92%</span>
+              <span class="chip warn">Complexity High</span>
+            </div>
+          </div>
+          <dl class="fields">
+            <div class="field wide"><dt>Description</dt><dd>The ledger should capture `gameId`, `ownerEpoch`, actor, action, phase, round, provider profile, catalog id, model id, reasoning policy, API surface, call status, attempt number, retry relationship, provider response id, trace manifest id when available, latency, token counters, provider-native units, actual/estimated micro-USD, currency, source confidence, diagnostics, and safe router billing facets. `TokenTracker` can remain a compatibility aggregate, but it should stop being the only durable cost structure.</dd></div>
+            <div class="field"><dt>Basis</dt><dd><strong>direct:</strong> `agent.ts:1329-1361` and `house-interviewer.ts:633-663` already extract tokens and `usage.imgnai`; `private-trace-writer.ts:41-76` already models safe usage metadata.</dd></div>
+            <div class="field"><dt>Rationale</dt><dd>This is the source-of-truth move. Once every call becomes a ledger entry, retries, failures, model experiments, and suspended runs stop disappearing into aggregate totals or raw debug blobs.</dd></div>
+            <div class="field wide"><dt>Downsides</dt><dd>Requires schema, idempotency, and careful placement so gameplay does not fail because accounting writes are temporarily degraded. Needs a crisp privacy boundary: the ledger stores safe facts and links to traces, not raw prompts or responses.</dd></div>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-2">
+          <div class="idea-header">
+            <div class="idea-title">
+              <span class="rank">2</span>
+              <div>
+                <h3>Idea 2. Durable Game Cost Rollup</h3>
+                <p>Create a live rollup keyed by `gameId` plus `ownerEpoch` that tracks totals across active, suspended, cancelled, and completed states. Completion can snapshot the rollup into `game_results.tokenUsage`, but the rollup is the thing administrators trust during the run.</p>
+              </div>
+            </div>
+            <div class="chips">
+              <span class="chip">Axis: Durable Persistence</span>
+              <span class="chip good">Confidence 90%</span>
+              <span class="chip warn">Complexity High</span>
+            </div>
+          </div>
+          <dl class="fields">
+            <div class="field wide"><dt>Description</dt><dd>The rollup should maintain total calls, failed calls, prompt/cached/completion/reasoning tokens, provider-native charges, actual cost, estimated cost, unavailable cost count, and breakdowns by provider, model, actor, action, phase, and round. It can be updated synchronously with ledger inserts or rebuilt from ledger entries when needed.</dd></div>
+            <div class="field"><dt>Basis</dt><dd><strong>direct:</strong> `game-lifecycle.ts:366-450` writes token usage only on completion, while `game-lifecycle.ts:989-1085` can suspend/fail runs without a result row. `game-runner.ts:497-522` and `game-checkpoints.ts:249-264` already persist token cursor state at checkpoints.</dd></div>
+            <div class="field"><dt>Rationale</dt><dd>This fixes the operational blind spot. A game that spends money and then suspends is exactly the case an administrator needs to inspect, not the case that should lose its accounting trail.</dd></div>
+            <div class="field wide"><dt>Downsides</dt><dd>Rollups must handle duplicate owner epochs and resume paths without double-counting. The cleanest implementation treats ledger entries as immutable and rollups as rebuildable summaries.</dd></div>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-3">
+          <div class="idea-header">
+            <div class="idea-title">
+              <span class="rank">3</span>
+              <div>
+                <h3>Idea 3. Provider Cost Normalization And Confidence Ladder</h3>
+                <p>Define a `ProviderUsageEnvelope` and cost confidence model that separates provider actuals, router actuals, org-reconciled actuals, catalog estimates, static estimates, and unavailable costs. Unknown cost is a state, not zero with nicer formatting.</p>
+              </div>
+            </div>
+            <div class="chips">
+              <span class="chip">Axis: Pricing Confidence</span>
+              <span class="chip good">Confidence 88%</span>
+              <span class="chip warn">Complexity Medium</span>
+            </div>
+          </div>
+          <dl class="fields">
+            <div class="field wide"><dt>Description</dt><dd>Normalize OpenAI Responses usage, Chat Completions usage, Katana `usage.imgnai`, and local/OpenAI-compatible missing usage into one contract. Store integer micro-USD for normalized costs, provider-native units for credits or other billable units, original currency, pricing version, and `costSource` such as `provider_actual`, `router_actual`, `org_reconciled`, `catalog_estimate`, `static_estimate`, or `unavailable`.</dd></div>
+            <div class="field"><dt>Basis</dt><dd><strong>direct:</strong> `token-tracker.ts:46-90` uses a static OpenAI table; prior Katana work says unknown/router models must not fall back to fake OpenAI pricing. <strong>external:</strong> OpenAI exposes usage fields and organization cost endpoints; Katana responses in repo notes include `usage.imgnai.credits_charged`.</dd></div>
+            <div class="field"><dt>Rationale</dt><dd>The current problem is not just missing math; it is missing provenance. Administrators need to know whether a number is a bill, a reconciliation, a catalog-derived estimate, or a shrug in a trench coat.</dd></div>
+            <div class="field wide"><dt>Downsides</dt><dd>Katana cost fields need a fresh real sample for Grok game calls. OpenAI organization costs may not map perfectly to a game without project/API-key tagging discipline.</dd></div>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-4">
+          <div class="idea-header">
+            <div class="idea-title">
+              <span class="rank">4</span>
+              <div>
+                <h3>Idea 4. Admin Cost Console</h3>
+                <p>Add administrator cost summaries and drilldowns to the existing admin surface: game list totals, game detail live meter, cost by phase/action/player/House/model, top expensive calls, retry/failure spend, and exportable rows.</p>
+              </div>
+            </div>
+            <div class="chips">
+              <span class="chip">Axis: Admin Visibility</span>
+              <span class="chip good">Confidence 86%</span>
+              <span class="chip warn">Complexity Medium</span>
+            </div>
+          </div>
+          <dl class="fields">
+            <div class="field wide"><dt>Description</dt><dd>Expose `GET /api/admin/games/:idOrSlug/costs` for per-game detail and include compact cost fields in `GET /api/admin/games`. The UI should show total actual cost, estimated cost, unavailable cost count, token counts, provider-native charges, confidence badges, and hotspots. It should link to durable-run inspection and authorized private trace evidence rather than embedding raw trace content.</dd></div>
+            <div class="field"><dt>Basis</dt><dd><strong>direct:</strong> `routes/admin.ts:361-405` already returns admin game summaries; `routes/admin.ts:353-359` exposes durable-run inspection; `routes/admin.ts:284-310` exposes avatar generation provider/cost attempts.</dd></div>
+            <div class="field"><dt>Rationale</dt><dd>Accounting that only exists in tables is still hard to use. The admin needs fast answers: what did this run cost, is the number real, what got expensive, and did a failed retry path burn money?</dd></div>
+            <div class="field wide"><dt>Downsides</dt><dd>The dashboard must avoid turning into a trace browser. Keep default views compact and make raw evidence a deliberate producer/admin drilldown.</dd></div>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-5">
+          <div class="idea-header">
+            <div class="idea-title">
+              <span class="rank">5</span>
+              <div>
+                <h3>Idea 5. Trace Backfill And Provider Reconciliation</h3>
+                <p>Backfill historical cost data from existing private trace manifest metadata and terminal game results, then reconcile current ledger totals against provider-level reports where possible.</p>
+              </div>
+            </div>
+            <div class="chips">
+              <span class="chip">Axis: Pricing Confidence</span>
+              <span class="chip good">Confidence 78%</span>
+              <span class="chip warn">Complexity Medium</span>
+            </div>
+          </div>
+          <dl class="fields">
+            <div class="field wide"><dt>Description</dt><dd>Write a one-off or admin-only job that reads `game_evidence_manifests.metadata.usage` and `game_results.tokenUsage`, creates ledger entries marked `backfilled_trace` or `backfilled_result`, and records missing confidence where raw call-level data is unavailable. Separately, use OpenAI organization usage/cost endpoints for periodic reconciliation and keep Katana reconciliation provider-specific until its account/billing API is confirmed.</dd></div>
+            <div class="field"><dt>Basis</dt><dd><strong>direct:</strong> private trace manifests already store safe usage metadata with `accessScope: producer_admin`; `game_results.token_usage` has old terminal snapshots. <strong>external:</strong> OpenAI exposes organization usage and cost endpoints with grouped amount/currency data.</dd></div>
+            <div class="field"><dt>Rationale</dt><dd>This gives immediate historical baselines and catches accounting drift. It also tells you when the internal ledger and provider bills disagree, which is where billing bugs get expensive quietly.</dd></div>
+            <div class="field wide"><dt>Downsides</dt><dd>Backfill can never be as precise as native per-call capture. Older runs may lack private traces, non-owner paths may be partial, and provider cost grouping may not identify a game unless request tagging or project separation exists.</dd></div>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-6">
+          <div class="idea-header">
+            <div class="idea-title">
+              <span class="rank">6</span>
+              <div>
+                <h3>Idea 6. Measurement-First Budgets And Alerts</h3>
+                <p>After the ledger is reliable, add budgets as warnings and governance metadata before hard stopping games. Label high-spend experiments, alert on anomalies, and block only starts that cannot be measured safely.</p>
+              </div>
+            </div>
+            <div class="chips">
+              <span class="chip">Axis: Tokenmax Loop</span>
+              <span class="chip good">Confidence 80%</span>
+              <span class="chip warn">Complexity Medium</span>
+            </div>
+          </div>
+          <dl class="fields">
+            <div class="field wide"><dt>Description</dt><dd>Support per-game, per-day, per-provider, and per-model alert thresholds. Add an explicit `tokenmax` or experiment label for intentional high-spend runs. Start with admin warnings, status badges, and logs. Later, add hard caps as an explicit product choice, not as the first control mechanism.</dd></div>
+            <div class="field"><dt>Basis</dt><dd><strong>reasoned:</strong> user goal is optimization after knowing current run cost. Budget controls before reliable measurement risk hiding spend, breaking active games, or nudging the system back toward fake estimates.</dd></div>
+            <div class="field"><dt>Rationale</dt><dd>This keeps the product honest during the tokenmax phase: spend can be intentional, visible, and bounded without prematurely sacrificing game quality.</dd></div>
+            <div class="field wide"><dt>Downsides</dt><dd>Bad thresholds can create alert fatigue. Hard stops can damage a live match, so cap semantics need product judgment after actual cost patterns are visible.</dd></div>
+          </dl>
+        </article>
+
+        <article class="idea" id="idea-7">
+          <div class="idea-header">
+            <div class="idea-title">
+              <span class="rank">7</span>
+              <div>
+                <h3>Idea 7. Tokenmax ROI Report</h3>
+                <p>Once costs are trustworthy, report spend against game quality and watchability signals: completed run quality, strategic depth artifacts, postgame richness, retries, latency, and model/reasoning policy differences.</p>
+              </div>
+            </div>
+            <div class="chips">
+              <span class="chip">Axis: Tokenmax Loop</span>
+              <span class="chip good">Confidence 72%</span>
+              <span class="chip warn">Complexity High</span>
+            </div>
+          </div>
+          <dl class="fields">
+            <div class="field wide"><dt>Description</dt><dd>Add a report that compares cost by model, reasoning policy, rule track, and prompt version against outcome proxies: game completion, transcript richness, postgame summary usefulness, strategic artifact density, and human review notes when present. This becomes the optimization map for deciding where extra tokens actually buy better content.</dd></div>
+            <div class="field"><dt>Basis</dt><dd><strong>direct/reasoned:</strong> repo strategy and observability docs prize watchable strategic play, and the user explicitly framed this as prerequisite measurement before optimization.</dd></div>
+            <div class="field"><dt>Rationale</dt><dd>Raw spend answers "what did it cost?" ROI reporting answers "what was worth it?" That is the difference between tokenmaxxing as taste and tokenmaxxing as an engineering loop.</dd></div>
+            <div class="field wide"><dt>Downsides</dt><dd>Quality signals are noisier than cost signals. This should follow the accounting spine, not block it.</dd></div>
+          </dl>
+        </article>
+      </div>
+    </section>
+
+    <section id="rejection-summary">
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Idea</th>
+            <th>Reason Rejected</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td>Terminal-only `game_results.tokenUsage` upgrade</td><td>Completion-only persistence fails the active/suspended-run visibility requirement.</td></tr>
+          <tr><td>2</td><td>Refresh the static pricing table</td><td>Helpful maintenance, but it repeats the stale-estimate failure mode instead of recording actuals.</td></tr>
+          <tr><td>3</td><td>Raw private trace scraping as primary UI</td><td>Private traces are forensic evidence, not an indexed admin cost read model.</td></tr>
+          <tr><td>4</td><td>Public cost display on game pages</td><td>Scope and authorization mismatch; costs are producer/admin operational data.</td></tr>
+          <tr><td>5</td><td>Hard budget kill switch first</td><td>Too much gameplay risk before measurement is reliable.</td></tr>
+          <tr><td>6</td><td>Per-player spend dashboard</td><td>Potentially useful later, but a distraction from game-run accounting.</td></tr>
+          <tr><td>7</td><td>Provider-specific tables only</td><td>Fragments reporting across OpenAI, Katana, and future routers.</td></tr>
+          <tr><td>8</td><td>Store raw prompts/responses in cost ledger</td><td>Violates the compact privacy boundary; ledger rows should link to private traces, not contain them.</td></tr>
+          <tr><td>9</td><td>Rely only on OpenAI organization costs</td><td>Cannot cover Katana, local runs, per-action dimensions, or live in-progress state.</td></tr>
+          <tr><td>10</td><td>Cost simulator before actual measurement</td><td>Useful after baselines exist; premature range theater before then.</td></tr>
+          <tr><td>11</td><td>Fully unify avatar and game spend in v1</td><td>The vocabulary should align, but live game accounting should land before table unification.</td></tr>
+          <tr><td>12</td><td>Model selection gate before ledger</td><td>The gate needs confidence semantics and live actuals first.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="recommended-first-slice">
+      <h2>Recommended First Slice</h2>
+      <div class="source-block">
+        <p>Build the accounting spine before the console: a per-call ledger, provider usage normalizer, and live rollup with one admin read endpoint. Keep `TokenTracker` and terminal `game_results.tokenUsage` as compatibility/export surfaces, but make the ledger and rollup the operational source of truth.</p>
+        <p>Minimum useful slice: add provider usage fixtures, normalize OpenAI Responses, OpenAI Chat Completions, and Katana `usage.imgnai`; insert cost ledger rows from agent and House calls; maintain a game cost rollup; expose `GET /api/admin/games/:idOrSlug/costs`; add a compact cost summary to `/api/admin/games`; verify suspended/failed runs retain cost rows.</p>
+      </div>
+    </section>
+
+    <section id="sources-references">
+      <h2>Sources &amp; References</h2>
+      <div class="sources">
+        <dl class="source-block">
+          <dt>Provider usage capture</dt>
+          <dd><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/agent.ts#L1329-L1361">packages/engine/src/agent.ts:1329-1361</a></dd>
+          <dd><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/house-interviewer.ts#L633-L663">packages/engine/src/house-interviewer.ts:633-663</a></dd>
+          <dd><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/private-trace-writer.ts#L41-L76">packages/api/src/services/private-trace-writer.ts:41-76</a></dd>
+        </dl>
+        <dl class="source-block">
+          <dt>Current cost persistence</dt>
+          <dd><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-lifecycle.ts#L366-L450">packages/api/src/services/game-lifecycle.ts:366-450</a></dd>
+          <dd><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-lifecycle.ts#L989-L1085">packages/api/src/services/game-lifecycle.ts:989-1085</a></dd>
+          <dd><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/token-tracker.ts#L117-L227">packages/engine/src/token-tracker.ts:117-227</a></dd>
+        </dl>
+        <dl class="source-block">
+          <dt>Admin and static estimates</dt>
+          <dd><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/web/src/lib/api.ts#L1416-L1435">packages/web/src/lib/api.ts:1416-1435</a></dd>
+          <dd><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/web/src/app/admin/games/new/create-game-form.tsx#L48-L82">packages/web/src/app/admin/games/new/create-game-form.tsx:48-82</a></dd>
+          <dd><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/routes/admin.ts#L361-L405">packages/api/src/routes/admin.ts:361-405</a></dd>
+        </dl>
+        <dl class="source-block">
+          <dt>Durability and privacy</dt>
+          <dd><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/game-runner.ts#L497-L522">packages/engine/src/game-runner.ts:497-522</a></dd>
+          <dd><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/game-checkpoints.ts#L249-L264">packages/api/src/services/game-checkpoints.ts:249-264</a></dd>
+          <dd><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/reasoning-transcript-observability.md#L168-L192">docs/reasoning-transcript-observability.md:168-192</a></dd>
+        </dl>
+        <dl class="source-block">
+          <dt>Prior repo context</dt>
+          <dd><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/cost-analysis.md#L1-L8">docs/cost-analysis.md:1-8</a></dd>
+          <dd><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/ideation/2026-06-27-multi-model-provider-grok-router-ideation.md#L24-L27">docs/ideation/2026-06-27-multi-model-provider-grok-router-ideation.md:24-27</a></dd>
+          <dd><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/plans/2026-06-27-001-feat-katana-model-router-plan.md#L86-L88">docs/plans/2026-06-27-001-feat-katana-model-router-plan.md:86-88</a></dd>
+        </dl>
+        <dl class="source-block">
+          <dt>External provider docs</dt>
+          <dd><a href="https://platform.openai.com/docs/api-reference/responses/object">OpenAI Responses object usage fields</a></dd>
+          <dd><a href="https://platform.openai.com/docs/api-reference/usage/costs">OpenAI organization usage and costs API</a></dd>
+          <dd><a href="https://kat.imgnai.com/v1/models">Katana public model catalog</a></dd>
+          <dd><a href="https://kat.imgnai.com/llms.txt">Katana compact LLM docs</a></dd>
+        </dl>
+      </div>
+    </section>
+
+    <footer class="composition-signal">
+      Composed 2026-07-03T23:41:02Z by ce-ideate from user prompt: live game run cost tracking and administrator visibility.
+    </footer>
+  </main>
+</body>
+</html>

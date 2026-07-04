@@ -339,10 +339,91 @@ export async function listGames(
 export interface AdminGameSummary extends GameSummary {
   hidden: boolean;
   hiddenAt?: string;
+  cost?: AdminGameCostSummary | null;
+}
+
+export type AdminGameCostState = "no_calls" | "unavailable" | "estimated" | "actual";
+
+export interface AdminGameCostSummary {
+  callCount: number;
+  failedCallCount: number;
+  unpricedCallCount: number;
+  promptTokens: number;
+  cachedTokens: number;
+  completionTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+  actualCostMicrousd: number;
+  estimatedCostMicrousd: number;
+  costCurrency: string;
+  costSourceCounts: Record<string, number>;
+  captureSourceCounts: Record<string, number>;
+  providerNativeTotals: Record<string, number>;
+  lastEntryAt?: string;
+  state: AdminGameCostState;
+}
+
+export interface AdminGameCostDetail extends AdminGameCostSummary {
+  gameId: string;
+  ownerEpochBreakdowns: Array<{
+    ownerEpoch: string;
+    summary: AdminGameCostSummary;
+  }>;
+  breakdowns: Record<string, Record<string, {
+    callCount: number;
+    actualCostMicrousd: number;
+    estimatedCostMicrousd: number;
+    totalTokens: number;
+  }>>;
+  expensiveCalls: Array<{
+    actorName?: string | null;
+    actorRole?: string | null;
+    action?: string | null;
+    phase?: string | null;
+    round?: number | null;
+    provider?: string | null;
+    modelName?: string | null;
+    costSource: string;
+    actualCostMicrousd?: number | null;
+    estimatedCostMicrousd?: number | null;
+    totalTokens: number;
+    callStatus: string;
+  }>;
+  retryFailureSpend: {
+    failedCallCount: number;
+    retryCallCount: number;
+    actualCostMicrousd: number;
+    estimatedCostMicrousd: number;
+  };
+  backfill: {
+    traceBackfilledEntries: number;
+    terminalBackfilledEntries: number;
+    hasTerminalAggregate: boolean;
+  };
+  pricing: {
+    rateCardVersions: string[];
+    pricingSourceIds: string[];
+    pricedAt: string[];
+  };
+  reconciliation: Array<Record<string, unknown>>;
 }
 
 export async function listAdminGames(): Promise<AdminGameSummary[]> {
   return apiFetch("/api/admin/games");
+}
+
+export async function getAdminGameCosts(idOrSlug: string): Promise<AdminGameCostDetail> {
+  return apiFetch(`/api/admin/games/${idOrSlug}/costs`);
+}
+
+export async function backfillAdminGameCosts(idOrSlug: string): Promise<{
+  gameId: string;
+  inserted: number;
+  skipped: number;
+  rebuilt: boolean;
+  diagnostics: string[];
+}> {
+  return apiFetch(`/api/admin/games/${idOrSlug}/costs/backfill`, { method: "POST" });
 }
 
 export async function stopGame(id: string): Promise<void> {

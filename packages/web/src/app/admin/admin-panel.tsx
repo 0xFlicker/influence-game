@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAccount } from "wagmi";
-import { fillGame, formatGameModelLabel, hideGame, isFillAccepted, listGames, startGame, stopGame, type GameSummary } from "@/lib/api";
+import { fillGame, formatGameModelLabel, hideGame, isFillAccepted, listAdminGames, startGame, stopGame, type AdminGameSummary, type GameSummary } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { TruncatedAddress } from "@/components/truncated-address";
+import { AdminCostPanel, AdminCostPill } from "./admin-cost-view";
 
 function phaseLabel(phase: string): string {
   const labels: Record<string, string> = {
@@ -33,7 +34,17 @@ function progressPct(game: GameSummary): number {
 // Game card (in_progress)
 // ---------------------------------------------------------------------------
 
-function GameCard({ game, onRefresh, canStop }: { game: GameSummary; onRefresh: () => void; canStop: boolean }) {
+function GameCard({
+  game,
+  onRefresh,
+  canStop,
+  onOpenCosts,
+}: {
+  game: AdminGameSummary;
+  onRefresh: () => void;
+  canStop: boolean;
+  onOpenCosts: () => void;
+}) {
   const router = useRouter();
   const pct = progressPct(game);
   const [stopping, setStopping] = useState(false);
@@ -83,6 +94,11 @@ function GameCard({ game, onRefresh, canStop }: { game: GameSummary; onRefresh: 
         </div>
       </div>
       <div className="flex flex-col items-end gap-1 flex-shrink-0">
+        <AdminCostPill
+          summary={game.cost}
+          onClick={onOpenCosts}
+          ariaLabel={`Open cost details for game #${game.gameNumber}`}
+        />
         {canStop && (
           <div className="flex items-center gap-2">
             <button
@@ -106,7 +122,7 @@ function GameCard({ game, onRefresh, canStop }: { game: GameSummary; onRefresh: 
 // Waiting game card
 // ---------------------------------------------------------------------------
 
-function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide }: { game: GameSummary; onRefresh: () => void; canStart: boolean; canFill: boolean; canStop: boolean; canHide: boolean }) {
+function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide }: { game: AdminGameSummary; onRefresh: () => void; canStart: boolean; canFill: boolean; canStop: boolean; canHide: boolean }) {
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [filling, setFilling] = useState(false);
@@ -293,7 +309,17 @@ function StatusBadge({ status, errorInfo }: { status: GameSummary["status"]; err
   );
 }
 
-function RecentGameRow({ game, canHide, onRefresh }: { game: GameSummary; canHide: boolean; onRefresh: () => void }) {
+function RecentGameRow({
+  game,
+  canHide,
+  onRefresh,
+  onOpenCosts,
+}: {
+  game: AdminGameSummary;
+  canHide: boolean;
+  onRefresh: () => void;
+  onOpenCosts: () => void;
+}) {
   const router = useRouter();
   const [hiding, setHiding] = useState(false);
   const [confirmHide, setConfirmHide] = useState(false);
@@ -337,6 +363,13 @@ function RecentGameRow({ game, canHide, onRefresh }: { game: GameSummary; canHid
       <td className="py-3 px-4 text-white/40 text-xs">{date}</td>
       <td className="py-3 px-4">
         <StatusBadge status={game.status} errorInfo={game.errorInfo} />
+      </td>
+      <td className="py-3 px-4">
+        <AdminCostPill
+          summary={game.cost}
+          onClick={onOpenCosts}
+          ariaLabel={`Open cost details for game #${game.gameNumber}`}
+        />
       </td>
       <td className="py-3 px-4">
         {canHide && (
@@ -391,17 +424,22 @@ export function AdminPanel() {
   const canFillGame = hasPermission("fill_game");
   const canHideGame = hasPermission("hide_game");
 
-  const [activeGames, setActiveGames] = useState<GameSummary[]>([]);
-  const [suspendedGames, setSuspendedGames] = useState<GameSummary[]>([]);
-  const [waitingGames, setWaitingGames] = useState<GameSummary[]>([]);
-  const [recentGames, setRecentGames] = useState<GameSummary[]>([]);
+  const [activeGames, setActiveGames] = useState<AdminGameSummary[]>([]);
+  const [suspendedGames, setSuspendedGames] = useState<AdminGameSummary[]>([]);
+  const [waitingGames, setWaitingGames] = useState<AdminGameSummary[]>([]);
+  const [recentGames, setRecentGames] = useState<AdminGameSummary[]>([]);
+  const [costGame, setCostGame] = useState<AdminGameSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const fetchRequestIdRef = useRef(0);
 
   const fetchGames = useCallback(async () => {
+    const fetchRequestId = fetchRequestIdRef.current + 1;
+    fetchRequestIdRef.current = fetchRequestId;
     setError(null);
     try {
-      const all = await listGames();
+      const all = await listAdminGames();
+      if (fetchRequestIdRef.current !== fetchRequestId) return;
       setActiveGames(all.filter((g) => g.status === "in_progress"));
       setSuspendedGames(
         all
@@ -420,12 +458,13 @@ export function AdminPanel() {
             (a, b) =>
               new Date(b.completedAt ?? b.createdAt).getTime() -
               new Date(a.completedAt ?? a.createdAt).getTime(),
-          ),
+        ),
       );
     } catch (err) {
+      if (fetchRequestIdRef.current !== fetchRequestId) return;
       setError(err instanceof Error ? err.message : "Failed to load games.");
     } finally {
-      setLoading(false);
+      if (fetchRequestIdRef.current === fetchRequestId) setLoading(false);
     }
   }, []);
 
@@ -481,7 +520,7 @@ export function AdminPanel() {
         ) : (
           <div className="space-y-3">
             {activeGames.map((g) => (
-              <GameCard key={g.id} game={g} onRefresh={fetchGames} canStop={canStopGame} />
+              <GameCard key={g.id} game={g} onRefresh={fetchGames} canStop={canStopGame} onOpenCosts={() => setCostGame(g)} />
             ))}
           </div>
         )}
@@ -493,11 +532,11 @@ export function AdminPanel() {
           <h2 className="text-xs font-semibold text-amber-300/80 uppercase tracking-wider mb-3">
             Failed Games ({suspendedGames.length})
           </h2>
-          <div className="border border-amber-900/40 rounded-xl overflow-hidden">
-            <table className="w-full">
+          <div className="overflow-x-auto rounded-xl border border-amber-900/40">
+            <table className="min-w-[64rem] w-full">
               <thead>
                 <tr className="border-b border-amber-900/30">
-                  {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", ""].map(
+                  {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", ""].map(
                     (h) => (
                       <th
                         key={h}
@@ -511,7 +550,7 @@ export function AdminPanel() {
               </thead>
               <tbody>
                 {suspendedGames.map((g) => (
-                  <RecentGameRow key={g.id} game={g} onRefresh={fetchGames} canHide={canHideGame} />
+                  <RecentGameRow key={g.id} game={g} onRefresh={fetchGames} canHide={canHideGame} onOpenCosts={() => setCostGame(g)} />
                 ))}
               </tbody>
             </table>
@@ -571,11 +610,11 @@ export function AdminPanel() {
             No completed games yet.
           </div>
         ) : (
-          <div className="border border-white/10 rounded-xl overflow-hidden">
-            <table className="w-full">
+          <div className="overflow-x-auto rounded-xl border border-white/10">
+            <table className="min-w-[64rem] w-full">
               <thead>
                 <tr className="border-b border-white/10">
-                  {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", ""].map(
+                  {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", ""].map(
                     (h) => (
                       <th
                         key={h}
@@ -589,13 +628,16 @@ export function AdminPanel() {
               </thead>
               <tbody>
                 {recentGames.slice(0, 5).map((g) => (
-                  <RecentGameRow key={g.id} game={g} canHide={canHideGame} onRefresh={fetchGames} />
+                  <RecentGameRow key={g.id} game={g} canHide={canHideGame} onRefresh={fetchGames} onOpenCosts={() => setCostGame(g)} />
                 ))}
               </tbody>
             </table>
           </div>
         )}
       </section>
+      {costGame && (
+        <AdminCostPanel key={costGame.id} game={costGame} onClose={() => setCostGame(null)} onBackfilled={fetchGames} />
+      )}
     </div>
   );
 }
