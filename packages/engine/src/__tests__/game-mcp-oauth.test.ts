@@ -55,7 +55,7 @@ describe("Game MCP OAuth helper utilities", () => {
       "http://127.0.0.1:34567/oauth/callback",
     );
     expect(authorizeUrl.searchParams.get("resource")).toBe(resourceUri);
-    expect(authorizeUrl.searchParams.get("scope")).toBe("mcp");
+    expect(authorizeUrl.searchParams.get("scope")).toBe("producer");
     expect(authorizeUrl.searchParams.get("state")).toBe("state-123");
     expect(authorizeUrl.searchParams.get("code_challenge")).toBe("challenge-123");
     expect(authorizeUrl.searchParams.get("code_challenge_method")).toBe("S256");
@@ -118,10 +118,10 @@ describe("Game MCP OAuth helper utilities", () => {
         access_token: "resource-token",
         token_type: "Bearer",
         expires_in: 3600,
-        scope: "mcp",
+        scope: "producer",
         audience: "game-mcp",
         purpose: "mcp_access",
-        resource: resourceUri,
+        resource: "http://localhost:3000/mcp",
       }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -139,6 +139,7 @@ describe("Game MCP OAuth helper utilities", () => {
       });
 
       expect(token.access_token).toBe("resource-token");
+      expect(token.resource).toBe("http://localhost:3000/mcp");
       const form = new URLSearchParams(capturedBody ?? "");
       expect(form.get("resource")).toBe(resourceUri);
       expect(form.get("code")).toBe("code-123");
@@ -155,7 +156,7 @@ describe("Game MCP OAuth helper utilities", () => {
       access_token: "saved-token",
       token_type: "Bearer",
       expires_in: 3600,
-      scope: "mcp",
+      scope: "producer",
       audience: "game-mcp",
       purpose: "mcp_access",
       resource: resourceUri,
@@ -176,7 +177,7 @@ describe("Game MCP OAuth helper utilities", () => {
       iss: MCP_OAUTH_ISSUER,
       aud: "game-mcp",
       client_id: MCP_OAUTH_CLIENT_ID,
-      scope: "mcp",
+      scope: "producer",
       token_type: "Bearer",
       purpose: "mcp_access",
       exp: futureExp(),
@@ -187,7 +188,7 @@ describe("Game MCP OAuth helper utilities", () => {
       iss: MCP_OAUTH_ISSUER,
       aud: "trace-mcp",
       client_id: MCP_OAUTH_CLIENT_ID,
-      scope: "mcp",
+      scope: "producer",
       token_type: "Bearer",
       purpose: "mcp_access",
       exp: futureExp(),
@@ -197,7 +198,7 @@ describe("Game MCP OAuth helper utilities", () => {
       iss: MCP_OAUTH_ISSUER,
       aud: "game-mcp",
       client_id: MCP_OAUTH_CLIENT_ID,
-      scope: "mcp",
+      scope: "producer",
       token_type: "Bearer",
       purpose: "mcp_access",
       exp: futureExp(),
@@ -207,7 +208,7 @@ describe("Game MCP OAuth helper utilities", () => {
       iss: MCP_OAUTH_ISSUER,
       aud: "game-mcp",
       client_id: "wrong-client",
-      scope: "mcp",
+      scope: "producer",
       token_type: "Bearer",
       purpose: "mcp_access",
       exp: futureExp(),
@@ -217,7 +218,7 @@ describe("Game MCP OAuth helper utilities", () => {
       iss: MCP_OAUTH_ISSUER,
       aud: "game-mcp",
       client_id: MCP_OAUTH_CLIENT_ID,
-      scope: "mcp",
+      scope: "producer",
       token_type: "Bearer",
       purpose: "mcp_access",
       exp: Math.floor(Date.now() / 1000) - 1,
@@ -237,7 +238,7 @@ describe("Game MCP OAuth helper utilities", () => {
           iss: MCP_OAUTH_ISSUER,
           aud: "game-mcp",
           client_id: MCP_OAUTH_CLIENT_ID,
-          scope: "mcp",
+          scope: "producer",
           token_type: "Bearer",
           purpose: "mcp_access",
           exp: futureExp(),

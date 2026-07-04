@@ -79,6 +79,10 @@ function resolveProfileId(baseURL: string | undefined, explicitProfileId?: Provi
   return isLocalBaseURL(baseURL) ? "lm-studio" : "custom-openai-compatible";
 }
 
+function requiresExplicitBaseURL(providerProfileId: ProviderProfileId): boolean {
+  return providerProfileId === "lm-studio" || providerProfileId === "custom-openai-compatible";
+}
+
 export function resolveToolChoiceMode(
   env: NodeJS.ProcessEnv = process.env,
   baseURL?: string,
@@ -146,6 +150,9 @@ export function createLlmClientFromEnv(
 
   const baseURL = baseURLConfig?.value;
   const providerProfileId = resolveProfileId(baseURL, explicitProfileId);
+  if (requiresExplicitBaseURL(providerProfileId) && !baseURL) {
+    return null;
+  }
   const apiKey = apiKeyConfig?.value ?? (baseURL && providerProfileId === "lm-studio" ? "lm-studio" : undefined);
   if (!apiKey) return null;
   const openAIReasoningSummary = resolveOpenAIReasoningSummaryMode(env, baseURL);

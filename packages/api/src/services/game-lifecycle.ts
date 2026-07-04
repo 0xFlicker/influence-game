@@ -795,6 +795,7 @@ export async function startGame(
   const privateTraceSink = ownerEpoch
     ? createPrivateTraceSink(db, gameId, ownerEpoch, game.cognitiveArtifactCaptureVersion)
     : undefined;
+  const toolChoiceMode = resolvedModelSelection.model.preferredToolChoiceMode ?? llmConfig?.toolChoiceMode;
 
   // Construct agents from player records
   const agents: IAgent[] = players.map((player) => {
@@ -832,7 +833,7 @@ export async function startGame(
       undefined,
       memoryStore,
       {
-        toolChoiceMode: llmConfig.toolChoiceMode,
+        ...(toolChoiceMode && { toolChoiceMode }),
         ...(llmConfig.openAIReasoningSummary && { openAIReasoningSummary: llmConfig.openAIReasoningSummary }),
         providerProfileId: resolvedModelSelection.providerProfile.id,
         catalogId: resolvedModelSelection.catalogId,
@@ -853,7 +854,7 @@ export async function startGame(
         resolvedModelSelection.modelId,
         {
           gameId,
-          toolChoiceMode: llmConfig.toolChoiceMode,
+          ...(toolChoiceMode && { toolChoiceMode }),
           providerProfileId: resolvedModelSelection.providerProfile.id,
           catalogId: resolvedModelSelection.catalogId,
           modelCapabilities: resolvedModelSelection.model.capabilities,

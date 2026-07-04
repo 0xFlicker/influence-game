@@ -93,6 +93,23 @@ export interface GeneratedPersona {
   personaKey: Personality;
 }
 
+const PERSONA_RESPONSE_FORMAT = {
+  type: "json_schema" as const,
+  json_schema: {
+    name: "generated_persona",
+    strict: true,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        personality: { type: "string" },
+        strategy: { type: "string" },
+      },
+      required: ["personality", "strategy"],
+    },
+  },
+};
+
 /**
  * Generate a unique personality description and strategy using LLM.
  * Falls back to defaults if the LLM call fails.
@@ -129,7 +146,7 @@ Respond with JSON only:
 }`,
         },
       ],
-      response_format: { type: "json_object" },
+      response_format: PERSONA_RESPONSE_FORMAT,
     });
 
     const content = response.choices[0]?.message?.content;

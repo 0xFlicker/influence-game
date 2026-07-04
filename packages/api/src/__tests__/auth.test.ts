@@ -6,7 +6,9 @@
  */
 
 import { describe, test, expect, beforeAll, beforeEach } from "bun:test";
+import { createHash } from "crypto";
 import { Hono } from "hono";
+import { inArray } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import type { DrizzleDB } from "../db/index.js";
 import {
@@ -19,8 +21,14 @@ import {
   optionalAuth,
   type AuthEnv,
 } from "../middleware/auth.js";
+import { createAuthRoutes } from "../routes/auth.js";
 import { seedRBAC } from "../db/rbac-seed.js";
 import { setupTestDB } from "./test-utils.js";
+import {
+  authorizeMcpOAuth,
+  exchangeMcpOAuthCode,
+  MCP_OAUTH_CLIENT_ID,
+} from "../services/mcp-oauth.js";
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -258,6 +266,122 @@ describe("requirePermission middleware", () => {
     expect(res.status).toBe(200);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Local CLI session exchange
+// ---------------------------------------------------------------------------
+
+describe("local CLI session exchange", () => {
+  let db: DrizzleDB;
+  let app: Hono;
+
+  beforeEach(async () => {
+    db = await setupDB();
+    app = new Hono();
+    app.route("/", createAuthRoutes(db));
+  });
+
+  test("exchanges a loopback producer MCP token for a normal app session", async () => {
+    const walletAddress = "0xproducer00000000000000000000000000000001";
+    await db.insert(schema.users).values({
+      id: "producer-cli-user",
+      walletAddress,
+      displayName: "Producer CLI",
+    });
+    await assignRoles(db, walletAddress, ["producer", "gamer"]);
+    const mcpToken = await issueProducerMcpToken(db, {
+      userId: "producer-cli-user",
+      walletAddress,
+    });
+
+    const res = await app.request("http://127.0.0.1/api/auth/local-cli-session", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${mcpToken}` },
+      body: JSON.stringify({}),
+    });
+
+    if (res.status !== 200) {
+      console.error("local CLI exchange failure", await res.clone().text());
+    }
+    expect(res.status).toBe(200);
+    const body = await res.json() as { token: string; user: { roles: string[]; permissions: string[] } };
+    expect(body.user.roles).toContain("producer");
+    expect(body.user.roles).toContain("gamer");
+    expect(body.user.permissions).toContain("create_game");
+    expect(body.user.permissions).toContain("fill_game");
+    expect(body.user.permissions).toContain("start_game");
+    const session = await verifySessionToken(body.token);
+    expect(session?.userId).toBe("producer-cli-user");
+    expect(session?.permissions).toContain("create_game");
+  });
+
+  test("rejects the exchange away from loopback hosts", async () => {
+    const res = await app.request("https://influence.example/api/auth/local-cli-session", {
+      method: "POST",
+      headers: { Authorization: "Bearer anything" },
+      body: JSON.stringify({}),
+    });
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "Local CLI session exchange is loopback-only" });
+  });
+});
+
+async function assignRoles(db: DrizzleDB, walletAddress: string, roleNames: string[]): Promise<void> {
+  const roles = await db
+    .select({ id: schema.roles.id, name: schema.roles.name })
+    .from(schema.roles)
+    .where(inArray(schema.roles.name, roleNames));
+  await db.insert(schema.addressRoles).values(roles.map((role) => ({
+    walletAddress: walletAddress.toLowerCase(),
+    roleId: role.id,
+    grantedBy: "test",
+  })));
+}
+
+async function issueProducerMcpToken(
+  db: DrizzleDB,
+  user: { userId: string; walletAddress: string },
+): Promise<string> {
+  const redirectUri = "http://127.0.0.1:49111/oauth/callback";
+  const state = "test-state";
+  const codeVerifier = "test-code-verifier";
+  const codeChallenge = createHash("sha256")
+    .update(codeVerifier)
+    .digest("base64url");
+  const authorization = await authorizeMcpOAuth(db, {
+    id: user.userId,
+    walletAddress: user.walletAddress,
+    email: null,
+    displayName: "Producer CLI",
+  }, {
+    client_id: MCP_OAUTH_CLIENT_ID,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "producer",
+    selected_scope: "producer",
+    resource: "http://127.0.0.1:3000/mcp",
+    state,
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256",
+    decision: "approve",
+  });
+  expect(authorization.status).toBe(200);
+  const redirectTo = (authorization.body as { redirectTo: string }).redirectTo;
+  const code = new URL(redirectTo).searchParams.get("code");
+  expect(code).toBeTruthy();
+
+  const token = await exchangeMcpOAuthCode(db, {
+    grant_type: "authorization_code",
+    client_id: MCP_OAUTH_CLIENT_ID,
+    redirect_uri: redirectUri,
+    resource: "http://127.0.0.1:3000/mcp",
+    code: code!,
+    code_verifier: codeVerifier,
+  });
+  expect(token.status).toBe(200);
+  return (token.body as { access_token: string }).access_token;
+}
 
 // ---------------------------------------------------------------------------
 // requireRole middleware

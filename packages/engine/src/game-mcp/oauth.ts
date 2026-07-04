@@ -139,7 +139,7 @@ export async function exchangeAuthorizationCode(
     typeof parsed.expires_in !== "number" ||
     !parsed.scope?.split(/\s+/).includes(MCP_OAUTH_SCOPE) ||
     parsed.audience !== MCP_OAUTH_AUDIENCE ||
-    parsed.resource !== options.resourceUri
+    !isSameLocalResource(parsed.resource, options.resourceUri)
   ) {
     throw new Error("Token exchange returned an invalid MCP OAuth response");
   }
@@ -152,4 +152,26 @@ function isLoopbackHost(hostname: string): boolean {
     hostname === "127.0.0.1" ||
     hostname === "::1" ||
     hostname === "[::1]";
+}
+
+function isSameLocalResource(actual: unknown, expected: string): boolean {
+  if (typeof actual !== "string") return false;
+  if (actual === expected) return true;
+
+  let actualUrl: URL;
+  let expectedUrl: URL;
+  try {
+    actualUrl = new URL(actual);
+    expectedUrl = new URL(expected);
+  } catch {
+    return false;
+  }
+
+  return actualUrl.protocol === expectedUrl.protocol &&
+    actualUrl.port === expectedUrl.port &&
+    actualUrl.pathname === expectedUrl.pathname &&
+    actualUrl.search === expectedUrl.search &&
+    actualUrl.hash === expectedUrl.hash &&
+    isLoopbackHost(actualUrl.hostname) &&
+    isLoopbackHost(expectedUrl.hostname);
 }

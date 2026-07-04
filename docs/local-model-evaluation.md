@@ -22,12 +22,10 @@ The engine and API read LLM provider settings through a shared OpenAI-compatible
 | `INFLUENCE_LLM_PREFLIGHT_TIMEOUT_MS` | `10000` | Timeout for the API start preflight metadata request. |
 | `INFLUENCE_LLM_TOOL_CHOICE_MODE` | `required` for local base URLs, otherwise `named` | Structured decision-call mode. Use `required` for LM Studio servers that reject named OpenAI tool forcing. Other accepted values: `named`, `auto`, `json_schema`. |
 | `INFLUENCE_OPENAI_REASONING_SUMMARY` | `auto` for hosted OpenAI, off for local base URLs | Hosted OpenAI Responses reasoning summary mode: `auto`, `concise`, `detailed`, or `off`. Local OpenAI-compatible base URLs ignore this because they do not implement the hosted summary contract. |
-| `INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS` | `4096` | Minimum completion budget for local structured decision calls. Useful for models that spend many tokens on internal reasoning before producing tool arguments. |
-| `INFLUENCE_LLM_LOCAL_MESSAGE_MIN_TOKENS` | `8192` | Minimum completion budget for local public-message calls. Useful when visible speech is empty because reasoning consumed a small budget. Empty local messages retry once with a doubled budget. |
 
 Project-specific variables win over aliases. If a base URL is configured without an API key, the client uses `lm-studio` as a local default key.
 
-Local OpenAI-compatible providers are not perfectly identical to OpenAI's hosted API. LM Studio may reject `tool_choice` objects like `{ type: "function", function: { name } }`; the default local mode sends `tool_choice: "required"` with one available tool instead. Local structured decision schemas keep the emitted `thinking` field, while raw provider reasoning metadata such as `reasoning_content` is stored separately as `reasoningContext`. Hosted OpenAI reasoning summaries are a separate Responses API feature; they default to `auto` for hosted OpenAI but remain off for local base URLs. House Mingle room assignment and House alliance-huddle scheduling/outcome summarization use strict JSON Schema output with the same local structured token floor before falling back to deterministic repair behavior. If a model/server still struggles with tools, try `INFLUENCE_LLM_TOOL_CHOICE_MODE=json_schema` to skip tool calls and request the tool argument schema as JSON response format.
+Local OpenAI-compatible providers are not perfectly identical to OpenAI's hosted API. LM Studio may reject `tool_choice` objects like `{ type: "function", function: { name } }`; the default local mode sends `tool_choice: "required"` with one available tool instead. Local structured decision schemas keep the emitted `thinking` field, while raw provider reasoning metadata such as `reasoning_content` is stored separately as `reasoningContext`. Hosted OpenAI reasoning summaries are a separate Responses API feature; they default to `auto` for hosted OpenAI but remain off for local base URLs. Structured decisions use a global 8192-token completion floor, and public message calls use a global 4096-token completion floor with one doubled retry when visible content is empty. House Mingle room assignment and House alliance-huddle scheduling/outcome summarization use the same structured floor before falling back to deterministic repair behavior. If a model/server still struggles with tools, try `INFLUENCE_LLM_TOOL_CHOICE_MODE=json_schema` to skip tool calls and request the tool argument schema as JSON response format.
 
 Local public messages skip the hosted-provider `{ thinking, message }` response schema and request visible speech in `message.content`. When a local server returns native reasoning metadata such as LM Studio's `reasoning_content`, the engine stores that value as transcript `reasoningContext`. This keeps malformed hidden reasoning out of public speech while still preserving local model reasoning for viewer/debug surfaces.
 
@@ -46,7 +44,13 @@ Initial game-ready catalog entries:
 | `openai:gpt-5.4-mini` | OpenAI | `gpt-5.4-mini` | Legacy premium fallback |
 | `katana:grok-4-3` | Katana / IMGNAI | `grok-4-3` | Router-backed Grok testing lane |
 
-Back-burner catalog records currently exist for `katana:grok-4-20-multi-agent`, `katana:q-naifu-a3b`, and `katana:glm-5-2`; API game creation rejects them until they are promoted to game-ready. Simulator runs may use catalog records for evaluation.
+Known unsuitable catalog entries:
+
+| Catalog ID | Provider | Model ID | Reason |
+|---|---|---|---|
+| `katana:q-naifu-a3b` | Katana / IMGNAI | `q-naifu-a3b` | Disabled after local API-backed evaluation: JSON Schema transport worked, but core vote/revote/strategy decisions were repeatedly empty or semantically invalid and advanced via fallbacks |
+
+Dynamic text catalog IDs are also accepted for provider evaluation: `katana:<model-id>`, `lm-studio:<model-id>`, and `custom-openai-compatible:<model-id>`. Known catalog entries keep nicer labels and capability hints; dynamic entries let local API-backed runs try newly available Katana or LM Studio text models without waiting for a code change.
 
 Reasoning policy is explicit: `low`, `medium`, or `high` for fixed thinking depth, or `action-policy` for the engine's per-action defaults. The admin UI does not offer `none`.
 
@@ -141,10 +145,32 @@ To run the API against LM Studio:
 ```bash
 export INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1
 
-doppler run -- bun run dev:api
+doppler run --project social-strategy-agent --config dev -- env PORT=3000 bun run dev:api
 ```
 
-The API still needs app/database/auth secrets from Doppler unless you provide equivalent local env vars. API game creation is moving toward explicit catalog-backed model selection; for local LM Studio gameplay validation today, prefer the simulator's `--model <lm-studio-model-id>` path until local catalog entries are promoted into the game creation UI/API.
+The API still needs app/database/auth secrets from Doppler unless you provide equivalent local env vars. If LM Studio can generate normally but does not implement model metadata retrieval, start the API with `INFLUENCE_LLM_PREFLIGHT=off`.
+
+Use the API-backed CLI when you want the run to show up in the API/web UI and write durable game rows instead of JSONL-only simulator artifacts:
+
+```bash
+# First obtain a producer MCP OAuth token if you do not already have one:
+cd packages/engine
+bun run mcp:game:login
+
+# Then launch a real API-backed local-model game:
+cd ../..
+bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id> --players 4
+```
+
+`simulate:api` uses `INFLUENCE_API_SESSION_TOKEN` when set. Otherwise it reads `INFLUENCE_MCP_TOKEN` or the saved `~/.influence-game/mcp-token.json` token and exchanges that producer MCP OAuth token for a normal app session through the loopback-only `/api/auth/local-cli-session` route. MCP tokens still do not authenticate normal app routes directly; the exchange is explicit local tooling and the minted session uses current RBAC permissions.
+
+API simulator max rounds default to a short player-scaled smoke cap (`4 players -> 5`) unless `--max-rounds` is passed. Passing `--max-rounds auto` delegates to the normal API-created-game default.
+
+For Katana text-model evaluation, run the API with `API_KAT_IMGNAI_KEY` and `API_KAT_IMGNAI_SECRET` available, then choose any Katana text model ID:
+
+```bash
+bun run simulate:api -- --provider katana --model deepseek-v4-flash --players 4
+```
 
 ## What To Record
 

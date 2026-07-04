@@ -33,6 +33,7 @@ export interface ModelCatalogEntry {
   defaultReasoningPolicy: ModelReasoningPolicy;
   allowedReasoningEfforts: readonly ModelReasoningEffort[];
   capabilities: ModelRequestCapabilities;
+  preferredToolChoiceMode?: LlmToolChoiceMode;
   notes?: string;
   legacyTier?: ModelTier;
 }
@@ -129,6 +130,11 @@ const KATANA_GENERAL_CAPABILITIES: ModelRequestCapabilities = {
   supportsTools: true,
 };
 
+const KATANA_JSON_SCHEMA_ONLY_CAPABILITIES: ModelRequestCapabilities = {
+  ...KATANA_GENERAL_CAPABILITIES,
+  supportsTools: false,
+};
+
 export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
   {
     id: "openai:gpt-5-nano",
@@ -190,11 +196,12 @@ export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
     providerProfileId: "katana",
     modelId: "q-naifu-a3b",
     displayName: "Katana q-naifu-a3b",
-    evaluationStatus: "evaluation-candidate",
+    evaluationStatus: "disabled",
     defaultReasoningPolicy: "action-policy",
     allowedReasoningEfforts: [],
-    capabilities: KATANA_GENERAL_CAPABILITIES,
-    notes: "Back-burner record; not selectable until evaluated for Influence games.",
+    capabilities: KATANA_JSON_SCHEMA_ONLY_CAPABILITIES,
+    preferredToolChoiceMode: "json_schema",
+    notes: "Failed local API-backed Influence evaluation: JSON Schema transport worked, but core vote/revote/strategy decisions were repeatedly empty or semantically invalid and advanced via fallbacks.",
   },
   {
     id: "katana:glm-5-2",
@@ -213,6 +220,34 @@ const MODEL_BY_ID = new Map(MODEL_CATALOG.map((entry) => [entry.id, entry]));
 const MODEL_BY_PROVIDER_AND_MODEL = new Map(
   MODEL_CATALOG.map((entry) => [`${entry.providerProfileId}:${entry.modelId}`, entry]),
 );
+
+function dynamicOpenAICompatibleCatalogEntry(catalogId: string): ModelCatalogEntry | undefined {
+  const [profileId, ...modelParts] = catalogId.split(":");
+  if (profileId !== "katana" && profileId !== "lm-studio" && profileId !== "custom-openai-compatible") {
+    return undefined;
+  }
+  const modelId = modelParts.join(":").trim();
+  if (!modelId || modelId.includes(":")) return undefined;
+  const providerProfileId = profileId;
+  const label = providerProfileId === "katana"
+    ? "Katana"
+    : providerProfileId === "lm-studio"
+      ? "LM Studio"
+      : "OpenAI-compatible";
+  return {
+    id: catalogId,
+    providerProfileId,
+    modelId,
+    displayName: `${label} ${modelId}`,
+    evaluationStatus: "game-ready",
+    defaultReasoningPolicy: "action-policy",
+    allowedReasoningEfforts: providerProfileId === "katana" && modelId.startsWith("grok-")
+      ? MODEL_REASONING_EFFORTS
+      : [],
+    capabilities: inferModelCapabilities(modelId, providerProfileId),
+    notes: `Dynamic ${label} text-model selection for local API-backed evaluation.`,
+  };
+}
 
 export function normalizeReasoningPolicy(value: unknown): ModelReasoningPolicy | null {
   if (typeof value !== "string") return null;
@@ -247,7 +282,7 @@ export function normalizeGameModelSelection(value: unknown): GameModelSelection 
 }
 
 export function modelCatalogEntryById(catalogId: string): ModelCatalogEntry | undefined {
-  return MODEL_BY_ID.get(catalogId);
+  return MODEL_BY_ID.get(catalogId) ?? dynamicOpenAICompatibleCatalogEntry(catalogId);
 }
 
 export function providerProfileById(profileId: ProviderProfileId): ProviderProfile {

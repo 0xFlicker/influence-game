@@ -161,6 +161,7 @@ interface SimulationModelRuntime {
   catalogId?: string;
   capabilities: ModelRequestCapabilities;
   reasoningPolicy: ModelReasoningPolicy;
+  preferredToolChoiceMode?: LlmToolChoiceMode;
 }
 
 function readPositiveInt(value: string | undefined, fallback: number): number {
@@ -1300,6 +1301,7 @@ function resolveCatalogBackedSimulationModel(args: SimArgs): SimulationModelRunt
     catalogId: resolved.catalogId,
     capabilities: resolved.model.capabilities,
     reasoningPolicy: resolved.reasoningPolicy,
+    ...(resolved.model.preferredToolChoiceMode && { preferredToolChoiceMode: resolved.model.preferredToolChoiceMode }),
   };
 }
 
@@ -1401,7 +1403,8 @@ async function main() {
     const startTime = Date.now();
 
     // Create fresh agents for each game
-    const agents = selectCast(args.players, args.personas, openai, modelRuntime, llmConfig.toolChoiceMode, openAIReasoningSummary);
+    const toolChoiceMode = modelRuntime.preferredToolChoiceMode ?? llmConfig.toolChoiceMode;
+    const agents = selectCast(args.players, args.personas, openai, modelRuntime, toolChoiceMode, openAIReasoningSummary);
     const playerPersonas: Record<string, string> = {};
     const playerNameById: Record<string, string> = {};
     const gameTracker = new TokenTracker();
@@ -1414,7 +1417,7 @@ async function main() {
     console.log(`  Players: ${agents.map((a) => a.name).join(", ")}`);
 
     const houseInterviewer = new LLMHouseInterviewer(openai, modelRuntime.modelId, {
-      toolChoiceMode: llmConfig.toolChoiceMode,
+      toolChoiceMode,
       providerProfileId: modelRuntime.providerProfileId,
       ...(modelRuntime.catalogId && { catalogId: modelRuntime.catalogId }),
       modelCapabilities: modelRuntime.capabilities,
