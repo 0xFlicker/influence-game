@@ -114,7 +114,25 @@ Respond with JSON only:
           { role: "system", content: systemPrompt },
           { role: "user", content: userParts.join("\n\n") },
         ],
-        response_format: { type: "json_object" },
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "agent_profile_generation",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                name: { type: "string" },
+                backstory: { type: "string" },
+                personality: { type: "string" },
+                strategyStyle: { type: "string" },
+                personaKey: { type: "string" },
+              },
+              required: ["name", "backstory", "personality", "strategyStyle", "personaKey"],
+            },
+          },
+        },
       });
 
       const content = response.choices[0]?.message?.content;

@@ -20,6 +20,7 @@ import {
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { isInviteRequired, redeemInviteCode } from "../lib/invite-codes.js";
 import { getSafeDefaultDisplayName, isEmailLike } from "../lib/display-name.js";
+import { extractBearerToken, validateGameMcpBearerToken } from "../game-mcp/auth.js";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -27,6 +28,59 @@ import { getSafeDefaultDisplayName, isEmailLike } from "../lib/display-name.js";
 
 export function createAuthRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
+
+  // -------------------------------------------------------------------------
+  // POST /api/auth/local-cli-session — exchange local producer MCP OAuth token
+  // for a normal app session JWT. This is intentionally loopback-only so local
+  // scripts can reuse the existing browser OAuth grant without making MCP
+  // bearer tokens authenticate normal app routes directly.
+  // -------------------------------------------------------------------------
+
+  app.post("/api/auth/local-cli-session", async (c) => {
+    if (!isLoopbackHost(c.req.header("host"), c.req.url)) {
+      return c.json({ error: "Local CLI session exchange is loopback-only" }, 403);
+    }
+
+    const body = await parseJsonBody(c, "POST /api/auth/local-cli-session");
+    const tokenFromBody = typeof body?.mcpToken === "string" ? body.mcpToken.trim() : "";
+    const token = tokenFromBody || extractBearerToken(c.req.header("Authorization"));
+    if (!token) {
+      return c.json({ error: "mcpToken is required" }, 400);
+    }
+
+    const validation = await validateGameMcpBearerToken(db, token);
+    if (!validation.ok) {
+      return c.json({ error: "Invalid MCP token", reason: validation.reason }, validation.status);
+    }
+    if (validation.context.authProfile !== "producer") {
+      return c.json({ error: "Producer MCP scope is required" }, 403);
+    }
+
+    const user = (await db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.id, validation.context.userId)))[0];
+    if (!user) {
+      return c.json({ error: "User not found" }, 401);
+    }
+
+    const resolved = user.walletAddress
+      ? await getPermissionsForAddress(db, user.walletAddress)
+      : { roles: [], permissions: [] };
+    const sessionToken = await createSessionToken(user.id, resolved);
+
+    return c.json({
+      token: sessionToken,
+      user: {
+        id: user.id,
+        walletAddress: user.walletAddress,
+        email: user.email,
+        displayName: user.displayName,
+        roles: resolved.roles,
+        permissions: resolved.permissions,
+      },
+    });
+  });
 
   // -------------------------------------------------------------------------
   // POST /api/auth/login — exchange Privy token for session JWT
@@ -211,4 +265,28 @@ export function createAuthRoutes(db: DrizzleDB) {
   });
 
   return app;
+}
+
+function isLoopbackHost(hostHeader: string | undefined, requestUrl?: string): boolean {
+  const host = hostFromHeader(hostHeader) ?? hostFromUrl(requestUrl);
+  return host === "127.0.0.1" || host === "localhost" || host === "[::1]" || host === "::1";
+}
+
+function hostFromHeader(hostHeader: string | undefined): string | undefined {
+  const host = hostHeader?.trim().toLowerCase();
+  if (!host) return undefined;
+  if (host.startsWith("[")) {
+    const closingBracket = host.indexOf("]");
+    return closingBracket === -1 ? host : host.slice(0, closingBracket + 1);
+  }
+  return host.split(":")[0];
+}
+
+function hostFromUrl(requestUrl: string | undefined): string | undefined {
+  if (!requestUrl) return undefined;
+  try {
+    return new URL(requestUrl).hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
 }

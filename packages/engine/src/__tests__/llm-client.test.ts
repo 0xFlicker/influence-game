@@ -39,6 +39,24 @@ describe("LLM client env config", () => {
     );
   });
 
+  it("does not route explicit LM Studio catalog selections to OpenAI without a base URL", () => {
+    const config = createLlmClientFromEnv(
+      { OPENAI_API_KEY: "openai-key" },
+      { providerProfileId: "lm-studio" },
+    );
+
+    expect(config).toBeNull();
+  });
+
+  it("requires a base URL for explicit custom OpenAI-compatible catalog selections", () => {
+    const config = createLlmClientFromEnv(
+      { OPENAI_API_KEY: "openai-key" },
+      { providerProfileId: "custom-openai-compatible" },
+    );
+
+    expect(config).toBeNull();
+  });
+
   it("lets project-specific env override OpenAI-compatible aliases", () => {
     const config = createLlmClientFromEnv({
       INFLUENCE_LLM_BASE_URL: "http://127.0.0.1:1234/v1",

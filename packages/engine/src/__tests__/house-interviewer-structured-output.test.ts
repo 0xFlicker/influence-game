@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import type OpenAI from "openai";
 import { LLMHouseInterviewer, type HouseAllianceHuddleOutcomeContext, type HouseAllianceHuddleScheduleContext } from "../house-interviewer";
 import type { PrivateDecisionTrace } from "../game-runner";
@@ -10,9 +10,6 @@ type StubResponse = {
   finishReason?: string;
   refusal?: string;
 };
-
-const ORIGINAL_LOCAL_STRUCTURED_MIN_TOKENS = process.env.INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS;
-const ORIGINAL_STRUCTURED_MIN_TOKENS = process.env.INFLUENCE_LLM_STRUCTURED_MIN_TOKENS;
 
 function makeAssignmentContext() {
   return {
@@ -195,19 +192,6 @@ function huddleOutcomeContent(overrides: Record<string, unknown> = {}): string {
   });
 }
 
-afterEach(() => {
-  if (ORIGINAL_LOCAL_STRUCTURED_MIN_TOKENS === undefined) {
-    delete process.env.INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS;
-  } else {
-    process.env.INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS = ORIGINAL_LOCAL_STRUCTURED_MIN_TOKENS;
-  }
-  if (ORIGINAL_STRUCTURED_MIN_TOKENS === undefined) {
-    delete process.env.INFLUENCE_LLM_STRUCTURED_MIN_TOKENS;
-  } else {
-    process.env.INFLUENCE_LLM_STRUCTURED_MIN_TOKENS = ORIGINAL_STRUCTURED_MIN_TOKENS;
-  }
-});
-
 describe("LLMHouseInterviewer structured alliance huddles", () => {
   it("requests strict JSON schema output for huddle scheduling", async () => {
     const requests: Array<Record<string, unknown>> = [];
@@ -352,8 +336,8 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
     await house.assignMingleRooms(makeAssignmentContext());
 
     expect(requests).toHaveLength(2);
-    expect(requests[0]?.max_tokens).toBe(1200);
-    expect(requests[1]?.max_tokens).toBe(1800);
+    expect(requests[0]?.max_tokens).toBe(8192);
+    expect(requests[1]?.max_tokens).toBe(12288);
   });
 
   it("falls back cleanly after repeated malformed responses", async () => {
@@ -416,8 +400,7 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
     expect(requests).toHaveLength(1);
   });
 
-  it("applies the local structured token floor when House receives local tool-choice mode", async () => {
-    process.env.INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS = "4096";
+  it("applies the global structured token floor when House receives local tool-choice mode", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const house = new LLMHouseInterviewer(
       makeOpenAIStub(requests, [{ content: assignmentContent() }]),
@@ -427,7 +410,7 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
 
     await house.assignMingleRooms(makeAssignmentContext());
 
-    expect(requests[0]?.max_tokens).toBe(4096);
+    expect(requests[0]?.max_tokens).toBe(8192);
   });
 
   it("uses Katana Grok reasoning effort without OpenAI max-completion params", async () => {

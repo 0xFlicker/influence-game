@@ -621,5 +621,5 @@ export function computeMaxRounds(playerCount: number): number {
   const normalRoundsToEndgame = Math.max(0, playerCount - 4);
   const endgameRounds = 3; // reckoning + tribunal + judgment
   const buffer = 2;
-  return Math.max(DEFAULT_CONFIG.maxRounds, normalRoundsToEndgame + endgameRounds + buffer);
+  return Math.max(5, normalRoundsToEndgame + endgameRounds + buffer);
 }

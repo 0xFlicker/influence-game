@@ -41,6 +41,12 @@ bun run simulate -- --games 1 --players 4 --personas Atlas,Vera,Finn,Mira
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 4 --model <lm-studio-model-id>
 
+# API-backed LM Studio game: creates/fills/starts a real durable API game
+bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id> --players 4
+
+# API-backed Katana text-model game
+bun run simulate:api -- --provider katana --model deepseek-v4-flash --players 4
+
 # Katana / IMGNAI Grok router smoke (uses Doppler dev secrets)
 bun run simulate:katana:grok:smoke
 
@@ -70,9 +76,12 @@ bun run simulate -- --variant mingle
 bun run simulate -- --variant power-lobby-mingle
 ```
 
-The root `simulate` script injects hosted-provider secrets from the Doppler `social-strategy-agent` project's `dev` config. Use `simulate:local` when testing LM Studio or another OpenAI-compatible local endpoint.
+The root `simulate` script injects hosted-provider secrets from the Doppler `social-strategy-agent` project's `dev` config. Use `simulate:local` when testing the legacy JSONL simulator against LM Studio or another OpenAI-compatible local endpoint.
 
-Simulation model selection supports both legacy `--model <id>` and explicit catalog-backed runs. Use `--model-catalog katana:grok-4-3 --reasoning-policy low|medium|high` to test router-backed Grok through the shared provider catalog. Admin-created games now store `modelSelection.catalogId` plus `reasoningPolicy`; `budget` / `standard` / `premium` remains only as a fixed compatibility fallback for older callers and games.
+For durable local evaluation, prefer `simulate:api`. It authenticates to the running API with `INFLUENCE_API_SESSION_TOKEN`, or exchanges the saved producer MCP OAuth token from `INFLUENCE_MCP_TOKEN` / `~/.influence-game/mcp-token.json` through the loopback-only `/api/auth/local-cli-session` route. The CLI creates a real game, fills AI slots, starts the API background runner, and waits only until the durable event cursor advances. The API process must already be configured for the selected provider: LM Studio needs `INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1`, while Katana needs `API_KAT_IMGNAI_KEY` and `API_KAT_IMGNAI_SECRET`.
+API simulator max rounds default to a short player-scaled smoke cap (`4 players -> 5`) unless `--max-rounds` is passed.
+
+Simulation model selection supports both legacy `--model <id>` and explicit catalog-backed runs. Use `--model-catalog katana:grok-4-3 --reasoning-policy low|medium|high` to test router-backed Grok through the shared provider catalog. API games store `modelSelection.catalogId` plus `reasoningPolicy`; `budget` / `standard` / `premium` remains only as a fixed compatibility fallback for older callers and games. Dynamic text catalog IDs are supported for local/provider evaluation, including `lm-studio:<model-id>` and `katana:<model-id>` such as `katana:deepseek-v4-flash`.
 
 Output includes a round-by-round transcript, per-persona win rates, token cost estimates, and per-game artifacts under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis with `thinking` / `reasoningContext` (including labeled OpenAI reasoning summaries when enabled), `game-N-events.jsonl` for replayable accepted domain events, `game-N-progress.jsonl` for lightweight progress, and `game-N.txt` for human-readable transcript review. Simulator event JSONL uses the same canonical event envelope that API-backed games persist in Postgres, but CLI simulations remain local artifacts and do not write API database rows. Mingle intent, House room-assignment, Mingle turn, named-alliance `alliance-action`, House `alliance-huddle-schedule`, member `alliance-huddle-turn`, House `alliance-huddle-outcome`, vote, private `candidate-selection`, power (including bundled `shieldPullUp` when Protect needs a replacement), normal Council votes, empowered Council tiebreakers only when normal Council votes tie, and House MC summary records are written to turns JSONL by default; Mingle intent player targets are repaired to living, non-self players before House assignment, and Mingle intent, strategic reflection, and Strategy Thread packet records can include `strategicLens` metadata. Strategic reflection and `strategy-packet` records are written when `--strategic-reflections` is enabled; the hidden cadence is an initial post-Introduction reflection, later-round pre-vote and post-vote reflections, plus post-Council diary-phase reflection when Council diary sessions run. Later private decisions may include `decisionLog` receipts that explain strategic pivots for normal reflection carry-forward. `--rich-producer` also writes private `house-strategy-bible`, `house-long-form-summary`, and `house-producer-brief` records. For prompt-continuity validation, check that the Current Board Contract keeps live players, eliminated players, jurors, empowerment, shields, Council status, and endgame status clear; named-alliance context shows member-safe rosters, terms, failed proposals, and huddle outcomes without leaking raw huddle transcript; Council diary prompts respect the player's role, including empowered players whose tiebreak was not needed; Judgment question prompts use questions-only history; and House MC summaries emphasize consequence over player-count bookkeeping.
 
@@ -206,8 +215,6 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `INFLUENCE_LLM_PREFLIGHT_TIMEOUT_MS` | No | `10000` | Timeout for API start provider/model preflight |
 | `INFLUENCE_LLM_TOOL_CHOICE_MODE` | No | `required` for local base URLs, otherwise `named` | Structured decision-call mode: `named`, `required`, `auto`, or `json_schema` |
 | `INFLUENCE_OPENAI_REASONING_SUMMARY` | No | `auto` for hosted OpenAI, off for local base URLs | Hosted OpenAI Responses reasoning summary mode: `auto`, `concise`, `detailed`, or `off` |
-| `INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS` | No | `4096` | Minimum completion budget for local structured decisions |
-| `INFLUENCE_LLM_LOCAL_MESSAGE_MIN_TOKENS` | No | `8192` | Minimum completion budget for local public messages |
 | `PRIVY_APP_ID` | Yes | -- | Privy app ID for auth |
 | `PRIVY_APP_SECRET` | Yes | -- | Privy app secret for auth |
 | `JWT_SECRET` | Yes | -- | Secret for signing session JWTs |

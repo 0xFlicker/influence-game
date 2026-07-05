@@ -3760,6 +3760,8 @@ ${roomSection}
   private static REASONING_TOKEN_OVERHEAD = 8192;
   private static REASONING_OVERHEAD_HIGH = 16384;
   private static REASONING_OVERHEAD_LOW = 4096;
+  private static MIN_MESSAGE_TOKENS = 4096;
+  private static MIN_STRUCTURED_TOKENS = 8192;
 
   /** JSON Schema for structured AgentResponse output (thinking + message) */
   private static readonly AGENT_RESPONSE_FORMAT = {
@@ -3909,34 +3911,12 @@ ${roomSection}
     return this.toolChoiceMode !== "named";
   }
 
-  private localStructuredMinTokens(): number {
-    const configured =
-      process.env.INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS ??
-      process.env.INFLUENCE_LLM_STRUCTURED_MIN_TOKENS;
-    const parsed = configured ? parseInt(configured, 10) : NaN;
-    return Number.isFinite(parsed) && parsed > 0
-      ? parsed
-      : InfluenceAgent.REASONING_TOKEN_OVERHEAD;
-  }
-
-  private localMessageMinTokens(): number {
-    const configured =
-      process.env.INFLUENCE_LLM_LOCAL_MESSAGE_MIN_TOKENS ??
-      process.env.INFLUENCE_LLM_MESSAGE_MIN_TOKENS;
-    const parsed = configured ? parseInt(configured, 10) : NaN;
-    return Number.isFinite(parsed) && parsed > 0
-      ? parsed
-      : InfluenceAgent.REASONING_OVERHEAD_HIGH;
-  }
-
   private applyStructuredTokenFloor(effectiveMaxTokens: number): number {
-    if (!this.usesLocalStructuredCompatibility()) return effectiveMaxTokens;
-    return Math.max(effectiveMaxTokens, this.localStructuredMinTokens());
+    return Math.max(effectiveMaxTokens, InfluenceAgent.MIN_STRUCTURED_TOKENS);
   }
 
   private applyMessageTokenFloor(effectiveMaxTokens: number): number {
-    if (!this.usesLocalStructuredCompatibility()) return effectiveMaxTokens;
-    return Math.max(effectiveMaxTokens, this.localMessageMinTokens());
+    return Math.max(effectiveMaxTokens, InfluenceAgent.MIN_MESSAGE_TOKENS);
   }
 
   private static omitThinkingFromSchema(schema: unknown): unknown {
@@ -4059,7 +4039,7 @@ ${roomSection}
     options?: LlmCallOptions,
   ): Promise<AgentResponse> {
     const overhead = options?.reasoningOverhead ?? InfluenceAgent.REASONING_TOKEN_OVERHEAD;
-    const effectiveMaxTokens = maxTokens + overhead;
+    const effectiveMaxTokens = this.applyMessageTokenFloor(maxTokens + overhead);
     const sourceKey = options?.action ? `${this.name}/${options.action}` : this.name;
     const summaryMode = this.resolvedReasoningSummaryMode(options);
     const messages: Array<{ role: "system" | "user"; content: string }> = [];
@@ -4455,7 +4435,9 @@ ${JSON.stringify(tool.function.parameters)}`,
     const reasoning = this.usesReasoningBudget();
     const useCompletionTokens = this.usesCompletionTokensParam();
     const overhead = options?.reasoningOverhead ?? InfluenceAgent.REASONING_TOKEN_OVERHEAD;
-    const effectiveMaxTokens = reasoning ? maxTokens + overhead : maxTokens;
+    const effectiveMaxTokens = this.applyMessageTokenFloor(
+      reasoning ? maxTokens + overhead : maxTokens,
+    );
     const maxAttempts = 2;
     const sourceKey = options?.action ? `${this.name}/${options.action}` : this.name;
 

@@ -68,6 +68,16 @@ Status legend:
 - Validation path: purge/redaction tests, expired object behavior, bounded read/search behavior after purge, and non-dereferenceable private content.
 - Suggested slice: implement an explicit purge/redaction workflow for private trace content. Avoid broad storage redesign.
 
+### R5. Admin-visible model fallback and repair diagnostics
+
+- Status: `ready`
+- Consolidates: local API-backed model evaluation finding from q-naifu-a3b testing.
+- Sources: local runtime logs showing `[tool-fallback]` / `[vote-fallback]` repairs during API-backed Katana games; current canonical vote/revote events preserve repaired legal targets but do not expose whether fallback or target repair occurred.
+- Signal: fallback-heavy model failures can currently be hidden behind valid-looking canonical game events. Admins may only notice the failure by watching local server logs, which is not acceptable for model evaluation, production operations, or postgame trust.
+- Concrete seam: agent fallback paths, vote/revote target validation, cognitive artifact diagnostics, provider spend/cost detail, admin game detail/cost views, and any producer-safe read model used for local/API simulation inspection.
+- Validation path: run a model that emits invalid/empty vote targets; verify the canonical game still advances, while the admin/producer surface clearly shows fallback count, repaired fields, original invalid value, fallback reason, and affected agent/action/round.
+- Suggested slice: record fallback/repair metadata at decision time and surface it in an admin-visible diagnostics panel or cost detail section. Keep player-facing game events clean, but do not let admin tooling launder fallback decisions into invisible success.
+
 ## Blocked Backlog
 
 ### D1. Owner reclaim and restart orchestration

@@ -403,7 +403,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
       model: "grok-4-3",
-      max_tokens: expect.any(Number),
+      max_tokens: 8192,
       reasoning_effort: "high",
     });
     expect(requests[0]).not.toHaveProperty("max_completion_tokens");
@@ -2289,7 +2289,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(tools[0]!.function.parameters.required).toContain("decisionLog");
   });
 
-  it("uses plain visible messages (no structured thinking+message JSON) in local mode", async () => {
+  it("uses plain visible messages with the global message token floor in local mode", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -2309,7 +2309,7 @@ describe("InfluenceAgent structured output mode", () => {
       thinking: "",
       message: "Glad to meet everyone. I ask too many questions, but I promise most of them are useful.",
     });
-    expect(requests[0]?.max_tokens).toBe(16384);
+    expect(requests[0]?.max_tokens).toBe(4096);
     expect(requests[0]?.response_format).toBeUndefined();
     // We no longer inject the old "LOCAL MODEL OUTPUT RULE" that forbade thinking.
     // Local models are now allowed to think freely on public messages (Master likes thick thinking).
@@ -2368,8 +2368,8 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(response.message).toBe("Second try, actual words.");
     expect(requests).toHaveLength(2);
-    expect(requests[0]?.max_tokens).toBe(16384);
-    expect(requests[1]?.max_tokens).toBe(32768);
+    expect(requests[0]?.max_tokens).toBe(4096);
+    expect(requests[1]?.max_tokens).toBe(8192);
   });
 
   it("keeps explicitly emitted thinking separate from raw reasoningContext on local models", async () => {

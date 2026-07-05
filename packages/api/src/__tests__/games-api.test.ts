@@ -382,7 +382,7 @@ describe("Game REST API", () => {
       expect(await res.json()).toEqual({ error: "Invalid model selection" });
     });
 
-    test("rejects back-burner model selections for active games", async () => {
+    test("rejects disabled q-naifu-a3b catalog entry after failed Katana evaluation", async () => {
       const res = await app.request(
         "/api/games",
         json(
@@ -398,23 +398,31 @@ describe("Game REST API", () => {
       expect(await res.json()).toEqual({ error: "Model is not game-ready" });
     });
 
-    test("rejects unknown explicit model catalog selections", async () => {
+    test("accepts dynamic LM Studio model catalog selections", async () => {
       const res = await app.request(
         "/api/games",
         json(
           {
             playerCount: 6,
             modelSelection: {
-              catalogId: "katana:grok-4-33",
-              reasoningPolicy: "high",
+              catalogId: "lm-studio:google/gemma-4-26b-a4b-qat",
             },
           },
           adminToken,
         ),
       );
 
-      expect(res.status).toBe(400);
-      expect(await res.json()).toEqual({ error: "Unknown model selection" });
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { id: string };
+      const game = (await db
+        .select()
+        .from(schema.games)
+        .where(eq(schema.games.id, body.id)))[0]!;
+      const config = JSON.parse(game.config);
+      expect(config.modelSelection).toEqual({
+        catalogId: "lm-studio:google/gemma-4-26b-a4b-qat",
+        reasoningPolicy: "action-policy",
+      });
     });
 
     test("creates game with auto maxRounds", async () => {

@@ -741,7 +741,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
 
   private modelParams(maxTokens: number, temperature: number) {
     const usesReasoningBudget = this.modelCapabilities.supportsReasoningEffort || this.modelCapabilities.usesMaxCompletionTokens;
-    const budget = usesReasoningBudget ? maxTokens + 4000 : maxTokens;
+    const budget = this.applyMessageTokenFloor(usesReasoningBudget ? maxTokens + 4000 : maxTokens);
     const reasoningEffort = this.requestedReasoningEffort();
     return {
       ...(this.modelCapabilities.usesMaxCompletionTokens
@@ -752,21 +752,25 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     };
   }
 
-  private usesLocalStructuredCompatibility(): boolean {
-    return this.toolChoiceMode !== "named";
-  }
-
-  private localStructuredMinTokens(): number {
-    const configured =
-      process.env.INFLUENCE_LLM_LOCAL_STRUCTURED_MIN_TOKENS ??
-      process.env.INFLUENCE_LLM_STRUCTURED_MIN_TOKENS;
-    const parsed = configured ? parseInt(configured, 10) : NaN;
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 4096;
+  private applyMessageTokenFloor(maxTokens: number): number {
+    return Math.max(maxTokens, 4096);
   }
 
   private applyStructuredTokenFloor(maxTokens: number): number {
-    if (!this.usesLocalStructuredCompatibility()) return maxTokens;
-    return Math.max(maxTokens, this.localStructuredMinTokens());
+    return Math.max(maxTokens, 8192);
+  }
+
+  private jsonObjectResponseFormat(name: string) {
+    return {
+      type: "json_schema" as const,
+      json_schema: {
+        name,
+        schema: {
+          type: "object",
+          additionalProperties: true,
+        },
+      },
+    };
   }
 
   private structuredOutputSignal(): AbortSignal | undefined {
@@ -1224,7 +1228,7 @@ Respond with JSON only:
       const response = await this.openai.chat.completions.create({
         model: this.model,
         messages,
-        response_format: { type: "json_object" },
+        response_format: this.jsonObjectResponseFormat("house_strategy_bible"),
         ...this.modelParams(5000, 0.35),
       });
       this.recordUsage("House/strategy-bible", response);
@@ -1255,7 +1259,7 @@ Respond with JSON only:
       const response = await this.openai.chat.completions.create({
         model: this.model,
         messages,
-        response_format: { type: "json_object" },
+        response_format: this.jsonObjectResponseFormat("house_mc_summary"),
         ...this.modelParams(1600, 0.8),
       });
       this.recordUsage("House/mc-summary", response);
@@ -1285,7 +1289,7 @@ Respond with JSON only:
       const response = await this.openai.chat.completions.create({
         model: this.model,
         messages,
-        response_format: { type: "json_object" },
+        response_format: this.jsonObjectResponseFormat("house_long_form_summary"),
         ...this.modelParams(4000, 0.75),
       });
       this.recordUsage("House/long-form-summary", response);
@@ -1346,7 +1350,7 @@ Respond with JSON only:
       const response = await this.openai.chat.completions.create({
         model: this.model,
         messages,
-        response_format: { type: "json_object" },
+        response_format: this.jsonObjectResponseFormat("house_producer_brief"),
         ...this.modelParams(1800, 0.55),
       });
       this.recordUsage("House/producer-brief", response);
