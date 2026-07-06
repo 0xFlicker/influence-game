@@ -39,7 +39,7 @@ export interface HouseHighlightsViewModel {
   state: HouseHighlightsState;
   badge: string;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   shareCaption: string;
   scenes: HouseHighlightsSceneModel[];
   fallbackLinks: HouseHighlightsProofLink[];
