@@ -1,9 +1,20 @@
 import { describe, expect, it } from "bun:test";
 import { renderToString } from "react-dom/server";
 import type { HouseHighlightsResponse } from "../lib/api";
+import { HouseHighlightsClient } from "../app/games/[slug]/highlights/house-highlights-client";
 import { HouseHighlightsView } from "../app/games/[slug]/components/house-highlights-view";
 
 describe("HouseHighlightsView", () => {
+  it("renders a client-loading shell before browser-side highlights data loads", () => {
+    const html = renderToString(
+      <HouseHighlightsClient gameSlug="edge-smoke-dusk" />,
+    );
+
+    expect(html).toContain("Opening House Highlights");
+    expect(html).toContain("The House is loading the receipt trail.");
+    expect(html).not.toContain("The House could not open this cut.");
+  });
+
   it("renders a shareable House Cut with receipts and proof links", () => {
     const html = renderToString(
       <HouseHighlightsView response={mainCutFixture()} gameSlug="edge-smoke-dusk" />,
