@@ -68,6 +68,16 @@ Status legend:
 - Validation path: purge/redaction tests, expired object behavior, bounded read/search behavior after purge, and non-dereferenceable private content.
 - Suggested slice: implement an explicit purge/redaction workflow for private trace content. Avoid broad storage redesign.
 
+### R5. Server-side web data loading boundary
+
+- Status: `ready`
+- Consolidates: House Highlights staging failure follow-up.
+- Sources: `packages/web/src/lib/api.ts`, `packages/web/src/app/games/[slug]/highlights/page.tsx`, `packages/api/src/services/postgame-highlights.ts`
+- Signal: web server routes currently lean on the browser-oriented API client in places where real server-side data loading is needed. The Highlights page exposed the issue because a public share page needs route-owned metadata, future OG cards, and cacheable HTML, but the current small fix restores client-side loading only.
+- Concrete seam: Next server components/pages that need shareable metadata or cacheable read models, API service/read-model boundaries, and deployment env ownership for server-side reads.
+- Validation path: server-render a Highlights route with route-specific metadata from the same public projection as the browser page, without relying on client hydration or self-fetching through a public API URL; verify staging and local Docker/dev envs.
+- Suggested slice: design a deliberate server-side read pattern for public web projections, then migrate Highlights first. Do not invent per-page DB imports or duplicate projection logic in web.
+
 ## Blocked Backlog
 
 ### D1. Owner reclaim and restart orchestration
