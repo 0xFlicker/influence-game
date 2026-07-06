@@ -72,7 +72,7 @@ export function allianceCutCandidate(point: PostgameTurningPoint): HouseHighligh
     involvedAgents: uniquePlayers([eliminated, ...alliedVoters, ...point.players]),
     houseHook: `${cutterNames || "An ally"} helped bury ${eliminated.name}.`,
     setup: `${eliminated.name} shared a named alliance before the vote turned.`,
-    conflict: `The pressure point was no longer outside the pact; it came from inside the receipt trail.`,
+    conflict: `The pressure came from inside the alliance.`,
     payoff: point.description,
     receipts: [
       {

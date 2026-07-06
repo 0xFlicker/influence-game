@@ -117,7 +117,7 @@ function copyForState(
       return {
         badge: "House Cut",
         title: "This was the game where the receipts found the story.",
-        subtitle: "One thesis, selected scenes, and links back to the proof.",
+        // subtitle: "One thesis, selected scenes, and links back to the proof.",
         noCutMessage: null,
       };
     case "mini_highlight_pack":
@@ -133,7 +133,7 @@ function copyForState(
         title: "The House declined the cut.",
         subtitle: "The game completed, but the story did not clear the V1 highlight gate.",
         noCutMessage: noCutReason === "insufficient_scene_evidence"
-          ? "Alliance receipts exist, but fewer than two cold-viewer-legible scenes survived selection."
+          ? "Alliance receipts exist, but no scenes were selected by the House."
           : "The available receipts were not strong enough for a public highlight.",
       };
     case "unsupported_ineligible":

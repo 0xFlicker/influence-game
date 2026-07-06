@@ -59,6 +59,7 @@ export function AvatarUpload({ currentUrl, persona, name, onUploaded }: AvatarUp
   }
 
   const displayUrl = previewUrl ?? currentUrl;
+  const hasAvatar = Boolean(displayUrl);
 
   return (
     <div className="flex flex-col items-center gap-2">
@@ -68,7 +69,16 @@ export function AvatarUpload({ currentUrl, persona, name, onUploaded }: AvatarUp
         disabled={uploading}
         className="relative group cursor-pointer disabled:cursor-wait"
       >
-        <AgentAvatar avatarUrl={displayUrl} persona={persona} name={name} size="16" />
+        {hasAvatar ? (
+          <AgentAvatar avatarUrl={displayUrl} persona={persona} name={name} size="16" />
+        ) : (
+          <span
+            aria-label={`${name} avatar placeholder`}
+            className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-white/20 bg-white/5 text-lg font-semibold text-white/45 ring-1 ring-white/10"
+          >
+            {name.trim().charAt(0).toUpperCase() || "A"}
+          </span>
+        )}
 
         {/* Hover overlay */}
         <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
