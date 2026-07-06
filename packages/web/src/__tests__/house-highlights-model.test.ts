@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { HouseHighlightsResponse } from "../lib/api";
 import { buildHouseHighlightsViewModel } from "../app/games/[slug]/components/house-highlights-model";
+import { houseHighlightVisualBriefFixture } from "./house-highlights-fixtures";
 
 describe("house highlights model", () => {
   it("maps a main House Cut into scene cards with proof links", () => {
@@ -11,6 +12,12 @@ describe("house highlights model", () => {
     expect(model.scenes[0]).toMatchObject({
       categoryLabel: "Betrayal",
       receiptSummary: "Vote record + Alliance receipt",
+      visualBrief: {
+        typeLabel: "Betrayal vote",
+        primaryAgentsLabel: "Ember",
+        secondaryAgentsLabel: "Nova",
+        backdropLabel: "Abstract Vote Board",
+      },
       proofLink: {
         href: "/games/edge-smoke-dusk/results#round-1",
         surface: "results",
@@ -51,7 +58,7 @@ describe("house highlights model", () => {
 export function mainCutFixture(): HouseHighlightsResponse {
   return {
     ok: true,
-    schemaVersion: 1,
+    schemaVersion: 2,
     game: {
       id: "game-edge-smoke-dusk",
       slug: "edge-smoke-dusk",
@@ -61,7 +68,7 @@ export function mainCutFixture(): HouseHighlightsResponse {
       roundCount: 5,
     },
     highlights: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       state: "main_cut",
       eligibility: {
         status: "eligible",
@@ -111,7 +118,13 @@ export function mainCutFixture(): HouseHighlightsResponse {
             round: 1,
             anchor: "round-1",
           },
-          posterDirection: "Vote card split across the alliance line.",
+          visualBrief: houseHighlightVisualBriefFixture({
+            visualType: "betrayal_vote",
+            templateLabel: "Betrayal vote",
+            primaryAgents: [{ id: "ember", name: "Ember" }],
+            secondaryAgents: [{ id: "nova", name: "Nova" }],
+            backdrop: "abstract_vote_board",
+          }),
         },
         {
           id: "alliance-formation:smoke-vote",
@@ -138,7 +151,15 @@ export function mainCutFixture(): HouseHighlightsResponse {
             round: 1,
             anchor: "round-1",
           },
-          posterDirection: "Alliance title card.",
+          visualBrief: houseHighlightVisualBriefFixture({
+            visualType: "alliance_formation",
+            templateLabel: "Alliance formation",
+            primaryAgents: [
+              { id: "ember", name: "Ember" },
+              { id: "nova", name: "Nova" },
+            ],
+            backdrop: "fractured_alliance_table",
+          }),
         },
         {
           id: "jury-judgment:final-vote",
@@ -165,7 +186,13 @@ export function mainCutFixture(): HouseHighlightsResponse {
             round: null,
             anchor: "jury",
           },
-          posterDirection: "Final vote graphic.",
+          visualBrief: houseHighlightVisualBriefFixture({
+            visualType: "jury_judgment",
+            templateLabel: "Jury judgment",
+            primaryAgents: [{ id: "lilith", name: "Lilith" }],
+            secondaryAgents: [{ id: "shadowtech", name: "Shadowtech" }],
+            backdrop: "jury_wall",
+          }),
         },
       ],
       noCutReason: null,

@@ -48,10 +48,16 @@ describe("postgame highlights service", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(result.schemaVersion).toBe(2);
+    expect(result.highlights.schemaVersion).toBe(2);
     expect(result.highlights.state).toBe("main_cut");
     expect(result.highlights.cut?.kind).toBe("main");
     expect(result.highlights.scenes.length).toBeGreaterThanOrEqual(3);
     expect(result.highlights.scenes.every((scene) => scene.receipts.length > 0)).toBe(true);
+    expect(result.highlights.scenes.every((scene) => scene.visualBrief.visualType.length > 0)).toBe(true);
+    expect(JSON.stringify(result)).not.toContain("posterDirection");
+    expect(JSON.stringify(result)).not.toContain("forbiddenInventions");
+    expect(JSON.stringify(result)).not.toContain("rejectedBackdropCategories");
     expect("diagnostics" in result.highlights).toBe(false);
     expect(JSON.stringify(result)).not.toContain("\"confidence\"");
     expect(JSON.stringify(result)).not.toContain("\"eventRefs\"");
@@ -69,10 +75,18 @@ describe("postgame highlights service", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(result.schemaVersion).toBe(2);
+    expect(result.highlights.schemaVersion).toBe(2);
     expect(result.highlights.state).toBe("main_cut");
     expect(result.highlights.diagnostics.selectedSceneIds.length).toBeGreaterThanOrEqual(3);
     expect(result.highlights.diagnostics.selectedCandidates.every((candidate) =>
       candidate.reasons.includes("selected_for_main_cut")
+    )).toBe(true);
+    expect(result.highlights.diagnostics.selectedCandidates.every((candidate) =>
+      candidate.visualBrief.visualType.length > 0
+    )).toBe(true);
+    expect(result.highlights.scenes.some((scene) =>
+      scene.visualBrief.diagnostics.forbiddenInventions.length > 0
     )).toBe(true);
     expect(result.highlights.diagnostics.rejectedCandidates.some((candidate) =>
       candidate.reasons.includes("duplicate_story_beat")
@@ -94,6 +108,9 @@ describe("postgame highlights service", () => {
     expect(body.highlights.state).toBe("main_cut");
     expect("diagnostics" in body.highlights).toBe(false);
     expect(body.highlights.scenes.every((scene) => scene.receipts.length > 0)).toBe(true);
+    expect(body.highlights.scenes.every((scene) => scene.visualBrief.templateLabel.length > 0)).toBe(true);
+    expect(JSON.stringify(body)).not.toContain("posterDirection");
+    expect(JSON.stringify(body)).not.toContain("forbiddenInventions");
     expect(JSON.stringify(body)).not.toContain("\"confidence\"");
     expect(JSON.stringify(body)).not.toContain("\"eventRefs\"");
     expect(JSON.stringify(body)).not.toContain("\"eventType\"");
@@ -148,6 +165,9 @@ describe("postgame highlights service", () => {
     )).toBe(true);
     expect(body.highlights.diagnostics.rejectedCandidates.some((candidate) =>
       candidate.reasons.includes("duplicate_story_beat")
+    )).toBe(true);
+    expect(body.highlights.diagnostics.selectedCandidates.some((candidate) =>
+      candidate.visualBrief.factualSlots.length > 0
     )).toBe(true);
   });
 

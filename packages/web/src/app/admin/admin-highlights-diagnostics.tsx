@@ -5,6 +5,7 @@ import {
   getAdminPostgameHighlightsDiagnostics,
   type AdminGameSummary,
   type AdminHouseHighlightSceneCard,
+  type AdminHouseHighlightVisualBrief,
   type AdminHouseHighlightsDiagnosticsResponse,
   type HouseHighlightCategory,
   type HouseHighlightDeepLink,
@@ -71,6 +72,9 @@ function CandidateMeta({
       <span className="rounded border border-white/10 bg-white/[0.03] px-2 py-0.5">
         selection confidence: {candidate.confidence}
       </span>
+      <span className="rounded border border-cyan-300/20 bg-cyan-500/10 px-2 py-0.5 text-cyan-100">
+        visual: {formatSnake(candidate.visualBrief.visualType)}
+      </span>
       {candidate.reasons.map((reason) => (
         <span key={reason} className="rounded border border-white/10 bg-white/[0.03] px-2 py-0.5">
           {reason}
@@ -110,7 +114,51 @@ function SelectedSceneCard({
         </a>
       </div>
       <CandidateMeta candidate={candidate} />
+      <VisualDiagnostics visualBrief={scene.visualBrief} />
     </article>
+  );
+}
+
+function VisualDiagnostics({
+  visualBrief,
+}: {
+  visualBrief: AdminHouseHighlightVisualBrief;
+}) {
+  return (
+    <div className="mt-3 rounded-md border border-cyan-300/15 bg-cyan-950/10 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-cyan-300/25 bg-cyan-500/10 px-2 py-0.5 text-[11px] text-cyan-100">
+          {visualBrief.templateLabel}
+        </span>
+        <span className="text-[11px] text-white/40">
+          backdrop: {formatSnake(visualBrief.backdrop.category)}
+        </span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {visualBrief.factualSlots.map((slot) => (
+          <span
+            key={`${slot.key}:${slot.label}`}
+            className={`rounded border px-2 py-0.5 text-[11px] ${
+              slot.status === "filled"
+                ? "border-emerald-300/20 bg-emerald-500/10 text-emerald-100"
+                : "border-amber-300/20 bg-amber-500/10 text-amber-100"
+            }`}
+          >
+            {slot.label}: {slot.status}
+          </span>
+        ))}
+      </div>
+      {visualBrief.diagnostics.forbiddenInventions.length > 0 ? (
+        <div className="mt-2 text-[11px] leading-5 text-white/40">
+          Forbidden: {visualBrief.diagnostics.forbiddenInventions.join(" ")}
+        </div>
+      ) : null}
+      {visualBrief.diagnostics.rejectedBackdropCategories.length > 0 ? (
+        <div className="mt-2 text-[11px] leading-5 text-amber-100/70">
+          Rejected backdrop categories: {visualBrief.diagnostics.rejectedBackdropCategories.map(formatSnake).join(", ")}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -134,6 +182,7 @@ function CandidateTable({
           <tr>
             <th className="px-3 py-2 text-left font-medium">Candidate</th>
             <th className="px-3 py-2 text-left font-medium">Category</th>
+            <th className="px-3 py-2 text-left font-medium">Visual</th>
             <th className="px-3 py-2 text-left font-medium">Source</th>
             <th className="px-3 py-2 text-right font-medium">Score</th>
             <th className="px-3 py-2 text-left font-medium">Reason</th>
@@ -150,6 +199,19 @@ function CandidateTable({
                 <span className={`rounded-full border px-2 py-0.5 text-[11px] ${categoryTone(candidate.category)}`}>
                   {formatSnake(candidate.category)}
                 </span>
+              </td>
+              <td className="max-w-[12rem] px-3 py-2 text-cyan-100/70">
+                <div className="truncate">{formatSnake(candidate.visualBrief.visualType)}</div>
+                {candidate.visualBrief.diagnostics.rejectedBackdropCategories.length > 0 ? (
+                  <div className="mt-1 text-[11px] leading-4 text-amber-100/70">
+                    Rejected backdrop: {candidate.visualBrief.diagnostics.rejectedBackdropCategories.map(formatSnake).join(", ")}
+                  </div>
+                ) : null}
+                {candidate.visualBrief.factualSlots.some((slot) => slot.status === "missing") ? (
+                  <div className="mt-1 text-[11px] leading-4 text-amber-100/70">
+                    Missing slot: {candidate.visualBrief.factualSlots.filter((slot) => slot.status === "missing").map((slot) => slot.label).join(", ")}
+                  </div>
+                ) : null}
               </td>
               <td className="max-w-[11rem] truncate px-3 py-2 text-white/45">{candidate.source}</td>
               <td className="px-3 py-2 text-right text-white/60">{candidate.score}</td>

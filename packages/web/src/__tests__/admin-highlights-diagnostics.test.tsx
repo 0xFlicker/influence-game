@@ -8,6 +8,10 @@ import type {
   AdminGameSummary,
   AdminHouseHighlightsDiagnosticsResponse,
 } from "../lib/api";
+import {
+  adminHouseHighlightVisualBriefFixture,
+  candidateVisualBriefFixture,
+} from "./house-highlights-fixtures";
 
 describe("AdminHighlightsDiagnostics", () => {
   it("renders card selection diagnostics with sources, rejection reasons, and receipts", () => {
@@ -22,9 +26,14 @@ describe("AdminHighlightsDiagnostics", () => {
     expect(html).toContain("Lyra kept taking the room&#x27;s power");
     expect(html).toContain("power_shift");
     expect(html).toContain("selected_for_main_cut");
+    expect(html).toContain("Power streak");
+    expect(html).toContain("Do not invent vote totals");
     expect(html).toContain("Rex was cut from inside the pact");
     expect(html).toContain("betrayal_scene_cap");
+    expect(html).toContain("Betrayal Vote");
     expect(html).toContain("not_in_final_edit");
+    expect(html).toContain("Rejected backdrop");
+    expect(html).toContain("Fractured Alliance Table");
     expect(html).toContain("round:5:empowered:lyra");
     expect(html).toContain("/games/vast-plum-bay/results#round-5");
   });
@@ -46,7 +55,7 @@ describe("AdminHighlightsDiagnostics", () => {
 function diagnosticsFixture(): AdminHouseHighlightsDiagnosticsResponse {
   return {
     ok: true,
-    schemaVersion: 1,
+    schemaVersion: 2,
     game: {
       id: "game-vast-plum-bay",
       slug: "vast-plum-bay",
@@ -56,7 +65,7 @@ function diagnosticsFixture(): AdminHouseHighlightsDiagnosticsResponse {
       roundCount: 8,
     },
     highlights: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       state: "main_cut",
       eligibility: {
         status: "eligible",
@@ -95,7 +104,13 @@ function diagnosticsFixture(): AdminHouseHighlightsDiagnosticsResponse {
             round: 5,
             anchor: "round-5",
           },
-          posterDirection: "Power tally card.",
+          visualBrief: adminHouseHighlightVisualBriefFixture({
+            visualType: "power_streak",
+            templateLabel: "Power streak",
+            primaryAgents: [{ id: "lyra", name: "Lyra" }],
+            backdrop: "spotlight_stage",
+            forbiddenInventions: ["Do not invent vote totals."],
+          }),
         },
       ],
       noCutReason: null,
@@ -114,6 +129,12 @@ function diagnosticsFixture(): AdminHouseHighlightsDiagnosticsResponse {
           score: 94,
           receiptCount: 1,
           reasons: ["selected_for_main_cut"],
+          visualBrief: candidateVisualBriefFixture({
+            visualType: "power_streak",
+            templateLabel: "Power streak",
+            primaryAgents: [{ id: "lyra", name: "Lyra" }],
+            backdrop: "spotlight_stage",
+          }),
         }],
         rejectedCandidates: [
           {
@@ -126,6 +147,12 @@ function diagnosticsFixture(): AdminHouseHighlightsDiagnosticsResponse {
             score: 100,
             receiptCount: 2,
             reasons: ["betrayal_scene_cap"],
+            visualBrief: candidateVisualBriefFixture({
+              visualType: "betrayal_vote",
+              templateLabel: "Betrayal vote",
+              primaryAgents: [{ id: "rex", name: "Rex" }],
+              backdrop: "abstract_vote_board",
+            }),
           },
           {
             id: "vote-cohort:echo-luna",
@@ -137,6 +164,16 @@ function diagnosticsFixture(): AdminHouseHighlightsDiagnosticsResponse {
             score: 84,
             receiptCount: 2,
             reasons: ["not_in_final_edit"],
+            visualBrief: candidateVisualBriefFixture({
+              visualType: "council_slate",
+              templateLabel: "Council slate",
+              primaryAgents: [
+                { id: "echo", name: "Echo" },
+                { id: "luna", name: "Luna" },
+              ],
+              backdrop: "surveillance_board_texture",
+              rejectedBackdropCategories: ["fractured_alliance_table"],
+            }),
           },
         ],
         notes: [{

@@ -25,7 +25,7 @@ export function buildHouseHighlightsProjection(
 
   if (allianceReceiptCount === 0) {
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       state: "unsupported_ineligible",
       eligibility: {
         status: "unsupported",
@@ -112,7 +112,7 @@ export function buildHouseHighlightsProjection(
       : { ...candidate, rejectionReasons: ["insufficient_scene_evidence"] }
   );
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     state: "no_cut",
     eligibility: {
       status: "eligible",

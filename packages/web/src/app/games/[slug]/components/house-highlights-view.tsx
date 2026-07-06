@@ -96,7 +96,7 @@ function SceneCard({
           </span>
         </div>
         <p className="mt-4 text-sm leading-6 text-white/65">{scene.hook}</p>
-        <p className="mt-4 text-xs leading-5 text-white/35">{scene.posterDirection}</p>
+        <VisualBriefPanel scene={scene} />
       </div>
 
       <div className="space-y-4">
@@ -139,6 +139,54 @@ function SceneCard({
         </Link>
       </div>
     </article>
+  );
+}
+
+function VisualBriefPanel({
+  scene,
+}: {
+  scene: HouseHighlightsSceneModel;
+}) {
+  return (
+    <div className="mt-4 rounded-md border border-cyan-300/15 bg-cyan-950/15 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-cyan-300/25 bg-cyan-500/10 px-2 py-0.5 text-[11px] font-semibold text-cyan-100">
+          {scene.visualBrief.typeLabel}
+        </span>
+        <span className="text-[11px] text-white/35">
+          {scene.visualBrief.backdropLabel}
+        </span>
+      </div>
+
+      <div className="mt-3 grid gap-2 text-xs">
+        <div>
+          <div className="font-semibold uppercase text-white/30">Primary</div>
+          <div className="mt-1 text-white/75">{scene.visualBrief.primaryAgentsLabel}</div>
+        </div>
+        {scene.visualBrief.secondaryAgentsLabel ? (
+          <div>
+            <div className="font-semibold uppercase text-white/30">Supporting</div>
+            <div className="mt-1 text-white/58">{scene.visualBrief.secondaryAgentsLabel}</div>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {scene.visualBrief.slots.slice(0, 4).map((slot) => (
+          <span
+            key={`${slot.key}:${slot.value}`}
+            className="min-w-0 max-w-full rounded border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-white/55 break-words"
+            title={`${slot.label}: ${slot.value}`}
+          >
+            {slot.label}: {slot.value}
+          </span>
+        ))}
+      </div>
+
+      <p className="mt-3 text-[11px] leading-5 text-white/35">
+        Deterministic overlays: {scene.visualBrief.overlaysLabel}
+      </p>
+    </div>
   );
 }
 

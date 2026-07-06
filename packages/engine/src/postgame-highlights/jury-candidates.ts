@@ -10,6 +10,7 @@ import type {
   JuryVoteEntry,
   PlayerRef,
 } from "./types";
+import { agentSlot, receiptTypeSlot, valueSlot, visualBrief } from "./visual-briefs";
 
 export function buildJuryRelationshipCandidates(
   analysis: PostgameAnalysisProjection,
@@ -36,6 +37,7 @@ export function juryJudgmentCandidate(
   }
   const runnerUp = finalVote.runnerUp;
   const finalVoteLabel = finalVote.voteCounts.map((entry) => entry.votes).sort((left, right) => right - left).join("-");
+  const receiptId = "jury:final-vote";
   return {
     id: "jury-judgment:final-vote",
     title: "The jury made the damage permanent",
@@ -48,7 +50,7 @@ export function juryJudgmentCandidate(
       : `${finalVote.winner.name} faced a jury with little room for error.`,
     payoff: `${finalVote.winner.name} won by ${finalVote.margin === 1 ? "one vote" : `${finalVote.margin} votes`}.`,
     receipts: [{
-      id: "jury:final-vote",
+      id: receiptId,
       tier: "vote_record",
       label: "Final jury vote",
       description: `Final vote: ${finalVoteLabel}.`,
@@ -57,7 +59,22 @@ export function juryJudgmentCandidate(
     }],
     confidence: finalVote.margin <= 1 ? "high" : "medium",
     deepLink: resultsLink(null, "Open jury result"),
-    posterDirection: "Final vote graphic with two finalist avatars and juror tally marks.",
+    visualBrief: visualBrief({
+      visualType: "jury_judgment",
+      primaryAgents: [finalVote.winner],
+      secondaryAgents: runnerUp ? [runnerUp] : [],
+      factualSlots: [
+        agentSlot("finalists", "Finalists", [finalVote.winner, runnerUp].filter((player): player is PlayerRef => Boolean(player)), [receiptId]),
+        valueSlot("vote_outcome", "Final vote", finalVoteLabel, [receiptId]),
+        receiptTypeSlot(["vote_record"], [receiptId]),
+      ],
+      truthOverlays: ["agent_identity", "jury_tally", "receipt_badge", "outcome_caption", "proof_link"],
+      backdrop: "jury_wall",
+      forbiddenInventions: [
+        "Do not invent juror expressions or physical deliberation.",
+        "Do not put vote counts inside generated imagery.",
+      ],
+    }),
     source: "jury_final_vote",
     score: 90,
     narrativeOrder: 30,
@@ -76,8 +93,9 @@ function juryPaybackCandidate(
     finalist.id !== vote.finalist.id && finalistVotedToEliminate(analysis, finalist.id, vote.juror.id)
   );
   if (!punished || vote.jurorEliminatedRound === null) return null;
+  const receiptId = `jury-payback:${vote.juror.id}:${punished.id}`;
   return {
-    id: `jury-payback:${vote.juror.id}:${punished.id}`,
+    id: receiptId,
     title: `${vote.juror.name} made ${punished.name} pay later`,
     category: "revenge",
     involvedAgents: uniquePlayers([vote.juror, punished, vote.finalist]),
@@ -86,7 +104,7 @@ function juryPaybackCandidate(
     conflict: `At the end, ${vote.juror.name} still controlled one piece of the verdict.`,
     payoff: `${vote.juror.name} voted for ${vote.finalist.name} instead.`,
     receipts: [{
-      id: `jury-payback:${vote.juror.id}:${punished.id}`,
+      id: receiptId,
       tier: "vote_record",
       label: "Jury payback record",
       description: `${vote.juror.name} did not vote for the finalist who helped eliminate them.`,
@@ -98,7 +116,24 @@ function juryPaybackCandidate(
     }],
     confidence: "medium",
     deepLink: resultsLink(null, "Open jury result"),
-    posterDirection: "Jury ballot card with the earlier elimination vote ghosted behind it.",
+    visualBrief: visualBrief({
+      visualType: "revenge_vote",
+      primaryAgents: [vote.juror],
+      secondaryAgents: [punished, vote.finalist],
+      factualSlots: [
+        agentSlot("jurors", "Juror", [vote.juror], [receiptId]),
+        agentSlot("finalists", "Finalists involved", [punished, vote.finalist], [receiptId]),
+        valueSlot("round", "Juror eliminated round", vote.jurorEliminatedRound, [receiptId]),
+        valueSlot("vote_outcome", "Jury vote outcome", `${vote.juror.name} voted for ${vote.finalist.name}`, [receiptId]),
+        receiptTypeSlot(["vote_record"], [receiptId]),
+      ],
+      truthOverlays: ["agent_identity", "jury_tally", "vote_marker", "receipt_badge", "outcome_caption", "proof_link"],
+      backdrop: "jury_wall",
+      forbiddenInventions: [
+        "Do not invent payback as private motive beyond the receipt-backed pattern.",
+        "Do not depict juror emotion or confrontation.",
+      ],
+    }),
     source: "jury_vote_payback",
     score: 93,
     narrativeOrder: 82,
@@ -111,8 +146,9 @@ function juryPaybackCandidate(
 
 function juryForgivenessCandidate(vote: JuryVoteEntry): HouseHighlightsCandidate | null {
   if (!vote.votedForFinalistWhoVotedToEliminateThem || vote.jurorEliminatedRound === null) return null;
+  const receiptId = `jury-forgiveness:${vote.juror.id}:${vote.finalist.id}`;
   return {
-    id: `jury-forgiveness:${vote.juror.id}:${vote.finalist.id}`,
+    id: receiptId,
     title: `${vote.juror.name} still gave ${vote.finalist.name} the final vote`,
     category: "irony",
     involvedAgents: uniquePlayers([vote.juror, vote.finalist]),
@@ -121,7 +157,7 @@ function juryForgivenessCandidate(vote: JuryVoteEntry): HouseHighlightsCandidate
     conflict: `The jury vote forced ${vote.juror.name} to choose between memory and the final pitch.`,
     payoff: `${vote.juror.name} voted for ${vote.finalist.name} anyway.`,
     receipts: [{
-      id: `jury-forgiveness:${vote.juror.id}:${vote.finalist.id}`,
+      id: receiptId,
       tier: "vote_record",
       label: "Jury vote record",
       description: `${vote.juror.name} voted for a finalist who had helped eliminate them.`,
@@ -133,7 +169,24 @@ function juryForgivenessCandidate(vote: JuryVoteEntry): HouseHighlightsCandidate
     }],
     confidence: "medium",
     deepLink: resultsLink(null, "Open jury result"),
-    posterDirection: "Jury ballot card with a crossed-out elimination tally in the background.",
+    visualBrief: visualBrief({
+      visualType: "jury_judgment",
+      primaryAgents: [vote.juror],
+      secondaryAgents: [vote.finalist],
+      factualSlots: [
+        agentSlot("jurors", "Juror", [vote.juror], [receiptId]),
+        agentSlot("finalists", "Finalist", [vote.finalist], [receiptId]),
+        valueSlot("round", "Juror eliminated round", vote.jurorEliminatedRound, [receiptId]),
+        valueSlot("vote_outcome", "Jury vote outcome", `${vote.juror.name} voted for ${vote.finalist.name}`, [receiptId]),
+        receiptTypeSlot(["vote_record"], [receiptId]),
+      ],
+      truthOverlays: ["agent_identity", "jury_tally", "vote_marker", "receipt_badge", "outcome_caption", "proof_link"],
+      backdrop: "jury_wall",
+      forbiddenInventions: [
+        "Do not invent forgiveness as an emotional state.",
+        "Do not render fake handwritten ballots or readable generated text.",
+      ],
+    }),
     source: "jury_vote_forgiveness",
     score: 81,
     narrativeOrder: 84,

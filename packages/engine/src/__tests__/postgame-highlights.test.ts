@@ -12,6 +12,14 @@ import {
   GameState,
   Phase,
 } from "../index";
+import {
+  projectionForCut,
+  sceneFromCandidate,
+  selectCandidatesForCut,
+  validateCandidate,
+} from "../postgame-highlights/selection";
+import type { HouseHighlightsCandidate } from "../postgame-highlights/types";
+import { agentSlot, receiptTypeSlot, valueSlot, visualBrief } from "../postgame-highlights/visual-briefs";
 
 describe("buildHouseHighlightsProjection", () => {
   it("publishes a main House Cut when three receipt-backed scenes support one thesis", () => {
@@ -110,6 +118,124 @@ describe("buildHouseHighlightsProjection", () => {
     ]));
   });
 
+  it("rejects candidates with unsafe or unsupported visual briefs", () => {
+    const missingSlotCandidate = validateCandidate(highlightCandidateFixture({
+      visualBrief: visualBrief({
+        visualType: "council_slate",
+        primaryAgents: [{ id: "ember", name: "Ember" }],
+        factualSlots: [
+          agentSlot("primary_agent", "Primary agent", [{ id: "ember", name: "Ember" }], ["fixture-receipt"]),
+          agentSlot("eliminated_agent", "Eliminated agent", [], ["fixture-receipt"]),
+          receiptTypeSlot(["vote_record"], ["fixture-receipt"]),
+        ],
+        truthOverlays: ["agent_identity", "receipt_badge", "proof_link"],
+        backdrop: "abstract_vote_board",
+        forbiddenInventions: ["Do not invent an eliminated agent."],
+      }),
+    }));
+    const unsafeBackdropCandidate = validateCandidate(highlightCandidateFixture({
+      visualBrief: visualBrief({
+        visualType: "council_slate",
+        primaryAgents: [{ id: "ember", name: "Ember" }],
+        factualSlots: filledVisualSlots(),
+        truthOverlays: ["agent_identity", "receipt_badge", "proof_link"],
+        backdrop: "fractured_alliance_table",
+        forbiddenInventions: ["Do not imply an alliance."],
+        rejectedBackdropCategories: ["fractured_alliance_table"],
+      }),
+    }));
+    const unsupportedAllianceCandidate = validateCandidate(highlightCandidateFixture({
+      visualBrief: visualBrief({
+        visualType: "council_slate",
+        primaryAgents: [{ id: "ember", name: "Ember" }],
+        factualSlots: filledVisualSlots(),
+        truthOverlays: ["agent_identity", "alliance_line", "receipt_badge", "proof_link"],
+        backdrop: "surveillance_board_texture",
+        forbiddenInventions: ["Do not draw alliance lines from vote records."],
+      }),
+    }));
+
+    expect(missingSlotCandidate.rejectionReasons).toContain("missing_visual_brief_slot");
+    expect(unsafeBackdropCandidate.rejectionReasons).toContain("unsafe_visual_backdrop");
+    expect(unsupportedAllianceCandidate.rejectionReasons).toContain("unsupported_alliance_visual");
+  });
+
+  it("keeps rejected visual briefs out of selected scenes while preserving diagnostics", () => {
+    const rejectedCandidate = validateCandidate(highlightCandidateFixture({
+      id: "unsafe-visual",
+      title: "Unsafe visual",
+      score: 100,
+      narrativeOrder: 0,
+      dedupeKey: "unsafe-visual",
+      visualBrief: visualBrief({
+        visualType: "council_slate",
+        primaryAgents: [{ id: "ember", name: "Ember" }],
+        factualSlots: filledVisualSlots(),
+        truthOverlays: ["agent_identity", "alliance_line", "receipt_badge", "proof_link"],
+        backdrop: "surveillance_board_texture",
+        forbiddenInventions: ["Do not draw alliance lines from vote records."],
+      }),
+    }));
+    const validCandidates = [
+      validateCandidate(highlightCandidateFixture({
+        id: "valid-1",
+        title: "Valid visual 1",
+        score: 80,
+        narrativeOrder: 1,
+        dedupeKey: "valid-1",
+      })),
+      validateCandidate(highlightCandidateFixture({
+        id: "valid-2",
+        title: "Valid visual 2",
+        score: 79,
+        narrativeOrder: 2,
+        dedupeKey: "valid-2",
+      })),
+      validateCandidate(highlightCandidateFixture({
+        id: "valid-3",
+        title: "Valid visual 3",
+        score: 78,
+        narrativeOrder: 3,
+        dedupeKey: "valid-3",
+      })),
+    ];
+    const selectedCandidates = selectCandidatesForCut(
+      validCandidates.filter((candidate) => candidate.rejectionReasons.length === 0),
+      3,
+    );
+    const scenes = selectedCandidates.map(sceneFromCandidate);
+    const projection = projectionForCut({
+      state: "main_cut",
+      eligibility: { allianceReceiptCount: 1 },
+      thesis: "Fixture thesis.",
+      cut: {
+        kind: "main",
+        title: "House Cut",
+        thesis: "Fixture thesis.",
+        shareCaption: "Fixture thesis.",
+        scenes,
+      },
+      selectedScenes: scenes,
+      candidates: [rejectedCandidate, ...validCandidates],
+      fallbackLinks: [{
+        surface: "results",
+        label: "Open results",
+        round: null,
+        anchor: "results",
+      }],
+      notes: [],
+    });
+
+    expect(projection.scenes.map((scene) => scene.id)).not.toContain("unsafe-visual");
+    expect(projection.diagnostics.rejectedCandidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "unsafe-visual",
+        selected: false,
+        reasons: expect.arrayContaining(["unsupported_alliance_visual"]),
+      }),
+    ]));
+  });
+
   it("falls back to mini-highlights when scenes are strong but no main thesis survives", () => {
     const analysis = withoutPublicSceneFacts(buildAnalysisWithAlliance());
     const projection = buildHouseHighlightsProjection({
@@ -194,7 +320,15 @@ function expectSceneCardContract(
   expect(scene.setup.length).toBeGreaterThan(0);
   expect(scene.conflict.length).toBeGreaterThan(0);
   expect(scene.payoff.length).toBeGreaterThan(0);
-  expect(scene.posterDirection.length).toBeGreaterThan(0);
+  expect("posterDirection" in scene).toBe(false);
+  expect(scene.visualBrief.visualType.length).toBeGreaterThan(0);
+  expect(scene.visualBrief.primaryAgents.length).toBeGreaterThan(0);
+  expect(scene.visualBrief.factualSlots.length).toBeGreaterThan(0);
+  expect(scene.visualBrief.factualSlots.every((slot) => slot.status === "filled")).toBe(true);
+  const receiptTypeSlot = scene.visualBrief.factualSlots.find((slot) => slot.key === "receipt_types");
+  expect(receiptTypeSlot?.value).toMatch(/(Vote record|Alliance receipt|Derived signal|Public quote|Presentation direction)/);
+  expect(receiptTypeSlot?.value).not.toContain(":");
+  expect(scene.visualBrief.truthOverlays).toContain("agent_identity");
   expect(["medium", "high"]).toContain(scene.confidence);
   expect(scene.deepLink.surface).toMatch(/^(results|replay)$/);
   expect(scene.deepLink.anchor.length).toBeGreaterThan(0);
@@ -269,6 +403,61 @@ function unavailableJury(analysis: ReturnType<typeof buildAnalysisFromEvents>) {
     runnerUpSupporters: [],
     narrativeHints: [],
     nonWinnerSupporters: [],
+  };
+}
+
+function filledVisualSlots() {
+  const player = { id: "ember", name: "Ember" };
+  return [
+    agentSlot("primary_agent", "Primary agent", [player], ["fixture-receipt"]),
+    valueSlot("round", "Round", 1, ["fixture-receipt"]),
+    receiptTypeSlot(["vote_record"], ["fixture-receipt"]),
+  ];
+}
+
+function highlightCandidateFixture(
+  overrides: Partial<HouseHighlightsCandidate> = {},
+): HouseHighlightsCandidate {
+  const player = { id: "ember", name: "Ember" };
+  return {
+    id: "fixture-candidate",
+    title: "Fixture candidate",
+    category: "loyalty",
+    involvedAgents: [player],
+    houseHook: "A fixture hook.",
+    setup: "A fixture setup.",
+    conflict: "A fixture conflict.",
+    payoff: "A fixture payoff.",
+    receipts: [{
+      id: "fixture-receipt",
+      tier: "vote_record",
+      label: "Fixture vote record",
+      description: "A fixture receipt.",
+      factRefs: ["round:1:vote:ember"],
+    }],
+    confidence: "medium",
+    deepLink: {
+      surface: "results",
+      label: "Open fixture",
+      round: 1,
+      anchor: "round-1",
+    },
+    visualBrief: visualBrief({
+      visualType: "council_slate",
+      primaryAgents: [player],
+      factualSlots: filledVisualSlots(),
+      truthOverlays: ["agent_identity", "receipt_badge", "proof_link"],
+      backdrop: "abstract_vote_board",
+      forbiddenInventions: ["Do not invent fixture facts."],
+    }),
+    source: "fixture",
+    score: 50,
+    narrativeOrder: 1,
+    thesisTags: ["fixture"],
+    dedupeKey: "fixture-candidate",
+    consequenceBearing: true,
+    rejectionReasons: [],
+    ...overrides,
   };
 }
 

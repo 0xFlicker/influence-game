@@ -11,6 +11,7 @@ import {
 } from "./helpers";
 import { resultsLink } from "./links";
 import type { HouseHighlightsCandidate } from "./types";
+import { agentSlot, receiptTypeSlot, valueSlot, visualBrief } from "./visual-briefs";
 
 export function buildAllianceFormationCandidates(
   analysis: PostgameAnalysisProjection,
@@ -26,6 +27,7 @@ export function buildAllianceFormationCandidates(
       const payoff = alliance.latestOutcome?.leakOrBetrayalClaims.length
         ? `The House kept the leak claim on the board before the vote record caught up.`
         : `The alliance became the receipt that made the later turn legible.`;
+      const receiptId = `alliance:${alliance.id}`;
       return {
         id: `alliance-formation:${alliance.id}`,
         title: `${alliance.name} made the pact visible`,
@@ -36,7 +38,7 @@ export function buildAllianceFormationCandidates(
         conflict,
         payoff,
         receipts: [{
-          id: `alliance:${alliance.id}`,
+          id: receiptId,
           tier: "alliance_receipt",
           label: alliance.name,
           description: `Named alliance with ${alliance.huddleOutcomeCount} recorded huddle outcome(s).`,
@@ -44,7 +46,21 @@ export function buildAllianceFormationCandidates(
         }],
         confidence: "medium",
         deepLink: resultsLink(alliance.createdRound, "Open alliance receipts", `alliance-${alliance.id}`),
-        posterDirection: "Alliance title card with member avatars and a thin relation line.",
+        visualBrief: visualBrief({
+          visualType: "alliance_formation",
+          primaryAgents: alliance.members,
+          factualSlots: [
+            agentSlot("alliance_members", "Alliance members", alliance.members, [receiptId]),
+            valueSlot("round", "Round", alliance.createdRound, [receiptId]),
+            receiptTypeSlot(["alliance_receipt"], [receiptId]),
+          ],
+          truthOverlays: ["agent_identity", "alliance_line", "round_label", "receipt_badge", "proof_link"],
+          backdrop: "fractured_alliance_table",
+          forbiddenInventions: [
+            "Do not show a physical secret meeting.",
+            "Do not imply private emotion or loyalty beyond the alliance receipt.",
+          ],
+        }),
         source: "alliance_summary",
         score: 80 - index,
         narrativeOrder: 10 + index,
@@ -61,10 +77,15 @@ export function allianceCutCandidate(point: PostgameTurningPoint): HouseHighligh
     ?? point.players[0]
     ?? { id: "unknown", name: "Unknown" };
   const alliedVoters = playersFromCriteria(point, "alliedVoterIds");
+  const visualVoters = alliedVoters.length > 0
+    ? alliedVoters
+    : point.players.filter((player) => player.id !== eliminated.id);
   const cutterNames = alliedVoters.length > 0
     ? alliedVoters.map((player) => player.name).join(", ")
-    : point.players.filter((player) => player.id !== eliminated.id).map((player) => player.name).join(", ");
+    : visualVoters.map((player) => player.name).join(", ");
   const allianceIds = stringArray(point.criteria.allianceIds);
+  const eliminationReceiptId = `round:${point.round}:eliminated:${eliminated.id}`;
+  const allianceReceiptId = `alliance-cut:${point.round}:${eliminated.id}`;
   return {
     id: `alliance-cut:${point.round}:${eliminated.id}`,
     title: `${eliminated.name} was cut from inside the pact`,
@@ -76,7 +97,7 @@ export function allianceCutCandidate(point: PostgameTurningPoint): HouseHighligh
     payoff: point.description,
     receipts: [
       {
-        id: `round:${point.round}:eliminated:${eliminated.id}`,
+        id: eliminationReceiptId,
         tier: "vote_record",
         label: `Round ${point.round} elimination`,
         description: `${eliminated.name} was eliminated in round ${point.round}.`,
@@ -84,7 +105,7 @@ export function allianceCutCandidate(point: PostgameTurningPoint): HouseHighligh
         ...(point.evidence.eventRefs?.length ? { eventRefs: sanitizedEventRefs(point.evidence.eventRefs) } : {}),
       },
       {
-        id: `alliance-cut:${point.round}:${eliminated.id}`,
+        id: allianceReceiptId,
         tier: "alliance_receipt",
         label: "Alliance-member cut",
         description: point.description,
@@ -93,7 +114,24 @@ export function allianceCutCandidate(point: PostgameTurningPoint): HouseHighligh
     ],
     confidence: point.confidence,
     deepLink: resultsLink(point.round, "Open round result"),
-    posterDirection: "Vote card split across the alliance line, with the eliminated agent isolated.",
+    visualBrief: visualBrief({
+      visualType: "betrayal_vote",
+      primaryAgents: [eliminated],
+      secondaryAgents: visualVoters,
+      factualSlots: [
+        agentSlot("eliminated_agent", "Eliminated agent", [eliminated], [eliminationReceiptId]),
+        agentSlot("voters", "Allied voters", visualVoters, [allianceReceiptId]),
+        valueSlot("round", "Round", point.round, [eliminationReceiptId]),
+        valueSlot("vote_outcome", "Vote outcome", `${eliminated.name} eliminated`, [eliminationReceiptId]),
+        receiptTypeSlot(["vote_record", "alliance_receipt"], [eliminationReceiptId, allianceReceiptId]),
+      ],
+      truthOverlays: ["agent_identity", "alliance_line", "round_label", "vote_marker", "receipt_badge", "outcome_caption", "proof_link"],
+      backdrop: "abstract_vote_board",
+      forbiddenInventions: [
+        "Do not depict whispering, plotting, or a physical betrayal scene.",
+        "Do not invent anger, guilt, surprise, or motive.",
+      ],
+    }),
     source: point.derivationMethod,
     score: 100,
     narrativeOrder: 20,
@@ -115,31 +153,49 @@ export function buildHighlightedEliminationDuplicates(
 
   return analysis.summary.highlightedEliminations
     .filter((elimination) => allianceCutKeys.has(`elimination:${elimination.round}:${elimination.player.id}`))
-    .map((elimination) => ({
-      id: `highlighted-elimination:${elimination.round}:${elimination.player.id}`,
-      title: `${elimination.player.name} became the visible consequence`,
-      category: "collapse" as const,
-      involvedAgents: [elimination.player],
-      houseHook: `${elimination.player.name}'s exit was already a highlight before the alliance receipt sharpened it.`,
-      setup: `${elimination.player.name} entered round ${elimination.round} as a notable target.`,
-      conflict: `The vote record made the room choose a side.`,
-      payoff: `${elimination.player.name} was eliminated in round ${elimination.round}.`,
-      receipts: [{
+    .map((elimination) => {
+      const receiptId = `highlighted-elimination:${elimination.round}:${elimination.player.id}`;
+      return {
         id: `highlighted-elimination:${elimination.round}:${elimination.player.id}`,
-        tier: "vote_record" as const,
-        label: "Highlighted elimination",
-        description: `Highlighted by deterministic postgame rules: ${elimination.highlightReasons.join(", ")}.`,
-        factRefs: [`round:${elimination.round}:eliminated:${elimination.player.id}`],
-      }],
-      confidence: elimination.confidence,
-      deepLink: resultsLink(elimination.round, "Open round result"),
-      posterDirection: "Single-agent elimination card with vote marks in the background.",
-      source: elimination.derivationMethod,
-      score: 65,
-      narrativeOrder: 21,
-      thesisTags: ["alliance-collapse", "public-reckoning"],
-      dedupeKey: `elimination:${elimination.round}:${elimination.player.id}`,
-      consequenceBearing: true,
-      rejectionReasons: [],
-    }));
+        title: `${elimination.player.name} became the visible consequence`,
+        category: "collapse" as const,
+        involvedAgents: [elimination.player],
+        houseHook: `${elimination.player.name}'s exit was already a highlight before the alliance receipt sharpened it.`,
+        setup: `${elimination.player.name} entered round ${elimination.round} as a notable target.`,
+        conflict: `The vote record made the room choose a side.`,
+        payoff: `${elimination.player.name} was eliminated in round ${elimination.round}.`,
+        receipts: [{
+          id: receiptId,
+          tier: "vote_record" as const,
+          label: "Highlighted elimination",
+          description: `Highlighted by deterministic postgame rules: ${elimination.highlightReasons.join(", ")}.`,
+          factRefs: [`round:${elimination.round}:eliminated:${elimination.player.id}`],
+        }],
+        confidence: elimination.confidence,
+        deepLink: resultsLink(elimination.round, "Open round result"),
+        visualBrief: visualBrief({
+          visualType: "council_slate",
+          primaryAgents: [elimination.player],
+          factualSlots: [
+            agentSlot("eliminated_agent", "Eliminated agent", [elimination.player], [receiptId]),
+            valueSlot("round", "Round", elimination.round, [receiptId]),
+            valueSlot("vote_outcome", "Vote outcome", `${elimination.player.name} eliminated`, [receiptId]),
+            receiptTypeSlot(["vote_record"], [receiptId]),
+          ],
+          truthOverlays: ["agent_identity", "round_label", "vote_marker", "receipt_badge", "outcome_caption", "proof_link"],
+          backdrop: "abstract_vote_board",
+          forbiddenInventions: [
+            "Do not invent motive or private pressure.",
+            "Do not render readable generated vote text.",
+          ],
+        }),
+        source: elimination.derivationMethod,
+        score: 65,
+        narrativeOrder: 21,
+        thesisTags: ["alliance-collapse", "public-reckoning"],
+        dedupeKey: `elimination:${elimination.round}:${elimination.player.id}`,
+        consequenceBearing: true,
+        rejectionReasons: [],
+      };
+    });
 }

@@ -3,6 +3,7 @@ import { renderToString } from "react-dom/server";
 import type { HouseHighlightsResponse } from "../lib/api";
 import { HouseHighlightsClient } from "../app/games/[slug]/highlights/house-highlights-client";
 import { HouseHighlightsView } from "../app/games/[slug]/components/house-highlights-view";
+import { houseHighlightVisualBriefFixture } from "./house-highlights-fixtures";
 
 describe("HouseHighlightsView", () => {
   it("renders a client-loading shell before browser-side highlights data loads", () => {
@@ -23,6 +24,15 @@ describe("HouseHighlightsView", () => {
     expect(html).toContain("House Cut");
     expect(html).toContain("This was the game where the pact collapsed one vote too late.");
     expect(html).toContain("Ember was cut from inside the pact");
+    expect(html).toContain("Betrayal vote");
+    expect(html).toContain("Abstract Vote Board");
+    expect(html).toContain("Primary");
+    expect(html).toContain("Supporting");
+    expect(html).toContain("Primary agent");
+    expect(html).toContain("Ember");
+    expect(html).toContain("Nova");
+    expect(html).toContain("Deterministic overlays");
+    expect(html).toContain("Agent Identity + Receipt Badge + Proof Link");
     expect(html).toContain("Vote record");
     expect(html).toContain("Alliance receipt");
     expect(html).toContain("/games/edge-smoke-dusk/results#round-1");
@@ -32,6 +42,8 @@ describe("HouseHighlightsView", () => {
     expect(html).not.toContain("rejectedCandidates");
     expect(html).not.toContain("sourcePointers");
     expect(html).not.toContain("payloadVersion");
+    expect(html).not.toContain("posterDirection");
+    expect(html).not.toContain("Vote card split across the alliance line");
   });
 
   it("renders a mini-highlight pack without needing one main thesis", () => {
@@ -136,7 +148,7 @@ describe("HouseHighlightsView", () => {
 function mainCutFixture(): HouseHighlightsResponse {
   return {
     ok: true,
-    schemaVersion: 1,
+    schemaVersion: 2,
     game: {
       id: "game-edge-smoke-dusk",
       slug: "edge-smoke-dusk",
@@ -146,7 +158,7 @@ function mainCutFixture(): HouseHighlightsResponse {
       roundCount: 5,
     },
     highlights: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       state: "main_cut",
       eligibility: {
         status: "eligible",
@@ -195,7 +207,13 @@ function mainCutFixture(): HouseHighlightsResponse {
           round: 1,
           anchor: "round-1",
         },
-        posterDirection: "Vote card split across the alliance line.",
+        visualBrief: houseHighlightVisualBriefFixture({
+          visualType: "betrayal_vote",
+          templateLabel: "Betrayal vote",
+          primaryAgents: [{ id: "ember", name: "Ember" }],
+          secondaryAgents: [{ id: "nova", name: "Nova" }],
+          backdrop: "abstract_vote_board",
+        }),
       }],
       noCutReason: null,
       fallbackLinks: [

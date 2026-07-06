@@ -2,6 +2,7 @@ import {
   buildHouseHighlightsProjection,
   type HouseHighlightReceipt,
   type HouseHighlightSceneCard,
+  type HouseHighlightVisualBrief,
   type HouseHighlightsCut,
   type HouseHighlightsProjection,
 } from "@influence/engine";
@@ -19,8 +20,11 @@ export type PostgameHighlightsReadStatus = Exclude<
 
 export type PublicHouseHighlightReceipt = Omit<HouseHighlightReceipt, "eventRefs">;
 
-export type PublicHouseHighlightSceneCard = Omit<HouseHighlightSceneCard, "confidence" | "receipts"> & {
+export type PublicHouseHighlightVisualBrief = Omit<HouseHighlightVisualBrief, "diagnostics">;
+
+export type PublicHouseHighlightSceneCard = Omit<HouseHighlightSceneCard, "confidence" | "receipts" | "visualBrief"> & {
   receipts: PublicHouseHighlightReceipt[];
+  visualBrief: PublicHouseHighlightVisualBrief;
 };
 
 export type PublicHouseHighlightsCut = Omit<HouseHighlightsCut, "scenes"> & {
@@ -35,7 +39,7 @@ export type PublicHouseHighlightsProjection = Omit<HouseHighlightsProjection, "d
 export type PostgameHighlightsResult =
   | {
       ok: true;
-      schemaVersion: 1;
+      schemaVersion: 2;
       game: PostgameGameMetadata;
       highlights: PublicHouseHighlightsProjection;
     }
@@ -48,7 +52,7 @@ export type PostgameHighlightsResult =
 export type PostgameHighlightsDiagnosticsResult =
   | {
       ok: true;
-      schemaVersion: 1;
+      schemaVersion: 2;
       game: PostgameGameMetadata;
       highlights: HouseHighlightsProjection;
     }
@@ -66,7 +70,7 @@ export async function getPostgameHighlights(
   if (!loaded.ok) return loaded;
   return {
     ok: true,
-    schemaVersion: 1,
+    schemaVersion: 2,
     game: loaded.game,
     highlights: redactHouseHighlightsDiagnostics(loaded.highlights),
   };
@@ -80,7 +84,7 @@ export async function getPostgameHighlightsDiagnostics(
   if (!loaded.ok) return loaded;
   return {
     ok: true,
-    schemaVersion: 1,
+    schemaVersion: 2,
     game: loaded.game,
     highlights: loaded.highlights,
   };
@@ -104,12 +108,19 @@ export function redactHouseHighlightsDiagnostics(
 }
 
 function redactSceneForPublic(scene: HouseHighlightSceneCard): PublicHouseHighlightSceneCard {
-  const { confidence, receipts, ...publicScene } = scene;
+  const { confidence, receipts, visualBrief, ...publicScene } = scene;
   void confidence;
   return {
     ...publicScene,
+    visualBrief: redactVisualBriefForPublic(visualBrief),
     receipts: receipts.map(redactReceiptForPublic),
   };
+}
+
+function redactVisualBriefForPublic(brief: HouseHighlightVisualBrief): PublicHouseHighlightVisualBrief {
+  const { diagnostics, ...publicBrief } = brief;
+  void diagnostics;
+  return publicBrief;
 }
 
 function redactReceiptForPublic(receipt: HouseHighlightReceipt): PublicHouseHighlightReceipt {
@@ -129,7 +140,7 @@ async function loadHouseHighlights(
 
   return {
     ok: true,
-    schemaVersion: 1,
+    schemaVersion: 2,
     game: analysis.game,
     highlights: buildHouseHighlightsProjection({
       analysis: analysis.analysis,

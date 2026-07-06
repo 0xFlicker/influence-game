@@ -16,6 +16,7 @@ import type {
   UnanimousVote,
   VoteCohort,
 } from "./types";
+import { agentSlot, receiptTypeSlot, valueSlot, visualBrief } from "./visual-briefs";
 
 export function buildTurningPointCandidates(
   analysis: PostgameAnalysisProjection,
@@ -106,7 +107,22 @@ function powerControlCandidate(point: PostgameTurningPoint): HouseHighlightsCand
     }],
     confidence: point.confidence,
     deepLink: resultsLink(point.round, "Open power record"),
-    posterDirection: "Power tally card with the same agent avatar recurring across rounds.",
+    visualBrief: visualBrief({
+      visualType: "power_streak",
+      primaryAgents: [player],
+      factualSlots: [
+        agentSlot("primary_agent", "Power holder", [player], [candidateId]),
+        valueSlot("round", "Round", roundLabel, [candidateId]),
+        valueSlot("vote_outcome", "Power record", point.description, [candidateId], "receipt"),
+        receiptTypeSlot(["vote_record"], [candidateId]),
+      ],
+      truthOverlays: ["agent_identity", "round_label", "power_tally", "receipt_badge", "outcome_caption", "proof_link"],
+      backdrop: "spotlight_stage",
+      forbiddenInventions: [
+        "Do not depict the agent taking a physical crown or stage action.",
+        "Do not invent vote totals not present in the receipt.",
+      ],
+    }),
     source: point.derivationMethod,
     score: point.type === "power_shift" ? 94 : 92,
     narrativeOrder: 12,
@@ -120,8 +136,9 @@ function powerControlCandidate(point: PostgameTurningPoint): HouseHighlightsCand
 function threatRemovedCandidate(point: PostgameTurningPoint): HouseHighlightsCandidate[] {
   const player = point.players[0];
   if (!player) return [];
+  const receiptId = `threat-removed:${point.round}:${player.id}`;
   return [{
-    id: `threat-removed:${point.round}:${player.id}`,
+    id: receiptId,
     title: `${player.name} stopped being a future problem`,
     category: "collapse",
     involvedAgents: [player],
@@ -130,7 +147,7 @@ function threatRemovedCandidate(point: PostgameTurningPoint): HouseHighlightsCan
     conflict: "The vote record finally turned that pressure into an exit.",
     payoff: point.description,
     receipts: [{
-      id: `threat-removed:${point.round}:${player.id}`,
+      id: receiptId,
       tier: "vote_record",
       label: `Round ${point.round} elimination`,
       description: point.description,
@@ -139,7 +156,22 @@ function threatRemovedCandidate(point: PostgameTurningPoint): HouseHighlightsCan
     }],
     confidence: point.confidence,
     deepLink: resultsLink(point.round, "Open round result"),
-    posterDirection: "Elimination card with prior pressure marks behind the agent portrait.",
+    visualBrief: visualBrief({
+      visualType: "council_slate",
+      primaryAgents: [player],
+      factualSlots: [
+        agentSlot("eliminated_agent", "Eliminated agent", [player], [receiptId]),
+        valueSlot("round", "Round", point.round, [receiptId]),
+        valueSlot("vote_outcome", "Vote outcome", point.description, [receiptId], "receipt"),
+        receiptTypeSlot(["vote_record"], [receiptId]),
+      ],
+      truthOverlays: ["agent_identity", "round_label", "vote_marker", "receipt_badge", "outcome_caption", "proof_link"],
+      backdrop: "abstract_vote_board",
+      forbiddenInventions: [
+        "Do not invent private motive for the elimination.",
+        "Do not render generated vote totals or names.",
+      ],
+    }),
     source: point.derivationMethod,
     score: 82,
     narrativeOrder: 30 + point.round,
@@ -153,8 +185,9 @@ function threatRemovedCandidate(point: PostgameTurningPoint): HouseHighlightsCan
 function endgamePivotCandidate(point: PostgameTurningPoint): HouseHighlightsCandidate[] {
   const player = point.players[0];
   if (!player) return [];
+  const receiptId = `endgame-pivot:${point.round}:${player.id}`;
   return [{
-    id: `endgame-pivot:${point.round}:${player.id}`,
+    id: receiptId,
     title: `${player.name} fell when the game changed shape`,
     category: "suspense",
     involvedAgents: [player],
@@ -163,7 +196,7 @@ function endgamePivotCandidate(point: PostgameTurningPoint): HouseHighlightsCand
     conflict: `${player.name} had to survive a smaller room with fewer places to hide.`,
     payoff: point.description,
     receipts: [{
-      id: `endgame-pivot:${point.round}:${player.id}`,
+      id: receiptId,
       tier: "vote_record",
       label: "Endgame vote record",
       description: point.description,
@@ -172,7 +205,22 @@ function endgamePivotCandidate(point: PostgameTurningPoint): HouseHighlightsCand
     }],
     confidence: point.confidence,
     deepLink: resultsLink(point.round, "Open endgame result"),
-    posterDirection: "Endgame title card with the room narrowed to the remaining agents.",
+    visualBrief: visualBrief({
+      visualType: "endgame_collapse",
+      primaryAgents: [player],
+      factualSlots: [
+        agentSlot("eliminated_agent", "Eliminated agent", [player], [receiptId]),
+        valueSlot("round", "Round", point.round, [receiptId]),
+        valueSlot("vote_outcome", "Endgame outcome", point.description, [receiptId], "receipt"),
+        receiptTypeSlot(["vote_record"], [receiptId]),
+      ],
+      truthOverlays: ["agent_identity", "round_label", "vote_marker", "receipt_badge", "outcome_caption", "proof_link"],
+      backdrop: "empty_council_chamber",
+      forbiddenInventions: [
+        "Do not invent who remained unless the scene provides those facts.",
+        "Do not depict a physical collapse or punishment.",
+      ],
+    }),
     source: point.derivationMethod,
     score: 89,
     narrativeOrder: 60 + point.round,
@@ -186,8 +234,9 @@ function endgamePivotCandidate(point: PostgameTurningPoint): HouseHighlightsCand
 function nearMissCandidate(point: PostgameTurningPoint): HouseHighlightsCandidate[] {
   const player = point.players[0];
   if (!player) return [];
+  const receiptId = `near-miss:${point.round}:${player.id}`;
   return [{
-    id: `near-miss:${point.round}:${player.id}`,
+    id: receiptId,
     title: `${player.name} survived the vote's crosshairs`,
     category: "unlikely_survival",
     involvedAgents: [player],
@@ -196,7 +245,7 @@ function nearMissCandidate(point: PostgameTurningPoint): HouseHighlightsCandidat
     conflict: "The vote had to choose who actually left.",
     payoff: point.description,
     receipts: [{
-      id: `near-miss:${point.round}:${player.id}`,
+      id: receiptId,
       tier: "vote_record",
       label: "Council survival record",
       description: point.description,
@@ -205,7 +254,22 @@ function nearMissCandidate(point: PostgameTurningPoint): HouseHighlightsCandidat
     }],
     confidence: point.confidence,
     deepLink: resultsLink(point.round, "Open survival record"),
-    posterDirection: "Council slate graphic with one agent crossed out and one left standing.",
+    visualBrief: visualBrief({
+      visualType: "unlikely_survival",
+      primaryAgents: [player],
+      factualSlots: [
+        agentSlot("surviving_agent", "Surviving agent", [player], [receiptId]),
+        valueSlot("round", "Round", point.round, [receiptId]),
+        valueSlot("vote_outcome", "Survival outcome", point.description, [receiptId], "receipt"),
+        receiptTypeSlot(["vote_record"], [receiptId]),
+      ],
+      truthOverlays: ["agent_identity", "round_label", "vote_marker", "receipt_badge", "outcome_caption", "proof_link"],
+      backdrop: "abstract_vote_board",
+      forbiddenInventions: [
+        "Do not imply fear or relief.",
+        "Do not invent the alternate eliminated agent unless the scene proves it.",
+      ],
+    }),
     source: point.derivationMethod,
     score: 90,
     narrativeOrder: 24 + point.round,
@@ -221,8 +285,9 @@ function shieldSaveCandidate(round: RoundSummary): HouseHighlightsCandidate[] {
   if (!shielded) return [];
   const firstDanger = round.exposeLeaders.find((entry) => entry.votes > 0)?.player ?? null;
   const eliminated = round.eliminated;
+  const receiptId = `shield-save:${round.round}:${shielded.id}`;
   return [{
-    id: `shield-save:${round.round}:${shielded.id}`,
+    id: receiptId,
     title: `${shielded.name} got covered before the vote landed`,
     category: "triumph",
     involvedAgents: uniquePlayers([
@@ -239,7 +304,7 @@ function shieldSaveCandidate(round: RoundSummary): HouseHighlightsCandidate[] {
       ? `${eliminated.name} left instead.`
       : `${shielded.name} survived the round.`,
     receipts: [{
-      id: `shield-save:${round.round}:${shielded.id}`,
+      id: receiptId,
       tier: "vote_record",
       label: `Round ${round.round} shield`,
       description: `${shielded.name} received a shield in round ${round.round}.`,
@@ -251,7 +316,27 @@ function shieldSaveCandidate(round: RoundSummary): HouseHighlightsCandidate[] {
     }],
     confidence: "high",
     deepLink: resultsLink(round.round, "Open shield record"),
-    posterDirection: "Shield graphic over one avatar while the eliminated agent fades behind it.",
+    visualBrief: visualBrief({
+      visualType: "shield_survival",
+      primaryAgents: [shielded],
+      secondaryAgents: uniquePlayers([
+        ...(round.empowered ? [round.empowered] : []),
+        ...(eliminated ? [eliminated] : []),
+      ]),
+      factualSlots: [
+        agentSlot("protected_agent", "Protected agent", [shielded], [receiptId]),
+        ...(eliminated ? [agentSlot("eliminated_agent", "Eliminated agent", [eliminated], [receiptId])] : []),
+        valueSlot("round", "Round", round.round, [receiptId]),
+        valueSlot("vote_outcome", "Shield outcome", eliminated ? `${eliminated.name} eliminated` : `${shielded.name} survived`, [receiptId]),
+        receiptTypeSlot(["vote_record"], [receiptId]),
+      ],
+      truthOverlays: ["agent_identity", "round_label", "shield_marker", "vote_marker", "receipt_badge", "outcome_caption", "proof_link"],
+      backdrop: "spotlight_stage",
+      forbiddenInventions: [
+        "Do not depict a physical rescue.",
+        "Do not invent injury, fear, heroism, or facial expression.",
+      ],
+    }),
     source: "round_shield_record",
     score: 91,
     narrativeOrder: 18 + round.round,
@@ -266,8 +351,9 @@ function voteFlipCandidate(round: RoundSummary): HouseHighlightsCandidate[] {
   const exposed = round.exposeLeaders.find((entry) => entry.votes > 0)?.player ?? null;
   const eliminated = round.eliminated;
   if (!exposed || !eliminated || exposed.id === eliminated.id) return [];
+  const receiptId = `vote-flip:${round.round}:${eliminated.id}`;
   return [{
-    id: `vote-flip:${round.round}:${eliminated.id}`,
+    id: receiptId,
     title: `The room looked at ${exposed.name}, then cut ${eliminated.name}`,
     category: "chaos",
     involvedAgents: uniquePlayers([exposed, eliminated]),
@@ -276,7 +362,7 @@ function voteFlipCandidate(round: RoundSummary): HouseHighlightsCandidate[] {
     conflict: "Council still had to decide who actually paid for the round.",
     payoff: `${eliminated.name} was eliminated instead.`,
     receipts: [{
-      id: `vote-flip:${round.round}:${eliminated.id}`,
+      id: receiptId,
       tier: "vote_record",
       label: "Exposure-to-elimination flip",
       description: `${exposed.name} led exposure pressure, but ${eliminated.name} was eliminated.`,
@@ -288,7 +374,24 @@ function voteFlipCandidate(round: RoundSummary): HouseHighlightsCandidate[] {
     }],
     confidence: "medium",
     deepLink: resultsLink(round.round, "Open vote record"),
-    posterDirection: "Split vote graphic: exposed target on one side, eliminated target on the other.",
+    visualBrief: visualBrief({
+      visualType: "vote_flip",
+      primaryAgents: [eliminated],
+      secondaryAgents: [exposed],
+      factualSlots: [
+        agentSlot("exposed_agent", "Initial exposed agent", [exposed], [receiptId]),
+        agentSlot("eliminated_agent", "Eliminated agent", [eliminated], [receiptId]),
+        valueSlot("round", "Round", round.round, [receiptId]),
+        valueSlot("vote_outcome", "Final outcome", `${eliminated.name} eliminated`, [receiptId]),
+        receiptTypeSlot(["vote_record"], [receiptId]),
+      ],
+      truthOverlays: ["agent_identity", "round_label", "vote_marker", "receipt_badge", "outcome_caption", "proof_link"],
+      backdrop: "abstract_vote_board",
+      forbiddenInventions: [
+        "Do not imply the room lied unless a receipt says so.",
+        "Do not create generated ballots or vote totals.",
+      ],
+    }),
     source: "exposure_to_elimination_flip",
     score: 87,
     narrativeOrder: 22 + round.round,
@@ -304,8 +407,9 @@ function playerSurvivalCandidate(summary: PlayerSummary): HouseHighlightsCandida
   const firstRound = Math.min(...dangerRounds);
   const player = summary.player;
   const ending = summary.status === "winner" ? "won" : "reached the final";
+  const receiptId = `near-miss:run:${player.id}`;
   return {
-    id: `near-miss:run:${player.id}`,
+    id: receiptId,
     title: `${player.name} kept surviving the room's attention`,
     category: "unlikely_survival",
     involvedAgents: [player],
@@ -314,7 +418,7 @@ function playerSurvivalCandidate(summary: PlayerSummary): HouseHighlightsCandida
     conflict: "Every danger mark gave the room another chance to finish the job.",
     payoff: `${player.name} still ${ending}.`,
     receipts: [{
-      id: `near-miss:run:${player.id}`,
+      id: receiptId,
       tier: "vote_record",
       label: "Survival record",
       description: `${player.name} had ${summary.atRiskMoments.length} public danger moment(s) and still ${ending}.`,
@@ -322,7 +426,22 @@ function playerSurvivalCandidate(summary: PlayerSummary): HouseHighlightsCandida
     }],
     confidence: summary.atRiskMoments.length >= 3 ? "high" : "medium",
     deepLink: resultsLink(firstRound, "Open survival record"),
-    posterDirection: "Repeated danger marks stacked behind a finalist avatar.",
+    visualBrief: visualBrief({
+      visualType: "unlikely_survival",
+      primaryAgents: [player],
+      factualSlots: [
+        agentSlot("surviving_agent", "Surviving agent", [player], [receiptId]),
+        valueSlot("round", "First danger round", firstRound, [receiptId]),
+        valueSlot("vote_outcome", "Survival outcome", `${player.name} ${ending}`, [receiptId]),
+        receiptTypeSlot(["vote_record"], [receiptId]),
+      ],
+      truthOverlays: ["agent_identity", "round_label", "vote_marker", "receipt_badge", "outcome_caption", "proof_link"],
+      backdrop: "surveillance_board_texture",
+      forbiddenInventions: [
+        "Do not invent a chase, escape, or emotional state.",
+        "Do not imply every danger mark was an alliance action.",
+      ],
+    }),
     source: "player_survival_record",
     score: summary.status === "winner" ? 90 : 88,
     narrativeOrder: 26 + firstRound,
@@ -336,6 +455,10 @@ function playerSurvivalCandidate(summary: PlayerSummary): HouseHighlightsCandida
 function voteCohortCandidate(cohort: VoteCohort): HouseHighlightsCandidate {
   const names = formatNames(cohort.players);
   const rounds = cohort.roundsControlled.join(", ");
+  const receiptIds = [
+    `vote-cohort:${cohort.firstObservedRound}:${cohort.lastObservedRound}`,
+    `vote-cohort-ledger:${cohort.firstObservedRound}:${cohort.lastObservedRound}`,
+  ] as const;
   return {
     id: `vote-cohort:${cohort.players.map((player) => player.id).sort().join("-")}`,
     title: `${names} kept finding the same target`,
@@ -347,14 +470,14 @@ function voteCohortCandidate(cohort: VoteCohort): HouseHighlightsCandidate {
     payoff: `${cohort.sharedVotes.length} shared vote outcomes survived the receipt check.`,
     receipts: [
       {
-        id: `vote-cohort:${cohort.firstObservedRound}:${cohort.lastObservedRound}`,
+        id: receiptIds[0],
         tier: "derived_signal",
         label: "Shared vote pattern",
         description: cohort.note,
         factRefs: cohort.sharedVotes.map((vote) => `round:${vote.round}:${vote.basis}:${vote.target?.id ?? "none"}`),
       },
       {
-        id: `vote-cohort-ledger:${cohort.firstObservedRound}:${cohort.lastObservedRound}`,
+        id: receiptIds[1],
         tier: "vote_record",
         label: "Vote ledger",
         description: `Matched public vote outcomes from round ${cohort.firstObservedRound} to round ${cohort.lastObservedRound}.`,
@@ -363,7 +486,23 @@ function voteCohortCandidate(cohort: VoteCohort): HouseHighlightsCandidate {
     ],
     confidence: cohort.confidence,
     deepLink: resultsLink(cohort.firstObservedRound, "Open vote pattern"),
-    posterDirection: "Relation-line graphic connecting agents through repeated vote cards.",
+    visualBrief: visualBrief({
+      visualType: "council_slate",
+      primaryAgents: cohort.players,
+      factualSlots: [
+        agentSlot("voters", "Repeat voters", cohort.players, receiptIds),
+        valueSlot("round", "Observed rounds", rounds, receiptIds),
+        valueSlot("vote_outcome", "Shared vote outcomes", `${cohort.sharedVotes.length} shared vote outcomes`, receiptIds, "receipt"),
+        receiptTypeSlot(["derived_signal", "vote_record"], receiptIds),
+      ],
+      truthOverlays: ["agent_identity", "round_label", "vote_marker", "receipt_badge", "outcome_caption", "proof_link"],
+      backdrop: "surveillance_board_texture",
+      forbiddenInventions: [
+        "Do not draw an alliance line without an alliance receipt.",
+        "Do not imply friendship, loyalty, or coordination beyond shared public votes.",
+      ],
+      rejectedBackdropCategories: ["fractured_alliance_table"],
+    }),
     source: cohort.derivationMethod,
     score: 84,
     narrativeOrder: 16 + cohort.firstObservedRound,
@@ -376,6 +515,7 @@ function voteCohortCandidate(cohort: VoteCohort): HouseHighlightsCandidate {
 
 function nearUnanimousVoteCandidate(vote: UnanimousVote): HouseHighlightsCandidate {
   const round = vote.round ?? null;
+  const receiptId = `near-unanimous-vote:${round ?? "jury"}:${vote.target.id}`;
   return {
     id: `near-unanimous-vote:${round ?? "jury"}:${vote.voteType}:${vote.target.id}`,
     title: `${vote.target.name} had nowhere to hide in the vote`,
@@ -388,7 +528,7 @@ function nearUnanimousVoteCandidate(vote: UnanimousVote): HouseHighlightsCandida
       ? `Every vote went to ${vote.target.name}.`
       : `Only one vote separated ${vote.target.name} from unanimity.`,
     receipts: [{
-      id: `near-unanimous-vote:${round ?? "jury"}:${vote.target.id}`,
+      id: receiptId,
       tier: "vote_record",
       label: "Vote margin",
       description: `${vote.target.name} received ${vote.votes} of ${vote.totalVotes} ${vote.voteType} votes.`,
@@ -396,7 +536,22 @@ function nearUnanimousVoteCandidate(vote: UnanimousVote): HouseHighlightsCandida
     }],
     confidence: "high",
     deepLink: resultsLink(round, "Open vote margin"),
-    posterDirection: "Vote pile-on graphic with one name repeated across the tally.",
+    visualBrief: visualBrief({
+      visualType: "council_slate",
+      primaryAgents: [vote.target],
+      factualSlots: [
+        agentSlot("targeted_agent", "Targeted agent", [vote.target], [receiptId]),
+        valueSlot("round", "Round", round ?? "jury", [receiptId]),
+        valueSlot("vote_outcome", "Vote outcome", `${vote.votes} of ${vote.totalVotes} ${vote.voteType} votes`, [receiptId]),
+        receiptTypeSlot(["vote_record"], [receiptId]),
+      ],
+      truthOverlays: ["agent_identity", "round_label", "vote_marker", "receipt_badge", "outcome_caption", "proof_link"],
+      backdrop: "abstract_vote_board",
+      forbiddenInventions: [
+        "Do not render generated vote text or repeated names.",
+        "Do not imply private humiliation beyond the public vote margin.",
+      ],
+    }),
     source: "near_unanimous_vote_record",
     score: 80,
     narrativeOrder: (round ?? 80) + 28,

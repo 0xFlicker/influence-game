@@ -891,6 +891,96 @@ export interface HouseHighlightDeepLink {
   anchor: string;
 }
 
+export type HouseHighlightVisualType =
+  | "alliance_formation"
+  | "alliance_rupture"
+  | "betrayal_vote"
+  | "vote_flip"
+  | "unlikely_survival"
+  | "shield_survival"
+  | "power_streak"
+  | "council_slate"
+  | "revenge_vote"
+  | "jury_judgment"
+  | "endgame_collapse";
+
+export type HouseHighlightVisualSlotKey =
+  | "primary_agent"
+  | "exposed_agent"
+  | "targeted_agent"
+  | "eliminated_agent"
+  | "surviving_agent"
+  | "protected_agent"
+  | "voters"
+  | "alliance_members"
+  | "finalists"
+  | "jurors"
+  | "round"
+  | "vote_outcome"
+  | "receipt_types";
+
+export type HouseHighlightVisualSlotSource = "receipt" | "canonical_fact" | "scene_context";
+
+export interface HouseHighlightVisualSlot {
+  key: HouseHighlightVisualSlotKey;
+  label: string;
+  status: "filled" | "missing";
+  source: HouseHighlightVisualSlotSource;
+  agents?: HouseHighlightPlayerRef[];
+  value?: string;
+  receiptIds: string[];
+}
+
+export type HouseHighlightTruthOverlay =
+  | "agent_identity"
+  | "round_label"
+  | "vote_marker"
+  | "alliance_line"
+  | "receipt_badge"
+  | "outcome_caption"
+  | "proof_link"
+  | "shield_marker"
+  | "jury_tally"
+  | "power_tally";
+
+export type HouseHighlightBackdropCategory =
+  | "none"
+  | "empty_council_chamber"
+  | "jury_wall"
+  | "abstract_vote_board"
+  | "fractured_alliance_table"
+  | "spotlight_stage"
+  | "surveillance_board_texture";
+
+export interface HouseHighlightVisualBackdrop {
+  category: HouseHighlightBackdropCategory;
+  generatedAllowed: boolean;
+  description: string;
+}
+
+export type HouseHighlightShareFraming = "page_native" | "square" | "vertical" | "wide";
+
+export interface HouseHighlightVisualBriefDiagnostics {
+  forbiddenInventions: string[];
+  warnings: string[];
+  rejectedBackdropCategories: HouseHighlightBackdropCategory[];
+}
+
+export interface HouseHighlightVisualBrief {
+  visualType: HouseHighlightVisualType;
+  templateLabel: string;
+  primaryAgents: HouseHighlightPlayerRef[];
+  secondaryAgents: HouseHighlightPlayerRef[];
+  factualSlots: HouseHighlightVisualSlot[];
+  truthOverlays: HouseHighlightTruthOverlay[];
+  backdrop: HouseHighlightVisualBackdrop;
+  shareFraming: HouseHighlightShareFraming[];
+}
+
+export interface AdminHouseHighlightVisualBrief extends HouseHighlightVisualBrief {
+  diagnostics: HouseHighlightVisualBriefDiagnostics;
+}
+
 export interface HouseHighlightSceneCard {
   id: string;
   title: string;
@@ -902,7 +992,7 @@ export interface HouseHighlightSceneCard {
   payoff: string;
   receipts: HouseHighlightReceipt[];
   deepLink: HouseHighlightDeepLink;
-  posterDirection: string;
+  visualBrief: HouseHighlightVisualBrief;
 }
 
 export interface HouseHighlightsCut {
@@ -914,7 +1004,7 @@ export interface HouseHighlightsCut {
 }
 
 export interface PublicHouseHighlightsProjection {
-  schemaVersion: 1;
+  schemaVersion: 2;
   state: HouseHighlightsState;
   eligibility: {
     status: "eligible" | "unsupported";
@@ -930,7 +1020,7 @@ export interface PublicHouseHighlightsProjection {
 
 export interface HouseHighlightsResponse {
   ok: true;
-  schemaVersion: 1;
+  schemaVersion: 2;
   game: {
     id: string;
     slug?: string;
@@ -948,9 +1038,10 @@ export async function getPostgameHighlights(gameIdOrSlug: string): Promise<House
   return apiFetch(`/api/games/${gamePathSegment(gameIdOrSlug)}/postgame/highlights`);
 }
 
-export interface AdminHouseHighlightSceneCard extends Omit<HouseHighlightSceneCard, "receipts"> {
+export interface AdminHouseHighlightSceneCard extends Omit<HouseHighlightSceneCard, "receipts" | "visualBrief"> {
   confidence: HouseHighlightConfidence;
   receipts: AdminHouseHighlightReceipt[];
+  visualBrief: AdminHouseHighlightVisualBrief;
 }
 
 export interface AdminHouseHighlightsCut extends Omit<HouseHighlightsCut, "scenes"> {
@@ -967,6 +1058,7 @@ export interface HouseHighlightsCandidateDiagnostic {
   score: number;
   receiptCount: number;
   reasons: string[];
+  visualBrief: Pick<AdminHouseHighlightVisualBrief, "visualType" | "templateLabel" | "factualSlots" | "backdrop" | "diagnostics">;
 }
 
 export interface AdminHouseHighlightsProjection extends Omit<PublicHouseHighlightsProjection, "cut" | "scenes"> {
@@ -982,7 +1074,7 @@ export interface AdminHouseHighlightsProjection extends Omit<PublicHouseHighligh
 
 export interface AdminHouseHighlightsDiagnosticsResponse {
   ok: true;
-  schemaVersion: 1;
+  schemaVersion: 2;
   game: HouseHighlightsResponse["game"];
   highlights: AdminHouseHighlightsProjection;
 }

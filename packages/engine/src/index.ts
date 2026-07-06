@@ -95,6 +95,16 @@ export type {
   HouseHighlightsProjection,
   HouseHighlightsState,
   HouseHighlightSceneCard,
+  HouseHighlightBackdropCategory,
+  HouseHighlightShareFraming,
+  HouseHighlightTruthOverlay,
+  HouseHighlightVisualBackdrop,
+  HouseHighlightVisualBrief,
+  HouseHighlightVisualBriefDiagnostics,
+  HouseHighlightVisualSlot,
+  HouseHighlightVisualSlotKey,
+  HouseHighlightVisualSlotSource,
+  HouseHighlightVisualType,
 } from "./postgame-highlights";
 export { buildPostVotePressureProjection } from "./post-vote-pressure";
 export type {

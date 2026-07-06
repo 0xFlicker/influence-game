@@ -184,7 +184,11 @@ The thesis-led V1 House Highlights form for alliance-bearing completed games wit
 
 ## Highlight scene card
 
-The reusable unit of House Highlights selection. A scene card names the moment, emotional category, involved agents, House hook, setup, conflict, payoff, receipts, confidence, deep link, and rough poster or caption direction. Main House Cuts and mini-highlight packs use the same scene-card contract.
+The reusable unit of House Highlights selection. A scene card names the moment, emotional category, involved agents, House hook, setup, conflict, payoff, receipts, confidence, and deep link. Main House Cuts and mini-highlight packs use the same scene-card contract.
+
+## Visual Brief
+
+A structured, truth-safe visual direction for a selected House Highlights scene. A Visual Brief chooses a visual type, required factual slots, deterministic overlays, allowed mood or background category, forbidden inventions, and share posture. It replaces public-facing rough poster direction: generated imagery may supply only non-factual atmosphere, while deterministic composition owns agent identities, names, votes, alliances, receipts, labels, captions, and outcomes.
 
 ## Trailer thesis
 

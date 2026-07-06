@@ -34,7 +34,7 @@ export function projectionForCut(params: {
     ? "selected_for_main_cut"
     : "selected_for_mini_highlight_pack";
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     state: params.state,
     eligibility: {
       status: "eligible",
@@ -78,6 +78,15 @@ export function validateCandidate(candidate: HouseHighlightsCandidate): HouseHig
   }
   if (candidate.category === "betrayal" && !candidate.receipts.some((receipt) => receipt.tier === "alliance_receipt")) {
     reasons.push("missing_alliance_receipt_for_label");
+  }
+  if (candidate.visualBrief.factualSlots.some((slot) => slot.status === "missing")) {
+    reasons.push("missing_visual_brief_slot");
+  }
+  if (candidate.visualBrief.diagnostics.rejectedBackdropCategories.includes(candidate.visualBrief.backdrop.category)) {
+    reasons.push("unsafe_visual_backdrop");
+  }
+  if (candidate.visualBrief.truthOverlays.includes("alliance_line") && !candidate.receipts.some((receipt) => receipt.tier === "alliance_receipt")) {
+    reasons.push("unsupported_alliance_visual");
   }
   return { ...candidate, rejectionReasons: uniqueStrings(reasons) };
 }
@@ -235,6 +244,13 @@ export function diagnosticForCandidate(
     score: candidate.score,
     receiptCount: candidate.receipts.length,
     reasons: selected ? [selectedReason] : uniqueStrings(candidate.rejectionReasons),
+    visualBrief: {
+      visualType: candidate.visualBrief.visualType,
+      templateLabel: candidate.visualBrief.templateLabel,
+      factualSlots: candidate.visualBrief.factualSlots,
+      backdrop: candidate.visualBrief.backdrop,
+      diagnostics: candidate.visualBrief.diagnostics,
+    },
   };
 }
 

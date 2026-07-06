@@ -48,6 +48,96 @@ export interface HouseHighlightDeepLink {
   anchor: string;
 }
 
+export type HouseHighlightVisualType =
+  | "alliance_formation"
+  | "alliance_rupture"
+  | "betrayal_vote"
+  | "vote_flip"
+  | "unlikely_survival"
+  | "shield_survival"
+  | "power_streak"
+  | "council_slate"
+  | "revenge_vote"
+  | "jury_judgment"
+  | "endgame_collapse";
+
+export type HouseHighlightVisualSlotKey =
+  | "primary_agent"
+  | "exposed_agent"
+  | "targeted_agent"
+  | "eliminated_agent"
+  | "surviving_agent"
+  | "protected_agent"
+  | "voters"
+  | "alliance_members"
+  | "finalists"
+  | "jurors"
+  | "round"
+  | "vote_outcome"
+  | "receipt_types";
+
+export type HouseHighlightVisualSlotSource =
+  | "receipt"
+  | "canonical_fact"
+  | "scene_context";
+
+export interface HouseHighlightVisualSlot {
+  key: HouseHighlightVisualSlotKey;
+  label: string;
+  status: "filled" | "missing";
+  source: HouseHighlightVisualSlotSource;
+  agents?: PlayerRef[];
+  value?: string;
+  receiptIds: string[];
+}
+
+export type HouseHighlightTruthOverlay =
+  | "agent_identity"
+  | "round_label"
+  | "vote_marker"
+  | "alliance_line"
+  | "receipt_badge"
+  | "outcome_caption"
+  | "proof_link"
+  | "shield_marker"
+  | "jury_tally"
+  | "power_tally";
+
+export type HouseHighlightBackdropCategory =
+  | "none"
+  | "empty_council_chamber"
+  | "jury_wall"
+  | "abstract_vote_board"
+  | "fractured_alliance_table"
+  | "spotlight_stage"
+  | "surveillance_board_texture";
+
+export interface HouseHighlightVisualBackdrop {
+  category: HouseHighlightBackdropCategory;
+  generatedAllowed: boolean;
+  description: string;
+}
+
+export type HouseHighlightShareFraming = "page_native" | "square" | "vertical" | "wide";
+
+export interface HouseHighlightVisualBriefDiagnostics {
+  forbiddenInventions: string[];
+  warnings: string[];
+  rejectedBackdropCategories: HouseHighlightBackdropCategory[];
+}
+
+export interface HouseHighlightVisualBrief {
+  visualType: HouseHighlightVisualType;
+  templateLabel: string;
+  primaryAgents: PlayerRef[];
+  secondaryAgents: PlayerRef[];
+  factualSlots: HouseHighlightVisualSlot[];
+  truthOverlays: HouseHighlightTruthOverlay[];
+  backdrop: HouseHighlightVisualBackdrop;
+  shareFraming: HouseHighlightShareFraming[];
+  diagnostics: HouseHighlightVisualBriefDiagnostics;
+}
+
 export interface HouseHighlightSceneCard {
   id: string;
   title: string;
@@ -60,7 +150,7 @@ export interface HouseHighlightSceneCard {
   receipts: HouseHighlightReceipt[];
   confidence: PostgameDerivationConfidence;
   deepLink: HouseHighlightDeepLink;
-  posterDirection: string;
+  visualBrief: HouseHighlightVisualBrief;
 }
 
 export interface HouseHighlightsCut {
@@ -81,10 +171,11 @@ export interface HouseHighlightsCandidateDiagnostic {
   score: number;
   receiptCount: number;
   reasons: string[];
+  visualBrief: Pick<HouseHighlightVisualBrief, "visualType" | "templateLabel" | "factualSlots" | "backdrop" | "diagnostics">;
 }
 
 export interface HouseHighlightsProjection {
-  schemaVersion: 1;
+  schemaVersion: 2;
   state: HouseHighlightsState;
   eligibility: {
     status: "eligible" | "unsupported";

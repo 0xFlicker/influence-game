@@ -3,6 +3,7 @@ import type {
   HouseHighlightDeepLink,
   HouseHighlightReceiptTier,
   HouseHighlightSceneCard,
+  HouseHighlightVisualSlot,
   HouseHighlightsResponse,
   HouseHighlightsState,
 } from "@/lib/api";
@@ -31,8 +32,22 @@ export interface HouseHighlightsSceneModel {
     tierLabel: string;
     description: string;
   }>;
+  visualBrief: {
+    typeLabel: string;
+    primaryAgentsLabel: string;
+    secondaryAgentsLabel: string | null;
+    backdropLabel: string;
+    backdropDescription: string;
+    slots: Array<{
+      key: string;
+      label: string;
+      value: string;
+      receiptCount: number;
+    }>;
+    overlaysLabel: string;
+    shareFramingLabel: string;
+  };
   proofLink: HouseHighlightsProofLink;
-  posterDirection: string;
 }
 
 export interface HouseHighlightsViewModel {
@@ -102,8 +117,21 @@ function sceneModel(scene: HouseHighlightSceneCard, gameSlug: string): HouseHigh
       tierLabel: receiptTierLabel(receipt.tier),
       description: receipt.description,
     })),
+    visualBrief: {
+      typeLabel: scene.visualBrief.templateLabel,
+      primaryAgentsLabel: agentList(scene.visualBrief.primaryAgents),
+      secondaryAgentsLabel: scene.visualBrief.secondaryAgents.length > 0
+        ? agentList(scene.visualBrief.secondaryAgents)
+        : null,
+      backdropLabel: formatLabel(scene.visualBrief.backdrop.category),
+      backdropDescription: scene.visualBrief.backdrop.description,
+      slots: scene.visualBrief.factualSlots
+        .filter((slot) => slot.status === "filled")
+        .map(slotModel),
+      overlaysLabel: scene.visualBrief.truthOverlays.map(formatLabel).join(" + "),
+      shareFramingLabel: scene.visualBrief.shareFraming.map(formatLabel).join(" / "),
+    },
     proofLink: proofLink(scene.deepLink, gameSlug),
-    posterDirection: scene.posterDirection,
   };
 }
 
@@ -149,10 +177,36 @@ function copyForState(
 }
 
 function categoryLabel(category: HouseHighlightCategory): string {
-  return category
+  return formatLabel(category);
+}
+
+function formatLabel(value: string): string {
+  return value
     .split("_")
     .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
     .join(" ");
+}
+
+function agentList(agents: readonly { name: string }[]): string {
+  return agents.map((agent) => agent.name).join(", ");
+}
+
+function slotModel(slot: HouseHighlightVisualSlot) {
+  return {
+    key: slot.key,
+    label: slot.label,
+    value: slotDisplayValue(slot),
+    receiptCount: slot.receiptIds.length,
+  };
+}
+
+function slotDisplayValue(slot: HouseHighlightVisualSlot): string {
+  if (slot.agents?.length) return agentList(slot.agents);
+  const value = slot.value ?? "Filled";
+  if (slot.key === "receipt_types" && value.includes(":")) {
+    return `${slot.receiptIds.length} receipt${slot.receiptIds.length === 1 ? "" : "s"}`;
+  }
+  return value;
 }
 
 function categoryTone(category: HouseHighlightCategory): string {
