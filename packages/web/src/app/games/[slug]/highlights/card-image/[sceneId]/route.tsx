@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
 import type { HouseHighlightPlayerRef, HouseHighlightSceneCard } from "@/lib/api";
 import { getServerPostgameHighlights, resolveServerApiUrl } from "@/lib/server-api";
+import { houseHighlightGeneratedBackgroundAsset } from "../../../components/house-highlights-backgrounds";
 import { sceneForCardImage } from "../card-image-data";
 
 export const dynamic = "force-dynamic";
@@ -86,6 +87,7 @@ function CardImage({
   const card = scene.visualCard;
   const primary = card.primaryAgents[0];
   const secondary = card.secondaryAgents[0];
+  const generatedBackground = generatedBackgroundForImage(scene.visualBrief.visualType, requestUrl);
 
   return (
     <div
@@ -99,9 +101,25 @@ function CardImage({
         width: "100%",
       }}
     >
+      {generatedBackground ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={generatedBackground}
+          alt=""
+          height={SIZE.height}
+          width={SIZE.width}
+          style={{
+            height: "100%",
+            inset: 0,
+            objectFit: "cover",
+            position: "absolute",
+            width: "100%",
+          }}
+        />
+      ) : null}
       <div
         style={{
-          background: "linear-gradient(90deg,rgba(0,0,0,0.78),rgba(0,0,0,0.28) 58%,rgba(0,0,0,0.68))",
+          background: "radial-gradient(circle at 72% 22%,rgba(255,255,255,0.08),transparent 32%),linear-gradient(90deg,rgba(0,0,0,0.82),rgba(0,0,0,0.48) 55%,rgba(0,0,0,0.76))",
           display: "flex",
           inset: 0,
           position: "absolute",
@@ -163,6 +181,11 @@ function CardImage({
       </div>
     </div>
   );
+}
+
+export function generatedBackgroundForImage(visualType: string, requestUrl: string): string | null {
+  const asset = houseHighlightGeneratedBackgroundAsset(visualType);
+  return asset ? new URL(asset, requestUrl).toString() : null;
 }
 
 function AgentPill({

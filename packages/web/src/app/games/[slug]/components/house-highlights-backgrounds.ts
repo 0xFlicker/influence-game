@@ -1,4 +1,18 @@
-import type { HouseHighlightBackdropCategory } from "@/lib/api";
+import type { HouseHighlightBackdropCategory, HouseHighlightVisualType } from "@/lib/api";
+
+const GENERATED_BACKGROUND_ASSETS: Record<HouseHighlightVisualType, string> = {
+  alliance_formation: "/house-highlights/generated/alliance-formation.jpg",
+  alliance_rupture: "/house-highlights/generated/alliance-rupture.jpg",
+  betrayal_vote: "/house-highlights/generated/betrayal-vote.jpg",
+  vote_flip: "/house-highlights/generated/vote-flip.jpg",
+  unlikely_survival: "/house-highlights/generated/unlikely-survival.jpg",
+  shield_survival: "/house-highlights/generated/shield-survival.jpg",
+  power_streak: "/house-highlights/generated/power-streak.jpg",
+  council_slate: "/house-highlights/generated/council-slate.jpg",
+  revenge_vote: "/house-highlights/generated/revenge-vote.jpg",
+  jury_judgment: "/house-highlights/generated/jury-judgment.jpg",
+  endgame_collapse: "/house-highlights/generated/endgame-collapse.jpg",
+};
 
 const BACKDROP_PLATES: Partial<Record<HouseHighlightBackdropCategory, string>> = {
   empty_council_chamber: "/house-highlights/plates/empty-council-chamber.svg",
@@ -26,4 +40,8 @@ export function houseHighlightBackdropClass(category: string): string {
 
 export function houseHighlightBackdropAsset(category: string): string | null {
   return BACKDROP_PLATES[category as HouseHighlightBackdropCategory] ?? null;
+}
+
+export function houseHighlightGeneratedBackgroundAsset(visualType: string): string | null {
+  return GENERATED_BACKGROUND_ASSETS[visualType as HouseHighlightVisualType] ?? null;
 }

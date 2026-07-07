@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { HouseHighlightsResponse } from "../lib/api";
 import { sceneForCardImage } from "../app/games/[slug]/highlights/card-image/card-image-data";
-import { avatarSrcForImage, GET } from "../app/games/[slug]/highlights/card-image/[sceneId]/route";
+import {
+  avatarSrcForImage,
+  generatedBackgroundForImage,
+  GET,
+} from "../app/games/[slug]/highlights/card-image/[sceneId]/route";
 import {
   houseHighlightVisualBriefFixture,
   houseHighlightVisualCardFixture,
@@ -45,6 +49,13 @@ describe("house highlights card image", () => {
     expect(avatarSrcForImage("/avatars/personas/strategic.png", "http://localhost:3001/card.png")).toBe(
       "http://localhost:3001/avatars/personas/strategic.png",
     );
+  });
+
+  it("resolves generated backgrounds against the share image origin", () => {
+    expect(generatedBackgroundForImage("betrayal_vote", "http://localhost:3001/card.png")).toBe(
+      "http://localhost:3001/house-highlights/generated/betrayal-vote.jpg",
+    );
+    expect(generatedBackgroundForImage("mystery_visual", "http://localhost:3001/card.png")).toBeNull();
   });
 
   it("renders a png response for a valid scene without auth headers", async () => {

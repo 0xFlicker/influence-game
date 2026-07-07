@@ -10,6 +10,7 @@ import {
   gameHighlightSceneHref,
   houseHighlightSceneAnchor,
 } from "@/lib/game-links";
+import { houseHighlightGeneratedBackgroundAsset } from "./house-highlights-backgrounds";
 
 export interface HouseHighlightsProofLink {
   label: string;
@@ -44,7 +45,9 @@ export interface HouseHighlightsSceneModel {
       id: string;
       text: string;
     }>;
+    backgroundImage: string | null;
     backdropCategory: string;
+    visualType: string;
   };
   proofLink: HouseHighlightsProofLink;
   shareLink: HouseHighlightsShareLink;
@@ -129,7 +132,9 @@ function sceneModel(
         id: fact.id,
         text: fact.text,
       })),
+      backgroundImage: houseHighlightGeneratedBackgroundAsset(scene.visualBrief.visualType),
       backdropCategory: scene.visualCard.backdrop.category,
+      visualType: scene.visualBrief.visualType,
     },
     proofLink: proofLink(scene.deepLink, gameSlug),
     shareLink: {

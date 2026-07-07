@@ -20,9 +20,19 @@ export function HouseHighlightCard({
       className={`relative isolate min-h-[520px] overflow-hidden rounded-lg border border-white/10 md:aspect-[1200/630] md:min-h-0 ${houseHighlightBackdropClass(card.backdropCategory)}`}
       data-testid="house-highlight-visual-card"
     >
-      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.76),rgba(0,0,0,0.34)_55%,rgba(0,0,0,0.7))]" />
-      <div className="absolute inset-x-0 top-0 h-px bg-white/30" />
-      <div className="relative flex h-full flex-col justify-between p-5 sm:p-7">
+      {card.backgroundImage ? (
+        <Image
+          src={card.backgroundImage}
+          alt=""
+          fill
+          className="absolute inset-0 z-0 object-cover"
+          sizes="(min-width: 1024px) 1040px, 100vw"
+          unoptimized
+        />
+      ) : null}
+      <div className="absolute inset-0 z-10 bg-[radial-gradient(circle_at_72%_24%,rgba(255,255,255,0.08),transparent_30%),linear-gradient(90deg,rgba(0,0,0,0.82),rgba(0,0,0,0.48)_52%,rgba(0,0,0,0.76))]" />
+      <div className="absolute inset-x-0 top-0 z-20 h-px bg-white/30" />
+      <div className="relative z-20 flex h-full flex-col justify-between p-5 sm:p-7">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-normal text-white/52">

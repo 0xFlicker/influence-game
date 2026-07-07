@@ -34,7 +34,9 @@ describe("house highlights model", () => {
           { id: "fixture-card-fact:0", text: "Nova voted against Ember in Round 1." },
           { id: "fixture-card-fact:1", text: "Ember was eliminated in Round 1." },
         ],
+        backgroundImage: "/house-highlights/generated/betrayal-vote.jpg",
         backdropCategory: "abstract_vote_board",
+        visualType: "betrayal_vote",
       },
       proofLink: {
         href: "/games/edge-smoke-dusk/results#round-1",
