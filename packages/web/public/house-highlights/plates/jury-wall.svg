@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#0d171b"/>
+      <stop offset=".52" stop-color="#232b31"/>
+      <stop offset="1" stop-color="#060809"/>
+    </linearGradient>
+    <pattern id="panels" width="150" height="126" patternUnits="userSpaceOnUse">
+      <rect x="12" y="12" width="126" height="102" rx="10" fill="#ffffff" fill-opacity=".035" stroke="#ffffff" stroke-opacity=".055"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" fill="url(#g)"/>
+  <rect width="1200" height="630" fill="url(#panels)"/>
+  <path d="M80 500H1120" stroke="#22d3ee" stroke-opacity=".14" stroke-width="14" stroke-linecap="round"/>
+</svg>

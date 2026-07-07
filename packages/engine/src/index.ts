@@ -101,10 +101,15 @@ export type {
   HouseHighlightVisualBackdrop,
   HouseHighlightVisualBrief,
   HouseHighlightVisualBriefDiagnostics,
+  HouseHighlightVisualCard,
+  HouseHighlightVisualCardFact,
+  HouseHighlightVisualCardFactKind,
+  HouseHighlightVisualCardTemplate,
   HouseHighlightVisualSlot,
   HouseHighlightVisualSlotKey,
   HouseHighlightVisualSlotSource,
   HouseHighlightVisualType,
+  PlayerRef,
 } from "./postgame-highlights";
 export { buildPostVotePressureProjection } from "./post-vote-pressure";
 export type {

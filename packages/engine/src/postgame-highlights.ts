@@ -13,6 +13,10 @@ export type {
   HouseHighlightVisualBackdrop,
   HouseHighlightVisualBrief,
   HouseHighlightVisualBriefDiagnostics,
+  HouseHighlightVisualCard,
+  HouseHighlightVisualCardFact,
+  HouseHighlightVisualCardFactKind,
+  HouseHighlightVisualCardTemplate,
   HouseHighlightVisualSlot,
   HouseHighlightVisualSlotKey,
   HouseHighlightVisualSlotSource,
@@ -20,4 +24,5 @@ export type {
   HouseHighlightsCut,
   HouseHighlightsProjection,
   HouseHighlightsState,
+  PlayerRef,
 } from "./postgame-highlights/types";

@@ -4,7 +4,7 @@ import type {
   PostgameDerivationConfidence,
 } from "../postgame-analysis";
 
-export type PlayerRef = { id: string; name: string };
+export type PlayerRef = { id: string; name: string; avatarUrl?: string | null };
 
 export type HouseHighlightsState =
   | "main_cut"
@@ -136,6 +136,42 @@ export interface HouseHighlightVisualBrief {
   backdrop: HouseHighlightVisualBackdrop;
   shareFraming: HouseHighlightShareFraming[];
   diagnostics: HouseHighlightVisualBriefDiagnostics;
+}
+
+export type HouseHighlightVisualCardTemplate =
+  | "hero_vote_action"
+  | "generic_scene";
+
+export type HouseHighlightVisualCardFactKind =
+  | "vote_action"
+  | "alliance_membership"
+  | "elimination"
+  | "protection"
+  | "survival"
+  | "jury_outcome"
+  | "round_context"
+  | "outcome";
+
+export interface HouseHighlightVisualCardFact {
+  id: string;
+  kind: HouseHighlightVisualCardFactKind;
+  text: string;
+  agentIds: string[];
+  receiptIds: string[];
+}
+
+export interface HouseHighlightVisualCard {
+  template: HouseHighlightVisualCardTemplate;
+  title: string;
+  eyebrow: string;
+  altText: string;
+  primaryAgents: PlayerRef[];
+  secondaryAgents: PlayerRef[];
+  roundLabel: string | null;
+  outcome: string;
+  factLines: HouseHighlightVisualCardFact[];
+  backdrop: HouseHighlightVisualBackdrop;
+  shareFraming: HouseHighlightShareFraming[];
 }
 
 export interface HouseHighlightSceneCard {

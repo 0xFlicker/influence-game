@@ -10,20 +10,35 @@ import { gameHref } from "@/lib/game-links";
 import { useRuntimeConfig } from "@/lib/runtime-config";
 import { HouseHighlightsView } from "../components/house-highlights-view";
 
-type HighlightsLoadState =
+export type HighlightsLoadState =
   | { status: "loading" }
   | { status: "loaded"; requestKey: string; response: HouseHighlightsResponse }
   | { status: "error"; requestKey: string; error: string };
 
-export function HouseHighlightsClient({ gameSlug }: { gameSlug: string }) {
+export function HouseHighlightsClient({
+  gameSlug,
+  initialResponse,
+  selectedSceneId,
+}: {
+  gameSlug: string;
+  initialResponse?: HouseHighlightsResponse;
+  selectedSceneId?: string | null;
+}) {
   const runtimeConfig = useRuntimeConfig();
   const requestKey = `${runtimeConfig.API_URL}:${gameSlug}`;
   const [loadState, setLoadState] = useState<HighlightsLoadState>({
-    status: "loading",
+    ...(initialResponse
+      ? { status: "loaded" as const, requestKey, response: initialResponse }
+      : { status: "loading" as const }),
   });
+  const loadStateRequestKey =
+    loadState.status === "loading" ? null : loadState.requestKey;
 
   useEffect(() => {
     if (!runtimeConfig.ready) return;
+    if (loadState.status === "loaded" && loadStateRequestKey === requestKey) {
+      return;
+    }
 
     let cancelled = false;
 
@@ -34,20 +49,15 @@ export function HouseHighlightsClient({ gameSlug }: { gameSlug: string }) {
       })
       .catch((error) => {
         if (cancelled) return;
-        setLoadState({
-          status: "error",
-          requestKey,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Highlights are unavailable for this game.",
-        });
+        setLoadState((previous) =>
+          highlightsLoadStateAfterRefreshError(previous, requestKey, gameSlug, error)
+        );
       });
 
     return () => {
       cancelled = true;
     };
-  }, [gameSlug, requestKey, runtimeConfig.ready]);
+  }, [gameSlug, loadState.status, loadStateRequestKey, requestKey, runtimeConfig.ready]);
 
   const visibleLoadState =
     loadState.status !== "loading" && loadState.requestKey === requestKey
@@ -62,6 +72,7 @@ export function HouseHighlightsClient({ gameSlug }: { gameSlug: string }) {
       <HouseHighlightsView
         response={visibleLoadState.response}
         gameSlug={loadedGameSlug}
+        selectedSceneId={selectedSceneId}
       />
     );
   }
@@ -81,10 +92,41 @@ export function HouseHighlightsClient({ gameSlug }: { gameSlug: string }) {
     <HighlightsStateCard
       tone="loading"
       title="Opening House Highlights..."
-      message="The House is loading the receipt trail."
+      message="The House is loading the game facts."
       gameSlug={gameSlug}
     />
   );
+}
+
+export function highlightsLoadStateAfterRefreshError(
+  previous: HighlightsLoadState,
+  requestKey: string,
+  gameSlug: string,
+  error: unknown,
+): HighlightsLoadState {
+  if (previous.status === "loaded" && responseMatchesGame(previous.response, gameSlug)) {
+    return { ...previous, requestKey };
+  }
+
+  return {
+    status: "error",
+    requestKey,
+    error:
+      error instanceof Error
+        ? error.message
+        : "Highlights are unavailable for this game.",
+  };
+}
+
+export function shouldSkipHighlightsRefresh(
+  loadState: HighlightsLoadState,
+  requestKey: string,
+): boolean {
+  return loadState.status === "loaded" && loadState.requestKey === requestKey;
+}
+
+function responseMatchesGame(response: HouseHighlightsResponse, gameSlug: string): boolean {
+  return response.game.slug === gameSlug || response.game.id === gameSlug;
 }
 
 function HighlightsStateCard({

@@ -12,6 +12,19 @@ export function gameHighlightsHref(gameIdOrSlug: string): string {
   return `${gameHref(gameIdOrSlug)}/highlights`;
 }
 
+export function houseHighlightSceneAnchor(sceneId: string): string {
+  return `scene-${sceneId}`;
+}
+
+export function gameHighlightSceneHref(gameIdOrSlug: string, sceneId: string): string {
+  const anchor = encodeURIComponent(houseHighlightSceneAnchor(sceneId));
+  return `${gameHighlightsHref(gameIdOrSlug)}?scene=${encodeURIComponent(sceneId)}#${anchor}`;
+}
+
+export function gameHighlightCardImageHref(gameIdOrSlug: string, sceneId: string): string {
+  return `${gameHighlightsHref(gameIdOrSlug)}/card-image/${encodeURIComponent(sceneId)}`;
+}
+
 export function gameResultsHref(gameIdOrSlug: string, anchor?: string): string {
   return `${gameHref(gameIdOrSlug)}/results${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
 }

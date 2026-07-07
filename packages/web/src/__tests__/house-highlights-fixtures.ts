@@ -3,6 +3,8 @@ import type {
   HouseHighlightBackdropCategory,
   HouseHighlightPlayerRef,
   HouseHighlightVisualBrief,
+  HouseHighlightVisualCard,
+  HouseHighlightVisualCardTemplate,
   HouseHighlightVisualType,
 } from "../lib/api";
 
@@ -42,6 +44,41 @@ export function houseHighlightVisualBriefFixture(params: {
       category: params.backdrop,
       generatedAllowed: params.backdrop !== "none",
       description: `${params.templateLabel} fixture backdrop.`,
+    },
+    shareFraming: ["page_native", "square", "vertical", "wide"],
+  };
+}
+
+export function houseHighlightVisualCardFixture(params: {
+  template?: HouseHighlightVisualCardTemplate;
+  title: string;
+  eyebrow: string;
+  primaryAgents: HouseHighlightPlayerRef[];
+  secondaryAgents?: HouseHighlightPlayerRef[];
+  backdrop: HouseHighlightBackdropCategory;
+  facts?: string[];
+}): HouseHighlightVisualCard {
+  const facts = params.facts ?? [`${params.primaryAgents[0]?.name ?? "A player"} shaped this scene.`];
+  return {
+    template: params.template ?? "generic_scene",
+    title: params.title,
+    eyebrow: params.eyebrow,
+    altText: `${params.title}. ${facts.join(" ")}`,
+    primaryAgents: params.primaryAgents,
+    secondaryAgents: params.secondaryAgents ?? [],
+    roundLabel: "Round 1",
+    outcome: facts[0] ?? params.title,
+    factLines: facts.map((text, index) => ({
+      id: `fixture-card-fact:${index}`,
+      kind: index === 0 ? "outcome" : "round_context",
+      text,
+      agentIds: params.primaryAgents.map((agent) => agent.id),
+      receiptIds: ["fixture-receipt"],
+    })),
+    backdrop: {
+      category: params.backdrop,
+      generatedAllowed: params.backdrop !== "none",
+      description: `${params.eyebrow} fixture card backdrop.`,
     },
     shareFraming: ["page_native", "square", "vertical", "wide"],
   };

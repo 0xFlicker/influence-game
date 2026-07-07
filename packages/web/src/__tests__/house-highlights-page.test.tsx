@@ -1,9 +1,17 @@
 import { describe, expect, it } from "bun:test";
 import { renderToString } from "react-dom/server";
 import type { HouseHighlightsResponse } from "../lib/api";
-import { HouseHighlightsClient } from "../app/games/[slug]/highlights/house-highlights-client";
+import {
+  highlightsLoadStateAfterRefreshError,
+  HouseHighlightsClient,
+  shouldSkipHighlightsRefresh,
+} from "../app/games/[slug]/highlights/house-highlights-client";
+import { generateMetadata } from "../app/games/[slug]/highlights/page";
 import { HouseHighlightsView } from "../app/games/[slug]/components/house-highlights-view";
-import { houseHighlightVisualBriefFixture } from "./house-highlights-fixtures";
+import {
+  houseHighlightVisualBriefFixture,
+  houseHighlightVisualCardFixture,
+} from "./house-highlights-fixtures";
 
 describe("HouseHighlightsView", () => {
   it("renders a client-loading shell before browser-side highlights data loads", () => {
@@ -12,11 +20,63 @@ describe("HouseHighlightsView", () => {
     );
 
     expect(html).toContain("Opening House Highlights");
-    expect(html).toContain("The House is loading the receipt trail.");
+    expect(html).toContain("The House is loading the game facts.");
     expect(html).not.toContain("The House could not open this cut.");
   });
 
-  it("renders a shareable House Cut with receipts and proof links", () => {
+  it("renders initial server-loaded highlights without the loading-only shell", () => {
+    const html = renderToString(
+      <HouseHighlightsClient
+        gameSlug="edge-smoke-dusk"
+        initialResponse={mainCutFixture()}
+      />,
+    );
+
+    expect(html).toContain("House Cut");
+    expect(html).toContain("Ember was cut from inside the pact");
+    expect(html).not.toContain("Opening House Highlights");
+  });
+
+  it("keeps server-loaded highlights visible when the browser refresh fails", () => {
+    const initialResponse = mainCutFixture();
+    const nextState = highlightsLoadStateAfterRefreshError(
+      {
+        status: "loaded",
+        requestKey: "http://127.0.0.1:3000:edge-smoke-dusk",
+        response: initialResponse,
+      },
+      "https://api.example.test:edge-smoke-dusk",
+      "edge-smoke-dusk",
+      new Error("Network down"),
+    );
+
+    expect(nextState).toMatchObject({
+      status: "loaded",
+      requestKey: "https://api.example.test:edge-smoke-dusk",
+      response: initialResponse,
+    });
+  });
+
+  it("does not immediately refetch matching server-loaded highlights", () => {
+    expect(shouldSkipHighlightsRefresh(
+      {
+        status: "loaded",
+        requestKey: "http://127.0.0.1:3000:edge-smoke-dusk",
+        response: mainCutFixture(),
+      },
+      "http://127.0.0.1:3000:edge-smoke-dusk",
+    )).toBe(true);
+    expect(shouldSkipHighlightsRefresh(
+      {
+        status: "loaded",
+        requestKey: "http://127.0.0.1:3000:edge-smoke-dusk",
+        response: mainCutFixture(),
+      },
+      "https://api.example.test:edge-smoke-dusk",
+    )).toBe(false);
+  });
+
+  it("renders a shareable House Cut with fact-forward visual cards", () => {
     const html = renderToString(
       <HouseHighlightsView response={mainCutFixture()} gameSlug="edge-smoke-dusk" />,
     );
@@ -25,25 +85,84 @@ describe("HouseHighlightsView", () => {
     expect(html).toContain("This was the game where the pact collapsed one vote too late.");
     expect(html).toContain("Ember was cut from inside the pact");
     expect(html).toContain("Betrayal vote");
-    expect(html).toContain("Abstract Vote Board");
-    expect(html).toContain("Primary");
-    expect(html).toContain("Supporting");
-    expect(html).toContain("Primary agent");
+    expect(html).toContain("What happened");
     expect(html).toContain("Ember");
     expect(html).toContain("Nova");
-    expect(html).toContain("Deterministic overlays");
-    expect(html).toContain("Agent Identity + Receipt Badge + Proof Link");
-    expect(html).toContain("Vote record");
-    expect(html).toContain("Alliance receipt");
+    expect(html).toContain('src="https://cdn.example.test/avatars/ember.png"');
+    expect(html).toContain("Nova voted against Ember in Round 1.");
+    expect(html).toContain("Ember was eliminated in Round 1.");
     expect(html).toContain("/games/edge-smoke-dusk/results#round-1");
+    expect(html).toContain("/games/edge-smoke-dusk/highlights?scene=alliance-cut%3A1%3Aember#scene-alliance-cut%3A1%3Aember");
     expect(html).toContain("/games/edge-smoke-dusk/replay");
+    expect(html).toContain("house-highlight-visual-card");
     expect(html).not.toContain("High confidence");
+    expect(html).not.toContain("Abstract Vote Board");
+    expect(html).not.toContain("Primary agent");
+    expect(html).not.toContain("Deterministic overlays");
+    expect(html).not.toContain("Receipt Badge");
+    expect(html).not.toContain("Proof Link");
+    expect(html).not.toContain("Vote record");
+    expect(html).not.toContain("Alliance receipt");
+    expect(html).not.toContain("Receipts");
+    expect(html).not.toContain("scene facts");
+    expect(html).not.toContain("scene fact");
     expect(html).not.toContain("scene House Cut");
     expect(html).not.toContain("rejectedCandidates");
     expect(html).not.toContain("sourcePointers");
     expect(html).not.toContain("payloadVersion");
     expect(html).not.toContain("posterDirection");
     expect(html).not.toContain("Vote card split across the alliance line");
+  });
+
+  it("marks a selected card from a shared scene URL", () => {
+    const html = renderToString(
+      <HouseHighlightsView
+        response={mainCutFixture()}
+        gameSlug="edge-smoke-dusk"
+        selectedSceneId="alliance-cut:1:ember"
+      />,
+    );
+
+    expect(html).toContain('id="scene-alliance-cut:1:ember"');
+    expect(html).toContain('data-selected="true"');
+  });
+
+  it("generates scene-specific metadata for card share URLs", async () => {
+    const originalApiBackendUrl = process.env.API_BACKEND_URL;
+    const originalFetch = globalThis.fetch;
+    process.env.API_BACKEND_URL = "http://127.0.0.1:3333";
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(mainCutFixture()), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })) as unknown as typeof fetch;
+
+    try {
+      const metadata = await generateMetadata({
+        params: Promise.resolve({ slug: "edge-smoke-dusk" }),
+        searchParams: Promise.resolve({ scene: "alliance-cut:1:ember" }),
+      });
+
+      expect(metadata.title).toBe("Ember was cut from inside the pact — House Highlights");
+      expect(metadata.description).toContain("Nova voted against Ember in Round 1");
+      expect(metadata.openGraph?.images).toEqual([
+        {
+          url: "/games/edge-smoke-dusk/highlights/card-image/alliance-cut%3A1%3Aember",
+          width: 1200,
+          height: 630,
+          alt: expect.stringContaining("Ember was cut from inside the pact"),
+        },
+      ]);
+      expect((metadata.twitter as { card?: string } | null | undefined)?.card)
+        .toBe("summary_large_image");
+    } finally {
+      if (originalApiBackendUrl === undefined) {
+        delete process.env.API_BACKEND_URL;
+      } else {
+        process.env.API_BACKEND_URL = originalApiBackendUrl;
+      }
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it("renders a mini-highlight pack without needing one main thesis", () => {
@@ -109,7 +228,7 @@ describe("HouseHighlightsView", () => {
     );
 
     expect(html).toContain("The House declined the cut.");
-    expect(html).toContain("Alliance receipts exist");
+    expect(html).toContain("Named-alliance facts exist");
     expect(html).toContain("Open results");
     expect(html).not.toContain("Scene 1");
   });
@@ -208,11 +327,23 @@ function mainCutFixture(): HouseHighlightsResponse {
           anchor: "round-1",
         },
         visualBrief: houseHighlightVisualBriefFixture({
-          visualType: "betrayal_vote",
-          templateLabel: "Betrayal vote",
-          primaryAgents: [{ id: "ember", name: "Ember" }],
-          secondaryAgents: [{ id: "nova", name: "Nova" }],
-          backdrop: "abstract_vote_board",
+            visualType: "betrayal_vote",
+            templateLabel: "Betrayal vote",
+            primaryAgents: [{ id: "ember", name: "Ember", avatarUrl: "https://cdn.example.test/avatars/ember.png" }],
+            secondaryAgents: [{ id: "nova", name: "Nova", avatarUrl: "https://cdn.example.test/avatars/nova.png" }],
+            backdrop: "abstract_vote_board",
+          }),
+          visualCard: houseHighlightVisualCardFixture({
+            template: "hero_vote_action",
+            title: "Ember was cut from inside the pact",
+            eyebrow: "Betrayal vote",
+            primaryAgents: [{ id: "ember", name: "Ember", avatarUrl: "https://cdn.example.test/avatars/ember.png" }],
+            secondaryAgents: [{ id: "nova", name: "Nova", avatarUrl: "https://cdn.example.test/avatars/nova.png" }],
+            backdrop: "abstract_vote_board",
+          facts: [
+            "Nova voted against Ember in Round 1.",
+            "Ember was eliminated in Round 1.",
+          ],
         }),
       }],
       noCutReason: null,

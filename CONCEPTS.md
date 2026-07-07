@@ -190,6 +190,10 @@ The reusable unit of House Highlights selection. A scene card names the moment, 
 
 A structured, truth-safe visual direction for a selected House Highlights scene. A Visual Brief chooses a visual type, required factual slots, deterministic overlays, allowed mood or background category, forbidden inventions, and share posture. It replaces public-facing rough poster direction: generated imagery may supply only non-factual atmosphere, while deterministic composition owns agent identities, names, votes, alliances, receipts, labels, captions, and outcomes.
 
+## Visual Card
+
+A polished static, shareable rendering of a selected House Highlights scene. A Visual Card consumes a Visual Brief but shows scene facts rather than proof scaffolding: who voted for whom, who was eliminated or protected, who was in a named alliance, what round mattered, and what outcome followed. It may use approved non-factual background plates, but evidence links and diagnostics stay outside the card on the surrounding Highlights surface.
+
 ## Trailer thesis
 
 The one-sentence House claim that frames a main House Cut, usually expressible as "This was the game where...". A trailer thesis can be ominous and editorial, but it is valid only when at least three selected scene cards support it with medium-or-better confidence and cold-viewer legibility.

@@ -863,6 +863,7 @@ export type HouseHighlightConfidence = "low" | "medium" | "high";
 export interface HouseHighlightPlayerRef {
   id: string;
   name: string;
+  avatarUrl?: string | null;
 }
 
 export interface HouseHighlightEvidenceRef {
@@ -977,6 +978,42 @@ export interface HouseHighlightVisualBrief {
   shareFraming: HouseHighlightShareFraming[];
 }
 
+export type HouseHighlightVisualCardTemplate =
+  | "hero_vote_action"
+  | "generic_scene";
+
+export type HouseHighlightVisualCardFactKind =
+  | "vote_action"
+  | "alliance_membership"
+  | "elimination"
+  | "protection"
+  | "survival"
+  | "jury_outcome"
+  | "round_context"
+  | "outcome";
+
+export interface HouseHighlightVisualCardFact {
+  id: string;
+  kind: HouseHighlightVisualCardFactKind;
+  text: string;
+  agentIds: string[];
+  receiptIds: string[];
+}
+
+export interface HouseHighlightVisualCard {
+  template: HouseHighlightVisualCardTemplate;
+  title: string;
+  eyebrow: string;
+  altText: string;
+  primaryAgents: HouseHighlightPlayerRef[];
+  secondaryAgents: HouseHighlightPlayerRef[];
+  roundLabel: string | null;
+  outcome: string;
+  factLines: HouseHighlightVisualCardFact[];
+  backdrop: HouseHighlightVisualBackdrop;
+  shareFraming: HouseHighlightShareFraming[];
+}
+
 export interface AdminHouseHighlightVisualBrief extends HouseHighlightVisualBrief {
   diagnostics: HouseHighlightVisualBriefDiagnostics;
 }
@@ -993,6 +1030,7 @@ export interface HouseHighlightSceneCard {
   receipts: HouseHighlightReceipt[];
   deepLink: HouseHighlightDeepLink;
   visualBrief: HouseHighlightVisualBrief;
+  visualCard: HouseHighlightVisualCard;
 }
 
 export interface HouseHighlightsCut {
@@ -1038,7 +1076,7 @@ export async function getPostgameHighlights(gameIdOrSlug: string): Promise<House
   return apiFetch(`/api/games/${gamePathSegment(gameIdOrSlug)}/postgame/highlights`);
 }
 
-export interface AdminHouseHighlightSceneCard extends Omit<HouseHighlightSceneCard, "receipts" | "visualBrief"> {
+export interface AdminHouseHighlightSceneCard extends Omit<HouseHighlightSceneCard, "receipts" | "visualBrief" | "visualCard"> {
   confidence: HouseHighlightConfidence;
   receipts: AdminHouseHighlightReceipt[];
   visualBrief: AdminHouseHighlightVisualBrief;

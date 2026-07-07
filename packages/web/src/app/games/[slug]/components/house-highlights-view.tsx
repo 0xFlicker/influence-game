@@ -5,15 +5,18 @@ import {
   buildHouseHighlightsViewModel,
   type HouseHighlightsSceneModel,
 } from "./house-highlights-model";
+import { HouseHighlightCard } from "./house-highlights-card";
 
 export function HouseHighlightsView({
   response,
   gameSlug,
+  selectedSceneId,
 }: {
   response: HouseHighlightsResponse;
   gameSlug: string;
+  selectedSceneId?: string | null;
 }) {
-  const model = buildHouseHighlightsViewModel(response, gameSlug);
+  const model = buildHouseHighlightsViewModel(response, gameSlug, selectedSceneId);
 
   return (
     <section className="space-y-8" data-testid="house-highlights-view">
@@ -82,27 +85,25 @@ function SceneCard({
   index: number;
 }) {
   return (
-    <article className="grid gap-4 rounded-lg border border-white/10 bg-white/[0.04] p-4 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] sm:p-5">
-      <div className="min-h-48 rounded-md border border-white/10 bg-black/30 p-4">
-        <div className="text-xs font-semibold uppercase text-white/30">
-          Scene {index + 1}
-        </div>
-        <h2 className="mt-3 text-2xl font-semibold leading-tight text-white">
-          {scene.title}
-        </h2>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <span className={`rounded-full border px-2.5 py-1 text-xs ${scene.categoryTone}`}>
-            {scene.categoryLabel}
-          </span>
-        </div>
-        <p className="mt-4 text-sm leading-6 text-white/65">{scene.hook}</p>
-        <VisualBriefPanel scene={scene} />
-      </div>
+    <article
+      id={scene.anchorId}
+      className={`scroll-mt-24 grid gap-4 rounded-lg border p-4 sm:p-5 ${
+        scene.isSelected
+          ? "border-cyan-300/35 bg-cyan-500/[0.08]"
+          : "border-white/10 bg-white/[0.04]"
+      }`}
+      data-selected={scene.isSelected ? "true" : undefined}
+    >
+      <HouseHighlightCard scene={scene} index={index} />
 
       <div className="space-y-4">
         <div>
-          <div className="text-xs font-semibold uppercase text-white/30">Involved</div>
-          <div className="mt-1 text-sm text-white/72">{scene.agentsLabel}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded-full border px-2.5 py-1 text-xs ${scene.categoryTone}`}>
+              {scene.categoryLabel}
+            </span>
+          </div>
+          <p className="mt-4 text-sm leading-6 text-white/65">{scene.hook}</p>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
@@ -113,80 +114,33 @@ function SceneCard({
 
         <div>
           <div className="text-xs font-semibold uppercase text-white/30">
-            Receipts
+            What happened
           </div>
-          <div className="mt-1 text-sm text-white/65">{scene.receiptSummary}</div>
           <div className="mt-3 grid gap-2">
-            {scene.receipts.map((receipt) => (
-              <div key={receipt.id} className="rounded-md border border-white/10 bg-black/20 p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-white/80">{receipt.label}</span>
-                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-white/45">
-                    {receipt.tierLabel}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs leading-5 text-white/45">{receipt.description}</p>
+            {scene.visualCard.factLines.map((fact) => (
+              <div key={fact.id} className="rounded-md border border-white/10 bg-black/20 p-3">
+                <p className="text-sm leading-5 text-white/72">{fact.text}</p>
               </div>
             ))}
           </div>
         </div>
 
-        <Link
-          href={scene.proofLink.href}
-          className="inline-flex rounded-lg border border-cyan-300/25 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100 transition-colors hover:bg-cyan-500/15"
-        >
-          {scene.proofLink.label}
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={scene.shareLink.href}
+            className="inline-flex rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white/70 transition-colors hover:bg-white/[0.1]"
+          >
+            {scene.shareLink.label}
+          </Link>
+          <Link
+            href={scene.proofLink.href}
+            className="inline-flex rounded-lg border border-cyan-300/25 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100 transition-colors hover:bg-cyan-500/15"
+          >
+            {scene.proofLink.label}
+          </Link>
+        </div>
       </div>
     </article>
-  );
-}
-
-function VisualBriefPanel({
-  scene,
-}: {
-  scene: HouseHighlightsSceneModel;
-}) {
-  return (
-    <div className="mt-4 rounded-md border border-cyan-300/15 bg-cyan-950/15 p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-full border border-cyan-300/25 bg-cyan-500/10 px-2 py-0.5 text-[11px] font-semibold text-cyan-100">
-          {scene.visualBrief.typeLabel}
-        </span>
-        <span className="text-[11px] text-white/35">
-          {scene.visualBrief.backdropLabel}
-        </span>
-      </div>
-
-      <div className="mt-3 grid gap-2 text-xs">
-        <div>
-          <div className="font-semibold uppercase text-white/30">Primary</div>
-          <div className="mt-1 text-white/75">{scene.visualBrief.primaryAgentsLabel}</div>
-        </div>
-        {scene.visualBrief.secondaryAgentsLabel ? (
-          <div>
-            <div className="font-semibold uppercase text-white/30">Supporting</div>
-            <div className="mt-1 text-white/58">{scene.visualBrief.secondaryAgentsLabel}</div>
-          </div>
-        ) : null}
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {scene.visualBrief.slots.slice(0, 4).map((slot) => (
-          <span
-            key={`${slot.key}:${slot.value}`}
-            className="min-w-0 max-w-full rounded border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-white/55 break-words"
-            title={`${slot.label}: ${slot.value}`}
-          >
-            {slot.label}: {slot.value}
-          </span>
-        ))}
-      </div>
-
-      <p className="mt-3 text-[11px] leading-5 text-white/35">
-        Deterministic overlays: {scene.visualBrief.overlaysLabel}
-      </p>
-    </div>
   );
 }
 

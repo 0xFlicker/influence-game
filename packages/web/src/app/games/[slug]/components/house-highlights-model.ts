@@ -1,13 +1,15 @@
 import type {
   HouseHighlightCategory,
   HouseHighlightDeepLink,
-  HouseHighlightReceiptTier,
   HouseHighlightSceneCard,
-  HouseHighlightVisualSlot,
   HouseHighlightsResponse,
   HouseHighlightsState,
 } from "@/lib/api";
-import { completedGameModeHref } from "@/lib/game-links";
+import {
+  completedGameModeHref,
+  gameHighlightSceneHref,
+  houseHighlightSceneAnchor,
+} from "@/lib/game-links";
 
 export interface HouseHighlightsProofLink {
   label: string;
@@ -15,39 +17,39 @@ export interface HouseHighlightsProofLink {
   surface: "results" | "replay";
 }
 
+export interface HouseHighlightsShareLink {
+  label: string;
+  href: string;
+}
+
 export interface HouseHighlightsSceneModel {
   id: string;
   title: string;
   categoryLabel: string;
   categoryTone: string;
-  agentsLabel: string;
   hook: string;
   setup: string;
   conflict: string;
   payoff: string;
-  receiptSummary: string;
-  receipts: Array<{
-    id: string;
-    label: string;
-    tierLabel: string;
-    description: string;
-  }>;
-  visualBrief: {
-    typeLabel: string;
-    primaryAgentsLabel: string;
-    secondaryAgentsLabel: string | null;
-    backdropLabel: string;
-    backdropDescription: string;
-    slots: Array<{
-      key: string;
-      label: string;
-      value: string;
-      receiptCount: number;
+  visualCard: {
+    template: string;
+    title: string;
+    eyebrow: string;
+    altText: string;
+    primaryAgents: Array<{ id: string; name: string; initials: string; avatarUrl: string | null }>;
+    secondaryAgents: Array<{ id: string; name: string; initials: string; avatarUrl: string | null }>;
+    roundLabel: string | null;
+    outcome: string;
+    factLines: Array<{
+      id: string;
+      text: string;
     }>;
-    overlaysLabel: string;
-    shareFramingLabel: string;
+    backdropCategory: string;
   };
   proofLink: HouseHighlightsProofLink;
+  shareLink: HouseHighlightsShareLink;
+  anchorId: string;
+  isSelected: boolean;
 }
 
 export interface HouseHighlightsViewModel {
@@ -66,9 +68,10 @@ export interface HouseHighlightsViewModel {
 export function buildHouseHighlightsViewModel(
   response: HouseHighlightsResponse,
   gameSlug: string,
+  selectedSceneId?: string | null,
 ): HouseHighlightsViewModel {
   const highlights = response.highlights;
-  const scenes = highlights.scenes.map((scene) => sceneModel(scene, gameSlug));
+  const scenes = highlights.scenes.map((scene) => sceneModel(scene, gameSlug, selectedSceneId ?? null));
   const fallbackLinks = highlights.fallbackLinks.map((link) => proofLink(link, gameSlug));
   const stateCopy = copyForState(highlights.state, highlights.noCutReason, highlights.eligibility.reason);
   const title = highlights.thesis ?? stateCopy.title;
@@ -99,39 +102,42 @@ export function proofLink(
   };
 }
 
-function sceneModel(scene: HouseHighlightSceneCard, gameSlug: string): HouseHighlightsSceneModel {
+function sceneModel(
+  scene: HouseHighlightSceneCard,
+  gameSlug: string,
+  selectedSceneId: string | null,
+): HouseHighlightsSceneModel {
   return {
     id: scene.id,
     title: scene.title,
     categoryLabel: categoryLabel(scene.category),
     categoryTone: categoryTone(scene.category),
-    agentsLabel: scene.involvedAgents.map((agent) => agent.name).join(", "),
-    hook: scene.houseHook,
-    setup: scene.setup,
-    conflict: scene.conflict,
-    payoff: scene.payoff,
-    receiptSummary: receiptSummary(scene),
-    receipts: scene.receipts.map((receipt) => ({
-      id: receipt.id,
-      label: receipt.label,
-      tierLabel: receiptTierLabel(receipt.tier),
-      description: receipt.description,
-    })),
-    visualBrief: {
-      typeLabel: scene.visualBrief.templateLabel,
-      primaryAgentsLabel: agentList(scene.visualBrief.primaryAgents),
-      secondaryAgentsLabel: scene.visualBrief.secondaryAgents.length > 0
-        ? agentList(scene.visualBrief.secondaryAgents)
-        : null,
-      backdropLabel: formatLabel(scene.visualBrief.backdrop.category),
-      backdropDescription: scene.visualBrief.backdrop.description,
-      slots: scene.visualBrief.factualSlots
-        .filter((slot) => slot.status === "filled")
-        .map(slotModel),
-      overlaysLabel: scene.visualBrief.truthOverlays.map(formatLabel).join(" + "),
-      shareFramingLabel: scene.visualBrief.shareFraming.map(formatLabel).join(" / "),
+    hook: publicSceneText(scene.houseHook),
+    setup: publicSceneText(scene.setup),
+    conflict: publicSceneText(scene.conflict),
+    payoff: publicSceneText(scene.payoff),
+    visualCard: {
+      template: scene.visualCard.template,
+      title: scene.visualCard.title,
+      eyebrow: scene.visualCard.eyebrow,
+      altText: scene.visualCard.altText,
+      primaryAgents: scene.visualCard.primaryAgents.map(cardAgent),
+      secondaryAgents: scene.visualCard.secondaryAgents.map(cardAgent),
+      roundLabel: scene.visualCard.roundLabel,
+      outcome: scene.visualCard.outcome,
+      factLines: scene.visualCard.factLines.map((fact) => ({
+        id: fact.id,
+        text: fact.text,
+      })),
+      backdropCategory: scene.visualCard.backdrop.category,
     },
     proofLink: proofLink(scene.deepLink, gameSlug),
+    shareLink: {
+      label: "Share scene",
+      href: gameHighlightSceneHref(gameSlug, scene.id),
+    },
+    anchorId: houseHighlightSceneAnchor(scene.id),
+    isSelected: selectedSceneId === scene.id,
   };
 }
 
@@ -144,8 +150,7 @@ function copyForState(
     case "main_cut":
       return {
         badge: "House Cut",
-        title: "This was the game where the receipts found the story.",
-        // subtitle: "One thesis, selected scenes, and links back to the proof.",
+        title: "This was the game where the facts found the story.",
         noCutMessage: null,
       };
     case "mini_highlight_pack":
@@ -161,14 +166,14 @@ function copyForState(
         title: "The House declined the cut.",
         subtitle: "The game completed, but the story did not clear the V1 highlight gate.",
         noCutMessage: noCutReason === "insufficient_scene_evidence"
-          ? "Alliance receipts exist, but no scenes were selected by the House."
-          : "The available receipts were not strong enough for a public highlight.",
+          ? "Named-alliance facts exist, but no scenes were selected by the House."
+          : "The available facts were not strong enough for a public highlight.",
       };
     case "unsupported_ineligible":
       return {
         badge: "Ineligible",
         title: "No V1 Highlights cut.",
-        subtitle: "This completed game does not have the alliance receipts required by House Highlights V1.",
+        subtitle: "This completed game does not have the named-alliance facts required by House Highlights V1.",
         noCutMessage: eligibilityReason === "missing_alliance_receipts"
           ? "The House will not invent alliance drama from ordinary vote facts."
           : "The game is outside the supported Highlights path.",
@@ -187,26 +192,13 @@ function formatLabel(value: string): string {
     .join(" ");
 }
 
-function agentList(agents: readonly { name: string }[]): string {
-  return agents.map((agent) => agent.name).join(", ");
-}
-
-function slotModel(slot: HouseHighlightVisualSlot) {
-  return {
-    key: slot.key,
-    label: slot.label,
-    value: slotDisplayValue(slot),
-    receiptCount: slot.receiptIds.length,
-  };
-}
-
-function slotDisplayValue(slot: HouseHighlightVisualSlot): string {
-  if (slot.agents?.length) return agentList(slot.agents);
-  const value = slot.value ?? "Filled";
-  if (slot.key === "receipt_types" && value.includes(":")) {
-    return `${slot.receiptIds.length} receipt${slot.receiptIds.length === 1 ? "" : "s"}`;
-  }
-  return value;
+function publicSceneText(text: string): string {
+  return text
+    .replace(/\breceipt trail\b/gi, "public record")
+    .replace(/\breceipts\b/gi, "facts")
+    .replace(/\breceipt\b/gi, "fact")
+    .replace(/\bproof links?\b/gi, "result links")
+    .replace(/\bproof\b/gi, "record");
 }
 
 function categoryTone(category: HouseHighlightCategory): string {
@@ -228,22 +220,40 @@ function categoryTone(category: HouseHighlightCategory): string {
   }
 }
 
-function receiptTierLabel(tier: HouseHighlightReceiptTier): string {
-  switch (tier) {
-    case "vote_record":
-      return "Vote record";
-    case "alliance_receipt":
-      return "Alliance receipt";
-    case "derived_signal":
-      return "Derived signal";
-    case "public_quote":
-      return "Public quote";
-    case "presentation_direction":
-      return "Presentation";
-  }
+const PERSONA_AVATAR_KEYS = [
+  "honest",
+  "strategic",
+  "deceptive",
+  "paranoid",
+  "social",
+  "aggressive",
+  "loyalist",
+  "observer",
+  "diplomat",
+  "wildcard",
+  "contrarian",
+  "provocateur",
+  "martyr",
+] as const;
+
+function cardAgent(agent: { id: string; name: string; avatarUrl?: string | null }) {
+  return {
+    ...agent,
+    avatarUrl: agent.avatarUrl ?? fallbackPersonaAvatarUrl(agent.name),
+    initials: agent.name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? "")
+      .join("") || "?",
+  };
 }
 
-function receiptSummary(scene: HouseHighlightSceneCard): string {
-  const tiers = new Set(scene.receipts.map((receipt) => receiptTierLabel(receipt.tier)));
-  return [...tiers].join(" + ");
+function fallbackPersonaAvatarUrl(name: string): string {
+  let hash = 0;
+  for (const char of name) {
+    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  }
+  const key = PERSONA_AVATAR_KEYS[hash % PERSONA_AVATAR_KEYS.length] ?? "strategic";
+  return `/avatars/personas/${key}.png`;
 }

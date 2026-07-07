@@ -55,6 +55,51 @@ describe("postgame highlights service", () => {
     expect(result.highlights.scenes.length).toBeGreaterThanOrEqual(3);
     expect(result.highlights.scenes.every((scene) => scene.receipts.length > 0)).toBe(true);
     expect(result.highlights.scenes.every((scene) => scene.visualBrief.visualType.length > 0)).toBe(true);
+    const firstVoteScene = result.highlights.scenes.find((scene) =>
+      scene.visualBrief.visualType === "betrayal_vote"
+    ) as {
+      visualCard?: {
+        factLines: Array<{ kind: string; text: string }>;
+        template: string;
+        altText: string;
+        primaryAgents: Array<{ id: string; name: string; avatarUrl?: string | null }>;
+        secondaryAgents: Array<{ id: string; name: string; avatarUrl?: string | null }>;
+      };
+    } | undefined;
+    expect(firstVoteScene?.visualCard?.template).toBe("hero_vote_action");
+    expect(firstVoteScene?.visualCard?.altText.length).toBeGreaterThan(0);
+    expect(firstVoteScene?.visualCard?.altText).not.toMatch(/[.!?]{2,}/);
+    expect([
+      ...(firstVoteScene?.visualCard?.primaryAgents ?? []),
+      ...(firstVoteScene?.visualCard?.secondaryAgents ?? []),
+    ].every((agent) => agent.avatarUrl?.startsWith("https://cdn.example.test/avatars/"))).toBe(true);
+    expect(firstVoteScene?.visualCard?.factLines.some((line) => /eliminated|voted|alliance/i.test(line.text))).toBe(true);
+    expect(firstVoteScene?.visualCard?.factLines.map((line) => line.kind)).not.toContain("elimination");
+    expect(firstVoteScene?.visualCard?.factLines.map((line) => line.kind)).not.toContain("outcome");
+    expect(JSON.stringify(firstVoteScene?.visualCard)).not.toMatch(/proof link|vote record|alliance receipt|receipt badge/i);
+    const allianceFactLines = result.highlights.scenes.flatMap((scene) =>
+      scene.visualCard.factLines.filter((line) => line.kind === "alliance_membership")
+    );
+    expect(allianceFactLines.every((line) => line.receiptIds.length > 0)).toBe(true);
+    expect(allianceFactLines.some((line) => line.text.includes("a named alliance"))).toBe(false);
+    for (const scene of result.highlights.scenes) {
+      const roundLabel = scene.visualCard.roundLabel;
+      if (!roundLabel) continue;
+      expect(scene.visualCard.outcome).not.toContain(roundLabel);
+      expect(scene.visualCard.factLines.some((line) => line.kind === "round_context")).toBe(false);
+      expect(scene.visualCard.factLines.some((line) => line.text.includes(roundLabel))).toBe(false);
+    }
+    expect(result.highlights.scenes.flatMap((scene) =>
+      scene.visualCard.factLines.map((line) => line.kind)
+    )).not.toContain("outcome");
+    expect(result.highlights.scenes.filter((scene) =>
+      scene.visualCard.factLines.some((line) => line.kind === "vote_action")
+    ).flatMap((scene) =>
+      scene.visualCard.factLines.map((line) => line.kind)
+    )).not.toContain("elimination");
+    expect(result.highlights.scenes.flatMap((scene) =>
+      scene.visualCard.factLines.map((line) => line.text)
+    ).some((text) => /[.!?]\s+in Round/i.test(text))).toBe(false);
     expect(JSON.stringify(result)).not.toContain("posterDirection");
     expect(JSON.stringify(result)).not.toContain("forbiddenInventions");
     expect(JSON.stringify(result)).not.toContain("rejectedBackdropCategories");
@@ -218,19 +263,22 @@ async function insertEdgeSmokeDusk(
   events: readonly CanonicalGameEvent[],
 ): Promise<void> {
   const userId = "user-lilith";
-  const agentProfileId = "agent-lilith";
+  const agentProfileIds = Object.fromEntries(
+    Object.values(EDGE_SMOKE_DUSK_PLAYERS).map((player) => [player.id, `agent-${player.id}`]),
+  );
   await db.insert(schema.users).values({
     id: userId,
     email: "lilith@test.example",
     displayName: "Lilith Owner",
   });
-  await db.insert(schema.agentProfiles).values({
-    id: agentProfileId,
+  await db.insert(schema.agentProfiles).values(Object.values(EDGE_SMOKE_DUSK_PLAYERS).map((player) => ({
+    id: agentProfileIds[player.id]!,
     userId,
-    name: EDGE_SMOKE_DUSK_PLAYERS.lilith.name,
-    personality: "Precise and socially patient.",
+    name: player.name,
+    personality: `${player.name} fixture profile.`,
     personaKey: "strategic",
-  });
+    avatarUrl: `https://cdn.example.test/avatars/${player.id}.png`,
+  })));
   const gameId = await insertGame(db, {
     id: EDGE_SMOKE_DUSK_GAME_ID,
     slug: EDGE_SMOKE_DUSK_EXPECTED.slug,
@@ -250,7 +298,7 @@ async function insertEdgeSmokeDusk(
     id: player.id,
     gameId,
     userId: player.id === EDGE_SMOKE_DUSK_PLAYERS.lilith.id ? userId : null,
-    agentProfileId: player.id === EDGE_SMOKE_DUSK_PLAYERS.lilith.id ? agentProfileId : null,
+    agentProfileId: agentProfileIds[player.id],
     persona: JSON.stringify({
       name: player.name,
       personality: `${player.name} fixture persona`,
