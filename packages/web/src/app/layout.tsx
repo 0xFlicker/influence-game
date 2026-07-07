@@ -37,6 +37,10 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase,
     title,
     description,
+    icons: {
+      icon: "/logo.png",
+      apple: "/logo.png",
+    },
     openGraph: {
       title,
       description,
