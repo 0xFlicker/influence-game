@@ -1,11 +1,13 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, statfs } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { parseHouseHighlightsTrailerManifest, type HouseHighlightsTrailerManifest } from "@influence/engine";
 import {
   HouseHighlightsTrailerMusicUnavailableError,
+  selectHouseHighlightsTrailerMusicVariant,
 } from "../lib/house-highlights-trailer-audio";
 import {
+  DEFAULT_HOUSE_HIGHLIGHTS_TRAILER_MUSIC_DIR,
   renderHouseHighlightsTrailerMediaBundle,
   writeHouseHighlightsTrailerPlaybackMetadata,
   type HouseHighlightsTrailerBundleArtifact,
@@ -13,11 +15,20 @@ import {
 
 const POLL_INTERVAL_MS = 5_000;
 const HEARTBEAT_INTERVAL_MS = 60_000;
+const HTTP_TIMEOUT_MS = 15_000;
+export const DEFAULT_HOUSE_HIGHLIGHTS_MEDIA_WORKER_TEMP_DIR = "/tmp/influence-render-worker";
+export const MIN_HOUSE_HIGHLIGHTS_MEDIA_WORKER_FREE_BYTES = 2 * 1024 * 1024 * 1024;
+const PREPARED_HOUSE_CUT_COUNTS = [0, 1, 2, 3, 4, 5] as const;
+const PREPARED_PLAYER_COUNTS = [6, 8, 10, 12] as const;
 
 export interface HouseHighlightsMediaWorkerConfig {
   apiBaseUrl: string;
   workerToken: string;
   pollIntervalMs: number;
+  httpTimeoutMs: number;
+  temporaryRoot: string;
+  minimumFreeBytes: number;
+  browserExecutable?: string;
 }
 
 interface WorkerClaim {
@@ -59,10 +70,15 @@ export function houseHighlightsMediaWorkerConfig(env: Record<string, string | un
     apiBaseUrl: new URL(apiBaseUrl).toString().replace(/\/$/, ""),
     workerToken,
     pollIntervalMs: positiveInt(env.POSTGAME_MEDIA_POLL_INTERVAL_MS, POLL_INTERVAL_MS),
+    httpTimeoutMs: positiveInt(env.POSTGAME_MEDIA_HTTP_TIMEOUT_MS, HTTP_TIMEOUT_MS),
+    temporaryRoot: env.POSTGAME_MEDIA_TEMP_DIR?.trim() || DEFAULT_HOUSE_HIGHLIGHTS_MEDIA_WORKER_TEMP_DIR,
+    minimumFreeBytes: positiveInt(env.POSTGAME_MEDIA_MIN_FREE_BYTES, MIN_HOUSE_HIGHLIGHTS_MEDIA_WORKER_FREE_BYTES),
+    browserExecutable: env.REMOTION_BROWSER_EXECUTABLE?.trim() || undefined,
   };
 }
 
 export async function runHouseHighlightsMediaWorkerOnce(config: HouseHighlightsMediaWorkerConfig, fetchImpl: typeof fetch = fetch): Promise<"idle" | "completed" | "waiting_music" | "failed"> {
+  await assertHouseHighlightsMediaWorkerTemporarySpace(config.temporaryRoot, config.minimumFreeBytes);
   const response = await workerRequest<{ claim: WorkerClaim | null }>(config, "/api/internal/postgame-media/claim", { method: "POST" }, fetchImpl);
   if (!response.claim) return "idle";
   const claim = { ...response.claim, manifest: parseHouseHighlightsTrailerManifest(response.claim.manifest) };
@@ -76,14 +92,19 @@ export async function runHouseHighlightsMediaWorker(config: HouseHighlightsMedia
   }
 }
 
+export function assertHouseHighlightsMediaWorkerSmokeResult(result: "idle" | "completed" | "waiting_music" | "failed"): void {
+  if (result !== "completed") throw new Error(`Smoke requires a queued completed-game render job; received ${result}.`);
+}
+
 export async function renderClaim(config: HouseHighlightsMediaWorkerConfig, claim: WorkerClaim, fetchImpl: typeof fetch = fetch): Promise<"completed" | "waiting_music" | "failed"> {
-  const workDir = await mkdtemp(join(tmpdir(), "influence-house-highlights-worker-"));
+  const workDir = await mkdtemp(join(config.temporaryRoot, "claim-"));
   const heartbeat = startHeartbeat(config, claim, fetchImpl);
   try {
     await progress(config, claim, "rendering", fetchImpl);
     const bundle = await renderHouseHighlightsTrailerMediaBundle({
       manifest: claim.manifest,
       outputDir: workDir,
+      temporaryRoot: workDir,
       onStage: async (stage) => {
         if (stage === "composing") await progress(config, claim, "composing", fetchImpl);
       },
@@ -102,7 +123,7 @@ export async function renderClaim(config: HouseHighlightsMediaWorkerConfig, clai
     });
     const artifacts = [bundle.artifacts.video, bundle.artifacts.poster, bundle.artifacts.captions, metadataArtifact];
     const uploadTargets = await requestUploadTargets(config, claim, artifacts, fetchImpl);
-    await Promise.all(artifacts.map(async (artifact) => uploadArtifact(targetFor(uploadTargets, artifact.name), artifact, fetchImpl)));
+    await Promise.all(artifacts.map(async (artifact) => uploadArtifact(config, targetFor(uploadTargets, artifact.name), artifact, fetchImpl)));
     await workerRequest(config, `/api/internal/postgame-media/${encodeURIComponent(claim.gameId)}/finalize`, {
       method: "POST",
       body: JSON.stringify({
@@ -136,6 +157,58 @@ export function parseHouseHighlightsMediaWorkerArgs(argv: readonly string[]): "p
   throw new Error("Usage: bun run render-house-highlights-media-worker.ts [--once|--smoke|--health]");
 }
 
+export interface HouseHighlightsMediaWorkerHealthDependencies {
+  fetchImpl?: typeof fetch;
+  runCommand?: (command: string, args: readonly string[]) => Promise<void>;
+  verifyMusic?: () => Promise<void>;
+  verifyTemporarySpace?: (temporaryRoot: string, minimumFreeBytes: number) => Promise<void>;
+}
+
+export async function checkHouseHighlightsMediaWorkerHealth(
+  config: HouseHighlightsMediaWorkerConfig,
+  dependencies: HouseHighlightsMediaWorkerHealthDependencies = {},
+): Promise<void> {
+  if (!config.browserExecutable) throw new Error("REMOTION_BROWSER_EXECUTABLE is required for worker health checks.");
+  const runCommand = dependencies.runCommand ?? runCommandQuietly;
+  await runCommand("ffmpeg", ["-version"]);
+  await runCommand(config.browserExecutable, ["--version"]);
+  await (dependencies.verifyMusic ?? assertPreparedHouseHighlightsTrailerMusicMatrix)();
+  await (dependencies.verifyTemporarySpace ?? assertHouseHighlightsMediaWorkerTemporarySpace)(config.temporaryRoot, config.minimumFreeBytes);
+  const response = await fetchWithTimeout(
+    dependencies.fetchImpl ?? fetch,
+    `${config.apiBaseUrl}/api/health`,
+    undefined,
+    config.httpTimeoutMs,
+    "worker_health_api",
+  );
+  if (!response.ok) throw new Error(`worker_health_api_${response.status}`);
+  const body = await response.json().catch(() => null) as { status?: unknown } | null;
+  if (body?.status !== "ok") throw new Error("worker_health_api_invalid_response");
+}
+
+export async function assertPreparedHouseHighlightsTrailerMusicMatrix(): Promise<void> {
+  const filenames = await readdir(DEFAULT_HOUSE_HIGHLIGHTS_TRAILER_MUSIC_DIR);
+  const prepared = filenames.filter((filename) => filename.endsWith(".m4a"));
+  const expectedCount = PREPARED_HOUSE_CUT_COUNTS.length * PREPARED_PLAYER_COUNTS.length;
+  if (prepared.length !== expectedCount) {
+    throw new Error(`worker_music_matrix_expected_${expectedCount}_found_${prepared.length}`);
+  }
+  for (const houseCuts of PREPARED_HOUSE_CUT_COUNTS) {
+    for (const players of PREPARED_PLAYER_COUNTS) {
+      selectHouseHighlightsTrailerMusicVariant({ houseCuts, players, trailerDurationSeconds: 1 }, prepared, DEFAULT_HOUSE_HIGHLIGHTS_TRAILER_MUSIC_DIR);
+    }
+  }
+}
+
+export async function assertHouseHighlightsMediaWorkerTemporarySpace(temporaryRoot: string, minimumFreeBytes = MIN_HOUSE_HIGHLIGHTS_MEDIA_WORKER_FREE_BYTES): Promise<void> {
+  await mkdir(temporaryRoot, { recursive: true });
+  const filesystem = await statfs(temporaryRoot);
+  const availableBytes = filesystem.bavail * filesystem.bsize;
+  if (availableBytes < minimumFreeBytes) {
+    throw new Error(`worker_temp_space_low_${availableBytes}`);
+  }
+}
+
 async function requestUploadTargets(config: HouseHighlightsMediaWorkerConfig, claim: WorkerClaim, artifacts: readonly HouseHighlightsTrailerBundleArtifact[], fetchImpl: typeof fetch): Promise<UploadTarget[]> {
   const response = await workerRequest<{ targets: UploadTarget[] }>(config, `/api/internal/postgame-media/${encodeURIComponent(claim.gameId)}/upload-targets`, {
     method: "POST",
@@ -148,12 +221,17 @@ async function requestUploadTargets(config: HouseHighlightsMediaWorkerConfig, cl
   return response.targets;
 }
 
-async function uploadArtifact(target: UploadTarget, artifact: HouseHighlightsTrailerBundleArtifact, fetchImpl: typeof fetch): Promise<void> {
-  const response = await fetchImpl(target.uploadUrl, {
-    method: "PUT",
-    headers: target.uploadHeaders,
-    body: Bun.file(artifact.path),
-  });
+async function uploadArtifact(config: HouseHighlightsMediaWorkerConfig, target: UploadTarget, artifact: HouseHighlightsTrailerBundleArtifact, fetchImpl: typeof fetch): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(fetchImpl, target.uploadUrl, {
+      method: "PUT",
+      headers: target.uploadHeaders,
+      body: Bun.file(artifact.path),
+    }, config.httpTimeoutMs, "artifact_upload");
+  } catch {
+    throw new Error("artifact_upload_request_failed");
+  }
   if (!response.ok) throw new Error(`artifact_upload_${response.status}`);
 }
 
@@ -189,7 +267,7 @@ async function workerRequest<T>(config: HouseHighlightsMediaWorkerConfig, path: 
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${config.workerToken}`);
   if (init.body) headers.set("Content-Type", "application/json");
-  const response = await fetchImpl(`${config.apiBaseUrl}${path}`, { ...init, headers });
+  const response = await fetchWithTimeout(fetchImpl, `${config.apiBaseUrl}${path}`, { ...init, headers }, config.httpTimeoutMs, "worker_api");
   if (!response.ok) throw new Error(`worker_api_${response.status}`);
   return response.json() as Promise<T>;
 }
@@ -215,12 +293,24 @@ function publicArtifactFor(claim: WorkerClaim, artifact: string): WorkerClaim["p
 function categorizedFailure(error: unknown): { category: string; message: string } { const message = error instanceof Error ? error.message : "unknown worker failure"; return { category: message.startsWith("artifact_upload") ? "upload" : message.startsWith("worker_api") ? "api" : "render", message: message.slice(0, 240) }; }
 function positiveInt(value: string | undefined, fallback: number): number { const parsed = Number(value); return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback; }
 function sleep(ms: number): Promise<void> { return new Promise((resolvePromise) => setTimeout(resolvePromise, ms)); }
+function runCommandQuietly(command: string, args: readonly string[]): Promise<void> { return new Promise((resolvePromise, reject) => { const child = spawn(command, args, { stdio: "ignore" }); child.on("error", (error) => reject(new Error(`${command} failed to start: ${error.message}`))); child.on("close", (code) => code === 0 ? resolvePromise() : reject(new Error(`${command} exited with code ${code}`))); }); }
+async function fetchWithTimeout(fetchImpl: typeof fetch, input: RequestInfo | URL, init: RequestInit | undefined, timeoutMs: number, errorPrefix: string): Promise<Response> {
+  const signal = AbortSignal.timeout(timeoutMs);
+  try {
+    return await fetchImpl(input, { ...init, signal });
+  } catch {
+    throw new Error(`${errorPrefix}_${signal.aborted ? "timeout" : "request_failed"}`);
+  }
+}
 
 if (import.meta.main) {
   const mode = parseHouseHighlightsMediaWorkerArgs(Bun.argv.slice(2));
   const config = houseHighlightsMediaWorkerConfig();
   const run = mode === "health"
-    ? Promise.resolve(console.log("House Highlights media worker configuration is valid."))
-    : mode === "poll" ? runHouseHighlightsMediaWorker(config) : runHouseHighlightsMediaWorkerOnce(config).then((result) => console.log(mode === "smoke" ? `Smoke result: ${result}` : result));
+    ? checkHouseHighlightsMediaWorkerHealth(config).then(() => console.log("House Highlights media worker health check passed."))
+    : mode === "poll" ? runHouseHighlightsMediaWorker(config) : runHouseHighlightsMediaWorkerOnce(config).then((result) => {
+      if (mode === "smoke") assertHouseHighlightsMediaWorkerSmokeResult(result);
+      console.log(mode === "smoke" ? "Smoke render completed." : result);
+    });
   run.catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exit(1); });
 }

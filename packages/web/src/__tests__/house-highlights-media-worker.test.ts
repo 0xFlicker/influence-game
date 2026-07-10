@@ -9,7 +9,9 @@ import {
   type HouseHighlightsTrailerRenderer,
 } from "../lib/house-highlights-trailer-media-bundle";
 import {
+  assertHouseHighlightsMediaWorkerSmokeResult,
   houseHighlightsMediaWorkerConfig,
+  checkHouseHighlightsMediaWorkerHealth,
   parseHouseHighlightsMediaWorkerArgs,
   runHouseHighlightsMediaWorkerOnce,
 } from "../scripts/render-house-highlights-media-worker";
@@ -81,7 +83,51 @@ describe("House Highlights media worker bundle", () => {
     expect(() => houseHighlightsMediaWorkerConfig({ POSTGAME_MEDIA_API_URL: "http://api.test" }))
       .toThrow("POSTGAME_MEDIA_WORKER_TOKEN");
     expect(parseHouseHighlightsMediaWorkerArgs(["--once"])).toBe("once");
+    expect(parseHouseHighlightsMediaWorkerArgs(["--smoke"])).toBe("smoke");
     expect(parseHouseHighlightsMediaWorkerArgs(["--health"])).toBe("health");
+  });
+
+  it("bounds worker API requests with the configured HTTP timeout", async () => {
+    const config = houseHighlightsMediaWorkerConfig({
+      POSTGAME_MEDIA_API_URL: "http://api.test/",
+      POSTGAME_MEDIA_WORKER_TOKEN: "secret-worker-token",
+      POSTGAME_MEDIA_HTTP_TIMEOUT_MS: "1",
+      POSTGAME_MEDIA_MIN_FREE_BYTES: "1",
+    });
+    await expect(runHouseHighlightsMediaWorkerOnce(config, ((_, init) => new Promise((_, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("request aborted")));
+    })) as typeof fetch)).rejects.toThrow("worker_api_timeout");
+  });
+
+  it("runs non-mutating health checks without sending worker credentials", async () => {
+    const config = houseHighlightsMediaWorkerConfig({
+      POSTGAME_MEDIA_API_URL: "http://api.test/",
+      POSTGAME_MEDIA_WORKER_TOKEN: "secret-worker-token",
+      REMOTION_BROWSER_EXECUTABLE: "/usr/bin/chromium",
+    });
+    const commands: Array<{ command: string; args: readonly string[] }> = [];
+    const healthRequests: Request[] = [];
+    await checkHouseHighlightsMediaWorkerHealth(config, {
+      fetchImpl: (async (input, init) => {
+        healthRequests.push(new Request(input, init));
+        return Response.json({ status: "ok" });
+      }) as typeof fetch,
+      runCommand: async (command, args) => { commands.push({ command, args }); },
+      verifyMusic: async () => undefined,
+      verifyTemporarySpace: async () => undefined,
+    });
+    expect(commands).toEqual([
+      { command: "ffmpeg", args: ["-version"] },
+      { command: "/usr/bin/chromium", args: ["--version"] },
+    ]);
+    expect(healthRequests[0]?.url).toBe("http://api.test/api/health");
+    expect(healthRequests[0]?.headers.has("Authorization")).toBeFalse();
+  });
+
+  it("rejects an idle or failed claim as a smoke result", () => {
+    expect(() => assertHouseHighlightsMediaWorkerSmokeResult("completed")).not.toThrow();
+    expect(() => assertHouseHighlightsMediaWorkerSmokeResult("idle")).toThrow("Smoke requires a queued completed-game render job");
+    expect(() => assertHouseHighlightsMediaWorkerSmokeResult("waiting_music")).toThrow("Smoke requires a queued completed-game render job");
   });
 });
 

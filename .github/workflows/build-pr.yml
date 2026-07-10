@@ -137,9 +137,15 @@ jobs:
           - target: api
             dockerfile: Dockerfile.api
             image: ghcr.io/0xflicker/influence-api
+            build_args: ""
           - target: web
             dockerfile: Dockerfile.web
             image: ghcr.io/0xflicker/influence-web
+            build_args: '--build-arg PRIVY_APP_ID="$PRIVY_APP_ID"'
+          - target: render-worker
+            dockerfile: Dockerfile.render-worker
+            image: ghcr.io/0xflicker/influence-render-worker
+            build_args: ""
     steps:
       - uses: actions/checkout@v4
         with:
@@ -152,23 +158,13 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push API
-        if: matrix.target == 'api'
-        run: |
-          docker build -f ${{ matrix.dockerfile }} \
-            --build-arg GIT_SHA=${{ needs.ephemeral-status.outputs.head_sha }} \
-            -t ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }} \
-            .
-          docker push ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }}
-
-      - name: Build and push web
-        if: matrix.target == 'web'
+      - name: Build and push ${{ matrix.target }}
         env:
           PRIVY_APP_ID: ${{ secrets.PRIVY_APP_ID }}
         run: |
           docker build -f ${{ matrix.dockerfile }} \
             --build-arg GIT_SHA=${{ needs.ephemeral-status.outputs.head_sha }} \
-            --build-arg PRIVY_APP_ID="${PRIVY_APP_ID}" \
+            ${{ matrix.build_args }} \
             -t ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }} \
             .
           docker push ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }}

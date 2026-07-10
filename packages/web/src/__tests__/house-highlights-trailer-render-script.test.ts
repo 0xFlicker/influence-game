@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { remotionBrowserOptions } from "../lib/house-highlights-trailer-media-bundle";
 import {
   fetchHouseHighlightsTrailerJson,
   musicMuxArgsFor,
@@ -46,6 +47,14 @@ describe("house highlights trailer render script", () => {
 
     expect(paths.mp4Path).toBe("/tmp/trailers/vast-plum-bay.mp4");
     expect(paths.cuePath).toBe("/tmp/trailers/vast-plum-bay.cue.json");
+  });
+
+  it("only configures Remotion's installed browser when explicitly requested", () => {
+    expect(remotionBrowserOptions({})).toEqual({});
+    expect(remotionBrowserOptions({ REMOTION_BROWSER_EXECUTABLE: " /usr/bin/chromium " })).toEqual({
+      browserExecutable: "/usr/bin/chromium",
+      chromeMode: "chrome-for-testing",
+    });
   });
 
   it("selects the exact prepared score for a supported trailer shape", () => {

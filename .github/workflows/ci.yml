@@ -63,9 +63,15 @@ jobs:
           - target: api
             dockerfile: Dockerfile.api
             image: ghcr.io/0xflicker/influence-api
+            build_args: ""
           - target: web
             dockerfile: Dockerfile.web
             image: ghcr.io/0xflicker/influence-web
+            build_args: '--build-arg PRIVY_APP_ID="$PRIVY_APP_ID"'
+          - target: render-worker
+            dockerfile: Dockerfile.render-worker
+            image: ghcr.io/0xflicker/influence-render-worker
+            build_args: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -80,25 +86,13 @@ jobs:
         id: sha
         run: echo "short=$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push API
-        if: matrix.target == 'api'
-        run: |
-          docker build -f ${{ matrix.dockerfile }} \
-            --build-arg GIT_SHA=${{ github.sha }} \
-            -t ${{ matrix.image }}:${{ steps.sha.outputs.short }} \
-            -t ${{ matrix.image }}:staging \
-            .
-          docker push ${{ matrix.image }}:${{ steps.sha.outputs.short }}
-          docker push ${{ matrix.image }}:staging
-
-      - name: Build and push web
-        if: matrix.target == 'web'
+      - name: Build and push ${{ matrix.target }}
         env:
           PRIVY_APP_ID: ${{ secrets.PRIVY_APP_ID }}
         run: |
           docker build -f ${{ matrix.dockerfile }} \
             --build-arg GIT_SHA=${{ github.sha }} \
-            --build-arg PRIVY_APP_ID="${PRIVY_APP_ID}" \
+            ${{ matrix.build_args }} \
             -t ${{ matrix.image }}:${{ steps.sha.outputs.short }} \
             -t ${{ matrix.image }}:staging \
             .

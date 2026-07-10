@@ -29,7 +29,11 @@
     "dev:api": "cd packages/api && bun run dev",
     "dev:web": "cd packages/web && bun run dev",
     "trailer:render": "cd packages/web && bun run trailer:render",
-    "trailer:music:variants": "bun run scripts/generate-house-highlights-music-variants.ts"
+    "trailer:music:variants": "bun run scripts/generate-house-highlights-music-variants.ts",
+    "render-worker:poll": "cd packages/web && bun run render-worker:poll",
+    "render-worker:once": "cd packages/web && bun run render-worker:once",
+    "render-worker:smoke": "cd packages/web && bun run render-worker:smoke",
+    "render-worker:health": "cd packages/web && bun run render-worker:health"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",

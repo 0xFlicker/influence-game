@@ -8,6 +8,10 @@
     "build": "next build",
     "start": "next start -H 127.0.0.1",
     "trailer:render": "bun run src/scripts/render-house-highlights-trailer.ts",
+    "render-worker:poll": "bun run src/scripts/render-house-highlights-media-worker.ts",
+    "render-worker:once": "bun run src/scripts/render-house-highlights-media-worker.ts --once",
+    "render-worker:smoke": "bun run src/scripts/render-house-highlights-media-worker.ts --smoke",
+    "render-worker:health": "bun run src/scripts/render-house-highlights-media-worker.ts --health",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test:mock": "bun test src/__tests__/"

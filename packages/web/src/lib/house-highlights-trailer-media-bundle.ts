@@ -231,21 +231,27 @@ async function artifactFor(name: HouseHighlightsTrailerBundleArtifactName, path:
 
 function remotionRenderer(): HouseHighlightsTrailerRenderer {
   let serveUrl: string | null = null;
+  const browserOptions = remotionBrowserOptions();
   const compositionFor = async (manifest: HouseHighlightsTrailerManifest) => {
     serveUrl ??= await bundle({ entryPoint: resolve(WEB_ROOT, "src/remotion/house-highlights-trailer/index.tsx"), publicDir: resolve(WEB_ROOT, "public"), rootDir: WEB_ROOT });
-    return { serveUrl, composition: await selectComposition({ serveUrl, id: HOUSE_HIGHLIGHTS_TRAILER_COMPOSITION_ID, inputProps: { manifest } }) };
+    return { serveUrl, composition: await selectComposition({ serveUrl, id: HOUSE_HIGHLIGHTS_TRAILER_COMPOSITION_ID, inputProps: { manifest }, ...browserOptions }) };
   };
   return {
     async renderVisual({ manifest, outputPath }) {
       const selected = await compositionFor(manifest);
-      await renderMedia({ composition: selected.composition, serveUrl: selected.serveUrl, codec: "h264", outputLocation: outputPath, inputProps: { manifest }, overwrite: true, logLevel: "warn" });
+      await renderMedia({ composition: selected.composition, serveUrl: selected.serveUrl, codec: "h264", outputLocation: outputPath, inputProps: { manifest }, overwrite: true, logLevel: "warn", ...browserOptions });
     },
     async renderPoster({ manifest, frame, outputPath }) {
       const selected = await compositionFor(manifest);
-      await renderStill({ composition: selected.composition, serveUrl: selected.serveUrl, frame, imageFormat: "png", output: outputPath, inputProps: { manifest }, overwrite: true, logLevel: "warn" });
+      await renderStill({ composition: selected.composition, serveUrl: selected.serveUrl, frame, imageFormat: "png", output: outputPath, inputProps: { manifest }, overwrite: true, logLevel: "warn", ...browserOptions });
     },
     async mux({ visualPath, outputPath, music }) { await run("ffmpeg", musicMuxArgsFor({ visualPath, outputPath, music })); },
   };
+}
+
+export function remotionBrowserOptions(env: Record<string, string | undefined> = process.env): { browserExecutable?: string; chromeMode?: "chrome-for-testing" } {
+  const browserExecutable = env.REMOTION_BROWSER_EXECUTABLE?.trim();
+  return browserExecutable ? { browserExecutable, chromeMode: "chrome-for-testing" } : {};
 }
 
 function safeOutputBasename(value: string): string { return value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "house-highlights-trailer"; }
