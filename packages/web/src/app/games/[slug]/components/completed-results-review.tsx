@@ -2,7 +2,7 @@
 
 import { startTransition, useEffect, useState } from "react";
 import Link from "next/link";
-import { completedGameModeHref, gameHighlightsHref } from "@/lib/game-links";
+import { completedGameModeHref, gameHighlightsHref, gameHref } from "@/lib/game-links";
 import {
   getCompletedGameResults,
   getGameAlliances,
@@ -129,6 +129,12 @@ export function CompletedResultsReview({
           </h2>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link
+            href={gameHref(gameSlug)}
+            className="rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white/70 transition-colors hover:bg-white/[0.1]"
+          >
+            Trailer
+          </Link>
           <Link
             href={gameHighlightsHref(gameSlug)}
             className="rounded-lg border border-red-300/25 bg-red-500/10 px-3 py-2 text-sm text-red-100 transition-colors hover:bg-red-500/15"

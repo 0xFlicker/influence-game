@@ -72,6 +72,7 @@ export function GameViewer({
   initialGame,
   initialMessages,
   initialReplayFrames,
+  initialPostgameMedia,
 }: GameViewerProps) {
   const { authenticated, login } = usePrivy();
   const router = useRouter();
@@ -736,9 +737,11 @@ export function GameViewer({
   if (game.status === "completed" && completedMode !== "replay") {
     return (
       <CompletedGameEntry
+        key={`completed-entry:${game.slug ?? game.id}`}
         gameId={game.slug ?? game.id}
         gameNumber={game.gameNumber}
         hasReplay={messages.length > 0 || completedMode !== "results"}
+        initialMedia={initialPostgameMedia}
       />
     );
   }

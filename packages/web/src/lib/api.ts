@@ -1076,6 +1076,60 @@ export async function getPostgameHighlights(gameIdOrSlug: string): Promise<House
   return apiFetch(`/api/games/${gamePathSegment(gameIdOrSlug)}/postgame/highlights`);
 }
 
+export type PublicPostgameMediaStatus =
+  | "not_requested"
+  | "waiting_inputs"
+  | "waiting_music"
+  | "queued"
+  | "rendering"
+  | "ready"
+  | "failed";
+
+export type PublicPostgameMediaResponse =
+  | {
+      schemaVersion: 1;
+      mediaType: "house_highlights_trailer";
+      status: Exclude<PublicPostgameMediaStatus, "ready">;
+    }
+  | {
+      schemaVersion: 1;
+      mediaType: "house_highlights_trailer";
+      status: "ready";
+      renderVersion: number;
+      durationSeconds: number;
+      preview: {
+        title: string;
+        description: string;
+      };
+      video: {
+        url: string;
+        contentType: string;
+        width: number;
+        height: number;
+      };
+      poster: {
+        url: string;
+        contentType: string;
+        altText: string;
+      };
+      captions: {
+        url: string;
+        contentType: string;
+        language: string;
+        label: string;
+      };
+      manifest: {
+        url: string;
+        contentType: string;
+      };
+    };
+
+export async function getPostgameMedia(
+  gameIdOrSlug: string,
+): Promise<PublicPostgameMediaResponse> {
+  return apiFetch(`/api/games/${gamePathSegment(gameIdOrSlug)}/postgame/media`);
+}
+
 export interface AdminHouseHighlightSceneCard extends Omit<HouseHighlightSceneCard, "receipts" | "visualBrief" | "visualCard"> {
   confidence: HouseHighlightConfidence;
   receipts: AdminHouseHighlightReceipt[];

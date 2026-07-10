@@ -1,6 +1,6 @@
 import { gamePathSegment } from "./game-links";
 import { getPublicRuntimeConfig } from "./server-runtime-config";
-import type { HouseHighlightsResponse } from "./api";
+import type { HouseHighlightsResponse, PublicPostgameMediaResponse } from "./api";
 
 const DEFAULT_SERVER_API_TIMEOUT_MS = 8_000;
 
@@ -85,6 +85,16 @@ export function getServerPostgameHighlights(
 ): Promise<HouseHighlightsResponse> {
   return serverApiFetch(
     `/api/games/${gamePathSegment(gameIdOrSlug)}/postgame/highlights`,
+    options,
+  );
+}
+
+export function getServerPostgameMedia(
+  gameIdOrSlug: string,
+  options?: RequestInit,
+): Promise<PublicPostgameMediaResponse> {
+  return serverApiFetch(
+    `/api/games/${gamePathSegment(gameIdOrSlug)}/postgame/media`,
     options,
   );
 }

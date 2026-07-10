@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { HouseHighlightsResponse } from "@/lib/api";
-import { completedGameModeHref } from "@/lib/game-links";
+import { completedGameModeHref, gameHref } from "@/lib/game-links";
 import {
   buildHouseHighlightsViewModel,
   type HouseHighlightsSceneModel,
@@ -59,6 +59,12 @@ export function HouseHighlightsView({
           </p>
         ) : <span />}
         <div className="flex flex-wrap gap-2">
+          <Link
+            href={gameHref(gameSlug)}
+            className="rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white/70 transition-colors hover:bg-white/[0.1]"
+          >
+            Trailer
+          </Link>
           <Link
             href={completedGameModeHref(gameSlug, "results")}
             className="rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white/70 transition-colors hover:bg-white/[0.1]"

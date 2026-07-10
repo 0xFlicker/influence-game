@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import {
   getServerPostgameHighlights,
+  getServerPostgameMedia,
   resolveServerApiUrl,
   serverApiFetch,
 } from "../lib/server-api";
@@ -60,6 +61,26 @@ describe("server-api", () => {
     });
     expect(JSON.stringify(requestedHeaders)).not.toContain("Authorization");
     expect(requestedSignal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("fetches public postgame media without browser auth headers", async () => {
+    process.env.API_BACKEND_URL = "http://127.0.0.1:3333";
+    let requestedUrl = "";
+    globalThis.fetch = (async (url: Parameters<typeof fetch>[0]) => {
+      requestedUrl = String(url);
+      return new Response(JSON.stringify({
+        schemaVersion: 1,
+        mediaType: "house_highlights_trailer",
+        status: "not_requested",
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+
+    await getServerPostgameMedia("edge smoke/dusk");
+
+    expect(requestedUrl).toBe("http://127.0.0.1:3333/api/games/edge%20smoke%2Fdusk/postgame/media");
   });
 
   it("throws a server API error for non-ok responses", async () => {

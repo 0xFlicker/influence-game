@@ -95,6 +95,8 @@ describe("HouseHighlightsView", () => {
     expect(html).toContain("/games/edge-smoke-dusk/highlights?scene=alliance-cut%3A1%3Aember#scene-alliance-cut%3A1%3Aember");
     expect(html).toContain("/games/edge-smoke-dusk/replay");
     expect(html).toContain("house-highlight-visual-card");
+    expect(html).toContain("Trailer");
+    expect(html).toContain("/games/edge-smoke-dusk");
     expect(html).not.toContain("High confidence");
     expect(html).not.toContain("Abstract Vote Board");
     expect(html).not.toContain("Primary agent");

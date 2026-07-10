@@ -1,4 +1,11 @@
-import type { PhaseKey, TranscriptEntry, GamePlayer, GameDetail, GameWatchReplayFrame } from "@/lib/api";
+import type {
+  PhaseKey,
+  TranscriptEntry,
+  GamePlayer,
+  GameDetail,
+  GameWatchReplayFrame,
+  PublicPostgameMediaResponse,
+} from "@/lib/api";
 
 export type RoomType = "lobby" | "private_rooms" | "tribunal" | "diary" | "endgame";
 
@@ -73,6 +80,7 @@ export interface GameViewerProps {
   initialGame?: GameDetail;
   initialMessages?: TranscriptEntry[];
   initialReplayFrames?: GameWatchReplayFrame[];
+  initialPostgameMedia?: PublicPostgameMediaResponse;
 }
 
 export type SpectacleMessagePhase = "typing" | "revealing" | "done";
