@@ -4,9 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Image tag that was deployed (informational)"
-        required: false
-        default: "staging"
+        description: "Immutable image tag that was deployed (informational)"
+        required: true
 
 permissions:
   contents: read

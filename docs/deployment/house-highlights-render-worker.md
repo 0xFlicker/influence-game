@@ -188,7 +188,7 @@ render-worker:
     api:
       condition: service_healthy
   environment:
-    POSTGAME_MEDIA_API_URL: http://api:4000
+    POSTGAME_MEDIA_API_URL: http://api:3001
     POSTGAME_MEDIA_WORKER_TOKEN: ${POSTGAME_MEDIA_WORKER_TOKEN}
     POSTGAME_MEDIA_POLL_INTERVAL_MS: "5000"
     POSTGAME_MEDIA_HTTP_TIMEOUT_MS: "15000"
@@ -204,15 +204,17 @@ render-worker:
 Also add the current worker token to the API service, provision at least 2 GiB
 free on the temp mount, and keep one replica. Do not add public ports or object-
 storage credentials to the worker. The image's Docker healthcheck runs `--health`;
-deployment validation should additionally queue a staging game and run the
-one-shot `--smoke` command, then perform the `ffprobe` checks above.
+deployment validation must use the existing admin backfill path with an approved
+disposable completed game, then confirm public player playback and the `ffprobe`
+checks above in staging before promoting the same immutable SHA to production.
 
 CI publishes:
 
 - `ghcr.io/0xflicker/influence-render-worker:<short-sha>` and `:staging` from `main`;
 - `ghcr.io/0xflicker/influence-render-worker:pr-<number>` for ephemeral PR builds.
 
-The `linode-iac` deployment should pin a promoted immutable SHA tag and use the
-same restart/promotion process as API and web. Rollback means restoring the prior
-worker image tag; queued/leased jobs remain API-owned and can be reclaimed after
-their lease expires.
+The `linode-iac` deployment should pin the same selected immutable SHA for API,
+web, and worker. Moving `staging` and `latest` tags may remain discovery aliases,
+but are never runtime deployment inputs. Rollback restores the prior immutable
+three-image release; queued/leased jobs remain API-owned and can be reclaimed
+after their lease expires.

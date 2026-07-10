@@ -74,6 +74,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      image_tag: ${{ steps.sha.outputs.short }}
     strategy:
       fail-fast: false
       matrix:
@@ -166,6 +168,6 @@ jobs:
               workflow_id: 'deploy-staging.yml',
               ref: 'main',
               inputs: {
-                image_tag: 'staging'
+                image_tag: '${{ needs.docker-build-push.outputs.image_tag }}'
               }
             });
