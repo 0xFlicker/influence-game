@@ -197,6 +197,20 @@
       "when": 1783644202696,
       "tag": "0027_postgame_media",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1783645436924,
+      "tag": "0028_postgame_media_worker",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1783646056613,
+      "tag": "0029_postgame_media_upload_targets",
+      "breakpoints": true
     }
   ]
 }

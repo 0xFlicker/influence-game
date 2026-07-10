@@ -1,0 +1,1 @@
+ALTER TABLE "game_postgame_media" ADD COLUMN "upload_target_metadata" jsonb;

@@ -68,6 +68,7 @@ export type AdminPostgameMediaRead =
       mediaType: typeof MEDIA_TYPE;
       status: PostgameMediaStatus;
       renderVersion: number;
+      artifactVersion?: string;
       attemptNumber: number;
       lease?: {
         active: boolean;
@@ -80,7 +81,7 @@ export type AdminPostgameMediaRead =
       artifactMetadata?: PostgameMediaArtifactMetadata;
       cueMetadata?: Record<string, unknown>;
       diagnostics?: Record<string, unknown>;
-      provenance: {
+      provenance?: {
         renderInputSnapshotHash: string;
         renderInputSnapshotVersion: number;
         rendererVersion: string;
@@ -142,12 +143,22 @@ export async function getAdminPostgameMedia(
       }
     : undefined;
   const currentReady = adminCurrentReady(row);
+  const provenance = hasSnapshotProvenance(row)
+    ? {
+        renderInputSnapshotHash: row.renderInputSnapshotHash,
+        renderInputSnapshotVersion: row.renderInputSnapshotVersion,
+        rendererVersion: row.rendererVersion,
+        timingContractVersion: row.timingContractVersion,
+        musicAssetId: row.musicAssetId,
+      }
+    : undefined;
 
   return {
     schemaVersion: SCHEMA_VERSION,
     mediaType: MEDIA_TYPE,
     status: row.status,
     renderVersion: row.renderVersion,
+    ...(row.artifactVersion ? { artifactVersion: row.artifactVersion } : {}),
     attemptNumber: row.attemptNumber,
     ...(lease ? { lease } : {}),
     ...(failure ? { failure } : {}),
@@ -156,13 +167,7 @@ export async function getAdminPostgameMedia(
       : {}),
     ...(row.cueMetadata ? { cueMetadata: redactRecord(row.cueMetadata) } : {}),
     ...(row.diagnostics ? { diagnostics: redactRecord(row.diagnostics) } : {}),
-    provenance: {
-      renderInputSnapshotHash: row.renderInputSnapshotHash,
-      renderInputSnapshotVersion: row.renderInputSnapshotVersion,
-      rendererVersion: row.rendererVersion,
-      timingContractVersion: row.timingContractVersion,
-      musicAssetId: row.musicAssetId,
-    },
+    ...(provenance ? { provenance } : {}),
     ...(currentReady ? { currentReady } : {}),
     timestamps: {
       createdAt: row.createdAt,
@@ -187,6 +192,22 @@ async function loadPostgameMedia(db: DrizzleDB, gameId: string) {
 
 function publicState(status: Exclude<PublicPostgameMediaStatus, "ready">): PublicPostgameMediaRead {
   return { schemaVersion: SCHEMA_VERSION, mediaType: MEDIA_TYPE, status };
+}
+
+function hasSnapshotProvenance(
+  row: typeof schema.gamePostgameMedia.$inferSelect,
+): row is typeof schema.gamePostgameMedia.$inferSelect & {
+  renderInputSnapshotHash: string;
+  renderInputSnapshotVersion: number;
+  rendererVersion: string;
+  timingContractVersion: string;
+  musicAssetId: string;
+} {
+  return row.renderInputSnapshotHash !== null
+    && row.renderInputSnapshotVersion !== null
+    && row.rendererVersion !== null
+    && row.timingContractVersion !== null
+    && row.musicAssetId !== null;
 }
 
 function publicStatusFor(status: PostgameMediaStatus): Exclude<PublicPostgameMediaStatus, "ready"> {

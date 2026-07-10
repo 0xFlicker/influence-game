@@ -18,6 +18,7 @@ import { setupTestDB } from "./test-utils.js";
 import {
   appendDurableEventsAndPublishWatchState,
   preflightSelectedModel,
+  reconcilePostgameMediaAfterCompletion,
   serializeTranscriptEntry,
 } from "../services/game-lifecycle.js";
 import {
@@ -40,6 +41,20 @@ import {
 beforeAll(() => {
   process.env.JWT_SECRET = "test-jwt-secret-lifecycle";
   process.env.ADMIN_ADDRESS = "0xadminlifecycle";
+});
+
+describe("postgame media completion isolation", () => {
+  test("does not fail the completed-game path when media reconciliation throws", async () => {
+    const db = await setupTestDB();
+    const completed = await reconcilePostgameMediaAfterCompletion(
+      db,
+      "completed-game-id",
+      async () => {
+        throw new Error("renderer coordinator unavailable");
+      },
+    );
+    expect(completed).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

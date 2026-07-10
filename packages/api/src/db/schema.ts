@@ -34,6 +34,18 @@ export type PostgameMediaStatus =
   | "ready"
   | "failed";
 
+export type PostgameMediaAuditAction =
+  | "completion_reconcile"
+  | "backfill"
+  | "rerender";
+
+export type PostgameMediaAuditOutcome =
+  | "queued"
+  | "waiting_inputs"
+  | "suppressed"
+  | "failed"
+  | "denied";
+
 export interface PostgameMediaPreviewMetadata {
   title: string;
   description: string;
@@ -86,6 +98,25 @@ export interface PostgameMediaArtifactMetadata {
     provider: string;
     bucket: string;
   };
+}
+
+export type PostgameMediaArtifactKind =
+  | "video"
+  | "poster"
+  | "captions"
+  | "metadata";
+
+export interface PostgameMediaUploadTargetMetadata {
+  targetId: string;
+  attemptNumber: number;
+  artifactVersion: string;
+  artifact: PostgameMediaArtifactKind;
+  filename: string;
+  objectKey: string;
+  publicUrl: string;
+  contentType: string;
+  byteLength: number;
+  sha256: string;
 }
 
 const MCP_OAUTH_SCOPE_CHECK_SQL = sql.raw(
@@ -886,6 +917,7 @@ export const gamePostgameMedia = pgTable("game_postgame_media", {
   mediaType: text("media_type").notNull().$type<PostgameMediaType>(),
   status: text("status").notNull().$type<PostgameMediaStatus>().default("queued"),
   renderVersion: integer("render_version").notNull().default(1),
+  artifactVersion: text("artifact_version"),
   attemptNumber: integer("attempt_number").notNull().default(1),
   workerIdHash: text("worker_id_hash"),
   leaseTokenHash: text("lease_token_hash"),
@@ -897,14 +929,15 @@ export const gamePostgameMedia = pgTable("game_postgame_media", {
   failureMessage: text("failure_message"),
   renderDurationMs: integer("render_duration_ms"),
   renderInputSnapshot: jsonb("render_input_snapshot")
-    .notNull()
     .$type<unknown>(),
-  renderInputSnapshotHash: text("render_input_snapshot_hash").notNull(),
-  renderInputSnapshotVersion: integer("render_input_snapshot_version").notNull(),
-  rendererVersion: text("renderer_version").notNull(),
-  timingContractVersion: text("timing_contract_version").notNull(),
-  musicAssetId: text("music_asset_id").notNull(),
+  renderInputSnapshotHash: text("render_input_snapshot_hash"),
+  renderInputSnapshotVersion: integer("render_input_snapshot_version"),
+  rendererVersion: text("renderer_version"),
+  timingContractVersion: text("timing_contract_version"),
+  musicAssetId: text("music_asset_id"),
   artifactMetadata: jsonb("artifact_metadata").$type<PostgameMediaArtifactMetadata>(),
+  uploadTargetMetadata: jsonb("upload_target_metadata")
+    .$type<PostgameMediaUploadTargetMetadata[]>(),
   cueMetadata: jsonb("cue_metadata").$type<Record<string, unknown>>(),
   diagnostics: jsonb("diagnostics").$type<Record<string, unknown>>(),
   currentReadyRenderVersion: integer("current_ready_render_version"),
@@ -925,7 +958,22 @@ export const gamePostgameMedia = pgTable("game_postgame_media", {
   check("game_postgame_media_status_check", sql`${table.status} IN ('waiting_inputs', 'waiting_music', 'queued', 'claimed', 'rendering', 'composing', 'uploading', 'ready', 'failed')`),
   check("game_postgame_media_render_version_check", sql`${table.renderVersion} > 0 AND ${table.attemptNumber} > 0`),
   check("game_postgame_media_duration_check", sql`${table.renderDurationMs} IS NULL OR ${table.renderDurationMs} >= 0`),
-  check("game_postgame_media_snapshot_version_check", sql`${table.renderInputSnapshotVersion} > 0`),
+  check("game_postgame_media_snapshot_provenance_check", sql`
+    (${table.renderInputSnapshot} IS NULL
+      AND ${table.renderInputSnapshotHash} IS NULL
+      AND ${table.renderInputSnapshotVersion} IS NULL
+      AND ${table.artifactVersion} IS NULL
+      AND ${table.rendererVersion} IS NULL
+      AND ${table.timingContractVersion} IS NULL
+      AND ${table.musicAssetId} IS NULL)
+    OR (${table.renderInputSnapshot} IS NOT NULL
+      AND ${table.renderInputSnapshotHash} IS NOT NULL
+      AND ${table.renderInputSnapshotVersion} > 0
+      AND ${table.artifactVersion} IS NOT NULL
+      AND ${table.rendererVersion} IS NOT NULL
+      AND ${table.timingContractVersion} IS NOT NULL
+      AND ${table.musicAssetId} IS NOT NULL)
+  `),
   check("game_postgame_media_current_ready_check", sql`
     (${table.currentReadyRenderVersion} IS NULL
       AND ${table.currentReadyDurationMs} IS NULL
@@ -936,6 +984,27 @@ export const gamePostgameMedia = pgTable("game_postgame_media", {
       AND ${table.currentReadyArtifactMetadata} IS NOT NULL
       AND ${table.currentReadyPublishedAt} IS NOT NULL)
   `),
+]);
+
+export const gamePostgameMediaAuditEvents = pgTable("game_postgame_media_audit_events", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id").references(() => games.id),
+  actorUserId: text("actor_user_id").references(() => users.id),
+  action: text("action").notNull().$type<PostgameMediaAuditAction>(),
+  outcome: text("outcome").notNull().$type<PostgameMediaAuditOutcome>(),
+  reason: text("reason"),
+  source: text("source").notNull(),
+  previousRenderVersion: integer("previous_render_version"),
+  currentRenderVersion: integer("current_render_version"),
+  safeMetadata: jsonb("safe_metadata").$type<Record<string, unknown>>(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  index("game_postgame_media_audit_game_idx").on(table.gameId, table.createdAt),
+  index("game_postgame_media_audit_actor_idx").on(table.actorUserId, table.createdAt),
+  check("game_postgame_media_audit_action_check", sql`${table.action} IN ('completion_reconcile', 'backfill', 'rerender')`),
+  check("game_postgame_media_audit_outcome_check", sql`${table.outcome} IN ('queued', 'waiting_inputs', 'suppressed', 'failed', 'denied')`),
 ]);
 
 // ---------------------------------------------------------------------------

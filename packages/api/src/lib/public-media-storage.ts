@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import {
   generateConstrainedPublicUpload,
   getPublicObjectStorageBucket,
@@ -198,6 +198,39 @@ export async function inspectPublicMediaArtifact(
     });
   } catch (error) {
     if (isMissingObject(error)) return { valid: false, reason: "missing" };
+    throw error;
+  }
+}
+
+export async function readPublicMediaArtifactBody(
+  object: { key: string },
+  maxBytes: number,
+): Promise<Buffer | null> {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+    throw new Error("Invalid public media read limit");
+  }
+  if (getStorageBackend() === "local") {
+    const stored = await readLocalUpload(object.key);
+    if (!stored) return null;
+    if (stored.byteLength > maxBytes) throw new Error("Public media object exceeds read limit");
+    return stored.body;
+  }
+  if (getStorageBackend() === "disabled") return null;
+
+  try {
+    const response = await getPublicObjectStorageClient().send(new GetObjectCommand({
+      Bucket: getPublicObjectStorageBucket(),
+      Key: object.key,
+    }));
+    if ((response.ContentLength ?? 0) > maxBytes) {
+      throw new Error("Public media object exceeds read limit");
+    }
+    if (!response.Body) return null;
+    const bytes = await response.Body.transformToByteArray();
+    if (bytes.byteLength > maxBytes) throw new Error("Public media object exceeds read limit");
+    return Buffer.from(bytes);
+  } catch (error) {
+    if (isMissingObject(error)) return null;
     throw error;
   }
 }

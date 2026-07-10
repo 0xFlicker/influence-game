@@ -37,6 +37,8 @@ import {
   getPostgameHighlightsDiagnostics,
   type PostgameHighlightsReadStatus,
 } from "../services/postgame-highlights.js";
+import { getAdminPostgameMedia } from "../services/postgame-media.js";
+import { requestPostgameMedia, type PostgameMediaRequestAction } from "../services/postgame-media-coordinator.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
 import { randomUUID } from "crypto";
 
@@ -49,6 +51,7 @@ export function createAdminRoutes(db: DrizzleDB) {
 
   const requireAdminRead = requirePermission("view_admin", "manage_roles");
   const requireRoleManagement = requirePermission("manage_roles");
+  const requirePostgameMediaManagement = requirePermission("manage_postgame_media", "manage_roles");
   const canManageCostAccounting = (permissions: string[]) => (
     permissions.includes("manage_cost_accounting") || permissions.includes("manage_roles")
   );
@@ -394,6 +397,45 @@ export function createAdminRoutes(db: DrizzleDB) {
     }
     return c.json(result);
   });
+
+  app.get("/api/admin/games/:idOrSlug/postgame/media", requireAdminRead, async (c) => {
+    const gameId = await findAdminGameId(c.req.param("idOrSlug") ?? "");
+    if (!gameId) return c.json({ error: "Game not found" }, 404);
+    return c.json(await getAdminPostgameMedia(db, gameId));
+  });
+
+  const requestPostgameMediaAction = (action: PostgameMediaRequestAction) => async (c: Context<AuthEnv>) => {
+    const body = await parseJsonBody(c, `POST /api/admin/games/:idOrSlug/postgame/media/${action}`);
+    const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
+    const confirmation = typeof body?.confirmation === "string" ? body.confirmation : "";
+    if (!reason || confirmation !== action.toUpperCase()) {
+      return c.json({ error: `reason and confirmation ${action.toUpperCase()} are required` }, 400);
+    }
+    const gameId = await findAdminGameId(c.req.param("idOrSlug") ?? "");
+    if (!gameId) return c.json({ error: "Game not found" }, 404);
+    const result = await requestPostgameMedia(db, {
+      gameId,
+      actorUserId: c.get("user").id,
+      action,
+      reason,
+      source: "admin_route",
+    });
+    if (result.outcome === "not_completed") {
+      return c.json({ error: "Postgame media can only be requested for completed games" }, 409);
+    }
+    return c.json(result, result.outcome === "queued" ? 202 : 200);
+  };
+
+  app.post(
+    "/api/admin/games/:idOrSlug/postgame/media/backfill",
+    requirePostgameMediaManagement,
+    requestPostgameMediaAction("backfill"),
+  );
+  app.post(
+    "/api/admin/games/:idOrSlug/postgame/media/rerender",
+    requirePostgameMediaManagement,
+    requestPostgameMediaAction("rerender"),
+  );
 
   app.post("/api/admin/games/:idOrSlug/costs/backfill", async (c) => {
     const userPermissions = c.get("userPermissions") ?? [];

@@ -23,10 +23,12 @@ import { createUploadRoutes } from "./routes/upload.js";
 import { createProfileRoutes } from "./routes/profile.js";
 import { createCognitiveArtifactRoutes } from "./routes/cognitive-artifacts.js";
 import { createWatchIntelligenceRoutes } from "./routes/watch-intelligence.js";
+import { createPostgameMediaWorkerRoutes } from "./routes/postgame-media-worker.js";
 import { getStorageStatus } from "./lib/storage.js";
 import { getGameWatchState } from "./services/game-watch-state.js";
 import { recoverGamesOnStartup } from "./services/game-lifecycle.js";
 import { suspendOrphanedInProgressGamesOnStartup } from "./services/startup-orphaned-games.js";
+import { reconcileCompletedPostgameMedia } from "./services/postgame-media-coordinator.js";
 import {
   setServer,
   handleOpen,
@@ -92,6 +94,14 @@ const databaseUrl = process.env.DATABASE_URL;
 await runMigrations(databaseUrl);
 const db = createDB(databaseUrl);
 await seedRBAC(db);
+try {
+  const reconciliation = await reconcileCompletedPostgameMedia(db);
+  if (reconciliation.queued > 0 || reconciliation.waitingInputs > 0) {
+    console.info(`[postgame-media] Reconciled ${reconciliation.examined} completed games; queued ${reconciliation.queued}, waiting inputs ${reconciliation.waitingInputs}`);
+  }
+} catch {
+  console.warn("[postgame-media] Startup reconciliation deferred");
+}
 
 // ---------------------------------------------------------------------------
 // Startup cleanup — this API process is also the worker in current deployments.
@@ -186,6 +196,9 @@ app.route("/", mcpRoutes);
 // Game routes
 const gameRoutes = createGameRoutes(db);
 app.route("/", gameRoutes);
+
+const postgameMediaWorkerRoutes = createPostgameMediaWorkerRoutes(db);
+app.route("/", postgameMediaWorkerRoutes);
 
 // Public watch intelligence routes
 const watchIntelligenceRoutes = createWatchIntelligenceRoutes(db);

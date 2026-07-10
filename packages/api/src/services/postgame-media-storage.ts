@@ -181,10 +181,16 @@ function assertPublicUrl(value: unknown, message: string): string {
     (url.protocol !== "http:" && url.protocol !== "https:")
     || url.username
     || url.password
-    || url.search
     || url.hash
   ) throw new Error(message);
+  if (url.search && !isSafeLocalPublicObjectUrl(url)) throw new Error(message);
   return url.toString();
+}
+
+function isSafeLocalPublicObjectUrl(url: URL): boolean {
+  return url.pathname === "/api/uploads/local"
+    && url.searchParams.has("key")
+    && Array.from(url.searchParams.keys()).every((key) => key === "key");
 }
 
 function assertOpaqueVersion(value: unknown): string {

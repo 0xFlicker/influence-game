@@ -168,6 +168,7 @@ describe("admin route RBAC", () => {
         "view_admin",
         "schedule_free_game",
         "hide_game",
+        "manage_postgame_media",
       ],
     });
 
@@ -191,6 +192,7 @@ describe("admin route RBAC", () => {
         "fill_game",
         "view_admin",
         "manage_cost_accounting",
+        "manage_postgame_media",
         "schedule_free_game",
         "hide_game",
       ],
@@ -556,6 +558,32 @@ describe("admin route RBAC", () => {
       event.gameId === gameId &&
       event.actorUserId === sysopUserId
     ))).toBeTrue();
+  });
+
+  test("keeps postgame media diagnostics admin-only and requires explicit managed actions", async () => {
+    const gamerRead = await app.request("/api/admin/games/missing/postgame/media", {
+      headers: { Authorization: `Bearer ${gamerToken}` },
+    });
+    expect(gamerRead.status).toBe(403);
+
+    const adminRead = await app.request("/api/admin/games/missing/postgame/media", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(adminRead.status).toBe(404);
+
+    const invalidRequest = await app.request("/api/admin/games/missing/postgame/media/backfill", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "repair missing work", confirmation: "RERENDER" }),
+    });
+    expect(invalidRequest.status).toBe(400);
+
+    const confirmedRequest = await app.request("/api/admin/games/missing/postgame/media/backfill", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "repair missing work", confirmation: "BACKFILL" }),
+    });
+    expect(confirmedRequest.status).toBe(404);
   });
 
   test("returns not found for unknown durable run IDs", async () => {

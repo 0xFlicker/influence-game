@@ -63,6 +63,7 @@ import {
   getSupportedRecovery,
 } from "./game-recovery.js";
 import { isUserSelectableAgentArchetype } from "./agent-archetypes.js";
+import { ensureWaitingPostgameMediaRow, reconcilePostgameMediaForGame } from "./postgame-media-coordinator.js";
 
 // ---------------------------------------------------------------------------
 // Active game tracking
@@ -573,6 +574,16 @@ async function persistCompletedGame(
       throw new Error(`Game ${params.gameId} could not be completed from its current status`);
     }
 
+    // Media is deliberately isolated in a savepoint: renderer/coordinator trouble
+    // must never turn a completed game back into an in-progress one.
+    try {
+      await tx.transaction(async (mediaTx) => {
+        await ensureWaitingPostgameMediaRow(mediaTx, params.gameId);
+      });
+    } catch {
+      console.warn("[postgame-media] Could not create completion media placeholder");
+    }
+
     if (params.ownerEpoch) {
       const closedOwner = await tx.update(schema.gameRunOwners)
         .set({
@@ -972,6 +983,20 @@ export async function recoverGamesOnStartup(
   };
 }
 
+export async function reconcilePostgameMediaAfterCompletion(
+  db: DrizzleDB,
+  gameId: string,
+  reconcile: typeof reconcilePostgameMediaForGame = reconcilePostgameMediaForGame,
+): Promise<boolean> {
+  try {
+    await reconcile(db, gameId);
+    return true;
+  } catch {
+    console.warn("[postgame-media] Completion reconciliation deferred");
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Async game execution
 // ---------------------------------------------------------------------------
@@ -999,6 +1024,7 @@ async function runGameAsync(
     });
     const refresh = await tryRefreshGameWatchStateSummary(db, gameId, "completion");
     await publishCurrentWatchState(db, gameId, "completion", refresh?.watchState);
+    await reconcilePostgameMediaAfterCompletion(db, gameId);
     persistedTranscriptEntries = result.transcript.length;
     if (ownerEpoch) {
       broadcastRaw(gameId, {

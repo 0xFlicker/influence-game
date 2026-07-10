@@ -294,6 +294,7 @@ async function insertMediaJob(
     mediaType: "house_highlights_trailer",
     status: "queued",
     renderVersion: 1,
+    artifactVersion: "rv_fixture-version",
     attemptNumber: 1,
     renderInputSnapshot: manifest,
     renderInputSnapshotHash: hashHouseHighlightsTrailerManifest(manifest),
