@@ -6,7 +6,7 @@
  * endpoint so the profile flow works without cloud object-storage secrets.
  */
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
@@ -23,6 +23,7 @@ const STORAGE_ENV = [
 
 const DEFAULT_LOCAL_UPLOAD_DIR = ".local-uploads";
 const LOCAL_UPLOAD_MAX_BYTES = 2 * 1024 * 1024;
+const LOCAL_CONSTRAINED_UPLOADS = new Map<string, "active" | "consuming" | "used">();
 
 // ---------------------------------------------------------------------------
 // Client singleton
@@ -52,7 +53,11 @@ function getS3Client(): S3Client {
   return _client;
 }
 
-function getBucket(): string {
+export function getPublicObjectStorageClient(): S3Client {
+  return getS3Client();
+}
+
+export function getPublicObjectStorageBucket(): string {
   const bucket = process.env.LINODE_OBJ_BUCKET;
   if (!bucket) {
     throw new Error("LINODE_OBJ_BUCKET must be set");
@@ -112,6 +117,44 @@ export interface StoredPublicAvatarResult {
   publicUrl: string;
 }
 
+export interface PublicObjectUploadInput {
+  key: string;
+  contentType: string;
+  byteLength: number;
+  sha256: string;
+  targetId: string;
+  expiresIn?: number;
+  publicBaseUrl?: string;
+}
+
+export interface ConstrainedPublicUploadResult extends PresignedUploadResult {
+  contentType: string;
+  byteLength: number;
+  sha256: string;
+  targetId: string;
+  /** Required only while the worker performs the PUT; do not serialize publicly. */
+  uploadHeaders: Record<string, string>;
+}
+
+export interface LocalConstrainedUploadInput {
+  key: string;
+  contentType: string;
+  byteLength: number;
+  sha256: string;
+  targetId: string;
+  expiresIn?: number;
+  publicBaseUrl?: string;
+}
+
+export interface LocalConstrainedUploadClaims {
+  key: string;
+  contentType: string;
+  byteLength: number;
+  sha256: string;
+  targetId: string;
+  expiresAt: number;
+}
+
 /**
  * Generate a presigned PUT URL for browser-direct upload.
  *
@@ -134,7 +177,7 @@ export async function generatePresignedUpload(
   }
 
   const client = getS3Client();
-  const bucket = getBucket();
+  const bucket = getPublicObjectStorageBucket();
 
   const command = new PutObjectCommand({
     Bucket: bucket,
@@ -151,6 +194,45 @@ export async function generatePresignedUpload(
   const publicUrl = `https://${bucket}.${endpointHost}/${key}`;
 
   return { uploadUrl, key, publicUrl };
+}
+
+/**
+ * Generate a constrained public-object upload target. Unlike the legacy avatar
+ * helper, callers must provide the exact byte length and SHA-256 they expect.
+ */
+export async function generateConstrainedPublicUpload(
+  input: PublicObjectUploadInput,
+): Promise<ConstrainedPublicUploadResult> {
+  validateLocalKey(input.key);
+  validateConstrainedUploadInput(input);
+
+  const expiresIn = input.expiresIn ?? 300;
+  const backend = getStorageBackend();
+  if (backend === "disabled") throw new Error("Object storage is not configured");
+  if (backend === "local") return generateLocalConstrainedUpload({ ...input, expiresIn });
+
+  const command = new PutObjectCommand({
+    Bucket: getPublicObjectStorageBucket(),
+    Key: input.key,
+    ContentType: input.contentType,
+    ContentLength: input.byteLength,
+    ChecksumSHA256: checksumBase64(input.sha256),
+    IfNoneMatch: "*",
+    CacheControl: "public, max-age=31536000, immutable",
+    ACL: "public-read",
+    Metadata: { sha256: normalizeSha256(input.sha256) },
+  });
+  const uploadUrl = await getSignedUrl(getS3Client(), command, { expiresIn });
+  return {
+    uploadUrl,
+    key: input.key,
+    publicUrl: publicS3UrlForKey(input.key),
+    contentType: input.contentType,
+    byteLength: input.byteLength,
+    sha256: normalizeSha256(input.sha256),
+    targetId: input.targetId,
+    uploadHeaders: constrainedUploadHeaders(input.contentType, input.byteLength, input.sha256),
+  };
 }
 
 export async function storePublicAvatarImage(
@@ -175,7 +257,7 @@ export async function storePublicAvatarImage(
   }
 
   const client = getS3Client();
-  const bucket = getBucket();
+  const bucket = getPublicObjectStorageBucket();
   await client.send(new PutObjectCommand({
     Bucket: bucket,
     Key: key,
@@ -234,7 +316,14 @@ function validatePublicAvatarImage(
 function publicS3UrlForKey(key: string): string {
   const endpoint = process.env.LINODE_OBJ_ENDPOINT!;
   const endpointHost = new URL(endpoint).host;
-  return `https://${getBucket()}.${endpointHost}/${key}`;
+  return `https://${getPublicObjectStorageBucket()}.${endpointHost}/${key}`;
+}
+
+export function publicObjectUrlForKey(key: string, publicBaseUrl?: string): string {
+  validateLocalKey(key);
+  return getStorageBackend() === "local"
+    ? absolutizeApiUrl(getLocalPublicUploadPath(key), publicBaseUrl)
+    : publicS3UrlForKey(key);
 }
 
 /**
@@ -261,6 +350,64 @@ export function verifyLocalUploadToken(
     && timingSafeEqual(expectedBuffer, tokenBuffer);
 }
 
+export function generateLocalConstrainedUpload(
+  input: LocalConstrainedUploadInput,
+): ConstrainedPublicUploadResult {
+  validateLocalKey(input.key);
+  validateConstrainedUploadInput(input);
+  const expiresIn = input.expiresIn ?? 300;
+  const expiresAt = Date.now() + expiresIn * 1_000;
+  const sha256 = normalizeSha256(input.sha256);
+  LOCAL_CONSTRAINED_UPLOADS.set(input.targetId, "active");
+  const token = signLocalConstrainedUpload({ ...input, sha256, expiresAt });
+  const params = new URLSearchParams({
+    key: input.key,
+    contentType: input.contentType,
+    contentLength: input.byteLength.toString(),
+    sha256,
+    targetId: input.targetId,
+    expiresAt: expiresAt.toString(),
+    token,
+  });
+  return {
+    uploadUrl: absolutizeApiUrl(`/api/upload/local?${params.toString()}`, input.publicBaseUrl),
+    publicUrl: absolutizeApiUrl(getLocalPublicUploadPath(input.key), input.publicBaseUrl),
+    key: input.key,
+    contentType: input.contentType,
+    byteLength: input.byteLength,
+    sha256,
+    targetId: input.targetId,
+    uploadHeaders: constrainedUploadHeaders(input.contentType, input.byteLength, sha256),
+  };
+}
+
+export function verifyLocalConstrainedUploadToken(
+  claims: LocalConstrainedUploadClaims,
+  token: string,
+): boolean {
+  if (!Number.isFinite(claims.expiresAt) || Date.now() > claims.expiresAt) return false;
+  const expected = signLocalConstrainedUpload(claims);
+  return safeTokenEqual(expected, token);
+}
+
+export function beginLocalConstrainedUpload(targetId: string): boolean {
+  if (LOCAL_CONSTRAINED_UPLOADS.get(targetId) !== "active") return false;
+  LOCAL_CONSTRAINED_UPLOADS.set(targetId, "consuming");
+  return true;
+}
+
+export function releaseLocalConstrainedUpload(targetId: string): void {
+  if (LOCAL_CONSTRAINED_UPLOADS.get(targetId) === "consuming") {
+    LOCAL_CONSTRAINED_UPLOADS.set(targetId, "active");
+  }
+}
+
+export function completeLocalConstrainedUpload(targetId: string): void {
+  if (LOCAL_CONSTRAINED_UPLOADS.get(targetId) === "consuming") {
+    LOCAL_CONSTRAINED_UPLOADS.set(targetId, "used");
+  }
+}
+
 export async function writeLocalUpload(
   key: string,
   contentType: string,
@@ -278,9 +425,42 @@ export async function writeLocalUpload(
   await writeFile(`${filePath}.content-type`, contentType);
 }
 
+export async function writeLocalConstrainedUpload(
+  claims: Pick<LocalConstrainedUploadClaims, "key" | "contentType" | "byteLength" | "sha256">,
+  body: ArrayBuffer,
+): Promise<void> {
+  validateLocalKey(claims.key);
+  validateConstrainedUploadInput({ ...claims, targetId: "local-write-1" });
+  if (body.byteLength !== claims.byteLength) {
+    throw new LocalUploadError(400, "Content length does not match signed upload");
+  }
+  const normalizedSha256 = normalizeSha256(claims.sha256);
+  const receivedSha256 = sha256ForBuffer(Buffer.from(body));
+  if (!safeTokenEqual(normalizedSha256, receivedSha256)) {
+    throw new LocalUploadError(400, "SHA-256 does not match signed upload");
+  }
+
+  const filePath = getLocalUploadPath(claims.key);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  try {
+    await writeFile(filePath, Buffer.from(body), { flag: "wx" });
+  } catch (error) {
+    if (isFileAlreadyExists(error)) {
+      throw new LocalUploadError(400, "Immutable upload object already exists");
+    }
+    throw error;
+  }
+  await writeFile(`${filePath}.content-type`, claims.contentType);
+  await writeFile(`${filePath}.sha256`, normalizedSha256);
+  await writeFile(`${filePath}.etag`, `\"${normalizedSha256.slice("sha256:".length)}\"`);
+}
+
 export async function readLocalUpload(key: string): Promise<{
   body: Buffer;
   contentType: string;
+  byteLength: number;
+  sha256: string;
+  etag: string;
 } | null> {
   validateLocalKey(key);
 
@@ -288,7 +468,14 @@ export async function readLocalUpload(key: string): Promise<{
   try {
     const body = await readFile(filePath);
     const contentType = await readContentType(filePath, key);
-    return { body, contentType };
+    const sha256 = await readLocalSha256(filePath, body);
+    return {
+      body,
+      contentType,
+      byteLength: body.byteLength,
+      sha256,
+      etag: await readLocalEtag(filePath, sha256),
+    };
   } catch (error) {
     if (isFileNotFound(error)) return null;
     throw error;
@@ -443,6 +630,89 @@ function signLocalUpload(key: string, contentType: string, expiresAt: number): s
     .digest("hex");
 }
 
+function signLocalConstrainedUpload(claims: LocalConstrainedUploadClaims): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("JWT_SECRET must be set for local upload signing");
+  return createHmac("sha256", secret)
+    .update(claims.key)
+    .update("\0")
+    .update(claims.contentType)
+    .update("\0")
+    .update(claims.byteLength.toString())
+    .update("\0")
+    .update(normalizeSha256(claims.sha256))
+    .update("\0")
+    .update(claims.targetId)
+    .update("\0")
+    .update(claims.expiresAt.toString())
+    .digest("hex");
+}
+
+function validateConstrainedUploadInput(input: {
+  contentType: string;
+  byteLength: number;
+  sha256: string;
+  targetId: string;
+}): void {
+  if (!input.contentType || !Number.isSafeInteger(input.byteLength) || input.byteLength < 1) {
+    throw new LocalUploadError(400, "Invalid constrained upload");
+  }
+  normalizeSha256(input.sha256);
+  if (!/^[A-Za-z0-9_-]{12,128}$/.test(input.targetId)) {
+    throw new LocalUploadError(400, "Invalid constrained upload target");
+  }
+}
+
+function normalizeSha256(value: string): string {
+  const normalized = value.startsWith("sha256:") ? value : `sha256:${value}`;
+  if (!/^sha256:[a-f0-9]{64}$/i.test(normalized)) {
+    throw new LocalUploadError(400, "Invalid SHA-256 checksum");
+  }
+  return normalized.toLowerCase();
+}
+
+function checksumBase64(value: string): string {
+  return Buffer.from(normalizeSha256(value).slice("sha256:".length), "hex").toString("base64");
+}
+
+function constrainedUploadHeaders(contentType: string, byteLength: number, sha256: string): Record<string, string> {
+  return {
+    "content-type": contentType,
+    "content-length": byteLength.toString(),
+    "x-amz-checksum-sha256": checksumBase64(sha256),
+    "if-none-match": "*",
+  };
+}
+
+function sha256ForBuffer(body: Buffer): string {
+  return `sha256:${createHash("sha256").update(body).digest("hex")}`;
+}
+
+function safeTokenEqual(expected: string, received: string): boolean {
+  const expectedBuffer = Buffer.from(expected);
+  const receivedBuffer = Buffer.from(received);
+  return expectedBuffer.length === receivedBuffer.length
+    && timingSafeEqual(expectedBuffer, receivedBuffer);
+}
+
+async function readLocalSha256(filePath: string, body: Buffer): Promise<string> {
+  try {
+    return normalizeSha256((await readFile(`${filePath}.sha256`, "utf-8")).trim());
+  } catch (error) {
+    if (!isFileNotFound(error)) throw error;
+    return sha256ForBuffer(body);
+  }
+}
+
+async function readLocalEtag(filePath: string, sha256: string): Promise<string> {
+  try {
+    return (await readFile(`${filePath}.etag`, "utf-8")).trim();
+  } catch (error) {
+    if (!isFileNotFound(error)) throw error;
+    return `\"${sha256.slice("sha256:".length)}\"`;
+  }
+}
+
 async function readContentType(filePath: string, key: string): Promise<string> {
   try {
     return (await readFile(`${filePath}.content-type`, "utf-8")).trim();
@@ -459,4 +729,8 @@ async function readContentType(filePath: string, key: string): Promise<string> {
 
 function isFileNotFound(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+function isFileAlreadyExists(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "EEXIST";
 }
