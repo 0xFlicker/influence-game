@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: What Influence Should Build Next</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #09090c;
+      --panel: #121218;
+      --panel-2: #181820;
+      --text: #f5f1e8;
+      --muted: #aaa6a0;
+      --faint: #74717a;
+      --line: #2c2b34;
+      --red: #ef4444;
+      --red-soft: #351719;
+      --gold: #e7b968;
+      --gold-soft: #2b2317;
+      --green: #7bd9aa;
+      --green-soft: #11281e;
+      --blue: #8fb7ff;
+      --blue-soft: #162035;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+    }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #ffd9d9; }
+    .page { width: min(940px, calc(100% - 32px)); margin: 0 auto; padding: 56px 0 72px; }
+    header { padding: 28px; border: 1px solid var(--line); border-radius: 18px; background: var(--panel); }
+    .eyebrow { margin: 0 0 8px; color: var(--red); font-size: 11px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(30px, 5vw, 48px); line-height: 1.08; letter-spacing: -.035em; }
+    .dek { max-width: 70ch; margin: 16px 0 0; color: var(--muted); font-size: 17px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+    .chip { display: inline-flex; align-items: center; min-height: 28px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel-2); color: var(--muted); font-size: 12px; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 0; }
+    nav a { padding: 7px 11px; border-radius: 8px; background: var(--blue-soft); color: #c9dbff; font-size: 12px; }
+    section { margin-top: 54px; }
+    h2 { margin: 0 0 18px; font-size: 25px; letter-spacing: -.02em; }
+    h3 { margin: 0; font-size: 21px; line-height: 1.25; }
+    p { max-width: 74ch; }
+    .grounding { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .fact { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--muted); }
+    .fact strong { display: block; margin-bottom: 4px; color: var(--text); }
+    .axis-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 0; list-style: none; }
+    .axis-list li { padding: 12px; border-radius: 10px; background: var(--panel-2); color: var(--muted); }
+    .idea-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0; list-style: none; }
+    .idea-nav a { display: block; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
+    article { margin-top: 16px; padding: 22px; border: 1px solid var(--line); border-radius: 15px; background: var(--panel); }
+    article.top { background: var(--red-soft); border-color: #6d2a2e; }
+    .rank { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 28px; margin-right: 8px; border-radius: 999px; background: var(--gold-soft); color: var(--gold); font-size: 12px; font-weight: 800; }
+    .metrics { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; }
+    .metrics span { padding: 4px 9px; border-radius: 999px; background: var(--green-soft); color: var(--green); font-size: 12px; }
+    dl { display: grid; grid-template-columns: 110px 1fr; gap: 10px 14px; margin: 18px 0 0; }
+    dt { color: var(--faint); font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    dd { margin: 0; color: var(--muted); }
+    .diagram { margin: 20px 0 4px; padding: 14px; overflow-x: auto; border-radius: 12px; background: #0d0d12; }
+    .diagram svg { display: block; min-width: 700px; width: 100%; height: auto; }
+    .diagram-caption { margin: 8px 0 0; color: var(--faint); font-size: 12px; }
+    table { width: 100%; border-collapse: collapse; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+    th, td { padding: 11px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--faint); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+    td { color: var(--muted); }
+    tr:last-child td { border-bottom: 0; }
+    footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--faint); font-size: 12px; }
+    @media (max-width: 700px) {
+      .page { width: min(100% - 20px, 940px); padding-top: 20px; }
+      header, article { padding: 18px; }
+      .grounding, .axis-list, .idea-nav { grid-template-columns: 1fr; }
+      dl { grid-template-columns: 1fr; gap: 2px; }
+      dd { margin-bottom: 10px; }
+      table { display: block; overflow-x: auto; white-space: normal; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <p class="eyebrow">Influence · Product ideation</p>
+      <h1>What Influence Should Build Next</h1>
+      <p class="dek">House Highlights now closes the public story of a game. The next move should close the private owner loop: understand the agent, improve it, and send it back into The House.</p>
+      <div class="meta" aria-label="Document metadata">
+        <span class="chip">Date: <time datetime="2026-07-10">2026-07-10</time></span>
+        <span class="chip">Topic: open-ideation</span>
+        <span class="chip">Mode: repo-grounded</span>
+        <span class="chip">28 raw · 6 survivors</span>
+      </div>
+      <nav aria-label="Document sections">
+        <a href="#grounding-context">Grounding Context</a>
+        <a href="#topic-axes">Topic Axes</a>
+        <a href="#ranked-ideas">Ranked Ideas</a>
+        <a href="#rejection-summary">Rejection Summary</a>
+      </nav>
+    </header>
+
+    <section id="grounding-context">
+      <p class="eyebrow">What the repo says</p>
+      <h2>Grounding Context</h2>
+      <div class="grounding">
+        <div class="fact"><strong>The product thesis is an improvement loop.</strong><code>STRATEGY.md:14-18</code> says owners create and tune persistent competitors, then watch them reason, fail, and improve.</div>
+        <div class="fact"><strong>The metric is already named.</strong><code>STRATEGY.md:22-26</code> tracks repeat joiners and explicitly plans to measure agent edits after games.</div>
+        <div class="fact"><strong>The private evidence foundation exists.</strong><code>docs/plans/2026-06-19-003-feat-user-cognitive-artifacts-plan.md:12-14</code> establishes authorized reasoning, thinking, and strategy records, while deferring polished UI and summaries.</div>
+        <div class="fact"><strong>The shipped UI stops at watching.</strong><code>completed-results-review.tsx:131-149</code> routes to Trailer, House Highlights, and Watch Replay; <code>dashboard-agent-bench.tsx:50-59</code> offers Replay.</div>
+        <div class="fact"><strong>Edits are not longitudinally legible.</strong><code>agent-profiles.ts:414-437</code> resets aggregate games and wins when personality-defining fields change.</div>
+        <div class="fact"><strong>The public media loop is freshly complete.</strong>Main includes the durable trailer worker, storage, player/share surface, and admin controls; the next bet can build on it instead of extending render plumbing.</div>
+      </div>
+      <p>External context supports the same direction: current agent-development practice emphasizes datasets, trace grading, and prompt optimization as a loop from observed behavior to measurable revision. Influence already owns unusually rich, game-native traces; the product opportunity is to make that loop enjoyable for an agent owner, not to expose an eval dashboard wearing a tiny party hat.</p>
+    </section>
+
+    <section id="topic-axes">
+      <p class="eyebrow">Surface map</p>
+      <h2>Topic Axes</h2>
+      <ul class="axis-list">
+        <li>Owner improvement loop</li>
+        <li>Persistent agent identity</li>
+        <li>Postgame understanding</li>
+        <li>Return and replay behavior</li>
+        <li>Sharing and audience growth</li>
+        <li>Evaluation leverage</li>
+      </ul>
+    </section>
+
+    <section id="ranked-ideas">
+      <p class="eyebrow">The survivors</p>
+      <h2>Ranked Ideas</h2>
+      <ol class="idea-nav">
+        <li><a href="#idea-1">1. The Debrief Loop</a></li>
+        <li><a href="#idea-2">2. Agent Seasons + Patch Notes</a></li>
+        <li><a href="#idea-3">3. Film Room</a></li>
+        <li><a href="#idea-4">4. House Coach</a></li>
+        <li><a href="#idea-5">5. Premiere Night</a></li>
+        <li><a href="#idea-6">6. Evaluation Corpus Export</a></li>
+      </ol>
+
+      <article id="idea-1" class="top">
+        <h3><span class="rank">1</span>The Debrief Loop</h3>
+        <p>An owner-only postgame room for one persistent agent. It presents a compact result, three to five evidence-backed lessons, the pivotal facts or authorized cognitive artifacts behind each lesson, and two explicit exits: <em>Edit this agent</em> and <em>Run it back</em>. V1 should draft changes, never silently rewrite the agent.</p>
+        <div class="metrics"><span>Confidence 94%</span><span>Complexity Medium</span><span>Axis: Owner improvement loop</span></div>
+        <div class="diagram" role="img" aria-label="Conceptual loop from game to debrief to agent patch to another game">
+          <svg viewBox="0 0 820 160" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#8fb7ff"/></marker>
+            </defs>
+            <g fill="#181820" stroke="#42414c" stroke-width="2">
+              <rect x="20" y="48" width="155" height="64" rx="14"/>
+              <rect x="225" y="48" width="155" height="64" rx="14"/>
+              <rect x="430" y="48" width="155" height="64" rx="14"/>
+              <rect x="635" y="48" width="155" height="64" rx="14"/>
+            </g>
+            <g fill="#f5f1e8" font-family="system-ui, sans-serif" font-size="16" text-anchor="middle">
+              <text x="97" y="76">Watch the game</text><text x="97" y="97" fill="#aaa6a0" font-size="12">trailer · results · replay</text>
+              <text x="302" y="76">Private debrief</text><text x="302" y="97" fill="#aaa6a0" font-size="12">facts · decisions · lessons</text>
+              <text x="507" y="76">Patch the agent</text><text x="507" y="97" fill="#aaa6a0" font-size="12">owner reviews the draft</text>
+              <text x="712" y="76">Run it back</text><text x="712" y="97" fill="#aaa6a0" font-size="12">measure the next game</text>
+            </g>
+            <g stroke="#8fb7ff" stroke-width="3" fill="none" marker-end="url(#arrow)">
+              <path d="M176 80 H216"/><path d="M381 80 H421"/><path d="M586 80 H626"/>
+            </g>
+          </svg>
+          <p class="diagram-caption">Illustrative direction: the feature's value is the closed loop, not any particular card layout.</p>
+        </div>
+        <dl>
+          <dt>Basis</dt><dd><strong>direct:</strong> The strategy names postgame edits as a planned metric and says reasoning access should turn spectatorship into improvement. The underlying artifact API exists, while the current UI terminates at watching.</dd>
+          <dt>Rationale</dt><dd>This is the shortest path from the expensive work already shipped to the product's core thesis. It can improve completed-game engagement, agent edits, repeat joins, and attachment to persistent competitors in one coherent journey.</dd>
+          <dt>Downsides</dt><dd>Generated coaching can overclaim causality in a stochastic social game. Lessons must cite observable facts and authorized artifacts, distinguish fact from interpretation, and avoid presenting one loss as scientific proof.</dd>
+        </dl>
+      </article>
+
+      <article id="idea-2">
+        <h3><span class="rank">2</span>Agent Seasons + Patch Notes</h3>
+        <p>Give each meaningful personality or strategy edit an immutable revision. Games remain attached to the revision that actually played, and owners can see a compact patch note plus performance for each revision. The agent keeps one identity without its history being erased whenever it learns something.</p>
+        <div class="metrics"><span>Confidence 90%</span><span>Complexity High</span><span>Axis: Persistent agent identity</span></div>
+        <dl>
+          <dt>Basis</dt><dd><strong>direct:</strong> The strategy calls agents persistent competitors, but <code>agent-profiles.ts:414-437</code> resets aggregate stats after personality-defining edits.</dd>
+          <dt>Rationale</dt><dd>A tuning game needs before-and-after evidence. Revision lineage makes every future debrief, comparison, leaderboard, and owner story more honest.</dd>
+          <dt>Downsides</dt><dd>Touches schema, joins, history semantics, and UI. It also requires a careful definition of what counts as a revision versus cosmetic metadata.</dd>
+        </dl>
+      </article>
+
+      <article id="idea-3">
+        <h3><span class="rank">3</span>Film Room</h3>
+        <p>Reduce a completed game to three to five pivotal moments for the owned agent, each shaped as <em>belief → action → consequence</em>. A lesson links back to the exact replay moment and shows whether the interpretation comes from public facts, the agent's own strategy artifact, or a House-authored inference.</p>
+        <div class="metrics"><span>Confidence 88%</span><span>Complexity Medium</span><span>Axis: Postgame understanding</span></div>
+        <dl>
+          <dt>Basis</dt><dd><strong>direct:</strong> Completed results already carry vote history, alliance arcs, and agent cards; cognitive artifacts carry owned reasoning and strategy. The current surface presents the records but does not synthesize owner-specific turning points.</dd>
+          <dt>Rationale</dt><dd>Owners need a few reviewable decisions, not an archaeology degree. This can be the deterministic/evidence layer inside The Debrief Loop.</dd>
+          <dt>Downsides</dt><dd>Pivotal-moment selection can become generic or hindsight-heavy. It needs explicit provenance and a bounded vocabulary of lesson types before inviting LLM prose.</dd>
+        </dl>
+      </article>
+
+      <article id="idea-4">
+        <h3><span class="rank">4</span>House Coach</h3>
+        <p>Add bounded Q&amp;A for an owner: “Why did Nyx trust Echo?”, “Where did she abandon her plan?”, or “What should I change before the next game?” Answers use the same owner-scoped read policy as cognitive artifacts and cite the game moments they rely on.</p>
+        <div class="metrics"><span>Confidence 82%</span><span>Complexity Medium</span><span>Axis: Owner improvement loop</span></div>
+        <dl>
+          <dt>Basis</dt><dd><strong>direct:</strong> Games MCP already exposes bounded cognitive list/read capabilities, making conversational analysis possible without opening producer traces.</dd>
+          <dt>Rationale</dt><dd>The target audience already works in ChatGPT, Claude, and agent tooling. Conversation turns a dense game record into an explorable coaching surface.</dd>
+          <dt>Downsides</dt><dd>Easy to build a charming liar. Answers need citations, authorization tests, bounded retrieval, and clear uncertainty language.</dd>
+        </dl>
+      </article>
+
+      <article id="idea-5">
+        <h3><span class="rank">5</span>Premiere Night</h3>
+        <p>When a trailer becomes ready, notify participants with one canonical share link and a lightweight “watch together” moment. The feature should remain small: readiness notification, a scheduled or immediate premiere state, reactions, and a direct path from public celebration to the owner's private debrief.</p>
+        <div class="metrics"><span>Confidence 76%</span><span>Complexity Medium</span><span>Axis: Sharing and audience growth</span></div>
+        <dl>
+          <dt>Basis</dt><dd><strong>direct:</strong> The production pipeline now has durable media states and a public player/share surface, while completed-games-watched is a named product metric.</dd>
+          <dt>Rationale</dt><dd>Rendered media has more value when it creates a social appointment instead of quietly appearing in storage. This makes House Highlights a behavior, not only an artifact.</dd>
+          <dt>Downsides</dt><dd>Notification and presence mechanics can sprawl quickly. It needs real game cadence and friend-group usage evidence before investing in chat, rooms, or complex synchronization.</dd>
+        </dl>
+      </article>
+
+      <article id="idea-6">
+        <h3><span class="rank">6</span>Evaluation Corpus Export</h3>
+        <p>Let an owner or producer export authorized decision examples from completed games as a compact evaluation dataset: situation, agent configuration, chosen action, consequence, and selected cognitive artifacts. Keep it local/downloadable first and make provenance explicit.</p>
+        <div class="metrics"><span>Confidence 72%</span><span>Complexity Medium</span><span>Axis: Evaluation leverage</span></div>
+        <dl>
+          <dt>Basis</dt><dd><strong>external:</strong> OpenAI's current eval tooling centers datasets, graders, traces, and prompt optimization; <strong>direct:</strong> Influence already captures structured game facts and cognitive artifacts.</dd>
+          <dt>Rationale</dt><dd>This turns each game into compounding agent-development material and gives advanced users a credible bridge to offline model/prompt experiments.</dd>
+          <dt>Downsides</dt><dd>Mostly serves power users, so it should follow—not precede—the simple in-product debrief. Export privacy and schema stability also need care.</dd>
+        </dl>
+      </article>
+    </section>
+
+    <section id="rejection-summary">
+      <p class="eyebrow">What did not survive</p>
+      <h2>Rejection Summary</h2>
+      <table>
+        <thead><tr><th>#</th><th>Idea</th><th>Reason rejected</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>Game-to-Edit Deep Link</td><td>Component of The Debrief Loop, not a standalone direction.</td></tr>
+          <tr><td>2</td><td>Loss Explanation Card</td><td>Too reductive for stochastic social play; Film Room preserves evidence and nuance.</td></tr>
+          <tr><td>3</td><td>Auto-Patch Strategy Draft</td><td>Useful inside the debrief, but unsafe and vague as a standalone automatic feature.</td></tr>
+          <tr><td>4</td><td>No-Replay Review</td><td>Duplicate of the compact Debrief Loop summary.</td></tr>
+          <tr><td>5</td><td>Run It Back</td><td>Important CTA, insufficient alone to create an improvement loop.</td></tr>
+          <tr><td>6</td><td>The Game Is the Eval</td><td>Strong framing, absorbed into the debrief and export ideas.</td></tr>
+          <tr><td>7</td><td>Retirement Ceremony</td><td>Delightful later, but does not improve the active loop.</td></tr>
+          <tr><td>8</td><td>Audience Coach Notes</td><td>Privacy and moderation burden with weak fit for the immediate friends audience.</td></tr>
+          <tr><td>9</td><td>Cross-Game Tendencies</td><td>Depends on revision history and enough game volume; follow-on to Agent Seasons.</td></tr>
+          <tr><td>10</td><td>Owner Improvement Funnel Analytics</td><td>Required instrumentation, not the player-facing bet itself.</td></tr>
+          <tr><td>11</td><td>Pit Crew</td><td>Duplicate analogy for The Debrief Loop.</td></tr>
+          <tr><td>12</td><td>Fantasy Waiver Wire</td><td>Assumes field prediction and drifts toward preset-scenario strategy.</td></tr>
+          <tr><td>13</td><td>Chess Opening Book</td><td>Social positions are contextual; reusable scripts risk making agents brittle.</td></tr>
+          <tr><td>14</td><td>Rivalry Ledger</td><td>Needs repeat-cast volume and durable cross-game opponent identity semantics.</td></tr>
+          <tr><td>15</td><td>Blind Patch Challenge</td><td>Novelty without a strong improvement or retention basis.</td></tr>
+          <tr><td>16</td><td>House-Managed Agent</td><td>Removes owner agency from the core tuning fantasy.</td></tr>
+          <tr><td>17</td><td>Agent Patch Notes alone</td><td>Merged into the stronger Agent Seasons direction.</td></tr>
+          <tr><td>18</td><td>Premiere-to-Debrief Split</td><td>Retained as a boundary principle inside the top idea, not a separate feature.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer class="composition-signal">Composed 2026-07-10T19:09Z by ce-ideate from the current Influence repository and the user's open-ended “what next?” prompt.</footer>
+  </main>
+</body>
+</html>

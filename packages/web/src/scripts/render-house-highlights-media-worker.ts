@@ -8,9 +8,11 @@ import {
 } from "../lib/house-highlights-trailer-audio";
 import {
   DEFAULT_HOUSE_HIGHLIGHTS_TRAILER_MUSIC_DIR,
+  remotionMediaOptions,
   renderHouseHighlightsTrailerMediaBundle,
   writeHouseHighlightsTrailerPlaybackMetadata,
   type HouseHighlightsTrailerBundleArtifact,
+  type HouseHighlightsRemotionMediaOptions,
 } from "../lib/house-highlights-trailer-media-bundle";
 
 const POLL_INTERVAL_MS = 5_000;
@@ -31,7 +33,7 @@ export interface HouseHighlightsMediaWorkerConfig {
   uploadTimeoutMs: number;
   temporaryRoot: string;
   minimumFreeBytes: number;
-  browserExecutable?: string;
+  remotionOptions: HouseHighlightsRemotionMediaOptions;
 }
 
 interface WorkerClaim {
@@ -70,6 +72,7 @@ export function houseHighlightsMediaWorkerConfig(env: Record<string, string | un
   const apiBaseUrl = env.POSTGAME_MEDIA_API_URL;
   const workerToken = env.POSTGAME_MEDIA_WORKER_TOKEN;
   if (!apiBaseUrl || !workerToken) throw new Error("POSTGAME_MEDIA_API_URL and POSTGAME_MEDIA_WORKER_TOKEN are required.");
+  const renderOptions = remotionMediaOptions(env);
   return {
     apiBaseUrl: new URL(apiBaseUrl).toString().replace(/\/$/, ""),
     workerToken,
@@ -78,7 +81,7 @@ export function houseHighlightsMediaWorkerConfig(env: Record<string, string | un
     uploadTimeoutMs: positiveInt(env.POSTGAME_MEDIA_UPLOAD_TIMEOUT_MS, UPLOAD_TIMEOUT_MS),
     temporaryRoot: env.POSTGAME_MEDIA_TEMP_DIR?.trim() || DEFAULT_HOUSE_HIGHLIGHTS_MEDIA_WORKER_TEMP_DIR,
     minimumFreeBytes: positiveInt(env.POSTGAME_MEDIA_MIN_FREE_BYTES, MIN_HOUSE_HIGHLIGHTS_MEDIA_WORKER_FREE_BYTES),
-    browserExecutable: env.REMOTION_BROWSER_EXECUTABLE?.trim() || undefined,
+    remotionOptions: renderOptions,
   };
 }
 
@@ -135,6 +138,7 @@ export async function renderClaim(config: HouseHighlightsMediaWorkerConfig, clai
       manifest: withWorkerReachableAssetUrls(claim.manifest, config.apiBaseUrl),
       outputDir: workDir,
       temporaryRoot: workDir,
+      remotionOptions: config.remotionOptions,
       onStage: async (stage) => {
         if (stage === "composing") await progress(config, claim, "composing", fetchImpl);
       },
@@ -255,10 +259,11 @@ export async function checkHouseHighlightsMediaWorkerHealth(
   config: HouseHighlightsMediaWorkerConfig,
   dependencies: HouseHighlightsMediaWorkerHealthDependencies = {},
 ): Promise<void> {
-  if (!config.browserExecutable) throw new Error("REMOTION_BROWSER_EXECUTABLE is required for worker health checks.");
+  const browserExecutable = config.remotionOptions.browserExecutable;
+  if (!browserExecutable) throw new Error("REMOTION_BROWSER_EXECUTABLE is required for worker health checks.");
   const runCommand = dependencies.runCommand ?? runCommandQuietly;
   await runCommand("ffmpeg", ["-version"]);
-  await runCommand(config.browserExecutable, ["--version"]);
+  await runCommand(browserExecutable, ["--version"]);
   await (dependencies.verifyMusic ?? assertPreparedHouseHighlightsTrailerMusicMatrix)();
   await (dependencies.verifyTemporarySpace ?? assertHouseHighlightsMediaWorkerTemporarySpace)(config.temporaryRoot, config.minimumFreeBytes);
   const response = await fetchWithTimeout(

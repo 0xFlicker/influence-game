@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { join } from "node:path";
 import type { HouseHighlightsResponse } from "../lib/api";
 import { sceneForCardImage } from "../app/games/[slug]/highlights/card-image/card-image-data";
+import {
+  CardImageRenderOverloadedError,
+  createCardImageRenderQueue,
+} from "../app/games/[slug]/highlights/card-image/card-image-render-queue";
 import {
   avatarSrcForImage,
   generatedBackgroundForImage,
@@ -24,6 +29,40 @@ afterEach(() => {
 });
 
 describe("house highlights card image", () => {
+  it("coalesces duplicate card renders and bounds distinct queued work", async () => {
+    const queue = createCardImageRenderQueue<string>({ maxQueued: 1 });
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let firstRuns = 0;
+    const first = queue.run("same-card", async () => {
+      firstRuns += 1;
+      await firstGate;
+      return "first";
+    });
+    const duplicate = queue.run("same-card", async () => "duplicate");
+    const queued = queue.run("second-card", async () => "second");
+    const overflow = queue.run("third-card", async () => "third");
+
+    await expect(overflow).rejects.toBeInstanceOf(CardImageRenderOverloadedError);
+    releaseFirst();
+
+    expect(await Promise.all([first, duplicate, queued])).toEqual(["first", "first", "second"]);
+    expect(firstRuns).toBe(1);
+  });
+
+  it("recovers the render lane after a failed job", async () => {
+    const queue = createCardImageRenderQueue<string>();
+
+    await expect(queue.run("failed-card", async () => {
+      throw new Error("render failed");
+    })).rejects.toThrow("render failed");
+
+    expect(await queue.run("next-card", async () => "rendered")).toBe("rendered");
+    expect(await queue.run("failed-card", async () => "retried")).toBe("retried");
+  });
+
   it("finds scenes by encoded share image ids", () => {
     const scene = sceneForCardImage(mainCutFixture(), "alliance-cut%3A1%3Aember");
 
@@ -62,13 +101,20 @@ describe("house highlights card image", () => {
     process.env.API_BACKEND_URL = "http://127.0.0.1:3333";
     let requestedHeaders: HeadersInit | undefined;
     globalThis.fetch = (async (
-      _url: Parameters<typeof fetch>[0],
+      input: Parameters<typeof fetch>[0],
       init?: Parameters<typeof fetch>[1],
     ) => {
-      requestedHeaders = init?.headers;
-      return new Response(JSON.stringify(mainCutFixture()), {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.includes("/postgame/highlights")) {
+        requestedHeaders = init?.headers;
+        return new Response(JSON.stringify(mainCutFixture()), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(Bun.file(join(import.meta.dir, "../../public/house-highlights/generated/betrayal-vote.jpg")), {
         status: 200,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "image/jpeg" },
       });
     }) as unknown as typeof fetch;
 
@@ -119,6 +165,48 @@ describe("house highlights card image", () => {
     expect(response.status).toBe(503);
     expect(response.headers.get("content-type")).toContain("image/png");
     expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("returns a retryable static png when the render queue is saturated", async () => {
+    process.env.API_BACKEND_URL = "http://127.0.0.1:3333";
+    let releaseFirst!: () => void;
+    let markFirstStarted!: () => void;
+    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const firstStarted = new Promise<void>((resolve) => { markFirstStarted = resolve; });
+    let apiRequests = 0;
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      if (url.includes("/postgame/highlights")) {
+        apiRequests += 1;
+        if (apiRequests === 1) {
+          markFirstStarted();
+          await firstGate;
+        }
+        return Response.json(mainCutFixture());
+      }
+      return new Response(Bun.file(join(import.meta.dir, "../../public/house-highlights/generated/betrayal-vote.jpg")), {
+        status: 200,
+        headers: { "Content-Type": "image/jpeg" },
+      });
+    }) as unknown as typeof fetch;
+
+    const request = (sceneId: string) => GET(new Request(`http://example.test/${sceneId}.png`), {
+      params: Promise.resolve({ slug: "edge-smoke-dusk", sceneId }),
+    });
+    const active = request("active-scene");
+    await firstStarted;
+    const queued = Array.from({ length: 10 }, (_, index) => request(`queued-scene-${index + 1}`));
+    for (let index = 0; index < queued.length; index += 1) await Promise.resolve();
+    const overloaded = await request("overloaded-scene");
+
+    expect(overloaded.status).toBe(503);
+    expect(overloaded.headers.get("content-type")).toBe("image/png");
+    expect(overloaded.headers.get("cache-control")).toBe("no-store");
+    expect(overloaded.headers.get("retry-after")).toBe("5");
+    expect((await overloaded.arrayBuffer()).byteLength).toBeGreaterThan(0);
+
+    releaseFirst();
+    await Promise.all([active, ...queued]);
   });
 });
 

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { remotionBrowserOptions } from "../lib/house-highlights-trailer-media-bundle";
+import {
+  remotionBrowserOptions,
+  remotionMediaOptions,
+} from "../lib/house-highlights-trailer-media-bundle";
 import {
   fetchHouseHighlightsTrailerJson,
   musicMuxArgsFor,
@@ -55,6 +58,25 @@ describe("house highlights trailer render script", () => {
       browserExecutable: "/usr/bin/chromium",
       chromeMode: "chrome-for-testing",
     });
+  });
+
+  it("uses one low-memory Remotion lane and disables parallel encoding by default", () => {
+    expect(remotionMediaOptions({})).toEqual({
+      concurrency: 1,
+      disallowParallelEncoding: true,
+    });
+    expect(remotionMediaOptions({
+      POSTGAME_MEDIA_REMOTION_CONCURRENCY: "2",
+      REMOTION_BROWSER_EXECUTABLE: " /usr/bin/chromium ",
+    })).toEqual({
+      browserExecutable: "/usr/bin/chromium",
+      chromeMode: "chrome-for-testing",
+      concurrency: 2,
+      disallowParallelEncoding: true,
+    });
+    expect(() => remotionMediaOptions({
+      POSTGAME_MEDIA_REMOTION_CONCURRENCY: "0",
+    })).toThrow("POSTGAME_MEDIA_REMOTION_CONCURRENCY");
   });
 
   it("selects the exact prepared score for a supported trailer shape", () => {

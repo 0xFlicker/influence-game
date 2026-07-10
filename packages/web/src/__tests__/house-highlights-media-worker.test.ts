@@ -21,6 +21,40 @@ import {
 } from "../scripts/render-house-highlights-media-worker";
 
 describe("House Highlights media worker bundle", () => {
+  it("serializes visual rendering, poster rendering, and music composition", async () => {
+    const root = await mkdtemp(join(tmpdir(), "house-highlights-worker-order-"));
+    const musicDir = join(root, "music");
+    const order: string[] = [];
+    await mkdir(join(root, "tmp"), { recursive: true });
+    await mkdir(musicDir, { recursive: true });
+    await Bun.write(join(musicDir, "golden-verdict-0-cuts-6-players-28.8s.m4a"), "prepared score");
+
+    await renderHouseHighlightsTrailerMediaBundle({
+      manifest: manifestFixture(),
+      outputDir: join(root, "out"),
+      temporaryRoot: join(root, "tmp"),
+      musicDir,
+      renderer: {
+        renderVisual: async ({ outputPath }) => {
+          order.push("visual:start");
+          await Promise.resolve();
+          order.push("visual:end");
+          await Bun.write(outputPath, "visual");
+        },
+        renderPoster: async ({ outputPath }) => {
+          order.push("poster");
+          await Bun.write(outputPath, "poster");
+        },
+        mux: async ({ outputPath }) => {
+          order.push("mux");
+          await Bun.write(outputPath, "muxed with audio");
+        },
+      },
+    });
+
+    expect(order).toEqual(["visual:start", "visual:end", "poster", "mux"]);
+  });
+
   it("renders a stored snapshot without live game endpoints and cleans temporary output", async () => {
     const root = await mkdtemp(join(tmpdir(), "house-highlights-worker-test-"));
     const musicDir = join(root, "music");
@@ -46,6 +80,10 @@ describe("House Highlights media worker bundle", () => {
     expect(bundle.captions).toContain("Runner-up");
     expect(bundle.captions.toLowerCase()).not.toContain("receipt");
     expect(bundle.captions.toLowerCase()).not.toContain("proof");
+    expect(bundle.artifacts.video.byteLength).toBe(16);
+    expect(bundle.artifacts.video.sha256).toBe("sha256:6e0e372e3ce6a41548d958e3f6a0339228a4b0624c1af7ad4c15eacf768f3fb6");
+    expect(bundle.artifacts.poster.byteLength).toBe(6);
+    expect(bundle.artifacts.poster.sha256).toBe("sha256:293b9207228b7854bc3ccb2959ebea1583e066d41983124a5b381d6fdf6575f8");
     const metadata = createHouseHighlightsTrailerPlaybackMetadata({
       durationMs: bundle.durationMs,
       dimensions: bundle.dimensions,
@@ -83,6 +121,10 @@ describe("House Highlights media worker bundle", () => {
       return Response.json({ claim: null });
     }) as typeof fetch);
     expect(result).toBe("idle");
+    expect(config.remotionOptions).toEqual({
+      concurrency: 1,
+      disallowParallelEncoding: true,
+    });
     expect(requests[0]?.headers.get("Authorization")).toBe("Bearer secret-worker-token");
     expect(() => houseHighlightsMediaWorkerConfig({ POSTGAME_MEDIA_API_URL: "http://api.test" }))
       .toThrow("POSTGAME_MEDIA_WORKER_TOKEN");
