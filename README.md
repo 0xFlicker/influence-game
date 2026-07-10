@@ -118,15 +118,17 @@ For API-backed durable runs, owner-backed games can write private decision trace
 
 The Trace MCP is local-dev-only. The wrapper starts local Postgres and local private content S3, sources `.env.private-trace.local`, runs API migrations, sends setup logs to stderr, and then starts the stdio MCP server. It uses local API database and private-storage environment variables, calls the existing manifest read path for `read_content`, and exposes `list_durable_runs`, `inspect_durable_run`, `list_manifests`, `read_content`, and `search_reasoning_traces`. It is not a product/admin MCP endpoint, does not include browser login, and is not packaged for external release yet. Use `bun run trace:local:smoke` to validate the local DB + private content S3 writer/read path end to end. Local Postgres runs in Docker; sandboxed agents usually need elevated sandbox access for DB-backed commands against `127.0.0.1:54320`.
 
-### 3. Run the full stack (API + Web UI)
+### 3. Run the full stack (API + Web + Trailer Worker)
 
-To watch games live in a browser:
+The root development scripts inject the Doppler `dev` config and agree on the
+local API URL, websocket URL, trailer-worker token, and public media origin.
+Run each service in its own terminal from the repository root.
 
 **Terminal 1 -- Start the API server:**
 
 ```bash
 bun run s3:bootstrap
-doppler run --project social-strategy-agent --config dev -- env PORT=3000  bun run dev:api
+bun run dev:api
 ```
 
 The API runs on `http://127.0.0.1:3000` by default. It connects to a local PostgreSQL database (`influence_dev` on port 54320). The private trace env must be present in the API process before a game starts; restart the API after sourcing `.env.private-trace.local` or trace manifests will not be written.
@@ -134,12 +136,27 @@ The API runs on `http://127.0.0.1:3000` by default. It connects to a local Postg
 **Terminal 2 -- Start the web frontend:**
 
 ```bash
-doppler run --project social-strategy-agent --config dev -- \
-  env PORT=3001 API_URL=http://127.0.0.1:3000 WS_URL=ws://127.0.0.1:3000 API_BACKEND_URL=http://127.0.0.1:3000 \
-  bun run dev:web
+bun run dev:web
 ```
 
 The frontend runs on `http://localhost:3001`. Doppler injects Privy/admin/runtime config for the web app; the `env ...` overrides keep Next.js off the API port and make browser API calls use IPv4 `127.0.0.1` instead of `localhost`.
+
+**Terminal 3 -- Start the House Highlights render worker:**
+
+```bash
+bun run dev:render-worker
+```
+
+The worker is a long-running, single-concurrency poller. It renders queued
+completed-game trailers with music, uploads the immutable media bundle through
+the API, and then waits for more work. Without this process, admin trailer jobs
+remain `Queued`. Stop it with `Ctrl-C`; interrupted leases are reclaimed after
+their API-owned timeout.
+
+The user-facing scripts wrap Doppler themselves. Their lower-level counterparts
+(`dev:api:service`, `dev:web:service`, and `dev:render-worker:service`) skip
+Doppler and are intended for already-configured shells and deployment tooling.
+Do not wrap `bun run dev:api` or `bun run dev:web` in another `doppler run`.
 
 **Then:**
 
@@ -232,6 +249,7 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `POSTGAME_MEDIA_WORKER_TOKEN` | Required for trailer worker | -- | Current bearer token shared by the API and render worker |
 | `POSTGAME_MEDIA_WORKER_TOKEN_PREVIOUS` | No | -- | Previous worker token accepted during a bounded rotation window |
 | `POSTGAME_MEDIA_LEASE_MS` | No | `300000` | API-owned render claim lease duration |
+| `POSTGAME_MEDIA_PUBLIC_BASE_URL` | Required for local trailer playback | request origin | Browser-reachable API origin used for local public media URLs |
 | `LINODE_PRIVATE_CONTENT_ENDPOINT` | Required for private traces | -- | S3-compatible endpoint for private trace content storage |
 | `LINODE_PRIVATE_CONTENT_ACCESS_KEY` | Required for private traces | -- | Access key scoped to the private content bucket |
 | `LINODE_PRIVATE_CONTENT_SECRET_KEY` | Required for private traces | -- | Secret key scoped to the private content bucket |
@@ -258,7 +276,7 @@ Staging/production must set `LINODE_PRIVATE_CONTENT_ENDPOINT`, `LINODE_PRIVATE_C
 
 When the Linode variables are absent in local dev, the API falls back to filesystem-backed upload URLs and stores files under `packages/api/.local-uploads/` by default. The API returns absolute local upload/read URLs from the request origin so the browser can upload through `127.0.0.1:3000` while the web app runs on `localhost:3001`. Staging/production should use the S3 backend.
 
-Completed-game House Highlights trailers are produced by the separate `ghcr.io/0xflicker/influence-render-worker` image. Public playback lives at `/games/[slug]`; admin trailer diagnostics and backfill/rerender controls live in the completed-game history. See [docs/deployment/house-highlights-render-worker.md](docs/deployment/house-highlights-render-worker.md) for the worker, storage, smoke-test, and `linode-iac` contracts.
+Completed-game House Highlights trailers are produced locally with `bun run dev:render-worker` and in deployment by the separate `ghcr.io/0xflicker/influence-render-worker` image. Public playback lives at `/games/[slug]`; admin trailer diagnostics and backfill/rerender controls live in the completed-game history. See [docs/deployment/house-highlights-render-worker.md](docs/deployment/house-highlights-render-worker.md) for the worker, storage, smoke-test, and `linode-iac` contracts.
 
 ### Web (`packages/web`) -- set in `packages/web/.env.local`
 

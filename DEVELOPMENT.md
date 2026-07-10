@@ -457,10 +457,17 @@ Run the local browser stack with explicit Doppler dev config:
 
 ```bash
 bun run s3:bootstrap
-doppler run --project social-strategy-agent --config dev -- env PORT=3000 bun run dev:api
-
-doppler run --project social-strategy-agent --config dev -- env PORT=3001 bun run dev:web
+bun run dev:api
+bun run dev:web
+bun run dev:render-worker
 ```
+
+Run those three `dev:*` commands in separate terminals. They wrap Doppler's
+`social-strategy-agent/dev` config themselves and share the local trailer token,
+API origin, and filesystem upload directory. The worker has no listening port;
+it polls the API and is required for admin trailer jobs to advance beyond
+`Queued`. Use the corresponding `*:service` scripts only when the shell or
+container already supplies its environment.
 
 The private trace env has to be loaded into the API process before a game starts. If the API was already running, restart it after sourcing `.env.private-trace.local`; the trace writer is best-effort and gameplay can complete without private trace manifests when these vars are missing.
 
@@ -530,6 +537,7 @@ House Highlights postgame media adds a third, single-concurrency service. The AP
 |---------|-----|---------|
 | API (Hono) | 3000 | 4000 |
 | Web (Next.js) | 3001 | 4001 |
+| Render worker | No port | No port |
 
 The API respects `PORT` and `HOST` env vars (set in Doppler per environment). In dev, `HOST` defaults to `0.0.0.0`. In staging, `HOST=100.100.251.4` restricts access to the tailnet.
 

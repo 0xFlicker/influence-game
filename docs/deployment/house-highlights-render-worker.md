@@ -105,17 +105,13 @@ Build the same image CI publishes:
 docker build -f Dockerfile.render-worker -t influence-render-worker:local .
 ```
 
-Start the API with local public storage and a worker token. The normal Doppler
-command may supply the remaining API environment:
+For normal local development, start the API and native worker in separate
+terminals. The root scripts share the local worker token, public API origin, and
+`packages/api/.local-uploads` storage automatically:
 
 ```sh
-cd packages/api
-INFLUENCE_STORAGE_BACKEND=local \
-INFLUENCE_LOCAL_UPLOAD_DIR=/tmp/influence-postgame-media \
-POSTGAME_MEDIA_WORKER_TOKEN=local-render-worker \
-POSTGAME_MEDIA_PUBLIC_BASE_URL=http://127.0.0.1:3002 \
-PORT=3002 \
-doppler run --project social-strategy-agent --config dev -- bun run src/index.ts
+bun run dev:api
+bun run dev:render-worker
 ```
 
 Queue a completed game from **Admin -> Game History -> Trailer -> Backfill**.
@@ -126,7 +122,7 @@ curl -fsS -X POST \
   -H "Authorization: Bearer $ADMIN_SESSION_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"reason":"local worker smoke","confirmation":"BACKFILL"}' \
-  http://127.0.0.1:3002/api/admin/games/vast-plum-bay/postgame/media/backfill
+  http://127.0.0.1:3000/api/admin/games/vast-plum-bay/postgame/media/backfill
 ```
 
 Run the container health check, then consume exactly one queued job:
@@ -137,14 +133,14 @@ chmod 0777 /tmp/influence-render-worker-smoke
 
 docker run --rm \
   -v /tmp/influence-render-worker-smoke:/tmp/influence-render-worker \
-  -e POSTGAME_MEDIA_API_URL=http://host.docker.internal:3002 \
+  -e POSTGAME_MEDIA_API_URL=http://host.docker.internal:3000 \
   -e POSTGAME_MEDIA_WORKER_TOKEN=local-render-worker \
   influence-render-worker:local \
   bun run /app/packages/web/src/scripts/render-house-highlights-media-worker.ts --health
 
 docker run --rm \
   -v /tmp/influence-render-worker-smoke:/tmp/influence-render-worker \
-  -e POSTGAME_MEDIA_API_URL=http://host.docker.internal:3002 \
+  -e POSTGAME_MEDIA_API_URL=http://host.docker.internal:3000 \
   -e POSTGAME_MEDIA_WORKER_TOKEN=local-render-worker \
   influence-render-worker:local \
   bun run /app/packages/web/src/scripts/render-house-highlights-media-worker.ts --smoke
@@ -155,7 +151,7 @@ or finalize failure. After success, fetch the ready read model and inspect the
 actual published MP4:
 
 ```sh
-curl -fsS http://127.0.0.1:3002/api/games/vast-plum-bay/postgame/media > /tmp/postgame-media.json
+curl -fsS http://127.0.0.1:3000/api/games/vast-plum-bay/postgame/media > /tmp/postgame-media.json
 jq -r '.video.url' /tmp/postgame-media.json | xargs curl -fsSL -o /tmp/house-highlights-smoke.mp4
 ffprobe -v error -show_entries stream=codec_type,codec_name,width,height -show_entries format=duration -of json /tmp/house-highlights-smoke.mp4
 find /tmp/influence-render-worker-smoke -mindepth 1 -print

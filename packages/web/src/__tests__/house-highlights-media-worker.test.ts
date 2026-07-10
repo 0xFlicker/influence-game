@@ -144,14 +144,17 @@ describe("House Highlights media worker bundle", () => {
       ...manifest.finalVote.winner,
       avatarUrl: "http://localhost:3000/api/uploads/local?key=alice.png",
     };
+    manifest.cast[1]!.avatarUrl = "/api/uploads/local?key=pfp%2Fbob.png";
 
     const rewritten = withWorkerReachableAssetUrls(manifest, "http://host.docker.internal:3002");
 
     expect(rewritten.cast[0]!.avatarUrl).toBe("http://host.docker.internal:3000/api/uploads/local?key=alice.png");
     expect(rewritten.finalVote.winner.avatarUrl).toBe("http://host.docker.internal:3000/api/uploads/local?key=alice.png");
-    expect(rewritten.cast[1]!.avatarUrl).toBe("/avatars/bob.png");
+    expect(rewritten.cast[1]!.avatarUrl).toBe("http://host.docker.internal:3002/api/uploads/local?key=pfp%2Fbob.png");
     expect(manifest.cast[0]!.avatarUrl).toStartWith("http://127.0.0.1:3000/");
-    expect(withWorkerReachableAssetUrls(manifest, "http://127.0.0.1:3002")).toBe(manifest);
+    const native = withWorkerReachableAssetUrls(manifest, "http://127.0.0.1:3002");
+    expect(native.cast[0]!.avatarUrl).toBe(manifest.cast[0]!.avatarUrl);
+    expect(native.cast[1]!.avatarUrl).toBe("http://127.0.0.1:3002/api/uploads/local?key=pfp%2Fbob.png");
   });
 
   it("requires every prepared score while tolerating unrelated extra music", async () => {

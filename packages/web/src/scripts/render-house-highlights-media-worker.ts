@@ -189,11 +189,11 @@ export function withWorkerReachableAssetUrls(
   apiBaseUrl: string,
 ): HouseHighlightsTrailerManifest {
   const reachableHost = new URL(apiBaseUrl).hostname;
-  if (isLoopbackHost(reachableHost)) return manifest;
+  const rewriteLoopbackHosts = !isLoopbackHost(reachableHost);
 
   const agent = (value: HouseHighlightsTrailerManifest["cast"][number]) => ({
     ...value,
-    avatarUrl: rewriteLoopbackUrlHost(value.avatarUrl, reachableHost),
+    avatarUrl: rewriteWorkerAssetUrl(value.avatarUrl, apiBaseUrl, reachableHost, rewriteLoopbackHosts),
   });
   return {
     ...manifest,
@@ -220,10 +220,11 @@ export function withWorkerReachableAssetUrls(
   };
 }
 
-function rewriteLoopbackUrlHost(value: string, reachableHost: string): string {
+function rewriteWorkerAssetUrl(value: string, apiBaseUrl: string, reachableHost: string, rewriteLoopbackHosts: boolean): string {
+  if (value.startsWith("/api/")) return new URL(value, apiBaseUrl).toString();
   try {
     const url = new URL(value);
-    if (!isLoopbackHost(url.hostname)) return value;
+    if (!rewriteLoopbackHosts || !isLoopbackHost(url.hostname)) return value;
     url.hostname = reachableHost;
     return url.toString();
   } catch {
