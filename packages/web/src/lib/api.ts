@@ -1178,6 +1178,93 @@ export async function getAdminPostgameHighlightsDiagnostics(
   return apiFetch(`/api/admin/games/${gamePathSegment(gameIdOrSlug)}/postgame/highlights/diagnostics`);
 }
 
+export type AdminPostgameMediaStatus =
+  | "waiting_inputs"
+  | "waiting_music"
+  | "queued"
+  | "claimed"
+  | "rendering"
+  | "composing"
+  | "uploading"
+  | "ready"
+  | "failed";
+
+export interface AdminPostgameMediaArtifact {
+  publicUrl: string;
+  objectKey: string;
+  contentType: string;
+  byteLength: number;
+  sha256: string;
+}
+
+export interface AdminPostgameMediaArtifactMetadata {
+  preview: { title: string; description: string };
+  video: AdminPostgameMediaArtifact & { width: number; height: number };
+  poster: AdminPostgameMediaArtifact & { altText: string };
+  captions: AdminPostgameMediaArtifact & { language: string; label: string };
+  manifest: AdminPostgameMediaArtifact;
+  storage: { provider: string; bucket: string };
+}
+
+export type AdminPostgameMediaResponse =
+  | {
+      schemaVersion: 1;
+      mediaType: "house_highlights_trailer";
+      status: "not_requested";
+    }
+  | {
+      schemaVersion: 1;
+      mediaType: "house_highlights_trailer";
+      status: AdminPostgameMediaStatus;
+      renderVersion: number;
+      artifactVersion?: string;
+      attemptNumber: number;
+      lease?: { active: boolean; expiresAt: string | null };
+      failure?: { category: string | null; message: string | null };
+      artifactMetadata?: AdminPostgameMediaArtifactMetadata;
+      cueMetadata?: Record<string, unknown>;
+      diagnostics?: Record<string, unknown>;
+      provenance?: {
+        renderInputSnapshotHash: string;
+        renderInputSnapshotVersion: number;
+        rendererVersion: string;
+        timingContractVersion: string;
+        musicAssetId: string;
+      };
+      currentReady?: {
+        renderVersion: number;
+        durationSeconds: number;
+        publishedAt: string;
+        artifactMetadata: AdminPostgameMediaArtifactMetadata;
+      };
+      timestamps: {
+        createdAt: string;
+        updatedAt: string;
+        claimedAt: string | null;
+        attemptStartedAt: string | null;
+        attemptFinishedAt: string | null;
+      };
+    };
+
+export type AdminPostgameMediaAction = "backfill" | "rerender";
+
+export async function getAdminPostgameMedia(
+  gameIdOrSlug: string,
+): Promise<AdminPostgameMediaResponse> {
+  return apiFetch(`/api/admin/games/${gamePathSegment(gameIdOrSlug)}/postgame/media`);
+}
+
+export async function requestAdminPostgameMedia(
+  gameIdOrSlug: string,
+  action: AdminPostgameMediaAction,
+  reason: string,
+): Promise<{ outcome: string }> {
+  return apiFetch(`/api/admin/games/${gamePathSegment(gameIdOrSlug)}/postgame/media/${action}`, {
+    method: "POST",
+    body: JSON.stringify({ reason, confirmation: action.toUpperCase() }),
+  });
+}
+
 export interface PublicAlliancePlayerRead {
   id: string;
   name: string;

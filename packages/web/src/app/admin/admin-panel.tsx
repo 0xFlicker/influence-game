@@ -9,6 +9,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { TruncatedAddress } from "@/components/truncated-address";
 import { AdminCostPanel, AdminCostPill } from "./admin-cost-view";
 import { AdminHighlightsDiagnosticsPanel, AdminHighlightsPill } from "./admin-highlights-diagnostics";
+import { AdminPostgameMediaPanel, AdminPostgameMediaPill } from "./admin-postgame-media";
 
 function phaseLabel(phase: string): string {
   const labels: Record<string, string> = {
@@ -316,12 +317,14 @@ function RecentGameRow({
   onRefresh,
   onOpenCosts,
   onOpenHighlights,
+  onOpenMedia,
 }: {
   game: AdminGameSummary;
   canHide: boolean;
   onRefresh: () => void;
   onOpenCosts: () => void;
   onOpenHighlights: () => void;
+  onOpenMedia: () => void;
 }) {
   const router = useRouter();
   const [hiding, setHiding] = useState(false);
@@ -378,6 +381,9 @@ function RecentGameRow({
         <AdminHighlightsPill game={game} onClick={onOpenHighlights} />
       </td>
       <td className="py-3 px-4">
+        <AdminPostgameMediaPill game={game} onClick={onOpenMedia} />
+      </td>
+      <td className="py-3 px-4">
         {canHide && (
           <button
             onClick={(e) => { e.stopPropagation(); setConfirmHide(true); }}
@@ -429,6 +435,7 @@ export function AdminPanel() {
   const canStopGame = hasPermission("stop_game");
   const canFillGame = hasPermission("fill_game");
   const canHideGame = hasPermission("hide_game");
+  const canManagePostgameMedia = hasPermission("manage_postgame_media");
 
   const [activeGames, setActiveGames] = useState<AdminGameSummary[]>([]);
   const [suspendedGames, setSuspendedGames] = useState<AdminGameSummary[]>([]);
@@ -436,6 +443,7 @@ export function AdminPanel() {
   const [recentGames, setRecentGames] = useState<AdminGameSummary[]>([]);
   const [costGame, setCostGame] = useState<AdminGameSummary | null>(null);
   const [highlightsGame, setHighlightsGame] = useState<AdminGameSummary | null>(null);
+  const [mediaGame, setMediaGame] = useState<AdminGameSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const fetchRequestIdRef = useRef(0);
@@ -543,7 +551,7 @@ export function AdminPanel() {
             <table className="min-w-[72rem] w-full">
               <thead>
                 <tr className="border-b border-amber-900/30">
-                  {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", ""].map(
+                  {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", "Trailer", ""].map(
                     (h) => (
                       <th
                         key={h}
@@ -557,7 +565,7 @@ export function AdminPanel() {
               </thead>
               <tbody>
                 {suspendedGames.map((g) => (
-                  <RecentGameRow key={g.id} game={g} onRefresh={fetchGames} canHide={canHideGame} onOpenCosts={() => setCostGame(g)} onOpenHighlights={() => setHighlightsGame(g)} />
+                  <RecentGameRow key={g.id} game={g} onRefresh={fetchGames} canHide={canHideGame} onOpenCosts={() => setCostGame(g)} onOpenHighlights={() => setHighlightsGame(g)} onOpenMedia={() => setMediaGame(g)} />
                 ))}
               </tbody>
             </table>
@@ -621,7 +629,7 @@ export function AdminPanel() {
             <table className="min-w-[72rem] w-full">
               <thead>
                 <tr className="border-b border-white/10">
-                  {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", ""].map(
+                  {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", "Trailer", ""].map(
                     (h) => (
                       <th
                         key={h}
@@ -635,7 +643,7 @@ export function AdminPanel() {
               </thead>
               <tbody>
                 {recentGames.slice(0, 5).map((g) => (
-                  <RecentGameRow key={g.id} game={g} canHide={canHideGame} onRefresh={fetchGames} onOpenCosts={() => setCostGame(g)} onOpenHighlights={() => setHighlightsGame(g)} />
+                  <RecentGameRow key={g.id} game={g} canHide={canHideGame} onRefresh={fetchGames} onOpenCosts={() => setCostGame(g)} onOpenHighlights={() => setHighlightsGame(g)} onOpenMedia={() => setMediaGame(g)} />
                 ))}
               </tbody>
             </table>
@@ -647,6 +655,14 @@ export function AdminPanel() {
       )}
       {highlightsGame && (
         <AdminHighlightsDiagnosticsPanel key={highlightsGame.id} game={highlightsGame} onClose={() => setHighlightsGame(null)} />
+      )}
+      {mediaGame && (
+        <AdminPostgameMediaPanel
+          key={mediaGame.id}
+          game={mediaGame}
+          canManage={canManagePostgameMedia}
+          onClose={() => setMediaGame(null)}
+        />
       )}
     </div>
   );

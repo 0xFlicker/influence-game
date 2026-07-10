@@ -6,6 +6,7 @@ import { formatGameModelLabel, hideGame, listAdminGames, unhideGame, type AdminG
 import { usePermissions } from "@/hooks/use-permissions";
 import { AdminCostPanel, AdminCostPill } from "../admin-cost-view";
 import { AdminHighlightsDiagnosticsPanel, AdminHighlightsPill } from "../admin-highlights-diagnostics";
+import { AdminPostgameMediaPanel, AdminPostgameMediaPill } from "../admin-postgame-media";
 
 // ---------------------------------------------------------------------------
 // Filter state
@@ -48,12 +49,14 @@ function GameRow({
   onToggleVisibility,
   onOpenCosts,
   onOpenHighlights,
+  onOpenMedia,
 }: {
   game: AdminGameSummary;
   canHide: boolean;
   onToggleVisibility: () => void;
   onOpenCosts: () => void;
   onOpenHighlights: () => void;
+  onOpenMedia: () => void;
 }) {
   const router = useRouter();
   const [toggling, setToggling] = useState(false);
@@ -121,6 +124,9 @@ function GameRow({
       </td>
       <td className="py-3 px-4">
         <AdminHighlightsPill game={game} onClick={onOpenHighlights} />
+      </td>
+      <td className="py-3 px-4">
+        <AdminPostgameMediaPill game={game} onClick={onOpenMedia} />
       </td>
       <td className="py-3 px-4">
         {canHide && (
@@ -210,6 +216,7 @@ function FilterSelect<T extends string>({
 export function GameHistoryBrowser() {
   const { hasPermission } = usePermissions();
   const canHideGame = hasPermission("hide_game");
+  const canManagePostgameMedia = hasPermission("manage_postgame_media");
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [modelFilter, setModelFilter] = useState<ModelFilter>("all");
@@ -220,6 +227,7 @@ export function GameHistoryBrowser() {
   const [games, setGames] = useState<AdminGameSummary[]>([]);
   const [costGame, setCostGame] = useState<AdminGameSummary | null>(null);
   const [highlightsGame, setHighlightsGame] = useState<AdminGameSummary | null>(null);
+  const [mediaGame, setMediaGame] = useState<AdminGameSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const fetchRequestIdRef = useRef(0);
@@ -354,7 +362,7 @@ export function GameHistoryBrowser() {
           <table className="min-w-[72rem] w-full">
             <thead>
               <tr className="border-b border-white/10">
-                {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", ""].map((h) => (
+                {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", "Trailer", ""].map((h) => (
                   <th
                     key={h}
                     className="text-left py-3 px-4 text-xs text-white/30 font-medium"
@@ -373,6 +381,7 @@ export function GameHistoryBrowser() {
                   onToggleVisibility={fetchGames}
                   onOpenCosts={() => setCostGame(g)}
                   onOpenHighlights={() => setHighlightsGame(g)}
+                  onOpenMedia={() => setMediaGame(g)}
                 />
               ))}
             </tbody>
@@ -391,6 +400,14 @@ export function GameHistoryBrowser() {
       )}
       {highlightsGame && (
         <AdminHighlightsDiagnosticsPanel key={highlightsGame.id} game={highlightsGame} onClose={() => setHighlightsGame(null)} />
+      )}
+      {mediaGame && (
+        <AdminPostgameMediaPanel
+          key={mediaGame.id}
+          game={mediaGame}
+          canManage={canManagePostgameMedia}
+          onClose={() => setMediaGame(null)}
+        />
       )}
     </div>
   );
