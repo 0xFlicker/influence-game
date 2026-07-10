@@ -6,6 +6,10 @@ import {
   type HouseHighlightsTrailerManifest,
 } from "../../app/games/[slug]/components/house-highlights-trailer-model";
 import {
+  HOUSE_HIGHLIGHTS_TRAILER_MEDIA_TYPE,
+  HOUSE_HIGHLIGHTS_TRAILER_TIMING_CONTRACT_VERSION,
+} from "@influence/engine";
+import {
   HouseHighlightsTrailerComposition,
   type HouseHighlightsTrailerCompositionProps,
 } from "./composition";
@@ -35,6 +39,8 @@ registerRoot(function RemotionRoot() {
 
 const demoManifest: HouseHighlightsTrailerCompositionProps["manifest"] = {
   schemaVersion: 1,
+  mediaType: HOUSE_HIGHLIGHTS_TRAILER_MEDIA_TYPE,
+  timingContractVersion: HOUSE_HIGHLIGHTS_TRAILER_TIMING_CONTRACT_VERSION,
   game: {
     id: "demo",
     slug: "demo",
@@ -102,6 +108,7 @@ const demoManifest: HouseHighlightsTrailerCompositionProps["manifest"] = {
   ],
   cueSheet: {
     schemaVersion: 1,
+    timingContractVersion: HOUSE_HIGHLIGHTS_TRAILER_TIMING_CONTRACT_VERSION,
     frameRate: HOUSE_HIGHLIGHTS_TRAILER_FPS,
     totalFrames: 648,
     totalDurationSeconds: 21.6,

@@ -64,6 +64,7 @@ describe("house highlights trailer render script", () => {
       variantPlayers: 12,
       variantDurationSeconds: 55.6,
       trailerDurationSeconds: 55.6,
+      behavior: "exact",
     });
   });
 
@@ -87,6 +88,24 @@ describe("house highlights trailer render script", () => {
     }, filenames, "/music").filename).toBe(
       "golden-verdict-5-cuts-12-players-55.6s.m4a",
     );
+  });
+
+  it("selects every prepared 0-5 cut and 6/8/10/12 player matrix variant exactly", () => {
+    const durations = [
+      [24.8, 28.4, 32, 35.6], [28.8, 32.4, 36, 39.6], [32.8, 36.4, 40, 43.6],
+      [36.8, 40.4, 44, 47.6], [40.8, 44.4, 48, 51.6], [44.8, 48.4, 52, 55.6],
+    ];
+    const players = [6, 8, 10, 12];
+    const filenames = durations.flatMap((row, cuts) => row.map((duration, index) =>
+      `golden-verdict-${cuts}-cuts-${players[index]}-players-${duration.toFixed(1)}s.m4a`,
+    ));
+    for (const [cuts, row] of durations.entries()) {
+      for (const [index, duration] of row.entries()) {
+        const selection = selectHouseHighlightsTrailerMusicVariant({ houseCuts: cuts, players: players[index]!, trailerDurationSeconds: duration }, filenames, "/music");
+        expect(selection.behavior).toBe("exact");
+        expect(selection.filename).toBe(`golden-verdict-${cuts}-cuts-${players[index]}-players-${duration.toFixed(1)}s.m4a`);
+      }
+    }
   });
 
   it("trims and fades an oversized score while preserving the visual duration", () => {
