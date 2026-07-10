@@ -115,10 +115,10 @@ function sceneModel(
     title: scene.title,
     categoryLabel: categoryLabel(scene.category),
     categoryTone: categoryTone(scene.category),
-    hook: publicSceneText(scene.houseHook),
-    setup: publicSceneText(scene.setup),
-    conflict: publicSceneText(scene.conflict),
-    payoff: publicSceneText(scene.payoff),
+    hook: normalizeSceneText(scene.houseHook),
+    setup: normalizeSceneText(scene.setup),
+    conflict: normalizeSceneText(scene.conflict),
+    payoff: normalizeSceneText(scene.payoff),
     visualCard: {
       template: scene.visualCard.template,
       title: scene.visualCard.title,
@@ -197,13 +197,8 @@ function formatLabel(value: string): string {
     .join(" ");
 }
 
-function publicSceneText(text: string): string {
-  return text
-    .replace(/\breceipt trail\b/gi, "public record")
-    .replace(/\breceipts\b/gi, "facts")
-    .replace(/\breceipt\b/gi, "fact")
-    .replace(/\bproof links?\b/gi, "result links")
-    .replace(/\bproof\b/gi, "record");
+function normalizeSceneText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }
 
 function categoryTone(category: HouseHighlightCategory): string {

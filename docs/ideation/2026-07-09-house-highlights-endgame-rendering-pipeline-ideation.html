@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: House Highlights Endgame Rendering Pipeline</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0e1012;
+      --panel: #171a1f;
+      --panel-2: #20242b;
+      --line: #343943;
+      --text: #f5f3ee;
+      --muted: #b9b2a8;
+      --soft: #827c73;
+      --gold: #e5c36a;
+      --cyan: #7bd8e9;
+      --rose: #f09aa4;
+      --green: #98d99f;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 18% -10%, rgba(229, 195, 106, 0.12), transparent 32rem),
+        radial-gradient(circle at 92% 10%, rgba(123, 216, 233, 0.10), transparent 30rem),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      width: min(1120px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 48px 0 72px;
+    }
+
+    header,
+    section,
+    .idea,
+    .note {
+      border: 1px solid var(--line);
+      background: rgba(23, 26, 31, 0.82);
+      border-radius: 14px;
+    }
+
+    header {
+      padding: 30px;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 920px;
+      font-size: clamp(2.2rem, 4vw, 4.3rem);
+      font-weight: 820;
+    }
+
+    h2 {
+      margin: 44px 0 0;
+      font-size: 1.6rem;
+      font-weight: 780;
+    }
+
+    h3 {
+      font-size: 1.16rem;
+      font-weight: 760;
+    }
+
+    p {
+      margin: 0.8rem 0 0;
+      max-width: 76ch;
+      color: var(--muted);
+    }
+
+    a {
+      color: var(--cyan);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+
+    code {
+      color: #f2dc9a;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    section {
+      margin-top: 16px;
+      padding: 22px;
+    }
+
+    ul {
+      margin: 12px 0 0;
+      padding-left: 1.2rem;
+      color: var(--muted);
+    }
+
+    li + li { margin-top: 0.45rem; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.18);
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 11px 13px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: rgba(32, 36, 43, 0.9);
+      color: var(--text);
+      font-size: 0.9rem;
+    }
+
+    td { color: var(--muted); }
+    tr:last-child td { border-bottom: 0; }
+
+    .metadata,
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    .pill,
+    .tag {
+      border: 1px solid rgba(255, 255, 255, 0.13);
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.22);
+      color: var(--muted);
+      padding: 6px 10px;
+      font-size: 0.88rem;
+    }
+
+    .axis-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .axis {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(32, 36, 43, 0.74);
+      padding: 14px;
+      color: var(--muted);
+    }
+
+    .axis strong {
+      display: block;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .idea {
+      margin-top: 16px;
+      padding: 22px;
+      background: linear-gradient(180deg, rgba(32, 36, 43, 0.92), rgba(15, 17, 20, 0.9));
+    }
+
+    .idea-head {
+      display: grid;
+      grid-template-columns: 44px 1fr;
+      gap: 14px;
+      align-items: start;
+    }
+
+    .rank {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      border: 1px solid rgba(229, 195, 106, 0.42);
+      border-radius: 999px;
+      background: rgba(229, 195, 106, 0.16);
+      color: var(--gold);
+      font-weight: 850;
+    }
+
+    .detail {
+      margin-top: 12px;
+      color: var(--muted);
+    }
+
+    .detail strong {
+      color: var(--text);
+    }
+
+    .score {
+      color: var(--green);
+    }
+
+    .warning {
+      color: var(--rose);
+    }
+
+    .note {
+      margin-top: 16px;
+      padding: 18px;
+      background: rgba(0, 0, 0, 0.22);
+    }
+
+    footer {
+      margin-top: 36px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--soft);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Ideation: House Highlights Endgame Rendering Pipeline</h1>
+    <p>
+      Fresh ideation pass for taking the proven local House Highlights trailer renderer into a production end-of-game media pipeline:
+      final render trigger, durable upload, a deployable render-worker container, accessible playback, and share tooling.
+    </p>
+    <div class="metadata">
+      <span class="pill">Date: 2026-07-09</span>
+      <span class="pill">Topic: house-highlights-endgame-rendering-pipeline</span>
+      <span class="pill">Mode: repo-grounded</span>
+      <span class="pill">Status: ideation, not implementation planning</span>
+      <span class="pill">Scope floor: third render container required</span>
+    </div>
+  </header>
+
+  <h2>Grounding Context</h2>
+  <section>
+    <h3>Codebase Context</h3>
+    <ul>
+      <li>The current local renderer lives in <code>packages/web/src/scripts/render-house-highlights-trailer.ts</code>. It fetches public House Highlights and completed-results data, builds a manifest, bundles Remotion, renders MP4, and writes cue JSON.</li>
+      <li>The manifest boundary in <code>house-highlights-trailer-model.ts</code> already refuses non-completed games, requires final jury/finalist/winner facts, emits cue segments, and keeps trailer facts as presentation-ready props.</li>
+      <li>The Remotion composition renders from props only. This is the right truth boundary: renderer animates; it does not choose scenes, infer votes, or mutate facts.</li>
+      <li>Existing Highlights scene sharing already uses contextual share URLs and dynamic OG card images that land viewers back on the full Highlights page.</li>
+      <li>Existing public upload storage uses Linode/Akamai Object Storage through S3-compatible helpers, with local filesystem fallback for development.</li>
+      <li>Private trace storage provides a useful parallel pattern: large bytes in object storage, safe manifests/checksums/status in Postgres, no raw internal storage keys on public surfaces.</li>
+      <li>Current Docker images are split into API and web. The web image is optimized for Next standalone serving, not headless Chrome/ffmpeg rendering.</li>
+      <li>Scope clarification: this production slice is not done until the repo has a deployable third container for rendering and a concrete handoff package for <code>linode-iac</code> to wire into deployment.</li>
+    </ul>
+
+    <h3 style="margin-top: 22px;">External Context</h3>
+    <ul>
+      <li><a href="https://www.remotion.dev/docs/renderer/render-media">Remotion <code>renderMedia()</code></a> is the programmatic rendering API and accepts composition, bundle/serve URL, codec, output location, input props, and progress callbacks.</li>
+      <li><a href="https://www.remotion.dev/docs/docker">Remotion Docker guidance</a> calls out headless Chrome dependencies and browser installation; this is a real runtime concern, not just a package.json concern.</li>
+      <li><a href="https://techdocs.akamai.com/cloud-computing/docs/object-storage">Akamai/Linode Object Storage</a> is S3-compatible and stores objects in buckets with metadata, matching the repo's existing storage posture.</li>
+      <li><a href="https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/video">MDN video guidance</a> recommends captions and transcripts for accessibility; <a href="https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/track">the <code>&lt;track&gt;</code> element</a> supports captions, descriptions, chapters, and metadata.</li>
+    </ul>
+  </section>
+
+  <h2>Completion Bar</h2>
+  <section>
+    <p>
+      This slice should not be considered complete merely because the API can record media, the web can display a trailer player, or a local command can render a final MP4.
+      The production boundary now includes a third deployed service: a <strong>render-worker</strong> container that can be built, smoke-tested, configured, and handed off to <code>linode-iac</code>.
+    </p>
+    <ul>
+      <li>The worker container must include the Remotion, Chromium/headless-browser, ffmpeg, asset, and music-muxing runtime needs.</li>
+      <li>The API/web containers should not absorb the rendering runtime just to ship faster.</li>
+      <li>The app repo should provide the image contract, command shape, environment variables, storage expectations, health/smoke command, and job-status behavior needed for deployment wiring.</li>
+      <li>The <code>linode-iac</code> handoff should be specific enough that deployment work is mostly compose/env/secret wiring, not reverse-engineering this repo's render path.</li>
+    </ul>
+  </section>
+
+  <h2>Topic Axes</h2>
+  <section>
+    <div class="axis-grid">
+      <div class="axis"><strong>Completion trigger</strong>When and how a completed game creates media without blocking game completion.</div>
+      <div class="axis"><strong>Render runtime</strong>Where Remotion, Chromium, ffmpeg, and music composition run in production Docker.</div>
+      <div class="axis"><strong>Durable media</strong>How MP4, poster, cue, captions, versions, checksums, and public URLs are modeled.</div>
+      <div class="axis"><strong>Playback UX</strong>How the web shows the trailer accessibly and honestly when media is ready, pending, or failed.</div>
+      <div class="axis"><strong>Sharing and ops</strong>How links unfurl, how producers inspect/rerender, and how failures stay legible.</div>
+    </div>
+  </section>
+
+  <h2>Ranked Ideas</h2>
+
+  <article class="idea">
+    <div class="idea-head">
+      <div class="rank">1</div>
+      <div>
+        <h3>Postgame Media Bundle</h3>
+        <div class="tags">
+          <span class="tag">Axis: Durable media</span>
+          <span class="tag score">Confidence: 93%</span>
+          <span class="tag">Complexity: Medium-high</span>
+          <span class="tag">Status: Unexplored</span>
+        </div>
+      </div>
+    </div>
+    <p>
+      Treat the public trailer as a durable postgame media bundle rather than "an MP4 somewhere." The bundle should include MP4, poster frame, cue JSON, transcript or WebVTT, manifest hash, duration, content type, byte size, object keys, render version, and public status.
+    </p>
+    <p class="detail"><strong>Basis:</strong> direct: current private trace architecture stores large bytes in S3-compatible storage while Postgres owns safe manifest metadata; the current trailer renderer already emits MP4 plus cue JSON.</p>
+    <p class="detail"><strong>Rationale:</strong> This gives playback, sharing, rerendering, and debugging one product contract. Object storage owns bytes; the database owns truth about whether the trailer is ready and what generated it.</p>
+    <p class="detail"><strong>Downsides:</strong> Requires durable schema/storage work and careful public/private key separation.</p>
+  </article>
+
+  <article class="idea">
+    <div class="idea-head">
+      <div class="rank">2</div>
+      <div>
+        <h3>Dedicated Render Worker Image With Local Parity</h3>
+        <div class="tags">
+          <span class="tag">Axis: Render runtime</span>
+          <span class="tag score">Confidence: 88%</span>
+          <span class="tag">Complexity: High</span>
+          <span class="tag">Status: Unexplored</span>
+        </div>
+      </div>
+    </div>
+    <p>
+      Package rendering as a dedicated worker/container command that runs the same manifest-to-video renderer as local development, with Chromium and ffmpeg dependencies installed and a tiny smoke render in validation.
+    </p>
+    <p class="detail"><strong>Basis:</strong> direct/external: <code>Dockerfile.web</code> is a Next standalone runtime, while Remotion Docker guidance requires headless browser libraries and browser installation for rendering.</p>
+    <p class="detail"><strong>Rationale:</strong> This avoids stuffing public web/API request containers with fragile video-rendering dependencies. It also makes production failures easier to isolate: the worker either renders, uploads, and records status, or it fails visibly.</p>
+    <p class="detail"><strong>Downsides:</strong> Adds an image/build/deploy surface. This is no longer optional scope; the slice must produce a clean handoff for the Linode deployment repo.</p>
+  </article>
+
+  <article class="idea">
+    <div class="idea-head">
+      <div class="rank">3</div>
+      <div>
+        <h3>Idempotent Completion-Triggered Render Job</h3>
+        <div class="tags">
+          <span class="tag">Axis: Completion trigger</span>
+          <span class="tag score">Confidence: 90%</span>
+          <span class="tag">Complexity: Medium</span>
+          <span class="tag">Status: Unexplored</span>
+        </div>
+      </div>
+    </div>
+    <p>
+      When completed results and House Highlights are available, create or run one idempotent trailer render job. The job should not block the completed-game state; render failure updates media status and diagnostics only.
+    </p>
+    <p class="detail"><strong>Basis:</strong> direct: current product guidance says render-at-completion is acceptable at this scale; the manifest already fails clearly when a game is not completed or lacks final jury/winner facts.</p>
+    <p class="detail"><strong>Rationale:</strong> Viewers should not wait for render-on-demand, and gameplay completion should not be held hostage by video tooling. This keeps game truth and media publication separate.</p>
+    <p class="detail"><strong>Downsides:</strong> Needs clear sequencing around completed results, highlights availability, retry behavior, and explicit rerenders.</p>
+  </article>
+
+  <article class="idea">
+    <div class="idea-head">
+      <div class="rank">4</div>
+      <div>
+        <h3>Contextual Accessible Trailer Player</h3>
+        <div class="tags">
+          <span class="tag">Axis: Playback UX</span>
+          <span class="tag score">Confidence: 91%</span>
+          <span class="tag">Complexity: Medium</span>
+          <span class="tag">Status: Unexplored</span>
+        </div>
+      </div>
+    </div>
+    <p>
+      Add a Highlights/results trailer module using native <code>&lt;video controls&gt;</code>, poster image, transcript/cue section, copy-link button, download/open-file affordance, and honest ready/unavailable states.
+    </p>
+    <p class="detail"><strong>Basis:</strong> external: MDN recommends captions/transcripts for video, and <code>&lt;track&gt;</code> supports timed text; direct: Visual Card share links already land users back in context.</p>
+    <p class="detail"><strong>Rationale:</strong> Native video controls are boring in exactly the right way for the first public player. The product value is the trailer and share flow, not custom playback chrome.</p>
+    <p class="detail"><strong>Downsides:</strong> Native controls are less branded. Transcript and chapter generation needs public-copy-safe cue labels.</p>
+  </article>
+
+  <article class="idea">
+    <div class="idea-head">
+      <div class="rank">5</div>
+      <div>
+        <h3>Contextual Trailer Share URL With Poster OG</h3>
+        <div class="tags">
+          <span class="tag">Axis: Sharing and ops</span>
+          <span class="tag score">Confidence: 89%</span>
+          <span class="tag">Complexity: Medium</span>
+          <span class="tag">Status: Unexplored</span>
+        </div>
+      </div>
+    </div>
+    <p>
+      Make the share target a web URL for the trailer/player module, with Open Graph and Twitter metadata using the stored poster frame and descriptive title/copy. The MP4 URL is the media source, not the primary share link.
+    </p>
+    <p class="detail"><strong>Basis:</strong> direct: existing scene card sharing uses route metadata and deterministic OG images; raw video URLs cannot carry fallback states, transcript, surrounding context, or product navigation.</p>
+    <p class="detail"><strong>Rationale:</strong> Sharing links are the end goal. A contextual share page can handle media not ready, poster-first social previews, analytics, and links back to Highlights/results/replay.</p>
+    <p class="detail"><strong>Downsides:</strong> Requires metadata coordination between stored media status and Next route metadata.</p>
+  </article>
+
+  <article class="idea">
+    <div class="idea-head">
+      <div class="rank">6</div>
+      <div>
+        <h3>Render Versioning And Admin Rerender Console</h3>
+        <div class="tags">
+          <span class="tag">Axis: Sharing and ops</span>
+          <span class="tag score">Confidence: 84%</span>
+          <span class="tag">Complexity: Medium-high</span>
+          <span class="tag">Status: Unexplored</span>
+        </div>
+      </div>
+    </div>
+    <p>
+      Store render version, manifest schema, manifest hash, source timestamps, status, failure reason, and explicit producer rerender action. Successful shared videos should remain stable unless intentionally replaced or versioned.
+    </p>
+    <p class="detail"><strong>Basis:</strong> direct: trailer copy, background, music, and card facts have already changed through iteration. Public media can drift from current code unless each render records what produced it.</p>
+    <p class="detail"><strong>Rationale:</strong> This prevents silent share-link drift and gives producers a sane way to inspect failures, rerender after improvements, and understand what a viewer saw.</p>
+    <p class="detail"><strong>Downsides:</strong> Admin tooling can become a rabbit hole. Keep it status-first, not a video CMS.</p>
+  </article>
+
+  <article class="idea">
+    <div class="idea-head">
+      <div class="rank">7</div>
+      <div>
+        <h3>Cue-To-Music-And-Accessibility Bridge</h3>
+        <div class="tags">
+          <span class="tag">Axis: Playback UX</span>
+          <span class="tag score">Confidence: 82%</span>
+          <span class="tag">Complexity: Medium</span>
+          <span class="tag">Status: Unexplored</span>
+        </div>
+      </div>
+    </div>
+    <p>
+      Promote cue metadata from producer-only JSON into a shared artifact that drives music-bed selection, transcript/chapter generation, and player navigation.
+    </p>
+    <p class="detail"><strong>Basis:</strong> direct: the current cue sheet defines deterministic segment timing and exact music variants; external: timed tracks can expose chapters, captions, descriptions, and metadata.</p>
+    <p class="detail"><strong>Rationale:</strong> The same timeline can serve Suno/music composition, public accessibility, and viewer navigation. No need to maintain three subtly different timing systems. That way lies spreadsheet sadness.</p>
+    <p class="detail"><strong>Downsides:</strong> Cue labels need a public-safe copy pass. Producer labels are not automatically viewer captions.</p>
+  </article>
+
+  <h2>Rejected Directions</h2>
+  <section>
+    <table>
+      <thead>
+        <tr>
+          <th>Rejected idea</th>
+          <th>Reason</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Render inside normal web runtime</td><td>Too much Chromium/ffmpeg dependency risk for the public Next server.</td></tr>
+        <tr><td>Render inside normal API request process</td><td>Possible emergency shortcut, but weaker than worker isolation for production.</td></tr>
+        <tr><td>Viewer-triggered render button</td><td>Adds wait/retry UX when current scale supports completion-time rendering.</td></tr>
+        <tr><td>Raw MP4 as primary share link</td><td>Loses context, fallback states, OG metadata, transcript, and analytics.</td></tr>
+        <tr><td>Autoplay trailer on page load</td><td>Bad default for accessibility, mobile, and music/audio expectations.</td></tr>
+        <tr><td>Dynamic OG generation for every trailer request</td><td>Poster should be a stored artifact; dynamic rendering adds latency and failure surface.</td></tr>
+        <tr><td>Full distributed queue infrastructure now</td><td>Too expensive for current scale; simple idempotent jobs are enough.</td></tr>
+        <tr><td>Vertical/square variants in the first production slice</td><td>Scope overrun. Canonical 16:9 is still the current trailer contract.</td></tr>
+        <tr><td>Automatic music generation inside the app</td><td>Scope overrun. Music is currently external/Suno-produced or selected from prepared variants.</td></tr>
+        <tr><td>Silent automatic rerender on every deploy</td><td>Creates share-link drift and makes already-shared media hard to explain.</td></tr>
+        <tr><td>No durable media record, only object keys in code/config</td><td>Not queryable enough for public player states or admin diagnostics.</td></tr>
+        <tr><td>Custom branded video player first</td><td>Lower value than native accessible video with poster, controls, transcript, and share states.</td></tr>
+        <tr><td>Trailer as a Highlights scene property</td><td>Trailer combines highlights, results, winner, music, and render status; better as game media.</td></tr>
+        <tr><td>Store MP4 bytes in Postgres</td><td>Poor fit for large media. Object storage is already the repo's byte-store pattern.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <h2>Open Product Questions</h2>
+  <section>
+    <ul>
+      <li>What exact render-worker image contract should the app repo hand to <code>linode-iac</code>: image name, command, env vars, mounted temp space, object-storage credentials, API credentials, concurrency, and smoke command?</li>
+      <li>Should successful rerenders replace the canonical trailer URL or publish a new version while preserving old shared links?</li>
+      <li>Should music be required for public trailer publication, or should silent trailers publish with music added later?</li>
+      <li>Should the player live on the Highlights page, results page, or a dedicated trailer route that embeds surrounding context?</li>
+      <li>How much of cue JSON should be public, and what labels need to be rewritten as viewer-facing transcript/chapter text?</li>
+      <li>What exact local parity command should validate the render image on the Linode box before enabling completion-time renders?</li>
+    </ul>
+  </section>
+
+  <h2>Recommended Brainstorm Seed</h2>
+  <section>
+    <p>
+      The strongest next brainstorm seed is <strong>Postgame Media Bundle</strong>, with the render worker and contextual player treated as connected concerns.
+      That seed can define the product contract for media status, publication semantics, object bundle contents, share URL behavior, accessibility artifacts,
+      rerender policy, and admin diagnostics without dropping into database migrations or route design too early.
+    </p>
+    <div class="note">
+      <strong>Working stance:</strong> MP4 is only one artifact. The product needs a durable, shareable, inspectable postgame media bundle.
+      The trailer should feel cinematic, but the publication pipeline should be boringly correct.
+    </div>
+  </section>
+
+  <footer>
+    Created by Compound Engineering ideation. Scratch checkpoints:
+    <code>/tmp/compound-engineering/ce-ideate/7f3a91c2/raw-candidates.md</code> and
+    <code>/tmp/compound-engineering/ce-ideate/7f3a91c2/survivors.md</code>.
+  </footer>
+</main>
+</body>
+</html>

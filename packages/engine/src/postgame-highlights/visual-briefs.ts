@@ -32,7 +32,7 @@ const BACKDROP_DESCRIPTIONS: Record<HouseHighlightBackdropCategory, string> = {
   abstract_vote_board: "Abstract vote-board texture with no readable ballots, names, or totals.",
   fractured_alliance_table: "Empty fractured-table atmosphere with no people or implied action.",
   spotlight_stage: "Empty spotlight-stage atmosphere with no agent pose or emotion.",
-  surveillance_board_texture: "Abstract evidence-board texture with no readable receipts or labels.",
+  surveillance_board_texture: "Abstract evidence-board texture with no readable names or labels.",
 };
 
 const SAFE_GENERATED_BACKDROPS = new Set<HouseHighlightBackdropCategory>([

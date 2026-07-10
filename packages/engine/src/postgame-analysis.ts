@@ -1537,7 +1537,7 @@ function buildTurningPoints(input: {
         type: "near_miss",
         players: [moment.player],
         confidence: "medium",
-        description: `${moment.player.name} survived the Council vote in round ${round.round}.`,
+        description: `${moment.player.name} survived the Council vote.`,
         derivationMethod: "survived_council_slate",
         criteria: {
           round: round.round,

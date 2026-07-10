@@ -106,7 +106,7 @@ function powerControlCandidate(point: PostgameTurningPoint): HouseHighlightsCand
       ...(point.evidence.eventRefs?.length ? { eventRefs: sanitizedEventRefs(point.evidence.eventRefs) } : {}),
     }],
     confidence: point.confidence,
-    deepLink: resultsLink(point.round, "Open power record"),
+    deepLink: resultsLink(point.round, "Open power details"),
     visualBrief: visualBrief({
       visualType: "power_streak",
       primaryAgents: [player],
@@ -120,7 +120,7 @@ function powerControlCandidate(point: PostgameTurningPoint): HouseHighlightsCand
       backdrop: "spotlight_stage",
       forbiddenInventions: [
         "Do not depict the agent taking a physical crown or stage action.",
-        "Do not invent vote totals not present in the receipt.",
+        "Do not invent vote totals not present in the public facts.",
       ],
     }),
     source: point.derivationMethod,
@@ -144,7 +144,7 @@ function threatRemovedCandidate(point: PostgameTurningPoint): HouseHighlightsCan
     involvedAgents: [player],
     houseHook: `${player.name}'s exit mattered before the final vote ever arrived.`,
     setup: `${player.name} carried visible pressure in the postgame record.`,
-    conflict: "The vote record finally turned that pressure into an exit.",
+    conflict: "The public vote finally turned that pressure into an exit.",
     payoff: point.description,
     receipts: [{
       id: receiptId,
@@ -253,7 +253,7 @@ function nearMissCandidate(point: PostgameTurningPoint): HouseHighlightsCandidat
       ...(point.evidence.eventRefs?.length ? { eventRefs: sanitizedEventRefs(point.evidence.eventRefs) } : {}),
     }],
     confidence: point.confidence,
-    deepLink: resultsLink(point.round, "Open survival record"),
+    deepLink: resultsLink(point.round, "Open survival details"),
     visualBrief: visualBrief({
       visualType: "unlikely_survival",
       primaryAgents: [player],
@@ -315,7 +315,7 @@ function shieldSaveCandidate(round: RoundSummary): HouseHighlightsCandidate[] {
       ...(round.evidence?.length ? { eventRefs: sanitizedEventRefs(round.evidence) } : {}),
     }],
     confidence: "high",
-    deepLink: resultsLink(round.round, "Open shield record"),
+    deepLink: resultsLink(round.round, "Open shield details"),
     visualBrief: visualBrief({
       visualType: "shield_survival",
       primaryAgents: [shielded],
@@ -373,7 +373,7 @@ function voteFlipCandidate(round: RoundSummary): HouseHighlightsCandidate[] {
       ...(round.evidence?.length ? { eventRefs: sanitizedEventRefs(round.evidence) } : {}),
     }],
     confidence: "medium",
-    deepLink: resultsLink(round.round, "Open vote record"),
+    deepLink: resultsLink(round.round, "Open vote details"),
     visualBrief: visualBrief({
       visualType: "vote_flip",
       primaryAgents: [eliminated],
@@ -425,7 +425,7 @@ function playerSurvivalCandidate(summary: PlayerSummary): HouseHighlightsCandida
       factRefs: summary.atRiskMoments.map((moment) => `round:${moment.round}:risk:${moment.type}:${player.id}`),
     }],
     confidence: summary.atRiskMoments.length >= 3 ? "high" : "medium",
-    deepLink: resultsLink(firstRound, "Open survival record"),
+    deepLink: resultsLink(firstRound, "Open survival details"),
     visualBrief: visualBrief({
       visualType: "unlikely_survival",
       primaryAgents: [player],
@@ -467,7 +467,7 @@ function voteCohortCandidate(cohort: VoteCohort): HouseHighlightsCandidate {
     houseHook: `${names} moved like a voting bloc without needing The House to call it an alliance.`,
     setup: `Their public votes matched across round ${rounds}.`,
     conflict: "Repeated agreement can become power even when it is not a named pact.",
-    payoff: `${cohort.sharedVotes.length} shared vote outcomes survived the receipt check.`,
+    payoff: `${cohort.sharedVotes.length} shared vote outcomes held up in the public record.`,
     receipts: [
       {
         id: receiptIds[0],
@@ -485,7 +485,7 @@ function voteCohortCandidate(cohort: VoteCohort): HouseHighlightsCandidate {
       },
     ],
     confidence: cohort.confidence,
-    deepLink: resultsLink(cohort.firstObservedRound, "Open vote pattern"),
+    deepLink: resultsLink(cohort.firstObservedRound, "Open voting pattern"),
     visualBrief: visualBrief({
       visualType: "council_slate",
       primaryAgents: cohort.players,

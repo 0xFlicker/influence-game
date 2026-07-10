@@ -27,7 +27,9 @@
     "lint": "bun run --filter '*' lint",
     "check": "bun run typecheck && bun run lint",
     "dev:api": "cd packages/api && bun run dev",
-    "dev:web": "cd packages/web && bun run dev"
+    "dev:web": "cd packages/web && bun run dev",
+    "trailer:render": "cd packages/web && bun run trailer:render",
+    "trailer:music:variants": "bun run scripts/generate-house-highlights-music-variants.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",

@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Ideation: House Highlights Trailers</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101113;
+      --panel: #181a1f;
+      --panel-2: #20232a;
+      --text: #f5f5f2;
+      --muted: #b8b3aa;
+      --soft: #7d7a73;
+      --line: #383a42;
+      --gold: #e6c46d;
+      --cyan: #75d6e7;
+      --rose: #ef8f9a;
+      --green: #8bd59b;
+      --violet: #b4a2ff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(230, 196, 109, 0.10), transparent 34rem),
+        radial-gradient(circle at 92% 18%, rgba(117, 214, 231, 0.08), transparent 28rem),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      width: min(1100px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 48px 0 64px;
+    }
+
+    header {
+      border: 1px solid var(--line);
+      background: rgba(24, 26, 31, 0.78);
+      border-radius: 18px;
+      padding: 30px;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      max-width: 880px;
+      font-size: clamp(2.1rem, 4vw, 4.2rem);
+      font-weight: 780;
+    }
+
+    h2 {
+      margin-top: 42px;
+      font-size: 1.7rem;
+      font-weight: 760;
+    }
+
+    h3 {
+      font-size: 1.2rem;
+      font-weight: 740;
+    }
+
+    p {
+      max-width: 76ch;
+      margin: 0.8rem 0 0;
+      color: var(--muted);
+    }
+
+    a {
+      color: var(--cyan);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+      color: #f2dc9a;
+    }
+
+    .metadata {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .pill {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 11px;
+      color: var(--muted);
+      background: rgba(0, 0, 0, 0.20);
+      font-size: 0.9rem;
+    }
+
+    .section-card {
+      border: 1px solid var(--line);
+      background: rgba(24, 26, 31, 0.72);
+      border-radius: 16px;
+      padding: 24px;
+      margin-top: 16px;
+    }
+
+    .axes {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .axis {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(32, 35, 42, 0.78);
+      padding: 14px;
+      color: var(--muted);
+    }
+
+    .axis strong {
+      display: block;
+      color: var(--text);
+      margin-bottom: 5px;
+    }
+
+    .jump-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 18px 0;
+    }
+
+    .jump-list a {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: rgba(32, 35, 42, 0.68);
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.92rem;
+    }
+
+    .idea {
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(32, 35, 42, 0.86), rgba(18, 19, 22, 0.88));
+      border-radius: 16px;
+      padding: 22px;
+      margin-top: 16px;
+    }
+
+    .idea-top {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+    }
+
+    .rank {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: rgba(230, 196, 109, 0.18);
+      border: 1px solid rgba(230, 196, 109, 0.42);
+      color: var(--gold);
+      font-weight: 800;
+    }
+
+    .idea-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0 2px;
+    }
+
+    .tag {
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      padding: 4px 8px;
+      color: var(--muted);
+      background: rgba(0,0,0,0.20);
+      font-size: 0.85rem;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(260px, 0.55fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .detail {
+      margin-top: 14px;
+    }
+
+    .detail strong {
+      color: var(--text);
+    }
+
+    .diagram {
+      margin-top: 18px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(0, 0, 0, 0.20);
+      padding: 12px;
+      overflow-x: auto;
+    }
+
+    svg {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+      background: rgba(24, 26, 31, 0.68);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+      padding: 12px 14px;
+    }
+
+    th {
+      color: var(--text);
+      background: rgba(32, 35, 42, 0.84);
+      font-size: 0.9rem;
+    }
+
+    td {
+      color: var(--muted);
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    footer {
+      margin-top: 36px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      color: var(--soft);
+      font-size: 0.9rem;
+    }
+
+    @media (max-width: 760px) {
+      main {
+        width: min(100vw - 24px, 1100px);
+        padding-top: 24px;
+      }
+
+      header, .section-card, .idea {
+        padding: 18px;
+      }
+
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="pill">Ideation</div>
+    <h1>House Highlights Trailers</h1>
+    <p>
+      A ranked idea set for moving from static House Highlights Visual Cards to a 16:9,
+      post-completion animated trailer: cast intro, selected House Cuts, final vote, and winner reveal.
+      This stays at product-idea altitude; implementation details belong in the next brainstorm or plan.
+    </p>
+    <div class="metadata">
+      <span class="pill">date: <time datetime="2026-07-07">2026-07-07</time></span>
+      <span class="pill">topic: house-highlights-trailers</span>
+      <span class="pill">focus: animated trailer from selected cuts</span>
+      <span class="pill">mode: repo-grounded</span>
+    </div>
+  </header>
+
+  <section id="grounding-context">
+    <h2>Codebase Context</h2>
+    <div class="section-card">
+      <p>
+        House Highlights already has the right editorial spine for a trailer: the selected scene set is generated
+        by the postgame highlight layer, and the current public surface renders cards from a deterministic
+        <code>visualCard</code> model rather than public <code>posterDirection</code> prose. The Visual Cards plan
+        explicitly made the card a shareable static artifact, while the earlier House Highlights plan described a
+        faux-trailer direction using avatars, title cards, captions, vote graphics, relation visuals, simple motion,
+        reusable backgrounds, and ambient music. The key change now is that animated trailers are no longer purely
+        aspirational; the static card layer has proven the truth-safe composition vocabulary.
+      </p>
+      <p>
+        The user's current direction narrows the trailer to a 16:9 start, variable duration, completion-time render,
+        Linode Object Storage persistence, no expiration, no music composition in the first slice, and no new scene
+        selection beyond the House Cuts that already exist. The trailer should still feel cinematic, but the renderer
+        must remain obedient: analysis decides what happened; rendering only animates the manifest it is handed. That
+        keeps the same "generated mood, deterministic truth" rule from Visual Briefs and Visual Cards.
+      </p>
+      <p>
+        Existing final-vote data is promising enough to ideate around: postgame analysis exposes final vote counts,
+        juror ledger entries, finalists, winner, and supporter groups, while completed-results UI already resolves
+        jury votes into row/cell data. The requested final segment should therefore show vote count under each finalist
+        with small voter avatar and name, then reveal the winner. No speculative motive copy is needed.
+      </p>
+    </div>
+  </section>
+
+  <section id="topic-axes">
+    <h2>Topic Axes</h2>
+    <div class="axes">
+      <div class="axis"><strong>Editorial Spine</strong>What sequence every trailer uses, and how duration follows content.</div>
+      <div class="axis"><strong>Motion Language</strong>How cast, cards, cuts, avatars, and generated backdrops move without inventing facts.</div>
+      <div class="axis"><strong>Final Vote Climax</strong>How the trailer earns its ending with finalist columns, juror votes, and winner reveal.</div>
+      <div class="axis"><strong>Renderer Boundary</strong>How analysis, rendering, upload, storage, and share surfaces stay separate.</div>
+      <div class="axis"><strong>Music Handoff</strong>What metadata helps later Suno/manual music matching without forcing audio into V1.</div>
+    </div>
+  </section>
+
+  <section id="ranked-ideas">
+    <h2>Ranked Ideas</h2>
+    <nav class="jump-list" aria-label="Ranked idea links">
+      <a href="#idea-1">1. Completion-rendered trailer</a>
+      <a href="#idea-2">2. Cast parade</a>
+      <a href="#idea-3">3. Four-second scenelets</a>
+      <a href="#idea-4">4. Final vote tableau</a>
+      <a href="#idea-5">5. Music cue sheet</a>
+      <a href="#idea-6">6. Render artifact lifecycle</a>
+    </nav>
+
+    <article class="idea" id="idea-1">
+      <div class="idea-top">
+        <div class="rank">1</div>
+        <div>
+          <h3>Completion-Rendered Variable-Length Trailer</h3>
+          <div class="idea-meta">
+            <span class="tag">Axis: Editorial Spine</span>
+            <span class="tag">Confidence: 92%</span>
+            <span class="tag">Complexity: Medium</span>
+          </div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div>
+          <p>
+            Render one trailer after game completion from a fixed sequence: all participants, selected House Cuts,
+            final vote, winner reveal. Duration follows content: six-player games are shorter than twelve-player
+            games, and games with one or two cuts simply have fewer scene beats. This avoids forcing a false "best 3"
+            scene policy before the product has earned one.
+          </p>
+          <p class="detail"><strong>Basis:</strong> direct: the current plans define selected House Highlights scenes as the public artifact, and the user clarified that "fine to just use the existing selected house cuts" and "none" should be omitted when no strong cuts exist.</p>
+          <p class="detail"><strong>Rationale:</strong> The trailer's strongest product move is continuity, not additional selection. It turns a completed game into a watchable artifact without reopening the House Highlights core contract.</p>
+          <p class="detail"><strong>Downsides:</strong> Variable duration makes music matching less automatic and means trailer length is not predictable until the manifest is known.</p>
+        </div>
+        <div class="diagram" aria-label="Trailer sequence sketch">
+          <svg width="440" height="180" viewBox="0 0 440 180" role="img">
+            <rect x="12" y="40" width="96" height="70" rx="10" fill="#20232a" stroke="#75d6e7"/>
+            <text x="60" y="70" text-anchor="middle" fill="#f5f5f2" font-size="13" font-weight="700">Cast</text>
+            <text x="60" y="91" text-anchor="middle" fill="#b8b3aa" font-size="11">1-2s each</text>
+            <path d="M116 75 H153" stroke="#7d7a73" stroke-width="2"/>
+            <polygon points="153,75 145,70 145,80" fill="#7d7a73"/>
+            <rect x="160" y="26" width="116" height="98" rx="10" fill="#20232a" stroke="#e6c46d"/>
+            <text x="218" y="61" text-anchor="middle" fill="#f5f5f2" font-size="13" font-weight="700">House Cuts</text>
+            <text x="218" y="82" text-anchor="middle" fill="#b8b3aa" font-size="11">4s each</text>
+            <text x="218" y="101" text-anchor="middle" fill="#b8b3aa" font-size="11">1-N selected</text>
+            <path d="M284 75 H321" stroke="#7d7a73" stroke-width="2"/>
+            <polygon points="321,75 313,70 313,80" fill="#7d7a73"/>
+            <rect x="328" y="40" width="96" height="70" rx="10" fill="#20232a" stroke="#8bd59b"/>
+            <text x="376" y="70" text-anchor="middle" fill="#f5f5f2" font-size="13" font-weight="700">Final Vote</text>
+            <text x="376" y="91" text-anchor="middle" fill="#b8b3aa" font-size="11">Winner reveal</text>
+          </svg>
+        </div>
+      </div>
+    </article>
+
+    <article class="idea" id="idea-2">
+      <div class="idea-top">
+        <div class="rank">2</div>
+        <div>
+          <h3>Cast Parade as Identity Ramp</h3>
+          <div class="idea-meta">
+            <span class="tag">Axis: Motion Language</span>
+            <span class="tag">Confidence: 88%</span>
+            <span class="tag">Complexity: Medium</span>
+          </div>
+        </div>
+      </div>
+      <p>
+        Start every trailer with a fast participant parade: each player slides in with avatar/PFP and name, slows
+        briefly, then exits. The sequence should be brisk, roughly one to two seconds per participant, because its
+        job is identity priming rather than biography. For 12-player games it establishes the cast; for six-player
+        games it makes the shorter trailer feel intentional instead of under-filled.
+      </p>
+      <p class="detail"><strong>Basis:</strong> direct: the user specified "1-2s max" per participant and asked for name plus avatar PFP.</p>
+      <p class="detail"><strong>Rationale:</strong> House Highlights cards now use avatars when relevant; the trailer can make avatars load-bearing by letting viewers recognize faces before cuts and jury votes appear.</p>
+      <p class="detail"><strong>Downsides:</strong> This segment can feel repetitive if motion and ordering are dull. It needs enough variation to feel like a title sequence, not a database export with shoes on.</p>
+    </article>
+
+    <article class="idea" id="idea-3">
+      <div class="idea-top">
+        <div class="rank">3</div>
+        <div>
+          <h3>Four-Second House Cut Scenelets</h3>
+          <div class="idea-meta">
+            <span class="tag">Axis: Motion Language</span>
+            <span class="tag">Confidence: 86%</span>
+            <span class="tag">Complexity: Medium</span>
+          </div>
+        </div>
+      </div>
+      <p>
+        Treat every selected House Cut as a short scenelet based on the existing Visual Card composition: generated
+        background plate, deterministic avatar/name overlays, title, outcome, and one or two action facts. Four
+        seconds is enough for a cinematic reveal plus a readable fact beat without trying to replay the whole round.
+      </p>
+      <p class="detail"><strong>Basis:</strong> direct: the Visual Cards plan targets one polished card per selected scene and the user picked four seconds per selected House Cut.</p>
+      <p class="detail"><strong>Rationale:</strong> This makes the animated trailer a natural continuation of the static card pipeline. A cut segment can borrow the same factual payload while adding camera movement, avatar emphasis, and timed text reveal.</p>
+      <p class="detail"><strong>Downsides:</strong> The existing card text may need tighter trailer-specific choices. A card can tolerate three fact boxes; a moving trailer likely wants fewer, stronger beats.</p>
+    </article>
+
+    <article class="idea" id="idea-4">
+      <div class="idea-top">
+        <div class="rank">4</div>
+        <div>
+          <h3>Final Vote Tableau and Winner Reveal</h3>
+          <div class="idea-meta">
+            <span class="tag">Axis: Final Vote Climax</span>
+            <span class="tag">Confidence: 84%</span>
+            <span class="tag">Complexity: Medium</span>
+          </div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div>
+          <p>
+            End with finalist columns. Under each finalist, stack or fan the jurors who voted for them using small
+            avatar plus name chips. Once the votes settle, reveal the winner with the final score and a restrained
+            victory treatment. This is the one segment where vote count should be illustrated, not just stated.
+          </p>
+          <p class="detail"><strong>Basis:</strong> direct: the user required "vote count illustrated with small voter avatar + name under each finalist"; postgame analysis exposes final vote counts and jury ledgers.</p>
+          <p class="detail"><strong>Rationale:</strong> The trailer needs a climax that is both emotional and boringly correct. Juror chips under finalists make the final vote legible at a glance while preserving the deterministic truth layer.</p>
+          <p class="detail"><strong>Downsides:</strong> The layout must handle different finalist counts, missing avatars, long names, and lopsided votes without turning the ending into a crowded spreadsheet cosplay.</p>
+        </div>
+        <div class="diagram" aria-label="Final vote tableau sketch">
+          <svg width="440" height="210" viewBox="0 0 440 210" role="img">
+            <rect x="26" y="20" width="170" height="170" rx="12" fill="#20232a" stroke="#75d6e7"/>
+            <rect x="244" y="20" width="170" height="170" rx="12" fill="#20232a" stroke="#e6c46d"/>
+            <circle cx="72" cy="58" r="20" fill="#75d6e7" opacity="0.35"/>
+            <circle cx="290" cy="58" r="20" fill="#e6c46d" opacity="0.35"/>
+            <text x="112" y="56" fill="#f5f5f2" font-size="14" font-weight="700">Finalist A</text>
+            <text x="330" y="56" fill="#f5f5f2" font-size="14" font-weight="700">Finalist B</text>
+            <text x="112" y="82" fill="#b8b3aa" font-size="12">2 votes</text>
+            <text x="330" y="82" fill="#b8b3aa" font-size="12">5 votes</text>
+            <g fill="#181a1f" stroke="#383a42">
+              <rect x="48" y="112" width="126" height="24" rx="12"/>
+              <rect x="48" y="144" width="126" height="24" rx="12"/>
+              <rect x="266" y="100" width="126" height="24" rx="12"/>
+              <rect x="266" y="132" width="126" height="24" rx="12"/>
+              <rect x="266" y="164" width="126" height="24" rx="12"/>
+            </g>
+            <text x="111" y="128" text-anchor="middle" fill="#b8b3aa" font-size="11">voter avatar + name</text>
+            <text x="329" y="116" text-anchor="middle" fill="#b8b3aa" font-size="11">voter avatar + name</text>
+          </svg>
+        </div>
+      </div>
+    </article>
+
+    <article class="idea" id="idea-5">
+      <div class="idea-top">
+        <div class="rank">5</div>
+        <div>
+          <h3>Music Cue Sheet, Not Music Composition</h3>
+          <div class="idea-meta">
+            <span class="tag">Axis: Music Handoff</span>
+            <span class="tag">Confidence: 80%</span>
+            <span class="tag">Complexity: Low</span>
+          </div>
+        </div>
+      </div>
+      <p>
+        Every rendered trailer should produce a human-readable cue sheet next to the video: total duration, segment
+        start/end times, House Cut boundaries, final vote reveal time, and any obvious downbeat targets. This lets a
+        Suno track be generated or edited to the trailer length later without making music synchronization a V1 blocker.
+      </p>
+      <p class="detail"><strong>Basis:</strong> direct: the user said different lengths and cut points are needed to match music to cuts, and explicitly deferred figuring out how to apply music.</p>
+      <p class="detail"><strong>Rationale:</strong> Cue metadata is cheap compounding. It lets the first trailer ship silent or with placeholder audio while preserving the timing map needed for future music work.</p>
+      <p class="detail"><strong>Downsides:</strong> A cue sheet does not solve music fit by itself; it only makes the later manual or automated music pass less guessy.</p>
+    </article>
+
+    <article class="idea" id="idea-6">
+      <div class="idea-top">
+        <div class="rank">6</div>
+        <div>
+          <h3>Render Artifact Lifecycle Around Linode Storage</h3>
+          <div class="idea-meta">
+            <span class="tag">Axis: Renderer Boundary</span>
+            <span class="tag">Confidence: 78%</span>
+            <span class="tag">Complexity: Medium</span>
+          </div>
+        </div>
+      </div>
+      <p>
+        Treat the trailer as a durable postgame media artifact: render after completion, upload to Linode Object
+        Storage, keep it indefinitely, and let share/watch surfaces point at the stored asset rather than rendering
+        on demand. The renderer should output a video and cue sheet; upload and publishing are separate responsibilities.
+      </p>
+      <p class="detail"><strong>Basis:</strong> direct: the user chose completion render, Linode storage, no expiration, and "renderer owns the rendering only"; external: Akamai/Linode Object Storage is S3-compatible and designed for media objects with unique URLs.</p>
+      <p class="detail"><strong>Rationale:</strong> Completion-time rendering protects share latency and avoids making social previews depend on a video job at request time. It also matches the user's scale: a small number of completed games can afford a heavier render once.</p>
+      <p class="detail"><strong>Downsides:</strong> Durable media needs re-render rules when visual templates change, and the product needs a clear answer for failed renders so completed games do not silently lack trailers.</p>
+    </article>
+  </section>
+
+  <section id="rejection-summary">
+    <h2>Rejection Summary</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Idea</th>
+          <th>Reason Rejected</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>Fixed-length trailer with forced "best 3" House Cuts</td>
+          <td>Conflicts with the latest direction: duration should follow content and selected cuts may be one, two, or more.</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>Renderer chooses the cuts</td>
+          <td>Violates the boundary. Analysis selects; renderer renders.</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>Generated video scenes for votes, alliances, or jury emotions</td>
+          <td>Too high invention risk. Generated assets may provide mood/backdrop, not factual action.</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td>Music-synced V1 trailer</td>
+          <td>Useful later, but the user explicitly deferred applying music. Cue points are the right first move.</td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td>All aspect ratios at launch</td>
+          <td>Scope creep. Start 16:9, prove the pipeline, then adapt crops once the trailer grammar works.</td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td>On-demand video render per share request</td>
+          <td>Worse for share latency and unnecessary at the current scale; completion-rendered storage is cleaner.</td>
+        </tr>
+        <tr>
+          <td>7</td>
+          <td>Narrated House voiceover</td>
+          <td>Interesting but premature. It adds script, voice, timing, and factual-safety problems before the visual trailer exists.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="sources">
+    <h2>Sources &amp; References</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Reference</th>
+          <th>Use</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/plans/2026-07-04-001-feat-house-highlights-plan.md">docs/plans/2026-07-04-001-feat-house-highlights-plan.md</a></td>
+          <td>Grounded the original faux-trailer ambition and selected House Cut artifact boundary.</td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/plans/2026-07-06-001-feat-house-highlights-visual-briefs-plan.md">docs/plans/2026-07-06-001-feat-house-highlights-visual-briefs-plan.md</a></td>
+          <td>Grounded generated-backdrop versus deterministic-truth boundaries.</td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/plans/2026-07-06-002-feat-house-highlights-visual-cards-plan.md">docs/plans/2026-07-06-002-feat-house-highlights-visual-cards-plan.md</a></td>
+          <td>Grounded the static card pipeline and share-card continuation point.</td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/postgame-highlights.ts">packages/api/src/services/postgame-highlights.ts</a></td>
+          <td>Confirmed public highlights projection now exposes card-facing facts and visual card data.</td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/postgame-highlights/types.ts">packages/engine/src/postgame-highlights/types.ts</a></td>
+          <td>Confirmed Visual Brief and Visual Card vocabulary available to future trailer manifest work.</td>
+        </tr>
+        <tr>
+          <td><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/api/src/services/postgame-analysis.ts">packages/api/src/services/postgame-analysis.ts</a></td>
+          <td>Confirmed final vote, juror, finalist, winner, and vote-count data surfaces exist in postgame analysis.</td>
+        </tr>
+        <tr>
+          <td><a href="https://ffmpeg.org/ffmpeg-filters.html">FFmpeg filters documentation</a></td>
+          <td>Feasibility reference for compositing/timing primitives such as trim and overlay, not a product commitment.</td>
+        </tr>
+        <tr>
+          <td><a href="https://www.remotion.dev/docs/renderer/render-media">Remotion renderMedia documentation</a></td>
+          <td>Feasibility reference for programmatic React-to-video rendering as one possible implementation path.</td>
+        </tr>
+        <tr>
+          <td><a href="https://techdocs.akamai.com/cloud-computing/docs/object-storage">Akamai/Linode Object Storage documentation</a></td>
+          <td>Feasibility reference for S3-compatible durable media object storage.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer class="composition-signal">
+    Composed 2026-07-07T09:16:13-07:00 by ce-ideate from the in-session House Highlights trailer discussion.
+  </footer>
+</main>
+</body>
+</html>

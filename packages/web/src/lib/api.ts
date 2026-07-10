@@ -972,8 +972,6 @@ export interface HouseHighlightVisualBrief {
   templateLabel: string;
   primaryAgents: HouseHighlightPlayerRef[];
   secondaryAgents: HouseHighlightPlayerRef[];
-  factualSlots: HouseHighlightVisualSlot[];
-  truthOverlays: HouseHighlightTruthOverlay[];
   backdrop: HouseHighlightVisualBackdrop;
   shareFraming: HouseHighlightShareFraming[];
 }
@@ -1015,6 +1013,8 @@ export interface HouseHighlightVisualCard {
 }
 
 export interface AdminHouseHighlightVisualBrief extends HouseHighlightVisualBrief {
+  factualSlots: HouseHighlightVisualSlot[];
+  truthOverlays: HouseHighlightTruthOverlay[];
   diagnostics: HouseHighlightVisualBriefDiagnostics;
 }
 
@@ -1042,7 +1042,7 @@ export interface HouseHighlightsCut {
 }
 
 export interface PublicHouseHighlightsProjection {
-  schemaVersion: 2;
+  schemaVersion: 3;
   state: HouseHighlightsState;
   eligibility: {
     status: "eligible" | "unsupported";
@@ -1058,7 +1058,7 @@ export interface PublicHouseHighlightsProjection {
 
 export interface HouseHighlightsResponse {
   ok: true;
-  schemaVersion: 2;
+  schemaVersion: 3;
   game: {
     id: string;
     slug?: string;
@@ -1099,7 +1099,8 @@ export interface HouseHighlightsCandidateDiagnostic {
   visualBrief: Pick<AdminHouseHighlightVisualBrief, "visualType" | "templateLabel" | "factualSlots" | "backdrop" | "diagnostics">;
 }
 
-export interface AdminHouseHighlightsProjection extends Omit<PublicHouseHighlightsProjection, "cut" | "scenes"> {
+export interface AdminHouseHighlightsProjection extends Omit<PublicHouseHighlightsProjection, "schemaVersion" | "cut" | "scenes"> {
+  schemaVersion: 2;
   cut: AdminHouseHighlightsCut | null;
   scenes: AdminHouseHighlightSceneCard[];
   diagnostics: {

@@ -94,7 +94,7 @@ describe("house highlights model", () => {
 export function mainCutFixture(): HouseHighlightsResponse {
   return {
     ok: true,
-    schemaVersion: 2,
+    schemaVersion: 3,
     game: {
       id: "game-edge-smoke-dusk",
       slug: "edge-smoke-dusk",
@@ -104,7 +104,7 @@ export function mainCutFixture(): HouseHighlightsResponse {
       roundCount: 5,
     },
     highlights: {
-      schemaVersion: 2,
+      schemaVersion: 3,
       state: "main_cut",
       eligibility: {
         status: "eligible",
@@ -130,7 +130,7 @@ export function mainCutFixture(): HouseHighlightsResponse {
           ],
           houseHook: "Nova helped bury Ember.",
           setup: "Ember shared a named alliance before the vote turned.",
-          conflict: "The pressure point came from inside the receipt trail.",
+          conflict: "The pressure point came from inside the alliance record.",
           payoff: "Ember was eliminated in round 1.",
           receipts: [
             {
@@ -182,10 +182,10 @@ export function mainCutFixture(): HouseHighlightsResponse {
             { id: "ember", name: "Ember" },
             { id: "nova", name: "Nova" },
           ],
-          houseHook: "Smoke Vote Pair left receipts before the room turned.",
+          houseHook: "Smoke Vote Pair left public facts before the room turned.",
           setup: "Smoke Vote Pair formed around Ember and Nova.",
           conflict: "The pact had to turn into public consequences.",
-          payoff: "The alliance became the receipt that made the later turn legible.",
+          payoff: "The alliance made the later turn legible.",
           receipts: [{
             id: "alliance:smoke-vote",
             tier: "alliance_receipt",
@@ -195,7 +195,7 @@ export function mainCutFixture(): HouseHighlightsResponse {
           }],
           deepLink: {
             surface: "results",
-            label: "Open alliance receipts",
+            label: "Open alliance details",
             round: 1,
             anchor: "round-1",
           },

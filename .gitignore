@@ -13,5 +13,7 @@ docs/simulations/
 *.tsbuildinfo
 e2e-screenshots/
 test-results/
+.renders/
+packages/web/.renders/
 .DS_Store
 .agents/

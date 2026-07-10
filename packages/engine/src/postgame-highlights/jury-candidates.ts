@@ -43,7 +43,7 @@ export function juryJudgmentCandidate(
     title: "The jury made the damage permanent",
     category: "jury_judgment",
     involvedAgents: uniquePlayers([finalVote.winner, runnerUp].filter((player): player is PlayerRef => Boolean(player))),
-    houseHook: `The final vote landed ${finalVoteLabel}, close enough to hear every receipt.`,
+    houseHook: `The final vote landed ${finalVoteLabel}, close enough for every ballot to matter.`,
     setup: "By the end, the social record had to survive the jury.",
     conflict: runnerUp
       ? `${finalVote.winner.name} and ${runnerUp.name} split the room into a final judgment.`
@@ -130,7 +130,7 @@ function juryPaybackCandidate(
       truthOverlays: ["agent_identity", "jury_tally", "vote_marker", "receipt_badge", "outcome_caption", "proof_link"],
       backdrop: "jury_wall",
       forbiddenInventions: [
-        "Do not invent payback as private motive beyond the receipt-backed pattern.",
+        "Do not invent payback as private motive beyond the public vote pattern.",
         "Do not depict juror emotion or confrontation.",
       ],
     }),

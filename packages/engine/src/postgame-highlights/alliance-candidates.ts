@@ -25,15 +25,15 @@ export function buildAllianceFormationCandidates(
         ? `Their recorded plan was: ${alliance.latestOutcome.plan}`
         : `The pact had to turn ${alliance.purpose.toLowerCase()} into public consequences.`;
       const payoff = alliance.latestOutcome?.leakOrBetrayalClaims.length
-        ? `The House kept the leak claim on the board before the vote record caught up.`
-        : `The alliance became the receipt that made the later turn legible.`;
+        ? `The House kept the leak claim on the board before the public vote caught up.`
+        : `The alliance made the later turn legible.`;
       const receiptId = `alliance:${alliance.id}`;
       return {
         id: `alliance-formation:${alliance.id}`,
         title: `${alliance.name} made the pact visible`,
         category: "loyalty",
         involvedAgents: alliance.members.map((member) => ({ id: member.id, name: member.name })),
-        houseHook: `${alliance.name} left receipts before the room turned.`,
+        houseHook: `${alliance.name} left public alliance facts before the room turned.`,
         setup,
         conflict,
         payoff,
@@ -45,7 +45,7 @@ export function buildAllianceFormationCandidates(
           factRefs: [`alliance:${alliance.id}`],
         }],
         confidence: "medium",
-        deepLink: resultsLink(alliance.createdRound, "Open alliance receipts", `alliance-${alliance.id}`),
+        deepLink: resultsLink(alliance.createdRound, "Open alliance details", `alliance-${alliance.id}`),
         visualBrief: visualBrief({
           visualType: "alliance_formation",
           primaryAgents: alliance.members,
@@ -58,7 +58,7 @@ export function buildAllianceFormationCandidates(
           backdrop: "fractured_alliance_table",
           forbiddenInventions: [
             "Do not show a physical secret meeting.",
-            "Do not imply private emotion or loyalty beyond the alliance receipt.",
+            "Do not imply private emotion or loyalty beyond the named alliance facts.",
           ],
         }),
         source: "alliance_summary",
@@ -160,10 +160,10 @@ export function buildHighlightedEliminationDuplicates(
         title: `${elimination.player.name} became the visible consequence`,
         category: "collapse" as const,
         involvedAgents: [elimination.player],
-        houseHook: `${elimination.player.name}'s exit was already a highlight before the alliance receipt sharpened it.`,
+        houseHook: `${elimination.player.name}'s exit was already a highlight before alliance facts sharpened it.`,
         setup: `${elimination.player.name} entered round ${elimination.round} as a notable target.`,
-        conflict: `The vote record made the room choose a side.`,
-        payoff: `${elimination.player.name} was eliminated in round ${elimination.round}.`,
+        conflict: `The public vote made the room choose a side.`,
+        payoff: `${elimination.player.name} was eliminated.`,
         receipts: [{
           id: receiptId,
           tier: "vote_record" as const,

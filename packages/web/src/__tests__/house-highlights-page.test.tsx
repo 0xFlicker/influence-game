@@ -190,7 +190,7 @@ describe("HouseHighlightsView", () => {
                 id: "jury-judgment:final-vote",
                 title: "The jury made the damage permanent",
                 category: "jury_judgment",
-                houseHook: "The final vote landed close enough to hear every receipt.",
+                houseHook: "The final vote landed close enough for every ballot to matter.",
               },
             ],
           },
@@ -267,7 +267,7 @@ describe("HouseHighlightsView", () => {
 function mainCutFixture(): HouseHighlightsResponse {
   return {
     ok: true,
-    schemaVersion: 2,
+    schemaVersion: 3,
     game: {
       id: "game-edge-smoke-dusk",
       slug: "edge-smoke-dusk",
@@ -277,7 +277,7 @@ function mainCutFixture(): HouseHighlightsResponse {
       roundCount: 5,
     },
     highlights: {
-      schemaVersion: 2,
+      schemaVersion: 3,
       state: "main_cut",
       eligibility: {
         status: "eligible",
@@ -302,7 +302,7 @@ function mainCutFixture(): HouseHighlightsResponse {
         ],
         houseHook: "Nova helped bury Ember.",
         setup: "Ember shared a named alliance before the vote turned.",
-        conflict: "The pressure point came from inside the receipt trail.",
+        conflict: "The pressure point came from inside the alliance record.",
         payoff: "Ember was eliminated in round 1.",
         receipts: [
           {

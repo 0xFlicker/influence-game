@@ -194,6 +194,18 @@ A structured, truth-safe visual direction for a selected House Highlights scene.
 
 A polished static, shareable rendering of a selected House Highlights scene. A Visual Card consumes a Visual Brief but shows scene facts rather than proof scaffolding: who voted for whom, who was eliminated or protected, who was in a named alliance, what round mattered, and what outcome followed. It may use approved non-factual background plates, but evidence links and diagnostics stay outside the card on the surrounding Highlights surface.
 
+## House Highlights Trailer
+
+A locally or durably rendered motion presentation of a completed game's House Highlights artifact. A trailer uses the selected House Highlights scenes plus completed-results facts to show a cast parade, selected House Cut scenelets, the final vote, and the winner reveal. It is a presentation layer, not a new factual source or scene-selection system.
+
+## Postgame media bundle
+
+A durable public media package for a completed game. In House Highlights, the bundle includes the final music-backed trailer video, poster, cue or caption metadata, render version, storage locations, and publication status. The bundle is the shareable product unit; the MP4 is one artifact inside it, not the whole contract.
+
+## Render worker
+
+A deployed service boundary for expensive media rendering. For House Highlights, the render worker consumes existing completed-game and Highlights facts, renders deterministic video, applies prepared music, uploads media artifacts, and reports status. It does not own story selection, vote truth, alliance claims, public playback, or completed-game state.
+
 ## Trailer thesis
 
 The one-sentence House claim that frames a main House Cut, usually expressible as "This was the game where...". A trailer thesis can be ominous and editorial, but it is valid only when at least three selected scene cards support it with medium-or-better confidence and cold-viewer legibility.

@@ -125,7 +125,7 @@ describe("house highlights card image", () => {
 function mainCutFixture(): HouseHighlightsResponse {
   return {
     ok: true,
-    schemaVersion: 2,
+    schemaVersion: 3,
     game: {
       id: "game-edge-smoke-dusk",
       slug: "edge-smoke-dusk",
@@ -135,7 +135,7 @@ function mainCutFixture(): HouseHighlightsResponse {
       roundCount: 5,
     },
     highlights: {
-      schemaVersion: 2,
+      schemaVersion: 3,
       state: "main_cut",
       eligibility: {
         status: "eligible",
