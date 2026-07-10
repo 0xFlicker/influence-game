@@ -514,11 +514,13 @@ For Codex or another MCP client, configure the command as the wrapper script dir
 Staging deploys are automated via the CI/CD pipeline:
 
 1. Push to `main` → CI passes (typecheck, lint, test)
-2. Docker images built and pushed to GHCR (`ghcr.io/0xflicker/influence-{api,web}`)
+2. Docker images built and pushed to GHCR (`ghcr.io/0xflicker/influence-{api,web,render-worker}`)
 3. Cross-repo trigger fires `deploy-staging.yml` in the `linode-iac` repo
 4. Docker Compose deploys to the staging host
 
 To manually trigger a staging deploy, use the `deploy-staging` skill or trigger the `deploy-staging.yml` workflow in linode-iac.
+
+House Highlights postgame media adds a third, single-concurrency service. The API owns jobs, leases, storage credentials, and publication state; the render worker owns Remotion/Chromium/ffmpeg work only. Build, local smoke, health, temp-space, object-delivery, admin backfill, and concrete Compose handoff instructions are in `docs/deployment/house-highlights-render-worker.md`. Do not place `LINODE_OBJ_*` credentials in the worker container.
 
 **Board access URL:** `https://influencer-staging.tail8a79ed.ts.net/`
 

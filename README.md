@@ -229,6 +229,9 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `LINODE_OBJ_ACCESS_KEY` | Required for S3 | -- | Linode Object Storage access key |
 | `LINODE_OBJ_SECRET_KEY` | Required for S3 | -- | Linode Object Storage secret key |
 | `LINODE_OBJ_BUCKET` | Required for S3 | -- | Linode Object Storage bucket |
+| `POSTGAME_MEDIA_WORKER_TOKEN` | Required for trailer worker | -- | Current bearer token shared by the API and render worker |
+| `POSTGAME_MEDIA_WORKER_TOKEN_PREVIOUS` | No | -- | Previous worker token accepted during a bounded rotation window |
+| `POSTGAME_MEDIA_LEASE_MS` | No | `300000` | API-owned render claim lease duration |
 | `LINODE_PRIVATE_CONTENT_ENDPOINT` | Required for private traces | -- | S3-compatible endpoint for private trace content storage |
 | `LINODE_PRIVATE_CONTENT_ACCESS_KEY` | Required for private traces | -- | Access key scoped to the private content bucket |
 | `LINODE_PRIVATE_CONTENT_SECRET_KEY` | Required for private traces | -- | Secret key scoped to the private content bucket |
@@ -254,6 +257,8 @@ The bootstrap uses `http://127.0.0.1:19000` by default, creates `influence-priva
 Staging/production must set `LINODE_PRIVATE_CONTENT_ENDPOINT`, `LINODE_PRIVATE_CONTENT_ACCESS_KEY`, `LINODE_PRIVATE_CONTENT_SECRET_KEY`, and `LINODE_PRIVATE_CONTENT_BUCKET` for private traces. The private access key should be scoped to the private content bucket and is intentionally separate from the profile-picture `LINODE_OBJ_*` credentials.
 
 When the Linode variables are absent in local dev, the API falls back to filesystem-backed upload URLs and stores files under `packages/api/.local-uploads/` by default. The API returns absolute local upload/read URLs from the request origin so the browser can upload through `127.0.0.1:3000` while the web app runs on `localhost:3001`. Staging/production should use the S3 backend.
+
+Completed-game House Highlights trailers are produced by the separate `ghcr.io/0xflicker/influence-render-worker` image. Public playback lives at `/games/[slug]`; admin trailer diagnostics and backfill/rerender controls live in the completed-game history. See [docs/deployment/house-highlights-render-worker.md](docs/deployment/house-highlights-render-worker.md) for the worker, storage, smoke-test, and `linode-iac` contracts.
 
 ### Web (`packages/web`) -- set in `packages/web/.env.local`
 

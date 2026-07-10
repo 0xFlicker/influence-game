@@ -111,3 +111,16 @@ Selection outside the prepared matrix is deterministic:
 Output is written to
 `packages/web/.renders/house-highlights-trailers/<game-slug>.mp4`, with the
 matching internal cue metadata beside it as `<game-slug>.cue.json`.
+
+## Production Worker
+
+The production worker uses the same 24 prepared `.m4a` variants and the same
+selection rules. Public readiness always requires the final music-backed MP4;
+the worker reports a structured `waiting_music` state when a prepared normal-
+matrix score is absent and never publishes a silent fallback.
+
+The media worker writes internal cue metadata to the admin read model for music
+and render QA. Viewers receive the MP4, spoiler-safe roster poster, VTT captions,
+and safe playback metadata only. Run `bun run render-worker:health` to validate
+the full prepared matrix and `bun run render-worker:smoke` to claim and complete
+one intentionally queued local game.

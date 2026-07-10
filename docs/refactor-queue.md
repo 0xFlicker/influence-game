@@ -231,6 +231,34 @@ Status legend:
 - Promotion trigger: simulations show trial alliances persisting past their stated boundary or agents using vague timeboxes that make active status misleading.
 - Suggested slice if promoted: replace free-form trial expiry with a structured boundary enum and archive trial alliances automatically at the named phase or round boundary.
 
+### W13. Postgame media queue infrastructure
+
+- Status: `future`
+- Signal: the first production trailer worker deliberately uses API polling and database leases on one Linode host.
+- Promotion trigger: multiple render hosts, materially higher completion volume, or operational evidence that polling and lease recovery are no longer sufficient.
+- Suggested slice if promoted: move the existing claim/heartbeat/finalize contract behind a durable queue without changing the manifest or renderer boundary.
+
+### W14. Postgame media version retention
+
+- Status: `future`
+- Signal: public trailer objects are immutable and do not expire; failed-attempt scratch files are deleted immediately, but old successfully published versions remain stored.
+- Promotion trigger: storage cost or producer confusion from retained prior versions becomes measurable.
+- Suggested slice if promoted: add an audited retention policy that preserves the current version and a bounded diagnostic history before deleting old immutable objects.
+
+### W15. Trailer chapters and transcript panels
+
+- Status: `future`
+- Signal: cue metadata and VTT captions exist, while the public player intentionally uses native playback and captions only.
+- Promotion trigger: viewers need chapter navigation or a visible transcript to understand longer trailers.
+- Suggested slice if promoted: derive viewer-safe chapters from the existing cue contract without exposing internal cue IDs, worker diagnostics, or music filenames.
+
+### W16. Render-worker portability
+
+- Status: `future`
+- Signal: the image and API lease boundary are portable, but the first deployment is one Docker Compose worker on Linode.
+- Promotion trigger: AWS, multiple regions, autoscaling, or managed-job execution becomes an actual deployment goal.
+- Suggested slice if promoted: adapt the existing immutable manifest and worker protocol to the target queue/runtime rather than moving render logic into API or web request containers.
+
 ## Closed / Removed
 
 - Public websocket transcript boundary hardening: already landed on local `origin/main` via `1bc1277a` / PR #37. This branch needs to merge or rebase main, not queue new work.
