@@ -22,6 +22,72 @@ import {
 import { sql } from "drizzle-orm";
 import { MCP_OAUTH_SCOPE_CHECK_VALUES } from "../services/mcp-scope-policy.js";
 
+export type PostgameMediaType = "house_highlights_trailer";
+export type PostgameMediaStatus =
+  | "waiting_inputs"
+  | "waiting_music"
+  | "queued"
+  | "claimed"
+  | "rendering"
+  | "composing"
+  | "uploading"
+  | "ready"
+  | "failed";
+
+export interface PostgameMediaPreviewMetadata {
+  title: string;
+  description: string;
+}
+
+export interface PostgameMediaVideoArtifact {
+  publicUrl: string;
+  objectKey: string;
+  contentType: string;
+  byteLength: number;
+  sha256: string;
+  width: number;
+  height: number;
+}
+
+export interface PostgameMediaPosterArtifact {
+  publicUrl: string;
+  objectKey: string;
+  contentType: string;
+  byteLength: number;
+  sha256: string;
+  altText: string;
+}
+
+export interface PostgameMediaCaptionsArtifact {
+  publicUrl: string;
+  objectKey: string;
+  contentType: string;
+  byteLength: number;
+  sha256: string;
+  language: string;
+  label: string;
+}
+
+export interface PostgameMediaManifestArtifact {
+  publicUrl: string;
+  objectKey: string;
+  contentType: string;
+  byteLength: number;
+  sha256: string;
+}
+
+export interface PostgameMediaArtifactMetadata {
+  preview: PostgameMediaPreviewMetadata;
+  video: PostgameMediaVideoArtifact;
+  poster: PostgameMediaPosterArtifact;
+  captions: PostgameMediaCaptionsArtifact;
+  manifest: PostgameMediaManifestArtifact;
+  storage: {
+    provider: string;
+    bucket: string;
+  };
+}
+
 const MCP_OAUTH_SCOPE_CHECK_SQL = sql.raw(
   `(${MCP_OAUTH_SCOPE_CHECK_VALUES.map((scope) => `'${scope}'`).join(", ")})`,
 );
@@ -807,6 +873,69 @@ export const gameCostAccountingAuditEvents = pgTable("game_cost_accounting_audit
   index("game_cost_accounting_audit_actor_idx").on(table.actorUserId, table.createdAt),
   check("game_cost_accounting_audit_action_check", sql`${table.action} IN ('backfill_game', 'rebuild_rollup', 'record_reconciliation')`),
   check("game_cost_accounting_audit_outcome_check", sql`${table.outcome} IN ('succeeded', 'failed', 'denied')`),
+]);
+
+// ---------------------------------------------------------------------------
+// Postgame Media (durable House Highlights render state)
+// ---------------------------------------------------------------------------
+
+export const gamePostgameMedia = pgTable("game_postgame_media", {
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id),
+  mediaType: text("media_type").notNull().$type<PostgameMediaType>(),
+  status: text("status").notNull().$type<PostgameMediaStatus>().default("queued"),
+  renderVersion: integer("render_version").notNull().default(1),
+  attemptNumber: integer("attempt_number").notNull().default(1),
+  workerIdHash: text("worker_id_hash"),
+  leaseTokenHash: text("lease_token_hash"),
+  leaseExpiresAt: text("lease_expires_at"),
+  claimedAt: text("claimed_at"),
+  attemptStartedAt: text("attempt_started_at"),
+  attemptFinishedAt: text("attempt_finished_at"),
+  failureCategory: text("failure_category"),
+  failureMessage: text("failure_message"),
+  renderDurationMs: integer("render_duration_ms"),
+  renderInputSnapshot: jsonb("render_input_snapshot")
+    .notNull()
+    .$type<unknown>(),
+  renderInputSnapshotHash: text("render_input_snapshot_hash").notNull(),
+  renderInputSnapshotVersion: integer("render_input_snapshot_version").notNull(),
+  rendererVersion: text("renderer_version").notNull(),
+  timingContractVersion: text("timing_contract_version").notNull(),
+  musicAssetId: text("music_asset_id").notNull(),
+  artifactMetadata: jsonb("artifact_metadata").$type<PostgameMediaArtifactMetadata>(),
+  cueMetadata: jsonb("cue_metadata").$type<Record<string, unknown>>(),
+  diagnostics: jsonb("diagnostics").$type<Record<string, unknown>>(),
+  currentReadyRenderVersion: integer("current_ready_render_version"),
+  currentReadyDurationMs: integer("current_ready_duration_ms"),
+  currentReadyArtifactMetadata: jsonb("current_ready_artifact_metadata")
+    .$type<PostgameMediaArtifactMetadata>(),
+  currentReadyPublishedAt: text("current_ready_published_at"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  primaryKey({ columns: [table.gameId, table.mediaType] }),
+  index("game_postgame_media_status_idx").on(table.status, table.updatedAt),
+  check("game_postgame_media_type_check", sql`${table.mediaType} IN ('house_highlights_trailer')`),
+  check("game_postgame_media_status_check", sql`${table.status} IN ('waiting_inputs', 'waiting_music', 'queued', 'claimed', 'rendering', 'composing', 'uploading', 'ready', 'failed')`),
+  check("game_postgame_media_render_version_check", sql`${table.renderVersion} > 0 AND ${table.attemptNumber} > 0`),
+  check("game_postgame_media_duration_check", sql`${table.renderDurationMs} IS NULL OR ${table.renderDurationMs} >= 0`),
+  check("game_postgame_media_snapshot_version_check", sql`${table.renderInputSnapshotVersion} > 0`),
+  check("game_postgame_media_current_ready_check", sql`
+    (${table.currentReadyRenderVersion} IS NULL
+      AND ${table.currentReadyDurationMs} IS NULL
+      AND ${table.currentReadyArtifactMetadata} IS NULL
+      AND ${table.currentReadyPublishedAt} IS NULL)
+    OR (${table.currentReadyRenderVersion} IS NOT NULL
+      AND ${table.currentReadyDurationMs} IS NOT NULL
+      AND ${table.currentReadyArtifactMetadata} IS NOT NULL
+      AND ${table.currentReadyPublishedAt} IS NOT NULL)
+  `),
 ]);
 
 // ---------------------------------------------------------------------------

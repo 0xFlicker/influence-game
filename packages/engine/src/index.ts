@@ -111,6 +111,30 @@ export type {
   HouseHighlightVisualType,
   PlayerRef,
 } from "./postgame-highlights";
+export {
+  HOUSE_HIGHLIGHTS_TRAILER_MANIFEST_VERSION,
+  HOUSE_HIGHLIGHTS_TRAILER_MEDIA_TYPE,
+  HOUSE_HIGHLIGHTS_TRAILER_TIMING_CONTRACT_VERSION,
+  assertHouseHighlightsTrailerManifest,
+  hashHouseHighlightsTrailerManifest,
+  parseHouseHighlightsTrailerManifest,
+  serializeHouseHighlightsTrailerManifest,
+  validateHouseHighlightsTrailerManifest,
+} from "./postgame-media/house-highlights-trailer-manifest";
+export type {
+  HouseHighlightsTrailerAgent,
+  HouseHighlightsTrailerAgentStatus,
+  HouseHighlightsTrailerCueSegment,
+  HouseHighlightsTrailerCueSegmentKind,
+  HouseHighlightsTrailerCueSheet,
+  HouseHighlightsTrailerFact,
+  HouseHighlightsTrailerFinalVote,
+  HouseHighlightsTrailerFinalVoteGroup,
+  HouseHighlightsTrailerManifest,
+  HouseHighlightsTrailerManifestValidationResult,
+  HouseHighlightsTrailerPlayerResult,
+  HouseHighlightsTrailerScenelet,
+} from "./postgame-media/house-highlights-trailer-manifest";
 export { buildPostVotePressureProjection } from "./post-vote-pressure";
 export type {
   PostVotePressurePlayer,
