@@ -124,6 +124,7 @@ export interface PublicObjectUploadInput {
   sha256: string;
   targetId: string;
   expiresIn?: number;
+  uploadBaseUrl?: string;
   publicBaseUrl?: string;
 }
 
@@ -143,6 +144,7 @@ export interface LocalConstrainedUploadInput {
   sha256: string;
   targetId: string;
   expiresIn?: number;
+  uploadBaseUrl?: string;
   publicBaseUrl?: string;
 }
 
@@ -370,7 +372,7 @@ export function generateLocalConstrainedUpload(
     token,
   });
   return {
-    uploadUrl: absolutizeApiUrl(`/api/upload/local?${params.toString()}`, input.publicBaseUrl),
+    uploadUrl: absolutizeApiUrl(`/api/upload/local?${params.toString()}`, input.uploadBaseUrl ?? input.publicBaseUrl),
     publicUrl: absolutizeApiUrl(getLocalPublicUploadPath(input.key), input.publicBaseUrl),
     key: input.key,
     contentType: input.contentType,

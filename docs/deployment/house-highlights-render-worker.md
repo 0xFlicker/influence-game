@@ -16,7 +16,7 @@ bun run render-worker:health
 bun run render-worker:smoke
 ```
 
-`health` is non-mutating: it validates worker configuration, ffmpeg, the configured Chromium executable, the 24-file prepared music matrix, temp space, and `GET /api/health`. `smoke` runs the same claim/render/upload/finalize path as the poller and exits nonzero unless it completes a queued completed-game job. Run smoke only against a disposable or intentionally queued local job, then inspect the finalized MP4 with `ffprobe`.
+`health` is non-mutating: it validates worker configuration, ffmpeg, the configured Chromium executable, all 24 required prepared music variants, temp space, and `GET /api/health`. Extra producer-staged `.m4a` files do not make the worker unhealthy. `smoke` runs the same claim/render/upload/finalize path as the poller and exits nonzero unless it completes a queued completed-game job. Run smoke only against a disposable or intentionally queued local job, then inspect the finalized MP4 with `ffprobe`.
 
 ## Runtime Contract
 
@@ -32,6 +32,7 @@ Optional runtime environment:
 ```text
 POSTGAME_MEDIA_POLL_INTERVAL_MS=5000
 POSTGAME_MEDIA_HTTP_TIMEOUT_MS=15000
+POSTGAME_MEDIA_UPLOAD_TIMEOUT_MS=300000
 POSTGAME_MEDIA_TEMP_DIR=/tmp/influence-render-worker
 POSTGAME_MEDIA_MIN_FREE_BYTES=2147483648
 REMOTION_BROWSER_EXECUTABLE=/usr/bin/chromium
@@ -41,7 +42,7 @@ REMOTION_BROWSER_EXECUTABLE=/usr/bin/chromium
 
 The image ships Chromium, ffmpeg, CA certificates, fontconfig/Liberation/Noto fonts, web public visual assets, and the 24 prepared tracks at `/app/music/house-highlights-variants`. It sets `REMOTION_BROWSER_EXECUTABLE=/usr/bin/chromium`, so Remotion uses the installed browser rather than downloading one at render time.
 
-`POSTGAME_MEDIA_HTTP_TIMEOUT_MS` defaults to 15,000 ms and bounds worker API, health, and API-issued upload requests. This keeps the poller from hanging indefinitely when the API or an upload target stops responding; errors are categorized without logging response bodies or signed upload URLs.
+`POSTGAME_MEDIA_HTTP_TIMEOUT_MS` defaults to 15,000 ms and bounds worker API and health requests. `POSTGAME_MEDIA_UPLOAD_TIMEOUT_MS` defaults to 300,000 ms so a normal 1080p trailer can upload on a slower object-storage connection without disabling API timeouts. Errors are categorized without logging response bodies or signed upload URLs.
 
 `POSTGAME_MEDIA_TEMP_DIR` defaults to `/tmp/influence-render-worker`. `POSTGAME_MEDIA_MIN_FREE_BYTES` is an explicit, tunable preflight floor and defaults to 2 GiB (`2147483648` bytes). Mount or provision at least that much writable local disk for this directory, or raise the value when expected render size warrants it; the worker checks free space before claiming work and removes claim output after each attempt. Deploy one worker process with concurrency 1.
 
@@ -53,10 +54,13 @@ The API container must receive:
 POSTGAME_MEDIA_WORKER_TOKEN=<same current token as worker>
 POSTGAME_MEDIA_WORKER_TOKEN_PREVIOUS=<optional previous token during rotation>
 POSTGAME_MEDIA_LEASE_MS=300000
+POSTGAME_MEDIA_PUBLIC_BASE_URL=https://api.example.com
 ```
 
 The worker claims one job at a time. Claims carry a lease and an opaque artifact
-version. Heartbeats extend active work; an expired claim can be reclaimed with a
+version. `POSTGAME_MEDIA_PUBLIC_BASE_URL` is the browser-reachable API origin;
+it keeps local-storage media URLs public even when the worker calls the API by
+an internal Compose hostname. Heartbeats extend active work; an expired claim can be reclaimed with a
 fresh artifact version, so a stale upload target cannot publish over the new
 attempt. The API verifies all four uploaded objects, content types, byte lengths,
 SHA-256 hashes, object-key prefix, and safe playback metadata before changing the
@@ -81,7 +85,7 @@ postgame-media/house-highlights-trailers/<game-id>/<opaque-artifact-version>/
 ```
 
 Each ready bundle contains `trailer.mp4`, `poster.png`, `captions.vtt`, and
-`playback.json`. Object writes use create-only semantics and
+`metadata.json`. Object writes use create-only semantics and
 `Cache-Control: public, max-age=31536000, immutable`. The bucket/CDN must allow
 public `GET` and `HEAD`, byte-range MP4 reads, and cross-origin player reads. Its
 CORS response must expose `Accept-Ranges`, `Content-Length`, `Content-Range`, and
@@ -109,6 +113,7 @@ cd packages/api
 INFLUENCE_STORAGE_BACKEND=local \
 INFLUENCE_LOCAL_UPLOAD_DIR=/tmp/influence-postgame-media \
 POSTGAME_MEDIA_WORKER_TOKEN=local-render-worker \
+POSTGAME_MEDIA_PUBLIC_BASE_URL=http://127.0.0.1:3002 \
 PORT=3002 \
 doppler run --project social-strategy-agent --config dev -- bun run src/index.ts
 ```
@@ -191,6 +196,7 @@ render-worker:
     POSTGAME_MEDIA_WORKER_TOKEN: ${POSTGAME_MEDIA_WORKER_TOKEN}
     POSTGAME_MEDIA_POLL_INTERVAL_MS: "5000"
     POSTGAME_MEDIA_HTTP_TIMEOUT_MS: "15000"
+    POSTGAME_MEDIA_UPLOAD_TIMEOUT_MS: "300000"
     POSTGAME_MEDIA_TEMP_DIR: /tmp/influence-render-worker
     POSTGAME_MEDIA_MIN_FREE_BYTES: "2147483648"
     REMOTION_BROWSER_EXECUTABLE: /usr/bin/chromium

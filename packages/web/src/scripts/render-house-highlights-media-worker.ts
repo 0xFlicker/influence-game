@@ -14,8 +14,10 @@ import {
 } from "../lib/house-highlights-trailer-media-bundle";
 
 const POLL_INTERVAL_MS = 5_000;
-const HEARTBEAT_INTERVAL_MS = 60_000;
+const MAX_HEARTBEAT_INTERVAL_MS = 60_000;
 const HTTP_TIMEOUT_MS = 15_000;
+const UPLOAD_TIMEOUT_MS = 5 * 60_000;
+const MAX_POLL_BACKOFF_MS = 60_000;
 export const DEFAULT_HOUSE_HIGHLIGHTS_MEDIA_WORKER_TEMP_DIR = "/tmp/influence-render-worker";
 export const MIN_HOUSE_HIGHLIGHTS_MEDIA_WORKER_FREE_BYTES = 2 * 1024 * 1024 * 1024;
 const PREPARED_HOUSE_CUT_COUNTS = [0, 1, 2, 3, 4, 5] as const;
@@ -26,6 +28,7 @@ export interface HouseHighlightsMediaWorkerConfig {
   workerToken: string;
   pollIntervalMs: number;
   httpTimeoutMs: number;
+  uploadTimeoutMs: number;
   temporaryRoot: string;
   minimumFreeBytes: number;
   browserExecutable?: string;
@@ -36,6 +39,7 @@ interface WorkerClaim {
   artifactVersion: string;
   attemptNumber: number;
   leaseToken: string;
+  leaseExpiresAt: string;
   manifest: HouseHighlightsTrailerManifest;
   provenance: {
     renderInputSnapshotHash: string;
@@ -71,6 +75,7 @@ export function houseHighlightsMediaWorkerConfig(env: Record<string, string | un
     workerToken,
     pollIntervalMs: positiveInt(env.POSTGAME_MEDIA_POLL_INTERVAL_MS, POLL_INTERVAL_MS),
     httpTimeoutMs: positiveInt(env.POSTGAME_MEDIA_HTTP_TIMEOUT_MS, HTTP_TIMEOUT_MS),
+    uploadTimeoutMs: positiveInt(env.POSTGAME_MEDIA_UPLOAD_TIMEOUT_MS, UPLOAD_TIMEOUT_MS),
     temporaryRoot: env.POSTGAME_MEDIA_TEMP_DIR?.trim() || DEFAULT_HOUSE_HIGHLIGHTS_MEDIA_WORKER_TEMP_DIR,
     minimumFreeBytes: positiveInt(env.POSTGAME_MEDIA_MIN_FREE_BYTES, MIN_HOUSE_HIGHLIGHTS_MEDIA_WORKER_FREE_BYTES),
     browserExecutable: env.REMOTION_BROWSER_EXECUTABLE?.trim() || undefined,
@@ -85,10 +90,35 @@ export async function runHouseHighlightsMediaWorkerOnce(config: HouseHighlightsM
   return renderClaim(config, claim, fetchImpl);
 }
 
-export async function runHouseHighlightsMediaWorker(config: HouseHighlightsMediaWorkerConfig, fetchImpl: typeof fetch = fetch): Promise<void> {
-  for (;;) {
-    await runHouseHighlightsMediaWorkerOnce(config, fetchImpl);
-    await sleep(config.pollIntervalMs);
+export interface HouseHighlightsMediaWorkerLoopOptions {
+  maxIterations?: number;
+  sleepImpl?: (ms: number) => Promise<void>;
+  random?: () => number;
+  onError?: (code: string) => void;
+}
+
+export async function runHouseHighlightsMediaWorker(
+  config: HouseHighlightsMediaWorkerConfig,
+  fetchImpl: typeof fetch = fetch,
+  options: HouseHighlightsMediaWorkerLoopOptions = {},
+): Promise<void> {
+  const maxIterations = options.maxIterations ?? Number.POSITIVE_INFINITY;
+  const sleepImpl = options.sleepImpl ?? sleep;
+  const random = options.random ?? Math.random;
+  const onError = options.onError ?? ((code) => console.error(`[postgame-media-worker] ${code}`));
+  let consecutiveFailures = 0;
+  for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+    let delayMs = config.pollIntervalMs;
+    try {
+      await runHouseHighlightsMediaWorkerOnce(config, fetchImpl);
+      consecutiveFailures = 0;
+    } catch (error) {
+      consecutiveFailures += 1;
+      onError(safePollFailureCode(error));
+      const baseDelay = Math.min(MAX_POLL_BACKOFF_MS, config.pollIntervalMs * 2 ** Math.min(consecutiveFailures - 1, 6));
+      delayMs = Math.min(MAX_POLL_BACKOFF_MS, baseDelay + Math.floor(baseDelay * 0.2 * random()));
+    }
+    if (iteration + 1 < maxIterations) await sleepImpl(delayMs);
   }
 }
 
@@ -102,7 +132,7 @@ export async function renderClaim(config: HouseHighlightsMediaWorkerConfig, clai
   try {
     await progress(config, claim, "rendering", fetchImpl);
     const bundle = await renderHouseHighlightsTrailerMediaBundle({
-      manifest: claim.manifest,
+      manifest: withWorkerReachableAssetUrls(claim.manifest, config.apiBaseUrl),
       outputDir: workDir,
       temporaryRoot: workDir,
       onStage: async (stage) => {
@@ -138,7 +168,12 @@ export async function renderClaim(config: HouseHighlightsMediaWorkerConfig, clai
     return "completed";
   } catch (error) {
     if (error instanceof HouseHighlightsTrailerMusicUnavailableError) {
-      await progress(config, claim, "waiting_music", fetchImpl, { category: error.category });
+      await progress(config, claim, "waiting_music", fetchImpl, {
+        category: error.category,
+        message: error.message,
+        requestedHouseCuts: String(error.request.houseCuts),
+        requestedPlayers: String(error.request.players),
+      });
       return "waiting_music";
     }
     await reportFailure(config, claim, categorizedFailure(error), fetchImpl);
@@ -147,6 +182,57 @@ export async function renderClaim(config: HouseHighlightsMediaWorkerConfig, clai
     heartbeat.stop();
     await rm(workDir, { recursive: true, force: true });
   }
+}
+
+export function withWorkerReachableAssetUrls(
+  manifest: HouseHighlightsTrailerManifest,
+  apiBaseUrl: string,
+): HouseHighlightsTrailerManifest {
+  const reachableHost = new URL(apiBaseUrl).hostname;
+  if (isLoopbackHost(reachableHost)) return manifest;
+
+  const agent = (value: HouseHighlightsTrailerManifest["cast"][number]) => ({
+    ...value,
+    avatarUrl: rewriteLoopbackUrlHost(value.avatarUrl, reachableHost),
+  });
+  return {
+    ...manifest,
+    cast: manifest.cast.map(agent),
+    scenelets: manifest.scenelets.map((scenelet) => ({
+      ...scenelet,
+      primaryAgents: scenelet.primaryAgents.map(agent),
+      secondaryAgents: scenelet.secondaryAgents.map(agent),
+    })),
+    finalVote: {
+      ...manifest.finalVote,
+      finalists: manifest.finalVote.finalists.map(agent),
+      groups: manifest.finalVote.groups.map((group) => ({
+        ...group,
+        finalist: agent(group.finalist),
+        jurors: group.jurors.map(agent),
+      })),
+      winner: agent(manifest.finalVote.winner),
+    },
+    playerResults: manifest.playerResults.map((result) => ({
+      ...result,
+      agent: agent(result.agent),
+    })),
+  };
+}
+
+function rewriteLoopbackUrlHost(value: string, reachableHost: string): string {
+  try {
+    const url = new URL(value);
+    if (!isLoopbackHost(url.hostname)) return value;
+    url.hostname = reachableHost;
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
 }
 
 export function parseHouseHighlightsMediaWorkerArgs(argv: readonly string[]): "poll" | "once" | "smoke" | "health" {
@@ -186,16 +272,14 @@ export async function checkHouseHighlightsMediaWorkerHealth(
   if (body?.status !== "ok") throw new Error("worker_health_api_invalid_response");
 }
 
-export async function assertPreparedHouseHighlightsTrailerMusicMatrix(): Promise<void> {
-  const filenames = await readdir(DEFAULT_HOUSE_HIGHLIGHTS_TRAILER_MUSIC_DIR);
+export async function assertPreparedHouseHighlightsTrailerMusicMatrix(
+  musicDir = DEFAULT_HOUSE_HIGHLIGHTS_TRAILER_MUSIC_DIR,
+): Promise<void> {
+  const filenames = await readdir(musicDir);
   const prepared = filenames.filter((filename) => filename.endsWith(".m4a"));
-  const expectedCount = PREPARED_HOUSE_CUT_COUNTS.length * PREPARED_PLAYER_COUNTS.length;
-  if (prepared.length !== expectedCount) {
-    throw new Error(`worker_music_matrix_expected_${expectedCount}_found_${prepared.length}`);
-  }
   for (const houseCuts of PREPARED_HOUSE_CUT_COUNTS) {
     for (const players of PREPARED_PLAYER_COUNTS) {
-      selectHouseHighlightsTrailerMusicVariant({ houseCuts, players, trailerDurationSeconds: 1 }, prepared, DEFAULT_HOUSE_HIGHLIGHTS_TRAILER_MUSIC_DIR);
+      selectHouseHighlightsTrailerMusicVariant({ houseCuts, players, trailerDurationSeconds: 1 }, prepared, musicDir);
     }
   }
 }
@@ -228,7 +312,7 @@ async function uploadArtifact(config: HouseHighlightsMediaWorkerConfig, target: 
       method: "PUT",
       headers: target.uploadHeaders,
       body: Bun.file(artifact.path),
-    }, config.httpTimeoutMs, "artifact_upload");
+    }, config.uploadTimeoutMs, "artifact_upload");
   } catch {
     throw new Error("artifact_upload_request_failed");
   }
@@ -248,8 +332,14 @@ function startHeartbeat(config: HouseHighlightsMediaWorkerConfig, claim: WorkerC
       method: "POST",
       body: JSON.stringify({ attemptNumber: claim.attemptNumber, leaseToken: claim.leaseToken }),
     }, fetchImpl).catch(() => undefined);
-  }, HEARTBEAT_INTERVAL_MS);
+  }, heartbeatIntervalForLease(claim.leaseExpiresAt));
   return { stop: () => clearInterval(interval) };
+}
+
+export function heartbeatIntervalForLease(leaseExpiresAt: string, nowMs = Date.now()): number {
+  const remainingMs = new Date(leaseExpiresAt).getTime() - nowMs;
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return 1_000;
+  return Math.max(1_000, Math.min(MAX_HEARTBEAT_INTERVAL_MS, Math.floor(remainingMs / 3)));
 }
 
 async function reportFailure(config: HouseHighlightsMediaWorkerConfig, claim: WorkerClaim, failure: { category: string; message: string }, fetchImpl: typeof fetch): Promise<void> {
@@ -293,6 +383,11 @@ function publicArtifactFor(claim: WorkerClaim, artifact: string): WorkerClaim["p
 function categorizedFailure(error: unknown): { category: string; message: string } { const message = error instanceof Error ? error.message : "unknown worker failure"; return { category: message.startsWith("artifact_upload") ? "upload" : message.startsWith("worker_api") ? "api" : "render", message: message.slice(0, 240) }; }
 function positiveInt(value: string | undefined, fallback: number): number { const parsed = Number(value); return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback; }
 function sleep(ms: number): Promise<void> { return new Promise((resolvePromise) => setTimeout(resolvePromise, ms)); }
+function safePollFailureCode(error: unknown): string {
+  const message = error instanceof Error ? error.message : "unknown";
+  if (/^(?:worker_api|worker_temp_space_low_)[a-z0-9_]+$/i.test(message)) return `poll_failed:${message}`;
+  return "poll_failed:unexpected";
+}
 function runCommandQuietly(command: string, args: readonly string[]): Promise<void> { return new Promise((resolvePromise, reject) => { const child = spawn(command, args, { stdio: "ignore" }); child.on("error", (error) => reject(new Error(`${command} failed to start: ${error.message}`))); child.on("close", (code) => code === 0 ? resolvePromise() : reject(new Error(`${command} exited with code ${code}`))); }); }
 async function fetchWithTimeout(fetchImpl: typeof fetch, input: RequestInfo | URL, init: RequestInit | undefined, timeoutMs: number, errorPrefix: string): Promise<Response> {
   const signal = AbortSignal.timeout(timeoutMs);

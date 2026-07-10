@@ -167,6 +167,13 @@ jobs:
             ${{ matrix.build_args }} \
             -t ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }} \
             .
+          if [ "${{ matrix.target }}" = "render-worker" ]; then
+            docker run --rm --entrypoint sh ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }} -ec '
+              ffmpeg -version >/dev/null
+              chromium --version >/dev/null
+              test "$(find /app/music/house-highlights-variants -name "*.m4a" | wc -l)" -ge 24
+            '
+          fi
           docker push ${{ matrix.image }}:pr-${{ needs.ephemeral-status.outputs.pr_number }}
 
   trigger-deploy:

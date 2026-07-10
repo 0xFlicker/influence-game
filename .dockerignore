@@ -8,3 +8,9 @@ node_modules
 scripts/
 .worktrees/
 test-results/
+.turbo
+coverage
+**/.local-uploads
+**/.next
+**/.renders
+**/coverage

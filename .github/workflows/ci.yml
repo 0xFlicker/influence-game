@@ -49,6 +49,24 @@ jobs:
       - name: Test
         run: bun run test
 
+  render-worker-pr-build:
+    if: github.event_name == 'pull_request'
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build render worker
+        run: docker build -f Dockerfile.render-worker -t influence-render-worker:pr-check .
+
+      - name: Verify render worker runtime
+        run: |
+          docker run --rm --entrypoint sh influence-render-worker:pr-check -ec '
+            ffmpeg -version >/dev/null
+            chromium --version >/dev/null
+            test "$(find /app/music/house-highlights-variants -name "*.m4a" | wc -l)" -ge 24
+          '
+
   docker-build-push:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     needs: check
@@ -96,6 +114,13 @@ jobs:
             -t ${{ matrix.image }}:${{ steps.sha.outputs.short }} \
             -t ${{ matrix.image }}:staging \
             .
+          if [ "${{ matrix.target }}" = "render-worker" ]; then
+            docker run --rm --entrypoint sh ${{ matrix.image }}:${{ steps.sha.outputs.short }} -ec '
+              ffmpeg -version >/dev/null
+              chromium --version >/dev/null
+              test "$(find /app/music/house-highlights-variants -name "*.m4a" | wc -l)" -ge 24
+            '
+          fi
           docker push ${{ matrix.image }}:${{ steps.sha.outputs.short }}
           docker push ${{ matrix.image }}:staging
 

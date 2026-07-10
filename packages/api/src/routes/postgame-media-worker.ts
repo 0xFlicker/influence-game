@@ -30,6 +30,7 @@ export function createPostgameMediaWorkerRoutes(db: DrizzleDB) {
     } catch {
       return c.json({ error: "Public media storage is not configured" }, 503);
     }
+    const publicBaseUrl = postgameMediaPublicBaseUrl(c.req.url);
     const claim = await claimPostgameMedia(db, workerToken);
     if (!claim) return c.json({ claim: null });
     return c.json({
@@ -38,7 +39,7 @@ export function createPostgameMediaWorkerRoutes(db: DrizzleDB) {
         publicArtifacts: postgameMediaPublicArtifactLocations(
           claim.gameId,
           claim.artifactVersion,
-          new URL(c.req.url).origin,
+          publicBaseUrl,
         ),
         storage,
       },
@@ -97,7 +98,8 @@ export function createPostgameMediaWorkerRoutes(db: DrizzleDB) {
       attemptNumber: body.attemptNumber,
       leaseToken: body.leaseToken,
       declarations,
-      publicBaseUrl: new URL(c.req.url).origin,
+      uploadBaseUrl: new URL(c.req.url).origin,
+      publicBaseUrl: postgameMediaPublicBaseUrl(c.req.url),
     });
     if (!result.ok) {
       const status = result.error === "invalid_artifacts" ? 400 : 409;
@@ -144,6 +146,26 @@ export function createPostgameMediaWorkerRoutes(db: DrizzleDB) {
   });
 
   return app;
+}
+
+export function postgameMediaPublicBaseUrl(
+  requestUrl: string,
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const configured = env.POSTGAME_MEDIA_PUBLIC_BASE_URL?.trim();
+  if (!configured) return new URL(requestUrl).origin;
+  const url = new URL(configured);
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:")
+    || url.username
+    || url.password
+    || url.pathname !== "/"
+    || url.search
+    || url.hash
+  ) {
+    throw new Error("POSTGAME_MEDIA_PUBLIC_BASE_URL must be an HTTP(S) origin");
+  }
+  return url.origin;
 }
 
 function parseUploadDeclarations(value: unknown): PostgameMediaUploadDeclaration[] | null {

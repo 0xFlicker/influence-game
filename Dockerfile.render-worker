@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 FROM oven/bun:1 AS deps
 WORKDIR /app
 
@@ -5,30 +7,32 @@ COPY package.json bun.lock bunfig.toml ./
 COPY packages/api/package.json packages/api/
 COPY packages/engine/package.json packages/engine/
 COPY packages/web/package.json packages/web/
-RUN bun install --frozen-lockfile
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+  bun install --frozen-lockfile
 
 FROM oven/bun:1 AS runtime
 WORKDIR /app
 
 LABEL org.opencontainers.image.source=https://github.com/0xFlicker/influence-game
 
-RUN apt-get update \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+  apt-get update \
   && apt-get install -y --no-install-recommends \
     ca-certificates \
     chromium \
     ffmpeg \
     fontconfig \
     fonts-liberation \
-    fonts-noto-core \
-  && rm -rf /var/lib/apt/lists/*
+    fonts-noto-core
 
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/engine/node_modules ./packages/engine/node_modules
-COPY --from=deps /app/packages/web/node_modules ./packages/web/node_modules
-COPY package.json bun.lock bunfig.toml tsconfig.json ./
-COPY packages/engine/ packages/engine/
-COPY packages/web/ packages/web/
-COPY music/house-highlights-variants/ ./music/house-highlights-variants/
+COPY --chown=bun:bun --from=deps /app/node_modules ./node_modules
+COPY --chown=bun:bun --from=deps /app/packages/engine/node_modules ./packages/engine/node_modules
+COPY --chown=bun:bun --from=deps /app/packages/web/node_modules ./packages/web/node_modules
+COPY --chown=bun:bun package.json bun.lock bunfig.toml tsconfig.json ./
+COPY --chown=bun:bun packages/engine/ packages/engine/
+COPY --chown=bun:bun packages/web/ packages/web/
+COPY --chown=bun:bun music/house-highlights-variants/ ./music/house-highlights-variants/
 
 ARG GIT_SHA=unknown
 ENV GIT_SHA=${GIT_SHA}
@@ -36,10 +40,10 @@ ENV NODE_ENV=production
 ENV REMOTION_BROWSER_EXECUTABLE=/usr/bin/chromium
 ENV POSTGAME_MEDIA_TEMP_DIR=/tmp/influence-render-worker
 ENV POSTGAME_MEDIA_HTTP_TIMEOUT_MS=15000
+ENV POSTGAME_MEDIA_UPLOAD_TIMEOUT_MS=300000
 ENV POSTGAME_MEDIA_MIN_FREE_BYTES=2147483648
 
-RUN mkdir -p "${POSTGAME_MEDIA_TEMP_DIR}" \
-  && chown -R bun:bun /app "${POSTGAME_MEDIA_TEMP_DIR}"
+RUN install -d -o bun -g bun "${POSTGAME_MEDIA_TEMP_DIR}"
 
 USER bun
 

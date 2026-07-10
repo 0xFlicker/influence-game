@@ -10,10 +10,14 @@ import {
 } from "../lib/house-highlights-trailer-media-bundle";
 import {
   assertHouseHighlightsMediaWorkerSmokeResult,
+  assertPreparedHouseHighlightsTrailerMusicMatrix,
   houseHighlightsMediaWorkerConfig,
   checkHouseHighlightsMediaWorkerHealth,
+  heartbeatIntervalForLease,
   parseHouseHighlightsMediaWorkerArgs,
+  runHouseHighlightsMediaWorker,
   runHouseHighlightsMediaWorkerOnce,
+  withWorkerReachableAssetUrls,
 } from "../scripts/render-house-highlights-media-worker";
 
 describe("House Highlights media worker bundle", () => {
@@ -97,6 +101,69 @@ describe("House Highlights media worker bundle", () => {
     await expect(runHouseHighlightsMediaWorkerOnce(config, ((_, init) => new Promise((_, reject) => {
       init?.signal?.addEventListener("abort", () => reject(new Error("request aborted")));
     })) as typeof fetch)).rejects.toThrow("worker_api_timeout");
+    expect(config.uploadTimeoutMs).toBe(5 * 60_000);
+  });
+
+  it("keeps polling after a transient claim failure with bounded backoff", async () => {
+    const config = houseHighlightsMediaWorkerConfig({
+      POSTGAME_MEDIA_API_URL: "http://api.test/",
+      POSTGAME_MEDIA_WORKER_TOKEN: "secret-worker-token",
+      POSTGAME_MEDIA_POLL_INTERVAL_MS: "10",
+      POSTGAME_MEDIA_MIN_FREE_BYTES: "1",
+    });
+    let requests = 0;
+    const sleeps: number[] = [];
+    const errors: string[] = [];
+    await runHouseHighlightsMediaWorker(config, (async () => {
+      requests += 1;
+      if (requests === 1) throw new Error("temporary network failure containing https://secret.example");
+      return Response.json({ claim: null });
+    }) as unknown as typeof fetch, {
+      maxIterations: 2,
+      random: () => 0,
+      sleepImpl: async (ms) => { sleeps.push(ms); },
+      onError: (code) => { errors.push(code); },
+    });
+
+    expect(requests).toBe(2);
+    expect(sleeps).toEqual([10]);
+    expect(errors).toEqual(["poll_failed:worker_api_request_failed"]);
+    expect(errors.join(" ")).not.toContain("secret.example");
+  });
+
+  it("heartbeats well before the minimum API lease expires", () => {
+    const now = Date.parse("2026-07-09T00:00:00.000Z");
+    expect(heartbeatIntervalForLease("2026-07-09T00:01:00.000Z", now)).toBe(20_000);
+    expect(heartbeatIntervalForLease("2026-07-09T00:10:00.000Z", now)).toBe(60_000);
+  });
+
+  it("rewrites persisted loopback avatar URLs for a container API host", () => {
+    const manifest = manifestFixture();
+    manifest.cast[0]!.avatarUrl = "http://127.0.0.1:3000/api/uploads/local?key=alice.png";
+    manifest.finalVote.winner = {
+      ...manifest.finalVote.winner,
+      avatarUrl: "http://localhost:3000/api/uploads/local?key=alice.png",
+    };
+
+    const rewritten = withWorkerReachableAssetUrls(manifest, "http://host.docker.internal:3002");
+
+    expect(rewritten.cast[0]!.avatarUrl).toBe("http://host.docker.internal:3000/api/uploads/local?key=alice.png");
+    expect(rewritten.finalVote.winner.avatarUrl).toBe("http://host.docker.internal:3000/api/uploads/local?key=alice.png");
+    expect(rewritten.cast[1]!.avatarUrl).toBe("/avatars/bob.png");
+    expect(manifest.cast[0]!.avatarUrl).toStartWith("http://127.0.0.1:3000/");
+    expect(withWorkerReachableAssetUrls(manifest, "http://127.0.0.1:3002")).toBe(manifest);
+  });
+
+  it("requires every prepared score while tolerating unrelated extra music", async () => {
+    const musicDir = await mkdtemp(join(tmpdir(), "house-highlights-music-matrix-"));
+    for (const houseCuts of [0, 1, 2, 3, 4, 5]) {
+      for (const players of [6, 8, 10, 12]) {
+        await Bun.write(join(musicDir, `golden-verdict-${houseCuts}-cuts-${players}-players-1.0s.m4a`), "score");
+      }
+    }
+    await Bun.write(join(musicDir, "producer-alt.m4a"), "extra score");
+
+    await expect(assertPreparedHouseHighlightsTrailerMusicMatrix(musicDir)).resolves.toBeUndefined();
   });
 
   it("runs non-mutating health checks without sending worker credentials", async () => {

@@ -96,6 +96,7 @@ export async function issuePostgameMediaUploadTargets(
   db: DrizzleDB,
   request: LeaseRequest & {
     declarations: readonly PostgameMediaUploadDeclaration[];
+    uploadBaseUrl?: string;
     publicBaseUrl?: string;
   },
   now = new Date(),
@@ -133,6 +134,7 @@ export async function issuePostgameMediaUploadTargets(
         leaseId,
         byteLength: declaration.byteLength,
         sha256: declaration.sha256,
+        ...(request.uploadBaseUrl ? { uploadBaseUrl: request.uploadBaseUrl } : {}),
         ...(request.publicBaseUrl ? { publicBaseUrl: request.publicBaseUrl } : {}),
       })));
   } catch {

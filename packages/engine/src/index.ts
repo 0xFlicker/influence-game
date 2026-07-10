@@ -126,11 +126,11 @@ export {
   assertHouseHighlightsTrailerManifest,
   buildHouseHighlightsTrailerCueSheet,
   buildHouseHighlightsTrailerManifest,
-  hashHouseHighlightsTrailerManifest,
   parseHouseHighlightsTrailerManifest,
   serializeHouseHighlightsTrailerManifest,
   validateHouseHighlightsTrailerManifest,
 } from "./postgame-media/house-highlights-trailer-manifest";
+export { hashHouseHighlightsTrailerManifest } from "./postgame-media/house-highlights-trailer-manifest-hash";
 export type {
   HouseHighlightsTrailerAgent,
   HouseHighlightsTrailerAgentStatus,

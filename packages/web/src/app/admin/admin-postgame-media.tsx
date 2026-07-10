@@ -248,6 +248,20 @@ export function AdminPostgameMediaDiagnostics({ detail }: { detail: AdminPostgam
         </section>
       ) : null}
 
+      {detail.status === "waiting_music" ? (
+        <section className="rounded-md border border-amber-700/40 bg-amber-950/25 p-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-amber-200/60">Waiting for music</h3>
+          <p className="mt-2 text-sm text-amber-100/75">
+            {stringValue(detail.diagnostics?.message) ?? "The prepared score for this trailer variant is unavailable."}
+          </p>
+          {stringValue(detail.diagnostics?.requestedHouseCuts) && stringValue(detail.diagnostics?.requestedPlayers) ? (
+            <p className="mt-1 text-xs text-amber-100/50">
+              Requested variant: {stringValue(detail.diagnostics?.requestedHouseCuts)} House Cuts / {stringValue(detail.diagnostics?.requestedPlayers)} players
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
       {artifacts ? <ArtifactSummary artifacts={artifacts} /> : null}
     </div>
   );
@@ -347,4 +361,8 @@ function recordValue(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
 }

@@ -41,6 +41,7 @@ export interface CreatePublicMediaUploadTargetInput {
   byteLength: number;
   sha256: string;
   expiresIn?: number;
+  uploadBaseUrl?: string;
   publicBaseUrl?: string;
 }
 
@@ -136,6 +137,7 @@ export async function createPublicMediaUploadTarget(
     sha256: input.sha256,
     targetId,
     ...(input.expiresIn !== undefined && { expiresIn: input.expiresIn }),
+    ...(input.uploadBaseUrl !== undefined && { uploadBaseUrl: input.uploadBaseUrl }),
     ...(input.publicBaseUrl !== undefined && { publicBaseUrl: input.publicBaseUrl }),
   });
   return {

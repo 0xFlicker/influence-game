@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 import { hashHouseHighlightsTrailerManifest, type HouseHighlightsTrailerManifest } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { createPostgameMediaWorkerRoutes } from "../routes/postgame-media-worker.js";
+import { createPostgameMediaWorkerRoutes, postgameMediaPublicBaseUrl } from "../routes/postgame-media-worker.js";
 import { createUploadRoutes } from "../routes/upload.js";
 import { getAdminPostgameMedia, getPublicPostgameMedia } from "../services/postgame-media.js";
 import { reconcilePostgameMediaForGame, requestPostgameMedia } from "../services/postgame-media-coordinator.js";
@@ -22,6 +22,7 @@ describe("postgame media worker routes and leases", () => {
   let savedStorageBackend: string | undefined;
   let savedUploadDir: string | undefined;
   let savedJwtSecret: string | undefined;
+  let savedPublicBaseUrl: string | undefined;
 
   beforeEach(async () => {
     db = await setupTestDB();
@@ -29,6 +30,7 @@ describe("postgame media worker routes and leases", () => {
     savedStorageBackend = process.env.INFLUENCE_STORAGE_BACKEND;
     savedUploadDir = process.env.INFLUENCE_LOCAL_UPLOAD_DIR;
     savedJwtSecret = process.env.JWT_SECRET;
+    savedPublicBaseUrl = process.env.POSTGAME_MEDIA_PUBLIC_BASE_URL;
     process.env.INFLUENCE_STORAGE_BACKEND = "local";
     process.env.INFLUENCE_LOCAL_UPLOAD_DIR = uploadDir;
     process.env.JWT_SECRET = "postgame-media-route-test-secret";
@@ -40,6 +42,7 @@ describe("postgame media worker routes and leases", () => {
     restoreEnv("INFLUENCE_STORAGE_BACKEND", savedStorageBackend);
     restoreEnv("INFLUENCE_LOCAL_UPLOAD_DIR", savedUploadDir);
     restoreEnv("JWT_SECRET", savedJwtSecret);
+    restoreEnv("POSTGAME_MEDIA_PUBLIC_BASE_URL", savedPublicBaseUrl);
     await rm(uploadDir, { recursive: true, force: true });
   });
 
@@ -72,6 +75,16 @@ describe("postgame media worker routes and leases", () => {
     expect(combined).not.toContain(row?.workerIdHash ?? "");
     expect(combined).not.toContain(row?.leaseTokenHash ?? "");
     expect(combined).not.toContain("previous-worker-token");
+  });
+
+  test("keeps worker upload routing separate from the public media origin", () => {
+    expect(postgameMediaPublicBaseUrl("http://api:4000/internal", {})).toBe("http://api:4000");
+    expect(postgameMediaPublicBaseUrl("http://api:4000/internal", {
+      POSTGAME_MEDIA_PUBLIC_BASE_URL: "https://api.example.test",
+    })).toBe("https://api.example.test");
+    expect(() => postgameMediaPublicBaseUrl("http://api:4000/internal", {
+      POSTGAME_MEDIA_PUBLIC_BASE_URL: "https://api.example.test/path",
+    })).toThrow("HTTP(S) origin");
   });
 
   test("reconciles missing and retryable failed-enqueue rows idempotently into waiting inputs", async () => {
@@ -134,6 +147,42 @@ describe("postgame media worker routes and leases", () => {
     expect(JSON.stringify(audit)).not.toContain("do-not-store");
   });
 
+  test("requeues a stored waiting-music manifest after the score is restored", async () => {
+    const actorUserId = "postgame-media-music-actor";
+    const gameId = await insertQueuedMedia(db, "waiting-music-retry");
+    await db.insert(schema.users).values({ id: actorUserId, walletAddress: "0xpostgamemediamusicactor" });
+    await db.update(schema.gamePostgameMedia)
+      .set({
+        status: "waiting_music",
+        attemptFinishedAt: new Date().toISOString(),
+        diagnostics: { category: "waiting_music", requestedHouseCuts: "0", requestedPlayers: "2" },
+      })
+      .where(eq(schema.gamePostgameMedia.gameId, gameId));
+
+    const result = await requestPostgameMedia(db, {
+      gameId,
+      actorUserId,
+      action: "backfill",
+      reason: "Prepared score restored",
+      source: "admin_route",
+    });
+
+    expect(result).toMatchObject({
+      outcome: "queued",
+      previousRenderVersion: 1,
+      currentRenderVersion: 2,
+    });
+    const [row] = await db.select().from(schema.gamePostgameMedia)
+      .where(eq(schema.gamePostgameMedia.gameId, gameId));
+    expect(row).toMatchObject({
+      status: "queued",
+      renderVersion: 2,
+      attemptNumber: 2,
+      diagnostics: null,
+    });
+    expect(row?.artifactVersion).not.toBe("rv_fixture-version");
+  });
+
   test("allows an unexpired lease to heartbeat and rejects it after expiry", async () => {
     const gameId = await insertQueuedMedia(db, "lease-validity");
     const now = new Date("2026-07-10T00:00:00.000Z");
@@ -193,6 +242,7 @@ describe("postgame media worker routes and leases", () => {
   });
 
   test("issues lease-bound targets and publishes only after every uploaded object and safe metadata verify", async () => {
+    process.env.POSTGAME_MEDIA_PUBLIC_BASE_URL = "https://public-api.example.test";
     const gameId = await insertQueuedMedia(db, "uploaded-bundle");
     const app = new Hono();
     app.route("/", createPostgameMediaWorkerRoutes(db));
@@ -213,6 +263,7 @@ describe("postgame media worker routes and leases", () => {
         storage: { provider: "local"; bucket: string };
       };
     }).claim;
+    expect(claim.publicArtifacts.every(({ publicUrl }) => publicUrl.startsWith("https://public-api.example.test/"))).toBeTrue();
 
     const video = new Uint8Array([0, 0, 0, 1, 9]);
     const poster = new Uint8Array([137, 80, 78, 71]);
@@ -274,6 +325,8 @@ describe("postgame media worker routes and leases", () => {
         uploadHeaders: Record<string, string>;
       }>;
     }).targets;
+    expect(targets.every(({ publicUrl }) => publicUrl.startsWith("https://public-api.example.test/"))).toBeTrue();
+    expect(targets.every(({ uploadUrl }) => uploadUrl.startsWith("http://localhost/"))).toBeTrue();
     const target = (artifact: keyof typeof bodies) =>
       targets.find((entry) => entry.artifact === artifact)!;
     const finalizePayload = {

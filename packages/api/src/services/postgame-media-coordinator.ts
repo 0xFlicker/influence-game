@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import {
   buildHouseHighlightsTrailerManifest,
   hashHouseHighlightsTrailerManifest,
+  parseHouseHighlightsTrailerManifest,
   type HouseHighlightsTrailerManifest,
 } from "@influence/engine";
 import type {
@@ -133,6 +134,28 @@ export async function requestPostgameMedia(
     return result;
   }
 
+  if (row?.status === "waiting_music") {
+    const storedSnapshot = parseStoredSnapshot(row.renderInputSnapshot);
+    if (storedSnapshot) {
+      const nextRenderVersion = row.renderVersion + 1;
+      const nextAttemptNumber = row.attemptNumber + 1;
+      await db.update(schema.gamePostgameMedia)
+        .set({
+          ...queuedValues(game.id, nextRenderVersion, nextAttemptNumber, storedSnapshot, newArtifactVersion()),
+          updatedAt: new Date().toISOString(),
+        })
+        .where(mediaWhere(game.id));
+      const result: PostgameMediaCoordinatorResult = {
+        outcome: "queued",
+        gameId: game.id,
+        previousRenderVersion: row.renderVersion,
+        currentRenderVersion: nextRenderVersion,
+      };
+      await recordPostgameMediaAudit(db, auditParams(params, "queued", result));
+      return result;
+    }
+  }
+
   const snapshot = await createSnapshot(db, game.id);
   if (!snapshot) {
     if (!row) await ensureWaitingPostgameMediaRow(db, game.id);
@@ -242,6 +265,14 @@ function isActive(status: string): boolean {
 function isRetryableEnqueueFailure(row: typeof schema.gamePostgameMedia.$inferSelect): boolean {
   return row.status === "failed"
     && (row.failureCategory === "enqueue" || row.failureCategory === "snapshot_inputs");
+}
+
+function parseStoredSnapshot(value: unknown): HouseHighlightsTrailerManifest | null {
+  try {
+    return parseHouseHighlightsTrailerManifest(value);
+  } catch {
+    return null;
+  }
 }
 
 function emptyResult(outcome: PostgameMediaCoordinatorOutcome, gameId: string): PostgameMediaCoordinatorResult {

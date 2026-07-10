@@ -230,10 +230,14 @@ async function artifactFor(name: HouseHighlightsTrailerBundleArtifactName, path:
 }
 
 function remotionRenderer(): HouseHighlightsTrailerRenderer {
-  let serveUrl: string | null = null;
+  let serveUrlPromise: Promise<string> | null = null;
   const browserOptions = remotionBrowserOptions();
   const compositionFor = async (manifest: HouseHighlightsTrailerManifest) => {
-    serveUrl ??= await bundle({ entryPoint: resolve(WEB_ROOT, "src/remotion/house-highlights-trailer/index.tsx"), publicDir: resolve(WEB_ROOT, "public"), rootDir: WEB_ROOT });
+    const serveUrl = await (serveUrlPromise ??= bundle({
+      entryPoint: resolve(WEB_ROOT, "src/remotion/house-highlights-trailer/index.tsx"),
+      publicDir: resolve(WEB_ROOT, "public"),
+      rootDir: WEB_ROOT,
+    }));
     return { serveUrl, composition: await selectComposition({ serveUrl, id: HOUSE_HIGHLIGHTS_TRAILER_COMPOSITION_ID, inputProps: { manifest }, ...browserOptions }) };
   };
   return {

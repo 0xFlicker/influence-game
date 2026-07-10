@@ -2,11 +2,11 @@ import { describe, expect, test } from "bun:test";
 import {
   HOUSE_HIGHLIGHTS_TRAILER_MANIFEST_VERSION,
   HOUSE_HIGHLIGHTS_TRAILER_TIMING_CONTRACT_VERSION,
-  hashHouseHighlightsTrailerManifest,
   parseHouseHighlightsTrailerManifest,
   validateHouseHighlightsTrailerManifest,
   type HouseHighlightsTrailerManifest,
 } from "../postgame-media/house-highlights-trailer-manifest";
+import { hashHouseHighlightsTrailerManifest } from "../postgame-media/house-highlights-trailer-manifest-hash";
 
 describe("House Highlights trailer render-input manifest", () => {
   test("accepts one complete serializable versioned render-input snapshot", () => {

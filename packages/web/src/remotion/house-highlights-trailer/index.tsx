@@ -1,14 +1,5 @@
 import { Composition, registerRoot } from "remotion";
-import {
-  HOUSE_HIGHLIGHTS_TRAILER_FPS,
-  HOUSE_HIGHLIGHTS_TRAILER_HEIGHT,
-  HOUSE_HIGHLIGHTS_TRAILER_WIDTH,
-  type HouseHighlightsTrailerManifest,
-} from "../../app/games/[slug]/components/house-highlights-trailer-model";
-import {
-  HOUSE_HIGHLIGHTS_TRAILER_MEDIA_TYPE,
-  HOUSE_HIGHLIGHTS_TRAILER_TIMING_CONTRACT_VERSION,
-} from "@influence/engine";
+import type { HouseHighlightsTrailerManifest } from "../../app/games/[slug]/components/house-highlights-trailer-model";
 import {
   HouseHighlightsTrailerComposition,
   type HouseHighlightsTrailerCompositionProps,
@@ -17,14 +8,19 @@ import { HOUSE_HIGHLIGHTS_TRAILER_COMPOSITION_ID } from "./constants";
 
 export { HOUSE_HIGHLIGHTS_TRAILER_COMPOSITION_ID };
 
+const DEMO_FRAME_RATE = 30;
+const DEMO_WIDTH = 1920;
+const DEMO_HEIGHT = 1080;
+const TIMING_CONTRACT_VERSION = "house-highlights-trailer-timing-v1" as const;
+
 registerRoot(function RemotionRoot() {
   return (
     <Composition
       id={HOUSE_HIGHLIGHTS_TRAILER_COMPOSITION_ID}
       component={HouseHighlightsTrailerComposition}
-      fps={HOUSE_HIGHLIGHTS_TRAILER_FPS}
-      width={HOUSE_HIGHLIGHTS_TRAILER_WIDTH}
-      height={HOUSE_HIGHLIGHTS_TRAILER_HEIGHT}
+      fps={DEMO_FRAME_RATE}
+      width={DEMO_WIDTH}
+      height={DEMO_HEIGHT}
       durationInFrames={demoManifest.cueSheet.totalFrames}
       defaultProps={{ manifest: demoManifest }}
       calculateMetadata={({ props }) => ({
@@ -39,16 +35,16 @@ registerRoot(function RemotionRoot() {
 
 const demoManifest: HouseHighlightsTrailerCompositionProps["manifest"] = {
   schemaVersion: 1,
-  mediaType: HOUSE_HIGHLIGHTS_TRAILER_MEDIA_TYPE,
-  timingContractVersion: HOUSE_HIGHLIGHTS_TRAILER_TIMING_CONTRACT_VERSION,
+  mediaType: "house_highlights_trailer",
+  timingContractVersion: TIMING_CONTRACT_VERSION,
   game: {
     id: "demo",
     slug: "demo",
     status: "completed",
   },
-  frameRate: HOUSE_HIGHLIGHTS_TRAILER_FPS,
-  width: HOUSE_HIGHLIGHTS_TRAILER_WIDTH,
-  height: HOUSE_HIGHLIGHTS_TRAILER_HEIGHT,
+  frameRate: DEMO_FRAME_RATE,
+  width: DEMO_WIDTH,
+  height: DEMO_HEIGHT,
   cast: [
     agent("alice", "Alice", "/avatars/personas/strategic.png", 1, "winner"),
     agent("bob", "Bob", "/avatars/personas/loyalist.png", 2, "finalist"),
@@ -108,8 +104,8 @@ const demoManifest: HouseHighlightsTrailerCompositionProps["manifest"] = {
   ],
   cueSheet: {
     schemaVersion: 1,
-    timingContractVersion: HOUSE_HIGHLIGHTS_TRAILER_TIMING_CONTRACT_VERSION,
-    frameRate: HOUSE_HIGHLIGHTS_TRAILER_FPS,
+    timingContractVersion: TIMING_CONTRACT_VERSION,
+    frameRate: DEMO_FRAME_RATE,
     totalFrames: 648,
     totalDurationSeconds: 21.6,
     segments: [
@@ -157,8 +153,8 @@ function cue(
     label,
     startFrame,
     endFrame,
-    startSeconds: startFrame / HOUSE_HIGHLIGHTS_TRAILER_FPS,
-    endSeconds: endFrame / HOUSE_HIGHLIGHTS_TRAILER_FPS,
-    durationSeconds: (endFrame - startFrame) / HOUSE_HIGHLIGHTS_TRAILER_FPS,
+    startSeconds: startFrame / DEMO_FRAME_RATE,
+    endSeconds: endFrame / DEMO_FRAME_RATE,
+    durationSeconds: (endFrame - startFrame) / DEMO_FRAME_RATE,
   };
 }

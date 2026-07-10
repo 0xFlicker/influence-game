@@ -85,6 +85,22 @@ describe("AdminPostgameMedia", () => {
     expect(live).not.toContain("Trailer");
   });
 
+  it("explains the missing prepared music variant to producers", () => {
+    const html = renderToString(<AdminPostgameMediaDiagnostics detail={mediaDetail({
+      status: "waiting_music",
+      diagnostics: {
+        message: "Missing prepared House Highlights trailer music variant for 3 cuts / 10 players.",
+        requestedHouseCuts: "3",
+        requestedPlayers: "10",
+      },
+    })} />);
+
+    expect(html).toContain("Waiting for music");
+    expect(html).toContain("3 cuts / 10 players");
+    expect(html).toContain("Requested variant");
+    expect(html).toContain("House Cuts");
+  });
+
   it("posts a reason and the API-required action confirmation", async () => {
     setApiBase("http://127.0.0.1:3333");
     let request: { url: string; init?: RequestInit } | undefined;

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { HouseHighlightVisualCardFactKind } from "../postgame-highlights/types";
 
 export const HOUSE_HIGHLIGHTS_TRAILER_MANIFEST_VERSION = 1 as const;
@@ -313,14 +312,6 @@ export function serializeHouseHighlightsTrailerManifest(
   manifest: HouseHighlightsTrailerManifest,
 ): string {
   return stableJson(manifest);
-}
-
-export function hashHouseHighlightsTrailerManifest(
-  manifest: HouseHighlightsTrailerManifest,
-): string {
-  return `sha256:${createHash("sha256")
-    .update(serializeHouseHighlightsTrailerManifest(manifest))
-    .digest("hex")}`;
 }
 
 export function buildHouseHighlightsTrailerManifest(
