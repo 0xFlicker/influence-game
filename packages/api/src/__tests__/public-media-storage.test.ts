@@ -226,7 +226,9 @@ describe("public House Highlights media storage", () => {
       "https://public-media.public.example.test/postgame-media/house-highlights-trailers/game-1/rv_opaque_03/captions.vtt",
     );
     expect(target.uploadHeaders["if-none-match"]).toBe("*");
+    expect(target.uploadHeaders["x-amz-acl"]).toBe("public-read");
     expect(new URL(target.uploadUrl).searchParams.get("X-Amz-SignedHeaders")).toContain("if-none-match");
+    expect(new URL(target.uploadUrl).searchParams.get("X-Amz-SignedHeaders")).toContain("x-amz-acl");
     const sanitized = JSON.stringify(sanitizePublicMediaUploadTarget(target));
     expect(sanitized).not.toContain("X-Amz-");
     expect(sanitized).not.toContain("private.example.test");
