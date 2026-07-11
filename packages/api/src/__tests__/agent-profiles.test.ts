@@ -436,7 +436,7 @@ describe("Agent Profile API", () => {
       });
     });
 
-    test("resets stats when personality changes and games have been played", async () => {
+    test("preserves lifetime stats when personality changes", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
         jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
@@ -455,9 +455,9 @@ describe("Agent Profile API", () => {
       );
       expect(res.status).toBe(200);
       const body = await res.json() as { gamesPlayed: number; gamesWon: number; statsReset: boolean };
-      expect(body.statsReset).toBe(true);
-      expect(body.gamesPlayed).toBe(0);
-      expect(body.gamesWon).toBe(0);
+      expect(body.statsReset).toBe(false);
+      expect(body.gamesPlayed).toBe(5);
+      expect(body.gamesWon).toBe(2);
     });
 
     test("returns 404 when updating another user's profile", async () => {
@@ -546,6 +546,69 @@ describe("Agent Profile API", () => {
       // Verify NOT deleted
       const profiles = await db.select().from(schema.agentProfiles);
       expect(profiles).toHaveLength(1);
+    });
+
+    test("returns a clear conflict instead of breaking linked producer season history", async () => {
+      const createRes = await app.request(
+        "/api/agent-profiles",
+        jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
+      );
+      const { id } = await createRes.json() as { id: string };
+      const revision = (await db.select().from(schema.agentRevisions)
+        .where(eq(schema.agentRevisions.agentProfileId, id)))[0]!;
+      await db.insert(schema.agentCompetitionRatings).values({
+        agentProfileId: id,
+        effectiveRevisionId: revision.id,
+        mu: 25,
+        sigma: 25 / 3,
+        gamesPlayed: 1,
+        ratingPolicyVersion: "competition-rating-v1",
+      });
+
+      const res = await app.request(`/api/agent-profiles/${id}`, authDelete(tokenA));
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ code: "rated_history_exists" });
+      expect(await db.select().from(schema.agentProfiles)
+        .where(eq(schema.agentProfiles.id, id))).toHaveLength(1);
+    });
+
+    test("returns the same conflict when a pregame rating snapshot references the agent", async () => {
+      const createRes = await app.request(
+        "/api/agent-profiles",
+        jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
+      );
+      const { id } = await createRes.json() as { id: string };
+      const revision = (await db.select().from(schema.agentRevisions)
+        .where(eq(schema.agentRevisions.agentProfileId, id)))[0]!;
+      const seasonId = randomUUID();
+      const gameId = randomUUID();
+      await db.insert(schema.seasons).values({
+        id: seasonId,
+        slug: `snapshot-${seasonId}`,
+        name: "Snapshot Season",
+        status: "active",
+      });
+      await db.insert(schema.games).values({
+        id: gameId,
+        slug: `snapshot-${gameId}`,
+        config: "{}",
+        status: "waiting",
+        trackType: "free",
+        seasonId,
+      });
+      await db.insert(schema.competitionRatingSnapshots).values({
+        id: randomUUID(),
+        gameId,
+        agentProfileId: id,
+        agentRevisionId: revision.id,
+        mu: 25,
+        sigma: 25 / 3,
+        ratingPolicyVersion: "competition-rating-v1",
+      });
+
+      const res = await app.request(`/api/agent-profiles/${id}`, authDelete(tokenA));
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ code: "rated_history_exists" });
     });
 
     test("clears agentProfileId references in game_players", async () => {

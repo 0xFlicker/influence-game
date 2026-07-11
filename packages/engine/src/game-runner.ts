@@ -83,6 +83,8 @@ export class GameRunner {
   private mingleInbox = new Map<UUID, Array<{ from: string; text: string }>>();
   /** Ordered list of eliminated player names */
   private readonly eliminationOrder: string[] = [];
+  /** Canonical player IDs in elimination order, independent of display names. */
+  private readonly eliminationOrderPlayerIds: UUID[] = [];
   /** When true, the game loop will exit at the next phase boundary. */
   private _aborted = false;
   /** Total number of players at game start */
@@ -105,6 +107,13 @@ export class GameRunner {
     this.gameState = options.resumeFrom
       ? GameState.fromCanonicalEvents(options.resumeFrom.canonicalEvents)
       : new GameState(agents.map((a) => ({ id: a.id, name: a.name })), gameStateOptions);
+    if (options.resumeFrom) {
+      for (const event of options.resumeFrom.canonicalEvents) {
+        if (event.type !== "player.eliminated") continue;
+        this.eliminationOrderPlayerIds.push(event.payload.playerId);
+        this.eliminationOrder.push(event.payload.playerName);
+      }
+    }
     this.machine = createPhaseMachine();
     this.houseInterviewer = houseInterviewer ?? new TemplateHouseInterviewer();
     this.durableEventSink = options.durableEventSink;
@@ -223,7 +232,14 @@ export class GameRunner {
   // Main entry point
   // ---------------------------------------------------------------------------
 
-  async run(): Promise<{ winner?: UUID; winnerName?: string; rounds: number; transcript: TranscriptEntry[]; eliminationOrder: string[] }> {
+  async run(): Promise<{
+    winner?: UUID;
+    winnerName?: string;
+    rounds: number;
+    transcript: TranscriptEntry[];
+    eliminationOrder: string[];
+    rankedPlayerIds: UUID[];
+  }> {
     const gameId = this.gameState.gameId;
     const allPlayers = this.gameState.getAllPlayers().map((p) => ({ id: p.id, name: p.name }));
 
@@ -269,6 +285,14 @@ export class GameRunner {
     });
 
     const winner = this.gameState.getWinner();
+    const finalistIds = this.gameState.getAllPlayers()
+      .filter((player) => player.status === PlayerStatus.ALIVE && player.id !== winner?.id)
+      .map((player) => player.id);
+    const rankedPlayerIds = [
+      ...(winner ? [winner.id] : []),
+      ...finalistIds,
+      ...[...this.eliminationOrderPlayerIds].reverse(),
+    ];
     if (!this.durableEventSink) {
       this.logger.emitStream({
         type: "game_over",
@@ -283,6 +307,7 @@ export class GameRunner {
       rounds: this.gameState.round,
       transcript: this.logger.transcript,
       eliminationOrder: [...this.eliminationOrder],
+      rankedPlayerIds,
     };
   }
 
@@ -301,6 +326,7 @@ export class GameRunner {
       houseInterviewer: this.houseInterviewer,
       mingleInbox: this.mingleInbox,
       eliminationOrder: this.eliminationOrder,
+      eliminationOrderPlayerIds: this.eliminationOrderPlayerIds,
       beforeAcceptedCommit: this.beforeAcceptedCommit,
     };
   }

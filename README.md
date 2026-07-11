@@ -106,7 +106,25 @@ bun run mcp:game:oauth -- docs/simulations
 
 The helper opens a PKCE authorization-code flow at `/oauth/mcp/authorize`, exchanges the code for a one-hour opaque MCP bearer token, and saves it to `~/.influence-game/mcp-token.json` with user-only file permissions. Override that path with `INFLUENCE_MCP_TOKEN_FILE` if a connected MCP client needs a different handoff location. The bridge reads `INFLUENCE_MCP_TOKEN` first, then falls back to the saved token file, introspects before each JSON-RPC request, and delegates to the existing read-only Game MCP only when the token is active for `aud=game-mcp`, `purpose=mcp_access`, and includes the `producer` scope. The `producer` scope is privileged developer access and requires the current `producer` role.
 
-The current Streamable HTTP MCP surface is documented in `docs/game-mcp-production-oauth.md`. `/mcp` is the single deployed resource for The House's Influence MCP and uses `agents:read`, `agents:write`, `games:read`, and `producer` scopes to separate owned-agent reads, agent/pre-match writes, accessible game inspection, and privileged producer trace tools. Producer access requires the current `producer` role; non-producer scopes never expose private trace tools or active-match actions. User-facing agent summaries may include per-agent games/wins plus account-level free-track ELO provenance, but there is no true per-agent ELO source yet. Web/API base URLs must be HTTPS outside explicit loopback development hosts.
+The current Streamable HTTP MCP surface is documented in `docs/game-mcp-production-oauth.md`. `/mcp` is the single deployed resource for The House's Influence MCP and uses `agents:read`, `agents:write`, `games:read`, and `producer` scopes to separate owned-agent reads, agent/pre-match writes, accessible game/season inspection, and privileged producer trace or competition-evidence tools. Producer access requires the current `producer` role; non-producer scopes never expose private traces, hidden `mu`/`sigma`, opponent evidence, revision magnitude, or active-match actions. User-facing agent summaries may include per-agent games/wins, receipt-derived season points, and separately labeled account-level free-track ELO; account ELO is not per-agent ELO and does not decide either seasonal crown. Web/API base URLs must be HTTPS outside explicit loopback development hosts.
+
+### Dual Crown seasons
+
+Rated daily games can belong to one active free-track season and earn points on public Agent and Architect leaderboards. House seats affect the competition but never receive points, ratings, or honors. Competition-quality ratings, scoring evidence, and recalibration evidence are producer-only. Profile edits preserve lifetime and season results; behavior/runtime changes create quiet analytical revisions while avatar and other presentation-only edits do not.
+
+Apply migrations, then backfill effective revisions once for existing agents:
+
+```bash
+bun run packages/api/src/scripts/backfill-agent-revisions.ts
+```
+
+In a deployed API container, run the bundled artifact while the API is stopped:
+
+```bash
+bun run dist/backfill-agent-revisions.js
+```
+
+Creating a season in the producer UI immediately makes it active. The same UI can close admission, inspect competition evidence, and finalize the crowns.
 
 For completed API-backed games, use the postgame MCP tools (`read_game_brief`, `read_jury_breakdown`, `read_player_game_summary`, `read_game_turning_points`, and `list_agent_games`) or the `/api/games/:id/postgame/*` REST mirrors before falling back to raw canonical event filters. They are compact, structured, canonical-event-derived views intended for LLM analysis of winners, jury splits, round summaries, player arcs, derived vote cohorts, highlighted eliminations, momentum, and turning points. `read_game_brief` v2 starts with an `executiveSummary`, includes round `headline` values and `gameMomentum`, and marks derived objects with confidence; derived vote cohorts are repeated shared vote outcomes, not confirmed alliance membership.
 

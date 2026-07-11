@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { AvatarCompletion, SavedAgent } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
 import { AgentAvatar } from "@/components/agent-avatar";
@@ -111,6 +112,12 @@ export function AgentList({
                   </div>
                 )}
                 <div className="flex gap-2">
+                  <Link
+                    href={`/dashboard/agents/${agent.id}`}
+                    className="influence-button-secondary text-xs px-3 py-1.5 rounded-lg"
+                  >
+                    Analyze
+                  </Link>
                   <button
                     onClick={() => onEdit(agent)}
                     className="influence-button-secondary text-xs px-3 py-1.5 rounded-lg"

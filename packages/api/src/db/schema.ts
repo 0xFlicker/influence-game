@@ -7,8 +7,10 @@
  */
 
 import {
+  type AnyPgColumn,
   bigint,
   check,
+  doublePrecision,
   foreignKey,
   index,
   integer,
@@ -154,6 +156,29 @@ export const users = pgTable("users", {
 
 export type GameStatus = "waiting" | "in_progress" | "completed" | "cancelled" | "suspended";
 export type TrackType = "custom" | "free";
+export type SeasonStatus = "active" | "closing" | "final";
+export type SeasonRatedPool = "free";
+
+export const seasons = pgTable("seasons", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  status: text("status").notNull().$type<SeasonStatus>().default("active"),
+  ratedPool: text("rated_pool").notNull().$type<SeasonRatedPool>().default("free"),
+  admissionStartsAt: text("admission_starts_at"),
+  admissionClosesAt: text("admission_closes_at"),
+  finalizedAt: text("finalized_at"),
+  createdById: text("created_by_id").references(() => users.id),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("seasons_one_active_pool_unique")
+    .on(table.ratedPool)
+    .where(sql`${table.status} = 'active'`),
+  index("seasons_status_created_idx").on(table.status, table.createdAt),
+  check("seasons_status_check", sql`${table.status} IN ('active', 'closing', 'final')`),
+  check("seasons_rated_pool_check", sql`${table.ratedPool} IN ('free')`),
+]);
 
 export const games = pgTable("games", {
   id: text("id").primaryKey(), // UUID
@@ -161,6 +186,7 @@ export const games = pgTable("games", {
   config: text("config").notNull(), // JSON-serialized GameConfig
   status: text("status").notNull().$type<GameStatus>().default("waiting"),
   trackType: text("track_type").notNull().$type<TrackType>().default("custom"),
+  seasonId: text("season_id").references(() => seasons.id),
   cognitiveArtifactCaptureVersion: integer("cognitive_artifact_capture_version").notNull().default(0),
   minPlayers: integer("min_players").notNull().default(4),
   maxPlayers: integer("max_players").notNull().default(12),
@@ -173,6 +199,7 @@ export const games = pgTable("games", {
     .default(sql`now()::text`),
 }, (table) => [
   index("games_created_by_id_idx").on(table.createdById),
+  index("games_season_id_status_idx").on(table.seasonId, table.status),
   index("games_status_ended_at_idx").on(table.status, table.endedAt),
   index("games_status_ended_created_idx").on(table.status, table.endedAt, table.createdAt),
 ]);
@@ -191,6 +218,8 @@ export const agentProfiles = pgTable("agent_profiles", {
   personality: text("personality").notNull(), // Personality prompt / description
   strategyStyle: text("strategy_style"), // Strategy hints
   personaKey: text("persona_key"), // Archetype key (honest, strategic, etc.)
+  currentRevisionId: text("current_revision_id")
+    .references((): AnyPgColumn => agentRevisions.id, { onDelete: "restrict" }),
   avatarUrl: text("avatar_url"),
   gamesPlayed: integer("games_played").notNull().default(0),
   gamesWon: integer("games_won").notNull().default(0),
@@ -204,6 +233,34 @@ export const agentProfiles = pgTable("agent_profiles", {
   index("agent_profiles_user_id_idx").on(table.userId),
   index("agent_profiles_name_idx").on(table.name),
   index("agent_profiles_name_id_idx").on(table.name, table.id),
+  index("agent_profiles_current_revision_idx").on(table.currentRevisionId),
+]);
+
+export type AgentRevisionTrigger = "initial_backfill" | "profile_create" | "profile_edit" | "runtime_policy_change";
+export type AgentRevisionMagnitude = "initial" | "small" | "material" | "execution";
+
+export const agentRevisions = pgTable("agent_revisions", {
+  id: text("id").primaryKey(),
+  agentProfileId: text("agent_profile_id")
+    .notNull()
+    .references(() => agentProfiles.id, { onDelete: "restrict" }),
+  ordinal: integer("ordinal").notNull(),
+  priorRevisionId: text("prior_revision_id")
+    .references((): AnyPgColumn => agentRevisions.id, { onDelete: "restrict" }),
+  trigger: text("trigger").notNull().$type<AgentRevisionTrigger>(),
+  magnitude: text("magnitude").notNull().$type<AgentRevisionMagnitude>(),
+  fingerprint: text("fingerprint").notNull(),
+  behaviorSnapshot: jsonb("behavior_snapshot").notNull().$type<Record<string, unknown>>(),
+  effectiveRuntimeSnapshot: jsonb("effective_runtime_snapshot").notNull().$type<Record<string, unknown>>(),
+  revisionPolicyVersion: text("revision_policy_version").notNull(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("agent_revisions_profile_ordinal_unique").on(table.agentProfileId, table.ordinal),
+  index("agent_revisions_profile_fingerprint_idx").on(table.agentProfileId, table.fingerprint),
+  index("agent_revisions_profile_created_idx").on(table.agentProfileId, table.createdAt),
+  check("agent_revisions_ordinal_check", sql`${table.ordinal} > 0`),
+  check("agent_revisions_trigger_check", sql`${table.trigger} IN ('initial_backfill', 'profile_create', 'profile_edit', 'runtime_policy_change')`),
+  check("agent_revisions_magnitude_check", sql`${table.magnitude} IN ('initial', 'small', 'material', 'execution')`),
 ]);
 
 export type AvatarGenerationPurpose = "agent_profile_completion";
@@ -300,6 +357,7 @@ export const gamePlayers = pgTable("game_players", {
     .references(() => games.id),
   userId: text("user_id").references(() => users.id),
   agentProfileId: text("agent_profile_id").references(() => agentProfiles.id),
+  agentRevisionId: text("agent_revision_id").references(() => agentRevisions.id, { onDelete: "restrict" }),
   persona: text("persona").notNull(), // JSON: { name, personality, strategyHints }
   agentConfig: text("agent_config").notNull(), // JSON: { model, temperature, etc. }
   joinedAt: text("joined_at")
@@ -309,6 +367,7 @@ export const gamePlayers = pgTable("game_players", {
   index("game_players_game_id_idx").on(table.gameId),
   index("game_players_user_id_idx").on(table.userId),
   index("game_players_agent_profile_id_idx").on(table.agentProfileId),
+  index("game_players_agent_revision_id_idx").on(table.agentRevisionId),
   index("game_players_agent_profile_game_id_idx").on(table.agentProfileId, table.gameId),
   index("game_players_user_game_id_idx").on(table.userId, table.gameId),
 ]);
@@ -356,6 +415,188 @@ export const gameResults = pgTable("game_results", {
     .notNull()
     .default(sql`now()::text`),
 });
+
+// ---------------------------------------------------------------------------
+// Dual Crown Competition Ledger
+// ---------------------------------------------------------------------------
+
+export type CompetitionEligibilityStatus = "eligible" | "ineligible";
+export type CompetitionRatingEventType = "initialization" | "revision_recalibration" | "game_result";
+
+export const agentCompetitionRatings = pgTable("agent_competition_ratings", {
+  agentProfileId: text("agent_profile_id")
+    .primaryKey()
+    .references(() => agentProfiles.id, { onDelete: "restrict" }),
+  effectiveRevisionId: text("effective_revision_id")
+    .notNull()
+    .references(() => agentRevisions.id, { onDelete: "restrict" }),
+  mu: doublePrecision("mu").notNull(),
+  sigma: doublePrecision("sigma").notNull(),
+  gamesPlayed: integer("games_played").notNull().default(0),
+  ratingPolicyVersion: text("rating_policy_version").notNull(),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  index("agent_competition_ratings_revision_idx").on(table.effectiveRevisionId),
+  check("agent_competition_ratings_mu_check", sql`${table.mu} NOT IN ('NaN'::float8, 'Infinity'::float8, '-Infinity'::float8)`),
+  check("agent_competition_ratings_sigma_check", sql`${table.sigma} NOT IN ('NaN'::float8, 'Infinity'::float8, '-Infinity'::float8) AND ${table.sigma} > 0`),
+  check("agent_competition_ratings_games_check", sql`${table.gamesPlayed} >= 0`),
+]);
+
+export const competitionRatingSnapshots = pgTable("competition_rating_snapshots", {
+  id: text("id").primaryKey(),
+  gameId: text("game_id").notNull()
+    .references(() => games.id, { onDelete: "restrict" }),
+  agentProfileId: text("agent_profile_id").notNull()
+    .references(() => agentProfiles.id, { onDelete: "restrict" }),
+  agentRevisionId: text("agent_revision_id").notNull()
+    .references(() => agentRevisions.id, { onDelete: "restrict" }),
+  mu: doublePrecision("mu").notNull(),
+  sigma: doublePrecision("sigma").notNull(),
+  ratingPolicyVersion: text("rating_policy_version").notNull(),
+  capturedAt: text("captured_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("competition_rating_snapshots_game_agent_unique")
+    .on(table.gameId, table.agentProfileId),
+  index("competition_rating_snapshots_game_idx").on(table.gameId),
+  check("competition_rating_snapshots_mu_check", sql`${table.mu} NOT IN ('NaN'::float8, 'Infinity'::float8, '-Infinity'::float8)`),
+  check("competition_rating_snapshots_sigma_check", sql`${table.sigma} NOT IN ('NaN'::float8, 'Infinity'::float8, '-Infinity'::float8) AND ${table.sigma} > 0`),
+]);
+
+export const competitionRatingEvents = pgTable("competition_rating_events", {
+  id: text("id").primaryKey(),
+  idempotencyKey: text("idempotency_key").notNull().unique(),
+  agentProfileId: text("agent_profile_id")
+    .notNull()
+    .references(() => agentProfiles.id, { onDelete: "restrict" }),
+  agentRevisionId: text("agent_revision_id")
+    .notNull()
+    .references(() => agentRevisions.id, { onDelete: "restrict" }),
+  seasonId: text("season_id").references(() => seasons.id, { onDelete: "restrict" }),
+  gameId: text("game_id").references(() => games.id, { onDelete: "restrict" }),
+  eventType: text("event_type").notNull().$type<CompetitionRatingEventType>(),
+  beforeMu: doublePrecision("before_mu"),
+  beforeSigma: doublePrecision("before_sigma"),
+  afterMu: doublePrecision("after_mu").notNull(),
+  afterSigma: doublePrecision("after_sigma").notNull(),
+  ratingPolicyVersion: text("rating_policy_version").notNull(),
+  revisionPolicyVersion: text("revision_policy_version"),
+  evidence: jsonb("evidence").notNull().$type<Record<string, unknown>>(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  index("competition_rating_events_agent_created_idx").on(table.agentProfileId, table.createdAt),
+  index("competition_rating_events_game_idx").on(table.gameId),
+  check("competition_rating_events_type_check", sql`${table.eventType} IN ('initialization', 'revision_recalibration', 'game_result')`),
+  check("competition_rating_events_before_pair_check", sql`(${table.beforeMu} IS NULL) = (${table.beforeSigma} IS NULL)`),
+  check("competition_rating_events_before_values_check", sql`
+    ${table.beforeMu} IS NULL
+    OR (${table.beforeMu} NOT IN ('NaN'::float8, 'Infinity'::float8, '-Infinity'::float8)
+      AND ${table.beforeSigma} NOT IN ('NaN'::float8, 'Infinity'::float8, '-Infinity'::float8)
+      AND ${table.beforeSigma} > 0)
+  `),
+  check("competition_rating_events_after_check", sql`
+    ${table.afterMu} NOT IN ('NaN'::float8, 'Infinity'::float8, '-Infinity'::float8)
+    AND ${table.afterSigma} NOT IN ('NaN'::float8, 'Infinity'::float8, '-Infinity'::float8)
+    AND ${table.afterSigma} > 0
+  `),
+]);
+
+export const competitionReceipts = pgTable("competition_receipts", {
+  id: text("id").primaryKey(),
+  seasonId: text("season_id")
+    .notNull()
+    .references(() => seasons.id, { onDelete: "restrict" }),
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id, { onDelete: "restrict" }),
+  ownerId: text("owner_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  agentProfileId: text("agent_profile_id")
+    .notNull()
+    .references(() => agentProfiles.id, { onDelete: "restrict" }),
+  agentRevisionId: text("agent_revision_id")
+    .notNull()
+    .references(() => agentRevisions.id, { onDelete: "restrict" }),
+  ownerDisplayNameSnapshot: text("owner_display_name_snapshot"),
+  agentNameSnapshot: text("agent_name_snapshot").notNull(),
+  eligibilityStatus: text("eligibility_status").notNull().$type<CompetitionEligibilityStatus>(),
+  eligibilityReason: text("eligibility_reason"),
+  lobbySize: integer("lobby_size").notNull(),
+  placement: integer("placement"),
+  basePoints: integer("base_points").notNull().default(0),
+  fieldBonus: integer("field_bonus").notNull().default(0),
+  totalPoints: integer("total_points").notNull().default(0),
+  accountRatingDelta: integer("account_rating_delta"),
+  scoringPolicyVersion: text("scoring_policy_version").notNull(),
+  earnedAt: text("earned_at").notNull(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("competition_receipts_season_game_agent_unique")
+    .on(table.seasonId, table.gameId, table.agentProfileId),
+  index("competition_receipts_season_agent_idx")
+    .on(table.seasonId, table.agentProfileId, table.earnedAt),
+  index("competition_receipts_season_owner_idx")
+    .on(table.seasonId, table.ownerId, table.earnedAt),
+  index("competition_receipts_game_idx").on(table.gameId),
+  check("competition_receipts_eligibility_check", sql`${table.eligibilityStatus} IN ('eligible', 'ineligible')`),
+  check("competition_receipts_lobby_size_check", sql`${table.lobbySize} >= 2`),
+  check("competition_receipts_points_check", sql`
+    ${table.basePoints} >= 0
+    AND ${table.fieldBonus} >= 0
+    AND ${table.totalPoints} = ${table.basePoints} + ${table.fieldBonus}
+  `),
+  check("competition_receipts_status_values_check", sql`
+    (${table.eligibilityStatus} = 'eligible'
+      AND ${table.placement} BETWEEN 1 AND ${table.lobbySize}
+      AND ${table.eligibilityReason} IS NULL)
+    OR (${table.eligibilityStatus} = 'ineligible'
+      AND ${table.basePoints} = 0
+      AND ${table.fieldBonus} = 0
+      AND ${table.totalPoints} = 0
+      AND ${table.eligibilityReason} IS NOT NULL)
+  `),
+]);
+
+export const competitionReceiptEvidence = pgTable("competition_receipt_evidence", {
+  receiptId: text("receipt_id")
+    .primaryKey()
+    .references(() => competitionReceipts.id, { onDelete: "restrict" }),
+  ratingPolicyVersion: text("rating_policy_version").notNull(),
+  pregameRating: jsonb("pregame_rating").notNull().$type<Record<string, unknown>>(),
+  postgameRating: jsonb("postgame_rating").$type<Record<string, unknown>>(),
+  opponentRatings: jsonb("opponent_ratings").notNull().$type<Array<Record<string, unknown>>>(),
+  fieldStrengthEvidence: jsonb("field_strength_evidence").notNull().$type<Record<string, unknown>>(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+});
+
+export const seasonHonors = pgTable("season_honors", {
+  id: text("id").primaryKey(),
+  seasonId: text("season_id")
+    .notNull()
+    .unique()
+    .references(() => seasons.id, { onDelete: "restrict" }),
+  agentChampionAgentProfileId: text("agent_champion_agent_profile_id")
+    .notNull()
+    .references(() => agentProfiles.id, { onDelete: "restrict" }),
+  agentChampionOwnerId: text("agent_champion_owner_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  agentChampionNameSnapshot: text("agent_champion_name_snapshot").notNull(),
+  agentChampionOwnerNameSnapshot: text("agent_champion_owner_name_snapshot"),
+  agentChampionPoints: integer("agent_champion_points").notNull(),
+  architectChampionOwnerId: text("architect_champion_owner_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  architectChampionOwnerNameSnapshot: text("architect_champion_owner_name_snapshot"),
+  architectChampionPointsHundredths: integer("architect_champion_points_hundredths").notNull(),
+  architectContributions: jsonb("architect_contributions").notNull().$type<Array<Record<string, unknown>>>(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  check("season_honors_points_check", sql`
+    ${table.agentChampionPoints} >= 0
+    AND ${table.architectChampionPointsHundredths} >= 0
+  `),
+]);
 
 // ---------------------------------------------------------------------------
 // Durable Game Run Kernel

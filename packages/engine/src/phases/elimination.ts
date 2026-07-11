@@ -76,6 +76,7 @@ export async function handleElimination(
   logger.logSystem(`ELIMINATED: ${eliminated.name}`, phase);
   ctx.diaryRoom.lastEliminatedName = eliminated.name;
   ctx.eliminationOrder.push(eliminated.name);
+  ctx.eliminationOrderPlayerIds?.push(eliminatedId);
   const transcriptThinking = transcriptThinkingFor(eliminatedAgent, lastMsgResponse.thinking, lastMsgResponse.reasoningContext);
   logger.logPublic(eliminatedId, lastMsgResponse.message, phase, transcriptThinking);
   logger.emitAgentTurn({

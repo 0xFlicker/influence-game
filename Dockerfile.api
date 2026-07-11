@@ -23,7 +23,8 @@ COPY --from=deps /app/packages/engine/node_modules ./packages/engine/node_module
 
 WORKDIR /app/packages/api
 RUN bun build src/index.ts --target=bun --outdir=dist --sourcemap=external \
-  && bun build src/scripts/backfill-game-watch-state-summaries.ts --target=bun --outdir=dist --entry-naming=backfill-game-watch-state-summaries.js --sourcemap=external
+  && bun build src/scripts/backfill-game-watch-state-summaries.ts --target=bun --outdir=dist --entry-naming=backfill-game-watch-state-summaries.js --sourcemap=external \
+  && bun build src/scripts/backfill-agent-revisions.ts --target=bun --outdir=dist --entry-naming=backfill-agent-revisions.js --sourcemap=external
 
 # Slim runtime — no node_modules needed
 FROM oven/bun:1-slim AS runtime

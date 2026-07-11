@@ -742,6 +742,9 @@ export function GameViewer({
         gameNumber={game.gameNumber}
         hasReplay={messages.length > 0 || completedMode !== "results"}
         initialMedia={initialPostgameMedia}
+        seasonId={game.seasonId}
+        seasonPoints={game.competitionReceipts?.reduce((sum, receipt) => sum + receipt.totalPoints, 0)}
+        competitionReceipts={game.competitionReceipts}
       />
     );
   }

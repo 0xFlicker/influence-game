@@ -82,9 +82,15 @@ const RULE_SECTIONS: GameMcpRulesSection[] = [
   },
   {
     id: "free-games",
-    title: "Free Games",
-    tags: ["free", "daily", "queue", "elo", "rating"],
-    body: "Daily free games draw queued agents at midnight UTC when enough accounts are queued. Free-track rating is account-level in the current backend, so MCP responses must not describe a true per-agent ELO unless that source is added later.",
+    title: "Free Games And Dual Crown Seasons",
+    tags: ["free", "daily", "queue", "elo", "rating", "season", "agent crown", "architect crown", "points"],
+    body: "Daily free games draw at most one queued agent per account and fill remaining seats with House agents. During a season, eligible games earn points on public Agent and Architect leaderboards. Wins and strong play matter, House agents cannot earn points or titles, and account ELO remains a separate player-level free-track signal that does not decide either crown.",
+  },
+  {
+    id: "agent-revisions",
+    title: "Agent Revisions",
+    tags: ["agent", "edit", "revision", "analysis", "stats"],
+    body: "Agent edits never reset career or season results. A change to effective strategy or runtime inputs creates an analytical revision for optional performance comparison; presentation-only changes do not. Revision and competition-quality internals stay out of ordinary edit flows.",
   },
   {
     id: "archetypes",
@@ -109,7 +115,7 @@ export function getGameMcpRules(): GameMcpRulesRead {
       archetypes: listGameMcpArchetypeSummaries({ includeStrategyHints: true }),
       ratingProvenance: {
         kind: "account-level-free-track",
-        note: "Current free-track ELO is account-level. Agent summaries may include agent games and wins, but should not claim a true per-agent ELO source unless one is implemented later.",
+        note: "Free-track ELO is account-level and separate from receipt-derived seasonal Agent and Architect championship points. Do not describe account ELO as per-agent ELO.",
       },
     },
   };

@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getPostgameMedia, type PublicPostgameMediaResponse } from "@/lib/api";
+import {
+  getPostgameMedia,
+  type CompetitionReceipt,
+  type PublicPostgameMediaResponse,
+} from "@/lib/api";
 import { completedGameModeHref, gameHighlightsHref } from "@/lib/game-links";
 import { PostgameMediaPlayer } from "./postgame-media-player";
 
@@ -11,6 +15,9 @@ interface CompletedGameEntryProps {
   gameNumber?: number;
   hasReplay: boolean;
   initialMedia?: PublicPostgameMediaResponse;
+  seasonId?: string;
+  seasonPoints?: number;
+  competitionReceipts?: CompetitionReceipt[];
 }
 
 export function postgameMediaStateCopy(
@@ -43,6 +50,9 @@ export function CompletedGameEntry({
   gameNumber,
   hasReplay,
   initialMedia,
+  seasonId,
+  seasonPoints,
+  competitionReceipts = [],
 }: CompletedGameEntryProps) {
   const [media, setMedia] = useState<PublicPostgameMediaResponse | undefined>(initialMedia);
   const [mediaLoading, setMediaLoading] = useState(initialMedia === undefined);
@@ -78,6 +88,17 @@ export function CompletedGameEntry({
       <p className="mt-3 max-w-lg text-sm text-white/50">
         Watch the House trailer, replay the game unspoiled, or inspect the full results.
       </p>
+      {seasonId && (
+        <Link
+          href={`/games/free?season=${encodeURIComponent(seasonId)}`}
+          className="mt-4 inline-flex self-center rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white/55 transition-colors hover:border-white/20 hover:text-white/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phase/60"
+        >
+          Rated season game{seasonPoints !== undefined ? ` · ${seasonPoints} points awarded` : ""}
+        </Link>
+      )}
+      {competitionReceipts.length > 0 && (
+        <SeasonReceiptSummary receipts={competitionReceipts} />
+      )}
 
       <div className="mt-6 text-left">
         {media?.status === "ready" ? (
@@ -122,6 +143,47 @@ export function CompletedGameEntry({
         </Link>
       </div>
     </section>
+  );
+}
+
+export function SeasonReceiptSummary({ receipts }: { receipts: CompetitionReceipt[] }) {
+  return (
+    <section aria-labelledby="season-receipts-title" className="influence-panel mt-5 w-full overflow-hidden rounded-xl text-left">
+      <div className="border-b border-border-active/60 px-4 py-3">
+        <h3 id="season-receipts-title" className="text-sm font-medium text-text-primary">Championship point receipts</h3>
+        <p className="influence-copy-muted mt-1 text-xs">Public placement points and bounded strong-field bonuses.</p>
+      </div>
+      <div className="divide-y divide-border-active/50">
+        {receipts.map((receipt) => (
+          <article key={`${receipt.gameId}:${receipt.agentId}`} className="grid gap-3 px-4 py-3 sm:grid-cols-[1fr_repeat(4,auto)] sm:items-center sm:gap-5">
+            <div>
+              <div className="text-sm font-medium text-text-primary">{receipt.agentName}</div>
+              <div className="influence-copy-muted text-xs">
+                {receipt.placement === null ? "Not eligible" : `Place ${receipt.placement} of ${receipt.lobbySize}`}
+              </div>
+            </div>
+            <ReceiptFact label="Base" value={String(receipt.basePoints)} />
+            <ReceiptFact label="Field" value={`+${receipt.fieldBonus}`} />
+            <ReceiptFact label="Total" value={String(receipt.totalPoints)} strong />
+            <ReceiptFact
+              label="Account ELO"
+              value={receipt.accountRatingDelta === null
+                ? "—"
+                : `${receipt.accountRatingDelta >= 0 ? "+" : ""}${receipt.accountRatingDelta}`}
+            />
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ReceiptFact({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="min-w-14">
+      <div className="influence-copy-muted text-[10px] uppercase tracking-wider">{label}</div>
+      <div className={`mt-0.5 font-mono text-sm ${strong ? "font-semibold text-text-primary" : "text-text-secondary"}`}>{value}</div>
+    </div>
   );
 }
 

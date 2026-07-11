@@ -88,6 +88,16 @@ Status legend:
 - Validation path: server-render a Highlights route with route-specific metadata from the same public projection as the browser page, without relying on client hydration or self-fetching through a public API URL; verify staging and local Docker/dev envs.
 - Suggested slice: design a deliberate server-side read pattern for public web projections, then migrate Highlights first. Do not invent per-page DB imports or duplicate projection logic in web.
 
+### R7. Retryable terminal game settlement
+
+- Status: `ready`
+- Consolidates: Dual Crown implementation review finding about terminal persistence and competition settlement recovery.
+- Sources: `packages/api/src/services/game-lifecycle.ts`, `packages/api/src/services/competition-completion.ts`, startup recovery handling for terminal checkpoints.
+- Signal: the engine can finish a game in memory and then fail while persisting its result, season points, hidden ratings, and account statistics. The enclosing database transaction correctly rolls back instead of leaving partial awards, but the terminal result is not retained as retryable work. Startup recovery refuses terminal checkpoints, so an interrupted or failed settlement has no supported replay path.
+- Concrete seam: terminal result persistence, game completion status, competition settlement idempotency keyed by game ID, startup recovery diagnostics, and producer/admin recovery commands.
+- Validation path: inject a settlement failure after the engine returns a winner; verify the exact terminal result survives, the game is visibly pending settlement, a retry completes it without replaying gameplay, and repeated retries cannot duplicate points, ratings, receipts, results, or profile counters.
+- Suggested slice: persist the terminal result before settlement, represent settlement as pending/completed, make settlement idempotent by game ID, and add a producer CLI or admin action to retry pending settlements. This preserves the result of a specific game; it does not freeze season rules or introduce player-facing ceremony.
+
 ## Blocked Backlog
 
 ### D1. Owner reclaim and restart orchestration

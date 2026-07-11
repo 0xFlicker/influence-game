@@ -58,6 +58,8 @@ import {
   tryRefreshGameWatchStateSummary,
 } from "../services/game-watch-state-summary.js";
 import { broadcastRaw } from "../services/ws-manager.js";
+import { prepareOwnedSeatAdmission, SeasonStateError } from "../services/seasons.js";
+import { getPublicGameCompetitionReceipts } from "../services/season-read-model.js";
 import { generateUniqueSlug } from "../lib/slug.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
@@ -272,6 +274,8 @@ export function createGameRoutes(db: DrizzleDB) {
         visibility: config.visibility ?? "public",
         viewerMode: config.viewerMode ?? "speedrun",
         trackType: game.trackType,
+        seasonId: game.seasonId ?? undefined,
+        rated: Boolean(game.seasonId),
         winner: watchState.winner?.name,
         errorInfo: publicErrorInfo(game.status, config),
         kernelHealth: kernelHealthByGameId.get(game.id),
@@ -322,6 +326,9 @@ export function createGameRoutes(db: DrizzleDB) {
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     const gameNumber = allGamesOrdered.findIndex((g) => g.id === game.id) + 1;
     const watchState = await buildGameWatchState(db, game);
+    const competition = game.seasonId
+      ? await getPublicGameCompetitionReceipts(db, game.seasonId, game.id)
+      : null;
 
     const detail = {
       id: game.id,
@@ -346,6 +353,9 @@ export function createGameRoutes(db: DrizzleDB) {
       modelLabel: modelLabelFromConfig(config),
       visibility: config.visibility ?? "public",
       viewerMode: config.viewerMode ?? "speedrun",
+      seasonId: game.seasonId ?? undefined,
+      rated: Boolean(game.seasonId),
+      competitionReceipts: competition?.receipts ?? [],
       winner: watchState.winner?.name,
       tokenUsage: result[0]?.tokenUsage ? JSON.parse(result[0].tokenUsage) : undefined,
       errorInfo: publicErrorInfo(game.status, config),
@@ -402,9 +412,11 @@ export function createGameRoutes(db: DrizzleDB) {
     // -----------------------------------------------------------------------
     let resolvedName: string;
     let resolvedPersonality: string;
+    let resolvedBackstory: string | null = null;
     let resolvedStrategyHints: string | null = strategyHints ?? null;
     let resolvedPersonaKey: string | null = personaKey ?? null;
     let resolvedProfileId: string | null = null;
+    let resolvedProfile: typeof schema.agentProfiles.$inferSelect | null = null;
 
     if (agentProfileId) {
       const profile = (await db
@@ -422,15 +434,21 @@ export function createGameRoutes(db: DrizzleDB) {
 
       resolvedName = profile.name;
       resolvedPersonality = profile.personality;
+      resolvedBackstory = profile.backstory;
       resolvedStrategyHints = profile.strategyStyle;
       resolvedPersonaKey = profile.personaKey;
       resolvedProfileId = profile.id;
+      resolvedProfile = profile;
     } else {
       if (!agentName || !personality) {
         return c.json({ error: "agentName and personality are required (or provide agentProfileId)" }, 400);
       }
       resolvedName = agentName;
       resolvedPersonality = personality;
+    }
+
+    if (game.seasonId && !resolvedProfile) {
+      return c.json({ error: "Rated games require an owned saved agent." }, 400);
     }
 
     // -----------------------------------------------------------------------
@@ -459,6 +477,7 @@ export function createGameRoutes(db: DrizzleDB) {
     const persona = {
       name: resolvedName,
       personality: resolvedPersonality,
+      backstory: resolvedBackstory,
       strategyHints: resolvedStrategyHints,
       personaKey: resolvedPersonaKey,
     };
@@ -468,15 +487,42 @@ export function createGameRoutes(db: DrizzleDB) {
       temperature: 0.9,
     };
 
-    await db.insert(schema.gamePlayers)
-      .values({
-        id: playerId,
-        gameId,
-        userId: joinUser?.id ?? null,
-        agentProfileId: resolvedProfileId,
-        persona: JSON.stringify(persona),
-        agentConfig: JSON.stringify(agentConfig),
+    try {
+      await db.transaction(async (tx) => {
+        const admission = resolvedProfile && joinUser
+          ? await prepareOwnedSeatAdmission(tx, {
+            gameId,
+            userId: joinUser.id,
+            profile: resolvedProfile,
+            temperature: agentConfig.temperature,
+          })
+          : null;
+        const admittedProfile = admission?.profile ?? resolvedProfile;
+        const persistedPersona = admittedProfile
+          ? {
+            name: admittedProfile.name,
+            personality: admittedProfile.personality,
+            backstory: admittedProfile.backstory,
+            strategyHints: admittedProfile.strategyStyle,
+            personaKey: admittedProfile.personaKey,
+          }
+          : persona;
+        await tx.insert(schema.gamePlayers).values({
+          id: playerId,
+          gameId,
+          userId: joinUser?.id ?? null,
+          agentProfileId: resolvedProfileId,
+          agentRevisionId: admission?.revisionId ?? null,
+          persona: JSON.stringify(persistedPersona),
+          agentConfig: JSON.stringify(agentConfig),
+        });
       });
+    } catch (error) {
+      if (error instanceof SeasonStateError) {
+        return c.json({ error: error.message }, error.code === "rated_roster_invalid" ? 409 : 400);
+      }
+      throw error;
+    }
     await tryRefreshGameWatchStateSummary(db, gameId, "player_joined");
 
     return c.json({ playerId }, 201);

@@ -305,6 +305,8 @@ export interface GameSummary {
   visibility: GameVisibility;
   viewerMode: ViewerMode;
   trackType?: TrackType;
+  seasonId?: string;
+  rated?: boolean;
   finalists?: [string, string];
   winner?: string;
   winnerPersona?: string;
@@ -1835,6 +1837,9 @@ export interface GameDetail {
   modelLabel?: string;
   visibility: GameVisibility;
   viewerMode: ViewerMode;
+  seasonId?: string;
+  rated?: boolean;
+  competitionReceipts?: CompetitionReceipt[];
   winner?: string;
   winnerPersona?: string;
   finalists?: [string, string];
@@ -2088,6 +2093,169 @@ export interface LeaderboardEntry {
   peakRating: number;
 }
 
+export interface SeasonIdentity {
+  id: string;
+  slug: string;
+  name: string;
+  status: "active" | "closing" | "final";
+  ratedPool: "free";
+  admissionStartsAt: string | null;
+  admissionClosesAt: string | null;
+  finalizedAt: string | null;
+}
+
+export interface AgentSeasonStanding {
+  rank: number;
+  agentId: string;
+  agentName: string;
+  ownerId: string;
+  ownerName: string | null;
+  totalPoints: number;
+  gamesPlayed: number;
+  wins: number;
+  runnerUpFinishes: number;
+  averageNormalizedPlacement: number;
+}
+
+export interface ArchitectSeasonStanding {
+  rank: number;
+  ownerId: string;
+  ownerName: string | null;
+  totalPointsHundredths: number;
+  wins: number;
+  contributions: Array<{
+    agentId: string;
+    agentName: string;
+    sourcePoints: number;
+    weightPercent: 100 | 50 | 25;
+    weightedPointsHundredths: number;
+  }>;
+}
+
+export interface SeasonDashboard {
+  schemaVersion: 1;
+  season: SeasonIdentity;
+  agentStandings: AgentSeasonStanding[];
+  architectStandings: ArchitectSeasonStanding[];
+  honors: null | {
+    agentChampion: { agentId: string; agentName: string; ownerId: string; ownerName: string | null; points: number };
+    architectChampion: {
+      ownerId: string;
+      ownerName: string | null;
+      pointsHundredths: number;
+      contributions: Array<Record<string, unknown>>;
+    };
+  };
+}
+
+export interface CompetitionReceipt {
+  gameId: string;
+  gameSlug: string | null;
+  agentId: string;
+  agentName: string;
+  ownerId: string;
+  ownerName: string | null;
+  lobbySize: number;
+  placement: number | null;
+  basePoints: number;
+  fieldBonus: number;
+  totalPoints: number;
+  eligibilityStatus: "eligible" | "ineligible";
+  eligibilityReason: string | null;
+  accountRatingDelta: number | null;
+  earnedAt: string;
+}
+
+export interface OwnedCompetitionReceipt extends CompetitionReceipt {
+  revisionId: string;
+}
+
+export interface AgentSeasonAnalysis {
+  schemaVersion: 1;
+  season: SeasonIdentity;
+  agent: { id: string; name: string };
+  summary: {
+    totalPoints: number;
+    gamesPlayed: number;
+    wins: number;
+    averagePlacement: number | null;
+    placementDistribution: Record<string, number>;
+  };
+  revisions: Array<{
+    revisionId: string;
+    ordinal: number;
+    gamesPlayed: number;
+    wins: number;
+    totalPoints: number;
+    averagePlacement: number | null;
+  }>;
+  receipts: OwnedCompetitionReceipt[];
+}
+
+export interface ProducerSeasonDiagnostics {
+  schemaVersion: 1;
+  seasonId: string;
+  season: {
+    status: SeasonIdentity["status"];
+  };
+  readiness: {
+    assignedGames: number;
+    nonTerminalGames: number;
+    unsettledOwnedSeats: number;
+    canFinalize: boolean;
+  };
+  ratings: Array<{
+    agentProfileId: string;
+    effectiveRevisionId: string;
+    mu: number;
+    sigma: number;
+    gamesPlayed: number;
+    ratingPolicyVersion: string;
+  }>;
+  ratingEvents: Array<{
+    id: string;
+    eventType: "initialization" | "revision_recalibration" | "game_result";
+    agentProfileId: string;
+    agentRevisionId: string;
+    beforeMu: number | null;
+    beforeSigma: number | null;
+    afterMu: number;
+    afterSigma: number;
+    ratingPolicyVersion: string;
+    revisionPolicyVersion: string | null;
+    evidence: Record<string, unknown>;
+    createdAt: string;
+  }>;
+  ratingSnapshots: Array<{
+    id: string;
+    gameId: string;
+    agentProfileId: string;
+    agentRevisionId: string;
+    mu: number;
+    sigma: number;
+    ratingPolicyVersion: string;
+    capturedAt: string;
+  }>;
+  receiptEvidence: Array<{
+    receiptId: string;
+    ratingPolicyVersion: string;
+    pregameRating: Record<string, unknown>;
+    postgameRating: Record<string, unknown> | null;
+    opponentRatings: Array<Record<string, unknown>>;
+    fieldStrengthEvidence: Record<string, unknown>;
+  }>;
+  revisions: Array<{
+    id: string;
+    agentProfileId: string;
+    ordinal: number;
+    magnitude: "initial" | "small" | "material" | "execution";
+    fingerprint: string;
+    behaviorSnapshot: Record<string, unknown>;
+    effectiveRuntimeSnapshot: Record<string, unknown>;
+    createdAt: string;
+  }>;
+}
+
 // Keep for backwards compat during transition
 export type FreeTrackLeaderboardEntry = LeaderboardEntry;
 
@@ -2136,6 +2304,62 @@ export async function leaveFreeQueue(): Promise<void> {
 
 export async function getFreeQueueLeaderboard(): Promise<LeaderboardEntry[]> {
   return apiFetch("/api/free-queue/leaderboard");
+}
+
+export async function listSeasons(): Promise<SeasonIdentity[]> {
+  const response = await apiFetch<{ schemaVersion: 1; seasons: SeasonIdentity[] }>("/api/seasons");
+  return response.seasons;
+}
+
+export async function getSeasonDashboard(idOrSlug: string): Promise<SeasonDashboard> {
+  return apiFetch(`/api/seasons/${encodeURIComponent(idOrSlug)}`);
+}
+
+export async function getAgentSeasonAnalysis(
+  seasonIdOrSlug: string,
+  agentId: string,
+): Promise<AgentSeasonAnalysis> {
+  return apiFetch(
+    `/api/seasons/${encodeURIComponent(seasonIdOrSlug)}/agents/${encodeURIComponent(agentId)}`,
+  );
+}
+
+export function agentSeasonExportUrl(
+  seasonIdOrSlug: string,
+  format: "json" | "csv",
+  agentId?: string,
+): string {
+  const query = new URLSearchParams({ format });
+  if (agentId) query.set("agentId", agentId);
+  return resolveApiUrl(`/api/seasons/${encodeURIComponent(seasonIdOrSlug)}/export?${query}`);
+}
+
+export async function getProducerSeasonDiagnostics(idOrSlug: string): Promise<ProducerSeasonDiagnostics> {
+  return apiFetch(`/api/admin/seasons/${encodeURIComponent(idOrSlug)}/diagnostics`);
+}
+
+export async function createAdminSeason(input: {
+  slug: string;
+  name: string;
+  admissionStartsAt?: string | null;
+  admissionClosesAt?: string | null;
+}): Promise<SeasonIdentity> {
+  const response = await apiFetch<{ schemaVersion: 1; season: SeasonIdentity }>("/api/admin/seasons", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return response.season;
+}
+
+export async function closeAdminSeason(id: string): Promise<SeasonIdentity> {
+  const response = await apiFetch<{ schemaVersion: 1; season: SeasonIdentity }>(`/api/admin/seasons/${id}/close`, {
+    method: "POST",
+  });
+  return response.season;
+}
+
+export async function finalizeAdminSeason(id: string): Promise<void> {
+  await apiFetch(`/api/admin/seasons/${id}/finalize`, { method: "POST" });
 }
 
 export async function getLeaderboard(): Promise<LeaderboardEntry[]> {

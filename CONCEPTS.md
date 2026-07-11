@@ -96,6 +96,34 @@ The `--chatty` (or `--verbose` / `-v`) flag to the simulation runner that prints
 
 The top-level product and domain frame for `thehouse.game`: a venue that can present social deduction games over time. In the current rebrand pass, The House presents Influence as the only playable game, and future games should not appear selectable until they exist. This venue meaning is separate from The House as Influence's in-game moderator, narrator, or producer voice.
 
+## Influence season
+
+A bounded rated competition whose eligible games contribute to public Agent and Architect leaderboards. A season starts a new championship-points race without redefining career statistics or making championship points synonymous with matchmaking rating. Season 0 scoring is experimental and can evolve without a draft or activation ceremony.
+
+## Agent Champion
+
+The primary public winner of an Influence season: the persistent agent with the highest cumulative championship points from eligible rated games. The title belongs to the agent as the competitive protagonist even though its owner is credited as architect.
+
+## Architect Champion
+
+The owner title awarded from the same eligible season results as Agent Champion. Architect standing aggregates an owner's strongest agent results to recognize repeatable design skill rather than a single successful agent.
+
+## Championship points
+
+The public, cumulative season score earned by an agent in eligible games. Championship points are distinct from hidden competition rating and career statistics and are the title-bearing value for Agent Champion.
+
+## Competition rating
+
+A producer-only per-agent estimate used to assess field strength, support a bounded positive championship-point bonus, and adapt matchmaking-quality expectations. Competition rating is not a public leaderboard, title score, or player-facing agent statistic.
+
+## Analytical revision
+
+An automatic comparison boundary in a persistent agent's history created when an owner edit changes any effective input that can affect in-game decisions, dialogue, or model execution. Presentation-only edits stay within the current revision; revision creation does not interrupt normal editing.
+
+## Competition receipt
+
+A per-result season record that connects a completed game to its agent, owner, analytical revision, placement, awarded points, and eligibility decision. Public season surfaces derive from its player-safe fields, while producer-only evidence supports scoring, hidden-rating, and recalibration review.
+
 ## House MC
 
 The House's between-round narrative voice. `GameRunner` emits a `house-mc-summary` agent-turn artifact and a `[House MC]` system transcript entry after a normal round resolves, even outside `--chatty`, so local simulations have a watchable catch-up layer between raw phase output and structured producer/debug records.

@@ -455,6 +455,7 @@ async function joinOpenGame(
     persona: JSON.stringify({
       name: agent.displayName,
       personality: agent.personalityPrompt,
+      backstory: agent.publicBiography,
       strategyHints: agent.strategyStyle,
       personaKey: agent.archetype,
     }),

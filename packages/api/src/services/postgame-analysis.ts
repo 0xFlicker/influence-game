@@ -258,11 +258,20 @@ export async function listPostgameAgentGames(
     };
   }
 
-  const diagnostics: Array<{ code: string; severity: "info" | "warning" | "error"; message: string }> = [{
-    code: "rating_delta_unavailable",
-    severity: "info",
-    message: "Per-game rating deltas are not persisted yet.",
-  }];
+  const diagnostics: Array<{ code: string; severity: "info" | "warning" | "error"; message: string }> = [];
+  const gameIds = [...new Set(matches.map((match) => match.gameId))];
+  const receiptRows = gameIds.length === 0
+    ? []
+    : await db.select({
+      gameId: schema.competitionReceipts.gameId,
+      agentProfileId: schema.competitionReceipts.agentProfileId,
+      accountRatingDelta: schema.competitionReceipts.accountRatingDelta,
+    }).from(schema.competitionReceipts)
+      .where(inArray(schema.competitionReceipts.gameId, gameIds));
+  const ratingDeltaByGameAgent = new Map(receiptRows.map((receipt) => [
+    `${receipt.gameId}:${receipt.agentProfileId}`,
+    receipt.accountRatingDelta,
+  ]));
   const games: PostgameAgentGameRow[] = [];
   for (const row of matches) {
     const analysis = await getPostgameAnalysis(db, row.gameId);
@@ -276,6 +285,9 @@ export async function listPostgameAgentGames(
     }
     const player = analysis.analysis.playerSummaries.find((entry) => entry.player.id === row.id);
     if (!player) continue;
+    const ratingDelta = row.agentProfileId
+      ? ratingDeltaByGameAgent.get(`${row.gameId}:${row.agentProfileId}`)
+      : undefined;
     const finalVote = analysis.analysis.summary.finalVote;
     const juryVotesReceived = finalVote.voteCounts.find((entry) => entry.player.id === row.id)?.votes;
     games.push({
@@ -293,7 +305,16 @@ export async function listPostgameAgentGames(
       finalistNames: analysis.analysis.summary.finalists.map((finalist) => finalist.name),
       ...(finalVote.status === "available" && { finalJuryVoteTotal: finalVote.totalVotes }),
       ...(juryVotesReceived !== undefined && { juryVotesReceived }),
+      ...(ratingDelta !== undefined && { ratingDelta }),
       diagnostics: analysis.analysis.diagnostics,
+    });
+  }
+
+  if (games.some((game) => game.ratingDelta === undefined || game.ratingDelta === null)) {
+    diagnostics.push({
+      code: "rating_delta_unavailable",
+      severity: "info",
+      message: "Account rating delta is unavailable for legacy, unrated, or ineligible games.",
     });
   }
 

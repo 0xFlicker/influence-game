@@ -68,7 +68,13 @@ function subscribeToE2EMode(): () => void {
 }
 
 function useIsE2EMode(): boolean {
-  return useSyncExternalStore(subscribeToE2EMode, isE2EMode, () => false);
+  const configured = process.env.NODE_ENV !== "production"
+    && process.env.NEXT_PUBLIC_E2E_AUTH === "true";
+  return useSyncExternalStore(
+    subscribeToE2EMode,
+    () => configured || isE2EMode(),
+    () => configured,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -195,7 +201,7 @@ function AuthSync({ children }: { children: React.ReactNode }) {
 // ---------------------------------------------------------------------------
 
 // Dummy Privy app ID for e2e mode (Privy SDK requires a non-empty string)
-const E2E_PRIVY_APP_ID = "e2e-dummy-privy-app-id";
+const E2E_PRIVY_APP_ID = "e2e-test-privy-app-id-001";
 
 export function Providers({
   children,

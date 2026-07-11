@@ -24,6 +24,7 @@ import { createProfileRoutes } from "./routes/profile.js";
 import { createCognitiveArtifactRoutes } from "./routes/cognitive-artifacts.js";
 import { createWatchIntelligenceRoutes } from "./routes/watch-intelligence.js";
 import { createPostgameMediaWorkerRoutes } from "./routes/postgame-media-worker.js";
+import { createSeasonRoutes } from "./routes/seasons.js";
 import { getStorageStatus } from "./lib/storage.js";
 import { getGameWatchState } from "./services/game-watch-state.js";
 import { recoverGamesOnStartup } from "./services/game-lifecycle.js";
@@ -219,6 +220,10 @@ app.route("/", adminRoutes);
 // Free game queue routes
 const freeQueueRoutes = createFreeQueueRoutes(db);
 app.route("/", freeQueueRoutes);
+
+// Dual Crown seasons and competition data
+const seasonRoutes = createSeasonRoutes(db);
+app.route("/", seasonRoutes);
 
 // Upload routes (presigned URL generation for PFPs)
 const uploadRoutes = createUploadRoutes(db);

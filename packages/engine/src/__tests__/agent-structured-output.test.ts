@@ -268,6 +268,33 @@ function makeRejectingOpenAIStub(requests: Array<Record<string, unknown>>, error
 }
 
 describe("InfluenceAgent structured output mode", () => {
+  it("passes owner-authored runtime inputs into prompts and supported model requests", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeOpenAIStub(requests),
+      "gpt-4o-mini",
+      "A retired negotiator who remembers every promise.",
+      undefined,
+      {
+        personalityPrompt: "Quietly funny, patient, and exact.",
+        strategyInstructions: "Build trust, then compare private commitments with public votes.",
+        temperature: 0.42,
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getVotes(makeContext());
+
+    const messages = requests[0]?.messages as Array<{ role: string; content: string }>;
+    expect(messages[0]?.content).toContain("A retired negotiator who remembers every promise.");
+    expect(messages[0]?.content).toContain("Quietly funny, patient, and exact.");
+    expect(messages[0]?.content).toContain("Build trust, then compare private commitments with public votes.");
+    expect(requests[0]?.temperature).toBe(0.42);
+  });
+
   it("uses named tool choice by default", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(

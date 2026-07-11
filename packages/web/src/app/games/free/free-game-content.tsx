@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
 import {
@@ -10,8 +10,12 @@ import {
   joinFreeQueue,
   leaveFreeQueue,
   listAgents,
+  listSeasons,
+  getSeasonDashboard,
   type FreeQueueStatus,
   type LeaderboardEntry,
+  type SeasonDashboard,
+  type SeasonIdentity,
   type SavedAgent,
   type GameStatus,
 } from "@/lib/api";
@@ -351,6 +355,168 @@ function Leaderboard({
   );
 }
 
+export function SeasonStandings({
+  dashboard,
+  loading,
+  seasons,
+  onSelectSeason,
+}: {
+  dashboard: SeasonDashboard | null;
+  loading: boolean;
+  seasons: SeasonIdentity[];
+  onSelectSeason: (slug: string) => void;
+}) {
+  const [tab, setTab] = useState<"agents" | "architects">("agents");
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const tabs = ["agents", "architects"] as const;
+
+  function moveTab(current: typeof tab, direction: -1 | 1) {
+    const currentIndex = tabs.indexOf(current);
+    const nextIndex = (currentIndex + direction + tabs.length) % tabs.length;
+    const next = tabs[nextIndex]!;
+    setTab(next);
+    tabRefs.current[nextIndex]?.focus();
+  }
+
+  if (loading) {
+    return <div className="influence-empty-state rounded-xl p-8 text-center text-sm">Loading season standings...</div>;
+  }
+  if (!dashboard) {
+    return (
+      <div className="influence-empty-state rounded-xl p-8 text-center">
+        <p className="text-sm text-text-primary">No championship season is published yet.</p>
+        <p className="influence-copy-muted mt-1 text-xs">Daily games still run; their account rating remains available below.</p>
+      </div>
+    );
+  }
+
+  const empty = tab === "agents"
+    ? dashboard.agentStandings.length === 0
+    : dashboard.architectStandings.length === 0;
+  return (
+    <div className="influence-panel overflow-hidden rounded-xl">
+      <div className="flex flex-col gap-4 border-b border-border-active/60 px-5 py-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-phase">
+            {dashboard.season.status === "active" ? "Season live" : dashboard.season.status}
+          </p>
+          <h2 className="mt-1 text-xl font-semibold text-text-primary">{dashboard.season.name}</h2>
+          <p className="influence-copy-muted mt-1 text-xs">Wins lead. Every eligible finish adds to the ledger.</p>
+          {seasons.length > 1 && (
+            <label className="mt-3 inline-flex items-center gap-2 text-xs influence-copy-muted">
+              Season
+              <select
+                value={dashboard.season.slug}
+                onChange={(event) => onSelectSeason(event.target.value)}
+                className="rounded-md border border-border-active bg-surface-raised px-2 py-1.5 text-xs text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-phase/70"
+              >
+                {seasons.map((season) => <option key={season.id} value={season.slug}>{season.name} · {season.status}</option>)}
+              </select>
+            </label>
+          )}
+        </div>
+        <div className="inline-flex rounded-lg border border-border-active bg-black/20 p-1" role="tablist" aria-label="Championship standings">
+          {tabs.map((value, index) => (
+            <button
+              key={value}
+              ref={(element) => { tabRefs.current[index] = element; }}
+              type="button"
+              role="tab"
+              aria-selected={tab === value}
+              aria-controls={`season-${value}-panel`}
+              id={`season-${value}-tab`}
+              tabIndex={tab === value ? 0 : -1}
+              onClick={() => setTab(value)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft") { event.preventDefault(); moveTab(value, -1); }
+                if (event.key === "ArrowRight") { event.preventDefault(); moveTab(value, 1); }
+              }}
+              className="rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phase/70 data-[active=true]:bg-white/10 data-[active=true]:text-text-primary text-text-secondary"
+              data-active={tab === value}
+            >
+              {value === "agents" ? "Agent Crown" : "Architect Crown"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {dashboard.honors && (
+        <div className="grid gap-px border-b border-border-active/60 bg-border-active sm:grid-cols-2">
+          <CrownHonor
+            label="Agent Champion"
+            winner={dashboard.honors.agentChampion.agentName}
+            detail={`${dashboard.honors.agentChampion.points} points · ${dashboard.honors.agentChampion.ownerName ?? "Anonymous architect"}`}
+          />
+          <CrownHonor
+            label="Architect Champion"
+            winner={dashboard.honors.architectChampion.ownerName ?? "Anonymous architect"}
+            detail={`${(dashboard.honors.architectChampion.pointsHundredths / 100).toFixed(2)} weighted points${dashboard.honors.agentChampion.ownerId === dashboard.honors.architectChampion.ownerId ? " · Dual Crown sweep" : ""}`}
+          />
+        </div>
+      )}
+
+      {empty ? (
+        <div className="p-8 text-center text-sm influence-copy-muted">No eligible results in this season yet.</div>
+      ) : tab === "agents" ? (
+        <div id="season-agents-panel" className="overflow-x-auto" role="tabpanel" aria-labelledby="season-agents-tab">
+          <table className="w-full min-w-[640px]">
+            <thead><tr className="border-b border-border-active/60">
+              {['Rank', 'Agent', 'Points', 'Wins', 'Games', 'Finish score'].map((label) => (
+                <th key={label} className="influence-table-header px-4 py-3 text-left text-xs font-medium">{label}</th>
+              ))}
+            </tr></thead>
+            <tbody>{dashboard.agentStandings.map((standing) => (
+              <tr key={standing.agentId} className="influence-table-row group">
+                <td className="px-4 py-3 font-mono text-lg text-white/45" aria-label={`Rank ${standing.rank}`}>{String(standing.rank).padStart(2, '0')}</td>
+                <td className="px-4 py-3">
+                  <span className="text-sm font-medium text-text-primary">{standing.agentName}</span>
+                  <div className="influence-copy-muted text-xs">{standing.ownerName ?? "Anonymous architect"}</div>
+                </td>
+                <td className="px-4 py-3 font-mono text-base font-semibold text-text-primary">{standing.totalPoints}</td>
+                <td className="px-4 py-3 text-sm influence-copy">{standing.wins}</td>
+                <td className="px-4 py-3 text-sm influence-copy-muted">{standing.gamesPlayed}</td>
+                <td className="px-4 py-3 text-sm influence-copy-muted">{(standing.averageNormalizedPlacement * 100).toFixed(0)}%</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      ) : (
+        <div id="season-architects-panel" className="divide-y divide-border-active/50" role="tabpanel" aria-labelledby="season-architects-tab">
+          {dashboard.architectStandings.map((standing) => (
+            <article key={standing.ownerId} className="group grid gap-3 px-5 py-4 transition-colors hover:bg-white/[0.025] sm:grid-cols-[3rem_1fr_auto] sm:items-center">
+              <div className="font-mono text-lg text-white/45" aria-label={`Rank ${standing.rank}`}>{String(standing.rank).padStart(2, '0')}</div>
+              <div>
+                <h3 className="text-sm font-medium text-text-primary">{standing.ownerName ?? "Anonymous architect"}</h3>
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                  {standing.contributions.map((item) => (
+                    <span key={item.agentId} className="text-xs influence-copy-muted">
+                      {item.agentName} <span className="font-mono text-white/55">{item.sourcePoints} × {item.weightPercent}%</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="text-left sm:text-right">
+                <div className="font-mono text-lg font-semibold text-text-primary">{(standing.totalPointsHundredths / 100).toFixed(2)}</div>
+                <div className="influence-copy-muted text-[11px] uppercase tracking-wider">weighted points</div>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CrownHonor({ label, winner, detail }: { label: string; winner: string; detail: string }) {
+  return (
+    <div className="bg-surface px-5 py-4">
+      <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-phase">{label}</div>
+      <div className="mt-1 text-base font-semibold text-text-primary">{winner}</div>
+      <div className="influence-copy-muted mt-1 text-xs">{detail}</div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
@@ -369,6 +535,10 @@ export function FreeGameContent() {
   const [leaderboardLoading, setLeaderboardLoading] = useState(true);
   const [queueError, setQueueError] = useState<string | null>(null);
   const [leaderboardError, setLeaderboardError] = useState<string | null>(null);
+  const [seasonDashboard, setSeasonDashboard] = useState<SeasonDashboard | null>(null);
+  const [seasons, setSeasons] = useState<SeasonIdentity[]>([]);
+  const [seasonLoading, setSeasonLoading] = useState(true);
+  const [seasonError, setSeasonError] = useState<string | null>(null);
   const [agentsError, setAgentsError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -401,6 +571,36 @@ export function FreeGameContent() {
     }
   }, []);
 
+  const fetchSeason = useCallback(async (requestedSlug?: string) => {
+    try {
+      const nextSeasons = await listSeasons();
+      setSeasons(nextSeasons);
+      const urlSelection = requestedSlug
+        ?? (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("season") ?? undefined : undefined);
+      const selected = nextSeasons.find((season) => season.slug === urlSelection || season.id === urlSelection)
+        ?? nextSeasons.find((season) => season.status === "active")
+        ?? nextSeasons.find((season) => season.status === "closing")
+        ?? nextSeasons.find((season) => season.status === "final")
+        ?? nextSeasons[0];
+      setSeasonDashboard(selected ? await getSeasonDashboard(selected.slug) : null);
+      setSeasonError(null);
+    } catch (err) {
+      console.warn("[FreeGameContent] Failed to load season standings:", err);
+      setSeasonDashboard(null);
+      setSeasonError("Failed to load season standings.");
+    } finally {
+      setSeasonLoading(false);
+    }
+  }, []);
+
+  function selectSeason(slug: string) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("season", slug);
+    window.history.replaceState({}, "", url);
+    setSeasonLoading(true);
+    void fetchSeason(slug);
+  }
+
   const fetchAgents = useCallback(async () => {
     if (!getAuthToken()) return;
     try {
@@ -417,11 +617,13 @@ export function FreeGameContent() {
   useEffect(() => {
     fetchQueueStatus();
     fetchLeaderboard();
+    fetchSeason();
     fetchAgents();
 
     const interval = setInterval(() => {
       fetchQueueStatus();
       fetchLeaderboard();
+      fetchSeason();
     }, 15000);
 
     const onSessionReady = () => {
@@ -434,7 +636,7 @@ export function FreeGameContent() {
       clearInterval(interval);
       window.removeEventListener("auth:session-ready", onSessionReady);
     };
-  }, [fetchQueueStatus, fetchLeaderboard, fetchAgents]);
+  }, [fetchQueueStatus, fetchLeaderboard, fetchSeason, fetchAgents]);
 
   async function handleJoin(agentProfileId: string) {
     setActionLoading(true);
@@ -522,19 +724,35 @@ export function FreeGameContent() {
       {/* Today's Game */}
       <TodayGameSection todayGame={queueStatus?.todayGame ?? null} />
 
-      {/* Leaderboard */}
+      {/* Championship standings */}
       <section>
         <h2 className="influence-section-title mb-3">
-          {ACTIVE_GAME.name} Free Track Leaderboard
+          Dual Crown Championship
         </h2>
-        {leaderboardError && !leaderboardLoading ? (
+        {seasonError && !seasonLoading ? (
           <div className="rounded-xl p-8 text-center border border-red-400/30 bg-red-400/10">
-            <p className="text-red-400 text-sm">{leaderboardError}</p>
+            <p className="text-red-400 text-sm">{seasonError}</p>
           </div>
         ) : (
-          <Leaderboard entries={leaderboard} loading={leaderboardLoading} />
+          <SeasonStandings
+            dashboard={seasonDashboard}
+            loading={seasonLoading}
+            seasons={seasons}
+            onSelectSeason={selectSeason}
+          />
         )}
       </section>
+
+      <details className="group">
+        <summary className="cursor-pointer list-none influence-copy-muted text-xs transition-colors hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-phase/70">
+          Account free-track ELO <span aria-hidden="true" className="ml-1 group-open:hidden">+</span><span aria-hidden="true" className="ml-1 hidden group-open:inline">−</span>
+        </summary>
+        <div className="mt-3">
+          {leaderboardError && !leaderboardLoading ? (
+            <div className="rounded-xl p-6 text-center border border-red-400/30 bg-red-400/10"><p className="text-red-400 text-sm">{leaderboardError}</p></div>
+          ) : <Leaderboard entries={leaderboard} loading={leaderboardLoading} />}
+        </div>
+      </details>
     </div>
   );
 }

@@ -16,6 +16,10 @@ import {
   isUserSelectableAgentArchetype,
   type AgentArchetypeKey,
 } from "./agent-archetypes.js";
+import {
+  ensureAgentRevisionInTransaction,
+  resolveFreeTrackEffectiveRuntimeSnapshot,
+} from "./agent-revisions.js";
 
 const DEFAULT_AGENT_LIMIT = 50;
 const MAX_AGENT_LIMIT = 100;
@@ -106,6 +110,29 @@ export interface SearchOwnedAgentsInput extends AgentProfileManagementContext {
 
 export type CreateOwnedAgentInput = Record<string, unknown>;
 export type UpdateOwnedAgentInput = Record<string, unknown>;
+
+export interface CreateAgentProfileMutationInput {
+  name: unknown;
+  personality: unknown;
+  backstory?: unknown;
+  strategyStyle?: unknown;
+  personaKey?: unknown;
+  avatarUrl?: unknown;
+}
+
+export interface UpdateAgentProfileMutationInput {
+  name?: unknown;
+  personality?: unknown;
+  backstory?: unknown;
+  strategyStyle?: unknown;
+  personaKey?: unknown;
+  avatarUrl?: unknown;
+}
+
+export interface AgentProfileMutationRead {
+  profile: typeof schema.agentProfiles.$inferSelect;
+  revisionCreated: boolean;
+}
 
 export interface AccountRatingSummary {
   kind: "account-level-free-track";
@@ -270,6 +297,140 @@ export async function searchOwnedAgents(
   };
 }
 
+export async function createOwnedAgentProfile(
+  db: DrizzleDB,
+  context: AgentProfileManagementContext,
+  input: CreateAgentProfileMutationInput,
+): Promise<AgentProfileMutationRead> {
+  await getAccountRating(db, context.userId);
+  const name = requiredStringField(input.name, "name", MAX_DISPLAY_NAME_LENGTH);
+  const personality = requiredStringField(
+    input.personality,
+    "personality",
+    MAX_PERSONALITY_PROMPT_LENGTH,
+  );
+  const backstory = input.backstory === undefined
+    ? null
+    : optionalStringField(input.backstory, "backstory", MAX_PUBLIC_BIOGRAPHY_LENGTH);
+  const strategyStyle = input.strategyStyle === undefined
+    ? null
+    : optionalStringField(input.strategyStyle, "strategyStyle", MAX_STRATEGY_STYLE_LENGTH);
+  const personaKey = input.personaKey === undefined || input.personaKey === null
+    ? null
+    : optionalArchetype(input.personaKey);
+  const avatarUrl = normalizeAgentAvatarUrlInput(input.avatarUrl, context.publicBaseUrl);
+  if (!avatarUrl.ok) {
+    throw new AgentProfileManagementError("invalid_agent_input", avatarUrl.error, 400);
+  }
+
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  const result = await db.transaction(async (tx) => {
+    const profile = (await tx.insert(schema.agentProfiles).values({
+      id,
+      userId: context.userId,
+      name,
+      backstory,
+      personality,
+      strategyStyle,
+      personaKey,
+      avatarUrl: avatarUrl.value ?? null,
+      gamesPlayed: 0,
+      gamesWon: 0,
+      createdAt: now,
+      updatedAt: now,
+    }).returning())[0];
+    if (!profile) throw new Error("Agent profile insert returned no row");
+    const revision = await ensureAgentRevisionInTransaction(tx, {
+      profile,
+      effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile),
+      trigger: "profile_create",
+    });
+    return { profile, revisionCreated: revision.created };
+  });
+
+  if (result.profile.avatarUrl) {
+    await recordAvatarChange(db, {
+      userId: context.userId,
+      agentProfileId: result.profile.id,
+      source: context.avatarChangeSource ?? "mcp_provided_avatar",
+      status: "completed",
+      previousAvatarUrl: null,
+      newAvatarUrl: result.profile.avatarUrl,
+    });
+  }
+  return result;
+}
+
+export async function updateOwnedAgentProfile(
+  db: DrizzleDB,
+  context: AgentProfileManagementContext,
+  agentId: string,
+  input: UpdateAgentProfileMutationInput,
+): Promise<AgentProfileMutationRead> {
+  const existing = await requireOwnedAgentProfile(db, context.userId, agentId);
+  const updates: Partial<typeof schema.agentProfiles.$inferInsert> = {
+    updatedAt: new Date().toISOString(),
+  };
+  if (input.name !== undefined) {
+    updates.name = requiredStringField(input.name, "name", MAX_DISPLAY_NAME_LENGTH);
+  }
+  if (input.personality !== undefined) {
+    updates.personality = requiredStringField(
+      input.personality,
+      "personality",
+      MAX_PERSONALITY_PROMPT_LENGTH,
+    );
+  }
+  if (input.backstory !== undefined) {
+    updates.backstory = optionalStringField(input.backstory, "backstory", MAX_PUBLIC_BIOGRAPHY_LENGTH);
+  }
+  if (input.strategyStyle !== undefined) {
+    updates.strategyStyle = optionalStringField(input.strategyStyle, "strategyStyle", MAX_STRATEGY_STYLE_LENGTH);
+  }
+  if (input.personaKey !== undefined) {
+    updates.personaKey = input.personaKey === null ? null : optionalArchetype(input.personaKey);
+  }
+  if (input.avatarUrl !== undefined) {
+    const avatarUrl = normalizeAgentAvatarUrlInput(input.avatarUrl, context.publicBaseUrl);
+    if (!avatarUrl.ok) {
+      throw new AgentProfileManagementError("invalid_agent_input", avatarUrl.error, 400);
+    }
+    updates.avatarUrl = avatarUrl.value ?? null;
+  }
+
+  const result = await db.transaction(async (tx) => {
+    const profile = (await tx.update(schema.agentProfiles)
+      .set(updates)
+      .where(and(
+        eq(schema.agentProfiles.id, agentId),
+        eq(schema.agentProfiles.userId, context.userId),
+      ))
+      .returning())[0];
+    if (!profile) {
+      throw new AgentProfileManagementError("agent_not_found", "Agent not found.", 404, { agentId });
+    }
+    const revision = await ensureAgentRevisionInTransaction(tx, {
+      profile,
+      effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile),
+      trigger: "profile_edit",
+    });
+    return { profile, revisionCreated: revision.created };
+  });
+
+  if (input.avatarUrl !== undefined && result.profile.avatarUrl !== existing.avatarUrl) {
+    await recordAvatarChange(db, {
+      userId: context.userId,
+      agentProfileId: agentId,
+      source: context.avatarChangeSource ?? "mcp_update",
+      status: "completed",
+      previousAvatarUrl: existing.avatarUrl,
+      newAvatarUrl: result.profile.avatarUrl,
+    });
+  }
+  return result;
+}
+
 export async function createOwnedAgent(
   db: DrizzleDB,
   context: AgentProfileManagementContext,
@@ -291,46 +452,25 @@ export async function createOwnedAgent(
     throw new AgentProfileManagementError("invalid_agent_input", avatarUrl.error, 400);
   }
 
-  await getAccountRating(db, context.userId);
-
-  const id = randomUUID();
-  const now = new Date().toISOString();
-  await db.insert(schema.agentProfiles).values({
-    id,
-    userId: context.userId,
+  const { profile } = await createOwnedAgentProfile(db, context, {
     name: displayName,
     backstory: publicBiography,
     personality: personalityPrompt,
     strategyStyle,
     personaKey: archetype,
-    avatarUrl: avatarUrl.value ?? null,
-    gamesPlayed: 0,
-    gamesWon: 0,
-    createdAt: now,
-    updatedAt: now,
+    avatarUrl: avatarUrl.value,
   });
 
-  if (avatarUrl.value) {
-    await recordAvatarChange(db, {
-      userId: context.userId,
-      agentProfileId: id,
-      source: context.avatarChangeSource ?? "mcp_provided_avatar",
-      status: "completed",
-      previousAvatarUrl: null,
-      newAvatarUrl: avatarUrl.value,
-    });
-  }
-
-  const avatarCompletion = avatarUrl.value
+  const avatarCompletion = profile.avatarUrl
     ? {
         status: "already_provided" as const,
-        avatarUrl: avatarUrl.value,
+        avatarUrl: profile.avatarUrl,
         reason: "Agent already has an avatar.",
       }
-    : await maybeRequestAvatarCompletion(db, context, id);
+    : await maybeRequestAvatarCompletion(db, context, profile.id);
 
   return {
-    ...(await getOwnedAgent(db, { userId: context.userId, agentId: id })),
+    ...(await getOwnedAgent(db, { userId: context.userId, agentId: profile.id })),
     message: "Agent created.",
     ...(avatarCompletion && { avatarCompletion }),
   };
@@ -344,11 +484,8 @@ export async function updateOwnedAgent(
   rejectUnsupportedFields(input, UPDATE_AGENT_FIELDS);
 
   const agentId = requiredStringField(input.agentId, "agentId", 200);
-  const existing = await requireOwnedAgentProfile(db, context.userId, agentId);
-
-  const updates: Record<string, unknown> = {
-    updatedAt: new Date().toISOString(),
-  };
+  await requireOwnedAgentProfile(db, context.userId, agentId);
+  const updates: UpdateAgentProfileMutationInput = {};
 
   if (input.displayName !== undefined) {
     updates.name = requiredStringField(input.displayName, "displayName", MAX_DISPLAY_NAME_LENGTH);
@@ -376,30 +513,7 @@ export async function updateOwnedAgent(
     }
     updates.avatarUrl = avatarUrl.value ?? null;
   }
-
-  if (profileIdentityChanged(existing, updates) && existing.gamesPlayed > 0) {
-    updates.gamesPlayed = 0;
-    updates.gamesWon = 0;
-  }
-
-  await db
-    .update(schema.agentProfiles)
-    .set(updates)
-    .where(and(
-      eq(schema.agentProfiles.id, agentId),
-      eq(schema.agentProfiles.userId, context.userId),
-    ));
-
-  if (input.avatarUrl !== undefined && updates.avatarUrl !== existing.avatarUrl) {
-    await recordAvatarChange(db, {
-      userId: context.userId,
-      agentProfileId: agentId,
-      source: context.avatarChangeSource ?? "mcp_update",
-      status: "completed",
-      previousAvatarUrl: existing.avatarUrl,
-      newAvatarUrl: updates.avatarUrl as string | null,
-    });
-  }
+  await updateOwnedAgentProfile(db, context, agentId, updates);
 
   return {
     ...(await getOwnedAgent(db, { userId: context.userId, agentId })),
@@ -718,19 +832,6 @@ function invalidArchetypeError(): AgentProfileManagementError {
     `Invalid archetype. Must be one of: ${formatUserSelectableAgentArchetypeKeys()}.`,
     400,
     { supportedArchetypes: formatUserSelectableAgentArchetypeKeys().split(", ") },
-  );
-}
-
-function profileIdentityChanged(
-  existing: AgentProfileRow,
-  updates: Record<string, unknown>,
-): boolean {
-  return (
-    (updates.name !== undefined && updates.name !== existing.name) ||
-    (updates.personality !== undefined && updates.personality !== existing.personality) ||
-    (updates.personaKey !== undefined && updates.personaKey !== existing.personaKey) ||
-    (updates.backstory !== undefined && updates.backstory !== existing.backstory) ||
-    (updates.strategyStyle !== undefined && updates.strategyStyle !== existing.strategyStyle)
   );
 }
 

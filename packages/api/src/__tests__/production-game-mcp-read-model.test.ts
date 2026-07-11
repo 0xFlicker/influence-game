@@ -101,6 +101,7 @@ describe("ProductionGameMcpReadModel", () => {
     expect(games.canonicalGameFacts.games[0]).toMatchObject({
       id: gameId,
       slug: "mcp-read-model-game",
+      rated: false,
       eventLog: {
         status: "complete",
         rowCount: events.length,

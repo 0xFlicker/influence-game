@@ -40,6 +40,14 @@ import {
 } from "../services/postgame-analysis.js";
 import type { GameMcpAuthContext } from "./auth.js";
 import { resolveGamesMcpClaims } from "./claims.js";
+import {
+  exportOwnedSeasonReceipts,
+  getOwnedAgentSeasonAnalysis,
+  getProducerSeasonDiagnostics,
+  getPublicGameCompetitionReceipts,
+  getPublicSeasonDashboard,
+  listPublicSeasons,
+} from "../services/season-read-model.js";
 
 const DEFAULT_EVENT_LIMIT = 50;
 const MAX_EVENT_LIMIT = 200;
@@ -57,6 +65,8 @@ export interface ProductionGameMcpGameIdentity {
   slug?: string;
   status: string;
   trackType: string;
+  rated: boolean;
+  seasonId?: string;
   createdAt: string;
   startedAt?: string;
   endedAt?: string;
@@ -282,6 +292,62 @@ export class ProductionGameMcpReadModel {
     private readonly cognitiveArtifacts = new CognitiveArtifactReadModel(db),
   ) {}
 
+  async listSeasons(): Promise<{ schemaVersion: 1; seasons: Awaited<ReturnType<typeof listPublicSeasons>> }> {
+    return { schemaVersion: 1, seasons: await listPublicSeasons(this.db) };
+  }
+
+  async readSeason(seasonIdOrSlug: string) {
+    const season = await getPublicSeasonDashboard(this.db, seasonIdOrSlug);
+    if (!season) throw new Error("Season not found");
+    return season;
+  }
+
+  async readSeasonGameReceipts(seasonIdOrSlug: string, gameIdOrSlug: string) {
+    const result = await getPublicGameCompetitionReceipts(this.db, seasonIdOrSlug, gameIdOrSlug);
+    if (!result) throw new Error("Season or game not found");
+    return { schemaVersion: 1 as const, ...result };
+  }
+
+  async readOwnedAgentSeason(
+    seasonIdOrSlug: string,
+    agentId: string,
+    access: ProductionGameMcpAccess,
+  ) {
+    if (!access.userId) throw new Error("Owned agent season reads require a user subject");
+    const result = await getOwnedAgentSeasonAnalysis(this.db, {
+      seasonIdOrSlug,
+      agentId,
+      ownerId: access.userId,
+    });
+    if (!result) throw new Error("Owned agent or season not found");
+    return result;
+  }
+
+  async exportOwnedSeason(
+    seasonIdOrSlug: string,
+    format: "json" | "csv",
+    access: ProductionGameMcpAccess,
+    limit?: number,
+    agentId?: string,
+  ) {
+    if (!access.userId) throw new Error("Season exports require a user subject");
+    const result = await exportOwnedSeasonReceipts(this.db, {
+      seasonIdOrSlug,
+      ownerId: access.userId,
+      agentId,
+      format,
+      limit,
+    });
+    if (!result) throw new Error("Season not found");
+    return { schemaVersion: 1 as const, ...result };
+  }
+
+  async readProducerSeasonDiagnostics(seasonIdOrSlug: string) {
+    const result = await getProducerSeasonDiagnostics(this.db, seasonIdOrSlug);
+    if (!result) throw new Error("Season not found");
+    return result;
+  }
+
   async resolveGame(idOrSlug: string): Promise<ProductionGameMcpGameIdentity | null> {
     const row = (await this.db
       .select({
@@ -289,6 +355,7 @@ export class ProductionGameMcpReadModel {
         slug: schema.games.slug,
         status: schema.games.status,
         trackType: schema.games.trackType,
+        seasonId: schema.games.seasonId,
         createdAt: schema.games.createdAt,
         startedAt: schema.games.startedAt,
         endedAt: schema.games.endedAt,
@@ -332,6 +399,7 @@ export class ProductionGameMcpReadModel {
       slug: schema.games.slug,
       status: schema.games.status,
       trackType: schema.games.trackType,
+      seasonId: schema.games.seasonId,
       createdAt: schema.games.createdAt,
       startedAt: schema.games.startedAt,
       endedAt: schema.games.endedAt,
@@ -1417,6 +1485,7 @@ function gameIdentity(row: {
   slug: string | null;
   status: string;
   trackType: string;
+  seasonId: string | null;
   createdAt: string;
   startedAt: string | null;
   endedAt: string | null;
@@ -1426,6 +1495,8 @@ function gameIdentity(row: {
     ...(row.slug && { slug: row.slug }),
     status: row.status,
     trackType: row.trackType,
+    rated: row.seasonId !== null,
+    ...(row.seasonId && { seasonId: row.seasonId }),
     createdAt: row.createdAt,
     ...(row.startedAt && { startedAt: row.startedAt }),
     ...(row.endedAt && { endedAt: row.endedAt }),

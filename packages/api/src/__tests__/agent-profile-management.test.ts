@@ -176,7 +176,7 @@ describe("agent profile management service", () => {
     expect("statsReset" in read).toBe(false);
   });
 
-  test("updates owned mutable fields without surfacing reset-training fields", async () => {
+  test("updates owned mutable fields without resetting lifetime statistics", async () => {
     await insertAgent(db, {
       id: "agent-update",
       userId: USER_A_ID,
@@ -198,8 +198,8 @@ describe("agent profile management service", () => {
     expect(read.message).toBe("Agent updated.");
     expect(read.agent.archetype).toBe("provocateur");
     expect(read.agent.personalityPrompt).toBe("A little more aggressive, but still socially precise.");
-    expect(read.agent.stats.gamesPlayed).toBe(0);
-    expect(read.agent.stats.wins).toBe(0);
+    expect(read.agent.stats.gamesPlayed).toBe(5);
+    expect(read.agent.stats.wins).toBe(2);
     expect("statsReset" in read).toBe(false);
     expect("statsReset" in read.agent).toBe(false);
   });

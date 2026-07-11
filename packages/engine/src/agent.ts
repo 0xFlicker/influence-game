@@ -1055,6 +1055,12 @@ export interface InfluenceAgentOptions {
   modelCapabilities?: ModelRequestCapabilities;
   reasoningPolicy?: ModelReasoningPolicy;
   catalogId?: string;
+  /** Owner-authored behavior text layered after the selected archetype. */
+  personalityPrompt?: string;
+  /** Owner-authored strategy guidance included as private behavioral context. */
+  strategyInstructions?: string;
+  /** Sampling temperature used only by providers that support it. */
+  temperature?: number;
 }
 
 type LlmCallOptions = {
@@ -1086,6 +1092,9 @@ export class InfluenceAgent implements IAgent {
   private readonly toolChoiceMode: LlmToolChoiceMode;
   private readonly privateTraceSink?: PrivateTraceSink;
   private readonly openAIReasoningSummary?: OpenAIReasoningSummaryMode;
+  private readonly personalityPrompt?: string;
+  private readonly strategyInstructions?: string;
+  private readonly temperature: number;
   private tokenTracker: TokenTracker | null = null;
   private gameId: UUID = "";
   private allPlayers: Array<{ id: UUID; name: string }> = [];
@@ -1124,6 +1133,9 @@ export class InfluenceAgent implements IAgent {
     this.toolChoiceMode = options.toolChoiceMode ?? "named";
     this.privateTraceSink = options.privateTraceSink;
     this.openAIReasoningSummary = options.openAIReasoningSummary;
+    this.personalityPrompt = options.personalityPrompt?.trim() || undefined;
+    this.strategyInstructions = options.strategyInstructions?.trim() || undefined;
+    this.temperature = options.temperature ?? 0.7;
     this.backstory = backstory ?? AGENT_BACKSTORIES[name] ?? "";
     this.memoryStore = memoryStore ?? null;
   }
@@ -3070,6 +3082,8 @@ Use the jury_vote tool to cast your vote.`;
 ${this.backstory ? `## Who You Are\n${this.backstory}\n` : ""}
 ## Your Personality & Game Approach
 ${PERSONALITY_PROMPTS[this.personality]}
+${this.personalityPrompt ? `\n## Owner-Authored Personality\n${this.personalityPrompt}\n` : ""}
+${this.strategyInstructions ? `\n## Owner-Authored Strategy Guidance\n${this.strategyInstructions}\n` : ""}
 
 ${STRATEGIC_PLAY_MENU}
 
@@ -4175,7 +4189,7 @@ ${roomSection}
             ...(useCompletionTokens
               ? { max_completion_tokens: effectiveMaxTokens }
               : { max_tokens: effectiveMaxTokens }),
-            ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
+            ...(this.supportsCustomTemperature() && { temperature: this.temperature }),
           },
           { signal: options?.signal },
         );
@@ -4269,7 +4283,7 @@ ${JSON.stringify(tool.function.parameters)}`,
         ...(useCompletionTokens
           ? { max_completion_tokens: effectiveMaxTokens }
           : { max_tokens: effectiveMaxTokens }),
-        ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
+        ...(this.supportsCustomTemperature() && { temperature: this.temperature }),
         ...(reasoning && this.supportsToolReasoningEffort() && this.requestedReasoningEffort(options) && { reasoning_effort: this.requestedReasoningEffort(options) }),
         response_format: {
           type: "json_schema",
@@ -4356,7 +4370,7 @@ ${JSON.stringify(tool.function.parameters)}`,
             ...(useCompletionTokens
               ? { max_completion_tokens: effectiveMaxTokens }
               : { max_tokens: effectiveMaxTokens }),
-            ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
+            ...(this.supportsCustomTemperature() && { temperature: this.temperature }),
             ...(this.requestedReasoningEffort(options) && { reasoning_effort: this.requestedReasoningEffort(options) }),
           },
           { signal: options?.signal },
@@ -4454,7 +4468,7 @@ ${JSON.stringify(tool.function.parameters)}`,
             ...(useCompletionTokens
               ? { max_completion_tokens: effectiveMaxTokens }
               : { max_tokens: effectiveMaxTokens }),
-            ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
+            ...(this.supportsCustomTemperature() && { temperature: this.temperature }),
             ...(this.requestedReasoningEffort(options) && { reasoning_effort: this.requestedReasoningEffort(options) }),
             response_format: InfluenceAgent.AGENT_RESPONSE_FORMAT,
           },
@@ -4565,7 +4579,7 @@ ${JSON.stringify(tool.function.parameters)}`,
             ...(useCompletionTokens
               ? { max_completion_tokens: effectiveMaxTokens }
               : { max_tokens: effectiveMaxTokens }),
-            ...(this.supportsCustomTemperature() && { temperature: 0.7 }),
+            ...(this.supportsCustomTemperature() && { temperature: this.temperature }),
             ...(reasoning && this.supportsToolReasoningEffort() && this.requestedReasoningEffort(options) && { reasoning_effort: this.requestedReasoningEffort(options) }),
             tools: [requestTool],
             tool_choice: toolChoice,

@@ -145,7 +145,7 @@ For agent prompts, context builders, simulations, and future implementation work
 
 ## Shields
 
-When the empowered player uses **Protect**, the protected player gains a **Council shield**. Shielded players cannot appear as council candidates for the current Council. Shields expire automatically after that Council and do not stack.
+When the empowered player uses **Protect**, the protected player gains a **Council shield**. Shielded players cannot appear as council candidates for the current Council. Shields expire automatically after that Council.
 
 ---
 
