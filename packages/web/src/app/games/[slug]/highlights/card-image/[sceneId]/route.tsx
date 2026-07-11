@@ -3,6 +3,10 @@ import type { HouseHighlightPlayerRef, HouseHighlightSceneCard } from "@/lib/api
 import { getServerPostgameHighlights, resolveServerApiUrl } from "@/lib/server-api";
 import { houseHighlightGeneratedBackgroundAsset } from "../../../components/house-highlights-backgrounds";
 import { sceneForCardImage } from "../card-image-data";
+import {
+  CardImageRenderOverloadedError,
+  createCardImageRenderQueue,
+} from "../card-image-render-queue";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +23,18 @@ const FALLBACK_CACHE_HEADERS = {
   "Cache-Control": "no-store",
 };
 
+// A valid 1x1 PNG keeps the image contract without starting another renderer.
+const OVERLOAD_PLACEHOLDER_PNG = new Uint8Array([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+  0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x08, 0x04, 0x00, 0x00, 0x00, 0xb5, 0x1c, 0x0c, 0x02, 0x00, 0x00, 0x00,
+  0x0b, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0x64, 0xf8, 0x0f, 0x00,
+  0x01, 0x05, 0x01, 0x01, 0x27, 0x18, 0xe3, 0x66, 0x00, 0x00, 0x00, 0x00,
+  0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+]);
+
+const cardImageRenderQueue = createCardImageRenderQueue<Response>();
+
 interface RouteContext {
   params: Promise<{
     slug: string;
@@ -28,26 +44,49 @@ interface RouteContext {
 
 export async function GET(request: Request, context: RouteContext) {
   const { slug, sceneId } = await context.params;
+  const renderKey = `${new URL(request.url).origin}\0${slug}\0${sceneId}`;
 
   try {
-    const response = await getServerPostgameHighlights(slug);
-    const scene = sceneForCardImage(response, sceneId);
+    const response = await cardImageRenderQueue.run(renderKey, async () => {
+      try {
+        const response = await getServerPostgameHighlights(slug);
+        const scene = sceneForCardImage(response, sceneId);
 
-    if (!scene) {
-      return fallbackImage("Scene unavailable", 404);
-    }
+        if (!scene) {
+          return bufferResponse(fallbackImage("Scene unavailable", 404));
+        }
 
-    return new ImageResponse(
-      <CardImage scene={scene} requestUrl={request.url} />,
-      {
-        ...SIZE,
-        headers: CACHE_HEADERS,
-      },
-    );
+        return bufferResponse(new ImageResponse(
+          <CardImage scene={scene} requestUrl={request.url} />,
+          {
+            ...SIZE,
+            headers: CACHE_HEADERS,
+          },
+        ));
+      } catch (err) {
+        console.error(`[HouseHighlightCardImage] render failed for slug="${slug}" scene="${sceneId}":`, err);
+        return bufferResponse(fallbackImage("Highlights unavailable", 503));
+      }
+    });
+    return response.clone();
   } catch (err) {
-    console.error(`[HouseHighlightCardImage] render failed for slug="${slug}" scene="${sceneId}":`, err);
-    return fallbackImage("Highlights unavailable", 503);
+    if (err instanceof CardImageRenderOverloadedError) {
+      return new Response(OVERLOAD_PLACEHOLDER_PNG.slice(), {
+        status: 503,
+        headers: {
+          ...FALLBACK_CACHE_HEADERS,
+          "Content-Type": "image/png",
+          "Retry-After": "5",
+        },
+      });
+    }
+    console.error(`[HouseHighlightCardImage] fallback failed for slug="${slug}" scene="${sceneId}":`, err);
+    return new Response(null, { status: 503, headers: FALLBACK_CACHE_HEADERS });
   }
+}
+
+async function bufferResponse(response: Response): Promise<Response> {
+  return new Response(await response.arrayBuffer(), response);
 }
 
 function fallbackImage(title: string, status: number) {

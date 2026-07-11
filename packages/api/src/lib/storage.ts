@@ -224,7 +224,10 @@ export async function generateConstrainedPublicUpload(
     ACL: "public-read",
     Metadata: { sha256: normalizeSha256(input.sha256) },
   });
-  const uploadUrl = await getSignedUrl(getS3Client(), command, { expiresIn });
+  const uploadUrl = await getSignedUrl(getS3Client(), command, {
+    expiresIn,
+    unhoistableHeaders: new Set(["x-amz-acl"]),
+  });
   return {
     uploadUrl,
     key: input.key,
@@ -682,6 +685,7 @@ function constrainedUploadHeaders(contentType: string, byteLength: number, sha25
     "content-type": contentType,
     "content-length": byteLength.toString(),
     "x-amz-checksum-sha256": checksumBase64(sha256),
+    "x-amz-acl": "public-read",
     "if-none-match": "*",
   };
 }

@@ -2,7 +2,8 @@ import { bundle } from "@remotion/bundler";
 import { renderMedia, renderStill, selectComposition } from "@remotion/renderer";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { mkdir, mkdtemp, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -62,12 +63,15 @@ export interface HouseHighlightsTrailerRenderer {
   mux(input: { visualPath: string; outputPath: string; music: HouseHighlightsTrailerMusicSelection }): Promise<void>;
 }
 
+export type HouseHighlightsRemotionMediaOptions = ReturnType<typeof remotionMediaOptions>;
+
 export async function renderHouseHighlightsTrailerMediaBundle(input: {
   manifest: HouseHighlightsTrailerManifest;
   outputDir: string;
   musicDir?: string;
   temporaryRoot?: string;
   renderer?: HouseHighlightsTrailerRenderer;
+  remotionOptions?: HouseHighlightsRemotionMediaOptions;
   onStage?: (stage: "rendering" | "composing") => Promise<void> | void;
 }): Promise<HouseHighlightsTrailerMediaBundle> {
   const musicDir = input.musicDir ?? DEFAULT_HOUSE_HIGHLIGHTS_TRAILER_MUSIC_DIR;
@@ -93,14 +97,12 @@ export async function renderHouseHighlightsTrailerMediaBundle(input: {
   const visualPath = join(workDir, "visual.mp4");
   const muxPath = join(workDir, "trailer.mp4");
   const posterTempPath = join(workDir, "poster.png");
-  const renderer = input.renderer ?? remotionRenderer();
+  const renderer = input.renderer ?? remotionRenderer(input.remotionOptions);
   const posterFrame = posterFrameForManifest(input.manifest);
   try {
     await input.onStage?.("rendering");
-    await Promise.all([
-      renderer.renderVisual({ manifest: input.manifest, outputPath: visualPath }),
-      renderer.renderPoster({ manifest: input.manifest, frame: posterFrame, outputPath: posterTempPath }),
-    ]);
+    await renderer.renderVisual({ manifest: input.manifest, outputPath: visualPath });
+    await renderer.renderPoster({ manifest: input.manifest, frame: posterFrame, outputPath: posterTempPath });
     await input.onStage?.("composing");
     await renderer.mux({ visualPath, outputPath: muxPath, music });
     const captions = captionsForManifest(input.manifest);
@@ -224,14 +226,21 @@ function captionLinesForSegment(manifest: HouseHighlightsTrailerManifest, id: st
 }
 
 async function artifactFor(name: HouseHighlightsTrailerBundleArtifactName, path: string, contentType: string): Promise<HouseHighlightsTrailerBundleArtifact> {
-  const bytes = await Bun.file(path).arrayBuffer();
-  const fileStat = await stat(path);
-  return { name, path, contentType, byteLength: fileStat.size, sha256: `sha256:${createHash("sha256").update(Buffer.from(bytes)).digest("hex")}` };
+  const hash = createHash("sha256");
+  let byteLength = 0;
+  for await (const chunk of createReadStream(path)) {
+    hash.update(chunk);
+    byteLength += chunk.byteLength;
+  }
+  return { name, path, contentType, byteLength, sha256: `sha256:${hash.digest("hex")}` };
 }
 
-function remotionRenderer(): HouseHighlightsTrailerRenderer {
+function remotionRenderer(configuredMediaOptions?: HouseHighlightsRemotionMediaOptions): HouseHighlightsTrailerRenderer {
   let serveUrlPromise: Promise<string> | null = null;
-  const browserOptions = remotionBrowserOptions();
+  const mediaOptions = configuredMediaOptions ?? remotionMediaOptions();
+  const browserOptions = mediaOptions.browserExecutable
+    ? { browserExecutable: mediaOptions.browserExecutable, chromeMode: mediaOptions.chromeMode }
+    : {};
   const compositionFor = async (manifest: HouseHighlightsTrailerManifest) => {
     const serveUrl = await (serveUrlPromise ??= bundle({
       entryPoint: resolve(WEB_ROOT, "src/remotion/house-highlights-trailer/index.tsx"),
@@ -243,7 +252,7 @@ function remotionRenderer(): HouseHighlightsTrailerRenderer {
   return {
     async renderVisual({ manifest, outputPath }) {
       const selected = await compositionFor(manifest);
-      await renderMedia({ composition: selected.composition, serveUrl: selected.serveUrl, codec: "h264", outputLocation: outputPath, inputProps: { manifest }, overwrite: true, logLevel: "warn", ...browserOptions });
+      await renderMedia({ composition: selected.composition, serveUrl: selected.serveUrl, codec: "h264", outputLocation: outputPath, inputProps: { manifest }, overwrite: true, logLevel: "warn", ...mediaOptions });
     },
     async renderPoster({ manifest, frame, outputPath }) {
       const selected = await compositionFor(manifest);
@@ -256,6 +265,22 @@ function remotionRenderer(): HouseHighlightsTrailerRenderer {
 export function remotionBrowserOptions(env: Record<string, string | undefined> = process.env): { browserExecutable?: string; chromeMode?: "chrome-for-testing" } {
   const browserExecutable = env.REMOTION_BROWSER_EXECUTABLE?.trim();
   return browserExecutable ? { browserExecutable, chromeMode: "chrome-for-testing" } : {};
+}
+
+export function remotionMediaOptions(env: Record<string, string | undefined> = process.env): ReturnType<typeof remotionBrowserOptions> & {
+  concurrency: number;
+  disallowParallelEncoding: true;
+} {
+  const configured = env.POSTGAME_MEDIA_REMOTION_CONCURRENCY?.trim();
+  const concurrency = configured ? Number(configured) : 1;
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
+    throw new Error("POSTGAME_MEDIA_REMOTION_CONCURRENCY must be a positive integer.");
+  }
+  return {
+    ...remotionBrowserOptions(env),
+    concurrency,
+    disallowParallelEncoding: true,
+  };
 }
 
 function safeOutputBasename(value: string): string { return value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "house-highlights-trailer"; }

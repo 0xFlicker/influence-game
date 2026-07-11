@@ -35,6 +35,7 @@ POSTGAME_MEDIA_HTTP_TIMEOUT_MS=15000
 POSTGAME_MEDIA_UPLOAD_TIMEOUT_MS=300000
 POSTGAME_MEDIA_TEMP_DIR=/tmp/influence-render-worker
 POSTGAME_MEDIA_MIN_FREE_BYTES=2147483648
+POSTGAME_MEDIA_REMOTION_CONCURRENCY=1
 REMOTION_BROWSER_EXECUTABLE=/usr/bin/chromium
 ```
 
@@ -44,7 +45,9 @@ The image ships Chromium, ffmpeg, CA certificates, fontconfig/Liberation/Noto fo
 
 `POSTGAME_MEDIA_HTTP_TIMEOUT_MS` defaults to 15,000 ms and bounds worker API and health requests. `POSTGAME_MEDIA_UPLOAD_TIMEOUT_MS` defaults to 300,000 ms so a normal 1080p trailer can upload on a slower object-storage connection without disabling API timeouts. Errors are categorized without logging response bodies or signed upload URLs.
 
-`POSTGAME_MEDIA_TEMP_DIR` defaults to `/tmp/influence-render-worker`. `POSTGAME_MEDIA_MIN_FREE_BYTES` is an explicit, tunable preflight floor and defaults to 2 GiB (`2147483648` bytes). Mount or provision at least that much writable local disk for this directory, or raise the value when expected render size warrants it; the worker checks free space before claiming work and removes claim output after each attempt. Deploy one worker process with concurrency 1.
+`POSTGAME_MEDIA_TEMP_DIR` defaults to `/tmp/influence-render-worker`. `POSTGAME_MEDIA_MIN_FREE_BYTES` is an explicit, tunable disk-space preflight floor and defaults to 2 GiB (`2147483648` bytes); it is not a RAM setting. Mount or provision at least that much writable local disk for this directory, or raise the value when expected render size warrants it. The worker checks free space before claiming work and removes claim output after each attempt.
+
+`POSTGAME_MEDIA_REMOTION_CONCURRENCY` defaults to `1` and must be a positive integer. Each claim renders the visual trailer, then the lossless poster still, then the music mux. Remotion's parallel encoding is disabled, so the worker does not create a second opportunistic encoding lane. Keep one worker process and the default render concurrency unless measured production capacity supports a larger value.
 
 ## API Contract
 
@@ -184,6 +187,7 @@ release family:
 render-worker:
   image: ghcr.io/0xflicker/influence-render-worker:${INFLUENCE_IMAGE_TAG}
   restart: unless-stopped
+  mem_limit: 1g
   depends_on:
     api:
       condition: service_healthy
@@ -195,13 +199,14 @@ render-worker:
     POSTGAME_MEDIA_UPLOAD_TIMEOUT_MS: "300000"
     POSTGAME_MEDIA_TEMP_DIR: /tmp/influence-render-worker
     POSTGAME_MEDIA_MIN_FREE_BYTES: "2147483648"
+    POSTGAME_MEDIA_REMOTION_CONCURRENCY: "1"
     REMOTION_BROWSER_EXECUTABLE: /usr/bin/chromium
   volumes:
     - /var/lib/influence/render-worker-tmp:/tmp/influence-render-worker
   stop_grace_period: 30s
 ```
 
-Also add the current worker token to the API service, provision at least 2 GiB
+Use a `1g` worker memory limit on the current staging host and `2g` in production. These are protective container ceilings, not a claim that staging has already been load-profiled. Also add the current worker token to the API service, provision at least 2 GiB
 free on the temp mount, and keep one replica. Do not add public ports or object-
 storage credentials to the worker. The image's Docker healthcheck runs `--health`;
 deployment validation must use the existing admin backfill path with an approved
