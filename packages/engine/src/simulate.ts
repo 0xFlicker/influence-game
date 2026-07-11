@@ -74,6 +74,11 @@
  * diary prompts, including empowered players whose Council tiebreak was not
  * needed. These keep eliminated players useful as history, jury context, or
  * social evidence without turning them back into live targets.
+ * API-backed saved agents also pass owner-authored personality, backstory,
+ * strategy instructions, and temperature into InfluenceAgent. Those inputs,
+ * together with resolved model/provider/reasoning/tool policy, define the
+ * effective analytical revision; simulation comparisons should hold the same
+ * snapshot constant rather than relying on a mutable display profile.
  *
  * `--rich-producer` enables private House Strategy Bible Packet updates,
  * packet-backed long-form House summaries, bounded Council diary sessions, and

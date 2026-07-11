@@ -49,6 +49,9 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const tools = ((response?.result as { tools: unknown[] }).tools);
     expect(tools.map((tool) => (tool as { name: string }).name)).toEqual([
       "list_games",
+      "list_seasons",
+      "read_season_standings",
+      "read_season_game_receipts",
       "list_agent_games",
       "read_game_brief",
       "read_jury_breakdown",
@@ -61,6 +64,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "player_timeline",
       "list_cognitive_artifacts",
       "read_cognitive_artifact",
+      "read_producer_season_diagnostics",
       "inspect_durable_run",
       "read_producer_game_analysis",
       "list_trace_manifests",
@@ -134,6 +138,9 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const tools = ((response?.result as { tools: unknown[] }).tools);
     expect(tools.map((tool) => (tool as { name: string }).name)).toEqual([
       "list_games",
+      "list_seasons",
+      "read_season_standings",
+      "read_season_game_receipts",
       "list_agent_games",
       "read_game_brief",
       "read_jury_breakdown",
@@ -154,6 +161,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "search_agents",
       "get_queue_status",
       "list_open_games",
+      "read_agent_season",
+      "export_agent_season_data",
       "create_agent",
       "update_agent",
       "join_queue",
@@ -972,6 +981,12 @@ function fakeReadModel(
 ): ProductionGameMcpReadModel {
   return {
     listGames: async () => ({ games: [] }),
+    listSeasons: async () => ({ schemaVersion: 1, seasons: [] }),
+    readSeason: async () => ({ schemaVersion: 1 }),
+    readSeasonGameReceipts: async () => ({ schemaVersion: 1, receipts: [] }),
+    readOwnedAgentSeason: async () => ({ schemaVersion: 1 }),
+    exportOwnedSeason: async () => ({ schemaVersion: 1 }),
+    readProducerSeasonDiagnostics: async () => ({ schemaVersion: 1 }),
     listAgentGames: async () => ({ schemaVersion: 1, ok: true, agent: { name: "Agent" }, games: [], diagnostics: [] }),
     readGameBrief: async () => ({ schemaVersion: 1, ok: true, postgame: null }),
     readJuryBreakdown: async () => ({ schemaVersion: 1, ok: true, jury: null }),

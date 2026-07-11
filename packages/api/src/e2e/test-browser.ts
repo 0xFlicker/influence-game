@@ -6,14 +6,17 @@
  */
 
 import puppeteer, { type Browser, type Page } from "puppeteer";
+import { existsSync } from "node:fs";
 import { injectWalletProvider } from "./test-wallet-provider.js";
 
 /**
  * Launch a headless Puppeteer browser instance.
  */
 export async function launchBrowser(): Promise<Browser> {
+  const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
   return puppeteer.launch({
     headless: true,
+    ...(existsSync(macChrome) ? { executablePath: macChrome } : {}),
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",

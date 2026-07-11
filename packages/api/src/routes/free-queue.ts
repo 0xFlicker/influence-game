@@ -38,6 +38,7 @@ import {
 } from "../services/game-ownership.js";
 import { getRedactedKernelHealth } from "../services/game-kernel-health.js";
 import { tryRefreshGameWatchStateSummary } from "../services/game-watch-state-summary.js";
+import { bindFreeGameToActiveSeason } from "../services/seasons.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -237,21 +238,6 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.post("/api/free-queue/draw", requireAuth(db), requirePermission("schedule_free_game"), async (c) => {
-    // Get all queue entries
-    const entries = await db
-      .select()
-      .from(schema.freeGameQueue);
-
-    if (entries.length < 2) {
-      return c.json({
-        drawn: false,
-        reason: `Not enough players in queue (${entries.length}). Need at least 2.`,
-      });
-    }
-
-    // Shuffle and pick up to 12
-    const shuffled = entries.sort(() => Math.random() - 0.5);
-    const picked = shuffled.slice(0, Math.min(entries.length, 12));
     const maxPlayers = 12;
     const minPlayers = 4;
 
@@ -288,92 +274,118 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
 
     const user = c.get("user");
 
-    await db.insert(schema.games)
-      .values({
-        id: gameId,
-        slug,
-        config: JSON.stringify(config),
-        status: "waiting",
-        trackType: "free",
-        cognitiveArtifactCaptureVersion: 1,
-        minPlayers,
-        maxPlayers,
-        createdById: user?.id ?? null,
-      });
-
-    // Add picked players to the game
     const addedPlayers: Array<{ playerId: string; userId: string; agentProfileId: string; agentName: string }> = [];
-
-    for (const entry of picked) {
-      const profile = (await db
-        .select()
-        .from(schema.agentProfiles)
-        .where(eq(schema.agentProfiles.id, entry.agentProfileId)))[0];
-
-      if (!profile) continue;
-
-      const playerId = randomUUID();
-      const agentModel = resolveModelForTier("budget");
-      const persona = {
-        name: profile.name,
-        personality: profile.personality,
-        strategyHints: profile.strategyStyle,
-        personaKey: profile.personaKey,
-      };
-
-      await db.insert(schema.gamePlayers)
-        .values({
-          id: playerId,
-          gameId,
-          userId: entry.userId,
-          agentProfileId: profile.id,
-          persona: JSON.stringify(persona),
-          agentConfig: JSON.stringify({ model: agentModel, temperature: 0.9 }),
+    let slotsToFill = maxPlayers;
+    const admission = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('influence-daily-free-draw'))`);
+      const existingDraw = (await tx.select({ id: schema.games.id, slug: schema.games.slug })
+        .from(schema.games)
+        .where(and(
+          eq(schema.games.trackType, "free"),
+          sql`${schema.games.createdAt}::timestamptz >= date_trunc('day', now())`,
+        ))
+        .orderBy(desc(schema.games.createdAt))
+        .limit(1))[0];
+      if (existingDraw) {
+        return {
+          drawn: false as const,
+          reason: "Today's Daily Free game has already been drawn.",
+          gameId: existingDraw.id,
+          gameSlug: existingDraw.slug,
+        };
+      }
+      const entries = await tx.select().from(schema.freeGameQueue);
+      if (entries.length < 2) {
+        return {
+          drawn: false as const,
+          reason: `Not enough players in queue (${entries.length}). Need at least 2.`,
+        };
+      }
+      const shuffled = entries.sort(() => Math.random() - 0.5);
+      const picked = shuffled.slice(0, Math.min(entries.length, 12));
+      await tx.insert(schema.games).values({
+          id: gameId,
+          slug,
+          config: JSON.stringify(config),
+          status: "waiting",
+          trackType: "free",
+          cognitiveArtifactCaptureVersion: 1,
+          minPlayers,
+          maxPlayers,
+          createdById: user?.id ?? null,
         });
 
-      addedPlayers.push({
-        playerId,
-        userId: entry.userId,
-        agentProfileId: profile.id,
-        agentName: profile.name,
-      });
-    }
+      // Add picked players to the game.
+      for (const entry of picked) {
+        const profile = (await tx
+          .select()
+          .from(schema.agentProfiles)
+          .where(eq(schema.agentProfiles.id, entry.agentProfileId)))[0];
 
-    // Fill remaining slots with AI if less than maxPlayers
-    const slotsToFill = maxPlayers - addedPlayers.length;
-    if (slotsToFill > 0) {
-      const existingNames = addedPlayers.map((p) => p.agentName);
-      const names = pickAgentNames(slotsToFill, existingNames);
-      const archetypes = pickArchetypes(slotsToFill, []);
+        if (!profile) continue;
 
-      for (let i = 0; i < slotsToFill; i++) {
-        const name = names[i] ?? `Agent-${i + 1}`;
-        const archetype = archetypes[i] ?? "strategic";
-        const aiPlayerId = randomUUID();
-
+        const playerId = randomUUID();
+        const agentModel = resolveModelForTier("budget");
         const persona = {
-          name,
-          personality: archetype,
-          strategyHints: null,
-          personaKey: archetype,
+          name: profile.name,
+          personality: profile.personality,
+          backstory: profile.backstory,
+          strategyHints: profile.strategyStyle,
+          personaKey: profile.personaKey,
         };
 
-        await db.insert(schema.gamePlayers)
-          .values({
-            id: aiPlayerId,
+        await tx.insert(schema.gamePlayers).values({
+            id: playerId,
             gameId,
-            userId: null,
+            userId: entry.userId,
+            agentProfileId: profile.id,
             persona: JSON.stringify(persona),
-            agentConfig: JSON.stringify({ model: resolveModelForTier("budget"), temperature: 0.9 }),
+            agentConfig: JSON.stringify({ model: agentModel, temperature: 0.9 }),
           });
-      }
-    }
 
-    // Remove picked entries from queue
-    for (const entry of picked) {
-      await db.delete(schema.freeGameQueue)
-        .where(eq(schema.freeGameQueue.id, entry.id));
-    }
+        addedPlayers.push({
+          playerId,
+          userId: entry.userId,
+          agentProfileId: profile.id,
+          agentName: profile.name,
+        });
+      }
+
+      // Fill remaining slots with House agents.
+      slotsToFill = maxPlayers - addedPlayers.length;
+      if (slotsToFill > 0) {
+        const existingNames = addedPlayers.map((p) => p.agentName);
+        const names = pickAgentNames(slotsToFill, existingNames);
+        const archetypes = pickArchetypes(slotsToFill, []);
+
+        for (let i = 0; i < slotsToFill; i++) {
+          const name = names[i] ?? `Agent-${i + 1}`;
+          const archetype = archetypes[i] ?? "strategic";
+          const aiPlayerId = randomUUID();
+          await tx.insert(schema.gamePlayers).values({
+              id: aiPlayerId,
+              gameId,
+              userId: null,
+              persona: JSON.stringify({
+                name,
+                personality: archetype,
+                strategyHints: null,
+                personaKey: archetype,
+              }),
+              agentConfig: JSON.stringify({ model: resolveModelForTier("budget"), temperature: 0.9 }),
+            });
+        }
+      }
+
+      for (const entry of picked) {
+        await tx.delete(schema.freeGameQueue).where(eq(schema.freeGameQueue.id, entry.id));
+      }
+      return {
+        drawn: true as const,
+        ...(await bindFreeGameToActiveSeason(tx, gameId)),
+      };
+    });
+    if (!admission.drawn) return c.json(admission);
     await tryRefreshGameWatchStateSummary(db, gameId, "free_queue_draw");
 
     return c.json({
@@ -383,6 +395,8 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       playersDrawn: addedPlayers.length,
       aiPlayersFilled: slotsToFill,
       totalPlayers: maxPlayers,
+      rated: admission.rated,
+      seasonId: admission.seasonId,
     }, 201);
   });
 

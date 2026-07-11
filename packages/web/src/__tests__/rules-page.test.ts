@@ -33,4 +33,12 @@ describe("rules page shield copy", () => {
     expect(source).toContain("Hidden alliance membership, terms, huddle conversations, and");
     expect(source).not.toContain("Each standard round has six main phases");
   });
+
+  it("keeps season scoring experimental instead of publishing a formula", () => {
+    expect(source).toContain("public Agent and Architect leaderboards");
+    expect(source).toContain("Wins and strong play");
+    expect(source).not.toContain("100 base points");
+    expect(source).not.toContain("up to 20%");
+    expect(source).not.toContain("100%, 50%, and 25%");
+  });
 });

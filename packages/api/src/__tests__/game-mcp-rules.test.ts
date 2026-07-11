@@ -38,6 +38,16 @@ describe("game MCP rules catalog", () => {
     expect(serialized).not.toContain("each standard round moves through lobby, vote, mingle, power, reveal, and council");
   });
 
+  test("describes season leaderboards without publishing scoring constants", () => {
+    const freeGames = getGameMcpRules().rules.sections.find((section) => section.id === "free-games");
+
+    expect(freeGames?.body).toContain("public Agent and Architect leaderboards");
+    expect(freeGames?.body).toContain("Wins and strong play");
+    expect(freeGames?.body).not.toContain("100 base points");
+    expect(freeGames?.body).not.toContain("20%");
+    expect(freeGames?.body).not.toContain("100%, 50%, and 25%");
+  });
+
   test("lists archetypes from the shared validation catalog", () => {
     const read = listGameMcpArchetypes({ includeStrategyHints: true });
     const keys = read.archetypes.map((archetype) => archetype.key);

@@ -12,7 +12,6 @@
 
 import { Hono } from "hono";
 import { eq, and } from "drizzle-orm";
-import { randomUUID } from "crypto";
 import {
   createLlmClientFromEnv,
   resolveModelForTier,
@@ -28,12 +27,15 @@ import {
   formatUserSelectableAgentArchetypeKeys,
   isUserSelectableAgentArchetype,
 } from "../services/agent-archetypes.js";
-import { normalizeAgentAvatarUrlInput } from "../services/agent-profile-management.js";
+import {
+  AgentProfileManagementError,
+  createOwnedAgentProfile,
+  updateOwnedAgentProfile,
+} from "../services/agent-profile-management.js";
 import {
   completeAvatarGenerationRequest,
   latestAvatarCompletion,
   latestAvatarCompletionsByAgentProfileId,
-  recordAvatarChange,
   requestAvatarCompletion,
 } from "../services/avatar-generation.js";
 
@@ -177,58 +179,27 @@ Respond with JSON only:
       return c.json({ error: "Invalid JSON body" }, 400);
     }
 
-    const { name, backstory, personality, strategyStyle, personaKey, avatarUrl } = body;
-
-    if (!name || !personality) {
-      return c.json({ error: "name and personality are required" }, 400);
-    }
-
-    if (personaKey && !isUserSelectableAgentArchetype(personaKey)) {
-      return c.json({ error: `Invalid personaKey. Must be one of: ${formatUserSelectableAgentArchetypeKeys()}` }, 400);
-    }
-
-    const parsedAvatarUrl = normalizeAgentAvatarUrlInput(avatarUrl, new URL(c.req.url).origin);
-    if (!parsedAvatarUrl.ok) {
-      return c.json({ error: parsedAvatarUrl.error }, 400);
-    }
-
     const user = c.get("user");
-    const id = randomUUID();
-    const now = new Date().toISOString();
-
-    await db.insert(schema.agentProfiles)
-      .values({
-        id,
+    try {
+      const result = await createOwnedAgentProfile(db, {
         userId: user.id,
-        name,
-        backstory: backstory ?? null,
-        personality,
-        strategyStyle: strategyStyle ?? null,
-        personaKey: personaKey ?? null,
-        avatarUrl: parsedAvatarUrl.value ?? null,
-        gamesPlayed: 0,
-        gamesWon: 0,
-        createdAt: now,
-        updatedAt: now,
+        publicBaseUrl: new URL(c.req.url).origin,
+        avatarChangeSource: "web_upload",
+      }, {
+        name: body.name,
+        backstory: body.backstory,
+        personality: body.personality,
+        strategyStyle: body.strategyStyle,
+        personaKey: body.personaKey,
+        avatarUrl: body.avatarUrl,
       });
-
-    if (parsedAvatarUrl.value) {
-      await recordAvatarChange(db, {
-        userId: user.id,
-        agentProfileId: id,
-        source: "web_upload",
-        status: "completed",
-        previousAvatarUrl: null,
-        newAvatarUrl: parsedAvatarUrl.value,
-      });
+      return c.json(playerSafeAgentProfile(result.profile), 201);
+    } catch (error) {
+      if (error instanceof AgentProfileManagementError) {
+        return c.json({ error: error.message }, error.statusCode === 404 ? 404 : 400);
+      }
+      throw error;
     }
-
-    const profile = (await db
-      .select()
-      .from(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.id, id)))[0]!;
-
-    return c.json(profile, 201);
   });
 
   // -------------------------------------------------------------------------
@@ -343,7 +314,7 @@ Respond with JSON only:
     );
 
     return c.json(profiles.map((profile) => ({
-      ...profile,
+      ...playerSafeAgentProfile(profile),
       avatarCompletion: completions.get(profile.id),
     })));
   });
@@ -370,7 +341,7 @@ Respond with JSON only:
       return c.json({ error: "Agent profile not found" }, 404);
     }
 
-    return c.json(profile);
+    return c.json(playerSafeAgentProfile(profile));
   });
 
   // -------------------------------------------------------------------------
@@ -381,82 +352,31 @@ Respond with JSON only:
     const user = c.get("user");
     const profileId = c.req.param("id");
 
-    const existing = (await db
-      .select()
-      .from(schema.agentProfiles)
-      .where(
-        and(
-          eq(schema.agentProfiles.id, profileId),
-          eq(schema.agentProfiles.userId, user.id),
-        ),
-      ))[0];
-
-    if (!existing) {
-      return c.json({ error: "Agent profile not found" }, 404);
-    }
-
     const body = await parseJsonBody(c, "PATCH /api/agent-profiles/:id");
     if (!body) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
 
-    const { name, backstory, personality, strategyStyle, personaKey, avatarUrl } = body;
-
-    if (personaKey !== undefined && personaKey !== null && !isUserSelectableAgentArchetype(personaKey)) {
-      return c.json({ error: `Invalid personaKey. Must be one of: ${formatUserSelectableAgentArchetypeKeys()}` }, 400);
-    }
-
-    const parsedAvatarUrl = normalizeAgentAvatarUrlInput(avatarUrl, new URL(c.req.url).origin);
-    if (!parsedAvatarUrl.ok) {
-      return c.json({ error: parsedAvatarUrl.error }, 400);
-    }
-
-    // If personality-defining fields changed and the agent has played games, reset stats
-    const personalityChanged =
-      (name !== undefined && name !== existing.name) ||
-      (personality !== undefined && personality !== existing.personality) ||
-      (personaKey !== undefined && personaKey !== existing.personaKey) ||
-      (backstory !== undefined && backstory !== existing.backstory) ||
-      (strategyStyle !== undefined && strategyStyle !== existing.strategyStyle);
-
-    const hasGamesPlayed = existing.gamesPlayed > 0;
-    const resetStats = personalityChanged && hasGamesPlayed;
-
-    const updates: Record<string, unknown> = {
-      updatedAt: new Date().toISOString(),
-    };
-    if (name !== undefined) updates.name = name;
-    if (backstory !== undefined) updates.backstory = backstory;
-    if (personality !== undefined) updates.personality = personality;
-    if (strategyStyle !== undefined) updates.strategyStyle = strategyStyle;
-    if (personaKey !== undefined) updates.personaKey = personaKey;
-    if (avatarUrl !== undefined) updates.avatarUrl = parsedAvatarUrl.value;
-    if (resetStats) {
-      updates.gamesPlayed = 0;
-      updates.gamesWon = 0;
-    }
-
-    await db.update(schema.agentProfiles)
-      .set(updates)
-      .where(eq(schema.agentProfiles.id, profileId));
-
-    if (avatarUrl !== undefined && updates.avatarUrl !== existing.avatarUrl) {
-      await recordAvatarChange(db, {
+    try {
+      const result = await updateOwnedAgentProfile(db, {
         userId: user.id,
-        agentProfileId: profileId,
-        source: "web_manual_update",
-        status: "completed",
-        previousAvatarUrl: existing.avatarUrl,
-        newAvatarUrl: updates.avatarUrl as string | null,
+        publicBaseUrl: new URL(c.req.url).origin,
+        avatarChangeSource: "web_manual_update",
+      }, profileId, {
+        name: body.name,
+        backstory: body.backstory,
+        personality: body.personality,
+        strategyStyle: body.strategyStyle,
+        personaKey: body.personaKey,
+        avatarUrl: body.avatarUrl,
       });
+      return c.json({ ...playerSafeAgentProfile(result.profile), statsReset: false });
+    } catch (error) {
+      if (error instanceof AgentProfileManagementError) {
+        return c.json({ error: error.message }, error.statusCode === 404 ? 404 : 400);
+      }
+      throw error;
     }
-
-    const updated = (await db
-      .select()
-      .from(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.id, profileId)))[0]!;
-
-    return c.json({ ...updated, statsReset: resetStats });
   });
 
   // -------------------------------------------------------------------------
@@ -481,16 +401,50 @@ Respond with JSON only:
       return c.json({ error: "Agent profile not found" }, 404);
     }
 
-    // Clear references in game_players before deleting
-    await db.update(schema.gamePlayers)
-      .set({ agentProfileId: null })
-      .where(eq(schema.gamePlayers.agentProfileId, profileId));
+    const [competitionReceipt, competitionRating, competitionSnapshot] = await Promise.all([
+      db.select({ id: schema.competitionReceipts.id })
+        .from(schema.competitionReceipts)
+        .where(eq(schema.competitionReceipts.agentProfileId, profileId))
+        .limit(1),
+      db.select({ agentProfileId: schema.agentCompetitionRatings.agentProfileId })
+        .from(schema.agentCompetitionRatings)
+        .where(eq(schema.agentCompetitionRatings.agentProfileId, profileId))
+        .limit(1),
+      db.select({ id: schema.competitionRatingSnapshots.id })
+        .from(schema.competitionRatingSnapshots)
+        .where(eq(schema.competitionRatingSnapshots.agentProfileId, profileId))
+        .limit(1),
+    ]);
+    if (competitionReceipt.length > 0
+      || competitionRating.length > 0
+      || competitionSnapshot.length > 0) {
+      return c.json({
+        error: "Agents with rated competition history cannot be deleted because producer season records still reference them.",
+        code: "rated_history_exists",
+      }, 409);
+    }
 
-    await db.delete(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.id, profileId));
+    await db.transaction(async (tx) => {
+      // Unrated legacy seats may outlive a deleted unused profile. Rated
+      // competition rows retain restrictive references and will fail closed.
+      await tx.update(schema.gamePlayers)
+        .set({ agentProfileId: null, agentRevisionId: null })
+        .where(eq(schema.gamePlayers.agentProfileId, profileId));
+      await tx.update(schema.agentProfiles).set({ currentRevisionId: null })
+        .where(eq(schema.agentProfiles.id, profileId));
+      await tx.delete(schema.agentRevisions)
+        .where(eq(schema.agentRevisions.agentProfileId, profileId));
+      await tx.delete(schema.agentProfiles)
+        .where(eq(schema.agentProfiles.id, profileId));
+    });
 
     return c.json({ deleted: true });
   });
 
   return app;
+}
+
+function playerSafeAgentProfile(profile: typeof schema.agentProfiles.$inferSelect) {
+  const { currentRevisionId: _currentRevisionId, ...safe } = profile;
+  return safe;
 }

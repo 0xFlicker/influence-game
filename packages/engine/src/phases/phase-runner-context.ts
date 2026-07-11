@@ -26,6 +26,7 @@ export interface PhaseRunnerContext {
   houseInterviewer: IHouseInterviewer;
   mingleInbox: Map<UUID, Array<{ from: string; text: string }>>;
   eliminationOrder: string[];
+  eliminationOrderPlayerIds?: UUID[];
   beforeAcceptedCommit?: () => Promise<void> | void;
 }
 

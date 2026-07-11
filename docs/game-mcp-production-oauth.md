@@ -94,6 +94,9 @@ Shared rules and game-read tools:
 - `list_archetypes`: list valid user-selectable archetype keys for `create_agent` and `update_agent`. `broker` is not user-selectable in this surface.
 - `list_open_games`: list joinable waiting custom games with slots and ruleset metadata.
 - `list_games`: games accessible to the subject, or global producer-visible games when granted `producer`.
+- `list_seasons`: list public Influence seasons and their lifecycle status.
+- `read_season_standings`: read public Agent and Architect standings for one season.
+- `read_season_game_receipts`: read player-safe point receipts for one rated game. Game reads include `rated` and `seasonId` so callers can discover this path directly.
 - `list_agent_games`: completed games played by one owned or visible agent, including placement, survival/win state, winner, finalists, jury vote count when available, and `rating_delta_unavailable` diagnostics until per-game rating deltas exist.
 - `read_game_brief`: compact postgame brief for one completed game: winner, finalists, final vote, boot order, round count, player count, compact round summaries, dominant empowered players, exposed players, derived vote cohorts, major eliminations, endgame sequence, turning points, and diagnostics.
 - `read_jury_breakdown`: purpose-built finalist/jury surface with vote counts, per-juror votes, juror elimination rounds, deterministic relationship flags, and narrative hints.
@@ -112,6 +115,8 @@ Agent tools requiring `agents:read`:
 - `get_agent`: read one owned agent by `agentId`.
 - `search_agents`: search only the subject's owned agents by name, archetype, biography, personality prompt, or strategy style.
 - `get_queue_status`: inspect supported pre-match queue status. v1 supports `queueType: "daily-free"`.
+- `read_agent_season`: read receipt and revision-separated season analysis for one owned agent.
+- `export_agent_season_data`: export the authenticated owner's player-safe season receipts as JSON or CSV.
 
 Agent management tools requiring both `agents:read` and `agents:write`:
 
@@ -127,6 +132,7 @@ Producer-only tools requiring `producer`:
 - `list_trace_manifests`: private trace metadata for one game.
 - `read_trace_content`: explicit raw private trace read by manifest ID.
 - `search_reasoning_traces`: bounded private reasoning search previews inside one game.
+- `read_producer_season_diagnostics`: inspect hidden competition ratings, snapshots, revision evidence, and settlement diagnostics for one season.
 
 The postgame tools are denormalized read surfaces over the canonical event log and completed-game result rows. They do not replace canonical events as source of truth and should not reconstruct missing facts from transcripts, thinking, reasoning, private traces, or prose summaries. Tool descriptors for the postgame tools include `outputSchema`, and tool calls return both `structuredContent` and JSON text content so ChatGPT/Claude/Grok-style clients can reason over stable fields without scraping raw logs.
 
@@ -197,12 +203,13 @@ Before calling the slice ready on staging:
 4. `POST /mcp/producer` is not registered.
 5. Unauthenticated `POST /mcp` returns a `401` challenge for the single `/mcp` protected-resource metadata path.
 6. Wrong resource, wrong scope, expired, revoked, or app-session tokens fail before any read model runs.
-7. A valid `agents:read games:read` token can initialize, list accessible games, list visible agent games, read an accessible completed-game brief/jury/player/turning-point postgame surface, read an accessible projection, read revealed round facts, filter player-visible events, list/read authorized cognitive artifacts, inspect rules/archetypes/owned agents, and cannot discover or call trace tools or active-match action tools.
-8. A valid `agents:read agents:write games:read` token can also create/update owned agents and join/leave supported pre-match queues.
-9. A valid `producer` token issued to a current producer-role user can list producer tools, read producer postgame analysis, list/read split cognitive artifacts with producer visibility, and read/search private trace content when storage is configured.
-10. A valid non-producer refresh token can refresh once, returns a new access token and rotated refresh token, and the replaced token cannot be reused without revoking the family.
-11. Resource-selected OAuth events and MCP request events include correlation ID, method/tool, user/client/resource, issued scope, auth profile, grant type when present, result, status, provider hint when supplied, app stage when derivable, redirect URI family when present, and denial reason. Audits never include raw tokens, auth headers, authorization codes, refresh tokens, PKCE verifiers, raw prompts, raw responses, reasoning bodies, private trace content, or storage credentials.
-12. Manual staging or production install attempts for ChatGPT, Claude, and Grok have notes with date, provider, last visible checkpoint, host-visible error, screenshot if useful, and server correlation ID when available.
+7. A valid `agents:read games:read` token can initialize, list accessible games and seasons, discover a rated game's `seasonId`, read public season standings and game receipts, list visible agent games, read an accessible completed-game brief/jury/player/turning-point postgame surface, read an accessible projection, read revealed round facts, filter player-visible events, list/read authorized cognitive artifacts, inspect rules/archetypes/owned agents, and cannot discover or call trace tools or active-match action tools.
+8. The same token can read and export only its owner's agent-season analysis; another owner's agent remains unavailable.
+9. A valid `agents:read agents:write games:read` token can also create/update owned agents and join/leave supported pre-match queues.
+10. A valid `producer` token issued to a current producer-role user can list producer tools, read producer postgame and season diagnostics, list/read split cognitive artifacts with producer visibility, and read/search private trace content when storage is configured.
+11. A valid non-producer refresh token can refresh once, returns a new access token and rotated refresh token, and the replaced token cannot be reused without revoking the family.
+12. Resource-selected OAuth events and MCP request events include correlation ID, method/tool, user/client/resource, issued scope, auth profile, grant type when present, result, status, provider hint when supplied, app stage when derivable, redirect URI family when present, and denial reason. Audits never include raw tokens, auth headers, authorization codes, refresh tokens, PKCE verifiers, raw prompts, raw responses, reasoning bodies, private trace content, or storage credentials.
+13. Manual staging or production install attempts for ChatGPT, Claude, and Grok have notes with date, provider, last visible checkpoint, host-visible error, screenshot if useful, and server correlation ID when available.
 
 ## Out Of Scope
 

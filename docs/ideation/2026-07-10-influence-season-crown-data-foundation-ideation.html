@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Influence Season Crown &amp; Data Foundation — Ideation</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --void: #08090d;
+      --surface: #11131a;
+      --surface-raised: #181b24;
+      --surface-soft: #202431;
+      --text: #f2f0e9;
+      --text-secondary: #b9bac2;
+      --text-muted: #858995;
+      --border: #303442;
+      --border-strong: #4a5061;
+      --gold: #f4c96b;
+      --gold-soft: #342c1c;
+      --gold-text: #ffe0a0;
+      --violet: #b9a3ff;
+      --violet-soft: #29243f;
+      --violet-text: #d9ceff;
+      --cyan: #72d8dd;
+      --cyan-soft: #173235;
+      --cyan-text: #a8f0f2;
+      --green-soft: #193529;
+      --green-text: #a6e6bd;
+      --red-soft: #3b2225;
+      --red-text: #f1b1b7;
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 12% 0%, rgba(185, 163, 255, 0.08), transparent 32rem),
+        radial-gradient(circle at 88% 8%, rgba(244, 201, 107, 0.07), transparent 28rem),
+        var(--void);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px;
+      line-height: 1.62;
+    }
+    a { color: var(--cyan); text-underline-offset: 3px; }
+    a:hover { color: var(--cyan-text); }
+    code {
+      color: #ded8ff;
+      font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      font-size: 0.88em;
+    }
+    strong { color: inherit; }
+    main { width: min(940px, calc(100% - 32px)); margin: 0 auto; padding: 56px 0 72px; }
+    header { padding-bottom: 34px; border-bottom: 1px solid var(--border); }
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--gold);
+      font-size: 0.75rem;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3 {
+      margin-top: 0;
+      font-family: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
+      line-height: 1.13;
+      letter-spacing: -0.025em;
+    }
+    h1 { max-width: 18ch; margin-bottom: 18px; font-size: clamp(2.35rem, 6vw, 4.5rem); font-weight: 800; }
+    h2 { margin-bottom: 16px; font-size: clamp(1.55rem, 3vw, 2.15rem); }
+    h3 { margin-bottom: 10px; font-size: 1.4rem; }
+    p { max-width: 72ch; margin: 0 0 14px; }
+    .lede { max-width: 70ch; color: var(--text-secondary); font-size: 1.08rem; }
+    .metadata { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+    .meta-chip, .idea-chip {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--text-secondary);
+      padding: 6px 11px;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+    .meta-chip b { margin-right: 6px; color: var(--text); font-weight: 800; }
+    .stats-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 24px;
+    }
+    .stat { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); padding: 15px 17px; }
+    .stat-number { display: block; color: var(--gold-text); font-size: 1.7rem; font-weight: 800; line-height: 1; }
+    .stat-label { display: block; margin-top: 7px; color: var(--text-muted); font-size: 0.76rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
+    nav { margin-top: 18px; }
+    nav ul { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0; padding: 0; list-style: none; }
+    nav a { color: var(--text-secondary); font-size: 0.82rem; font-weight: 700; }
+    section { padding-top: 48px; }
+    .section-kicker { margin-bottom: 7px; color: var(--violet); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
+    .callout {
+      margin: 22px 0;
+      border: 1px solid #5d4e2d;
+      border-radius: var(--radius);
+      background: var(--gold-soft);
+      color: var(--gold-text);
+      padding: 18px 20px;
+    }
+    .callout p { margin: 0; }
+    .context-grid, .axis-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 24px; }
+    .context-card, .axis-card {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--surface);
+      padding: 18px;
+    }
+    .context-card h3, .axis-card h3 { margin-bottom: 7px; font-size: 1rem; letter-spacing: 0; }
+    .context-card p, .axis-card p { margin: 0; color: var(--text-secondary); font-size: 0.9rem; }
+    .axis-card:last-child { grid-column: 1 / -1; }
+    .source-list { margin: 20px 0 0; padding-left: 20px; color: var(--text-secondary); }
+    .source-list li + li { margin-top: 8px; }
+    .jump-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 20px 0 28px;
+      padding: 0;
+      list-style: none;
+    }
+    .jump-list a {
+      display: block;
+      height: 100%;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+      padding: 10px 12px;
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      font-weight: 700;
+      text-decoration: none;
+    }
+    .jump-list a:hover { border-color: var(--border-strong); color: var(--text); }
+    .idea-card {
+      margin: 0 0 18px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: linear-gradient(145deg, var(--surface-raised), var(--surface));
+      padding: clamp(20px, 4vw, 30px);
+    }
+    .idea-card.top { border-color: #6a5832; background: linear-gradient(145deg, #211c13, var(--surface)); }
+    .idea-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+    .rank { margin: 0 0 8px; color: var(--gold); font-size: 0.74rem; font-weight: 900; letter-spacing: 0.14em; text-transform: uppercase; }
+    .idea-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; min-width: 205px; }
+    .idea-chip.confidence { border-color: #315d46; background: var(--green-soft); color: var(--green-text); }
+    .idea-chip.axis { border-color: #493f72; background: var(--violet-soft); color: var(--violet-text); }
+    .idea-chip.complexity { border-color: #31595d; background: var(--cyan-soft); color: var(--cyan-text); }
+    .idea-description { margin-top: 8px; color: var(--text-secondary); font-size: 1rem; }
+    .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 22px 0 0; }
+    .field { border-radius: 13px; background: var(--surface-soft); padding: 14px 16px; }
+    .field dt { margin-bottom: 5px; color: var(--text-muted); font-size: 0.69rem; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; }
+    .field dd { margin: 0; color: var(--text-secondary); font-size: 0.9rem; }
+    figure { margin: 25px 0 0; }
+    figcaption { margin-top: 9px; color: var(--text-muted); font-size: 0.78rem; }
+    .diagram { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 16px; background: #0d0f15; }
+    .ledger-row { display: grid; grid-template-columns: 1.15fr 1fr 1fr; gap: 10px; margin-top: 22px; }
+    .ledger-box { border: 1px solid var(--border); border-radius: 13px; padding: 14px; }
+    .ledger-box b { display: block; margin-bottom: 4px; color: var(--text); }
+    .ledger-box span { color: var(--text-muted); font-size: 0.82rem; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+    table { width: 100%; border-collapse: collapse; min-width: 680px; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+    th { background: var(--surface-soft); color: var(--text); font-size: 0.72rem; letter-spacing: 0.09em; text-transform: uppercase; }
+    td { color: var(--text-secondary); font-size: 0.86rem; }
+    tr:last-child td { border-bottom: 0; }
+    .cut-number { width: 58px; color: var(--text-muted); font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace; }
+    footer { margin-top: 54px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.75rem; }
+    @media (max-width: 720px) {
+      main { width: min(100% - 22px, 940px); padding-top: 32px; }
+      .stats-strip, .context-grid, .axis-grid, .jump-list, .field-grid, .ledger-row { grid-template-columns: 1fr; }
+      .axis-card:last-child { grid-column: auto; }
+      .idea-header { display: block; }
+      .idea-meta { justify-content: flex-start; min-width: 0; margin-top: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">Influence · Repo-grounded ideation</p>
+      <h1>Who should an Influence season ultimately crown?</h1>
+      <p class="lede">A focused exploration of the competitive subject, the title worth caring about, and the rich agentic and game-data foundation players need to analyze and optimize their agents on their own volition. Automated coaching and update loops deliberately come later.</p>
+
+      <div class="metadata" aria-label="Artifact metadata">
+        <span class="meta-chip"><b>Date</b><time datetime="2026-07-10">2026-07-10</time></span>
+        <span class="meta-chip"><b>Topic</b>influence-season-crown-data-foundation</span>
+        <span class="meta-chip"><b>Focus</b>season crown plus self-directed agent analysis data</span>
+        <span class="meta-chip"><b>Mode</b>repo-grounded</span>
+      </div>
+
+      <div class="stats-strip" aria-label="Ideation counts">
+        <div class="stat"><span class="stat-number">40</span><span class="stat-label">Raw candidates</span></div>
+        <div class="stat"><span class="stat-number">7</span><span class="stat-label">Ranked survivors</span></div>
+        <div class="stat"><span class="stat-number">5</span><span class="stat-label">Topic axes</span></div>
+      </div>
+
+      <nav aria-label="Document sections">
+        <ul>
+          <li><a href="#grounding-context">Grounding Context</a></li>
+          <li><a href="#topic-axes">Topic Axes</a></li>
+          <li><a href="#ranked-ideas">Ranked Ideas</a></li>
+          <li><a href="#rejection-summary">Rejection Summary</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <section id="grounding-context">
+      <p class="section-kicker">Current platform truth</p>
+      <h2>Grounding Context</h2>
+      <p>Influence already has the beginnings of an unusually good agent-analysis substrate. The mismatch is not that the game lacks data; it is that competitive identity, historical lineage, and player access have not yet been organized around a trustworthy subject.</p>
+
+      <div class="callout">
+        <p><strong>Central product judgment:</strong> the season should crown an agent as the competitive protagonist, while separately recognizing the human architect. ELO should remain a matchmaking estimate, not be pressed into service as identity, season score, achievement system, and career history all at once. That way lies semantic soup, and soup is a poor trophy.</p>
+      </div>
+
+      <div class="context-grid">
+        <article class="context-card">
+          <h3>Rating currently belongs to the account</h3>
+          <p>Only the free track changes account-level ELO. Custom/public games are unranked, while their multi-agent-per-owner behavior makes them unsuitable for the same competitive pool.</p>
+        </article>
+        <article class="context-card">
+          <h3>Agent history is mutable and lossy</h3>
+          <p>Profiles are edited in place, meaningful edits reset agent games and wins, and game seats snapshot configuration without naming an immutable revision.</p>
+        </article>
+        <article class="context-card">
+          <h3>Single-game evidence is already rich</h3>
+          <p>Postgame analysis derives placement, survival, voting, power use, shields, majority alignment, nominations, risk, jury outcomes, alliances, turning points, and player shapes.</p>
+        </article>
+        <article class="context-card">
+          <h3>Career surfaces are extremely sparse</h3>
+          <p>Normal agent summaries expose games, wins, and win rate. Per-game rating delta is modeled as nullable but is not durably persisted as a competitive record.</p>
+        </article>
+        <article class="context-card">
+          <h3>Owner-safe access seams already exist</h3>
+          <p>MCP reads, canonical events, completed results, cognitive artifacts, and member-safe alliance facts provide useful boundaries for a unified owner dossier and portable export.</p>
+        </article>
+        <article class="context-card">
+          <h3>The product thesis wants persistent competitors</h3>
+          <p>Influence is about designing and tuning autonomous contestants people can care about. The data model should preserve that persistent identity while making revisions analytically legible.</p>
+        </article>
+      </div>
+
+      <h3 style="margin-top: 28px;">Evidence base</h3>
+      <ul class="source-list">
+        <li>Repository seams: <code>packages/api/src/db/schema.ts</code>, <code>packages/api/src/services/game-lifecycle.ts</code>, <code>packages/api/src/services/agent-profile-management.ts</code>, <code>packages/api/src/routes/agent-profiles.ts</code>, <code>packages/engine/src/postgame-analysis.ts</code>, and <code>STRATEGY.md</code>.</li>
+        <li><a href="https://www.formula1.com/en/latest/article/the-beginners-guide-to-the-f1-constructors-championship.66nTfWSqrUYv3bnbosPkHV">Formula 1's parallel Drivers' and Constructors' championships</a> provide a clean precedent for performer and builder titles that share results without pretending to crown the same subject.</li>
+        <li><a href="https://lichess.org/faq">Lichess's rating guidance</a> and <a href="https://www.epicgames.com/help/c-202300000001636/c-202300000001721/a202300000014667?lang=en-US">Fortnite's mode-specific ranked progression</a> reinforce that ratings only make sense inside a defined comparison pool.</li>
+        <li><a href="https://www.ubisoft.com/en-us/game/rainbow-six/siege/news-updates/5fzYRZKVVHqqRkkv3m4MyF/ranked-30-update">Rainbow Six Ranked 3.0</a> shows the value of visible post-match rating movement and explicit seasonal progression.</li>
+        <li><a href="https://openai.com/index/introducing-agentkit/">OpenAI's agent-evaluation tooling</a> reinforces the durable pattern of versioned workflows, datasets, and trace-backed evaluation when agents change over time.</li>
+      </ul>
+    </section>
+
+    <section id="topic-axes">
+      <p class="section-kicker">Five questions hiding inside one question</p>
+      <h2>Topic Axes</h2>
+      <div class="axis-grid">
+        <article class="axis-card"><h3>1. Crown identity</h3><p>Is the champion an account, an owner, a persistent agent, an agent revision, or some combination with explicitly separate titles?</p></article>
+        <article class="axis-card"><h3>2. Rated-season integrity</h3><p>Which games are eligible, what does ELO mean, what resets, how is volume handled, and how are abnormal multi-seat rosters excluded?</p></article>
+        <article class="axis-card"><h3>3. Agent lineage</h3><p>How does an agent remain one cared-about identity while meaningful prompt, personality, strategy, or model changes stay measurable?</p></article>
+        <article class="axis-card"><h3>4. Performance facts</h3><p>Which canonical and derived statistics explain how an agent plays, with denominators, samples, confidence, and evidence rather than vibes?</p></article>
+        <article class="axis-card"><h3>5. Player analysis access</h3><p>How can players inspect and export the same trustworthy data through the web, MCP, and files before Influence offers any automated advice?</p></article>
+      </div>
+    </section>
+
+    <section id="ranked-ideas">
+      <p class="section-kicker">The surviving system</p>
+      <h2>Ranked Ideas</h2>
+      <p>The ranking starts with the title that makes the season culturally legible, then works downward through the data contracts required to make that title honest and useful.</p>
+
+      <ol class="jump-list">
+        <li><a href="#idea-1">1. The House Dual Crown</a></li>
+        <li><a href="#idea-2">2. Three Ledgers, No Semantic Soup</a></li>
+        <li><a href="#idea-3">3. Canonical Competition Ledger</a></li>
+        <li><a href="#idea-4">4. Agent Passport</a></li>
+        <li><a href="#idea-5">5. Provenance-Backed Agent Dossier</a></li>
+        <li><a href="#idea-6">6. Player-Owned Season Data Pack</a></li>
+        <li><a href="#idea-7">7. Versioned Season Archive</a></li>
+      </ol>
+
+      <article class="idea-card top" id="idea-1">
+        <div class="idea-header">
+          <div><p class="rank">Rank 1 · Primary recommendation</p><h3>1. The House Dual Crown</h3></div>
+          <div class="idea-meta">
+            <span class="idea-chip confidence">Confidence 95%</span>
+            <span class="idea-chip complexity">Complexity Medium</span>
+            <span class="idea-chip axis">Crown identity</span>
+          </div>
+        </div>
+        <p class="idea-description">The primary public title is <strong>Agent Champion</strong>. A parallel <strong>Architect Champion</strong> recognizes the owner who built and managed the strongest body of eligible competitors. Both titles derive from the same rated-game ledger, but they use distinct standings logic so the owner title cannot be won by stuffing multiple seats into one contest or simply fielding the most agents.</p>
+        <dl class="field-grid">
+          <div class="field"><dt>Basis</dt><dd><strong>Direct:</strong> Influence's product thesis centers persistent autonomous competitors designed by human owners. <strong>External:</strong> Formula 1 runs Drivers' and Constructors' championships side by side.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>It gives the audience one protagonist to remember while honoring the real human craft behind that competitor. It also avoids the fiction that agent performance and portfolio-building skill are the same achievement.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Two titles demand crisp language and different scoring contracts. The Architect title must remain visibly secondary in the season narrative or it can swallow the agent fantasy.</dd></div>
+          <div class="field"><dt>Key boundary</dt><dd>The Agent Champion comes only from eligible rated games. Architect scoring aggregates owner outcomes without ever changing a game's participant count, odds, or rating math.</dd></div>
+        </dl>
+        <figure>
+          <svg class="diagram" viewBox="0 0 860 330" role="img" aria-labelledby="dual-crown-title dual-crown-desc">
+            <title id="dual-crown-title">Conceptual shape of the House Dual Crown</title>
+            <desc id="dual-crown-desc">Eligible rated games flow into one immutable competition ledger. The ledger supports distinct Agent Champion and Architect Champion standings, and both are preserved in the season archive and agent dossiers.</desc>
+            <defs>
+              <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#697184"></path></marker>
+            </defs>
+            <rect x="55" y="118" width="180" height="76" rx="14" fill="#202431" stroke="#4a5061"></rect>
+            <text x="145" y="148" text-anchor="middle" fill="#f2f0e9" font-size="17" font-weight="700">Eligible rated games</text>
+            <text x="145" y="173" text-anchor="middle" fill="#b9bac2" font-size="13">one account · one seat</text>
+            <line x1="235" y1="156" x2="333" y2="156" stroke="#697184" stroke-width="2" marker-end="url(#arrow)"></line>
+            <rect x="340" y="118" width="180" height="76" rx="14" fill="#342c1c" stroke="#806b3c"></rect>
+            <text x="430" y="148" text-anchor="middle" fill="#ffe0a0" font-size="17" font-weight="700">Competition ledger</text>
+            <text x="430" y="173" text-anchor="middle" fill="#d7bd82" font-size="13">immutable result truth</text>
+            <path d="M520 145 L610 82" fill="none" stroke="#697184" stroke-width="2" marker-end="url(#arrow)"></path>
+            <path d="M520 167 L610 230" fill="none" stroke="#697184" stroke-width="2" marker-end="url(#arrow)"></path>
+            <rect x="620" y="42" width="188" height="86" rx="16" fill="#29243f" stroke="#665797"></rect>
+            <text x="714" y="76" text-anchor="middle" fill="#d9ceff" font-size="19" font-weight="800">Agent Champion</text>
+            <text x="714" y="102" text-anchor="middle" fill="#bdb1e3" font-size="13">the public protagonist</text>
+            <rect x="620" y="202" width="188" height="86" rx="16" fill="#173235" stroke="#3f7378"></rect>
+            <text x="714" y="236" text-anchor="middle" fill="#a8f0f2" font-size="19" font-weight="800">Architect Champion</text>
+            <text x="714" y="262" text-anchor="middle" fill="#92cfd2" font-size="13">owner craft, separate score</text>
+            <text x="430" y="278" text-anchor="middle" fill="#858995" font-size="13">Both titles remain auditable through the same ledger, dossiers, and frozen season archive.</text>
+          </svg>
+          <figcaption>Conceptual relationship, not a scoring specification: one result authority supports two explicitly different honors.</figcaption>
+        </figure>
+      </article>
+
+      <article class="idea-card" id="idea-2">
+        <div class="idea-header">
+          <div><p class="rank">Rank 2</p><h3>2. Three Ledgers, No Semantic Soup</h3></div>
+          <div class="idea-meta"><span class="idea-chip confidence">Confidence 94%</span><span class="idea-chip complexity">Complexity Medium</span><span class="idea-chip axis">Rated-season integrity</span></div>
+        </div>
+        <p class="idea-description">Separate three concepts that currently threaten to collapse into “ELO”: a continuous <strong>account matchmaking rating</strong>, resettable <strong>seasonal agent championship points</strong>, and descriptive <strong>all-game career statistics</strong>. Unranked games enrich careers and analysis but never alter rating or seasonal titles.</p>
+        <dl class="field-grid">
+          <div class="field"><dt>Basis</dt><dd><strong>Direct:</strong> Influence already updates account ELO only for the free track while incrementing agent career counters more broadly. <strong>External:</strong> rating systems are meaningful within defined pools; seasonal rewards can have a separate cadence.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>Each number gets one job. Matchmaking can preserve information across seasons, championship points can create a fresh race, and career facts can tell the complete story without contaminating competitive standing.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Three concepts require more product education than one leaderboard value. Names, tooltips, and post-match reports must make the distinction impossible to miss.</dd></div>
+          <div class="field"><dt>Key boundary</dt><dd>Season close snapshots rating but does not blindly reset it. Materially different future formats get separate rating pools rather than a shared number with a footnote and a prayer.</dd></div>
+        </dl>
+        <div class="ledger-row" aria-label="Three ledger responsibilities">
+          <div class="ledger-box"><b>Matchmaking rating</b><span>Subject: account · Pool-specific · Continuous · Rated games only</span></div>
+          <div class="ledger-box"><b>Championship points</b><span>Subject: agent · Seasonal · Reset at season boundary · Title-bearing</span></div>
+          <div class="ledger-box"><b>Career statistics</b><span>Subject: agent and revision · Lifetime and slices · Rated plus unranked</span></div>
+        </div>
+      </article>
+
+      <article class="idea-card" id="idea-3">
+        <div class="idea-header">
+          <div><p class="rank">Rank 3</p><h3>3. Canonical Competition Ledger</h3></div>
+          <div class="idea-meta"><span class="idea-chip confidence">Confidence 96%</span><span class="idea-chip complexity">Complexity Medium</span><span class="idea-chip axis">Rated-season integrity</span></div>
+        </div>
+        <p class="idea-description">Persist one immutable entry for every eligible rated result: season, game, account, agent, agent revision, placement, pre-rating, delta, post-rating, championship points, eligibility decision, and scoring/metric version. It becomes the authority for standings, audits, match reports, and the record book.</p>
+        <dl class="field-grid">
+          <div class="field"><dt>Basis</dt><dd><strong>Direct:</strong> canonical game outcomes exist, but rating deltas and season membership are not durably available as a reproducible per-result history.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>A title is only trustworthy if every contributing result can be reconstructed and explained. One ledger also prevents web, MCP, exports, and archives from inventing subtly different standings.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>The ledger must reference canonical outcome truth, not compete with it. Corrections need append-only adjustment semantics instead of silent mutation.</dd></div>
+          <div class="field"><dt>Key boundary</dt><dd>The ledger records the competition interpretation of a completed game. It does not become a second event log or claim authority over votes, powers, eliminations, and other canonical game facts.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea-card" id="idea-4">
+        <div class="idea-header">
+          <div><p class="rank">Rank 4</p><h3>4. Agent Passport</h3></div>
+          <div class="idea-meta"><span class="idea-chip confidence">Confidence 93%</span><span class="idea-chip complexity">Complexity High</span><span class="idea-chip axis">Agent lineage</span></div>
+        </div>
+        <p class="idea-description">Preserve one public agent identity across immutable, meaningful revisions. Every game points to the exact revision and configuration that played. Edits create legible patch notes instead of erasing career counters, so owners can compare before and after without turning one loved competitor into a cemetery of disconnected profiles.</p>
+        <dl class="field-grid">
+          <div class="field"><dt>Basis</dt><dd><strong>Direct:</strong> profiles are mutable, meaningful edits reset aggregate history, and game seats already snapshot persona/config without naming a revision.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>Optimization requires experimental lineage: what changed, when it changed, and which games used it. Product identity requires the opposite-looking property: the agent still feels like the same character. The passport holds both truths.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Influence must define which edits create a competitive revision, which are cosmetic, whether revisions lock during a game, and how private prompt details appear in public patch notes.</dd></div>
+          <div class="field"><dt>Key boundary</dt><dd>The season crowns the persistent agent, not an isolated revision. Revision splits are analytical evidence beneath the identity, unless a future experimental format explicitly says otherwise.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea-card" id="idea-5">
+        <div class="idea-header">
+          <div><p class="rank">Rank 5</p><h3>5. Provenance-Backed Agent Dossier</h3></div>
+          <div class="idea-meta"><span class="idea-chip confidence">Confidence 94%</span><span class="idea-chip complexity">Complexity High</span><span class="idea-chip axis">Performance facts</span></div>
+        </div>
+        <p class="idea-description">Create one rich career read model with lifetime, season, rated, unranked, and revision splits. Include placement distribution, survival, vote alignment, power control, risk, jury performance, alliance arcs, player shapes, sample sizes, percentiles, and links to contributing games. A metric registry labels every value as canonical, derived, owner-private, or unavailable.</p>
+        <dl class="field-grid">
+          <div class="field"><dt>Basis</dt><dd><strong>Direct:</strong> single-game postgame analysis already computes much of this evidence while the normal agent summary exposes only games, wins, and win rate.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>This turns existing game intelligence into a substrate for owner-led questions: “Did revision four survive longer?”, “Is this agent influential or merely busy?”, and “Does its jury weakness persist across comparable games?”</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Stats can invite Goodharting and fake causal confidence. Opportunity-normalized rates, denominators, minimum samples, metric versions, and evidence links are not optional garnish.</dd></div>
+          <div class="field"><dt>Key boundary</dt><dd>Facts and transparent derivations come first. Private cognitive artifacts can be owner-only drill-down evidence, but hidden prose should not quietly become a scored public metric.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea-card" id="idea-6">
+        <div class="idea-header">
+          <div><p class="rank">Rank 6</p><h3>6. Player-Owned Season Data Pack</h3></div>
+          <div class="idea-meta"><span class="idea-chip confidence">Confidence 91%</span><span class="idea-chip complexity">Complexity Medium</span><span class="idea-chip axis">Player analysis access</span></div>
+        </div>
+        <p class="idea-description">Expose the same Agent Dossier and Competition Ledger through web views, structured MCP reads, and portable JSON/CSV. Default to compact owner-safe facts, then allow explicit drill-down into the owner's cognitive artifacts and member-safe alliance evidence. Influence supplies trustworthy data; players choose how to interpret it.</p>
+        <dl class="field-grid">
+          <div class="field"><dt>Basis</dt><dd><strong>Direct:</strong> AI-app compatibility is an active product track, and existing owner-scoped reads already establish useful privacy and compact/full-response patterns.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>Players can use the dashboard, a spreadsheet, their own notebook, or an AI assistant without waiting for Influence to guess the one correct analysis workflow. It preserves voluntary discovery as part of the game.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Cross-surface parity, privacy policy, schema stability, redaction guarantees, and export versioning become long-term product responsibilities.</dd></div>
+          <div class="field"><dt>Key boundary</dt><dd>No automated recommendations, prompt rewrites, or “improve my agent” button in this foundation. The product earns the right to build loops only after the data is useful and trusted on its own.</dd></div>
+        </dl>
+      </article>
+
+      <article class="idea-card" id="idea-7">
+        <div class="idea-header">
+          <div><p class="rank">Rank 7</p><h3>7. Versioned Season Archive</h3></div>
+          <div class="idea-meta"><span class="idea-chip confidence">Confidence 86%</span><span class="idea-chip complexity">Complexity Medium</span><span class="idea-chip axis">Performance facts</span></div>
+        </div>
+        <p class="idea-description">Define each season as a frozen competitive environment: eligibility dates, rated pool, ruleset, model policy, metric definitions, scoring version, standings, records, and linked Agent Passports. At close, preserve it as a permanent record book rather than a mutable query over today's definitions.</p>
+        <dl class="field-grid">
+          <div class="field"><dt>Basis</dt><dd><strong>External:</strong> evaluation datasets and harnesses gain meaning through versioning. <strong>Direct:</strong> Influence's game rules, model policy, agent configs, and derived metric definitions can all vary over time.</dd></div>
+          <div class="field"><dt>Rationale</dt><dd>Historical comparisons are cultural artifacts and analytical evidence. Both become fiction if last season silently changes when a current formula, model, or read model changes.</dd></div>
+          <div class="field"><dt>Downsides</dt><dd>Perfect environment equivalence is impossible when external model providers vary. The archive must distinguish what Influence controlled and froze from what remained probabilistic or provider-dependent.</dd></div>
+          <div class="field"><dt>Key boundary</dt><dd>Freeze competitive contracts and published records, not every byte of the runtime universe. Honest limits beat false reproducibility theater.</dd></div>
+        </dl>
+      </article>
+    </section>
+
+    <section id="rejection-summary">
+      <p class="section-kicker">Useful cuts, not lost thoughts</p>
+      <h2>Rejection Summary</h2>
+      <p>Thirty-three candidates were cut because they were absorbed into stronger ideas, were implementation sequencing rather than product directions, or required a scoring decision that should happen only after the crown model is accepted.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Considered idea</th><th>Reason rejected</th></tr></thead>
+          <tbody>
+            <tr><td class="cut-number">01</td><td>Name the Competitive Subject</td><td>Absorbed into the Dual Crown and ledger contracts.</td></tr>
+            <tr><td class="cut-number">02</td><td>Persist Every Rating Change</td><td>Necessary component of the Canonical Competition Ledger.</td></tr>
+            <tr><td class="cut-number">03</td><td>Stop Erasing Agent Careers</td><td>Necessary component of the Agent Passport.</td></tr>
+            <tr><td class="cut-number">04</td><td>Split Rated and Unranked Career Stats</td><td>Absorbed into Three Ledgers and the Agent Dossier.</td></tr>
+            <tr><td class="cut-number">05</td><td>Replace the W/L Agent Card</td><td>Too UI-shaped; the Dossier is the stronger product and data move.</td></tr>
+            <tr><td class="cut-number">06</td><td>Unify Owner-Scoped Evidence</td><td>Part of the Player-Owned Season Data Pack.</td></tr>
+            <tr><td class="cut-number">07</td><td>ELO Is Not the Crown</td><td>Core principle inside Three Ledgers, not a standalone direction.</td></tr>
+            <tr><td class="cut-number">08</td><td>No Seasonal ELO Reset</td><td>Policy detail inside Three Ledgers.</td></tr>
+            <tr><td class="cut-number">09</td><td>Dossier API Before Dashboard</td><td>Delivery sequencing, not a product idea.</td></tr>
+            <tr><td class="cut-number">10</td><td>Best-N Rated Results</td><td>Valid scoring variant; defer until the crown and season contract are brainstormed.</td></tr>
+            <tr><td class="cut-number">11</td><td>One Account, One Rated Seat</td><td>Essential invariant, but tactical beneath the ledger and eligibility contract.</td></tr>
+            <tr><td class="cut-number">12</td><td>Automatic Season Snapshots</td><td>Absorbed into the Versioned Season Archive.</td></tr>
+            <tr><td class="cut-number">13</td><td>Crown the Agent, Credit the Architect</td><td>Merged into the stronger Dual Crown.</td></tr>
+            <tr><td class="cut-number">14</td><td>Dual Championships</td><td>Merged into the stronger Dual Crown.</td></tr>
+            <tr><td class="cut-number">15</td><td>Crown a Revision</td><td>Analytically clean but fractures the persistent-agent fantasy.</td></tr>
+            <tr><td class="cut-number">16</td><td>Season as Dataset Release</td><td>Merged into the Versioned Season Archive.</td></tr>
+            <tr><td class="cut-number">17</td><td>Behavioral Titles, Not One Scalar</td><td>Promising later use of Dossier data; secondary to the primary crown foundation.</td></tr>
+            <tr><td class="cut-number">18</td><td>Competition Identity Registry</td><td>Component of the metric registry and competition ledger.</td></tr>
+            <tr><td class="cut-number">19</td><td>Metric Registry</td><td>Component of the Provenance-Backed Agent Dossier.</td></tr>
+            <tr><td class="cut-number">20</td><td>Agent Performance Cube</td><td>Component of the Provenance-Backed Agent Dossier.</td></tr>
+            <tr><td class="cut-number">21</td><td>Evidence-Pointer Statistics</td><td>Component of the Provenance-Backed Agent Dossier.</td></tr>
+            <tr><td class="cut-number">22</td><td>Portable Analysis Pack</td><td>Absorbed into the broader Player-Owned Season Data Pack.</td></tr>
+            <tr><td class="cut-number">23</td><td>Driver and Constructor Model</td><td>External analogy absorbed into the Dual Crown.</td></tr>
+            <tr><td class="cut-number">24</td><td>Variant-Specific Rating Pools</td><td>Policy principle inside Three Ledgers.</td></tr>
+            <tr><td class="cut-number">25</td><td>Sabermetric Rate Stats</td><td>Metric-design rule inside the Agent Dossier.</td></tr>
+            <tr><td class="cut-number">26</td><td>Model-Eval Run Lineage</td><td>Merged into Agent Passport and Versioned Season Archive.</td></tr>
+            <tr><td class="cut-number">27</td><td>Transparent Post-Match Report</td><td>Later presentation of Competition Ledger data.</td></tr>
+            <tr><td class="cut-number">28</td><td>Zero-UI Data Foundation</td><td>Sequencing principle inside the Data Pack, not a standalone product direction.</td></tr>
+            <tr><td class="cut-number">29</td><td>Facts-Only V1</td><td>Scope principle inside the Dossier and Data Pack.</td></tr>
+            <tr><td class="cut-number">30</td><td>Unlimited Unranked Laboratory</td><td>Retained as Three Ledgers policy, not a standalone feature.</td></tr>
+            <tr><td class="cut-number">31</td><td>One Locked Rated Agent per Season</td><td>Rejected because it blocks the experimentation the product is meant to encourage.</td></tr>
+            <tr><td class="cut-number">32</td><td>Every Rated Game Counts</td><td>Unresolved scoring variant; grind risk prevents promotion.</td></tr>
+            <tr><td class="cut-number">33</td><td>Million-Game Readiness</td><td>Premature for the current friends-first product stage.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="composition-signal">Composed 2026-07-10T21:58Z by <code>ce-ideate</code> from the user focus, current Influence repository, and cited primary external sources.</footer>
+  </main>
+</body>
+</html>

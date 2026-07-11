@@ -89,7 +89,7 @@ export default function AboutPage() {
               },
               {
                 title: "Free Daily Games",
-                desc: "Queue your agent for the nightly free game. An ELO-rated leaderboard tracks performance over time.",
+                desc: "Queue one agent for the nightly game. Seasonal Agent and Architect crowns track performance while account ELO remains a separate signal.",
               },
               {
                 title: "Replay & Analysis",

@@ -24,6 +24,7 @@ const PERMISSIONS = [
   { name: "view_admin", description: "Access the admin panel" },
   { name: "manage_cost_accounting", description: "Backfill, rebuild, and reconcile admin game cost accounting" },
   { name: "manage_postgame_media", description: "Backfill and rerender House Highlights postgame media" },
+  { name: "manage_seasons", description: "Create, close, and finalize rated Influence seasons" },
   { name: "schedule_free_game", description: "Trigger daily free game draw and start" },
   { name: "hide_game", description: "Hide/unhide games from public lists" },
 ] as const;
@@ -48,6 +49,7 @@ const ROLES = [
       "schedule_free_game",
       "hide_game",
       "manage_postgame_media",
+      "manage_seasons",
     ],
   },
   {

@@ -64,6 +64,8 @@ import {
 } from "./game-recovery.js";
 import { isUserSelectableAgentArchetype } from "./agent-archetypes.js";
 import { ensureWaitingPostgameMediaRow, reconcilePostgameMediaForGame } from "./postgame-media-coordinator.js";
+import { validateRatedGameRoster } from "./seasons.js";
+import { completeCompetitionGameInTransaction } from "./competition-completion.js";
 
 // ---------------------------------------------------------------------------
 // Active game tracking
@@ -384,6 +386,7 @@ interface CompletedGameRunResult {
   rounds: number;
   transcript: TranscriptEntry[];
   eliminationOrder: string[];
+  rankedPlayerIds: string[];
 }
 
 async function persistCompletedGame(
@@ -473,27 +476,36 @@ async function persistCompletedGame(
         }),
       });
 
-    const playersWithProfiles = (await tx
-      .select()
-      .from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.gameId, params.gameId)))
-      .filter((p) => p.agentProfileId != null);
-
-    for (const player of playersWithProfiles) {
-      const isWinner = player.id === params.result.winner;
-      await tx.execute(
-        sql`UPDATE agent_profiles
-            SET games_played = games_played + 1,
-                games_won = games_won + ${isWinner ? 1 : 0},
-                updated_at = ${now}
-            WHERE id = ${player.agentProfileId}`,
-      );
-    }
-
     const gameRecord = (await tx
-      .select({ trackType: schema.games.trackType })
+      .select({ trackType: schema.games.trackType, seasonId: schema.games.seasonId })
       .from(schema.games)
       .where(eq(schema.games.id, params.gameId)))[0];
+
+    const competition = await completeCompetitionGameInTransaction(tx, {
+      gameId: params.gameId,
+      winnerId: params.result.winner ?? null,
+      roundsPlayed: params.result.rounds,
+      earnedAt: now,
+    });
+
+    if (!competition.rated) {
+      const playersWithProfiles = (await tx
+        .select()
+        .from(schema.gamePlayers)
+        .where(eq(schema.gamePlayers.gameId, params.gameId)))
+        .filter((p) => p.agentProfileId != null);
+
+      for (const player of playersWithProfiles) {
+        const isWinner = player.id === params.result.winner;
+        await tx.execute(
+          sql`UPDATE agent_profiles
+              SET games_played = games_played + 1,
+                  games_won = games_won + ${isWinner ? 1 : 0},
+                  updated_at = ${now}
+              WHERE id = ${player.agentProfileId}`,
+        );
+      }
+    }
 
     if (gameRecord?.trackType === "free") {
       const allPlayers = await tx
@@ -506,49 +518,44 @@ async function persistCompletedGame(
       const totalHumans = allPlayers.filter((p) => p.userId != null).length;
 
       if (totalHumans >= 2) {
-        for (const p of allPlayers) {
-          if (!p.userId) continue;
-          if (seenUsers.has(p.userId)) continue;
-          seenUsers.add(p.userId);
-
-          const persona = JSON.parse(p.persona) as { name: string };
-          const elimIndex = params.result.eliminationOrder.indexOf(persona.name);
-          let placement: number;
-          if (p.id === params.result.winner) {
-            placement = 1;
-          } else if (elimIndex >= 0) {
-            placement = totalHumans - elimIndex;
-            if (placement < 2) placement = 2;
-          } else {
-            placement = Math.ceil(totalHumans / 2);
-          }
-
+        const playerById = new Map(allPlayers.map((player) => [player.id, player]));
+        const rankedHumanSeats = params.result.rankedPlayerIds
+          .map((playerId) => playerById.get(playerId))
+          .filter((player): player is typeof allPlayers[number] => Boolean(player?.userId))
+          .filter((player) => {
+            if (!player.userId || seenUsers.has(player.userId)) return false;
+            seenUsers.add(player.userId);
+            return true;
+          });
+        for (const [index, p] of rankedHumanSeats.entries()) {
           humanPlayers.push({
-            userId: p.userId,
-            placement,
-            totalPlayers: totalHumans,
+            userId: p.userId!,
+            placement: index + 1,
+            totalPlayers: rankedHumanSeats.length,
           });
         }
 
         const currentRatings = new Map<string, number>();
-        for (const hp of humanPlayers) {
+        const currentPeaks = new Map<string, number>();
+        const userIds = [...new Set(humanPlayers.map((player) => player.userId))].sort();
+        for (const userId of userIds) {
+          await tx.execute(sql`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`);
+        }
+        for (const userId of userIds) {
           const user = (await tx
-            .select({ rating: schema.users.rating })
+            .select({ rating: schema.users.rating, peakRating: schema.users.peakRating })
             .from(schema.users)
-            .where(eq(schema.users.id, hp.userId)))[0];
-          currentRatings.set(hp.userId, user?.rating ?? 1200);
+            .where(eq(schema.users.id, userId)))[0];
+          currentRatings.set(userId, user?.rating ?? 1200);
+          currentPeaks.set(userId, user?.peakRating ?? 1200);
         }
 
         const eloChanges = calculateEloChanges(humanPlayers, currentRatings);
+        const winnerUserId = allPlayers.find((player) => player.id === params.result.winner)?.userId ?? null;
         for (const change of eloChanges) {
-          const isWinner = humanPlayers.find((p) => p.userId === change.userId)?.placement === 1;
+          const isWinner = change.userId === winnerUserId;
 
-          const user = (await tx
-            .select({ peakRating: schema.users.peakRating })
-            .from(schema.users)
-            .where(eq(schema.users.id, change.userId)))[0];
-
-          const newPeak = Math.max(user?.peakRating ?? 1200, change.newRating);
+          const newPeak = Math.max(currentPeaks.get(change.userId) ?? 1200, change.newRating);
           await tx.execute(
             sql`UPDATE users
                 SET rating = ${change.newRating},
@@ -558,6 +565,14 @@ async function persistCompletedGame(
                     last_game_at = ${now}
                 WHERE id = ${change.userId}`,
           );
+          if (gameRecord.seasonId) {
+            await tx.update(schema.competitionReceipts)
+              .set({ accountRatingDelta: change.delta })
+              .where(and(
+                eq(schema.competitionReceipts.gameId, params.gameId),
+                eq(schema.competitionReceipts.ownerId, change.userId),
+              ));
+          }
         }
       }
     }
@@ -697,6 +712,11 @@ export async function validateGameStartReadiness(
     return { error: "Game not found" };
   }
 
+  const ratedRoster = await validateRatedGameRoster(db, gameId);
+  if (ratedRoster.error) {
+    return { error: ratedRoster.error };
+  }
+
   let gameConfig: Record<string, unknown>;
   try {
     gameConfig = JSON.parse(game.config) as Record<string, unknown>;
@@ -815,6 +835,7 @@ export async function startGame(
       personality?: string;
       strategyHints?: string;
       personaKey?: string;
+      backstory?: string;
     };
     if (useTestMockRunner) {
       return new ApiTestMockAgent(player.id, persona.name);
@@ -841,7 +862,7 @@ export async function startGame(
       personality,
       llmConfig.client,
       model,
-      undefined,
+      persona.backstory,
       memoryStore,
       {
         ...(toolChoiceMode && { toolChoiceMode }),
@@ -850,6 +871,9 @@ export async function startGame(
         catalogId: resolvedModelSelection.catalogId,
         modelCapabilities: resolvedModelSelection.model.capabilities,
         reasoningPolicy: resolvedModelSelection.reasoningPolicy,
+        ...(player.agentProfileId && persona.personality && { personalityPrompt: persona.personality }),
+        ...(player.agentProfileId && persona.strategyHints && { strategyInstructions: persona.strategyHints }),
+        ...(agentCfg.temperature !== undefined && { temperature: agentCfg.temperature }),
         ...(privateTraceSink && { privateTraceSink }),
       },
     );

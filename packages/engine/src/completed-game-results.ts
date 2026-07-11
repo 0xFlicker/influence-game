@@ -103,6 +103,8 @@ export interface CompletedGameResultsRead {
     roundsPlayed: number;
     finalists: RevealedPlayerRef[];
     playerCount: number;
+    /** Canonical player IDs ordered by placement; tied placements retain roster order. */
+    rankedPlayerIds: UUID[];
   };
   players: CompletedGameResultsPlayer[];
   eliminationOrder: CompletedGameResultsElimination[];
@@ -160,6 +162,7 @@ export function buildCompletedGameResults(
   const rounds = buildRounds(options.events, eventLogStatus, projectionStatus, projection);
   const winner = refOrNull(projection, winnerId);
   const jury = buildJury(options.events, projection, winnerEvent, finalists);
+  const players = buildPlayers(projection, winnerId, finalists, eliminationOrder);
 
   return {
     schemaVersion: 1,
@@ -176,8 +179,12 @@ export function buildCompletedGameResults(
       roundsPlayed,
       finalists,
       playerCount: projection.playerOrder.length,
+      rankedPlayerIds: [...players]
+        .filter((player) => player.placement !== null)
+        .sort((left, right) => (left.placement ?? Number.MAX_SAFE_INTEGER) - (right.placement ?? Number.MAX_SAFE_INTEGER))
+        .map((player) => player.id),
     },
-    players: buildPlayers(projection, winnerId, finalists, eliminationOrder),
+    players,
     eliminationOrder,
     rounds,
     jury,
@@ -218,6 +225,7 @@ function terminalFallbackRead(
       roundsPlayed: terminalResult?.roundsPlayed ?? 0,
       finalists: [],
       playerCount: 0,
+      rankedPlayerIds: winner ? [winner.id] : [],
     },
     players: winner ? [{ ...winner, placement: 1, status: "winner" }] : [],
     eliminationOrder: [],

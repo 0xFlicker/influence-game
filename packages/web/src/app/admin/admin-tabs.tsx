@@ -8,10 +8,11 @@ import { AgentsAdminPanel } from "./agents-admin-panel";
 import { InviteCodesPanel } from "./invite-codes-panel";
 import { ImportGamePanel } from "./import-game-panel";
 import { PermissionGate } from "@/components/admin-gate";
+import { SeasonAdminPanel } from "./season-admin-panel";
 
-type Tab = "games" | "agents" | "users" | "invites" | "import";
+type Tab = "games" | "seasons" | "agents" | "users" | "invites" | "import";
 
-const VALID_TABS: Tab[] = ["games", "agents", "users", "invites", "import"];
+const VALID_TABS: Tab[] = ["games", "seasons", "agents", "users", "invites", "import"];
 
 export function AdminTabs() {
   const searchParams = useSearchParams();
@@ -38,7 +39,13 @@ export function AdminTabs() {
   return (
     <div>
       {/* Tab bar */}
-      <div className="flex gap-1 mb-8 border-b border-white/10">
+      <div className="mb-8 flex max-w-full gap-1 overflow-x-auto border-b border-white/10">
+        <TabButton
+          active={activeTab === "seasons"}
+          onClick={() => setActiveTab("seasons")}
+        >
+          Seasons
+        </TabButton>
         <TabButton
           active={activeTab === "games"}
           onClick={() => setActiveTab("games")}
@@ -75,6 +82,7 @@ export function AdminTabs() {
 
       {/* Tab content */}
       {activeTab === "games" && <AdminPanel />}
+      {activeTab === "seasons" && <SeasonAdminPanel />}
       {activeTab === "agents" && <AgentsAdminPanel />}
       {activeTab === "users" && <UserRolesPanel />}
       {activeTab === "invites" && <InviteCodesPanel />}

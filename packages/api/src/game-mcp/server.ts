@@ -175,6 +175,21 @@ export class ProductionGameMcpJsonRpcServer {
         requireAnyScope(auth, ["games:read", "producer"]);
         return content(await this.readModel.listGames(auth, optionalNumber(args, "limit")));
       }
+      if (name === "list_seasons") {
+        requireAnyScope(auth, ["games:read", "producer"]);
+        return content(await this.readModel.listSeasons());
+      }
+      if (name === "read_season_standings") {
+        requireAnyScope(auth, ["games:read", "producer"]);
+        return content(await this.readModel.readSeason(requiredString(args, "seasonIdOrSlug")));
+      }
+      if (name === "read_season_game_receipts") {
+        requireAnyScope(auth, ["games:read", "producer"]);
+        return content(await this.readModel.readSeasonGameReceipts(
+          requiredString(args, "seasonIdOrSlug"),
+          requiredString(args, "gameIdOrSlug"),
+        ));
+      }
       if (name === "list_agent_games") {
         requireAnyScope(auth, ["games:read", "producer"]);
         return postgameContent(await this.readModel.listAgentGames(agentGamesArgs(args), auth));
@@ -265,6 +280,26 @@ export class ProductionGameMcpJsonRpcServer {
           limit: optionalNumber(args, "limit"),
         }));
       }
+      if (name === "read_agent_season") {
+        requireScopes(auth, ["agents:read"]);
+        return content(await this.readModel.readOwnedAgentSeason(
+          requiredString(args, "seasonIdOrSlug"),
+          requiredString(args, "agentId"),
+          auth,
+        ));
+      }
+      if (name === "export_agent_season_data") {
+        requireScopes(auth, ["agents:read"]);
+        const format = optionalString(args, "format") ?? "json";
+        if (format !== "json" && format !== "csv") throw new Error("format must be json or csv");
+        return content(await this.readModel.exportOwnedSeason(
+          requiredString(args, "seasonIdOrSlug"),
+          format,
+          auth,
+          optionalNumber(args, "limit"),
+          optionalString(args, "agentId"),
+        ));
+      }
       if (name === "get_queue_status") {
         requireScopes(auth, ["agents:read"]);
         const db = this.requireManagementDb();
@@ -306,6 +341,12 @@ export class ProductionGameMcpJsonRpcServer {
       if (name === "read_producer_game_analysis") {
         requireScopes(auth, ["producer"]);
         return postgameContent(await this.readModel.readProducerGameAnalysis(postgameArgs(args), auth));
+      }
+      if (name === "read_producer_season_diagnostics") {
+        requireScopes(auth, ["producer"]);
+        return content(await this.readModel.readProducerSeasonDiagnostics(
+          requiredString(args, "seasonIdOrSlug"),
+        ));
       }
       if (name === "list_trace_manifests") {
         requireScopes(auth, ["producer"]);
@@ -396,6 +437,32 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
       scopes: gameReadScopes,
       readOnlyHint: true,
       appMeta: includeProducerTools ? undefined : createInfluenceMcpAppToolMeta(),
+    }),
+    tool({
+      name: "list_seasons",
+      description: "List Influence championship seasons and their public status.",
+      properties: {},
+      scopes: gameReadScopes,
+      readOnlyHint: true,
+    }),
+    tool({
+      name: "read_season_standings",
+      description: "Read receipt-derived Agent and Architect standings for one season.",
+      properties: { seasonIdOrSlug: { type: "string" } },
+      required: ["seasonIdOrSlug"],
+      scopes: gameReadScopes,
+      readOnlyHint: true,
+    }),
+    tool({
+      name: "read_season_game_receipts",
+      description: "Read public point receipts for one game in a championship season.",
+      properties: {
+        seasonIdOrSlug: { type: "string" },
+        gameIdOrSlug: { type: "string" },
+      },
+      required: ["seasonIdOrSlug", "gameIdOrSlug"],
+      scopes: gameReadScopes,
+      readOnlyHint: true,
     }),
     tool({
       name: "list_agent_games",
@@ -597,6 +664,14 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
   return [
     ...tools,
     tool({
+      name: "read_producer_season_diagnostics",
+      description: "Read producer-only hidden competition ratings, rating events, and receipt evidence for one season.",
+      properties: { seasonIdOrSlug: { type: "string" } },
+      required: ["seasonIdOrSlug"],
+      scopes: ["producer"],
+      readOnlyHint: true,
+    }),
+    tool({
       name: "inspect_durable_run",
       description: "Return the durable-run inspection summary for one game ID or slug.",
       properties: {
@@ -741,6 +816,30 @@ function userAgentReadTools(): unknown[] {
       properties: {
         limit: { type: "number" },
       },
+      scopes: ["agents:read"],
+      readOnlyHint: true,
+    }),
+    tool({
+      name: "read_agent_season",
+      description: "Read the authenticated owner's receipt and revision-separated season analysis for one saved agent.",
+      properties: {
+        seasonIdOrSlug: { type: "string" },
+        agentId: { type: "string" },
+      },
+      required: ["seasonIdOrSlug", "agentId"],
+      scopes: ["agents:read"],
+      readOnlyHint: true,
+    }),
+    tool({
+      name: "export_agent_season_data",
+      description: "Export the authenticated owner's bounded season receipt data, optionally for one agent, as JSON or spreadsheet-safe CSV.",
+      properties: {
+        seasonIdOrSlug: { type: "string" },
+        agentId: { type: "string" },
+        format: { type: "string", enum: ["json", "csv"] },
+        limit: { type: "number" },
+      },
+      required: ["seasonIdOrSlug"],
       scopes: ["agents:read"],
       readOnlyHint: true,
     }),

@@ -150,23 +150,23 @@ export function ProfileContent() {
         )}
       </section>
 
-      {/* ELO Stats */}
+      {/* Account rating stats */}
       <section className="influence-panel rounded-xl p-6">
         <h2 className="influence-section-title mb-4">
-          Rating
+          Account Free-Track Rating
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
           <div>
             <p className="text-3xl font-bold text-text-primary font-mono">
               {profile.rating}
             </p>
-            <p className="influence-copy-muted text-xs mt-1">Current ELO</p>
+            <p className="influence-copy-muted text-xs mt-1">Current Account ELO</p>
           </div>
           <div>
             <p className="text-3xl font-bold text-text-primary/65 font-mono">
               {profile.peakRating}
             </p>
-            <p className="influence-copy-muted text-xs mt-1">Peak ELO</p>
+            <p className="influence-copy-muted text-xs mt-1">Peak Account ELO</p>
           </div>
           <div>
             <p className="text-3xl font-bold text-text-primary font-mono">

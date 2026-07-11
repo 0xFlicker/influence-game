@@ -114,6 +114,7 @@ describe("buildCompletedGameResults", () => {
     expect(read.summary.winner).toEqual({ id: "alice", name: "Alice" });
     expect(read.summary.winnerMethod).toBe("majority");
     expect(read.summary.finalists.map((player) => player.id)).toEqual(["alice", "bob"]);
+    expect(read.summary.rankedPlayerIds).toEqual(["alice", "bob", "charlie", "dave"]);
     expect(read.jury.status).toBe("available");
     expect(read.jury.ledger.map((entry) => entry.juror.id)).toEqual(["charlie", "dave"]);
     expect(read.jury.voteCounts).toEqual([

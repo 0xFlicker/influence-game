@@ -110,10 +110,13 @@ export async function startTestServers(
       NODE_ENV: "development",
       PORT: String(webPort),
       NEXT_PUBLIC_API_URL: apiUrl,
+      PRIVY_APP_ID: "e2e-test-privy-app-id-001",
+      NEXT_PUBLIC_PRIVY_APP_ID: "e2e-test-privy-app-id-001",
+      NEXT_PUBLIC_E2E_AUTH: "true",
     };
 
     webProcess = Bun.spawn(
-      ["bun", "run", "dev"],
+      ["bun", "run", "dev", "--hostname", "127.0.0.1"],
       {
         cwd: path.join(WORKSPACE_ROOT, "packages/web"),
         env: webEnv,
@@ -124,8 +127,21 @@ export async function startTestServers(
 
     webUrl = `http://localhost:${webPort}`;
 
-    // Wait for web server to be healthy
-    await waitForHealth(webUrl, 60000);
+    // Wait for web server to be healthy. Preserve child output on failure;
+    // otherwise a Next startup error is hidden behind a generic timeout.
+    try {
+      await waitForHealth(webUrl, 60000);
+    } catch (error) {
+      webProcess.kill("SIGTERM");
+      await webProcess.exited;
+      const [stdout, stderr] = await Promise.all([
+        readProcessPipe(webProcess.stdout),
+        readProcessPipe(webProcess.stderr),
+      ]);
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}\n${stdout}\n${stderr}`.trim(),
+      );
+    }
   }
 
   return {
@@ -136,6 +152,11 @@ export async function startTestServers(
     apiUrl,
     webUrl,
   };
+}
+
+async function readProcessPipe(pipe: Subprocess["stdout"]): Promise<string> {
+  if (!pipe || typeof pipe === "number") return "";
+  return new Response(pipe).text();
 }
 
 /**
