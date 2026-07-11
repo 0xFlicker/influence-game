@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PermissionGate } from "@/components/admin-gate";
 import {
   closeAdminSeason,
@@ -12,6 +12,24 @@ import {
   type SeasonIdentity,
 } from "@/lib/api";
 
+export function suggestSeasonName(seasons: Pick<SeasonIdentity, "name">[]): string {
+  const highestNumber = seasons.reduce((highest, season) => {
+    const match = /^Season\s+(\d+)$/i.exec(season.name.trim());
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, -1);
+  return `Season ${highestNumber + 1}`;
+}
+
+function seasonSlug(name: string): string {
+  const readable = name
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 64) || "season";
+  return `${readable}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
 export function SeasonAdminPanel() {
   const [seasons, setSeasons] = useState<SeasonIdentity[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -19,11 +37,17 @@ export function SeasonAdminPanel() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [newSeasonName, setNewSeasonName] = useState("Season 0");
+  const loadedNameSuggestion = useRef(false);
 
   const refresh = useCallback(async (preferredId?: string) => {
     try {
       const next = await listSeasons();
       setSeasons(next);
+      if (!loadedNameSuggestion.current) {
+        setNewSeasonName(suggestSeasonName(next));
+        loadedNameSuggestion.current = true;
+      }
       const selected = next.find((season) => season.id === preferredId)
         ?? next[0];
       setSelectedId(selected?.id ?? "");
@@ -46,6 +70,7 @@ export function SeasonAdminPanel() {
     try {
       const result = await action();
       await refresh(result?.id ?? selectedId);
+      return result;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Season operation failed.");
     } finally {
@@ -54,9 +79,13 @@ export function SeasonAdminPanel() {
   }
 
   async function createSeason() {
-    const suffix = new Date().toISOString().slice(0, 10);
-    const slug = `season-${suffix}-${crypto.randomUUID().slice(0, 8)}`;
-    await run(() => createAdminSeason({ slug, name: `Season ${suffix}` }));
+    const name = newSeasonName.trim();
+    if (!name) {
+      setError("Enter a season name.");
+      return;
+    }
+    const created = await run(() => createAdminSeason({ slug: seasonSlug(name), name }));
+    if (created) setNewSeasonName(suggestSeasonName([...seasons, created]));
   }
 
   if (loading) return <div className="influence-empty-state rounded-xl p-8 text-center text-sm">Loading seasons...</div>;
@@ -69,7 +98,23 @@ export function SeasonAdminPanel() {
           <p className="influence-copy mt-1 text-sm">Create and close seasons, crown champions, and inspect producer-only competition evidence.</p>
         </div>
         <PermissionGate permission="manage_seasons">
-          <button type="button" disabled={busy} onClick={createSeason} className="influence-button-primary rounded-lg px-4 py-2 text-sm disabled:opacity-50">Create season</button>
+          <form
+            className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end"
+            onSubmit={(event) => { event.preventDefault(); void createSeason(); }}
+          >
+            <label className="text-xs influence-copy-muted">
+              New season name
+              <input
+                type="text"
+                value={newSeasonName}
+                maxLength={120}
+                disabled={busy}
+                onChange={(event) => setNewSeasonName(event.target.value)}
+                className="mt-1 block w-full rounded-lg border border-border-active bg-surface-raised px-3 py-2 text-sm text-text-primary sm:w-56"
+              />
+            </label>
+            <button type="submit" disabled={busy || !newSeasonName.trim()} className="influence-button-primary whitespace-nowrap rounded-lg px-4 py-2 text-sm disabled:opacity-50">Create season</button>
+          </form>
         </PermissionGate>
       </div>
 

@@ -187,7 +187,7 @@ describe("E2E: Dual Crown season surfaces", () => {
         "SEASON SUMMARY", "GAME RECEIPTS", "QA Champion", "Export JSON", "Export CSV",
       ]);
       await assertRoute(ownerPage, `${webUrl}/admin?tab=seasons`, [
-        "Season operations", "Browser QA Championship", "Pregame rating snapshots",
+        "Season operations", "New season name", "Browser QA Championship", "Pregame rating snapshots",
         "Receipt reproduction", "Revision classifier evidence",
       ]);
     }

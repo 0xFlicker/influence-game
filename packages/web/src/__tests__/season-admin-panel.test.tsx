@@ -1,9 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SeasonAdminPanel, SeasonEvidence } from "../app/admin/season-admin-panel";
+import { SeasonAdminPanel, SeasonEvidence, suggestSeasonName } from "../app/admin/season-admin-panel";
 import type { ProducerSeasonDiagnostics } from "../lib/api";
 
 describe("season admin panel", () => {
+  test("suggests a human season number instead of a date-based display name", () => {
+    expect(suggestSeasonName([])).toBe("Season 0");
+    expect(suggestSeasonName([{ name: "Season 0" }, { name: "Summer Invitational" }])).toBe("Season 1");
+    expect(suggestSeasonName([{ name: "Season 2" }, { name: "Season 7" }])).toBe("Season 8");
+  });
+
   test("starts in a read-only loading state without arbitrary ledger mutation controls", () => {
     const html = renderToStaticMarkup(<SeasonAdminPanel />);
     expect(html).toContain("Loading seasons");
