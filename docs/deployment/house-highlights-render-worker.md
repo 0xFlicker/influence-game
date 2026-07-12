@@ -95,6 +95,13 @@ CORS response must expose `Accept-Ranges`, `Content-Length`, `Content-Range`, an
 `ETag`. The local filesystem adapter implements the same GET/HEAD/range/CORS
 contract through the API.
 
+For the S3-compatible backend, every constrained presigned PUT also carries
+`x-amz-acl: public-read`. The API includes that ACL in the `PutObject` command,
+keeps `x-amz-acl` in the URL's signed-header list, and returns the same header in
+the upload target. The credential-free worker forwards all issued upload headers
+unchanged. Bucket-level anonymous-read policy does not replace this per-object
+ACL; omitting it can produce a successful PUT followed by public playback `403`s.
+
 The API container keeps `LINODE_OBJ_ENDPOINT`, `LINODE_OBJ_ACCESS_KEY`,
 `LINODE_OBJ_SECRET_KEY`, and `LINODE_OBJ_BUCKET`. The worker receives lease-bound,
 single-use upload targets only. Failed-attempt intermediates are removed from the
@@ -156,13 +163,18 @@ actual published MP4:
 ```sh
 curl -fsS http://127.0.0.1:3000/api/games/vast-plum-bay/postgame/media > /tmp/postgame-media.json
 jq -r '.video.url' /tmp/postgame-media.json | xargs curl -fsSL -o /tmp/house-highlights-smoke.mp4
+VIDEO_URL="$(jq -r '.video.url' /tmp/postgame-media.json)"
+curl -fsSI "$VIDEO_URL"
+curl -fsS -H 'Range: bytes=0-1023' -D - -o /dev/null "$VIDEO_URL"
 ffprobe -v error -show_entries stream=codec_type,codec_name,width,height -show_entries format=duration -of json /tmp/house-highlights-smoke.mp4
 find /tmp/influence-render-worker-smoke -mindepth 1 -print
 ```
 
-The probe must show H.264 video, AAC audio, 1920x1080 dimensions, and a nonzero
+The anonymous `HEAD` must succeed and the range request must return `206`. The
+probe must show H.264 video, AAC audio, 1920x1080 dimensions, and a nonzero
 duration matching the public read model. The final `find` must print nothing when
-the worker temp directory is bind-mounted for inspection.
+the worker temp directory is bind-mounted for inspection. Repeat anonymous reads
+for the poster, captions, and metadata URLs before declaring staging ready.
 
 ## Admin Operations
 
