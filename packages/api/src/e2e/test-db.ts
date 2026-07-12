@@ -26,6 +26,7 @@ let migrated = false;
 // All Influence table names — truncate only these, not unrelated tables.
 const INFLUENCE_TABLES = [
   "free_track_ratings",
+  "free_queue_prompt_suppressions",
   "free_game_queue",
   "agent_memories",
   "transcripts",

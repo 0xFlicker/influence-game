@@ -22,6 +22,7 @@ import {
 } from "./durable-run-test-utils.js";
 import { hashCanonicalEvent } from "../services/game-events.js";
 import { setupTestDB } from "./test-utils.js";
+import { createSeason } from "../services/seasons.js";
 
 const ADMIN_ADDRESS = "0xadmin000000000000000000000000000000000001";
 const GAMER_ADDRESS = "0xgamer000000000000000000000000000000000001";
@@ -226,6 +227,60 @@ describe("admin route RBAC", () => {
     expect(res.status).toBe(403);
   });
 
+  test("shows the practical free queue view and removes an entry directly", async () => {
+    await createSeason(db, { slug: "admin-queue", name: "Admin Queue" });
+    const ownerId = await createUser(db, "0xqueue00000000000000000000000000000000001", "Queue Owner");
+    await db.insert(schema.agentProfiles).values({
+      id: "admin-queue-agent",
+      userId: ownerId,
+      name: "Atlas",
+      personality: "Patient",
+      gamesPlayed: 0,
+      gamesWon: 0,
+    });
+    await db.insert(schema.freeGameQueue).values({
+      id: "admin-queue-entry",
+      userId: ownerId,
+      agentProfileId: "admin-queue-agent",
+      consecutiveMisses: 2,
+    });
+
+    const read = await app.request("/api/admin/free-queue", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(read.status).toBe(200);
+    const body = await read.json() as Record<string, unknown> & { entries: Array<Record<string, unknown>> };
+    expect(body.eligibleCount).toBe(1);
+    expect(body.availableHumanSeats).toBe(12);
+    expect(body.entries[0]).toMatchObject({
+      userId: ownerId,
+      ownerLabel: "Queue Owner",
+      agentName: "Atlas",
+      status: "eligible",
+      consecutiveMisses: 2,
+    });
+    expect(JSON.stringify(body)).not.toContain("walletAddress");
+    expect(JSON.stringify(body)).not.toContain("email");
+
+    const readOnlyToken = await createSessionToken(adminUserId, {
+      roles: ["admin-reader"],
+      permissions: ["view_admin"],
+    });
+    const deniedRemoval = await app.request(`/api/admin/free-queue/${ownerId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${readOnlyToken}` },
+    });
+    expect(deniedRemoval.status).toBe(403);
+
+    const removed = await app.request(`/api/admin/free-queue/${ownerId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(removed.status).toBe(200);
+    expect(await db.select().from(schema.freeGameQueue)).toEqual([]);
+    expect(await db.select().from(schema.freeQueuePromptSuppressions)).toHaveLength(1);
+  });
+
   test("keeps highlights diagnostics behind admin read permission", async () => {
     const denied = await app.request("/api/admin/games/missing/postgame/highlights/diagnostics", {
       headers: { Authorization: `Bearer ${gamerToken}` },
@@ -267,6 +322,7 @@ describe("admin route RBAC", () => {
       safeMetadata: {
         promptHash: "safe-hash",
         prompt: "raw prompt should not leak",
+        draftProfile: { personality: "private draft personality" },
         providerAssetUrl: "https://provider.example/avatar.png",
         width: 1024,
       },
@@ -299,6 +355,7 @@ describe("admin route RBAC", () => {
     expect(generations).toHaveLength(1);
     expect(generations[0]!.failureCode).toBe("provider_failed");
     expect(JSON.stringify(generations)).not.toContain("raw prompt");
+    expect(JSON.stringify(generations)).not.toContain("private draft personality");
     expect(JSON.stringify(generations)).not.toContain("provider.example");
     expect(generations[0]!.safeMetadata.width).toBe(1024);
 

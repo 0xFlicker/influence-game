@@ -77,8 +77,8 @@ Prefer coarse, retry-tolerant mutations:
 
 - `create_agent` creates one owned profile from coarse authoring fields and returns the full agent summary.
 - `update_agent` updates mutable fields only and returns the full agent summary. It should not train users around current stats-reset behavior.
-- `join_queue` supports `daily-free` and `open-game`; unsupported future types fail with `unsupported_queue_type`.
-- `leave_queue` supports `daily-free` only and succeeds when the user is already absent.
+- `join_queue` supports standing `daily-free` membership and waiting `open-game` enrollment; unsupported future types fail with `unsupported_queue_type`. Daily Free calls express desired state: the same agent is idempotent and another owned agent switches the existing row.
+- `leave_queue` supports `daily-free` only, succeeds when the user is already absent, and suppresses browser reacquisition for the rest of the active season.
 
 Queue semantics should stay future-aware without pretending future queues exist. `queueType` is the extensibility point. In v1, daily-free status/leave are supported; open-game list/join are supported; open-game status/leave are not.
 
@@ -145,7 +145,7 @@ Queue operation matrix:
 ```text
 daily-free:
   get_queue_status: yes
-  join_queue: yes, idempotent for same user and same agent
+  join_queue: yes, idempotent for the same agent and atomic when switching agents
   leave_queue: yes, idempotent when absent
 
 open-game:

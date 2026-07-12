@@ -54,6 +54,7 @@ const INFLUENCE_TABLES = [
   "competition_rating_events",
   "agent_competition_ratings",
   "free_track_ratings",
+  "free_queue_prompt_suppressions",
   "free_game_queue",
   "avatar_change_events",
   "avatar_generation_requests",

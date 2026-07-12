@@ -8,13 +8,18 @@ import { describe, test, expect, beforeEach, beforeAll } from "bun:test";
 import { Hono } from "hono";
 import { schema } from "../db/index.js";
 import type { DrizzleDB } from "../db/index.js";
-import { createAgentProfileRoutes } from "../routes/agent-profiles.js";
+import {
+  createAgentProfileRoutes,
+  resolveAgentProfileGenerationLlm,
+} from "../routes/agent-profiles.js";
 import { createGameRoutes } from "../routes/games.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { randomUUID } from "crypto";
 import { setupTestDB } from "./test-utils.js";
-import { createLlmClientFromEnv } from "@influence/engine";
 import { eq } from "drizzle-orm";
+import { joinQueue } from "../services/queue-enrollment.js";
+import { createSeason } from "../services/seasons.js";
+import { avatarProfileFingerprint } from "../services/avatar-generation.js";
 
 // ---------------------------------------------------------------------------
 // Set required env vars for auth
@@ -93,6 +98,11 @@ function authDelete(token: string): RequestInit {
   };
 }
 
+function restoreEnv(key: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -146,6 +156,7 @@ describe("Agent Profile API", () => {
             backstory: "Grew up in a small town...",
             strategyStyle: "Alliance-focused",
             personaKey: "strategic",
+            gender: "female",
           },
           tokenA,
         ),
@@ -158,6 +169,7 @@ describe("Agent Profile API", () => {
       expect(body.personality).toBe("Strategic calculator who keeps options open");
       expect(body.backstory).toBe("Grew up in a small town...");
       expect(body.personaKey).toBe("strategic");
+      expect(body.gender).toBe("female");
       expect(body.gamesPlayed).toBe(0);
       expect(body.gamesWon).toBe(0);
     });
@@ -191,6 +203,16 @@ describe("Agent Profile API", () => {
       expect(body.error).not.toContain("broker");
     });
 
+    test("rejects invalid gender", async () => {
+      const res = await app.request(
+        "/api/agent-profiles",
+        jsonReq({ name: "Atlas", personality: "Test", gender: "unknown" }, tokenA),
+      );
+      expect(res.status).toBe(400);
+      const body = await res.json() as { error: string };
+      expect(body.error).toContain("gender");
+    });
+
     test("creates profile with minimal fields", async () => {
       const res = await app.request(
         "/api/agent-profiles",
@@ -201,6 +223,201 @@ describe("Agent Profile API", () => {
       expect(body.backstory).toBeNull();
       expect(body.strategyStyle).toBeNull();
       expect(body.personaKey).toBeNull();
+      expect(body.gender).toBeNull();
+      expect(body.avatarCompletion).toMatchObject({
+        status: "skipped",
+        failureCode: "provider_not_configured",
+      });
+
+      const generations = await db.select().from(schema.avatarGenerationRequests);
+      expect(generations).toHaveLength(1);
+      expect(generations[0]!.triggerSource).toBe("web_create_default");
+    });
+
+    test("reuses an AI Help draft portrait attempt instead of requesting again on create", async () => {
+      const draftRes = await app.request(
+        "/api/agent-profiles/avatar/generate-draft",
+        jsonReq({
+          name: "Mira",
+          gender: "female",
+          personality: "A patient mediator.",
+          backstory: "She grew up translating between rival communities.",
+          strategyStyle: "Build stable coalitions.",
+          personaKey: "diplomat",
+        }, tokenA),
+      );
+      expect(draftRes.status).toBe(200);
+      const draft = await draftRes.json() as {
+        avatarCompletion: { generationRequestId: string; status: string };
+      };
+      expect(draft.avatarCompletion.status).toBe("skipped");
+      expect(draft.avatarCompletion.generationRequestId).toBeTruthy();
+
+      const createRes = await app.request(
+        "/api/agent-profiles",
+        jsonReq({
+          name: "Mira",
+          gender: "female",
+          personality: "A patient mediator.",
+          backstory: "She grew up translating between rival communities.",
+          strategyStyle: "Build stable coalitions.",
+          personaKey: "diplomat",
+          avatarGenerationRequestId: draft.avatarCompletion.generationRequestId,
+        }, tokenA),
+      );
+      expect(createRes.status).toBe(201);
+      expect(await createRes.json()).toMatchObject({
+        avatarUrl: null,
+        avatarCompletion: { status: "skipped" },
+      });
+
+      const generations = await db.select().from(schema.avatarGenerationRequests);
+      expect(generations).toHaveLength(1);
+      expect(generations[0]!.agentProfileId).toStartWith("draft-");
+    });
+
+    test("attaches a completed AI Help portrait as generated media", async () => {
+      await db.insert(schema.avatarGenerationRequests).values({
+        id: "completed-draft-request",
+        userId: USER_A_ID,
+        agentProfileId: "draft-completed-mira",
+        purpose: "agent_profile_completion",
+        status: "completed",
+        triggerSource: "web_user_prompt",
+        provider: "katana",
+        model: "gen",
+        safeMetadata: {
+          draftProfile: {
+            name: "Mira",
+            gender: "female",
+            backstory: null,
+            personality: "A patient mediator.",
+            strategyStyle: null,
+            personaKey: "diplomat",
+          },
+          profileFingerprint: avatarProfileFingerprint({
+            name: "Mira",
+            gender: "female",
+            backstory: null,
+            personality: "A patient mediator.",
+            strategyStyle: null,
+            personaKey: "diplomat",
+          }),
+          avatarUrl: "/api/uploads/local?key=pfp%2Fgenerated%2Fmira.png",
+        },
+        createdAt: "2026-07-12T00:00:00.000Z",
+        updatedAt: "2026-07-12T00:01:00.000Z",
+        completedAt: "2026-07-12T00:01:00.000Z",
+      });
+
+      const createRes = await app.request(
+        "/api/agent-profiles",
+        jsonReq({
+          name: "Mira",
+          gender: "female",
+          personality: "A patient mediator.",
+          personaKey: "diplomat",
+          avatarGenerationRequestId: "completed-draft-request",
+        }, tokenA),
+      );
+      expect(createRes.status).toBe(201);
+      const created = await createRes.json() as { avatarUrl: string };
+      expect(created.avatarUrl).toContain("pfp%2Fgenerated%2Fmira.png");
+
+      const [change] = await db.select().from(schema.avatarChangeEvents);
+      expect(change).toMatchObject({
+        source: "web_generated_completion",
+        generationRequestId: "completed-draft-request",
+      });
+      expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(1);
+
+      const duplicate = await app.request(
+        "/api/agent-profiles",
+        jsonReq({
+          name: "Mira",
+          gender: "female",
+          personality: "A patient mediator.",
+          personaKey: "diplomat",
+          avatarGenerationRequestId: "completed-draft-request",
+        }, tokenA),
+      );
+      expect(duplicate.status).toBe(400);
+    });
+
+    test("keeps an explicit upload authoritative over an unrelated draft", async () => {
+      await db.insert(schema.avatarGenerationRequests).values({
+        id: "ignored-draft-request",
+        userId: USER_A_ID,
+        agentProfileId: "draft-ignored",
+        purpose: "agent_profile_completion",
+        status: "completed",
+        triggerSource: "web_ai_help_draft",
+        provider: "katana",
+        model: "gen",
+        safeMetadata: {
+          draftProfile: { name: "Other", gender: "male", personality: "Other", backstory: null, strategyStyle: null, personaKey: "strategic" },
+          profileFingerprint: "different",
+          avatarUrl: "/api/uploads/local?key=generated.png",
+        },
+        createdAt: "2026-07-12T00:00:00.000Z",
+        updatedAt: "2026-07-12T00:01:00.000Z",
+        completedAt: "2026-07-12T00:01:00.000Z",
+      });
+
+      const res = await app.request("/api/agent-profiles", jsonReq({
+        name: "Uploaded Mira",
+        gender: "female",
+        personality: "A patient mediator.",
+        avatarUrl: "/api/uploads/local?key=uploaded.png",
+        avatarGenerationRequestId: "ignored-draft-request",
+      }, tokenA));
+      expect(res.status).toBe(201);
+      const [change] = await db.select().from(schema.avatarChangeEvents);
+      expect(change).toMatchObject({ source: "web_upload", generationRequestId: null });
+      expect(change!.newAvatarUrl).toContain("uploaded.png");
+    });
+
+    test("skips automatic avatar generation when the user has no quota allowance", async () => {
+      const saved = {
+        key: process.env.API_KAT_IMGNAI_KEY,
+        secret: process.env.API_KAT_IMGNAI_SECRET,
+        quota: process.env.INFLUENCE_AVATAR_GENERATION_FREE_QUOTA,
+      };
+      process.env.API_KAT_IMGNAI_KEY = "kat-key";
+      process.env.API_KAT_IMGNAI_SECRET = "kat-secret";
+      process.env.INFLUENCE_AVATAR_GENERATION_FREE_QUOTA = "1";
+
+      try {
+        await db.insert(schema.avatarGenerationRequests).values({
+          id: "existing-generation",
+          userId: USER_B_ID,
+          agentProfileId: "prior-agent",
+          purpose: "agent_profile_completion",
+          status: "completed",
+          triggerSource: "web_create_default",
+          provider: "katana",
+          model: "gen",
+          createdAt: "2026-07-12T00:00:00.000Z",
+          updatedAt: "2026-07-12T00:00:00.000Z",
+        });
+
+        const res = await app.request(
+          "/api/agent-profiles",
+          jsonReq({ name: "Quota Agent", personality: "Quiet", gender: "male" }, tokenB),
+        );
+        expect(res.status).toBe(201);
+        expect(await res.json()).toMatchObject({
+          avatarUrl: null,
+          avatarCompletion: {
+            status: "skipped",
+            failureCode: "quota_exhausted",
+          },
+        });
+      } finally {
+        restoreEnv("API_KAT_IMGNAI_KEY", saved.key);
+        restoreEnv("API_KAT_IMGNAI_SECRET", saved.secret);
+        restoreEnv("INFLUENCE_AVATAR_GENERATION_FREE_QUOTA", saved.quota);
+      }
     });
 
     test("records avatar change history when creating with an avatar", async () => {
@@ -226,6 +443,7 @@ describe("Agent Profile API", () => {
         previousAvatarUrl: null,
         newAvatarUrl: body.avatarUrl,
       });
+      expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(0);
     });
 
     test("requests generated avatar completion for an owned avatarless profile", async () => {
@@ -314,7 +532,11 @@ describe("Agent Profile API", () => {
       );
       const withoutRequestRes = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "No Request", personality: "Quiet" }, tokenA),
+        jsonReq({
+          name: "No Request",
+          personality: "Quiet",
+          avatarUrl: "/api/uploads/local?key=pfp%2Fuser-a%2Fno-request.png",
+        }, tokenA),
       );
       const { id: withRequestId } = await withRequestRes.json() as { id: string };
       const { id: withoutRequestId } = await withoutRequestRes.json() as { id: string };
@@ -400,12 +622,13 @@ describe("Agent Profile API", () => {
 
       const res = await app.request(
         `/api/agent-profiles/${id}`,
-        jsonReq({ name: "Atlas v2", backstory: "New backstory" }, tokenA, "PATCH"),
+        jsonReq({ name: "Atlas v2", backstory: "New backstory", gender: "non-binary" }, tokenA, "PATCH"),
       );
       expect(res.status).toBe(200);
-      const body = await res.json() as { name: string; backstory: string; statsReset: boolean };
+      const body = await res.json() as { name: string; backstory: string; gender: string; statsReset: boolean };
       expect(body.name).toBe("Atlas v2");
       expect(body.backstory).toBe("New backstory");
+      expect(body.gender).toBe("non-binary");
       expect(body.statsReset).toBe(false);
     });
 
@@ -531,6 +754,50 @@ describe("Agent Profile API", () => {
         .where(eq(schema.avatarChangeEvents.agentProfileId, id));
       expect(history).toHaveLength(1);
       expect(history[0]!.newAvatarUrl).toBe("https://cdn.example/avatar.png");
+    });
+
+    test("blocks deleting the standing Daily Free agent", async () => {
+      const createRes = await app.request(
+        "/api/agent-profiles",
+        jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
+      );
+      const { id } = await createRes.json() as { id: string };
+      await db.insert(schema.freeGameQueue).values({
+        id: randomUUID(),
+        userId: USER_A_ID,
+        agentProfileId: id,
+      });
+
+      const res = await app.request(`/api/agent-profiles/${id}`, authDelete(tokenA));
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ code: "daily_free_entry_exists" });
+      expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
+    });
+
+    test("linearizes standing enrollment against deleting the same agent", async () => {
+      await createSeason(db, { slug: "delete-race", name: "Delete Race" });
+      const createRes = await app.request(
+        "/api/agent-profiles",
+        jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
+      );
+      const { id } = await createRes.json() as { id: string };
+
+      const [joinResult, deleteResult] = await Promise.allSettled([
+        joinQueue(db, { userId: USER_A_ID }, { queueType: "daily-free", agentId: id }),
+        app.request(`/api/agent-profiles/${id}`, authDelete(tokenA)),
+      ]);
+      const deleteResponse = deleteResult.status === "fulfilled" ? deleteResult.value : null;
+      expect(deleteResult.status).toBe("fulfilled");
+      expect([200, 409]).toContain(deleteResponse!.status);
+      if (joinResult.status === "rejected") {
+        expect(joinResult.reason).toMatchObject({ code: "agent_not_found" });
+        expect(deleteResponse!.status).toBe(200);
+      } else {
+        expect(deleteResponse!.status).toBe(409);
+      }
+      const profiles = await db.select().from(schema.agentProfiles).where(eq(schema.agentProfiles.id, id));
+      const entries = await db.select().from(schema.freeGameQueue).where(eq(schema.freeGameQueue.agentProfileId, id));
+      expect(profiles.length).toBe(entries.length);
     });
 
     test("returns 404 when deleting another user's profile", async () => {
@@ -772,8 +1039,8 @@ describe("Agent Profile API", () => {
       }
     });
 
-    // LLM integration test — only runs when an OpenAI-compatible provider is configured.
-    const llmTest = createLlmClientFromEnv() ? test : test.skip;
+    // LLM integration test — only runs when hosted OpenAI is configured.
+    const llmTest = resolveAgentProfileGenerationLlm() ? test : test.skip;
 
     llmTest("generates a personality from traits", async () => {
       const res = await app.request(
@@ -788,10 +1055,12 @@ describe("Agent Profile API", () => {
         personality: string;
         strategyStyle: string | null;
         personaKey: string;
+        gender: "male" | "female" | "non-binary";
       };
       expect(body.name).toBeTruthy();
       expect(body.personality).toBeTruthy();
       expect(body.personaKey).toBeTruthy();
+      expect(["male", "female", "non-binary"]).toContain(body.gender);
     }, 15_000);
 
     llmTest("generates a personality from archetype only", async () => {

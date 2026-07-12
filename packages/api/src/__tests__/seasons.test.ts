@@ -33,6 +33,29 @@ describe("season admission and state", () => {
     expect(await closeSeason(db, season.id, "2026-07-21T00:00:00.000Z")).toEqual(closing);
   });
 
+  test("closing a season clears standing entries and prompt suppressions", async () => {
+    const db = await setupTestDB();
+    const ownerId = await insertUser(db, "standing-owner");
+    const profile = await createProfile(db, ownerId, "Standing Atlas");
+    const season = await createSeason(db, { slug: "standing-season", name: "Standing Season" });
+    await db.insert(schema.freeGameQueue).values({
+      id: randomUUID(),
+      userId: ownerId,
+      agentProfileId: profile.id,
+    });
+    await db.insert(schema.freeQueuePromptSuppressions).values({
+      id: randomUUID(),
+      userId: ownerId,
+      seasonId: season.id,
+      reason: "left_queue",
+    });
+
+    await closeSeason(db, season.id);
+
+    expect(await db.select().from(schema.freeGameQueue)).toEqual([]);
+    expect(await db.select().from(schema.freeQueuePromptSuppressions)).toEqual([]);
+  });
+
   test("normalizes season boundaries and rejects malformed or reversed windows", async () => {
     const db = await setupTestDB();
     const owner = await insertUser(db, "timestamp-owner");

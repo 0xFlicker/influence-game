@@ -13,7 +13,7 @@
  */
 
 import { Hono } from "hono";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -39,6 +39,15 @@ import {
 import { getRedactedKernelHealth } from "../services/game-kernel-health.js";
 import { tryRefreshGameWatchStateSummary } from "../services/game-watch-state-summary.js";
 import { bindFreeGameToActiveSeason } from "../services/seasons.js";
+import {
+  deferDailyFreePrompt,
+  acquireDailyFreeLocks,
+  getQueueStatus,
+  joinQueue,
+  leaveQueue,
+  QueueEnrollmentError,
+} from "../services/queue-enrollment.js";
+import { AgentProfileManagementError } from "../services/agent-profile-management.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -68,28 +77,25 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.get("/api/free-queue", optionalAuth(db), async (c) => {
-    const allEntries = await db
-      .select()
-      .from(schema.freeGameQueue);
-
     const user = c.get("user");
     let userEntry = null;
+    let personalized = null;
     if (user) {
-      const entry = allEntries.find((e) => e.userId === user.id);
+      personalized = await getQueueStatus(db, { userId: user.id });
+      const entry = personalized.queue.entry;
       if (entry) {
-        const profile = (await db
-          .select({ name: schema.agentProfiles.name })
-          .from(schema.agentProfiles)
-          .where(eq(schema.agentProfiles.id, entry.agentProfileId)))[0];
         userEntry = {
-          agentProfileId: entry.agentProfileId,
-          agentName: profile?.name ?? "Unknown",
+          agentProfileId: entry.agent.id,
+          agentName: entry.agent.displayName,
           joinedAt: entry.joinedAt,
         };
       }
     }
 
-    const todayGame = (await db
+    const queueCount = personalized?.queue.count
+      ?? (await db.select({ count: sql<number>`count(*)::int` }).from(schema.freeGameQueue))[0]?.count
+      ?? 0;
+    const todayGame = personalized?.latestGame ?? (await db
       .select({
         id: schema.games.id,
         slug: schema.games.slug,
@@ -109,8 +115,11 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       : 0;
 
     return c.json({
-      count: allEntries.length,
+      count: queueCount,
       userEntry,
+      eligibility: personalized?.queue.eligibility ?? null,
+      promptEligible: personalized?.promptEligible ?? false,
+      relevantGame: personalized?.relevantGame ?? null,
       nextGameTime: getNextFreeGameTime(),
       todayGame: todayGame
         ? {
@@ -135,44 +144,24 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       return c.json({ error: "agentProfileId is required" }, 400);
     }
 
-    const { agentProfileId } = body;
-
-    // Validate agent profile exists and belongs to user
-    const profile = (await db
-      .select()
-      .from(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.id, agentProfileId)))[0];
-
-    if (!profile) {
-      return c.json({ error: "Agent profile not found" }, 404);
-    }
-    if (profile.userId !== user.id) {
-      return c.json({ error: "Agent profile does not belong to you" }, 403);
-    }
-
-    // Check if user already has an entry (1 per user)
-    const existing = (await db
-      .select()
-      .from(schema.freeGameQueue)
-      .where(eq(schema.freeGameQueue.userId, user.id)))[0];
-
-    if (existing) {
-      return c.json({ error: "You already have an agent in the queue. Leave first to switch." }, 409);
-    }
-
-    const id = randomUUID();
-    await db.insert(schema.freeGameQueue)
-      .values({
-        id,
-        userId: user.id,
-        agentProfileId,
+    try {
+      const result = await joinQueue(db, { userId: user.id }, {
+        queueType: "daily-free",
+        agentId: body.agentProfileId,
       });
-
-    return c.json({
-      id,
-      agentProfileId,
-      agentName: profile.name,
-    }, 201);
+      return c.json({
+        id: result.queue.entryId,
+        agentProfileId: result.agent!.id,
+        agentName: result.agent!.displayName,
+        joinedAt: result.queue.joinedAt,
+        status: result.queue.status,
+      }, result.queue.status === "already-queued" ? 200 : 201);
+    } catch (error) {
+      if (error instanceof QueueEnrollmentError || error instanceof AgentProfileManagementError) {
+        return c.json({ error: error.message, code: error.code }, error.statusCode as 400);
+      }
+      throw error;
+    }
   });
 
   // -------------------------------------------------------------------------
@@ -181,20 +170,27 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
 
   app.delete("/api/free-queue/leave", requireAuth(db), async (c) => {
     const user = c.get("user");
-
-    const entry = (await db
-      .select()
-      .from(schema.freeGameQueue)
-      .where(eq(schema.freeGameQueue.userId, user.id)))[0];
-
-    if (!entry) {
-      return c.json({ error: "You are not in the queue" }, 404);
+    try {
+      const result = await leaveQueue(db, { userId: user.id });
+      return c.json({ removed: result.queue.status === "left-queue" });
+    } catch (error) {
+      if (error instanceof QueueEnrollmentError) {
+        return c.json({ error: error.message, code: error.code }, error.statusCode as 400);
+      }
+      throw error;
     }
+  });
 
-    await db.delete(schema.freeGameQueue)
-      .where(eq(schema.freeGameQueue.id, entry.id));
-
-    return c.json({ removed: true });
+  app.post("/api/free-queue/maybe-later", requireAuth(db), async (c) => {
+    const user = c.get("user");
+    try {
+      return c.json(await deferDailyFreePrompt(db, { userId: user.id }));
+    } catch (error) {
+      if (error instanceof QueueEnrollmentError) {
+        return c.json({ error: error.message, code: error.code }, error.statusCode as 400);
+      }
+      throw error;
+    }
   });
 
   // -------------------------------------------------------------------------
@@ -277,7 +273,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
     const addedPlayers: Array<{ playerId: string; userId: string; agentProfileId: string; agentName: string }> = [];
     let slotsToFill = maxPlayers;
     const admission = await db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('influence-daily-free-draw'))`);
+      await acquireDailyFreeLocks(tx);
       const existingDraw = (await tx.select({ id: schema.games.id, slug: schema.games.slug })
         .from(schema.games)
         .where(and(
@@ -295,13 +291,22 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
         };
       }
       const entries = await tx.select().from(schema.freeGameQueue);
-      if (entries.length < 2) {
+      const busyOwners = await tx.select({ userId: schema.gamePlayers.userId })
+        .from(schema.gamePlayers)
+        .innerJoin(schema.games, eq(schema.gamePlayers.gameId, schema.games.id))
+        .where(and(
+          eq(schema.games.trackType, "free"),
+          inArray(schema.games.status, ["waiting", "in_progress", "suspended"]),
+        ));
+      const busyOwnerIds = new Set(busyOwners.flatMap((row) => row.userId ? [row.userId] : []));
+      const eligibleEntries = entries.filter((entry) => !busyOwnerIds.has(entry.userId));
+      if (eligibleEntries.length < 2) {
         return {
           drawn: false as const,
-          reason: `Not enough players in queue (${entries.length}). Need at least 2.`,
+          reason: `Not enough eligible players in queue (${eligibleEntries.length}). Need at least 2.`,
         };
       }
-      const shuffled = entries.sort(() => Math.random() - 0.5);
+      const shuffled = [...eligibleEntries].sort(() => Math.random() - 0.5);
       const picked = shuffled.slice(0, Math.min(entries.length, 12));
       await tx.insert(schema.games).values({
           id: gameId,
@@ -377,8 +382,20 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
         }
       }
 
-      for (const entry of picked) {
-        await tx.delete(schema.freeGameQueue).where(eq(schema.freeGameQueue.id, entry.id));
+      const pickedIds = new Set(picked.map((entry) => entry.id));
+      const selectedIds = [...pickedIds];
+      const missedIds = eligibleEntries
+        .filter((entry) => !pickedIds.has(entry.id))
+        .map((entry) => entry.id);
+      if (selectedIds.length > 0) {
+        await tx.update(schema.freeGameQueue)
+          .set({ consecutiveMisses: 0 })
+          .where(inArray(schema.freeGameQueue.id, selectedIds));
+      }
+      if (missedIds.length > 0) {
+        await tx.update(schema.freeGameQueue)
+          .set({ consecutiveMisses: sql`${schema.freeGameQueue.consecutiveMisses} + 1` })
+          .where(inArray(schema.freeGameQueue.id, missedIds));
       }
       return {
         drawn: true as const,

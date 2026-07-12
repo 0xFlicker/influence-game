@@ -1,0 +1,2 @@
+ALTER TABLE "avatar_generation_requests" DROP CONSTRAINT "avatar_generation_requests_trigger_source_check";--> statement-breakpoint
+ALTER TABLE "avatar_generation_requests" ADD CONSTRAINT "avatar_generation_requests_trigger_source_check" CHECK ("avatar_generation_requests"."trigger_source" IN ('web_user_prompt', 'web_ai_help_draft', 'web_create_default', 'mcp_create_default'));

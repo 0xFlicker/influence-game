@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { AvatarCompletion, SavedAgent } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
-import { AgentAvatar } from "@/components/agent-avatar";
+import { AgentAvatarPreview } from "@/components/agent-avatar-preview";
 import { isAvatarCompletionPending, isAvatarCompletionUnavailable } from "./avatar-completion";
 
 interface AgentListProps {
@@ -65,11 +65,12 @@ export function AgentList({
           >
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-3 min-w-0">
-                {/* Agent avatar with persona badge */}
-                <AgentAvatar
+                <AgentAvatarPreview
                   avatarUrl={agent.avatarUrl}
-                  persona={agent.personaKey ?? "strategic"}
+                  personaKey={agent.personaKey}
                   name={agent.name}
+                  gamesPlayed={agent.gamesPlayed}
+                  gamesWon={agent.gamesWon}
                   size="10"
                 />
 

@@ -89,11 +89,14 @@ function buildQueueSummary(queueStatus: FreeQueueStatus | null | undefined): Das
   if (!queueStatus) return null;
 
   if (queueStatus.userEntry) {
+    const currentGame = queueStatus.relevantGame;
     return {
       kind: "queued",
-      label: "Free queue",
-      description: `${queueStatus.userEntry.agentName} is queued for the next free game.`,
-      href: "/games/free",
+      label: currentGame ? "Daily Free game" : "Daily Free",
+      description: currentGame
+        ? `${queueStatus.userEntry.agentName} is in the current Daily Free game.`
+        : `${queueStatus.userEntry.agentName} is entered for Daily Free.`,
+      href: currentGame ? `/games/${currentGame.slug ?? currentGame.id}` : "/games/free",
     };
   }
 

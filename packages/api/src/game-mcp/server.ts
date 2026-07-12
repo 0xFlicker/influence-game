@@ -28,6 +28,7 @@ import {
   searchGameMcpRules,
 } from "./rules.js";
 import { USER_SELECTABLE_AGENT_ARCHETYPE_KEYS } from "../services/agent-archetypes.js";
+import { AGENT_GENDER_VALUES } from "../lib/agent-gender.js";
 import {
   AgentProfileManagementError,
   createOwnedAgent,
@@ -803,7 +804,7 @@ function userAgentReadTools(): unknown[] {
     }),
     tool({
       name: "get_queue_status",
-      description: "Inspect supported pre-match queue status, currently daily-free. Call before joining/leaving or to answer whether the user is queued. Do not use for active match status or actions. Requires agents:read. No side effects.",
+      description: "Inspect the authenticated user's Standing Daily Agent, current eligibility, and relevant waiting/active game. Call before joining or leaving. Requires agents:read. No side effects.",
       properties: {
         queueType: { type: "string", enum: ["daily-free"] },
       },
@@ -851,13 +852,14 @@ function userAgentWriteTools(): unknown[] {
   return [
     tool({
       name: "create_agent",
-      description: "Create one owned reusable Influence agent from coarse authoring fields. Call when the user asks to create a new agent. Do not use to create agents for other users or act inside a live match. Requires agents:read and agents:write. Side effect: inserts an agent profile.",
+      description: "Create one owned reusable Influence agent from coarse authoring fields. Call when the user asks to create a new agent. Do not use to create agents for other users or act inside a live match. Requires agents:read and agents:write. Side effects: inserts an agent profile and, when no avatar is supplied and quota allows, starts portrait generation reported through avatarCompletion.",
       properties: {
         displayName: { type: "string" },
         archetype: { type: "string", enum: USER_SELECTABLE_AGENT_ARCHETYPE_KEYS },
         personalityPrompt: { type: "string" },
         publicBiography: nullableStringSchema(),
         strategyStyle: nullableStringSchema(),
+        gender: { anyOf: [{ type: "string", enum: AGENT_GENDER_VALUES }, { type: "null" }] },
         avatarUrl: nullableStringSchema(),
       },
       required: ["displayName", "archetype", "personalityPrompt"],
@@ -874,6 +876,7 @@ function userAgentWriteTools(): unknown[] {
         personalityPrompt: { type: "string" },
         publicBiography: nullableStringSchema(),
         strategyStyle: nullableStringSchema(),
+        gender: { anyOf: [{ type: "string", enum: AGENT_GENDER_VALUES }, { type: "null" }] },
         avatarUrl: nullableStringSchema(),
       },
       required: ["agentId"],
@@ -882,7 +885,7 @@ function userAgentWriteTools(): unknown[] {
     }),
     tool({
       name: "join_queue",
-      description: "Enroll one owned agent into a supported pre-match queue. Use queueType=daily-free for the daily draw, or queueType=open-game with gameIdOrSlug for a waiting open game. Do not use for active-match participation. Requires agents:read and agents:write. Side effect: inserts a queue entry or waiting game player row.",
+      description: "Set the user's standing Daily Free agent, or enroll an owned agent in a waiting open game. For queueType=daily-free, retrying the same agent is idempotent and choosing another owned agent switches the standing entry. Requires agents:read and agents:write. Side effect: creates or updates enrollment.",
       properties: {
         queueType: { type: "string", enum: ["daily-free", "open-game"] },
         agentId: { type: "string" },
@@ -894,7 +897,7 @@ function userAgentWriteTools(): unknown[] {
     }),
     tool({
       name: "leave_queue",
-      description: "Leave a supported pre-match queue idempotently, currently daily-free. Call when the user asks to remove their queued agent. Do not use for active-match exits or game actions. Requires agents:read and agents:write. Side effect: deletes the daily-free queue entry if present.",
+      description: "Remove the user's standing Daily Free entry idempotently and suppress browser acquisition prompts for the rest of the active season. This does not exit an active game. Requires agents:read and agents:write. Side effect: removes standing enrollment.",
       properties: {
         queueType: { type: "string", enum: ["daily-free"] },
       },

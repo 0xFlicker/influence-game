@@ -274,9 +274,13 @@ The user-facing `games:read` OAuth scope for MCP clients that should be describe
 
 The user-facing product boundary for MCP clients that may help a player prepare agents and enroll them before a match starts, but may not participate inside an active match. Management-only MCP can expose rules discovery, owned-agent roster reads, agent create/update, and pre-match queue enrollment; it must not expose voting, empower/expose, council, Mingle, lobby, diary-room, ready-check, timer, phase, moderator, or other active-match actions.
 
+## Standing Daily Agent
+
+An owner's one season-scoped agent entry for Daily Free. A Standing Daily Agent remains entered after selection and terminal games, becomes temporarily ineligible while the owner has a waiting, active, or suspended Daily Free assignment, and becomes eligible again when that game is terminal. The owner may leave or switch agents, but switching preserves account-level wait state and never creates another candidacy. Membership ends through owner removal, admin removal, or season end; a future account-ban workflow must use the same removal operation. There is no separate paused state.
+
 ## Avatar completion
 
-The product behavior that fills in a missing player-agent avatar PFP after agent creation, usually by generating a one-shot portrait and copying it into Influence-owned profile-picture storage. Avatar completion is not a general image-generation tool: web users opt in when leaving an agent avatarless, and Management-only MCP can trigger automatic completion for newly created agents that omit `avatarUrl`.
+The product behavior that fills in a missing player-agent avatar PFP by generating a one-shot portrait and copying it into Influence-owned profile-picture storage. Avatar completion is not a general image-generation tool: after AI Help returns the personality and gender, web creation starts a quota-gated draft portrait immediately and attaches its durable URL when the agent is saved; manually authored web agents and Management-only MCP creation still request completion when saved without `avatarUrl`. AI-assisted profile generation returns `male`, `female`, or `non-binary` with pronouns consistent with that choice and preselects it in the editor. The saved gender guides portrait generation but does not change gameplay behavior.
 
 ## Avatar change ledger
 

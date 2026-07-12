@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   normalizeGameModelSelection,
   resolveModelSelection,
@@ -9,11 +9,13 @@ import { schema } from "../db/index.js";
 import type { GameStatus, TrackType } from "../db/schema.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
 import {
+  AgentProfileManagementError,
   getOwnedAgent,
   type AgentProfileManagementContext,
   type AgentSummary,
 } from "./agent-profile-management.js";
 import { tryRefreshGameWatchStateSummary } from "./game-watch-state-summary.js";
+import { getActiveSeason } from "./seasons.js";
 
 export type QueueType = "daily-free" | "open-game";
 
@@ -28,6 +30,7 @@ export type QueueEnrollmentErrorCode =
   | "invalid_queue_input"
   | "agent_already_queued"
   | "agent_already_in_active_game"
+  | "no_active_season"
   | "queue_full"
   | "game_not_joinable";
 
@@ -69,7 +72,7 @@ export interface QueueAgentEntry {
 }
 
 export interface DailyFreeQueueStatusRead {
-  schemaVersion: 1;
+  schemaVersion: 2;
   queue: {
     queueType: "daily-free";
     displayName: "Daily Free";
@@ -78,7 +81,14 @@ export interface DailyFreeQueueStatusRead {
     selectionMethod: "random-draw";
     estimatedDrawAt: string;
     entry: QueueAgentEntry | null;
+    eligibility: "eligible" | "temporarily-ineligible" | "absent";
   };
+  promptEligible: boolean;
+  relevantGame: {
+    id: string;
+    slug?: string;
+    status: "waiting" | "in_progress" | "suspended";
+  } | null;
   latestGame: {
     id: string;
     slug?: string;
@@ -94,10 +104,11 @@ export interface QueueMutationRead {
   queue: {
     queueType: QueueType;
     displayName: string;
-    status: "queued" | "already-queued" | "not-queued" | "left-queue" | "joined-open-game";
+    status: "queued" | "switched" | "already-queued" | "not-queued" | "left-queue" | "joined-open-game";
     joinedAt?: string;
     estimatedDrawAt?: string;
     selectionMethod?: "random-draw";
+    entryId?: string;
   };
   agent?: AgentSummary;
   game?: OpenGameSummary;
@@ -130,6 +141,8 @@ export interface OpenGamesRead {
 }
 
 type GameRow = typeof schema.games.$inferSelect;
+type DrizzleTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
+type DatabaseExecutor = DrizzleDB | DrizzleTransaction;
 
 export async function getQueueStatus(
   db: DrizzleDB,
@@ -141,8 +154,8 @@ export async function getQueueStatus(
     throw unsupportedQueueType(queueType, SUPPORTED_STATUS_QUEUE_TYPES, "get_queue_status");
   }
 
-  const [allEntries, userEntry, latestGame] = await Promise.all([
-    db.select().from(schema.freeGameQueue),
+  const [queueCount, userEntry, latestGame, activeSeason, relevantGame] = await Promise.all([
+    db.select({ count: sql<number>`count(*)::int` }).from(schema.freeGameQueue),
     db
       .select()
       .from(schema.freeGameQueue)
@@ -159,7 +172,19 @@ export async function getQueueStatus(
       .where(eq(schema.games.trackType, "free"))
       .orderBy(desc(schema.games.createdAt))
       .limit(1),
+    getActiveSeason(db),
+    getRelevantDailyFreeGame(db, context.userId),
   ]);
+
+  const suppression = activeSeason
+    ? (await db.select().from(schema.freeQueuePromptSuppressions).where(and(
+        eq(schema.freeQueuePromptSuppressions.userId, context.userId),
+        eq(schema.freeQueuePromptSuppressions.seasonId, activeSeason.id),
+      )).limit(1))[0]
+    : null;
+  const suppressionActive = Boolean(suppression && (
+    suppression.suppressedUntil === null || Date.parse(suppression.suppressedUntil) > Date.now()
+  ));
 
   const entry = userEntry[0]
     ? {
@@ -173,16 +198,19 @@ export async function getQueueStatus(
     : null;
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     queue: {
       queueType: "daily-free",
       displayName: "Daily Free",
       status: entry ? "queued" : "not-queued",
-      count: allEntries.length,
+      count: queueCount[0]?.count ?? 0,
       selectionMethod: "random-draw",
       estimatedDrawAt: getNextDailyFreeDrawAt(),
       entry,
+      eligibility: !entry ? "absent" : relevantGame ? "temporarily-ineligible" : "eligible",
     },
+    promptEligible: Boolean(activeSeason && !entry && !suppressionActive),
+    relevantGame,
     latestGame: latestGame[0]
       ? {
           id: latestGame[0].id,
@@ -221,12 +249,23 @@ export async function leaveQueue(
     throw unsupportedQueueType(queueType, SUPPORTED_LEAVE_QUEUE_TYPES, "leave_queue");
   }
 
-  const entry = (await db
-    .select()
-    .from(schema.freeGameQueue)
-    .where(eq(schema.freeGameQueue.userId, context.userId))
-    .limit(1))[0];
-
+  const result = await db.transaction(async (tx) => {
+    await acquireDailyFreeLocks(tx);
+    const current = await getDailyFreeQueueEntry(tx, context.userId);
+    if (!current) return { entry: null, agent: null };
+    const season = await getActiveSeason(tx);
+    await tx.delete(schema.freeGameQueue).where(eq(schema.freeGameQueue.userId, context.userId));
+    if (season) {
+      await upsertPromptSuppression(tx, context.userId, season.id, "left_queue", null);
+    }
+    const agent = (await getOwnedAgent(tx, {
+      userId: context.userId,
+      publicBaseUrl: context.publicBaseUrl,
+      agentId: current.agentProfileId,
+    })).agent;
+    return { entry: current, agent };
+  });
+  const { entry } = result;
   if (!entry) {
     return {
       schemaVersion: 1,
@@ -241,13 +280,7 @@ export async function leaveQueue(
       },
     };
   }
-
-  await db.delete(schema.freeGameQueue).where(eq(schema.freeGameQueue.id, entry.id));
-  const agent = (await getOwnedAgent(db, {
-    userId: context.userId,
-    publicBaseUrl: context.publicBaseUrl,
-    agentId: entry.agentProfileId,
-  })).agent;
+  const agent = result.agent!;
 
   return {
     schemaVersion: 1,
@@ -262,6 +295,33 @@ export async function leaveQueue(
     },
     agent,
   };
+}
+
+export async function deferDailyFreePrompt(
+  db: DrizzleDB,
+  context: QueueEnrollmentContext,
+): Promise<{ ok: true; suppressedUntil: string }> {
+  const suppressedUntil = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+  await db.transaction(async (tx) => {
+    await acquireDailyFreeLocks(tx);
+    const season = await requireActiveFreeSeason(tx);
+    await upsertPromptSuppression(tx, context.userId, season.id, "maybe_later", suppressedUntil);
+  });
+  return { ok: true, suppressedUntil };
+}
+
+export async function removeStandingDailyAgentByAdmin(
+  db: DrizzleDB,
+  userId: string,
+): Promise<{ removed: boolean }> {
+  return db.transaction(async (tx) => {
+    await acquireDailyFreeLocks(tx);
+    const season = await requireActiveFreeSeason(tx);
+    const entry = await getDailyFreeQueueEntry(tx, userId);
+    await tx.delete(schema.freeGameQueue).where(eq(schema.freeGameQueue.userId, userId));
+    await upsertPromptSuppression(tx, userId, season.id, "admin_removed", null);
+    return { removed: Boolean(entry) };
+  });
 }
 
 export async function listOpenGames(
@@ -301,78 +361,34 @@ async function joinDailyFreeQueue(
     agentId,
   })).agent;
 
-  const existing = await getDailyFreeQueueEntry(db, context.userId);
-  if (existing) {
-    if (existing.agentProfileId === agentId) {
-      return dailyFreeQueueRead("already-queued", `${agent.displayName} is already queued for Daily Free.`, agent, existing.joinedAt);
+  const result = await db.transaction(async (tx) => {
+    await acquireDailyFreeLocks(tx);
+    await requireActiveFreeSeason(tx);
+    await requireOwnedDailyFreeAgent(tx, context.userId, agentId);
+    const existing = await getDailyFreeQueueEntry(tx, context.userId);
+    if (existing?.agentProfileId === agentId) return { status: "already-queued" as const, entry: existing };
+    if (existing) {
+      const updated = (await tx.update(schema.freeGameQueue).set({ agentProfileId: agentId })
+        .where(eq(schema.freeGameQueue.id, existing.id)).returning())[0]!;
+      await tx.delete(schema.freeQueuePromptSuppressions)
+        .where(eq(schema.freeQueuePromptSuppressions.userId, context.userId));
+      return { status: "switched" as const, entry: updated };
     }
-    const existingAgent = (await getOwnedAgent(db, {
-      userId: context.userId,
-      publicBaseUrl: context.publicBaseUrl,
-      agentId: existing.agentProfileId,
-    })).agent;
-    throw new QueueEnrollmentError(
-      "agent_already_queued",
-      `${existingAgent.displayName} is already queued for Daily Free. Leave the queue before joining with another agent.`,
-      409,
-      {
-        queueType: "daily-free",
-        queuedAgent: existingAgent,
-      },
-    );
-  }
-
-  const activeEnrollment = await getActiveEnrollmentForAgent(db, context.userId, agentId);
-  if (activeEnrollment) {
-    throw new QueueEnrollmentError(
-      "agent_already_in_active_game",
-      `${agent.displayName} is already enrolled in a ${activeEnrollment.status} game.`,
-      409,
-      {
-        agent,
-        activeEnrollment,
-      },
-    );
-  }
-
-  const id = randomUUID();
-  try {
-    await db.insert(schema.freeGameQueue).values({
-      id,
+    const inserted = (await tx.insert(schema.freeGameQueue).values({
+      id: randomUUID(),
       userId: context.userId,
       agentProfileId: agentId,
-    });
-  } catch (error) {
-    const racedEntry = await getDailyFreeQueueEntry(db, context.userId);
-    if (racedEntry) {
-      if (racedEntry.agentProfileId === agentId) {
-        const refreshedAgent = (await getOwnedAgent(db, {
-          userId: context.userId,
-          publicBaseUrl: context.publicBaseUrl,
-          agentId,
-        })).agent;
-        return dailyFreeQueueRead("already-queued", `${refreshedAgent.displayName} is already queued for Daily Free.`, refreshedAgent, racedEntry.joinedAt);
-      }
-      const existingAgent = (await getOwnedAgent(db, {
-        userId: context.userId,
-        publicBaseUrl: context.publicBaseUrl,
-        agentId: racedEntry.agentProfileId,
-      })).agent;
-      throw new QueueEnrollmentError(
-        "agent_already_queued",
-        `${existingAgent.displayName} is already queued for Daily Free. Leave the queue before joining with another agent.`,
-        409,
-        {
-          queueType: "daily-free",
-          queuedAgent: existingAgent,
-        },
-      );
-    }
-    throw error;
-  }
-
-  const entry = await getDailyFreeQueueEntry(db, context.userId);
-  return dailyFreeQueueRead("queued", `${agent.displayName} joined the Daily Free queue.`, agent, entry?.joinedAt);
+    }).returning())[0]!;
+    await tx.delete(schema.freeQueuePromptSuppressions)
+      .where(eq(schema.freeQueuePromptSuppressions.userId, context.userId));
+    return { status: "queued" as const, entry: inserted };
+  });
+  const message = result.status === "already-queued"
+    ? `${agent.displayName} is already queued for Daily Free.`
+    : result.status === "switched"
+      ? `${agent.displayName} is now your Standing Daily Agent.`
+      : `${agent.displayName} joined the Daily Free queue.`;
+  return dailyFreeQueueRead(result.status, message, agent, result.entry.id, result.entry.joinedAt);
 }
 
 async function joinOpenGame(
@@ -485,9 +501,10 @@ async function joinOpenGame(
 }
 
 function dailyFreeQueueRead(
-  status: "queued" | "already-queued",
+  status: "queued" | "switched" | "already-queued",
   message: string,
   agent: AgentSummary,
+  entryId: string,
   joinedAt?: string,
 ): QueueMutationRead {
   return {
@@ -499,6 +516,7 @@ function dailyFreeQueueRead(
       displayName: "Daily Free",
       status,
       ...(joinedAt && { joinedAt }),
+      entryId,
       estimatedDrawAt: getNextDailyFreeDrawAt(),
       selectionMethod: "random-draw",
     },
@@ -524,12 +542,96 @@ async function resolveJoinableOpenGame(db: DrizzleDB, gameIdOrSlug: string): Pro
   return game;
 }
 
-async function getDailyFreeQueueEntry(db: DrizzleDB, userId: string) {
+async function getDailyFreeQueueEntry(db: DatabaseExecutor, userId: string) {
   return (await db
     .select()
     .from(schema.freeGameQueue)
     .where(eq(schema.freeGameQueue.userId, userId))
     .limit(1))[0];
+}
+
+export async function getRelevantDailyFreeGame(
+  db: DatabaseExecutor,
+  userId: string,
+): Promise<DailyFreeQueueStatusRead["relevantGame"]> {
+  const row = (await db.select({
+    id: schema.games.id,
+    slug: schema.games.slug,
+    status: schema.games.status,
+    createdAt: schema.games.createdAt,
+  }).from(schema.gamePlayers)
+    .innerJoin(schema.games, eq(schema.gamePlayers.gameId, schema.games.id))
+    .where(and(
+      eq(schema.gamePlayers.userId, userId),
+      eq(schema.games.trackType, "free"),
+      inArray(schema.games.status, ["waiting", "in_progress", "suspended"]),
+    ))
+    .orderBy(desc(schema.games.createdAt))
+    .limit(1))[0];
+  if (!row || !["waiting", "in_progress", "suspended"].includes(row.status)) return null;
+  return {
+    id: row.id,
+    ...(row.slug && { slug: row.slug }),
+    status: row.status as "waiting" | "in_progress" | "suspended",
+  };
+}
+
+export async function acquireDailyFreeLocks(tx: DrizzleTransaction): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('influence-season-free'))`);
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('influence-daily-free-draw'))`);
+}
+
+async function requireOwnedDailyFreeAgent(
+  tx: DrizzleTransaction,
+  userId: string,
+  agentId: string,
+): Promise<void> {
+  const profile = await tx.select({ id: schema.agentProfiles.id })
+    .from(schema.agentProfiles)
+    .where(and(
+      eq(schema.agentProfiles.id, agentId),
+      eq(schema.agentProfiles.userId, userId),
+    ))
+    .limit(1);
+  if (profile.length === 0) {
+    throw new AgentProfileManagementError(
+      "agent_not_found",
+      "Agent not found.",
+      404,
+      { agentId },
+    );
+  }
+}
+
+async function requireActiveFreeSeason(tx: DrizzleTransaction) {
+  const season = await getActiveSeason(tx);
+  if (!season) {
+    throw new QueueEnrollmentError(
+      "no_active_season",
+      "Daily Free is between seasons right now.",
+      409,
+    );
+  }
+  return season;
+}
+
+async function upsertPromptSuppression(
+  tx: DrizzleTransaction,
+  userId: string,
+  seasonId: string,
+  reason: "maybe_later" | "left_queue" | "admin_removed",
+  suppressedUntil: string | null,
+): Promise<void> {
+  await tx.insert(schema.freeQueuePromptSuppressions).values({
+    id: randomUUID(),
+    userId,
+    seasonId,
+    reason,
+    suppressedUntil,
+  }).onConflictDoUpdate({
+    target: schema.freeQueuePromptSuppressions.userId,
+    set: { seasonId, reason, suppressedUntil, createdAt: new Date().toISOString() },
+  });
 }
 
 async function getActiveEnrollmentForAgent(
@@ -539,7 +641,7 @@ async function getActiveEnrollmentForAgent(
 ): Promise<{
   gameId: string;
   slug?: string;
-  status: "waiting" | "in_progress";
+  status: "waiting" | "in_progress" | "suspended";
   queueType: QueueType;
 } | null> {
   const row = (await db
@@ -555,12 +657,12 @@ async function getActiveEnrollmentForAgent(
     .where(and(
       eq(schema.gamePlayers.userId, userId),
       eq(schema.gamePlayers.agentProfileId, agentId),
-      inArray(schema.games.status, ["waiting", "in_progress"]),
+      inArray(schema.games.status, ["waiting", "in_progress", "suspended"]),
     ))
     .orderBy(desc(schema.games.createdAt))
     .limit(1))[0];
 
-  if (!row || (row.status !== "waiting" && row.status !== "in_progress")) return null;
+  if (!row || (row.status !== "waiting" && row.status !== "in_progress" && row.status !== "suspended")) return null;
   return {
     gameId: row.gameId,
     ...(row.slug && { slug: row.slug }),

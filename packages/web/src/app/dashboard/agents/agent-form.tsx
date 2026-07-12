@@ -1,15 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  AGENT_GENDER_OPTIONS,
+  avatarDraftProfileFingerprint,
+  getDraftAgentAvatarGeneration,
   generatePersonality,
+  requestDraftAgentAvatarGeneration,
+  type AvatarCompletion,
   type PersonaKey,
   type SavedAgent,
   type CreateAgentParams,
+  type AgentGender,
   type GeneratePersonalityParams,
 } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
 import { AvatarUpload } from "@/components/avatar-upload";
+import { isAvatarCompletionPending, isSameAvatarCompletion } from "./avatar-completion";
 
 interface AgentFormProps {
   initial?: SavedAgent;
@@ -19,20 +26,93 @@ interface AgentFormProps {
 }
 
 export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Agent" }: AgentFormProps) {
+  const isEditing = Boolean(initial);
   const [name, setName] = useState(initial?.name ?? "");
   const [backstory, setBackstory] = useState(initial?.backstory ?? "");
   const [personality, setPersonality] = useState(initial?.personality ?? "");
   const [strategyStyle, setStrategyStyle] = useState(initial?.strategyStyle ?? "");
   const [personaKey, setPersonaKey] = useState<PersonaKey>(initial?.personaKey ?? "strategic");
-  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(initial?.avatarUrl ?? undefined);
+  const [gender, setGender] = useState<AgentGender | "">(initial?.gender ?? "");
+  const [explicitAvatarUrl, setExplicitAvatarUrl] = useState<string | undefined>(initial?.avatarUrl ?? undefined);
+  const [draftAvatarUrl, setDraftAvatarUrl] = useState<string | undefined>();
   const [submitting, setSubmitting] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [portraitStarting, setPortraitStarting] = useState(false);
+  const [draftAvatarCompletion, setDraftAvatarCompletion] = useState<AvatarCompletion | null>(null);
+  const [generatedWithAi, setGeneratedWithAi] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const selectedPersona = PERSONAS.find((p) => p.key === personaKey)!;
+  const currentProfileFingerprint = gender
+    ? avatarDraftProfileFingerprint({
+        name,
+        gender,
+        backstory: backstory || undefined,
+        personality,
+        strategyStyle: strategyStyle || undefined,
+        personaKey,
+      })
+    : null;
+  const draftIsStale = Boolean(
+    draftAvatarCompletion?.profileFingerprint
+    && draftAvatarCompletion.profileFingerprint !== currentProfileFingerprint,
+  );
+  const avatarUrl = explicitAvatarUrl ?? (draftIsStale ? undefined : draftAvatarUrl);
+  const portraitPending = draftAvatarCompletion
+    ? isAvatarCompletionPending(draftAvatarCompletion) && !draftIsStale
+    : false;
+  const generationActivity = resolveGenerationActivity({
+    generating,
+    portraitStarting,
+    portraitPending,
+    draftAvatarCompletion,
+    draftIsStale,
+    submitting,
+    generatedWithAi,
+    isEditing,
+    hasAvatar: Boolean(avatarUrl),
+  });
+
+  useEffect(() => {
+    const requestId = draftAvatarCompletion?.generationRequestId;
+    if (!requestId || !portraitPending) return;
+
+    let cancelled = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const result = await getDraftAgentAvatarGeneration(requestId);
+        if (cancelled) return;
+        setError(null);
+        setDraftAvatarCompletion((current) => isSameAvatarCompletion(current, result.avatarCompletion)
+          ? current
+          : result.avatarCompletion);
+        if (result.avatarCompletion.status === "completed" && result.avatarCompletion.avatarUrl) {
+          setDraftAvatarUrl(result.avatarCompletion.avatarUrl);
+          return;
+        }
+        if (isAvatarCompletionPending(result.avatarCompletion)) {
+          timer = window.setTimeout(() => void poll(), 2_500);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.warn("[AgentForm] Failed to refresh draft portrait status:", err);
+          setError("Portrait status could not be refreshed. Waiting to try again; you can upload an image instead.");
+          timer = window.setTimeout(() => void poll(), 5_000);
+        }
+      }
+    };
+
+    timer = window.setTimeout(() => void poll(), 2_500);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [draftAvatarCompletion?.generationRequestId, portraitPending]);
 
   async function handleGenerate() {
     setGenerating(true);
+    setGeneratedWithAi(false);
     setError(null);
     try {
       const params: GeneratePersonalityParams = {};
@@ -44,9 +124,11 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
           personality: personality.trim() || undefined,
           strategyStyle: strategyStyle.trim() || undefined,
           personaKey,
+          gender: gender || undefined,
         };
       } else {
         params.archetype = personaKey;
+        params.gender = gender || undefined;
       }
       const result = await generatePersonality(params);
       setName(result.name);
@@ -54,10 +136,46 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
       setPersonality(result.personality);
       setStrategyStyle(result.strategyStyle ?? "");
       setPersonaKey(result.personaKey);
+      setGender(result.gender);
+      setGeneratedWithAi(true);
+      setGenerating(false);
+
+      if (!explicitAvatarUrl) {
+        await startDraftPortrait({
+          name: result.name,
+          gender: result.gender,
+          backstory: result.backstory ?? undefined,
+          personality: result.personality,
+          strategyStyle: result.strategyStyle ?? undefined,
+          personaKey: result.personaKey,
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "AI generation failed. Try again or fill in manually.");
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function startDraftPortrait(profile: Parameters<typeof requestDraftAgentAvatarGeneration>[0]) {
+    setPortraitStarting(true);
+    setDraftAvatarCompletion(null);
+    setDraftAvatarUrl(undefined);
+    setError(null);
+    try {
+      const draft = await requestDraftAgentAvatarGeneration(profile);
+      setDraftAvatarCompletion(draft.avatarCompletion);
+      if (draft.avatarCompletion.status === "completed" && draft.avatarCompletion.avatarUrl) {
+        setDraftAvatarUrl(draft.avatarCompletion.avatarUrl);
+      }
+    } catch (err) {
+      setDraftAvatarCompletion({
+        status: "failed",
+        reason: err instanceof Error ? err.message : "Portrait generation could not be started.",
+        retryable: true,
+      });
+    } finally {
+      setPortraitStarting(false);
     }
   }
 
@@ -71,6 +189,10 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
       setError("Personality description is required.");
       return;
     }
+    if (!gender) {
+      setError("Select a gender for this agent.");
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
@@ -82,7 +204,11 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
         backstory: backstory.trim() || undefined,
         strategyStyle: strategyStyle.trim() || undefined,
         personaKey,
-        avatarUrl,
+        gender,
+        avatarUrl: explicitAvatarUrl,
+        avatarGenerationRequestId: isEditing || explicitAvatarUrl || draftIsStale
+          ? undefined
+          : draftAvatarCompletion?.generationRequestId,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save agent.");
@@ -98,7 +224,7 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
           currentUrl={avatarUrl}
           persona={personaKey}
           name={name || "Agent"}
-          onUploaded={setAvatarUrl}
+          onUploaded={setExplicitAvatarUrl}
         />
       </div>
 
@@ -114,12 +240,48 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
         <button
           type="button"
           onClick={handleGenerate}
-          disabled={generating}
+          disabled={generating || portraitStarting || portraitPending}
           className="influence-button-primary shrink-0 text-xs px-3 py-1.5 rounded-lg font-medium"
         >
-          {generating ? "Generating..." : "AI Help"}
+          {generating ? "Generating..." : portraitStarting || portraitPending ? "Generating portrait..." : "AI Help"}
         </button>
       </div>
+      {generationActivity && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="influence-panel flex items-start gap-3 rounded-lg px-3 py-2.5"
+        >
+          {generationActivity.busy && (
+            <span className="mt-0.5 h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-accent/30 border-t-accent" aria-hidden="true" />
+          )}
+          <div className="min-w-0 text-xs">
+            <p className="text-text-primary font-medium">
+              {generationActivity.title}
+            </p>
+            <p className="influence-copy-muted mt-0.5">
+              {generationActivity.detail}
+            </p>
+          </div>
+        </div>
+      )}
+      {!explicitAvatarUrl && (draftIsStale || (draftAvatarCompletion && !isAvatarCompletionPending(draftAvatarCompletion))) && gender && name.trim() && personality.trim() && (
+        <button
+          type="button"
+          onClick={() => void startDraftPortrait({
+            name: name.trim(),
+            gender,
+            backstory: backstory.trim() || undefined,
+            personality: personality.trim(),
+            strategyStyle: strategyStyle.trim() || undefined,
+            personaKey,
+          })}
+          disabled={portraitStarting}
+          className="influence-button-secondary w-full rounded-lg px-3 py-2 text-xs"
+        >
+          Regenerate portrait
+        </button>
+      )}
 
       {/* Agent name */}
       <div>
@@ -138,6 +300,33 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
           The name your agent uses in games. Other players will see this.
         </p>
       </div>
+
+      {/* Gender selection */}
+      <fieldset aria-describedby="agent-gender-help" aria-required="true">
+        <legend className="influence-section-title block mb-2">
+          Gender <span className="text-red-400" aria-hidden="true">*</span>
+        </legend>
+        <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Gender">
+          {AGENT_GENDER_OPTIONS.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setGender(value)}
+              role="radio"
+              aria-checked={gender === value}
+              data-selected={gender === value}
+              className={`influence-selection-card rounded-lg px-3 py-2.5 text-sm transition-all ${
+                gender === value ? "text-text-primary" : "influence-copy"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p id="agent-gender-help" className="influence-copy-muted text-xs mt-1">
+          Used to guide portrait generation.
+        </p>
+      </fieldset>
 
       {/* Persona selection */}
       <div>
@@ -218,7 +407,7 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
 
       {/* Error */}
       {error && (
-        <p className="text-red-400 text-sm rounded-lg px-4 py-2.5 border border-red-400/30 bg-red-400/10">
+        <p role="alert" className="text-red-400 text-sm rounded-lg px-4 py-2.5 border border-red-400/30 bg-red-400/10">
           {error}
         </p>
       )}
@@ -234,12 +423,83 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
         </button>
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || (!avatarUrl && (portraitStarting || portraitPending || draftIsStale))}
           className="influence-button-primary flex-1 text-sm py-2.5 rounded-lg font-medium"
         >
-          {submitting ? "Saving..." : submitLabel}
+          {!avatarUrl && (portraitStarting || portraitPending)
+            ? "Generating portrait..."
+            : submitting
+            ? isEditing ? "Saving..." : avatarUrl ? "Creating..." : "Starting portrait..."
+            : submitLabel}
         </button>
       </div>
     </form>
   );
+}
+
+function resolveGenerationActivity(input: {
+  generating: boolean;
+  portraitStarting: boolean;
+  portraitPending: boolean;
+  draftAvatarCompletion: AvatarCompletion | null;
+  draftIsStale: boolean;
+  submitting: boolean;
+  generatedWithAi: boolean;
+  isEditing: boolean;
+  hasAvatar: boolean;
+}): { title: string; detail: string; busy: boolean } | null {
+  if (input.generating) {
+    return {
+      title: "Generating agent details...",
+      detail: "Portrait generation starts as soon as these details are ready.",
+      busy: true,
+    };
+  }
+  if (input.portraitStarting || input.portraitPending) {
+    return {
+      title: "Generating portrait...",
+      detail: "You can review the agent while the portrait is being created.",
+      busy: true,
+    };
+  }
+  if (input.draftIsStale) {
+    return {
+      title: "Portrait needs refresh",
+      detail: "Agent details changed. Regenerate the portrait before saving.",
+      busy: false,
+    };
+  }
+  if (input.draftAvatarCompletion?.status === "completed") {
+    return {
+      title: "Portrait ready",
+      detail: "The generated portrait will be saved with this agent.",
+      busy: false,
+    };
+  }
+  if (input.draftAvatarCompletion) {
+    return {
+      title: "Portrait not generated",
+      detail: input.draftAvatarCompletion.reason ?? "Portrait generation could not be completed.",
+      busy: false,
+    };
+  }
+  if (input.submitting) {
+    return {
+      title: input.isEditing
+        ? "Saving changes..."
+        : input.hasAvatar ? "Creating agent..." : "Creating agent and starting portrait...",
+      detail: !input.hasAvatar && !input.isEditing
+        ? "Portrait status will stay visible after this form closes."
+        : "Review the details, then save when ready.",
+      busy: true,
+    };
+  }
+  if (input.generatedWithAi) {
+    return {
+      title: input.isEditing ? "Updated details ready" : "Agent details ready",
+      detail: "Review the details, then save when ready.",
+      busy: false,
+    };
+  }
+  return null;
 }

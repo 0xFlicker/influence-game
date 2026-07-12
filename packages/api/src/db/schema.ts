@@ -22,6 +22,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import type { AgentGender } from "../lib/agent-gender.js";
 import { MCP_OAUTH_SCOPE_CHECK_VALUES } from "../services/mcp-scope-policy.js";
 
 export type PostgameMediaType = "house_highlights_trailer";
@@ -218,6 +219,7 @@ export const agentProfiles = pgTable("agent_profiles", {
   personality: text("personality").notNull(), // Personality prompt / description
   strategyStyle: text("strategy_style"), // Strategy hints
   personaKey: text("persona_key"), // Archetype key (honest, strategic, etc.)
+  gender: text("gender").$type<AgentGender>(),
   currentRevisionId: text("current_revision_id")
     .references((): AnyPgColumn => agentRevisions.id, { onDelete: "restrict" }),
   avatarUrl: text("avatar_url"),
@@ -234,6 +236,7 @@ export const agentProfiles = pgTable("agent_profiles", {
   index("agent_profiles_name_idx").on(table.name),
   index("agent_profiles_name_id_idx").on(table.name, table.id),
   index("agent_profiles_current_revision_idx").on(table.currentRevisionId),
+  check("agent_profiles_gender_check", sql`${table.gender} IS NULL OR ${table.gender} IN ('male', 'female', 'non-binary')`),
 ]);
 
 export type AgentRevisionTrigger = "initial_backfill" | "profile_create" | "profile_edit" | "runtime_policy_change";
@@ -267,6 +270,8 @@ export type AvatarGenerationPurpose = "agent_profile_completion";
 export type AvatarGenerationStatus = "queued" | "processing" | "completed" | "skipped" | "failed";
 export type AvatarGenerationTriggerSource =
   | "web_user_prompt"
+  | "web_ai_help_draft"
+  | "web_create_default"
   | "mcp_create_default";
 
 export const avatarGenerationRequests = pgTable("avatar_generation_requests", {
@@ -303,7 +308,7 @@ export const avatarGenerationRequests = pgTable("avatar_generation_requests", {
     .where(sql`${table.status} IN ('queued', 'processing', 'completed')`),
   check("avatar_generation_requests_purpose_check", sql`${table.purpose} IN ('agent_profile_completion')`),
   check("avatar_generation_requests_status_check", sql`${table.status} IN ('queued', 'processing', 'completed', 'skipped', 'failed')`),
-  check("avatar_generation_requests_trigger_source_check", sql`${table.triggerSource} IN ('web_user_prompt', 'mcp_create_default')`),
+  check("avatar_generation_requests_trigger_source_check", sql`${table.triggerSource} IN ('web_user_prompt', 'web_ai_help_draft', 'web_create_default', 'mcp_create_default')`),
 ]);
 
 export type AvatarChangeSource =
@@ -1549,7 +1554,28 @@ export const freeGameQueue = pgTable("free_game_queue", {
   joinedAt: text("joined_at")
     .notNull()
     .default(sql`now()::text`),
+  consecutiveMisses: integer("consecutive_misses")
+    .notNull()
+    .default(0),
 });
+
+export const freeQueuePromptSuppressions = pgTable("free_queue_prompt_suppressions", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id),
+  seasonId: text("season_id")
+    .notNull()
+    .references(() => seasons.id),
+  reason: text("reason").notNull(),
+  suppressedUntil: text("suppressed_until"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  check("free_queue_prompt_suppressions_reason_check", sql`${table.reason} IN ('maybe_later', 'left_queue', 'admin_removed')`),
+]);
 
 // ---------------------------------------------------------------------------
 // Invite Codes

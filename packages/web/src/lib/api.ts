@@ -1603,6 +1603,7 @@ export interface SavedAgent {
   personality: string;
   strategyStyle: string | null;
   personaKey: PersonaKey | null;
+  gender?: AgentGender | null;
   avatarUrl: string | null;
   gamesPlayed: number;
   gamesWon: number;
@@ -1617,10 +1618,20 @@ export interface CreateAgentParams {
   backstory?: string;
   strategyStyle?: string;
   personaKey?: PersonaKey;
+  gender: AgentGender;
   avatarUrl?: string;
+  avatarGenerationRequestId?: string;
 }
 
-export type UpdateAgentParams = Partial<CreateAgentParams>;
+export const AGENT_GENDER_OPTIONS = [
+  { value: "male", label: "Male" },
+  { value: "female", label: "Female" },
+  { value: "non-binary", label: "Non-binary" },
+] as const;
+
+export type AgentGender = typeof AGENT_GENDER_OPTIONS[number]["value"];
+
+export type UpdateAgentParams = Partial<Omit<CreateAgentParams, "avatarGenerationRequestId">>;
 
 export interface AvatarCompletion {
   status: "already_provided" | "accepted" | "queued" | "processing" | "completed" | "skipped" | "failed";
@@ -1630,6 +1641,7 @@ export interface AvatarCompletion {
   failureStage?: "provider_submit" | "provider_poll" | "asset_select" | "asset_download" | "avatar_store" | "profile_update";
   retryable?: boolean;
   reason?: string;
+  profileFingerprint?: string;
 }
 
 export interface GeneratePersonalityParams {
@@ -1638,12 +1650,14 @@ export interface GeneratePersonalityParams {
   backstoryIdea?: string;
   archetype?: string;
   name?: string;
+  gender?: AgentGender;
   existingProfile?: {
     name?: string;
     backstory?: string;
     personality?: string;
     strategyStyle?: string;
     personaKey?: string;
+    gender?: AgentGender;
   };
 }
 
@@ -1653,6 +1667,7 @@ export interface GeneratePersonalityResult {
   personality: string;
   strategyStyle: string | null;
   personaKey: PersonaKey;
+  gender: AgentGender;
 }
 
 // ---------------------------------------------------------------------------
@@ -1670,10 +1685,20 @@ export async function getAgent(id: string): Promise<SavedAgent> {
 export async function createAgent(
   params: CreateAgentParams,
 ): Promise<SavedAgent> {
-  return apiFetch("/api/agent-profiles", {
+  const agent = await apiFetch<SavedAgent>("/api/agent-profiles", {
     method: "POST",
     body: JSON.stringify(params),
   });
+  if (typeof window !== "undefined" && agent.avatarCompletion) {
+    window.dispatchEvent(new CustomEvent("agent-avatar:generation", {
+      detail: {
+        agentId: agent.id,
+        agentName: agent.name,
+        completion: agent.avatarCompletion,
+      },
+    }));
+  }
+  return agent;
 }
 
 export async function updateAgent(
@@ -1697,6 +1722,41 @@ export async function requestAgentAvatarGeneration(
     method: "POST",
     body: JSON.stringify({}),
   });
+}
+
+export interface DraftAgentAvatarParams {
+  name: string;
+  gender: AgentGender;
+  backstory?: string;
+  personality: string;
+  strategyStyle?: string;
+  personaKey: PersonaKey;
+}
+
+export function avatarDraftProfileFingerprint(params: DraftAgentAvatarParams): string {
+  return JSON.stringify([
+    params.name.trim(),
+    params.gender,
+    params.backstory?.trim() || null,
+    params.personality.trim(),
+    params.strategyStyle?.trim() || null,
+    params.personaKey,
+  ]);
+}
+
+export async function requestDraftAgentAvatarGeneration(
+  params: DraftAgentAvatarParams,
+): Promise<{ avatarCompletion: AvatarCompletion }> {
+  return apiFetch("/api/agent-profiles/avatar/generate-draft", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
+export async function getDraftAgentAvatarGeneration(
+  generationRequestId: string,
+): Promise<{ avatarCompletion: AvatarCompletion }> {
+  return apiFetch(`/api/agent-profiles/avatar/generation-drafts/${generationRequestId}`);
 }
 
 export async function getAgentAvatarGeneration(
@@ -2064,6 +2124,13 @@ export interface FreeQueueStatus {
     agentName: string;
     joinedAt: string;
   } | null;
+  eligibility?: "eligible" | "temporarily-ineligible" | "absent" | null;
+  promptEligible?: boolean;
+  relevantGame?: {
+    id: string;
+    slug?: string;
+    status: "waiting" | "in_progress" | "suspended";
+  } | null;
   todayGame: {
     id: string;
     slug: string;
@@ -2080,6 +2147,9 @@ interface FreeQueueStatusResponse {
   nextGameAt?: string;
   userEntry?: FreeQueueStatus["userEntry"];
   todayGame?: FreeQueueStatus["todayGame"];
+  eligibility?: FreeQueueStatus["eligibility"];
+  promptEligible?: boolean;
+  relevantGame?: FreeQueueStatus["relevantGame"];
 }
 
 export interface LeaderboardEntry {
@@ -2091,6 +2161,25 @@ export interface LeaderboardEntry {
   gamesWon: number;
   winRate: number;
   peakRating: number;
+}
+
+export interface AdminFreeQueueEntry {
+  userId: string;
+  ownerLabel: string;
+  agentProfileId: string;
+  agentName: string;
+  joinedAt: string;
+  consecutiveMisses: number;
+  status: "eligible" | "in-game";
+  activeGame: { id: string; slug: string; status: GameStatus } | null;
+  lastGame: { id: string; slug: string; status: GameStatus; createdAt: string } | null;
+}
+
+export interface AdminFreeQueueStatus {
+  eligibleCount: number;
+  availableHumanSeats: 12;
+  longestWaitSince: string | null;
+  entries: AdminFreeQueueEntry[];
 }
 
 export interface SeasonIdentity {
@@ -2287,6 +2376,9 @@ export async function getFreeQueueStatus(): Promise<FreeQueueStatus> {
     queuedCount: status.queuedCount ?? status.count ?? 0,
     nextGameAt: status.nextGameAt ?? status.nextGameTime ?? new Date().toISOString(),
     userEntry: status.userEntry ?? null,
+    eligibility: status.eligibility ?? null,
+    promptEligible: status.promptEligible ?? false,
+    relevantGame: status.relevantGame ?? null,
     todayGame: status.todayGame ?? null,
   };
 }
@@ -2302,8 +2394,20 @@ export async function leaveFreeQueue(): Promise<void> {
   await apiFetch("/api/free-queue/leave", { method: "DELETE" });
 }
 
+export async function maybeLaterFreeQueue(): Promise<void> {
+  await apiFetch("/api/free-queue/maybe-later", { method: "POST" });
+}
+
 export async function getFreeQueueLeaderboard(): Promise<LeaderboardEntry[]> {
   return apiFetch("/api/free-queue/leaderboard");
+}
+
+export async function getAdminFreeQueue(): Promise<AdminFreeQueueStatus> {
+  return apiFetch("/api/admin/free-queue");
+}
+
+export async function removeAdminFreeQueueEntry(userId: string): Promise<void> {
+  await apiFetch(`/api/admin/free-queue/${encodeURIComponent(userId)}`, { method: "DELETE" });
 }
 
 export async function listSeasons(): Promise<SeasonIdentity[]> {

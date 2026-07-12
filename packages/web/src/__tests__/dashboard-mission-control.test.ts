@@ -85,6 +85,21 @@ describe("buildDashboardMissionControl", () => {
     expect(control.liveGame?.id).toBe("live-game");
   });
 
+  it("links a standing agent directly to its current Daily Free game", () => {
+    const control = buildDashboardMissionControl({
+      agents: [agent()],
+      games: [],
+      history: [],
+      queueStatus: queue({
+        userEntry: { agentProfileId: "agent-1", agentName: "Atlas", joinedAt: "2026-06-21T13:00:00.000Z" },
+        relevantGame: { id: "daily-1", slug: "daily-firelight", status: "waiting" },
+      }),
+    });
+
+    expect(control.primaryAction.href).toBe("/games/daily-firelight");
+    expect(control.queueSummary?.description).toContain("current Daily Free game");
+  });
+
   it("skips unavailable live and queue states before choosing replay", () => {
     const control = buildDashboardMissionControl({
       agents: [agent()],

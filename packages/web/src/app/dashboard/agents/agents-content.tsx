@@ -13,7 +13,7 @@ import {
   type AvatarCompletion,
 } from "@/lib/api";
 import { AgentList } from "./agent-list";
-import { isAvatarCompletionPending } from "./avatar-completion";
+import { isAvatarCompletionPending, isSameAvatarCompletion } from "./avatar-completion";
 
 export function AgentsContent() {
   const router = useRouter();
@@ -226,14 +226,4 @@ export function AgentsContent() {
       )}
     </div>
   );
-}
-
-function isSameAvatarCompletion(a: AvatarCompletion | undefined, b: AvatarCompletion): boolean {
-  return a?.status === b.status
-    && a.generationRequestId === b.generationRequestId
-    && a.avatarUrl === b.avatarUrl
-    && a.failureCode === b.failureCode
-    && a.failureStage === b.failureStage
-    && a.retryable === b.retryable
-    && a.reason === b.reason;
 }

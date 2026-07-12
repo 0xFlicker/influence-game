@@ -94,8 +94,12 @@ export async function closeSeason(
 ): Promise<typeof schema.seasons.$inferSelect> {
   const closedAt = normalizeTimestamp(now, "Season close time");
   return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('influence-season-free'))`);
     const season = await requireSeasonForUpdate(tx, seasonId);
     if (season.status === "closing" || season.status === "final") return season;
+    await tx.delete(schema.freeQueuePromptSuppressions)
+      .where(eq(schema.freeQueuePromptSuppressions.seasonId, seasonId));
+    await tx.delete(schema.freeGameQueue);
     const updated = (await tx.update(schema.seasons).set({
       status: "closing",
       admissionClosesAt: closedAt,

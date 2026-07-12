@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { AgentAvatar, resolveAgentAvatarUrl } from "../components/agent-avatar";
+import { AgentAvatarPreview } from "../components/agent-avatar-preview";
 import { setApiBase } from "../lib/api";
 import { PERSONAS } from "../lib/personas";
 
@@ -55,7 +56,7 @@ describe("AgentAvatar", () => {
     ).toBe("https://influence-pfp.us-iad-1.linodeobjects.com/pfp/user-1/avatar.png");
   });
 
-  it("keeps generated personality blurbs out of avatar badge titles", () => {
+  it("renders portraits without an archetype badge overlay", () => {
     const html = renderToString(
       createElement(AgentAvatar, {
         persona: "Zara is exuberant and unpredictable.",
@@ -64,8 +65,36 @@ describe("AgentAvatar", () => {
       }),
     );
 
-    expect(html).toContain('title="Observer archetype"');
+    expect(html).not.toContain('title="Observer archetype"');
     expect(html).not.toContain("Zara is exuberant and unpredictable.");
+  });
+
+  it("renders an accessible portrait preview with role and game stats", () => {
+    const html = renderToString(
+      createElement(AgentAvatarPreview, {
+        avatarUrl: null,
+        personaKey: "strategic",
+        name: "Nova",
+        gamesPlayed: 5,
+        gamesWon: 2,
+      }),
+    );
+
+    expect(html).toContain('aria-label="View Nova portrait and stats"');
+    expect(html).toContain("Strategist");
+    expect(html).toContain(">games</dt>");
+    expect(html).toContain(">5</dd>");
+    expect(html).toContain(">wins</dt>");
+    expect(html).toContain(">2</dd>");
+    expect(html).toContain(">win rate</dt>");
+    expect(html).toContain(">40%</dd>");
+  });
+
+  it("uses useful role labels instead of House personality names", () => {
+    expect(PERSONAS.find((persona) => persona.key === "strategic")?.name).toBe("Strategist");
+    expect(PERSONAS.find((persona) => persona.key === "paranoid")?.name).toBe("Watchful");
+    expect(PERSONAS.map((persona) => persona.name)).not.toContain("Atlas");
+    expect(PERSONAS.map((persona) => persona.name)).not.toContain("Lyra");
   });
 
   it("has a generated PNG asset for every exposed persona key", () => {

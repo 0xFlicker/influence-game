@@ -31,6 +31,8 @@ import {
 } from "@/lib/api";
 import { isE2EMode } from "@/lib/wallet-adapter";
 import { InviteCodeModal } from "@/components/invite-code-modal";
+import { StandingDailyAgentPrompt } from "@/components/standing-daily-agent-prompt";
+import { AvatarGenerationActivity } from "@/components/avatar-generation-activity";
 
 // ---------------------------------------------------------------------------
 // Wagmi config (Privy-managed)
@@ -117,6 +119,7 @@ function AuthSync({ children }: { children: React.ReactNode }) {
 
     if (!authenticated) {
       clearAuthToken();
+      window.dispatchEvent(new CustomEvent("auth:session-cleared"));
       setNeedsInvite(false);
       setPendingPrivyToken(null);
       return;
@@ -192,6 +195,8 @@ function AuthSync({ children }: { children: React.ReactNode }) {
     <InviteContext.Provider value={inviteState}>
       {children}
       <InviteCodeModal />
+      <StandingDailyAgentPrompt />
+      <AvatarGenerationActivity />
     </InviteContext.Provider>
   );
 }

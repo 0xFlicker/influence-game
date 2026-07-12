@@ -14,7 +14,7 @@
  */
 
 import { Hono, type Context } from "hono";
-import { eq, sql, isNull, and, or, asc, like, desc } from "drizzle-orm";
+import { eq, sql, isNull, and, or, asc, like, desc, inArray } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { getPermissionsForAddress } from "../db/rbac.js";
@@ -41,6 +41,8 @@ import { getAdminPostgameMedia } from "../services/postgame-media.js";
 import { requestPostgameMedia, type PostgameMediaRequestAction } from "../services/postgame-media-coordinator.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
 import { randomUUID } from "crypto";
+import { getPublicDisplayName } from "../lib/display-name.js";
+import { removeStandingDailyAgentByAdmin } from "../services/queue-enrollment.js";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -52,6 +54,7 @@ export function createAdminRoutes(db: DrizzleDB) {
   const requireAdminRead = requirePermission("view_admin", "manage_roles");
   const requireRoleManagement = requirePermission("manage_roles");
   const requirePostgameMediaManagement = requirePermission("manage_postgame_media", "manage_roles");
+  const requireFreeQueueManagement = requirePermission("schedule_free_game", "manage_roles");
   const canManageCostAccounting = (permissions: string[]) => (
     permissions.includes("manage_cost_accounting") || permissions.includes("manage_roles")
   );
@@ -299,6 +302,80 @@ export function createAdminRoutes(db: DrizzleDB) {
       .innerJoin(schema.users, sql`${schema.agentProfiles.userId} = ${schema.users.id}`);
 
     return c.json(profiles);
+  });
+
+  app.get("/api/admin/free-queue", requireAdminRead, async (c) => {
+    const rows = await db.select({
+      userId: schema.freeGameQueue.userId,
+      agentProfileId: schema.freeGameQueue.agentProfileId,
+      agentName: schema.agentProfiles.name,
+      joinedAt: schema.freeGameQueue.joinedAt,
+      consecutiveMisses: schema.freeGameQueue.consecutiveMisses,
+      displayName: schema.users.displayName,
+      email: schema.users.email,
+      walletAddress: schema.users.walletAddress,
+    }).from(schema.freeGameQueue)
+      .innerJoin(schema.agentProfiles, eq(schema.freeGameQueue.agentProfileId, schema.agentProfiles.id))
+      .innerJoin(schema.users, eq(schema.freeGameQueue.userId, schema.users.id))
+      .orderBy(asc(schema.freeGameQueue.joinedAt));
+
+    const gameRows = rows.length === 0 ? [] : await db.select({
+        userId: schema.gamePlayers.userId,
+        id: schema.games.id,
+        slug: schema.games.slug,
+        status: schema.games.status,
+        createdAt: schema.games.createdAt,
+      }).from(schema.gamePlayers)
+        .innerJoin(schema.games, eq(schema.gamePlayers.gameId, schema.games.id))
+        .where(and(
+          inArray(schema.gamePlayers.userId, rows.map((row) => row.userId)),
+          eq(schema.games.trackType, "free"),
+        )).orderBy(desc(schema.games.createdAt));
+    const lastGameByOwner = new Map<string, (typeof gameRows)[number]>();
+    const activeGameByOwner = new Map<string, (typeof gameRows)[number]>();
+    for (const game of gameRows) {
+      if (!game.userId) continue;
+      if (!lastGameByOwner.has(game.userId)) lastGameByOwner.set(game.userId, game);
+      if (["waiting", "in_progress", "suspended"].includes(game.status)
+        && !activeGameByOwner.has(game.userId)) {
+        activeGameByOwner.set(game.userId, game);
+      }
+    }
+    const entries = rows.map((row) => {
+      const activeGame = activeGameByOwner.get(row.userId);
+      const lastGame = lastGameByOwner.get(row.userId);
+      return {
+        userId: row.userId,
+        ownerLabel: getPublicDisplayName(row),
+        agentProfileId: row.agentProfileId,
+        agentName: row.agentName,
+        joinedAt: row.joinedAt,
+        consecutiveMisses: row.consecutiveMisses,
+        status: activeGame ? "in-game" as const : "eligible" as const,
+        activeGame: activeGame ? {
+          id: activeGame.id,
+          slug: activeGame.slug ?? activeGame.id,
+          status: activeGame.status,
+        } : null,
+        lastGame: lastGame ? {
+          id: lastGame.id,
+          slug: lastGame.slug ?? lastGame.id,
+          status: lastGame.status,
+          createdAt: lastGame.createdAt,
+        } : null,
+      };
+    });
+    const eligibleEntries = entries.filter((entry) => entry.status === "eligible");
+    return c.json({
+      eligibleCount: eligibleEntries.length,
+      availableHumanSeats: 12,
+      longestWaitSince: eligibleEntries[0]?.joinedAt ?? null,
+      entries,
+    });
+  });
+
+  app.delete("/api/admin/free-queue/:userId", requireFreeQueueManagement, async (c) => {
+    return c.json(await removeStandingDailyAgentByAdmin(db, c.req.param("userId")));
   });
 
   // -------------------------------------------------------------------------
@@ -1230,6 +1307,7 @@ function redactAvatarAdminMetadata(value: Record<string, unknown> | null): Recor
       || normalized.includes("token")
       || normalized.includes("originaldataurl")
       || normalized.includes("providerasseturl")
+      || normalized === "draftprofile"
     ) {
       continue;
     }

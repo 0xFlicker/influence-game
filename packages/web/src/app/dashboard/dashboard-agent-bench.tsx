@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AgentAvatar } from "@/components/agent-avatar";
+import { AgentAvatarPreview } from "@/components/agent-avatar-preview";
 import type { PlayerGameResult, SavedAgent } from "@/lib/api";
 
 interface DashboardAgentBenchProps {
@@ -112,10 +112,12 @@ export function DashboardAgentBench({ agents, loading, error }: DashboardAgentBe
         <div className="space-y-2">
           {agents.map((agent) => (
             <div key={agent.id} className="influence-panel-muted flex items-center gap-3 rounded-lg p-3">
-              <AgentAvatar
+              <AgentAvatarPreview
                 avatarUrl={agent.avatarUrl}
-                persona={agent.personaKey ?? "strategic"}
+                personaKey={agent.personaKey}
                 name={agent.name}
+                gamesPlayed={agent.gamesPlayed}
+                gamesWon={agent.gamesWon}
                 size="8"
               />
               <div className="min-w-0 flex-1">

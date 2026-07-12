@@ -98,6 +98,46 @@ Status legend:
 - Validation path: inject a settlement failure after the engine returns a winner; verify the exact terminal result survives, the game is visibly pending settlement, a retry completes it without replaying gameplay, and repeated retries cannot duplicate points, ratings, receipts, results, or profile counters.
 - Suggested slice: persist the terminal result before settlement, represent settlement as pending/completed, make settlement idempotent by game ID, and add a producer CLI or admin action to retry pending settlements. This preserves the result of a specific game; it does not freeze season rules or introduce player-facing ceremony.
 
+### R8. Durable draft-avatar recovery ownership
+
+- Status: `ready`
+- Consolidates: Standing Daily Agent implementation review finding #7.
+- Sources: `packages/api/src/services/avatar-generation.ts`, `packages/api/src/routes/agent-profiles.ts`, `packages/web/src/app/dashboard/agents/agent-form.tsx`, `docs/solutions/runtime-errors/api-startup-recovery-resumes-interrupted-games.md`, `docs/solutions/architecture-patterns/house-highlights-postgame-media-pipeline.md`
+- Signal: pre-profile avatar requests are persisted, but accepted work is initially executed by an in-process fire-and-forget promise. Browser polling can resume a known request, but a server restart followed by a form reload loses the draft request ID and can leave queued or stale-processing work without an owner.
+- Concrete seam: avatar generation request claiming, API startup recovery, stale-processing detection, draft request discovery, and provider request idempotency.
+- Validation path: interrupt the API after a draft is queued and after provider submission; restart without the originating form; verify the same request is reclaimed, completes once, stores one image, and does not create duplicate provider jobs.
+- Suggested slice: add a server-owned startup or periodic reconciler that claims queued and stale avatar requests. Keep browser polling as progress UI, not execution ownership.
+
+### R9. Atomic draft-avatar adoption during agent creation
+
+- Status: `ready`
+- Consolidates: Standing Daily Agent implementation review finding #8.
+- Sources: `packages/api/src/routes/agent-profiles.ts`, `packages/api/src/services/avatar-generation.ts`, `packages/api/src/services/agent-profile-management.ts`
+- Signal: agent creation currently marks a completed draft request consumed before profile validation, profile insertion, revision creation, and avatar-lineage recording finish. A later failure can return an error with no usable agent while retries reject the portrait as already consumed.
+- Concrete seam: `consumeOwnedDraftAvatarCompletion`, owned-profile creation transaction, agent revision creation, and avatar change history.
+- Validation path: inject failures during profile validation, profile insertion, revision creation, and avatar audit insertion; verify every failure rolls back draft consumption and a retry creates exactly one profile with the intended portrait and lineage.
+- Suggested slice: claim/consume the draft, create the profile and revision, and record avatar lineage in one transaction. Do not add an out-of-band unconsume repair path unless the transaction boundary proves impossible.
+
+### R10. Honest avatar-generation status degradation
+
+- Status: `ready`
+- Consolidates: Standing Daily Agent implementation review finding #9.
+- Sources: `packages/web/src/components/avatar-generation-activity.tsx`, `packages/web/src/app/dashboard/agents/avatar-completion.ts`
+- Signal: repeated status-read failures are currently rewritten into a terminal-looking `Portrait not generated` state even when the provider job may still be healthy and complete later. This confuses observability failure with generation failure and stops automatic status refresh.
+- Concrete seam: avatar completion UI state, activity polling, retry affordances, and provider-versus-status error copy.
+- Validation path: force three consecutive status API failures while the provider request remains pending, then recover the API; verify the UI reports status as temporarily unavailable, never claims generation failed, and eventually displays the completed portrait.
+- Suggested slice: introduce a separate status-unavailable/degraded state with bounded backoff and manual refresh. Preserve the last known provider status instead of manufacturing a terminal failure.
+
+### R11. Bounded draft-avatar polling and create recovery
+
+- Status: `ready`
+- Consolidates: Standing Daily Agent implementation review finding #10.
+- Sources: `packages/web/src/app/dashboard/agents/agent-form.tsx`, `packages/web/src/app/dashboard/agents/avatar-completion.ts`, `packages/api/src/routes/agent-profiles.ts`
+- Signal: draft status polling retries every five seconds without a limit while portrait-pending state disables agent creation. A sustained API or auth failure can therefore leave the form retrying forever with no explicit recovery action.
+- Concrete seam: AgentForm draft polling, submit eligibility, retry controls, stale-draft handling, and post-create default portrait generation.
+- Validation path: use fake timers and sustained 401/5xx responses; verify retry count and backoff are bounded, polling stops, the user receives a legible retry or create-without-waiting action, and no failed draft is accidentally consumed or attributed to the created agent.
+- Suggested slice: cap polling retries with backoff and expose an explicit retry/status-refresh path. If creation proceeds without a confirmed completed draft, omit its request ID so normal post-create portrait completion owns recovery.
+
 ## Blocked Backlog
 
 ### D1. Owner reclaim and restart orchestration

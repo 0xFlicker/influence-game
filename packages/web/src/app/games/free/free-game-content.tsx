@@ -143,6 +143,7 @@ function QueueSection({
   }
 
   if (isQueued) {
+    const otherAgents = agents.filter((agent) => agent.id !== queueStatus.userEntry!.agentProfileId);
     return (
       <div className="influence-panel rounded-xl p-6">
         <div className="flex items-center justify-between">
@@ -153,15 +154,44 @@ function QueueSection({
             <p className="text-text-primary text-lg font-semibold">
               {queueStatus.userEntry!.agentName}
             </p>
+            {queueStatus.relevantGame && (
+              <Link
+                href={`/games/${queueStatus.relevantGame.slug ?? queueStatus.relevantGame.id}`}
+                className="mt-1 inline-block text-xs text-phase hover:underline"
+              >
+                View current game
+              </Link>
+            )}
           </div>
           <button
             onClick={onLeave}
             disabled={actionLoading}
             className="influence-button-danger text-xs px-4 py-2 rounded-lg"
           >
-            {actionLoading ? "Leaving..." : "Leave Queue"}
+            {actionLoading ? "Leaving..." : "Leave queue"}
           </button>
         </div>
+        {otherAgents.length > 0 && (
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <select
+              value={selectedAgentId}
+              onChange={(event) => setSelectedAgentId(event.target.value)}
+              className="influence-field min-w-0 flex-1 rounded-lg px-3 py-2 text-sm"
+              aria-label="Switch Daily Free agent"
+            >
+              <option value="">Choose another agent</option>
+              {otherAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+            </select>
+            <button
+              type="button"
+              onClick={() => onJoin(selectedAgentId)}
+              disabled={!selectedAgentId || actionLoading}
+              className="influence-button-secondary rounded-lg px-4 py-2 text-xs font-semibold"
+            >
+              {actionLoading ? "Switching..." : "Switch agent"}
+            </button>
+          </div>
+        )}
         {actionError && (
           <p className="text-red-400 text-xs mt-3">{actionError}</p>
         )}
@@ -630,11 +660,14 @@ export function FreeGameContent() {
       fetchQueueStatus();
       fetchAgents();
     };
+    const onQueueChanged = () => { fetchQueueStatus(); };
     window.addEventListener("auth:session-ready", onSessionReady);
+    window.addEventListener("free-queue:changed", onQueueChanged);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener("auth:session-ready", onSessionReady);
+      window.removeEventListener("free-queue:changed", onQueueChanged);
     };
   }, [fetchQueueStatus, fetchLeaderboard, fetchSeason, fetchAgents]);
 
@@ -643,7 +676,7 @@ export function FreeGameContent() {
     setActionError(null);
     try {
       await joinFreeQueue(agentProfileId);
-      await fetchQueueStatus();
+      window.dispatchEvent(new Event("free-queue:changed"));
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to join queue");
     } finally {
@@ -656,7 +689,7 @@ export function FreeGameContent() {
     setActionError(null);
     try {
       await leaveFreeQueue();
-      await fetchQueueStatus();
+      window.dispatchEvent(new Event("free-queue:changed"));
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to leave queue");
     } finally {

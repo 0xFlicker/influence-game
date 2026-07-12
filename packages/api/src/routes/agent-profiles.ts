@@ -14,7 +14,7 @@ import { Hono } from "hono";
 import { eq, and } from "drizzle-orm";
 import {
   createLlmClientFromEnv,
-  resolveModelForTier,
+  resolveModelSelection,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -33,11 +33,33 @@ import {
   updateOwnedAgentProfile,
 } from "../services/agent-profile-management.js";
 import {
-  completeAvatarGenerationRequest,
   latestAvatarCompletion,
   latestAvatarCompletionsByAgentProfileId,
-  requestAvatarCompletion,
+  consumeOwnedDraftAvatarCompletion,
+  requestAndStartAvatarCompletion,
+  requestAndStartDraftAvatarCompletion,
+  resumeOwnedDraftAvatarCompletion,
 } from "../services/avatar-generation.js";
+import { acquireDailyFreeLocks } from "../services/queue-enrollment.js";
+import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
+
+const AGENT_PROFILE_GENERATION_CATALOG_ID = "openai:gpt-5-nano";
+
+export function resolveAgentProfileGenerationLlm(
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const selection = resolveModelSelection(
+    { catalogId: AGENT_PROFILE_GENERATION_CATALOG_ID },
+    null,
+  );
+  const llmConfig = createLlmClientFromEnv(env, {
+    providerProfileId: selection.providerProfile.id,
+  });
+
+  return llmConfig
+    ? { ...llmConfig, modelId: selection.modelId }
+    : null;
+}
 
 // ---------------------------------------------------------------------------
 // Factory — creates a Hono sub-app with injected DB
@@ -45,6 +67,51 @@ import {
 
 export function createAgentProfileRoutes(db: DrizzleDB) {
   const app = new Hono<AuthEnv>();
+
+  // -------------------------------------------------------------------------
+  // Draft portrait generation — starts as soon as AI Help returns profile text
+  // -------------------------------------------------------------------------
+
+  app.post("/api/agent-profiles/avatar/generate-draft", requireAuth(db), async (c) => {
+    const body = await parseJsonBody(c, "POST /api/agent-profiles/avatar/generate-draft");
+    if (!body) return c.json({ error: "Invalid JSON body" }, 400);
+    if (typeof body.name !== "string" || !body.name.trim() || body.name.trim().length > 80
+      || typeof body.personality !== "string" || !body.personality.trim() || body.personality.trim().length > 8_000
+      || (body.backstory !== undefined && (typeof body.backstory !== "string" || body.backstory.length > 2_000))
+      || (body.strategyStyle !== undefined && (typeof body.strategyStyle !== "string" || body.strategyStyle.length > 2_000))
+      || !isAgentGender(body.gender)) {
+      return c.json({ error: "Draft portrait fields are missing or exceed agent profile limits" }, 400);
+    }
+
+    const user = c.get("user");
+    const publicBaseUrl = new URL(c.req.url).origin;
+    const completion = await requestAndStartDraftAvatarCompletion(db, {
+      userId: user.id,
+      profile: {
+        name: body.name.trim(),
+        gender: body.gender,
+        backstory: typeof body.backstory === "string" ? body.backstory : null,
+        personality: body.personality.trim(),
+        strategyStyle: typeof body.strategyStyle === "string" ? body.strategyStyle : null,
+        personaKey: isUserSelectableAgentArchetype(body.personaKey) ? body.personaKey : "strategic",
+      },
+      publicBaseUrl,
+      userRoles: c.get("userRoles") ?? [],
+    }, { publicBaseUrl });
+
+    return c.json({ avatarCompletion: completion }, completion.status === "accepted" ? 202 : 200);
+  });
+
+  app.get("/api/agent-profiles/avatar/generation-drafts/:id", requireAuth(db), async (c) => {
+    const completion = await resumeOwnedDraftAvatarCompletion(
+      db,
+      c.get("user").id,
+      c.req.param("id"),
+      { publicBaseUrl: new URL(c.req.url).origin },
+    );
+    if (!completion) return c.json({ error: "Draft portrait request not found" }, 404);
+    return c.json({ avatarCompletion: completion });
+  });
 
   // -------------------------------------------------------------------------
   // POST /api/agent-profiles/generate — AI-assisted personality builder
@@ -56,18 +123,20 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       return c.json({ error: "Invalid JSON body" }, 400);
     }
 
-    const { traits, occupation, backstoryIdea, archetype, name, existingProfile } = body as {
+    const { traits, occupation, backstoryIdea, archetype, name, gender, existingProfile } = body as {
       traits?: string;
       occupation?: string;
       backstoryIdea?: string;
       archetype?: string;
       name?: string;
+      gender?: AgentGender;
       existingProfile?: {
         name?: string;
         backstory?: string;
         personality?: string;
         strategyStyle?: string;
         personaKey?: string;
+        gender?: AgentGender;
       };
     };
 
@@ -75,13 +144,16 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       return c.json({ error: "Provide at least one of: traits, occupation, backstoryIdea, archetype, or existingProfile to refine" }, 400);
     }
 
-    const llmConfig = createLlmClientFromEnv();
+    const llmConfig = resolveAgentProfileGenerationLlm();
     if (!llmConfig) {
       return c.json({ error: "AI generation not available (LLM provider not configured)" }, 503);
     }
 
     const isRefine = !!existingProfile;
     const openai = llmConfig.client;
+    const requestedGender = isAgentGender(gender)
+      ? gender
+      : isAgentGender(existingProfile?.gender) ? existingProfile.gender : undefined;
 
     const systemPrompt = `You are a character designer for "Influence", a social strategy game where AI agents negotiate, form alliances, betray each other, and vote to eliminate players. Think Big Brother or Survivor but with rich, human-like personalities.
 
@@ -95,7 +167,8 @@ Respond with JSON only:
   "backstory": "A 2-4 sentence rich backstory — their background, what shaped them, what they care about. This should inform how they speak and relate to others.",
   "personality": "A 2-3 sentence personality description — their vibe, communication style, social tendencies. This drives how the AI agent behaves in conversations.",
   "strategyStyle": "A 1-2 sentence strategic approach — how they play the game, form alliances, handle conflict.",
-  "personaKey": "One of: ${formatUserSelectableAgentArchetypeKeys()} — the closest archetype match."
+  "personaKey": "One of: ${formatUserSelectableAgentArchetypeKeys()} — the closest archetype match.",
+  "gender": "One of: male, female, non-binary. Keep the character's pronouns and details consistent with this choice."
 }`;
 
     const userParts: string[] = [];
@@ -107,10 +180,11 @@ Respond with JSON only:
     if (occupation) userParts.push(`Occupation/background: ${occupation}`);
     if (backstoryIdea) userParts.push(`Backstory idea: ${backstoryIdea}`);
     if (archetype) userParts.push(`Preferred archetype: ${archetype}`);
+    if (requestedGender) userParts.push(`Required gender: ${requestedGender}. Do not change it.`);
 
     try {
       const response = await openai.chat.completions.create({
-        model: resolveModelForTier("budget"),
+        model: llmConfig.modelId,
         max_completion_tokens: 5200,
         messages: [
           { role: "system", content: systemPrompt },
@@ -130,8 +204,9 @@ Respond with JSON only:
                 personality: { type: "string" },
                 strategyStyle: { type: "string" },
                 personaKey: { type: "string" },
+                gender: { type: "string", enum: ["male", "female", "non-binary"] },
               },
-              required: ["name", "backstory", "personality", "strategyStyle", "personaKey"],
+              required: ["name", "backstory", "personality", "strategyStyle", "personaKey", "gender"],
             },
           },
         },
@@ -148,6 +223,7 @@ Respond with JSON only:
         personality?: string;
         strategyStyle?: string;
         personaKey?: string;
+        gender?: unknown;
       };
 
       // Validate personaKey
@@ -162,6 +238,7 @@ Respond with JSON only:
         personality: generated.personality ?? "A mysterious player.",
         strategyStyle: generated.strategyStyle ?? null,
         personaKey: validatedPersonaKey,
+        gender: resolveGeneratedAgentGender(generated, requestedGender),
       });
     } catch (err) {
       console.error("[agent-profiles] AI generation failed:", err);
@@ -181,19 +258,82 @@ Respond with JSON only:
 
     const user = c.get("user");
     try {
+      let draftCompletion = null;
+      if (!body.avatarUrl && typeof body.avatarGenerationRequestId === "string") {
+        const consumed = await consumeOwnedDraftAvatarCompletion(db, {
+          userId: user.id,
+          generationRequestId: body.avatarGenerationRequestId,
+          profile: {
+            name: typeof body.name === "string" ? body.name : "",
+            gender: isAgentGender(body.gender) ? body.gender : null,
+            backstory: typeof body.backstory === "string" && body.backstory.trim() ? body.backstory : null,
+            personality: typeof body.personality === "string" ? body.personality : "",
+            strategyStyle: typeof body.strategyStyle === "string" && body.strategyStyle.trim() ? body.strategyStyle : null,
+            personaKey: typeof body.personaKey === "string" ? body.personaKey : null,
+          },
+        });
+        if (!consumed.ok) {
+          const messages = {
+            not_found: "Draft portrait request not found.",
+            pending: "Portrait generation is still in progress.",
+            profile_changed: "Agent details changed after portrait generation. Regenerate the portrait.",
+            already_consumed: "Draft portrait request has already been used.",
+          } as const;
+          return c.json({ error: messages[consumed.reason] }, consumed.reason === "pending" ? 409 : 400);
+        }
+        draftCompletion = consumed.completion;
+      }
       const result = await createOwnedAgentProfile(db, {
         userId: user.id,
         publicBaseUrl: new URL(c.req.url).origin,
-        avatarChangeSource: "web_upload",
+        avatarChangeSource: !body.avatarUrl && draftCompletion?.avatarUrl ? "web_generated_completion" : "web_upload",
+        avatarGenerationRequestId: !body.avatarUrl && draftCompletion?.avatarUrl
+          ? draftCompletion.generationRequestId
+          : undefined,
       }, {
         name: body.name,
         backstory: body.backstory,
         personality: body.personality,
         strategyStyle: body.strategyStyle,
         personaKey: body.personaKey,
-        avatarUrl: body.avatarUrl,
+        gender: body.gender,
+        avatarUrl: body.avatarUrl ?? draftCompletion?.avatarUrl,
       });
-      return c.json(playerSafeAgentProfile(result.profile), 201);
+      if (result.profile.avatarUrl) {
+        return c.json(playerSafeAgentProfile(result.profile), 201);
+      }
+      if (draftCompletion) {
+        return c.json({
+          ...playerSafeAgentProfile(result.profile),
+          avatarCompletion: draftCompletion,
+        }, 201);
+      }
+
+      const publicBaseUrl = new URL(c.req.url).origin;
+      let avatarCompletion;
+      try {
+        avatarCompletion = await requestAndStartAvatarCompletion(db, {
+          userId: user.id,
+          agentProfileId: result.profile.id,
+          triggerSource: "web_create_default",
+          publicBaseUrl,
+          userRoles: c.get("userRoles") ?? [],
+        }, { publicBaseUrl });
+      } catch (error) {
+        console.warn("[agent-profiles] Failed to request automatic avatar generation:", error);
+        return c.json({
+          ...playerSafeAgentProfile(result.profile),
+          avatarCompletion: {
+            status: "failed",
+            reason: "Portrait generation could not be started.",
+            retryable: true,
+          },
+        }, 201);
+      }
+      return c.json({
+        ...playerSafeAgentProfile(result.profile),
+        avatarCompletion,
+      }, 201);
     } catch (error) {
       if (error instanceof AgentProfileManagementError) {
         return c.json({ error: error.message }, error.statusCode === 404 ? 404 : 400);
@@ -225,21 +365,13 @@ Respond with JSON only:
       return c.json({ error: "Agent profile not found" }, 404);
     }
 
-    const completion = await requestAvatarCompletion(db, {
+    const completion = await requestAndStartAvatarCompletion(db, {
       userId: user.id,
       agentProfileId: profileId,
       triggerSource: "web_user_prompt",
       publicBaseUrl,
       userRoles: c.get("userRoles") ?? [],
-    });
-
-    if (completion.status === "accepted" && completion.generationRequestId) {
-      void completeAvatarGenerationRequest(db, completion.generationRequestId, {
-        publicBaseUrl,
-      }).catch((error) => {
-        console.warn("[agent-profiles] Background avatar generation failed:", error);
-      });
-    }
+    }, { publicBaseUrl });
 
     return c.json({ avatarCompletion: completion }, completion.status === "accepted" ? 202 : 200);
   });
@@ -368,6 +500,7 @@ Respond with JSON only:
         personality: body.personality,
         strategyStyle: body.strategyStyle,
         personaKey: body.personaKey,
+        gender: body.gender,
         avatarUrl: body.avatarUrl,
       });
       return c.json({ ...playerSafeAgentProfile(result.profile), statsReset: false });
@@ -386,45 +519,41 @@ Respond with JSON only:
   app.delete("/api/agent-profiles/:id", requireAuth(db), async (c) => {
     const user = c.get("user");
     const profileId = c.req.param("id");
-
-    const existing = (await db
-      .select()
-      .from(schema.agentProfiles)
-      .where(
-        and(
+    const result = await db.transaction(async (tx) => {
+      await acquireDailyFreeLocks(tx);
+      const existing = await tx.select({ id: schema.agentProfiles.id })
+        .from(schema.agentProfiles)
+        .where(and(
           eq(schema.agentProfiles.id, profileId),
           eq(schema.agentProfiles.userId, user.id),
-        ),
-      ))[0];
+        ))
+        .limit(1);
+      if (existing.length === 0) return "not-found" as const;
 
-    if (!existing) {
-      return c.json({ error: "Agent profile not found" }, 404);
-    }
+      const standingEntry = await tx.select({ id: schema.freeGameQueue.id })
+        .from(schema.freeGameQueue)
+        .where(eq(schema.freeGameQueue.agentProfileId, profileId))
+        .limit(1);
+      if (standingEntry.length > 0) return "standing" as const;
 
-    const [competitionReceipt, competitionRating, competitionSnapshot] = await Promise.all([
-      db.select({ id: schema.competitionReceipts.id })
-        .from(schema.competitionReceipts)
-        .where(eq(schema.competitionReceipts.agentProfileId, profileId))
-        .limit(1),
-      db.select({ agentProfileId: schema.agentCompetitionRatings.agentProfileId })
-        .from(schema.agentCompetitionRatings)
-        .where(eq(schema.agentCompetitionRatings.agentProfileId, profileId))
-        .limit(1),
-      db.select({ id: schema.competitionRatingSnapshots.id })
-        .from(schema.competitionRatingSnapshots)
-        .where(eq(schema.competitionRatingSnapshots.agentProfileId, profileId))
-        .limit(1),
-    ]);
-    if (competitionReceipt.length > 0
-      || competitionRating.length > 0
-      || competitionSnapshot.length > 0) {
-      return c.json({
-        error: "Agents with rated competition history cannot be deleted because producer season records still reference them.",
-        code: "rated_history_exists",
-      }, 409);
-    }
+      const [competitionReceipt, competitionRating, competitionSnapshot] = await Promise.all([
+        tx.select({ id: schema.competitionReceipts.id })
+          .from(schema.competitionReceipts)
+          .where(eq(schema.competitionReceipts.agentProfileId, profileId))
+          .limit(1),
+        tx.select({ agentProfileId: schema.agentCompetitionRatings.agentProfileId })
+          .from(schema.agentCompetitionRatings)
+          .where(eq(schema.agentCompetitionRatings.agentProfileId, profileId))
+          .limit(1),
+        tx.select({ id: schema.competitionRatingSnapshots.id })
+          .from(schema.competitionRatingSnapshots)
+          .where(eq(schema.competitionRatingSnapshots.agentProfileId, profileId))
+          .limit(1),
+      ]);
+      if (competitionReceipt.length > 0
+        || competitionRating.length > 0
+        || competitionSnapshot.length > 0) return "rated" as const;
 
-    await db.transaction(async (tx) => {
       // Unrated legacy seats may outlive a deleted unused profile. Rated
       // competition rows retain restrictive references and will fail closed.
       await tx.update(schema.gamePlayers)
@@ -436,12 +565,46 @@ Respond with JSON only:
         .where(eq(schema.agentRevisions.agentProfileId, profileId));
       await tx.delete(schema.agentProfiles)
         .where(eq(schema.agentProfiles.id, profileId));
+      return "deleted" as const;
     });
+
+    if (result === "not-found") return c.json({ error: "Agent profile not found" }, 404);
+    if (result === "standing") {
+      return c.json({
+        error: "Leave Daily Free or switch agents before deleting this agent.",
+        code: "daily_free_entry_exists",
+      }, 409);
+    }
+    if (result === "rated") {
+      return c.json({
+        error: "Agents with rated competition history cannot be deleted because producer season records still reference them.",
+        code: "rated_history_exists",
+      }, 409);
+    }
 
     return c.json({ deleted: true });
   });
 
   return app;
+}
+
+export function resolveGeneratedAgentGender(generated: {
+  gender?: unknown;
+  backstory?: string;
+  personality?: string;
+  strategyStyle?: string;
+}, requestedGender?: AgentGender): AgentGender {
+  if (requestedGender) return requestedGender;
+  if (isAgentGender(generated.gender)) return generated.gender;
+
+  const prose = [generated.backstory, generated.personality, generated.strategyStyle]
+    .filter(Boolean)
+    .join(" ");
+  const femalePronouns = prose.match(/\b(she|her|hers|herself)\b/gi)?.length ?? 0;
+  const malePronouns = prose.match(/\b(he|him|his|himself)\b/gi)?.length ?? 0;
+  if (femalePronouns > malePronouns) return "female";
+  if (malePronouns > femalePronouns) return "male";
+  return "non-binary";
 }
 
 function playerSafeAgentProfile(profile: typeof schema.agentProfiles.$inferSelect) {

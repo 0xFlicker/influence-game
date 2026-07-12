@@ -3,11 +3,11 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import type { AvatarChangeSource, AvatarGenerationTriggerSource } from "../db/schema.js";
+import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
 import { normalizeUploadedAvatarUrl } from "../lib/storage.js";
 import {
-  completeAvatarGenerationRequest,
   recordAvatarChange,
-  requestAvatarCompletion,
+  requestAndStartAvatarCompletion,
   type AvatarCompletionRead,
 } from "./avatar-generation.js";
 import {
@@ -20,6 +20,9 @@ import {
   ensureAgentRevisionInTransaction,
   resolveFreeTrackEffectiveRuntimeSnapshot,
 } from "./agent-revisions.js";
+
+type DrizzleTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
+type DatabaseExecutor = DrizzleDB | DrizzleTransaction;
 
 const DEFAULT_AGENT_LIMIT = 50;
 const MAX_AGENT_LIMIT = 100;
@@ -34,6 +37,7 @@ const CREATE_AGENT_FIELDS = new Set([
   "personalityPrompt",
   "publicBiography",
   "strategyStyle",
+  "gender",
   "avatarUrl",
 ]);
 
@@ -44,6 +48,7 @@ const UPDATE_AGENT_FIELDS = new Set([
   "personalityPrompt",
   "publicBiography",
   "strategyStyle",
+  "gender",
   "avatarUrl",
 ]);
 
@@ -93,6 +98,7 @@ export interface AgentProfileManagementContext {
     processImmediately?: boolean;
   };
   avatarChangeSource?: AvatarChangeSource;
+  avatarGenerationRequestId?: string;
 }
 
 export interface ListOwnedAgentsInput extends AgentProfileManagementContext {
@@ -117,6 +123,7 @@ export interface CreateAgentProfileMutationInput {
   backstory?: unknown;
   strategyStyle?: unknown;
   personaKey?: unknown;
+  gender?: unknown;
   avatarUrl?: unknown;
 }
 
@@ -126,6 +133,7 @@ export interface UpdateAgentProfileMutationInput {
   backstory?: unknown;
   strategyStyle?: unknown;
   personaKey?: unknown;
+  gender?: unknown;
   avatarUrl?: unknown;
 }
 
@@ -152,12 +160,14 @@ export interface AgentStatsSummary {
 export interface AgentQueueStateSummary {
   dailyFree: "queued" | "not-queued";
   joinedAt?: string;
+  eligibility?: "eligible" | "temporarily-ineligible";
+  currentGame?: AgentActiveEnrollmentSummary;
 }
 
 export interface AgentActiveEnrollmentSummary {
   gameId: string;
   slug?: string;
-  status: "waiting" | "in_progress";
+  status: "waiting" | "in_progress" | "suspended";
   queueType: "daily-free" | "open-game";
 }
 
@@ -169,6 +179,7 @@ export interface AgentSummary {
   publicBiography: string | null;
   personalityPrompt: string;
   strategyStyle: string | null;
+  gender: AgentGender | null;
   avatarUrl: string | null;
   stats: AgentStatsSummary;
   rating: AccountRatingSummary;
@@ -250,7 +261,7 @@ export async function listOwnedAgents(
 }
 
 export async function getOwnedAgent(
-  db: DrizzleDB,
+  db: DatabaseExecutor,
   input: GetOwnedAgentInput,
 ): Promise<AgentRead> {
   const accountRating = await getAccountRating(db, input.userId);
@@ -318,6 +329,7 @@ export async function createOwnedAgentProfile(
   const personaKey = input.personaKey === undefined || input.personaKey === null
     ? null
     : optionalArchetype(input.personaKey);
+  const gender = optionalAgentGender(input.gender);
   const avatarUrl = normalizeAgentAvatarUrlInput(input.avatarUrl, context.publicBaseUrl);
   if (!avatarUrl.ok) {
     throw new AgentProfileManagementError("invalid_agent_input", avatarUrl.error, 400);
@@ -334,6 +346,7 @@ export async function createOwnedAgentProfile(
       personality,
       strategyStyle,
       personaKey,
+      gender,
       avatarUrl: avatarUrl.value ?? null,
       gamesPlayed: 0,
       gamesWon: 0,
@@ -355,6 +368,7 @@ export async function createOwnedAgentProfile(
       agentProfileId: result.profile.id,
       source: context.avatarChangeSource ?? "mcp_provided_avatar",
       status: "completed",
+      generationRequestId: context.avatarGenerationRequestId,
       previousAvatarUrl: null,
       newAvatarUrl: result.profile.avatarUrl,
     });
@@ -390,6 +404,9 @@ export async function updateOwnedAgentProfile(
   }
   if (input.personaKey !== undefined) {
     updates.personaKey = input.personaKey === null ? null : optionalArchetype(input.personaKey);
+  }
+  if (input.gender !== undefined) {
+    updates.gender = optionalAgentGender(input.gender);
   }
   if (input.avatarUrl !== undefined) {
     const avatarUrl = normalizeAgentAvatarUrlInput(input.avatarUrl, context.publicBaseUrl);
@@ -458,16 +475,28 @@ export async function createOwnedAgent(
     personality: personalityPrompt,
     strategyStyle,
     personaKey: archetype,
+    gender: input.gender,
     avatarUrl: avatarUrl.value,
   });
 
-  const avatarCompletion = profile.avatarUrl
-    ? {
-        status: "already_provided" as const,
-        avatarUrl: profile.avatarUrl,
-        reason: "Agent already has an avatar.",
-      }
-    : await maybeRequestAvatarCompletion(db, context, profile.id);
+  let avatarCompletion: AvatarCompletionRead | {
+    status: "already_provided";
+    avatarUrl: string;
+    reason: string;
+  } | undefined;
+  if (profile.avatarUrl) {
+    avatarCompletion = {
+      status: "already_provided",
+      avatarUrl: profile.avatarUrl,
+      reason: "Agent already has an avatar.",
+    };
+  } else {
+    try {
+      avatarCompletion = await maybeRequestAvatarCompletion(db, context, profile.id);
+    } catch (error) {
+      console.warn("[agent-profile-management] Failed to request automatic avatar generation:", error);
+    }
+  }
 
   return {
     ...(await getOwnedAgent(db, { userId: context.userId, agentId: profile.id })),
@@ -506,6 +535,9 @@ export async function updateOwnedAgent(
   if (input.archetype !== undefined) {
     updates.personaKey = optionalArchetype(input.archetype);
   }
+  if (input.gender !== undefined) {
+    updates.gender = optionalAgentGender(input.gender);
+  }
   if (input.avatarUrl !== undefined) {
     const avatarUrl = normalizeAgentAvatarUrlInput(input.avatarUrl, context.publicBaseUrl);
     if (!avatarUrl.ok) {
@@ -528,28 +560,19 @@ async function maybeRequestAvatarCompletion(
 ): Promise<AvatarCompletionRead | undefined> {
   if (!context.avatarCompletion) return undefined;
 
-  const read = await requestAvatarCompletion(db, {
+  return requestAndStartAvatarCompletion(db, {
     userId: context.userId,
     agentProfileId,
     triggerSource: context.avatarCompletion.triggerSource,
     publicBaseUrl: context.publicBaseUrl,
   }, {
     processImmediately: context.avatarCompletion.processImmediately,
+    publicBaseUrl: context.publicBaseUrl,
   });
-
-  if (read.status === "accepted" && !context.avatarCompletion.processImmediately && read.generationRequestId) {
-    void completeAvatarGenerationRequest(db, read.generationRequestId, {
-      publicBaseUrl: context.publicBaseUrl,
-    }).catch((error) => {
-      console.warn("[avatar-generation] Background avatar completion failed:", error);
-    });
-  }
-
-  return read;
 }
 
 async function requireOwnedAgentProfile(
-  db: DrizzleDB,
+  db: DatabaseExecutor,
   userId: string,
   agentId: string,
 ): Promise<AgentProfileRow> {
@@ -568,7 +591,7 @@ async function requireOwnedAgentProfile(
   return profile;
 }
 
-async function getAccountRating(db: DrizzleDB, userId: string): Promise<AccountRatingSummary> {
+async function getAccountRating(db: DatabaseExecutor, userId: string): Promise<AccountRatingSummary> {
   const user = (await db
     .select({
       rating: schema.users.rating,
@@ -598,7 +621,7 @@ function accountRatingSummary(user: AccountRatingRow): AccountRatingSummary {
 }
 
 async function loadAgentSerializationContext(
-  db: DrizzleDB,
+  db: DatabaseExecutor,
   userId: string,
   profiles: AgentProfileRow[],
   accountRating: AccountRatingSummary,
@@ -607,6 +630,7 @@ async function loadAgentSerializationContext(
   queuedAgentProfileId: string | null;
   queueJoinedAt: string | null;
   activeEnrollmentByAgentProfileId: Map<string, AgentActiveEnrollmentSummary>;
+  currentDailyFreeEnrollment: AgentActiveEnrollmentSummary | null;
 }> {
   if (profiles.length === 0) {
     return {
@@ -614,6 +638,7 @@ async function loadAgentSerializationContext(
       queuedAgentProfileId: null,
       queueJoinedAt: null,
       activeEnrollmentByAgentProfileId: new Map(),
+      currentDailyFreeEnrollment: null,
     };
   }
 
@@ -638,14 +663,18 @@ async function loadAgentSerializationContext(
     .where(and(
       eq(schema.gamePlayers.userId, userId),
       inArray(schema.gamePlayers.agentProfileId, profileIds),
-      inArray(schema.games.status, ["waiting", "in_progress"]),
+      inArray(schema.games.status, ["waiting", "in_progress", "suspended"]),
     ));
 
+  const activeEnrollmentByAgentProfileId = activeEnrollmentMap(enrollmentRows);
+  const currentDailyFreeEnrollment = [...activeEnrollmentByAgentProfileId.values()]
+    .find((enrollment) => enrollment.queueType === "daily-free") ?? null;
   return {
     accountRating,
     queuedAgentProfileId: queueEntry?.agentProfileId ?? null,
     queueJoinedAt: queueEntry?.joinedAt ?? null,
-    activeEnrollmentByAgentProfileId: activeEnrollmentMap(enrollmentRows),
+    activeEnrollmentByAgentProfileId,
+    currentDailyFreeEnrollment,
   };
 }
 
@@ -660,7 +689,7 @@ function activeEnrollmentMap(
   const byProfileId = new Map<string, AgentActiveEnrollmentSummary>();
   for (const row of sortedRows) {
     if (!row.agentProfileId || byProfileId.has(row.agentProfileId)) continue;
-    if (row.status !== "waiting" && row.status !== "in_progress") continue;
+    if (row.status !== "waiting" && row.status !== "in_progress" && row.status !== "suspended") continue;
     byProfileId.set(row.agentProfileId, {
       gameId: row.gameId,
       ...(row.slug && { slug: row.slug }),
@@ -674,7 +703,8 @@ function activeEnrollmentMap(
 function enrollmentStatusRank(status: string): number {
   if (status === "in_progress") return 0;
   if (status === "waiting") return 1;
-  return 2;
+  if (status === "suspended") return 2;
+  return 3;
 }
 
 function serializeAgent(
@@ -684,6 +714,7 @@ function serializeAgent(
     queuedAgentProfileId: string | null;
     queueJoinedAt: string | null;
     activeEnrollmentByAgentProfileId: Map<string, AgentActiveEnrollmentSummary>;
+    currentDailyFreeEnrollment: AgentActiveEnrollmentSummary | null;
   },
 ): AgentSummary {
   const archetype = profile.personaKey && isUserSelectableAgentArchetype(profile.personaKey)
@@ -699,6 +730,7 @@ function serializeAgent(
     publicBiography: profile.backstory,
     personalityPrompt: profile.personality,
     strategyStyle: profile.strategyStyle,
+    gender: profile.gender,
     avatarUrl: profile.avatarUrl,
     stats: {
       gamesPlayed: profile.gamesPlayed,
@@ -709,6 +741,10 @@ function serializeAgent(
     queueState: {
       dailyFree: queued ? "queued" : "not-queued",
       ...(queued && context.queueJoinedAt && { joinedAt: context.queueJoinedAt }),
+      ...(queued && {
+        eligibility: context.currentDailyFreeEnrollment ? "temporarily-ineligible" as const : "eligible" as const,
+      }),
+      ...(queued && context.currentDailyFreeEnrollment && { currentGame: context.currentDailyFreeEnrollment }),
     },
     activeEnrollment: context.activeEnrollmentByAgentProfileId.get(profile.id) ?? null,
     createdAt: profile.createdAt,
@@ -818,6 +854,17 @@ function optionalArchetype(value: unknown): AgentArchetypeKey | null {
   const normalized = normalizeArchetype(value);
   if (normalized) return normalized;
   throw invalidArchetypeError();
+}
+
+function optionalAgentGender(value: unknown): AgentGender | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (isAgentGender(value)) return value;
+  throw new AgentProfileManagementError(
+    "invalid_agent_input",
+    "gender must be male, female, non-binary, or null.",
+    400,
+    { field: "gender" },
+  );
 }
 
 function normalizeArchetype(value: unknown): AgentArchetypeKey | null {

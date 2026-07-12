@@ -1,0 +1,4 @@
+ALTER TABLE "avatar_generation_requests" DROP CONSTRAINT "avatar_generation_requests_trigger_source_check";--> statement-breakpoint
+ALTER TABLE "agent_profiles" ADD COLUMN "gender" text;--> statement-breakpoint
+ALTER TABLE "agent_profiles" ADD CONSTRAINT "agent_profiles_gender_check" CHECK ("agent_profiles"."gender" IS NULL OR "agent_profiles"."gender" IN ('male', 'female', 'non-binary'));--> statement-breakpoint
+ALTER TABLE "avatar_generation_requests" ADD CONSTRAINT "avatar_generation_requests_trigger_source_check" CHECK ("avatar_generation_requests"."trigger_source" IN ('web_user_prompt', 'web_create_default', 'mcp_create_default'));

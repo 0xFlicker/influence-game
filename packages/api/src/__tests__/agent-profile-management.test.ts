@@ -139,6 +139,7 @@ describe("agent profile management service", () => {
     expect(queued.queueState).toEqual({
       dailyFree: "queued",
       joinedAt: "2026-06-30T00:01:00.000Z",
+      eligibility: "eligible",
     });
     expect(queued.activeEnrollment).toBeNull();
     expect(active.queueState.dailyFree).toBe("not-queued");
@@ -160,6 +161,7 @@ describe("agent profile management service", () => {
       personalityPrompt: " Slightly aggressive mediator with a beautiful memory. ",
       publicBiography: " A former debate coach with velvet-glove instincts. ",
       strategyStyle: "Make everyone feel heard, then choose the strongest bloc.",
+      gender: "non-binary",
       avatarUrl: "/api/uploads/local?key=avatars/neon.png",
     });
 
@@ -170,6 +172,7 @@ describe("agent profile management service", () => {
     expect(read.agent.archetypeLabel).toBe("Diplomat");
     expect(read.agent.personalityPrompt).toBe("Slightly aggressive mediator with a beautiful memory.");
     expect(read.agent.publicBiography).toBe("A former debate coach with velvet-glove instincts.");
+    expect(read.agent.gender).toBe("non-binary");
     expect(read.agent.avatarUrl).toBe("https://influence.test/api/uploads/local?key=avatars/neon.png");
     expect(read.agent.queueState.dailyFree).toBe("not-queued");
     expect(read.agent.rating.currentElo).toBe(1388);
@@ -192,12 +195,14 @@ describe("agent profile management service", () => {
     }, {
       agentId: "agent-update",
       archetype: "provocateur",
+      gender: "male",
       personalityPrompt: "A little more aggressive, but still socially precise.",
     });
 
     expect(read.message).toBe("Agent updated.");
     expect(read.agent.archetype).toBe("provocateur");
     expect(read.agent.personalityPrompt).toBe("A little more aggressive, but still socially precise.");
+    expect(read.agent.gender).toBe("male");
     expect(read.agent.stats.gamesPlayed).toBe(5);
     expect(read.agent.stats.wins).toBe(2);
     expect("statsReset" in read).toBe(false);

@@ -157,7 +157,6 @@ function AllianceMemberAvatars({ card }: { card: MatchWatchAllianceCardModel }) 
             persona={member.persona ?? member.name}
             name={member.name}
             size="6"
-            hideBadge
           />
         </span>
       ))}

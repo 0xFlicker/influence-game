@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
+import { useE2EAuth } from "@/app/providers";
 import {
   getAuthToken,
   getFreeQueueStatus,
@@ -55,6 +56,8 @@ export function McpSetupCard({ hasHistory }: { hasHistory: boolean }) {
 
 export function DashboardContent() {
   const { user, authenticated, login } = usePrivy();
+  const e2e = useE2EAuth();
+  const effectiveAuthenticated = e2e.isE2E ? e2e.authenticated : authenticated;
   const [joinTarget, setJoinTarget] = useState<{ game: GameSummary } | null>(null);
 
   const [history, setHistory] = useState<PlayerGameResult[]>([]);
@@ -72,7 +75,7 @@ export function DashboardContent() {
   const [queueStatus, setQueueStatus] = useState<FreeQueueStatus | null>(null);
 
   const fetchHistory = useCallback(() => {
-    if (!authenticated || !getAuthToken()) {
+    if (!effectiveAuthenticated || !getAuthToken()) {
       setHistoryLoading(false);
       return;
     }
@@ -85,10 +88,10 @@ export function DashboardContent() {
         setHistoryError("Failed to load game history.");
       })
       .finally(() => setHistoryLoading(false));
-  }, [authenticated]);
+  }, [effectiveAuthenticated]);
 
   const fetchAgents = useCallback(() => {
-    if (!authenticated || !getAuthToken()) {
+    if (!effectiveAuthenticated || !getAuthToken()) {
       setAgentsLoading(false);
       return;
     }
@@ -101,7 +104,7 @@ export function DashboardContent() {
         setAgentsError("Failed to load agents.");
       })
       .finally(() => setAgentsLoading(false));
-  }, [authenticated]);
+  }, [effectiveAuthenticated]);
 
   const fetchGames = useCallback(() => {
     setGamesError(null);
@@ -115,7 +118,7 @@ export function DashboardContent() {
   }, []);
 
   const fetchQueueStatus = useCallback(() => {
-    if (!authenticated || !getAuthToken()) {
+    if (!effectiveAuthenticated || !getAuthToken()) {
       setQueueStatus(null);
       return;
     }
@@ -126,7 +129,7 @@ export function DashboardContent() {
         console.warn("[DashboardContent] Failed to load free queue status:", err);
         setQueueStatus(null);
       });
-  }, [authenticated]);
+  }, [effectiveAuthenticated]);
 
   useEffect(() => {
     const initialFetch = window.setTimeout(fetchGames, 0);
@@ -138,7 +141,7 @@ export function DashboardContent() {
   }, [fetchGames]);
 
   useEffect(() => {
-    if (!authenticated) {
+    if (!effectiveAuthenticated) {
       const reset = window.setTimeout(() => {
         setHistory([]);
         setAgents([]);
@@ -160,13 +163,18 @@ export function DashboardContent() {
       fetchAgents();
       fetchQueueStatus();
     }
+    function handleQueueChanged() {
+      fetchQueueStatus();
+    }
 
     window.addEventListener("auth:session-ready", handleSessionReady);
+    window.addEventListener("free-queue:changed", handleQueueChanged);
     return () => {
       window.clearTimeout(initialFetch);
       window.removeEventListener("auth:session-ready", handleSessionReady);
+      window.removeEventListener("free-queue:changed", handleQueueChanged);
     };
-  }, [authenticated, fetchAgents, fetchHistory, fetchQueueStatus]);
+  }, [effectiveAuthenticated, fetchAgents, fetchHistory, fetchQueueStatus]);
 
   const control = useMemo(
     () =>
@@ -183,7 +191,7 @@ export function DashboardContent() {
   const errors = [historyError, agentsError, gamesError].filter((error): error is string => Boolean(error));
 
   function handleJoinClick(game: GameSummary) {
-    if (!authenticated) {
+    if (!effectiveAuthenticated) {
       login();
       return;
     }
