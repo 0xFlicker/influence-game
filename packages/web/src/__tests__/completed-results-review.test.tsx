@@ -4,8 +4,40 @@ import { CompletedResultsVoteMatrix } from "../app/games/[slug]/components/compl
 import { CompletedResultsAgentCard } from "../app/games/[slug]/components/completed-results-agent-card";
 import { CompletedResultsAllianceArcs } from "../app/games/[slug]/components/completed-results-alliance-arcs";
 import { CompletedGameEntry } from "../app/games/[slug]/components/completed-game-entry";
+import { CompletedResultsSeasonSummary } from "../app/games/[slug]/components/completed-results-review";
 
 describe("completed results review components", () => {
+  it("renders championship point receipts only in the results review", () => {
+    const html = renderToString(
+      <CompletedResultsSeasonSummary
+        seasonId="season-0"
+        receipts={[{
+          gameId: "game-1",
+          gameSlug: "cold-navy-horn",
+          agentId: "atlas",
+          agentName: "Atlas",
+          ownerId: "owner-1",
+          ownerName: "Architect",
+          lobbySize: 8,
+          placement: 1,
+          basePoints: 100,
+          fieldBonus: 12,
+          totalPoints: 112,
+          eligibilityStatus: "eligible",
+          eligibilityReason: null,
+          accountRatingDelta: 18,
+          earnedAt: "2026-07-11T00:00:00.000Z",
+        }]}
+      />,
+    );
+
+    expect(html).toContain("Rated season game");
+    expect(html).toContain("112 points awarded");
+    expect(html).toContain("Championship point receipts");
+    expect(html).toContain("Place 1 of 8");
+    expect(html).toContain("+12");
+  });
+
   it("renders vote matrix cells and keeps formal alliance wording absent", () => {
     const html = renderToString(
       <CompletedResultsVoteMatrix

@@ -6,6 +6,7 @@ import { completedGameModeHref, gameHighlightsHref, gameHref } from "@/lib/game-
 import {
   getCompletedGameResults,
   getGameAlliances,
+  type CompetitionReceipt,
   type CompletedGameResultsResponse,
   type GameDetail,
   type PublicGameAlliancesResponse,
@@ -15,6 +16,7 @@ import { buildCompletedResultsReviewModel } from "./completed-results-model";
 import { CompletedResultsVoteMatrix } from "./completed-results-vote-matrix";
 import { CompletedResultsAgentCard } from "./completed-results-agent-card";
 import { CompletedResultsAllianceArcs } from "./completed-results-alliance-arcs";
+import { SeasonReceiptSummary } from "./completed-game-entry";
 
 type ResultsLoadState =
   | { gameId: string; status: "loading" }
@@ -162,6 +164,11 @@ export function CompletedResultsReview({
         ) : null}
       </div>
 
+      <CompletedResultsSeasonSummary
+        seasonId={game.seasonId}
+        receipts={game.competitionReceipts}
+      />
+
       <section className="space-y-3">
         <h3 className="text-sm font-semibold text-white/85">What Happened</h3>
         {timeline.length > 0 ? (
@@ -218,6 +225,31 @@ export function CompletedResultsReview({
           ))}
         </div>
       </section>
+    </section>
+  );
+}
+
+export function CompletedResultsSeasonSummary({
+  seasonId,
+  receipts = [],
+}: {
+  seasonId?: string;
+  receipts?: CompetitionReceipt[];
+}) {
+  if (!seasonId && receipts.length === 0) return null;
+  const points = receipts.reduce((sum, receipt) => sum + receipt.totalPoints, 0);
+
+  return (
+    <section aria-label="Season results">
+      {seasonId && (
+        <Link
+          href={`/games/free?season=${encodeURIComponent(seasonId)}`}
+          className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white/55 transition-colors hover:border-white/20 hover:text-white/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phase/60"
+        >
+          Rated season game{receipts.length > 0 ? ` · ${points} points awarded` : ""}
+        </Link>
+      )}
+      {receipts.length > 0 && <SeasonReceiptSummary receipts={receipts} />}
     </section>
   );
 }

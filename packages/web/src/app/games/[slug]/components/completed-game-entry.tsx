@@ -15,9 +15,6 @@ interface CompletedGameEntryProps {
   gameNumber?: number;
   hasReplay: boolean;
   initialMedia?: PublicPostgameMediaResponse;
-  seasonId?: string;
-  seasonPoints?: number;
-  competitionReceipts?: CompetitionReceipt[];
 }
 
 export function postgameMediaStateCopy(
@@ -50,9 +47,6 @@ export function CompletedGameEntry({
   gameNumber,
   hasReplay,
   initialMedia,
-  seasonId,
-  seasonPoints,
-  competitionReceipts = [],
 }: CompletedGameEntryProps) {
   const [media, setMedia] = useState<PublicPostgameMediaResponse | undefined>(initialMedia);
   const [mediaLoading, setMediaLoading] = useState(initialMedia === undefined);
@@ -88,18 +82,6 @@ export function CompletedGameEntry({
       <p className="mt-3 max-w-lg text-sm text-white/50">
         Watch the House trailer, replay the game unspoiled, or inspect the full results.
       </p>
-      {seasonId && (
-        <Link
-          href={`/games/free?season=${encodeURIComponent(seasonId)}`}
-          className="mt-4 inline-flex self-center rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white/55 transition-colors hover:border-white/20 hover:text-white/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phase/60"
-        >
-          Rated season game{seasonPoints !== undefined ? ` · ${seasonPoints} points awarded` : ""}
-        </Link>
-      )}
-      {competitionReceipts.length > 0 && (
-        <SeasonReceiptSummary receipts={competitionReceipts} />
-      )}
-
       <div className="mt-6 text-left">
         {media?.status === "ready" ? (
           <PostgameMediaPlayer gameId={gameId} media={media} />

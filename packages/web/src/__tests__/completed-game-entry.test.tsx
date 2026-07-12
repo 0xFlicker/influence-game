@@ -74,37 +74,18 @@ describe("CompletedGameEntry", () => {
     expect(html).toContain(`/games/${gameId}/results`);
   });
 
-  it("renders public season receipts with no hidden competition evidence", () => {
+  it("keeps season points and receipts off the spoiler-safe completed-game entry", () => {
     const html = renderToString(
       <CompletedGameEntry
         gameId={gameId}
         hasReplay
-        seasonId="summer-2026"
         initialMedia={{ schemaVersion: 1, mediaType: "house_highlights_trailer", status: "not_requested" }}
-        competitionReceipts={[{
-          gameId,
-          gameSlug: gameId,
-          agentId: "atlas",
-          agentName: "Atlas",
-          ownerId: "owner-1",
-          ownerName: "Architect",
-          lobbySize: 8,
-          placement: 1,
-          basePoints: 100,
-          fieldBonus: 12,
-          totalPoints: 112,
-          eligibilityStatus: "eligible",
-          eligibilityReason: null,
-          accountRatingDelta: 18,
-          earnedAt: "2026-07-10T00:00:00.000Z",
-        }]}
       />,
     );
-    expect(html).toContain("Championship point receipts");
-    expect(html).toContain("Place 1 of 8");
-    expect(html).toContain("Base");
-    expect(html).toContain("+12");
-    expect(html).toContain("112");
+    expect(html).not.toContain("Championship point receipts");
+    expect(html).not.toContain("Place 1 of 8");
+    expect(html).not.toContain("points awarded");
+    expect(html).not.toContain("112");
     expect(html).not.toContain("sigma");
     expect(html).not.toContain("opponentRatings");
     expect(html).not.toContain("recalibr");
