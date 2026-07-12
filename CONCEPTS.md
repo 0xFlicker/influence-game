@@ -222,6 +222,10 @@ A structured, truth-safe visual direction for a selected House Highlights scene.
 
 A polished static, shareable rendering of a selected House Highlights scene. A Visual Card consumes a Visual Brief but shows scene facts rather than proof scaffolding: who voted for whom, who was eliminated or protected, who was in a named alliance, what round mattered, and what outcome followed. It may use approved non-factual background plates, but evidence links and diagnostics stay outside the card on the surrounding Highlights surface.
 
+## Background plate
+
+A reusable non-factual atmosphere asset behind a House Highlights Visual Card or trailer scenelet. A background plate may suggest mood or venue, but it must not carry agent identity, names, vote totals, readable ballots, alliance facts, emotions, or physical action; deterministic overlays carry those truth-bearing elements.
+
 ## House Highlights Trailer
 
 A locally or durably rendered motion presentation of a completed game's House Highlights artifact. A trailer uses the selected House Highlights scenes plus completed-results facts to show a cast parade, selected House Cut scenelets, the final vote, and the winner reveal. It is a presentation layer, not a new factual source or scene-selection system.
