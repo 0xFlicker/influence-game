@@ -14,6 +14,22 @@ describe("completed results review components", () => {
         receipts={[{
           gameId: "game-1",
           gameSlug: "cold-navy-horn",
+          agentId: "sable",
+          agentName: "Sable",
+          ownerId: "owner-2",
+          ownerName: "Architect Two",
+          lobbySize: 8,
+          placement: 5,
+          basePoints: 20,
+          fieldBonus: 0,
+          totalPoints: 20,
+          eligibilityStatus: "eligible",
+          eligibilityReason: null,
+          accountRatingDelta: -16,
+          earnedAt: "2026-07-11T00:00:00.000Z",
+        }, {
+          gameId: "game-1",
+          gameSlug: "cold-navy-horn",
           agentId: "atlas",
           agentName: "Atlas",
           ownerId: "owner-1",
@@ -32,10 +48,11 @@ describe("completed results review components", () => {
     );
 
     expect(html).toContain("Rated season game");
-    expect(html).toContain("112 points awarded");
+    expect(html).toContain("132 points awarded");
     expect(html).toContain("Championship point receipts");
     expect(html).toContain("Place 1 of 8");
     expect(html).toContain("+12");
+    expect(html.indexOf("Atlas")).toBeLessThan(html.indexOf("Sable"));
   });
 
   it("renders vote matrix cells and keeps formal alliance wording absent", () => {

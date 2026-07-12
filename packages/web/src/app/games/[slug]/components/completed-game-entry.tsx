@@ -129,6 +129,12 @@ export function CompletedGameEntry({
 }
 
 export function SeasonReceiptSummary({ receipts }: { receipts: CompetitionReceipt[] }) {
+  const rankedReceipts = [...receipts].sort((left, right) =>
+    right.totalPoints - left.totalPoints
+    || (left.placement ?? Number.MAX_SAFE_INTEGER) - (right.placement ?? Number.MAX_SAFE_INTEGER)
+    || left.agentName.localeCompare(right.agentName),
+  );
+
   return (
     <section aria-labelledby="season-receipts-title" className="influence-panel mt-5 w-full overflow-hidden rounded-xl text-left">
       <div className="border-b border-border-active/60 px-4 py-3">
@@ -136,7 +142,7 @@ export function SeasonReceiptSummary({ receipts }: { receipts: CompetitionReceip
         <p className="influence-copy-muted mt-1 text-xs">Public placement points and bounded strong-field bonuses.</p>
       </div>
       <div className="divide-y divide-border-active/50">
-        {receipts.map((receipt) => (
+        {rankedReceipts.map((receipt) => (
           <article key={`${receipt.gameId}:${receipt.agentId}`} className="grid gap-3 px-4 py-3 sm:grid-cols-[1fr_repeat(4,auto)] sm:items-center sm:gap-5">
             <div>
               <div className="text-sm font-medium text-text-primary">{receipt.agentName}</div>
