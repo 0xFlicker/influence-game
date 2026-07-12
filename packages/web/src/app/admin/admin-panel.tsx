@@ -32,6 +32,10 @@ function progressPct(game: GameSummary): number {
   return Math.round((game.currentRound / game.maxRounds) * 100);
 }
 
+export function canVoidSuspendedGame(status: GameSummary["status"], canStop: boolean): boolean {
+  return canStop && status === "suspended";
+}
+
 // ---------------------------------------------------------------------------
 // Game card (in_progress)
 // ---------------------------------------------------------------------------
@@ -43,7 +47,7 @@ function GameCard({
   onOpenCosts,
 }: {
   game: AdminGameSummary;
-  onRefresh: () => void;
+  onRefresh: () => void | Promise<void>;
   canStop: boolean;
   onOpenCosts: () => void;
 }) {
@@ -314,6 +318,7 @@ function StatusBadge({ status, errorInfo }: { status: GameSummary["status"]; err
 function RecentGameRow({
   game,
   canHide,
+  canStop,
   onRefresh,
   onOpenCosts,
   onOpenHighlights,
@@ -321,6 +326,7 @@ function RecentGameRow({
 }: {
   game: AdminGameSummary;
   canHide: boolean;
+  canStop: boolean;
   onRefresh: () => void;
   onOpenCosts: () => void;
   onOpenHighlights: () => void;
@@ -329,6 +335,9 @@ function RecentGameRow({
   const router = useRouter();
   const [hiding, setHiding] = useState(false);
   const [confirmHide, setConfirmHide] = useState(false);
+  const [voiding, setVoiding] = useState(false);
+  const [confirmVoid, setConfirmVoid] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const date = new Date(game.completedAt ?? game.createdAt).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -344,6 +353,20 @@ function RecentGameRow({
       onRefresh();
     } catch {
       setHiding(false);
+    }
+  }
+
+  async function handleVoid() {
+    setConfirmVoid(false);
+    setActionError(null);
+    setVoiding(true);
+    try {
+      await stopGame(game.id);
+      await onRefresh();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setVoiding(false);
     }
   }
 
@@ -384,6 +407,15 @@ function RecentGameRow({
         <AdminPostgameMediaPill game={game} onClick={onOpenMedia} />
       </td>
       <td className="py-3 px-4">
+        {canVoidSuspendedGame(game.status, canStop) && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setConfirmVoid(true); }}
+            disabled={voiding}
+            className="mr-3 text-amber-300/70 hover:text-amber-200 text-xs transition-colors disabled:opacity-50"
+          >
+            {voiding ? "Voiding..." : "Void"}
+          </button>
+        )}
         {canHide && (
           <button
             onClick={(e) => { e.stopPropagation(); setConfirmHide(true); }}
@@ -393,6 +425,30 @@ function RecentGameRow({
           >
             {hiding ? "…" : "Hide"}
           </button>
+        )}
+        {actionError && <p className="mt-1 text-xs text-red-400/80">{actionError}</p>}
+        {confirmVoid && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-zinc-900 border border-amber-500/30 rounded-xl p-6 max-w-sm w-full mx-4">
+              <p className="text-white text-sm mb-4">
+                Void failed game <strong>#{game.gameNumber}</strong>? This ends it permanently and releases its players for future queues.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setConfirmVoid(false)}
+                  className="text-sm text-white/50 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  Keep suspended
+                </button>
+                <button
+                  onClick={handleVoid}
+                  className="text-sm bg-amber-600 hover:bg-amber-500 text-black px-4 py-1.5 rounded-lg font-medium transition-colors"
+                >
+                  Void game
+                </button>
+              </div>
+            </div>
+          </div>
         )}
         {confirmHide && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={(e) => e.stopPropagation()}>
@@ -565,7 +621,7 @@ export function AdminPanel() {
               </thead>
               <tbody>
                 {suspendedGames.map((g) => (
-                  <RecentGameRow key={g.id} game={g} onRefresh={fetchGames} canHide={canHideGame} onOpenCosts={() => setCostGame(g)} onOpenHighlights={() => setHighlightsGame(g)} onOpenMedia={() => setMediaGame(g)} />
+                  <RecentGameRow key={g.id} game={g} onRefresh={fetchGames} canHide={canHideGame} canStop={canStopGame} onOpenCosts={() => setCostGame(g)} onOpenHighlights={() => setHighlightsGame(g)} onOpenMedia={() => setMediaGame(g)} />
                 ))}
               </tbody>
             </table>
@@ -643,7 +699,7 @@ export function AdminPanel() {
               </thead>
               <tbody>
                 {recentGames.slice(0, 5).map((g) => (
-                  <RecentGameRow key={g.id} game={g} canHide={canHideGame} onRefresh={fetchGames} onOpenCosts={() => setCostGame(g)} onOpenHighlights={() => setHighlightsGame(g)} onOpenMedia={() => setMediaGame(g)} />
+                  <RecentGameRow key={g.id} game={g} canHide={canHideGame} canStop={canStopGame} onRefresh={fetchGames} onOpenCosts={() => setCostGame(g)} onOpenHighlights={() => setHighlightsGame(g)} onOpenMedia={() => setMediaGame(g)} />
                 ))}
               </tbody>
             </table>

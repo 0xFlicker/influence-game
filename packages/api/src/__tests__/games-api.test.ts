@@ -1388,6 +1388,31 @@ describe("Game REST API", () => {
       expect(res.status).toBe(200);
     });
 
+    test("voids an unrecoverable suspended game and revokes its owner", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      const ownerEpoch = await insertOwner(db, id);
+      await db.update(schema.games)
+        .set({ status: "suspended" })
+        .where(eq(schema.games.id, id));
+
+      const res = await app.request(`/api/games/${id}/stop`, authPost(adminToken));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ status: "cancelled" });
+
+      const game = (await db.select().from(schema.games).where(eq(schema.games.id, id)))[0]!;
+      expect(game.status).toBe("cancelled");
+      expect(game.endedAt).toBeTruthy();
+      const owner = (await db.select().from(schema.gameRunOwners)
+        .where(and(
+          eq(schema.gameRunOwners.gameId, id),
+          eq(schema.gameRunOwners.ownerEpoch, ownerEpoch),
+        )))[0]!;
+      expect(owner.status).toBe("revoked");
+      expect(owner.revokedAt).toBeTruthy();
+      expect(owner.kernelHealth).toBe("suspended");
+      expect(owner.failureReason).toBe("admin_void");
+    });
+
     test("rejects stop for completed game", async () => {
       const { id } = await createTestGame(app, adminToken);
       const { eq } = await import("drizzle-orm");

@@ -89,7 +89,8 @@ export async function acquireRecoveryGameRunOwner(
       const game = (await tx
         .select({ status: schema.games.status })
         .from(schema.games)
-        .where(eq(schema.games.id, gameId)))[0];
+        .where(eq(schema.games.id, gameId))
+        .for("update"))[0];
 
       if (!game) {
         return { ok: false as const, error: "Game not found", statusCode: 404 as const };
@@ -114,13 +115,18 @@ export async function acquireRecoveryGameRunOwner(
         return { ok: false as const, error: "Game already has an active owner", statusCode: 409 as const };
       }
 
-      await tx.update(schema.games)
+      const updated = await tx.update(schema.games)
         .set({
           status: "in_progress",
           startedAt: now.toISOString(),
           endedAt: null,
         })
-        .where(and(eq(schema.games.id, gameId), eq(schema.games.status, "suspended")));
+        .where(and(eq(schema.games.id, gameId), eq(schema.games.status, "suspended")))
+        .returning({ id: schema.games.id });
+
+      if (updated.length === 0) {
+        return { ok: false as const, error: "Game recovery state changed", statusCode: 409 as const };
+      }
 
       await tx.insert(schema.gameRunOwners)
         .values({

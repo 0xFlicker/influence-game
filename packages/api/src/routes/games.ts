@@ -781,39 +781,76 @@ export function createGameRoutes(db: DrizzleDB) {
     const gameId = c.req.param("id");
 
     const game = (await db
-      .select()
+      .select({ status: schema.games.status })
       .from(schema.games)
       .where(eq(schema.games.id, gameId)))[0];
 
     if (!game) {
       return c.json({ error: "Game not found" }, 404);
     }
+    if (game.status !== "in_progress" && game.status !== "waiting" && game.status !== "suspended") {
+      return c.json({ error: "Game is not running, waiting, or suspended" }, 400);
+    }
 
-    if (game.status !== "in_progress" && game.status !== "waiting") {
-      return c.json({ error: "Game is not running or waiting" }, 400);
+    const wasSuspended = game.status === "suspended";
+    const reasonCode = wasSuspended ? "admin_void" : "admin_stop";
+
+    if (wasSuspended) {
+      const cancelled = await db.transaction(async (tx) => {
+        const locked = (await tx
+          .select({ status: schema.games.status })
+          .from(schema.games)
+          .where(eq(schema.games.id, gameId))
+          .for("update"))[0];
+
+        if (!locked || (locked.status !== "suspended" && locked.status !== "in_progress")) {
+          return false;
+        }
+
+        const endedAt = new Date().toISOString();
+        await tx.update(schema.games)
+          .set({ status: "cancelled", endedAt })
+          .where(eq(schema.games.id, gameId));
+        await tx.update(schema.gameRunOwners)
+          .set({
+            status: "revoked",
+            revokedAt: endedAt,
+            kernelHealth: "suspended",
+            failureReason: reasonCode,
+          })
+          .where(and(
+            eq(schema.gameRunOwners.gameId, gameId),
+            eq(schema.gameRunOwners.status, "active"),
+          ));
+        return true;
+      });
+      if (!cancelled) {
+        const current = (await db
+          .select({ status: schema.games.status })
+          .from(schema.games)
+          .where(eq(schema.games.id, gameId)))[0];
+        return c.json({ status: current?.status ?? game.status });
+      }
+    } else {
+      abortGame(gameId);
+      await revokeActiveGameRunOwner(db, gameId, reasonCode);
+      const cancelled = await db.update(schema.games)
+        .set({ status: "cancelled", endedAt: new Date().toISOString() })
+        .where(and(
+          eq(schema.games.id, gameId),
+          inArray(schema.games.status, ["in_progress", "waiting"]),
+        ))
+        .returning({ status: schema.games.status });
+      if (cancelled.length === 0) {
+        const current = (await db
+          .select({ status: schema.games.status })
+          .from(schema.games)
+          .where(eq(schema.games.id, gameId)))[0];
+        return c.json({ status: current?.status ?? game.status });
+      }
     }
 
     abortGame(gameId);
-    await revokeActiveGameRunOwner(db, gameId, "admin_stop");
-
-    const cancelled = await db.update(schema.games)
-      .set({
-        status: "cancelled",
-        endedAt: new Date().toISOString(),
-      })
-      .where(and(
-        eq(schema.games.id, gameId),
-        or(eq(schema.games.status, "in_progress"), eq(schema.games.status, "waiting")),
-      ))
-      .returning({ status: schema.games.status });
-
-    if (cancelled.length === 0) {
-      const current = (await db
-        .select({ status: schema.games.status })
-        .from(schema.games)
-        .where(eq(schema.games.id, gameId)))[0];
-      return c.json({ status: current?.status ?? game.status });
-    }
     await tryRefreshGameWatchStateSummary(db, gameId, "game_cancelled");
 
     broadcastRaw(gameId, {
@@ -821,8 +858,8 @@ export function createGameRoutes(db: DrizzleDB) {
       gameId,
       status: "cancelled",
       terminal: true,
-      reasonCode: "admin_stop",
-      message: "Game cancelled.",
+      reasonCode,
+      message: wasSuspended ? "Game voided by an administrator." : "Game cancelled.",
     });
 
     return c.json({ status: "cancelled" });
