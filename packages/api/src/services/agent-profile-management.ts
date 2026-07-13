@@ -6,9 +6,11 @@ import type { AvatarChangeSource, AvatarGenerationTriggerSource } from "../db/sc
 import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
 import { normalizeUploadedAvatarUrl } from "../lib/storage.js";
 import {
+  consumeOwnedDraftAvatarCompletion,
   recordAvatarChange,
   requestAndStartAvatarCompletion,
   type AvatarCompletionRead,
+  type AvatarPromptProfile,
 } from "./avatar-generation.js";
 import {
   formatUserSelectableAgentArchetypeKeys,
@@ -141,6 +143,10 @@ export interface AgentProfileMutationRead {
   profile: typeof schema.agentProfiles.$inferSelect;
   revisionCreated: boolean;
 }
+
+export type DraftAvatarAdoptionResult =
+  | { ok: true; result: AgentProfileMutationRead; completion: AvatarCompletionRead }
+  | { ok: false; reason: "not_found" | "pending" | "profile_changed" | "already_consumed" };
 
 export interface AccountRatingSummary {
   kind: "account-level-free-track";
@@ -308,12 +314,10 @@ export async function searchOwnedAgents(
   };
 }
 
-export async function createOwnedAgentProfile(
-  db: DrizzleDB,
+function prepareAgentProfileCreate(
   context: AgentProfileManagementContext,
   input: CreateAgentProfileMutationInput,
-): Promise<AgentProfileMutationRead> {
-  await getAccountRating(db, context.userId);
+): typeof schema.agentProfiles.$inferInsert {
   const name = requiredStringField(input.name, "name", MAX_DISPLAY_NAME_LENGTH);
   const personality = requiredStringField(
     input.personality,
@@ -337,30 +341,45 @@ export async function createOwnedAgentProfile(
 
   const id = randomUUID();
   const now = new Date().toISOString();
-  const result = await db.transaction(async (tx) => {
-    const profile = (await tx.insert(schema.agentProfiles).values({
-      id,
-      userId: context.userId,
-      name,
-      backstory,
-      personality,
-      strategyStyle,
-      personaKey,
-      gender,
-      avatarUrl: avatarUrl.value ?? null,
-      gamesPlayed: 0,
-      gamesWon: 0,
-      createdAt: now,
-      updatedAt: now,
-    }).returning())[0];
-    if (!profile) throw new Error("Agent profile insert returned no row");
-    const revision = await ensureAgentRevisionInTransaction(tx, {
-      profile,
-      effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile),
-      trigger: "profile_create",
-    });
-    return { profile, revisionCreated: revision.created };
+  return {
+    id,
+    userId: context.userId,
+    name,
+    backstory,
+    personality,
+    strategyStyle,
+    personaKey,
+    gender,
+    avatarUrl: avatarUrl.value ?? null,
+    gamesPlayed: 0,
+    gamesWon: 0,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+async function createAgentProfileInTransaction(
+  tx: DrizzleTransaction,
+  values: typeof schema.agentProfiles.$inferInsert,
+): Promise<AgentProfileMutationRead> {
+  const profile = (await tx.insert(schema.agentProfiles).values(values).returning())[0];
+  if (!profile) throw new Error("Agent profile insert returned no row");
+  const revision = await ensureAgentRevisionInTransaction(tx, {
+    profile,
+    effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile),
+    trigger: "profile_create",
   });
+  return { profile, revisionCreated: revision.created };
+}
+
+export async function createOwnedAgentProfile(
+  db: DrizzleDB,
+  context: AgentProfileManagementContext,
+  input: CreateAgentProfileMutationInput,
+): Promise<AgentProfileMutationRead> {
+  await getAccountRating(db, context.userId);
+  const values = prepareAgentProfileCreate(context, input);
+  const result = await db.transaction((tx) => createAgentProfileInTransaction(tx, values));
 
   if (result.profile.avatarUrl) {
     await recordAvatarChange(db, {
@@ -374,6 +393,42 @@ export async function createOwnedAgentProfile(
     });
   }
   return result;
+}
+
+export async function adoptOwnedDraftAvatarAndCreateAgentProfile(
+  db: DrizzleDB,
+  context: AgentProfileManagementContext,
+  generationRequestId: string,
+  draftProfile: AvatarPromptProfile,
+  input: CreateAgentProfileMutationInput,
+): Promise<DraftAvatarAdoptionResult> {
+  await getAccountRating(db, context.userId);
+  const values = prepareAgentProfileCreate(context, input);
+
+  return db.transaction(async (tx) => {
+    const consumed = await consumeOwnedDraftAvatarCompletion(tx, {
+      userId: context.userId,
+      generationRequestId,
+      profile: draftProfile,
+    });
+    if (!consumed.ok) return consumed;
+
+    const completion = consumed.completion;
+    const avatarUrl = completion.avatarUrl ?? null;
+    const result = await createAgentProfileInTransaction(tx, { ...values, avatarUrl });
+    if (avatarUrl) {
+      await recordAvatarChange(tx, {
+        userId: context.userId,
+        agentProfileId: result.profile.id,
+        source: "web_generated_completion",
+        status: "completed",
+        generationRequestId,
+        previousAvatarUrl: null,
+        newAvatarUrl: avatarUrl,
+      });
+    }
+    return { ok: true, result, completion };
+  });
 }
 
 export async function updateOwnedAgentProfile(
