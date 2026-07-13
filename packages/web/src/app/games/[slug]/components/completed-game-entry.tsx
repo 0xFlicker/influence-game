@@ -12,7 +12,6 @@ import { PostgameMediaPlayer } from "./postgame-media-player";
 
 interface CompletedGameEntryProps {
   gameId: string;
-  gameNumber?: number;
   hasReplay: boolean;
   initialMedia?: PublicPostgameMediaResponse;
 }
@@ -44,7 +43,6 @@ export function postgameMediaStateCopy(
 
 export function CompletedGameEntry({
   gameId,
-  gameNumber,
   hasReplay,
   initialMedia,
 }: CompletedGameEntryProps) {
@@ -73,8 +71,8 @@ export function CompletedGameEntry({
 
   return (
     <section className="mx-auto flex min-h-[56vh] w-full max-w-3xl flex-col justify-center px-4 py-8 text-center">
-      <div className="text-xs uppercase tracking-[0.18em] text-white/35">
-        Completed game{gameNumber ? ` #${gameNumber}` : ""}
+      <div className="text-xs tracking-[0.18em] text-white/35">
+        Completed game {gameId}
       </div>
       <h2 className="mt-3 text-2xl font-semibold text-white sm:text-3xl">
         Start here

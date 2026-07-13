@@ -63,6 +63,7 @@ import { getPublicGameCompetitionReceipts } from "../services/season-read-model.
 import { generateUniqueSlug } from "../lib/slug.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
+import { getGameSeasonIdentityMap } from "../lib/game-season.js";
 import {
   createLlmClientFromEnv,
   generatePersona,
@@ -222,11 +223,7 @@ export function createGameRoutes(db: DrizzleDB) {
       });
     await tryRefreshGameWatchStateSummary(db, gameId, "game_created");
 
-    // Game number = total count of games (this is the newest)
-    const allGames = await db.select({ id: schema.games.id }).from(schema.games);
-    const gameNumber = allGames.length;
-
-    return c.json({ id: gameId, slug, gameNumber }, 201);
+    return c.json({ id: gameId, slug }, 201);
   });
 
   // -------------------------------------------------------------------------
@@ -249,6 +246,7 @@ export function createGameRoutes(db: DrizzleDB) {
 
     const kernelHealthByGameId = await getRedactedKernelHealthByGameId(db, rows.map((game) => game.id));
     const watchSummaryReadsByGameId = await getGameWatchStateSummaryReadsByGameIds(db, rows.map((game) => game.id));
+    const seasonById = await getGameSeasonIdentityMap(db, rows.map((game) => game.seasonId));
 
     const summaries = rows.map((game) => {
       const config = JSON.parse(game.config);
@@ -259,8 +257,7 @@ export function createGameRoutes(db: DrizzleDB) {
 
       return {
         id: game.id,
-        slug: game.slug ?? undefined,
-        gameNumber: 0, // Populated below
+        slug: game.slug,
         status: game.status,
         playerCount: game.maxPlayers ?? config.maxPlayers ?? watchState.counts.totalPlayers,
         currentRound: watchState.currentRound,
@@ -275,6 +272,7 @@ export function createGameRoutes(db: DrizzleDB) {
         viewerMode: config.viewerMode ?? "speedrun",
         trackType: game.trackType,
         seasonId: game.seasonId ?? undefined,
+        season: game.seasonId ? seasonById.get(game.seasonId) : undefined,
         rated: Boolean(game.seasonId),
         winner: watchState.winner?.name,
         errorInfo: publicErrorInfo(game.status, config),
@@ -285,11 +283,6 @@ export function createGameRoutes(db: DrizzleDB) {
         startedAt: game.startedAt ?? undefined,
         completedAt: game.endedAt ?? undefined,
       };
-    });
-
-    // Assign game numbers by creation order
-    summaries.forEach((s, i) => {
-      s.gameNumber = i + 1;
     });
 
     return c.json(summaries);
@@ -319,12 +312,6 @@ export function createGameRoutes(db: DrizzleDB) {
       .from(schema.gameResults)
       .where(eq(schema.gameResults.gameId, game.id));
 
-    // Compute game number from creation order
-    const allGamesOrdered = (await db
-      .select({ id: schema.games.id, createdAt: schema.games.createdAt })
-      .from(schema.games))
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-    const gameNumber = allGamesOrdered.findIndex((g) => g.id === game.id) + 1;
     const watchState = await buildGameWatchState(db, game);
     const competition = game.seasonId
       ? await getPublicGameCompetitionReceipts(db, game.seasonId, game.id)
@@ -332,8 +319,7 @@ export function createGameRoutes(db: DrizzleDB) {
 
     const detail = {
       id: game.id,
-      slug: game.slug ?? undefined,
-      gameNumber,
+      slug: game.slug,
       status: game.status,
       currentRound: watchState.currentRound,
       maxRounds: config.maxRounds ?? 10,
@@ -354,6 +340,13 @@ export function createGameRoutes(db: DrizzleDB) {
       visibility: config.visibility ?? "public",
       viewerMode: config.viewerMode ?? "speedrun",
       seasonId: game.seasonId ?? undefined,
+      season: competition
+        ? {
+            id: competition.season.id,
+            slug: competition.season.slug,
+            name: competition.season.name,
+          }
+        : undefined,
       rated: Boolean(game.seasonId),
       competitionReceipts: competition?.receipts ?? [],
       winner: watchState.winner?.name,
@@ -935,13 +928,6 @@ export function createGameRoutes(db: DrizzleDB) {
       return c.json([]);
     }
 
-    // Build game number map from all games ordered by creation
-    const allGames = (await db
-      .select({ id: schema.games.id, createdAt: schema.games.createdAt })
-      .from(schema.games))
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-    const gameNumberMap = new Map(allGames.map((g, i) => [g.id, i + 1]));
-
     const results = (await Promise.all(playerRecords
       .map(async (playerRecord) => {
         const game = (await db
@@ -969,8 +955,7 @@ export function createGameRoutes(db: DrizzleDB) {
 
         return {
           gameId: game.id,
-          gameSlug: game.slug ?? undefined,
-          gameNumber: gameNumberMap.get(game.id) ?? 0,
+          gameSlug: game.slug,
           agentName: persona.name ?? "Unknown",
           persona: persona.personaKey ?? "strategic",
           placement: isWinner ? 1 : totalPlayers,

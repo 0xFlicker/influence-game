@@ -54,7 +54,7 @@ function readyMedia(): Extract<PublicPostgameMediaResponse, { status: "ready" }>
 describe("CompletedGameEntry", () => {
   it("renders a ready native player without autoplay and with captions", () => {
     const html = renderToString(
-      <CompletedGameEntry gameId={gameId} gameNumber={12} hasReplay initialMedia={readyMedia()} />,
+      <CompletedGameEntry gameId={gameId} hasReplay initialMedia={readyMedia()} />,
     );
 
     expect(html).toContain("House Highlights");
@@ -67,6 +67,9 @@ describe("CompletedGameEntry", () => {
     expect(html).not.toContain("autoplay");
     expect(html).not.toContain("Winner");
     expect(html).not.toContain("Final Vote");
+    expect(html).toContain("text-xs tracking-[0.18em] text-white/35\">Completed game");
+    expect(html).toContain(gameId);
+    expect(html).not.toContain("text-xs uppercase tracking-[0.18em] text-white/35\">Completed game");
     expect(html).toContain("Share trailer");
     expect(html).toContain("focus-visible:outline");
     expect(html).toContain(`/games/${gameId}/highlights`);
@@ -222,7 +225,6 @@ describe("CompletedGameEntry", () => {
         return new Response(JSON.stringify({
           id: "game-id",
           slug: gameId,
-          gameNumber: 12,
           status: "completed",
           currentRound: 4,
           maxRounds: 8,
@@ -263,7 +265,6 @@ describe("CompletedGameEntry", () => {
       return new Response(JSON.stringify({
         id: "game-id",
         slug: gameId,
-        gameNumber: 12,
         status: "in_progress",
         currentRound: 2,
         maxRounds: 8,

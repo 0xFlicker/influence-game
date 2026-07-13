@@ -13,7 +13,6 @@ function baseGame(): GameDetail {
   return {
     id: "game-1",
     slug: "public-game",
-    gameNumber: 7,
     status: "in_progress",
     currentRound: 1,
     maxRounds: 8,

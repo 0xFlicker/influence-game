@@ -23,7 +23,7 @@ type CognitiveArtifactRow = typeof schema.gameCognitiveArtifacts.$inferSelect;
 
 export interface CognitiveArtifactGameIdentity {
   id: string;
-  slug?: string;
+  slug: string;
   status: string;
   cognitiveArtifactCaptureVersion: number;
 }
@@ -349,7 +349,7 @@ export class CognitiveArtifactReadModel {
     if (!row) return null;
     return {
       id: row.id,
-      ...(row.slug && { slug: row.slug }),
+      slug: row.slug,
       status: row.status,
       cognitiveArtifactCaptureVersion: row.cognitiveArtifactCaptureVersion,
     };

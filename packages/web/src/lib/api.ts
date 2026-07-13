@@ -208,7 +208,7 @@ export interface GameWatchFinalState {
 export interface GameWatchState {
   schemaVersion: 3;
   gameId: string;
-  slug?: string;
+  slug: string;
   status: GameStatus;
   source: GameWatchStateSource;
   currentRound: number;
@@ -234,7 +234,7 @@ export interface GameWatchState {
 export interface GameWatchReplayFrame {
   schemaVersion: 1;
   gameId: string;
-  slug?: string;
+  slug: string;
   sequence: number;
   eventType: string;
   timestamp: number;
@@ -289,8 +289,7 @@ export function formatGameModelLabel(
 
 export interface GameSummary {
   id: string;
-  slug?: string;
-  gameNumber: number;
+  slug: string;
   status: GameStatus;
   playerCount: number;
   currentRound: number;
@@ -306,6 +305,7 @@ export interface GameSummary {
   viewerMode: ViewerMode;
   trackType?: TrackType;
   seasonId?: string;
+  season?: Pick<SeasonIdentity, "id" | "slug" | "name">;
   rated?: boolean;
   finalists?: [string, string];
   winner?: string;
@@ -324,7 +324,7 @@ export interface GameSummary {
 
 export async function createGame(
   params: CreateGameParams,
-): Promise<{ id: string; slug: string; gameNumber: number }> {
+): Promise<{ id: string; slug: string }> {
   return apiFetch("/api/games", {
     method: "POST",
     body: JSON.stringify(params),
@@ -506,7 +506,7 @@ export type CognitiveArtifactListResult =
     ok: true;
     game: {
       id: string;
-      slug?: string;
+      slug: string;
       status: GameStatus;
       cognitiveArtifactCaptureVersion: number;
     };
@@ -523,7 +523,7 @@ export type CognitiveArtifactReadResult =
     ok: true;
     game: {
       id: string;
-      slug?: string;
+      slug: string;
       status: GameStatus;
       cognitiveArtifactCaptureVersion: number;
     };
@@ -535,7 +535,7 @@ export type CognitiveArtifactReadResult =
     error: string;
     game?: {
       id: string;
-      slug?: string;
+      slug: string;
       status: GameStatus;
       cognitiveArtifactCaptureVersion: number;
     };
@@ -666,7 +666,7 @@ export type PublicWatchIntelligenceResult =
       schemaVersion: 1;
       game: {
         id: string;
-        slug?: string;
+        slug: string;
         status: GameStatus;
       };
       context: {
@@ -823,7 +823,7 @@ export interface CompletedGameResultsResponse {
   schemaVersion: 1;
   game: {
     id: string;
-    slug?: string;
+    slug: string;
     status: GameStatus;
     completedAt?: string;
   };
@@ -1063,7 +1063,7 @@ export interface HouseHighlightsResponse {
   schemaVersion: 3;
   game: {
     id: string;
-    slug?: string;
+    slug: string;
     status: GameStatus;
     trackType: string;
     startedAt?: string;
@@ -1362,7 +1362,7 @@ export interface PublicGameAlliancesResponse {
   schemaVersion: 1;
   game: {
     id: string;
-    slug?: string;
+    slug: string;
     status: GameStatus;
     createdAt: string;
     startedAt?: string;
@@ -1561,8 +1561,7 @@ export type JoinGameConfig =
 
 export interface PlayerGameResult {
   gameId: string;
-  gameSlug?: string;
-  gameNumber: number;
+  gameSlug: string;
   agentName: string;
   persona: PersonaKey;
   placement: number;
@@ -1886,8 +1885,7 @@ export interface TranscriptEntry {
 
 export interface GameDetail {
   id: string;
-  slug?: string;
-  gameNumber: number;
+  slug: string;
   status: GameStatus;
   currentRound: number;
   maxRounds: number;
@@ -1898,6 +1896,7 @@ export interface GameDetail {
   visibility: GameVisibility;
   viewerMode: ViewerMode;
   seasonId?: string;
+  season?: Pick<SeasonIdentity, "id" | "slug" | "name">;
   rated?: boolean;
   competitionReceipts?: CompetitionReceipt[];
   winner?: string;
@@ -2128,14 +2127,14 @@ export interface FreeQueueStatus {
   promptEligible?: boolean;
   relevantGame?: {
     id: string;
-    slug?: string;
+    slug: string;
     status: "waiting" | "in_progress" | "suspended";
   } | null;
   todayGame: {
     id: string;
     slug: string;
-    gameNumber: number;
     status: GameStatus;
+    season?: Pick<SeasonIdentity, "id" | "slug" | "name">;
     kernelHealth?: KernelHealthSummary;
   } | null;
 }
@@ -2525,7 +2524,6 @@ export async function uploadProfilePicture(file: File): Promise<UploadResult> {
 
 export interface RemoteGame {
   slug: string;
-  gameNumber: number;
   status: GameStatus;
   playerCount: number;
   currentRound: number;
@@ -2536,8 +2534,8 @@ export interface RemoteGame {
 
 export interface ImportGameResult {
   id: string;
+  gameId?: string;
   slug: string;
-  gameNumber: number;
 }
 
 export async function listRemoteGames(

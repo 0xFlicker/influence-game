@@ -134,7 +134,7 @@ async function createTestGame(
       adminToken,
     ),
   );
-  return res.json() as Promise<{ id: string; gameNumber: number }>;
+  return res.json() as Promise<{ id: string; slug: string }>;
 }
 
 async function joinTestPlayer(
@@ -299,7 +299,7 @@ describe("Game REST API", () => {
   // =========================================================================
 
   describe("POST /api/games", () => {
-    test("creates a game and returns id + gameNumber", async () => {
+    test("creates a game and returns id + slug", async () => {
       const res = await app.request(
         "/api/games",
         json(
@@ -315,9 +315,10 @@ describe("Game REST API", () => {
       );
 
       expect(res.status).toBe(201);
-      const body = (await res.json()) as { id: string; gameNumber: number };
+      const body = (await res.json()) as { id: string; slug: string; gameNumber?: number };
       expect(body.id).toBeTruthy();
-      expect(body.gameNumber).toBe(1);
+      expect(body.slug).toMatch(/^[a-z]+-[a-z]+-[a-z]+$/);
+      expect(body.gameNumber).toBeUndefined();
 
       const game = (await db
         .select()
@@ -465,11 +466,12 @@ describe("Game REST API", () => {
       expect(game.status).toBe("waiting");
     });
 
-    test("game numbers increment", async () => {
+    test("game slugs are unique", async () => {
       const g1 = await createTestGame(app, adminToken);
       const g2 = await createTestGame(app, adminToken);
-      expect(g1.gameNumber).toBe(1);
-      expect(g2.gameNumber).toBe(2);
+      expect(g1.slug).toBeTruthy();
+      expect(g2.slug).toBeTruthy();
+      expect(g1.slug).not.toBe(g2.slug);
     });
 
     test("game records createdById from admin user", async () => {
@@ -515,6 +517,28 @@ describe("Game REST API", () => {
       const body = (await res.json()) as Array<Record<string, unknown>>;
       expect(body[0]!.modelLabel).toBe("xAI Grok 4.3 · Medium");
       expect(body[0]).not.toHaveProperty("modelSelection");
+    });
+
+    test("returns the persisted season identity without a synthetic game number", async () => {
+      const seasonId = randomUUID();
+      await db.insert(schema.seasons).values({
+        id: seasonId,
+        slug: "season-zero",
+        name: "Season 0",
+      });
+      const { id, slug } = await createTestGame(app, adminToken);
+      await db.update(schema.games).set({ seasonId }).where(eq(schema.games.id, id));
+
+      const res = await app.request("/api/games");
+      const body = (await res.json()) as Array<Record<string, unknown>>;
+
+      expect(body[0]).toMatchObject({
+        id,
+        slug,
+        seasonId,
+        season: { id: seasonId, slug: "season-zero", name: "Season 0" },
+      });
+      expect(body[0]).not.toHaveProperty("gameNumber");
     });
 
     test("filters by status", async () => {
@@ -1890,8 +1914,8 @@ describe("Game REST API", () => {
   describe("full game lifecycle", () => {
     test("create → join × 4 → start → stop", async () => {
       // Create
-      const { id, gameNumber } = await createTestGame(app, adminToken);
-      expect(gameNumber).toBe(1);
+      const { id, slug } = await createTestGame(app, adminToken);
+      expect(slug).toBeTruthy();
 
       // Join 4 players
       const playerIds: string[] = [];

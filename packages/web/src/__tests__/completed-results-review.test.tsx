@@ -184,11 +184,11 @@ describe("completed results review components", () => {
 
   it("offers House Highlights alongside replay and results for completed games", () => {
     const html = renderToString(
-      <CompletedGameEntry gameId="edge smoke/dusk" gameNumber={7} hasReplay />,
+      <CompletedGameEntry gameId="edge smoke/dusk" hasReplay />,
     );
 
     expect(html).toContain("Completed game");
-    expect(html).toContain("#7");
+    expect(html).toContain("edge smoke/dusk");
     expect(html).toContain("House Highlights");
     expect(html).toContain("/games/edge%20smoke%2Fdusk/highlights");
     expect(html).toContain("/games/edge%20smoke%2Fdusk/replay");

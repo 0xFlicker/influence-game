@@ -31,7 +31,7 @@ export default async function GameResultsPage({ params }: Props) {
       <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">
-            {initialGame ? `Game #${initialGame.gameNumber}` : slug}
+            {initialGame?.slug ?? slug}
           </h1>
         </div>
 

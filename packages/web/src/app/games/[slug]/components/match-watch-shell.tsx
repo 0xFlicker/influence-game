@@ -116,7 +116,7 @@ export function MatchWatchShell({
     [model, allianceFacts, allianceLoadState, allianceError],
   );
   const replayAtFinalResults = !live && Boolean(playbackState) && isReplayAtFinalResults(messages, playbackState?.visibleMessages);
-  const gamePath = game.slug ?? game.id;
+  const gamePath = game.slug;
 
   useEffect(() => {
     setPhaseAttr(model.phase);
@@ -142,7 +142,7 @@ export function MatchWatchShell({
       setIntelligenceLoadState("loading");
       setIntelligenceError(null);
     });
-    void getPublicWatchIntelligence(game.slug ?? game.id, {
+    void getPublicWatchIntelligence(game.slug, {
       actorPlayerId: model.selectedPlayerId,
       round: model.round,
       phase: model.phase,
@@ -171,7 +171,7 @@ export function MatchWatchShell({
       setAllianceLoadState("loading");
       setAllianceError(null);
     });
-    void getGameAlliances(game.slug ?? game.id)
+    void getGameAlliances(game.slug)
       .then((result) => {
         if (cancelled) return;
         setAllianceFacts(result);
@@ -302,7 +302,7 @@ function ShellHeader({
       </div>
 
       <div className="min-w-0 text-left lg:text-center">
-        <div className="truncate text-sm font-semibold uppercase tracking-[0.18em] text-white/90">
+        <div className="truncate text-sm font-semibold tracking-[0.18em] text-white/90">
           {model.matchTitle}
         </div>
         <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-white/35">

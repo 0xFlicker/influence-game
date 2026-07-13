@@ -271,6 +271,7 @@ async function createGameInDB(
   await db.insert(schema.games)
     .values({
       id: gameId,
+      slug: `test-${gameId}`,
       config: JSON.stringify(config),
       status: "in_progress",
       minPlayers: 5,

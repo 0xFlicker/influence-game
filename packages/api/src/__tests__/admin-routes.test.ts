@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
 import { Hono } from "hono";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import type { DrizzleDB } from "../db/index.js";
 import { getPermissionsForAddress } from "../db/rbac.js";
@@ -209,6 +209,25 @@ describe("admin route RBAC", () => {
     });
 
     expect(res.status).toBe(200);
+  });
+
+  test("admin game history uses slug and persisted season identity", async () => {
+    const season = await createSeason(db, { slug: "season-zero", name: "Season 0" });
+    const gameId = await insertGame(db, { slug: "admin-season-game" });
+    await db.update(schema.games).set({ seasonId: season.id }).where(eq(schema.games.id, gameId));
+
+    const res = await app.request("/api/admin/games", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const rows = await res.json() as Array<Record<string, unknown>>;
+
+    expect(rows[0]).toMatchObject({
+      id: gameId,
+      slug: "admin-season-game",
+      seasonId: season.id,
+      season: { id: season.id, slug: "season-zero", name: "Season 0" },
+    });
+    expect(rows[0]).not.toHaveProperty("gameNumber");
   });
 
   test("keeps role-management routes locked to manage_roles", async () => {

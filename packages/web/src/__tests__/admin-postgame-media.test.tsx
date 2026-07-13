@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { renderToString } from "react-dom/server";
 import {
   AdminPostgameMediaDiagnostics,
+  AdminPostgameMediaPanel,
   AdminPostgameMediaPill,
   postgameMediaActionFor,
   postgameMediaRequiresConfirmation,
@@ -83,6 +84,15 @@ describe("AdminPostgameMedia", () => {
     expect(completed).toContain("Trailer");
     expect(completed).toContain("media");
     expect(live).not.toContain("Trailer");
+  });
+
+  it("preserves the exact lowercase slug in the media panel", () => {
+    const html = renderToString(
+      <AdminPostgameMediaPanel game={adminGame()} canManage={false} onClose={() => {}} />,
+    );
+
+    expect(html).toContain(">vast-plum-bay</p>");
+    expect(html).not.toContain("text-xs uppercase tracking-wide text-white/35\">vast-plum-bay");
   });
 
   it("explains the missing prepared music variant to producers", () => {
@@ -185,7 +195,6 @@ function adminGame(overrides: Partial<AdminGameSummary> = {}): AdminGameSummary 
   return {
     id: "game-id",
     slug: "vast-plum-bay",
-    gameNumber: 42,
     status: "completed",
     playerCount: 12,
     currentRound: 8,

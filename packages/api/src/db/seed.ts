@@ -89,6 +89,7 @@ const defaultConfig = {
 await db.insert(schema.games)
   .values({
     id: gameId,
+    slug: "seed-completed-game",
     config: JSON.stringify(defaultConfig),
     status: "completed",
     minPlayers: 5,
@@ -228,6 +229,7 @@ const waitingGameId = randomUUID();
 await db.insert(schema.games)
   .values({
     id: waitingGameId,
+    slug: "seed-waiting-game",
     config: JSON.stringify(defaultConfig),
     status: "waiting",
     minPlayers: 5,

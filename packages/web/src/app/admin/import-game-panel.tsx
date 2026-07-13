@@ -243,7 +243,7 @@ export function ImportGamePanel() {
                       href={`/games/${entry.result.slug}`}
                       className="text-green-400 hover:text-green-300 underline"
                     >
-                      Imported → Game #{entry.result.gameNumber}
+                      Imported → {entry.result.slug}
                     </a>
                   )}
                   {entry.status === "error" && (

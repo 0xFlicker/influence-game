@@ -86,13 +86,14 @@ export interface DailyFreeQueueStatusRead {
   promptEligible: boolean;
   relevantGame: {
     id: string;
-    slug?: string;
+    slug: string;
     status: "waiting" | "in_progress" | "suspended";
   } | null;
   latestGame: {
     id: string;
-    slug?: string;
+    slug: string;
     status: GameStatus;
+    seasonId: string | null;
     createdAt: string;
   } | null;
 }
@@ -116,7 +117,7 @@ export interface QueueMutationRead {
 
 export interface OpenGameSummary {
   id: string;
-  slug?: string;
+  slug: string;
   queueType: "open-game";
   status: "waiting";
   playerCount: number;
@@ -166,6 +167,7 @@ export async function getQueueStatus(
         id: schema.games.id,
         slug: schema.games.slug,
         status: schema.games.status,
+        seasonId: schema.games.seasonId,
         createdAt: schema.games.createdAt,
       })
       .from(schema.games)
@@ -214,8 +216,9 @@ export async function getQueueStatus(
     latestGame: latestGame[0]
       ? {
           id: latestGame[0].id,
-          ...(latestGame[0].slug && { slug: latestGame[0].slug }),
+          slug: latestGame[0].slug,
           status: latestGame[0].status,
+          seasonId: latestGame[0].seasonId,
           createdAt: latestGame[0].createdAt,
         }
       : null,
@@ -489,7 +492,7 @@ async function joinOpenGame(
   return {
     schemaVersion: 1,
     ok: true,
-    message: `${agent.displayName} joined open game ${game.slug ?? game.id}.`,
+    message: `${agent.displayName} joined open game ${game.slug}.`,
     queue: {
       queueType: "open-game",
       displayName: "Open Game",
@@ -571,7 +574,7 @@ export async function getRelevantDailyFreeGame(
   if (!row || !["waiting", "in_progress", "suspended"].includes(row.status)) return null;
   return {
     id: row.id,
-    ...(row.slug && { slug: row.slug }),
+    slug: row.slug,
     status: row.status as "waiting" | "in_progress" | "suspended",
   };
 }
@@ -640,7 +643,7 @@ async function getActiveEnrollmentForAgent(
   agentId: string,
 ): Promise<{
   gameId: string;
-  slug?: string;
+  slug: string;
   status: "waiting" | "in_progress" | "suspended";
   queueType: QueueType;
 } | null> {
@@ -665,7 +668,7 @@ async function getActiveEnrollmentForAgent(
   if (!row || (row.status !== "waiting" && row.status !== "in_progress" && row.status !== "suspended")) return null;
   return {
     gameId: row.gameId,
-    ...(row.slug && { slug: row.slug }),
+    slug: row.slug,
     status: row.status,
     queueType: row.trackType === "free" ? "daily-free" : "open-game",
   };
@@ -688,7 +691,7 @@ function openGameSummary(game: GameRow, playerCount: number): OpenGameSummary {
   const config = JSON.parse(game.config) as Record<string, unknown>;
   return {
     id: game.id,
-    ...(game.slug && { slug: game.slug }),
+    slug: game.slug,
     queueType: "open-game",
     status: "waiting",
     playerCount,

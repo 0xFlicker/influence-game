@@ -1,4 +1,5 @@
 import type { FreeQueueStatus, GameSummary, PlayerGameResult, SavedAgent } from "@/lib/api";
+import { gameHref } from "@/lib/game-identity";
 
 export type DashboardPrimaryActionKind =
   | "watch"
@@ -51,12 +52,8 @@ export interface DashboardMissionControl {
 
 const PREVIEW_LIMIT = 3;
 
-function gameHref(game: Pick<GameSummary, "id" | "slug">): string {
-  return `/games/${game.slug ?? game.id}`;
-}
-
 function resultHref(result: PlayerGameResult): string {
-  return `/games/${result.gameSlug ?? result.gameId}`;
+  return `/games/${result.gameSlug}`;
 }
 
 function newestFirst(a: { createdAt?: string; completedAt?: string }, b: { createdAt?: string; completedAt?: string }): number {
@@ -96,7 +93,7 @@ function buildQueueSummary(queueStatus: FreeQueueStatus | null | undefined): Das
       description: currentGame
         ? `${queueStatus.userEntry.agentName} is in the current Daily Free game.`
         : `${queueStatus.userEntry.agentName} is entered for Daily Free.`,
-      href: currentGame ? `/games/${currentGame.slug ?? currentGame.id}` : "/games/free",
+      href: currentGame ? `/games/${currentGame.slug}` : "/games/free",
     };
   }
 
@@ -105,7 +102,7 @@ function buildQueueSummary(queueStatus: FreeQueueStatus | null | undefined): Das
     return {
       kind: "today-game",
       label: "Today's free game",
-      description: `Game #${queueStatus.todayGame.gameNumber} is ${status}.`,
+      description: `${queueStatus.todayGame.slug} is ${status}.`,
       href: "/games/free",
     };
   }
@@ -129,7 +126,7 @@ function choosePrimaryAction(input: {
     return {
       kind: "watch",
       label: "Watch live game",
-      description: `Game #${input.liveGame.gameNumber} is in progress now.`,
+      description: `${input.liveGame.slug} is in progress now.`,
       href: gameHref(input.liveGame),
       game: input.liveGame,
     };
@@ -157,7 +154,7 @@ function choosePrimaryAction(input: {
     return {
       kind: "join",
       label: "Join open game",
-      description: `Seat an agent in Game #${input.joinableGame.gameNumber}.`,
+      description: `Seat an agent in ${input.joinableGame.slug}.`,
       game: input.joinableGame,
     };
   }

@@ -88,6 +88,18 @@ describe("free queue season admission", () => {
     const seats = await db.select().from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.gameId, body.gameId));
     expect(game?.seasonId).toBe(season.id);
+    const statusResponse = await app.request("/api/free-queue", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const status = await statusResponse.json() as {
+      todayGame: Record<string, unknown> | null;
+    };
+    expect(status.todayGame).toMatchObject({
+      id: body.gameId,
+      slug: game?.slug,
+      season: { id: season.id, slug: "daily-summer", name: "Daily Summer" },
+    });
+    expect(status.todayGame).not.toHaveProperty("gameNumber");
     for (const item of queued) {
       const seat = seats.find((candidate) => candidate.agentProfileId === item.profileId);
       expect(seat?.userId).toBe(item.userId);

@@ -379,7 +379,7 @@ export function AdminHighlightsPill({
         event.stopPropagation();
         onClick();
       }}
-      aria-label={`Open House Highlights diagnostics for game #${game.gameNumber}`}
+      aria-label={`Open House Highlights diagnostics for game ${game.slug}`}
       className="min-h-8 rounded-md border border-cyan-700/40 bg-cyan-950/30 px-2.5 py-1 text-left text-xs font-medium text-cyan-100 transition-colors hover:border-cyan-300/50 focus:outline-none focus:ring-2 focus:ring-cyan-500"
     >
       <span className="block leading-tight">Cards</span>
@@ -417,7 +417,7 @@ export function AdminHighlightsDiagnosticsPanel({
   }, [onClose]);
 
   const requestDiagnostics = useCallback((requestId: number) => {
-    getAdminPostgameHighlightsDiagnostics(game.slug ?? game.id)
+    getAdminPostgameHighlightsDiagnostics(game.slug)
       .then((next) => {
         if (requestIdRef.current !== requestId) return;
         setDetail(next);
@@ -429,7 +429,7 @@ export function AdminHighlightsDiagnosticsPanel({
       .finally(() => {
         if (requestIdRef.current === requestId) setLoading(false);
       });
-  }, [game.id, game.slug]);
+  }, [game.slug]);
 
   const loadDiagnostics = useCallback(() => {
     const requestId = requestIdRef.current + 1;
@@ -448,7 +448,7 @@ export function AdminHighlightsDiagnosticsPanel({
     };
   }, [requestDiagnostics]);
 
-  const title = useMemo(() => `Game #${game.gameNumber}`, [game.gameNumber]);
+  const title = useMemo(() => game.slug, [game.slug]);
 
   return (
     <div
@@ -470,7 +470,6 @@ export function AdminHighlightsDiagnosticsPanel({
             <h2 id="admin-highlights-panel-title" className="mt-1 text-xl font-semibold text-white">
               {title}
             </h2>
-            <p className="mt-1 text-sm text-white/40">{game.slug ?? game.id}</p>
           </div>
           <button
             ref={closeRef}

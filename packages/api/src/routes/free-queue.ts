@@ -25,6 +25,7 @@ import {
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { generateUniqueSlug } from "../lib/slug.js";
+import { getGameSeasonIdentityMap } from "../lib/game-season.js";
 import { getPublicDisplayName } from "../lib/display-name.js";
 import {
   pickAgentNames,
@@ -100,6 +101,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
         id: schema.games.id,
         slug: schema.games.slug,
         status: schema.games.status,
+        seasonId: schema.games.seasonId,
         createdAt: schema.games.createdAt,
       })
       .from(schema.games)
@@ -107,12 +109,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       .orderBy(desc(schema.games.createdAt))
       .limit(1))[0];
 
-    const gameNumber = todayGame
-      ? Number((await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(schema.games)
-          .where(sql`${schema.games.createdAt} <= ${todayGame.createdAt}`))[0]?.count ?? 0)
-      : 0;
+    const seasonById = await getGameSeasonIdentityMap(db, [todayGame?.seasonId ?? null]);
 
     return c.json({
       count: queueCount,
@@ -124,9 +121,9 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       todayGame: todayGame
         ? {
             id: todayGame.id,
-            slug: todayGame.slug ?? todayGame.id,
-            gameNumber,
+            slug: todayGame.slug,
             status: todayGame.status,
+            season: todayGame.seasonId ? seasonById.get(todayGame.seasonId) : undefined,
             kernelHealth: await getRedactedKernelHealth(db, todayGame.id),
           }
         : null,

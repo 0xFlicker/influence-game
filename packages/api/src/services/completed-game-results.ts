@@ -22,7 +22,7 @@ export type CompletedGameResultsServiceResult =
       schemaVersion: 1;
       game: {
         id: string;
-        slug?: string;
+        slug: string;
         status: GameStatus;
         completedAt?: string;
       };
@@ -87,7 +87,7 @@ export async function getCompletedGameResults(
     schemaVersion: 1,
     game: {
       id: game.id,
-      ...(game.slug && { slug: game.slug }),
+      slug: game.slug,
       status: game.status,
       ...(game.endedAt && { completedAt: game.endedAt }),
     },

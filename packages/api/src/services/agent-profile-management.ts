@@ -172,7 +172,7 @@ export interface AgentQueueStateSummary {
 
 export interface AgentActiveEnrollmentSummary {
   gameId: string;
-  slug?: string;
+  slug: string;
   status: "waiting" | "in_progress" | "suspended";
   queueType: "daily-free" | "open-game";
 }
@@ -221,7 +221,7 @@ type AccountRatingRow = Pick<
 interface EnrollmentRow {
   agentProfileId: string | null;
   gameId: string;
-  slug: string | null;
+  slug: string;
   status: string;
   trackType: string;
   createdAt: string;
@@ -747,7 +747,7 @@ function activeEnrollmentMap(
     if (row.status !== "waiting" && row.status !== "in_progress" && row.status !== "suspended") continue;
     byProfileId.set(row.agentProfileId, {
       gameId: row.gameId,
-      ...(row.slug && { slug: row.slug }),
+      slug: row.slug,
       status: row.status,
       queueType: row.trackType === "free" ? "daily-free" : "open-game",
     });

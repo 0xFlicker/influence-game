@@ -37,6 +37,7 @@ describe("cognitive artifact writer", () => {
     await db.insert(schema.games)
       .values({
         id: gameId,
+        slug: `test-${gameId}`,
         config: "{}",
         status: "in_progress",
         cognitiveArtifactCaptureVersion: COGNITIVE_ARTIFACT_CAPTURE_VERSION,

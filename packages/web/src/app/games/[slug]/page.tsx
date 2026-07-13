@@ -115,7 +115,7 @@ export default async function GameViewerPage({ params, searchParams }: Props) {
       <main className="flex-1 px-6 py-10 max-w-5xl mx-auto w-full">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-white">
-            {initialGame ? `Game #${initialGame.gameNumber}` : slug}
+            {initialGame?.slug ?? slug}
           </h1>
         </div>
 

@@ -41,7 +41,7 @@ export function AdminPostgameMediaPill({
         event.stopPropagation();
         onClick();
       }}
-      aria-label={`Open trailer media diagnostics for game #${game.gameNumber}`}
+      aria-label={`Open trailer media diagnostics for game ${game.slug}`}
       className="min-h-8 rounded-md border border-amber-700/40 bg-amber-950/30 px-2.5 py-1 text-left text-xs font-medium text-amber-100 transition-colors hover:border-amber-300/50 focus:outline-none focus:ring-2 focus:ring-amber-500"
     >
       <span className="block leading-tight">Trailer</span>
@@ -68,7 +68,7 @@ export function AdminPostgameMediaPanel({
   const [feedback, setFeedback] = useState<string | null>(null);
   const requestIdRef = useRef(0);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const gameKey = game.slug ?? game.id;
+  const gameKey = game.slug;
 
   const load = useCallback(() => {
     const requestId = requestIdRef.current + 1;
@@ -149,7 +149,7 @@ export function AdminPostgameMediaPanel({
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-wide text-white/35">Game #{game.gameNumber}</p>
+            <p className="text-xs tracking-wide text-white/35">{game.slug}</p>
             <h2 id="postgame-media-panel-title" className="mt-1 text-xl font-semibold text-white">Trailer media</h2>
           </div>
           <button

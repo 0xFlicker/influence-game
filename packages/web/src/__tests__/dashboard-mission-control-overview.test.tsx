@@ -11,7 +11,6 @@ function game(overrides: Partial<GameSummary> = {}): GameSummary {
   return {
     id: "game-1",
     slug: "strategic-sunset",
-    gameNumber: 1,
     status: "waiting",
     playerCount: 8,
     currentRound: 0,
@@ -49,7 +48,6 @@ function result(overrides: Partial<PlayerGameResult> = {}): PlayerGameResult {
   return {
     gameId: "game-result-1",
     gameSlug: "finished-firelight",
-    gameNumber: 7,
     agentName: "Atlas",
     persona: "strategic",
     placement: 2,
@@ -182,26 +180,26 @@ describe("dashboard mission-control overview", () => {
     const html = renderDashboardSurface({
       agents: [agent()],
       games: [
-        game({ id: "game-1", gameNumber: 1, createdAt: "2026-06-21T12:00:00.000Z" }),
-        game({ id: "game-2", gameNumber: 2, createdAt: "2026-06-21T13:00:00.000Z" }),
-        game({ id: "game-3", gameNumber: 3, createdAt: "2026-06-21T14:00:00.000Z" }),
-        game({ id: "game-4", gameNumber: 4, createdAt: "2026-06-21T15:00:00.000Z" }),
+        game({ id: "game-1", slug: "game-one", createdAt: "2026-06-21T12:00:00.000Z" }),
+        game({ id: "game-2", slug: "game-two", createdAt: "2026-06-21T13:00:00.000Z" }),
+        game({ id: "game-3", slug: "game-three", createdAt: "2026-06-21T14:00:00.000Z" }),
+        game({ id: "game-4", slug: "game-four", createdAt: "2026-06-21T15:00:00.000Z" }),
       ],
       history: [],
     });
     const textHtml = withoutReactTextMarkers(html);
 
     expect(html).toContain('href="/games"');
-    expect(textHtml).toContain("Game #4");
-    expect(textHtml).toContain("Game #3");
-    expect(textHtml).toContain("Game #2");
-    expect(textHtml).not.toContain("Game #1");
+    expect(textHtml).toContain("game-four");
+    expect(textHtml).toContain("game-three");
+    expect(textHtml).toContain("game-two");
+    expect(textHtml).not.toContain("game-one");
   });
 
   it("keeps existing game preview visible during background refresh", () => {
     const html = renderToString(
       <DashboardGamePreview
-        games={[game({ gameNumber: 8 })]}
+        games={[game({ slug: "refresh-game" })]}
         queueSummary={null}
         loading
         error={null}
@@ -210,20 +208,20 @@ describe("dashboard mission-control overview", () => {
     );
     const textHtml = withoutReactTextMarkers(html);
 
-    expect(textHtml).toContain("Game #8");
+    expect(textHtml).toContain("refresh-game");
     expect(textHtml).not.toContain("Loading games");
   });
 
   it("keeps existing result and agent previews visible during background refresh", () => {
     const html = renderToString(
       <>
-        <DashboardRecentResult result={result({ gameNumber: 9 })} loading error={null} />
+        <DashboardRecentResult result={result({ gameSlug: "recent-game" })} loading error={null} />
         <DashboardAgentBench agents={[agent({ name: "Lyra" })]} loading error={null} />
       </>,
     );
     const textHtml = withoutReactTextMarkers(html);
 
-    expect(textHtml).toContain("Game #9");
+    expect(textHtml).toContain("recent-game");
     expect(textHtml).toContain("Lyra");
     expect(textHtml).not.toContain("Loading result");
     expect(textHtml).not.toContain("Loading agents");

@@ -115,7 +115,7 @@ export type PublicAllianceReadResult =
       schemaVersion: 1;
       game: {
         id: string;
-        slug?: string;
+        slug: string;
         status: GameStatus;
         createdAt: string;
         startedAt?: string;
@@ -162,7 +162,7 @@ export async function getPublicGameAlliances(
     schemaVersion: 1,
     game: {
       id: game.id,
-      ...(game.slug && { slug: game.slug }),
+      slug: game.slug,
       status: game.status,
       createdAt: game.createdAt,
       ...(game.startedAt && { startedAt: game.startedAt }),
