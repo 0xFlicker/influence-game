@@ -29,13 +29,13 @@ import {
 } from "../services/agent-archetypes.js";
 import {
   AgentProfileManagementError,
+  adoptOwnedDraftAvatarAndCreateAgentProfile,
   createOwnedAgentProfile,
   updateOwnedAgentProfile,
 } from "../services/agent-profile-management.js";
 import {
   latestAvatarCompletion,
   latestAvatarCompletionsByAgentProfileId,
-  consumeOwnedDraftAvatarCompletion,
   requestAndStartAvatarCompletion,
   requestAndStartDraftAvatarCompletion,
   resumeOwnedDraftAvatarCompletion,
@@ -258,47 +258,54 @@ Respond with JSON only:
 
     const user = c.get("user");
     try {
+      const publicBaseUrl = new URL(c.req.url).origin;
       let draftCompletion = null;
+      let result;
       if (!body.avatarUrl && typeof body.avatarGenerationRequestId === "string") {
-        const consumed = await consumeOwnedDraftAvatarCompletion(db, {
+        const adopted = await adoptOwnedDraftAvatarAndCreateAgentProfile(db, {
           userId: user.id,
-          generationRequestId: body.avatarGenerationRequestId,
-          profile: {
-            name: typeof body.name === "string" ? body.name : "",
-            gender: isAgentGender(body.gender) ? body.gender : null,
-            backstory: typeof body.backstory === "string" && body.backstory.trim() ? body.backstory : null,
-            personality: typeof body.personality === "string" ? body.personality : "",
-            strategyStyle: typeof body.strategyStyle === "string" && body.strategyStyle.trim() ? body.strategyStyle : null,
-            personaKey: typeof body.personaKey === "string" ? body.personaKey : null,
-          },
+          publicBaseUrl,
+        }, body.avatarGenerationRequestId, {
+          name: typeof body.name === "string" ? body.name : "",
+          gender: isAgentGender(body.gender) ? body.gender : null,
+          backstory: typeof body.backstory === "string" && body.backstory.trim() ? body.backstory : null,
+          personality: typeof body.personality === "string" ? body.personality : "",
+          strategyStyle: typeof body.strategyStyle === "string" && body.strategyStyle.trim() ? body.strategyStyle : null,
+          personaKey: typeof body.personaKey === "string" ? body.personaKey : null,
+        }, {
+          name: body.name,
+          backstory: body.backstory,
+          personality: body.personality,
+          strategyStyle: body.strategyStyle,
+          personaKey: body.personaKey,
+          gender: body.gender,
         });
-        if (!consumed.ok) {
+        if (!adopted.ok) {
           const messages = {
             not_found: "Draft portrait request not found.",
             pending: "Portrait generation is still in progress.",
             profile_changed: "Agent details changed after portrait generation. Regenerate the portrait.",
             already_consumed: "Draft portrait request has already been used.",
           } as const;
-          return c.json({ error: messages[consumed.reason] }, consumed.reason === "pending" ? 409 : 400);
+          return c.json({ error: messages[adopted.reason] }, adopted.reason === "pending" ? 409 : 400);
         }
-        draftCompletion = consumed.completion;
+        draftCompletion = adopted.completion;
+        result = adopted.result;
+      } else {
+        result = await createOwnedAgentProfile(db, {
+          userId: user.id,
+          publicBaseUrl,
+          avatarChangeSource: "web_upload",
+        }, {
+          name: body.name,
+          backstory: body.backstory,
+          personality: body.personality,
+          strategyStyle: body.strategyStyle,
+          personaKey: body.personaKey,
+          gender: body.gender,
+          avatarUrl: body.avatarUrl,
+        });
       }
-      const result = await createOwnedAgentProfile(db, {
-        userId: user.id,
-        publicBaseUrl: new URL(c.req.url).origin,
-        avatarChangeSource: !body.avatarUrl && draftCompletion?.avatarUrl ? "web_generated_completion" : "web_upload",
-        avatarGenerationRequestId: !body.avatarUrl && draftCompletion?.avatarUrl
-          ? draftCompletion.generationRequestId
-          : undefined,
-      }, {
-        name: body.name,
-        backstory: body.backstory,
-        personality: body.personality,
-        strategyStyle: body.strategyStyle,
-        personaKey: body.personaKey,
-        gender: body.gender,
-        avatarUrl: body.avatarUrl ?? draftCompletion?.avatarUrl,
-      });
       if (result.profile.avatarUrl) {
         return c.json(playerSafeAgentProfile(result.profile), 201);
       }
@@ -309,7 +316,6 @@ Respond with JSON only:
         }, 201);
       }
 
-      const publicBaseUrl = new URL(c.req.url).origin;
       let avatarCompletion;
       try {
         avatarCompletion = await requestAndStartAvatarCompletion(db, {

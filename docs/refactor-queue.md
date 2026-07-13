@@ -110,13 +110,13 @@ Status legend:
 
 ### R9. Atomic draft-avatar adoption during agent creation
 
-- Status: `ready`
+- Status: `completed in current branch`
 - Consolidates: Standing Daily Agent implementation review finding #8.
 - Sources: `packages/api/src/routes/agent-profiles.ts`, `packages/api/src/services/avatar-generation.ts`, `packages/api/src/services/agent-profile-management.ts`
-- Signal: agent creation currently marks a completed draft request consumed before profile validation, profile insertion, revision creation, and avatar-lineage recording finish. A later failure can return an error with no usable agent while retries reject the portrait as already consumed.
+- Signal: draft-avatar adoption now validates the profile before opening one database transaction that conditionally consumes the completed draft, inserts the profile and initial revision, and records generated-avatar lineage. A failure at any transactional step rolls the consumption and agent records back together.
 - Concrete seam: `consumeOwnedDraftAvatarCompletion`, owned-profile creation transaction, agent revision creation, and avatar change history.
-- Validation path: inject failures during profile validation, profile insertion, revision creation, and avatar audit insertion; verify every failure rolls back draft consumption and a retry creates exactly one profile with the intended portrait and lineage.
-- Suggested slice: claim/consume the draft, create the profile and revision, and record avatar lineage in one transaction. Do not add an out-of-band unconsume repair path unless the transaction boundary proves impossible.
+- Validation: DB-backed route coverage verifies invalid profiles do not consume drafts, cross-owner attempts do not reveal or mutate them, concurrent adoption creates at most one agent, and injected profile, revision, and avatar-lineage insert failures each roll back consumption and permit a successful retry. Existing upload and avatar-free creation paths remain separate.
+- Result: `adoptOwnedDraftAvatarAndCreateAgentProfile` owns the atomic path while the route preserves the existing draft error responses. No compensating unconsume workflow was added, and R8/R10/R11 remain open.
 
 ### R10. Honest avatar-generation status degradation
 
@@ -334,5 +334,7 @@ Status legend:
 1. R1 API-backed local run harness
 2. R3 Games MCP revealed-facts expansion
 3. R4 Private trace retention and purge workflow
+
+R9 is completed in the current branch and is no longer part of the pending priority order. R8, R10, and R11 remain ready as separate recovery and UX slices.
 
 `Crash-Honesty Extraction` does not survive as a standalone backlog item. Its useful content is captured by R2, W3, and later D1.

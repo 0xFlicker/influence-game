@@ -346,7 +346,7 @@ export async function resumeOwnedDraftAvatarCompletion(
 }
 
 export async function consumeOwnedDraftAvatarCompletion(
-  db: DrizzleDB,
+  db: DatabaseExecutor,
   input: { userId: string; generationRequestId: string; profile: AvatarPromptProfile },
 ): Promise<
   | { ok: true; completion: AvatarCompletionRead }
