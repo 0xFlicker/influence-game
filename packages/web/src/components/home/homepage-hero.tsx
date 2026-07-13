@@ -13,6 +13,7 @@ import {
   ACTIVE_GAME,
   THE_HOUSE_PRESENTS_INFLUENCE,
 } from "@/lib/product-identity";
+import { gameHref } from "@/lib/game-identity";
 import { MessageSequence } from "./message-sequence";
 
 interface HomeGameStat {
@@ -25,10 +26,6 @@ interface HomeGameStat {
 
 function gameStartedAt(game: GameSummary): number {
   return new Date(game.startedAt ?? game.createdAt).getTime();
-}
-
-function gameHref(game: GameSummary): string {
-  return `/games/${game.slug ?? game.id}`;
 }
 
 function queuedLabel(count: number): string {

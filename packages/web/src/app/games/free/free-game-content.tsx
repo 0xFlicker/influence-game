@@ -293,12 +293,12 @@ function TodayGameSection({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-text-primary font-semibold">
-              Game #{todayGame.gameNumber}
+              {todayGame.slug}
             </span>
             <StatusBadge status={todayGame.status} />
           </div>
           <Link
-            href={`/games/${todayGame.slug ?? todayGame.id}`}
+            href={`/games/${todayGame.slug}`}
             className="influence-button-secondary text-xs px-3 py-1.5 rounded-lg"
           >
             {isLive ? "Watch" : isDone ? "Replay" : isSuspended ? "Inspect" : "View"}

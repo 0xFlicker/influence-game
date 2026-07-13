@@ -38,7 +38,7 @@ export interface GameWatchStateSummaryBackfillResult {
 
 interface FallbackGameRow {
   id: string;
-  slug: string | null;
+  slug: string;
   status: GameStatus;
 }
 
@@ -123,7 +123,7 @@ export function buildFallbackGameWatchStateSummary(
   return {
     schemaVersion: GAME_WATCH_STATE_SUMMARY_SCHEMA_VERSION,
     gameId: game.id,
-    ...(game.slug && { slug: game.slug }),
+    slug: game.slug,
     status: game.status,
     source: "pre_kernel_empty",
     currentRound: 0,
@@ -239,7 +239,7 @@ function summaryFromRow(row: SummaryRow): GameWatchStateSummary {
   return {
     schemaVersion: GAME_WATCH_STATE_SUMMARY_SCHEMA_VERSION,
     gameId: row.gameId,
-    ...(row.slug && { slug: row.slug }),
+    slug: row.slug,
     status: row.status,
     source: row.source,
     currentRound: row.currentRound,
@@ -305,7 +305,7 @@ function insertValuesFromSummary(
   const finalWinner = summary.final.winner;
   return {
     gameId: summary.gameId,
-    slug: summary.slug ?? null,
+    slug: summary.slug,
     schemaVersion: GAME_WATCH_STATE_SUMMARY_SCHEMA_VERSION,
     status: summary.status,
     source: summary.source,

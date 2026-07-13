@@ -183,7 +183,7 @@ export const seasons = pgTable("seasons", {
 
 export const games = pgTable("games", {
   id: text("id").primaryKey(), // UUID
-  slug: text("slug").unique(), // Human-readable identifier, e.g. "punk-green-apple"
+  slug: text("slug").notNull().unique(), // Human-readable identifier, e.g. "punk-green-apple"
   config: text("config").notNull(), // JSON-serialized GameConfig
   status: text("status").notNull().$type<GameStatus>().default("waiting"),
   trackType: text("track_type").notNull().$type<TrackType>().default("custom"),
@@ -712,7 +712,7 @@ export const gameWatchStateSummaries = pgTable("game_watch_state_summaries", {
   gameId: text("game_id")
     .primaryKey()
     .references(() => games.id),
-  slug: text("slug"),
+  slug: text("slug").notNull(),
   schemaVersion: integer("schema_version").notNull().default(1),
   status: text("status").notNull().$type<GameStatus>(),
   source: text("source").notNull().$type<GameWatchStateSummarySource>(),

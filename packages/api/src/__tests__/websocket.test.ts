@@ -579,6 +579,7 @@ function watchStateFixture(gameId: string, sequence: number): GameWatchState {
   return {
     schemaVersion: 3,
     gameId,
+    slug: `test-${gameId}`,
     status: "in_progress",
     source: "durable_projection",
     currentRound: 2,

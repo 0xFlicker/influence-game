@@ -314,7 +314,7 @@ export function buildMatchWatchModel({
 
   return {
     mode: live ? "live" : "replay",
-    matchTitle: game.slug?.toUpperCase() ?? `GAME ${game.gameNumber}`,
+    matchTitle: game.slug,
     round,
     roundLabel: `Round ${round}`,
     phase,

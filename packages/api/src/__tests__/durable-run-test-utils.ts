@@ -91,7 +91,7 @@ export async function insertGame(
   const gameId = params.id ?? randomUUID();
   await db.insert(schema.games).values({
     id: gameId,
-    ...(params.slug && { slug: params.slug }),
+    slug: params.slug ?? `test-${gameId}`,
     config: JSON.stringify(params.config ?? {
       maxRounds: 5,
       modelTier: "budget",

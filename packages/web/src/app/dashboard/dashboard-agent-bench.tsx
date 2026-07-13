@@ -19,7 +19,7 @@ function capitalize(s: string): string {
 }
 
 function resultHref(result: PlayerGameResult): string {
-  return `/games/${result.gameSlug ?? result.gameId}`;
+  return `/games/${result.gameSlug}`;
 }
 
 function placementText(result: PlayerGameResult): string {
@@ -49,7 +49,7 @@ export function DashboardRecentResult({ result, loading, error }: DashboardRecen
         </div>
       ) : result ? (
         <div className="influence-panel-muted rounded-lg p-4">
-          <p className="text-lg font-semibold text-text-primary">Game #{result.gameNumber}</p>
+          <p className="text-lg font-semibold text-text-primary">{result.gameSlug}</p>
           <p className="influence-copy mt-1 text-sm">
             {result.agentName} finished {placementText(result)} after {result.rounds} rounds.
           </p>

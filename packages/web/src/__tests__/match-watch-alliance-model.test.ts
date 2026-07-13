@@ -10,7 +10,6 @@ function game(): GameDetail {
   return {
     id: "game-1",
     slug: "public-game",
-    gameNumber: 7,
     status: "in_progress",
     currentRound: 2,
     maxRounds: 8,

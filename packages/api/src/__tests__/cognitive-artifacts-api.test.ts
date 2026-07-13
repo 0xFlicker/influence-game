@@ -86,6 +86,7 @@ describe("cognitive artifact API routes", () => {
     const playerId = randomUUID();
     await db.insert(schema.games).values({
       id: gameId,
+      slug: `test-${gameId}`,
       config: "{}",
       cognitiveArtifactCaptureVersion: 0,
     });
@@ -117,6 +118,7 @@ describe("cognitive artifact API routes", () => {
     const strategyId = randomUUID();
     await db.insert(schema.games).values({
       id: gameId,
+      slug: `test-${gameId}`,
       config: "{}",
       status: "in_progress",
       cognitiveArtifactCaptureVersion: 1,

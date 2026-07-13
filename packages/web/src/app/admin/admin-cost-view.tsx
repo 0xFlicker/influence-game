@@ -222,7 +222,7 @@ export function AdminCostPanel({
   }, []);
 
   const requestCosts = useCallback((requestId: number) => {
-    getAdminGameCosts(game.slug ?? game.id)
+    getAdminGameCosts(game.slug)
       .then((next) => {
         if (requestIdRef.current !== requestId) return;
         setDetail(next);
@@ -234,7 +234,7 @@ export function AdminCostPanel({
       .finally(() => {
         if (requestIdRef.current === requestId) setLoading(false);
       });
-  }, [game.id, game.slug]);
+  }, [game.slug]);
 
   const loadCosts = useCallback(() => {
     const requestId = requestIdRef.current + 1;
@@ -256,7 +256,7 @@ export function AdminCostPanel({
   }, [requestCosts]);
 
   const runBackfill = useCallback(() => {
-    const gameKey = game.slug ?? game.id;
+    const gameKey = game.slug;
     const backfillRequestId = backfillRequestIdRef.current + 1;
     backfillRequestIdRef.current = backfillRequestId;
     setBackfillLoading(true);
@@ -277,7 +277,7 @@ export function AdminCostPanel({
       .finally(() => {
         if (backfillRequestIdRef.current === backfillRequestId) setBackfillLoading(false);
       });
-  }, [game.id, game.slug, loadCosts, onBackfilled]);
+  }, [game.slug, loadCosts, onBackfilled]);
 
   const providerRows = useMemo(() => detail?.breakdowns.provider, [detail]);
   const modelRows = useMemo(() => detail?.breakdowns.model, [detail]);
@@ -302,9 +302,8 @@ export function AdminCostPanel({
           <div>
             <p className="text-xs uppercase tracking-wide text-white/35">Cost detail</p>
             <h2 id="admin-cost-panel-title" className="mt-1 text-xl font-semibold text-white">
-              Game #{game.gameNumber}
+              {game.slug}
             </h2>
-            <p className="mt-1 text-sm text-white/40">{game.slug ?? game.id}</p>
           </div>
           <button
             ref={closeRef}

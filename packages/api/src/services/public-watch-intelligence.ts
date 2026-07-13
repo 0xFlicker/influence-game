@@ -64,7 +64,7 @@ export interface PublicWatchIntelligenceReceipts {
 
 export interface PublicWatchIntelligenceGame {
   id: string;
-  slug?: string;
+  slug: string;
   status: GameStatus;
 }
 
@@ -271,12 +271,12 @@ async function buildPublicReceipts(
 
 function gameIdentity(watchState: {
   gameId: string;
-  slug?: string;
+  slug: string;
   status: GameStatus;
 }): PublicWatchIntelligenceGame {
   return {
     id: watchState.gameId,
-    ...(watchState.slug && { slug: watchState.slug }),
+    slug: watchState.slug,
     status: watchState.status,
   };
 }

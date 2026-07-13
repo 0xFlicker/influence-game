@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { formatGameModelLabel, hideGame, listAdminGames, unhideGame, type AdminGameSummary, type GameStatus, type ModelTier } from "@/lib/api";
+import { formatGameModelLabel, hideGame, listAdminGames, unhideGame, type AdminGameSummary, type GameStatus } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
+import { gameDisplayName, gameHref } from "@/lib/game-identity";
 import { AdminCostPanel, AdminCostPill } from "../admin-cost-view";
 import { AdminHighlightsDiagnosticsPanel, AdminHighlightsPill } from "../admin-highlights-diagnostics";
 import { AdminPostgameMediaPanel, AdminPostgameMediaPill } from "../admin-postgame-media";
@@ -13,7 +14,6 @@ import { AdminPostgameMediaPanel, AdminPostgameMediaPill } from "../admin-postga
 // ---------------------------------------------------------------------------
 
 type StatusFilter = GameStatus | "all";
-type ModelFilter = ModelTier | "all";
 type PlayerFilter = "all" | "4" | "6" | "8" | "10" | "12";
 type VisibilityFilter = "all" | "visible" | "hidden";
 
@@ -85,11 +85,11 @@ function GameRow({
 
   return (
     <tr
-      onClick={() => router.push(`/games/${game.slug ?? game.id}`)}
+      onClick={() => router.push(gameHref(game))}
       className={`border-t border-white/5 hover:bg-white/[0.02] transition-colors group cursor-pointer ${game.hidden ? "opacity-40" : ""}`}
     >
       <td className="py-3 px-4 text-white/50 text-sm">
-        #{game.gameNumber}
+        {gameDisplayName(game)}
         {game.hidden && (
           <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-orange-900/40 text-orange-400">
             hidden
@@ -119,7 +119,7 @@ function GameRow({
         <AdminCostPill
           summary={game.cost}
           onClick={onOpenCosts}
-          ariaLabel={`Open cost details for game #${game.gameNumber}`}
+          ariaLabel={`Open cost details for game ${gameDisplayName(game)}`}
         />
       </td>
       <td className="py-3 px-4">
@@ -154,7 +154,7 @@ function GameRow({
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={(e) => e.stopPropagation()}>
             <div className="bg-zinc-900 border border-white/10 rounded-xl p-6 max-w-sm w-full mx-4">
               <p className="text-white text-sm mb-4">
-                Hide game <strong>#{game.gameNumber}</strong> from public lists?
+                Hide game <strong>{gameDisplayName(game)}</strong> from public lists?
               </p>
               <div className="flex justify-end gap-2">
                 <button
@@ -219,7 +219,6 @@ export function GameHistoryBrowser() {
   const canManagePostgameMedia = hasPermission("manage_postgame_media");
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [modelFilter, setModelFilter] = useState<ModelFilter>("all");
   const [playerFilter, setPlayerFilter] = useState<PlayerFilter>("all");
   const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>("all");
   const [search, setSearch] = useState("");
@@ -256,7 +255,6 @@ export function GameHistoryBrowser() {
 
   const filtered = games.filter((g) => {
     if (statusFilter !== "all" && g.status !== statusFilter) return false;
-    if (modelFilter !== "all" && g.modelTier !== modelFilter) return false;
     if (playerFilter !== "all" && g.playerCount !== parseInt(playerFilter)) return false;
     if (visibilityFilter === "visible" && g.hidden) return false;
     if (visibilityFilter === "hidden" && !g.hidden) return false;
@@ -266,7 +264,8 @@ export function GameHistoryBrowser() {
       if (
         !g.winner?.toLowerCase().includes(q) &&
         !modelLabel.includes(q) &&
-        !String(g.gameNumber).includes(q)
+        !g.slug.toLowerCase().includes(q) &&
+        !g.season?.name.toLowerCase().includes(q)
       )
         return false;
     }
@@ -290,17 +289,6 @@ export function GameHistoryBrowser() {
             { value: "waiting", label: "Waiting" },
             { value: "suspended", label: "Failed" },
             { value: "cancelled", label: "Void" },
-          ]}
-        />
-        <FilterSelect
-          label="Model"
-          value={modelFilter}
-          onChange={setModelFilter}
-          options={[
-            { value: "all", label: "All models" },
-            { value: "budget", label: "Budget" },
-            { value: "standard", label: "Standard" },
-            { value: "premium", label: "Premium" },
           ]}
         />
         <FilterSelect
@@ -362,7 +350,7 @@ export function GameHistoryBrowser() {
           <table className="min-w-[72rem] w-full">
             <thead>
               <tr className="border-b border-white/10">
-                {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", "Trailer", ""].map((h) => (
+                {["Slug", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", "Trailer", ""].map((h) => (
                   <th
                     key={h}
                     className="text-left py-3 px-4 text-xs text-white/30 font-medium"

@@ -361,7 +361,7 @@ Events happen simultaneously in Influence: whispers fly during WHISPER phase, di
 **Default layout (Live mode):**
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Influence · Game #7      Round 3 · LOBBY      ⏱ LIVE               │
+│  Influence · vast-sage-coal     Round 3 · LOBBY      ⏱ LIVE          │
 │  ████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   Phase: LOBBY           │
 ├───────────────────────────┬─────────────────────────────────────────┤
 │  PLAYERS                  │  MAIN STAGE                              │

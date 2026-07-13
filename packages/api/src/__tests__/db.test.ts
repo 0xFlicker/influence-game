@@ -87,6 +87,7 @@ describe("Database Schema", () => {
       await db.insert(schema.games)
         .values({
           id: gameId,
+          slug: `test-${gameId}`,
           config: JSON.stringify(config),
           status: "waiting",
           minPlayers: 5,
@@ -106,7 +107,7 @@ describe("Database Schema", () => {
     test("game status defaults to waiting", async () => {
       const gameId = randomUUID();
       await db.insert(schema.games)
-        .values({ id: gameId, config: "{}" });
+        .values({ id: gameId, slug: `test-${gameId}`, config: "{}" });
 
       const rows = await db
         .select()
@@ -116,10 +117,36 @@ describe("Database Schema", () => {
       expect(rows[0]!.status).toBe("waiting");
     });
 
+    test("game slug is required by the database", async () => {
+      let threw = false;
+      try {
+        await db.execute(sql`
+          INSERT INTO games (id, config)
+          VALUES (${randomUUID()}, '{}')
+        `);
+      } catch {
+        threw = true;
+      }
+      expect(threw).toBe(true);
+    });
+
+    test("game slug is unique in the database", async () => {
+      const slug = `test-${randomUUID()}`;
+      await db.insert(schema.games).values({ id: randomUUID(), slug, config: "{}" });
+
+      let threw = false;
+      try {
+        await db.insert(schema.games).values({ id: randomUUID(), slug, config: "{}" });
+      } catch {
+        threw = true;
+      }
+      expect(threw).toBe(true);
+    });
+
     test("cognitive artifact capture defaults off for existing game inserts", async () => {
       const gameId = randomUUID();
       await db.insert(schema.games)
-        .values({ id: gameId, config: "{}" });
+        .values({ id: gameId, slug: `test-${gameId}`, config: "{}" });
 
       const rows = await db
         .select()
@@ -132,7 +159,7 @@ describe("Database Schema", () => {
     test("game status transitions", async () => {
       const gameId = randomUUID();
       await db.insert(schema.games)
-        .values({ id: gameId, config: "{}" });
+        .values({ id: gameId, slug: `test-${gameId}`, config: "{}" });
 
       // Start the game
       await db.update(schema.games)
@@ -170,7 +197,7 @@ describe("Database Schema", () => {
     test("game can be marked suspended for inspection", async () => {
       const gameId = randomUUID();
       await db.insert(schema.games)
-        .values({ id: gameId, config: "{}", status: "in_progress" });
+        .values({ id: gameId, slug: `test-${gameId}`, config: "{}", status: "in_progress" });
 
       await db.update(schema.games)
         .set({
@@ -200,7 +227,7 @@ describe("Database Schema", () => {
 
       await db.insert(schema.users).values({ id: userId });
       await db.insert(schema.games)
-        .values({ id: gameId, config: "{}" });
+        .values({ id: gameId, slug: `test-${gameId}`, config: "{}" });
 
       const playerId = randomUUID();
       const persona = { name: "Atlas", personality: "Strategic calculator" };
@@ -228,7 +255,7 @@ describe("Database Schema", () => {
     test("multiple players per game", async () => {
       const gameId = randomUUID();
       await db.insert(schema.games)
-        .values({ id: gameId, config: "{}" });
+        .values({ id: gameId, slug: `test-${gameId}`, config: "{}" });
 
       for (let i = 0; i < 6; i++) {
         await db.insert(schema.gamePlayers)
@@ -257,7 +284,7 @@ describe("Database Schema", () => {
     test("insert and query transcript entries", async () => {
       const gameId = randomUUID();
       await db.insert(schema.games)
-        .values({ id: gameId, config: "{}" });
+        .values({ id: gameId, slug: `test-${gameId}`, config: "{}" });
 
       await db.insert(schema.transcripts)
         .values([
@@ -308,7 +335,7 @@ describe("Database Schema", () => {
     test("transcript entries are auto-incremented", async () => {
       const gameId = randomUUID();
       await db.insert(schema.games)
-        .values({ id: gameId, config: "{}" });
+        .values({ id: gameId, slug: `test-${gameId}`, config: "{}" });
 
       await db.insert(schema.transcripts)
         .values({
@@ -347,7 +374,7 @@ describe("Database Schema", () => {
     test("insert and query game result", async () => {
       const gameId = randomUUID();
       await db.insert(schema.games)
-        .values({ id: gameId, config: "{}" });
+        .values({ id: gameId, slug: `test-${gameId}`, config: "{}" });
 
       const resultId = randomUUID();
       const tokenUsage = {
@@ -379,7 +406,7 @@ describe("Database Schema", () => {
     test("one result per game (unique constraint)", async () => {
       const gameId = randomUUID();
       await db.insert(schema.games)
-        .values({ id: gameId, config: "{}" });
+        .values({ id: gameId, slug: `test-${gameId}`, config: "{}" });
 
       await db.insert(schema.gameResults)
         .values({
@@ -407,7 +434,7 @@ describe("Database Schema", () => {
     test("draw game has null winnerId", async () => {
       const gameId = randomUUID();
       await db.insert(schema.games)
-        .values({ id: gameId, config: "{}" });
+        .values({ id: gameId, slug: `test-${gameId}`, config: "{}" });
 
       await db.insert(schema.gameResults)
         .values({
@@ -436,7 +463,7 @@ describe("Database Schema", () => {
       const gameId = randomUUID();
       const ownerEpoch = randomUUID();
       await db.insert(schema.games)
-        .values({ id: gameId, config: "{}", status: "in_progress" });
+        .values({ id: gameId, slug: `test-${gameId}`, config: "{}", status: "in_progress" });
       await db.insert(schema.gameRunOwners)
         .values({
           id: randomUUID(),
@@ -635,7 +662,7 @@ describe("Database Schema", () => {
 
       const invalidGameId = randomUUID();
       await db.insert(schema.games)
-        .values({ id: invalidGameId, config: "{}" });
+        .values({ id: invalidGameId, slug: `test-${invalidGameId}`, config: "{}" });
 
       let threw = false;
       try {
@@ -867,6 +894,7 @@ describe("Database Schema", () => {
       await db.insert(schema.games)
         .values({
           id: gameId,
+          slug: `test-${gameId}`,
           config: JSON.stringify({ maxRounds: 10 }),
           status: "waiting",
           createdById: userId1,

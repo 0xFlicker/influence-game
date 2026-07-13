@@ -14,11 +14,16 @@ import {
   type FillGameResponse,
   type GameStatus,
   type GameSummary,
-  type ModelTier,
-  type TrackType,
 } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { ACTIVE_GAME } from "@/lib/product-identity";
+import {
+  gameCategoryLabel,
+  gameCategoryValue,
+  gameDisplayName,
+  gameHref,
+  type GameCategoryValue,
+} from "@/lib/game-identity";
 
 function phaseLabel(phase: string): string {
   const labels: Record<string, string> = {
@@ -52,13 +57,11 @@ function progressPct(game: GameSummary): number {
 }
 
 type StatusFilter = "all" | GameStatus;
-type TierFilter = "all" | ModelTier;
-type TrackFilter = "all" | TrackType;
+type CategoryFilter = "all" | GameCategoryValue;
 
 interface FiltersState {
   status: StatusFilter;
-  tier: TierFilter;
-  track: TrackFilter;
+  category: CategoryFilter;
   search: string;
 }
 
@@ -90,6 +93,7 @@ function GameCard({
   const isReadyToStart = joinedPlayers >= game.playerCount;
   const slotsInfo = isJoinable ? `${joinedPlayers}/${game.playerCount} joined` : undefined;
   const pct = progressPct(game);
+  const categoryLabel = gameCategoryLabel(game);
 
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -172,20 +176,20 @@ function GameCard({
   return (
     <>
       <div
-        onClick={() => router.push(`/games/${game.slug ?? game.id}`)}
+        onClick={() => router.push(gameHref(game))}
         className="influence-panel rounded-xl p-5 transition-colors cursor-pointer"
       >
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 mb-2 flex-wrap">
-              <span className="text-text-primary font-semibold">Game #{game.gameNumber}</span>
+              <span className="text-text-primary font-semibold">{gameDisplayName(game)}</span>
               <span className="text-xs px-2 py-0.5 rounded-sm bg-emerald-500/20 text-emerald-200 border border-emerald-500/35 font-semibold">
                 {ACTIVE_GAME.badgeLabel}
               </span>
               <StatusBadge status={game.status} />
-              {game.trackType === "free" && (
+              {categoryLabel && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-900/40 text-emerald-400 border border-emerald-900/60 font-medium">
-                  Free
+                  {categoryLabel}
                 </span>
               )}
               <span className="text-xs px-2 py-0.5 rounded-full bg-surface-raised/80 text-text-secondary font-mono border border-border-active/50">
@@ -321,7 +325,7 @@ function GameCard({
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-zinc-900 border border-white/10 rounded-xl p-6 max-w-sm w-full mx-4">
             <p className="text-white text-sm mb-4">
-              Hide game <strong>#{game.gameNumber}</strong> from public lists? It can be restored from Game History.
+              Hide game <strong>{gameDisplayName(game)}</strong> from public lists? It can be restored from Game History.
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -373,7 +377,7 @@ interface GamesBrowserProps {
 
 export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
   const { hasPermission } = usePermissions();
-  const [filters, setFilters] = useState<FiltersState>({ status: "all", tier: "all", track: "all", search: "" });
+  const [filters, setFilters] = useState<FiltersState>({ status: "all", category: "all", search: "" });
   const [games, setGames] = useState<GameSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -444,11 +448,10 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
   const filtered = games
     .filter((g) => {
       if (filters.status !== "all" && g.status !== filters.status) return false;
-      if (filters.tier !== "all" && g.modelTier !== filters.tier) return false;
-      if (filters.track !== "all" && (g.trackType ?? "custom") !== filters.track) return false;
+      if (filters.category !== "all" && gameCategoryValue(g) !== filters.category) return false;
       if (searchQuery) {
         const modelLabel = formatGameModelLabel(g.modelSelection, g.modelTier, g.modelLabel);
-        const haystack = `Game #${g.gameNumber} ${ACTIVE_GAME.name} ${g.winner ?? ""} ${g.winnerPersona ?? ""} ${modelLabel} ${g.modelTier} ${g.trackType ?? ""}`.toLowerCase();
+        const haystack = `${g.slug} ${g.season?.name ?? ""} ${ACTIVE_GAME.name} ${g.winner ?? ""} ${g.winnerPersona ?? ""} ${modelLabel} ${g.trackType ?? ""}`.toLowerCase();
         if (!haystack.includes(searchQuery)) return false;
       }
       return true;
@@ -467,11 +470,21 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
     { value: "completed", label: "Done" },
   ];
 
-  const tierOptions: { value: TierFilter; label: string }[] = [
-    { value: "all", label: "Any tier" },
-    { value: "budget", label: "Budget" },
-    { value: "standard", label: "Standard" },
-    { value: "premium", label: "Premium" },
+  const seasonOptions = Array.from(
+    new Map(games.flatMap((game) => game.season ? [[game.season.id, game.season]] : [])).values(),
+  ).sort((a, b) => a.name.localeCompare(b.name));
+  const categoryOptions: Array<{ value: CategoryFilter; label: string }> = [
+    { value: "all", label: "All games" },
+    ...seasonOptions.map((season) => ({
+      value: `season:${season.id}` as const,
+      label: season.name,
+    })),
+    ...(games.some((game) => !game.season && game.trackType === "free")
+      ? [{ value: "free" as const, label: "Free" }]
+      : []),
+    ...(games.some((game) => !game.season && (game.trackType ?? "custom") === "custom")
+      ? [{ value: "custom" as const, label: "Custom" }]
+      : []),
   ];
 
   if (loading) {
@@ -519,25 +532,16 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
           </div>
 
           <select
-            value={filters.tier}
-            onChange={(e) => setFilters((f) => ({ ...f, tier: e.target.value as TierFilter }))}
+            value={filters.category}
+            onChange={(e) => setFilters((f) => ({ ...f, category: e.target.value as CategoryFilter }))}
             className="influence-field text-xs px-3 py-1.5 rounded-lg"
+            aria-label="Game category"
           >
-            {tierOptions.map((opt) => (
-              <option key={opt.value} value={opt.value} className="bg-[#111118]">
-                {opt.label}
+            {categoryOptions.map((option) => (
+              <option key={option.value} value={option.value} className="bg-[#111118]">
+                {option.label}
               </option>
             ))}
-          </select>
-
-          <select
-            value={filters.track}
-            onChange={(e) => setFilters((f) => ({ ...f, track: e.target.value as TrackFilter }))}
-            className="influence-field text-xs px-3 py-1.5 rounded-lg"
-          >
-            <option value="all" className="bg-[#111118]">Any track</option>
-            <option value="custom" className="bg-[#111118]">Custom</option>
-            <option value="free" className="bg-[#111118]">Free</option>
           </select>
 
           <div className="ml-auto flex items-center gap-3">

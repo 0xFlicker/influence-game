@@ -40,6 +40,8 @@ import {
 import { getAdminPostgameMedia } from "../services/postgame-media.js";
 import { requestPostgameMedia, type PostgameMediaRequestAction } from "../services/postgame-media-coordinator.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
+import { getGameSeasonIdentityMap } from "../lib/game-season.js";
+import { generateUniqueSlug } from "../lib/slug.js";
 import { randomUUID } from "crypto";
 import { getPublicDisplayName } from "../lib/display-name.js";
 import { removeStandingDailyAgentByAdmin } from "../services/queue-enrollment.js";
@@ -558,6 +560,7 @@ export function createAdminRoutes(db: DrizzleDB) {
     const rows = await db.select().from(schema.games);
     const kernelHealthByGameId = await getRedactedKernelHealthByGameId(db, rows.map((game) => game.id));
     const costSummaryByGameId = await getGameCostSummaryMap(db, rows.map((game) => game.id));
+    const seasonById = await getGameSeasonIdentityMap(db, rows.map((game) => game.seasonId));
 
     const summaries = await Promise.all(rows.map(async (game) => {
       const config = JSON.parse(game.config);
@@ -580,8 +583,7 @@ export function createAdminRoutes(db: DrizzleDB) {
 
       return {
         id: game.id,
-        slug: game.slug ?? undefined,
-        gameNumber: 0, // populated below
+        slug: game.slug,
         status: game.status,
         playerCount: game.maxPlayers ?? config.maxPlayers ?? players.length,
         currentRound: 0,
@@ -596,6 +598,8 @@ export function createAdminRoutes(db: DrizzleDB) {
         visibility: config.visibility ?? "public",
         viewerMode: config.viewerMode ?? "speedrun",
         trackType: game.trackType,
+        seasonId: game.seasonId ?? undefined,
+        season: game.seasonId ? seasonById.get(game.seasonId) : undefined,
         winner: winnerPersona?.name ?? undefined,
         winnerPersona: winnerPersona?.personality ?? undefined,
         errorInfo: config.errorInfo ?? undefined,
@@ -608,11 +612,6 @@ export function createAdminRoutes(db: DrizzleDB) {
         cost: costSummaryByGameId.get(game.id) ?? null,
       };
     }));
-
-    // Assign game numbers by creation order
-    summaries.forEach((s, i) => {
-      s.gameNumber = i + 1;
-    });
 
     return c.json(summaries);
   });
@@ -974,6 +973,15 @@ export function createAdminRoutes(db: DrizzleDB) {
 
         slug = `${slug}-copy-${maxN + 1}`;
       }
+    }
+    if (!slug) {
+      slug = await generateUniqueSlug(async (candidate) => {
+        const existing = await db
+          .select({ id: schema.games.id })
+          .from(schema.games)
+          .where(eq(schema.games.slug, candidate));
+        return existing.length > 0;
+      });
     }
 
     // UUID remapping tables

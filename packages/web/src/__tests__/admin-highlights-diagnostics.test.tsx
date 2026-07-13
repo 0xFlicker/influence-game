@@ -190,7 +190,6 @@ function adminGame(overrides: Partial<AdminGameSummary> = {}): AdminGameSummary 
   return {
     id: "game-vast-plum-bay",
     slug: "vast-plum-bay",
-    gameNumber: 42,
     status: "completed",
     playerCount: 10,
     currentRound: 8,

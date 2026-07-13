@@ -20,7 +20,6 @@ function game(): GameDetail {
   return {
     id: "game-1",
     slug: "vast-violet-code",
-    gameNumber: 12,
     status: "completed",
     currentRound: 1,
     maxRounds: 8,
@@ -81,7 +80,7 @@ describe("MatchWatchShell", () => {
     expect(html).toContain('data-testid="match-watch-shell"');
     expect(html).toContain("INFLUENCE");
     expect(html).toContain("Watch Room");
-    expect(html).toContain("VAST-VIOLET-CODE");
+    expect(html).toContain("vast-violet-code");
     expect(textHtml).toContain("Round 1 Replay");
     expect(html).toContain("Cast &amp; Status");
     expect(html).toContain('aria-label="Cast selection"');

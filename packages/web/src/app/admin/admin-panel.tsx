@@ -70,12 +70,12 @@ function GameCard({
 
   return (
     <div
-      onClick={() => router.push(`/games/${game.slug ?? game.id}`)}
+      onClick={() => router.push(`/games/${game.slug}`)}
       className="border border-white/10 rounded-xl p-5 flex items-start justify-between gap-4 cursor-pointer hover:border-white/20 transition-colors"
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-3 mb-2">
-          <span className="text-white font-semibold">#{game.gameNumber}</span>
+          <span className="text-white font-semibold">{game.slug}</span>
           <span className="text-white/50 text-sm">
             {game.playerCount}-player · Round {game.currentRound}/{game.maxRounds} ·{" "}
             {formatGameModelLabel(game.modelSelection, game.modelTier, game.modelLabel)}
@@ -103,7 +103,7 @@ function GameCard({
         <AdminCostPill
           summary={game.cost}
           onClick={onOpenCosts}
-          ariaLabel={`Open cost details for game #${game.gameNumber}`}
+          ariaLabel={`Open cost details for game ${game.slug}`}
         />
         {canStop && (
           <div className="flex items-center gap-2">
@@ -196,12 +196,12 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
 
   return (
     <div
-      onClick={() => router.push(`/games/${game.slug ?? game.id}`)}
+      onClick={() => router.push(`/games/${game.slug}`)}
       className="border border-white/10 rounded-xl p-5 flex items-center justify-between gap-4 cursor-pointer hover:border-white/20 transition-colors"
     >
       <div>
         <div className="flex items-center gap-3 mb-1">
-          <span className="text-white font-semibold">#{game.gameNumber}</span>
+          <span className="text-white font-semibold">{game.slug}</span>
           <span className="text-white/50 text-sm">
             {game.playerCount}-player · {filling ? `${game.playerCount}/${game.playerCount} slots filled` : "Not started"} · {formatGameModelLabel(game.modelSelection, game.modelTier, game.modelLabel)}
           </span>
@@ -262,7 +262,7 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-zinc-900 border border-white/10 rounded-xl p-6 max-w-sm w-full mx-4">
             <p className="text-white text-sm mb-4">
-              Hide game <strong>#{game.gameNumber}</strong> from public lists? It can be restored from Game History.
+              Hide game <strong>{game.slug}</strong> from public lists? It can be restored from Game History.
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -372,10 +372,10 @@ function RecentGameRow({
 
   return (
     <tr
-      onClick={() => router.push(`/games/${game.slug ?? game.id}`)}
+      onClick={() => router.push(`/games/${game.slug}`)}
       className="border-t border-white/5 hover:bg-white/[0.02] transition-colors cursor-pointer"
     >
-      <td className="py-3 px-4 text-white/60 text-sm">#{game.gameNumber}</td>
+      <td className="py-3 px-4 text-white/60 text-sm">{game.slug}</td>
       <td className="py-3 px-4 text-white text-sm">
         {game.winner ? (
           <span>
@@ -397,7 +397,7 @@ function RecentGameRow({
         <AdminCostPill
           summary={game.cost}
           onClick={onOpenCosts}
-          ariaLabel={`Open cost details for game #${game.gameNumber}`}
+          ariaLabel={`Open cost details for game ${game.slug}`}
         />
       </td>
       <td className="py-3 px-4">
@@ -431,7 +431,7 @@ function RecentGameRow({
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={(e) => e.stopPropagation()}>
             <div className="bg-zinc-900 border border-amber-500/30 rounded-xl p-6 max-w-sm w-full mx-4">
               <p className="text-white text-sm mb-4">
-                Void failed game <strong>#{game.gameNumber}</strong>? This ends it permanently and releases its players for future queues.
+                Void failed game <strong>{game.slug}</strong>? This ends it permanently and releases its players for future queues.
               </p>
               <div className="flex justify-end gap-2">
                 <button
@@ -454,7 +454,7 @@ function RecentGameRow({
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={(e) => e.stopPropagation()}>
             <div className="bg-zinc-900 border border-white/10 rounded-xl p-6 max-w-sm w-full mx-4">
               <p className="text-white text-sm mb-4">
-                Hide game <strong>#{game.gameNumber}</strong> from public lists? It can be restored from Game History.
+                Hide game <strong>{game.slug}</strong> from public lists? It can be restored from Game History.
               </p>
               <div className="flex justify-end gap-2">
                 <button
@@ -607,7 +607,7 @@ export function AdminPanel() {
             <table className="min-w-[72rem] w-full">
               <thead>
                 <tr className="border-b border-amber-900/30">
-                  {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", "Trailer", ""].map(
+                  {["Slug", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", "Trailer", ""].map(
                     (h) => (
                       <th
                         key={h}
@@ -685,7 +685,7 @@ export function AdminPanel() {
             <table className="min-w-[72rem] w-full">
               <thead>
                 <tr className="border-b border-white/10">
-                  {["#", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", "Trailer", ""].map(
+                  {["Slug", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", "Trailer", ""].map(
                     (h) => (
                       <th
                         key={h}

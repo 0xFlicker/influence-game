@@ -244,6 +244,7 @@ describe("CognitiveArtifactReadModel", () => {
     await db.insert(schema.users).values({ id: creatorUserId });
     await db.insert(schema.games).values({
       id: gameId,
+      slug: `test-${gameId}`,
       config: "{}",
       createdById: creatorUserId,
       cognitiveArtifactCaptureVersion: 0,
@@ -346,6 +347,7 @@ describe("CognitiveArtifactReadModel", () => {
   ): Promise<void> {
     await db.insert(schema.games).values({
       id: gameId,
+      slug: `test-${gameId}`,
       config: "{}",
       status: "in_progress",
       cognitiveArtifactCaptureVersion: params.captureVersion,

@@ -45,7 +45,7 @@ export type DurableRunDiagnostic =
 
 export interface DurableRunGameIdentity {
   id: string;
-  slug?: string;
+  slug: string;
   status: GameStatus;
   trackType: TrackType;
   createdAt: string;
@@ -300,7 +300,7 @@ async function getEvidenceSummary(
 
 interface DurableRunGameRow {
   id: string;
-  slug: string | null;
+  slug: string;
   status: GameStatus;
   trackType: TrackType;
   createdAt: string;
@@ -519,7 +519,7 @@ export async function getDurableRunInspection(
         schemaVersion: 2,
         game: {
           id: game.id,
-          ...(game.slug && { slug: game.slug }),
+          slug: game.slug,
           status: game.status,
           trackType: game.trackType,
           createdAt: game.createdAt,

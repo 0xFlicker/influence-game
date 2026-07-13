@@ -239,6 +239,20 @@
       "when": 1783881569991,
       "tag": "0033_curved_quasar",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1783959181062,
+      "tag": "0034_premium_mantis",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1783959640321,
+      "tag": "0035_big_human_robot",
+      "breakpoints": true
     }
   ]
 }

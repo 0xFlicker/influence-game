@@ -703,7 +703,7 @@ export function GameViewer({
   }
 
   if (game.status === "completed" && completedMode === "results") {
-    return <CompletedResultsReview gameId={game.slug ?? game.id} game={game} />;
+    return <CompletedResultsReview gameId={game.slug} game={game} />;
   }
 
   if (game.status === "completed" && completedMode === "replay" && replayLoading && messages.length === 0) {
@@ -725,7 +725,7 @@ export function GameViewer({
           This completed game does not have replay messages available right now.
         </p>
         <button
-          onClick={() => router.push(completedGameModeHref(game.slug ?? game.id, "results"))}
+          onClick={() => router.push(completedGameModeHref(game.slug, "results"))}
           className="mt-2 rounded-lg bg-white/10 px-4 py-2 text-sm text-white/70 transition-colors hover:bg-white/15"
         >
           View results
@@ -737,9 +737,8 @@ export function GameViewer({
   if (game.status === "completed" && completedMode !== "replay") {
     return (
       <CompletedGameEntry
-        key={`completed-entry:${game.slug ?? game.id}`}
-        gameId={game.slug ?? game.id}
-        gameNumber={game.gameNumber}
+        key={`completed-entry:${game.slug}`}
+        gameId={game.slug}
         hasReplay={messages.length > 0 || completedMode !== "results"}
         initialMedia={initialPostgameMedia}
       />
@@ -822,7 +821,8 @@ export function GameViewer({
   const gameSummaryForJoin: GameSummary = {
     id: game.id,
     slug: game.slug,
-    gameNumber: game.gameNumber,
+    seasonId: game.seasonId,
+    season: game.season,
     status: game.status,
     playerCount: game.players.length,
     currentRound: game.currentRound,

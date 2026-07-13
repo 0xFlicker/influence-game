@@ -212,7 +212,7 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
           {/* Header */}
           <div className="flex items-start justify-between mb-6">
             <div>
-              <h2 className="text-xl font-bold text-text-primary">Join Game #{game.gameNumber}</h2>
+              <h2 className="text-xl font-bold text-text-primary">Join {game.slug}</h2>
               <p className="influence-copy text-sm mt-1">
                 {game.playerCount}-player · {formatGameModelLabel(game.modelSelection, game.modelTier, game.modelLabel)}
               </p>

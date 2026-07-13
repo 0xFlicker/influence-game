@@ -208,7 +208,7 @@ export class PrivateTraceReadModel {
 
   async listDurableRuns(limit = 20): Promise<Array<{
     id: string;
-    slug?: string;
+    slug: string;
     status: string;
     startedAt?: string;
     ownerStatus?: string;
@@ -234,7 +234,7 @@ export class PrivateTraceReadModel {
       const traceManifestCount = (await this.listManifests(game.id, 1)).totalCount;
       result.push({
         id: game.id,
-        ...(game.slug && { slug: game.slug }),
+        slug: game.slug,
         status: game.status,
         ...(game.startedAt && { startedAt: game.startedAt }),
         ...(game.ownerStatus && { ownerStatus: game.ownerStatus }),

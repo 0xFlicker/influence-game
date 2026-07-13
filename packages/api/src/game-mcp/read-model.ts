@@ -62,7 +62,7 @@ export type ProductionGameMcpAccess = Pick<GameMcpAuthContext, "authProfile" | "
 
 export interface ProductionGameMcpGameIdentity {
   id: string;
-  slug?: string;
+  slug: string;
   status: string;
   trackType: string;
   rated: boolean;
@@ -1482,7 +1482,7 @@ function strategicGradeForPlayer(player: PostgamePlayerGameSummary): {
 
 function gameIdentity(row: {
   id: string;
-  slug: string | null;
+  slug: string;
   status: string;
   trackType: string;
   seasonId: string | null;
@@ -1492,7 +1492,7 @@ function gameIdentity(row: {
 }): ProductionGameMcpGameIdentity {
   return {
     id: row.id,
-    ...(row.slug && { slug: row.slug }),
+    slug: row.slug,
     status: row.status,
     trackType: row.trackType,
     rated: row.seasonId !== null,

@@ -119,7 +119,7 @@ export function CompletedResultsReview({
   }, game.players);
   const { overview, timeline, voteMatrix, agentCards } = model;
   const playerById = new Map(game.players.map((player) => [player.id, player]));
-  const gameSlug = game.slug ?? game.id;
+  const gameSlug = game.slug;
 
   return (
     <section id="results" className="space-y-6" data-testid="completed-results-review">

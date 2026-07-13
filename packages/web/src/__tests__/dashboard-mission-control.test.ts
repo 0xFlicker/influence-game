@@ -6,7 +6,6 @@ function game(overrides: Partial<GameSummary> = {}): GameSummary {
   return {
     id: "game-1",
     slug: "strategic-sunset",
-    gameNumber: 1,
     status: "waiting",
     playerCount: 8,
     currentRound: 0,
@@ -44,7 +43,6 @@ function result(overrides: Partial<PlayerGameResult> = {}): PlayerGameResult {
   return {
     gameId: "game-result-1",
     gameSlug: "finished-firelight",
-    gameNumber: 7,
     agentName: "Atlas",
     persona: "strategic",
     placement: 2,

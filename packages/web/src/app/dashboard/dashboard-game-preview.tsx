@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { DashboardQueueSummary } from "./dashboard-mission-control";
 import type { GameSummary } from "@/lib/api";
+import { gameCategoryLabel, gameDisplayName, gameHref } from "@/lib/game-identity";
 
 interface DashboardGamePreviewProps {
   games: GameSummary[];
@@ -10,10 +11,6 @@ interface DashboardGamePreviewProps {
   loading: boolean;
   error: string | null;
   onJoin: (game: GameSummary) => void;
-}
-
-function gameHref(game: GameSummary): string {
-  return `/games/${game.slug ?? game.id}`;
 }
 
 function statusLabel(game: GameSummary): string {
@@ -68,16 +65,17 @@ export function DashboardGamePreview({
         </div>
       ) : (
         <div className="space-y-2">
-          {games.map((game) => (
-            <div key={game.id} className="influence-panel-muted rounded-lg p-3">
+          {games.map((game) => {
+            const categoryLabel = gameCategoryLabel(game);
+            return <div key={game.id} className="influence-panel-muted rounded-lg p-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="mb-1 flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-semibold text-text-primary">Game #{game.gameNumber}</p>
+                    <p className="text-sm font-semibold text-text-primary">{gameDisplayName(game)}</p>
                     <span className="influence-chip px-2 py-0.5 text-xs">{statusLabel(game)}</span>
-                    {game.trackType === "free" && (
+                    {categoryLabel && (
                       <span className="rounded-full border border-emerald-900/60 bg-emerald-900/40 px-2 py-0.5 text-xs font-medium text-emerald-400">
-                        Free
+                        {categoryLabel}
                       </span>
                     )}
                   </div>
@@ -99,8 +97,8 @@ export function DashboardGamePreview({
                   </Link>
                 )}
               </div>
-            </div>
-          ))}
+            </div>;
+          })}
         </div>
       )}
 

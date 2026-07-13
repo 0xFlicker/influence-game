@@ -97,7 +97,7 @@ export interface GameWatchFinalState {
 export interface GameWatchState {
   schemaVersion: 3;
   gameId: string;
-  slug?: string;
+  slug: string;
   status: GameStatus;
   source: GameWatchStateSource;
   currentRound: number;
@@ -123,7 +123,7 @@ export interface GameWatchState {
 export interface GameWatchReplayFrame {
   schemaVersion: 1;
   gameId: string;
-  slug?: string;
+  slug: string;
   sequence: number;
   eventType: string;
   timestamp: number;
@@ -135,7 +135,7 @@ export interface GameWatchReplayFrame {
 
 interface GameRow {
   id: string;
-  slug: string | null;
+  slug: string;
   config: string;
   status: GameStatus;
 }
@@ -229,7 +229,7 @@ export async function buildGameWatchState(
   return {
     schemaVersion: 3,
     gameId: game.id,
-    ...(game.slug && { slug: game.slug }),
+    slug: game.slug,
     status: game.status,
     source,
     currentRound,
@@ -301,7 +301,7 @@ export async function getGameWatchReplayFrames(
     frames.push({
       schemaVersion: 1,
       gameId: game.id,
-      ...(game.slug && { slug: game.slug }),
+      slug: game.slug,
       sequence: event.sequence,
       eventType: event.eventType,
       timestamp: Date.parse(event.envelope.timestamp),

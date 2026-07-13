@@ -137,7 +137,7 @@ console.log(`   Players: ${PLAYER_COUNT} | Model: ${MODEL_TIER} | Timing: ${TIMI
 
 // Step 1: Create game
 console.log("1. Creating game...");
-const game = await api<{ id: string; slug: string; gameNumber: number }>("POST", "/api/games", {
+const game = await api<{ id: string; slug: string }>("POST", "/api/games", {
   playerCount: PLAYER_COUNT,
   modelTier: MODEL_TIER,
   timingPreset: TIMING_PRESET,
@@ -145,7 +145,7 @@ const game = await api<{ id: string; slug: string; gameNumber: number }>("POST",
   viewerMode: "speedrun",
   visibility: "public",
 });
-console.log(`   Game #${game.gameNumber} created: ${game.slug} (${game.id})`);
+console.log(`   Game ${game.slug} created (${game.id})`);
 
 // Step 2: Fill with AI players
 if (!SKIP_FILL) {

@@ -119,7 +119,6 @@ describe("E2E: Full Game Flow", () => {
     const created = (await createRes.json()) as {
       id: string;
       slug: string;
-      gameNumber: number;
     };
     gameId = created.id;
     gameSlug = created.slug;
@@ -168,12 +167,12 @@ describe("E2E: Full Game Flow", () => {
 
         // Wait for game list to render (GamesBrowser fetches from API)
         await page.waitForFunction(
-          "document.body.innerText.includes('Game #') || document.body.innerText.includes('Open')",
+          `document.body.innerText.includes(${JSON.stringify(gameSlug)})`,
           { timeout: 20000 },
         );
 
         const pageText = await getPageText(page);
-        expect(pageText).toContain("Game #");
+        expect(pageText).toContain(gameSlug);
 
         // Navigate to game detail page by slug
         await page.goto(`${servers.webUrl}/games/${gameSlug}`, {
@@ -182,12 +181,12 @@ describe("E2E: Full Game Flow", () => {
         });
 
         await page.waitForFunction(
-          "document.body.innerText.includes('Game #')",
+          `document.body.innerText.includes(${JSON.stringify(gameSlug)})`,
           { timeout: 15000 },
         );
 
         const detailText = await getPageText(page);
-        expect(detailText).toContain("Game #");
+        expect(detailText).toContain(gameSlug);
       } catch (err) {
         await screenshotOnFailure(page, "scenario1-failure");
         throw err;
