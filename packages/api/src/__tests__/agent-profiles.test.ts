@@ -16,7 +16,7 @@ import { createGameRoutes } from "../routes/games.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { randomUUID } from "crypto";
 import { setupTestDB } from "./test-utils.js";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { joinQueue } from "../services/queue-enrollment.js";
 import { createSeason } from "../services/seasons.js";
 import { avatarProfileFingerprint } from "../services/avatar-generation.js";
@@ -38,6 +38,44 @@ beforeAll(() => {
 
 const USER_A_ID = "user-a-id";
 const USER_B_ID = "user-b-id";
+const VALID_DRAFT_PROFILE = {
+  name: "Mira",
+  gender: "female" as const,
+  backstory: null,
+  personality: "A patient mediator.",
+  strategyStyle: null,
+  personaKey: "diplomat",
+};
+
+async function insertCompletedDraft(
+  db: DrizzleDB,
+  input: {
+    id: string;
+    agentProfileId: string;
+    userId?: string;
+    profile?: typeof VALID_DRAFT_PROFILE;
+  },
+) {
+  const profile = input.profile ?? VALID_DRAFT_PROFILE;
+  await db.insert(schema.avatarGenerationRequests).values({
+    id: input.id,
+    userId: input.userId ?? USER_A_ID,
+    agentProfileId: input.agentProfileId,
+    purpose: "agent_profile_completion",
+    status: "completed",
+    triggerSource: "web_ai_help_draft",
+    provider: "katana",
+    model: "gen",
+    safeMetadata: {
+      draftProfile: profile,
+      profileFingerprint: avatarProfileFingerprint(profile),
+      avatarUrl: "/api/uploads/local?key=pfp%2Fgenerated%2Fmira.png",
+    },
+    createdAt: "2026-07-12T00:00:00.000Z",
+    updatedAt: "2026-07-12T00:01:00.000Z",
+    completedAt: "2026-07-12T00:01:00.000Z",
+  });
+}
 
 async function setupApp() {
   const db = await setupTestDB();
@@ -343,6 +381,114 @@ describe("Agent Profile API", () => {
       );
       expect(duplicate.status).toBe(400);
     });
+
+    test("does not consume a completed draft when profile validation fails", async () => {
+      const profile = {
+        ...VALID_DRAFT_PROFILE,
+        name: "M".repeat(81),
+      };
+      await insertCompletedDraft(db, {
+        id: "invalid-profile-draft-request",
+        agentProfileId: "draft-invalid-mira",
+        profile,
+      });
+
+      const response = await app.request("/api/agent-profiles", jsonReq({
+        ...profile,
+        avatarGenerationRequestId: "invalid-profile-draft-request",
+      }, tokenA));
+      expect(response.status).toBe(400);
+
+      const [request] = await db.select().from(schema.avatarGenerationRequests)
+        .where(eq(schema.avatarGenerationRequests.id, "invalid-profile-draft-request"));
+      expect(request?.safeMetadata).not.toHaveProperty("consumedAt");
+    });
+
+    test("does not reveal or mutate another owner's completed draft", async () => {
+      await insertCompletedDraft(db, {
+        id: "foreign-owner-draft-request",
+        agentProfileId: "draft-foreign-owner",
+      });
+
+      const response = await app.request("/api/agent-profiles", jsonReq({
+        ...VALID_DRAFT_PROFILE,
+        avatarGenerationRequestId: "foreign-owner-draft-request",
+      }, tokenB));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: "Draft portrait request not found." });
+
+      const [request] = await db.select().from(schema.avatarGenerationRequests)
+        .where(eq(schema.avatarGenerationRequests.id, "foreign-owner-draft-request"));
+      expect(request?.safeMetadata).not.toHaveProperty("consumedAt");
+      expect(await db.select().from(schema.agentProfiles)).toHaveLength(0);
+      expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
+    });
+
+    test("allows at most one concurrent adoption of a completed draft", async () => {
+      await insertCompletedDraft(db, {
+        id: "concurrent-draft-request",
+        agentProfileId: "draft-concurrent",
+      });
+      const create = () => app.request("/api/agent-profiles", jsonReq({
+        ...VALID_DRAFT_PROFILE,
+        avatarGenerationRequestId: "concurrent-draft-request",
+      }, tokenA));
+
+      const responses = await Promise.all([create(), create()]);
+      expect(responses.map((response) => response.status).sort()).toEqual([201, 400]);
+      expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
+      expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
+      expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(1);
+    });
+
+    for (const failureTable of ["agent_profiles", "agent_revisions", "avatar_change_events"] as const) {
+      test(`rolls back draft adoption when ${failureTable} insertion fails and allows retry`, async () => {
+        const requestId = `rollback-${failureTable}-draft-request`;
+        const triggerName = `fail_draft_adoption_${failureTable}`;
+        await insertCompletedDraft(db, {
+          id: requestId,
+          agentProfileId: `draft-rollback-${failureTable}`,
+        });
+        await db.execute(sql.raw(`
+          CREATE OR REPLACE FUNCTION ${triggerName}() RETURNS trigger AS $$
+          BEGIN
+            RAISE EXCEPTION 'injected ${failureTable} insertion failure';
+          END;
+          $$ LANGUAGE plpgsql;
+          CREATE TRIGGER ${triggerName}
+            BEFORE INSERT ON ${failureTable}
+            FOR EACH ROW EXECUTE FUNCTION ${triggerName}();
+        `));
+
+        const create = () => app.request("/api/agent-profiles", jsonReq({
+          ...VALID_DRAFT_PROFILE,
+          avatarGenerationRequestId: requestId,
+        }, tokenA));
+        let failed: Response;
+        try {
+          failed = await create();
+        } finally {
+          await db.execute(sql.raw(`
+            DROP TRIGGER IF EXISTS ${triggerName} ON ${failureTable};
+            DROP FUNCTION IF EXISTS ${triggerName}();
+          `));
+        }
+        expect(failed.status).toBe(500);
+
+        const [request] = await db.select().from(schema.avatarGenerationRequests)
+          .where(eq(schema.avatarGenerationRequests.id, requestId));
+        expect(request?.safeMetadata).not.toHaveProperty("consumedAt");
+        expect(await db.select().from(schema.agentProfiles)).toHaveLength(0);
+        expect(await db.select().from(schema.agentRevisions)).toHaveLength(0);
+        expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
+
+        const retried = await create();
+        expect(retried.status).toBe(201);
+        expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
+        expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
+        expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(1);
+      });
+    }
 
     test("keeps an explicit upload authoritative over an unrelated draft", async () => {
       await db.insert(schema.avatarGenerationRequests).values({
