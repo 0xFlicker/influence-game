@@ -53,8 +53,8 @@ describe("free queue season admission", () => {
     const db = await setupTestDB();
     const operatorId = await insertUser(db, "operator");
     const queued = await Promise.all([
-      createQueuedAgent(db, "alice", "Atlas"),
-      createQueuedAgent(db, "bob", "Mira"),
+      createQueuedAgent(db, "alice", "Atlas Daily"),
+      createQueuedAgent(db, "bob", "Mira Daily"),
     ]);
     const season = await createSeason(db, {
       slug: "daily-summer",
@@ -67,6 +67,7 @@ describe("free queue season admission", () => {
       permissions: ["schedule_free_game"],
     });
     const app = new Hono().route("/", createFreeQueueRoutes(db));
+    const standingBefore = await db.select().from(schema.freeGameQueue);
     const response = await app.request("/api/free-queue/draw", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
@@ -106,15 +107,16 @@ describe("free queue season admission", () => {
       expect(seat?.agentRevisionId).toBeTruthy();
     }
     const standingEntries = await db.select().from(schema.freeGameQueue);
-    expect(standingEntries).toHaveLength(2);
+    expect(standingEntries).toEqual(standingBefore);
     expect(standingEntries.every((entry) => entry.consecutiveMisses === 0)).toBe(true);
+    expect(await db.select().from(schema.competitionRatingSnapshots)).toEqual([]);
   });
 
   test("draw remains available but explicitly unrated without an active season", async () => {
     const db = await setupTestDB();
     const operatorId = await insertUser(db, "operator-unrated");
-    await createQueuedAgent(db, "carol", "Vera");
-    await createQueuedAgent(db, "dan", "Echo");
+    await createQueuedAgent(db, "carol", "Vera Daily");
+    await createQueuedAgent(db, "dan", "Echo Daily");
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],
@@ -130,14 +132,14 @@ describe("free queue season admission", () => {
     expect(body).toMatchObject({ rated: false, seasonId: null });
     const seats = await db.select().from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.gameId, body.gameId));
-    expect(seats.filter((seat) => seat.agentProfileId).every((seat) => seat.agentRevisionId === null)).toBe(true);
+    expect(seats.filter((seat) => seat.agentProfileId).every((seat) => seat.agentRevisionId !== null)).toBe(true);
   });
 
   test("concurrent draw requests create only one Daily Free game", async () => {
     const db = await setupTestDB();
     const operatorId = await insertUser(db, "operator-race");
-    await createQueuedAgent(db, "race-alice", "Nova");
-    await createQueuedAgent(db, "race-bob", "Orion");
+    await createQueuedAgent(db, "race-alice", "Nova Daily");
+    await createQueuedAgent(db, "race-bob", "Orion Daily");
     const token = await createSessionToken(operatorId, {
       roles: ["scheduler"],
       permissions: ["schedule_free_game"],

@@ -1115,7 +1115,7 @@ describe("Agent Profile API", () => {
       expect(await res.json()).toMatchObject({ code: "rated_history_exists" });
     });
 
-    test("clears agentProfileId references in game_players", async () => {
+    test("clears agentProfileId references only from historical game_players", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
         jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
@@ -1140,13 +1140,45 @@ describe("Agent Profile API", () => {
         .where(eq(schema.gamePlayers.gameId, gameId));
       expect(gamePlayers[0]!.agentProfileId).toBe(profileId);
 
+      await db.update(schema.games).set({ status: "completed", endedAt: new Date().toISOString() })
+        .where(eq(schema.games.id, gameId));
+
       // Delete the profile
-      await app.request(`/api/agent-profiles/${profileId}`, authDelete(tokenA));
+      const deleted = await app.request(`/api/agent-profiles/${profileId}`, authDelete(tokenA));
+      expect(deleted.status).toBe(200);
 
       // Verify agentProfileId is now null
       gamePlayers = await db.select().from(schema.gamePlayers)
         .where(eq(schema.gamePlayers.gameId, gameId));
       expect(gamePlayers[0]!.agentProfileId).toBeNull();
+    });
+
+    test("refuses to detach an agent from a live roster", async () => {
+      const createRes = await app.request(
+        "/api/agent-profiles",
+        jsonReq({ name: "Live Aster", personality: "Strategic" }, tokenA),
+      );
+      const { id: profileId } = await createRes.json() as { id: string };
+      const gameRes = await app.request(
+        "/api/games",
+        jsonReq({ playerCount: 6, modelTier: "budget", timingPreset: "fast" }, tokenA),
+      );
+      const { id: gameId } = await gameRes.json() as { id: string };
+      expect((await app.request(
+        `/api/games/${gameId}/join`,
+        jsonReq({ agentProfileId: profileId }, tokenA),
+      )).status).toBe(201);
+      const before = (await db.select().from(schema.gamePlayers)
+        .where(eq(schema.gamePlayers.gameId, gameId)))[0]!;
+
+      const response = await app.request(`/api/agent-profiles/${profileId}`, authDelete(tokenA));
+
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({ code: "active_game_exists" });
+      expect((await db.select().from(schema.gamePlayers)
+        .where(eq(schema.gamePlayers.id, before.id)))[0]).toEqual(before);
+      expect((await db.select().from(schema.agentProfiles)
+        .where(eq(schema.agentProfiles.id, profileId)))[0]?.id).toBe(profileId);
     });
   });
 

@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import type { GameModelSelection } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
@@ -9,12 +8,10 @@ import {
   compareAgentStandings,
   compareArchitectStandings,
   earliestFinalTotalReachedAt,
-  initialCompetitionRating,
 } from "./season-policy.js";
 import {
-  resolveGameEffectiveAgentRevisionInTransaction,
-  resolveFreeTrackEffectiveRuntimeSnapshot,
-} from "./agent-revisions.js";
+  projectWaitingOwnedRosterInTransaction,
+} from "./owned-seat-projection.js";
 
 type DrizzleTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 type DatabaseExecutor = DrizzleDB | DrizzleTransaction;
@@ -136,8 +133,7 @@ export async function bindFreeGameToActiveSeason(
   now = new Date().toISOString(),
 ): Promise<{ rated: boolean; seasonId: string | null }> {
   const admittedAt = normalizeTimestamp(now, "Roster admission time");
-  const game = (await tx.select().from(schema.games).where(eq(schema.games.id, gameId)).limit(1))[0];
-  if (!game) throw new SeasonStateError("Game not found.", "rated_roster_invalid");
+  const { game, seats: players } = await projectWaitingOwnedRosterInTransaction(tx, gameId);
   if (game.trackType !== "free") {
     throw new SeasonStateError("Only free-track games can enter a season.", "rated_roster_invalid");
   }
@@ -156,46 +152,7 @@ export async function bindFreeGameToActiveSeason(
   const season = await getActiveSeason(tx, admittedAt);
   if (!season) return { rated: false, seasonId: null };
 
-  const gameConfig = parseGameConfig(game.config);
-  const players = await tx.select().from(schema.gamePlayers)
-    .where(eq(schema.gamePlayers.gameId, gameId))
-    .orderBy(asc(schema.gamePlayers.id));
   assertOneOwnedSeatPerUser(players);
-
-  for (const player of players) {
-    if (!player.agentProfileId) continue;
-    if (!player.userId) {
-      throw new SeasonStateError(
-        `Owned agent seat ${player.id} is missing its owner.`,
-        "rated_roster_invalid",
-      );
-    }
-    const profile = (await tx.select().from(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.id, player.agentProfileId)).limit(1))[0];
-    if (!profile || profile.userId !== player.userId) {
-      throw new SeasonStateError(
-        `Seat ${player.id} does not reference an agent owned by its user.`,
-        "rated_roster_invalid",
-      );
-    }
-    const agentConfig = parseAgentConfig(player.agentConfig);
-    const revision = await resolveGameEffectiveAgentRevisionInTransaction(tx, {
-      profile,
-      effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile, {
-        modelSelection: gameConfig.modelSelection,
-        modelTier: gameConfig.modelTier,
-        temperature: agentConfig.temperature,
-      }),
-    });
-    await tx.update(schema.gamePlayers).set({ agentRevisionId: revision.revision.id })
-      .where(eq(schema.gamePlayers.id, player.id));
-    await captureCompetitionRatingSnapshot(tx, {
-      gameId,
-      agentProfileId: profile.id,
-      agentRevisionId: revision.revision.id,
-      capturedAt: admittedAt,
-    });
-  }
 
   await tx.update(schema.games).set({ seasonId: season.id })
     .where(and(eq(schema.games.id, gameId), sql`${schema.games.seasonId} IS NULL`));
@@ -256,137 +213,6 @@ export async function validateRatedGameRoster(
     }
   }
   return { rated: true };
-}
-
-/**
- * Serializes joins against the game row and returns the revision that must be
- * stored on an owned seat. Unrated games deliberately return null.
- */
-export async function prepareOwnedSeatAdmission(
-  tx: DrizzleTransaction,
-  input: {
-    gameId: string;
-    userId: string;
-    profile: typeof schema.agentProfiles.$inferSelect;
-    temperature?: number;
-  },
-): Promise<{
-  revisionId: string;
-  profile: typeof schema.agentProfiles.$inferSelect;
-} | null> {
-  await tx.execute(sql`SELECT id FROM games WHERE id = ${input.gameId} FOR UPDATE`);
-  const game = (await tx.select().from(schema.games)
-    .where(eq(schema.games.id, input.gameId)).limit(1))[0];
-  if (!game) throw new SeasonStateError("Game not found.", "rated_roster_invalid");
-  if (!game.seasonId) return null;
-  if (game.status !== "waiting" || game.startedAt) {
-    throw new SeasonStateError("This game is no longer accepting players.", "rated_roster_invalid");
-  }
-  const currentPlayers = await tx.select({
-    persona: schema.gamePlayers.persona,
-  }).from(schema.gamePlayers).where(eq(schema.gamePlayers.gameId, input.gameId));
-  if (currentPlayers.length >= game.maxPlayers) {
-    throw new SeasonStateError("This game is full.", "rated_roster_invalid");
-  }
-
-  const season = await requireSeasonForUpdate(tx, game.seasonId);
-  if (season.status !== "active") {
-    throw new SeasonStateError(
-      "This season is no longer accepting roster changes.",
-      "invalid_state",
-    );
-  }
-  const existingOwnerSeat = (await tx.select({ id: schema.gamePlayers.id })
-    .from(schema.gamePlayers).where(and(
-      eq(schema.gamePlayers.gameId, input.gameId),
-      eq(schema.gamePlayers.userId, input.userId),
-    )).limit(1))[0];
-  if (existingOwnerSeat) {
-    throw new SeasonStateError(
-      "Rated games allow only one owned agent per player account.",
-      "rated_roster_invalid",
-    );
-  }
-  await tx.execute(sql`
-    SELECT id
-    FROM agent_profiles
-    WHERE id = ${input.profile.id}
-    FOR UPDATE
-  `);
-  const profile = (await tx.select().from(schema.agentProfiles)
-    .where(eq(schema.agentProfiles.id, input.profile.id)).limit(1))[0];
-  if (!profile || profile.userId !== input.userId) {
-    throw new SeasonStateError(
-      "The rated seat agent is not owned by this player account.",
-      "rated_roster_invalid",
-    );
-  }
-  const normalizedName = profile.name.trim().toLowerCase();
-  const nameCollision = currentPlayers.some((player) => {
-    const persona = JSON.parse(player.persona) as { name?: unknown };
-    return typeof persona.name === "string"
-      && persona.name.trim().toLowerCase() === normalizedName;
-  });
-  if (nameCollision) {
-    throw new SeasonStateError(
-      "A player with that name already exists in this game.",
-      "rated_roster_invalid",
-    );
-  }
-  const gameConfig = parseGameConfig(game.config);
-  const revision = await resolveGameEffectiveAgentRevisionInTransaction(tx, {
-    profile,
-    effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile, {
-      modelSelection: gameConfig.modelSelection,
-      modelTier: gameConfig.modelTier,
-      temperature: input.temperature,
-    }),
-  });
-  await captureCompetitionRatingSnapshot(tx, {
-    gameId: input.gameId,
-    agentProfileId: input.profile.id,
-    agentRevisionId: revision.revision.id,
-    capturedAt: new Date().toISOString(),
-  });
-  return { revisionId: revision.revision.id, profile };
-}
-
-async function captureCompetitionRatingSnapshot(
-  tx: DrizzleTransaction,
-  input: {
-    gameId: string;
-    agentProfileId: string;
-    agentRevisionId: string;
-    capturedAt: string;
-  },
-): Promise<void> {
-  const current = (await tx.select({
-    mu: schema.agentCompetitionRatings.mu,
-    sigma: schema.agentCompetitionRatings.sigma,
-  }).from(schema.agentCompetitionRatings)
-    .where(eq(schema.agentCompetitionRatings.agentProfileId, input.agentProfileId))
-    .limit(1))[0];
-  const rating = current ?? initialCompetitionRating();
-  await tx.insert(schema.competitionRatingSnapshots).values({
-    id: randomUUID(),
-    gameId: input.gameId,
-    agentProfileId: input.agentProfileId,
-    agentRevisionId: input.agentRevisionId,
-    mu: rating.mu,
-    sigma: rating.sigma,
-    ratingPolicyVersion: COMPETITION_RATING_POLICY_VERSION,
-    capturedAt: input.capturedAt,
-  }).onConflictDoNothing();
-  const snapshot = (await tx.select().from(schema.competitionRatingSnapshots).where(and(
-    eq(schema.competitionRatingSnapshots.gameId, input.gameId),
-    eq(schema.competitionRatingSnapshots.agentProfileId, input.agentProfileId),
-  )).limit(1))[0];
-  if (!snapshot || snapshot.agentRevisionId !== input.agentRevisionId) {
-    throw new SeasonStateError(
-      `Rated game ${input.gameId} has a conflicting pregame rating snapshot for ${input.agentProfileId}.`,
-      "rated_roster_invalid",
-    );
-  }
 }
 
 export async function finalizeSeason(
@@ -570,30 +396,4 @@ function normalizeTimestamp(value: string, label: string): string {
     throw new SeasonStateError(`${label} must be a valid timestamp.`, "invalid_state");
   }
   return new Date(epoch).toISOString();
-}
-
-function parseGameConfig(value: string): {
-  modelSelection?: GameModelSelection | null;
-  modelTier?: string;
-} {
-  try {
-    return JSON.parse(value) as {
-      modelSelection?: GameModelSelection | null;
-      modelTier?: string;
-    };
-  } catch {
-    throw new SeasonStateError("Rated game has invalid configuration.", "rated_roster_invalid");
-  }
-}
-
-function parseAgentConfig(value: string): { temperature?: number } {
-  try {
-    const parsed = JSON.parse(value) as { temperature?: unknown };
-    if (parsed.temperature !== undefined && typeof parsed.temperature !== "number") {
-      throw new Error("invalid temperature");
-    }
-    return { temperature: parsed.temperature as number | undefined };
-  } catch {
-    throw new SeasonStateError("Rated seat has invalid agent configuration.", "rated_roster_invalid");
-  }
 }

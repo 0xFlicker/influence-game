@@ -49,6 +49,7 @@ import {
   QueueEnrollmentError,
 } from "../services/queue-enrollment.js";
 import { AgentProfileManagementError } from "../services/agent-profile-management.js";
+import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -319,37 +320,19 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
 
       // Add picked players to the game.
       for (const entry of picked) {
-        const profile = (await tx
-          .select()
-          .from(schema.agentProfiles)
-          .where(eq(schema.agentProfiles.id, entry.agentProfileId)))[0];
-
-        if (!profile) continue;
-
         const playerId = randomUUID();
-        const agentModel = resolveModelForTier("budget");
-        const persona = {
-          name: profile.name,
-          personality: profile.personality,
-          backstory: profile.backstory,
-          strategyHints: profile.strategyStyle,
-          personaKey: profile.personaKey,
-        };
-
-        await tx.insert(schema.gamePlayers).values({
-            id: playerId,
-            gameId,
-            userId: entry.userId,
-            agentProfileId: profile.id,
-            persona: JSON.stringify(persona),
-            agentConfig: JSON.stringify({ model: agentModel, temperature: 0.9 }),
-          });
+        const admitted = await admitOwnedSeatInTransaction(tx, {
+          playerId,
+          gameId,
+          userId: entry.userId,
+          agentProfileId: entry.agentProfileId,
+        });
 
         addedPlayers.push({
           playerId,
           userId: entry.userId,
-          agentProfileId: profile.id,
-          agentName: profile.name,
+          agentProfileId: admitted.projection.profile.id,
+          agentName: admitted.projection.profile.name,
         });
       }
 

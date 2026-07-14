@@ -58,7 +58,13 @@ import {
   tryRefreshGameWatchStateSummary,
 } from "../services/game-watch-state-summary.js";
 import { broadcastRaw } from "../services/ws-manager.js";
-import { prepareOwnedSeatAdmission, SeasonStateError } from "../services/seasons.js";
+import {
+  admitOwnedSeatInTransaction,
+  assertUnownedSeatAdmissionInTransaction,
+  lockWaitingGameForRosterWrite,
+  OwnedSeatProjectionError,
+  updateWaitingHouseSeatPersonaInTransaction,
+} from "../services/owned-seat-projection.js";
 import { getPublicGameCompetitionReceipts } from "../services/season-read-model.js";
 import { generateUniqueSlug } from "../lib/slug.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
@@ -408,7 +414,6 @@ export function createGameRoutes(db: DrizzleDB) {
     let resolvedBackstory: string | null = null;
     let resolvedStrategyHints: string | null = strategyHints ?? null;
     let resolvedPersonaKey: string | null = personaKey ?? null;
-    let resolvedProfileId: string | null = null;
     let resolvedProfile: typeof schema.agentProfiles.$inferSelect | null = null;
 
     if (agentProfileId) {
@@ -430,7 +435,6 @@ export function createGameRoutes(db: DrizzleDB) {
       resolvedBackstory = profile.backstory;
       resolvedStrategyHints = profile.strategyStyle;
       resolvedPersonaKey = profile.personaKey;
-      resolvedProfileId = profile.id;
       resolvedProfile = profile;
     } else {
       if (!agentName || !personality) {
@@ -482,36 +486,29 @@ export function createGameRoutes(db: DrizzleDB) {
 
     try {
       await db.transaction(async (tx) => {
-        const admission = resolvedProfile && joinUser
-          ? await prepareOwnedSeatAdmission(tx, {
+        if (resolvedProfile && joinUser) {
+          await admitOwnedSeatInTransaction(tx, {
             gameId,
             userId: joinUser.id,
-            profile: resolvedProfile,
-            temperature: agentConfig.temperature,
-          })
-          : null;
-        const admittedProfile = admission?.profile ?? resolvedProfile;
-        const persistedPersona = admittedProfile
-          ? {
-            name: admittedProfile.name,
-            personality: admittedProfile.personality,
-            backstory: admittedProfile.backstory,
-            strategyHints: admittedProfile.strategyStyle,
-            personaKey: admittedProfile.personaKey,
-          }
-          : persona;
+            agentProfileId: resolvedProfile.id,
+            playerId,
+            overrides: { temperature: agentConfig.temperature },
+          });
+          return;
+        }
+        await assertUnownedSeatAdmissionInTransaction(tx, { gameId, name: resolvedName });
         await tx.insert(schema.gamePlayers).values({
           id: playerId,
           gameId,
           userId: joinUser?.id ?? null,
-          agentProfileId: resolvedProfileId,
-          agentRevisionId: admission?.revisionId ?? null,
-          persona: JSON.stringify(persistedPersona),
+          agentProfileId: null,
+          agentRevisionId: null,
+          persona: JSON.stringify(persona),
           agentConfig: JSON.stringify(agentConfig),
         });
       });
     } catch (error) {
-      if (error instanceof SeasonStateError) {
+      if (error instanceof OwnedSeatProjectionError) {
         return c.json({ error: error.message }, error.code === "rated_roster_invalid" ? 409 : 400);
       }
       throw error;
@@ -551,18 +548,6 @@ export function createGameRoutes(db: DrizzleDB) {
       return c.json({ error: "Game is already full" }, 400);
     }
 
-    const existingNames = existingPlayers.map((p) => {
-      const persona = JSON.parse(p.persona);
-      return persona.name as string;
-    });
-    const existingArchetypes = existingPlayers.map((p) => {
-      const persona = JSON.parse(p.persona);
-      return (persona.personaKey ?? persona.personality ?? "strategic") as Personality;
-    });
-
-    const names = pickAgentNames(slotsToFill, existingNames);
-    const archetypes = pickArchetypes(slotsToFill, existingArchetypes);
-
     const config = JSON.parse(game.config);
     const resolvedModelSelection = resolveModelSelection(
       normalizeGameModelSelection(config.modelSelection),
@@ -572,51 +557,69 @@ export function createGameRoutes(db: DrizzleDB) {
 
     // Step 1: Create placeholder players immediately (no LLM needed)
     const addedPlayers: Array<{ id: string; name: string; archetype: string }> = [];
+    let totalPlayers = existingPlayers.length;
 
-    await db.transaction(async (tx) => {
-      const currentPlayers = await tx
-        .select()
-        .from(schema.gamePlayers)
-        .where(eq(schema.gamePlayers.gameId, gameId));
+    try {
+      await db.transaction(async (tx) => {
+        const lockedGame = await lockWaitingGameForRosterWrite(tx, gameId);
+        const currentPlayers = await tx
+          .select()
+          .from(schema.gamePlayers)
+          .where(eq(schema.gamePlayers.gameId, gameId));
+        const actualSlots = lockedGame.maxPlayers - currentPlayers.length;
+        const existingNames = currentPlayers.map((player) => {
+          const persona = JSON.parse(player.persona) as { name: string };
+          return persona.name;
+        });
+        const existingArchetypes = currentPlayers.map((player) => {
+          const persona = JSON.parse(player.persona) as { personaKey?: Personality; personality?: Personality };
+          return persona.personaKey ?? persona.personality ?? "strategic";
+        });
+        const names = pickAgentNames(actualSlots, existingNames);
+        const archetypes = pickArchetypes(actualSlots, existingArchetypes);
 
-      const actualSlots = game.maxPlayers - currentPlayers.length;
+        for (let i = 0; i < actualSlots; i++) {
+          const name = names[i] ?? `Agent-${i + 1}`;
+          const archetype = archetypes[i] ?? "strategic";
 
-      for (let i = 0; i < actualSlots && i < slotsToFill; i++) {
-        const name = names[i] ?? `Agent-${i + 1}`;
-        const archetype = archetypes[i] ?? "strategic";
+          const playerId = randomUUID();
+          const persona = {
+            name,
+            personality: archetype,
+            strategyHints: null,
+            personaKey: archetype,
+            personalityBlurb: null,
+          };
 
-        const playerId = randomUUID();
-        const persona = {
-          name,
-          personality: archetype,
-          strategyHints: null,
-          personaKey: archetype,
-          personalityBlurb: null,
-        };
+          const agentCfg = {
+            model: agentModel,
+            temperature: 0.9,
+          };
 
-        const agentCfg = {
-          model: agentModel,
-          temperature: 0.9,
-        };
+          await tx.insert(schema.gamePlayers)
+            .values({
+              id: playerId,
+              gameId,
+              userId: null,
+              persona: JSON.stringify(persona),
+              agentConfig: JSON.stringify(agentCfg),
+            });
 
-        await tx.insert(schema.gamePlayers)
-          .values({
-            id: playerId,
-            gameId,
-            userId: null,
-            persona: JSON.stringify(persona),
-            agentConfig: JSON.stringify(agentCfg),
-          });
-
-        addedPlayers.push({ id: playerId, name, archetype });
+          addedPlayers.push({ id: playerId, name, archetype });
+        }
+        totalPlayers = currentPlayers.length + addedPlayers.length;
+      });
+    } catch (error) {
+      if (error instanceof OwnedSeatProjectionError) {
+        return c.json({ error: error.message }, 409);
       }
-    });
+      throw error;
+    }
 
     if (addedPlayers.length === 0) {
       return c.json({ error: "Game is already full" }, 400);
     }
 
-    const totalPlayers = existingPlayers.length + addedPlayers.length;
     await tryRefreshGameWatchStateSummary(db, gameId, "players_filled");
 
     // Fill progress stays on the authenticated HTTP operation path, not the product watch stream.
@@ -640,11 +643,12 @@ export function createGameRoutes(db: DrizzleDB) {
               persona.strategyHints = generated.strategyHints || null;
               persona.personalityBlurb = generated.personality || null;
 
-              await db.update(schema.gamePlayers)
-                .set({ persona: JSON.stringify(persona) })
-                .where(eq(schema.gamePlayers.id, player.id));
-
-              updatedPlayers.push(player);
+              const updated = await db.transaction((tx) => updateWaitingHouseSeatPersonaInTransaction(tx, {
+                gameId,
+                playerId: player.id,
+                persona: JSON.stringify(persona),
+              }));
+              if (updated) updatedPlayers.push(player);
             }
           } catch (err) {
             console.warn(`[games] Persona generation failed for ${player.name}:`, err instanceof Error ? err.message : err);

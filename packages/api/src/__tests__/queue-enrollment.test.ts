@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import {
@@ -9,12 +10,26 @@ import {
   listOpenGames,
   QueueEnrollmentError,
 } from "../services/queue-enrollment.js";
-import { AgentProfileManagementError } from "../services/agent-profile-management.js";
+import {
+  AgentProfileManagementError,
+  updateOwnedAgentProfile,
+} from "../services/agent-profile-management.js";
+import {
+  ensureActiveAgentRevision,
+  resolveFreeTrackEffectiveRuntimeSnapshot,
+} from "../services/agent-revisions.js";
+import { fingerprintEffectiveRuntimeSnapshot } from "../services/revision-policy.js";
 import { setupTestDB } from "./test-utils.js";
 import { createSeason } from "../services/seasons.js";
+import { createGameRoutes } from "../routes/games.js";
+import { createSessionToken } from "../middleware/auth.js";
 
 const USER_A_ID = "queue-user-a";
 const USER_B_ID = "queue-user-b";
+
+beforeAll(() => {
+  process.env.JWT_SECRET = "queue-enrollment-test-secret";
+});
 
 describe("queue enrollment service", () => {
   let db: DrizzleDB;
@@ -177,6 +192,112 @@ describe("queue enrollment service", () => {
     });
     expect(players).toHaveLength(1);
     expect(players[0]!.agentProfileId).toBe("agent-open");
+    expect(players[0]!.agentRevisionId).toBeTruthy();
+
+    const profile = (await db.select().from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, "agent-open")))[0]!;
+    const revision = (await db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.id, players[0]!.agentRevisionId!)))[0]!;
+    const persistedConfig = JSON.parse(players[0]!.agentConfig) as { model: string; temperature: number };
+    expect(JSON.parse(players[0]!.persona)).toEqual({
+      name: profile.name,
+      personality: profile.personality,
+      backstory: profile.backstory,
+      strategyHints: profile.strategyStyle,
+      personaKey: profile.personaKey,
+    });
+    expect(revision.effectiveRuntimeSnapshot).toMatchObject({
+      name: profile.name,
+      personality: profile.personality,
+      backstory: profile.backstory,
+      strategyInstructions: profile.strategyStyle,
+      personaKey: profile.personaKey,
+      model: persistedConfig.model,
+      temperature: persistedConfig.temperature,
+    });
+    expect(revision.fingerprint).toBe(fingerprintEffectiveRuntimeSnapshot(
+      resolveFreeTrackEffectiveRuntimeSnapshot(profile, {
+        modelTier: "budget",
+        temperature: persistedConfig.temperature,
+      }),
+    ));
+  });
+
+  test("REST and MCP open-game joins persist the same owned-seat tuple", async () => {
+    await insertAgent(db, { id: "agent-parity", userId: USER_A_ID, name: "Parity Diplomat" });
+    await insertGame(db, { id: "mcp-parity", slug: "mcp-parity", status: "waiting", maxPlayers: 4 });
+    await insertGame(db, { id: "rest-parity", slug: "rest-parity", status: "waiting", maxPlayers: 4 });
+
+    await joinQueue(db, { userId: USER_A_ID }, {
+      queueType: "open-game",
+      agentId: "agent-parity",
+      gameIdOrSlug: "mcp-parity",
+    });
+    await db.update(schema.games).set({ status: "completed" })
+      .where(eq(schema.games.id, "mcp-parity"));
+
+    const token = await createSessionToken(USER_A_ID, {
+      roles: ["player"],
+      permissions: ["join_game"],
+    });
+    const app = new Hono().route("/", createGameRoutes(db));
+    const response = await app.request("/api/games/rest-parity/join", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ agentProfileId: "agent-parity" }),
+    });
+    expect(response.status).toBe(201);
+
+    const seats = await db.select().from(schema.gamePlayers);
+    const mcpSeat = seats.find((seat) => seat.gameId === "mcp-parity")!;
+    const restSeat = seats.find((seat) => seat.gameId === "rest-parity")!;
+    expect({
+      agentProfileId: mcpSeat.agentProfileId,
+      agentRevisionId: mcpSeat.agentRevisionId,
+      persona: mcpSeat.persona,
+      agentConfig: mcpSeat.agentConfig,
+    }).toEqual({
+      agentProfileId: restSeat.agentProfileId,
+      agentRevisionId: restSeat.agentRevisionId,
+      persona: restSeat.persona,
+      agentConfig: restSeat.agentConfig,
+    });
+  });
+
+  test("concurrent admission and profile update persist an entirely old or new tuple", async () => {
+    await insertAgent(db, { id: "agent-race", userId: USER_A_ID, name: "Race Diplomat" });
+    await insertGame(db, { id: "open-race", slug: "open-race", status: "waiting", maxPlayers: 4 });
+
+    await Promise.all([
+      joinQueue(db, { userId: USER_A_ID }, {
+        queueType: "open-game",
+        agentId: "agent-race",
+        gameIdOrSlug: "open-race",
+      }),
+      updateOwnedAgentProfile(db, { userId: USER_A_ID }, "agent-race", {
+        personality: "New behavior wins trust through patient coalition building.",
+      }),
+    ]);
+
+    const seat = (await db.select().from(schema.gamePlayers)
+      .where(eq(schema.gamePlayers.gameId, "open-race")))[0]!;
+    const persona = JSON.parse(seat.persona) as { personality: string };
+    const config = JSON.parse(seat.agentConfig) as { model: string; temperature: number };
+    const revision = (await db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.id, seat.agentRevisionId!)))[0]!;
+    const snapshot = revision.effectiveRuntimeSnapshot as {
+      personality: string;
+      model: string;
+      temperature: number;
+    };
+    expect(persona.personality).toBe(snapshot.personality);
+    expect(config.model).toBe(snapshot.model);
+    expect(config.temperature).toBe(snapshot.temperature);
+    expect(persona.personality === "Race Diplomat personality"
+      || persona.personality === "New behavior wins trust through patient coalition building.").toBe(true);
   });
 
   test("rejects non-owned agents for open-game join without exposing the other profile", async () => {
@@ -305,7 +426,7 @@ async function insertAgent(
     name: string;
   },
 ): Promise<void> {
-  await db.insert(schema.agentProfiles).values({
+  const profile = (await db.insert(schema.agentProfiles).values({
     id: input.id,
     userId: input.userId,
     name: input.name,
@@ -318,6 +439,11 @@ async function insertAgent(
     gamesWon: 0,
     createdAt: "2026-06-30T00:00:00.000Z",
     updatedAt: "2026-06-30T00:00:00.000Z",
+  }).returning())[0]!;
+  await ensureActiveAgentRevision(db, {
+    profile,
+    effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile),
+    trigger: "profile_create",
   });
 }
 
