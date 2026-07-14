@@ -50,6 +50,35 @@ export interface OwnedSeatProjection {
   agentConfig: string;
 }
 
+export interface OwnedSeatReconciliation {
+  seat: PlayerRow;
+  projection: OwnedSeatProjection;
+  disposition: "reconciled" | "already_current";
+}
+
+/**
+ * Locks a known game set in stable order without assuming the rows are still
+ * waiting. Callers use the returned state to distinguish reconciliation from
+ * a roster that crossed the freeze boundary while the lock was contended.
+ */
+export async function lockRosterGamesInTransaction(
+  tx: DrizzleTransaction,
+  gameIds: readonly string[],
+): Promise<GameRow[]> {
+  const sortedIds = [...new Set(gameIds)].sort();
+  if (sortedIds.length === 0) return [];
+  await tx.execute(sql`
+    SELECT id
+    FROM games
+    WHERE id IN (${sql.join(sortedIds.map((id) => sql`${id}`), sql`, `)})
+    ORDER BY id
+    FOR UPDATE
+  `);
+  return tx.select().from(schema.games)
+    .where(inArray(schema.games.id, sortedIds))
+    .orderBy(asc(schema.games.id));
+}
+
 /**
  * Locks the game before any profile row and makes the waiting boundary
  * authoritative for a live roster write.
@@ -256,6 +285,96 @@ export async function projectWaitingOwnedRosterInTransaction(
     .where(eq(schema.gamePlayers.gameId, game.id))
     .orderBy(asc(schema.gamePlayers.id));
   return { game, seats };
+}
+
+/**
+ * Reconciles one profile's follower seats inside a game the caller already
+ * locked. The helper owns tuple construction and roster-name validation, but
+ * deliberately does not open a transaction or widen the lock set.
+ */
+export async function reconcileOwnedProfileSeatsInLockedGame(
+  tx: DrizzleTransaction,
+  input: {
+    game: GameRow;
+    userId: string;
+    agentProfileId: string;
+  },
+): Promise<OwnedSeatReconciliation[]> {
+  if (input.game.status !== "waiting" || input.game.startedAt) {
+    throw projectionError(
+      "This game is no longer accepting roster changes.",
+      "invalid_state",
+      "game_not_waiting",
+    );
+  }
+  const players = await tx.select().from(schema.gamePlayers)
+    .where(eq(schema.gamePlayers.gameId, input.game.id))
+    .orderBy(asc(schema.gamePlayers.id));
+  const followers = players.filter((player) => player.agentProfileId === input.agentProfileId);
+  if (followers.length === 0) return [];
+  if (followers.some((player) => player.userId !== input.userId)) {
+    throw projectionError(
+      "The seat agent is not owned by this player account.",
+      "rated_roster_invalid",
+      "profile_not_owned",
+    );
+  }
+
+  const projections: Array<{ player: PlayerRow; projection: OwnedSeatProjection }> = [];
+  for (const player of followers) {
+    projections.push({
+      player,
+      projection: await projectOwnedSeatInTransaction(tx, {
+        game: input.game,
+        userId: input.userId,
+        agentProfileId: input.agentProfileId,
+        overrides: parseSeatOverrides(player.agentConfig),
+      }),
+    });
+  }
+
+  const projectedNames = new Map<string, string>();
+  for (const player of players) {
+    const projected = projections.find((entry) => entry.player.id === player.id);
+    const name = projected?.projection.profile.name ?? personaName(player.persona);
+    const normalized = normalizeName(name);
+    if (projectedNames.has(normalized)) {
+      throw projectionError(
+        "A player with that name already exists in this game.",
+        "rated_roster_invalid",
+        "name_conflict",
+      );
+    }
+    projectedNames.set(normalized, player.id);
+  }
+
+  const reconciled: OwnedSeatReconciliation[] = [];
+  for (const { player, projection } of projections) {
+    const alreadyCurrent = player.agentRevisionId === projection.revision.id
+      && player.persona === projection.persona
+      && player.agentConfig === projection.agentConfig;
+    if (!alreadyCurrent) {
+      await tx.update(schema.gamePlayers).set({
+        agentRevisionId: projection.revision.id,
+        persona: projection.persona,
+        agentConfig: projection.agentConfig,
+      }).where(and(
+        eq(schema.gamePlayers.id, player.id),
+        eq(schema.gamePlayers.gameId, input.game.id),
+      ));
+    }
+    reconciled.push({
+      seat: alreadyCurrent ? player : {
+        ...player,
+        agentRevisionId: projection.revision.id,
+        persona: projection.persona,
+        agentConfig: projection.agentConfig,
+      },
+      projection,
+      disposition: alreadyCurrent ? "already_current" : "reconciled",
+    });
+  }
+  return reconciled;
 }
 
 export async function assertUnownedSeatAdmissionInTransaction(
