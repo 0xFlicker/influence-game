@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { isReservedHouseAgentName } from "@influence/engine";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -34,6 +35,8 @@ const MAX_DISPLAY_NAME_LENGTH = 80;
 const MAX_PERSONALITY_PROMPT_LENGTH = 8_000;
 const MAX_PUBLIC_BIOGRAPHY_LENGTH = 2_000;
 const MAX_STRATEGY_STYLE_LENGTH = 2_000;
+const AGENT_NAME_UNIQUE_INDEX = "agent_profiles_normalized_name_unique";
+const AGENT_NAME_TAKEN_MESSAGE = "That agent name is already in use. Choose another name.";
 
 const CREATE_AGENT_FIELDS = new Set([
   "displayName",
@@ -76,6 +79,7 @@ export type AgentProfileManagementErrorCode =
   | "invalid_agent_input"
   | "invalid_archetype"
   | "immutable_field"
+  | "agent_name_taken"
   | "account_limit_reached";
 
 export class AgentProfileManagementError extends Error {
@@ -326,6 +330,7 @@ function prepareAgentProfileCreate(
   input: CreateAgentProfileMutationInput,
 ): typeof schema.agentProfiles.$inferInsert {
   const name = requiredStringField(input.name, "name", MAX_DISPLAY_NAME_LENGTH);
+  assertAgentNameNotReserved(name);
   const personality = requiredStringField(
     input.personality,
     "personality",
@@ -386,7 +391,12 @@ export async function createOwnedAgentProfile(
 ): Promise<AgentProfileMutationRead> {
   await getAccountRating(db, context.userId);
   const values = prepareAgentProfileCreate(context, input);
-  const result = await db.transaction((tx) => createAgentProfileInTransaction(tx, values));
+  let result: AgentProfileMutationRead;
+  try {
+    result = await db.transaction((tx) => createAgentProfileInTransaction(tx, values));
+  } catch (error) {
+    throw mapAgentNameConflict(error);
+  }
 
   if (result.profile.avatarUrl) {
     await recordAvatarChange(db, {
@@ -412,30 +422,34 @@ export async function adoptOwnedDraftAvatarAndCreateAgentProfile(
   await getAccountRating(db, context.userId);
   const values = prepareAgentProfileCreate(context, input);
 
-  return db.transaction(async (tx) => {
-    const consumed = await consumeOwnedDraftAvatarCompletion(tx, {
-      userId: context.userId,
-      generationRequestId,
-      profile: draftProfile,
-    });
-    if (!consumed.ok) return consumed;
-
-    const completion = consumed.completion;
-    const avatarUrl = completion.avatarUrl ?? null;
-    const result = await createAgentProfileInTransaction(tx, { ...values, avatarUrl });
-    if (avatarUrl) {
-      await recordAvatarChange(tx, {
+  try {
+    return await db.transaction(async (tx) => {
+      const consumed = await consumeOwnedDraftAvatarCompletion(tx, {
         userId: context.userId,
-        agentProfileId: result.profile.id,
-        source: "web_generated_completion",
-        status: "completed",
         generationRequestId,
-        previousAvatarUrl: null,
-        newAvatarUrl: avatarUrl,
+        profile: draftProfile,
       });
-    }
-    return { ok: true, result, completion };
-  });
+      if (!consumed.ok) return consumed;
+
+      const completion = consumed.completion;
+      const avatarUrl = completion.avatarUrl ?? null;
+      const result = await createAgentProfileInTransaction(tx, { ...values, avatarUrl });
+      if (avatarUrl) {
+        await recordAvatarChange(tx, {
+          userId: context.userId,
+          agentProfileId: result.profile.id,
+          source: "web_generated_completion",
+          status: "completed",
+          generationRequestId,
+          previousAvatarUrl: null,
+          newAvatarUrl: avatarUrl,
+        });
+      }
+      return { ok: true, result, completion };
+    });
+  } catch (error) {
+    throw mapAgentNameConflict(error);
+  }
 }
 
 export async function updateOwnedAgentProfile(
@@ -450,6 +464,9 @@ export async function updateOwnedAgentProfile(
   };
   if (input.name !== undefined) {
     updates.name = requiredStringField(input.name, "name", MAX_DISPLAY_NAME_LENGTH);
+    if (normalizeSavedAgentName(updates.name) !== normalizeSavedAgentName(existing.name)) {
+      assertAgentNameNotReserved(updates.name);
+    }
   }
   if (input.personality !== undefined) {
     updates.personality = requiredStringField(
@@ -478,24 +495,29 @@ export async function updateOwnedAgentProfile(
     updates.avatarUrl = avatarUrl.value ?? null;
   }
 
-  const result = await db.transaction(async (tx) => {
-    const profile = (await tx.update(schema.agentProfiles)
-      .set(updates)
-      .where(and(
-        eq(schema.agentProfiles.id, agentId),
-        eq(schema.agentProfiles.userId, context.userId),
-      ))
-      .returning())[0];
-    if (!profile) {
-      throw new AgentProfileManagementError("agent_not_found", "Agent not found.", 404, { agentId });
-    }
-    const revision = await ensureActiveAgentRevisionInTransaction(tx, {
-      profile,
-      effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile),
-      trigger: "profile_edit",
+  let result: AgentProfileMutationRead;
+  try {
+    result = await db.transaction(async (tx) => {
+      const profile = (await tx.update(schema.agentProfiles)
+        .set(updates)
+        .where(and(
+          eq(schema.agentProfiles.id, agentId),
+          eq(schema.agentProfiles.userId, context.userId),
+        ))
+        .returning())[0];
+      if (!profile) {
+        throw new AgentProfileManagementError("agent_not_found", "Agent not found.", 404, { agentId });
+      }
+      const revision = await ensureActiveAgentRevisionInTransaction(tx, {
+        profile,
+        effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile),
+        trigger: "profile_edit",
+      });
+      return profileMutationRead(profile, revision);
     });
-    return profileMutationRead(profile, revision);
-  });
+  } catch (error) {
+    throw mapAgentNameConflict(error);
+  }
 
   if (input.avatarUrl !== undefined && result.profile.avatarUrl !== existing.avatarUrl) {
     await recordAvatarChange(db, {
@@ -897,6 +919,42 @@ function requiredStringField(value: unknown, field: string, maxLength: number): 
     );
   }
   return trimmed;
+}
+
+function assertAgentNameNotReserved(name: string): void {
+  if (isReservedHouseAgentName(name)) {
+    throw agentNameTakenError();
+  }
+}
+
+function normalizeSavedAgentName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function agentNameTakenError(): AgentProfileManagementError {
+  return new AgentProfileManagementError(
+    "agent_name_taken",
+    AGENT_NAME_TAKEN_MESSAGE,
+    409,
+  );
+}
+
+function mapAgentNameConflict(error: unknown): unknown {
+  return isNormalizedAgentNameUniqueViolation(error) ? agentNameTakenError() : error;
+}
+
+function isNormalizedAgentNameUniqueViolation(error: unknown): boolean {
+  let current = error;
+  for (let depth = 0; depth < 5 && current && typeof current === "object"; depth += 1) {
+    const record = current as Record<string, unknown>;
+    if (record.code === "23505"
+      && (record.constraint_name === AGENT_NAME_UNIQUE_INDEX
+        || record.constraint === AGENT_NAME_UNIQUE_INDEX)) {
+      return true;
+    }
+    current = record.cause;
+  }
+  return false;
 }
 
 function optionalStringField(value: unknown, field: string, maxLength: number): string | null {

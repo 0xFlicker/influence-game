@@ -39,7 +39,7 @@ beforeAll(() => {
 const USER_A_ID = "user-a-id";
 const USER_B_ID = "user-b-id";
 const VALID_DRAFT_PROFILE = {
-  name: "Mira",
+  name: "Maris Vale",
   gender: "female" as const,
   backstory: null,
   personality: "A patient mediator.",
@@ -163,7 +163,7 @@ describe("Agent Profile API", () => {
     test("POST /api/agent-profiles requires auth", async () => {
       const res = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Atlas", personality: "Strategic" }),
+        jsonReq({ name: "Aster Vale", personality: "Strategic" }),
       );
       expect(res.status).toBe(401);
     });
@@ -189,7 +189,7 @@ describe("Agent Profile API", () => {
         "/api/agent-profiles",
         jsonReq(
           {
-            name: "Atlas",
+            name: "Aster Vale",
             personality: "Strategic calculator who keeps options open",
             backstory: "Grew up in a small town...",
             strategyStyle: "Alliance-focused",
@@ -203,13 +203,73 @@ describe("Agent Profile API", () => {
       expect(res.status).toBe(201);
       const body = await res.json() as Record<string, unknown>;
       expect(body.id).toBeTruthy();
-      expect(body.name).toBe("Atlas");
+      expect(body.name).toBe("Aster Vale");
       expect(body.personality).toBe("Strategic calculator who keeps options open");
       expect(body.backstory).toBe("Grew up in a small town...");
       expect(body.personaKey).toBe("strategic");
       expect(body.gender).toBe("female");
       expect(body.gamesPlayed).toBe(0);
       expect(body.gamesWon).toBe(0);
+    });
+
+    test("returns one generic error for cross-owner and reserved names", async () => {
+      const first = await app.request("/api/agent-profiles", jsonReq({
+        name: "Ember Compass",
+        personality: "Careful and observant.",
+      }, tokenB));
+      expect(first.status).toBe(201);
+
+      for (const name of ["  EMBER COMPASS  ", " atlas "]) {
+        const res = await app.request("/api/agent-profiles", jsonReq({
+          name,
+          personality: "Should not be persisted.",
+        }, tokenA));
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({
+          code: "agent_name_taken",
+          error: "That agent name is already in use. Choose another name.",
+          retryable: false,
+        });
+      }
+
+      expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
+      expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
+    });
+
+    test("does not consume a completed draft when its normalized name is already used", async () => {
+      const existing = await app.request("/api/agent-profiles", jsonReq({
+        name: "Velvet Circuit",
+        personality: "Already owns this identity.",
+      }, tokenB));
+      expect(existing.status).toBe(201);
+      await insertCompletedDraft(db, {
+        id: "name-conflict-draft-request",
+        agentProfileId: "draft-name-conflict",
+        profile: {
+          ...VALID_DRAFT_PROFILE,
+          name: " velvet circuit ",
+        },
+      });
+      const avatarEventsBefore = await db.select().from(schema.avatarChangeEvents);
+
+      const res = await app.request("/api/agent-profiles", jsonReq({
+        ...VALID_DRAFT_PROFILE,
+        name: " velvet circuit ",
+        avatarGenerationRequestId: "name-conflict-draft-request",
+      }, tokenA));
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({
+        code: "agent_name_taken",
+        error: "That agent name is already in use. Choose another name.",
+        retryable: false,
+      });
+      const [request] = await db.select().from(schema.avatarGenerationRequests)
+        .where(eq(schema.avatarGenerationRequests.id, "name-conflict-draft-request"));
+      expect(request?.safeMetadata).not.toHaveProperty("consumedAt");
+      expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
+      expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
+      expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(avatarEventsBefore.length);
     });
 
     test("rejects missing name", async () => {
@@ -223,7 +283,7 @@ describe("Agent Profile API", () => {
     test("rejects missing personality", async () => {
       const res = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Atlas" }, tokenA),
+        jsonReq({ name: "Aster Vale" }, tokenA),
       );
       expect(res.status).toBe(400);
     });
@@ -231,7 +291,7 @@ describe("Agent Profile API", () => {
     test("rejects invalid personaKey", async () => {
       const res = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Atlas", personality: "Test", personaKey: "invalid" }, tokenA),
+        jsonReq({ name: "Aster Vale", personality: "Test", personaKey: "invalid" }, tokenA),
       );
       expect(res.status).toBe(400);
       const body = await res.json() as { error: string };
@@ -244,7 +304,7 @@ describe("Agent Profile API", () => {
     test("rejects invalid gender", async () => {
       const res = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Atlas", personality: "Test", gender: "unknown" }, tokenA),
+        jsonReq({ name: "Aster Vale", personality: "Test", gender: "unknown" }, tokenA),
       );
       expect(res.status).toBe(400);
       const body = await res.json() as { error: string };
@@ -276,7 +336,7 @@ describe("Agent Profile API", () => {
       const draftRes = await app.request(
         "/api/agent-profiles/avatar/generate-draft",
         jsonReq({
-          name: "Mira",
+          name: "Maris Vale",
           gender: "female",
           personality: "A patient mediator.",
           backstory: "She grew up translating between rival communities.",
@@ -294,7 +354,7 @@ describe("Agent Profile API", () => {
       const createRes = await app.request(
         "/api/agent-profiles",
         jsonReq({
-          name: "Mira",
+          name: "Maris Vale",
           gender: "female",
           personality: "A patient mediator.",
           backstory: "She grew up translating between rival communities.",
@@ -326,7 +386,7 @@ describe("Agent Profile API", () => {
         model: "gen",
         safeMetadata: {
           draftProfile: {
-            name: "Mira",
+            name: "Maris Vale",
             gender: "female",
             backstory: null,
             personality: "A patient mediator.",
@@ -334,7 +394,7 @@ describe("Agent Profile API", () => {
             personaKey: "diplomat",
           },
           profileFingerprint: avatarProfileFingerprint({
-            name: "Mira",
+            name: "Maris Vale",
             gender: "female",
             backstory: null,
             personality: "A patient mediator.",
@@ -351,7 +411,7 @@ describe("Agent Profile API", () => {
       const createRes = await app.request(
         "/api/agent-profiles",
         jsonReq({
-          name: "Mira",
+          name: "Maris Vale",
           gender: "female",
           personality: "A patient mediator.",
           personaKey: "diplomat",
@@ -372,7 +432,7 @@ describe("Agent Profile API", () => {
       const duplicate = await app.request(
         "/api/agent-profiles",
         jsonReq({
-          name: "Mira",
+          name: "Maris Vale",
           gender: "female",
           personality: "A patient mediator.",
           personaKey: "diplomat",
@@ -727,14 +787,14 @@ describe("Agent Profile API", () => {
     test("returns a specific profile", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
+        jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
       const { id } = await createRes.json() as { id: string };
 
       const res = await app.request(`/api/agent-profiles/${id}`, authGet(tokenA));
       expect(res.status).toBe(200);
       const body = await res.json() as { name: string };
-      expect(body.name).toBe("Atlas");
+      expect(body.name).toBe("Aster Vale");
     });
 
     test("returns 404 for non-existent profile", async () => {
@@ -762,7 +822,7 @@ describe("Agent Profile API", () => {
     test("updates profile fields", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
+        jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
       const { id } = await createRes.json() as { id: string };
 
@@ -778,11 +838,42 @@ describe("Agent Profile API", () => {
       expect(body.statsReset).toBe(false);
     });
 
+    test("returns the generic name-taken error for cross-owner rename collisions", async () => {
+      const ownerA = await app.request("/api/agent-profiles", jsonReq({
+        name: "Quiet Meridian",
+        personality: "Quiet and deliberate.",
+      }, tokenA));
+      const { id } = await ownerA.json() as { id: string };
+      const ownerB = await app.request("/api/agent-profiles", jsonReq({
+        name: "Copper Warden",
+        personality: "Protective and patient.",
+      }, tokenB));
+      expect(ownerB.status).toBe(201);
+      const avatarEventsBefore = await db.select().from(schema.avatarChangeEvents);
+
+      const res = await app.request(`/api/agent-profiles/${id}`, jsonReq({
+        name: "  COPPER WARDEN  ",
+        avatarUrl: "https://cdn.example/should-not-write.png",
+      }, tokenA, "PATCH"));
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({
+        code: "agent_name_taken",
+        error: "That agent name is already in use. Choose another name.",
+        retryable: false,
+      });
+      const [profile] = await db.select().from(schema.agentProfiles)
+        .where(eq(schema.agentProfiles.id, id));
+      expect(profile?.name).toBe("Quiet Meridian");
+      expect(profile?.avatarUrl).toBeNull();
+      expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(avatarEventsBefore.length);
+    });
+
     test("records avatar replacement history", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
         jsonReq({
-          name: "Atlas",
+          name: "Aster Vale",
           personality: "Strategic",
           avatarUrl: "https://cdn.example/old.png",
         }, tokenA),
@@ -808,7 +899,7 @@ describe("Agent Profile API", () => {
     test("preserves lifetime stats when personality changes", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
+        jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
       const { id } = await createRes.json() as { id: string };
 
@@ -832,7 +923,7 @@ describe("Agent Profile API", () => {
     test("returns 404 when updating another user's profile", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
+        jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
       const { id } = await createRes.json() as { id: string };
 
@@ -846,7 +937,7 @@ describe("Agent Profile API", () => {
     test("rejects invalid personaKey on update", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
+        jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
       const { id } = await createRes.json() as { id: string };
 
@@ -866,7 +957,7 @@ describe("Agent Profile API", () => {
     test("deletes a profile", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
+        jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
       const { id } = await createRes.json() as { id: string };
 
@@ -882,7 +973,7 @@ describe("Agent Profile API", () => {
       const createRes = await app.request(
         "/api/agent-profiles",
         jsonReq({
-          name: "Atlas",
+          name: "Aster Vale",
           personality: "Strategic",
           avatarUrl: "https://cdn.example/avatar.png",
         }, tokenA),
@@ -905,7 +996,7 @@ describe("Agent Profile API", () => {
     test("blocks deleting the standing Daily Free agent", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
+        jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
       const { id } = await createRes.json() as { id: string };
       await db.insert(schema.freeGameQueue).values({
@@ -924,7 +1015,7 @@ describe("Agent Profile API", () => {
       await createSeason(db, { slug: "delete-race", name: "Delete Race" });
       const createRes = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
+        jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
       const { id } = await createRes.json() as { id: string };
 
@@ -949,7 +1040,7 @@ describe("Agent Profile API", () => {
     test("returns 404 when deleting another user's profile", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
+        jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
       const { id } = await createRes.json() as { id: string };
 
@@ -964,7 +1055,7 @@ describe("Agent Profile API", () => {
     test("returns a clear conflict instead of breaking linked producer season history", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
+        jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
       const { id } = await createRes.json() as { id: string };
       const revision = (await db.select().from(schema.agentRevisions)
@@ -988,7 +1079,7 @@ describe("Agent Profile API", () => {
     test("returns the same conflict when a pregame rating snapshot references the agent", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
+        jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
       const { id } = await createRes.json() as { id: string };
       const revision = (await db.select().from(schema.agentRevisions)
@@ -1027,7 +1118,7 @@ describe("Agent Profile API", () => {
     test("clears agentProfileId references in game_players", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
+        jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
       const { id: profileId } = await createRes.json() as { id: string };
 
@@ -1069,7 +1160,7 @@ describe("Agent Profile API", () => {
         "/api/agent-profiles",
         jsonReq(
           {
-            name: "Atlas",
+            name: "Aster Vale",
             personality: "Strategic calculator",
             strategyStyle: "Alliance builder",
             personaKey: "strategic",
@@ -1096,7 +1187,7 @@ describe("Agent Profile API", () => {
       expect(players[0]!.agentProfileId).toBe(profileId);
 
       const persona = JSON.parse(players[0]!.persona);
-      expect(persona.name).toBe("Atlas");
+      expect(persona.name).toBe("Aster Vale");
       expect(persona.personality).toBe("Strategic calculator");
       expect(persona.strategyHints).toBe("Alliance builder");
       expect(persona.personaKey).toBe("strategic");
@@ -1119,7 +1210,7 @@ describe("Agent Profile API", () => {
     test("rejects join with another user's profile", async () => {
       const createRes = await app.request(
         "/api/agent-profiles",
-        jsonReq({ name: "Atlas", personality: "Strategic" }, tokenA),
+        jsonReq({ name: "Aster Vale", personality: "Strategic" }, tokenA),
       );
       const { id: profileId } = await createRes.json() as { id: string };
 

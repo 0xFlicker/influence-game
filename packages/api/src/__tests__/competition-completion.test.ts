@@ -239,7 +239,7 @@ describe("competition completion", () => {
     expect(first.agentChampionAgentProfileId).toBe(fixture.atlasProfileId);
     expect(first.architectContributions[0]).toMatchObject({
       agentId: fixture.atlasProfileId,
-      agentName: "Atlas",
+      agentName: "Aster Crown",
     });
     expect((await fixture.db.select().from(schema.seasonHonors))).toHaveLength(1);
     expect((await fixture.db.select().from(schema.seasons)
@@ -256,11 +256,11 @@ async function createRatedFixture(options: {
   const ownerA = await insertUser(db, "owner-a");
   const ownerB = options.sameOwner ? ownerA : await insertUser(db, "owner-b");
   const atlas = (await createOwnedAgentProfile(db, { userId: ownerA }, {
-    name: options.duplicateNames ? "Same Name" : "Atlas",
+    name: "Aster Crown",
     personality: "Atlas personality",
   })).profile;
   const mira = (await createOwnedAgentProfile(db, { userId: ownerB }, {
-    name: options.duplicateNames ? "Same Name" : "Mira",
+    name: "Maris Crown",
     personality: "Mira personality",
   })).profile;
   const revisions = await db.select().from(schema.agentRevisions);
@@ -284,9 +284,23 @@ async function createRatedFixture(options: {
     startedAt: "2026-07-10T19:00:00.000Z",
   });
   await db.insert(schema.gamePlayers).values([
-    ownedSeat("atlas", gameId, ownerA, atlas.id, atlasRevision.id, atlas.name),
+    ownedSeat(
+      "atlas",
+      gameId,
+      ownerA,
+      atlas.id,
+      atlasRevision.id,
+      options.duplicateNames ? "Same Name" : "Atlas",
+    ),
     houseSeat("echo", gameId, options.duplicateNames ? "Same Name" : "Echo"),
-    ownedSeat("mira", gameId, ownerB, mira.id, miraRevision.id, mira.name),
+    ownedSeat(
+      "mira",
+      gameId,
+      ownerB,
+      mira.id,
+      miraRevision.id,
+      options.duplicateNames ? "Same Name" : "Mira",
+    ),
     houseSeat("nyx", gameId, "Nyx"),
   ]);
   await db.insert(schema.competitionRatingSnapshots).values([

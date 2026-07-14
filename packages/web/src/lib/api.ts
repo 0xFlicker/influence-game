@@ -53,6 +53,8 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    public readonly code?: string,
+    public readonly retryable?: boolean,
   ) {
     super(message);
     this.name = "ApiError";
@@ -85,9 +87,29 @@ export async function apiFetch<T>(
       clearAuthToken();
       window.dispatchEvent(new CustomEvent("auth:expired"));
     }
-    throw new ApiError(res.status, text);
+    throw apiErrorFromResponse(res.status, text);
   }
   return res.json() as Promise<T>;
+}
+
+function apiErrorFromResponse(status: number, body: string): ApiError {
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    if (parsed && typeof parsed === "object") {
+      const error = parsed as Record<string, unknown>;
+      if (typeof error.error === "string" && typeof error.code === "string") {
+        return new ApiError(
+          status,
+          error.error,
+          error.code,
+          typeof error.retryable === "boolean" ? error.retryable : undefined,
+        );
+      }
+    }
+  } catch {
+    // Preserve non-JSON error bodies verbatim.
+  }
+  return new ApiError(status, body);
 }
 
 // ---------------------------------------------------------------------------

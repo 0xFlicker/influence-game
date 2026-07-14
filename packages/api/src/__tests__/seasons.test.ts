@@ -100,8 +100,8 @@ describe("season admission and state", () => {
     const db = await setupTestDB();
     const ownerA = await insertUser(db, "owner-a");
     const ownerB = await insertUser(db, "owner-b");
-    const profileA = await createProfile(db, ownerA, "Atlas");
-    const profileB = await createProfile(db, ownerB, "Mira");
+    const profileA = await createProfile(db, ownerA, "Aster Season");
+    const profileB = await createProfile(db, ownerB, "Maris Season");
     const season = await activeSeason(db, ownerA, "rated-roster");
     const gameId = await insertWaitingFreeGame(db);
     await insertOwnedSeat(db, gameId, ownerA, profileA.id, "Atlas");
@@ -124,7 +124,7 @@ describe("season admission and state", () => {
   test("leaves free games explicitly unrated when no season is active", async () => {
     const db = await setupTestDB();
     const owner = await insertUser(db, "unrated-owner");
-    const profile = await createProfile(db, owner, "Vera");
+    const profile = await createProfile(db, owner, "Verity Season");
     const gameId = await insertWaitingFreeGame(db);
     await insertOwnedSeat(db, gameId, owner, profile.id, "Vera");
 

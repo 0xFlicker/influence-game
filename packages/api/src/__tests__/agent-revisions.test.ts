@@ -39,7 +39,7 @@ describe("agent revision persistence", () => {
     const { profile, revisionCreated } = await createOwnedAgentProfile(db, {
       userId: USER_ID,
     }, {
-      name: "Mira",
+      name: "Maris Thread",
       personality: "Calm, observant, and deliberate.",
       backstory: "A retired negotiator.",
       strategyStyle: "Build trust before acting.",
@@ -67,7 +67,7 @@ describe("agent revision persistence", () => {
 
   test("keeps avatar-only and identical saves in the current revision", async () => {
     const { profile } = await createOwnedAgentProfile(db, { userId: USER_ID }, {
-      name: "Atlas",
+      name: "Aster Thread",
       personality: "Patient and exact.",
       personaKey: "observer",
     });
@@ -87,7 +87,7 @@ describe("agent revision persistence", () => {
 
   test("creates ordered revisions while preserving lifetime statistics", async () => {
     const { profile } = await createOwnedAgentProfile(db, { userId: USER_ID }, {
-      name: "Vera",
+      name: "Verity Thread",
       personality: "Bold but socially precise in every exchange.",
       personaKey: "provocateur",
     });
@@ -122,7 +122,7 @@ describe("agent revision persistence", () => {
       db,
       { userId: USER_ID },
       {
-        name: "Echo",
+        name: "Echowood Thread",
         personality: "Patient and observant.",
         personaKey: "observer",
       },
@@ -151,7 +151,7 @@ describe("agent revision persistence", () => {
 
   test("reuses game-effective revisions without moving the active pointer or rating", async () => {
     const { profile } = await createOwnedAgentProfile(db, { userId: USER_ID }, {
-      name: "Lyra",
+      name: "Lyris Thread",
       personality: "Finds vulnerabilities in people and systems.",
       personaKey: "observer",
     });

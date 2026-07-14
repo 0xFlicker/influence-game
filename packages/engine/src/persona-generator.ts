@@ -12,12 +12,21 @@ import type { Personality } from "./agent";
 // Agent name pool — diverse names for AI players
 // ---------------------------------------------------------------------------
 
-const AGENT_NAMES: string[] = [
+export const HOUSE_AGENT_NAMES = [
   "Atlas", "Vera", "Finn", "Mira", "Rex",
   "Lyra", "Kael", "Echo", "Sage", "Jace",
   "Nyx", "Orion", "Zara", "Riven", "Luna",
   "Thane", "Iris", "Cyrus", "Wren", "Dax",
-];
+] as const;
+
+const NORMALIZED_HOUSE_AGENT_NAMES = new Set(
+  HOUSE_AGENT_NAMES.map((name) => name.toLowerCase()),
+);
+
+/** Whether a display name is reserved by the canonical House-agent catalog. */
+export function isReservedHouseAgentName(name: string): boolean {
+  return NORMALIZED_HOUSE_AGENT_NAMES.has(name.trim().toLowerCase());
+}
 
 // ---------------------------------------------------------------------------
 // Default personality blurbs (fallback if LLM fails)
@@ -180,7 +189,7 @@ Respond with JSON only:
  */
 export function pickAgentNames(count: number, excludeNames: string[]): string[] {
   const excluded = new Set(excludeNames.map((n) => n.toLowerCase()));
-  const available = AGENT_NAMES.filter((n) => !excluded.has(n.toLowerCase()));
+  const available = HOUSE_AGENT_NAMES.filter((n) => !excluded.has(n.toLowerCase()));
 
   // Shuffle and pick
   const shuffled = [...available].sort(() => Math.random() - 0.5);

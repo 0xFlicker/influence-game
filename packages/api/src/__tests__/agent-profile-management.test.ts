@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
+import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import {
   AgentProfileManagementError,
@@ -177,6 +178,147 @@ describe("agent profile management service", () => {
     expect(read.agent.queueState.dailyFree).toBe("not-queued");
     expect(read.agent.rating.currentElo).toBe(1388);
     expect("statsReset" in read).toBe(false);
+  });
+
+  test("rejects globally used and reserved names without revealing the conflict", async () => {
+    await createOwnedAgent(db, { userId: USER_B_ID }, {
+      displayName: "Ember Quill",
+      archetype: "strategic",
+      personalityPrompt: "Patient and precise.",
+      publicBiography: null,
+      strategyStyle: null,
+    });
+
+    await expect(createOwnedAgent(db, { userId: USER_A_ID }, {
+      displayName: "  EMBER QUILL  ",
+      archetype: "strategic",
+      personalityPrompt: "A distinct competitor with a colliding name.",
+      publicBiography: null,
+      strategyStyle: null,
+    })).rejects.toMatchObject({
+      code: "agent_name_taken",
+      statusCode: 409,
+      message: "That agent name is already in use. Choose another name.",
+      details: undefined,
+    } satisfies Partial<AgentProfileManagementError>);
+
+    await expect(createOwnedAgent(db, { userId: USER_A_ID }, {
+      displayName: " atlas ",
+      archetype: "strategic",
+      personalityPrompt: "Trying a reserved House identity.",
+      publicBiography: null,
+      strategyStyle: null,
+    })).rejects.toMatchObject({
+      code: "agent_name_taken",
+      statusCode: 409,
+      message: "That agent name is already in use. Choose another name.",
+      details: undefined,
+    } satisfies Partial<AgentProfileManagementError>);
+
+    expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
+    expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
+    expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
+  });
+
+  test("allows exactly one concurrent normalized-name create without orphaned side effects", async () => {
+    const create = (userId: string, displayName: string) => createOwnedAgent(db, {
+      userId,
+      publicBaseUrl: "https://influence.test",
+      avatarChangeSource: "mcp_provided_avatar",
+    }, {
+      displayName,
+      archetype: "strategic",
+      personalityPrompt: "Races cleanly for one persistent identity.",
+      publicBiography: null,
+      strategyStyle: null,
+      avatarUrl: `/api/uploads/local?key=avatars/${userId}.png`,
+    });
+
+    const outcomes = await Promise.allSettled([
+      create(USER_A_ID, "Signal Bloom"),
+      create(USER_B_ID, " signal bloom "),
+    ]);
+
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    const rejected = outcomes.find((outcome) => outcome.status === "rejected") as PromiseRejectedResult;
+    expect(rejected.reason).toMatchObject({
+      code: "agent_name_taken",
+      statusCode: 409,
+      details: undefined,
+    });
+    expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
+    expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
+    expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(1);
+    expect(await db.select().from(schema.freeGameQueue)).toHaveLength(0);
+  });
+
+  test("rejects cross-owner rename collisions before revision or avatar side effects", async () => {
+    const ownerA = await createOwnedAgent(db, { userId: USER_A_ID }, {
+      displayName: "Quiet Meridian",
+      archetype: "strategic",
+      personalityPrompt: "Quiet and deliberate.",
+      publicBiography: null,
+      strategyStyle: null,
+    });
+    await createOwnedAgent(db, { userId: USER_B_ID }, {
+      displayName: "Copper Warden",
+      archetype: "strategic",
+      personalityPrompt: "Protective and patient.",
+      publicBiography: null,
+      strategyStyle: null,
+    });
+    const revisionsBefore = await db.select().from(schema.agentRevisions);
+
+    await expect(updateOwnedAgent(db, { userId: USER_A_ID }, {
+      agentId: ownerA.agent.id,
+      displayName: " copper warden ",
+      avatarUrl: "/api/uploads/local?key=avatars/should-not-write.png",
+    })).rejects.toMatchObject({
+      code: "agent_name_taken",
+      statusCode: 409,
+      details: undefined,
+    } satisfies Partial<AgentProfileManagementError>);
+
+    const [unchanged] = await db.select().from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, ownerA.agent.id));
+    expect(unchanged?.name).toBe("Quiet Meridian");
+    expect(unchanged?.avatarUrl).toBeNull();
+    expect(await db.select().from(schema.agentRevisions)).toHaveLength(revisionsBefore.length);
+    expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
+  });
+
+  test("allows a legacy reserved-name profile to keep its normalized name while blocking new adoption", async () => {
+    await insertAgent(db, {
+      id: "legacy-atlas",
+      userId: USER_A_ID,
+      name: "Atlas",
+      personality: "A legacy profile awaiting explicit cleanup.",
+      personaKey: "strategic",
+    });
+    await insertAgent(db, {
+      id: "rename-candidate",
+      userId: USER_B_ID,
+      name: "Silver Current",
+      personality: "A separately named profile.",
+      personaKey: "strategic",
+    });
+
+    const legacy = await updateOwnedAgent(db, { userId: USER_A_ID }, {
+      agentId: "legacy-atlas",
+      displayName: " Atlas ",
+      personalityPrompt: "Improved strategy without adopting a new identity.",
+    });
+    expect(legacy.agent.displayName).toBe("Atlas");
+    expect(legacy.agent.personalityPrompt).toBe("Improved strategy without adopting a new identity.");
+
+    await expect(updateOwnedAgent(db, { userId: USER_B_ID }, {
+      agentId: "rename-candidate",
+      displayName: "atlas",
+    })).rejects.toMatchObject({
+      code: "agent_name_taken",
+      statusCode: 409,
+      details: undefined,
+    } satisfies Partial<AgentProfileManagementError>);
   });
 
   test("updates owned mutable fields without resetting lifetime statistics", async () => {

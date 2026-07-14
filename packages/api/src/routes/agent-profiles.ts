@@ -342,6 +342,9 @@ Respond with JSON only:
       }, 201);
     } catch (error) {
       if (error instanceof AgentProfileManagementError) {
+        if (error.code === "agent_name_taken") {
+          return c.json({ code: error.code, error: error.message, retryable: false }, 409);
+        }
         return c.json({ error: error.message }, error.statusCode === 404 ? 404 : 400);
       }
       throw error;
@@ -512,6 +515,9 @@ Respond with JSON only:
       return c.json({ ...playerSafeAgentProfile(result.profile), statsReset: false });
     } catch (error) {
       if (error instanceof AgentProfileManagementError) {
+        if (error.code === "agent_name_taken") {
+          return c.json({ code: error.code, error: error.message, retryable: false }, 409);
+        }
         return c.json({ error: error.message }, error.statusCode === 404 ? 404 : 400);
       }
       throw error;
