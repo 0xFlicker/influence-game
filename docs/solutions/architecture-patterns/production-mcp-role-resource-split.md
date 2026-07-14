@@ -75,14 +75,17 @@ Derive ownership from auth context, never from MCP arguments. The bearer token a
 
 Prefer coarse, retry-tolerant mutations:
 
-- `create_agent` creates one owned profile from coarse authoring fields and returns the full agent summary.
-- `update_agent` updates mutable fields only and returns the full agent summary. It should not train users around current stats-reset behavior.
+- Resolve identity before mutation: `search_agents`, `list_agents`, and `get_agent` expose the stable Agent Profile, current revision, and whether its active enrollment follows current behavior or is pinned.
+- `create_agent` creates a distinctly named separate competitive identity with independent history. It is not a tuning or revision tool.
+- `update_agent` tunes any existing owned competitor regardless of enrollment while preserving identity, career, season history, and Standing Daily membership. Waiting seats follow the active behavior; started and suspended seats stay pinned.
 - `join_queue` supports standing `daily-free` membership and waiting `open-game` enrollment; unsupported future types fail with `unsupported_queue_type`. Daily Free calls express desired state: the same agent is idempotent and another owned agent switches the existing row.
 - `leave_queue` supports `daily-free` only, succeeds when the user is already absent, and suppresses browser reacquisition for the rest of the active season.
 
 Queue semantics should stay future-aware without pretending future queues exist. `queueType` is the extensibility point. In v1, daily-free status/leave are supported; open-game list/join are supported; open-game status/leave are not.
 
-Keep responses LLM-legible. Management reads should include queue state, active enrollment, rating provenance, stats, useful display labels, and recovery-friendly domain errors. A provider client should not need to call five tools to answer which owned agent can be queued and what happened.
+Keep responses LLM-legible. Management reads should include queue state, active enrollment, current revision, following/pinned disposition, rating provenance, stats, useful display labels, and recovery-friendly domain errors. Create and update should publish output schemas and return a versioned structured receipt with stable identity, revision outcome, Standing Daily disposition, waiting-seat reconciliation, frozen-seat count, avatar completion when relevant, and warnings. A provider client should not infer activation from prose or queue churn.
+
+Repeat the identity rule at initialization, owned-agent discovery, rules/help, and mutation descriptors: use `update_agent` for an existing competitor; use `create_agent` only for a separate career. This repetition is intentional because MCP hosts and LLMs may see only part of the surface before choosing a tool. Strengthen it from observed failures, but do not invent a hard proof boundary or draft/publish state machine before product behavior requires one.
 
 ## Why This Matters
 
@@ -169,6 +172,7 @@ Boundary checklist for a new MCP tool:
 6. Does authorization come entirely from bearer token and DB context?
 7. Is the response rich enough for an LLM client to explain the result?
 8. Is there a regression test for inventory, auth boundary, and failure shape?
+9. If it changes an agent, does discovery preserve an existing Agent Profile instead of accidentally creating another career?
 ```
 
 Readiness checks for this surface should cover:
@@ -180,6 +184,10 @@ Readiness checks for this surface should cover:
 - Active-match-shaped names rejected without depending on the read model.
 - `list_archetypes` and create/update schemas exclude non-user-selectable archetypes.
 - Owned-agent list/search/update cannot cross users or leak another user's prompt.
+- Initialization and tool descriptions direct an existing enrolled identity to `update_agent`, not `create_agent`.
+- Create/update output schemas match actual `structuredContent` receipts.
+- Agent reads expose current revision and following/pinned state without hidden competition-rating evidence.
+- Name collisions return generic `agent_name_taken` data without a conflicting profile or owner.
 - Agent summaries label account-level rating provenance.
 - Daily-free join/leave idempotency and conflict behavior.
 - Unsupported queue types rejected explicitly per operation.
