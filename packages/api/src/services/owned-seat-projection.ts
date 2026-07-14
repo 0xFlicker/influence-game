@@ -1,8 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  normalizeGameModelSelection,
-  resolveModelSelection,
-} from "@influence/engine";
+import { normalizeGameModelSelection } from "@influence/engine";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -135,26 +132,22 @@ export async function projectOwnedSeatInTransaction(
   }
 
   const gameConfig = parseGameConfig(input.game.config);
-  const modelSelection = resolveModelSelection(
-    normalizeGameModelSelection(gameConfig.modelSelection),
-    gameConfig.modelTier,
-  );
   const temperature = normalizeTemperature(input.overrides?.temperature);
-  const persona = JSON.stringify({
-    name: profile.name,
-    personality: profile.personality,
-    backstory: profile.backstory,
-    strategyHints: profile.strategyStyle,
-    personaKey: profile.personaKey,
-  });
-  const agentConfig = JSON.stringify({
-    model: modelSelection.modelId,
-    temperature,
-  });
   const effectiveRuntimeSnapshot = resolveFreeTrackEffectiveRuntimeSnapshot(profile, {
     modelSelection: normalizeGameModelSelection(gameConfig.modelSelection),
     modelTier: gameConfig.modelTier,
     temperature,
+  });
+  const persona = JSON.stringify({
+    name: effectiveRuntimeSnapshot.name,
+    personality: effectiveRuntimeSnapshot.personality,
+    backstory: effectiveRuntimeSnapshot.backstory,
+    strategyHints: effectiveRuntimeSnapshot.strategyInstructions,
+    personaKey: effectiveRuntimeSnapshot.personaKey,
+  });
+  const agentConfig = JSON.stringify({
+    model: effectiveRuntimeSnapshot.model,
+    temperature: effectiveRuntimeSnapshot.temperature,
   });
   const resolvedRevision = await resolveGameEffectiveAgentRevisionInTransaction(tx, {
     profile,
@@ -278,8 +271,17 @@ export async function projectWaitingOwnedRosterInTransaction(
     if (!existingPlayerId) projectedNames.set(normalized, player.id);
   }
 
+  let changed = false;
   for (const player of ownedPlayers) {
     const projection = projections.get(player.id)!;
+    if (
+      player.agentRevisionId === projection.revision.id
+      && player.persona === projection.persona
+      && player.agentConfig === projection.agentConfig
+    ) {
+      continue;
+    }
+    changed = true;
     await tx.update(schema.gamePlayers).set({
       agentRevisionId: projection.revision.id,
       persona: projection.persona,
@@ -289,9 +291,11 @@ export async function projectWaitingOwnedRosterInTransaction(
       eq(schema.gamePlayers.gameId, game.id),
     ));
   }
-  const seats = await tx.select().from(schema.gamePlayers)
-    .where(eq(schema.gamePlayers.gameId, game.id))
-    .orderBy(asc(schema.gamePlayers.id));
+  const seats = changed
+    ? await tx.select().from(schema.gamePlayers)
+      .where(eq(schema.gamePlayers.gameId, game.id))
+      .orderBy(asc(schema.gamePlayers.id))
+    : players;
   return { game, seats };
 }
 

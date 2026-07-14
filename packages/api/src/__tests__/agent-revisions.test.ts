@@ -36,7 +36,7 @@ describe("agent revision persistence", () => {
   });
 
   test("creates one complete initial revision with a new profile", async () => {
-    const { profile, revisionCreated } = await createOwnedAgentProfile(db, {
+    const { profile, profileRevision } = await createOwnedAgentProfile(db, {
       userId: USER_ID,
     }, {
       name: "Maris Thread",
@@ -46,7 +46,7 @@ describe("agent revision persistence", () => {
       personaKey: "strategic",
     });
 
-    expect(revisionCreated).toBe(true);
+    expect(profileRevision.outcome).toBe("created");
     const revision = await getLatestAgentRevision(db, profile.id);
     expect(revision).toMatchObject({
       ordinal: 1,
@@ -78,8 +78,8 @@ describe("agent revision persistence", () => {
     const identical = await updateOwnedAgentProfile(db, { userId: USER_ID }, profile.id, {
       personality: "Patient and exact.",
     });
-    expect(avatar.revisionCreated).toBe(false);
-    expect(identical.revisionCreated).toBe(false);
+    expect(avatar.profileRevision.outcome).toBe("preserved");
+    expect(identical.profileRevision.outcome).toBe("preserved");
     const revisions = await db.select().from(schema.agentRevisions)
       .where(eq(schema.agentRevisions.agentProfileId, profile.id));
     expect(revisions).toHaveLength(1);
@@ -98,7 +98,7 @@ describe("agent revision persistence", () => {
     const changed = await updateOwnedAgentProfile(db, { userId: USER_ID }, profile.id, {
       personality: "Bold and socially precise in every exchange.",
     });
-    expect(changed.revisionCreated).toBe(true);
+    expect(changed.profileRevision.outcome).toBe("created");
     expect(changed.profileRevision).toMatchObject({
       revisionId: expect.any(String),
       ordinal: 2,

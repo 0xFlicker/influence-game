@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono";
 import type { DrizzleDB } from "../db/index.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
+import { isPostgresUniqueViolation } from "../lib/postgres-errors.js";
 import { requireAuth, requirePermission, type AuthEnv } from "../middleware/auth.js";
 import {
   exportOwnedSeasonReceipts,
@@ -147,22 +148,4 @@ function seasonError(c: Context, error: unknown): Response {
     }, 409);
   }
   throw error;
-}
-
-function isPostgresUniqueViolation(error: unknown, constraint: string): boolean {
-  let current = error;
-  for (let depth = 0; depth < 3 && current && typeof current === "object"; depth += 1) {
-    const candidate = current as {
-      code?: unknown;
-      constraint_name?: unknown;
-      constraint?: unknown;
-      cause?: unknown;
-    };
-    if (candidate.code === "23505"
-      && (candidate.constraint_name === constraint || candidate.constraint === constraint)) {
-      return true;
-    }
-    current = candidate.cause;
-  }
-  return false;
 }

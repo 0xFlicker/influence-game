@@ -4,9 +4,8 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { projectWaitingOwnedRosterInTransaction } from "./owned-seat-projection.js";
 import {
-  asRosterFreezeError,
   freezeWaitingRosterInTransaction,
-  RosterFreezeError,
+  toRosterFreezeError,
   type RosterFreezeErrorCode,
   type RosterFreezeErrorReason,
 } from "./roster-freeze.js";
@@ -101,12 +100,7 @@ export async function acquireGameRunOwner(
     });
     return claim;
   } catch (error) {
-    let freezeError: RosterFreezeError | null = null;
-    try {
-      freezeError = asRosterFreezeError(error);
-    } catch {
-      // Non-freeze owner and persistence failures retain the legacy result.
-    }
+    const freezeError = toRosterFreezeError(error);
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Failed to acquire game owner",

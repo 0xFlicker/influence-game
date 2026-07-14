@@ -2,6 +2,7 @@ import type { AvatarCompletionRead } from "./avatar-generation.js";
 
 export const AGENT_MUTATION_RECEIPT_SCHEMA_VERSION = 1 as const;
 export const MAX_AGENT_MUTATION_WAITING_SEAT_REFERENCES = 10;
+export type AgentMutationWarning = "avatar_generation_failed";
 
 export interface AgentMutationProfileRevisionReceipt {
   revisionId: string;
@@ -38,7 +39,7 @@ export interface AgentMutationReceipt {
     unchanged: number;
   };
   avatarCompletion?: AvatarCompletionRead;
-  warnings: string[];
+  warnings: AgentMutationWarning[];
 }
 
 export function boundAgentMutationWaitingSeatReferences(

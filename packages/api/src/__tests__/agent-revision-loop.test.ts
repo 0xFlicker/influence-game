@@ -456,15 +456,8 @@ describe("agent revision update loop", () => {
   }
 });
 
-function deferred<T>(): {
-  promise: Promise<T>;
-  resolve: (value: T | PromiseLike<T>) => void;
-} {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((resolver) => {
-    resolve = resolver;
-  });
-  return { promise, resolve };
+function deferred<T>() {
+  return Promise.withResolvers<T>();
 }
 
 async function waitForBlockedDatabaseLock(db: DrizzleDB): Promise<void> {

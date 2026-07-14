@@ -5,6 +5,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import type { AvatarChangeSource, AvatarGenerationTriggerSource } from "../db/schema.js";
 import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
+import { isPostgresUniqueViolation } from "../lib/postgres-errors.js";
 import { normalizeUploadedAvatarUrl } from "../lib/storage.js";
 import {
   consumeOwnedDraftAvatarCompletion,
@@ -29,6 +30,7 @@ import {
   boundAgentMutationWaitingSeatReferences,
   type AgentMutationProfileRevisionReceipt,
   type AgentMutationReceipt,
+  type AgentMutationWarning,
   type AgentMutationWaitingSeatReference,
 } from "./agent-mutation-receipt.js";
 import {
@@ -164,7 +166,6 @@ export interface UpdateAgentProfileMutationInput {
 
 export interface AgentProfileMutationRead {
   profile: typeof schema.agentProfiles.$inferSelect;
-  revisionCreated: boolean;
   profileRevision: AgentProfileRevisionMutationRead;
   receipt: AgentMutationReceipt;
 }
@@ -685,7 +686,6 @@ function profileMutationRead(
 ): AgentProfileMutationRead {
   return {
     profile: { ...profile, currentRevisionId: revision.revision.id },
-    revisionCreated: revision.created,
     profileRevision: {
       revisionId: revision.revision.id,
       ordinal: revision.revision.ordinal,
@@ -713,7 +713,7 @@ async function findWaitingFollowerGames(
   db: DatabaseExecutor,
   agentProfileId: string,
 ): Promise<WaitingFollowerGame[]> {
-  const rows = await db.select({
+  return db.selectDistinct({
     id: schema.games.id,
     slug: schema.games.slug,
   }).from(schema.gamePlayers)
@@ -723,7 +723,6 @@ async function findWaitingFollowerGames(
       eq(schema.games.status, "waiting"),
     ))
     .orderBy(asc(schema.games.id));
-  return [...new Map(rows.map((row) => [row.id, row])).values()];
 }
 
 function profileRevisionReceipt(
@@ -922,7 +921,7 @@ export async function updateOwnedAgent(
 
 function addMutationWarning(
   receipt: AgentMutationReceipt,
-  warning: string,
+  warning: AgentMutationWarning,
 ): AgentMutationReceipt {
   return receipt.warnings.includes(warning)
     ? receipt
@@ -1216,21 +1215,9 @@ function agentNameTakenError(): AgentProfileManagementError {
 }
 
 function mapAgentNameConflict(error: unknown): unknown {
-  return isNormalizedAgentNameUniqueViolation(error) ? agentNameTakenError() : error;
-}
-
-function isNormalizedAgentNameUniqueViolation(error: unknown): boolean {
-  let current = error;
-  for (let depth = 0; depth < 5 && current && typeof current === "object"; depth += 1) {
-    const record = current as Record<string, unknown>;
-    if (record.code === "23505"
-      && (record.constraint_name === AGENT_NAME_UNIQUE_INDEX
-        || record.constraint === AGENT_NAME_UNIQUE_INDEX)) {
-      return true;
-    }
-    current = record.cause;
-  }
-  return false;
+  return isPostgresUniqueViolation(error, AGENT_NAME_UNIQUE_INDEX)
+    ? agentNameTakenError()
+    : error;
 }
 
 function optionalStringField(value: unknown, field: string, maxLength: number): string | null {

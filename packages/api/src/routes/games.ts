@@ -567,12 +567,15 @@ export function createGameRoutes(db: DrizzleDB) {
           .from(schema.gamePlayers)
           .where(eq(schema.gamePlayers.gameId, gameId));
         const actualSlots = lockedGame.maxPlayers - currentPlayers.length;
-        const existingNames = currentPlayers.map((player) => {
-          const persona = JSON.parse(player.persona) as { name: string };
-          return persona.name;
-        });
-        const existingArchetypes = currentPlayers.map((player) => {
-          const persona = JSON.parse(player.persona) as { personaKey?: Personality; personality?: Personality };
+        const currentPersonas = currentPlayers.map((player) => (
+          JSON.parse(player.persona) as {
+            name: string;
+            personaKey?: Personality;
+            personality?: Personality;
+          }
+        ));
+        const existingNames = currentPersonas.map((persona) => persona.name);
+        const existingArchetypes = currentPersonas.map((persona) => {
           return persona.personaKey ?? persona.personality ?? "strategic";
         });
         const names = pickAgentNames(actualSlots, existingNames);

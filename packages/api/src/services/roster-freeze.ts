@@ -7,6 +7,7 @@ import {
   OwnedSeatProjectionError,
   lockWaitingGameForRosterWrite,
   projectWaitingOwnedRosterInTransaction,
+  type OwnedSeatProjectionErrorReason,
 } from "./owned-seat-projection.js";
 import {
   COMPETITION_RATING_POLICY_VERSION,
@@ -60,7 +61,7 @@ export async function freezeWaitingRosterInTransaction(
   try {
     return await freezeWaitingRoster(tx, input);
   } catch (error) {
-    throw asRosterFreezeError(error);
+    throw toRosterFreezeError(error) ?? error;
   }
 }
 
@@ -307,28 +308,23 @@ function freezeError(
   return new RosterFreezeError(message, code, reason);
 }
 
-export function asRosterFreezeError(error: unknown): RosterFreezeError {
+export function toRosterFreezeError(error: unknown): RosterFreezeError | null {
   if (error instanceof RosterFreezeError) return error;
-  if (error instanceof OwnedSeatProjectionError) {
-    return new RosterFreezeError(
-      error.message,
-      error.code,
-      error.reason === "game_not_found"
-        ? "game_not_found"
-        : error.reason === "game_not_waiting"
-          ? "game_not_waiting"
-          : error.reason === "capacity"
-            ? "capacity"
-            : error.reason === "duplicate_owner"
-              ? "duplicate_owner"
-              : error.reason === "name_conflict"
-                ? "name_conflict"
-                : error.reason === "season_not_active"
-                  ? "season_not_startable"
-                  : error.reason === "profile_not_owned"
-                    ? "malformed_owned_seat"
-                    : error.reason,
-    );
+  if (!(error instanceof OwnedSeatProjectionError)) return null;
+  return new RosterFreezeError(
+    error.message,
+    error.code,
+    rosterFreezeReason(error.reason),
+  );
+}
+
+function rosterFreezeReason(reason: OwnedSeatProjectionErrorReason): RosterFreezeErrorReason {
+  switch (reason) {
+    case "season_not_active":
+      return "season_not_startable";
+    case "profile_not_owned":
+      return "malformed_owned_seat";
+    default:
+      return reason;
   }
-  throw error;
 }
