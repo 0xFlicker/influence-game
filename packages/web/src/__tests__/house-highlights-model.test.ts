@@ -7,7 +7,7 @@ import {
 } from "./house-highlights-fixtures";
 
 describe("house highlights model", () => {
-  it("maps a main House Cut into scene cards with fact-forward share links", () => {
+  it("maps a main House Cut into fact-forward scene cards", () => {
     const model = buildHouseHighlightsViewModel(mainCutFixture(), "edge-smoke-dusk");
 
     expect(model.badge).toBe("House Cut");
@@ -41,9 +41,6 @@ describe("house highlights model", () => {
       proofLink: {
         href: "/games/edge-smoke-dusk/results#round-1",
         surface: "results",
-      },
-      shareLink: {
-        href: "/games/edge-smoke-dusk/highlights?scene=alliance-cut%3A1%3Aember#scene-alliance-cut%3A1%3Aember",
       },
       anchorId: "scene-alliance-cut:1:ember",
       isSelected: false,

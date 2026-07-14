@@ -137,6 +137,45 @@ describe("CompletedGameEntry", () => {
     expect(result).toEqual({ tone: "success", message: "Share link copied." });
   });
 
+  it("opens native sharing with the canonical game URL", async () => {
+    let sharedData: ShareData | undefined;
+    const result = await sharePostgameTrailer({
+      gameId,
+      origin: "https://thehouse.game",
+      title: "House Highlights",
+      text: "The pact collapsed one vote too late.",
+      share: async (data) => {
+        sharedData = data;
+      },
+    });
+
+    expect(sharedData).toEqual({
+      title: "House Highlights",
+      text: "The pact collapsed one vote too late.",
+      url: `https://thehouse.game/games/${gameId}`,
+    });
+    expect(result).toEqual({ tone: "success", message: "Share dialog opened." });
+  });
+
+  it("does not copy the trailer URL when native sharing is cancelled", async () => {
+    let copyAttempted = false;
+    const result = await sharePostgameTrailer({
+      gameId,
+      origin: "https://thehouse.game",
+      title: "House Highlights",
+      text: "The pact collapsed one vote too late.",
+      share: async () => {
+        throw new DOMException("Share cancelled", "AbortError");
+      },
+      copy: async () => {
+        copyAttempted = true;
+      },
+    });
+
+    expect(copyAttempted).toBe(false);
+    expect(result).toEqual({ tone: "neutral", message: "Share cancelled." });
+  });
+
   it("reports share errors through visible live feedback", async () => {
     const result = await sharePostgameTrailer({
       gameId,

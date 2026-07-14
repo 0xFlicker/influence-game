@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import type { HouseHighlightsResponse } from "@/lib/api";
 import { completedGameModeHref, gameHref } from "@/lib/game-links";
@@ -6,6 +8,10 @@ import {
   type HouseHighlightsSceneModel,
 } from "./house-highlights-model";
 import { HouseHighlightCard } from "./house-highlights-card";
+import {
+  shareFeedbackClassName,
+  usePostgameTrailerShare,
+} from "./postgame-media-player";
 
 export function HouseHighlightsView({
   response,
@@ -47,7 +53,13 @@ export function HouseHighlightsView({
       ) : (
         <section className="grid gap-4" data-testid="house-highlights-scenes">
           {model.scenes.map((scene, index) => (
-            <SceneCard key={scene.id} scene={scene} index={index} />
+            <SceneCard
+              key={scene.id}
+              scene={scene}
+              index={index}
+              gameSlug={gameSlug}
+              shareCaption={model.shareCaption}
+            />
           ))}
         </section>
       )}
@@ -86,10 +98,20 @@ export function HouseHighlightsView({
 function SceneCard({
   scene,
   index,
+  gameSlug,
+  shareCaption,
 }: {
   scene: HouseHighlightsSceneModel;
   index: number;
+  gameSlug: string;
+  shareCaption: string;
 }) {
+  const { feedback, shareTrailer } = usePostgameTrailerShare({
+    gameId: gameSlug,
+    title: "House Highlights",
+    text: shareCaption,
+  });
+
   return (
     <article
       id={scene.anchorId}
@@ -132,12 +154,23 @@ function SceneCard({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Link
-            href={scene.shareLink.href}
-            className="inline-flex rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white/70 transition-colors hover:bg-white/[0.1]"
-          >
-            {scene.shareLink.label}
-          </Link>
+          <div className="flex flex-col items-start gap-1">
+            <button
+              type="button"
+              onClick={() => void shareTrailer()}
+              className="inline-flex rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white/70 transition-colors hover:bg-white/[0.1] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phase/60"
+              aria-label="Share trailer"
+            >
+              Share trailer
+            </button>
+            <p
+              className={shareFeedbackClassName(feedback)}
+              role="status"
+              aria-live="polite"
+            >
+              {feedback?.message ?? ""}
+            </p>
+          </div>
           <Link
             href={scene.proofLink.href}
             className="inline-flex rounded-lg border border-cyan-300/25 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100 transition-colors hover:bg-cyan-500/15"

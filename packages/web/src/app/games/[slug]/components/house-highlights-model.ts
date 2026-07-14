@@ -7,7 +7,6 @@ import type {
 } from "@/lib/api";
 import {
   completedGameModeHref,
-  gameHighlightSceneHref,
   houseHighlightSceneAnchor,
 } from "@/lib/game-links";
 import { houseHighlightGeneratedBackgroundAsset } from "./house-highlights-backgrounds";
@@ -16,11 +15,6 @@ export interface HouseHighlightsProofLink {
   label: string;
   href: string;
   surface: "results" | "replay";
-}
-
-export interface HouseHighlightsShareLink {
-  label: string;
-  href: string;
 }
 
 export interface HouseHighlightsSceneModel {
@@ -50,7 +44,6 @@ export interface HouseHighlightsSceneModel {
     visualType: string;
   };
   proofLink: HouseHighlightsProofLink;
-  shareLink: HouseHighlightsShareLink;
   anchorId: string;
   isSelected: boolean;
 }
@@ -137,10 +130,6 @@ function sceneModel(
       visualType: scene.visualBrief.visualType,
     },
     proofLink: proofLink(scene.deepLink, gameSlug),
-    shareLink: {
-      label: "Share scene",
-      href: gameHighlightSceneHref(gameSlug, scene.id),
-    },
     anchorId: houseHighlightSceneAnchor(scene.id),
     isSelected: selectedSceneId === scene.id,
   };

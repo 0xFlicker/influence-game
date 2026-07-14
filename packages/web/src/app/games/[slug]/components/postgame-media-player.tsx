@@ -7,9 +7,22 @@ import type { PublicPostgameMediaResponse } from "@/lib/api";
 type ReadyPostgameMedia = Extract<PublicPostgameMediaResponse, { status: "ready" }>;
 
 export type ShareFeedback = {
-  tone: "success" | "error";
+  tone: "success" | "neutral" | "error";
   message: string;
 };
+
+function isShareCancellation(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "name" in error
+    && error.name === "AbortError";
+}
+
+export function shareFeedbackClassName(feedback: ShareFeedback | null): string {
+  if (feedback?.tone === "error") return "text-xs text-red-200/80";
+  if (feedback?.tone === "success") return "text-xs text-emerald-200/80";
+  return "text-xs text-white/45";
+}
 
 export async function sharePostgameTrailer({
   gameId,
@@ -32,8 +45,11 @@ export async function sharePostgameTrailer({
     try {
       await share({ title, text, url });
       return { tone: "success", message: "Share dialog opened." };
-    } catch {
-      // Copying the canonical page is a useful fallback when native sharing declines.
+    } catch (error) {
+      if (isShareCancellation(error)) {
+        return { tone: "neutral", message: "Share cancelled." };
+      }
+      // Copying the canonical page is a useful fallback when native sharing fails.
     }
   }
 
@@ -49,21 +65,23 @@ export async function sharePostgameTrailer({
   return { tone: "error", message: "Unable to share this trailer right now." };
 }
 
-export function PostgameMediaPlayer({
+export function usePostgameTrailerShare({
   gameId,
-  media,
+  title,
+  text,
 }: {
   gameId: string;
-  media: ReadyPostgameMedia;
+  title: string;
+  text: string;
 }) {
   const [feedback, setFeedback] = useState<ShareFeedback | null>(null);
 
-  async function handleShare(): Promise<void> {
+  async function shareTrailer(): Promise<void> {
     const result = await sharePostgameTrailer({
       gameId,
       origin: window.location.origin,
-      title: media.preview.title,
-      text: media.preview.description,
+      title,
+      text,
       share: typeof navigator.share === "function"
         ? (data) => navigator.share(data)
         : undefined,
@@ -73,6 +91,22 @@ export function PostgameMediaPlayer({
     });
     setFeedback(result);
   }
+
+  return { feedback, shareTrailer };
+}
+
+export function PostgameMediaPlayer({
+  gameId,
+  media,
+}: {
+  gameId: string;
+  media: ReadyPostgameMedia;
+}) {
+  const { feedback, shareTrailer } = usePostgameTrailerShare({
+    gameId,
+    title: media.preview.title,
+    text: media.preview.description,
+  });
 
   return (
     <section
@@ -94,7 +128,7 @@ export function PostgameMediaPlayer({
         </div>
         <button
           type="button"
-          onClick={() => void handleShare()}
+          onClick={() => void shareTrailer()}
           className="min-h-11 shrink-0 rounded-lg border border-white/15 bg-white/[0.06] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/[0.12] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phase/60"
           aria-label="Share trailer"
         >
@@ -122,7 +156,7 @@ export function PostgameMediaPlayer({
 
       <div className="min-h-8 px-4 py-2 sm:px-5">
         <p
-          className={feedback?.tone === "error" ? "text-xs text-red-200/80" : "text-xs text-emerald-200/80"}
+          className={shareFeedbackClassName(feedback)}
           role="status"
           aria-live="polite"
         >
