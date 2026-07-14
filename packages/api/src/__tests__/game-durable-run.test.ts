@@ -105,6 +105,8 @@ describe("durable run inspection read model", () => {
         },
       },
     });
+    await db.update(schema.games).set({ maxPlayers: 5, startedAt: null })
+      .where(eq(schema.games.id, gameId));
 
     await db.insert(schema.gamePlayers).values(
       ["Atlas", "Echo", "Mira", "Nyx", "Vera"].map((name) => ({

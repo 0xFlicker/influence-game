@@ -64,7 +64,6 @@ import {
 } from "./game-recovery.js";
 import { isUserSelectableAgentArchetype } from "./agent-archetypes.js";
 import { ensureWaitingPostgameMediaRow, reconcilePostgameMediaForGame } from "./postgame-media-coordinator.js";
-import { validateRatedGameRoster } from "./seasons.js";
 import { completeCompetitionGameInTransaction } from "./competition-completion.js";
 
 // ---------------------------------------------------------------------------
@@ -710,11 +709,6 @@ export async function validateGameStartReadiness(
 
   if (!game) {
     return { error: "Game not found" };
-  }
-
-  const ratedRoster = await validateRatedGameRoster(db, gameId);
-  if (ratedRoster.error) {
-    return { error: ratedRoster.error };
   }
 
   let gameConfig: Record<string, unknown>;

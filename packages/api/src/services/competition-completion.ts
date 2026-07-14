@@ -30,6 +30,22 @@ export interface CompetitionCompletionResult {
   receiptCount: number;
 }
 
+export class CompetitionSettlementRepairRequiredError extends Error {
+  public readonly code = "competition_settlement_repair_required" as const;
+
+  constructor(
+    message: string,
+    public readonly reason:
+      | "owned_revision_missing"
+      | "owned_revision_mismatch"
+      | "pregame_snapshot_missing"
+      | "pregame_snapshot_mismatch",
+  ) {
+    super(message);
+    this.name = "CompetitionSettlementRepairRequiredError";
+  }
+}
+
 export async function completeCompetitionGame(
   db: DrizzleDB,
   input: CompetitionCompletionInput,
@@ -135,13 +151,15 @@ export async function completeCompetitionGameInTransaction(
   const profiles = await tx.select().from(schema.agentProfiles)
     .where(inArray(schema.agentProfiles.id, profileIds));
   const profilesById = new Map(profiles.map((profile) => [profile.id, profile]));
-  const revisions = await tx.select().from(schema.agentRevisions)
-    .where(inArray(schema.agentRevisions.agentProfileId, profileIds))
-    .orderBy(asc(schema.agentRevisions.ordinal));
-  const latestRevisionByProfile = new Map<string, typeof schema.agentRevisions.$inferSelect>();
+  const seatRevisionIds = uniqueOwnedSeats.flatMap((seat) => (
+    seat.agentRevisionId ? [seat.agentRevisionId] : []
+  ));
+  const revisions = seatRevisionIds.length === 0
+    ? []
+    : await tx.select().from(schema.agentRevisions)
+      .where(inArray(schema.agentRevisions.id, seatRevisionIds));
   const revisionById = new Map<string, typeof schema.agentRevisions.$inferSelect>();
   for (const revision of revisions) {
-    latestRevisionByProfile.set(revision.agentProfileId, revision);
     revisionById.set(revision.id, revision);
   }
   const ratings = await tx.select().from(schema.agentCompetitionRatings)
@@ -152,13 +170,36 @@ export async function completeCompetitionGameInTransaction(
     inArray(schema.competitionRatingSnapshots.agentProfileId, profileIds),
   ));
   const snapshotByProfile = new Map(snapshots.map((snapshot) => [snapshot.agentProfileId, snapshot]));
-  const snapshotMissing = uniqueOwnedSeats.some((seat) => {
+  for (const seat of uniqueOwnedSeats) {
+    if (!seat.agentRevisionId) {
+      throw repairRequired(
+        `Competition seat ${seat.id} is missing its pinned analytical revision.`,
+        "owned_revision_missing",
+      );
+    }
+    const revision = revisionById.get(seat.agentRevisionId);
+    if (!revision || revision.agentProfileId !== seat.agentProfileId) {
+      throw repairRequired(
+        `Competition seat ${seat.id} has a mismatched pinned analytical revision.`,
+        "owned_revision_mismatch",
+      );
+    }
     const snapshot = snapshotByProfile.get(seat.agentProfileId!);
-    return !snapshot || snapshot.agentRevisionId !== seat.agentRevisionId
-      || snapshot.ratingPolicyVersion !== COMPETITION_RATING_POLICY_VERSION;
-  });
-  const eligibilityReason = canonicalEligibilityReason
-    ?? (snapshotMissing ? "pregame_rating_snapshot_missing" : null);
+    if (!snapshot) {
+      throw repairRequired(
+        `Competition seat ${seat.id} is missing its pregame rating snapshot.`,
+        "pregame_snapshot_missing",
+      );
+    }
+    if (snapshot.agentRevisionId !== seat.agentRevisionId
+      || snapshot.ratingPolicyVersion !== COMPETITION_RATING_POLICY_VERSION) {
+      throw repairRequired(
+        `Competition seat ${seat.id} has mismatched pregame rating evidence.`,
+        "pregame_snapshot_mismatch",
+      );
+    }
+  }
+  const eligibilityReason = canonicalEligibilityReason;
   const eligible = eligibilityReason === null;
 
   const ownerIds = [...new Set(uniqueOwnedSeats.map((seat) => seat.userId!))];
@@ -169,12 +210,7 @@ export async function completeCompetitionGameInTransaction(
   for (const seat of uniqueOwnedSeats) {
     const profileId = seat.agentProfileId!;
     if (!profilesById.has(profileId)) throw new Error(`Competition profile ${profileId} not found`);
-    const seatRevision = seat.agentRevisionId
-      ? revisionById.get(seat.agentRevisionId)
-      : latestRevisionByProfile.get(profileId);
-    if (!seatRevision || seatRevision.agentProfileId !== profileId) {
-      throw new Error(`Competition seat ${seat.id} has no trustworthy analytical revision`);
-    }
+    const seatRevision = revisionById.get(seat.agentRevisionId!)!;
     if (!ratingByProfile.has(profileId)) {
       const initial = initialCompetitionRating();
       const inserted = (await tx.insert(schema.agentCompetitionRatings).values({
@@ -224,15 +260,12 @@ export async function completeCompetitionGameInTransaction(
     const placement = placementByPlayerId.get(player.id);
     if (placement === undefined) return null;
     const snapshot = player.agentProfileId ? snapshotByProfile.get(player.agentProfileId) : null;
-    const current = player.agentProfileId ? ratingByProfile.get(player.agentProfileId) : null;
     return {
       id: player.id,
       placement,
       rating: snapshot
         ? { mu: snapshot.mu, sigma: snapshot.sigma }
-        : current
-          ? { mu: current.mu, sigma: current.sigma }
-          : initialCompetitionRating(),
+        : initialCompetitionRating(),
     };
   }).filter((seat): seat is NonNullable<typeof seat> => seat !== null);
   const changes = eligible ? rateCompetitionField(ratingSeats) : [];
@@ -242,9 +275,7 @@ export async function completeCompetitionGameInTransaction(
     const profileId = seat.agentProfileId!;
     const ownerId = seat.userId!;
     const profile = profilesById.get(profileId)!;
-    const revision = seat.agentRevisionId
-      ? revisionById.get(seat.agentRevisionId)!
-      : latestRevisionByProfile.get(profileId)!;
+    const revision = revisionById.get(seat.agentRevisionId!)!;
     const rating = ratingByProfile.get(profileId)!;
     const placement = placementByPlayerId.get(seat.id) ?? null;
     const change = changeByPlayerId.get(seat.id);
@@ -281,9 +312,7 @@ export async function completeCompetitionGameInTransaction(
     await tx.insert(schema.competitionReceiptEvidence).values({
       receiptId,
       ratingPolicyVersion: COMPETITION_RATING_POLICY_VERSION,
-      pregameRating: pregame
-        ? { mu: pregame.mu, sigma: pregame.sigma }
-        : { mu: rating.mu, sigma: rating.sigma },
+      pregameRating: { mu: pregame!.mu, sigma: pregame!.sigma },
       postgameRating: change ? { mu: change.after.mu, sigma: change.after.sigma } : null,
       opponentRatings: opponents.map((opponent) => ({
         playerId: opponent.id,
@@ -374,6 +403,12 @@ function competitionIneligibilityReason(input: {
   if (input.players.some((player) => !input.placementByPlayerId.has(player.id))) {
     return "canonical_ranking_incomplete";
   }
-  if (input.ownedSeats.some((seat) => !seat.agentRevisionId)) return "owned_revision_missing";
   return null;
+}
+
+function repairRequired(
+  message: string,
+  reason: ConstructorParameters<typeof CompetitionSettlementRepairRequiredError>[1],
+): CompetitionSettlementRepairRequiredError {
+  return new CompetitionSettlementRepairRequiredError(message, reason);
 }

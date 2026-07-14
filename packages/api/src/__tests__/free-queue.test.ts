@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
@@ -6,11 +6,21 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { createFreeQueueRoutes } from "../routes/free-queue.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { abortAllGames } from "../services/game-lifecycle.js";
 import { createSeason } from "../services/seasons.js";
 import { setupTestDB } from "./test-utils.js";
 
+const savedMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
+
 beforeAll(() => {
   process.env.JWT_SECRET = "free-queue-season-test-secret";
+  process.env.INFLUENCE_API_TEST_MOCK_RUNNER = "true";
+});
+
+afterAll(async () => {
+  await abortAllGames();
+  if (savedMockRunner === undefined) delete process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
+  else process.env.INFLUENCE_API_TEST_MOCK_RUNNER = savedMockRunner;
 });
 
 describe("free queue season admission", () => {
@@ -110,6 +120,48 @@ describe("free queue season admission", () => {
     expect(standingEntries).toEqual(standingBefore);
     expect(standingEntries.every((entry) => entry.consecutiveMisses === 0)).toBe(true);
     expect(await db.select().from(schema.competitionRatingSnapshots)).toEqual([]);
+  });
+
+  test("starts an already-drawn Daily Free game after its season begins closing", async () => {
+    const db = await setupTestDB();
+    const operatorId = await insertUser(db, "closing-operator");
+    await createQueuedAgent(db, "closing-a", "Aster Closing");
+    await createQueuedAgent(db, "closing-b", "Maris Closing");
+    const season = await createSeason(db, {
+      slug: "daily-closing",
+      name: "Daily Closing",
+      createdById: operatorId,
+    });
+    const token = await createSessionToken(operatorId, {
+      roles: ["scheduler"],
+      permissions: ["schedule_free_game"],
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+    const draw = await app.request("/api/free-queue/draw", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const drawn = await draw.json() as { gameId: string };
+    await db.update(schema.seasons).set({ status: "closing" })
+      .where(eq(schema.seasons.id, season.id));
+
+    const started = await app.request("/api/free-queue/start", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(started.status).toBe(200);
+    expect(await started.json()).toMatchObject({ started: true, gameId: drawn.gameId });
+    const seats = await db.select().from(schema.gamePlayers)
+      .where(eq(schema.gamePlayers.gameId, drawn.gameId));
+    const snapshots = await db.select().from(schema.competitionRatingSnapshots)
+      .where(eq(schema.competitionRatingSnapshots.gameId, drawn.gameId));
+    expect(snapshots).toHaveLength(2);
+    expect(snapshots.every((snapshot) => seats.some((seat) => (
+      seat.agentProfileId === snapshot.agentProfileId
+        && seat.agentRevisionId === snapshot.agentRevisionId
+    )))).toBe(true);
+    await abortAllGames();
   });
 
   test("draw remains available but explicitly unrated without an active season", async () => {

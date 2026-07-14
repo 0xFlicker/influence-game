@@ -222,6 +222,7 @@ export async function admitOwnedSeatInTransaction(
 export async function projectWaitingOwnedRosterInTransaction(
   tx: DrizzleTransaction,
   gameId: string,
+  options: { allowHouseNameCollisions?: boolean } = {},
 ): Promise<{ game: GameRow; seats: PlayerRow[] }> {
   const game = await lockWaitingGameForRosterWrite(tx, gameId);
   const players = await tx.select().from(schema.gamePlayers)
@@ -260,14 +261,21 @@ export async function projectWaitingOwnedRosterInTransaction(
     const projection = projections.get(player.id);
     const name = projection?.profile.name ?? personaName(player.persona);
     const normalized = normalizeName(name);
-    if (projectedNames.has(normalized)) {
+    const existingPlayerId = projectedNames.get(normalized);
+    const existingPlayer = existingPlayerId
+      ? players.find((candidate) => candidate.id === existingPlayerId)
+      : undefined;
+    const isHouseOnlyCollision = existingPlayer
+      && !existingPlayer.agentProfileId
+      && !player.agentProfileId;
+    if (existingPlayerId && !(options.allowHouseNameCollisions && isHouseOnlyCollision)) {
       throw projectionError(
         "A player with that name already exists in this game.",
         "rated_roster_invalid",
         "name_conflict",
       );
     }
-    projectedNames.set(normalized, player.id);
+    if (!existingPlayerId) projectedNames.set(normalized, player.id);
   }
 
   for (const player of ownedPlayers) {

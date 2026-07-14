@@ -114,22 +114,83 @@ describe("competition completion", () => {
     expect(miraEvent).toMatchObject({ beforeMu: 10, beforeSigma: 8 });
   });
 
-  test("records an ineligible decision when an admission snapshot is missing", async () => {
+  test("fails repair-required without awards when a pregame snapshot is missing", async () => {
     const fixture = await createRatedFixture();
     await fixture.db.delete(schema.competitionRatingSnapshots)
       .where(eq(schema.competitionRatingSnapshots.agentProfileId, fixture.miraProfileId));
-    const result = await completeCompetitionGame(fixture.db, {
+    await expect(completeCompetitionGame(fixture.db, {
       gameId: fixture.gameId,
       winnerId: "atlas",
       roundsPlayed: 1,
       earnedAt: "2026-07-10T20:00:00.000Z",
+    })).rejects.toMatchObject({
+      code: "competition_settlement_repair_required",
+      reason: "pregame_snapshot_missing",
     });
-    expect(result).toMatchObject({
-      eligible: false,
-      eligibilityReason: "pregame_rating_snapshot_missing",
+    expect(await fixture.db.select().from(schema.competitionReceipts)).toHaveLength(0);
+    expect(await fixture.db.select().from(schema.competitionRatingEvents)).toHaveLength(0);
+    expect(await fixture.db.select().from(schema.agentCompetitionRatings)).toHaveLength(0);
+    expect((await fixture.db.select().from(schema.agentProfiles))
+      .every((profile) => profile.gamesPlayed === 0 && profile.gamesWon === 0)).toBe(true);
+  });
+
+  test("fails repair-required without awards when the seat and snapshot revisions differ", async () => {
+    const fixture = await createRatedFixture();
+    const atlasSnapshot = (await fixture.db.select().from(schema.competitionRatingSnapshots))
+      .find((snapshot) => snapshot.agentProfileId === fixture.atlasProfileId)!;
+    const miraSnapshot = (await fixture.db.select().from(schema.competitionRatingSnapshots))
+      .find((snapshot) => snapshot.agentProfileId === fixture.miraProfileId)!;
+    await fixture.db.update(schema.competitionRatingSnapshots)
+      .set({ agentRevisionId: miraSnapshot.agentRevisionId })
+      .where(eq(schema.competitionRatingSnapshots.id, atlasSnapshot.id));
+
+    await expect(completeCompetitionGame(fixture.db, {
+      gameId: fixture.gameId,
+      winnerId: "atlas",
+      roundsPlayed: 1,
+      earnedAt: "2026-07-10T20:00:00.000Z",
+    })).rejects.toMatchObject({
+      code: "competition_settlement_repair_required",
+      reason: "pregame_snapshot_mismatch",
     });
-    expect((await fixture.db.select().from(schema.competitionReceipts))
-      .every((receipt) => receipt.totalPoints === 0)).toBe(true);
+    expect(await fixture.db.select().from(schema.competitionReceipts)).toHaveLength(0);
+    expect(await fixture.db.select().from(schema.competitionRatingEvents)).toHaveLength(0);
+    expect(await fixture.db.select().from(schema.agentCompetitionRatings)).toHaveLength(0);
+  });
+
+  test("never infers a missing seat revision from the current pointer or highest ordinal", async () => {
+    const fixture = await createRatedFixture();
+    const atlasProfile = (await fixture.db.select().from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, fixture.atlasProfileId)))[0]!;
+    const active = (await fixture.db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.id, atlasProfile.currentRevisionId!)))[0]!;
+    await fixture.db.insert(schema.agentRevisions).values({
+      ...active,
+      id: randomUUID(),
+      ordinal: active.ordinal + 1,
+      priorRevisionId: active.id,
+      trigger: "runtime_policy_change",
+      magnitude: "execution",
+      fingerprint: `${active.fingerprint}:newer-non-active`,
+      createdAt: "2026-07-10T19:30:00.000Z",
+    });
+    await fixture.db.update(schema.gamePlayers).set({ agentRevisionId: null })
+      .where(eq(schema.gamePlayers.id, "atlas"));
+
+    await expect(completeCompetitionGame(fixture.db, {
+      gameId: fixture.gameId,
+      winnerId: "atlas",
+      roundsPlayed: 1,
+      earnedAt: "2026-07-10T20:00:00.000Z",
+    })).rejects.toMatchObject({
+      code: "competition_settlement_repair_required",
+      reason: "owned_revision_missing",
+    });
+    expect(await fixture.db.select().from(schema.competitionReceipts)).toHaveLength(0);
+    expect(await fixture.db.select().from(schema.competitionRatingEvents)).toHaveLength(0);
+    expect(await fixture.db.select().from(schema.agentCompetitionRatings)).toHaveLength(0);
+    expect((await fixture.db.select().from(schema.agentProfiles))
+      .every((profile) => profile.gamesPlayed === 0 && profile.gamesWon === 0)).toBe(true);
   });
 
   test("serializes concurrent completion retries without double settlement", async () => {

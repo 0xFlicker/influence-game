@@ -2146,7 +2146,7 @@ describe("Game REST API", () => {
       expect(res.status).toBe(409);
     });
 
-    test("POST /api/games/:id/start auto-reassigns duplicate names", async () => {
+    test("POST /api/games/:id/start reassigns duplicate House names inside roster freeze", async () => {
       const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
 
       // Manually insert players with duplicate names via direct DB insert

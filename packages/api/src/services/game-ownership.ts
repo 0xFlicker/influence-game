@@ -2,6 +2,14 @@ import { and, eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { projectWaitingOwnedRosterInTransaction } from "./owned-seat-projection.js";
+import {
+  asRosterFreezeError,
+  freezeWaitingRosterInTransaction,
+  RosterFreezeError,
+  type RosterFreezeErrorCode,
+  type RosterFreezeErrorReason,
+} from "./roster-freeze.js";
 
 export interface GameOwnerClaim {
   ownerEpoch: string;
@@ -9,9 +17,26 @@ export interface GameOwnerClaim {
 
 export type GameOwnerClaimResult =
   | { ok: true; claim: GameOwnerClaim }
-  | { ok: false; error: string; statusCode: 400 | 404 | 409 };
+  | {
+    ok: false;
+    error: string;
+    statusCode: 400 | 404 | 409;
+    code?: RosterFreezeErrorCode;
+    reason?: RosterFreezeErrorReason;
+    retryable?: boolean;
+  };
 
 const DEFAULT_OWNER_LEASE_MS = 10 * 60 * 1000;
+
+export class GameOwnerTransitionError extends Error {
+  constructor(
+    message: string,
+    public readonly code: "stale_owner" | "invalid_state",
+  ) {
+    super(message);
+    this.name = "GameOwnerTransitionError";
+  }
+}
 
 function ownerExpiresAt(now: Date, leaseMs = DEFAULT_OWNER_LEASE_MS): string {
   return new Date(now.getTime() + leaseMs).toISOString();
@@ -28,6 +53,28 @@ export async function acquireGameRunOwner(
 
   try {
     const claim = await db.transaction(async (tx) => {
+      const game = (await tx
+        .select({ status: schema.games.status })
+        .from(schema.games)
+        .where(eq(schema.games.id, gameId))
+        .for("update"))[0];
+      if (!game) {
+        return { ok: false as const, error: "Game not found", statusCode: 404 as const };
+      }
+      if (game.status !== "waiting") {
+        return {
+          ok: false as const,
+          error: game.status === "in_progress"
+            ? "Game is already running"
+            : "Game can only be started from waiting status",
+          statusCode: game.status === "in_progress" ? 409 as const : 400 as const,
+        };
+      }
+
+      await freezeWaitingRosterInTransaction(tx, {
+        gameId,
+        frozenAt: now.toISOString(),
+      });
       const updated = await tx.update(schema.games)
         .set({
           status: "in_progress",
@@ -36,22 +83,10 @@ export async function acquireGameRunOwner(
         .where(and(eq(schema.games.id, gameId), eq(schema.games.status, "waiting")))
         .returning({ id: schema.games.id });
 
-      if (updated.length === 0) {
-        const existing = (await tx
-          .select({ status: schema.games.status })
-          .from(schema.games)
-          .where(eq(schema.games.id, gameId)))[0];
-        if (!existing) {
-          return { ok: false as const, error: "Game not found", statusCode: 404 as const };
-        }
-        return {
-          ok: false as const,
-          error: existing.status === "in_progress"
-            ? "Game is already running"
-            : "Game can only be started from waiting status",
-          statusCode: existing.status === "in_progress" ? 409 as const : 400 as const,
-        };
-      }
+      if (updated.length === 0) throw new GameOwnerTransitionError(
+        "Game start state changed while the roster was freezing.",
+        "invalid_state",
+      );
 
       await tx.insert(schema.gameRunOwners)
         .values({
@@ -66,10 +101,23 @@ export async function acquireGameRunOwner(
     });
     return claim;
   } catch (error) {
+    let freezeError: RosterFreezeError | null = null;
+    try {
+      freezeError = asRosterFreezeError(error);
+    } catch {
+      // Non-freeze owner and persistence failures retain the legacy result.
+    }
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Failed to acquire game owner",
-      statusCode: 409,
+      statusCode: freezeError?.code === "rated_roster_invalid"
+        ? 400
+        : 409,
+      ...(freezeError && {
+        code: freezeError.code,
+        reason: freezeError.reason,
+        retryable: false,
+      }),
     };
   }
 }
@@ -158,7 +206,15 @@ export async function markOwnerStartupFailed(
 ): Promise<void> {
   const now = new Date().toISOString();
   await db.transaction(async (tx) => {
-    await tx.update(schema.gameRunOwners)
+    const game = (await tx.select({ status: schema.games.status }).from(schema.games)
+      .where(eq(schema.games.id, gameId)).for("update"))[0];
+    if (!game || game.status !== "in_progress") {
+      throw new GameOwnerTransitionError(
+        "The game is no longer in an owned startup state.",
+        "invalid_state",
+      );
+    }
+    const closed = await tx.update(schema.gameRunOwners)
       .set({
         status: "closed",
         closedAt: now,
@@ -169,11 +225,31 @@ export async function markOwnerStartupFailed(
         eq(schema.gameRunOwners.gameId, gameId),
         eq(schema.gameRunOwners.ownerEpoch, ownerEpoch),
         eq(schema.gameRunOwners.status, "active"),
-      ));
+        eq(schema.gameRunOwners.lastPersistedEventSequence, 0),
+      ))
+      .returning({ ownerEpoch: schema.gameRunOwners.ownerEpoch });
+    if (closed.length !== 1) {
+      throw new GameOwnerTransitionError(
+        `Owner epoch ${ownerEpoch} is no longer the active pre-play startup owner.`,
+        "stale_owner",
+      );
+    }
 
-    await tx.update(schema.games)
+    const returned = await tx.update(schema.games)
       .set({ status: "waiting", startedAt: null })
-      .where(and(eq(schema.games.id, gameId), eq(schema.games.status, "in_progress")));
+      .where(and(eq(schema.games.id, gameId), eq(schema.games.status, "in_progress")))
+      .returning({ id: schema.games.id });
+    if (returned.length !== 1) {
+      throw new GameOwnerTransitionError(
+        "The game is no longer in the startup state owned by this epoch.",
+        "invalid_state",
+      );
+    }
+    await tx.delete(schema.competitionRatingSnapshots)
+      .where(eq(schema.competitionRatingSnapshots.gameId, gameId));
+    await projectWaitingOwnedRosterInTransaction(tx, gameId, {
+      allowHouseNameCollisions: true,
+    });
   });
 }
 
