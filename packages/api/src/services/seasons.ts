@@ -12,7 +12,7 @@ import {
   initialCompetitionRating,
 } from "./season-policy.js";
 import {
-  ensureAgentRevisionInTransaction,
+  resolveGameEffectiveAgentRevisionInTransaction,
   resolveFreeTrackEffectiveRuntimeSnapshot,
 } from "./agent-revisions.js";
 
@@ -179,14 +179,13 @@ export async function bindFreeGameToActiveSeason(
       );
     }
     const agentConfig = parseAgentConfig(player.agentConfig);
-    const revision = await ensureAgentRevisionInTransaction(tx, {
+    const revision = await resolveGameEffectiveAgentRevisionInTransaction(tx, {
       profile,
       effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile, {
         modelSelection: gameConfig.modelSelection,
         modelTier: gameConfig.modelTier,
         temperature: agentConfig.temperature,
       }),
-      trigger: "runtime_policy_change",
     });
     await tx.update(schema.gamePlayers).set({ agentRevisionId: revision.revision.id })
       .where(eq(schema.gamePlayers.id, player.id));
@@ -335,14 +334,13 @@ export async function prepareOwnedSeatAdmission(
     );
   }
   const gameConfig = parseGameConfig(game.config);
-  const revision = await ensureAgentRevisionInTransaction(tx, {
+  const revision = await resolveGameEffectiveAgentRevisionInTransaction(tx, {
     profile,
     effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile, {
       modelSelection: gameConfig.modelSelection,
       modelTier: gameConfig.modelTier,
       temperature: input.temperature,
     }),
-    trigger: "runtime_policy_change",
   });
   await captureCompetitionRatingSnapshot(tx, {
     gameId: input.gameId,

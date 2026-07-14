@@ -25,10 +25,18 @@ export interface AgentProfileRevisionSource {
   personaKey: string | null;
 }
 
-export interface EnsureAgentRevisionInput {
+export interface EnsureActiveAgentRevisionInput {
   profile: AgentProfileRevisionSource;
   effectiveRuntimeSnapshot: EffectiveAgentRuntimeSnapshot;
-  trigger: typeof schema.agentRevisions.$inferInsert.trigger;
+  trigger: Exclude<
+    typeof schema.agentRevisions.$inferInsert.trigger,
+    "runtime_policy_change"
+  >;
+}
+
+export interface ResolveGameEffectiveAgentRevisionInput {
+  profile: AgentProfileRevisionSource;
+  effectiveRuntimeSnapshot: EffectiveAgentRuntimeSnapshot;
 }
 
 export interface EnsuredAgentRevision {
@@ -65,42 +73,24 @@ export function resolveFreeTrackEffectiveRuntimeSnapshot(
   };
 }
 
-export async function ensureAgentRevision(
+export async function ensureActiveAgentRevision(
   db: DrizzleDB,
-  input: EnsureAgentRevisionInput,
+  input: EnsureActiveAgentRevisionInput,
 ): Promise<EnsuredAgentRevision> {
-  return db.transaction((tx) => ensureAgentRevisionInTransaction(tx, input));
+  return db.transaction((tx) => ensureActiveAgentRevisionInTransaction(tx, input));
 }
 
-export async function ensureAgentRevisionInTransaction(
+export async function ensureActiveAgentRevisionInTransaction(
   tx: DrizzleTransaction,
-  input: EnsureAgentRevisionInput,
+  input: EnsureActiveAgentRevisionInput,
 ): Promise<EnsuredAgentRevision> {
-  await tx.execute(sql`
-    SELECT id
-    FROM agent_profiles
-    WHERE id = ${input.profile.id}
-    FOR UPDATE
-  `);
-
-  const profileState = (await tx.select({ currentRevisionId: schema.agentProfiles.currentRevisionId })
-    .from(schema.agentProfiles)
-    .where(eq(schema.agentProfiles.id, input.profile.id))
-    .limit(1))[0];
-  if (!profileState) throw new Error(`Agent profile ${input.profile.id} not found`);
-  const latest = (await tx
-    .select()
-    .from(schema.agentRevisions)
-    .where(eq(schema.agentRevisions.agentProfileId, input.profile.id))
-    .orderBy(desc(schema.agentRevisions.ordinal))
-    .limit(1))[0];
-  const current = profileState.currentRevisionId
-    ? (await tx.select().from(schema.agentRevisions)
-      .where(and(
-        eq(schema.agentRevisions.id, profileState.currentRevisionId),
-        eq(schema.agentRevisions.agentProfileId, input.profile.id),
-      )).limit(1))[0]
-    : latest;
+  const { profileState, pointedCurrent, latest } = await lockAndLoadRevisionState(
+    tx,
+    input.profile.id,
+  );
+  // Active-revision maintenance may repair a legacy null pointer by reusing the
+  // latest chronological revision. Game-effective resolution must never do so.
+  const current = pointedCurrent ?? latest;
   const nextFingerprint = fingerprintEffectiveRuntimeSnapshot(input.effectiveRuntimeSnapshot);
   if (current?.fingerprint === nextFingerprint) {
     if (profileState.currentRevisionId !== current.id) {
@@ -110,31 +100,13 @@ export async function ensureAgentRevisionInTransaction(
     return { revision: current, created: false, ratingRecalibrated: false };
   }
 
-  const previousSnapshot = current
-    ? parseEffectiveRuntimeSnapshot(current.effectiveRuntimeSnapshot)
-    : null;
-  const classification = classifyRevision(previousSnapshot, input.effectiveRuntimeSnapshot);
-  const magnitude = classification.magnitude === "none" ? "small" : classification.magnitude;
-  const behaviorSnapshot = {
-    name: input.effectiveRuntimeSnapshot.name,
-    personality: input.effectiveRuntimeSnapshot.personality,
-    backstory: input.effectiveRuntimeSnapshot.backstory,
-    strategyInstructions: input.effectiveRuntimeSnapshot.strategyInstructions,
-    personaKey: input.effectiveRuntimeSnapshot.personaKey,
-  };
-  const revision = (await tx.insert(schema.agentRevisions).values({
-    id: randomUUID(),
-    agentProfileId: input.profile.id,
-    ordinal: (latest?.ordinal ?? 0) + 1,
-    priorRevisionId: current?.id ?? null,
+  const { revision, classification } = await insertRevision(tx, {
+    profileId: input.profile.id,
+    effectiveRuntimeSnapshot: input.effectiveRuntimeSnapshot,
     trigger: input.trigger,
-    magnitude,
-    fingerprint: nextFingerprint,
-    behaviorSnapshot,
-    effectiveRuntimeSnapshot: Object.fromEntries(Object.entries(input.effectiveRuntimeSnapshot)),
-    revisionPolicyVersion: REVISION_POLICY_VERSION,
-  }).returning())[0];
-  if (!revision) throw new Error(`Failed to create revision for agent ${input.profile.id}`);
+    ordinal: (latest?.ordinal ?? 0) + 1,
+    priorRevision: current ?? null,
+  });
   const created = true;
   await tx.update(schema.agentProfiles).set({ currentRevisionId: revision.id })
     .where(eq(schema.agentProfiles.id, input.profile.id));
@@ -149,7 +121,7 @@ export async function ensureAgentRevisionInTransaction(
 
   const recalibration = recalibrateRatingForRevision(
     { mu: currentRating.mu, sigma: currentRating.sigma },
-    magnitude,
+    revision.magnitude,
   );
   await tx.update(schema.agentCompetitionRatings)
     .set({
@@ -181,7 +153,7 @@ export async function ensureAgentRevisionInTransaction(
         nextRevisionId: revision.id,
         previousFingerprint: classification.previousFingerprint,
         nextFingerprint: classification.nextFingerprint,
-        magnitude,
+        magnitude: revision.magnitude,
         ...classification.evidence,
       },
       recalibration: {
@@ -193,6 +165,51 @@ export async function ensureAgentRevisionInTransaction(
   return { revision, created, ratingRecalibrated: true };
 }
 
+export async function resolveGameEffectiveAgentRevision(
+  db: DrizzleDB,
+  input: ResolveGameEffectiveAgentRevisionInput,
+): Promise<EnsuredAgentRevision> {
+  return db.transaction((tx) => resolveGameEffectiveAgentRevisionInTransaction(tx, input));
+}
+
+export async function resolveGameEffectiveAgentRevisionInTransaction(
+  tx: DrizzleTransaction,
+  input: ResolveGameEffectiveAgentRevisionInput,
+): Promise<EnsuredAgentRevision> {
+  const { pointedCurrent: current, latest } = await lockAndLoadRevisionState(
+    tx,
+    input.profile.id,
+  );
+  if (!current) {
+    throw new Error(`Agent profile ${input.profile.id} has no active revision`);
+  }
+
+  const nextFingerprint = fingerprintEffectiveRuntimeSnapshot(input.effectiveRuntimeSnapshot);
+  if (current.fingerprint === nextFingerprint) {
+    return { revision: current, created: false, ratingRecalibrated: false };
+  }
+
+  const matching = (await tx.select().from(schema.agentRevisions)
+    .where(and(
+      eq(schema.agentRevisions.agentProfileId, input.profile.id),
+      eq(schema.agentRevisions.fingerprint, nextFingerprint),
+    ))
+    .orderBy(desc(schema.agentRevisions.ordinal))
+    .limit(1))[0];
+  if (matching) {
+    return { revision: matching, created: false, ratingRecalibrated: false };
+  }
+
+  const { revision } = await insertRevision(tx, {
+    profileId: input.profile.id,
+    effectiveRuntimeSnapshot: input.effectiveRuntimeSnapshot,
+    trigger: "runtime_policy_change",
+    ordinal: (latest?.ordinal ?? 0) + 1,
+    priorRevision: current,
+  });
+  return { revision, created: true, ratingRecalibrated: false };
+}
+
 export async function getLatestAgentRevision(
   db: DrizzleDB,
   agentProfileId: string,
@@ -202,6 +219,84 @@ export async function getLatestAgentRevision(
     .where(eq(schema.agentRevisions.agentProfileId, agentProfileId))
     .orderBy(desc(schema.agentRevisions.ordinal))
     .limit(1))[0] ?? null;
+}
+
+async function lockAndLoadRevisionState(
+  tx: DrizzleTransaction,
+  agentProfileId: string,
+): Promise<{
+  profileState: Pick<typeof schema.agentProfiles.$inferSelect, "currentRevisionId">;
+  pointedCurrent: typeof schema.agentRevisions.$inferSelect | undefined;
+  latest: typeof schema.agentRevisions.$inferSelect | undefined;
+}> {
+  await tx.execute(sql`
+    SELECT id
+    FROM agent_profiles
+    WHERE id = ${agentProfileId}
+    FOR UPDATE
+  `);
+
+  const profileState = (await tx.select({ currentRevisionId: schema.agentProfiles.currentRevisionId })
+    .from(schema.agentProfiles)
+    .where(eq(schema.agentProfiles.id, agentProfileId))
+    .limit(1))[0];
+  if (!profileState) throw new Error(`Agent profile ${agentProfileId} not found`);
+  const latest = (await tx.select().from(schema.agentRevisions)
+    .where(eq(schema.agentRevisions.agentProfileId, agentProfileId))
+    .orderBy(desc(schema.agentRevisions.ordinal))
+    .limit(1))[0];
+  const pointedCurrent = profileState.currentRevisionId
+    ? (await tx.select().from(schema.agentRevisions)
+      .where(and(
+        eq(schema.agentRevisions.id, profileState.currentRevisionId),
+        eq(schema.agentRevisions.agentProfileId, agentProfileId),
+      ))
+      .limit(1))[0]
+    : undefined;
+  if (profileState.currentRevisionId && !pointedCurrent) {
+    throw new Error(`Agent profile ${agentProfileId} has an invalid active revision`);
+  }
+  return { profileState, pointedCurrent, latest };
+}
+
+async function insertRevision(
+  tx: DrizzleTransaction,
+  input: {
+    profileId: string;
+    effectiveRuntimeSnapshot: EffectiveAgentRuntimeSnapshot;
+    trigger: typeof schema.agentRevisions.$inferInsert.trigger;
+    ordinal: number;
+    priorRevision: typeof schema.agentRevisions.$inferSelect | null;
+  },
+): Promise<{
+  revision: typeof schema.agentRevisions.$inferSelect;
+  classification: ReturnType<typeof classifyRevision>;
+}> {
+  const previousSnapshot = input.priorRevision
+    ? parseEffectiveRuntimeSnapshot(input.priorRevision.effectiveRuntimeSnapshot)
+    : null;
+  const classification = classifyRevision(previousSnapshot, input.effectiveRuntimeSnapshot);
+  const magnitude = classification.magnitude === "none" ? "small" : classification.magnitude;
+  const revision = (await tx.insert(schema.agentRevisions).values({
+    id: randomUUID(),
+    agentProfileId: input.profileId,
+    ordinal: input.ordinal,
+    priorRevisionId: input.priorRevision?.id ?? null,
+    trigger: input.trigger,
+    magnitude,
+    fingerprint: classification.nextFingerprint,
+    behaviorSnapshot: {
+      name: input.effectiveRuntimeSnapshot.name,
+      personality: input.effectiveRuntimeSnapshot.personality,
+      backstory: input.effectiveRuntimeSnapshot.backstory,
+      strategyInstructions: input.effectiveRuntimeSnapshot.strategyInstructions,
+      personaKey: input.effectiveRuntimeSnapshot.personaKey,
+    },
+    effectiveRuntimeSnapshot: Object.fromEntries(Object.entries(input.effectiveRuntimeSnapshot)),
+    revisionPolicyVersion: REVISION_POLICY_VERSION,
+  }).returning())[0];
+  if (!revision) throw new Error(`Failed to create revision for agent ${input.profileId}`);
+  return { revision, classification };
 }
 
 function parseEffectiveRuntimeSnapshot(value: Record<string, unknown>): EffectiveAgentRuntimeSnapshot {

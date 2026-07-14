@@ -19,9 +19,11 @@ import {
   type AgentArchetypeKey,
 } from "./agent-archetypes.js";
 import {
-  ensureAgentRevisionInTransaction,
+  ensureActiveAgentRevisionInTransaction,
   resolveFreeTrackEffectiveRuntimeSnapshot,
+  type EnsuredAgentRevision,
 } from "./agent-revisions.js";
+import type { AgentMutationProfileRevisionReceipt } from "./agent-mutation-receipt.js";
 
 type DrizzleTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 type DatabaseExecutor = DrizzleDB | DrizzleTransaction;
@@ -142,6 +144,11 @@ export interface UpdateAgentProfileMutationInput {
 export interface AgentProfileMutationRead {
   profile: typeof schema.agentProfiles.$inferSelect;
   revisionCreated: boolean;
+  profileRevision: AgentProfileRevisionMutationRead;
+}
+
+export interface AgentProfileRevisionMutationRead extends AgentMutationProfileRevisionReceipt {
+  ratingRecalibrated: boolean;
 }
 
 export type DraftAvatarAdoptionResult =
@@ -364,12 +371,12 @@ async function createAgentProfileInTransaction(
 ): Promise<AgentProfileMutationRead> {
   const profile = (await tx.insert(schema.agentProfiles).values(values).returning())[0];
   if (!profile) throw new Error("Agent profile insert returned no row");
-  const revision = await ensureAgentRevisionInTransaction(tx, {
+  const revision = await ensureActiveAgentRevisionInTransaction(tx, {
     profile,
     effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile),
     trigger: "profile_create",
   });
-  return { profile, revisionCreated: revision.created };
+  return profileMutationRead(profile, revision);
 }
 
 export async function createOwnedAgentProfile(
@@ -482,12 +489,12 @@ export async function updateOwnedAgentProfile(
     if (!profile) {
       throw new AgentProfileManagementError("agent_not_found", "Agent not found.", 404, { agentId });
     }
-    const revision = await ensureAgentRevisionInTransaction(tx, {
+    const revision = await ensureActiveAgentRevisionInTransaction(tx, {
       profile,
       effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile),
       trigger: "profile_edit",
     });
-    return { profile, revisionCreated: revision.created };
+    return profileMutationRead(profile, revision);
   });
 
   if (input.avatarUrl !== undefined && result.profile.avatarUrl !== existing.avatarUrl) {
@@ -501,6 +508,23 @@ export async function updateOwnedAgentProfile(
     });
   }
   return result;
+}
+
+function profileMutationRead(
+  profile: typeof schema.agentProfiles.$inferSelect,
+  revision: EnsuredAgentRevision,
+): AgentProfileMutationRead {
+  return {
+    profile: { ...profile, currentRevisionId: revision.revision.id },
+    revisionCreated: revision.created,
+    profileRevision: {
+      revisionId: revision.revision.id,
+      ordinal: revision.revision.ordinal,
+      outcome: revision.created ? "created" : "preserved",
+      active: true,
+      ratingRecalibrated: revision.ratingRecalibrated,
+    },
+  };
 }
 
 export async function createOwnedAgent(
