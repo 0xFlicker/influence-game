@@ -208,6 +208,16 @@ describe("Agent Profile API", () => {
       expect(body.backstory).toBe("Grew up in a small town...");
       expect(body.personaKey).toBe("strategic");
       expect(body.gender).toBe("female");
+      expect(body.receipt).toMatchObject({
+        schemaVersion: 1,
+        operation: "created",
+        agent: {
+          agentProfileId: body.id,
+          identityDisposition: "created",
+        },
+        profileRevision: { outcome: "created", active: true },
+        dailyFree: "not_enrolled",
+      });
       expect(body.gamesPlayed).toBe(0);
       expect(body.gamesWon).toBe(0);
     });
@@ -831,11 +841,27 @@ describe("Agent Profile API", () => {
         jsonReq({ name: "Atlas v2", backstory: "New backstory", gender: "non-binary" }, tokenA, "PATCH"),
       );
       expect(res.status).toBe(200);
-      const body = await res.json() as { name: string; backstory: string; gender: string; statsReset: boolean };
+      const body = await res.json() as {
+        id: string;
+        name: string;
+        backstory: string;
+        gender: string;
+        statsReset: boolean;
+        receipt: {
+          operation: string;
+          agent: { agentProfileId: string; identityDisposition: string };
+          profileRevision: { outcome: string; active: boolean };
+        };
+      };
       expect(body.name).toBe("Atlas v2");
       expect(body.backstory).toBe("New backstory");
       expect(body.gender).toBe("non-binary");
       expect(body.statsReset).toBe(false);
+      expect(body.receipt).toMatchObject({
+        operation: "updated",
+        agent: { agentProfileId: body.id, identityDisposition: "preserved" },
+        profileRevision: { outcome: "created", active: true },
+      });
     });
 
     test("returns the generic name-taken error for cross-owner rename collisions", async () => {

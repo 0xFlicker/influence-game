@@ -10,7 +10,7 @@
  *   POST   /api/agent-profiles/generate  — AI-assisted personality builder
  */
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { eq, and } from "drizzle-orm";
 import {
   createLlmClientFromEnv,
@@ -39,7 +39,9 @@ import {
   requestAndStartAvatarCompletion,
   requestAndStartDraftAvatarCompletion,
   resumeOwnedDraftAvatarCompletion,
+  type AvatarCompletionRead,
 } from "../services/avatar-generation.js";
+import type { AgentMutationReceipt } from "../services/agent-mutation-receipt.js";
 import { acquireDailyFreeLocks } from "../services/queue-enrollment.js";
 import { lockProfileAfterLiveRosterGames } from "../services/owned-seat-projection.js";
 import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
@@ -308,11 +310,15 @@ Respond with JSON only:
         });
       }
       if (result.profile.avatarUrl) {
-        return c.json(playerSafeAgentProfile(result.profile), 201);
+        return c.json({
+          ...playerSafeAgentProfile(result.profile),
+          receipt: result.receipt,
+        }, 201);
       }
       if (draftCompletion) {
         return c.json({
           ...playerSafeAgentProfile(result.profile),
+          receipt: withAvatarCompletionReceipt(result.receipt, draftCompletion),
           avatarCompletion: draftCompletion,
         }, 201);
       }
@@ -328,25 +334,25 @@ Respond with JSON only:
         }, { publicBaseUrl });
       } catch (error) {
         console.warn("[agent-profiles] Failed to request automatic avatar generation:", error);
+        const failedCompletion = {
+          status: "failed",
+          reason: "Portrait generation could not be started.",
+          retryable: true,
+        } as const;
         return c.json({
           ...playerSafeAgentProfile(result.profile),
-          avatarCompletion: {
-            status: "failed",
-            reason: "Portrait generation could not be started.",
-            retryable: true,
-          },
+          receipt: withAvatarCompletionReceipt(result.receipt, failedCompletion),
+          avatarCompletion: failedCompletion,
         }, 201);
       }
       return c.json({
         ...playerSafeAgentProfile(result.profile),
+        receipt: withAvatarCompletionReceipt(result.receipt, avatarCompletion),
         avatarCompletion,
       }, 201);
     } catch (error) {
       if (error instanceof AgentProfileManagementError) {
-        if (error.code === "agent_name_taken") {
-          return c.json({ code: error.code, error: error.message, retryable: false }, 409);
-        }
-        return c.json({ error: error.message }, error.statusCode === 404 ? 404 : 400);
+        return agentProfileErrorResponse(c, error);
       }
       throw error;
     }
@@ -513,13 +519,14 @@ Respond with JSON only:
         gender: body.gender,
         avatarUrl: body.avatarUrl,
       });
-      return c.json({ ...playerSafeAgentProfile(result.profile), statsReset: false });
+      return c.json({
+        ...playerSafeAgentProfile(result.profile),
+        statsReset: false,
+        receipt: result.receipt,
+      });
     } catch (error) {
       if (error instanceof AgentProfileManagementError) {
-        if (error.code === "agent_name_taken") {
-          return c.json({ code: error.code, error: error.message, retryable: false }, 409);
-        }
-        return c.json({ error: error.message }, error.statusCode === 404 ? 404 : 400);
+        return agentProfileErrorResponse(c, error);
       }
       throw error;
     }
@@ -627,4 +634,30 @@ export function resolveGeneratedAgentGender(generated: {
 function playerSafeAgentProfile(profile: typeof schema.agentProfiles.$inferSelect) {
   const { currentRevisionId: _currentRevisionId, ...safe } = profile;
   return safe;
+}
+
+function agentProfileErrorResponse(
+  c: Context<AuthEnv>,
+  error: AgentProfileManagementError,
+): Response {
+  const body = {
+    code: error.code,
+    error: error.message,
+    retryable: error.retryable,
+    ...(error.details && { details: error.details }),
+  };
+  if (error.statusCode === 404) return c.json(body, 404);
+  if (error.statusCode === 409) return c.json(body, 409);
+  return c.json(body, 400);
+}
+
+function withAvatarCompletionReceipt(
+  receipt: AgentMutationReceipt,
+  avatarCompletion: AvatarCompletionRead,
+): AgentMutationReceipt {
+  const warnings = avatarCompletion.status === "failed"
+    && !receipt.warnings.includes("avatar_generation_failed")
+    ? [...receipt.warnings, "avatar_generation_failed" as const]
+    : receipt.warnings;
+  return { ...receipt, avatarCompletion, warnings };
 }

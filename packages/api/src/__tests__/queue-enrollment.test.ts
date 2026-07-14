@@ -189,6 +189,10 @@ describe("queue enrollment service", () => {
       slug: "open-join",
       status: "waiting",
       queueType: "open-game",
+      revision: {
+        disposition: "follows-current",
+        effectiveRevisionId: players[0]!.agentRevisionId,
+      },
     });
     expect(players).toHaveLength(1);
     expect(players[0]!.agentProfileId).toBe("agent-open");

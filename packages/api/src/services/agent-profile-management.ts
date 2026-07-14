@@ -205,6 +205,16 @@ export interface AgentActiveEnrollmentSummary {
   slug: string;
   status: "waiting" | "in_progress" | "suspended";
   queueType: "daily-free" | "open-game";
+  revision: {
+    disposition: "follows-current" | "pinned";
+    effectiveRevisionId: string | null;
+  };
+}
+
+export interface AgentCurrentRevisionSummary {
+  revisionId: string;
+  ordinal: number;
+  active: true;
 }
 
 export interface AgentSummary {
@@ -219,6 +229,7 @@ export interface AgentSummary {
   avatarUrl: string | null;
   stats: AgentStatsSummary;
   rating: AccountRatingSummary;
+  currentRevision: AgentCurrentRevisionSummary | null;
   queueState: AgentQueueStateSummary;
   activeEnrollment: AgentActiveEnrollmentSummary | null;
   createdAt: string;
@@ -251,6 +262,7 @@ type AccountRatingRow = Pick<
 
 interface EnrollmentRow {
   agentProfileId: string | null;
+  agentRevisionId: string | null;
   gameId: string;
   slug: string;
   status: string;
@@ -1007,6 +1019,7 @@ async function loadAgentSerializationContext(
   queueJoinedAt: string | null;
   activeEnrollmentByAgentProfileId: Map<string, AgentActiveEnrollmentSummary>;
   currentDailyFreeEnrollment: AgentActiveEnrollmentSummary | null;
+  currentRevisionByAgentProfileId: Map<string, AgentCurrentRevisionSummary>;
 }> {
   if (profiles.length === 0) {
     return {
@@ -1015,6 +1028,7 @@ async function loadAgentSerializationContext(
       queueJoinedAt: null,
       activeEnrollmentByAgentProfileId: new Map(),
       currentDailyFreeEnrollment: null,
+      currentRevisionByAgentProfileId: new Map(),
     };
   }
 
@@ -1028,6 +1042,7 @@ async function loadAgentSerializationContext(
   const enrollmentRows = await db
     .select({
       agentProfileId: schema.gamePlayers.agentProfileId,
+      agentRevisionId: schema.gamePlayers.agentRevisionId,
       gameId: schema.games.id,
       slug: schema.games.slug,
       status: schema.games.status,
@@ -1045,12 +1060,30 @@ async function loadAgentSerializationContext(
   const activeEnrollmentByAgentProfileId = activeEnrollmentMap(enrollmentRows);
   const currentDailyFreeEnrollment = [...activeEnrollmentByAgentProfileId.values()]
     .find((enrollment) => enrollment.queueType === "daily-free") ?? null;
+  const currentRevisionIds = profiles
+    .map((profile) => profile.currentRevisionId)
+    .filter((revisionId): revisionId is string => Boolean(revisionId));
+  const currentRevisions = currentRevisionIds.length === 0
+    ? []
+    : await db.select({
+      id: schema.agentRevisions.id,
+      agentProfileId: schema.agentRevisions.agentProfileId,
+      ordinal: schema.agentRevisions.ordinal,
+    }).from(schema.agentRevisions).where(inArray(schema.agentRevisions.id, currentRevisionIds));
+  const currentRevisionByAgentProfileId = new Map<string, AgentCurrentRevisionSummary>(
+    currentRevisions.map((revision) => [revision.agentProfileId, {
+      revisionId: revision.id,
+      ordinal: revision.ordinal,
+      active: true,
+    }]),
+  );
   return {
     accountRating,
     queuedAgentProfileId: queueEntry?.agentProfileId ?? null,
     queueJoinedAt: queueEntry?.joinedAt ?? null,
     activeEnrollmentByAgentProfileId,
     currentDailyFreeEnrollment,
+    currentRevisionByAgentProfileId,
   };
 }
 
@@ -1071,6 +1104,10 @@ function activeEnrollmentMap(
       slug: row.slug,
       status: row.status,
       queueType: row.trackType === "free" ? "daily-free" : "open-game",
+      revision: {
+        disposition: row.status === "waiting" ? "follows-current" : "pinned",
+        effectiveRevisionId: row.agentRevisionId,
+      },
     });
   }
   return byProfileId;
@@ -1091,6 +1128,7 @@ function serializeAgent(
     queueJoinedAt: string | null;
     activeEnrollmentByAgentProfileId: Map<string, AgentActiveEnrollmentSummary>;
     currentDailyFreeEnrollment: AgentActiveEnrollmentSummary | null;
+    currentRevisionByAgentProfileId: Map<string, AgentCurrentRevisionSummary>;
   },
 ): AgentSummary {
   const archetype = profile.personaKey && isUserSelectableAgentArchetype(profile.personaKey)
@@ -1114,6 +1152,7 @@ function serializeAgent(
       winRate: profile.gamesPlayed > 0 ? profile.gamesWon / profile.gamesPlayed : 0,
     },
     rating: context.accountRating,
+    currentRevision: context.currentRevisionByAgentProfileId.get(profile.id) ?? null,
     queueState: {
       dailyFree: queued ? "queued" : "not-queued",
       ...(queued && context.queueJoinedAt && { joinedAt: context.queueJoinedAt }),

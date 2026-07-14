@@ -149,6 +149,10 @@ describe("agent profile management service", () => {
       slug: "open-green-rune",
       status: "in_progress",
       queueType: "open-game",
+      revision: {
+        disposition: "pinned",
+        effectiveRevisionId: null,
+      },
     });
   });
 
@@ -175,6 +179,11 @@ describe("agent profile management service", () => {
     expect(read.agent.publicBiography).toBe("A former debate coach with velvet-glove instincts.");
     expect(read.agent.gender).toBe("non-binary");
     expect(read.agent.avatarUrl).toBe("https://influence.test/api/uploads/local?key=avatars/neon.png");
+    expect(read.agent.currentRevision).toEqual({
+      revisionId: read.receipt.profileRevision.revisionId,
+      ordinal: 1,
+      active: true,
+    });
     expect(read.agent.queueState.dailyFree).toBe("not-queued");
     expect(read.agent.rating.currentElo).toBe(1388);
     expect("statsReset" in read).toBe(false);
