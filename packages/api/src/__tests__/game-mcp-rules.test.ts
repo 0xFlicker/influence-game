@@ -48,6 +48,18 @@ describe("game MCP rules catalog", () => {
     expect(freeGames?.body).not.toContain("100%, 50%, and 25%");
   });
 
+  test("teaches stable identity, active-by-default updates, and freeze behavior", () => {
+    const revisions = getGameMcpRules().rules.sections.find(
+      (section) => section.id === "agent-revisions",
+    );
+
+    expect(revisions?.body).toContain("use update_agent to tune any existing competitor regardless of enrollment");
+    expect(revisions?.body).toContain("create_agent is only for a distinctly named separate career");
+    expect(revisions?.body).toContain("waiting seats follow current behavior");
+    expect(revisions?.body).toContain("in-progress or suspended seats remain pinned");
+    expect(revisions?.body).toContain("there is no draft or publish step");
+  });
+
   test("lists archetypes from the shared validation catalog", () => {
     const read = listGameMcpArchetypes({ includeStrategyHints: true });
     const keys = read.archetypes.map((archetype) => archetype.key);

@@ -27,6 +27,7 @@ import { parseJsonBody } from "../lib/parse-json-body.js";
 import { generateUniqueSlug } from "../lib/slug.js";
 import { getGameSeasonIdentityMap } from "../lib/game-season.js";
 import { getPublicDisplayName } from "../lib/display-name.js";
+import { gameOwnerClaimErrorBody } from "../lib/game-owner-claim-response.js";
 import {
   pickAgentNames,
   pickArchetypes,
@@ -49,6 +50,7 @@ import {
   QueueEnrollmentError,
 } from "../services/queue-enrollment.js";
 import { AgentProfileManagementError } from "../services/agent-profile-management.js";
+import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -319,37 +321,19 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
 
       // Add picked players to the game.
       for (const entry of picked) {
-        const profile = (await tx
-          .select()
-          .from(schema.agentProfiles)
-          .where(eq(schema.agentProfiles.id, entry.agentProfileId)))[0];
-
-        if (!profile) continue;
-
         const playerId = randomUUID();
-        const agentModel = resolveModelForTier("budget");
-        const persona = {
-          name: profile.name,
-          personality: profile.personality,
-          backstory: profile.backstory,
-          strategyHints: profile.strategyStyle,
-          personaKey: profile.personaKey,
-        };
-
-        await tx.insert(schema.gamePlayers).values({
-            id: playerId,
-            gameId,
-            userId: entry.userId,
-            agentProfileId: profile.id,
-            persona: JSON.stringify(persona),
-            agentConfig: JSON.stringify({ model: agentModel, temperature: 0.9 }),
-          });
+        const admitted = await admitOwnedSeatInTransaction(tx, {
+          playerId,
+          gameId,
+          userId: entry.userId,
+          agentProfileId: entry.agentProfileId,
+        });
 
         addedPlayers.push({
           playerId,
           userId: entry.userId,
-          agentProfileId: profile.id,
-          agentName: profile.name,
+          agentProfileId: admitted.projection.profile.id,
+          agentName: admitted.projection.profile.name,
         });
       }
 
@@ -451,7 +435,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
 
     const owner = await acquireGameRunOwner(db, game.id);
     if (!owner.ok) {
-      return c.json({ error: owner.error }, owner.statusCode);
+      return c.json(gameOwnerClaimErrorBody(owner), owner.statusCode);
     }
     await tryRefreshGameWatchStateSummary(db, game.id, "free_queue_started");
 
@@ -463,7 +447,18 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
       startupError = error instanceof Error ? error.message : String(error);
     }
     if (startupError) {
-      await markOwnerStartupFailed(db, game.id, owner.claim.ownerEpoch, startupError);
+      const cleanup = await markOwnerStartupFailed(
+        db,
+        game.id,
+        owner.claim.ownerEpoch,
+        startupError,
+      );
+      if (cleanup.rosterDisposition === "repair_required") {
+        console.warn("[free-queue] Startup failure roster requires repair", {
+          gameId: game.id,
+          ...cleanup.reconciliationError,
+        });
+      }
       await tryRefreshGameWatchStateSummary(db, game.id, "free_queue_startup_failed");
       return c.json({ error: startupError }, 500);
     }

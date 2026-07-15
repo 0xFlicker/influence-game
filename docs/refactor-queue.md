@@ -309,6 +309,16 @@ Status legend:
 - Promotion trigger: AWS, multiple regions, autoscaling, or managed-job execution becomes an actual deployment goal.
 - Suggested slice if promoted: adapt the existing immutable manifest and worker protocol to the target queue/runtime rather than moving render logic into API or web request containers.
 
+### W17. Legacy Agent Profile and House-name cleanup
+
+- Status: `future`
+- Sources: `docs/plans/2026-07-14-001-fix-mcp-agent-revision-loop-repair-plan.md`, the global saved-profile name-uniqueness migration preflight, and the canonical House-agent catalog in `packages/engine/src/persona-generator.ts`.
+- Signal: the reported duplicate Lillith profile has been removed, but some older auto-generated Agent Profiles may still use names now reserved by the House-agent catalog. Those catalog collisions do not block the database unique index because they are not duplicate saved profiles.
+- Concrete seam: normalized Agent Profile name audit, House-agent reserved-name catalog, profile ownership/history, admin profile management, and owner communication before any rename.
+- Validation path: produce a read-only collision report; verify each candidate's ownership and game history; after explicit cleanup, prove no saved profile conflicts with another saved profile or the reserved catalog and that historical `game_players` snapshots remain unchanged.
+- Promotion trigger: the migration audit finds legacy House-name collisions that cannot be safely identified as disposable test/seed data.
+- Suggested slice if promoted: review ambiguous profiles individually and rename or retire them only with explicit owner/admin intent. Never silently rename, merge, or delete a competitive identity during migration.
+
 ## Closed / Removed
 
 - Public websocket transcript boundary hardening: already landed on local `origin/main` via `1bc1277a` / PR #37. This branch needs to merge or rebase main, not queue new work.

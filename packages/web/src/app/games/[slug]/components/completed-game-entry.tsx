@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   getPostgameMedia,
-  type CompetitionReceipt,
+  type GameCompetitionReceipt,
   type PublicPostgameMediaResponse,
 } from "@/lib/api";
 import { completedGameModeHref, gameHighlightsHref } from "@/lib/game-links";
@@ -126,7 +126,7 @@ export function CompletedGameEntry({
   );
 }
 
-export function SeasonReceiptSummary({ receipts }: { receipts: CompetitionReceipt[] }) {
+export function SeasonReceiptSummary({ receipts }: { receipts: GameCompetitionReceipt[] }) {
   const rankedReceipts = [...receipts].sort((left, right) =>
     right.totalPoints - left.totalPoints
     || (left.placement ?? Number.MAX_SAFE_INTEGER) - (right.placement ?? Number.MAX_SAFE_INTEGER)
@@ -137,20 +137,24 @@ export function SeasonReceiptSummary({ receipts }: { receipts: CompetitionReceip
     <section aria-labelledby="season-receipts-title" className="influence-panel mt-5 w-full overflow-hidden rounded-xl text-left">
       <div className="border-b border-border-active/60 px-4 py-3">
         <h3 id="season-receipts-title" className="text-sm font-medium text-text-primary">Championship point receipts</h3>
-        <p className="influence-copy-muted mt-1 text-xs">Public placement points and bounded strong-field bonuses.</p>
+        <p className="influence-copy-muted mt-1 text-xs">Points earned this game and current season totals.</p>
       </div>
       <div className="divide-y divide-border-active/50">
         {rankedReceipts.map((receipt) => (
-          <article key={`${receipt.gameId}:${receipt.agentId}`} className="grid gap-3 px-4 py-3 sm:grid-cols-[1fr_repeat(4,auto)] sm:items-center sm:gap-5">
+          <article key={`${receipt.gameId}:${receipt.agentId}`} className="grid gap-3 px-4 py-3 sm:grid-cols-[1fr_repeat(3,auto)] sm:items-center sm:gap-5">
             <div>
               <div className="text-sm font-medium text-text-primary">{receipt.agentName}</div>
               <div className="influence-copy-muted text-xs">
                 {receipt.placement === null ? "Not eligible" : `Place ${receipt.placement} of ${receipt.lobbySize}`}
               </div>
             </div>
-            <ReceiptFact label="Base" value={String(receipt.basePoints)} />
-            <ReceiptFact label="Field" value={`+${receipt.fieldBonus}`} />
-            <ReceiptFact label="Total" value={String(receipt.totalPoints)} strong />
+            <ReceiptFact
+              label="Points earned"
+              value={`+${receipt.totalPoints}`}
+              detail={receipt.fieldBonus > 0 ? `Includes +${receipt.fieldBonus} strong-field bonus` : undefined}
+              strong
+            />
+            <ReceiptFact label="Season total" value={String(receipt.seasonTotalPoints)} strong />
             <ReceiptFact
               label="Account ELO"
               value={receipt.accountRatingDelta === null
@@ -164,11 +168,22 @@ export function SeasonReceiptSummary({ receipts }: { receipts: CompetitionReceip
   );
 }
 
-function ReceiptFact({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+function ReceiptFact({
+  label,
+  value,
+  detail,
+  strong = false,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  strong?: boolean;
+}) {
   return (
     <div className="min-w-14">
       <div className="influence-copy-muted text-[10px] uppercase tracking-wider">{label}</div>
       <div className={`mt-0.5 font-mono text-sm ${strong ? "font-semibold text-text-primary" : "text-text-secondary"}`}>{value}</div>
+      {detail && <div className="influence-copy-muted mt-0.5 max-w-40 text-[10px] leading-tight">{detail}</div>}
     </div>
   );
 }

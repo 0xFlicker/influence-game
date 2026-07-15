@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { closeDB, createDB, type DrizzleDB, schema } from "../db/index.js";
 import {
-  ensureAgentRevisionInTransaction,
+  ensureActiveAgentRevisionInTransaction,
   resolveFreeTrackEffectiveRuntimeSnapshot,
 } from "../services/agent-revisions.js";
 
@@ -28,7 +28,7 @@ export async function backfillAgentRevisions(db: DrizzleDB): Promise<AgentRevisi
         .where(sql`${schema.agentProfiles.id} = ${profile.id}`)
         .limit(1))[0];
       if (!currentProfile || currentProfile.currentRevisionId) return false;
-      const ensured = await ensureAgentRevisionInTransaction(tx, {
+      const ensured = await ensureActiveAgentRevisionInTransaction(tx, {
         profile: currentProfile,
         effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(currentProfile),
         trigger: "initial_backfill",

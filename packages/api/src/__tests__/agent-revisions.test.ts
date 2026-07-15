@@ -7,8 +7,8 @@ import {
   updateOwnedAgentProfile,
 } from "../services/agent-profile-management.js";
 import {
-  ensureAgentRevision,
   getLatestAgentRevision,
+  resolveGameEffectiveAgentRevision,
   resolveFreeTrackEffectiveRuntimeSnapshot,
 } from "../services/agent-revisions.js";
 import {
@@ -17,6 +17,10 @@ import {
 } from "../services/season-policy.js";
 import { setupTestDB } from "./test-utils.js";
 import { backfillAgentRevisions } from "../scripts/backfill-agent-revisions.js";
+import {
+  AGENT_MUTATION_RECEIPT_SCHEMA_VERSION,
+  boundAgentMutationWaitingSeatReferences,
+} from "../services/agent-mutation-receipt.js";
 
 const USER_ID = "revision-test-user";
 
@@ -32,17 +36,17 @@ describe("agent revision persistence", () => {
   });
 
   test("creates one complete initial revision with a new profile", async () => {
-    const { profile, revisionCreated } = await createOwnedAgentProfile(db, {
+    const { profile, profileRevision } = await createOwnedAgentProfile(db, {
       userId: USER_ID,
     }, {
-      name: "Mira",
+      name: "Maris Thread",
       personality: "Calm, observant, and deliberate.",
       backstory: "A retired negotiator.",
       strategyStyle: "Build trust before acting.",
       personaKey: "strategic",
     });
 
-    expect(revisionCreated).toBe(true);
+    expect(profileRevision.outcome).toBe("created");
     const revision = await getLatestAgentRevision(db, profile.id);
     expect(revision).toMatchObject({
       ordinal: 1,
@@ -63,7 +67,7 @@ describe("agent revision persistence", () => {
 
   test("keeps avatar-only and identical saves in the current revision", async () => {
     const { profile } = await createOwnedAgentProfile(db, { userId: USER_ID }, {
-      name: "Atlas",
+      name: "Aster Thread",
       personality: "Patient and exact.",
       personaKey: "observer",
     });
@@ -74,8 +78,8 @@ describe("agent revision persistence", () => {
     const identical = await updateOwnedAgentProfile(db, { userId: USER_ID }, profile.id, {
       personality: "Patient and exact.",
     });
-    expect(avatar.revisionCreated).toBe(false);
-    expect(identical.revisionCreated).toBe(false);
+    expect(avatar.profileRevision.outcome).toBe("preserved");
+    expect(identical.profileRevision.outcome).toBe("preserved");
     const revisions = await db.select().from(schema.agentRevisions)
       .where(eq(schema.agentRevisions.agentProfileId, profile.id));
     expect(revisions).toHaveLength(1);
@@ -83,7 +87,7 @@ describe("agent revision persistence", () => {
 
   test("creates ordered revisions while preserving lifetime statistics", async () => {
     const { profile } = await createOwnedAgentProfile(db, { userId: USER_ID }, {
-      name: "Vera",
+      name: "Verity Thread",
       personality: "Bold but socially precise in every exchange.",
       personaKey: "provocateur",
     });
@@ -94,7 +98,14 @@ describe("agent revision persistence", () => {
     const changed = await updateOwnedAgentProfile(db, { userId: USER_ID }, profile.id, {
       personality: "Bold and socially precise in every exchange.",
     });
-    expect(changed.revisionCreated).toBe(true);
+    expect(changed.profileRevision.outcome).toBe("created");
+    expect(changed.profileRevision).toMatchObject({
+      revisionId: expect.any(String),
+      ordinal: 2,
+      outcome: "created",
+      active: true,
+      ratingRecalibrated: false,
+    });
     expect(changed.profile).toMatchObject({ gamesPlayed: 8, gamesWon: 3 });
 
     const revisions = await db.select().from(schema.agentRevisions)
@@ -106,9 +117,41 @@ describe("agent revision persistence", () => {
     });
   });
 
-  test("inherits mu and meters hidden uncertainty for execution revisions", async () => {
+  test("reverting owner behavior creates a chronological active revision", async () => {
+    const { profile, profileRevision: initial } = await createOwnedAgentProfile(
+      db,
+      { userId: USER_ID },
+      {
+        name: "Echowood Thread",
+        personality: "Patient and observant.",
+        personaKey: "observer",
+      },
+    );
+
+    const changed = await updateOwnedAgentProfile(db, { userId: USER_ID }, profile.id, {
+      personality: "Forceful and observant.",
+    });
+    const reverted = await updateOwnedAgentProfile(db, { userId: USER_ID }, profile.id, {
+      personality: "Patient and observant.",
+    });
+
+    expect(changed.profileRevision).toMatchObject({ ordinal: 2, outcome: "created", active: true });
+    expect(reverted.profileRevision).toMatchObject({ ordinal: 3, outcome: "created", active: true });
+    expect(reverted.profileRevision.revisionId).not.toBe(initial.revisionId);
+
+    const revisions = await db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id));
+    const initialRevision = revisions.find((revision) => revision.id === initial.revisionId)!;
+    const revertedRevision = revisions.find(
+      (revision) => revision.id === reverted.profileRevision.revisionId,
+    )!;
+    expect(revertedRevision.fingerprint).toBe(initialRevision.fingerprint);
+    expect(revertedRevision.priorRevisionId).toBe(changed.profileRevision.revisionId);
+  });
+
+  test("reuses game-effective revisions without moving the active pointer or rating", async () => {
     const { profile } = await createOwnedAgentProfile(db, { userId: USER_ID }, {
-      name: "Lyra",
+      name: "Lyris Thread",
       personality: "Finds vulnerabilities in people and systems.",
       personaKey: "observer",
     });
@@ -124,62 +167,118 @@ describe("agent revision persistence", () => {
     });
 
     const snapshot = resolveFreeTrackEffectiveRuntimeSnapshot(profile);
-    const result = await ensureAgentRevision(db, {
+    const result = await resolveGameEffectiveAgentRevision(db, {
       profile,
       effectiveRuntimeSnapshot: {
         ...snapshot,
         model: "gpt-5-mini",
         catalogId: "openai:gpt-5-mini",
       },
-      trigger: "runtime_policy_change",
     });
-    expect(result.ratingRecalibrated).toBe(true);
+    expect(result.ratingRecalibrated).toBe(false);
     expect(result.revision.magnitude).toBe("execution");
+    expect(result.revision.ordinal).toBe(2);
 
     const rating = (await db.select().from(schema.agentCompetitionRatings)
       .where(eq(schema.agentCompetitionRatings.agentProfileId, profile.id)))[0]!;
     expect(rating.mu).toBe(31);
-    expect(rating.sigma).toBeGreaterThan(2);
-    expect(rating.sigma).toBeLessThanOrEqual(initialRating.sigma);
+    expect(rating.sigma).toBe(2);
+    expect(rating.effectiveRevisionId).toBe(initialRevision.id);
     const events = await db.select().from(schema.competitionRatingEvents);
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
-      agentProfileId: profile.id,
-      agentRevisionId: result.revision.id,
-      eventType: "revision_recalibration",
-      beforeMu: 31,
-      afterMu: 31,
-      evidence: {
-        classification: {
-          previousRevisionId: initialRevision.id,
-          nextRevisionId: result.revision.id,
-          magnitude: "execution",
-        },
+    expect(events).toHaveLength(0);
+    expect((await db.select().from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, profile.id)))[0]?.currentRevisionId).toBe(initialRevision.id);
+
+    const reused = await resolveGameEffectiveAgentRevision(db, {
+      profile,
+      effectiveRuntimeSnapshot: {
+        ...snapshot,
+        model: "gpt-5-mini",
+        catalogId: "openai:gpt-5-mini",
       },
     });
-
-    const reverted = await ensureAgentRevision(db, {
-      profile,
-      effectiveRuntimeSnapshot: snapshot,
-      trigger: "runtime_policy_change",
+    expect(reused).toMatchObject({
+      created: false,
+      ratingRecalibrated: false,
+      revision: { id: result.revision.id },
     });
-    expect(reverted).toMatchObject({ created: true, ratingRecalibrated: true });
-    expect(reverted.revision).toMatchObject({
-      ordinal: 3,
-      priorRevisionId: result.revision.id,
-      fingerprint: initialRevision.fingerprint,
+
+    const secondRuntime = await resolveGameEffectiveAgentRevision(db, {
+      profile,
+      effectiveRuntimeSnapshot: { ...snapshot, temperature: 0.2 },
+    });
+    expect(secondRuntime).toMatchObject({
+      created: true,
+      ratingRecalibrated: false,
+      revision: { ordinal: 3, priorRevisionId: initialRevision.id },
     });
     expect(await db.select().from(schema.agentRevisions)
       .where(eq(schema.agentRevisions.agentProfileId, profile.id))).toHaveLength(3);
     expect((await db.select().from(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.id, profile.id)))[0]?.currentRevisionId).toBe(reverted.revision.id);
+      .where(eq(schema.agentProfiles.id, profile.id)))[0]?.currentRevisionId).toBe(initialRevision.id);
 
-    const eventsBeforeBackfill = await db.select().from(schema.competitionRatingEvents);
+    const activeEdit = await updateOwnedAgentProfile(db, { userId: USER_ID }, profile.id, {
+      strategyStyle: "Exploit uncertainty quickly.",
+    });
+    expect(activeEdit.profileRevision).toMatchObject({
+      ordinal: 4,
+      outcome: "created",
+      active: true,
+      ratingRecalibrated: true,
+    });
+    const recalibratedRating = (await db.select().from(schema.agentCompetitionRatings)
+      .where(eq(schema.agentCompetitionRatings.agentProfileId, profile.id)))[0]!;
+    expect(recalibratedRating.mu).toBe(31);
+    expect(recalibratedRating.sigma).toBeGreaterThan(2);
+    expect(recalibratedRating.sigma).toBeLessThanOrEqual(initialRating.sigma);
+    expect(recalibratedRating.effectiveRevisionId).toBe(activeEdit.profileRevision.revisionId);
+    expect(await db.select().from(schema.competitionRatingEvents)).toHaveLength(1);
+
     const backfill = await backfillAgentRevisions(db);
     expect(backfill).toMatchObject({ revisionsCreated: 0, revisionsReused: 1 });
     expect((await db.select().from(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.id, profile.id)))[0]?.currentRevisionId).toBe(reverted.revision.id);
-    expect(await db.select().from(schema.competitionRatingEvents)).toHaveLength(eventsBeforeBackfill.length);
+      .where(eq(schema.agentProfiles.id, profile.id)))[0]?.currentRevisionId)
+      .toBe(activeEdit.profileRevision.revisionId);
+    expect(await db.select().from(schema.competitionRatingEvents)).toHaveLength(1);
+  });
+
+  test("refuses to materialize a game-effective revision without an active profile revision", async () => {
+    const profile = {
+      id: randomUUID(),
+      userId: USER_ID,
+      name: "Unmigrated",
+      personality: "Has no revision lineage yet.",
+      backstory: null,
+      strategyStyle: null,
+      personaKey: null,
+    };
+    await db.insert(schema.agentProfiles).values(profile);
+
+    await expect(resolveGameEffectiveAgentRevision(db, {
+      profile,
+      effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile),
+    })).rejects.toThrow(`Agent profile ${profile.id} has no active revision`);
+    expect(await db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id))).toHaveLength(0);
+  });
+
+  test("does not infer active behavior from revision chronology when the pointer is absent", async () => {
+    const { profile, profileRevision } = await createOwnedAgentProfile(db, { userId: USER_ID }, {
+      name: "Pointerless",
+      personality: "Has retained history but no declared active behavior.",
+    });
+    await db.update(schema.agentProfiles).set({ currentRevisionId: null })
+      .where(eq(schema.agentProfiles.id, profile.id));
+
+    await expect(resolveGameEffectiveAgentRevision(db, {
+      profile,
+      effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile),
+    })).rejects.toThrow(`Agent profile ${profile.id} has no active revision`);
+    expect((await db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id)))[0]?.id)
+      .toBe(profileRevision.revisionId);
+    expect((await db.select().from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, profile.id)))[0]?.currentRevisionId).toBeNull();
   });
 
   test("recomputes recoverable counters without inventing missing history", async () => {
@@ -227,5 +326,22 @@ describe("agent revision persistence", () => {
       gamesPlayed: 1,
       gamesWon: 1,
     });
+  });
+});
+
+describe("agent mutation receipt primitives", () => {
+  test("schema version and waiting-seat detail stay bounded", () => {
+    expect(AGENT_MUTATION_RECEIPT_SCHEMA_VERSION).toBe(1);
+    const bounded = boundAgentMutationWaitingSeatReferences(
+      Array.from({ length: 12 }, (_, index) => ({
+        gameId: `game-${index}`,
+        slug: `game-${index}`,
+        disposition: "reconciled" as const,
+        effectiveRevisionId: `revision-${index}`,
+      })),
+    );
+    expect(bounded.games).toHaveLength(10);
+    expect(bounded.games.at(-1)?.gameId).toBe("game-9");
+    expect(bounded.truncatedCount).toBe(2);
   });
 });

@@ -53,6 +53,8 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    public readonly code?: string,
+    public readonly retryable?: boolean,
   ) {
     super(message);
     this.name = "ApiError";
@@ -85,9 +87,29 @@ export async function apiFetch<T>(
       clearAuthToken();
       window.dispatchEvent(new CustomEvent("auth:expired"));
     }
-    throw new ApiError(res.status, text);
+    throw apiErrorFromResponse(res.status, text);
   }
   return res.json() as Promise<T>;
+}
+
+function apiErrorFromResponse(status: number, body: string): ApiError {
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    if (parsed && typeof parsed === "object") {
+      const error = parsed as Record<string, unknown>;
+      if (typeof error.error === "string" && typeof error.code === "string") {
+        return new ApiError(
+          status,
+          error.error,
+          error.code,
+          typeof error.retryable === "boolean" ? error.retryable : undefined,
+        );
+      }
+    }
+  } catch {
+    // Preserve non-JSON error bodies verbatim.
+  }
+  return new ApiError(status, body);
 }
 
 // ---------------------------------------------------------------------------
@@ -1609,6 +1631,39 @@ export interface SavedAgent {
   createdAt: string;
   updatedAt: string;
   avatarCompletion?: AvatarCompletion;
+  receipt?: AgentMutationReceipt;
+}
+
+export interface AgentMutationReceipt {
+  schemaVersion: 1;
+  operation: "created" | "updated";
+  agent: {
+    agentProfileId: string;
+    identityDisposition: "created" | "preserved";
+  };
+  profileRevision: {
+    revisionId: string;
+    ordinal: number;
+    outcome: "created" | "preserved";
+    active: true;
+  };
+  dailyFree: "not_enrolled" | "preserved_follows_profile";
+  waitingSeats: {
+    total: number;
+    reconciled: number;
+    alreadyCurrent: number;
+    crossedFreeze: number;
+    games: Array<{
+      gameId: string;
+      slug: string;
+      disposition: "reconciled" | "already_current" | "crossed_freeze";
+      effectiveRevisionId: string | null;
+    }>;
+    truncatedCount: number;
+  };
+  frozenSeats: { unchanged: number };
+  avatarCompletion?: AvatarCompletion;
+  warnings: Array<"avatar_generation_failed">;
 }
 
 export interface CreateAgentParams {
@@ -1898,7 +1953,7 @@ export interface GameDetail {
   seasonId?: string;
   season?: Pick<SeasonIdentity, "id" | "slug" | "name">;
   rated?: boolean;
-  competitionReceipts?: CompetitionReceipt[];
+  competitionReceipts?: GameCompetitionReceipt[];
   winner?: string;
   winnerPersona?: string;
   finalists?: [string, string];
@@ -2252,6 +2307,10 @@ export interface CompetitionReceipt {
   eligibilityReason: string | null;
   accountRatingDelta: number | null;
   earnedAt: string;
+}
+
+export interface GameCompetitionReceipt extends CompetitionReceipt {
+  seasonTotalPoints: number;
 }
 
 export interface OwnedCompetitionReceipt extends CompetitionReceipt {

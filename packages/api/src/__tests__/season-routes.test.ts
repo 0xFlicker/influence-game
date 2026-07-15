@@ -143,7 +143,7 @@ async function seedRouteFixture() {
   const ownerId = await insertUser(db, "owner");
   const otherUserId = await insertUser(db, "other");
   const profile = (await createOwnedAgentProfile(db, { userId: ownerId }, {
-    name: "Atlas",
+    name: "Aster Routes",
     personality: "Steady",
   })).profile;
   const revision = (await db.select().from(schema.agentRevisions))[0]!;

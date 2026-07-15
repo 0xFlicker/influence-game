@@ -1,9 +1,11 @@
 import { randomUUID } from "crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { isReservedHouseAgentName } from "@influence/engine";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import type { AvatarChangeSource, AvatarGenerationTriggerSource } from "../db/schema.js";
 import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
+import { isPostgresUniqueViolation } from "../lib/postgres-errors.js";
 import { normalizeUploadedAvatarUrl } from "../lib/storage.js";
 import {
   consumeOwnedDraftAvatarCompletion,
@@ -19,9 +21,23 @@ import {
   type AgentArchetypeKey,
 } from "./agent-archetypes.js";
 import {
-  ensureAgentRevisionInTransaction,
+  ensureActiveAgentRevisionInTransaction,
   resolveFreeTrackEffectiveRuntimeSnapshot,
+  type EnsuredAgentRevision,
 } from "./agent-revisions.js";
+import {
+  AGENT_MUTATION_RECEIPT_SCHEMA_VERSION,
+  boundAgentMutationWaitingSeatReferences,
+  type AgentMutationProfileRevisionReceipt,
+  type AgentMutationReceipt,
+  type AgentMutationWarning,
+  type AgentMutationWaitingSeatReference,
+} from "./agent-mutation-receipt.js";
+import {
+  lockRosterGamesInTransaction,
+  OwnedSeatProjectionError,
+  reconcileOwnedProfileSeatsInLockedGame,
+} from "./owned-seat-projection.js";
 
 type DrizzleTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 type DatabaseExecutor = DrizzleDB | DrizzleTransaction;
@@ -32,6 +48,8 @@ const MAX_DISPLAY_NAME_LENGTH = 80;
 const MAX_PERSONALITY_PROMPT_LENGTH = 8_000;
 const MAX_PUBLIC_BIOGRAPHY_LENGTH = 2_000;
 const MAX_STRATEGY_STYLE_LENGTH = 2_000;
+const AGENT_NAME_UNIQUE_INDEX = "agent_profiles_normalized_name_unique";
+const AGENT_NAME_TAKEN_MESSAGE = "That agent name is already in use. Choose another name.";
 
 const CREATE_AGENT_FIELDS = new Set([
   "displayName",
@@ -74,6 +92,10 @@ export type AgentProfileManagementErrorCode =
   | "invalid_agent_input"
   | "invalid_archetype"
   | "immutable_field"
+  | "agent_name_taken"
+  | "waiting_roster_name_conflict"
+  | "agent_update_reconciliation_failed"
+  | "agent_update_conflict"
   | "account_limit_reached";
 
 export class AgentProfileManagementError extends Error {
@@ -82,6 +104,7 @@ export class AgentProfileManagementError extends Error {
     message: string,
     public readonly statusCode: number,
     public readonly details?: Record<string, unknown>,
+    public readonly retryable = false,
   ) {
     super(message);
     this.name = "AgentProfileManagementError";
@@ -98,6 +121,8 @@ export interface AgentProfileManagementContext {
   avatarCompletion?: {
     triggerSource: AvatarGenerationTriggerSource;
     processImmediately?: boolean;
+    /** Internal service collaborator override; never populated from request input. */
+    request?: typeof requestAndStartAvatarCompletion;
   };
   avatarChangeSource?: AvatarChangeSource;
   avatarGenerationRequestId?: string;
@@ -141,7 +166,12 @@ export interface UpdateAgentProfileMutationInput {
 
 export interface AgentProfileMutationRead {
   profile: typeof schema.agentProfiles.$inferSelect;
-  revisionCreated: boolean;
+  profileRevision: AgentProfileRevisionMutationRead;
+  receipt: AgentMutationReceipt;
+}
+
+export interface AgentProfileRevisionMutationRead extends AgentMutationProfileRevisionReceipt {
+  ratingRecalibrated: boolean;
 }
 
 export type DraftAvatarAdoptionResult =
@@ -175,6 +205,16 @@ export interface AgentActiveEnrollmentSummary {
   slug: string;
   status: "waiting" | "in_progress" | "suspended";
   queueType: "daily-free" | "open-game";
+  revision: {
+    disposition: "follows-current" | "pinned";
+    effectiveRevisionId: string | null;
+  };
+}
+
+export interface AgentCurrentRevisionSummary {
+  revisionId: string;
+  ordinal: number;
+  active: true;
 }
 
 export interface AgentSummary {
@@ -189,6 +229,7 @@ export interface AgentSummary {
   avatarUrl: string | null;
   stats: AgentStatsSummary;
   rating: AccountRatingSummary;
+  currentRevision: AgentCurrentRevisionSummary | null;
   queueState: AgentQueueStateSummary;
   activeEnrollment: AgentActiveEnrollmentSummary | null;
   createdAt: string;
@@ -209,6 +250,7 @@ export interface AgentRead {
 
 export interface AgentCommandRead extends AgentRead {
   message: string;
+  receipt: AgentMutationReceipt;
   avatarCompletion?: AvatarCompletionRead;
 }
 
@@ -220,6 +262,7 @@ type AccountRatingRow = Pick<
 
 interface EnrollmentRow {
   agentProfileId: string | null;
+  agentRevisionId: string | null;
   gameId: string;
   slug: string;
   status: string;
@@ -319,6 +362,7 @@ function prepareAgentProfileCreate(
   input: CreateAgentProfileMutationInput,
 ): typeof schema.agentProfiles.$inferInsert {
   const name = requiredStringField(input.name, "name", MAX_DISPLAY_NAME_LENGTH);
+  assertAgentNameNotReserved(name);
   const personality = requiredStringField(
     input.personality,
     "personality",
@@ -364,12 +408,12 @@ async function createAgentProfileInTransaction(
 ): Promise<AgentProfileMutationRead> {
   const profile = (await tx.insert(schema.agentProfiles).values(values).returning())[0];
   if (!profile) throw new Error("Agent profile insert returned no row");
-  const revision = await ensureAgentRevisionInTransaction(tx, {
+  const revision = await ensureActiveAgentRevisionInTransaction(tx, {
     profile,
     effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile),
     trigger: "profile_create",
   });
-  return { profile, revisionCreated: revision.created };
+  return profileMutationRead(profile, revision, emptyMutationReceipt(profile.id, revision, "created"));
 }
 
 export async function createOwnedAgentProfile(
@@ -379,18 +423,25 @@ export async function createOwnedAgentProfile(
 ): Promise<AgentProfileMutationRead> {
   await getAccountRating(db, context.userId);
   const values = prepareAgentProfileCreate(context, input);
-  const result = await db.transaction((tx) => createAgentProfileInTransaction(tx, values));
-
-  if (result.profile.avatarUrl) {
-    await recordAvatarChange(db, {
-      userId: context.userId,
-      agentProfileId: result.profile.id,
-      source: context.avatarChangeSource ?? "mcp_provided_avatar",
-      status: "completed",
-      generationRequestId: context.avatarGenerationRequestId,
-      previousAvatarUrl: null,
-      newAvatarUrl: result.profile.avatarUrl,
+  let result: AgentProfileMutationRead;
+  try {
+    result = await db.transaction(async (tx) => {
+      const created = await createAgentProfileInTransaction(tx, values);
+      if (created.profile.avatarUrl) {
+        await recordAvatarChange(tx, {
+          userId: context.userId,
+          agentProfileId: created.profile.id,
+          source: context.avatarChangeSource ?? "mcp_provided_avatar",
+          status: "completed",
+          generationRequestId: context.avatarGenerationRequestId,
+          previousAvatarUrl: null,
+          newAvatarUrl: created.profile.avatarUrl,
+        });
+      }
+      return created;
     });
+  } catch (error) {
+    throw mapAgentNameConflict(error);
   }
   return result;
 }
@@ -405,30 +456,34 @@ export async function adoptOwnedDraftAvatarAndCreateAgentProfile(
   await getAccountRating(db, context.userId);
   const values = prepareAgentProfileCreate(context, input);
 
-  return db.transaction(async (tx) => {
-    const consumed = await consumeOwnedDraftAvatarCompletion(tx, {
-      userId: context.userId,
-      generationRequestId,
-      profile: draftProfile,
-    });
-    if (!consumed.ok) return consumed;
-
-    const completion = consumed.completion;
-    const avatarUrl = completion.avatarUrl ?? null;
-    const result = await createAgentProfileInTransaction(tx, { ...values, avatarUrl });
-    if (avatarUrl) {
-      await recordAvatarChange(tx, {
+  try {
+    return await db.transaction(async (tx) => {
+      const consumed = await consumeOwnedDraftAvatarCompletion(tx, {
         userId: context.userId,
-        agentProfileId: result.profile.id,
-        source: "web_generated_completion",
-        status: "completed",
         generationRequestId,
-        previousAvatarUrl: null,
-        newAvatarUrl: avatarUrl,
+        profile: draftProfile,
       });
-    }
-    return { ok: true, result, completion };
-  });
+      if (!consumed.ok) return consumed;
+
+      const completion = consumed.completion;
+      const avatarUrl = completion.avatarUrl ?? null;
+      const result = await createAgentProfileInTransaction(tx, { ...values, avatarUrl });
+      if (avatarUrl) {
+        await recordAvatarChange(tx, {
+          userId: context.userId,
+          agentProfileId: result.profile.id,
+          source: "web_generated_completion",
+          status: "completed",
+          generationRequestId,
+          previousAvatarUrl: null,
+          newAvatarUrl: avatarUrl,
+        });
+      }
+      return { ok: true, result, completion };
+    });
+  } catch (error) {
+    throw mapAgentNameConflict(error);
+  }
 }
 
 export async function updateOwnedAgentProfile(
@@ -437,12 +492,175 @@ export async function updateOwnedAgentProfile(
   agentId: string,
   input: UpdateAgentProfileMutationInput,
 ): Promise<AgentProfileMutationRead> {
-  const existing = await requireOwnedAgentProfile(db, context.userId, agentId);
+  // Keep foreign roster rows out of the candidate lock set. Ownership remains
+  // authoritative under the profile lock inside each transaction attempt.
+  await requireOwnedAgentProfile(db, context.userId, agentId);
+  const MAX_UPDATE_ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= MAX_UPDATE_ATTEMPTS; attempt += 1) {
+    const candidateGames = await findWaitingFollowerGames(db, agentId);
+    try {
+      return await db.transaction(async (tx) => updateAgentProfileInTransaction(tx, {
+        context,
+        agentId,
+        input,
+        candidateGames,
+      }));
+    } catch (error) {
+      if (error instanceof ExpandedWaitingGameSetError) {
+        if (attempt < MAX_UPDATE_ATTEMPTS) continue;
+        throw new AgentProfileManagementError(
+          "agent_update_conflict",
+          "The agent's waiting-game enrollment changed during the update. Try again.",
+          409,
+          undefined,
+          true,
+        );
+      }
+      throw mapAgentNameConflict(error);
+    }
+  }
+  throw new Error("Agent profile update attempts exhausted unexpectedly");
+}
+
+async function updateAgentProfileInTransaction(
+  tx: DrizzleTransaction,
+  input: {
+    context: AgentProfileManagementContext;
+    agentId: string;
+    input: UpdateAgentProfileMutationInput;
+    candidateGames: WaitingFollowerGame[];
+  },
+): Promise<AgentProfileMutationRead> {
+  const lockedGames = await lockRosterGamesInTransaction(
+    tx,
+    input.candidateGames.map((game) => game.id),
+  );
+  await tx.execute(sql`
+    SELECT id
+    FROM agent_profiles
+    WHERE id = ${input.agentId}
+    FOR UPDATE
+  `);
+  const existing = await requireOwnedAgentProfile(tx, input.context.userId, input.agentId);
+  const updates = prepareAgentProfileUpdates(input.context, input.input, existing);
+  const profile = (await tx.update(schema.agentProfiles)
+    .set(updates)
+    .where(and(
+      eq(schema.agentProfiles.id, input.agentId),
+      eq(schema.agentProfiles.userId, input.context.userId),
+    ))
+    .returning())[0];
+  if (!profile) {
+    throw new AgentProfileManagementError("agent_not_found", "Agent not found.", 404, {
+      agentId: input.agentId,
+    });
+  }
+  const revision = await ensureActiveAgentRevisionInTransaction(tx, {
+    profile,
+    effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile),
+    trigger: "profile_edit",
+  });
+
+  const references: AgentMutationWaitingSeatReference[] = [];
+  for (const game of lockedGames) {
+    if (game.status === "waiting" && !game.startedAt) {
+      try {
+        const reconciliations = await reconcileOwnedProfileSeatsInLockedGame(tx, {
+          game,
+          userId: input.context.userId,
+          agentProfileId: input.agentId,
+        });
+        references.push(...reconciliations.map((reconciliation) => ({
+          gameId: game.id,
+          slug: game.slug,
+          disposition: reconciliation.disposition,
+          effectiveRevisionId: reconciliation.seat.agentRevisionId,
+        })));
+      } catch (error) {
+        throw mapWaitingReconciliationError(error, game);
+      }
+      continue;
+    }
+
+    const crossedSeats = await tx.select().from(schema.gamePlayers).where(and(
+      eq(schema.gamePlayers.gameId, game.id),
+      eq(schema.gamePlayers.agentProfileId, input.agentId),
+    ));
+    references.push(...crossedSeats.map((seat) => ({
+      gameId: game.id,
+      slug: game.slug,
+      disposition: "crossed_freeze" as const,
+      effectiveRevisionId: seat.agentRevisionId,
+    })));
+  }
+
+  const currentWaitingGames = await findWaitingFollowerGames(tx, input.agentId);
+  const lockedGameIds = new Set(input.candidateGames.map((game) => game.id));
+  if (currentWaitingGames.some((game) => !lockedGameIds.has(game.id))) {
+    throw new ExpandedWaitingGameSetError();
+  }
+
+  if (input.input.avatarUrl !== undefined && profile.avatarUrl !== existing.avatarUrl) {
+    await recordAvatarChange(tx, {
+      userId: input.context.userId,
+      agentProfileId: input.agentId,
+      source: input.context.avatarChangeSource ?? "mcp_update",
+      status: "completed",
+      generationRequestId: input.context.avatarGenerationRequestId,
+      previousAvatarUrl: existing.avatarUrl,
+      newAvatarUrl: profile.avatarUrl,
+    });
+  }
+
+  const [standingMembership, frozenSeatCount] = await Promise.all([
+    tx.select({ id: schema.freeGameQueue.id }).from(schema.freeGameQueue)
+      .where(eq(schema.freeGameQueue.agentProfileId, input.agentId)).limit(1),
+    tx.select({ count: sql<number>`count(*)::int` }).from(schema.gamePlayers)
+      .innerJoin(schema.games, eq(schema.gamePlayers.gameId, schema.games.id))
+      .where(and(
+        eq(schema.gamePlayers.agentProfileId, input.agentId),
+        inArray(schema.games.status, ["in_progress", "suspended"]),
+      )),
+  ]);
+  references.sort((left, right) => left.gameId.localeCompare(right.gameId));
+  const boundedReferences = boundAgentMutationWaitingSeatReferences(references);
+  const receipt: AgentMutationReceipt = {
+    schemaVersion: AGENT_MUTATION_RECEIPT_SCHEMA_VERSION,
+    operation: "updated",
+    agent: {
+      agentProfileId: input.agentId,
+      identityDisposition: "preserved",
+    },
+    profileRevision: profileRevisionReceipt(revision),
+    dailyFree: standingMembership.length > 0
+      ? "preserved_follows_profile"
+      : "not_enrolled",
+    waitingSeats: {
+      total: references.length,
+      reconciled: references.filter((reference) => reference.disposition === "reconciled").length,
+      alreadyCurrent: references.filter((reference) => reference.disposition === "already_current").length,
+      crossedFreeze: references.filter((reference) => reference.disposition === "crossed_freeze").length,
+      ...boundedReferences,
+    },
+    frozenSeats: { unchanged: frozenSeatCount[0]?.count ?? 0 },
+    warnings: [],
+  };
+  return profileMutationRead(profile, revision, receipt);
+}
+
+function prepareAgentProfileUpdates(
+  context: AgentProfileManagementContext,
+  input: UpdateAgentProfileMutationInput,
+  existing: AgentProfileRow,
+): Partial<typeof schema.agentProfiles.$inferInsert> {
   const updates: Partial<typeof schema.agentProfiles.$inferInsert> = {
     updatedAt: new Date().toISOString(),
   };
   if (input.name !== undefined) {
     updates.name = requiredStringField(input.name, "name", MAX_DISPLAY_NAME_LENGTH);
+    if (normalizeSavedAgentName(updates.name) !== normalizeSavedAgentName(existing.name)) {
+      assertAgentNameNotReserved(updates.name);
+    }
   }
   if (input.personality !== undefined) {
     updates.personality = requiredStringField(
@@ -470,37 +688,116 @@ export async function updateOwnedAgentProfile(
     }
     updates.avatarUrl = avatarUrl.value ?? null;
   }
+  return updates;
+}
 
-  const result = await db.transaction(async (tx) => {
-    const profile = (await tx.update(schema.agentProfiles)
-      .set(updates)
-      .where(and(
-        eq(schema.agentProfiles.id, agentId),
-        eq(schema.agentProfiles.userId, context.userId),
-      ))
-      .returning())[0];
-    if (!profile) {
-      throw new AgentProfileManagementError("agent_not_found", "Agent not found.", 404, { agentId });
-    }
-    const revision = await ensureAgentRevisionInTransaction(tx, {
-      profile,
-      effectiveRuntimeSnapshot: resolveFreeTrackEffectiveRuntimeSnapshot(profile),
-      trigger: "profile_edit",
-    });
-    return { profile, revisionCreated: revision.created };
-  });
+function profileMutationRead(
+  profile: typeof schema.agentProfiles.$inferSelect,
+  revision: EnsuredAgentRevision,
+  receipt: AgentMutationReceipt,
+): AgentProfileMutationRead {
+  return {
+    profile: { ...profile, currentRevisionId: revision.revision.id },
+    profileRevision: {
+      revisionId: revision.revision.id,
+      ordinal: revision.revision.ordinal,
+      outcome: revision.created ? "created" : "preserved",
+      active: true,
+      ratingRecalibrated: revision.ratingRecalibrated,
+    },
+    receipt,
+  };
+}
 
-  if (input.avatarUrl !== undefined && result.profile.avatarUrl !== existing.avatarUrl) {
-    await recordAvatarChange(db, {
-      userId: context.userId,
-      agentProfileId: agentId,
-      source: context.avatarChangeSource ?? "mcp_update",
-      status: "completed",
-      previousAvatarUrl: existing.avatarUrl,
-      newAvatarUrl: result.profile.avatarUrl,
-    });
+interface WaitingFollowerGame {
+  id: string;
+  slug: string;
+}
+
+class ExpandedWaitingGameSetError extends Error {
+  constructor() {
+    super("Waiting follower game set expanded during update");
+    this.name = "ExpandedWaitingGameSetError";
   }
-  return result;
+}
+
+async function findWaitingFollowerGames(
+  db: DatabaseExecutor,
+  agentProfileId: string,
+): Promise<WaitingFollowerGame[]> {
+  return db.selectDistinct({
+    id: schema.games.id,
+    slug: schema.games.slug,
+  }).from(schema.gamePlayers)
+    .innerJoin(schema.games, eq(schema.gamePlayers.gameId, schema.games.id))
+    .where(and(
+      eq(schema.gamePlayers.agentProfileId, agentProfileId),
+      eq(schema.games.status, "waiting"),
+    ))
+    .orderBy(asc(schema.games.id));
+}
+
+function profileRevisionReceipt(
+  revision: EnsuredAgentRevision,
+): AgentMutationProfileRevisionReceipt {
+  return {
+    revisionId: revision.revision.id,
+    ordinal: revision.revision.ordinal,
+    outcome: revision.created ? "created" : "preserved",
+    active: true,
+  };
+}
+
+function emptyMutationReceipt(
+  agentProfileId: string,
+  revision: EnsuredAgentRevision,
+  operation: "created" | "updated",
+): AgentMutationReceipt {
+  return {
+    schemaVersion: AGENT_MUTATION_RECEIPT_SCHEMA_VERSION,
+    operation,
+    agent: {
+      agentProfileId,
+      identityDisposition: operation === "created" ? "created" : "preserved",
+    },
+    profileRevision: profileRevisionReceipt(revision),
+    dailyFree: "not_enrolled",
+    waitingSeats: {
+      total: 0,
+      reconciled: 0,
+      alreadyCurrent: 0,
+      crossedFreeze: 0,
+      games: [],
+      truncatedCount: 0,
+    },
+    frozenSeats: { unchanged: 0 },
+    warnings: [],
+  };
+}
+
+function mapWaitingReconciliationError(
+  error: unknown,
+  game: Pick<typeof schema.games.$inferSelect, "id" | "slug">,
+): unknown {
+  if (!(error instanceof OwnedSeatProjectionError)) return error;
+  const details = {
+    games: [{ gameId: game.id, slug: game.slug }],
+    truncatedCount: 0,
+  };
+  if (error.reason === "name_conflict") {
+    return new AgentProfileManagementError(
+      "waiting_roster_name_conflict",
+      "That agent name is already in use in a waiting game. Choose another name.",
+      409,
+      details,
+    );
+  }
+  return new AgentProfileManagementError(
+    "agent_update_reconciliation_failed",
+    "The agent could not be updated across its waiting games.",
+    409,
+    details,
+  );
 }
 
 export async function createOwnedAgent(
@@ -524,7 +821,7 @@ export async function createOwnedAgent(
     throw new AgentProfileManagementError("invalid_agent_input", avatarUrl.error, 400);
   }
 
-  const { profile } = await createOwnedAgentProfile(db, context, {
+  const mutation = await createOwnedAgentProfile(db, context, {
     name: displayName,
     backstory: publicBiography,
     personality: personalityPrompt,
@@ -533,7 +830,9 @@ export async function createOwnedAgent(
     gender: input.gender,
     avatarUrl: avatarUrl.value,
   });
+  const { profile } = mutation;
 
+  let receipt = mutation.receipt;
   let avatarCompletion: AvatarCompletionRead | {
     status: "already_provided";
     avatarUrl: string;
@@ -550,12 +849,20 @@ export async function createOwnedAgent(
       avatarCompletion = await maybeRequestAvatarCompletion(db, context, profile.id);
     } catch (error) {
       console.warn("[agent-profile-management] Failed to request automatic avatar generation:", error);
+      receipt = addMutationWarning(receipt, "avatar_generation_failed");
+    }
+  }
+  if (avatarCompletion) {
+    receipt = { ...receipt, avatarCompletion };
+    if (avatarCompletion.status === "failed") {
+      receipt = addMutationWarning(receipt, "avatar_generation_failed");
     }
   }
 
   return {
     ...(await getOwnedAgent(db, { userId: context.userId, agentId: profile.id })),
     message: "Agent created.",
+    receipt,
     ...(avatarCompletion && { avatarCompletion }),
   };
 }
@@ -600,12 +907,37 @@ export async function updateOwnedAgent(
     }
     updates.avatarUrl = avatarUrl.value ?? null;
   }
-  await updateOwnedAgentProfile(db, context, agentId, updates);
+  const mutation = await updateOwnedAgentProfile(db, context, agentId, updates);
+  let receipt = mutation.receipt;
+  let avatarCompletion: AvatarCompletionRead | undefined;
+  if (!mutation.profile.avatarUrl && context.avatarCompletion) {
+    try {
+      avatarCompletion = await maybeRequestAvatarCompletion(db, context, agentId);
+      if (avatarCompletion) receipt = { ...receipt, avatarCompletion };
+      if (avatarCompletion?.status === "failed") {
+        receipt = addMutationWarning(receipt, "avatar_generation_failed");
+      }
+    } catch (error) {
+      console.warn("[agent-profile-management] Failed to request automatic avatar generation:", error);
+      receipt = addMutationWarning(receipt, "avatar_generation_failed");
+    }
+  }
 
   return {
     ...(await getOwnedAgent(db, { userId: context.userId, agentId })),
     message: "Agent updated.",
+    receipt,
+    ...(avatarCompletion && { avatarCompletion }),
   };
+}
+
+function addMutationWarning(
+  receipt: AgentMutationReceipt,
+  warning: AgentMutationWarning,
+): AgentMutationReceipt {
+  return receipt.warnings.includes(warning)
+    ? receipt
+    : { ...receipt, warnings: [...receipt.warnings, warning] };
 }
 
 async function maybeRequestAvatarCompletion(
@@ -615,7 +947,8 @@ async function maybeRequestAvatarCompletion(
 ): Promise<AvatarCompletionRead | undefined> {
   if (!context.avatarCompletion) return undefined;
 
-  return requestAndStartAvatarCompletion(db, {
+  const request = context.avatarCompletion.request ?? requestAndStartAvatarCompletion;
+  return request(db, {
     userId: context.userId,
     agentProfileId,
     triggerSource: context.avatarCompletion.triggerSource,
@@ -686,6 +1019,7 @@ async function loadAgentSerializationContext(
   queueJoinedAt: string | null;
   activeEnrollmentByAgentProfileId: Map<string, AgentActiveEnrollmentSummary>;
   currentDailyFreeEnrollment: AgentActiveEnrollmentSummary | null;
+  currentRevisionByAgentProfileId: Map<string, AgentCurrentRevisionSummary>;
 }> {
   if (profiles.length === 0) {
     return {
@@ -694,6 +1028,7 @@ async function loadAgentSerializationContext(
       queueJoinedAt: null,
       activeEnrollmentByAgentProfileId: new Map(),
       currentDailyFreeEnrollment: null,
+      currentRevisionByAgentProfileId: new Map(),
     };
   }
 
@@ -707,6 +1042,7 @@ async function loadAgentSerializationContext(
   const enrollmentRows = await db
     .select({
       agentProfileId: schema.gamePlayers.agentProfileId,
+      agentRevisionId: schema.gamePlayers.agentRevisionId,
       gameId: schema.games.id,
       slug: schema.games.slug,
       status: schema.games.status,
@@ -724,12 +1060,30 @@ async function loadAgentSerializationContext(
   const activeEnrollmentByAgentProfileId = activeEnrollmentMap(enrollmentRows);
   const currentDailyFreeEnrollment = [...activeEnrollmentByAgentProfileId.values()]
     .find((enrollment) => enrollment.queueType === "daily-free") ?? null;
+  const currentRevisionIds = profiles
+    .map((profile) => profile.currentRevisionId)
+    .filter((revisionId): revisionId is string => Boolean(revisionId));
+  const currentRevisions = currentRevisionIds.length === 0
+    ? []
+    : await db.select({
+      id: schema.agentRevisions.id,
+      agentProfileId: schema.agentRevisions.agentProfileId,
+      ordinal: schema.agentRevisions.ordinal,
+    }).from(schema.agentRevisions).where(inArray(schema.agentRevisions.id, currentRevisionIds));
+  const currentRevisionByAgentProfileId = new Map<string, AgentCurrentRevisionSummary>(
+    currentRevisions.map((revision) => [revision.agentProfileId, {
+      revisionId: revision.id,
+      ordinal: revision.ordinal,
+      active: true,
+    }]),
+  );
   return {
     accountRating,
     queuedAgentProfileId: queueEntry?.agentProfileId ?? null,
     queueJoinedAt: queueEntry?.joinedAt ?? null,
     activeEnrollmentByAgentProfileId,
     currentDailyFreeEnrollment,
+    currentRevisionByAgentProfileId,
   };
 }
 
@@ -750,6 +1104,10 @@ function activeEnrollmentMap(
       slug: row.slug,
       status: row.status,
       queueType: row.trackType === "free" ? "daily-free" : "open-game",
+      revision: {
+        disposition: row.status === "waiting" ? "follows-current" : "pinned",
+        effectiveRevisionId: row.agentRevisionId,
+      },
     });
   }
   return byProfileId;
@@ -770,6 +1128,7 @@ function serializeAgent(
     queueJoinedAt: string | null;
     activeEnrollmentByAgentProfileId: Map<string, AgentActiveEnrollmentSummary>;
     currentDailyFreeEnrollment: AgentActiveEnrollmentSummary | null;
+    currentRevisionByAgentProfileId: Map<string, AgentCurrentRevisionSummary>;
   },
 ): AgentSummary {
   const archetype = profile.personaKey && isUserSelectableAgentArchetype(profile.personaKey)
@@ -793,6 +1152,7 @@ function serializeAgent(
       winRate: profile.gamesPlayed > 0 ? profile.gamesWon / profile.gamesPlayed : 0,
     },
     rating: context.accountRating,
+    currentRevision: context.currentRevisionByAgentProfileId.get(profile.id) ?? null,
     queueState: {
       dailyFree: queued ? "queued" : "not-queued",
       ...(queued && context.queueJoinedAt && { joinedAt: context.queueJoinedAt }),
@@ -873,6 +1233,30 @@ function requiredStringField(value: unknown, field: string, maxLength: number): 
     );
   }
   return trimmed;
+}
+
+function assertAgentNameNotReserved(name: string): void {
+  if (isReservedHouseAgentName(name)) {
+    throw agentNameTakenError();
+  }
+}
+
+function normalizeSavedAgentName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function agentNameTakenError(): AgentProfileManagementError {
+  return new AgentProfileManagementError(
+    "agent_name_taken",
+    AGENT_NAME_TAKEN_MESSAGE,
+    409,
+  );
+}
+
+function mapAgentNameConflict(error: unknown): unknown {
+  return isPostgresUniqueViolation(error, AGENT_NAME_UNIQUE_INDEX)
+    ? agentNameTakenError()
+    : error;
 }
 
 function optionalStringField(value: unknown, field: string, maxLength: number): string | null {

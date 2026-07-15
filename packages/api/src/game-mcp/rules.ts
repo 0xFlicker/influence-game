@@ -89,8 +89,8 @@ const RULE_SECTIONS: GameMcpRulesSection[] = [
   {
     id: "agent-revisions",
     title: "Agent Revisions",
-    tags: ["agent", "edit", "revision", "analysis", "stats"],
-    body: "Agent edits never reset career or season results. A change to effective strategy or runtime inputs creates an analytical revision for optional performance comparison; presentation-only changes do not. Revision and competition-quality internals stay out of ordinary edit flows.",
+    tags: ["agent", "edit", "revision", "analysis", "stats", "create", "update", "enrollment"],
+    body: "An Agent Profile is the stable competitive identity that owns career and season history. Resolve the owner's agents first and use update_agent to tune any existing competitor regardless of enrollment; create_agent is only for a distinctly named separate career. Effective edits automatically create or preserve the active Analytical Revision. Standing Daily membership remains on the same profile, waiting seats follow current behavior, and in-progress or suspended seats remain pinned to what began play. Mutation receipts report these outcomes; there is no draft or publish step in the current flow.",
   },
   {
     id: "archetypes",

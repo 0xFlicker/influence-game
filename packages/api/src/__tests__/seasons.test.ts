@@ -9,9 +9,13 @@ import {
   closeSeason,
   createSeason,
   finalizeSeason,
-  prepareOwnedSeatAdmission,
   validateRatedGameRoster,
 } from "../services/seasons.js";
+import {
+  admitOwnedSeatInTransaction,
+  updateWaitingHouseSeatPersonaInTransaction,
+} from "../services/owned-seat-projection.js";
+import { fingerprintEffectiveRuntimeSnapshot } from "../services/revision-policy.js";
 import { setupTestDB } from "./test-utils.js";
 
 describe("season admission and state", () => {
@@ -96,12 +100,12 @@ describe("season admission and state", () => {
     expect(await db.select().from(schema.seasons)).toHaveLength(1);
   });
 
-  test("binds a free roster to the active season and pins exact owned revisions", async () => {
+  test("binds a free roster while projecting exact owned-seat tuples", async () => {
     const db = await setupTestDB();
     const ownerA = await insertUser(db, "owner-a");
     const ownerB = await insertUser(db, "owner-b");
-    const profileA = await createProfile(db, ownerA, "Atlas");
-    const profileB = await createProfile(db, ownerB, "Mira");
+    const profileA = await createProfile(db, ownerA, "Aster Season");
+    const profileB = await createProfile(db, ownerB, "Maris Season");
     const season = await activeSeason(db, ownerA, "rated-roster");
     const gameId = await insertWaitingFreeGame(db);
     await insertOwnedSeat(db, gameId, ownerA, profileA.id, "Atlas");
@@ -117,14 +121,37 @@ describe("season admission and state", () => {
     expect(game?.seasonId).toBe(season.id);
     expect(players.filter((player) => player.agentProfileId).every((player) => player.agentRevisionId)).toBe(true);
     expect(players.find((player) => !player.agentProfileId)?.agentRevisionId).toBeNull();
-    expect(await db.select().from(schema.competitionRatingSnapshots)).toHaveLength(2);
-    expect(await validateRatedGameRoster(db, gameId)).toEqual({ rated: true });
+    expect(await db.select().from(schema.competitionRatingSnapshots)).toHaveLength(0);
+    for (const player of players.filter((candidate) => candidate.agentProfileId)) {
+      const profile = player.agentProfileId === profileA.id ? profileA : profileB;
+      const persona = JSON.parse(player.persona) as Record<string, unknown>;
+      const config = JSON.parse(player.agentConfig) as Record<string, unknown>;
+      const revision = (await db.select().from(schema.agentRevisions)
+        .where(eq(schema.agentRevisions.id, player.agentRevisionId!)))[0]!;
+      expect(persona).toMatchObject({
+        name: profile.name,
+        personality: profile.personality,
+      });
+      expect(revision.fingerprint).toBe(fingerprintEffectiveRuntimeSnapshot({
+        name: persona.name as string,
+        personality: persona.personality as string,
+        backstory: (persona.backstory as string | null | undefined) ?? null,
+        strategyInstructions: (persona.strategyHints as string | null | undefined) ?? null,
+        personaKey: (persona.personaKey as string | null | undefined) ?? null,
+        model: config.model as string,
+        providerProfileId: revision.effectiveRuntimeSnapshot.providerProfileId as string,
+        catalogId: revision.effectiveRuntimeSnapshot.catalogId as string,
+        reasoningPolicy: (revision.effectiveRuntimeSnapshot.reasoningPolicy as string | null | undefined) ?? null,
+        toolChoiceMode: (revision.effectiveRuntimeSnapshot.toolChoiceMode as string | null | undefined) ?? null,
+        temperature: config.temperature as number,
+      }));
+    }
   });
 
-  test("leaves free games explicitly unrated when no season is active", async () => {
+  test("leaves free games unrated while still assigning truthful effective revisions", async () => {
     const db = await setupTestDB();
     const owner = await insertUser(db, "unrated-owner");
-    const profile = await createProfile(db, owner, "Vera");
+    const profile = await createProfile(db, owner, "Verity Season");
     const gameId = await insertWaitingFreeGame(db);
     await insertOwnedSeat(db, gameId, owner, profile.id, "Vera");
 
@@ -132,7 +159,7 @@ describe("season admission and state", () => {
     expect(admission).toEqual({ rated: false, seasonId: null });
     const player = (await db.select().from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.gameId, gameId)))[0];
-    expect(player?.agentRevisionId).toBeNull();
+    expect(player?.agentRevisionId).toBeTruthy();
     expect(await validateRatedGameRoster(db, gameId)).toEqual({ rated: false });
   });
 
@@ -151,10 +178,11 @@ describe("season admission and state", () => {
 
     await db.delete(schema.gamePlayers).where(eq(schema.gamePlayers.agentProfileId, second.id));
     await db.transaction((tx) => bindFreeGameToActiveSeason(tx, gameId));
-    await expect(db.transaction((tx) => prepareOwnedSeatAdmission(tx, {
+    await expect(db.transaction((tx) => admitOwnedSeatInTransaction(tx, {
       gameId,
       userId: owner,
-      profile: second,
+      agentProfileId: second.id,
+      playerId: randomUUID(),
     }))).rejects.toMatchObject({ code: "rated_roster_invalid" });
   });
 
@@ -187,11 +215,32 @@ describe("season admission and state", () => {
       seasonId: season.id,
     }).where(eq(schema.games.id, gameId));
 
-    await expect(db.transaction((tx) => prepareOwnedSeatAdmission(tx, {
+    await expect(db.transaction((tx) => admitOwnedSeatInTransaction(tx, {
       gameId,
       userId: owner,
-      profile,
-    }))).rejects.toMatchObject({ code: "rated_roster_invalid" });
+      agentProfileId: profile.id,
+      playerId: randomUUID(),
+    }))).rejects.toMatchObject({ code: "invalid_state" });
+  });
+
+  test("discards late House persona enrichment after the waiting boundary", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertWaitingFreeGame(db);
+    await insertHouseSeat(db, gameId, "House Before");
+    const seat = (await db.select().from(schema.gamePlayers)
+      .where(eq(schema.gamePlayers.gameId, gameId)))[0]!;
+    await db.update(schema.games).set({
+      status: "in_progress",
+      startedAt: new Date().toISOString(),
+    }).where(eq(schema.games.id, gameId));
+
+    await expect(db.transaction((tx) => updateWaitingHouseSeatPersonaInTransaction(tx, {
+      gameId,
+      playerId: seat.id,
+      persona: JSON.stringify({ name: "House After", personality: "late" }),
+    }))).rejects.toMatchObject({ code: "invalid_state" });
+    expect((await db.select().from(schema.gamePlayers)
+      .where(eq(schema.gamePlayers.id, seat.id)))[0]?.persona).toBe(seat.persona);
   });
 
   test("keeps admitted games in a closing season and blocks premature finalization", async () => {
@@ -205,15 +254,19 @@ describe("season admission and state", () => {
     await db.transaction((tx) => bindFreeGameToActiveSeason(tx, gameId));
 
     await closeSeason(db, season.id);
-    expect(await validateRatedGameRoster(db, gameId)).toEqual({ rated: true });
+    expect(await validateRatedGameRoster(db, gameId)).toMatchObject({
+      rated: true,
+      error: expect.stringContaining("no matching pregame rating snapshot"),
+    });
     await expect(finalizeSeason(db, season.id)).rejects.toMatchObject({ code: "season_not_ready" });
 
     const game = (await db.select().from(schema.games).where(eq(schema.games.id, gameId)))[0];
     expect(game?.seasonId).toBe(season.id);
-    await expect(db.transaction((tx) => prepareOwnedSeatAdmission(tx, {
+    await expect(db.transaction((tx) => admitOwnedSeatInTransaction(tx, {
       gameId,
       userId: owner,
-      profile,
+      agentProfileId: profile.id,
+      playerId: randomUUID(),
     }))).rejects.toMatchObject({ code: "invalid_state" });
   });
 });

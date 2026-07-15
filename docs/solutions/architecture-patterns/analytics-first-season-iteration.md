@@ -74,9 +74,21 @@ Do not expose hidden `mu`, `sigma`, expected outcomes, or recalibration magnitud
 
 ### Use analytical revisions as quiet measurement boundaries
 
-An analytical revision segments evidence without punishing editing. The revision service fingerprints the effective runtime snapshot and reuses the current revision when that fingerprint is unchanged (`packages/api/src/services/agent-revisions.ts:75-110`). When the effective snapshot changes, it creates the next ordinal revision, links the prior revision, stores behavior and runtime snapshots, and makes the new revision current (`packages/api/src/services/agent-revisions.ts:113-140`). If a hidden rating exists, the service meters its uncertainty and records producer evidence instead of resetting public season performance (`packages/api/src/services/agent-revisions.ts:142-193`).
+An analytical revision segments evidence without punishing editing. The revision service fingerprints the effective runtime snapshot and preserves the current revision when an owner save is behaviorally identical. When effective behavior changes, it creates the next chronological profile revision, links the prior revision, stores behavior and runtime snapshots, and makes the new revision current. If a hidden rating exists, the service meters its uncertainty and records producer evidence instead of resetting public season performance.
 
 Presentation-only changes should not fragment analysis. Inputs that can change decisions, dialogue, model execution, or tool behavior should. Keep this mechanism quiet: mention it briefly in help or rules, but do not interrupt edits with warnings, approval gates, or blocking modals.
+
+Keep active profile revisions separate from game-effective revisions. The Agent Profile's current revision answers what future play should inherit. A waiting seat resolves the exact profile behavior plus that game's runtime policy and may reuse or create a matching non-active game-effective revision without moving the profile pointer. This distinction keeps revision history truthful when two games use different model or temperature policy.
+
+### Follow current behavior until roster freeze
+
+Enrollment follows the stable Agent Profile, not a manually deployed revision ID. Standing Daily membership therefore survives an update without leave/rejoin churn, wait-age changes, or miss-state changes. An already-materialized waiting seat is provisional: a successful behavior update reconciles its revision, persona, and runtime inputs, and game start performs the final coherent projection.
+
+Roster freeze is the execution and competition-evidence boundary. The start transaction pins each seat's game-effective revision/persona/runtime tuple and captures its matching pregame competition-rating snapshot before play. Started and suspended games remain on those bytes after later profile edits. If the matching startup owner fails before gameplay is persisted, cleanup may void that attempted freeze, remove its rating snapshot, return the game to waiting, and resume following current behavior.
+
+Season assignment at Daily Free draw is not roster freeze. An already-assigned game may drain through an `active` or `closing` season, while a `final` or missing season rejects rated start. Competition settlement consumes the exact revision pinned on the seat and its matching pregame snapshot; it never substitutes the profile's current revision or highest ordinal.
+
+Keep the next-layer ideas deferred until observed behavior justifies them: a durable agent draft/publish lifecycle, a Two-Clock Revision Learning Card, connector-choice telemetry, and a formal Connector Revision Gauntlet. The current loop ships the smallest useful contract—active by default, structured receipts, deterministic contract tests, and practical connected-LLM exercises whose failures inform the next iteration.
 
 ### Keep Season 0 policy operator-owned and adjustable
 
@@ -137,10 +149,11 @@ The spoiler boundary applies at every maturity level: outcomes, championship rec
 
 1. An agent completes several rated games and appears in public standings with rank, games, wins, and placement performance.
 2. Its owner opens private analysis, inspects receipts and placement distribution, and follows links into authorized completed-game evidence.
-3. The owner changes strategy instructions. Influence quietly creates an analytical revision because an effective runtime input changed.
-4. Later results appear under the new revision, allowing comparison of games, wins, points, and average finish against the prior revision.
-5. Producers inspect hidden rating events, snapshots, and receipt evidence to judge field-quality scoring and recalibration.
-6. If play reveals poor scoring balance, the operator changes the versioned policy, tests it, and treats the change as Season 0 iteration rather than inventing an activation-proof exception process.
+3. The owner changes strategy instructions on the existing Agent Profile. Influence quietly creates an active analytical revision and returns a receipt; it does not create a second career or require publishing.
+4. Standing Daily membership remains attached to that profile. Waiting seats follow the new behavior until roster freeze, while games that already began remain pinned.
+5. Later results appear under the revision that each game actually executed, allowing comparison of games, wins, points, and average finish against the prior revision.
+6. Producers inspect hidden rating events, freeze-time snapshots, and receipt evidence to judge field-quality scoring and recalibration.
+7. If play reveals poor scoring balance, the operator changes the versioned policy, tests it, and treats the change as Season 0 iteration rather than inventing an activation-proof exception process.
 
 ### Correct audience boundaries
 

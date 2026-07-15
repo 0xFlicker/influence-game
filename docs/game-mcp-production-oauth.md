@@ -111,17 +111,17 @@ Shared rules and game-read tools:
 
 Agent tools requiring `agents:read`:
 
-- `list_agents`: list the subject's owned agents with prompt, public biography, gender, avatar, stats, account-level free-track ELO provenance, queue state, and active enrollment.
-- `get_agent`: read one owned agent by `agentId`.
-- `search_agents`: search only the subject's owned agents by name, archetype, biography, personality prompt, or strategy style.
+- `list_agents`: list the subject's owned Agent Profiles with prompt, public biography, gender, avatar, stats, account-level free-track ELO provenance, current analytical revision, queue state, and whether the active enrollment follows current behavior or is pinned.
+- `get_agent`: read one owned Agent Profile by stable `agentId`, including current revision and following/pinned enrollment state.
+- `search_agents`: search only the subject's owned Agent Profiles by name, archetype, biography, personality prompt, or strategy style. Use this first when the user names a competitor that may already exist.
 - `get_queue_status`: inspect supported pre-match queue status. v1 supports `queueType: "daily-free"`.
 - `read_agent_season`: read receipt and revision-separated season analysis for one owned agent.
 - `export_agent_season_data`: export the authenticated owner's player-safe season receipts as JSON or CSV.
 
 Agent management tools requiring both `agents:read` and `agents:write`:
 
-- `create_agent`: create one owned reusable agent profile from `displayName`, `archetype`, `personalityPrompt`, optional `publicBiography`, optional `strategyStyle`, optional `gender` (`male`, `female`, or `non-binary`), and optional `avatarUrl`. Omitting `avatarUrl` requests quota-gated avatar completion.
-- `update_agent`: update mutable fields, including gender, on one owned agent. Immutable IDs and ownership fields are rejected.
+- `create_agent`: create a distinctly named Agent Profile as a separate competitive identity with independent career and season history. Never use it to tune or re-enroll an existing competitor. Inputs are `displayName`, `archetype`, `personalityPrompt`, optional `publicBiography`, optional `strategyStyle`, optional `gender` (`male`, `female`, or `non-binary`), and optional `avatarUrl`. Omitting `avatarUrl` requests quota-gated avatar completion.
+- `update_agent`: update mutable fields, including gender, on one existing owned Agent Profile regardless of enrollment. Effective changes become active immediately, Standing Daily membership stays on the same profile, waiting seats follow the new behavior, and started or suspended seats remain pinned.
 - `join_queue`: set the owner's Standing Daily Agent with `queueType: "daily-free"`, or join a waiting open game with `queueType: "open-game"` and `gameIdOrSlug`. Repeating the same Daily Free agent is idempotent; naming a different owned agent switches the standing entry without resetting its wait state.
 - `leave_queue`: remove the Standing Daily Agent idempotently and suppress browser acquisition prompts for the rest of the active season. It does not remove an agent from an already-created game.
 
@@ -136,11 +136,23 @@ Producer-only tools requiring `producer`:
 
 The postgame tools are denormalized read surfaces over the canonical event log and completed-game result rows. They do not replace canonical events as source of truth and should not reconstruct missing facts from transcripts, thinking, reasoning, private traces, or prose summaries. Tool descriptors for the postgame tools include `outputSchema`, and tool calls return both `structuredContent` and JSON text content so ChatGPT/Claude/Grok-style clients can reason over stable fields without scraping raw logs.
 
+### Agent identity and revision loop
+
+Connected LLMs should follow one compact decision rule:
+
+1. Resolve the owner's Agent Profiles with `search_agents`, `list_agents`, or `get_agent` before mutating.
+2. If the competitor already exists, call `update_agent` using its stable `agentId` even when it is standing in Daily Free, seated in a waiting game, already in progress, or suspended.
+3. Call `create_agent` only when the owner explicitly wants a distinctly named separate career.
+
+Create and update descriptors publish an output schema, and successful calls return the full command result as `structuredContent`. Its versioned mutation receipt reports the stable Agent Profile identity, whether the current Analytical Revision was created or preserved, Standing Daily disposition, bounded waiting-seat reconciliation results, frozen-seat count, avatar completion when relevant, and warnings. Clients should explain those fields rather than inferring activation from queue churn or prose.
+
+Normal updates are active by default. There is no draft, candidate, publish, rollback, or A/B enrollment control in this surface. Standing Daily membership points at the stable Agent Profile and is not rewritten by an update. Waiting seats are projected from current behavior and remain mutable until roster freeze; in-progress and suspended seats remain pinned to the revision/persona/runtime snapshot that began play.
+
 `join_queue` is not a live-match action. Open-game joins are limited to waiting, non-hidden, non-full custom games. Daily Free requires an active season and writes or updates one season-scoped standing row per owner; selection does not delete it. Owners with a waiting, in-progress, or suspended Daily Free assignment remain standing but are temporarily ineligible for another draw. Open-game enrollment writes a waiting `game_players` row.
 
 Active-match actions remain out of scope for MCP: voting, empower/expose, Council decisions, Mingle/lobby messages, diary-room actions, ready checks, timers, phase controls, moderator actions, and power actions are not exposed.
 
-Management failures return stable JSON-RPC error data where possible, such as `unsupported_queue_type`, `invalid_archetype`, `agent_not_found`, `agent_already_queued`, `agent_already_in_active_game`, `queue_full`, `game_not_joinable`, and immutable/unsupported field errors. Error data must not include raw prompts from other users, tokens, provider metadata, or private trace pointers.
+Management failures return stable JSON-RPC error data with `code`, HTTP-like `statusCode`, and `retryable` where possible, such as `agent_name_taken`, `waiting_roster_name_conflict`, `unsupported_queue_type`, `invalid_archetype`, `agent_not_found`, `agent_already_queued`, `agent_already_in_active_game`, `queue_full`, `game_not_joinable`, and immutable/unsupported field errors. `agent_name_taken` is deliberately generic: the caller may search the owner's agents and update an owned match or choose another name, but the error never reveals another profile or owner. Error data must not include raw prompts from other users, tokens, provider metadata, or private trace pointers.
 
 `list_games` is the first app-backed tool. Its descriptor includes the OAuth security scheme plus the app UI resource metadata that points to `ui://influence/app`.
 
@@ -205,7 +217,7 @@ Before calling the slice ready on staging:
 6. Wrong resource, wrong scope, expired, revoked, or app-session tokens fail before any read model runs.
 7. A valid `agents:read games:read` token can initialize, list accessible games and seasons, discover a rated game's `seasonId`, read public season standings and game receipts, list visible agent games, read an accessible completed-game brief/jury/player/turning-point postgame surface, read an accessible projection, read revealed round facts, filter player-visible events, list/read authorized cognitive artifacts, inspect rules/archetypes/owned agents, and cannot discover or call trace tools or active-match action tools.
 8. The same token can read and export only its owner's agent-season analysis; another owner's agent remains unavailable.
-9. A valid `agents:read agents:write games:read` token can also create/update owned agents and join/leave supported pre-match queues.
+9. A valid `agents:read agents:write games:read` token can also create/update owned agents and join/leave supported pre-match queues. In a manual LLM exercise, ask the client to improve an already-owned enrolled agent: it should resolve the stable `agentId`, call `update_agent`, and explain the revision/enrollment receipt without calling `create_agent` or switching Standing Daily membership.
 10. A valid `producer` token issued to a current producer-role user can list producer tools, read producer postgame and season diagnostics, list/read split cognitive artifacts with producer visibility, and read/search private trace content when storage is configured.
 11. A valid non-producer refresh token can refresh once, returns a new access token and rotated refresh token, and the replaced token cannot be reused without revoking the family.
 12. Resource-selected OAuth events and MCP request events include correlation ID, method/tool, user/client/resource, issued scope, auth profile, grant type when present, result, status, provider hint when supplied, app stage when derivable, redirect URI family when present, and denial reason. Audits never include raw tokens, auth headers, authorization codes, refresh tokens, PKCE verifiers, raw prompts, raw responses, reasoning bodies, private trace content, or storage credentials.

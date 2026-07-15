@@ -176,16 +176,8 @@ describe("postgame analysis service", () => {
 
   test("returns disambiguation candidates when an agent name matches multiple visible agents", async () => {
     await insertEdgeSmokeDusk(db);
-    const duplicateAgentId = "agent-lilith-duplicate";
     const duplicatePlayerId = "player-lilith-duplicate";
     const duplicateGameId = "game-lilith-duplicate";
-    await db.insert(schema.agentProfiles).values({
-      id: duplicateAgentId,
-      userId: "user-lilith",
-      name: "Lilith Voss",
-      personality: "Another visible agent with the same display name.",
-      personaKey: "strategic",
-    });
     await db.insert(schema.games).values({
       id: duplicateGameId,
       slug: "duplicate-lilith-game",
@@ -197,18 +189,18 @@ describe("postgame analysis service", () => {
     await db.insert(schema.gamePlayers).values({
       id: duplicatePlayerId,
       gameId: duplicateGameId,
-      userId: "user-lilith",
-      agentProfileId: duplicateAgentId,
+      userId: null,
+      agentProfileId: null,
       persona: JSON.stringify({
         name: "Lilith Voss",
-        personality: "Duplicate fixture persona",
+        personality: "Unowned historical fixture persona",
         personaKey: "strategic",
       }),
       agentConfig: JSON.stringify({ model: "test-model", temperature: 0 }),
     });
 
     const result = await listPostgameAgentGames(db, {
-      agentName: "Lilith Voss",
+      agentName: "lilith voss",
       visibleGameIds: [EDGE_SMOKE_DUSK_GAME_ID, duplicateGameId],
     });
 
@@ -217,7 +209,7 @@ describe("postgame analysis service", () => {
     expect(result.status).toBe("agent_ambiguous");
     expect(result.resolutionCandidates?.map((candidate) => candidate.id).sort()).toEqual([
       "agent-lilith",
-      duplicateAgentId,
+      duplicatePlayerId,
     ].sort());
   });
 });

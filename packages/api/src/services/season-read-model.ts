@@ -70,6 +70,10 @@ export interface PublicCompetitionReceipt {
   earnedAt: string;
 }
 
+export interface PublicGameCompetitionReceipt extends PublicCompetitionReceipt {
+  seasonTotalPoints: number;
+}
+
 export interface OwnedCompetitionReceipt extends PublicCompetitionReceipt {
   revisionId: string;
 }
@@ -148,15 +152,27 @@ export async function getPublicGameCompetitionReceipts(
   db: DrizzleDB,
   seasonIdOrSlug: string,
   gameIdOrSlug: string,
-): Promise<{ season: PublicSeasonIdentity; receipts: PublicCompetitionReceipt[] } | null> {
+): Promise<{ season: PublicSeasonIdentity; receipts: PublicGameCompetitionReceipt[] } | null> {
   const season = await resolveSeason(db, seasonIdOrSlug);
   if (!season) return null;
   const game = (await db.select({ id: schema.games.id, seasonId: schema.games.seasonId }).from(schema.games)
     .where(or(eq(schema.games.id, gameIdOrSlug), eq(schema.games.slug, gameIdOrSlug))).limit(1))[0];
   if (!game || game.seasonId !== season.id) return null;
-  const receipts = (await loadPublicReceiptRows(db, season.id))
+  const seasonReceipts = await loadPublicReceiptRows(db, season.id);
+  const seasonTotalPointsByAgent = new Map<string, number>();
+  for (const receipt of seasonReceipts) {
+    if (receipt.eligibilityStatus !== "eligible") continue;
+    seasonTotalPointsByAgent.set(
+      receipt.agentProfileId,
+      (seasonTotalPointsByAgent.get(receipt.agentProfileId) ?? 0) + receipt.totalPoints,
+    );
+  }
+  const receipts = seasonReceipts
     .filter((receipt) => receipt.gameId === game.id)
-    .map(publicReceipt);
+    .map((receipt) => ({
+      ...publicReceipt(receipt),
+      seasonTotalPoints: seasonTotalPointsByAgent.get(receipt.agentProfileId) ?? 0,
+    }));
   return { season: publicSeasonIdentity(season), receipts };
 }
 

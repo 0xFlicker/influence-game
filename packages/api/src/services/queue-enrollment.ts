@@ -1,9 +1,5 @@
 import { randomUUID } from "crypto";
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
-import {
-  normalizeGameModelSelection,
-  resolveModelSelection,
-} from "@influence/engine";
+import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import type { GameStatus, TrackType } from "../db/schema.js";
@@ -16,6 +12,10 @@ import {
 } from "./agent-profile-management.js";
 import { tryRefreshGameWatchStateSummary } from "./game-watch-state-summary.js";
 import { getActiveSeason } from "./seasons.js";
+import {
+  admitOwnedSeatInTransaction,
+  OwnedSeatProjectionError,
+} from "./owned-seat-projection.js";
 
 export type QueueType = "daily-free" | "open-game";
 
@@ -405,81 +405,56 @@ async function joinOpenGame(
     publicBaseUrl: context.publicBaseUrl,
     agentId,
   })).agent;
-
-  const dailyEntry = await getDailyFreeQueueEntry(db, context.userId);
-  if (dailyEntry?.agentProfileId === agentId) {
-    throw new QueueEnrollmentError(
-      "agent_already_queued",
-      `${agent.displayName} is already queued for Daily Free. Leave that queue before joining an open game.`,
-      409,
-      {
-        queueType: "daily-free",
-        queuedAgent: agent,
-      },
-    );
-  }
-
-  const activeEnrollment = await getActiveEnrollmentForAgent(db, context.userId, agentId);
-  if (activeEnrollment) {
-    throw new QueueEnrollmentError(
-      "agent_already_in_active_game",
-      `${agent.displayName} is already enrolled in a ${activeEnrollment.status} game.`,
-      409,
-      {
-        agent,
-        activeEnrollment,
-      },
-    );
-  }
-
-  const game = await resolveJoinableOpenGame(db, gameIdOrSlug);
-  const currentPlayers = await db
-    .select()
-    .from(schema.gamePlayers)
-    .where(eq(schema.gamePlayers.gameId, game.id));
-
-  if (currentPlayers.length >= game.maxPlayers) {
-    throw new QueueEnrollmentError("queue_full", "Open game is full.", 409, {
-      gameId: game.id,
-      slug: game.slug,
-      maxPlayers: game.maxPlayers,
+  let admission: Awaited<ReturnType<typeof admitOwnedSeatInTransaction>>;
+  try {
+    admission = await db.transaction(async (tx) => {
+      // Standing membership and open-game admission must not pass each other.
+      // These advisory locks remain outermost; the roster order is game then
+      // season/profile inside the shared admission authority.
+      await acquireDailyFreeLocks(tx);
+      const game = await resolveJoinableOpenGame(tx, gameIdOrSlug);
+      const admitted = await admitOwnedSeatInTransaction(tx, {
+        gameId: game.id,
+        userId: context.userId,
+        agentProfileId: agentId,
+      });
+      if (admitted.game.hiddenAt || admitted.game.trackType !== "custom") {
+        throw new QueueEnrollmentError(
+          "game_not_joinable",
+          "Open game is not joinable. It may have started, finished, been hidden, or not exist.",
+          404,
+        );
+      }
+      const dailyEntry = await getDailyFreeQueueEntry(tx, context.userId);
+      if (dailyEntry?.agentProfileId === agentId) {
+        throw new QueueEnrollmentError(
+          "agent_already_queued",
+          `${agent.displayName} is already queued for Daily Free. Leave that queue before joining an open game.`,
+          409,
+          { queueType: "daily-free", queuedAgent: agent },
+        );
+      }
+      const activeEnrollment = await getActiveEnrollmentForAgent(
+        tx,
+        context.userId,
+        agentId,
+        admitted.game.id,
+      );
+      if (activeEnrollment) {
+        throw new QueueEnrollmentError(
+          "agent_already_in_active_game",
+          `${agent.displayName} is already enrolled in a ${activeEnrollment.status} game.`,
+          409,
+          { agent, activeEnrollment },
+        );
+      }
+      return admitted;
     });
+  } catch (error) {
+    if (error instanceof OwnedSeatProjectionError) throw mapOpenGameProjectionError(error, agentId);
+    throw error;
   }
-
-  const normalizedJoinName = agent.displayName.trim().toLowerCase();
-  const nameCollision = currentPlayers.some((player) => {
-    const persona = JSON.parse(player.persona) as { name?: string };
-    return persona.name?.trim().toLowerCase() === normalizedJoinName;
-  });
-  if (nameCollision) {
-    throw new QueueEnrollmentError(
-      "invalid_queue_input",
-      "A player with that agent name already exists in this game.",
-      409,
-      { gameId: game.id, agentId },
-    );
-  }
-
-  const gameConfig = JSON.parse(game.config) as Record<string, unknown>;
-  const resolvedModelSelection = resolveModelSelection(
-    normalizeGameModelSelection(gameConfig.modelSelection),
-    typeof gameConfig.modelTier === "string" ? gameConfig.modelTier : "budget",
-  );
-  const playerId = randomUUID();
-  await db.insert(schema.gamePlayers).values({
-    id: playerId,
-    gameId: game.id,
-    userId: context.userId,
-    agentProfileId: agentId,
-    persona: JSON.stringify({
-      name: agent.displayName,
-      personality: agent.personalityPrompt,
-      backstory: agent.publicBiography,
-      strategyHints: agent.strategyStyle,
-      personaKey: agent.archetype,
-    }),
-    agentConfig: JSON.stringify({ model: resolvedModelSelection.modelId, temperature: 0.9 }),
-  });
+  const game = admission.game;
   await tryRefreshGameWatchStateSummary(db, game.id, "mcp_open_game_joined");
 
   const refreshedAgent = (await getOwnedAgent(db, {
@@ -499,7 +474,7 @@ async function joinOpenGame(
       status: "joined-open-game",
     },
     agent: refreshedAgent,
-    game: openGameSummary(game, playerCounts.get(game.id) ?? currentPlayers.length + 1),
+    game: openGameSummary(game, playerCounts.get(game.id) ?? 1),
   };
 }
 
@@ -527,7 +502,7 @@ function dailyFreeQueueRead(
   };
 }
 
-async function resolveJoinableOpenGame(db: DrizzleDB, gameIdOrSlug: string): Promise<GameRow> {
+async function resolveJoinableOpenGame(db: DatabaseExecutor, gameIdOrSlug: string): Promise<GameRow> {
   const game = (await db
     .select()
     .from(schema.games)
@@ -638,9 +613,10 @@ async function upsertPromptSuppression(
 }
 
 async function getActiveEnrollmentForAgent(
-  db: DrizzleDB,
+  db: DatabaseExecutor,
   userId: string,
   agentId: string,
+  excludeGameId?: string,
 ): Promise<{
   gameId: string;
   slug: string;
@@ -661,6 +637,7 @@ async function getActiveEnrollmentForAgent(
       eq(schema.gamePlayers.userId, userId),
       eq(schema.gamePlayers.agentProfileId, agentId),
       inArray(schema.games.status, ["waiting", "in_progress", "suspended"]),
+      ...(excludeGameId ? [ne(schema.games.id, excludeGameId)] : []),
     ))
     .orderBy(desc(schema.games.createdAt))
     .limit(1))[0];
@@ -672,6 +649,36 @@ async function getActiveEnrollmentForAgent(
     status: row.status,
     queueType: row.trackType === "free" ? "daily-free" : "open-game",
   };
+}
+
+function mapOpenGameProjectionError(
+  error: OwnedSeatProjectionError,
+  agentId: string,
+): QueueEnrollmentError | AgentProfileManagementError {
+  if (error.reason === "profile_not_owned") {
+    return new AgentProfileManagementError(
+      "agent_not_found",
+      "Agent not found.",
+      404,
+      { agentId },
+    );
+  }
+  if (error.reason === "capacity") {
+    return new QueueEnrollmentError("queue_full", "Open game is full.", 409, error.details);
+  }
+  if (error.reason === "name_conflict") {
+    return new QueueEnrollmentError(
+      "invalid_queue_input",
+      "A player with that agent name already exists in this game.",
+      409,
+      error.details,
+    );
+  }
+  return new QueueEnrollmentError(
+    "game_not_joinable",
+    "Open game is not joinable. It may have started, finished, been hidden, or not exist.",
+    404,
+  );
 }
 
 async function loadPlayerCounts(db: DrizzleDB, gameIds: string[]): Promise<Map<string, number>> {

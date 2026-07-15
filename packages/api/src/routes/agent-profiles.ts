@@ -10,7 +10,7 @@
  *   POST   /api/agent-profiles/generate  — AI-assisted personality builder
  */
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { eq, and } from "drizzle-orm";
 import {
   createLlmClientFromEnv,
@@ -39,8 +39,11 @@ import {
   requestAndStartAvatarCompletion,
   requestAndStartDraftAvatarCompletion,
   resumeOwnedDraftAvatarCompletion,
+  type AvatarCompletionRead,
 } from "../services/avatar-generation.js";
+import type { AgentMutationReceipt } from "../services/agent-mutation-receipt.js";
 import { acquireDailyFreeLocks } from "../services/queue-enrollment.js";
+import { lockProfileAfterLiveRosterGames } from "../services/owned-seat-projection.js";
 import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
 
 const AGENT_PROFILE_GENERATION_CATALOG_ID = "openai:gpt-5-nano";
@@ -307,11 +310,15 @@ Respond with JSON only:
         });
       }
       if (result.profile.avatarUrl) {
-        return c.json(playerSafeAgentProfile(result.profile), 201);
+        return c.json({
+          ...playerSafeAgentProfile(result.profile),
+          receipt: result.receipt,
+        }, 201);
       }
       if (draftCompletion) {
         return c.json({
           ...playerSafeAgentProfile(result.profile),
+          receipt: withAvatarCompletionReceipt(result.receipt, draftCompletion),
           avatarCompletion: draftCompletion,
         }, 201);
       }
@@ -327,22 +334,25 @@ Respond with JSON only:
         }, { publicBaseUrl });
       } catch (error) {
         console.warn("[agent-profiles] Failed to request automatic avatar generation:", error);
+        const failedCompletion = {
+          status: "failed",
+          reason: "Portrait generation could not be started.",
+          retryable: true,
+        } as const;
         return c.json({
           ...playerSafeAgentProfile(result.profile),
-          avatarCompletion: {
-            status: "failed",
-            reason: "Portrait generation could not be started.",
-            retryable: true,
-          },
+          receipt: withAvatarCompletionReceipt(result.receipt, failedCompletion),
+          avatarCompletion: failedCompletion,
         }, 201);
       }
       return c.json({
         ...playerSafeAgentProfile(result.profile),
+        receipt: withAvatarCompletionReceipt(result.receipt, avatarCompletion),
         avatarCompletion,
       }, 201);
     } catch (error) {
       if (error instanceof AgentProfileManagementError) {
-        return c.json({ error: error.message }, error.statusCode === 404 ? 404 : 400);
+        return agentProfileErrorResponse(c, error);
       }
       throw error;
     }
@@ -509,10 +519,14 @@ Respond with JSON only:
         gender: body.gender,
         avatarUrl: body.avatarUrl,
       });
-      return c.json({ ...playerSafeAgentProfile(result.profile), statsReset: false });
+      return c.json({
+        ...playerSafeAgentProfile(result.profile),
+        statsReset: false,
+        receipt: result.receipt,
+      });
     } catch (error) {
       if (error instanceof AgentProfileManagementError) {
-        return c.json({ error: error.message }, error.statusCode === 404 ? 404 : 400);
+        return agentProfileErrorResponse(c, error);
       }
       throw error;
     }
@@ -527,14 +541,12 @@ Respond with JSON only:
     const profileId = c.req.param("id");
     const result = await db.transaction(async (tx) => {
       await acquireDailyFreeLocks(tx);
-      const existing = await tx.select({ id: schema.agentProfiles.id })
-        .from(schema.agentProfiles)
-        .where(and(
-          eq(schema.agentProfiles.id, profileId),
-          eq(schema.agentProfiles.userId, user.id),
-        ))
-        .limit(1);
-      if (existing.length === 0) return "not-found" as const;
+      const locked = await lockProfileAfterLiveRosterGames(tx, {
+        profileId,
+        userId: user.id,
+      });
+      if (!locked.profile) return "not-found" as const;
+      if (locked.liveGameIds.length > 0) return "active-game" as const;
 
       const standingEntry = await tx.select({ id: schema.freeGameQueue.id })
         .from(schema.freeGameQueue)
@@ -575,6 +587,12 @@ Respond with JSON only:
     });
 
     if (result === "not-found") return c.json({ error: "Agent profile not found" }, 404);
+    if (result === "active-game") {
+      return c.json({
+        error: "An agent in a waiting or active game cannot be deleted.",
+        code: "active_game_exists",
+      }, 409);
+    }
     if (result === "standing") {
       return c.json({
         error: "Leave Daily Free or switch agents before deleting this agent.",
@@ -616,4 +634,30 @@ export function resolveGeneratedAgentGender(generated: {
 function playerSafeAgentProfile(profile: typeof schema.agentProfiles.$inferSelect) {
   const { currentRevisionId: _currentRevisionId, ...safe } = profile;
   return safe;
+}
+
+function agentProfileErrorResponse(
+  c: Context<AuthEnv>,
+  error: AgentProfileManagementError,
+): Response {
+  const body = {
+    code: error.code,
+    error: error.message,
+    retryable: error.retryable,
+    ...(error.details && { details: error.details }),
+  };
+  if (error.statusCode === 404) return c.json(body, 404);
+  if (error.statusCode === 409) return c.json(body, 409);
+  return c.json(body, 400);
+}
+
+function withAvatarCompletionReceipt(
+  receipt: AgentMutationReceipt,
+  avatarCompletion: AvatarCompletionRead,
+): AgentMutationReceipt {
+  const warnings = avatarCompletion.status === "failed"
+    && !receipt.warnings.includes("avatar_generation_failed")
+    ? [...receipt.warnings, "avatar_generation_failed" as const]
+    : receipt.warnings;
+  return { ...receipt, avatarCompletion, warnings };
 }

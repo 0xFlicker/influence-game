@@ -23,7 +23,10 @@ import { writeGameCheckpoint } from "../services/game-checkpoints.js";
 import { getDurableRunInspection } from "../services/game-durable-run.js";
 import { abortAllGames, recoverGamesOnStartup } from "../services/game-lifecycle.js";
 import { markGameSuspended } from "../services/game-ownership.js";
-import { getSupportedRecovery } from "../services/game-recovery.js";
+import {
+  findStartupRecoverableGameIds,
+  getSupportedRecovery,
+} from "../services/game-recovery.js";
 import { setupTestDB } from "./test-utils.js";
 import {
   createCheckpointCapsule,
@@ -449,6 +452,27 @@ describe("game startup recovery", () => {
       }
     }, timeoutMs);
   }
+
+  test("startup recovery leaves settlement-repair suspensions for explicit repair", async () => {
+    const gameId = await insertGame(db, {
+      id: "startup-recovery-settlement-repair",
+      status: "suspended",
+      config: recoveryConfig,
+    });
+    await insertOwner(db, gameId, {
+      status: "expired",
+      kernelHealth: "suspended",
+      failureReason: "competition_settlement_repair_required",
+    });
+
+    expect(await getSupportedRecovery(db, gameId)).toEqual({
+      ok: false,
+      gameId,
+      reason: "competition_settlement_repair_required",
+    });
+    expect(await findStartupRecoverableGameIds(db)).not.toContain(gameId);
+    expect(await recoverGamesOnStartup(db)).toEqual({ attempted: 0, recovered: 0, skipped: [] });
+  });
 
   test("startup recovery resumes from a boundary with reconstructable Mingle inbox messages", async () => {
     const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, "power", {

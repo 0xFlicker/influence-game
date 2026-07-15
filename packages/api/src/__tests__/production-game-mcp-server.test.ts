@@ -14,6 +14,7 @@ import {
 } from "../game-mcp/read-model.js";
 import type { PrivateTraceReadModel } from "../services/private-trace-read-model.js";
 import type { GameMcpAuthContext } from "../game-mcp/auth.js";
+import { createSeason } from "../services/seasons.js";
 import { setupTestDB } from "./test-utils.js";
 
 const GAMES_AUTH: GameMcpAuthContext = {
@@ -35,6 +36,53 @@ const PRODUCER_AUTH: GameMcpAuthContext = {
   authProfile: "producer",
   expiresAt: 1_800_000_000,
 };
+
+function expectMatchesJsonSchema(value: unknown, schema: unknown): void {
+  const errors = validateJsonSchema(value, schema, "$");
+  if (errors.length > 0) {
+    throw new Error(`JSON schema validation failed:\n${errors.join("\n")}`);
+  }
+}
+
+function validateJsonSchema(value: unknown, rawSchema: unknown, path: string): string[] {
+  if (!rawSchema || typeof rawSchema !== "object" || Array.isArray(rawSchema)) {
+    return [`${path}: invalid schema`];
+  }
+  const schema = rawSchema as Record<string, unknown>;
+  if (Array.isArray(schema.anyOf)) {
+    const alternatives = schema.anyOf.map((candidate) => validateJsonSchema(value, candidate, path));
+    return alternatives.some((errors) => errors.length === 0)
+      ? []
+      : [`${path}: did not match anyOf`];
+  }
+  if ("const" in schema && value !== schema.const) return [`${path}: expected const ${String(schema.const)}`];
+  if (Array.isArray(schema.enum) && !schema.enum.includes(value)) return [`${path}: value is not in enum`];
+
+  if (schema.type === "null") return value === null ? [] : [`${path}: expected null`];
+  if (schema.type === "string") return typeof value === "string" ? [] : [`${path}: expected string`];
+  if (schema.type === "number") return typeof value === "number" ? [] : [`${path}: expected number`];
+  if (schema.type === "boolean") return typeof value === "boolean" ? [] : [`${path}: expected boolean`];
+  if (schema.type === "array") {
+    if (!Array.isArray(value)) return [`${path}: expected array`];
+    return value.flatMap((item, index) => validateJsonSchema(item, schema.items, `${path}[${index}]`));
+  }
+  if (schema.type !== "object") return [];
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [`${path}: expected object`];
+
+  const record = value as Record<string, unknown>;
+  const properties = schema.properties && typeof schema.properties === "object"
+    ? schema.properties as Record<string, unknown>
+    : {};
+  const errors: string[] = [];
+  for (const required of Array.isArray(schema.required) ? schema.required : []) {
+    if (typeof required === "string" && !(required in record)) errors.push(`${path}.${required}: required`);
+  }
+  for (const [key, childValue] of Object.entries(record)) {
+    if (key in properties) errors.push(...validateJsonSchema(childValue, properties[key], `${path}.${key}`));
+    else if (schema.additionalProperties === false) errors.push(`${path}.${key}: additional property`);
+  }
+  return errors;
+}
 
 describe("ProductionGameMcpJsonRpcServer", () => {
   test("advertises deployed read-only tools with MCP auth metadata", async () => {
@@ -189,7 +237,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     }, GAMES_AUTH);
 
     expect(response?.error).toBeUndefined();
-    const tools = ((response?.result as { tools: Array<{ name: string; annotations: { readOnlyHint: boolean }; inputSchema: unknown; description: string }> }).tools);
+    const tools = ((response?.result as { tools: Array<{ name: string; annotations: { readOnlyHint: boolean }; inputSchema: unknown; outputSchema?: unknown; description: string }> }).tools);
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
 
     expect(byName.get("list_archetypes")?.annotations.readOnlyHint).toBe(true);
@@ -200,7 +248,29 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(byName.get("leave_queue")?.annotations.readOnlyHint).toBe(false);
     expect(JSON.stringify(byName.get("create_agent")?.inputSchema)).toContain("diplomat");
     expect(JSON.stringify(byName.get("create_agent")?.inputSchema)).not.toContain("broker");
+    expect(byName.get("search_agents")?.description).toContain("use update_agent");
+    expect(byName.get("create_agent")?.description).toContain("separate competitive identity");
+    expect(byName.get("create_agent")?.description).toContain("Never use create_agent to tune");
+    expect(byName.get("update_agent")?.description).toContain("regardless of whether the competitor is unenrolled");
+    expect(byName.get("update_agent")?.description).toContain("started or suspended seats remain pinned");
+    expect(JSON.stringify(byName.get("create_agent")?.outputSchema)).toContain("profileRevision");
+    expect(JSON.stringify(byName.get("update_agent")?.outputSchema)).toContain("waitingSeats");
     expect(byName.get("join_queue")?.description).toContain("Side effect");
+  });
+
+  test("initialization prefers update_agent for every existing owned identity", async () => {
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: "init-guidance",
+      method: "initialize",
+    }, GAMES_AUTH);
+
+    const instructions = String((response?.result as { instructions?: string }).instructions);
+    expect(instructions).toContain("resolve the user's owned Agent Profile");
+    expect(instructions).toContain("Use update_agent for any existing owned competitor regardless of enrollment");
+    expect(instructions).toContain("Use create_agent only for a distinctly named separate career");
+    expect(instructions).toContain("must not be used for active-match actions");
   });
 
   test("advertises list_games as the user-facing MCP App entry point", async () => {
@@ -554,6 +624,183 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(text).toContain("\"currentElo\": 1377");
     expect(text).not.toContain("Other Agent");
     expect(text).not.toContain("Hidden other prompt");
+  });
+
+  test("updates one enrolled identity and returns its revision and enrollment receipt", async () => {
+    const db = await setupTestDB();
+    await db.insert(schema.users).values({
+      id: GAMES_AUTH.userId,
+      email: "games-user@test.example",
+      displayName: "Games User",
+    });
+    const server = createProductionGameMcpServer(db);
+    const toolsResponse = await server.handle({
+      jsonrpc: "2.0",
+      id: "agent-command-schemas",
+      method: "tools/list",
+    }, GAMES_AUTH);
+    const commandSchemas = new Map(
+      ((toolsResponse?.result as { tools: Array<{ name: string; outputSchema?: unknown }> }).tools)
+        .map((tool) => [tool.name, tool.outputSchema]),
+    );
+    expect(() => expectMatchesJsonSchema({}, commandSchemas.get("create_agent")))
+      .toThrow("required");
+    const createdResponse = await server.handle({
+      jsonrpc: "2.0",
+      id: "create-lillith",
+      method: "tools/call",
+      params: {
+        name: "create_agent",
+        arguments: {
+          displayName: "Lillith Contract",
+          archetype: "strategic",
+          personalityPrompt: "Patient and observant.",
+          publicBiography: null,
+          strategyStyle: "Build trust before acting.",
+          avatarUrl: "https://cdn.example/lillith.png",
+        },
+      },
+    }, GAMES_AUTH);
+    expect(createdResponse?.error).toBeUndefined();
+    const created = (createdResponse?.result as {
+      structuredContent: {
+        agent: { id: string };
+        receipt: { agent: { agentProfileId: string } };
+      };
+    }).structuredContent;
+    expectMatchesJsonSchema(created, commandSchemas.get("create_agent"));
+
+    await db.insert(schema.games).values({
+      id: "mcp-revision-waiting",
+      slug: "mcp-revision-waiting",
+      config: JSON.stringify({ modelTier: "budget" }),
+      status: "waiting",
+      trackType: "custom",
+      minPlayers: 1,
+      maxPlayers: 4,
+    });
+    const openJoinResponse = await server.handle({
+      jsonrpc: "2.0",
+      id: "seat-lillith",
+      method: "tools/call",
+      params: {
+        name: "join_queue",
+        arguments: {
+          queueType: "open-game",
+          agentId: created.agent.id,
+          gameIdOrSlug: "mcp-revision-waiting",
+        },
+      },
+    }, GAMES_AUTH);
+    expect(openJoinResponse?.error).toBeUndefined();
+    await createSeason(db, { slug: "mcp-revision-season", name: "MCP Revision Season" });
+    const standingResponse = await server.handle({
+      jsonrpc: "2.0",
+      id: "stand-lillith",
+      method: "tools/call",
+      params: {
+        name: "join_queue",
+        arguments: { queueType: "daily-free", agentId: created.agent.id },
+      },
+    }, GAMES_AUTH);
+    expect(standingResponse?.error).toBeUndefined();
+
+    const updatedResponse = await server.handle({
+      jsonrpc: "2.0",
+      id: "update-lillith",
+      method: "tools/call",
+      params: {
+        name: "update_agent",
+        arguments: {
+          agentId: created.agent.id,
+          strategyStyle: "Use earned trust to coordinate a decisive late move.",
+        },
+      },
+    }, GAMES_AUTH);
+    expect(updatedResponse?.error).toBeUndefined();
+    const updated = (updatedResponse?.result as {
+      structuredContent: {
+        agent: {
+          id: string;
+          currentRevision: { revisionId: string; ordinal: number; active: boolean };
+          activeEnrollment: {
+            revision: { disposition: string; effectiveRevisionId: string | null };
+          };
+        };
+        receipt: {
+          agent: { agentProfileId: string; identityDisposition: string };
+          profileRevision: { revisionId: string; outcome: string; active: boolean };
+          dailyFree: string;
+          waitingSeats: { total: number; reconciled: number; games: Array<{ effectiveRevisionId: string | null }> };
+          frozenSeats: { unchanged: number };
+        };
+      };
+    }).structuredContent;
+    expectMatchesJsonSchema(updated, commandSchemas.get("update_agent"));
+
+    expect(updated.agent.id).toBe(created.agent.id);
+    expect(updated.receipt).toMatchObject({
+      agent: {
+        agentProfileId: created.agent.id,
+        identityDisposition: "preserved",
+      },
+      profileRevision: { outcome: "created", active: true },
+      dailyFree: "preserved_follows_profile",
+      waitingSeats: { total: 1, reconciled: 1 },
+      frozenSeats: { unchanged: 0 },
+    });
+    expect(updated.agent.currentRevision.revisionId).toBe(
+      updated.receipt.profileRevision.revisionId,
+    );
+    expect(updated.agent.activeEnrollment.revision).toEqual({
+      disposition: "follows-current",
+      effectiveRevisionId: updated.receipt.waitingSeats.games[0]?.effectiveRevisionId ?? null,
+    });
+    expect(created.receipt.agent.agentProfileId).toBe(updated.agent.id);
+  });
+
+  test("keeps name-taken MCP errors generic and non-retryable", async () => {
+    const db = await setupTestDB();
+    await db.insert(schema.users).values([
+      { id: GAMES_AUTH.userId, email: "games-user@test.example" },
+      { id: "other-owner", email: "other-owner@test.example" },
+    ]);
+    await db.insert(schema.agentProfiles).values({
+      id: "private-conflict-agent",
+      userId: "other-owner",
+      name: "Private Conflict",
+      personality: "Must not leak.",
+    });
+    const server = createProductionGameMcpServer(db);
+
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: "duplicate-agent",
+      method: "tools/call",
+      params: {
+        name: "create_agent",
+        arguments: {
+          displayName: "  PRIVATE CONFLICT ",
+          archetype: "strategic",
+          personalityPrompt: "A separate attempt.",
+          publicBiography: null,
+          strategyStyle: null,
+          avatarUrl: "https://cdn.example/new.png",
+        },
+      },
+    }, GAMES_AUTH);
+
+    expect(response?.result).toBeUndefined();
+    expect(response?.error).toMatchObject({
+      message: "That agent name is already in use. Choose another name.",
+      data: {
+        code: "agent_name_taken",
+        statusCode: 409,
+        retryable: false,
+      },
+    });
+    expect(JSON.stringify(response?.error)).not.toContain("private-conflict-agent");
+    expect(JSON.stringify(response?.error)).not.toContain("other-owner");
   });
 
   test("returns structured domain error data for management failures", async () => {

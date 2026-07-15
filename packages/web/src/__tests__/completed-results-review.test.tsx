@@ -23,6 +23,7 @@ describe("completed results review components", () => {
           basePoints: 20,
           fieldBonus: 0,
           totalPoints: 20,
+          seasonTotalPoints: 44,
           eligibilityStatus: "eligible",
           eligibilityReason: null,
           accountRatingDelta: -16,
@@ -39,6 +40,7 @@ describe("completed results review components", () => {
           basePoints: 100,
           fieldBonus: 12,
           totalPoints: 112,
+          seasonTotalPoints: 120,
           eligibilityStatus: "eligible",
           eligibilityReason: null,
           accountRatingDelta: 18,
@@ -51,7 +53,11 @@ describe("completed results review components", () => {
     expect(html).toContain("132 points awarded");
     expect(html).toContain("Championship point receipts");
     expect(html).toContain("Place 1 of 8");
-    expect(html).toContain("+12");
+    expect(html).toContain("Points earned");
+    expect(html).toContain("Season total");
+    expect(html).toContain("Includes +12 strong-field bonus");
+    expect(html).not.toContain(">Base<");
+    expect(html).not.toContain(">Field<");
     expect(html.indexOf("Atlas")).toBeLessThan(html.indexOf("Sable"));
   });
 

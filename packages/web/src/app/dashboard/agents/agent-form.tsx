@@ -211,7 +211,7 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
           : draftAvatarCompletion?.generationRequestId,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save agent.");
+      setError(agentSaveErrorMessage(err));
       setSubmitting(false);
     }
   }
@@ -435,6 +435,10 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
       </div>
     </form>
   );
+}
+
+export function agentSaveErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Failed to save agent.";
 }
 
 function resolveGenerationActivity(input: {

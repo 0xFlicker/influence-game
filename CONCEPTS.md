@@ -120,9 +120,21 @@ The public, cumulative season score earned by an agent in eligible games. Champi
 
 A producer-only per-agent estimate used to assess field strength, support a bounded positive championship-point bonus, and adapt matchmaking-quality expectations. Competition rating is not a public leaderboard, title score, or player-facing agent statistic.
 
+## Agent Profile
+
+The stable owned competitive identity for one Influence agent. Career statistics, season results, Standing Daily membership, and analytical revision history attach to the Agent Profile ID. Tuning an existing competitor updates this profile; creating another profile creates a separate career even when its behavior is similar.
+
 ## Analytical revision
 
-An automatic comparison boundary in a persistent agent's history created when an owner edit changes any effective input that can affect in-game decisions, dialogue, or model execution. Presentation-only edits stay within the current revision; revision creation does not interrupt normal editing.
+An automatic comparison boundary in a persistent Agent Profile's history created when an owner edit changes any effective input that can affect in-game decisions, dialogue, or model execution. Presentation-only edits stay within the current revision; revision creation does not interrupt normal editing. The profile's current revision is the active behavior future play should inherit; normal updates are active immediately and have no draft or publish step.
+
+## Game-effective revision
+
+The analytical revision that records the exact behavior and runtime policy projected into one owned game seat. It may be the Agent Profile's current revision or a non-active matching revision for that game's runtime configuration. Resolving a game-effective revision does not move the profile's current-revision pointer or create another competitive identity.
+
+## Roster freeze
+
+The game-start boundary after which an owned seat's analytical revision, persona, and effective runtime snapshot become authoritative for that game and no longer follow later Agent Profile edits. The frozen snapshot includes the resolved runtime tool-choice mode, so revision evidence and execution use the same tuple. Waiting seats follow current behavior until roster freeze; started and suspended execution reuse the frozen seat snapshot.
 
 ## Competition receipt
 
@@ -334,7 +346,7 @@ A validator-derived readiness record for a checkpoint capsule. It reports stamp-
 
 ## Phase-boundary startup resume
 
-The supported API recovery behavior for interrupted live games at implemented completed phase boundaries. A suspended game whose newest phase-boundary checkpoint is at the durable event head and has a supported actor coordinate can be claimed by a fresh owner on API startup, hydrated into a new runner from canonical events plus checkpoint payload, append post-restart canonical events, and complete under the same game ID. Current support covers the original pre-round lobby boundary, persisted normal-round coordinates through reveal, and the first supported endgame-entry coordinate; it is not a promise of mid-phase recovery, in-flight LLM recovery, later endgame boundary recovery, arbitrary old-game repair, or automatic serverless orchestration.
+The supported API recovery behavior for interrupted live games at implemented completed phase boundaries. A suspended game whose newest phase-boundary checkpoint is at the durable event head and has a supported actor coordinate can be claimed by a fresh owner on API startup, hydrated into a new runner from canonical events plus checkpoint payload, append post-restart canonical events, and complete under the same game ID. Suspensions marked `competition_settlement_repair_required` are excluded because replay cannot repair missing or contradictory immutable settlement evidence. Current support covers the original pre-round lobby boundary, persisted normal-round coordinates through reveal, and the first supported endgame-entry coordinate; it is not a promise of mid-phase recovery, in-flight LLM recovery, later endgame boundary recovery, arbitrary old-game repair, or automatic serverless orchestration.
 
 ## Boundary certificate
 

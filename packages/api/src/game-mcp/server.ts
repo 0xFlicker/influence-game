@@ -44,6 +44,7 @@ import {
   leaveQueue,
   listOpenGames,
 } from "../services/queue-enrollment.js";
+import { agentCommandOutputSchema } from "./agent-tool-schemas.js";
 
 export interface JsonRpcRequest {
   jsonrpc?: "2.0";
@@ -120,6 +121,7 @@ export class ProductionGameMcpJsonRpcServer {
           "Influence MCP server for agent management, pre-match enrollment, game inspection, and producer diagnostics.",
           `Granted OAuth scopes: ${auth.scope}.`,
           "agents:read allows owned-agent and queue context; agents:write allows agent changes and supported pre-match enrollment; games:read allows accessible game inspection; producer allows global developer/private trace inspection.",
+          "Before changing an agent, resolve the user's owned Agent Profile with search_agents, list_agents, or get_agent. Use update_agent for any existing owned competitor regardless of enrollment; it preserves identity, career, and season history. Use create_agent only for a distinctly named separate career.",
           "This server must not be used for active-match actions such as voting, Mingle/lobby messages, diary-room actions, timers, phase controls, Council, power, or moderator actions.",
         ].join(" "),
       };
@@ -774,7 +776,7 @@ function userAgentReadTools(): unknown[] {
     }),
     tool({
       name: "list_agents",
-      description: "List the authenticated user's own reusable agents with prompts, biographies, stats, account-level ELO provenance, queue state, and active enrollment. Call to compare or choose an agent. Requires agents:read. No side effects.",
+      description: "List the authenticated user's own reusable Agent Profiles with current revision, queue state, and whether an active enrollment follows current behavior or is pinned. Call before any mutation to resolve whether the requested competitor already exists; existing identities must use update_agent. Requires agents:read. No side effects.",
       properties: {
         limit: { type: "number" },
       },
@@ -783,7 +785,7 @@ function userAgentReadTools(): unknown[] {
     }),
     tool({
       name: "get_agent",
-      description: "Read one owned agent by agentId with rich queue, rating-provenance, and active-enrollment metadata. Call when an agent was already selected. Requires agents:read. No side effects.",
+      description: "Read one owned Agent Profile by stable agentId, including its current revision and following-or-pinned enrollment state. Call when an agent was already selected, then use update_agent to tune that identity regardless of enrollment. Requires agents:read. No side effects.",
       properties: {
         agentId: { type: "string" },
       },
@@ -793,7 +795,7 @@ function userAgentReadTools(): unknown[] {
     }),
     tool({
       name: "search_agents",
-      description: "Search only the authenticated user's agents by name, archetype, biography, personality prompt, or strategy style. Call when the user names or describes an agent. Requires agents:read. No side effects.",
+      description: "Search only the authenticated user's Agent Profiles by name, archetype, biography, personality prompt, or strategy style. Call first when the user names or describes a competitor; if found, use update_agent to preserve that stable identity. Requires agents:read. No side effects.",
       properties: {
         query: { type: "string" },
         limit: { type: "number" },
@@ -852,7 +854,7 @@ function userAgentWriteTools(): unknown[] {
   return [
     tool({
       name: "create_agent",
-      description: "Create one owned reusable Influence agent from coarse authoring fields. Call when the user asks to create a new agent. Do not use to create agents for other users or act inside a live match. Requires agents:read and agents:write. Side effects: inserts an agent profile and, when no avatar is supplied and quota allows, starts portrait generation reported through avatarCompletion.",
+      description: "Create a distinctly named Agent Profile as a separate competitive identity with independent career and season history. Never use create_agent to tune, revise, or re-enroll an existing competitor; resolve owned identities first and use update_agent when one exists. An agent_name_taken error reveals no conflicting identity, so search the owner's agents and update an owned match or choose a different name. Requires agents:read and agents:write. Side effects: inserts an agent profile and, when no avatar is supplied and quota allows, starts portrait generation reported through avatarCompletion.",
       properties: {
         displayName: { type: "string" },
         archetype: { type: "string", enum: USER_SELECTABLE_AGENT_ARCHETYPE_KEYS },
@@ -865,10 +867,11 @@ function userAgentWriteTools(): unknown[] {
       required: ["displayName", "archetype", "personalityPrompt"],
       scopes: writeScopes,
       readOnlyHint: false,
+      outputSchema: agentCommandOutputSchema(),
     }),
     tool({
       name: "update_agent",
-      description: "Update mutable fields on one owned agent. Call when the user asks to tune an existing agent before enrollment. Do not pass ownership or immutable identifiers other than agentId. Requires agents:read and agents:write. Side effect: updates an agent profile.",
+      description: "Tune an existing owned Agent Profile while preserving its stable identity, career, season history, and Standing Daily membership. Use update_agent regardless of whether the competitor is unenrolled, standing in Daily Free, seated in a waiting game, in progress, or suspended. Effective changes become active by default: waiting seats follow current behavior, while started or suspended seats remain pinned. Read the structured receipt for the revision and enrollment outcome. Requires agents:read and agents:write. Side effect: updates the existing agent profile and eligible waiting followers; it never performs active-match actions.",
       properties: {
         agentId: { type: "string" },
         displayName: { type: "string" },
@@ -882,6 +885,7 @@ function userAgentWriteTools(): unknown[] {
       required: ["agentId"],
       scopes: writeScopes,
       readOnlyHint: false,
+      outputSchema: agentCommandOutputSchema(),
     }),
     tool({
       name: "join_queue",
@@ -1388,6 +1392,7 @@ function jsonRpcErrorData(error: unknown): { data?: unknown } {
       data: {
         code: error.code,
         statusCode: error.statusCode,
+        retryable: error instanceof AgentProfileManagementError ? error.retryable : false,
         ...(error.details && { details: error.details }),
       },
     };

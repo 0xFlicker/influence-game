@@ -18,6 +18,7 @@ import { abortAllGames } from "../services/game-lifecycle.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
 import { refreshGameWatchStateSummary } from "../services/game-watch-state-summary.js";
 import { setServer } from "../services/ws-manager.js";
+import { createSeason } from "../services/seasons.js";
 import { GameState, Phase, type CanonicalGameEvent } from "@influence/engine";
 import {
   createCanonicalEventFixture,
@@ -1308,6 +1309,31 @@ describe("Game REST API", () => {
       expect(game.startedAt).toBeTruthy();
     });
 
+    test("returns typed roster-freeze failures to start clients", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      for (let i = 0; i < 4; i++) {
+        await joinTestPlayer(app, id, `RatedPlayer${i}`, userToken);
+      }
+      const season = await createSeason(db, {
+        slug: `start-contract-${randomUUID()}`,
+        name: "Start Contract Season",
+        createdById: ADMIN_USER_ID,
+      });
+      await db.update(schema.seasons).set({ status: "final" })
+        .where(eq(schema.seasons.id, season.id));
+      await db.update(schema.games).set({ seasonId: season.id })
+        .where(eq(schema.games.id, id));
+
+      const res = await app.request(`/api/games/${id}/start`, authPost(adminToken));
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({
+        code: "invalid_state",
+        reason: "season_not_startable",
+        retryable: false,
+      });
+    });
+
     test("rejects provider startup before claiming the run", async () => {
       const { id } = await createTestGame(app, adminToken);
 
@@ -2146,7 +2172,7 @@ describe("Game REST API", () => {
       expect(res.status).toBe(409);
     });
 
-    test("POST /api/games/:id/start auto-reassigns duplicate names", async () => {
+    test("POST /api/games/:id/start reassigns duplicate House names inside roster freeze", async () => {
       const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
 
       // Manually insert players with duplicate names via direct DB insert
