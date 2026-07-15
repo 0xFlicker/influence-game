@@ -664,13 +664,14 @@ function mapOpenGameProjectionError(
     );
   }
   if (error.reason === "capacity") {
-    return new QueueEnrollmentError("queue_full", "Open game is full.", 409);
+    return new QueueEnrollmentError("queue_full", "Open game is full.", 409, error.details);
   }
   if (error.reason === "name_conflict") {
     return new QueueEnrollmentError(
       "invalid_queue_input",
       "A player with that agent name already exists in this game.",
       409,
+      error.details,
     );
   }
   return new QueueEnrollmentError(

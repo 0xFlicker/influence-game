@@ -70,6 +70,7 @@ import { generateUniqueSlug } from "../lib/slug.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
 import { getGameSeasonIdentityMap } from "../lib/game-season.js";
+import { gameOwnerClaimErrorBody } from "../lib/game-owner-claim-response.js";
 import {
   createLlmClientFromEnv,
   generatePersona,
@@ -716,7 +717,7 @@ export function createGameRoutes(db: DrizzleDB) {
 
     const owner = await acquireGameRunOwner(db, gameId);
     if (!owner.ok) {
-      return c.json({ error: owner.error }, owner.statusCode);
+      return c.json(gameOwnerClaimErrorBody(owner), owner.statusCode);
     }
     await tryRefreshGameWatchStateSummary(db, gameId, "game_started");
 
@@ -731,7 +732,13 @@ export function createGameRoutes(db: DrizzleDB) {
       startupError = error instanceof Error ? error.message : String(error);
     }
     if (startupError) {
-      await markOwnerStartupFailed(db, gameId, owner.claim.ownerEpoch, startupError);
+      const cleanup = await markOwnerStartupFailed(db, gameId, owner.claim.ownerEpoch, startupError);
+      if (cleanup.rosterDisposition === "repair_required") {
+        console.warn("[games] Startup failure roster requires repair", {
+          gameId,
+          ...cleanup.reconciliationError,
+        });
+      }
       await tryRefreshGameWatchStateSummary(db, gameId, "startup_failed");
       return c.json({ error: startupError }, 500);
     }

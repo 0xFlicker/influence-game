@@ -24,6 +24,7 @@ import type {
   CanonicalGameEvent,
   IAgent,
   MingleIntentAction,
+  LlmToolChoiceMode,
   Personality,
   GameConfig,
   GameRunnerOptions,
@@ -64,7 +65,10 @@ import {
 } from "./game-recovery.js";
 import { isUserSelectableAgentArchetype } from "./agent-archetypes.js";
 import { ensureWaitingPostgameMediaRow, reconcilePostgameMediaForGame } from "./postgame-media-coordinator.js";
-import { completeCompetitionGameInTransaction } from "./competition-completion.js";
+import {
+  CompetitionSettlementRepairRequiredError,
+  completeCompetitionGameInTransaction,
+} from "./competition-completion.js";
 
 // ---------------------------------------------------------------------------
 // Active game tracking
@@ -842,12 +846,16 @@ export async function startGame(
     const agentCfg = JSON.parse(player.agentConfig) as {
       model?: string;
       temperature?: number;
+      toolChoiceMode?: unknown;
     };
 
     const personality = resolvePersonality(
       persona.personaKey ?? persona.personality,
     );
     const model = agentCfg.model ?? resolvedModelSelection.modelId;
+    const playerToolChoiceMode = player.agentProfileId
+      ? parseToolChoiceMode(agentCfg.toolChoiceMode) ?? toolChoiceMode
+      : toolChoiceMode;
 
     const memoryStore = new PgMemoryStore(db);
     const agent = new InfluenceAgent(
@@ -859,7 +867,7 @@ export async function startGame(
       persona.backstory,
       memoryStore,
       {
-        ...(toolChoiceMode && { toolChoiceMode }),
+        ...(playerToolChoiceMode && { toolChoiceMode: playerToolChoiceMode }),
         ...(llmConfig.openAIReasoningSummary && { openAIReasoningSummary: llmConfig.openAIReasoningSummary }),
         providerProfileId: resolvedModelSelection.providerProfile.id,
         catalogId: resolvedModelSelection.catalogId,
@@ -938,6 +946,26 @@ export async function startGame(
   });
 
   return {};
+}
+
+function parseToolChoiceMode(value: unknown): LlmToolChoiceMode | undefined {
+  return value === "named" || value === "required" || value === "auto" || value === "json_schema"
+    ? value
+    : undefined;
+}
+
+export function classifyGameRunFailure(error: unknown): {
+  failureReason: string;
+  failureDetails: Record<string, unknown>;
+} {
+  const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof CompetitionSettlementRepairRequiredError) {
+    return {
+      failureReason: error.code,
+      failureDetails: { reason: error.reason, message },
+    };
+  }
+  return { failureReason: "runner_failed", failureDetails: { message } };
 }
 
 export async function recoverGame(
@@ -1056,6 +1084,7 @@ async function runGameAsync(
   } catch (err) {
     // Game failed — owner-backed runs fail closed instead of pretending to cancel/complete.
     const errorMessage = err instanceof Error ? err.message : String(err);
+    const failure = classifyGameRunFailure(err);
     console.error(`[game-lifecycle] Game ${gameId} failed:`, errorMessage);
 
     if (!ownerEpoch) {
@@ -1130,14 +1159,19 @@ async function runGameAsync(
         await db.update(schema.games)
           .set({ config: JSON.stringify(updatedConfig) })
           .where(eq(schema.games.id, gameId));
-        await markGameSuspended(db, gameId, "runner_failed", { message: errorMessage });
-        await tryRefreshGameWatchStateSummary(db, gameId, "runner_failed");
+        await markGameSuspended(
+          db,
+          gameId,
+          failure.failureReason,
+          failure.failureDetails,
+        );
+        await tryRefreshGameWatchStateSummary(db, gameId, failure.failureReason);
         broadcastRaw(gameId, {
           type: "game_status",
           gameId,
           status: "suspended",
           terminal: true,
-          reasonCode: "runner_failed",
+          reasonCode: failure.failureReason,
           message: "The game failed and cannot be resumed.",
         });
       } else {

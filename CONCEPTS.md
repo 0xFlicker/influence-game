@@ -134,7 +134,7 @@ The analytical revision that records the exact behavior and runtime policy proje
 
 ## Roster freeze
 
-The game-start boundary after which an owned seat's analytical revision, persona, and effective runtime snapshot become authoritative for that game and no longer follow later Agent Profile edits. Waiting seats follow current behavior until roster freeze; started and suspended execution reuse the frozen seat snapshot.
+The game-start boundary after which an owned seat's analytical revision, persona, and effective runtime snapshot become authoritative for that game and no longer follow later Agent Profile edits. The frozen snapshot includes the resolved runtime tool-choice mode, so revision evidence and execution use the same tuple. Waiting seats follow current behavior until roster freeze; started and suspended execution reuse the frozen seat snapshot.
 
 ## Competition receipt
 
@@ -346,7 +346,7 @@ A validator-derived readiness record for a checkpoint capsule. It reports stamp-
 
 ## Phase-boundary startup resume
 
-The supported API recovery behavior for interrupted live games at implemented completed phase boundaries. A suspended game whose newest phase-boundary checkpoint is at the durable event head and has a supported actor coordinate can be claimed by a fresh owner on API startup, hydrated into a new runner from canonical events plus checkpoint payload, append post-restart canonical events, and complete under the same game ID. Current support covers the original pre-round lobby boundary, persisted normal-round coordinates through reveal, and the first supported endgame-entry coordinate; it is not a promise of mid-phase recovery, in-flight LLM recovery, later endgame boundary recovery, arbitrary old-game repair, or automatic serverless orchestration.
+The supported API recovery behavior for interrupted live games at implemented completed phase boundaries. A suspended game whose newest phase-boundary checkpoint is at the durable event head and has a supported actor coordinate can be claimed by a fresh owner on API startup, hydrated into a new runner from canonical events plus checkpoint payload, append post-restart canonical events, and complete under the same game ID. Suspensions marked `competition_settlement_repair_required` are excluded because replay cannot repair missing or contradictory immutable settlement evidence. Current support covers the original pre-round lobby boundary, persisted normal-round coordinates through reveal, and the first supported endgame-entry coordinate; it is not a promise of mid-phase recovery, in-flight LLM recovery, later endgame boundary recovery, arbitrary old-game repair, or automatic serverless orchestration.
 
 ## Boundary certificate
 

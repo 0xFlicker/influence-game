@@ -2,7 +2,10 @@ import { and, eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { projectWaitingOwnedRosterInTransaction } from "./owned-seat-projection.js";
+import {
+  OwnedSeatProjectionError,
+  projectWaitingOwnedRosterInTransaction,
+} from "./owned-seat-projection.js";
 import {
   freezeWaitingRosterInTransaction,
   toRosterFreezeError,
@@ -36,6 +39,17 @@ export class GameOwnerTransitionError extends Error {
     this.name = "GameOwnerTransitionError";
   }
 }
+
+export type OwnerStartupFailureResult =
+  | { rosterDisposition: "reconciled" }
+  | {
+      rosterDisposition: "repair_required";
+      reconciliationError: {
+        message: string;
+        code?: string;
+        reason?: string;
+      };
+    };
 
 function ownerExpiresAt(now: Date, leaseMs = DEFAULT_OWNER_LEASE_MS): string {
   return new Date(now.getTime() + leaseMs).toISOString();
@@ -197,7 +211,7 @@ export async function markOwnerStartupFailed(
   gameId: string,
   ownerEpoch: string,
   errorMessage: string,
-): Promise<void> {
+): Promise<OwnerStartupFailureResult> {
   const now = new Date().toISOString();
   await db.transaction(async (tx) => {
     const game = (await tx.select({ status: schema.games.status }).from(schema.games)
@@ -241,10 +255,25 @@ export async function markOwnerStartupFailed(
     }
     await tx.delete(schema.competitionRatingSnapshots)
       .where(eq(schema.competitionRatingSnapshots.gameId, gameId));
-    await projectWaitingOwnedRosterInTransaction(tx, gameId, {
-      allowHouseNameCollisions: true,
-    });
   });
+
+  try {
+    await db.transaction((tx) => projectWaitingOwnedRosterInTransaction(tx, gameId, {
+      allowHouseNameCollisions: true,
+    }));
+    return { rosterDisposition: "reconciled" };
+  } catch (error) {
+    return {
+      rosterDisposition: "repair_required",
+      reconciliationError: {
+        message: error instanceof Error ? error.message : String(error),
+        ...(error instanceof OwnedSeatProjectionError && {
+          code: error.code,
+          reason: error.reason,
+        }),
+      },
+    };
+  }
 }
 
 export async function assertOwnerActive(

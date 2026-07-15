@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { normalizeGameModelSelection } from "@influence/engine";
+import {
+  normalizeGameModelSelection,
+  resolveModelSelection,
+  resolveToolChoiceMode,
+} from "@influence/engine";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -30,6 +34,7 @@ export class OwnedSeatProjectionError extends Error {
     message: string,
     public readonly code: OwnedSeatProjectionErrorCode,
     public readonly reason: OwnedSeatProjectionErrorReason,
+    public readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "OwnedSeatProjectionError";
@@ -133,10 +138,17 @@ export async function projectOwnedSeatInTransaction(
 
   const gameConfig = parseGameConfig(input.game.config);
   const temperature = normalizeTemperature(input.overrides?.temperature);
+  const modelSelection = normalizeGameModelSelection(gameConfig.modelSelection);
+  const resolvedModelSelection = resolveModelSelection(modelSelection, gameConfig.modelTier);
   const effectiveRuntimeSnapshot = resolveFreeTrackEffectiveRuntimeSnapshot(profile, {
-    modelSelection: normalizeGameModelSelection(gameConfig.modelSelection),
+    modelSelection,
     modelTier: gameConfig.modelTier,
     temperature,
+    toolChoiceMode: resolveToolChoiceMode(
+      process.env,
+      undefined,
+      resolvedModelSelection.providerProfile.id,
+    ),
   });
   const persona = JSON.stringify({
     name: effectiveRuntimeSnapshot.name,
@@ -148,6 +160,7 @@ export async function projectOwnedSeatInTransaction(
   const agentConfig = JSON.stringify({
     model: effectiveRuntimeSnapshot.model,
     temperature: effectiveRuntimeSnapshot.temperature,
+    toolChoiceMode: effectiveRuntimeSnapshot.toolChoiceMode,
   });
   const resolvedRevision = await resolveGameEffectiveAgentRevisionInTransaction(tx, {
     profile,
@@ -178,7 +191,11 @@ export async function admitOwnedSeatInTransaction(
     .where(eq(schema.gamePlayers.gameId, game.id))
     .orderBy(asc(schema.gamePlayers.id));
   if (players.length >= game.maxPlayers) {
-    throw projectionError("This game is full.", "rated_roster_invalid", "capacity");
+    throw projectionError("This game is full.", "rated_roster_invalid", "capacity", {
+      gameId: game.id,
+      slug: game.slug,
+      maxPlayers: game.maxPlayers,
+    });
   }
   if (game.seasonId && players.some((player) => player.userId === input.userId)) {
     throw projectionError(
@@ -194,7 +211,10 @@ export async function admitOwnedSeatInTransaction(
     agentProfileId: input.agentProfileId,
     overrides: input.overrides,
   });
-  assertNameAvailable(players, projection.profile.name);
+  assertNameAvailable(players, projection.profile.name, {
+    gameId: game.id,
+    agentId: input.agentProfileId,
+  });
   const seat = (await tx.insert(schema.gamePlayers).values({
     id: input.playerId ?? randomUUID(),
     gameId: game.id,
@@ -506,13 +526,18 @@ function assertOneOwnedSeatPerUser(
   }
 }
 
-function assertNameAvailable(players: PlayerRow[], name: string): void {
+function assertNameAvailable(
+  players: PlayerRow[],
+  name: string,
+  details?: Record<string, unknown>,
+): void {
   const normalized = normalizeName(name);
   if (players.some((player) => normalizeName(personaName(player.persona)) === normalized)) {
     throw projectionError(
       "A player with that name already exists in this game.",
       "rated_roster_invalid",
       "name_conflict",
+      details,
     );
   }
 }
@@ -581,6 +606,7 @@ function projectionError(
   message: string,
   code: OwnedSeatProjectionErrorCode,
   reason: OwnedSeatProjectionErrorReason,
+  details?: Record<string, unknown>,
 ): OwnedSeatProjectionError {
-  return new OwnedSeatProjectionError(message, code, reason);
+  return new OwnedSeatProjectionError(message, code, reason, details);
 }

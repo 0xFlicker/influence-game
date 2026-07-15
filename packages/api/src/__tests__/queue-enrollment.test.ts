@@ -318,6 +318,43 @@ describe("queue enrollment service", () => {
     } satisfies Partial<AgentProfileManagementError>);
   });
 
+  test("preserves safe capacity and name-conflict details for open-game clients", async () => {
+    await insertAgent(db, { id: "agent-full", userId: USER_A_ID, name: "Full Agent" });
+    await insertGame(db, {
+      id: "open-full-1",
+      slug: "open-full",
+      status: "waiting",
+      maxPlayers: 1,
+    });
+    await insertPlayer(db, { id: "full-house", gameId: "open-full-1", name: "House Seat" });
+
+    await expect(joinQueue(db, { userId: USER_A_ID }, {
+      queueType: "open-game",
+      agentId: "agent-full",
+      gameIdOrSlug: "open-full",
+    })).rejects.toMatchObject({
+      code: "queue_full",
+      details: { gameId: "open-full-1", slug: "open-full", maxPlayers: 1 },
+    } satisfies Partial<QueueEnrollmentError>);
+
+    await insertAgent(db, { id: "agent-collision", userId: USER_A_ID, name: "Same Name" });
+    await insertGame(db, { id: "open-collision-1", slug: "open-collision", status: "waiting" });
+    await insertPlayer(db, {
+      id: "collision-house",
+      gameId: "open-collision-1",
+      name: " same name ",
+    });
+
+    await expect(joinQueue(db, { userId: USER_A_ID }, {
+      queueType: "open-game",
+      agentId: "agent-collision",
+      gameIdOrSlug: "open-collision",
+    })).rejects.toMatchObject({
+      code: "invalid_queue_input",
+      details: { gameId: "open-collision-1", agentId: "agent-collision" },
+    } satisfies Partial<QueueEnrollmentError>);
+  });
+
   test("standing membership becomes temporarily ineligible while the owner has an active Daily Free game", async () => {
     await insertAgent(db, { id: "agent-busy", userId: USER_A_ID, name: "Busy Agent" });
     await insertGame(db, { id: "busy-game-1", slug: "busy-game", status: "waiting", trackType: "free" });

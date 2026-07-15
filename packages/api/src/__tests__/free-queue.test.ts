@@ -164,6 +164,41 @@ describe("free queue season admission", () => {
     await abortAllGames();
   });
 
+  test("returns typed freeze failures when a drawn Daily Free season is final", async () => {
+    const db = await setupTestDB();
+    const operatorId = await insertUser(db, "final-operator");
+    await createQueuedAgent(db, "final-a", "Aster Final");
+    await createQueuedAgent(db, "final-b", "Maris Final");
+    const season = await createSeason(db, {
+      slug: "daily-final",
+      name: "Daily Final",
+      createdById: operatorId,
+    });
+    const token = await createSessionToken(operatorId, {
+      roles: ["scheduler"],
+      permissions: ["schedule_free_game"],
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+    await app.request("/api/free-queue/draw", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    await db.update(schema.seasons).set({ status: "final" })
+      .where(eq(schema.seasons.id, season.id));
+
+    const started = await app.request("/api/free-queue/start", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(started.status).toBe(409);
+    expect(await started.json()).toMatchObject({
+      code: "invalid_state",
+      reason: "season_not_startable",
+      retryable: false,
+    });
+  });
+
   test("draw remains available but explicitly unrated without an active season", async () => {
     const db = await setupTestDB();
     const operatorId = await insertUser(db, "operator-unrated");

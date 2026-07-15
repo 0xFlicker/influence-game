@@ -17,10 +17,12 @@ import type { UUID, PowerAction, GameConfig } from "@influence/engine";
 import { setupTestDB } from "./test-utils.js";
 import {
   appendDurableEventsAndPublishWatchState,
+  classifyGameRunFailure,
   preflightSelectedModel,
   reconcilePostgameMediaAfterCompletion,
   serializeTranscriptEntry,
 } from "../services/game-lifecycle.js";
+import { CompetitionSettlementRepairRequiredError } from "../services/competition-completion.js";
 import {
   handleClose,
   handleOpen,
@@ -54,6 +56,23 @@ describe("postgame media completion isolation", () => {
       },
     );
     expect(completed).toBe(false);
+  });
+});
+
+describe("game run failure classification", () => {
+  test("preserves settlement repair evidence instead of marking it generically recoverable", () => {
+    const failure = classifyGameRunFailure(new CompetitionSettlementRepairRequiredError(
+      "Pregame rating snapshot is missing.",
+      "pregame_snapshot_missing",
+    ));
+
+    expect(failure).toEqual({
+      failureReason: "competition_settlement_repair_required",
+      failureDetails: {
+        reason: "pregame_snapshot_missing",
+        message: "Pregame rating snapshot is missing.",
+      },
+    });
   });
 });
 

@@ -37,6 +37,53 @@ const PRODUCER_AUTH: GameMcpAuthContext = {
   expiresAt: 1_800_000_000,
 };
 
+function expectMatchesJsonSchema(value: unknown, schema: unknown): void {
+  const errors = validateJsonSchema(value, schema, "$");
+  if (errors.length > 0) {
+    throw new Error(`JSON schema validation failed:\n${errors.join("\n")}`);
+  }
+}
+
+function validateJsonSchema(value: unknown, rawSchema: unknown, path: string): string[] {
+  if (!rawSchema || typeof rawSchema !== "object" || Array.isArray(rawSchema)) {
+    return [`${path}: invalid schema`];
+  }
+  const schema = rawSchema as Record<string, unknown>;
+  if (Array.isArray(schema.anyOf)) {
+    const alternatives = schema.anyOf.map((candidate) => validateJsonSchema(value, candidate, path));
+    return alternatives.some((errors) => errors.length === 0)
+      ? []
+      : [`${path}: did not match anyOf`];
+  }
+  if ("const" in schema && value !== schema.const) return [`${path}: expected const ${String(schema.const)}`];
+  if (Array.isArray(schema.enum) && !schema.enum.includes(value)) return [`${path}: value is not in enum`];
+
+  if (schema.type === "null") return value === null ? [] : [`${path}: expected null`];
+  if (schema.type === "string") return typeof value === "string" ? [] : [`${path}: expected string`];
+  if (schema.type === "number") return typeof value === "number" ? [] : [`${path}: expected number`];
+  if (schema.type === "boolean") return typeof value === "boolean" ? [] : [`${path}: expected boolean`];
+  if (schema.type === "array") {
+    if (!Array.isArray(value)) return [`${path}: expected array`];
+    return value.flatMap((item, index) => validateJsonSchema(item, schema.items, `${path}[${index}]`));
+  }
+  if (schema.type !== "object") return [];
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [`${path}: expected object`];
+
+  const record = value as Record<string, unknown>;
+  const properties = schema.properties && typeof schema.properties === "object"
+    ? schema.properties as Record<string, unknown>
+    : {};
+  const errors: string[] = [];
+  for (const required of Array.isArray(schema.required) ? schema.required : []) {
+    if (typeof required === "string" && !(required in record)) errors.push(`${path}.${required}: required`);
+  }
+  for (const [key, childValue] of Object.entries(record)) {
+    if (key in properties) errors.push(...validateJsonSchema(childValue, properties[key], `${path}.${key}`));
+    else if (schema.additionalProperties === false) errors.push(`${path}.${key}: additional property`);
+  }
+  return errors;
+}
+
 describe("ProductionGameMcpJsonRpcServer", () => {
   test("advertises deployed read-only tools with MCP auth metadata", async () => {
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
@@ -587,6 +634,17 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       displayName: "Games User",
     });
     const server = createProductionGameMcpServer(db);
+    const toolsResponse = await server.handle({
+      jsonrpc: "2.0",
+      id: "agent-command-schemas",
+      method: "tools/list",
+    }, GAMES_AUTH);
+    const commandSchemas = new Map(
+      ((toolsResponse?.result as { tools: Array<{ name: string; outputSchema?: unknown }> }).tools)
+        .map((tool) => [tool.name, tool.outputSchema]),
+    );
+    expect(() => expectMatchesJsonSchema({}, commandSchemas.get("create_agent")))
+      .toThrow("required");
     const createdResponse = await server.handle({
       jsonrpc: "2.0",
       id: "create-lillith",
@@ -610,6 +668,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         receipt: { agent: { agentProfileId: string } };
       };
     }).structuredContent;
+    expectMatchesJsonSchema(created, commandSchemas.get("create_agent"));
 
     await db.insert(schema.games).values({
       id: "mcp-revision-waiting",
@@ -677,6 +736,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         };
       };
     }).structuredContent;
+    expectMatchesJsonSchema(updated, commandSchemas.get("update_agent"));
 
     expect(updated.agent.id).toBe(created.agent.id);
     expect(updated.receipt).toMatchObject({

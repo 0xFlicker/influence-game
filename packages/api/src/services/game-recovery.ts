@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { getPersistedGameEvents } from "./game-event-read-model.js";
@@ -26,7 +26,25 @@ export async function findStartupRecoverableGameIds(db: DrizzleDB): Promise<stri
     .from(schema.games)
     .where(eq(schema.games.status, "suspended"))
     .orderBy(desc(schema.games.startedAt), desc(schema.games.createdAt));
-  return rows.map((row) => row.id);
+  const gameIds = rows.map((row) => row.id);
+  if (gameIds.length === 0) return [];
+  const owners = await db
+    .select({
+      gameId: schema.gameRunOwners.gameId,
+      failureReason: schema.gameRunOwners.failureReason,
+    })
+    .from(schema.gameRunOwners)
+    .where(inArray(schema.gameRunOwners.gameId, gameIds))
+    .orderBy(desc(schema.gameRunOwners.createdAt));
+  const latestFailureByGame = new Map<string, string | null>();
+  for (const owner of owners) {
+    if (!latestFailureByGame.has(owner.gameId)) {
+      latestFailureByGame.set(owner.gameId, owner.failureReason);
+    }
+  }
+  return gameIds.filter((gameId) => (
+    latestFailureByGame.get(gameId) !== "competition_settlement_repair_required"
+  ));
 }
 
 export async function getSupportedRecovery(
@@ -43,6 +61,16 @@ export async function getSupportedRecovery(
   }
   if (game.status !== "suspended") {
     return { ok: false, gameId, reason: `unsupported_game_status:${game.status}` };
+  }
+
+  const latestOwner = (await db
+    .select({ failureReason: schema.gameRunOwners.failureReason })
+    .from(schema.gameRunOwners)
+    .where(eq(schema.gameRunOwners.gameId, gameId))
+    .orderBy(desc(schema.gameRunOwners.createdAt))
+    .limit(1))[0];
+  if (latestOwner?.failureReason === "competition_settlement_repair_required") {
+    return { ok: false, gameId, reason: latestOwner.failureReason };
   }
 
   const checkpoints = await db

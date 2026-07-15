@@ -123,6 +123,25 @@ describe("atomic game owner claim and roster freeze", () => {
       .toMatchObject({ mu: 41, sigma: 4 });
   });
 
+  test("freezes the environment-resolved tool choice used by owned agents", async () => {
+    const savedToolChoice = process.env.INFLUENCE_LLM_TOOL_CHOICE_MODE;
+    process.env.INFLUENCE_LLM_TOOL_CHOICE_MODE = "required";
+    try {
+      const fixture = await createRatedWaitingFixture();
+      const owner = await acquireGameRunOwner(fixture.db, fixture.gameId);
+      expect(owner.ok).toBeTrue();
+
+      const seat = await ownedSeatFor(fixture.db, fixture.gameId, fixture.profileA.id);
+      expect(JSON.parse(seat.agentConfig).toolChoiceMode).toBe("required");
+      const revision = (await fixture.db.select().from(schema.agentRevisions)
+        .where(eq(schema.agentRevisions.id, seat.agentRevisionId!)))[0]!;
+      expect(revision.effectiveRuntimeSnapshot.toolChoiceMode).toBe("required");
+    } finally {
+      if (savedToolChoice === undefined) delete process.env.INFLUENCE_LLM_TOOL_CHOICE_MODE;
+      else process.env.INFLUENCE_LLM_TOOL_CHOICE_MODE = savedToolChoice;
+    }
+  });
+
   test("rejects final or missing rated season state without freezing anything", async () => {
     for (const state of ["final", "missing"] as const) {
       const fixture = await createRatedWaitingFixture();
@@ -237,6 +256,50 @@ describe("atomic game owner claim and roster freeze", () => {
       "stale retry",
     )).rejects.toMatchObject({ code: "stale_owner" });
     expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({ status: "in_progress" });
+  });
+
+  test("startup teardown commits even when the waiting roster needs profile repair", async () => {
+    const fixture = await createRatedWaitingFixture();
+    const owner = await acquireGameRunOwner(fixture.db, fixture.gameId);
+    expect(owner.ok).toBeTrue();
+    if (!owner.ok) throw new Error(owner.error);
+    const frozenSeat = await ownedSeatFor(fixture.db, fixture.gameId, fixture.profileA.id);
+
+    await updateOwnedAgentProfile(
+      fixture.db,
+      { userId: fixture.ownerA },
+      fixture.profileA.id,
+      { name: "House Quartz" },
+    );
+    const cleanup = await markOwnerStartupFailed(
+      fixture.db,
+      fixture.gameId,
+      owner.claim.ownerEpoch,
+      "provider unavailable before play",
+    );
+
+    expect(cleanup).toMatchObject({
+      rosterDisposition: "repair_required",
+      reconciliationError: { reason: "name_conflict" },
+    });
+    expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({ status: "waiting", startedAt: null });
+    expect(await fixture.db.select().from(schema.competitionRatingSnapshots)).toHaveLength(0);
+    expect(await ownedSeatFor(fixture.db, fixture.gameId, fixture.profileA.id)).toEqual(frozenSeat);
+    expect((await fixture.db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.ownerEpoch, owner.claim.ownerEpoch)))[0])
+      .toMatchObject({ status: "closed" });
+
+    expect(await acquireGameRunOwner(fixture.db, fixture.gameId)).toMatchObject({
+      ok: false,
+      reason: "name_conflict",
+    });
+    await updateOwnedAgentProfile(
+      fixture.db,
+      { userId: fixture.ownerA },
+      fixture.profileA.id,
+      { name: "Aster Repaired" },
+    );
+    expect((await acquireGameRunOwner(fixture.db, fixture.gameId)).ok).toBeTrue();
   });
 
   test("never lifts the pin after the owner persisted gameplay", async () => {

@@ -3,6 +3,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import {
   resolveModelSelection,
   type GameModelSelection,
+  type LlmToolChoiceMode,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -51,6 +52,7 @@ export function resolveFreeTrackEffectiveRuntimeSnapshot(
     modelSelection?: GameModelSelection | null;
     modelTier?: string | null;
     temperature?: number;
+    toolChoiceMode?: LlmToolChoiceMode;
   } = {},
 ): EffectiveAgentRuntimeSnapshot {
   const resolved = resolveModelSelection(
@@ -68,6 +70,7 @@ export function resolveFreeTrackEffectiveRuntimeSnapshot(
     catalogId: resolved.catalogId,
     reasoningPolicy: resolved.reasoningPolicy,
     toolChoiceMode: resolved.model.preferredToolChoiceMode
+      ?? options.toolChoiceMode
       ?? resolved.providerProfile.defaultToolChoiceMode,
     temperature: options.temperature ?? 0.9,
   };
