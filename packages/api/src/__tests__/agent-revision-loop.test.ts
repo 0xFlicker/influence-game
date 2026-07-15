@@ -182,6 +182,61 @@ describe("agent revision update loop", () => {
     expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(1);
   });
 
+  test("name-only edits update waiting display names without touching revisions or frozen seats", async () => {
+    const profile = await createAgent("Roster Name Before");
+    await insertGame("rename-waiting", "rename-waiting");
+    await insertGame("rename-active", "rename-active");
+    await insertGame("rename-suspended", "rename-suspended");
+    await admit(profile.id, "rename-waiting");
+    await admit(profile.id, "rename-active");
+    await admit(profile.id, "rename-suspended");
+    await db.update(schema.games).set({
+      status: "in_progress",
+      startedAt: "2026-07-14T01:00:00.000Z",
+    }).where(eq(schema.games.id, "rename-active"));
+    await db.update(schema.games).set({
+      status: "suspended",
+      startedAt: "2026-07-14T01:30:00.000Z",
+    }).where(eq(schema.games.id, "rename-suspended"));
+
+    const waitingBefore = (await db.select().from(schema.gamePlayers)
+      .where(eq(schema.gamePlayers.gameId, "rename-waiting")))[0]!;
+    const frozenBefore = await db.select().from(schema.gamePlayers)
+      .where(sql`${schema.gamePlayers.gameId} IN ('rename-active', 'rename-suspended')`)
+      .orderBy(schema.gamePlayers.gameId);
+    const revisionsBefore = await db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id));
+    const ratingsBefore = await db.select().from(schema.agentCompetitionRatings)
+      .where(eq(schema.agentCompetitionRatings.agentProfileId, profile.id));
+    const ratingEventsBefore = await db.select().from(schema.competitionRatingEvents)
+      .where(eq(schema.competitionRatingEvents.agentProfileId, profile.id));
+
+    const result = await updateOwnedAgentProfile(db, { userId: OWNER_ID }, profile.id, {
+      name: "Roster Name After",
+    });
+
+    const waitingAfter = (await db.select().from(schema.gamePlayers)
+      .where(eq(schema.gamePlayers.gameId, "rename-waiting")))[0]!;
+    const frozenAfter = await db.select().from(schema.gamePlayers)
+      .where(sql`${schema.gamePlayers.gameId} IN ('rename-active', 'rename-suspended')`)
+      .orderBy(schema.gamePlayers.gameId);
+    expect(result.profileRevision).toMatchObject({
+      revisionId: waitingBefore.agentRevisionId,
+      ordinal: revisionsBefore[0]?.ordinal,
+      outcome: "preserved",
+      ratingRecalibrated: false,
+    });
+    expect(JSON.parse(waitingAfter.persona).name).toBe("Roster Name After");
+    expect(waitingAfter.agentRevisionId).toBe(waitingBefore.agentRevisionId);
+    expect(frozenAfter).toEqual(frozenBefore);
+    expect(await db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id))).toEqual(revisionsBefore);
+    expect(await db.select().from(schema.agentCompetitionRatings)
+      .where(eq(schema.agentCompetitionRatings.agentProfileId, profile.id))).toEqual(ratingsBefore);
+    expect(await db.select().from(schema.competitionRatingEvents)
+      .where(eq(schema.competitionRatingEvents.agentProfileId, profile.id))).toEqual(ratingEventsBefore);
+  });
+
   test("reconciles every waiting follower and leaves frozen execution byte-for-byte unchanged", async () => {
     const profile = await createAgent("Many Games Agent");
     await insertGame("waiting-a", "waiting-a", { modelTier: "budget" });

@@ -222,7 +222,7 @@ describe("Agent Profile API", () => {
       expect(body.gamesWon).toBe(0);
     });
 
-    test("allows cross-owner duplicates and House-catalog names while uniqueness is deferred", async () => {
+    test("returns the generic name-taken contract for duplicates and House-catalog names", async () => {
       const first = await app.request("/api/agent-profiles", jsonReq({
         name: "Ember Compass",
         personality: "Careful and observant.",
@@ -232,16 +232,21 @@ describe("Agent Profile API", () => {
       for (const name of ["  EMBER COMPASS  ", " atlas "]) {
         const res = await app.request("/api/agent-profiles", jsonReq({
           name,
-          personality: "Allowed while global uniqueness is deferred.",
+          personality: "Must use a distinct global identity.",
         }, tokenA));
-        expect(res.status).toBe(201);
+        expect(res.status).toBe(409);
+        expect(await res.json()).toEqual({
+          code: "agent_name_taken",
+          error: "That agent name is already in use. Choose another name.",
+          retryable: false,
+        });
       }
 
-      expect(await db.select().from(schema.agentProfiles)).toHaveLength(3);
-      expect(await db.select().from(schema.agentRevisions)).toHaveLength(3);
+      expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
+      expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
     });
 
-    test("consumes a completed draft even when its normalized name is already used", async () => {
+    test("does not consume a completed draft when its normalized name is already used", async () => {
       const existing = await app.request("/api/agent-profiles", jsonReq({
         name: "Velvet Circuit",
         personality: "Already owns this identity.",
@@ -263,13 +268,18 @@ describe("Agent Profile API", () => {
         avatarGenerationRequestId: "name-conflict-draft-request",
       }, tokenA));
 
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({
+        code: "agent_name_taken",
+        error: "That agent name is already in use. Choose another name.",
+        retryable: false,
+      });
       const [request] = await db.select().from(schema.avatarGenerationRequests)
         .where(eq(schema.avatarGenerationRequests.id, "name-conflict-draft-request"));
-      expect(request?.safeMetadata).toHaveProperty("consumedAt");
-      expect(await db.select().from(schema.agentProfiles)).toHaveLength(2);
-      expect(await db.select().from(schema.agentRevisions)).toHaveLength(2);
-      expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(avatarEventsBefore.length + 1);
+      expect(request?.safeMetadata).not.toHaveProperty("consumedAt");
+      expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
+      expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
+      expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(avatarEventsBefore.length);
     });
 
     test("rejects missing name", async () => {
@@ -854,7 +864,7 @@ describe("Agent Profile API", () => {
       });
     });
 
-    test("allows cross-owner duplicate renames while uniqueness is deferred", async () => {
+    test("rejects cross-owner duplicate renames without applying other updates", async () => {
       const ownerA = await app.request("/api/agent-profiles", jsonReq({
         name: "Quiet Meridian",
         personality: "Quiet and deliberate.",
@@ -872,12 +882,17 @@ describe("Agent Profile API", () => {
         avatarUrl: "https://cdn.example/should-not-write.png",
       }, tokenA, "PATCH"));
 
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({
+        code: "agent_name_taken",
+        error: "That agent name is already in use. Choose another name.",
+        retryable: false,
+      });
       const [profile] = await db.select().from(schema.agentProfiles)
         .where(eq(schema.agentProfiles.id, id));
-      expect(profile?.name).toBe("COPPER WARDEN");
-      expect(profile?.avatarUrl).toBe("https://cdn.example/should-not-write.png");
-      expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(avatarEventsBefore.length + 1);
+      expect(profile?.name).toBe("Quiet Meridian");
+      expect(profile?.avatarUrl).toBeNull();
+      expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(avatarEventsBefore.length);
     });
 
     test("records avatar replacement history", async () => {

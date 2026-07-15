@@ -51,6 +51,17 @@ describe("effective revision fingerprints", () => {
       .toBe(fingerprintEffectiveRuntimeSnapshot(BASE_SNAPSHOT));
   });
 
+  test("treats display-name changes as presentation-only", () => {
+    const renamed = { ...BASE_SNAPSHOT, name: "Mira Solari" };
+
+    expect(fingerprintEffectiveRuntimeSnapshot(renamed))
+      .toBe(fingerprintEffectiveRuntimeSnapshot(BASE_SNAPSHOT));
+    expect(classifyRevision(BASE_SNAPSHOT, renamed)).toMatchObject({
+      magnitude: "none",
+      evidence: { changedBehaviorFields: [], textDistances: {} },
+    });
+  });
+
   test("returns a canonical snapshot without mutating its input", () => {
     const source = { ...BASE_SNAPSHOT, name: "  Mira   Vale " };
     const canonical = canonicalizeEffectiveRuntimeSnapshot(source);
@@ -59,7 +70,7 @@ describe("effective revision fingerprints", () => {
   });
 });
 
-describe("revision magnitude policy v1", () => {
+describe("revision magnitude policy v2", () => {
   test("classifies one low-distance text edit as small", () => {
     const result = classifyRevision(BASE_SNAPSHOT, {
       ...BASE_SNAPSHOT,
@@ -68,6 +79,21 @@ describe("revision magnitude policy v1", () => {
     expect(result.magnitude).toBe("small");
     expect(result.evidence.changedBehaviorFields).toEqual(["personality"]);
     expect(result.evidence.maximumTextDistance).toBeLessThan(0.15);
+  });
+
+  test("ignores a simultaneous display-name change when measuring behavior", () => {
+    const personality = BASE_SNAPSHOT.personality.replace("deliberate", "deliberately");
+    const result = classifyRevision(BASE_SNAPSHOT, {
+      ...BASE_SNAPSHOT,
+      name: "Mira Solari",
+      personality,
+    });
+
+    expect(result.magnitude).toBe("small");
+    expect(result.evidence.changedBehaviorFields).toEqual(["personality"]);
+    expect(result.evidence.textDistances).toEqual({
+      personality: combinedTextDistance(BASE_SNAPSHOT.personality, personality),
+    });
   });
 
   test("classifies multiple behavior edits as material", () => {

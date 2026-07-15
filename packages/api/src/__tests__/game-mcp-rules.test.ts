@@ -55,6 +55,8 @@ describe("game MCP rules catalog", () => {
 
     expect(revisions?.body).toContain("use update_agent to tune any existing competitor regardless of enrollment");
     expect(revisions?.body).toContain("create_agent is only for a distinctly named separate career");
+    expect(revisions?.body).toContain("globally unique after trim/case normalization");
+    expect(revisions?.body).toContain("agent_name_taken");
     expect(revisions?.body).toContain("waiting seats follow current behavior");
     expect(revisions?.body).toContain("in-progress or suspended seats remain pinned");
     expect(revisions?.body).toContain("there is no draft or publish step");

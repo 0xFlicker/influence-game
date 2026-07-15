@@ -250,7 +250,8 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(JSON.stringify(byName.get("create_agent")?.inputSchema)).not.toContain("broker");
     expect(byName.get("search_agents")?.description).toContain("use update_agent");
     expect(byName.get("create_agent")?.description).toContain("separate competitive identity");
-    expect(byName.get("create_agent")?.description).toContain("Never use create_agent to tune");
+    expect(byName.get("create_agent")?.description).toContain("globally unique");
+    expect(byName.get("create_agent")?.description).toContain("agent_name_taken");
     expect(byName.get("update_agent")?.description).toContain("regardless of whether the competitor is unenrolled");
     expect(byName.get("update_agent")?.description).toContain("started or suspended seats remain pinned");
     expect(JSON.stringify(byName.get("create_agent")?.outputSchema)).toContain("profileRevision");
@@ -759,7 +760,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(created.receipt.agent.agentProfileId).toBe(updated.agent.id);
   });
 
-  test("allows duplicate names while global uniqueness is deferred", async () => {
+  test("returns owner-safe structured name-taken data for duplicate names", async () => {
     const db = await setupTestDB();
     await db.insert(schema.users).values([
       { id: GAMES_AUTH.userId, email: "games-user@test.example" },
@@ -790,9 +791,16 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       },
     }, GAMES_AUTH);
 
-    expect(response?.error).toBeUndefined();
-    expect(response?.result).toBeDefined();
-    expect(await db.select().from(schema.agentProfiles)).toHaveLength(2);
+    expect(response?.result).toBeUndefined();
+    expect(response?.error?.message).toBe("That agent name is already in use. Choose another name.");
+    expect(response?.error?.data).toEqual({
+      code: "agent_name_taken",
+      statusCode: 409,
+      retryable: false,
+    });
+    expect(JSON.stringify(response)).not.toContain("private-conflict-agent");
+    expect(JSON.stringify(response)).not.toContain("other-owner");
+    expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
   });
 
   test("returns structured domain error data for management failures", async () => {

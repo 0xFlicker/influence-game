@@ -85,6 +85,119 @@ describe("agent revision persistence", () => {
     expect(revisions).toHaveLength(1);
   });
 
+  test("keeps a name-only save on a legacy revision without recalibrating rating", async () => {
+    const { profile, profileRevision } = await createOwnedAgentProfile(db, { userId: USER_ID }, {
+      name: "Legacy Name",
+      personality: "Patient and exact.",
+      personaKey: "observer",
+    });
+    await db.update(schema.agentRevisions).set({
+      fingerprint: `sha256:${"0".repeat(64)}`,
+      revisionPolicyVersion: "agent-revision-v1",
+    }).where(eq(schema.agentRevisions.id, profileRevision.revisionId));
+    await db.insert(schema.agentCompetitionRatings).values({
+      agentProfileId: profile.id,
+      effectiveRevisionId: profileRevision.revisionId,
+      mu: 31,
+      sigma: 2,
+      gamesPlayed: 6,
+      ratingPolicyVersion: COMPETITION_RATING_POLICY_VERSION,
+    });
+
+    const renamed = await updateOwnedAgentProfile(db, { userId: USER_ID }, profile.id, {
+      name: "Current Name",
+    });
+
+    expect(renamed.profileRevision).toMatchObject({
+      revisionId: profileRevision.revisionId,
+      ordinal: 1,
+      outcome: "preserved",
+      active: true,
+      ratingRecalibrated: false,
+    });
+    expect(await db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id))).toHaveLength(1);
+    expect((await db.select().from(schema.agentCompetitionRatings)
+      .where(eq(schema.agentCompetitionRatings.agentProfileId, profile.id)))[0]).toMatchObject({
+      effectiveRevisionId: profileRevision.revisionId,
+      mu: 31,
+      sigma: 2,
+    });
+    expect(await db.select().from(schema.competitionRatingEvents)).toHaveLength(0);
+  });
+
+  test("reuses a legacy revision for a game-effective snapshot that only renames the agent", async () => {
+    const { profile, profileRevision } = await createOwnedAgentProfile(db, { userId: USER_ID }, {
+      name: "Legacy Runtime Name",
+      personality: "Patient and exact.",
+      personaKey: "observer",
+    });
+    await db.update(schema.agentRevisions).set({
+      fingerprint: `sha256:${"1".repeat(64)}`,
+      revisionPolicyVersion: "agent-revision-v1",
+    }).where(eq(schema.agentRevisions.id, profileRevision.revisionId));
+    const activeEdit = await updateOwnedAgentProfile(db, { userId: USER_ID }, profile.id, {
+      personality: "Forceful and exact.",
+    });
+
+    const result = await resolveGameEffectiveAgentRevision(db, {
+      profile: { ...profile, name: "Current Runtime Name" },
+      effectiveRuntimeSnapshot: {
+        ...resolveFreeTrackEffectiveRuntimeSnapshot(profile),
+        name: "Current Runtime Name",
+      },
+    });
+
+    expect(result).toMatchObject({
+      created: false,
+      ratingRecalibrated: false,
+      revision: { id: profileRevision.revisionId, ordinal: 1 },
+    });
+    expect(await db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id))).toHaveLength(2);
+    expect((await db.select().from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, profile.id)))[0]?.currentRevisionId)
+      .toBe(activeEdit.profileRevision.revisionId);
+  });
+
+  test("creates one small revision for a name and personality edit while ignoring the name", async () => {
+    const personality = "Calm, observant, and deliberate in every social exchange.";
+    const { profile, profileRevision } = await createOwnedAgentProfile(db, { userId: USER_ID }, {
+      name: "Mira Vale",
+      personality,
+      personaKey: "observer",
+    });
+    await db.insert(schema.agentCompetitionRatings).values({
+      agentProfileId: profile.id,
+      effectiveRevisionId: profileRevision.revisionId,
+      mu: 31,
+      sigma: 2,
+      gamesPlayed: 6,
+      ratingPolicyVersion: COMPETITION_RATING_POLICY_VERSION,
+    });
+
+    const changed = await updateOwnedAgentProfile(db, { userId: USER_ID }, profile.id, {
+      name: "Mira Solari",
+      personality: personality.replace("deliberate", "deliberately"),
+    });
+
+    expect(changed.profileRevision).toMatchObject({
+      ordinal: 2,
+      outcome: "created",
+      ratingRecalibrated: true,
+    });
+    const revisions = await db.select().from(schema.agentRevisions)
+      .where(eq(schema.agentRevisions.agentProfileId, profile.id));
+    expect(revisions).toHaveLength(2);
+    expect(revisions.find((revision) => revision.id === changed.profileRevision.revisionId))
+      .toMatchObject({ magnitude: "small", priorRevisionId: profileRevision.revisionId });
+    const events = await db.select().from(schema.competitionRatingEvents);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.evidence).toMatchObject({
+      classification: { changedBehaviorFields: ["personality"] },
+    });
+  });
+
   test("creates ordered revisions while preserving lifetime statistics", async () => {
     const { profile } = await createOwnedAgentProfile(db, { userId: USER_ID }, {
       name: "Verity Thread",

@@ -187,7 +187,7 @@ Readiness checks for this surface should cover:
 - Initialization and tool descriptions direct an existing enrolled identity to `update_agent`, not `create_agent`.
 - Create/update output schemas match actual `structuredContent` receipts.
 - Agent reads expose current revision and following/pinned state without hidden competition-rating evidence.
-- Global saved-profile name uniqueness is deferred; per-game waiting-roster collisions return `waiting_roster_name_conflict` without a conflicting profile or owner.
+- Saved-profile names are globally unique after trim/case normalization, canonical House-agent names are reserved, and create or rename collisions return generic `agent_name_taken` data without a conflicting profile or owner. Per-game waiting-roster collisions remain a separate `waiting_roster_name_conflict` contract.
 - Agent summaries label account-level rating provenance.
 - Daily-free join/leave idempotency and conflict behavior.
 - Unsupported queue types rejected explicitly per operation.

@@ -31,7 +31,7 @@ describe("cognitive artifact writer", () => {
       .values({
         id: agentProfileId,
         userId,
-        name: "Atlas",
+        name: "Saved Artifact Atlas",
         personality: "strategic",
       });
     await db.insert(schema.games)

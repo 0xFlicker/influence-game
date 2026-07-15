@@ -4,7 +4,7 @@ import {
   type CompetitionRating,
 } from "./season-policy.js";
 
-export const REVISION_POLICY_VERSION = "agent-revision-v1";
+export const REVISION_POLICY_VERSION = "agent-revision-v2";
 
 export type RevisionMagnitude = "none" | "initial" | "small" | "material" | "execution";
 
@@ -50,7 +50,7 @@ export interface RevisionRecalibration {
 
 const SMALL_TEXT_DISTANCE = 0.15;
 const MATERIAL_TEXT_DISTANCE = 0.35;
-const BEHAVIOR_TEXT_FIELDS = ["name", "personality", "backstory", "strategyInstructions"] as const;
+const BEHAVIOR_TEXT_FIELDS = ["personality", "backstory", "strategyInstructions"] as const;
 const EXECUTION_FIELDS = [
   "model",
   "providerProfileId",
@@ -82,7 +82,19 @@ export function fingerprintEffectiveRuntimeSnapshot(
   snapshot: EffectiveAgentRuntimeSnapshot,
 ): string {
   validateSnapshot(snapshot);
-  return sha256StableJson(canonicalizeEffectiveRuntimeSnapshot(snapshot));
+  const canonical = canonicalizeEffectiveRuntimeSnapshot(snapshot);
+  return sha256StableJson({
+    personality: canonical.personality,
+    backstory: canonical.backstory,
+    strategyInstructions: canonical.strategyInstructions,
+    personaKey: canonical.personaKey,
+    model: canonical.model,
+    providerProfileId: canonical.providerProfileId,
+    catalogId: canonical.catalogId,
+    reasoningPolicy: canonical.reasoningPolicy,
+    toolChoiceMode: canonical.toolChoiceMode,
+    temperature: canonical.temperature,
+  });
 }
 
 export function classifyRevision(

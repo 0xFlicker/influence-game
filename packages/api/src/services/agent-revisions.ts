@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import {
   resolveModelSelection,
   type GameModelSelection,
@@ -95,7 +95,11 @@ export async function ensureActiveAgentRevisionInTransaction(
   // latest chronological revision. Game-effective resolution must never do so.
   const current = pointedCurrent ?? latest;
   const nextFingerprint = fingerprintEffectiveRuntimeSnapshot(input.effectiveRuntimeSnapshot);
-  if (current?.fingerprint === nextFingerprint) {
+  if (current && revisionMatchesCurrentPolicy(
+    current,
+    input.effectiveRuntimeSnapshot,
+    nextFingerprint,
+  )) {
     if (profileState.currentRevisionId !== current.id) {
       await tx.update(schema.agentProfiles).set({ currentRevisionId: current.id })
         .where(eq(schema.agentProfiles.id, input.profile.id));
@@ -188,7 +192,7 @@ export async function resolveGameEffectiveAgentRevisionInTransaction(
   }
 
   const nextFingerprint = fingerprintEffectiveRuntimeSnapshot(input.effectiveRuntimeSnapshot);
-  if (current.fingerprint === nextFingerprint) {
+  if (revisionMatchesCurrentPolicy(current, input.effectiveRuntimeSnapshot, nextFingerprint)) {
     return { revision: current, created: false, ratingRecalibrated: false };
   }
 
@@ -201,6 +205,24 @@ export async function resolveGameEffectiveAgentRevisionInTransaction(
     .limit(1))[0];
   if (matching) {
     return { revision: matching, created: false, ratingRecalibrated: false };
+  }
+
+  // v1 fingerprints included the display name. Re-evaluate legacy snapshots
+  // through the current analytical policy so cosmetic renames do not fork the
+  // lineage or prevent a game from reusing an otherwise identical revision.
+  const legacyMatching = (await tx.select().from(schema.agentRevisions)
+    .where(and(
+      eq(schema.agentRevisions.agentProfileId, input.profile.id),
+      ne(schema.agentRevisions.revisionPolicyVersion, REVISION_POLICY_VERSION),
+    ))
+    .orderBy(desc(schema.agentRevisions.ordinal)))
+    .find((revision) => revisionMatchesCurrentPolicy(
+      revision,
+      input.effectiveRuntimeSnapshot,
+      nextFingerprint,
+    ));
+  if (legacyMatching) {
+    return { revision: legacyMatching, created: false, ratingRecalibrated: false };
   }
 
   const { revision } = await insertRevision(tx, {
@@ -325,6 +347,17 @@ function parseEffectiveRuntimeSnapshot(value: Record<string, unknown>): Effectiv
     toolChoiceMode: nullableString(value.toolChoiceMode),
     temperature: value.temperature,
   };
+}
+
+function revisionMatchesCurrentPolicy(
+  revision: typeof schema.agentRevisions.$inferSelect,
+  next: EffectiveAgentRuntimeSnapshot,
+  nextFingerprint: string,
+): boolean {
+  if (revision.fingerprint === nextFingerprint) return true;
+  if (revision.revisionPolicyVersion === REVISION_POLICY_VERSION) return false;
+  const previous = parseEffectiveRuntimeSnapshot(revision.effectiveRuntimeSnapshot);
+  return classifyRevision(previous, next).magnitude === "none";
 }
 
 function nullableString(value: unknown): string | null {

@@ -854,7 +854,7 @@ function userAgentWriteTools(): unknown[] {
   return [
     tool({
       name: "create_agent",
-      description: "Create an Agent Profile as a separate competitive identity with independent career and season history. Never use create_agent to tune, revise, or re-enroll an existing competitor; resolve owned identities first and use update_agent when one exists. Requires agents:read and agents:write. Side effects: inserts an agent profile and, when no avatar is supplied and quota allows, starts portrait generation reported through avatarCompletion.",
+      description: "Create an Agent Profile as a separate competitive identity with independent career and season history. Display names are globally unique after trim/case normalization, and House-agent names are reserved; resolve owned identities first and use update_agent when one exists. A collision returns agent_name_taken without revealing another profile or owner. Requires agents:read and agents:write. Side effects: inserts an agent profile and, when no avatar is supplied and quota allows, starts portrait generation reported through avatarCompletion.",
       properties: {
         displayName: { type: "string" },
         archetype: { type: "string", enum: USER_SELECTABLE_AGENT_ARCHETYPE_KEYS },
@@ -871,7 +871,7 @@ function userAgentWriteTools(): unknown[] {
     }),
     tool({
       name: "update_agent",
-      description: "Tune an existing owned Agent Profile while preserving its stable identity, career, season history, and Standing Daily membership. Use update_agent regardless of whether the competitor is unenrolled, standing in Daily Free, seated in a waiting game, in progress, or suspended. Effective changes become active by default: waiting seats follow current behavior, while started or suspended seats remain pinned. Read the structured receipt for the revision and enrollment outcome. Requires agents:read and agents:write. Side effect: updates the existing agent profile and eligible waiting followers; it never performs active-match actions.",
+      description: "Tune an existing owned Agent Profile while preserving its stable identity, career, season history, and Standing Daily membership. Use update_agent regardless of whether the competitor is unenrolled, standing in Daily Free, seated in a waiting game, in progress, or suspended. Renaming to a globally occupied or reserved House-agent name returns agent_name_taken. Effective changes become active by default: waiting seats follow current behavior, while started or suspended seats remain pinned. Read the structured receipt for the revision and enrollment outcome. Requires agents:read and agents:write. Side effect: updates the existing agent profile and eligible waiting followers; it never performs active-match actions.",
       properties: {
         agentId: { type: "string" },
         displayName: { type: "string" },

@@ -45,6 +45,10 @@ import { generateUniqueSlug } from "../lib/slug.js";
 import { randomUUID } from "crypto";
 import { getPublicDisplayName } from "../lib/display-name.js";
 import { removeStandingDailyAgentByAdmin } from "../services/queue-enrollment.js";
+import {
+  allocateImportedAgentProfileName,
+  lockAndLoadImportedAgentProfileNameNamespace,
+} from "../services/imported-agent-profile-names.js";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -996,6 +1000,11 @@ export function createAdminRoutes(db: DrizzleDB) {
 
     try {
       await db.transaction(async (tx) => {
+        const {
+          existingProfileIds,
+          occupiedNames: occupiedProfileNames,
+        } = await lockAndLoadImportedAgentProfileNameNamespace(tx);
+
         // 1. Create synthetic users for each player's userId
         const seenUserIds = new Set<string>();
         for (const player of importedPlayers) {
@@ -1026,18 +1035,16 @@ export function createAdminRoutes(db: DrizzleDB) {
           if (!profile) continue;
 
           const profileId = profile.id as string;
-          // Check if agent profile already exists
-          const existing = (await tx
-            .select({ id: schema.agentProfiles.id })
-            .from(schema.agentProfiles)
-            .where(eq(schema.agentProfiles.id, profileId)))[0];
-
-          if (!existing) {
+          if (!existingProfileIds.has(profileId)) {
             const ownerId = userIdMap.get(profile.userId as string) ?? (profile.userId as string);
+            const importedName = allocateImportedAgentProfileName(
+              profile.name,
+              occupiedProfileNames,
+            );
             await tx.insert(schema.agentProfiles).values({
               id: profileId,
               userId: ownerId,
-              name: profile.name as string,
+              name: importedName,
               backstory: (profile.backstory as string) ?? null,
               personality: profile.personality as string,
               strategyStyle: (profile.strategyStyle as string) ?? null,
@@ -1046,6 +1053,7 @@ export function createAdminRoutes(db: DrizzleDB) {
               gamesPlayed: (profile.gamesPlayed as number) ?? 0,
               gamesWon: (profile.gamesWon as number) ?? 0,
             });
+            existingProfileIds.add(profileId);
           }
         }
 

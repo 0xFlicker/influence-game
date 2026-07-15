@@ -251,7 +251,13 @@ export { LLMHouseInterviewer, TemplateHouseInterviewer } from "./house-interview
 export type { IHouseInterviewer, DiaryRoomContext, FollowUpResult, LLMHouseInterviewerOptions } from "./house-interviewer";
 
 // Persona generator
-export { HOUSE_AGENT_NAMES, generatePersona, pickAgentNames, pickArchetypes } from "./persona-generator";
+export {
+  HOUSE_AGENT_NAMES,
+  generatePersona,
+  isReservedHouseAgentName,
+  pickAgentNames,
+  pickArchetypes,
+} from "./persona-generator";
 export type { GeneratedPersona } from "./persona-generator";
 
 // LLM provider configuration

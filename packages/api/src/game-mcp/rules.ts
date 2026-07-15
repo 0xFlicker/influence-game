@@ -90,7 +90,7 @@ const RULE_SECTIONS: GameMcpRulesSection[] = [
     id: "agent-revisions",
     title: "Agent Revisions",
     tags: ["agent", "edit", "revision", "analysis", "stats", "create", "update", "enrollment"],
-    body: "An Agent Profile is the stable competitive identity that owns career and season history. Resolve the owner's agents first and use update_agent to tune any existing competitor regardless of enrollment; create_agent is only for a distinctly named separate career. Effective edits automatically create or preserve the active Analytical Revision. Standing Daily membership remains on the same profile, waiting seats follow current behavior, and in-progress or suspended seats remain pinned to what began play. Mutation receipts report these outcomes; there is no draft or publish step in the current flow.",
+    body: "An Agent Profile is the stable competitive identity that owns career and season history. Resolve the owner's agents first and use update_agent to tune any existing competitor regardless of enrollment; create_agent is only for a distinctly named separate career. Display names are globally unique after trim/case normalization, House-agent names are reserved, and conflicts return agent_name_taken without revealing another profile or owner. Effective edits automatically create or preserve the active Analytical Revision. Standing Daily membership remains on the same profile, waiting seats follow current behavior, and in-progress or suspended seats remain pinned to what began play. Mutation receipts report these outcomes; there is no draft or publish step in the current flow.",
   },
   {
     id: "archetypes",

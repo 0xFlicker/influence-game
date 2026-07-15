@@ -21,7 +21,7 @@ describe("Dual Crown schema", () => {
     await db.insert(schema.agentProfiles).values({
       id: profileId,
       userId,
-      name: "Mira",
+      name: "Saved Mira",
       personality: "Calm and observant",
       backstory: "A patient negotiator.",
       strategyStyle: "Build trust before acting.",
@@ -70,7 +70,7 @@ describe("Dual Crown schema", () => {
       ordinal: 1,
       trigger: "initial_backfill",
       magnitude: "initial",
-      revisionPolicyVersion: "agent-revision-v1",
+      revisionPolicyVersion: "agent-revision-v2",
     });
     expect(revisions[0]!.effectiveRuntimeSnapshot).toMatchObject({
       model: "gpt-5-nano",
@@ -91,7 +91,7 @@ describe("Dual Crown schema", () => {
     await db.insert(schema.agentProfiles).values({
       id: profileId,
       userId,
-      name: "Atlas",
+      name: "Saved Atlas",
       personality: "Careful",
     });
     await backfillAgentRevisions(db);
@@ -161,7 +161,7 @@ describe("Dual Crown schema", () => {
     await db.insert(schema.agentProfiles).values({
       id: profileId,
       userId,
-      name: "Vera",
+      name: "Saved Vera",
       personality: "Bold",
     });
     await backfillAgentRevisions(db);

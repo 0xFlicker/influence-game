@@ -230,6 +230,71 @@ describe("admin route RBAC", () => {
     expect(rows[0]).not.toHaveProperty("gameNumber");
   });
 
+  test("auto-suffixes conflicting imported profiles without rewriting historical persona", async () => {
+    const existingOwner = await createUser(
+      db,
+      "0xexisting0000000000000000000000000000000001",
+      "Existing Owner",
+    );
+    await db.insert(schema.agentProfiles).values({
+      id: "existing-atlas-two",
+      userId: existingOwner,
+      name: "Atlas II",
+      personality: "Already owns the first available suffix.",
+    });
+
+    const persona = JSON.stringify({
+      name: "Atlas",
+      personality: "Historical imported behavior.",
+    });
+    const response = await app.request("/api/admin/import-game", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        version: 1,
+        game: {
+          id: "source-import-game",
+          slug: "source-import-game",
+          config: JSON.stringify({ modelTier: "budget" }),
+          status: "completed",
+          trackType: "custom",
+          minPlayers: 1,
+          maxPlayers: 1,
+          startedAt: "2026-07-01T00:00:00.000Z",
+          endedAt: "2026-07-01T01:00:00.000Z",
+          hiddenAt: null,
+        },
+        players: [{
+          id: "source-import-player",
+          userId: "source-import-user",
+          agentProfileId: "source-import-profile",
+          persona,
+          agentConfig: JSON.stringify({ model: "test", temperature: 0.7 }),
+          agentProfile: {
+            id: "source-import-profile",
+            userId: "source-import-user",
+            name: "Atlas",
+            personality: "Historical imported behavior.",
+          },
+        }],
+        transcripts: [],
+        result: null,
+        agentMemories: [],
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    const [profile] = await db.select().from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, "source-import-profile"));
+    expect(profile?.name).toBe("Atlas III");
+    const [seat] = await db.select().from(schema.gamePlayers)
+      .where(eq(schema.gamePlayers.agentProfileId, "source-import-profile"));
+    expect(seat?.persona).toBe(persona);
+  });
+
   test("keeps role-management routes locked to manage_roles", async () => {
     const res = await app.request("/api/admin/roles", {
       headers: { Authorization: `Bearer ${adminToken}` },
@@ -252,7 +317,7 @@ describe("admin route RBAC", () => {
     await db.insert(schema.agentProfiles).values({
       id: "admin-queue-agent",
       userId: ownerId,
-      name: "Atlas",
+      name: "Queue Atlas",
       personality: "Patient",
       gamesPlayed: 0,
       gamesWon: 0,
@@ -274,7 +339,7 @@ describe("admin route RBAC", () => {
     expect(body.entries[0]).toMatchObject({
       userId: ownerId,
       ownerLabel: "Queue Owner",
-      agentName: "Atlas",
+      agentName: "Queue Atlas",
       status: "eligible",
       consecutiveMisses: 2,
     });

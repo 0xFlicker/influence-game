@@ -1,9 +1,11 @@
 import { randomUUID } from "crypto";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { isReservedHouseAgentName } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import type { AvatarChangeSource, AvatarGenerationTriggerSource } from "../db/schema.js";
 import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
+import { isPostgresCheckViolation, isPostgresUniqueViolation } from "../lib/postgres-errors.js";
 import { normalizeUploadedAvatarUrl } from "../lib/storage.js";
 import {
   consumeOwnedDraftAvatarCompletion,
@@ -46,6 +48,8 @@ const MAX_DISPLAY_NAME_LENGTH = 80;
 const MAX_PERSONALITY_PROMPT_LENGTH = 8_000;
 const MAX_PUBLIC_BIOGRAPHY_LENGTH = 2_000;
 const MAX_STRATEGY_STYLE_LENGTH = 2_000;
+const AGENT_NAME_UNIQUE_CONSTRAINT = "agent_profiles_normalized_name_unique";
+const AGENT_NAME_HOUSE_RESERVED_CONSTRAINT = "agent_profiles_name_not_house_reserved";
 
 const CREATE_AGENT_FIELDS = new Set([
   "displayName",
@@ -85,6 +89,7 @@ const IMMUTABLE_AGENT_FIELDS = new Set([
 export type AgentProfileManagementErrorCode =
   | "agent_not_found"
   | "account_not_found"
+  | "agent_name_taken"
   | "invalid_agent_input"
   | "invalid_archetype"
   | "immutable_field"
@@ -357,6 +362,7 @@ function prepareAgentProfileCreate(
   input: CreateAgentProfileMutationInput,
 ): typeof schema.agentProfiles.$inferInsert {
   const name = requiredStringField(input.name, "name", MAX_DISPLAY_NAME_LENGTH);
+  assertAgentNameNotReserved(name);
   const personality = requiredStringField(
     input.personality,
     "personality",
@@ -417,22 +423,25 @@ export async function createOwnedAgentProfile(
 ): Promise<AgentProfileMutationRead> {
   await getAccountRating(db, context.userId);
   const values = prepareAgentProfileCreate(context, input);
-  const result = await db.transaction(async (tx) => {
-    const created = await createAgentProfileInTransaction(tx, values);
-    if (created.profile.avatarUrl) {
-      await recordAvatarChange(tx, {
-        userId: context.userId,
-        agentProfileId: created.profile.id,
-        source: context.avatarChangeSource ?? "mcp_provided_avatar",
-        status: "completed",
-        generationRequestId: context.avatarGenerationRequestId,
-        previousAvatarUrl: null,
-        newAvatarUrl: created.profile.avatarUrl,
-      });
-    }
-    return created;
-  });
-  return result;
+  try {
+    return await db.transaction(async (tx) => {
+      const created = await createAgentProfileInTransaction(tx, values);
+      if (created.profile.avatarUrl) {
+        await recordAvatarChange(tx, {
+          userId: context.userId,
+          agentProfileId: created.profile.id,
+          source: context.avatarChangeSource ?? "mcp_provided_avatar",
+          status: "completed",
+          generationRequestId: context.avatarGenerationRequestId,
+          previousAvatarUrl: null,
+          newAvatarUrl: created.profile.avatarUrl,
+        });
+      }
+      return created;
+    });
+  } catch (error) {
+    throw mapAgentNameConstraintError(error);
+  }
 }
 
 export async function adoptOwnedDraftAvatarAndCreateAgentProfile(
@@ -445,7 +454,8 @@ export async function adoptOwnedDraftAvatarAndCreateAgentProfile(
   await getAccountRating(db, context.userId);
   const values = prepareAgentProfileCreate(context, input);
 
-  return db.transaction(async (tx) => {
+  try {
+    return await db.transaction(async (tx) => {
       const consumed = await consumeOwnedDraftAvatarCompletion(tx, {
         userId: context.userId,
         generationRequestId,
@@ -468,7 +478,10 @@ export async function adoptOwnedDraftAvatarAndCreateAgentProfile(
         });
       }
       return { ok: true, result, completion };
-  });
+    });
+  } catch (error) {
+    throw mapAgentNameConstraintError(error);
+  }
 }
 
 export async function updateOwnedAgentProfile(
@@ -501,7 +514,7 @@ export async function updateOwnedAgentProfile(
           true,
         );
       }
-      throw error;
+      throw mapAgentNameConstraintError(error);
     }
   }
   throw new Error("Agent profile update attempts exhausted unexpectedly");
@@ -641,7 +654,9 @@ function prepareAgentProfileUpdates(
     updatedAt: new Date().toISOString(),
   };
   if (input.name !== undefined) {
-    updates.name = requiredStringField(input.name, "name", MAX_DISPLAY_NAME_LENGTH);
+    const name = requiredStringField(input.name, "name", MAX_DISPLAY_NAME_LENGTH);
+    assertAgentNameNotReserved(name);
+    updates.name = name;
   }
   if (input.personality !== undefined) {
     updates.personality = requiredStringField(
@@ -1275,6 +1290,26 @@ function invalidArchetypeError(): AgentProfileManagementError {
     `Invalid archetype. Must be one of: ${formatUserSelectableAgentArchetypeKeys()}.`,
     400,
     { supportedArchetypes: formatUserSelectableAgentArchetypeKeys().split(", ") },
+  );
+}
+
+function assertAgentNameNotReserved(name: string): void {
+  if (isReservedHouseAgentName(name)) throw agentNameTakenError();
+}
+
+function mapAgentNameConstraintError(error: unknown): unknown {
+  if (isPostgresUniqueViolation(error, AGENT_NAME_UNIQUE_CONSTRAINT)
+    || isPostgresCheckViolation(error, AGENT_NAME_HOUSE_RESERVED_CONSTRAINT)) {
+    return agentNameTakenError();
+  }
+  return error;
+}
+
+function agentNameTakenError(): AgentProfileManagementError {
+  return new AgentProfileManagementError(
+    "agent_name_taken",
+    "That agent name is already in use. Choose another name.",
+    409,
   );
 }
 
