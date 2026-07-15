@@ -6,9 +6,9 @@ import { completedGameModeHref, gameHighlightsHref, gameHref } from "@/lib/game-
 import {
   getCompletedGameResults,
   getGameAlliances,
-  type CompetitionReceipt,
   type CompletedGameResultsResponse,
   type GameDetail,
+  type GameCompetitionReceipt,
   type PublicGameAlliancesResponse,
 } from "@/lib/api";
 import { buildCompletedAllianceArcsModel, type AllianceFactsLoadState } from "./match-watch-alliance-model";
@@ -234,7 +234,7 @@ export function CompletedResultsSeasonSummary({
   receipts = [],
 }: {
   seasonId?: string;
-  receipts?: CompetitionReceipt[];
+  receipts?: GameCompetitionReceipt[];
 }) {
   if (!seasonId && receipts.length === 0) return null;
   const points = receipts.reduce((sum, receipt) => sum + receipt.totalPoints, 0);

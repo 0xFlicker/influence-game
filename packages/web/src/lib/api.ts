@@ -1953,7 +1953,7 @@ export interface GameDetail {
   seasonId?: string;
   season?: Pick<SeasonIdentity, "id" | "slug" | "name">;
   rated?: boolean;
-  competitionReceipts?: CompetitionReceipt[];
+  competitionReceipts?: GameCompetitionReceipt[];
   winner?: string;
   winnerPersona?: string;
   finalists?: [string, string];
@@ -2307,6 +2307,10 @@ export interface CompetitionReceipt {
   eligibilityReason: string | null;
   accountRatingDelta: number | null;
   earnedAt: string;
+}
+
+export interface GameCompetitionReceipt extends CompetitionReceipt {
+  seasonTotalPoints: number;
 }
 
 export interface OwnedCompetitionReceipt extends CompetitionReceipt {

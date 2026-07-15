@@ -64,6 +64,54 @@ describe("season read model", () => {
     expect(denied).toBeNull();
   });
 
+  test("adds the agent's current season total to game receipts", async () => {
+    const fixture = await seedStandingsFixture();
+    const alpha = (await fixture.db.select().from(schema.agentProfiles))
+      .find((profile) => profile.id === fixture.alphaId)!;
+    const laterGameId = randomUUID();
+    await fixture.db.insert(schema.games).values({
+      id: laterGameId,
+      slug: `later-${laterGameId}`,
+      config: "{}",
+      status: "completed",
+      trackType: "free",
+      seasonId: fixture.seasonId,
+      minPlayers: 4,
+      maxPlayers: 4,
+      endedAt: "2026-07-20T00:00:00.000Z",
+    });
+    await fixture.db.insert(schema.competitionReceipts).values({
+      id: randomUUID(),
+      seasonId: fixture.seasonId,
+      gameId: laterGameId,
+      ownerId: fixture.ownerA,
+      agentProfileId: fixture.alphaId,
+      agentRevisionId: alpha.currentRevisionId!,
+      ownerDisplayNameSnapshot: "Architect A",
+      agentNameSnapshot: "Alpha",
+      eligibilityStatus: "eligible",
+      lobbySize: 4,
+      placement: 3,
+      basePoints: 5,
+      fieldBonus: 0,
+      totalPoints: 5,
+      scoringPolicyVersion: "season-scoring-v1",
+      earnedAt: "2026-07-20T00:00:00.000Z",
+    });
+
+    const game = await getPublicGameCompetitionReceipts(
+      fixture.db,
+      fixture.seasonSlug,
+      fixture.firstGameId,
+    );
+
+    expect(game?.receipts[0]).toMatchObject({
+      agentName: "Alpha",
+      totalPoints: 120,
+      seasonTotalPoints: 125,
+    });
+  });
+
   test("exports bounded owner data with JSON parity and spreadsheet-safe CSV", async () => {
     const fixture = await seedStandingsFixture({ injectedName: true });
     const json = await exportOwnedSeasonReceipts(fixture.db, {
