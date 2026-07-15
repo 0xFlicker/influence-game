@@ -19,15 +19,6 @@ export const HOUSE_AGENT_NAMES = [
   "Thane", "Iris", "Cyrus", "Wren", "Dax",
 ] as const;
 
-const NORMALIZED_HOUSE_AGENT_NAMES = new Set(
-  HOUSE_AGENT_NAMES.map((name) => name.toLowerCase()),
-);
-
-/** Whether a display name is reserved by the canonical House-agent catalog. */
-export function isReservedHouseAgentName(name: string): boolean {
-  return NORMALIZED_HOUSE_AGENT_NAMES.has(name.trim().toLowerCase());
-}
-
 // ---------------------------------------------------------------------------
 // Default personality blurbs (fallback if LLM fails)
 // ---------------------------------------------------------------------------

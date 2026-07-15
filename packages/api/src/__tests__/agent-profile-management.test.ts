@@ -189,7 +189,7 @@ describe("agent profile management service", () => {
     expect("statsReset" in read).toBe(false);
   });
 
-  test("rejects globally used and reserved names without revealing the conflict", async () => {
+  test("allows globally duplicated and House-catalog names while uniqueness is deferred", async () => {
     await createOwnedAgent(db, { userId: USER_B_ID }, {
       displayName: "Ember Quill",
       archetype: "strategic",
@@ -198,38 +198,30 @@ describe("agent profile management service", () => {
       strategyStyle: null,
     });
 
-    await expect(createOwnedAgent(db, { userId: USER_A_ID }, {
+    const duplicate = await createOwnedAgent(db, { userId: USER_A_ID }, {
       displayName: "  EMBER QUILL  ",
       archetype: "strategic",
       personalityPrompt: "A distinct competitor with a colliding name.",
       publicBiography: null,
       strategyStyle: null,
-    })).rejects.toMatchObject({
-      code: "agent_name_taken",
-      statusCode: 409,
-      message: "That agent name is already in use. Choose another name.",
-      details: undefined,
-    } satisfies Partial<AgentProfileManagementError>);
+    });
 
-    await expect(createOwnedAgent(db, { userId: USER_A_ID }, {
+    const houseCatalogName = await createOwnedAgent(db, { userId: USER_A_ID }, {
       displayName: " atlas ",
       archetype: "strategic",
       personalityPrompt: "Trying a reserved House identity.",
       publicBiography: null,
       strategyStyle: null,
-    })).rejects.toMatchObject({
-      code: "agent_name_taken",
-      statusCode: 409,
-      message: "That agent name is already in use. Choose another name.",
-      details: undefined,
-    } satisfies Partial<AgentProfileManagementError>);
+    });
 
-    expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
-    expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
+    expect(duplicate.agent.displayName).toBe("EMBER QUILL");
+    expect(houseCatalogName.agent.displayName).toBe("atlas");
+    expect(await db.select().from(schema.agentProfiles)).toHaveLength(3);
+    expect(await db.select().from(schema.agentRevisions)).toHaveLength(3);
     expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
   });
 
-  test("allows exactly one concurrent normalized-name create without orphaned side effects", async () => {
+  test("allows concurrent normalized-name duplicates without orphaned side effects", async () => {
     const create = (userId: string, displayName: string) => createOwnedAgent(db, {
       userId,
       publicBaseUrl: "https://influence.test",
@@ -248,20 +240,14 @@ describe("agent profile management service", () => {
       create(USER_B_ID, " signal bloom "),
     ]);
 
-    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
-    const rejected = outcomes.find((outcome) => outcome.status === "rejected") as PromiseRejectedResult;
-    expect(rejected.reason).toMatchObject({
-      code: "agent_name_taken",
-      statusCode: 409,
-      details: undefined,
-    });
-    expect(await db.select().from(schema.agentProfiles)).toHaveLength(1);
-    expect(await db.select().from(schema.agentRevisions)).toHaveLength(1);
-    expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(1);
+    expect(outcomes.every((outcome) => outcome.status === "fulfilled")).toBe(true);
+    expect(await db.select().from(schema.agentProfiles)).toHaveLength(2);
+    expect(await db.select().from(schema.agentRevisions)).toHaveLength(2);
+    expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(2);
     expect(await db.select().from(schema.freeGameQueue)).toHaveLength(0);
   });
 
-  test("rejects cross-owner rename collisions before revision or avatar side effects", async () => {
+  test("allows a cross-owner duplicate rename with revision and avatar side effects", async () => {
     const ownerA = await createOwnedAgent(db, { userId: USER_A_ID }, {
       displayName: "Quiet Meridian",
       archetype: "strategic",
@@ -278,25 +264,22 @@ describe("agent profile management service", () => {
     });
     const revisionsBefore = await db.select().from(schema.agentRevisions);
 
-    await expect(updateOwnedAgent(db, { userId: USER_A_ID }, {
+    const updated = await updateOwnedAgent(db, { userId: USER_A_ID }, {
       agentId: ownerA.agent.id,
       displayName: " copper warden ",
-      avatarUrl: "/api/uploads/local?key=avatars/should-not-write.png",
-    })).rejects.toMatchObject({
-      code: "agent_name_taken",
-      statusCode: 409,
-      details: undefined,
-    } satisfies Partial<AgentProfileManagementError>);
+      avatarUrl: "https://cdn.example/should-write.png",
+    });
 
-    const [unchanged] = await db.select().from(schema.agentProfiles)
+    const [persisted] = await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, ownerA.agent.id));
-    expect(unchanged?.name).toBe("Quiet Meridian");
-    expect(unchanged?.avatarUrl).toBeNull();
-    expect(await db.select().from(schema.agentRevisions)).toHaveLength(revisionsBefore.length);
-    expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(0);
+    expect(updated.agent.displayName).toBe("copper warden");
+    expect(persisted?.name).toBe("copper warden");
+    expect(persisted?.avatarUrl).toBe("https://cdn.example/should-write.png");
+    expect(await db.select().from(schema.agentRevisions)).toHaveLength(revisionsBefore.length + 1);
+    expect(await db.select().from(schema.avatarChangeEvents)).toHaveLength(1);
   });
 
-  test("allows a legacy reserved-name profile to keep its normalized name while blocking new adoption", async () => {
+  test("allows legacy and newly adopted House-catalog names while uniqueness is deferred", async () => {
     await insertAgent(db, {
       id: "legacy-atlas",
       userId: USER_A_ID,
@@ -320,14 +303,11 @@ describe("agent profile management service", () => {
     expect(legacy.agent.displayName).toBe("Atlas");
     expect(legacy.agent.personalityPrompt).toBe("Improved strategy without adopting a new identity.");
 
-    await expect(updateOwnedAgent(db, { userId: USER_B_ID }, {
+    const adopted = await updateOwnedAgent(db, { userId: USER_B_ID }, {
       agentId: "rename-candidate",
       displayName: "atlas",
-    })).rejects.toMatchObject({
-      code: "agent_name_taken",
-      statusCode: 409,
-      details: undefined,
-    } satisfies Partial<AgentProfileManagementError>);
+    });
+    expect(adopted.agent.displayName).toBe("atlas");
   });
 
   test("updates owned mutable fields without resetting lifetime statistics", async () => {

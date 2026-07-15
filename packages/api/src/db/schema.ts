@@ -235,7 +235,6 @@ export const agentProfiles = pgTable("agent_profiles", {
   index("agent_profiles_user_id_idx").on(table.userId),
   index("agent_profiles_name_idx").on(table.name),
   index("agent_profiles_name_id_idx").on(table.name, table.id),
-  uniqueIndex("agent_profiles_normalized_name_unique").on(sql`lower(btrim(${table.name}))`),
   index("agent_profiles_current_revision_idx").on(table.currentRevisionId),
   check("agent_profiles_gender_check", sql`${table.gender} IS NULL OR ${table.gender} IN ('male', 'female', 'non-binary')`),
 ]);

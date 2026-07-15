@@ -854,7 +854,7 @@ function userAgentWriteTools(): unknown[] {
   return [
     tool({
       name: "create_agent",
-      description: "Create a distinctly named Agent Profile as a separate competitive identity with independent career and season history. Never use create_agent to tune, revise, or re-enroll an existing competitor; resolve owned identities first and use update_agent when one exists. An agent_name_taken error reveals no conflicting identity, so search the owner's agents and update an owned match or choose a different name. Requires agents:read and agents:write. Side effects: inserts an agent profile and, when no avatar is supplied and quota allows, starts portrait generation reported through avatarCompletion.",
+      description: "Create an Agent Profile as a separate competitive identity with independent career and season history. Never use create_agent to tune, revise, or re-enroll an existing competitor; resolve owned identities first and use update_agent when one exists. Requires agents:read and agents:write. Side effects: inserts an agent profile and, when no avatar is supplied and quota allows, starts portrait generation reported through avatarCompletion.",
       properties: {
         displayName: { type: "string" },
         archetype: { type: "string", enum: USER_SELECTABLE_AGENT_ARCHETYPE_KEYS },

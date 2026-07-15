@@ -759,7 +759,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(created.receipt.agent.agentProfileId).toBe(updated.agent.id);
   });
 
-  test("keeps name-taken MCP errors generic and non-retryable", async () => {
+  test("allows duplicate names while global uniqueness is deferred", async () => {
     const db = await setupTestDB();
     await db.insert(schema.users).values([
       { id: GAMES_AUTH.userId, email: "games-user@test.example" },
@@ -790,17 +790,9 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       },
     }, GAMES_AUTH);
 
-    expect(response?.result).toBeUndefined();
-    expect(response?.error).toMatchObject({
-      message: "That agent name is already in use. Choose another name.",
-      data: {
-        code: "agent_name_taken",
-        statusCode: 409,
-        retryable: false,
-      },
-    });
-    expect(JSON.stringify(response?.error)).not.toContain("private-conflict-agent");
-    expect(JSON.stringify(response?.error)).not.toContain("other-owner");
+    expect(response?.error).toBeUndefined();
+    expect(response?.result).toBeDefined();
+    expect(await db.select().from(schema.agentProfiles)).toHaveLength(2);
   });
 
   test("returns structured domain error data for management failures", async () => {

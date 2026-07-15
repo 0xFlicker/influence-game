@@ -1,11 +1,9 @@
 import { randomUUID } from "crypto";
-import { isReservedHouseAgentName } from "@influence/engine";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import type { AvatarChangeSource, AvatarGenerationTriggerSource } from "../db/schema.js";
 import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
-import { isPostgresUniqueViolation } from "../lib/postgres-errors.js";
 import { normalizeUploadedAvatarUrl } from "../lib/storage.js";
 import {
   consumeOwnedDraftAvatarCompletion,
@@ -48,8 +46,6 @@ const MAX_DISPLAY_NAME_LENGTH = 80;
 const MAX_PERSONALITY_PROMPT_LENGTH = 8_000;
 const MAX_PUBLIC_BIOGRAPHY_LENGTH = 2_000;
 const MAX_STRATEGY_STYLE_LENGTH = 2_000;
-const AGENT_NAME_UNIQUE_INDEX = "agent_profiles_normalized_name_unique";
-const AGENT_NAME_TAKEN_MESSAGE = "That agent name is already in use. Choose another name.";
 
 const CREATE_AGENT_FIELDS = new Set([
   "displayName",
@@ -92,7 +88,6 @@ export type AgentProfileManagementErrorCode =
   | "invalid_agent_input"
   | "invalid_archetype"
   | "immutable_field"
-  | "agent_name_taken"
   | "waiting_roster_name_conflict"
   | "agent_update_reconciliation_failed"
   | "agent_update_conflict"
@@ -362,7 +357,6 @@ function prepareAgentProfileCreate(
   input: CreateAgentProfileMutationInput,
 ): typeof schema.agentProfiles.$inferInsert {
   const name = requiredStringField(input.name, "name", MAX_DISPLAY_NAME_LENGTH);
-  assertAgentNameNotReserved(name);
   const personality = requiredStringField(
     input.personality,
     "personality",
@@ -423,26 +417,21 @@ export async function createOwnedAgentProfile(
 ): Promise<AgentProfileMutationRead> {
   await getAccountRating(db, context.userId);
   const values = prepareAgentProfileCreate(context, input);
-  let result: AgentProfileMutationRead;
-  try {
-    result = await db.transaction(async (tx) => {
-      const created = await createAgentProfileInTransaction(tx, values);
-      if (created.profile.avatarUrl) {
-        await recordAvatarChange(tx, {
-          userId: context.userId,
-          agentProfileId: created.profile.id,
-          source: context.avatarChangeSource ?? "mcp_provided_avatar",
-          status: "completed",
-          generationRequestId: context.avatarGenerationRequestId,
-          previousAvatarUrl: null,
-          newAvatarUrl: created.profile.avatarUrl,
-        });
-      }
-      return created;
-    });
-  } catch (error) {
-    throw mapAgentNameConflict(error);
-  }
+  const result = await db.transaction(async (tx) => {
+    const created = await createAgentProfileInTransaction(tx, values);
+    if (created.profile.avatarUrl) {
+      await recordAvatarChange(tx, {
+        userId: context.userId,
+        agentProfileId: created.profile.id,
+        source: context.avatarChangeSource ?? "mcp_provided_avatar",
+        status: "completed",
+        generationRequestId: context.avatarGenerationRequestId,
+        previousAvatarUrl: null,
+        newAvatarUrl: created.profile.avatarUrl,
+      });
+    }
+    return created;
+  });
   return result;
 }
 
@@ -456,8 +445,7 @@ export async function adoptOwnedDraftAvatarAndCreateAgentProfile(
   await getAccountRating(db, context.userId);
   const values = prepareAgentProfileCreate(context, input);
 
-  try {
-    return await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
       const consumed = await consumeOwnedDraftAvatarCompletion(tx, {
         userId: context.userId,
         generationRequestId,
@@ -480,10 +468,7 @@ export async function adoptOwnedDraftAvatarAndCreateAgentProfile(
         });
       }
       return { ok: true, result, completion };
-    });
-  } catch (error) {
-    throw mapAgentNameConflict(error);
-  }
+  });
 }
 
 export async function updateOwnedAgentProfile(
@@ -516,7 +501,7 @@ export async function updateOwnedAgentProfile(
           true,
         );
       }
-      throw mapAgentNameConflict(error);
+      throw error;
     }
   }
   throw new Error("Agent profile update attempts exhausted unexpectedly");
@@ -542,7 +527,7 @@ async function updateAgentProfileInTransaction(
     FOR UPDATE
   `);
   const existing = await requireOwnedAgentProfile(tx, input.context.userId, input.agentId);
-  const updates = prepareAgentProfileUpdates(input.context, input.input, existing);
+  const updates = prepareAgentProfileUpdates(input.context, input.input);
   const profile = (await tx.update(schema.agentProfiles)
     .set(updates)
     .where(and(
@@ -651,16 +636,12 @@ async function updateAgentProfileInTransaction(
 function prepareAgentProfileUpdates(
   context: AgentProfileManagementContext,
   input: UpdateAgentProfileMutationInput,
-  existing: AgentProfileRow,
 ): Partial<typeof schema.agentProfiles.$inferInsert> {
   const updates: Partial<typeof schema.agentProfiles.$inferInsert> = {
     updatedAt: new Date().toISOString(),
   };
   if (input.name !== undefined) {
     updates.name = requiredStringField(input.name, "name", MAX_DISPLAY_NAME_LENGTH);
-    if (normalizeSavedAgentName(updates.name) !== normalizeSavedAgentName(existing.name)) {
-      assertAgentNameNotReserved(updates.name);
-    }
   }
   if (input.personality !== undefined) {
     updates.personality = requiredStringField(
@@ -1233,30 +1214,6 @@ function requiredStringField(value: unknown, field: string, maxLength: number): 
     );
   }
   return trimmed;
-}
-
-function assertAgentNameNotReserved(name: string): void {
-  if (isReservedHouseAgentName(name)) {
-    throw agentNameTakenError();
-  }
-}
-
-function normalizeSavedAgentName(name: string): string {
-  return name.trim().toLowerCase();
-}
-
-function agentNameTakenError(): AgentProfileManagementError {
-  return new AgentProfileManagementError(
-    "agent_name_taken",
-    AGENT_NAME_TAKEN_MESSAGE,
-    409,
-  );
-}
-
-function mapAgentNameConflict(error: unknown): unknown {
-  return isPostgresUniqueViolation(error, AGENT_NAME_UNIQUE_INDEX)
-    ? agentNameTakenError()
-    : error;
 }
 
 function optionalStringField(value: unknown, field: string, maxLength: number): string | null {

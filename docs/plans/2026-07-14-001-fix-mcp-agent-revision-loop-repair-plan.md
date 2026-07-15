@@ -12,6 +12,8 @@ deepened: 2026-07-14
 
 # Core MCP Agent Revision Loop Repair - Plan
 
+> **2026-07-14 release amendment:** Global uniqueness for saved Agent Profile names is deferred. The unique-index migration, House-catalog create/rename rejection, and `agent_name_taken` contract described below are superseded and must not ship. Existing duplicate profiles remain untouched. Per-game roster validation may still reject two same-name seats when a waiting roster is reconciled or frozen because gameplay currently resolves participants by display name.
+
 ## Goal Capsule
 
 - **Objective:** Preserve one owned agent identity through postgame edits, active revision creation, waiting-enrollment propagation, and game start while making the correct MCP tool choice clear, observable, and easy for connected LLMs to follow.

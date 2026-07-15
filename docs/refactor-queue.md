@@ -312,11 +312,11 @@ Status legend:
 ### W17. Legacy Agent Profile and House-name cleanup
 
 - Status: `future`
-- Sources: `docs/plans/2026-07-14-001-fix-mcp-agent-revision-loop-repair-plan.md`, the global saved-profile name-uniqueness migration preflight, and the canonical House-agent catalog in `packages/engine/src/persona-generator.ts`.
-- Signal: the reported duplicate Lillith profile has been removed, but some older auto-generated Agent Profiles may still use names now reserved by the House-agent catalog. Those catalog collisions do not block the database unique index because they are not duplicate saved profiles.
+- Sources: `docs/plans/2026-07-14-001-fix-mcp-agent-revision-loop-repair-plan.md`, the deferred global saved-profile name-uniqueness work, and the canonical House-agent catalog in `packages/engine/src/persona-generator.ts`.
+- Signal: staging contains legitimate historical profiles with the same normalized display name. Global saved-profile uniqueness is intentionally deferred; no migration may block startup, rename identities, or delete profiles to enforce it.
 - Concrete seam: normalized Agent Profile name audit, House-agent reserved-name catalog, profile ownership/history, admin profile management, and owner communication before any rename.
 - Validation path: produce a read-only collision report; verify each candidate's ownership and game history; after explicit cleanup, prove no saved profile conflicts with another saved profile or the reserved catalog and that historical `game_players` snapshots remain unchanged.
-- Promotion trigger: the migration audit finds legacy House-name collisions that cannot be safely identified as disposable test/seed data.
+- Promotion trigger: duplicate names create concrete player or operator confusion that outweighs the identity-migration cost.
 - Suggested slice if promoted: review ambiguous profiles individually and rename or retire them only with explicit owner/admin intent. Never silently rename, merge, or delete a competitive identity during migration.
 
 ## Closed / Removed
