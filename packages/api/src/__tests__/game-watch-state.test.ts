@@ -113,7 +113,27 @@ describe("GameWatchState", () => {
       kernelHealth: "suspended",
       failureReason: "completion_settlement_transient_failure",
     });
-    const events = withJuryWinner(createCanonicalEventFixture(gameId), "mira");
+    const eventsWithWinner = withJuryWinner(createCanonicalEventFixture(gameId), "mira");
+    const winnerEvent = eventsWithWinner.at(-1)!;
+    const finalLoserElimination: CanonicalGameEvent = {
+      sequence: winnerEvent.sequence + 1,
+      gameId,
+      round: 4,
+      phase: null,
+      type: "player.eliminated",
+      timestamp: "2026-06-20T00:00:02.000Z",
+      source: "engine",
+      visibility: "system",
+      payloadVersion: 1,
+      sourcePointers: [],
+      payload: {
+        playerId: "echo",
+        playerName: "Echo",
+        eliminatedRound: 4,
+        juryMember: { playerId: "echo", playerName: "Echo", eliminatedRound: 4 },
+      },
+    };
+    const events = [...eventsWithWinner, finalLoserElimination];
     await insertCanonicalEventRows(db, gameId, ownerEpoch, events);
 
     const state = await getGameWatchState(db, gameId);
@@ -126,6 +146,8 @@ describe("GameWatchState", () => {
     expect(state?.final.winner).toBeUndefined();
     expect(state?.final.roundsPlayed).toBeUndefined();
     expect(state?.winner).toBeUndefined();
+    expect(state?.players.find((player) => player.id === "mira")?.status).toBe("alive");
+    expect(state?.players.find((player) => player.id === "echo")?.status).toBe("alive");
   });
 
   test("labels older completed games without durable events as best-available terminal result", async () => {

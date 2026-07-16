@@ -235,6 +235,9 @@ export async function appendDurableEventsAndPublishWatchState(
   },
 ): Promise<void> {
   await appendGameEvents(db, params);
+  if (params.events.some((event) => event.type === "jury.winner_determined")) {
+    return;
+  }
   const refresh = await tryRefreshGameWatchStateSummary(db, params.gameId, "durable_append");
   await publishCurrentWatchState(db, params.gameId, "durable append", refresh?.watchState);
 }
@@ -920,17 +923,11 @@ async function runGameAsync(
     });
     completionCaptured = true;
     await settleCapturedGameCompletion(db, gameId, { source: "runner" });
+    runner.releaseTerminalStream();
     const refresh = await tryRefreshGameWatchStateSummary(db, gameId, "completion");
     await publishCurrentWatchState(db, gameId, "completion", refresh?.watchState);
     await reconcilePostgameMediaAfterCompletion(db, gameId);
     persistedTranscriptEntries = result.transcript.length;
-    broadcastRaw(gameId, {
-      type: "game_over",
-      winner: result.winner,
-      winnerName: result.winnerName,
-      totalRounds: result.rounds,
-    });
-
   } catch (err) {
     // Game failed — owner-backed runs fail closed instead of pretending to cancel/complete.
     const errorMessage = err instanceof Error ? err.message : String(err);
@@ -941,6 +938,7 @@ async function runGameAsync(
       try {
         const settlement = await getGameCompletionSettlementSummary(db, gameId);
         if (settlement.state === "completed") {
+          runner.releaseTerminalStream();
           const refresh = await tryRefreshGameWatchStateSummary(db, gameId, "completion_confirmed");
           await publishCurrentWatchState(db, gameId, "completion confirmed", refresh?.watchState);
           await reconcilePostgameMediaAfterCompletion(db, gameId);

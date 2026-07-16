@@ -5,6 +5,7 @@ import {
   RetrySettlementDialog,
   settlementRetryErrorMessage,
   settlementRetryIsAvailable,
+  settlementRetryIsTerminalConflict,
   settlementRetrySuccessMessage,
 } from "../app/admin/games/game-history-browser";
 import {
@@ -77,12 +78,17 @@ describe("admin completion settlement retry", () => {
   });
 
   test("maps stable blocked states to operator-safe copy", () => {
-    expect(settlementRetryErrorMessage(new ApiError(409, "blocked", "repair_blocked"))).toBe(
+    const repairBlocked = new ApiError(409, "blocked", "repair_blocked");
+    const invalidState = new ApiError(409, "changed", "invalid_state");
+    expect(settlementRetryErrorMessage(repairBlocked)).toBe(
       "Retry is blocked because this settlement requires evidence repair.",
     );
-    expect(settlementRetryErrorMessage(new ApiError(409, "changed", "invalid_state"))).toBe(
+    expect(settlementRetryErrorMessage(invalidState)).toBe(
       "This settlement is no longer ready for retry. Refresh and inspect its current state.",
     );
+    expect(settlementRetryIsTerminalConflict(repairBlocked)).toBeTrue();
+    expect(settlementRetryIsTerminalConflict(invalidState)).toBeTrue();
+    expect(settlementRetryIsTerminalConflict(new Error("network"))).toBeFalse();
   });
 });
 

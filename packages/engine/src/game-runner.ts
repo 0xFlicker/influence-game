@@ -76,6 +76,7 @@ export class GameRunner {
   private readonly tokenTracker?: TokenTracker;
   private readonly resumeFrom?: GameRunnerOptions["resumeFrom"];
   private flushedCanonicalSequence = 0;
+  private terminalStreamReleased = false;
   private readonly writtenCheckpointKeys = new Set<string>();
   private houseStrategyBible: HouseStrategyBiblePacket | null = null;
   private readonly completedHouseSummaryRounds = new Set<number>();
@@ -187,6 +188,25 @@ export class GameRunner {
     this.logger.setStreamListener(listener);
   }
 
+  /**
+   * Publish the terminal stream only after the caller has durably settled the
+   * completed game. Durable runs retain jury/finale events until this boundary
+   * so a failed settlement cannot reveal an outcome the read models still hold
+   * as non-final.
+   */
+  releaseTerminalStream(): void {
+    if (!this.durableEventSink || this.terminalStreamReleased) return;
+    this.terminalStreamReleased = true;
+    this.logger.flushStreamBuffer();
+    const winner = this.gameState.getWinner();
+    this.logger.emitStream({
+      type: "game_over",
+      winner: winner?.id,
+      winnerName: winner?.name,
+      totalRounds: this.gameState.round,
+    });
+  }
+
   /** Register a listener for canonical accepted domain events. */
   setCanonicalEventListener(listener: CanonicalEventListener): () => void {
     return this.gameState.subscribeCanonicalEvents(listener, { replayExisting: true });
@@ -280,6 +300,7 @@ export class GameRunner {
 
     await this.flushDurableEvents({
       continueBuffering: false,
+      releaseStream: false,
       checkpointKind: "terminal",
       phase: Phase.END,
     });
@@ -333,6 +354,7 @@ export class GameRunner {
 
   private async flushDurableEvents(options: {
     continueBuffering: boolean;
+    releaseStream?: boolean;
     checkpointKind?: GameCheckpointKind;
     phase?: Phase;
     phaseActor?: PhaseActor;
@@ -342,17 +364,23 @@ export class GameRunner {
     const pendingEvents = this.gameState
       .getCanonicalEvents()
       .filter((event) => event.sequence > this.flushedCanonicalSequence);
+    const terminalOutcomeAccepted = pendingEvents.some(
+      (event) => event.type === "jury.winner_determined",
+    );
+    const releaseStream = options.releaseStream !== false && !terminalOutcomeAccepted;
 
     try {
       if (pendingEvents.length > 0) {
         await this.durableEventSink(pendingEvents);
         this.flushedCanonicalSequence = pendingEvents[pendingEvents.length - 1]!.sequence;
       }
-      this.logger.flushStreamBuffer();
+      if (releaseStream) {
+        this.logger.flushStreamBuffer();
+      }
       if (options.checkpointKind) {
         await this.writeCheckpoint(options.checkpointKind, options.phase, options.phaseActor);
       }
-      if (options.continueBuffering) {
+      if (options.continueBuffering && releaseStream) {
         this.logger.beginStreamBuffering();
       }
     } catch (error) {

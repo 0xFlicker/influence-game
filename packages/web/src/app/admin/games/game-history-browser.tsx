@@ -262,6 +262,11 @@ export function settlementRetryErrorMessage(error: unknown): string {
         : "Settlement retry failed.";
 }
 
+export function settlementRetryIsTerminalConflict(error: unknown): boolean {
+  return error instanceof ApiError
+    && (error.code === "invalid_state" || error.code === "repair_blocked");
+}
+
 export function RetrySettlementDialog({
   game,
   onClose,
@@ -274,6 +279,7 @@ export function RetrySettlementDialog({
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [retryBlocked, setRetryBlocked] = useState(false);
   const [status, setStatus] = useState<{ tone: "success" | "error"; message: string } | null>(null);
 
   useEffect(() => {
@@ -298,6 +304,10 @@ export function RetrySettlementDialog({
       onSettled();
     } catch (error) {
       setStatus({ tone: "error", message: settlementRetryErrorMessage(error) });
+      if (settlementRetryIsTerminalConflict(error)) {
+        setRetryBlocked(true);
+        onSettled();
+      }
     } finally {
       setSubmitting(false);
     }
@@ -331,7 +341,7 @@ export function RetrySettlementDialog({
           maxLength={240}
           value={reason}
           onChange={(event) => setReason(event.target.value)}
-          disabled={submitting || status?.tone === "success"}
+          disabled={submitting || retryBlocked || status?.tone === "success"}
           placeholder="Why is this retry safe now?"
           className="mt-2 w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/25 focus:border-amber-400 focus:outline-none disabled:opacity-50"
         />
@@ -348,9 +358,9 @@ export function RetrySettlementDialog({
             disabled={submitting}
             className="rounded-lg px-3 py-2 text-sm text-white/55 transition-colors hover:text-white disabled:opacity-40"
           >
-            {status?.tone === "success" ? "Close" : "Cancel"}
+            {status?.tone === "success" || retryBlocked ? "Close" : "Cancel"}
           </button>
-          {status?.tone !== "success" && (
+          {status?.tone !== "success" && !retryBlocked && (
             <button
               type="submit"
               disabled={submitting || reason.trim().length === 0}

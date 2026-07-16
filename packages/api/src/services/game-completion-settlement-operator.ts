@@ -9,6 +9,7 @@ import type {
 import {
   COMPLETION_SETTLEMENT_TRANSIENT_FAILURE,
   GameCompletionSettlementError,
+  getGameCompletionSettlementSummary,
   settleCapturedGameCompletion,
   type SettleCapturedGameCompletionResult,
 } from "./game-completion-settlement.js";
@@ -138,6 +139,7 @@ export async function retryCapturedGameCompletionAsOperator(
   },
   dependencies: {
     settleCapturedGameCompletion?: typeof settleCapturedGameCompletion;
+    finalizeRequestedOperatorAudit?: typeof finalizeRequestedOperatorAudit;
   } = {},
 ): Promise<SettleCapturedGameCompletionResult> {
   const snapshot = await loadSettlementAuditSnapshot(db, input.gameId);
@@ -200,6 +202,34 @@ export async function retryCapturedGameCompletionAsOperator(
     }
     try {
       const resulting = await loadSettlementAuditSnapshot(db, input.gameId);
+      if (resulting.state === "completed") {
+        const settlement = await getGameCompletionSettlementSummary(db, input.gameId);
+        if (!settlement.resultHash || !settlement.completedAt) {
+          throw new Error("Completed settlement is missing its durable receipt fields");
+        }
+        try {
+          const finalizeAudit = dependencies.finalizeRequestedOperatorAudit
+            ?? finalizeRequestedOperatorAudit;
+          await finalizeAudit(db, {
+            auditAttemptId,
+            outcome: "already_completed",
+            resultingState: "completed",
+            safeMetadata: { reasonCode: "settlement_commit_confirmed" },
+          });
+        } catch (auditError) {
+          const message = auditError instanceof Error ? auditError.message : String(auditError);
+          console.warn(
+            `[completion-settlement] Settlement ${input.gameId} completed, but audit finalization was deferred: ${message}`,
+          );
+        }
+        return {
+          outcome: "already_completed",
+          state: "completed",
+          resultHash: settlement.resultHash,
+          completedAt: settlement.completedAt,
+          settlement,
+        };
+      }
       await finalizeRequestedOperatorAudit(db, {
         auditAttemptId,
         outcome: "failed",
@@ -274,7 +304,7 @@ async function finalizeRequestedOperatorAudit(
   db: DrizzleDB,
   input: {
     auditAttemptId: string;
-    outcome: "repair_blocked" | "invalid_state" | "failed";
+    outcome: "already_completed" | "repair_blocked" | "invalid_state" | "failed";
     resultingState: GameCompletionSettlementState | null;
     safeFailureCode?: string;
     safeMetadata: Record<string, unknown>;

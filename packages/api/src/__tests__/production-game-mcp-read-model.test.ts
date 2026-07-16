@@ -155,8 +155,29 @@ describe("ProductionGameMcpReadModel", () => {
     expect(timeline.diagnostics).toEqual([]);
 
     const juryEvent = withJuryWinner(events, "atlas").at(-1)!;
-    await appendGameEvents(db, { gameId, ownerEpoch, events: [juryEvent] });
-    const finalEvent = juryEvent;
+    const finalEvent: CanonicalGameEvent = {
+      sequence: juryEvent.sequence + 1,
+      gameId,
+      round: juryEvent.round,
+      phase: null,
+      type: "player.eliminated",
+      timestamp: "2026-06-20T00:00:02.000Z",
+      source: "engine",
+      visibility: "system",
+      payloadVersion: 1,
+      sourcePointers: [],
+      payload: {
+        playerId: "echo",
+        playerName: "Echo",
+        eliminatedRound: juryEvent.round,
+        juryMember: {
+          playerId: "echo",
+          playerName: "Echo",
+          eliminatedRound: juryEvent.round,
+        },
+      },
+    };
+    await appendGameEvents(db, { gameId, ownerEpoch, events: [juryEvent, finalEvent] });
     await captureGameCompletionSettlement(db, {
       gameId,
       ownerEpoch,
@@ -235,6 +256,18 @@ describe("ProductionGameMcpReadModel", () => {
       eventType: "jury.vote_cast",
     }, PRODUCER_ACCESS);
     expect(pendingJuryVotes.canonicalGameFacts.events).toEqual([]);
+    const pendingFinalElimination = await readModel.filterEvents({
+      gameIdOrSlug: gameId,
+      eventType: "player.eliminated",
+      fromSequence: finalEvent.sequence,
+    }, PRODUCER_ACCESS);
+    expect(pendingFinalElimination.canonicalGameFacts.events).toEqual([]);
+    const pendingRoundFacts = await readModel.readRoundFacts({
+      gameIdOrSlug: gameId,
+      round: finalEvent.round,
+    }, PRODUCER_ACCESS);
+    expect(pendingRoundFacts.canonicalGameFacts.roundFacts.players.eliminated)
+      .not.toContainEqual(expect.objectContaining({ id: "echo" }));
   });
 
   test("reads LLM-native postgame surfaces for edge-smoke-dusk", async () => {

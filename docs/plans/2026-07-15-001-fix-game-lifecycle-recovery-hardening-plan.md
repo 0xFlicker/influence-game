@@ -284,7 +284,7 @@ sequenceDiagram
 
 ### Persistence Contract
 
-Add two game-owned tables in migration `0039`:
+Add two game-owned tables in migration `0040`:
 
 - `game_completion_settlements`: one row per game with originating owner epoch, final event sequence and hash, payload schema version, private JSONB envelope, payload hash, state, attempt count, last safe failure code, captured/attempted/completed timestamps, and uniqueness/check constraints.
 - `game_completion_settlement_attempts`: append-only operational receipts keyed to game and settlement where available, with source, actor, requested reason, outcome, prior/resulting state, result hash, safe failure code/metadata, and timestamp.
@@ -319,7 +319,7 @@ The envelope is immutable after insert. Only state, attempt metadata, and comple
 
 ### Migration and Rollback Safety
 
-- Migration `0039` is additive and does not backfill historical games. A suspended legacy game without an envelope remains non-retryable.
+- Migration `0040` is additive and does not backfill historical games. A suspended legacy game without an envelope remains non-retryable.
 - Apply the migration before starting code that can capture an envelope. The API must fail startup clearly if the new tables are unavailable; silent fallback to the old monolithic completion path is forbidden.
 - After any envelope has reached `pending` or `repair_required`, do not roll back to a binary whose recovery selector is unaware of completion settlements while startup recovery is enabled. Disable `INFLUENCE_API_STARTUP_RECOVERY` before such a rollback, or retain the new exclusion classifier until all sealed terminal games are completed or explicitly accounted for.
 - Do not drop the new tables during rollback while any non-completed settlement exists. The envelope is the only exact terminal outcome available for those games.
@@ -345,8 +345,8 @@ The envelope is immutable after insert. Only state, attempt metadata, and comple
 - **Dependencies:** None.
 - **Files:**
   - `packages/api/src/db/schema.ts`
-  - `packages/api/drizzle/0039_*.sql`
-  - `packages/api/drizzle/meta/0039_snapshot.json`
+  - `packages/api/drizzle/0040_game_completion_settlements.sql`
+  - `packages/api/drizzle/meta/0040_snapshot.json`
   - `packages/api/drizzle/meta/_journal.json`
   - `packages/api/src/services/game-completion-settlement.ts` (new)
   - `packages/api/src/__tests__/test-utils.ts`

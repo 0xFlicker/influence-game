@@ -14,6 +14,7 @@ import {
 } from "./game-event-read-model.js";
 import {
   getPersistedGameProjection,
+  getPersistedGameProjectionBeforeTerminalOutcome,
   summarizeCanonicalProjection,
   type PersistedGameProjectionRead,
   type ProjectionReplayDiagnostic,
@@ -197,7 +198,9 @@ export async function buildGameWatchState(
   ]);
   const config = parseConfig(game.config);
   const maxRounds = numberFromConfig(config.maxRounds, 10);
-  const projection = getPersistedGameProjection(persistedEvents);
+  const projection = game.status === "completed"
+    ? getPersistedGameProjection(persistedEvents)
+    : getPersistedGameProjectionBeforeTerminalOutcome(persistedEvents);
   const source = classifySource(game.status, result, projection);
   const committedResult = game.status === "completed" ? result : null;
   const projectedSummary = projection.summary;

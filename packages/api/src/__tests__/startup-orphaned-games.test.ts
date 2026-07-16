@@ -155,6 +155,36 @@ describe("startup orphaned game cleanup", () => {
       .toBe("suspended");
   });
 
+  test("suspends when durable events belong to a different owner epoch", async () => {
+    const gameId = await insertGame(db, {
+      id: "owner-event-epoch-disagreement",
+      status: "in_progress",
+    });
+    const eventOwnerEpoch = await insertOwner(db, gameId, { status: "expired" });
+    const events = createCanonicalEventFixture(gameId);
+    await insertCanonicalEventRows(db, gameId, eventOwnerEpoch, events);
+    const finalEvent = events.at(-1);
+    if (!finalEvent) throw new Error("Expected canonical event fixture");
+    const activeOwnerEpoch = await insertOwner(db, gameId, {
+      status: "active",
+      lastPersistedEventSequence: finalEvent.sequence,
+    });
+
+    const result = await suspendOrphanedInProgressGamesOnStartup(db);
+
+    expect(result.suspended).toEqual([expect.objectContaining({
+      gameId,
+      reason: "owner_event_epoch_disagreement",
+      details: expect.objectContaining({
+        activeOwnerCount: 1,
+        activeOwnerEpochs: [activeOwnerEpoch],
+        eventOwnerEpochs: [eventOwnerEpoch],
+      }),
+    })]);
+    expect((await db.select().from(schema.games).where(eq(schema.games.id, gameId)))[0]?.status)
+      .toBe("suspended");
+  });
+
   test("suspends missing ownership as ambiguous startup evidence", async () => {
     const gameId = await insertGame(db, { id: "missing-owner-orphan", status: "in_progress" });
 

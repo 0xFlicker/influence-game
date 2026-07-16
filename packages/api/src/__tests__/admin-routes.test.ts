@@ -23,7 +23,10 @@ import {
 import { hashCanonicalEvent } from "../services/game-events.js";
 import { setupTestDB } from "./test-utils.js";
 import { createSeason } from "../services/seasons.js";
-import { captureGameCompletionSettlement } from "../services/game-completion-settlement.js";
+import {
+  captureGameCompletionSettlement,
+  settleCapturedGameCompletion,
+} from "../services/game-completion-settlement.js";
 
 const ADMIN_ADDRESS = "0xadmin000000000000000000000000000000000001";
 const GAMER_ADDRESS = "0xgamer000000000000000000000000000000000001";
@@ -411,6 +414,30 @@ describe("admin route RBAC", () => {
     expect(failed.status).toBe(500);
     expect(JSON.stringify(await failed.json())).not.toContain("private injected failure detail");
 
+    const ambiguousFixture = await createPendingSettlementFixture(db, "admin-settlement-ambiguous");
+    const ambiguousApp = new Hono();
+    ambiguousApp.route("/", createAdminRoutes(db, {
+      completionSettlement: {
+        settleCapturedGameCompletion: async (settlementDb, gameId, context) => {
+          await settleCapturedGameCompletion(settlementDb, gameId, context);
+          throw new Error("commit acknowledgement lost");
+        },
+      },
+    }));
+    const ambiguous = await ambiguousApp.request(
+      `/api/admin/games/${ambiguousFixture.gameId}/completion-settlement/retry`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reason: "operator verifies ambiguous commit",
+          confirmation: "RETRY_SETTLEMENT",
+        }),
+      },
+    );
+    expect(ambiguous.status).toBe(200);
+    expect((await ambiguous.json() as Record<string, unknown>).outcome).toBe("already_completed");
+
     const repairFixture = await createPendingSettlementFixture(db, "admin-settlement-repair");
     await db.update(schema.gameCompletionSettlements).set({
       state: "repair_required",
@@ -453,7 +480,7 @@ describe("admin route RBAC", () => {
     expect(outcomes).toContain("failed");
     expect(outcomes.filter((outcome) => outcome === "denied")).toHaveLength(3);
     const requestedAudits = settlementAudits.filter((row) => row.outcome === "requested");
-    expect(requestedAudits).toHaveLength(5);
+    expect(requestedAudits).toHaveLength(6);
     for (const requested of requestedAudits) {
       const terminal = settlementAudits.find((row) => row.requestAttemptId === requested.id);
       expect(terminal).toBeDefined();
@@ -469,6 +496,37 @@ describe("admin route RBAC", () => {
     }
     expect(JSON.stringify(settlementAudits))
       .not.toContain("private settlement transcript");
+  });
+
+  test("returns confirmed ambiguous settlement success when audit finalization is deferred", async () => {
+    const fixture = await createPendingSettlementFixture(db, "admin-settlement-audit-deferred");
+    const auditDeferredApp = new Hono();
+    auditDeferredApp.route("/", createAdminRoutes(db, {
+      completionSettlement: {
+        settleCapturedGameCompletion: async (settlementDb, gameId, context) => {
+          await settleCapturedGameCompletion(settlementDb, gameId, context);
+          throw new Error("commit acknowledgement lost");
+        },
+        finalizeRequestedOperatorAudit: async () => {
+          throw new Error("audit store unavailable");
+        },
+      },
+    }));
+
+    const response = await auditDeferredApp.request(
+      `/api/admin/games/${fixture.gameId}/completion-settlement/retry`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reason: "operator confirms ambiguous commit",
+          confirmation: "RETRY_SETTLEMENT",
+        }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json() as Record<string, unknown>).outcome).toBe("already_completed");
   });
 
   test("admin game history uses slug and persisted season identity", async () => {
