@@ -126,6 +126,20 @@ bun run dist/backfill-agent-revisions.js
 
 Creating a season in the producer UI immediately makes it active. The same UI can close admission, inspect competition evidence, and finalize the crowns.
 
+### Daily Free draw idempotency
+
+`POST /api/free-queue/draw` requires an `Idempotency-Key` header containing 1-200 nonblank characters. A successful draw persists that key on the created Daily Free game. Retrying the same key returns the existing game; a distinct key is a distinct draw request, even on the same UTC date. This lets a recovered late game coexist with the following scheduled draw without weakening duplicate-delivery protection.
+
+The production scheduler passes its exact scheduled time to `cron-free-game-draw`, which derives `daily-free:schedule:<scheduled-time>` and sends the same key to staging and production. For a missed scheduled draw, invoke the Lambda with the original `scheduledTime`. For a deliberate manual draw, pass a unique `drawRequestKey`, or run `scripts/free-game-draw.sh`; the script prints its generated key. Reuse that exact value after an ambiguous timeout instead of generating another key.
+
+This contract spans `linode-iac`, `github-apps`, and this repository. Deploy it in compatibility order:
+
+1. Apply the `linode-iac` scheduler input while the old Lambda still ignores the extra payload.
+2. Deploy the `github-apps` Lambda. Do not invoke the dual-target draw before the API cutover; the old API cannot persist the new key, so a pre-cutover smoke can create an unkeyed production game.
+3. Deploy the Influence API migration and required-header behavior.
+
+Reversing that order can turn the scheduled draw into a `400` or a Lambda input error. Validate the scheduler payload and header forwarding in tests before cutover. After the next intended scheduled or recovery draw, repeat that exact payload and verify both calls resolve to the same existing game rather than creating another one.
+
 For completed API-backed games, use the postgame MCP tools (`read_game_brief`, `read_jury_breakdown`, `read_player_game_summary`, `read_game_turning_points`, and `list_agent_games`) or the `/api/games/:id/postgame/*` REST mirrors before falling back to raw canonical event filters. They are compact, structured, canonical-event-derived views intended for LLM analysis of winners, jury splits, round summaries, player arcs, derived vote cohorts, highlighted eliminations, momentum, and turning points. `read_game_brief` v2 starts with an `executiveSummary`, includes round `headline` values and `gameMomentum`, and marks derived objects with confidence; derived vote cohorts are repeated shared vote outcomes, not confirmed alliance membership.
 
 For API-backed durable runs, owner-backed games can write private decision trace content to the configured private content bucket and keep only manifests/counts in Postgres. To inspect those traces from a trusted local MCP client:

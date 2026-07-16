@@ -1,5 +1,5 @@
 {
-  "id": "883ff961-4d76-4fb5-931f-8f7d7c0b2f8c",
+  "id": "a1a3ba3f-3da3-4ade-8a42-25b11e03d9e6",
   "prevId": "784bacb9-bc34-4a7e-8700-755889c162ce",
   "version": "7",
   "dialect": "postgresql",
@@ -2889,435 +2889,6 @@
         "game_cognitive_artifacts_payload_byte_length_check": {
           "name": "game_cognitive_artifacts_payload_byte_length_check",
           "value": "\"game_cognitive_artifacts\".\"payload_byte_length\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.game_completion_settlement_attempts": {
-      "name": "game_completion_settlement_attempts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "game_id": {
-          "name": "game_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "settlement_id": {
-          "name": "settlement_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "actor_user_id": {
-          "name": "actor_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "requested_reason": {
-          "name": "requested_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "prior_state": {
-          "name": "prior_state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "resulting_state": {
-          "name": "resulting_state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "result_hash": {
-          "name": "result_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "safe_failure_code": {
-          "name": "safe_failure_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "safe_metadata": {
-          "name": "safe_metadata",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()::text"
-        }
-      },
-      "indexes": {
-        "game_completion_settlement_attempts_game_id_idx": {
-          "name": "game_completion_settlement_attempts_game_id_idx",
-          "columns": [
-            {
-              "expression": "game_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "game_completion_settlement_attempts_settlement_id_idx": {
-          "name": "game_completion_settlement_attempts_settlement_id_idx",
-          "columns": [
-            {
-              "expression": "settlement_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "game_completion_settlement_attempts_game_id_games_id_fk": {
-          "name": "game_completion_settlement_attempts_game_id_games_id_fk",
-          "tableFrom": "game_completion_settlement_attempts",
-          "tableTo": "games",
-          "columnsFrom": [
-            "game_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "game_completion_settlement_attempts_actor_user_id_users_id_fk": {
-          "name": "game_completion_settlement_attempts_actor_user_id_users_id_fk",
-          "tableFrom": "game_completion_settlement_attempts",
-          "tableTo": "users",
-          "columnsFrom": [
-            "actor_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "game_completion_settlement_attempts_game_settlement_fk": {
-          "name": "game_completion_settlement_attempts_game_settlement_fk",
-          "tableFrom": "game_completion_settlement_attempts",
-          "tableTo": "game_completion_settlements",
-          "columnsFrom": [
-            "game_id",
-            "settlement_id"
-          ],
-          "columnsTo": [
-            "game_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "game_completion_settlement_attempts_source_check": {
-          "name": "game_completion_settlement_attempts_source_check",
-          "value": "\"game_completion_settlement_attempts\".\"source\" IN ('runner', 'admin')"
-        },
-        "game_completion_settlement_attempts_outcome_check": {
-          "name": "game_completion_settlement_attempts_outcome_check",
-          "value": "\"game_completion_settlement_attempts\".\"outcome\" IN ('succeeded', 'already_completed', 'repair_required', 'failed', 'denied')"
-        },
-        "game_completion_settlement_attempts_prior_state_check": {
-          "name": "game_completion_settlement_attempts_prior_state_check",
-          "value": "\"game_completion_settlement_attempts\".\"prior_state\" IS NULL OR \"game_completion_settlement_attempts\".\"prior_state\" IN ('pending', 'repair_required', 'completed')"
-        },
-        "game_completion_settlement_attempts_resulting_state_check": {
-          "name": "game_completion_settlement_attempts_resulting_state_check",
-          "value": "\"game_completion_settlement_attempts\".\"resulting_state\" IS NULL OR \"game_completion_settlement_attempts\".\"resulting_state\" IN ('pending', 'repair_required', 'completed')"
-        },
-        "game_completion_settlement_attempts_result_hash_check": {
-          "name": "game_completion_settlement_attempts_result_hash_check",
-          "value": "\"game_completion_settlement_attempts\".\"result_hash\" IS NULL OR \"game_completion_settlement_attempts\".\"result_hash\" ~ '^sha256:[0-9a-f]{64}$'"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.game_completion_settlements": {
-      "name": "game_completion_settlements",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "game_id": {
-          "name": "game_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_epoch": {
-          "name": "owner_epoch",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "final_event_sequence": {
-          "name": "final_event_sequence",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "final_event_hash": {
-          "name": "final_event_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload_schema_version": {
-          "name": "payload_schema_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload_hash": {
-          "name": "payload_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "attempt_count": {
-          "name": "attempt_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "last_safe_failure_code": {
-          "name": "last_safe_failure_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "retry_ready_at": {
-          "name": "retry_ready_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "captured_at": {
-          "name": "captured_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()::text"
-        },
-        "last_attempted_at": {
-          "name": "last_attempted_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "completed_at": {
-          "name": "completed_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()::text"
-        }
-      },
-      "indexes": {
-        "game_completion_settlements_game_id_unique": {
-          "name": "game_completion_settlements_game_id_unique",
-          "columns": [
-            {
-              "expression": "game_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "game_completion_settlements_state_idx": {
-          "name": "game_completion_settlements_state_idx",
-          "columns": [
-            {
-              "expression": "state",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "retry_ready_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "game_completion_settlements_game_id_games_id_fk": {
-          "name": "game_completion_settlements_game_id_games_id_fk",
-          "tableFrom": "game_completion_settlements",
-          "tableTo": "games",
-          "columnsFrom": [
-            "game_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "game_completion_settlements_game_owner_fk": {
-          "name": "game_completion_settlements_game_owner_fk",
-          "tableFrom": "game_completion_settlements",
-          "tableTo": "game_run_owners",
-          "columnsFrom": [
-            "game_id",
-            "owner_epoch"
-          ],
-          "columnsTo": [
-            "game_id",
-            "owner_epoch"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "game_completion_settlements_event_boundary_fk": {
-          "name": "game_completion_settlements_event_boundary_fk",
-          "tableFrom": "game_completion_settlements",
-          "tableTo": "game_events",
-          "columnsFrom": [
-            "game_id",
-            "final_event_sequence"
-          ],
-          "columnsTo": [
-            "game_id",
-            "sequence"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "game_completion_settlements_game_id_id_unique": {
-          "name": "game_completion_settlements_game_id_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "game_id",
-            "id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "game_completion_settlements_state_check": {
-          "name": "game_completion_settlements_state_check",
-          "value": "\"game_completion_settlements\".\"state\" IN ('pending', 'repair_required', 'completed')"
-        },
-        "game_completion_settlements_event_sequence_check": {
-          "name": "game_completion_settlements_event_sequence_check",
-          "value": "\"game_completion_settlements\".\"final_event_sequence\" > 0"
-        },
-        "game_completion_settlements_payload_schema_version_check": {
-          "name": "game_completion_settlements_payload_schema_version_check",
-          "value": "\"game_completion_settlements\".\"payload_schema_version\" = 1"
-        },
-        "game_completion_settlements_attempt_count_check": {
-          "name": "game_completion_settlements_attempt_count_check",
-          "value": "\"game_completion_settlements\".\"attempt_count\" >= 0"
-        },
-        "game_completion_settlements_final_event_hash_check": {
-          "name": "game_completion_settlements_final_event_hash_check",
-          "value": "\"game_completion_settlements\".\"final_event_hash\" ~ '^sha256:[0-9a-f]{64}$'"
-        },
-        "game_completion_settlements_payload_hash_check": {
-          "name": "game_completion_settlements_payload_hash_check",
-          "value": "\"game_completion_settlements\".\"payload_hash\" ~ '^sha256:[0-9a-f]{64}$'"
-        },
-        "game_completion_settlements_completed_at_check": {
-          "name": "game_completion_settlements_completed_at_check",
-          "value": "\n    (\"game_completion_settlements\".\"state\" = 'completed' AND \"game_completion_settlements\".\"completed_at\" IS NOT NULL)\n    OR (\"game_completion_settlements\".\"state\" <> 'completed' AND \"game_completion_settlements\".\"completed_at\" IS NULL)\n  "
-        },
-        "game_completion_settlements_retry_ready_check": {
-          "name": "game_completion_settlements_retry_ready_check",
-          "value": "\n    \"game_completion_settlements\".\"retry_ready_at\" IS NULL OR \"game_completion_settlements\".\"state\" = 'pending'\n  "
         }
       },
       "isRLSEnabled": false
@@ -6347,6 +5918,12 @@
           "notNull": true,
           "default": "'custom'"
         },
+        "free_draw_request_key": {
+          "name": "free_draw_request_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "season_id": {
           "name": "season_id",
           "type": "text",
@@ -6490,6 +6067,22 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "games_free_draw_request_key_unique": {
+          "name": "games_free_draw_request_key_unique",
+          "columns": [
+            {
+              "expression": "free_draw_request_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"games\".\"track_type\" = 'free' AND \"games\".\"free_draw_request_key\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -6531,7 +6124,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "games_free_draw_request_key_length_check": {
+          "name": "games_free_draw_request_key_length_check",
+          "value": "\"games\".\"free_draw_request_key\" IS NULL OR char_length(\"games\".\"free_draw_request_key\") BETWEEN 1 AND 200"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.invite_codes": {

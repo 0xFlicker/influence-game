@@ -278,22 +278,15 @@
     {
       "idx": 39,
       "version": "7",
-      "when": 1784150284468,
-      "tag": "0039_game_completion_settlements",
+      "when": 1784163060224,
+      "tag": "0039_free_draw_request_idempotency",
       "breakpoints": true
     },
     {
       "idx": 40,
       "version": "7",
-      "when": 1784153009361,
-      "tag": "0040_completion_settlement_operator_audit",
-      "breakpoints": true
-    },
-    {
-      "idx": 41,
-      "version": "7",
-      "when": 1784155141974,
-      "tag": "0041_completion_settlement_immutability",
+      "when": 1784167464769,
+      "tag": "0040_game_completion_settlements",
       "breakpoints": true
     }
   ]
