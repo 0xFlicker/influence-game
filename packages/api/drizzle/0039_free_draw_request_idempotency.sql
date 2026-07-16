@@ -1,0 +1,3 @@
+ALTER TABLE "games" ADD COLUMN "free_draw_request_key" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "games_free_draw_request_key_unique" ON "games" USING btree ("free_draw_request_key") WHERE "games"."track_type" = 'free' AND "games"."free_draw_request_key" IS NOT NULL;--> statement-breakpoint
+ALTER TABLE "games" ADD CONSTRAINT "games_free_draw_request_key_length_check" CHECK ("games"."free_draw_request_key" IS NULL OR char_length("games"."free_draw_request_key") BETWEEN 1 AND 200);
