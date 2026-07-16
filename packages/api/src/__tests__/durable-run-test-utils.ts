@@ -48,6 +48,35 @@ export function createCanonicalEventFixture(gameId: string): readonly CanonicalG
   return state.getCanonicalEvents();
 }
 
+export function withJuryWinner(
+  events: readonly CanonicalGameEvent[],
+  winnerId: string,
+): readonly CanonicalGameEvent[] {
+  const last = events.at(-1);
+  if (!last) throw new Error("Expected fixture events");
+  return [
+    ...events,
+    {
+      sequence: last.sequence + 1,
+      gameId: last.gameId,
+      round: 4,
+      phase: Phase.JURY_VOTE,
+      type: "jury.winner_determined",
+      timestamp: "2026-06-20T00:00:01.000Z",
+      source: "engine",
+      visibility: "system",
+      payloadVersion: 1,
+      sourcePointers: [],
+      payload: {
+        tally: { votes: {} },
+        winnerId,
+        method: "random_tiebreaker",
+        voteCounts: [],
+      },
+    },
+  ];
+}
+
 export function createResolvedRoundCanonicalEventFixture(gameId: string): readonly CanonicalGameEvent[] {
   const state = new GameState(
     [

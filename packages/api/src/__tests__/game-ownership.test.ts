@@ -12,8 +12,13 @@ import {
   markOwnerStartupFailed,
   revokeActiveGameRunOwner,
 } from "../services/game-ownership.js";
+import { hashCanonicalEvent } from "../services/game-events.js";
 import { createSeason } from "../services/seasons.js";
 import { COMPETITION_RATING_POLICY_VERSION } from "../services/season-policy.js";
+import {
+  createCanonicalEventFixture,
+  insertCanonicalEventRows,
+} from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
 
 describe("atomic game owner claim and roster freeze", () => {
@@ -322,6 +327,73 @@ describe("atomic game owner claim and roster freeze", () => {
     expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({ status: "in_progress" });
     expect(await ownedSeatFor(fixture.db, fixture.gameId, fixture.profileA.id)).toEqual(frozenSeat);
     expect(await fixture.db.select().from(schema.competitionRatingSnapshots)).toEqual(snapshotsBefore);
+  });
+
+  test("atomically rejects startup teardown when durable events or a sealed settlement exist", async () => {
+    const eventFixture = await createRatedWaitingFixture();
+    const eventOwner = await acquireGameRunOwner(eventFixture.db, eventFixture.gameId);
+    expect(eventOwner.ok).toBeTrue();
+    if (!eventOwner.ok) throw new Error(eventOwner.error);
+    const event = createCanonicalEventFixture(eventFixture.gameId)[0];
+    if (!event) throw new Error("Expected canonical event fixture");
+    await insertCanonicalEventRows(
+      eventFixture.db,
+      eventFixture.gameId,
+      eventOwner.claim.ownerEpoch,
+      [event],
+    );
+
+    await expect(markOwnerStartupFailed(
+      eventFixture.db,
+      eventFixture.gameId,
+      eventOwner.claim.ownerEpoch,
+      "must not erase an accepted event",
+    )).rejects.toMatchObject({ code: "stale_owner" });
+    expect(await gameRow(eventFixture.db, eventFixture.gameId)).toMatchObject({ status: "in_progress" });
+    expect((await eventFixture.db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.ownerEpoch, eventOwner.claim.ownerEpoch)))[0])
+      .toMatchObject({ status: "active", lastPersistedEventSequence: 0 });
+    expect(await eventFixture.db.select().from(schema.gameEvents)
+      .where(eq(schema.gameEvents.gameId, eventFixture.gameId))).toHaveLength(1);
+
+    const settlementFixture = await createRatedWaitingFixture();
+    const settlementOwner = await acquireGameRunOwner(settlementFixture.db, settlementFixture.gameId);
+    expect(settlementOwner.ok).toBeTrue();
+    if (!settlementOwner.ok) throw new Error(settlementOwner.error);
+    const settlementEvents = createCanonicalEventFixture(settlementFixture.gameId);
+    await insertCanonicalEventRows(
+      settlementFixture.db,
+      settlementFixture.gameId,
+      settlementOwner.claim.ownerEpoch,
+      settlementEvents,
+    );
+    const finalEvent = settlementEvents.at(-1);
+    if (!finalEvent) throw new Error("Expected canonical event fixture");
+    await settlementFixture.db.insert(schema.gameCompletionSettlements).values({
+      id: randomUUID(),
+      gameId: settlementFixture.gameId,
+      ownerEpoch: settlementOwner.claim.ownerEpoch,
+      finalEventSequence: finalEvent.sequence,
+      finalEventHash: hashCanonicalEvent(finalEvent),
+      payload: {},
+      payloadHash: `sha256:${"b".repeat(64)}`,
+      state: "pending",
+    });
+
+    await expect(markOwnerStartupFailed(
+      settlementFixture.db,
+      settlementFixture.gameId,
+      settlementOwner.claim.ownerEpoch,
+      "must not erase a sealed completion",
+    )).rejects.toMatchObject({ code: "stale_owner" });
+    expect(await gameRow(settlementFixture.db, settlementFixture.gameId))
+      .toMatchObject({ status: "in_progress" });
+    expect((await settlementFixture.db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.ownerEpoch, settlementOwner.claim.ownerEpoch)))[0])
+      .toMatchObject({ status: "active", lastPersistedEventSequence: 0 });
+    expect(await settlementFixture.db.select().from(schema.gameCompletionSettlements)
+      .where(eq(schema.gameCompletionSettlements.gameId, settlementFixture.gameId)))
+      .toHaveLength(1);
   });
 
   test("suspended recovery preserves the frozen seat bytes", async () => {

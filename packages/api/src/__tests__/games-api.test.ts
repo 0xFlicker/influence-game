@@ -16,6 +16,10 @@ import { randomUUID } from "crypto";
 import { setupTestDB } from "./test-utils.js";
 import { abortAllGames } from "../services/game-lifecycle.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
+import {
+  captureGameCompletionSettlement,
+  prepareCapturedCompletionAfterRunnerExit,
+} from "../services/game-completion-settlement.js";
 import { refreshGameWatchStateSummary } from "../services/game-watch-state-summary.js";
 import { setServer } from "../services/ws-manager.js";
 import { createSeason } from "../services/seasons.js";
@@ -136,6 +140,45 @@ async function createTestGame(
     ),
   );
   return res.json() as Promise<{ id: string; slug: string }>;
+}
+
+function terminalCaptureInput(
+  gameId: string,
+  ownerEpoch: string,
+  events: readonly CanonicalGameEvent[],
+) {
+  const finalEvent = events.at(-1)!;
+  return {
+    gameId,
+    ownerEpoch,
+    finalEventSequence: finalEvent.sequence,
+    finalEventHash: hashCanonicalEvent(finalEvent),
+    terminalResult: {
+      gameId,
+      winnerId: "atlas",
+      winnerName: "Atlas",
+      rounds: 1,
+      transcript: [],
+      eliminationOrder: [],
+      rankedPlayerIds: ["atlas"],
+    },
+    tokenUsage: {
+      total: {
+        promptTokens: 0,
+        cachedTokens: 0,
+        completionTokens: 0,
+        reasoningTokens: 0,
+        totalTokens: 0,
+        callCount: 0,
+        emptyResponses: 0,
+      },
+      perAction: {},
+    },
+    resolvedModel: "test-model",
+    calculatedCost: null,
+    completionConfig: {},
+    finishedAt: "2026-07-15T12:00:00.000Z",
+  } satisfies Parameters<typeof captureGameCompletionSettlement>[1];
 }
 
 async function joinTestPlayer(
@@ -700,6 +743,76 @@ describe("Game REST API", () => {
           projection: { availability: "unavailable" },
         },
       });
+    });
+
+    test("keeps pending and repair-required settlements publicly suspended and non-final", async () => {
+      const pending = await createTestGame(app, adminToken);
+      const repair = await createTestGame(app, adminToken);
+      const legacy = await createTestGame(app, adminToken);
+
+      for (const fixture of [pending, repair, legacy]) {
+        await db.update(schema.games).set({
+          status: "suspended",
+          config: JSON.stringify({ errorInfo: "private runner failure detail" }),
+        }).where(eq(schema.games.id, fixture.id));
+      }
+      for (const [fixture, state] of [
+        [pending, "pending"],
+        [repair, "repair_required"],
+      ] as const) {
+        const events = createCanonicalEventFixture(fixture.id);
+        const finalEvent = events.at(-1)!;
+        const ownerEpoch = await insertOwner(db, fixture.id, {
+          status: "expired",
+          lastPersistedEventSequence: finalEvent.sequence,
+        });
+        await insertCanonicalEventRows(db, fixture.id, ownerEpoch, events);
+        await db.insert(schema.gameCompletionSettlements).values({
+          id: randomUUID(),
+          gameId: fixture.id,
+          ownerEpoch,
+          finalEventSequence: finalEvent.sequence,
+          finalEventHash: hashCanonicalEvent(finalEvent),
+          payload: {},
+          payloadHash: `sha256:${"b".repeat(64)}`,
+          state,
+          ...(state === "repair_required" && {
+            lastSafeFailureCode: "completion_boundary_conflict",
+          }),
+        });
+      }
+
+      const listResponse = await app.request("/api/games?status=suspended");
+      const listed = (await listResponse.json()) as Array<Record<string, unknown>>;
+      const byId = new Map(listed.map((game) => [game.id, game]));
+      expect(byId.get(pending.id)).toMatchObject({
+        status: "suspended",
+        errorInfo: "Finalizing results.",
+      });
+      expect(byId.get(repair.id)).toMatchObject({
+        status: "suspended",
+        errorInfo: "Results under review.",
+      });
+      expect(byId.get(legacy.id)).toMatchObject({
+        status: "suspended",
+        errorInfo: "The game failed and cannot be resumed.",
+      });
+      expect(byId.get(pending.id)).not.toHaveProperty("winner");
+      expect(byId.get(repair.id)).not.toHaveProperty("winner");
+      expect(byId.get(legacy.id)).not.toHaveProperty("winner");
+
+      for (const [fixture, errorInfo] of [
+        [pending, "Finalizing results."],
+        [repair, "Results under review."],
+        [legacy, "The game failed and cannot be resumed."],
+      ] as const) {
+        const response = await app.request(`/api/games/${fixture.id}`);
+        const detail = (await response.json()) as Record<string, unknown>;
+        expect(detail).toMatchObject({ status: "suspended", errorInfo });
+        expect(detail).not.toHaveProperty("winner");
+        expect(JSON.stringify(detail)).not.toContain("private runner failure detail");
+        expect(JSON.stringify(detail)).not.toContain("payloadHash");
+      }
     });
   });
 
@@ -1379,6 +1492,40 @@ describe("Game REST API", () => {
       }
     });
 
+    test("unwinds the exact zero-event owner when synchronous runner startup fails", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      for (let i = 0; i < 4; i++) {
+        await joinTestPlayer(app, id, `StartupPlayer${i}`, userToken);
+      }
+      const failingApp = new Hono().route("/", createGameRoutes(db, {
+        startGame: async () => {
+          throw new Error("Injected runner startup failure");
+        },
+      }));
+
+      const failed = await failingApp.request(`/api/games/${id}/start`, authPost(adminToken));
+
+      expect(failed.status).toBe(500);
+      expect((await failed.json()) as { error: string }).toMatchObject({
+        error: expect.any(String),
+      });
+      expect((await db.select().from(schema.games).where(eq(schema.games.id, id)))[0])
+        .toMatchObject({ status: "waiting", startedAt: null });
+      expect(await db.select().from(schema.gameEvents)
+        .where(eq(schema.gameEvents.gameId, id))).toHaveLength(0);
+      expect(await db.select().from(schema.gameRunOwners)
+        .where(eq(schema.gameRunOwners.gameId, id))).toEqual([
+        expect.objectContaining({
+          status: "closed",
+          kernelHealth: "degraded",
+        }),
+      ]);
+
+      const retried = await app.request(`/api/games/${id}/start`, authPost(adminToken));
+      expect(retried.status).toBe(200);
+      expect(await retried.json()).toMatchObject({ status: "in_progress" });
+    });
+
     test("rejects start with too few players", async () => {
       const { id } = await createTestGame(app, adminToken);
       await joinTestPlayer(app, id, "Solo", userToken);
@@ -1415,10 +1562,9 @@ describe("Game REST API", () => {
   describe("POST /api/games/:id/stop", () => {
     test("stops a running game", async () => {
       const { id } = await createTestGame(app, adminToken);
-      for (let i = 0; i < 4; i++) {
-        await joinTestPlayer(app, id, `Player${i}`, userToken);
-      }
-      await app.request(`/api/games/${id}/start`, authPost(adminToken));
+      await db.update(schema.games).set({ status: "in_progress" })
+        .where(eq(schema.games.id, id));
+      await insertOwner(db, id);
 
       const res = await app.request(`/api/games/${id}/stop`, authPost(adminToken));
       expect(res.status).toBe(200);
@@ -1461,6 +1607,64 @@ describe("Game REST API", () => {
       expect(owner.revokedAt).toBeTruthy();
       expect(owner.kernelHealth).toBe("suspended");
       expect(owner.failureReason).toBe("admin_void");
+    });
+
+    test("rejects stop once a completion result has been sealed", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      await db.update(schema.games).set({ status: "in_progress" })
+        .where(eq(schema.games.id, id));
+      const events = createCanonicalEventFixture(id);
+      const ownerEpoch = await insertOwner(db, id, {
+        lastPersistedEventSequence: events.length,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      });
+      await insertCanonicalEventRows(db, id, ownerEpoch, events);
+      await captureGameCompletionSettlement(db, terminalCaptureInput(id, ownerEpoch, events));
+      await prepareCapturedCompletionAfterRunnerExit(db, id, "runner_exit");
+
+      const res = await app.request(`/api/games/${id}/stop`, authPost(adminToken));
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({
+        error: "A sealed completion cannot be stopped or voided.",
+        code: "completion_settlement_sealed",
+      });
+      expect((await db.select().from(schema.games).where(eq(schema.games.id, id)))[0]?.status)
+        .toBe("suspended");
+    });
+
+    test("serializes stop against the one-way completion capture boundary", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      await db.update(schema.games).set({ status: "in_progress" })
+        .where(eq(schema.games.id, id));
+      const events = createCanonicalEventFixture(id);
+      const ownerEpoch = await insertOwner(db, id, {
+        lastPersistedEventSequence: events.length,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      });
+      await insertCanonicalEventRows(db, id, ownerEpoch, events);
+
+      const [captureAttempt, stopAttempt] = await Promise.allSettled([
+        captureGameCompletionSettlement(db, terminalCaptureInput(id, ownerEpoch, events)),
+        app.request(`/api/games/${id}/stop`, authPost(adminToken)),
+      ]);
+      expect(stopAttempt.status).toBe("fulfilled");
+      if (stopAttempt.status !== "fulfilled") throw stopAttempt.reason;
+
+      const game = (await db.select().from(schema.games).where(eq(schema.games.id, id)))[0]!;
+      const settlements = await db.select().from(schema.gameCompletionSettlements)
+        .where(eq(schema.gameCompletionSettlements.gameId, id));
+      if (stopAttempt.value.status === 200) {
+        expect(captureAttempt.status).toBe("rejected");
+        if (captureAttempt.status !== "rejected") throw new Error("Capture unexpectedly won");
+        expect(captureAttempt.reason).toMatchObject({ code: "game_not_in_progress" });
+        expect(game.status).toBe("cancelled");
+        expect(settlements).toHaveLength(0);
+      } else {
+        expect(stopAttempt.value.status).toBe(409);
+        expect(captureAttempt.status).toBe("fulfilled");
+        expect(game.status).toBe("in_progress");
+        expect(settlements).toHaveLength(1);
+      }
     });
 
     test("rejects stop for completed game", async () => {

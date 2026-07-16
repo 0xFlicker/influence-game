@@ -5,6 +5,7 @@ import { replayCanonicalEvents } from "../game-projection";
 import { DEFAULT_CONFIG, Phase } from "../types";
 import type { UUID } from "../types";
 import type { CanonicalGameEvent } from "../canonical-events";
+import type { GameStreamEvent } from "../game-runner.types";
 import { MockAgent } from "./mock-agent";
 
 function fixedClock(): () => number {
@@ -310,9 +311,23 @@ describe("GameRunner canonical events", () => {
     });
 
     const streamedTypes: string[] = [];
+    const viewerEvents: GameStreamEvent[] = [];
     runner.setCanonicalEventListener((event) => streamedTypes.push(event.type));
+    runner.setStreamListener((event) => viewerEvents.push(event));
 
     await runner.run();
+
+    expect(viewerEvents.some((event) => event.type === "game_over")).toBeFalse();
+    expect(viewerEvents.some((event) => (
+      event.type === "transcript_entry"
+      && event.entry.text.includes("THE WINNER IS")
+    ))).toBeFalse();
+    runner.releaseTerminalStream();
+    expect(viewerEvents.some((event) => event.type === "game_over")).toBeTrue();
+    expect(viewerEvents.some((event) => (
+      event.type === "transcript_entry"
+      && event.entry.text.includes("THE WINNER IS")
+    ))).toBeTrue();
 
     expect(streamedTypes[0]).toBe("game.roster_initialized");
     expect(streamedTypes).toContain("mingle.rooms_allocated");

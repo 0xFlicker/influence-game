@@ -12,6 +12,7 @@ import {
   insertCanonicalEventRows,
   insertGame,
   insertOwner,
+  withJuryWinner,
 } from "./durable-run-test-utils.js";
 
 describe("GameWatchState", () => {
@@ -77,6 +78,7 @@ describe("GameWatchState", () => {
     const ownerEpoch = await insertOwner(db, gameId);
     const events = withJuryWinner(createCanonicalEventFixture(gameId), "mira");
     await appendGameEvents(db, { gameId, ownerEpoch, events });
+    await insertResult(db, gameId, { winnerId: "mira", roundsPlayed: 3 });
 
     const state = await getGameWatchState(db, gameId);
 
@@ -97,6 +99,55 @@ describe("GameWatchState", () => {
         name: "Mira",
       },
     });
+  });
+
+  test("does not expose a durable terminal winner before completion settlement commits", async () => {
+    const gameId = await insertGame(db, {
+      slug: "watch-pending-completion-settlement",
+      status: "suspended",
+      config: gameConfig({ maxRounds: 5 }),
+    });
+    await insertFixturePlayers(db, gameId);
+    const ownerEpoch = await insertOwner(db, gameId, {
+      status: "expired",
+      kernelHealth: "suspended",
+      failureReason: "completion_settlement_transient_failure",
+    });
+    const eventsWithWinner = withJuryWinner(createCanonicalEventFixture(gameId), "mira");
+    const winnerEvent = eventsWithWinner.at(-1)!;
+    const finalLoserElimination: CanonicalGameEvent = {
+      sequence: winnerEvent.sequence + 1,
+      gameId,
+      round: 4,
+      phase: null,
+      type: "player.eliminated",
+      timestamp: "2026-06-20T00:00:02.000Z",
+      source: "engine",
+      visibility: "system",
+      payloadVersion: 1,
+      sourcePointers: [],
+      payload: {
+        playerId: "echo",
+        playerName: "Echo",
+        eliminatedRound: 4,
+        juryMember: { playerId: "echo", playerName: "Echo", eliminatedRound: 4 },
+      },
+    };
+    const events = [...eventsWithWinner, finalLoserElimination];
+    await insertCanonicalEventRows(db, gameId, ownerEpoch, events);
+
+    const state = await getGameWatchState(db, gameId);
+
+    expect(state).toMatchObject({
+      status: "suspended",
+      source: "durable_projection",
+      final: { status: "not_final" },
+    });
+    expect(state?.final.winner).toBeUndefined();
+    expect(state?.final.roundsPlayed).toBeUndefined();
+    expect(state?.winner).toBeUndefined();
+    expect(state?.players.find((player) => player.id === "mira")?.status).toBe("alive");
+    expect(state?.players.find((player) => player.id === "echo")?.status).toBe("alive");
   });
 
   test("labels older completed games without durable events as best-available terminal result", async () => {
@@ -540,35 +591,6 @@ function createShieldFallbackPressureFixture(gameId: string): readonly Canonical
   state.determineCandidates(["nyx"]);
 
   return state.getCanonicalEvents();
-}
-
-function withJuryWinner(
-  events: readonly CanonicalGameEvent[],
-  winnerId: string,
-): readonly CanonicalGameEvent[] {
-  const last = events.at(-1);
-  if (!last) throw new Error("Expected fixture events");
-  return [
-    ...events,
-    {
-      sequence: last.sequence + 1,
-      gameId: last.gameId,
-      round: 4,
-      phase: Phase.JURY_VOTE,
-      type: "jury.winner_determined",
-      timestamp: "2026-06-20T00:00:01.000Z",
-      source: "engine",
-      visibility: "system",
-      payloadVersion: 1,
-      sourcePointers: [],
-      payload: {
-        tally: { votes: {} },
-        winnerId,
-        method: "random_tiebreaker",
-        voteCounts: [],
-      },
-    },
-  ];
 }
 
 function withPrivatePointers(events: readonly CanonicalGameEvent[]): readonly CanonicalGameEvent[] {

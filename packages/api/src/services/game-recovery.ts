@@ -28,6 +28,11 @@ export async function findStartupRecoverableGameIds(db: DrizzleDB): Promise<stri
     .orderBy(desc(schema.games.startedAt), desc(schema.games.createdAt));
   const gameIds = rows.map((row) => row.id);
   if (gameIds.length === 0) return [];
+  const sealedSettlements = await db
+    .select({ gameId: schema.gameCompletionSettlements.gameId })
+    .from(schema.gameCompletionSettlements)
+    .where(inArray(schema.gameCompletionSettlements.gameId, gameIds));
+  const sealedGameIds = new Set(sealedSettlements.map((row) => row.gameId));
   const owners = await db
     .select({
       gameId: schema.gameRunOwners.gameId,
@@ -43,6 +48,8 @@ export async function findStartupRecoverableGameIds(db: DrizzleDB): Promise<stri
     }
   }
   return gameIds.filter((gameId) => (
+    !sealedGameIds.has(gameId)
+    &&
     latestFailureByGame.get(gameId) !== "competition_settlement_repair_required"
   ));
 }
@@ -61,6 +68,19 @@ export async function getSupportedRecovery(
   }
   if (game.status !== "suspended") {
     return { ok: false, gameId, reason: `unsupported_game_status:${game.status}` };
+  }
+
+  const sealedSettlement = (await db
+    .select({ state: schema.gameCompletionSettlements.state })
+    .from(schema.gameCompletionSettlements)
+    .where(eq(schema.gameCompletionSettlements.gameId, gameId))
+    .limit(1))[0];
+  if (sealedSettlement) {
+    return {
+      ok: false,
+      gameId,
+      reason: `completion_settlement_${sealedSettlement.state}`,
+    };
   }
 
   const latestOwner = (await db

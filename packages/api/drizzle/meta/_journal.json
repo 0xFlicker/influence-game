@@ -281,6 +281,13 @@
       "when": 1784163060224,
       "tag": "0039_free_draw_request_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1784167464769,
+      "tag": "0040_game_completion_settlements",
+      "breakpoints": true
     }
   ]
 }

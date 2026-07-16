@@ -21,6 +21,7 @@ import {
   preflightSelectedModel,
   reconcilePostgameMediaAfterCompletion,
   serializeTranscriptEntry,
+  tryReturnZeroEventOwnerFailureToWaiting,
 } from "../services/game-lifecycle.js";
 import { CompetitionSettlementRepairRequiredError } from "../services/competition-completion.js";
 import {
@@ -73,6 +74,65 @@ describe("game run failure classification", () => {
         message: "Pregame rating snapshot is missing.",
       },
     });
+  });
+
+  test("returns an exact zero-event owner failure to waiting", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db, {
+      id: "lifecycle-zero-event-owner-failure",
+      status: "in_progress",
+    });
+    const ownerEpoch = await insertOwner(db, gameId);
+
+    expect(await tryReturnZeroEventOwnerFailureToWaiting(
+      db,
+      gameId,
+      ownerEpoch,
+      "runner_startup_failed",
+    )).toEqual({
+      outcome: "returned_to_waiting",
+      cleanup: { rosterDisposition: "reconciled" },
+    });
+
+    const game = (await db.select().from(schema.games)
+      .where(eq(schema.games.id, gameId)))[0];
+    const owner = (await db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.ownerEpoch, ownerEpoch)))[0];
+    expect(game?.status).toBe("waiting");
+    expect(game?.startedAt).toBeNull();
+    expect(owner).toMatchObject({
+      status: "closed",
+      failureReason: "runner_startup_failed",
+      lastPersistedEventSequence: 0,
+    });
+  });
+
+  test("does not reset a failed owner after a canonical event was accepted", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db, {
+      id: "lifecycle-positive-event-owner-failure",
+      status: "in_progress",
+    });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const events = createCanonicalEventFixture(gameId);
+    await appendDurableEventsAndPublishWatchState(db, { gameId, ownerEpoch, events });
+
+    expect(await tryReturnZeroEventOwnerFailureToWaiting(
+      db,
+      gameId,
+      ownerEpoch,
+      "runner_failed",
+    )).toEqual({
+      outcome: "not_returned",
+      cleanupFailure: {
+        code: "stale_owner",
+        message: expect.stringContaining("no longer the active pre-play startup owner"),
+      },
+    });
+
+    const game = (await db.select().from(schema.games)
+      .where(eq(schema.games.id, gameId)))[0];
+    expect(game?.status).toBe("in_progress");
   });
 });
 

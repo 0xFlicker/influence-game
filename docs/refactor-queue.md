@@ -1,6 +1,9 @@
 # Influence Refactor Queue
 
 Generated: 2026-06-21
+
+Last audited against `main`: 2026-07-15
+
 Inputs:
 
 - `docs/plans/**/*.md`
@@ -22,81 +25,42 @@ Five-question gate:
 Status legend:
 
 - `ready`: good candidate for near-term planning.
-- `blocked`: real, but needs a prerequisite first.
 - `future`: coherent, but should not be in the active queue unless the pain becomes visible.
 - `closed`: already implemented, superseded, or not a coherent current ask.
 
 ## Ready Backlog
 
-### R1. API-backed local run harness replacing standalone simulation
+Items are ordered by current priority.
 
-- Status: `ready`
-- Consolidates: plans C7, brainstorms B1.
-- Sources: `docs/plans/2026-06-13-002-feat-durable-game-run-kernel-plan.md:100-101`, `docs/plans/2026-06-13-002-feat-durable-game-run-kernel-plan.md:474-482`, `docs/plans/2026-06-19-001-feat-production-game-mcp-http-oauth-plan.md:311-315`, `docs/brainstorms/2026-06-11-canonical-game-event-spine-requirements.md:72-80`, `docs/brainstorms/2026-06-15-private-trace-writer-mcp-requirements.md:10-20`, `docs/brainstorms/2026-06-18-global-game-mcp-oauth-bridge-requirements.md:16-32`
-- Signal: the old simulation CLI predates the API-backed game. Local model/gameplay evaluation should converge onto the real game path instead of preserving a separate execution model or building a simulation-import bridge.
-- Concrete seam: simulation CLI, API game creation/start lifecycle, local API/DB bootstrap, watch URLs, durable-run traces, Games MCP/read-model inspection.
-- Validation path: run a local API-backed game through the harness; verify normal durable game data, watch/replay URL, private traces/cognitive artifacts where configured, and Games MCP/read-model output.
-- Suggested slice: add `simulate:api` or equivalent local run harness that creates and runs real API games and prints watch/MCP/debug pointers. Keep standalone JSONL simulation as legacy until parity is proven.
-
-### R2. Remaining phase-boundary resume coverage
-
-- Status: `completed in current branch`
-- Consolidates: plans C1, brainstorms B2.
-- Sources: `docs/plans/2026-06-13-002-feat-durable-game-run-kernel-plan.md:95-102`, `docs/plans/2026-06-14-002-feat-checkpoint-hydration-passport-plan.md:495-503`, `docs/plans/2026-06-14-003-feat-phase-boundary-runtime-snapshot-plan.md:277-285`, `docs/brainstorms/2026-06-11-canonical-game-event-spine-requirements.md:18-28`, `docs/brainstorms/2026-06-14-checkpoint-hydration-passport-requirements.md:220-241`, `docs/brainstorms/2026-06-14-phase-boundary-runtime-snapshot-requirements.md:220-274`
-- Signal: startup recovery now works for the original pre-round lobby checkpoint, persisted normal-round coordinates through `reveal`, `reckoning_lobby`, staged late-game coordinates through `tribunal_vote`, `tribunal_defense` through Accusation Capsule V1, and Judgment finale coordinates.
-- Concrete seam: `GameRunner.hydratePhaseActorForResume`, `PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES`, `game-recovery-support.ts`, checkpoint accumulator registry, and DB-backed recovery tests.
-- Validation path: extend the recovery matrix with kill/restart tests for each newly supported coordinate; assert same game ID, contiguous post-restart events, completed results, and matching `resumeAvailable`.
-- Result: `reckoning_plea`, `reckoning_vote`, `tribunal_lobby`, `tribunal_accusation`, `tribunal_defense`, `tribunal_vote`, `judgment_opening`, `judgment_jury_questions`, `judgment_closing`, and `judgment_jury_vote` are covered by DB-backed same-game recovery tests. Startup recovery now selects the newest resume-capable same-head checkpoint instead of failing just because a newer unsupported checkpoint exists.
-
-### R3. Games MCP revealed-facts expansion
-
-- Status: `ready`
-- Consolidates: plans C6, brainstorms B6.
-- Sources: `docs/plans/2026-06-19-004-feat-games-mcp-round-facts-plan.md:324-332`, `docs/brainstorms/2026-06-11-canonical-game-event-spine-requirements.md:57-80`, `docs/brainstorms/2026-06-19-games-scope-mcp-oauth-hardening-requirements.md:13-32`, `docs/brainstorms/2026-06-19-user-cognitive-artifacts-mcp-web-access-requirements.md:96-124`
-- Signal: Games MCP is a user-facing projection/read-model consumer. `read_round_facts` can become more useful by adding one public/player-safe revealed-facts family at a time, especially endgame/jury facts.
-- Concrete seam: Games MCP read model, round facts builder, canonical event projection, user/producer auth profile split.
-- Validation path: MCP tests for allowed facts, denied private trace/tool discovery, and wrong-subject access.
-- Suggested slice: add endgame/jury revealed facts. Do not expose raw events or private source pointers.
-
-### R4. Private trace retention and purge workflow
-
-- Status: `ready`
-- Consolidates: plans C8, brainstorms B7.
-- Sources: `docs/plans/2026-06-13-002-feat-durable-game-run-kernel-plan.md:474-482`, `docs/plans/2026-06-15-001-feat-private-trace-writer-mcp-plan.md:278-288`, `docs/brainstorms/2026-06-15-private-trace-writer-mcp-requirements.md:10-20`, `docs/brainstorms/2026-06-15-private-trace-writer-mcp-requirements.md:57-70`, `docs/brainstorms/2026-06-15-private-trace-writer-mcp-requirements.md:162-193`
-- Signal: private trace capture and local inspection exist as a debugging lane, but retention duration, purge/redaction behavior, and credential/storage hygiene are still deferred.
-- Concrete seam: private trace writer/read model, storage keys/manifests, evidence read audit, local producer MCP.
-- Validation path: purge/redaction tests, expired object behavior, bounded read/search behavior after purge, and non-dereferenceable private content.
-- Suggested slice: implement an explicit purge/redaction workflow for private trace content. Avoid broad storage redesign.
-
-### R5. Admin-visible model fallback and repair diagnostics
+### R5. Producer-visible decision fallback and repair ledger
 
 - Status: `ready`
 - Consolidates: local API-backed model evaluation finding from q-naifu-a3b testing.
 - Sources: local runtime logs showing `[tool-fallback]` / `[vote-fallback]` repairs during API-backed Katana games; current canonical vote/revote events preserve repaired legal targets but do not expose whether fallback or target repair occurred.
-- Signal: fallback-heavy model failures can currently be hidden behind valid-looking canonical game events. Admins may only notice the failure by watching local server logs, which is not acceptable for model evaluation, production operations, or postgame trust.
-- Concrete seam: agent fallback paths, vote/revote target validation, cognitive artifact diagnostics, provider spend/cost detail, admin game detail/cost views, and any producer-safe read model used for local/API simulation inspection.
+- Signal: fallback-heavy model failures can currently be hidden behind valid-looking canonical game events. Producers may only notice the failure in local server warnings; provider accounting records spend, not repair provenance.
+- Concrete seam: agent fallback paths, vote/revote target validation, cognitive artifact diagnostics, and producer-safe postgame analysis.
 - Validation path: run a model that emits invalid/empty vote targets; verify the canonical game still advances, while the admin/producer surface clearly shows fallback count, repaired fields, original invalid value, fallback reason, and affected agent/action/round.
-- Suggested slice: record fallback/repair metadata at decision time and surface it in an admin-visible diagnostics panel or cost detail section. Keep player-facing game events clean, but do not let admin tooling launder fallback decisions into invisible success.
+- Suggested slice: persist a bounded producer-only ledger containing action, actor, round, original invalid value, chosen repair, reason, and model. Summarize it through existing producer analysis instead of polluting player-facing canonical events or coupling it to cost accounting.
 
-### R6. Server-side web data loading boundary
-
-- Status: `ready`
-- Consolidates: House Highlights staging failure follow-up.
-- Sources: `packages/web/src/lib/api.ts`, `packages/web/src/app/games/[slug]/highlights/page.tsx`, `packages/api/src/services/postgame-highlights.ts`
-- Signal: web server routes currently lean on the browser-oriented API client in places where real server-side data loading is needed. The Highlights page exposed the issue because a public share page needs route-owned metadata, future OG cards, and cacheable HTML, but the current small fix restores client-side loading only.
-- Concrete seam: Next server components/pages that need shareable metadata or cacheable read models, API service/read-model boundaries, and deployment env ownership for server-side reads.
-- Validation path: server-render a Highlights route with route-specific metadata from the same public projection as the browser page, without relying on client hydration or self-fetching through a public API URL; verify staging and local Docker/dev envs.
-- Suggested slice: design a deliberate server-side read pattern for public web projections, then migrate Highlights first. Do not invent per-page DB imports or duplicate projection logic in web.
-
-### R7. Retryable terminal game settlement
+### R12. Player Strategy Thread checkpoint hydration
 
 - Status: `ready`
-- Consolidates: Dual Crown implementation review finding about terminal persistence and competition settlement recovery.
-- Sources: `packages/api/src/services/game-lifecycle.ts`, `packages/api/src/services/competition-completion.ts`, startup recovery handling for terminal checkpoints.
-- Signal: the engine can finish a game in memory and then fail while persisting its result, season points, hidden ratings, and account statistics. The enclosing database transaction correctly rolls back instead of leaving partial awards, but the terminal result is not retained as retryable work. Startup recovery refuses terminal checkpoints, so an interrupted or failed settlement has no supported replay path.
-- Concrete seam: terminal result persistence, game completion status, competition settlement idempotency keyed by game ID, startup recovery diagnostics, and producer/admin recovery commands.
-- Validation path: inject a settlement failure after the engine returns a winner; verify the exact terminal result survives, the game is visibly pending settlement, a retry completes it without replaying gameplay, and repeated retries cannot duplicate points, ratings, receipts, results, or profile counters.
-- Suggested slice: persist the terminal result before settlement, represent settlement as pending/completed, make settlement idempotent by game ID, and add a producer CLI or admin action to retry pending settlements. This preserves the result of a specific game; it does not freeze season rules or introduce player-facing ceremony.
+- Consolidates: plans C4, brainstorms B5.
+- Sources: `docs/plans/2026-06-12-002-feat-strategy-thread-packet-plan.md:315-320`, `docs/plans/2026-06-13-001-feat-house-strategy-bible-packet-plan.md:419-425`, `docs/brainstorms/2026-06-12-strategy-thread-carry-forward-packet-requirements.md:16-30`, `docs/brainstorms/2026-06-12-strategy-thread-carry-forward-packet-requirements.md:75-77`, `docs/brainstorms/2026-06-13-house-strategy-bible-packet-requirements.md:18-31`, `docs/brainstorms/2026-06-13-house-strategy-bible-packet-requirements.md:207-209`
+- Signal: checkpoints now persist player and House continuity capsules, and supported resume paths hydrate the House packet. Player capsules are validated and persisted but are not passed into resumed agents, so their Strategy Thread state resets after recovery.
+- Concrete seam: player continuity capsules, `GameRunner` resume input, agent strategy-packet hydration, and recovered prompt construction.
+- Validation path: kill/restart at a supported coordinate after a strategy revision; verify the resumed agent prompt carries the same structured packet, eliminated-player scrubbing still applies, and no private packet content crosses public transcript or watch surfaces.
+- Suggested slice: add an explicit agent hydration contract for the persisted player capsule. Do not infer strategy from transcript prose or make the packet canonical game truth.
+
+### R4. Private trace purge execution
+
+- Status: `ready`
+- Consolidates: plans C8, brainstorms B7.
+- Sources: `docs/plans/2026-06-13-002-feat-durable-game-run-kernel-plan.md:474-482`, `docs/plans/2026-06-15-001-feat-private-trace-writer-mcp-plan.md:278-288`, `docs/brainstorms/2026-06-15-private-trace-writer-mcp-requirements.md:10-20`, `docs/brainstorms/2026-06-15-private-trace-writer-mcp-requirements.md:57-70`, `docs/brainstorms/2026-06-15-private-trace-writer-mcp-requirements.md:162-193`
+- Signal: manifests already carry retention, expiry, and redaction state, and reads fail closed for expired or redacted evidence. No executor marks content purged and deletes or otherwise makes the stored object non-dereferenceable.
+- Concrete seam: private trace manifests, storage object deletion, evidence read audit, and local producer operations.
+- Validation path: purge/redaction tests for manifest state, object deletion, expired-object behavior, bounded reads after purge, and non-dereferenceable private content.
+- Suggested slice: implement one audited purge operation over the existing manifest and storage contracts. Avoid broad storage redesign, legal-hold machinery, or a general records system.
 
 ### R8. Durable draft-avatar recovery ownership
 
@@ -107,16 +71,6 @@ Status legend:
 - Concrete seam: avatar generation request claiming, API startup recovery, stale-processing detection, draft request discovery, and provider request idempotency.
 - Validation path: interrupt the API after a draft is queued and after provider submission; restart without the originating form; verify the same request is reclaimed, completes once, stores one image, and does not create duplicate provider jobs.
 - Suggested slice: add a server-owned startup or periodic reconciler that claims queued and stale avatar requests. Keep browser polling as progress UI, not execution ownership.
-
-### R9. Atomic draft-avatar adoption during agent creation
-
-- Status: `completed in current branch`
-- Consolidates: Standing Daily Agent implementation review finding #8.
-- Sources: `packages/api/src/routes/agent-profiles.ts`, `packages/api/src/services/avatar-generation.ts`, `packages/api/src/services/agent-profile-management.ts`
-- Signal: draft-avatar adoption now validates the profile before opening one database transaction that conditionally consumes the completed draft, inserts the profile and initial revision, and records generated-avatar lineage. A failure at any transactional step rolls the consumption and agent records back together.
-- Concrete seam: `consumeOwnedDraftAvatarCompletion`, owned-profile creation transaction, agent revision creation, and avatar change history.
-- Validation: DB-backed route coverage verifies invalid profiles do not consume drafts, cross-owner attempts do not reveal or mutate them, concurrent adoption creates at most one agent, and injected profile, revision, and avatar-lineage insert failures each roll back consumption and permit a successful retry. Existing upload and avatar-free creation paths remain separate.
-- Result: `adoptOwnedDraftAvatarAndCreateAgentProfile` owns the atomic path while the route preserves the existing draft error responses. No compensating unconsume workflow was added, and R8/R10/R11 remain open.
 
 ### R10. Honest avatar-generation status degradation
 
@@ -133,34 +87,23 @@ Status legend:
 - Status: `ready`
 - Consolidates: Standing Daily Agent implementation review finding #10.
 - Sources: `packages/web/src/app/dashboard/agents/agent-form.tsx`, `packages/web/src/app/dashboard/agents/avatar-completion.ts`, `packages/api/src/routes/agent-profiles.ts`
-- Signal: draft status polling retries every five seconds without a limit while portrait-pending state disables agent creation. A sustained API or auth failure can therefore leave the form retrying forever with no explicit recovery action.
+- Signal: draft status polling retries every five seconds without a limit while portrait-pending state disables agent creation. A sustained API or auth failure can therefore leave the form retrying forever; upload and cancel exist, but there is no bounded retry or create-without-draft action.
 - Concrete seam: AgentForm draft polling, submit eligibility, retry controls, stale-draft handling, and post-create default portrait generation.
 - Validation path: use fake timers and sustained 401/5xx responses; verify retry count and backoff are bounded, polling stops, the user receives a legible retry or create-without-waiting action, and no failed draft is accidentally consumed or attributed to the created agent.
 - Suggested slice: cap polling retries with backoff and expose an explicit retry/status-refresh path. If creation proceeds without a confirmed completed draft, omit its request ID so normal post-create portrait completion owns recovery.
 
-## Blocked Backlog
+## Future / Watchlist
 
-### D1. Owner reclaim and restart orchestration
+### D1. Multi-process execution ownership and observer delivery
 
 - Status: `future`
-- Consolidates: plans C3, part of brainstorms B2.
-- Sources: `docs/plans/2026-06-14-003-feat-phase-boundary-runtime-snapshot-plan.md:277-285`, `docs/plans/2026-06-13-002-feat-durable-game-run-kernel-plan.md:474-482`
-- Signal: single-process startup recovery now reacquires interrupted work and decides whether continuation is allowed. Remaining orchestration work is about graceful shutdown, lease freshness, multi-worker coordination, and spot/serverless worker fleets.
-- Concrete seam: game owner rows, heartbeat/lease handling, startup orphan logic, durable-run inspection, lifecycle start/continue code.
-- Validation path: graceful shutdown tests, owner-expiry tests, multi-worker claim contention tests, and restart-orchestrator tests.
-- Promotion trigger: multiple API/worker processes become real, or deploy/restart behavior needs graceful drain semantics beyond the current startup recovery path.
-
-### D2. Strategy Thread and House packet checkpoint continuity
-
-- Status: `blocked`
-- Consolidates: plans C4, brainstorms B5.
-- Sources: `docs/plans/2026-06-12-002-feat-strategy-thread-packet-plan.md:315-320`, `docs/plans/2026-06-13-001-feat-house-strategy-bible-packet-plan.md:419-425`, `docs/brainstorms/2026-06-12-strategy-thread-carry-forward-packet-requirements.md:16-30`, `docs/brainstorms/2026-06-12-strategy-thread-carry-forward-packet-requirements.md:75-77`, `docs/brainstorms/2026-06-13-house-strategy-bible-packet-requirements.md:18-31`, `docs/brainstorms/2026-06-13-house-strategy-bible-packet-requirements.md:207-209`
-- Signal: strategy packets and House packets are important continuity artifacts, but they are not public transcript, canonical board truth, or standalone resume authority.
-- Concrete seam: agent strategy packet state, House interviewer packet state, continuity capsules, checkpoint serialization.
-- Validation path: prompt continuity tests before/after checkpoint hydration, simulation artifacts, and private trace checks.
-- Blocker: depends on W3 or another concrete checkpoint-continuity slice defining what strategy/House state hydration actually needs beyond the currently supported resume inputs.
-
-## Future / Watchlist
+- Consolidates: plans C3, part of brainstorms B2, and former W5 horizontal scaling locks/pub/sub.
+- Sources: `docs/plans/2026-06-14-003-feat-phase-boundary-runtime-snapshot-plan.md:277-285`, `docs/plans/2026-06-13-002-feat-durable-game-run-kernel-plan.md:474-482`, `docs/statefulness-plan.md:173-235`
+- Signal: single-process startup recovery and owner heartbeats now protect accepted commits, but active execution and Bun websocket publish/subscribe remain process-local.
+- Concrete seam: game owner rows, lease freshness, graceful shutdown, lifecycle execution locks, and cross-instance observer delivery.
+- Validation path: graceful shutdown, owner-expiry, multi-worker claim contention, restart-orchestrator, and cross-instance observer-delivery tests.
+- Promotion trigger: multiple API/worker processes become real or deploys need graceful drain and observer routing beyond one process.
+- Suggested slice if promoted: establish Postgres-backed single-owner execution before adding distributed websocket delivery. Add Redis or another pub/sub layer only when multi-instance observers require it.
 
 ### W1. GameWatchState summary repair scheduling
 
@@ -168,48 +111,29 @@ Status legend:
 - Consolidates: plans C5, brainstorms B4, updated after code inspection.
 - Sources: `docs/plans/2026-06-20-003-feat-game-watch-state-summaries-plan.md:292-327`, `docs/brainstorms/2026-06-20-game-watch-state-summary-read-model-requirements.md:10-26`, `packages/api/src/services/game-watch-state-summary.ts:50-115`, `packages/api/src/services/game-watch-state-summary.ts:155-220`, `packages/api/src/routes/games.ts:202-232`
 - Signal: the durable summary table, refresh service, route batch read, lifecycle refresh, and backfill command already exist. The original list-performance problem is not a ready backlog item anymore.
-- Remaining possible gap: if lifecycle refresh fails, list reads fall back to missing/schema-stale detection and do not independently detect current-schema rows that are behind the durable event head. The backfill command can repair that, but no background scheduler appears to run it automatically.
+- Remaining possible gap: if lifecycle refresh fails, list reads detect missing/schema-stale rows but not current-schema rows behind the durable event head. The explicit operator-run backfill detects and repairs that drift; no background scheduler runs it automatically.
 - Promotion trigger: stale game-list rows become visible in real use, or production operations need automatic summary repair beyond the explicit backfill command.
 - Suggested slice if promoted: scheduled or deploy-time repair for summaries behind event head, plus tests that preserve "list route is not a replay worker."
 
-### W2. Viewer-safe watch stream and non-watch websocket split
-
-- Status: `future`
-- Consolidates: brainstorms B3 and the closed public-boundary item.
-- Sources: `docs/brainstorms/2026-06-20-game-watch-state-requirements.md:27-32`, `docs/brainstorms/2026-06-20-game-watch-state-requirements.md:60-64`, `docs/brainstorms/2026-06-20-game-watch-state-requirements.md:253-258`, `docs/brainstorms/2026-06-20-match-watch-shell-route-owner-requirements.md:175-180`
-- Signal: `origin/main` already contains explicit public websocket transcript payload construction. The broader transport split should only be carried if normal watch routing still depends on mixed admin/runtime socket behavior after merging main.
-- Promotion trigger: a concrete leftover mixed-boundary socket path is found after the branch absorbs `origin/main`.
-- Suggested slice if promoted: route normal watching through persisted `GameWatchState` catch-up and move fill/admin diagnostics to a separate path.
-
-### W3. Incremental transcript persistence
+### W3. Interrupted-game public replay materialization
 
 - Status: `future`
 - Consolidates: `docs/statefulness-plan.md` Phase 1.4.
 - Sources: `docs/statefulness-plan.md:159-171`, `docs/statefulness-plan.md:246-252`
-- Signal: transcripts are still described as completion/error-time persistence in the statefulness plan. Incremental transcript flushes would make interrupted games more replayable even before full runner resume exists.
-- Concrete seam: transcript insertion path in game lifecycle, phase-boundary hooks, checkpoint/event cursor boundaries.
-- Promotion trigger: users lose meaningful watch/replay history from interrupted games, or resume work needs transcript/outbox cursor evidence beyond the current checkpoint watermark.
-- Suggested slice if promoted: phase-boundary transcript flushes tied to cursor evidence. Do not market this as game resume.
+- Signal: supported checkpoints now persist a sanitized transcript replay and durable watermark, and resume seeds the in-memory transcript from that replay. Public transcript rows still materialize only at terminal completion or on the legacy non-owner failure path, so an unrecoverable interrupted game can lack a public partial replay.
+- Concrete seam: checkpoint transcript replay, transcript insertion, supported-resume completion, and suspended/unrecoverable game reads.
+- Promotion trigger: users need public replay access for suspended or unrecoverable games rather than only for resumed-to-completion games.
+- Suggested slice if promoted: materialize checkpoint-backed public transcript rows for explicitly terminal interrupted states. Do not duplicate rows during successful resume or market partial replay as game recovery.
 
-### W4. Auth session hook and lint TODO cleanup
+### W4. Shared auth-session event adapter
 
 - Status: `future`
 - Consolidates: ideation comment/TODO scan.
-- Sources: `docs/ideation/2026-06-21-refactoring-session-comments-todos-research-ideation.html:452-458`, `packages/web/eslint.config.mjs:9-12`, `packages/web/src/lib/api.ts:38-84`, `packages/web/src/hooks/use-permissions.ts:118-119`
-- Signal: several web surfaces listen to `auth:session-ready` / `auth:expired`, and the web ESLint config carries a TODO around `react-hooks/set-state-in-effect`.
+- Sources: `docs/ideation/2026-06-21-refactoring-session-comments-todos-research-ideation.html:452-458`, `packages/web/src/lib/api.ts:38-84`, `packages/web/src/hooks/use-permissions.ts:118-119`
+- Signal: the old ESLint TODO is gone, but dashboard, profile, agent, queue, avatar, permissions, and game-viewer surfaces still duplicate `auth:session-ready` / `auth:expired` listener setup.
 - Concrete seam: shared auth/session hook or derived state helper, plus dashboard/profile/agent/game watcher listeners.
 - Promotion trigger: auth-state flashes, duplicated listener bugs, or active work in those web surfaces.
-- Suggested slice if promoted: centralize the auth session readiness/expiry listener pattern and narrow the lint warning. Keep it UX-driven, not lint-churn-driven.
-
-### W5. Horizontal scaling locks and pub/sub
-
-- Status: `future`
-- Consolidates: `docs/statefulness-plan.md` Phase 2.
-- Sources: `docs/statefulness-plan.md:173-235`, `docs/statefulness-plan.md:252-257`
-- Signal: `activeGames` and Bun websocket pub/sub remain process-local. Owner epochs guard accepted commits, but horizontal scaling still needs distributed publish/subscribe and single-owner execution locks.
-- Concrete seam: `game-lifecycle.ts` active runner ownership, `ws-manager.ts` publish/subscribe, Postgres advisory locks or Redis pub/sub.
-- Promotion trigger: multiple API instances become a real deployment goal, or observer routing across instances becomes painful.
-- Suggested slice if promoted: Postgres advisory lock around game execution before adding Redis. Redis pub/sub only when multi-instance websocket delivery is required.
+- Suggested slice if promoted: centralize readiness/expiry subscription and derived session state behind one hook or adapter. Keep it UX-driven, not lint-churn-driven.
 
 ### W6. Alliance huddle short-mode compression
 
@@ -221,12 +145,12 @@ Status legend:
 - Promotion trigger: named-alliance simulations show huddle windows dominate token spend or make large-cast games drag.
 - Suggested slice if promoted: design a compressed alliance-huddle mode that preserves post-vote fallout and cuts optional private coordination first.
 
-### W7. Alliance membership and speaking caps
+### W7. Cross-alliance membership and appearance guardrails
 
 - Status: `future`
 - Consolidates: named-alliance brainstorm deferred membership-cap rule.
 - Sources: `docs/ideation/2026-07-02-named-alliances-ideation.html:406`, `docs/ideation/2026-07-02-named-alliances-ideation.html:447-459`
-- Signal: overlapping alliances are expected to create interesting strategy, so the current rules intentionally do not cap how many alliances a player may join. Caps should be evidence-driven, not preemptive tidiness.
+- Signal: each alliance is already limited to two huddle sessions and each live member receives one turn per session. Overlapping alliances remain intentionally uncapped across the whole window, so repeated appearances can still crowd out other alliances or inflate prompt cost.
 - Concrete seam: alliance roster context, House huddle scheduling, huddle-seat budgets, prompt context budgeting, simulation diagnostics for multi-alliance agents.
 - Promotion trigger: agents join too many alliances to reason coherently, repeat huddle appearances crowd out other scheduled alliances, or large overlapping alliances multiply speaking turns beyond the intended token budget.
 - Suggested slice if promoted: evaluate soft caps first, such as House fatigue penalties, per-window speaking appearance limits, huddle-seat budgets, or warning-only diagnostics before hard membership caps.
@@ -261,16 +185,6 @@ Status legend:
 - Promotion trigger: simulations show Council huddles repeatedly operating on stale active alliances after obvious public betrayals, making coordination less legible or less strategic.
 - Suggested slice if promoted: add a narrow existing-alliance-only consequence window where members may formally renounce, reaffirm, fracture, close, or dissolve without allowing new alliance formation.
 
-### W11. Delayed huddle outcome reveal and recap rules
-
-- Status: `future`
-- Consolidates: named-alliance document-review finding about hidden huddles lacking audience payoff.
-- Sources: `docs/plans/2026-07-02-002-feat-named-alliances-rules-plan.md`
-- Signal: v1 keeps hidden alliance membership, terms, and huddle outcomes out of public live play unless players reveal them. That protects secrecy, but viewer/replay/postgame surfaces may eventually need a delayed reveal or recap contract.
-- Concrete seam: public watch/replay surfaces, postgame summaries, huddle outcomes, producer-safe versus player-safe visibility.
-- Promotion trigger: viewers cannot understand major vote or Council moves because causal huddle outcomes remain invisible after the relevant strategic window closes.
-- Suggested slice if promoted: define when huddle outcomes become recap-eligible after vote, Council, elimination, or postgame boundaries, while preserving live-match secrecy.
-
 ### W12. Structured trial-alliance expiry
 
 - Status: `future`
@@ -281,12 +195,13 @@ Status legend:
 - Promotion trigger: simulations show trial alliances persisting past their stated boundary or agents using vague timeboxes that make active status misleading.
 - Suggested slice if promoted: replace free-form trial expiry with a structured boundary enum and archive trial alliances automatically at the named phase or round boundary.
 
-### W13. Postgame media queue infrastructure
+### W13. Postgame media scale-out and runtime portability
 
 - Status: `future`
-- Signal: the first production trailer worker deliberately uses API polling and database leases on one Linode host.
-- Promotion trigger: multiple render hosts, materially higher completion volume, or operational evidence that polling and lease recovery are no longer sufficient.
-- Suggested slice if promoted: move the existing claim/heartbeat/finalize contract behind a durable queue without changing the manifest or renderer boundary.
+- Consolidates: former W13 queue infrastructure and W16 render-worker portability.
+- Signal: the first production trailer worker deliberately uses API polling and database leases from one Docker Compose worker on Linode. The manifest and lease protocol are portable, but the deployment is intentionally single-host and single-replica.
+- Promotion trigger: multiple render hosts, autoscaling, managed-job execution, materially higher completion volume, or evidence that polling and lease recovery are no longer sufficient.
+- Suggested slice if promoted: adapt the existing immutable manifest and claim/heartbeat/finalize protocol to the chosen queue/runtime. Do not move rendering into API or web request containers.
 
 ### W14. Postgame media version retention
 
@@ -302,27 +217,20 @@ Status legend:
 - Promotion trigger: viewers need chapter navigation or a visible transcript to understand longer trailers.
 - Suggested slice if promoted: derive viewer-safe chapters from the existing cue contract without exposing internal cue IDs, worker diagnostics, or music filenames.
 
-### W16. Render-worker portability
-
-- Status: `future`
-- Signal: the image and API lease boundary are portable, but the first deployment is one Docker Compose worker on Linode.
-- Promotion trigger: AWS, multiple regions, autoscaling, or managed-job execution becomes an actual deployment goal.
-- Suggested slice if promoted: adapt the existing immutable manifest and worker protocol to the target queue/runtime rather than moving render logic into API or web request containers.
-
-### W17. Legacy Agent Profile and House-name cleanup
-
-- Status: `future`
-- Sources: `docs/plans/2026-07-14-001-fix-mcp-agent-revision-loop-repair-plan.md`, the deferred global saved-profile name-uniqueness work, and the canonical House-agent catalog in `packages/engine/src/persona-generator.ts`.
-- Signal: staging contains legitimate historical profiles with the same normalized display name. Global saved-profile uniqueness is intentionally deferred; no migration may block startup, rename identities, or delete profiles to enforce it.
-- Concrete seam: normalized Agent Profile name audit, House-agent reserved-name catalog, profile ownership/history, admin profile management, and owner communication before any rename.
-- Validation path: produce a read-only collision report; verify each candidate's ownership and game history; after explicit cleanup, prove no saved profile conflicts with another saved profile or the reserved catalog and that historical `game_players` snapshots remain unchanged.
-- Promotion trigger: duplicate names create concrete player or operator confusion that outweighs the identity-migration cost.
-- Suggested slice if promoted: review ambiguous profiles individually and rename or retire them only with explicit owner/admin intent. Never silently rename, merge, or delete a competitive identity during migration.
-
 ## Closed / Removed
 
-- Public websocket transcript boundary hardening: already landed on local `origin/main` via `1bc1277a` / PR #37. This branch needs to merge or rebase main, not queue new work.
-- Transcript and token cursor sealing for supported resume: landed for checkpoint resume support. Remaining transcript durability work is tracked as W3 incremental transcript persistence, not as a standalone proof slice.
+- R1 API-backed local run harness: implemented by `b4dcee91`. `bun run simulate:api` now authenticates, creates, fills, and starts real API games, waits for durable advancement, and prints the game URL. Evidence includes launcher argument/config tests, API lifecycle integration and component coverage, and local-model documentation; there is not a standalone end-to-end launcher test.
+- R2 remaining phase-boundary resume coverage: implemented. `PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES` and the DB-backed recovery matrix cover the supported normal, Reckoning, Tribunal, and Judgment coordinates, including newer unsupported same-head checkpoint fallback.
+- R3 Games MCP revealed-facts expansion: superseded by the existing `read_round_facts` plus dedicated `read_game_brief`, `read_jury_breakdown`, `read_player_game_summary`, and `read_game_turning_points` surfaces with subject/producer isolation tests.
+- R6 server-side web data loading boundary: implemented by `packages/web/src/lib/server-api.ts` and the server-loaded Highlights/metadata routes, with auth-free public fetch, timeout, initial-render, and social metadata tests.
+- R7 retryable terminal game settlement: implemented. The final canonical event and a strict private terminal envelope are sealed before settlement; one atomic, idempotent transaction writes results, competition awards, ratings, profile/account counters, transcript, postgame initialization, and owner closure. Transient failures remain visibly pending and can be retried only through an authenticated, permission-gated, reasoned, audited admin action after the exact originating owner is expired. Deterministic evidence conflicts become `repair_required`; startup and MCP never replay gameplay or automatically redrive settlement. DB-backed tests cover failure capture, exact-once concurrency, rollback/repair, authorization, audit outcomes, safe producer reads, and zero-event restart classification.
+- R9 atomic draft-avatar adoption: implemented by `652934ae` with DB-backed invalid-profile, cross-owner, concurrent-adoption, and rollback coverage across profile, revision, and avatar-lineage writes.
+- W2 viewer-safe watch stream split: implemented. Websocket connect resolves slug/UUID, sends persisted `GameWatchState`, uses an explicit viewer-safe payload, filters private huddles, and leaves fill/admin mutation on HTTP routes.
+- W11 delayed huddle outcome reveal: superseded by the later decision to use immediate public alliance inspection plus completed-game Alliance Arcs; a separate delayed-reveal system was deliberately not adopted.
+- W17 legacy Agent Profile and House-name cleanup: implemented by `528d2858`. The repair migration resolves normalized/House-name conflicts, preserves frozen historical seats, updates only unfrozen waiting-seat snapshots, and installs database uniqueness/reserved-name authority.
+- W5 horizontal scaling locks/pub-sub: consolidated into D1 multi-process execution ownership and observer delivery.
+- W16 render-worker portability: consolidated into W13 postgame media scale-out and runtime portability.
+- Transcript and token cursor sealing for supported resume: landed for checkpoint resume support. Remaining interrupted-game replay materialization is tracked as W3, not as a standalone proof slice.
 - Cognitive artifact policy module: already implemented as `packages/api/src/services/cognitive-artifact-policy.ts` with writer/read-model/API/MCP tests.
 - Production Game MCP raw trace ranged reads: already implemented with ranged private-storage reads, `maxBytes` response caps, truncation metadata, tests, and docs.
 - Historical Whisper compatibility/backfill cleanup: not a coherent current ask.
@@ -339,12 +247,4 @@ Status legend:
 - Broad public DTO package: unnecessary right now; use targeted public-surface builders and sentinel tests.
 - Dashboard redesign, MCP install pages, MatchWatchShell chrome, post-vote Mingle drama, exposed-candidate rule changes, and House narration upgrades: product/UX/gameplay work, not refactor backlog unless a fresh implementation bug appears.
 
-## Current Priority Order
-
-1. R1 API-backed local run harness
-2. R3 Games MCP revealed-facts expansion
-3. R4 Private trace retention and purge workflow
-
-R9 is completed in the current branch and is no longer part of the pending priority order. R8, R10, and R11 remain ready as separate recovery and UX slices.
-
-`Crash-Honesty Extraction` does not survive as a standalone backlog item. Its useful content is captured by R2, W3, and later D1.
+`Crash-Honesty Extraction` does not survive as a standalone backlog item. Its completed coverage is recorded under R2; its remaining public-replay and multi-process concerns are W3 and D1.

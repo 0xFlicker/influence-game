@@ -25,6 +25,7 @@ const PERMISSIONS = [
   { name: "manage_cost_accounting", description: "Backfill, rebuild, and reconcile admin game cost accounting" },
   { name: "manage_postgame_media", description: "Backfill and rerender House Highlights postgame media" },
   { name: "manage_seasons", description: "Create, close, and finalize rated Influence seasons" },
+  { name: "retry_game_settlement", description: "Retry a sealed completion settlement" },
   { name: "schedule_free_game", description: "Trigger daily free game draw and start" },
   { name: "hide_game", description: "Hide/unhide games from public lists" },
 ] as const;
@@ -50,6 +51,7 @@ const ROLES = [
       "hide_game",
       "manage_postgame_media",
       "manage_seasons",
+      "retry_game_settlement",
     ],
   },
   {

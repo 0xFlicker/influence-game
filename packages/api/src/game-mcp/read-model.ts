@@ -16,13 +16,23 @@ import {
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { getDurableRunInspection } from "../services/game-durable-run.js";
+import {
+  getDurableRunInspection,
+} from "../services/game-durable-run.js";
 import {
   getPersistedGameEvents,
   type TrustedPersistedGameEvent,
 } from "../services/game-event-read-model.js";
-import { getPersistedGameProjection } from "../services/game-projection-read-model.js";
+import {
+  getPersistedGameProjection,
+  getPersistedGameProjectionBeforeTerminalOutcome,
+} from "../services/game-projection-read-model.js";
 import type { PersistedGameProjectionRead } from "../services/game-projection-read-model.js";
+import {
+  getGameCompletionSettlementState,
+  getGameCompletionSettlementStateMap,
+} from "../services/game-completion-settlement.js";
+import type { GameCompletionSettlementState } from "../db/schema.js";
 import { MAX_TRACE_MANIFEST_LIMIT, PrivateTraceReadModel } from "../services/private-trace-read-model.js";
 import {
   CognitiveArtifactReadModel,
@@ -416,11 +426,18 @@ export class ProductionGameMcpReadModel {
           .from(schema.games)
           .orderBy(desc(schema.games.createdAt))
           .limit(clamp(limit, 1, MAX_GAME_LIMIT));
+    const settlementStates = await getGameCompletionSettlementStateMap(
+      this.db,
+      rows.map((row) => row.id),
+    );
 
     const games = [];
     for (const row of rows) {
       const events = await getPersistedGameEvents(this.db, row.id);
-      const projection = getPersistedGameProjection(events);
+      const safeProjection = redactProjectionForSettlement(
+        events,
+        settlementStates.get(row.id),
+      );
       games.push({
         ...gameIdentity(row),
         eventLog: {
@@ -430,12 +447,14 @@ export class ProductionGameMcpReadModel {
           lastTrustedSequence: events.lastTrustedSequence,
         },
         projection: {
-          status: projection.status,
-          ...(projection.summary && {
-            round: projection.summary.round,
-            ...(projection.summary.phase && { phase: projection.summary.phase }),
-            alivePlayers: projection.summary.players.aliveNames,
-            winner: projection.summary.winner?.name,
+          status: safeProjection.status,
+          ...(safeProjection.summary && {
+            round: safeProjection.summary.round,
+            ...(safeProjection.summary.phase && { phase: safeProjection.summary.phase }),
+            alivePlayers: safeProjection.summary.players.aliveNames,
+            ...(safeProjection.summary.winner?.name && {
+              winner: safeProjection.summary.winner.name,
+            }),
           }),
         },
       });
@@ -465,8 +484,14 @@ export class ProductionGameMcpReadModel {
     };
   }> {
     const game = await this.requireGame(gameIdOrSlug, access);
-    const events = await getPersistedGameEvents(this.db, game.id);
-    const projection = getPersistedGameProjection(events);
+    const [events, settlementState] = await Promise.all([
+      getPersistedGameEvents(this.db, game.id),
+      getGameCompletionSettlementState(this.db, game.id),
+    ]);
+    const projection = redactProjectionForSettlement(
+      events,
+      settlementState,
+    );
     return {
       schemaVersion: 1,
       game,
@@ -487,13 +512,26 @@ export class ProductionGameMcpReadModel {
     canonicalGameFacts: RevealedRoundFactsRead;
   }> {
     const game = await this.requireGame(options.gameIdOrSlug, access);
-    const events = await getPersistedGameEvents(this.db, game.id);
-    const projection = getPersistedGameProjection(events);
+    const [events, settlementState] = await Promise.all([
+      getPersistedGameEvents(this.db, game.id),
+      getGameCompletionSettlementState(this.db, game.id),
+    ]);
+    const terminalOutcomeSequence = firstTerminalOutcomeSequence(events.events);
+    const terminalSafeEvents = events.events.filter((row) =>
+      terminalEventIsVisibleForSettlement(
+        row.envelope,
+        settlementState,
+        terminalOutcomeSequence,
+      ));
+    const projection = getPersistedGameProjection({
+      ...events,
+      events: terminalSafeEvents,
+    });
     return {
       schemaVersion: 1,
       game,
       canonicalGameFacts: buildRevealedRoundFacts({
-        events: events.events.map((event) => event.envelope),
+        events: terminalSafeEvents.map((event) => event.envelope),
         round: options.round,
         eventLogStatus: events.status,
         projectionStatus: projection.status,
@@ -578,7 +616,11 @@ export class ProductionGameMcpReadModel {
     const game = await this.requireGame(options.gameIdOrSlug, access);
     const players = await this.loadGamePlayers(game.id);
     const playerNames = playerNameMap(players);
-    const eventRead = await getPersistedGameEvents(this.db, game.id);
+    const [eventRead, settlementState] = await Promise.all([
+      getPersistedGameEvents(this.db, game.id),
+      getGameCompletionSettlementState(this.db, game.id),
+    ]);
+    const terminalOutcomeSequence = firstTerminalOutcomeSequence(eventRead.events);
     if (isGamesSubjectAccess(access) && options.visibilityMode === "producer") {
       throw new Error("producer visibility requires MCP scope: producer");
     }
@@ -606,6 +648,11 @@ export class ProductionGameMcpReadModel {
       if (options.phase && String(event.phase ?? "") !== options.phase) continue;
       if (options.fromSequence !== undefined && event.sequence < options.fromSequence) continue;
       if (options.toSequence !== undefined && event.sequence > options.toSequence) continue;
+      if (!terminalEventIsVisibleForSettlement(
+        event,
+        settlementState,
+        terminalOutcomeSequence,
+      )) continue;
       if (!canonicalEventIsVisibleTo(event, visibilityMode)) continue;
       const matchSources = actor ? eventMatchSources(event, actor) : [];
       if (actor && matchSources.length === 0) continue;
@@ -1556,6 +1603,41 @@ function requireProducerAccess(access: ProductionGameMcpAccess): void {
   if (access.authProfile !== "producer") {
     throw new Error("Producer-only MCP evidence requires MCP scope: producer");
   }
+}
+
+function settlementHoldsTerminalOutcome(
+  state: GameCompletionSettlementState | undefined,
+): boolean {
+  return state === "pending" || state === "repair_required";
+}
+
+function redactProjectionForSettlement(
+  events: Awaited<ReturnType<typeof getPersistedGameEvents>>,
+  state: GameCompletionSettlementState | undefined,
+): PersistedGameProjectionRead {
+  return settlementHoldsTerminalOutcome(state)
+    ? getPersistedGameProjectionBeforeTerminalOutcome(events)
+    : getPersistedGameProjection(events);
+}
+
+function terminalEventIsVisibleForSettlement(
+  event: Pick<CanonicalGameEvent, "type" | "sequence">,
+  state: GameCompletionSettlementState | undefined,
+  terminalOutcomeSequence: number | undefined,
+): boolean {
+  if (!settlementHoldsTerminalOutcome(state)) return true;
+  if (terminalOutcomeSequence !== undefined && event.sequence >= terminalOutcomeSequence) {
+    return false;
+  }
+  return event.type !== "jury.vote_cast"
+    && event.type !== "jury.winner_determined";
+}
+
+function firstTerminalOutcomeSequence(
+  events: readonly TrustedPersistedGameEvent[],
+): number | undefined {
+  return events.find((row) => row.envelope.type === "jury.winner_determined")
+    ?.envelope.sequence;
 }
 
 function redactGamesScopeProjection(

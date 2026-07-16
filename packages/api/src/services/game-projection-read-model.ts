@@ -219,3 +219,24 @@ export function getPersistedGameProjection(
     };
   }
 }
+
+/**
+ * Project only facts that are safe before the terminal settlement commits.
+ * Jury ballots are withheld, and the winner event plus every later event are
+ * excluded so neither the winner nor the losing finalist can be inferred.
+ */
+export function getPersistedGameProjectionBeforeTerminalOutcome(
+  persistedEvents: PersistedGameEventsRead,
+): PersistedGameProjectionRead {
+  const terminalOutcomeSequence = persistedEvents.events.find(
+    (event) => event.envelope.type === "jury.winner_determined",
+  )?.sequence;
+  const safeEvents = persistedEvents.events.filter((event) => (
+    event.envelope.type !== "jury.vote_cast"
+      && (terminalOutcomeSequence === undefined || event.sequence < terminalOutcomeSequence)
+  ));
+  return getPersistedGameProjection({
+    ...persistedEvents,
+    events: safeEvents,
+  });
+}

@@ -14,6 +14,7 @@ import {
 } from "./game-event-read-model.js";
 import {
   getPersistedGameProjection,
+  getPersistedGameProjectionBeforeTerminalOutcome,
   type DurableProjectionSummary,
   type ProjectionReplayDiagnostic,
   type ProjectionReplayStatus,
@@ -27,6 +28,10 @@ import {
   type HydrationPassport,
 } from "./checkpoint-hydration-passport.js";
 import { checkpointHasImplementedResumeSupport } from "./game-recovery-support.js";
+import {
+  getGameCompletionSettlementSummary,
+  type GameCompletionSettlementSummary,
+} from "./game-completion-settlement.js";
 
 type DurableRunReadDB = Pick<DrizzleDB, "select">;
 
@@ -118,6 +123,7 @@ export interface DurableEvidenceSummary {
 export interface DurableRunInspectionResponse {
   schemaVersion: 2;
   game: DurableRunGameIdentity;
+  completionSettlement: GameCompletionSettlementSummary;
   kernel: {
     health: RedactedKernelHealth;
     owner: DurableRunOwnerSummary | null;
@@ -407,6 +413,7 @@ export async function getDurableRunInspection(
       return { ok: false, statusCode: 404, error: "Game not found" };
     }
 
+    const completionSettlement = await getGameCompletionSettlementSummary(tx, game.id);
     const persistedEvents = await getPersistedGameEvents(tx, game.id);
     const owner = (await tx
       .select({
@@ -449,7 +456,12 @@ export async function getDurableRunInspection(
       );
     const evidence = await getEvidenceSummary(tx, game.id);
 
-    const projection = getPersistedGameProjection(persistedEvents);
+    const sealedNonfinal = completionSettlement.state === "pending"
+      || completionSettlement.state === "repair_required";
+    const projection = sealedNonfinal
+      ? getPersistedGameProjectionBeforeTerminalOutcome(persistedEvents)
+      : getPersistedGameProjection(persistedEvents);
+    const projectionSummary = projection.summary;
     const ownerSummary = summarizeOwnerAtInspection(owner);
     const kernelHealth = buildRedactedKernelHealth({
       status: ownerSummary.healthStatus,
@@ -526,6 +538,7 @@ export async function getDurableRunInspection(
           ...(game.startedAt && { startedAt: game.startedAt }),
           ...(game.endedAt && { endedAt: game.endedAt }),
         },
+        completionSettlement,
         kernel: {
           health: kernelHealth,
           owner: ownerSummary.owner,
@@ -544,7 +557,7 @@ export async function getDurableRunInspection(
         projection: {
           status: projection.status,
           replayedEventCount: projection.replayedEventCount,
-          summary: projection.summary,
+          summary: projectionSummary,
         },
         checkpoints: {
           count: checkpoints.length,

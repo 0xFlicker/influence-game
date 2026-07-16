@@ -29,6 +29,7 @@ import { getStorageStatus } from "./lib/storage.js";
 import { getGameWatchState } from "./services/game-watch-state.js";
 import { recoverGamesOnStartup } from "./services/game-lifecycle.js";
 import { suspendOrphanedInProgressGamesOnStartup } from "./services/startup-orphaned-games.js";
+import { preparePendingCompletionSettlementsOnStartup } from "./services/game-completion-settlement.js";
 import { reconcileCompletedPostgameMedia } from "./services/postgame-media-coordinator.js";
 import {
   setServer,
@@ -111,9 +112,24 @@ try {
 // ---------------------------------------------------------------------------
 
 const startupOrphans = await suspendOrphanedInProgressGamesOnStartup(db);
+for (const orphan of startupOrphans.returnedToWaiting) {
+  console.info(`[startup] Returned zero-event orphaned game ${orphan.gameId} to waiting`);
+}
+for (const orphan of startupOrphans.repairRequired) {
+  console.warn(
+    `[startup] Returned zero-event orphaned game ${orphan.gameId} to waiting; roster repair is required`,
+  );
+}
 for (const orphan of startupOrphans.suspended) {
   const age = orphan.ageMs === null ? "unknown age" : `started ${Math.round(orphan.ageMs / 1000)}s ago`;
-  console.warn(`[startup] Suspended orphaned game ${orphan.gameId} (${age})`);
+  console.warn(`[startup] Suspended orphaned game ${orphan.gameId} (${age}; ${orphan.reason})`);
+}
+
+const pendingSettlements = await preparePendingCompletionSettlementsOnStartup(db);
+if (pendingSettlements.readyGameIds.length > 0) {
+  console.warn(
+    `[startup] Marked ${pendingSettlements.readyGameIds.length} sealed completion settlement(s) ready for operator retry`,
+  );
 }
 
 const startupRecoveryDisabled = process.env.INFLUENCE_API_STARTUP_RECOVERY?.toLowerCase() === "false";

@@ -121,6 +121,10 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     ]);
     expect(JSON.stringify(tools)).toContain("\"scopes\":[\"producer\"]");
     expect(JSON.stringify(tools)).not.toContain("start_game");
+    expect(JSON.stringify(tools)).not.toContain("retry_game_settlement");
+    expect(JSON.stringify(tools)).not.toContain("retry_settlement");
+    expect(JSON.stringify(tools)).not.toContain("resume_game");
+    expect(JSON.stringify(tools)).not.toContain("restart_game");
     expect(JSON.stringify(tools)).not.toContain("create_agent");
     expect(JSON.stringify(tools)).not.toContain("join_queue");
     const searchTool = tools.find((tool) => (tool as { name: string }).name === "search_reasoning_traces");

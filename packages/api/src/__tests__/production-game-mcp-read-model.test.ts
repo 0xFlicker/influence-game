@@ -22,6 +22,7 @@ import {
 } from "../services/private-trace-storage.js";
 import { PRIVATE_TRACE_EVIDENCE_TYPE } from "../services/private-trace-writer.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
+import { captureGameCompletionSettlement } from "../services/game-completion-settlement.js";
 import { setupTestDB } from "./test-utils.js";
 import {
   createCanonicalEventFixture,
@@ -30,6 +31,7 @@ import {
   insertCanonicalEventRows,
   insertGame,
   insertOwner,
+  withJuryWinner,
 } from "./durable-run-test-utils.js";
 
 const PRODUCER_ACCESS = {
@@ -151,6 +153,121 @@ describe("ProductionGameMcpReadModel", () => {
     expect(timeline.canonicalGameFacts.events.length).toBeGreaterThan(0);
     expect(timeline.canonicalGameFacts.events[0]?.matchSources?.length).toBeGreaterThan(0);
     expect(timeline.diagnostics).toEqual([]);
+
+    const juryEvent = withJuryWinner(events, "atlas").at(-1)!;
+    const finalEvent: CanonicalGameEvent = {
+      sequence: juryEvent.sequence + 1,
+      gameId,
+      round: juryEvent.round,
+      phase: null,
+      type: "player.eliminated",
+      timestamp: "2026-06-20T00:00:02.000Z",
+      source: "engine",
+      visibility: "system",
+      payloadVersion: 1,
+      sourcePointers: [],
+      payload: {
+        playerId: "echo",
+        playerName: "Echo",
+        eliminatedRound: juryEvent.round,
+        juryMember: {
+          playerId: "echo",
+          playerName: "Echo",
+          eliminatedRound: juryEvent.round,
+        },
+      },
+    };
+    await appendGameEvents(db, { gameId, ownerEpoch, events: [juryEvent, finalEvent] });
+    await captureGameCompletionSettlement(db, {
+      gameId,
+      ownerEpoch,
+      finalEventSequence: finalEvent.sequence,
+      finalEventHash: hashCanonicalEvent(finalEvent),
+      terminalResult: {
+        gameId,
+        winnerId: "atlas",
+        winnerName: "Atlas",
+        rounds: 1,
+        transcript: [{
+          round: 1,
+          phase: Phase.END,
+          timestamp: 1_720_000_000_000,
+          from: "House",
+          scope: "system",
+          text: "PRIVATE_PENDING_SETTLEMENT_TRANSCRIPT",
+        }],
+        eliminationOrder: [],
+        rankedPlayerIds: ["atlas"],
+      },
+      tokenUsage: {
+        total: {
+          promptTokens: 0,
+          cachedTokens: 0,
+          completionTokens: 0,
+          reasoningTokens: 0,
+          totalTokens: 0,
+          callCount: 0,
+          emptyResponses: 0,
+        },
+        perAction: {},
+      },
+      resolvedModel: "private-model-name",
+      calculatedCost: null,
+      completionConfig: { privatePrompt: "PRIVATE_COMPLETION_PROMPT" },
+      finishedAt: "2026-07-15T12:00:00.000Z",
+    });
+    const inspection = await readModel.inspectDurableRun(gameId, PRODUCER_ACCESS);
+    expect(inspection.developerEvidence.durableRun).toMatchObject({
+      completionSettlement: {
+        state: "pending",
+        retryEligible: false,
+        resultHash: expect.stringMatching(/^sha256:/),
+      },
+      projection: {
+        summary: {
+          winner: null,
+          acceptedOutcomes: { juryWinner: null },
+          voteState: { juryVotes: {} },
+        },
+      },
+    });
+    const serializedInspection = JSON.stringify(inspection);
+    expect(serializedInspection).not.toContain("PRIVATE_PENDING_SETTLEMENT_TRANSCRIPT");
+    expect(serializedInspection).not.toContain("PRIVATE_COMPLETION_PROMPT");
+    expect(serializedInspection).not.toContain("private-model-name");
+    expect(serializedInspection).not.toContain("payload");
+    expect(serializedInspection).not.toContain("tokenUsage");
+
+    const pendingList = await readModel.listGames(PRODUCER_ACCESS);
+    expect(pendingList.canonicalGameFacts.games[0]?.projection).not.toHaveProperty("winner");
+    const pendingProjection = await readModel.readProjection(gameId, PRODUCER_ACCESS);
+    expect(pendingProjection.canonicalGameFacts.projection.summary).toMatchObject({
+      winner: null,
+      acceptedOutcomes: { juryWinner: null },
+      voteState: { juryVotes: {} },
+    });
+    const pendingWinnerEvents = await readModel.filterEvents({
+      gameIdOrSlug: gameId,
+      eventType: "jury.winner_determined",
+    }, PRODUCER_ACCESS);
+    expect(pendingWinnerEvents.canonicalGameFacts.events).toEqual([]);
+    const pendingJuryVotes = await readModel.filterEvents({
+      gameIdOrSlug: gameId,
+      eventType: "jury.vote_cast",
+    }, PRODUCER_ACCESS);
+    expect(pendingJuryVotes.canonicalGameFacts.events).toEqual([]);
+    const pendingFinalElimination = await readModel.filterEvents({
+      gameIdOrSlug: gameId,
+      eventType: "player.eliminated",
+      fromSequence: finalEvent.sequence,
+    }, PRODUCER_ACCESS);
+    expect(pendingFinalElimination.canonicalGameFacts.events).toEqual([]);
+    const pendingRoundFacts = await readModel.readRoundFacts({
+      gameIdOrSlug: gameId,
+      round: finalEvent.round,
+    }, PRODUCER_ACCESS);
+    expect(pendingRoundFacts.canonicalGameFacts.roundFacts.players.eliminated)
+      .not.toContainEqual(expect.objectContaining({ id: "echo" }));
   });
 
   test("reads LLM-native postgame surfaces for edge-smoke-dusk", async () => {

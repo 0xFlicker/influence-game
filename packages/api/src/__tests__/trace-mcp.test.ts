@@ -58,6 +58,9 @@ describe("Trace MCP JSON-RPC server", () => {
       "read_content",
       "search_reasoning_traces",
     ]);
+    expect(JSON.stringify(tools)).not.toContain("retry");
+    expect(JSON.stringify(tools)).not.toContain("resume");
+    expect(JSON.stringify(tools)).not.toContain("restart");
     expect(JSON.stringify(response?.result)).not.toContain("maxBytesPerObject");
     expect(JSON.stringify(response?.result)).toContain("maxBytes");
   });

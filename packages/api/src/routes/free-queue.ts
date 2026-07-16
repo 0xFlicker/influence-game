@@ -72,8 +72,12 @@ function getNextFreeGameTime(): string {
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createFreeQueueRoutes(db: DrizzleDB) {
+export function createFreeQueueRoutes(
+  db: DrizzleDB,
+  dependencies: { startGame?: typeof startGame } = {},
+) {
   const app = new Hono<AuthEnv>();
+  const startOwnedGame = dependencies.startGame ?? startGame;
 
   // -------------------------------------------------------------------------
   // GET /api/free-queue — queue status
@@ -448,7 +452,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
 
     let startupError: string | undefined;
     try {
-      const result = await startGame(db, game.id, owner.claim.ownerEpoch);
+      const result = await startOwnedGame(db, game.id, owner.claim.ownerEpoch);
       startupError = result.error;
     } catch (error) {
       startupError = error instanceof Error ? error.message : String(error);

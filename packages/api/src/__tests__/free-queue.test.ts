@@ -208,6 +208,105 @@ describe("free queue season admission", () => {
     });
   });
 
+  test("rejects Daily Free provider preflight before claiming an owner", async () => {
+    const db = await setupTestDB();
+    const operatorId = await insertUser(db, "preflight-operator");
+    await createQueuedAgent(db, "preflight-a", "Aster Preflight");
+    await createQueuedAgent(db, "preflight-b", "Maris Preflight");
+    const token = await createSessionToken(operatorId, {
+      roles: ["scheduler"],
+      permissions: ["schedule_free_game"],
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+    const draw = await app.request("/api/free-queue/draw", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:test:provider-preflight",
+      },
+    });
+    const drawn = await draw.json() as { gameId: string };
+    const savedEnv = {
+      mockRunner: process.env.INFLUENCE_API_TEST_MOCK_RUNNER,
+      openaiKey: process.env.OPENAI_API_KEY,
+    };
+    process.env.INFLUENCE_API_TEST_MOCK_RUNNER = "false";
+    delete process.env.OPENAI_API_KEY;
+    try {
+      const started = await app.request("/api/free-queue/start", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      expect(started.status).toBe(500);
+      expect(await started.json()).toEqual({ error: "LLM provider not configured" });
+      expect((await db.select().from(schema.games)
+        .where(eq(schema.games.id, drawn.gameId)))[0]).toMatchObject({
+        status: "waiting",
+        startedAt: null,
+      });
+      expect(await db.select().from(schema.gameRunOwners)
+        .where(eq(schema.gameRunOwners.gameId, drawn.gameId))).toHaveLength(0);
+    } finally {
+      if (savedEnv.mockRunner === undefined) delete process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
+      else process.env.INFLUENCE_API_TEST_MOCK_RUNNER = savedEnv.mockRunner;
+      if (savedEnv.openaiKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = savedEnv.openaiKey;
+    }
+  });
+
+  test("unwinds a claimed Daily Free owner after synchronous runner startup failure", async () => {
+    const db = await setupTestDB();
+    const operatorId = await insertUser(db, "startup-operator");
+    await createQueuedAgent(db, "startup-a", "Aster Startup");
+    await createQueuedAgent(db, "startup-b", "Maris Startup");
+    const token = await createSessionToken(operatorId, {
+      roles: ["scheduler"],
+      permissions: ["schedule_free_game"],
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+    const draw = await app.request("/api/free-queue/draw", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:test:startup-unwind",
+      },
+    });
+    const drawn = await draw.json() as { gameId: string };
+    const failingApp = new Hono().route("/", createFreeQueueRoutes(db, {
+      startGame: async () => {
+        throw new Error("Injected runner startup failure");
+      },
+    }));
+
+    const failed = await failingApp.request("/api/free-queue/start", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(failed.status).toBe(500);
+    expect(await failed.json()).toMatchObject({ error: expect.any(String) });
+    expect((await db.select().from(schema.games)
+      .where(eq(schema.games.id, drawn.gameId)))[0]).toMatchObject({
+      status: "waiting",
+      startedAt: null,
+    });
+    expect(await db.select().from(schema.gameEvents)
+      .where(eq(schema.gameEvents.gameId, drawn.gameId))).toHaveLength(0);
+    expect(await db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, drawn.gameId))).toEqual([
+      expect.objectContaining({ status: "closed", kernelHealth: "degraded" }),
+    ]);
+
+    const retried = await app.request("/api/free-queue/start", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(retried.status).toBe(200);
+    expect(await retried.json()).toMatchObject({ started: true, gameId: drawn.gameId });
+    await abortAllGames();
+  });
+
   test("draw remains available but explicitly unrated without an active season", async () => {
     const db = await setupTestDB();
     const operatorId = await insertUser(db, "operator-unrated");

@@ -6,7 +6,12 @@ import { schema } from "../db/index.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
 import { writeGameCheckpoint } from "../services/game-checkpoints.js";
 import { createEvidenceManifest } from "../services/game-evidence.js";
-import { getDurableRunInspection } from "../services/game-durable-run.js";
+import {
+  getDurableRunInspection,
+} from "../services/game-durable-run.js";
+import { getPersistedGameProjectionBeforeTerminalOutcome } from "../services/game-projection-read-model.js";
+import type { PersistedGameEventsRead } from "../services/game-event-read-model.js";
+import type { CanonicalGameEvent } from "@influence/engine";
 import { acquireGameRunOwner } from "../services/game-ownership.js";
 import { abortAllGames, startGame } from "../services/game-lifecycle.js";
 import {
@@ -23,6 +28,7 @@ import {
   insertCanonicalEventRows,
   insertGame,
   insertOwner,
+  withJuryWinner,
 } from "./durable-run-test-utils.js";
 
 const savedMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
@@ -43,6 +49,87 @@ async function waitForCompletedDurableInspection(db: DrizzleDB, gameId: string) 
 }
 
 describe("durable run inspection read model", () => {
+  test("replays the trusted pre-jury prefix while terminal settlement is non-final", () => {
+    const gameId = "sealed-game";
+    const initialEvents = createCanonicalEventFixture(gameId);
+    const lastInitial = initialEvents.at(-1)!;
+    const powerElimination: CanonicalGameEvent = {
+      sequence: lastInitial.sequence + 1,
+      gameId,
+      round: 1,
+      phase: null,
+      type: "player.eliminated",
+      timestamp: "2026-06-20T00:00:00.000Z",
+      source: "engine",
+      visibility: "system",
+      payloadVersion: 1,
+      sourcePointers: [],
+      payload: {
+        playerId: "mira",
+        playerName: "Mira",
+        eliminatedRound: 1,
+        juryMember: { playerId: "mira", playerName: "Mira", eliminatedRound: 1 },
+      },
+    };
+    const eventsWithWinner = withJuryWinner(
+      [...initialEvents, powerElimination],
+      "atlas",
+    );
+    const winnerEvent = eventsWithWinner.at(-1)!;
+    const finalLoserElimination: CanonicalGameEvent = {
+      sequence: winnerEvent.sequence + 1,
+      gameId,
+      round: 4,
+      phase: null,
+      type: "player.eliminated",
+      timestamp: "2026-06-20T00:00:02.000Z",
+      source: "engine",
+      visibility: "system",
+      payloadVersion: 1,
+      sourcePointers: [],
+      payload: {
+        playerId: "echo",
+        playerName: "Echo",
+        eliminatedRound: 4,
+        juryMember: { playerId: "echo", playerName: "Echo", eliminatedRound: 4 },
+      },
+    };
+    const events = [...eventsWithWinner, finalLoserElimination];
+    const persistedEvents: PersistedGameEventsRead = {
+      gameId,
+      status: "complete",
+      events: events.map((event) => ({
+        gameId,
+        sequence: event.sequence,
+        eventType: event.type,
+        eventHash: hashCanonicalEvent(event),
+        ownerEpoch: "owner-epoch",
+        visibility: event.visibility,
+        payloadVersion: 1,
+        envelope: event,
+        createdAt: event.timestamp,
+      })),
+      diagnostics: [],
+      eventCount: events.length,
+      validPrefixLength: events.length,
+      lastTrustedSequence: finalLoserElimination.sequence,
+      persistedHead: {
+        sequence: finalLoserElimination.sequence,
+        eventType: finalLoserElimination.type,
+        eventHash: hashCanonicalEvent(finalLoserElimination),
+        createdAt: finalLoserElimination.timestamp,
+      },
+    };
+
+    const safeProjection = getPersistedGameProjectionBeforeTerminalOutcome(persistedEvents);
+
+    expect(safeProjection.summary?.players.aliveIds.sort()).toEqual(["atlas", "echo", "nyx"]);
+    expect(safeProjection.summary?.players.eliminatedIds).toEqual(["mira"]);
+    expect(safeProjection.summary?.winner).toBeNull();
+    expect(safeProjection.summary?.acceptedOutcomes.juryWinner).toBeNull();
+    expect(safeProjection.summary?.voteState.juryVotes).toEqual({});
+  });
+
   let db: DrizzleDB;
 
   function openMockObserver(gameId: string): ServerWebSocket<WsConnectionData> {
@@ -136,6 +223,12 @@ describe("durable run inspection read model", () => {
       const inspection = await waitForCompletedDurableInspection(db, gameId);
 
       expect(inspection.game.status).toBe("completed");
+      expect(inspection.completionSettlement).toMatchObject({
+        state: "completed",
+        retryEligible: false,
+        resultHash: expect.stringMatching(/^sha256:/),
+      });
+      expect(inspection.completionSettlement).not.toHaveProperty("payload");
       expect(inspection.kernel.owner?.status).toBe("closed");
       expect(inspection.eventLog.status).toBe("complete");
       expect(inspection.eventLog.rowCount).toBeGreaterThan(0);
@@ -212,6 +305,10 @@ describe("durable run inspection read model", () => {
     if (!result.ok) throw new Error(result.error);
     expect(result.response.schemaVersion).toBe(2);
     expect(result.response.game.id).toBe(gameId);
+    expect(result.response.completionSettlement).toMatchObject({
+      state: "not_applicable",
+      retryEligible: false,
+    });
     expect(result.response.kernel.health).toMatchObject({
       status: "healthy",
       durableEventCount: events.length,
@@ -317,7 +414,7 @@ describe("durable run inspection read model", () => {
     expect(result.ok).toBeTrue();
     if (!result.ok) throw new Error(result.error);
     expect(result.response.game.id).toBe(targetId);
-    expect(result.response.game.slug).toBeUndefined();
+    expect(result.response.game.slug).toBe(`test-${targetId}`);
   });
 
   test("reports expired active owners as suspended at inspection time", async () => {

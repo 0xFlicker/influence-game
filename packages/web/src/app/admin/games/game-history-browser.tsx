@@ -1,8 +1,17 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { formatGameModelLabel, hideGame, listAdminGames, unhideGame, type AdminGameSummary, type GameStatus } from "@/lib/api";
+import {
+  ApiError,
+  formatGameModelLabel,
+  hideGame,
+  listAdminGames,
+  retryGameSettlement,
+  unhideGame,
+  type AdminGameSummary,
+  type GameStatus,
+} from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { gameDisplayName, gameHref } from "@/lib/game-identity";
 import { AdminCostPanel, AdminCostPill } from "../admin-cost-view";
@@ -16,12 +25,13 @@ import { AdminPostgameMediaPanel, AdminPostgameMediaPill } from "../admin-postga
 type StatusFilter = GameStatus | "all";
 type PlayerFilter = "all" | "4" | "6" | "8" | "10" | "12";
 type VisibilityFilter = "all" | "visible" | "hidden";
+type SettlementFilter = "all" | "pending" | "repair_required";
 
 // ---------------------------------------------------------------------------
 // Row component
 // ---------------------------------------------------------------------------
 
-function StatusBadge({ status }: { status: AdminGameSummary["status"] }) {
+function StatusBadge({ game }: { game: AdminGameSummary }) {
   const styles: Record<AdminGameSummary["status"], string> = {
     waiting: "bg-yellow-900/40 text-yellow-400",
     in_progress: "bg-blue-900/40 text-blue-400",
@@ -36,9 +46,35 @@ function StatusBadge({ status }: { status: AdminGameSummary["status"] }) {
     cancelled: "✗ void",
     suspended: "failed",
   };
+  const settlementState = game.completionSettlement.state;
+  const suspendedLabel = settlementState === "pending"
+    ? "Finalizing results"
+    : settlementState === "repair_required"
+      ? "Results under review"
+      : labels.suspended;
   return (
-    <span className={`text-xs px-2 py-0.5 rounded-full ${styles[status]}`}>
-      {labels[status]}
+    <span className={`text-xs px-2 py-0.5 rounded-full ${styles[game.status]}`}>
+      {game.status === "suspended" ? suspendedLabel : labels[game.status]}
+    </span>
+  );
+}
+
+function SettlementBadge({ game }: { game: AdminGameSummary }) {
+  const settlement = game.completionSettlement;
+  if (settlement.state === "not_applicable") return <span className="text-white/20">—</span>;
+  const details = settlement.state === "pending"
+    ? settlement.retryEligible ? "Pending · retry ready" : "Pending · finalizing"
+    : settlement.state === "repair_required"
+      ? "Repair required"
+      : "Completed";
+  const tone = settlement.state === "repair_required"
+    ? "bg-red-950/60 text-red-300 border-red-700/40"
+    : settlement.state === "pending"
+      ? "bg-amber-950/60 text-amber-200 border-amber-700/40"
+      : "bg-green-950/40 text-green-300 border-green-700/30";
+  return (
+    <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] ${tone}`}>
+      {details}
     </span>
   );
 }
@@ -46,17 +82,21 @@ function StatusBadge({ status }: { status: AdminGameSummary["status"] }) {
 function GameRow({
   game,
   canHide,
+  canRetrySettlement,
   onToggleVisibility,
   onOpenCosts,
   onOpenHighlights,
   onOpenMedia,
+  onOpenRetry,
 }: {
   game: AdminGameSummary;
   canHide: boolean;
+  canRetrySettlement: boolean;
   onToggleVisibility: () => void;
   onOpenCosts: () => void;
   onOpenHighlights: () => void;
   onOpenMedia: () => void;
+  onOpenRetry: () => void;
 }) {
   const router = useRouter();
   const [toggling, setToggling] = useState(false);
@@ -86,7 +126,7 @@ function GameRow({
   return (
     <tr
       onClick={() => router.push(gameHref(game))}
-      className={`border-t border-white/5 hover:bg-white/[0.02] transition-colors group cursor-pointer ${game.hidden ? "opacity-40" : ""}`}
+      className={`border-t border-white/5 hover:bg-white/[0.02] transition-colors group cursor-pointer ${game.hidden ? "opacity-40" : ""} ${game.completionSettlement.state === "repair_required" ? "bg-red-950/10" : game.completionSettlement.state === "pending" ? "bg-amber-950/10" : ""}`}
     >
       <td className="py-3 px-4 text-white/50 text-sm">
         {gameDisplayName(game)}
@@ -113,7 +153,10 @@ function GameRow({
       <td className="py-3 px-4 text-white/50 text-sm">{formatGameModelLabel(game.modelSelection, game.modelTier, game.modelLabel)}</td>
       <td className="py-3 px-4 text-white/40 text-xs">{date}</td>
       <td className="py-3 px-4">
-        <StatusBadge status={game.status} />
+        <StatusBadge game={game} />
+      </td>
+      <td className="py-3 px-4">
+        <SettlementBadge game={game} />
       </td>
       <td className="py-3 px-4">
         <AdminCostPill
@@ -129,6 +172,18 @@ function GameRow({
         <AdminPostgameMediaPill game={game} onClick={onOpenMedia} />
       </td>
       <td className="py-3 px-4">
+        {settlementRetryIsAvailable(game, canRetrySettlement) && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenRetry();
+            }}
+            className="mr-3 rounded-md border border-amber-600/40 px-2 py-1 text-xs text-amber-200 transition-colors hover:bg-amber-900/30 focus:outline-none focus:ring-2 focus:ring-amber-400"
+          >
+            Retry settlement
+          </button>
+        )}
         {canHide && (
           <button
             onClick={(e) => {
@@ -178,6 +233,148 @@ function GameRow({
   );
 }
 
+export function settlementRetrySuccessMessage(
+  result: Awaited<ReturnType<typeof retryGameSettlement>>,
+): string {
+  const followUpsConfirmed = result.watchRefreshed && result.mediaReconciliation !== null;
+  const followUpMessage = followUpsConfirmed
+    ? " Watch and media state were reconciled."
+    : " The sealed result is complete, but one or more follow-up views still need inspection.";
+  return result.outcome === "already_completed"
+    ? `Settlement was already completed.${followUpMessage}`
+    : `Settlement completed from the sealed result.${followUpMessage}`;
+}
+
+export function settlementRetryIsAvailable(
+  game: AdminGameSummary,
+  hasPermission: boolean,
+): boolean {
+  return hasPermission && game.completionSettlement.retryEligible;
+}
+
+export function settlementRetryErrorMessage(error: unknown): string {
+  return error instanceof ApiError && error.code === "repair_blocked"
+    ? "Retry is blocked because this settlement requires evidence repair."
+    : error instanceof ApiError && error.code === "invalid_state"
+      ? "This settlement is no longer ready for retry. Refresh and inspect its current state."
+      : error instanceof Error
+        ? error.message
+        : "Settlement retry failed.";
+}
+
+export function settlementRetryIsTerminalConflict(error: unknown): boolean {
+  return error instanceof ApiError
+    && (error.code === "invalid_state" || error.code === "repair_blocked");
+}
+
+export function RetrySettlementDialog({
+  game,
+  onClose,
+  onSettled,
+}: {
+  game: AdminGameSummary;
+  onClose: () => void;
+  onSettled: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [retryBlocked, setRetryBlocked] = useState(false);
+  const [status, setStatus] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    return () => {
+      if (dialog?.open) dialog.close();
+    };
+  }, []);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    setStatus(null);
+    try {
+      const result = await retryGameSettlement(game.slug, reason);
+      setStatus({
+        tone: "success",
+        message: settlementRetrySuccessMessage(result),
+      });
+      onSettled();
+    } catch (error) {
+      setStatus({ tone: "error", message: settlementRetryErrorMessage(error) });
+      if (settlementRetryIsTerminalConflict(error)) {
+        setRetryBlocked(true);
+        onSettled();
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby="retry-settlement-title"
+      onCancel={(event) => {
+        if (submitting) event.preventDefault();
+        else onClose();
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget && !submitting) onClose();
+      }}
+      className="w-full max-w-lg rounded-xl border border-white/10 bg-zinc-950 p-0 text-white shadow-2xl backdrop:bg-black/70"
+    >
+      <form onSubmit={handleSubmit} className="p-6">
+        <h2 id="retry-settlement-title" className="text-lg font-semibold">Retry completion settlement</h2>
+        <p className="mt-2 text-sm text-white/55">
+          This settles the sealed result for <strong className="text-white/80">{gameDisplayName(game)}</strong>. It does not replay gameplay.
+        </p>
+        <label htmlFor="retry-settlement-reason" className="mt-5 block text-sm font-medium text-white/75">
+          Operator reason
+        </label>
+        <input
+          id="retry-settlement-reason"
+          autoFocus
+          required
+          maxLength={240}
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          disabled={submitting || retryBlocked || status?.tone === "success"}
+          placeholder="Why is this retry safe now?"
+          className="mt-2 w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/25 focus:border-amber-400 focus:outline-none disabled:opacity-50"
+        />
+        <p className="mt-2 text-xs text-white/35">
+          Confirming sends the exact phrase RETRY_SETTLEMENT with this reason.
+        </p>
+        <div aria-live="polite" className={`mt-4 min-h-5 text-sm ${status?.tone === "error" ? "text-red-300" : "text-green-300"}`}>
+          {status?.message}
+        </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="rounded-lg px-3 py-2 text-sm text-white/55 transition-colors hover:text-white disabled:opacity-40"
+          >
+            {status?.tone === "success" || retryBlocked ? "Close" : "Cancel"}
+          </button>
+          {status?.tone !== "success" && !retryBlocked && (
+            <button
+              type="submit"
+              disabled={submitting || reason.trim().length === 0}
+              className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting ? "Retrying…" : "Retry sealed settlement"}
+            </button>
+          )}
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Filter bar
 // ---------------------------------------------------------------------------
@@ -217,16 +414,19 @@ export function GameHistoryBrowser() {
   const { hasPermission } = usePermissions();
   const canHideGame = hasPermission("hide_game");
   const canManagePostgameMedia = hasPermission("manage_postgame_media");
+  const canRetrySettlement = hasPermission("retry_game_settlement");
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [playerFilter, setPlayerFilter] = useState<PlayerFilter>("all");
   const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>("all");
+  const [settlementFilter, setSettlementFilter] = useState<SettlementFilter>("all");
   const [search, setSearch] = useState("");
 
   const [games, setGames] = useState<AdminGameSummary[]>([]);
   const [costGame, setCostGame] = useState<AdminGameSummary | null>(null);
   const [highlightsGame, setHighlightsGame] = useState<AdminGameSummary | null>(null);
   const [mediaGame, setMediaGame] = useState<AdminGameSummary | null>(null);
+  const [retryGame, setRetryGame] = useState<AdminGameSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const fetchRequestIdRef = useRef(0);
@@ -258,6 +458,7 @@ export function GameHistoryBrowser() {
     if (playerFilter !== "all" && g.playerCount !== parseInt(playerFilter)) return false;
     if (visibilityFilter === "visible" && g.hidden) return false;
     if (visibilityFilter === "hidden" && !g.hidden) return false;
+    if (settlementFilter !== "all" && g.completionSettlement.state !== settlementFilter) return false;
     if (search) {
       const q = search.toLowerCase();
       const modelLabel = formatGameModelLabel(g.modelSelection, g.modelTier, g.modelLabel).toLowerCase();
@@ -287,7 +488,7 @@ export function GameHistoryBrowser() {
             { value: "completed", label: "Done" },
             { value: "in_progress", label: "Live" },
             { value: "waiting", label: "Waiting" },
-            { value: "suspended", label: "Failed" },
+            { value: "suspended", label: "Suspended" },
             { value: "cancelled", label: "Void" },
           ]}
         />
@@ -316,6 +517,16 @@ export function GameHistoryBrowser() {
             ]}
           />
         )}
+        <FilterSelect
+          label="Completion settlement"
+          value={settlementFilter}
+          onChange={setSettlementFilter}
+          options={[
+            { value: "all", label: "All settlements" },
+            { value: "pending", label: "Finalizing results" },
+            { value: "repair_required", label: "Results under review" },
+          ]}
+        />
         <input
           type="text"
           placeholder="Search…"
@@ -350,7 +561,7 @@ export function GameHistoryBrowser() {
           <table className="min-w-[72rem] w-full">
             <thead>
               <tr className="border-b border-white/10">
-                {["Slug", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", "Trailer", ""].map((h) => (
+                {["Slug", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Settlement", "Cost", "Highlights", "Trailer", ""].map((h) => (
                   <th
                     key={h}
                     className="text-left py-3 px-4 text-xs text-white/30 font-medium"
@@ -366,10 +577,12 @@ export function GameHistoryBrowser() {
                   key={g.id}
                   game={g}
                   canHide={canHideGame}
+                  canRetrySettlement={canRetrySettlement}
                   onToggleVisibility={fetchGames}
                   onOpenCosts={() => setCostGame(g)}
                   onOpenHighlights={() => setHighlightsGame(g)}
                   onOpenMedia={() => setMediaGame(g)}
+                  onOpenRetry={() => setRetryGame(g)}
                 />
               ))}
             </tbody>
@@ -395,6 +608,14 @@ export function GameHistoryBrowser() {
           game={mediaGame}
           canManage={canManagePostgameMedia}
           onClose={() => setMediaGame(null)}
+        />
+      )}
+      {retryGame && (
+        <RetrySettlementDialog
+          key={retryGame.id}
+          game={retryGame}
+          onClose={() => setRetryGame(null)}
+          onSettled={fetchGames}
         />
       )}
     </div>

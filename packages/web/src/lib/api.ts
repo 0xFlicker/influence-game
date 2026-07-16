@@ -366,6 +366,37 @@ export interface AdminGameSummary extends GameSummary {
   hidden: boolean;
   hiddenAt?: string;
   cost?: AdminGameCostSummary | null;
+  completionSettlement: GameCompletionSettlementSummary;
+}
+
+export interface GameCompletionSettlementSummary {
+  schemaVersion: 1;
+  state: "not_applicable" | "pending" | "repair_required" | "completed";
+  retryEligible: boolean;
+  attemptCount: number;
+  resultHash: string | null;
+  boundary: {
+    ownerEpoch: string;
+    finalEventSequence: number;
+    finalEventHash: string;
+  } | null;
+  failureCode: string | null;
+  capturedAt: string | null;
+  retryReadyAt: string | null;
+  lastAttemptedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface RetryGameSettlementResult {
+  outcome: "completed" | "already_completed";
+  settlement: GameCompletionSettlementSummary;
+  watchRefreshed: boolean;
+  mediaReconciliation: {
+    outcome: "queued" | "waiting_inputs" | "suppressed" | "not_completed";
+    gameId: string;
+    previousRenderVersion: number | null;
+    currentRenderVersion: number | null;
+  } | null;
 }
 
 export type AdminGameCostState = "no_calls" | "unavailable" | "estimated" | "actual";
@@ -436,6 +467,16 @@ export interface AdminGameCostDetail extends AdminGameCostSummary {
 
 export async function listAdminGames(): Promise<AdminGameSummary[]> {
   return apiFetch("/api/admin/games");
+}
+
+export async function retryGameSettlement(
+  idOrSlug: string,
+  reason: string,
+): Promise<RetryGameSettlementResult> {
+  return apiFetch(`/api/admin/games/${encodeURIComponent(idOrSlug)}/completion-settlement/retry`, {
+    method: "POST",
+    body: JSON.stringify({ reason, confirmation: "RETRY_SETTLEMENT" }),
+  });
 }
 
 export async function getAdminGameCosts(idOrSlug: string): Promise<AdminGameCostDetail> {

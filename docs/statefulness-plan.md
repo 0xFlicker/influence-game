@@ -13,13 +13,15 @@ Historically, every running game held its entire execution state in process memo
 
 The engine now emits canonical accepted-domain events for simulator runs and writes them to `game-N-events.jsonl`. API-backed games also have a first durable game-run kernel: the API game ID is bound into engine events at construction, canonical events are written to Postgres under an owner epoch, and suspended/checkpoint/evidence metadata gives operators something inspectable after failure. The admin durable-run inspection read model can now validate the persisted event log, replay the trusted prefix into the canonical projection, and summarize checkpoint/evidence readiness.
 
-This is now partially crash-recoverable at implemented completed phase boundaries, not generally crash-safe. On startup, the API process treats any pre-existing `in_progress` game as orphaned because the replacement process has no in-memory runner for it, marks it `suspended`, then configured startup recovery can claim and continue the same game when the newest resume-capable phase-boundary checkpoint is at the durable event head and has a supported actor coordinate plus complete resume inputs. Mid-phase interruptions, in-flight model calls, full XState snapshot restoration, arbitrary old-game repair, and multi-worker recovery remain unsupported.
+This is now partially crash-recoverable at implemented completed phase boundaries, not generally crash-safe. On startup, the API distinguishes a failed start with no accepted events, interrupted gameplay with durable events, and a sealed terminal completion awaiting settlement. Only supported interrupted-game checkpoints return to gameplay. A sealed completion is a one-way boundary: transient settlement failures require a human-gated idempotent retry, while contradictory or missing sealed evidence requires repair. Mid-phase interruptions, in-flight model calls, full XState snapshot restoration, arbitrary old-game repair, and multi-worker recovery remain unsupported.
 
 ### Current Risks
 
 | Scenario | Impact |
 |----------|--------|
 | **Process crash mid-game** | The live runner dies. On API restart, pre-existing `in_progress` rows are treated as orphaned and marked `suspended`. Persisted canonical events/checkpoints/evidence manifests remain inspectable. If the newest resume-capable event-head checkpoint is a supported completed phase boundary, startup recovery can resume the same game; otherwise the run remains `suspended`. |
+| **Process crash before first accepted event** | When there is no sealed completion and exactly one active owner agrees with the empty event head, startup closes that owner and returns the roster to `waiting`. Missing/ambiguous owners, head disagreement, or cleanup conflict fail closed to `suspended` instead. |
+| **Failure after gameplay finishes** | The final event and private terminal envelope survive as a completion settlement. Startup never replays gameplay and never automatically settles it. A transient `pending` settlement becomes eligible for an audited admin retry only after the exact owner is expired; contradictory evidence becomes `repair_required`. |
 | **Deploy while games active** | Same as crash for unplanned termination. Supported phase-boundary recovery reduces risk, but graceful drain/resume and multi-worker coordination remain future work. |
 | **Horizontal scaling** | Accepted commits are owner-epoch guarded, but each live run still needs one sequential owner. `activeGames` and WebSocket pub/sub remain process-local caches. |
 
@@ -60,17 +62,21 @@ This is now partially crash-recoverable at implemented completed phase boundarie
 - Game players (personas, agent configs) — `game_players` table
 - Transcripts — `transcripts` table (bulk-inserted after game, or partially on error)
 - Game results — `game_results` table (winner, rounds, token usage)
+- Sealed terminal envelopes and settlement state — `game_completion_settlements` (private payload, final-event identity, result hash, retry readiness; sealed envelope fields are database-immutable)
+- Completion settlement audit attempts — `game_completion_settlement_attempts` (append-only request and correlated terminal receipts with safe operator/outcome metadata; no sealed payload)
 - Agent memories — `agent_memories` table via `PgMemoryStore` (written during game)
 - Agent profiles, ELO ratings, users, auth — various tables
 
 ### Existing Recovery Mechanisms
 
-1. **Orphaned game classification** (`index.ts`, `startup-orphaned-games.ts`) — On startup, pre-existing `in_progress` games are marked `suspended` for configured recovery because the replacement API process has no live runner for them.
+1. **Orphaned game classification** (`index.ts`, `startup-orphaned-games.ts`) — On startup, pre-existing `in_progress` games are classified from durable evidence. Exact zero-event starts return to `waiting`; durable gameplay is suspended for configured recovery; sealed terminal completions are suspended outside gameplay recovery.
 2. **Durable event append** (`game-events.ts`) — API canonical events are appended in sequence under the active owner epoch and suspend on owner/identity/sequence/hash failure.
 3. **Forensic checkpoint/evidence rows** (`game-checkpoints.ts`, `game-evidence.ts`) — Checkpoint capsules and private evidence manifests provide debug boundaries without making raw evidence public or claiming hydration.
 4. **Durable truth read model** (`game-event-read-model.ts`, `game-projection-read-model.ts`, `game-durable-run.ts`) — Admin-only inspection can explain event-log integrity, replay status, board projection summary, checkpoint readiness, and redacted evidence counts from Postgres.
 5. **Memory cleanup** (`game-lifecycle.ts`) — Normal completed/cancelled exits can clear `PgMemoryStore`; suspended runs avoid eager cleanup intended for safe terminal states.
 6. **Phase-boundary startup recovery** (`game-recovery.ts`, `game-recovery-support.ts`, `game-lifecycle.ts`) — On startup, the API process scans suspended games by default, validates a supported checkpoint, claims a fresh owner, hydrates `GameRunner`, and continues the same game. Set `INFLUENCE_API_STARTUP_RECOVERY=false` only when recovery needs to be explicitly disabled.
+7. **Captured completion settlement** (`game-completion-settlement.ts`) — The lifecycle seals the exact terminal result before atomically publishing result, transcript, competition, rating, counter, postgame, and owner-closure effects. Repeated or competing settlement attempts converge on one result.
+8. **Operator settlement retry** (`game-completion-settlement-operator.ts`, `admin.ts`) — Startup can open the retry-ready gate after proving the prior runner is absent, but only an authorized admin action with a reason can execute the retry. Producer MCP is read-only and `repair_required` settlements are not retried.
 
 These are partial crash-recovery mechanisms for supported phase boundaries plus fail-closed mitigation for everything else.
 
@@ -82,17 +88,29 @@ Note (as of 2026-06-30 endgame expansion): startup recovery supports staged endg
 
 Note (as of 2026-07-02 Accusation Capsule V1): startup recovery now supports `tribunal_defense` through a structured `currentAccusations` accumulator payload sealed to the same checkpoint boundary. Recovery validates capsule version, boundary identity, active target/accuser IDs, player names, non-empty accusation content, and duplicate targets before hydrating `_currentAccusations`. Transcript prose, private trace text, and public dialogue remain non-authoritative for rebuilding accusation state.
 
-### Current Resume Status (2026-07-02)
+### Current Recovery Status (2026-07-15)
+
+**Restart classification**
+
+| Durable evidence at startup | Classification | Allowed action |
+|---|---|---|
+| No accepted events, no completion settlement, exactly one active owner at event head zero | Failed start | Atomically close the owner and return the frozen roster to `waiting`; a later normal start creates a fresh owner. |
+| Accepted events, no sealed completion | Interrupted gameplay | Suspend first, then resume only from a supported event-head phase-boundary checkpoint under a fresh owner. Unsupported evidence remains suspended. |
+| Sealed `pending`, `completed`, or `repair_required` completion settlement | Finished gameplay | Never replay gameplay. `completed` stays terminal; transient `pending` can become manual-retry eligible after exact-owner expiry; `repair_required` stays blocked for evidence repair. |
+
+Any owner ambiguity, owner/event disagreement, settlement inconsistency, or failed roster cleanup takes the fail-closed path to `suspended`; the classifier does not guess.
 
 **Working now**
 
 - Startup recovery is enabled by default. Set `INFLUENCE_API_STARTUP_RECOVERY=false` only to explicitly disable it.
-- On API startup, pre-existing `in_progress` rows are immediately treated as orphaned and marked `suspended`; there is no "recent game may still be finishing" grace window in the single-API-process deployment.
+- On API startup, every pre-existing `in_progress` row is treated as having no local runner; there is no "recent game may still be finishing" grace window. Exact zero-event failed starts return to `waiting`, while durable gameplay and sealed completions are suspended into their separate recovery branches.
 - Recovery can claim a fresh owner epoch, hydrate the runner from persisted canonical events plus checkpoint resume inputs, append contiguous post-restart canonical events, and finish through the normal completed-results path.
 - Supported actor coordinates: `lobby`, `vote`, `mingle`, `power`, `reveal`, `reckoning_lobby`, `reckoning_plea`, `reckoning_vote`, `tribunal_lobby`, `tribunal_accusation`, `tribunal_defense`, `tribunal_vote`, `judgment_opening`, `judgment_jury_questions`, `judgment_closing`, and `judgment_jury_vote`.
 - Phase-boundary checkpoints store `actor_coordinate` so multiple transcript-only boundaries at the same event sequence can be ordered and recovered honestly.
 - Startup recovery scans the newest phase-boundary checkpoints at the durable event head and selects the newest resume-capable checkpoint, not merely the newest checkpoint row. A newer unsupported same-head checkpoint leaves recovery free to use an older supported same-head boundary; if no checkpoint is resume-capable, recovery still fails closed.
 - `tribunal_defense` checkpoints can carry Accusation Capsule V1 data through the `currentAccusations` accumulator. The payload is structured runtime state, not transcript-derived truth.
+- Terminal completion capture is durable before settlement. Settlement is atomic and idempotent across results, season points, hidden ratings, profile/account counters, transcript, postgame initialization, and owner closure.
+- Transient settlement failures are visibly pending. Startup only marks an abandoned settlement retry-ready; it does not redrive it. The dedicated admin action is permission-gated, reasoned, audited, and safe to repeat without duplicate awards.
 - Live local proof: `punk-khaki-bolt` recovered from round-2 `vote`, later recovered again from `reckoning_lobby`, appended canonical events through sequence 64 under fresh owners, closed the final owner healthy, wrote one completed result, and ended with Sage as winner.
 
 **Known gaps**
@@ -101,11 +119,12 @@ Note (as of 2026-07-02 Accusation Capsule V1): startup recovery now supports `tr
 |---|---|---|
 | Mid-phase interruption | unsupported | In-flight model calls and partially collected phase effects are still lost. The system resumes only from completed phase-boundary checkpoints. |
 | Historical suspended games | opportunistic only | Old games can resume only if their latest event-head checkpoint has the implemented resume inputs. Missing transcript replay, missing token cursor, unsupported actor coordinates, or unsafe accumulators remain fail-closed. |
+| Completion settlement evidence repair | manual investigation | A missing or contradictory final event/envelope/hash becomes `repair_required`. Gameplay replay and ordinary settlement retry are intentionally blocked. |
 | Multi-worker / spot fleet | unsupported | Owner epochs fence durable writes, but startup recovery is still modeled around the current single API process acting as the worker. Real worker fleets need separate coordination and lease semantics. |
 
 **Durable TODO hygiene**
 
-When a statefulness slice lands, update this section, `docs/refactor-queue.md`, and any touched plan or solution note in the same branch. Completed durability work should not remain described as the next necessary TODO. After Accusation Capsule V1, there is no currently named phase-boundary accumulator blocker; the next honest risks are mid-phase interruption/in-flight model calls and, if deployment topology changes, graceful drain plus multi-worker lease/pub-sub coordination.
+When a statefulness slice lands, update this section, `docs/refactor-queue.md`, and any touched plan or solution note in the same branch. Completed durability work should not remain described as the next necessary TODO. Retryable terminal settlement is complete; the next honest risks are mid-phase interruption/in-flight model calls, interrupted-game public replay materialization if users need it, and, if deployment topology changes, graceful drain plus multi-worker lease/pub-sub coordination.
 
 ---
 

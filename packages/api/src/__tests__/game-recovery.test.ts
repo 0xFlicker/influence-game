@@ -21,6 +21,7 @@ import { schema } from "../db/index.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
 import { writeGameCheckpoint } from "../services/game-checkpoints.js";
 import { getDurableRunInspection } from "../services/game-durable-run.js";
+import { preparePendingCompletionSettlementsOnStartup } from "../services/game-completion-settlement.js";
 import { abortAllGames, recoverGamesOnStartup } from "../services/game-lifecycle.js";
 import { markGameSuspended } from "../services/game-ownership.js";
 import {
@@ -32,6 +33,7 @@ import {
   createCheckpointCapsule,
   createCanonicalEventFixture,
   enrichCapsuleForV1Candidate,
+  insertCanonicalEventRows,
   insertGame,
   insertOwner,
 } from "./durable-run-test-utils.js";
@@ -309,6 +311,39 @@ function findCheckpointBoundary(
   );
 }
 
+async function insertSealedSettlement(
+  db: DrizzleDB,
+  params: {
+    gameId: string;
+    ownerEpoch: string;
+    state: "pending" | "repair_required";
+  },
+): Promise<void> {
+  const events = createCanonicalEventFixture(params.gameId);
+  await insertCanonicalEventRows(db, params.gameId, params.ownerEpoch, events);
+  const finalEvent = events.at(-1);
+  if (!finalEvent) throw new Error("Expected completion event boundary");
+  await db.update(schema.gameRunOwners)
+    .set({ lastPersistedEventSequence: finalEvent.sequence })
+    .where(and(
+      eq(schema.gameRunOwners.gameId, params.gameId),
+      eq(schema.gameRunOwners.ownerEpoch, params.ownerEpoch),
+    ));
+  await db.insert(schema.gameCompletionSettlements).values({
+    id: `settlement-${params.gameId}`,
+    gameId: params.gameId,
+    ownerEpoch: params.ownerEpoch,
+    finalEventSequence: finalEvent.sequence,
+    finalEventHash: hashCanonicalEvent(finalEvent),
+    payload: {},
+    payloadHash: `sha256:${"a".repeat(64)}`,
+    state: params.state,
+    lastSafeFailureCode: params.state === "repair_required"
+      ? "competition_settlement_evidence_missing"
+      : "completion_settlement_transient_failure",
+  });
+}
+
 async function assertRecoveredGameCompleted(params: {
   db: DrizzleDB;
   gameId: string;
@@ -472,6 +507,87 @@ describe("game startup recovery", () => {
     });
     expect(await findStartupRecoverableGameIds(db)).not.toContain(gameId);
     expect(await recoverGamesOnStartup(db)).toEqual({ attempted: 0, recovered: 0, skipped: [] });
+  });
+
+  test("sealed pending and repair-required completions never enter gameplay recovery", async () => {
+    const pendingGameId = await insertGame(db, {
+      id: "startup-recovery-sealed-pending",
+      status: "suspended",
+      config: recoveryConfig,
+    });
+    const pendingOwnerEpoch = await insertOwner(db, pendingGameId, {
+      status: "expired",
+      kernelHealth: "suspended",
+      failureReason: "startup_orphaned",
+    });
+    await insertSealedSettlement(db, {
+      gameId: pendingGameId,
+      ownerEpoch: pendingOwnerEpoch,
+      state: "pending",
+    });
+
+    const repairGameId = await insertGame(db, {
+      id: "startup-recovery-sealed-repair",
+      status: "suspended",
+      config: recoveryConfig,
+    });
+    const repairOwnerEpoch = await insertOwner(db, repairGameId, {
+      status: "expired",
+      kernelHealth: "suspended",
+      failureReason: "runner_failed",
+    });
+    await insertSealedSettlement(db, {
+      gameId: repairGameId,
+      ownerEpoch: repairOwnerEpoch,
+      state: "repair_required",
+    });
+
+    expect(await getSupportedRecovery(db, pendingGameId)).toEqual({
+      ok: false,
+      gameId: pendingGameId,
+      reason: "completion_settlement_pending",
+    });
+    expect(await getSupportedRecovery(db, repairGameId)).toEqual({
+      ok: false,
+      gameId: repairGameId,
+      reason: "completion_settlement_repair_required",
+    });
+    const recoverable = await findStartupRecoverableGameIds(db);
+    expect(recoverable).not.toContain(pendingGameId);
+    expect(recoverable).not.toContain(repairGameId);
+  });
+
+  test("startup makes an orphaned sealed completion retryable without redriving it", async () => {
+    const gameId = await insertGame(db, {
+      id: "startup-recovery-pending-ready",
+      status: "suspended",
+      config: recoveryConfig,
+    });
+    const ownerEpoch = await insertOwner(db, gameId, {
+      status: "expired",
+      kernelHealth: "suspended",
+      failureReason: "startup_orphaned",
+    });
+    await insertSealedSettlement(db, { gameId, ownerEpoch, state: "pending" });
+
+    const prepared = await preparePendingCompletionSettlementsOnStartup(db);
+    const settlement = (await db.select()
+      .from(schema.gameCompletionSettlements)
+      .where(eq(schema.gameCompletionSettlements.gameId, gameId)))[0];
+    const owner = (await db.select()
+      .from(schema.gameRunOwners)
+      .where(and(
+        eq(schema.gameRunOwners.gameId, gameId),
+        eq(schema.gameRunOwners.ownerEpoch, ownerEpoch),
+      )))[0];
+
+    expect(prepared).toEqual({ scanned: 1, readyGameIds: [gameId] });
+    expect(settlement?.state).toBe("pending");
+    expect(settlement?.retryReadyAt).not.toBeNull();
+    expect(owner?.failureReason).toBe("completion_settlement_transient_failure");
+    expect(await findStartupRecoverableGameIds(db)).not.toContain(gameId);
+    expect(await db.select().from(schema.gameResults)
+      .where(eq(schema.gameResults.gameId, gameId))).toHaveLength(0);
   });
 
   test("startup recovery resumes from a boundary with reconstructable Mingle inbox messages", async () => {

@@ -18,6 +18,7 @@ import {
   createResolvedRoundCanonicalEventFixture,
   insertGame,
   insertOwner,
+  withJuryWinner,
 } from "./durable-run-test-utils.js";
 
 describe("GameWatchState summaries", () => {
@@ -105,6 +106,41 @@ describe("GameWatchState summaries", () => {
         name: "Mira",
       },
     });
+  });
+
+  test("persists no final or winner fields for a suspended terminal projection", async () => {
+    const gameId = await insertGame(db, {
+      slug: "summary-pending-completion-settlement",
+      status: "suspended",
+      config: gameConfig(),
+    });
+    await insertFixturePlayers(db, gameId);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const events = withJuryWinner(createCanonicalEventFixture(gameId), "mira");
+    await appendGameEvents(db, { gameId, ownerEpoch, events });
+    await db.update(schema.gameRunOwners).set({
+      status: "expired",
+      kernelHealth: "suspended",
+      failureReason: "completion_settlement_transient_failure",
+    }).where(eq(schema.gameRunOwners.ownerEpoch, ownerEpoch));
+
+    await refreshGameWatchStateSummary(db, gameId, "completion_settlement_transient_failure");
+    const row = (await db.select()
+      .from(schema.gameWatchStateSummaries)
+      .where(eq(schema.gameWatchStateSummaries.gameId, gameId)))[0];
+    const read = (await getGameWatchStateSummaryReadsByGameIds(db, [gameId])).get(gameId);
+
+    expect(row).toMatchObject({
+      status: "suspended",
+      finalStatus: "not_final",
+      winnerId: null,
+      winnerName: null,
+      roundsPlayed: null,
+    });
+    expect(read?.status).toBe("current");
+    if (read?.status !== "current") throw new Error("Expected current summary");
+    expect(read.summary.final).toEqual({ status: "not_final" });
+    expect(read.summary.winner).toBeUndefined();
   });
 
   test("stores only viewer-safe summary data", async () => {
